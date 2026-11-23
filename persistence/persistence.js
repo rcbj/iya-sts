@@ -426,6 +426,10 @@ let configDirty = false;
 // The pending flush, and the promise anybody waiting on it holds.
 let timer = null;
 let flushing = null;
+// When `flushing` was set: how long this process's own flush has been out,
+// which is what decides whether it is slow or stuck (#1934's follow-up,
+// `ownFlushStuckMs()`).
+let flushingSince = 0;
 // The ONE flush queued behind `flushing`, shared by every caller that arrives
 // while it runs. See flush().
 let flushQueued = null;
@@ -2032,6 +2036,7 @@ function flush() {
   // product mode; persistence_replication.js holds a row of an unknown realm
   // back as well). The restore's order, for the restore's reason: a realm
   // has to exist before its directory can be loaded into it.
+  flushingSince = Date.now();
   flushing = Promise.resolve(typeof keystore.settleDeks === 'function'
     ? keystore.settleDeks() : null).then(function () {
     if (!wantRealms) {
@@ -2408,6 +2413,7 @@ function flush() {
   }).then(function (result) {
     inFlightDirectory.clear();
     flushing = null;
+    flushingSince = 0;
     // WHERE A RESPONSE'S COMMIT WAIT GOES (2026-10-22, #820): the minted
     // flush had a timer and this one did not, so a commit wait three times
     // the minted flush's could not be placed. Only a flush that wrote.
@@ -4566,10 +4572,25 @@ function stop() {
 //     STS-STORE-0042, and is never applied again): the high-water mark is
 //     not advanced, so the next pull reads the same rows, and if the flush
 //     has settled meanwhile they apply.
-//   * **AND A REQUEST WORKER ASKS TO BE REPLACED**, once, over the channel
-//     it already has (`reportLag()`'s arrangement): the front process
-//     retires it through the drain a stop uses and forks a replacement into
-//     its slot (`request_pool.js`, `receiveReplaceWorker()`). The
+//   * **AND A REQUEST WORKER WHOSE FLUSH IS STUCK ASKS TO BE REPLACED**,
+//     once, over the channel it already has (`reportLag()`'s arrangement):
+//     the front process retires it through the drain a stop uses and forks
+//     a replacement into its slot (`request_pool.js`,
+//     `receiveReplaceWorker()`). SLOW IS NOT STUCK, and the difference is
+//     what the flush holds: this worker's own unflushed writes, a
+//     revocation among them, which a kill would lose. So the ask waits
+//     until the flush has been out OWN_FLUSH_STUCK_FACTOR bounds in all
+//     (2 minutes by default) — past one bound the pulls are already failing
+//     and re-reading, which costs this worker its read-your-write requests
+//     and nothing else — and the ask carries the flush's start and the
+//     instant it is given up on, OWN_FLUSH_HARD_FACTOR bounds after it
+//     began (5 minutes). The worker's drain waits for that flush to settle
+//     before it exits (`settleOwnFlush()`, `request_worker.ts`'s
+//     `releaseThenExit()`), and the front process does not end it before
+//     that instant: a statement that is only slow lands and its writes
+//     with it. Only a flush with no answer from the driver for that long is
+//     abandoned, and that is said where the worker goes (STS-WORKER-0057).
+//     The
 //     replacement restores from the store and follows the change log from
 //     the head it read when it opened the store, so every row this worker
 //     could not apply reaches it — they are committed rows, and the store is
@@ -4591,6 +4612,110 @@ let replacementAsked = false;
 // barrier giving up between two pulls still says what holds them.
 let lastRanOut = null;
 const OWN_FLUSH_RAN_OUT = { ranOut: true };
+// SLOW AND STUCK, in bounds of `workers.readBarrierTimeoutMs` since the flush
+// began. Four, because the first bound is what makes the wait visible and a
+// statement waiting on a lock another session holds for a minute or two (a
+// long index build, a vacuum, a failover) is slow rather than gone; ten,
+// for the drain, because a flush that has had no answer from the driver for
+// that long (5 minutes by default) is not coming back, and a worker that
+// cannot exit until it does would hold its slot for ever. Both are factors
+// of the bound rather than settings of their own, so a stack that shortens
+// the bound (the tests, at its minimum of 1000 ms) shortens them with it.
+const OWN_FLUSH_STUCK_FACTOR = 4;
+const OWN_FLUSH_HARD_FACTOR = 10;
+
+/**
+ * How long this process's own flush may be out before it counts as stuck,
+ * and a request worker asks to be replaced.
+ * @returns milliseconds
+ */
+function ownFlushStuckMs() {
+  log.debug("Entering ownFlushStuckMs().");
+  log.debug("Leaving ownFlushStuckMs().");
+  return OWN_FLUSH_STUCK_FACTOR * ownFlushWaitLimitMs();
+}
+
+/**
+ * How long this process's own flush may be out before a drain gives up on
+ * it.
+ * @returns milliseconds
+ */
+function ownFlushHardMs() {
+  log.debug("Entering ownFlushHardMs().");
+  log.debug("Leaving ownFlushHardMs().");
+  return OWN_FLUSH_HARD_FACTOR * ownFlushWaitLimitMs();
+}
+
+/**
+ * The flush this process has out, if any.
+ * @returns `{ since, outMs, giveUpAt }` (epoch milliseconds), or null
+ */
+function ownFlushInFlight() {
+  log.debug("Entering ownFlushInFlight().");
+  if (!flushing) {
+    log.debug("Leaving ownFlushInFlight(). None.");
+    return null;
+  }
+  const since = flushingSince || Date.now();
+  log.debug("Leaving ownFlushInFlight(). Out.");
+  return { since: since, outMs: Date.now() - since,
+           giveUpAt: since + ownFlushHardMs() };
+}
+
+/**
+ * Waits for this process's own flush to settle, resolved or rejected — and
+ * for any flush queued behind it — until `ownFlushHardMs()` after the one
+ * out began. A drain calls it before it exits, so that a flush that is only
+ * slow is not abandoned with the writes in it.
+ * @returns a promise of true when nothing is out, false when it gave up
+ */
+function settleOwnFlush() {
+  log.debug("Entering settleOwnFlush().");
+  const out = ownFlushInFlight();
+  if (!out) {
+    log.debug("Leaving settleOwnFlush(). Nothing is out.");
+    return Promise.resolve(true);
+  }
+  const leftMs = Math.max(0, out.giveUpAt - Date.now());
+  // A ONE-SHOT BOUND inside one drain, cleared when the flushes settle.
+  let timer = null;
+  const gaveUp = new Promise(function (resolve) {
+    timer = setTimeout(function () {
+      resolve(OWN_FLUSH_RAN_OUT);
+    }, leftMs);
+    if (timer && typeof timer.unref === 'function') {
+      timer.unref();
+    }
+  });
+  log.debug("Leaving settleOwnFlush(). Waiting " + leftMs + " ms at most.");
+  return Promise.race([flushesSettled(flushing), gaveUp])
+    .then(function (result) {
+      clearTimeout(timer);
+      return result !== OWN_FLUSH_RAN_OUT;
+    });
+}
+
+/**
+ * Settles once `held` has, resolved or rejected, and then any flush that
+ * started behind it — a queued one starts as the one before it settles.
+ * No timer: `settleOwnFlush()` bounds the whole wait with its one.
+ * @param held - the `flushing` promise out now
+ * @returns a promise of null
+ */
+function flushesSettled(held) {
+  log.debug("Entering flushesSettled().");
+  log.debug("Leaving flushesSettled().");
+  return held.then(function () {
+    return null;
+  }, function (e) {
+    // A flush that failed has settled: its writes are back in memory, and
+    // the drain's own last flush tries them again.
+    log.debug("Caught in flushesSettled(): " + ((e && e.message) || e));
+    return null;
+  }).then(function () {
+    return flushing && flushing !== held ? flushesSettled(flushing) : null;
+  });
+}
 
 /**
  * The longest a change-log apply waits on this process's own flush.
@@ -4706,27 +4831,41 @@ function ownFlushWedged(wait, held) {
   const err = errorCodes.mark(new Error(errorCodes.tag('STS-STORE-0176') +
     what + '. The page is read again by the next pull; no row is dropped.'),
   'STS-STORE-0176');
+  const stuckMs = ownFlushStuckMs();
   if (reportedWedgeOf === held) {
     log.debug('persistence: ' + what + ' (already reported).');
-    log.debug("Leaving ownFlushWedged(). Already reported.");
-    return err;
+  } else {
+    reportedWedgeOf = held;
+    log.error(errorCodes.tag('STS-STORE-0176') + 'persistence: ' + what +
+              '. The change is not applied and not dropped: the next pull ' +
+              'reads it again. ' + (inWorker
+      ? 'A flush that is only slow is waited for: this request worker asks ' +
+        'the front process to replace it only if the flush is still out ' +
+        stuckMs + ' ms after it began (STS-STORE-0177).'
+      : 'This is the front process, which nothing replaces: its pulls fail ' +
+        'a bound at a time until the flush settles or the process ' +
+        'restarts.'));
   }
-  reportedWedgeOf = held;
-  log.error(errorCodes.tag('STS-STORE-0176') + 'persistence: ' + what +
-            '. The change is not applied and not dropped: the next pull ' +
-            'reads it again. ' + (inWorker
-    ? 'This request worker is asking the front process to replace it; ' +
-      'the replacement restores from the store and follows the change log ' +
-      'from there.'
-    : 'This is the front process, which nothing replaces: its pulls fail ' +
-      'a bound at a time until the flush settles or the process restarts.'));
-  if (inWorker && !replacementAsked) {
+  // STUCK, NOT SLOW: asked of the flush that is out now, at each wait that
+  // runs out, since the first one usually runs out long before this.
+  const out = held === flushing ? ownFlushInFlight() : null;
+  if (inWorker && !replacementAsked && out && out.outMs >= stuckMs) {
     replacementAsked = true;
+    log.error(errorCodes.tag('STS-STORE-0177') + 'persistence: this ' +
+              'request worker\'s own flush has been out ' + out.outMs +
+              ' ms, past ' + stuckMs + ' ms (' + OWN_FLUSH_STUCK_FACTOR +
+              ' x workers.readBarrierTimeoutMs), so it asks the front ' +
+              'process to replace it. Its drain waits for that flush to ' +
+              'settle until ' + new Date(out.giveUpAt).toISOString() +
+              ', and the writes in it are kept if it does; the ' +
+              'replacement restores from the store and follows the change ' +
+              'log from there.');
     try {
       // Lazily, as reportLag() does: a process that is not a worker loads
       // nothing, and outside a worker thread send() is a no-op.
       require('../common/worker_channel').send({ replaceWorker: {
-        code: 'STS-STORE-0176', reason: what } });
+        code: 'STS-STORE-0177', reason: what,
+        flushing: { since: out.since, giveUpAt: out.giveUpAt } } });
     } catch (e) {
       // The channel has gone: this worker is ending already, and the front
       // replaces it from its exit.
@@ -6234,6 +6373,9 @@ module.exports = {
   start: start,
   stop: stop,
   releaseOrigin: releaseOrigin,
+  // A drain's wait on this process's own flush (#1934's follow-up).
+  ownFlushInFlight: ownFlushInFlight,
+  settleOwnFlush: settleOwnFlush,
   flush: flush,
   // A create's claims, given back in the transaction that commits it (#628);
   // see the note above `releaseClaimsAtCommit()`.

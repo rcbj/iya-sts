@@ -55,6 +55,6 @@
   ],
   "exclude": [
     "node_modules", "tests/node_modules", "node-ldapjs",
-    "common/crypto_impl", "debugger/embedded"
+    "common/crypto_impl", "debugger/embedded", "wt-iya-sts-*"
   ]
 }

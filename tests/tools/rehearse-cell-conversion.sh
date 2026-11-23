@@ -293,7 +293,23 @@ say "1. a single-cell product-mode service on postgres"
 dc up -d --no-build sts >> "${OUT}/rehearsal.log" 2>&1 \
   || fail "the single-cell stack did not start"
 waitHealthy "${STS_CONTAINER_NAME}"
-runner single -e NODE_TLS_REJECT_UNAUTHORIZED=0 tests \
+# THE ANCHOR FIRST, VERIFIED (#1954's follow-up). The seed used to run with
+# NODE_TLS_REJECT_UNAUTHORIZED=0, because node reads NODE_EXTRA_CA_CERTS only
+# at start and the anchor did not exist yet. It is fetched in a process of
+# its own now — tests/tools/trust.js's readTrust(), which verifies the chain
+# against the Root the service's revocation listener publishes on 8082 — and
+# the seed starts holding it, as the verification below always did. The seed
+# writes the same file again from its own fetch.
+runner single tests node -e '
+  require("./tests/tools/trust.js").readTrust("https://sts:8081", 1)
+    .then(function (read) {
+      require("fs").writeFileSync("/rehearse/sts-certificate.pem", read.pem);
+    }, function (e) {
+      console.error("the anchor could not be read: " + e.message);
+      process.exit(1);
+    });' > "${OUT}/anchor.log" 2>&1 \
+  || fail "the service's anchor could not be read; see ${OUT}/anchor.log"
+runner single -e NODE_EXTRA_CA_CERTS=/rehearse/sts-certificate.pem tests \
   node tests/tools/rehearse-cell-conversion.js seed /rehearse \
   > "${OUT}/seed.log" 2>&1 || fail "seeding failed; see ${OUT}/seed.log"
 say "seeded; stopping the single-cell service"

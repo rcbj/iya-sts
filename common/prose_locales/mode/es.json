@@ -644,8 +644,8 @@
     "text": "La contraseña generada se escribe en el registro del servicio."
   },
   "mode.requirements.bootstrap-password-file.product": {
-    "en": "aa423786d143e231",
-    "text": "Se escribe en un archivo que solo este servicio puede leer, y el registro indica dónde, salvo que admin.logBootstrapPassword esté activado. Un arranque posterior elimina ese archivo, una vez que alguien ya tiene una credencial."
+    "en": "f6a1cd8269e19c3e",
+    "text": "Se escribe en un archivo que solo este servicio puede leer, y el registro indica dónde, salvo que admin.logBootstrapPassword esté activado. El archivo de un dominio de confianza añade a ese nombre un guion y el id del dominio. Un arranque posterior elimina un archivo en cuanto la contraseña que contiene ya no abre su cuenta."
   },
   "mode.requirements.pkce-every-client.what": {
     "en": "7e2c6f1869e39287",

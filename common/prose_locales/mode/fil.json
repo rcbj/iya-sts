@@ -644,8 +644,8 @@
     "text": "Isinusulat sa service log ang nabuong password."
   },
   "mode.requirements.bootstrap-password-file.product": {
-    "en": "aa423786d143e231",
-    "text": "Isinusulat ito sa file na ang serbisyong ito lang ang makakabasa, at sinasabi ng log kung saan, maliban kung naka-on ang admin.logBootstrapPassword. Binubura ng susunod na pagsisimula ang file na iyon, kapag may may hawak nang kredensyal."
+    "en": "f6a1cd8269e19c3e",
+    "text": "Isinusulat ito sa file na ang serbisyong ito lang ang makakabasa, at sinasabi ng log kung saan, maliban kung naka-on ang admin.logBootstrapPassword. Nagdaragdag ang file ng isang trust realm ng gitling at ng realm id sa pangalang iyon. Ang susunod na pagsisimula ay nagbubura ng isang file kapag hindi na nabubuksan ng password na nasa loob nito ang account nito."
   },
   "mode.requirements.pkce-every-client.what": {
     "en": "7e2c6f1869e39287",
