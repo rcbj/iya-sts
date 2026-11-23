@@ -4,6 +4,40 @@ title: Release notes
 
 # Release notes
 
+## 1.2.0
+
+### New: dynamic selectable roles
+
+A role can be **dynamic selectable**: nobody is a member of it, and a person
+chooses it at sign-in for the application they are signing in to, from the
+roles that role's own XACML policy permits them. A role marked `required`
+must be chosen. The choice is kept on the sign-on session, is asked of each
+role's policy again at every issuance, and appears in the roles claim and
+the SAML 2.0, SAML 1.1 and WS-Federation roles attribute for that
+application only. Single sign-on into another application carries no
+choice: the portal's **Sign in again** asks for a fresh sign-in, and an
+application that requires a role the session did not choose for it sends
+the person to sign in again. Flows with no sign-in screen (the password
+grant, token exchange, the assertion grants, the device grant, CIBA,
+WS-Trust, Kerberos and LDAP) never carry a chosen role, and are refused
+where a role is required (`STS-XACML-0332`). See
+[Dynamic selectable roles](dynamic-roles.md).
+
+### Create pages mark what the create requires
+
+Each Directory object has a create page that marks a field required exactly
+when the create refuses it empty. New user marks the owners required while
+**Service account** is ticked, and the push destination and the secret's
+name each once the other is filled in. New policy no longer marks a field
+the save accepts empty, such as the passkey policy's sign-in hints or the
+attribute policy's required attributes.
+
+A policy save through the management API that leaves `profile` out still
+edits the default profile, as in 1.0.0. A save whose `profile` is empty or
+null, and the console's new-policy form without a name, are refused with
+"A name is required." (`STS-ADMIN-0549`). A named authentication policy
+saved without a `name` is refused with `STS-AUTHN-0532`, as before.
+
 ## 1.1.0
 
 1.1.0 upgrades a deployment that is already running 1.0.0. Keep the
