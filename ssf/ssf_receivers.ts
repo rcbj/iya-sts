@@ -1311,6 +1311,9 @@ class SsfReceivers {
         break;
       }
       const sets = (answer.json && answer.json.sets) || {};
+      if (Object.keys(sets).length) {
+        await this.catchUpBeforeTaking();
+      }
       Object.keys(sets).forEach((jti) => {
         const taken = this.acceptPolled(surface.id, sets[jti]);
         out.received++;
@@ -1332,6 +1335,34 @@ class SsfReceivers {
     log.debug("Leaving SsfReceivers.pollSurface(). " +
               JSON.stringify(out));
     return out;
+  }
+
+  // THE REGISTER IS BROUGHT UP TO WHAT THE TRANSMITTER WROTE BEFORE A SET IS
+  // ACTED ON (run 45236493306). `actOn()` leaves a RISC SET alone when the
+  // account's row names its `txn` among `ownActs` — a person's own
+  // keyCompromise report on the portal — and the transmitter writes that row
+  // BEFORE it queues the SET. But this job runs on whichever request worker
+  // the scheduler picked, and the SET it collected over the loopback was
+  // queued by another; the row reaches this process through the change log a
+  // moment later. In the mariadb mode (three workers) the poll got there
+  // first, the portal acted on the person's own report, and the token they
+  // had just made it with was revoked (`sts_portal_signing_key`, STS-ACCOUNT-
+  // 0007). The SET answered was committed, and so was the row written before
+  // it, so one pull of the change log here is enough. A store that does not
+  // coordinate answers at once; a pull that fails is logged and the SETs are
+  // taken anyway, which errs towards acting, as `ssf/CLAUDE.md` says.
+  private async catchUpBeforeTaking(): Promise<void> {
+    const { log } = this.deps;
+    log.debug("Entering SsfReceivers.catchUpBeforeTaking().");
+    try {
+      // Required here, at the job: the store is a cache hit by then, and
+      // this library requires nothing of the persistence layer at load.
+      await require('../persistence/persistence').syncNow();
+    } catch (e) {
+      log.debug("Caught in SsfReceivers.catchUpBeforeTaking(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving SsfReceivers.catchUpBeforeTaking().");
   }
 
   /**

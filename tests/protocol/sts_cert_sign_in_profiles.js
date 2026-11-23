@@ -148,6 +148,29 @@ function started(r) {
   return !!(r.json && r.json.signedIn === true);
 }
 
+// THE PROXY SETTINGS ARE READ IN THE FRONT PROCESS, WHICH A WORKER'S WRITE
+// REACHES THROUGH THE CHANGE LOG (run 45236493306). `/admin-api/realms/set`
+// is answered by a request worker, and `common/forwarded_client_certificate.ts`
+// decides in the front process before dispatch, on its own copy of the realm,
+// which the store's change log brings up to date a moment later. The read
+// barrier (`workers.readYourWrite`) is a worker's and covers the writer's own
+// session; the proxy's request is neither. So in single-node and mariadb E3's
+// request, sent at once, met the range it had replaced and signed alice in.
+// A request is therefore asked again until the answer is the one the
+// setting means, for at most ten seconds: the check is still that the
+// setting takes effect, and a setting that never did still fails.
+async function settledUntil(url, o, wanted) {
+  log.debug("Entering settledUntil().");
+  const deadline = Date.now() + 10000;
+  let r = await settled(url, o);
+  while (!wanted(r) && Date.now() < deadline) {
+    await K.sleep(250);
+    r = await settled(url, o);
+  }
+  log.debug("Leaving settledUntil(). " + wanted(r));
+  return r;
+}
+
 async function test() {
   log.debug("Entering test().");
   const realm = await K.realm("certprof");
@@ -264,8 +287,9 @@ async function test() {
     .update(derOf(proxy.leaf.pem)).digest("hex");
   await K.set(realm, "tls.trustedProxyCertificates", proxySha);
   await K.set(realm, "tls.trustedProxyAddresses", "0.0.0.0/0,::/0");
-  const viaProxy = await settled(rb + "/tls/sign-in", { tls: proxyTls,
-                                                         headers: forwarded });
+  const viaProxy = await settledUntil(rb + "/tls/sign-in",
+                                      { tls: proxyTls, headers: forwarded },
+                                      started);
   check("E1. from the named proxy, the forwarded leaf signs alice in",
         function () {
     assert.ok(started(viaProxy), viaProxy.text.slice(0, 300));
@@ -303,8 +327,11 @@ async function test() {
               garbled.text.slice(0, 300));
   });
   await K.set(realm, "tls.trustedProxyAddresses", "192.0.2.0/24");
-  const elsewhere = await settled(rb + "/tls/sign-in", { tls: proxyTls,
-                                                          headers: forwarded });
+  const elsewhere = await settledUntil(rb + "/tls/sign-in",
+                                       { tls: proxyTls, headers: forwarded },
+                                       function (r) {
+                                         return !started(r);
+                                       });
   check("E3. from the proxy's certificate outside its address range the " +
         "headers are removed, and the proxy's own certificate signs nobody " +
         "in", function () {
