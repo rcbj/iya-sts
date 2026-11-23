@@ -3998,7 +3998,11 @@ Every one of those refusals leaves the pending record ALONE. A screen that spent
 itself on a refusal would turn each of them into a denial of service against the
 person it was asked of. The three are `askedOf()`, asked by the shell, the view
 and the answer alike, with the codes the form's refusals were recorded under
-(`STS-OAUTH-0149`, `0150`, `0151`; a malformed id or body `0148`).
+(`STS-OAUTH-0149`, `0150`, `0151`; a malformed id or body `0148`). **Each
+sentence is a `refusals.consent.*` catalog message since #2006**: the view's
+and the act's answers carry `messages` beside `errors` and the page draws them
+in its language; the shell's `invalid_request` and the act's
+`error_description` stay the English.
 
 ### A page of the sign-in surface since #576 (2026-10-12)
 

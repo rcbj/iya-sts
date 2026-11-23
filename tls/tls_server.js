@@ -196,6 +196,8 @@ const authn = require('../authn/authn');
 // ordinary routes and mark the response.
 const audit = require('../common/audit');
 const errorCodes = require('../common/error_codes');
+// The sign-in screen's certificate refusals as catalog sentences (#2006).
+const Sentence = require('../common/sentence');
 // #507: the master-secret digest a TLS 1.2 ticket's name is kept under is
 // `stsCrypto.sha256Hex()` (every digest goes through common/crypto.js,
 // tests/crypto_centralised.js), and this is the room-maker for its
@@ -6231,10 +6233,7 @@ function screenCertificateHolder(req) {
   log.debug('Entering screenCertificateHolder().');
   const socket = req && req.socket;
   const none = { ok: false, code: 'STS-AUTHN-0463',
-                 why: 'No verified client certificate arrived on this ' +
-                      'connection, so there is nobody to continue as. ' +
-                      'Choose the certificate when your browser asks, or ' +
-                      'sign in another way.' };
+                 why: Sentence.say('refusals.authn.certificateNone') };
   if (!socket || socket.authorized !== true) {
     log.debug('Leaving screenCertificateHolder(). Nothing verified.');
     return Promise.resolve(none);
@@ -6262,22 +6261,16 @@ function screenCertificateHolder(req) {
                 'certificate, not stored on one entry.');
       return checked.error === 'STORED_TWICE'
         ? { ok: false, code: 'STS-AUTHN-0469',
-            why: 'Your certificate is stored on more than one account ' +
-                 'here, so it cannot say which one is yours. Ask an ' +
-                 'administrator to store it on yours alone.' }
+            why: Sentence.say('refusals.authn.certificateStoredTwice') }
         : { ok: false, code: 'STS-AUTHN-0468',
-            why: 'Your certificate is not stored on any account here, so ' +
-                 'it cannot sign you in. Ask an administrator to store it ' +
-                 'on your account (a renewed certificate is stored again), ' +
-                 'or sign in another way.' };
+            why: Sentence.say('refusals.authn.certificateNotStored') };
     }
     if (checked && !checked.ok && checked.error === 'OTHER_REALM') {
       log.info('tls: the sign-in screen refused a client certificate from ' +
                'another realm: ' + checked.why);
       log.debug('Leaving screenCertificateHolder(). Another realm\'s.');
       return { ok: false, code: 'STS-AUTHN-0465',
-               why: 'Your certificate was issued in another realm, so it ' +
-                    'cannot sign you in here.' };
+               why: Sentence.say('refusals.authn.certificateOtherRealm') };
     }
     const pre = certificateRefusal(socket, 'optional', revocation,
                                    checked ? checked.identity : undefined);
@@ -6288,18 +6281,16 @@ function screenCertificateHolder(req) {
       log.debug('Leaving screenCertificateHolder(). Refused.');
       if (r.refusedOnRevocation) {
         return { ok: false, code: 'STS-AUTHN-0464',
-                 why: 'Your certificate has been revoked, or its revocation ' +
-                      'could not be confirmed, so it cannot sign you in.' };
+                 why: Sentence.say('refusals.authn.certificateRevoked') };
       }
       if (r.refusedAsIdentity) {
         return { ok: false, code: 'STS-AUTHN-0465',
-                 why: 'This certificate is not a TLS client certificate ' +
-                      'for a person here, so it cannot sign you in.' };
+                 why: Sentence.say('refusals.authn.certificateNotAPerson') };
       }
       if (r.application) {
         return { ok: false, code: 'STS-AUTHN-0466',
-                 why: 'This certificate was issued to an application, and ' +
-                      'an application\'s certificate signs nobody in.' };
+                 why: Sentence.say(
+                   'refusals.authn.certificateOfApplication') };
       }
       return none;
     }

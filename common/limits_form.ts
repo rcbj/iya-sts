@@ -39,6 +39,8 @@
 
 import helpers = require('./helpers');
 import AccessLimits = require('./access_limits');
+// A refusal's sentence (#2006): English to every text reader.
+import Sentence = require('./sentence');
 // The markup, shared with the browser (#576): a `web_` module, a leaf.
 import WebLimitsForm = require('./web_limits_form');
 
@@ -171,9 +173,9 @@ class LimitsForm {
               })) {
             if (!kept.length) {
               log.debug("Leaving LimitsForm.lowered(). No receiver.");
-              return { ok: false, code: 'STS-GNAP-0866', why: 'Every ' +
-                'receiver of "' + right.type + '" was unticked; untick the ' +
-                'right itself to leave it out.' };
+              return { ok: false, code: 'STS-GNAP-0866',
+                       why: Sentence.say('refusals.consent.receiversUnticked',
+                                         { type: String(right.type) }) };
             }
             proposed.receiver = typeof was.receiver === 'string' &&
               kept.length === 1 ? kept[0] : kept;
@@ -200,8 +202,9 @@ class LimitsForm {
         const raised = AccessLimits.raised(was, proposed);
         if (raised) {
           log.debug("Leaving LimitsForm.lowered(). Raised.");
-          return { ok: false, code: 'STS-GNAP-0866', why: 'The limits of "' +
-            right.type + '" may only be lowered here: ' + raised + '.' };
+          return { ok: false, code: 'STS-GNAP-0866',
+                   why: Sentence.say('refusals.consent.limitsOnlyLowered',
+                     { type: String(right.type), raised: String(raised) }) };
         }
         const next = Object.assign({}, right, { limits: proposed });
         const malformed = conformanceRefusal([{ access: [next] }]);

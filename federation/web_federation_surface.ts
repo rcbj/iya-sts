@@ -101,8 +101,10 @@ class FederationSurface extends WebSurface {
                                     own: this.own });
     if (!state) {
       this.view = null;
-      this.drawProblem('This page could not be drawn',
-                       'The service sent no state for it.');
+      this.drawProblem(this.refusal('refusals.web.notDrawnTitle', {},
+                                    'This page could not be drawn'),
+                       this.refusal('refusals.web.noState', {},
+                                    'The service sent no state for it.'));
       return;
     }
     this.lastAnswer = state;
@@ -165,8 +167,8 @@ class FederationSurface extends WebSurface {
       form.submit();
       return;
     }
-    this.flash = { error: 'This page sends nothing, so the form was not ' +
-                          'sent.' };
+    this.flash = { error: this.refusal('refusals.federation.sendsNothing',
+      {}, 'This page sends nothing, so the form was not sent.') };
     this.redraw();
   }
 }

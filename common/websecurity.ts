@@ -85,6 +85,9 @@
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
+// A rate limit's refusal as a catalog sentence (#2006), so the page that
+// draws it does so in its own language.
+import Sentence = require('./sentence');
 import config = require('./config');
 import mode = require('./mode');
 import stsCrypto = require('./crypto');
@@ -203,6 +206,9 @@ interface LimitAnswer {
   retryAfterS?: number;
   shared?: boolean;
   detail?: string;
+  // The refusal's sentence (#2006), for a page that draws it in its own
+  // language; `detail` is its English.
+  said?: Sentence;
 }
 
 // ---------------------------------------------------------------------------
@@ -768,8 +774,10 @@ class WebSecurity {
       return errorCodes.mark({ ok: false, kind: found.kind,
                limit: found.limit,
                retryAfterS: found.retryAfterS,
-               detail: 'Too many attempts. Wait ' + found.retryAfterS +
-                       ' seconds and try again.' }, code);
+               ...this.said(Sentence.say(
+                 'refusals.authn.tooManyAttempts',
+                 { seconds: found.retryAfterS })) },
+                             code);
     }
     log.debug('Leaving WebSecurity.attempt(). Allowed.');
     return { ok: true };
@@ -842,8 +850,9 @@ class WebSecurity {
               ' bucket.');
     return errorCodes.mark({ ok: false, kind: found.kind, limit: found.limit,
              retryAfterS: found.retryAfterS,
-             detail: 'Too many failed attempts. Wait ' + found.retryAfterS +
-                     ' seconds and try again.' }, code);
+             ...this.said(Sentence.say(
+               'refusals.authn.tooManyFailedAttempts',
+               { seconds: found.retryAfterS })) }, code);
   }
 
   // Forget the counters for one identity — what a SUCCESSFUL sign-in does, so
@@ -978,6 +987,8 @@ class WebSecurity {
     });
   }
 
+  // `detailLead` is `failed` for the failed-attempts bucket and anything
+  // else for the attempts one: a choice of catalog sentence (#2006).
   private sharedRefusal(refusal: Refusal, detailLead: string): LimitAnswer {
     const { log, errorCodes } = this.deps;
     log.debug("Entering WebSecurity.sharedRefusal().");
@@ -987,8 +998,29 @@ class WebSecurity {
     return errorCodes.mark({ ok: false, kind: refusal.kind,
              limit: refusal.limit, retryAfterS: refusal.retryAfterS,
              shared: true,
-             detail: detailLead + ' Wait ' + refusal.retryAfterS +
-                     ' seconds and try again.' }, code);
+             ...this.said(Sentence.say(detailLead === 'failed'
+               ? 'refusals.authn.tooManyFailedAttempts'
+               : 'refusals.authn.tooManyAttempts',
+               { seconds: refusal.retryAfterS })) }, code);
+  }
+
+  // A REFUSAL'S `detail` IS ITS ENGLISH, as it always was (#2006): every
+  // door that rate-limits — the token endpoint, LDAP, the portal — hands it
+  // to an answer of its own, some to a protocol's error text, so it stays a
+  // string, and the sentence the sign-in screen draws in the page's language
+  // rides beside it as `said` (the issuance gate's `asText()`, the same
+  // rule).
+  /**
+   * A refusal's `detail` and `said` members.
+   *
+   * @param sentence - the refusal's sentence
+   * @returns `{ detail, said }`
+   */
+  private said(sentence: Sentence): { detail: string; said: Sentence } {
+    const { log } = this.deps;
+    log.debug('Entering WebSecurity.said().');
+    log.debug('Leaving WebSecurity.said().');
+    return { detail: String(sentence), said: sentence };
   }
 
   private secondsLeft(remainingMs: unknown): number {
@@ -1052,7 +1084,7 @@ class WebSecurity {
                'cluster (' + found.kind + ' bucket, limit ' + found.limit +
                ' per ' + Math.round(span / 1000) + 's). Refusing for ' +
                'another ' + found.retryAfterS + 's.');
-      return self.sharedRefusal(found, 'Too many attempts.');
+      return self.sharedRefusal(found, 'any');
     });
   }
 
@@ -1119,7 +1151,7 @@ class WebSecurity {
         }
       });
       return { answer: refusal
-        ? self.sharedRefusal(refusal, 'Too many failed attempts.') : null,
+        ? self.sharedRefusal(refusal, 'failed') : null,
                counts: counts };
     });
   }

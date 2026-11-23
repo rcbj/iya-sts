@@ -837,7 +837,9 @@ human-facing page outside `/admin` and `/portal` into one, surface by surface**
   be dropped.
 * **THE BROWSER TRANSLATES** (rcbj's decision 3 on #570), in #539's order, from
   the catalogs served as static JSON under `/web`; the APIs stay
-  language-free and errors stay English.
+  language-free. **A refusal is drawn in the page's language too since
+  #2006**: an answer's `errors` stay English and its `messages` name each
+  sentence's catalog key (`common/CLAUDE.md` 3ci).
 * **A specification's endpoint is never converted** (#569's rule): its status,
   headers, body and the documents it answers — the auto-POST forms, the OP
   iframe, front-channel fan-out, the RFC 4559 exchange — stay as they are,

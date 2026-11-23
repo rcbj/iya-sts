@@ -64,6 +64,7 @@ import config = require('../common/config');
 import realms = require('../common/realms');
 import errorCodes = require('../common/error_codes');
 import stsCrypto = require('../common/crypto');
+import Sentence = require('../common/sentence');
 
 type Json = any;
 
@@ -269,7 +270,9 @@ class CertificateHandoff {
     if (!kept.ok) {
       log.debug("Leaving CertificateHandoff.resultFor(). A refusal.");
       return { ok: false, code: String(kept.code || 'STS-AUTHN-0463'),
-               why: String(kept.why || '') };
+               why: CertificateHandoff.revived(kept.whyMessage,
+                                               String(kept.why || '')) ||
+                    String(kept.why || '') };
     }
     const self = this;
     log.debug("Leaving CertificateHandoff.resultFor(). " + kept.username);
@@ -290,6 +293,36 @@ class CertificateHandoff {
         self.deps.log.debug('Leaving recordVerification(). (handoff)');
       }
     };
+  }
+
+  /**
+   * A sentence the handoff row kept as its message, said again from its key
+   * (`oid4vc/vc_signin.ts`'s `revived()` rule: a key this build's English
+   * catalog lacks says the English kept); null for none.
+   *
+   * @param message - `{ key, params }`, or null
+   * @param english - the English kept beside it
+   * @returns the sentence, or null
+   */
+  static revived(message: Json, english?: string): Sentence | null {
+    helpers.log.debug("Entering CertificateHandoff.revived().");
+    if (!message || typeof message !== 'object' ||
+        typeof message.key !== 'string' ||
+        message.key.indexOf('refusals.') !== 0) {
+      helpers.log.debug("Leaving CertificateHandoff.revived(). None.");
+      return null;
+    }
+    const params: Record<string, string | number | Sentence> = {};
+    const given = message.params && typeof message.params === 'object'
+      ? message.params : {};
+    Object.keys(given).forEach(function (name: string) {
+      const value = given[name];
+      params[name] = value && typeof value === 'object'
+        ? (CertificateHandoff.revived(value) || '')
+        : (typeof value === 'number' ? value : String(value));
+    });
+    helpers.log.debug("Leaving CertificateHandoff.revived().");
+    return Sentence.say(message.key, params, english);
   }
 
   /**
@@ -363,7 +396,10 @@ class CertificateHandoff {
       : { ok: false,
           code: String((holder && holder.code) || 'STS-AUTHN-0463'),
           why: String((holder && holder.why) ||
-                      'No verified client certificate arrived.') };
+                      'No verified client certificate arrived.'),
+          // The refusal's catalog message beside its English (#2006), so
+          // the screen draws it in the page's language when the act says it.
+          whyMessage: holder ? Sentence.stored(holder.why) : null };
     store.set(id, Object.assign({}, row, { state: 'presented',
                                            result: result }));
     const back = h.urlOf(req, LOGIN_PATH) + '?authn=' +

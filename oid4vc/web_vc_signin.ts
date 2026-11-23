@@ -47,14 +47,15 @@
 //     while the browser's dialog is open so the two never race to finish
 //     one sign-in.
 //   * A REFUSAL answers a view of kind `refused`, drawn under its sentence
-//     (English, as every refusal): the heading, the presentation's checks,
-//     and the ways on.
+//     in the page's language (#2006): the heading (`headingMessage`), the
+//     presentation's checks, and the ways on.
 //
 // A `web_` MODULE: it requires other `web_` modules only and logs nothing;
 // the browser arrives through the surface's `env`.
 // ---------------------------------------------------------------------------
 
 import WebQr = require('../common/web_qr');
+import WebSaid = require('../common/web_said');
 
 type Json = any;
 
@@ -74,6 +75,37 @@ function esc(value: unknown): string {
  * The wallet sign-in's renderers. A static utility class.
  */
 class WebVcSignin {
+  /**
+   * A sentence this page writes itself, in the page's language, and in the
+   * English given where the catalogs lack it (#2006).
+   *
+   * The key comes first, as in `WebSurface.refusal()`, so
+   * `tests/i18n_catalogs.js` (test E) finds it.
+   *
+   * @param key - the `refusals` key, a literal
+   * @param params - its parameters
+   * @param english - the English
+   * @param t - the translator
+   * @returns the sentence, as text
+   */
+  static refusal(key: string, params: Json, english: string,
+                 t: Json): string {
+    return WebSaid.sentence(t, { key: key, params: params || {} }) || english;
+  }
+
+  /**
+   * The same, as HTML: the catalog message's own inline markup kept.
+   *
+   * @param t - the translator
+   * @param key - the `refusals` key, a literal
+   * @param english - the English, as HTML
+   * @returns the sentence, as HTML
+   */
+  static refusalHtml(t: Json, key: string, english: string): string {
+    return t && typeof t.has === 'function' && t.has(key) ? t.html(key)
+                                                          : english;
+  }
+
   /**
    * The wait page's own address for a view, without the realm's prefix.
    *
@@ -96,7 +128,12 @@ class WebVcSignin {
    */
   static heading(v: Json, t: Json): string {
     if (v.wallet === 'refused') {
-      return String(v.heading || 'Nobody was signed in');
+      // The heading's catalog message (#2006), its English where the
+      // catalogs lack it.
+      return WebSaid.sentence(t, v.headingMessage) ||
+        String(v.heading ||
+               WebVcSignin.refusal('refusals.wallet.heading.nobodySignedIn',
+                                   {}, 'Nobody was signed in', t));
     }
     if (v.kind === 'enrol') {
       return t.text('wallet.heading.enrol');
@@ -224,9 +261,9 @@ class WebVcSignin {
 
   /**
    * A refusal's page under its sentence: the heading, what the presentation
-   * was found to be and the checks it went through, and the ways on. English,
-   * as every refusal is — but for the way back to the sign-in screen, which
-   * the wait page draws too.
+   * was found to be and the checks it went through, and the ways on, in the
+   * page's language (#2006). A check's name and detail are the Verifier's
+   * own words about a credential, and are drawn as sent.
    *
    * @param v - the refused view
    * @param t - the translator
@@ -234,13 +271,18 @@ class WebVcSignin {
    */
   static refused(v: Json, t: Json): string {
     const verdicts: Json = {
-      'presentation.verified': 'The presentation <strong>verified</strong>.',
-      'presentation.notVerified': 'The presentation <strong>did not ' +
-        'verify</strong>.',
-      'selfIssued.verified': 'The self-issued ID Token ' +
-        '<strong>verified</strong>.',
-      'selfIssued.notVerified': 'The self-issued ID Token <strong>did not ' +
-        'verify</strong>.'
+      'presentation.verified': WebVcSignin.refusalHtml(t,
+        'refusals.wallet.verdict.presentationVerified',
+        'The presentation <strong>verified</strong>.'),
+      'presentation.notVerified': WebVcSignin.refusalHtml(t,
+        'refusals.wallet.verdict.presentationNotVerified',
+        'The presentation <strong>did not verify</strong>.'),
+      'selfIssued.verified': WebVcSignin.refusalHtml(t,
+        'refusals.wallet.verdict.selfIssuedVerified',
+        'The self-issued ID Token <strong>verified</strong>.'),
+      'selfIssued.notVerified': WebVcSignin.refusalHtml(t,
+        'refusals.wallet.verdict.selfIssuedNotVerified',
+        'The self-issued ID Token <strong>did not verify</strong>.')
     };
     const checks = Array.isArray(v.checks) ? v.checks : [];
     return '<h1>' + esc(WebVcSignin.heading(v, t)) + '</h1>' +
@@ -259,11 +301,17 @@ class WebVcSignin {
       // one presented and a new one would sign in.
       (v.reissue
         ? '<p><a id="wallet-reissue" href="' + esc(v.reissue) + '">' +
-          'Get a new credential issued</a></p>'
+          esc(WebVcSignin.refusal('refusals.wallet.reissue', {},
+                                  'Get a new credential issued', t)) +
+          '</a></p>'
         : '') +
       (v.retry
         ? '<p><a id="wallet-retry" href="' + esc(v.retry) + '">' +
-          (v.verdict ? 'Try another credential' : 'Start again') + '</a></p>'
+          esc(v.verdict
+            ? WebVcSignin.refusal('refusals.wallet.retryCredential', {},
+                                  'Try another credential', t)
+            : WebVcSignin.refusal('refusals.wallet.startAgain', {},
+                                  'Start again', t)) + '</a></p>'
         : '') +
       WebVcSignin.back(v, t);
   }
@@ -391,15 +439,17 @@ class WalletFlow {
    */
   async operation(id: string): Promise<Json> {
     if (!await this.surface.ensureIndex()) {
-      this.surface.refused('The service\'s API could not be reached.');
+      this.surface.refused(this.surface.refusal('refusals.web.unreachable',
+        {}, 'The service\'s API could not be reached.'));
       return null;
     }
     const rows = (this.surface.indexRows || []).filter(function (op: Json) {
       return op.operationId === id;
     });
     if (!rows.length) {
-      this.surface.refused('This page has no API operation (' + id +
-                           '), so it refuses rather than guess.');
+      this.surface.refused(this.surface.refusal('refusals.web.noOperation',
+        { control: id }, 'This page has no API operation (' + id +
+        '), so it refuses rather than guess.'));
       return null;
     }
     return rows[0];
@@ -622,9 +672,12 @@ class WalletFlow {
       this.busy = false;
       button.disabled = false;
       if (problem) {
-        // A refusal, and refusals stay English (#539).
-        problem.textContent = 'The wallet did not answer: ' +
-          ((e && ((e as Json).name + ' ' + (e as Json).message)) || e);
+        // A refusal in the page's language (#2006); the browser's own
+        // error name and message are drawn as the browser gave them.
+        const error = String((e && ((e as Json).name + ' ' +
+                                    (e as Json).message)) || e);
+        problem.textContent = this.surface.refusal('refusals.wallet.noAnswer',
+          { error: error }, 'The wallet did not answer: ' + error);
         problem.hidden = false;
       }
       this.armedFor = String(view.state);
@@ -740,9 +793,9 @@ class WalletFlow {
       this.env().location.assign(String(json.location));
       return;
     }
-    const why = (json && ((json.errors || []).join(' ') ||
+    const why = (json && (this.surface.said(json) ||
                           json.error_description)) ||
-      'The service answered ' + answer.status + '.';
+      this.surface.answeredStatus(answer.status);
     this.surface.showView(json && json.view ? json.view : null, why);
   }
 }

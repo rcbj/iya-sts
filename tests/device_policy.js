@@ -222,7 +222,7 @@ function childMain() {
       const compromisedAnswer = ask(alicesFact());
       note(!compromisedAnswer.allowed &&
            code(compromisedAnswer) === 'compromised' &&
-           compromisedAnswer.why === 'Authentication failed.',
+           String(compromisedAnswer.why) === 'Authentication failed.',
            'B2. a COMPROMISED device is refused by default, and the client ' +
            'is told only that authentication failed',
            JSON.stringify(compromisedAnswer));
@@ -255,7 +255,8 @@ function childMain() {
       note(!cNone.allowed && code(cNone) === 'not-compliant' &&
            !cNc.allowed && code(cNc) === 'not-compliant' &&
            !cBobs.allowed && !cBobsCompliant.allowed &&
-           cNone.why === 'A compliant registered device is required.',
+           String(cNone.why) ===
+             'A compliant registered device is required.',
            'C1. with devices.requireCompliantDevice on: no device, a ' +
            'not-compliant one and somebody else\'s (even compliant) are ' +
            'refused', JSON.stringify([cNone.why, cNc.why, cBobs.why,

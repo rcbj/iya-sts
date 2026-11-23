@@ -15411,6 +15411,37 @@ reasons for the shape:
   `error_page.ts` below. What stays English is what a PROGRAM reads: an API's
   error answer, an `error_description`, a log line. A page shows those as
   data, in its diagnostics, never as its prose.
+* **AND FOR EVERY STATIC SURFACE'S REFUSALS BY #2006 (rcbj, 2026-11-23)**:
+  the sentence the sign-in screen and its steps, the wallet sign-in,
+  consent, sign-out, GNAP's interaction pages and federation's pages show
+  when an act is refused is drawn in the page's language. **The browser
+  translates** (#570's decision 3 holds): an answer keeps `errors:
+  [English]`, what a program reads, and carries `messages: [{ key, params
+  }]` beside it, one per sentence, `null` for text with no message. The
+  server's half is `sentence.ts`: `Sentence.say('refusals.<area>.<name>',
+  params)` is a value whose English, formatted from
+  `locales/refusals/en.json`, is what `String()`, concatenation,
+  `JSON.stringify()` and `join()` give, so a log line, an audit note and a
+  stored record read exactly what they read before, and only the lines that
+  ANSWER a refusal ask `Sentence.messagesOf()` (`authn.ts`'s
+  `refusalBody()`, `AuthnApi.refuse()`, `VcSignin.refuse()`, GNAP's
+  `apiRefusal()`, …). A sentence that must outlive the request in a store
+  keeps its message beside its English (`screenErrorMessage`, an outcome's
+  `reasonMessage`), because the store keeps only the English. The
+  browser's half is `web_said.ts` (`WebSurface.said()`, `refusal()` for a
+  sentence the runtime writes itself, its English inline because the
+  catalogs may be what failed to load); a key the catalogs lack is drawn in
+  the English it was sent with, never as its name. Every surface loads the
+  `refusals` namespace (`web_i18n.ts`), because the sentence is often a
+  shared library's. **A parameter that is words is a `Sentence` of its own**;
+  a fragment chosen in code is two keys or a `select`, never English passed
+  as a parameter. **Still English**: operator-written text (a policy's
+  advice, an application's configuration problem), technical detail
+  passed as a parameter, a validation shape refusal, the portal's and the
+  console's refusals, and every specification endpoint's answer.
+  `tests/refusal_sentences.js` holds the design and that no sign-in door is
+  handed an English literal; `tests/i18n_catalogs.js` test E scans
+  `Sentence.say('` and `.refusal('` as it scans `t.text('`.
 * **`error_page.ts` IS THE ONE ERROR PAGE (#1326).** The error in the yellow
   box (the protocol's `error` as a value, a sentence in the page's language),
   an action where the page has one, the background in a `<details>`, a note to

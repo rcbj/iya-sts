@@ -154,6 +154,8 @@ import listenerMap = require('../common/listener_map');
 import cors = require('../common/cors');
 import stsCrypto = require('../common/crypto');
 import GnapModel = require('./gnap_model');
+// A refusal as a catalog sentence (#2006): a leaf library.
+import Sentence = require('../common/sentence');
 
 type Json = any;
 
@@ -359,33 +361,46 @@ class GnapInteract {
   }
 
   // A refusal of `/gnap-api` that leaves the page standing: `{ ok: false,
-  // errors }` in English, and the page drawn again with the sentence over
-  // it (a CSRF token gone stale, a malformed body, a raised limit). The code
-  // is recorded, never sent.
+  // errors }` in English, with `messages` beside them where the sentence is
+  // a `refusals.gnap.*` catalog one (#2006), and the page drawn again with
+  // the sentence over it in its language (a CSRF token gone stale, a
+  // malformed body, a raised limit). The code is recorded, never sent.
   // error-code: none — the helper's definition; every caller passes its STS-GNAP code.
   private apiRefusal(res: Res, status: number, code: string,
-                     why: string): void {
+                     why: string | Sentence): void {
     const { log, errorCodes } = this.deps;
     log.debug("Entering GnapInteract.apiRefusal(). " + status);
     errorCodes.mark(res, code);
-    this.answer(res, status, { ok: false, errors: [why] });
+    const body: Json = { ok: false, errors: [String(why)] };
+    const messages = Sentence.messagesOf([why]);
+    if (messages) {
+      body.messages = messages;
+    }
+    this.answer(res, status, body);
     log.debug("Leaving GnapInteract.apiRefusal().");
   }
 
   // Section 4.1.1/4.1.2: a URI or code that names no active request gets an
   // error SHOWN, and the browser is NEVER sent back to any client. On a page
   // the shell carries it (400, as before); on `/gnap-api` the answer carries
-  // it as a view the runtime draws in place of the page.
+  // it as a view the runtime draws in place of the page. The heading and
+  // the detail are catalog sentences (#2006): the view keeps their English
+  // and carries their keys as `headingMessage` and `detailMessage`, which
+  // the runtime draws in the page's language.
   // error-code: none — the helper's definition, not a call to it.
-  private interactionError(res: Res, code: string, heading: string,
-                           detail: string): void {
+  private interactionError(res: Res, code: string, heading: Sentence,
+                           detail: Sentence): void {
     const { log, errorCodes } = this.deps;
     log.debug("Entering GnapInteract.interactionError().");
     errorCodes.mark(res, code);
-    const view = { kind: 'problem', heading: heading, detail: detail };
+    const view = { kind: 'problem', heading: String(heading),
+                   detail: String(detail),
+                   headingMessage: heading.message(),
+                   detailMessage: detail.message() };
     if (GnapInteract.answersJson(res)) {
       // error-code: none — marked on the first line of this helper.
-      this.answer(res, 400, { ok: false, errors: [detail], view: view });
+      this.answer(res, 400, { ok: false, errors: [String(detail)],
+                              messages: [detail.message()], view: view });
       log.debug("Leaving GnapInteract.interactionError(). JSON.");
       return;
     }
@@ -434,17 +449,15 @@ class GnapInteract {
       if (!self.activeForInteraction(grant)) {
         log.debug("Leaving the GNAP " + mode + " start. No active request.");
         return self.interactionError(res, 'STS-GNAP-0400',
-          'This link is not active',
-          'The link does not belong to a request that is still waiting for ' +
-          'approval — it may have expired, been used already, or been ' +
-          'answered.');
+                 Sentence.say('refusals.gnap.heading.linkNotActive'),
+                 Sentence.say('refusals.gnap.linkNotActive'));
       }
       const one = grant.interaction.modes[mode];
       if (!one || one.used || one.id !== params.value.id) {
         log.debug("Leaving the GNAP " + mode + " start. Already used.");
-        return self.interactionError(res, 'STS-GNAP-0401', 'This link has ' +
-                                     'already been used',
-          'Each interaction link works once (RFC 9635 section 4).');
+        return self.interactionError(res, 'STS-GNAP-0401',
+                 Sentence.say('refusals.gnap.heading.linkUsed'),
+                 Sentence.say('refusals.gnap.linkOnce'));
       }
       // ONCE ACROSS THE CLUSTER (#46): `one.used` is a field on a replicated
       // grant, so another node still reading the grant before this start
@@ -458,9 +471,9 @@ class GnapInteract {
       if (!spent.ok) {
         log.debug("Leaving the GNAP " + mode + " start. Spent elsewhere.");
         return self.interactionError(res, spent.reason === 'used' ?
-                                     'STS-GNAP-0712' : 'STS-GNAP-0716',
-                                     'This link has already been used',
-          'Each interaction link works once (RFC 9635 section 4).');
+                 'STS-GNAP-0712' : 'STS-GNAP-0716',
+                 Sentence.say('refusals.gnap.heading.linkUsed'),
+                 Sentence.say('refusals.gnap.linkOnce'));
       }
       one.used = true;
       grant.interaction.started = grant.interaction.started || mode;
@@ -507,8 +520,9 @@ class GnapInteract {
         log.error(errorCodes.tag('STS-GNAP-0160') + 'gnap: ' + name +
                   ' failed: ' + ((e && e.stack) || e));
         if (!res.headersSent) {
-          self.interactionError(res, 'STS-GNAP-0160', 'Something went wrong',
-                                'The request could not be completed.');
+          self.interactionError(res, 'STS-GNAP-0160',
+            Sentence.say('refusals.gnap.heading.wentWrong'),
+            Sentence.say('refusals.gnap.requestNotCompleted'));
         }
       });
     };
@@ -598,9 +612,9 @@ class GnapInteract {
 
   // The limit controls of an act, held to their own bound before
   // `LimitsForm.strip()` takes them off for the schema: a name of the
-  // controls' shape, and a short string or a short list of them. '' where
+  // controls' shape, and a short string or a short list of them. Null where
   // they are all well formed, or the sentence that refuses them.
-  private static limitFieldsRefusal(body: Json): string {
+  private static limitFieldsRefusal(body: Json): Sentence | null {
     helpers.log.debug("Entering GnapInteract.limitFieldsRefusal().");
     const bad = Object.keys(body || {}).filter(function (key) {
       if (!/^lim_/.test(key)) {
@@ -617,9 +631,10 @@ class GnapInteract {
     });
     helpers.log.debug("Leaving GnapInteract.limitFieldsRefusal(). " +
                       bad.length);
-    return bad.length ? 'A limit control is not one this page draws, or ' +
-      'carries more than a limit can: ' + bad.slice(0, 3).join(', ') + '.'
-      : '';
+    return bad.length
+      ? Sentence.say('refusals.gnap.limitControlBad',
+                     { names: bad.slice(0, 3).join(', ') })
+      : null;
   }
 
   // -------------------------------------------------------------------------
@@ -635,10 +650,10 @@ class GnapInteract {
       log.debug("Leaving GnapInteract.ownershipRefused(). The owner.");
       return false;
     }
-    this.interactionError(res, 'STS-GNAP-0862', 'You cannot approve this ' +
-      'request', 'It asks for access to a resource that is not yours to ' +
-      'give: ' + String(refused.why || '') + ' Only its owner can approve ' +
-      'it.');
+    this.interactionError(res, 'STS-GNAP-0862',
+      Sentence.say('refusals.gnap.heading.cannotApprove'),
+      Sentence.say('refusals.gnap.notYours',
+                   { why: refused.why || '' }));
     log.debug("Leaving GnapInteract.ownershipRefused(). Refused.");
     return true;
   }
@@ -827,11 +842,9 @@ class GnapInteract {
                                          'STS-GNAP-0717');
     if (!spent.ok) {
       this.interactionError(res, spent.reason === 'used' ? 'STS-GNAP-0717' :
-                            'STS-GNAP-0716',
-                            'This request has already been answered',
-        'An answer to this request has already been recorded — on this page ' +
-        'in another tab, or by a second submission of it. It is answered ' +
-        'once.');
+        'STS-GNAP-0716',
+        Sentence.say('refusals.gnap.heading.alreadyAnswered'),
+        Sentence.say('refusals.gnap.alreadyAnswered'));
       log.debug("Leaving GnapInteract.claimDecision(). Refused.");
       return null;
     }
@@ -884,9 +897,8 @@ class GnapInteract {
       store.grantByInteraction('approve:' + params.value.id) : null;
     if (!this.activeForInteraction(grant) || !grant.interaction.started) {
       this.interactionError(res, 'STS-GNAP-0406',
-        'This request is not waiting for you',
-        'There is no request waiting for approval at this address, or it ' +
-        'was already answered or has expired.');
+        Sentence.say('refusals.gnap.heading.notWaiting'),
+        Sentence.say('refusals.gnap.notWaiting'));
       log.debug("Leaving GnapInteract.approvalGrant().");
       return null;
     }
@@ -960,8 +972,9 @@ class GnapInteract {
         log.error(errorCodes.tag('STS-GNAP-0409') + 'gnap: a grant could ' +
                   'not be sent to its owner: ' + ((e && e.stack) || e));
         if (!res.headersSent) {
-          self.interactionError(res, 'STS-GNAP-0409', 'Something went wrong',
-                                'The request could not be completed.');
+          self.interactionError(res, 'STS-GNAP-0409',
+            Sentence.say('refusals.gnap.heading.wentWrong'),
+            Sentence.say('refusals.gnap.requestNotCompleted'));
         }
       });
       log.debug("Leaving GnapInteract.beforeApproval(). To the owner.");
@@ -1014,8 +1027,9 @@ class GnapInteract {
       log.error(errorCodes.tag('STS-GNAP-0409') + 'gnap: an unmet step-up ' +
                 'could not be answered: ' + ((e && e.stack) || e));
       if (!res.headersSent) {
-        self.interactionError(res, 'STS-GNAP-0409', 'Something went wrong',
-                              'The request could not be completed.');
+        self.interactionError(res, 'STS-GNAP-0409',
+          Sentence.say('refusals.gnap.heading.wentWrong'),
+          Sentence.say('refusals.gnap.requestNotCompleted'));
       }
     });
     log.debug("Leaving GnapInteract.beforeApproval(). Refused: unmet.");
@@ -1097,8 +1111,8 @@ class GnapInteract {
     }
     const type = String((req.headers && req.headers['content-type']) || '');
     if (!/^application\/json\s*(;|$)/i.test(type)) {
-      this.apiRefusal(res, 415, 'STS-GNAP-0410', 'This operation takes a ' +
-                      'JSON body (Content-Type: application/json).');
+      this.apiRefusal(res, 415, 'STS-GNAP-0410',
+        Sentence.say('refusals.gnap.jsonBody'));
       log.debug("Leaving GnapInteract.bound(). Not JSON.");
       return false;
     }
@@ -1111,9 +1125,9 @@ class GnapInteract {
       own = [];
     }
     if (!origin || own.indexOf(origin) < 0) {
-      this.apiRefusal(res, 403, 'STS-GNAP-0411', 'This operation is sent ' +
-        'by a page of this service: the request carried ' +
-        (origin ? 'another origin' : 'no Origin') + '.');
+      this.apiRefusal(res, 403, 'STS-GNAP-0411',
+        Sentence.say('refusals.gnap.wrongOrigin',
+                     { carried: origin ? 'another' : 'none' }));
       log.debug("Leaving GnapInteract.bound(). Not this origin.");
       return false;
     }
@@ -1122,10 +1136,8 @@ class GnapInteract {
     if (!expected || !presented ||
         !stsCrypto.constantTimeEquals(presented, expected)) {
       this.apiRefusal(res, 403, 'STS-GNAP-0412', expected
-        ? 'The ' + CSRF_HEADER + ' header is missing or is not this ' +
-          'browser\'s. Load the page again.'
-        : 'This browser holds no session for this page. Load the page ' +
-          'again.');
+        ? Sentence.say('refusals.gnap.csrfStale', { header: CSRF_HEADER })
+        : Sentence.say('refusals.gnap.noSession'));
       log.debug("Leaving GnapInteract.bound(). The token.");
       return false;
     }
@@ -1144,8 +1156,8 @@ class GnapInteract {
       log.debug("Entering " + name + ".");
       res.locals.gnapApi = true;
       if (config.value('gnap.enabled') === false) {
-        self.apiRefusal(res, 400, 'STS-GNAP-0402', 'This trust realm does ' +
-                        'not run GNAP (gnap.enabled).');
+        self.apiRefusal(res, 400, 'STS-GNAP-0402',
+          Sentence.say('refusals.gnap.off'));
         log.debug("Leaving " + name + ". Off.");
         return undefined;
       }
@@ -1241,9 +1253,8 @@ class GnapInteract {
       if (config.value('gnap.enabled') === false) {
         log.debug("Leaving GET /gnap/code. Off.");
         return self.interactionError(res, 'STS-GNAP-0402',
-                                     'GNAP is turned off',
-                                     'This trust realm does not run GNAP ' +
-                                     '(gnap.enabled).');
+                 Sentence.say('refusals.gnap.heading.off'),
+                 Sentence.say('refusals.gnap.off'));
       }
       self.sendShell(res, 200, null, '');
       log.debug("Leaving GET /gnap/code.");
@@ -1301,9 +1312,9 @@ class GnapInteract {
       if (!allowed.ok) {
         log.debug("Leaving POST /gnap-api/code. Rate limited.");
         return self.apiRefusal(res, 429, errorCodes.codeOf(allowed) ||
-                               'STS-GNAP-0404',
-                               'Too many codes have been tried from here. ' +
-                               allowed.detail);
+                                      'STS-GNAP-0404',
+                 Sentence.say('refusals.gnap.tooManyCodes',
+                              { detail: String(allowed.detail) }));
       }
       const code = grants.normaliseUserCode(posted.value.code);
       // WHICH CELL (#98): a user code carries no tag, so a code this cell
@@ -1325,8 +1336,8 @@ class GnapInteract {
             ? 'user_code_uri' : null)) : null;
       if (!self.activeForInteraction(grant) || !mode) {
         log.debug("Leaving POST /gnap-api/code. Unknown code.");
-        return self.apiRefusal(res, 400, 'STS-GNAP-0405', 'That code is ' +
-                               'not recognised, or it has expired.');
+        return self.apiRefusal(res, 400, 'STS-GNAP-0405',
+                 Sentence.say('refusals.gnap.codeNotRecognised'));
       }
       // ONCE ACROSS THE CLUSTER (#46). Both user-code modes of a grant are
       // spent together below, so what is claimed is "a user code of this
@@ -1338,8 +1349,8 @@ class GnapInteract {
       if (!codeSpent.ok) {
         log.debug("Leaving POST /gnap-api/code. Spent elsewhere.");
         return self.apiRefusal(res, 400, codeSpent.reason === 'used'
-          ? 'STS-GNAP-0713' : 'STS-GNAP-0716', 'That code is not ' +
-          'recognised, or it has expired.');
+                 ? 'STS-GNAP-0713' : 'STS-GNAP-0716',
+                 Sentence.say('refusals.gnap.codeNotRecognised'));
       }
       await websecurity.succeededShared('gnap-user-code', req, '',
                                         { keepAddress: true });
@@ -1541,9 +1552,9 @@ class GnapInteract {
       if (!lowered.ok) {
         log.debug("Leaving POST /gnap-api/approve. Limits refused.");
         return self.apiRefusal(res, 400, lowered.code === 'STS-GNAP-0867'
-                                 ? 'STS-GNAP-0867' : 'STS-GNAP-0866',
-                               'These limits could not be accepted: ' +
-                               lowered.why);
+                 ? 'STS-GNAP-0867' : 'STS-GNAP-0866',
+                 Sentence.say('refusals.gnap.limitsNotAccepted',
+                              { why: lowered.why }));
       }
       let claimedDecision = null;
       return (approve ? self.ownershipRefused(req, res, grant, session)
@@ -1577,8 +1588,8 @@ class GnapInteract {
                   'could not be completed: ' +
                   (e && e.stack || e));
         return self.interactionError(res, 'STS-GNAP-0409',
-                                     'Something went wrong',
-                                     'The answer could not be completed.');
+                 Sentence.say('refusals.gnap.heading.wentWrong'),
+                 Sentence.say('refusals.gnap.answerNotCompleted'));
       });
     })));
 

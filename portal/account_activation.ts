@@ -576,7 +576,7 @@ class AccountActivation {
                 'and no form can do it.';
       refusedCode = 'STS-PORTAL-0102';
     } else if (rpRefusal) {
-      refused = rpRefusal;
+      refused = String(rpRefusal);
       refusedCode = 'STS-PORTAL-0102';
     } else {
       let done: Json = null;
