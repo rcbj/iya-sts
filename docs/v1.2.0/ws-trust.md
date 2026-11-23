@@ -967,7 +967,10 @@ WS-Security signature this service accepted
 `wsse:FailedCheck` (`STS-WSTRUST-0084`). Every element
 `wstrustSignRequestElements` selects must be one that signature references,
 or inside one. An expression that matches nothing, or an element it does
-not cover, is `wsse:FailedCheck` (`STS-WSTRUST-0085`). An empty map is the
+not cover, is `wsse:FailedCheck` (`STS-WSTRUST-0085`); a map that selects
+more than 256 elements is `STS-WSTRUST-0087`. What a signature made over
+ciphertext covers is the ciphertext it references, and the element that
+ciphertext opens to. An empty map is the
 SOAP Body, which a signature always covers. Development believes a
 signature, as it always has, and still holds the map to what it references.
 
@@ -1006,6 +1009,13 @@ its expressions are in the map.
 |---|---|---|
 | Body | `/soap11:Envelope/soap11:Body/* \| /soap12:Envelope/soap12:Body/*` (the Body's content, as `sp:EncryptedParts/sp:Body` means it) | `/soap11:Envelope/soap11:Body \| /soap12:Envelope/soap12:Body` |
 | Header | every header block but `wsse:Security`: `/soap11:Envelope/soap11:Header/*[not(local-name()='Security' and namespace-uri()='…secext-1.0.xsd')]`, and the SOAP 1.2 twin | the same |
+
+**Checked against Apache WSS4J.** WSS4J 4.0.3 verifies a signed answer
+against `/sts/cert`, decrypts and verifies it in both orders and with the
+signature encrypted, and its signed requests (with or without its
+`InclusiveNamespaces` prefix list) are accepted and held to the presets.
+While answers are signed, each output's `ResponseProtection` offers
+`sp:SignedParts` and `sp:SignedElements`, both optional.
 
 The XPath subset includes `not(…)` over its other predicates, which is what
 the Header preset needs. A `not()` inside a `not()` is `STS-WSTRUST-0079`.

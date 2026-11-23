@@ -1380,6 +1380,43 @@ const XML_ACCEPTED_TRANSFORMS = Object.freeze([
   'http://www.w3.org/TR/2001/REC-xml-c14n-20010315#WithComments'
 ]);
 
+// THE SIGNATURE, SERIALIZED ALONE, WITH THE NAMESPACES IN SCOPE WHERE IT
+// STOOD (#1917's WSS4J round trip, 2026-11-23). Each WS-Security verifier
+// hands the engine the ds:Signature by itself, and serialized alone it lost
+// the declarations its ancestors made — the Envelope's soap and the security
+// header's wsse and wsu. Apache WSS4J, by default, writes an
+// InclusiveNamespaces PrefixList on SignedInfo's CanonicalizationMethod
+// naming exactly those, and exclusive c14n renders a listed prefix that is
+// IN SCOPE, so SignedInfo's octets here differed from the signer's and
+// every default WSS4J or CXF signature was refused as one that does not
+// verify (STS-KEYS-0012). The copy carries every declaration in scope; the
+// exclusive canonicalization renders only the listed and the visibly used,
+// so it canonicalizes as the signature did in place.
+function withInScopeNamespaces(element) {
+  log.debug("Entering withInScopeNamespaces().");
+  const copy = element.cloneNode(true);
+  const declared = {};
+  for (let cur = element; cur && cur.nodeType === 1; cur = cur.parentNode) {
+    const attrs = cur.attributes || [];
+    for (let i = 0; i < attrs.length; i++) {
+      const name = String(attrs[i].name || attrs[i].nodeName || '');
+      if ((name === 'xmlns' || name.indexOf('xmlns:') === 0) &&
+          !Object.prototype.hasOwnProperty.call(declared, name)) {
+        declared[name] = String(attrs[i].value || '');
+      }
+    }
+  }
+  Object.keys(declared).forEach(function (name) {
+    if (!copy.hasAttribute(name)) {
+      copy.setAttributeNS('http://www.w3.org/2000/xmlns/', name,
+                          declared[name]);
+    }
+  });
+  log.debug("Leaving withInScopeNamespaces(). " +
+            Object.keys(declared).length);
+  return copy;
+}
+
 // The id of an element, in every spelling this document could give one —
 // `wsu:Id` first, which is the WS-Security spelling.
 function wsuIdOf(element) {
@@ -1754,7 +1791,7 @@ function verifyWsSecuritySignature(xml, opts) {
   // refused otherwise), so each Reference resolves to the element the
   // reading checked by position.
   const signatureXml = withoutCertificateText(
-    serializer.serializeToString(sigEl));
+    serializer.serializeToString(withInScopeNamespaces(sigEl)));
   let result;
   try {
     result = xmldsig.verifyXml(signatureXml, {
@@ -1856,8 +1893,9 @@ function verifyWsSecurityHmac(xml, opts) {
   const key = Buffer.from(options.key);
   let result;
   try {
+    // In scope as it stood, for verifyWsSecuritySignature()'s reason.
     result = xmldsig.verifyXml(new xmldom.XMLSerializer()
-      .serializeToString(sigEl), {
+      .serializeToString(withInScopeNamespaces(sigEl)), {
       referencedXml: String(xml),
       allowedTransforms: XML_ACCEPTED_TRANSFORMS,
       verifier: function (octets, signatureBytes) {

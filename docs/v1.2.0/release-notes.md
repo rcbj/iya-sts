@@ -23,7 +23,14 @@ application's WS-Trust tab, **Body** and **Header** checkboxes write the
 common expressions into the four encryption and signing maps, and an
 **XPath builder** writes one for an element clicked in a sample message.
 The XPath subset gains `not(…)`. New refusals: `STS-WSTRUST-0084`,
-`0085` and `0086`. See [Message integrity](ws-trust.md#message-integrity).
+`0085`, `0086` and `0087`. See [Message integrity](ws-trust.md#message-integrity).
+
+### Fixed: WS-Trust requests signed by Apache WSS4J or CXF
+
+A WS-Security signature carrying an `InclusiveNamespaces` prefix list on its
+`SignedInfo`, which WSS4J and Apache CXF write by default, was refused as a
+signature that does not verify (`STS-KEYS-0012`). It is now verified as its
+signer made it.
 
 ### New: dynamic selectable roles
 

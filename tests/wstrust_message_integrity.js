@@ -472,6 +472,141 @@ async function childBody() {
   set('wstrustSignResponse', '');
 
   // -------------------------------------------------------------------------
+  // W. APACHE WSS4J, THE INDEPENDENT PEER (#1918's round trip). WSS4J 4.0.3
+  // (tests/tools/wss4j-driver, in the tests image) signs a request the way
+  // a WSS4J client does — its InclusiveNamespaces PrefixList included — and
+  // processes each answer's security header in its own order, the Basic
+  // Security Profile enforced, trusting only the realm's XML signing
+  // certificate. On a host without the driver the section says so and is
+  // a failure, never a silent pass.
+  // -------------------------------------------------------------------------
+  const wss4j = function (command, request) {
+    log.debug("Entering wss4j(). " + command);
+    const got = childProcess.spawnSync('wss4j-driver', [command], {
+      input: JSON.stringify(request), encoding: 'utf8', timeout: 120000,
+      maxBuffer: 64 * 1024 * 1024 });
+    let out = null;
+    try {
+      out = JSON.parse(String(got.stdout || '').trim().split('\n').pop());
+    } catch (e) {
+      log.debug("Caught in wss4j(): " + ((e && e.message) || e));
+      // No answer: the error the child gave is the reason.
+      out = { ok: false, message: String((got.error && got.error.message) ||
+        got.stderr || 'no answer').slice(0, 600) };
+    }
+    log.debug("Leaving wss4j().");
+    return out;
+  };
+  const signedBy = function (got, local) {
+    log.debug("Entering signedBy().");
+    const sig = (got.actions || []).filter(function (one) {
+      return one.action === 'signature';
+    })[0];
+    log.debug("Leaving signedBy().");
+    return !!sig && sig.refs.some(function (ref) {
+      return ref.name.slice(-(local.length + 1)) === '}' + local;
+    });
+  };
+  const aliceKey8 = nodeCrypto.createPrivateKey(alice.keyPem)
+    .export({ type: 'pkcs8', format: 'pem' });
+  const signerPem = String(helpers.STS.xmlSigner.certPem);
+  const recipientPem = certFor(encKeys);
+  const probe = wss4j('verify', { xml: '<a/>', trustPems: [] });
+  t.check(probe && (probe.ok === true || /Exception|Error/.test(
+            String(probe.message || ''))) &&
+          !/ENOENT|no answer/.test(String(probe.message || '')),
+          'W0. the WSS4J driver answers (tests/tools/wss4j-driver)',
+          JSON.stringify(probe));
+  set('wstrustSignRequest', 'true');
+  set('wstrustSignRequestElements', WebWsProtection.expressions(
+    'wstrustSignRequestElements', 'header').concat(
+    WebWsProtection.expressions('wstrustSignRequestElements', 'body')));
+  for (const inclusive of [true, false]) {
+    // No security header of the job's: WSS4J writes its own.
+    const made = wss4j('sign', { xml: envelope({ wsa: true })
+      .replace(/<wsse:Security>[\s\S]*<\/wsse:Security>/, ''),
+      certPem: alice.certPem, keyPem: aliceKey8,
+      parts: [{ local: 'Action', ns: WSA }], inclusivePrefixes: inclusive });
+    r = made.ok ? await ask('product', String(made.xml))
+                : { status: 0, body: JSON.stringify(made) };
+    t.check(r.status === 200 && />wmialice</.test(String(r.body)),
+            'W1. product: a request WSS4J signed over the Body, the ' +
+            'Timestamp and wsa:Action' + (inclusive
+              ? ', with its InclusiveNamespaces PrefixList,' : ',') +
+            ' authenticates the signer and passes the Header and Body ' +
+            'presets', brief(r));
+  }
+  set('wstrustSignRequest', '');
+  set('wstrustSignRequestElements', []);
+  set('wstrustSignResponse', 'true');
+  for (const m of ['development', 'product']) {
+    r = await ask(m, sign());
+    const got = wss4j('verify', { xml: String(r.body),
+                                  trustPems: [signerPem] });
+    t.check(r.status === 200 && got.ok && signedBy(got, 'Body') &&
+            signedBy(got, 'Timestamp') && (got.actions || []).some(
+              function (one) {
+                return one.action === 'timestamp';
+              }),
+            'W2. ' + m + ': WSS4J verifies the signed answer over its Body ' +
+            'and Timestamp against the realm\'s signing certificate',
+            JSON.stringify(got).slice(0, 900));
+  }
+  const tampered = String(r.body).replace(/(<saml:Issuer>)/, '$1x');
+  const refused = wss4j('verify', { xml: tampered, trustPems: [signerPem] });
+  t.check(tampered !== String(r.body) && refused.ok === false,
+          'W2. and refuses it once the Body is altered',
+          JSON.stringify(refused).slice(0, 400));
+  set('wstrustEncryptResponse', 'true');
+  set('wstrustEncryptResponseElements', WebWsProtection.expressions(
+    'wstrustEncryptResponseElements', 'body'));
+  set('wstrustEncryptionCertificate', recipientPem);
+  const withKey = function (xml) {
+    log.debug("Entering withKey().");
+    log.debug("Leaving withKey().");
+    return { xml: xml, trustPems: [signerPem], recipientKeyPem: encKeyPem,
+             recipientCertPem: recipientPem };
+  };
+  const orderOf = function (got) {
+    log.debug("Entering orderOf().");
+    log.debug("Leaving orderOf().");
+    return (got.actions || []).map(function (one) {
+      return one.action;
+    }).filter(function (one) {
+      return one === 'signature' || one === 'encryption';
+    }).join(',');
+  };
+  r = await ask('development', sign());
+  let got = wss4j('verify', withKey(String(r.body)));
+  t.check(r.status === 200 && got.ok && signedBy(got, 'Body') &&
+          /^encryption,signature$/.test(orderOf(got)) &&
+          />wmialice</.test(String(got.xml)),
+          'W3. sign-then-encrypt: WSS4J decrypts the Body and then ' +
+          'verifies the signature over the plaintext',
+          JSON.stringify(got).slice(0, 900));
+  set('wstrustEncryptSignature', 'true');
+  r = await ask('development', sign());
+  got = wss4j('verify', withKey(String(r.body)));
+  t.check(r.status === 200 && got.ok && signedBy(got, 'Body') &&
+          /encryption/.test(orderOf(got)) && /signature/.test(orderOf(got)),
+          'W4. sp:EncryptSignature: WSS4J decrypts the signature and the ' +
+          'Body and verifies', JSON.stringify(got).slice(0, 900));
+  set('wstrustEncryptSignature', '');
+  set('wstrustResponseProtectionOrder', 'encrypt-then-sign');
+  r = await ask('development', sign());
+  got = wss4j('verify', withKey(String(r.body)));
+  t.check(r.status === 200 && got.ok && signedBy(got, 'Body') &&
+          /^signature,encryption$/.test(orderOf(got)) &&
+          />wmialice</.test(String(got.xml)),
+          'W5. encrypt-then-sign: WSS4J verifies the signature over the ' +
+          'ciphertext and then decrypts', JSON.stringify(got).slice(0, 900));
+  set('wstrustResponseProtectionOrder', '');
+  set('wstrustEncryptResponse', '');
+  set('wstrustEncryptResponseElements', []);
+  set('wstrustEncryptionCertificate', '');
+  set('wstrustSignResponse', '');
+
+  // -------------------------------------------------------------------------
   // P. ENCRYPT-THEN-SIGN, AND THE HEADER INJECTED INSIDE CIPHERTEXT (#2007's
   // review). The client encrypts wsa:Action as an EncryptedHeader and signs
   // that, so the signature references ciphertext the service replaces with
@@ -665,9 +800,12 @@ async function childBody() {
           /<sp:EncryptSignature\/>/.test(signing) &&
           !/<sp:EncryptBeforeSigning\/>/.test(signing) &&
           /wsu:Id="ResponseProtection"/.test(signing) &&
+          /<sp:SignedElements[^>]*>\s*<sp:XPath>[^<]*not\(local-name\(\)=[^<]*Security/
+            .test(signing) &&
           /URI="#ResponseProtection"/.test(signing),
           'O2. answers signed: sp:IncludeTimestamp and sp:EncryptSignature ' +
-          'in the binding, and ResponseProtection on every output');
+          'in the binding, and ResponseProtection on every output offering ' +
+          'sp:SignedParts and sp:SignedElements');
   const after = WsTrustMetadata.document(BASE, BASE, Object.assign({},
     flags, { signsResponses: true, encryptsBeforeSigning: true,
              encryptsSignature: true, responseEncryptionOn: true }));

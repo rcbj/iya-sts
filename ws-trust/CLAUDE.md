@@ -1240,7 +1240,35 @@ the token it carries, after opening every EncryptedData with the key its
 EncryptedKey's ReferenceList names. **`crypto.decryptElement()` pairs the
 first EncryptedData with the first EncryptedKey**, which is wrong for a
 header with two, so the test opens each pair from a copy holding it alone.
-Not yet run: a WSS4J round trip of a signed answer (#1918 asked for one).
+**COVERAGE IS RESOLVED TO NODES BEFORE THE REQUEST IS OPENED** (#2007's
+review, the merger, 2026-11-23). `markSigned(doc, overOpened)` works out
+what the accepted signature covers once, before `openRequest()`: a reading
+over the message as it arrived (encrypt-then-sign) is a set of NODES, and
+`decryptOne()` gives each restored element `_stsFrom`, the EncryptedHeader
+and EncryptedData it replaced, so a plaintext is covered only where its
+ciphertext was referenced. Matching ids against the opened document had let
+a header injected inside unreferenced ciphertext, carrying a signed
+EncryptedData's id, count as signed — and made a genuine encrypted-then-
+signed header a false `0085`. A reading over the opened copy
+(sign-then-encrypt) stays by id: there the injection is a repeated id the
+reader refused. A map selecting more than 256 elements is `0087`; an
+unreadable `wstrustSignRequest` fails closed (`requiresSignedRequest()`).
+`tests/wstrust_message_integrity.js` P holds both, mutation-tested.
+
+**APACHE WSS4J IS THE PEER** (#1918): `tests/tools/wss4j-driver` (WSS4J
+4.0.3, built in the tests image's `wss4j-java` stage, jscep's
+arrangement) signs requests as a WSS4J client does and processes each
+answer's security header in its own order, the Basic Security Profile
+enforced, trusting only the realm's signing certificate. In process,
+`tests/wstrust_message_integrity.js` W; over HTTP,
+`tests/protocol/sts_wstrust_rules.js` I. **It found a defect older than
+#1917**: every WS-Security verifier serialized the ds:Signature ALONE, which
+lost the namespace declarations in scope where it stood, and WSS4J's
+default InclusiveNamespaces PrefixList on SignedInfo names exactly those
+(soap, wsse), so every stock WSS4J/CXF signature was refused as
+`STS-KEYS-0012`. `crypto.js`'s `withInScopeNamespaces()` hands the engine a
+copy carrying them. The enveloped verifier (`verifyXmlSignature()`, SAML)
+serializes its signature the same way and was not changed here.
 
 ## A SECOND-FACTOR PERSON'S USERNAMETOKEN (2026-09-22, #101)
 

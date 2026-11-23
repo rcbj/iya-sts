@@ -1000,9 +1000,21 @@ class WsTrustMetadata {
       '"/>' + (input ? '<sp:Header Namespace="' + WSA_SUBMISSION + '"/>'
                      : '');
     let out = '';
-    if (input || signs) {
+    if (input) {
       out += this.exactlyOne(['<wsp:All/>',
                               this.all('<sp:SignedParts/>')]);
+    } else if (signs) {
+      // #1918: the answer's signing, optional over everything, as
+      // sp:SignedParts and, for a client that names header blocks by
+      // XPath, sp:SignedElements over every block but the security header
+      // (`web_ws_protection.ts`'s Header preset, the signing map's).
+      out += this.exactlyOne(['<wsp:All/>',
+        this.all('<sp:SignedParts/>'),
+        this.all('<sp:SignedParts><sp:Body/></sp:SignedParts>' +
+                 '<sp:SignedElements XPathVersion="' + XPATH10 + '">' +
+                 xpaths([envelopeHeader + "/*[not(local-name()=" +
+                   "'Security' and namespace-uri()='" + terms.secext +
+                   "')]"]) + '</sp:SignedElements>')]);
     }
     if (encrypts) {
       const others = [envelopeHeader + "/*[not(local-name()='Security' and " +
