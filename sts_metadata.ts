@@ -9722,11 +9722,11 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC (#572). After a wallet, rate limited on the sign-in ' +
           'bucket.' },
   { path: '/authn-api/mfa/:id/webauthn/options', group: 'Authentication',
-    name: 'Arm a passkey step\'s ceremony', specs: ['webauthn'],
+    name: 'Arm a passkey step\'s ceremony', specs: ['webauthn', 'ctap21'],
     what: 'NON-SPEC (#572). The step\'s challenge, RP ID, user and keys, ' +
           'and the passkey policy\'s options.' },
   { path: '/authn-api/mfa/:id/webauthn', group: 'Authentication',
-    name: 'Finish a passkey step', specs: ['webauthn'],
+    name: 'Finish a passkey step', specs: ['webauthn', 'ctap21'],
     what: 'NON-SPEC (#572). The ceremony\'s result, verified: a ' +
           'registration where the step enrols a key, an assertion ' +
           'otherwise — decided by the step.' },

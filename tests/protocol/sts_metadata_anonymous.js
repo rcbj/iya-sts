@@ -1312,7 +1312,26 @@ const WELL_KNOWN_ELSEWHERE = {
   "/.well-known/uma2-configuration":
     "off by default (uma.enabled); the discovery document answers 501 until " +
     "UMA is turned on, and sts_uma.js reads it in a realm where it is on. " +
-    "NO_PUBLIC_METADATA's UMA 2.0 row is the same fact."
+    "NO_PUBLIC_METADATA's UMA 2.0 row is the same fact.",
+  // #1955 P6: the Web Key Directory, two methods and each one's policy file.
+  // Off by default (openpgp.wkd), and on it answers a key only for a person
+  // who opted in on the portal, so a stranger here gets 404 from all four.
+  "/.well-known/openpgpkey/:domain/hu/:hash":
+    "the Web Key Directory's advanced method (draft-koch-openpgp-webkey-" +
+    "service), off by default (openpgp.wkd) and answering only an opted-in " +
+    "person's key; sts_openpgp.js's section c fetches it anonymously off, " +
+    "on before the opt-in, published and withdrawn.",
+  "/.well-known/openpgpkey/:domain/policy":
+    "the advanced method's policy file, off by default (openpgp.wkd); " +
+    "sts_openpgp.js's section c fetches it anonymously.",
+  "/.well-known/openpgpkey/hu/:hash":
+    "the Web Key Directory's direct method, the domain the Host asked; off " +
+    "by default (openpgp.wkd), and sts_openpgp.js's section c fetches it " +
+    "anonymously.",
+  "/.well-known/openpgpkey/policy":
+    "the direct method's policy file, off by default (openpgp.wkd); the " +
+    "route is the advanced method's handler with the domain from the Host, " +
+    "which sts_openpgp.js's section c drives."
 };
 
 // ---------------------------------------------------------------------------

@@ -426,6 +426,17 @@ async function mustDo(method, path, json, what) {
 async function toTheCodeStep() {
   log.debug("Entering toTheCodeStep().");
   const rb = base + "/realm/" + H_REALM;
+  // THE SHELL FIRST, as a browser opens the portal (portal_signin.js's
+  // order): serving it registers the realm's `/portal/callback`, at the
+  // base this job reaches it on, on the seeded portal client (oidc_rp.ts,
+  // *NOBODY PINNED*). A fresh realm's entry carries only the callback built
+  // when it was seeded, before any request; in memory mode that was not
+  // this job's base, and the authorization endpoint refused the redirect_uri
+  // 400 (STS-OAUTH-0569) in run 45189343764.
+  const shell = await fetch(rb + "/portal", { redirect: "manual" });
+  await shell.text();
+  assert.strictEqual(shell.status, 200,
+                     "the realm's portal shell answered " + shell.status);
   const verifier = b64url(nodeCrypto.randomBytes(32));
   const authorize = rb + "/oauth2/authorize?" + new URLSearchParams({
     response_type: "code", client_id: "sts-user-portal",
