@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6000** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6001** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -94,7 +94,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 254
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 140
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 121
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 122
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 301
@@ -5637,7 +5637,7 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0137` | A remote PEP HTTPS listener requires a client certificate (requireClientCertificate) and has no authority to verify one against: no readable trustAnchorsFile, and trustIssuedClientCertificates off or PEP_AUTHZEN_CLIENT_CA not set (a reverse-proxy listener has only the anchors file). The listener is refused, fail-closed: a listener the service defined is not bound and is reported failed (reason other); one of the environment's keeps its socket and closes every connection unanswered, reported failed, with the sentence as GET /'s https.problem. Until 2026-11-16 the API listener asked nobody and admitted everybody. A tuning with a trust source, or without the requirement, serves again. | none — an error in the PEP's log; the listener serves nothing |
 | `STS-XPEP-0138` | A caller asked this edge PDP for one of the AuthZEN Search APIs (POST /access/v1/search/subject, resource or action). Those are answered by the service, which holds the directory and the resource and action catalogues. This edge answers 501, before admission and without reading the body, and does not advertise the paths. The code is logged and not sent. A turned-off edge, or one that has not pulled, answers that condition first (STS-XPEP-0044, STS-XPEP-0043, STS-AUTHZEN-0013, STS-AUTHZEN-0014). HEAD stays 404. | AuthZEN Authorization API 1.0 section 8; HTTP 501 |
 | `STS-XPEP-0139` | A caller asked this edge PDP for the Access Request and Approval Profile (POST /access/v1/access-requests, GET of its schema or of a task, POST or DELETE of a task's cancel). The service holds the approval store. This edge answers 501 with the evaluation error object, not problem+json, before admission and without reading the body, and does not advertise the paths. A POST to the task path without /cancel stays 404. The code is logged and not sent. context.approval on an evaluation is not this refusal: it is recognized and not used (STS-AUTHZEN-0084). | AuthZEN Access Request and Approval Profile; HTTP 501 |
-| `STS-XPEP-0140` | An access evaluation was one of the OAuth token-exchange binding's tuples: a gate (resource type audience and an action issue:<type>:<grant>), a context member the binding reads, or, beside a gate in the same batch, a scope or any other non-audience resource type. The service holds delegation and the directory. This edge answers 501 for that item — the whole response when the request was one evaluation, and context.error on a batch item — and does not forward it. The code is logged and not sent. A lone scope or detail, and an audience whose action is not a gate, stay ordinary evaluations. | AuthZEN OAuth token-exchange binding; HTTP 501 |
+| `STS-XPEP-0140` | An access evaluation was one of the OAuth token-exchange binding's tuples while the realm's authzen.tokenExchange is on (as the pulled catalogue says; a catalogue that does not say is read as on): a gate (resource type audience and an action issue:<token type>:<grant>, whatever the grant), a scope tuple (resource type protected_resource), lone or not, or a resource type the realm declares as an authorization_details type in a request that also carries a token-exchange gate (issue:<registered token type>:token_exchange). The service answers those by the binding's fixed rules, which need delegation and the directory. This edge answers 501 for that item — the whole response when the request was one evaluation, and context.error on a batch item — does not forward it, and records it to the service's audit log (authzen.remote.decision). The code is logged and not sent. While the binding is off every such tuple is an ordinary evaluation, as at the service; either way a context member the binding reads, on a tuple that is not the binding's, is 400 STS-AUTHZEN-0101. | AuthZEN OAuth token-exchange binding; HTTP 501 |
 
 ## STS-AUTHZEN
 
@@ -5710,7 +5710,7 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0081` | An AuthZEN access request task was asked about after its retention ended. | HTTP 410, urn:openid:authzen:access-request:error:task_expired |
 | `STS-AUTHZEN-0082` | An AuthZEN access request task already in a terminal status was asked to be cancelled. | HTTP 409, urn:openid:authzen:access-request:error:invalid_task_state |
 | `STS-AUTHZEN-0083` | An AuthZEN access request asked for emergency access where the denying policy's advice does not allow it, or without a context.business_justification. | HTTP 400, application/problem+json |
-| `STS-AUTHZEN-0084` | An AuthZEN evaluation presented a context.approval this realm cannot resolve, one issued to another caller, or an approval.state whose signature or approval id does not verify; it was not used and the evaluation was decided as not approved. | context.reason approval_unverifiable, next_action none |
+| `STS-AUTHZEN-0084` | An AuthZEN evaluation presented a context.approval this realm cannot resolve, one issued to another caller, or an approval.state whose signature or approval id does not verify; it was not used and the evaluation was decided as not approved. A remote PEP's edge PDP, which holds no approval store, records it for every approval presented to it, and answers the same context (#1205). | context.reason approval_unverifiable, next_action none |
 | `STS-AUTHZEN-0085` | An AuthZEN evaluation presented a context.approval that was revoked or past its approved_until; it was not used. | context.reason approval_expired |
 | `STS-AUTHZEN-0086` | An AuthZEN evaluation presented a context.approval for another tuple or application than the one it approved; it was not used. | context.reason out_of_scope |
 | `STS-AUTHZEN-0087` | A requestable AuthZEN denial's binding_token or binding_hash could not be made, so the denial was answered as an ordinary false with no access_request. | none — logged; decision: false |
@@ -5724,7 +5724,7 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0095` | An AuthZEN access request approval was asked to be revoked where there is no live approval with that id. | none — the portal's or console's refusal |
 | `STS-AUTHZEN-0096` | An AuthZEN access request's requested_access was not an object, or its requested_until not an RFC 3339 instant in the future. | HTTP 400, application/problem+json |
 | `STS-AUTHZEN-0100` | An AuthZEN token-exchange binding tuple (#1181) carried a context member its fixed rules read in the wrong JSON type, an unusable subject_token claim, an act chain nested too deep, or a may_act without sub. | HTTP 400, an error message (a batch item's context.error) |
-| `STS-AUTHZEN-0101` | An AuthZEN request that is not one of the token-exchange binding's gate or scope tuples, or that arrived while authzen.tokenExchange is off, carried a context member only the binding's fixed rules read (#1181). | HTTP 400, an error message (a batch item's context.error) |
+| `STS-AUTHZEN-0101` | An AuthZEN request that is not one of the token-exchange binding's gate or scope tuples, or that arrived while authzen.tokenExchange is off, carried a context member only the binding's fixed rules read (#1181). A remote PEP's edge PDP refuses the same requests the same way, from the switch its pulled catalogue carries (#1205). | HTTP 400, an error message (a batch item's context.error) |
 | `STS-AUTHZEN-0102` | An AuthZEN token-exchange binding tuple named a subject.type other than the Token Issuance Profile's user, client or workload (#1181). | HTTP 400, an error message (a batch item's context.error) |
 | `STS-AUTHZEN-0103` | An AuthZEN gate tuple named a grant other than token_exchange (issue:<type>:<grant>); this PDP decides the token-exchange gate only, and answered false (#1181). | decision: false |
 | `STS-AUTHZEN-0104` | An AuthZEN token-exchange gate named a token type that is not a registered short name; answered false (#1181). | decision: false |
@@ -5768,6 +5768,7 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0142` | An AuthZEN access request's approval could not be stored, so the task moved to failed rather than to approved (#1202). The failed callback is sent where it was asked for. | the approver's refusal; the task status failed |
 | `STS-AUTHZEN-0143` | A pending AuthZEN access request moved to failed because the approvers its advice names (configured static roles, groups, the application's owners) resolve to nobody but its subject (#1202). A computed or dynamic role, or a directory that cannot be read, is never taken for nobody. Noticed by the authzen.access-requests job. | the task status failed |
 | `STS-AUTHZEN-0144` | The requestable denial store of a realm is full (authzen.accessRequestMaxDenials), so a new denial is not recorded by evaluation_id; it is still requestable by its binding_token (#1204). Logged when the store fills, not per denial. | none — logged and audited once |
+| `STS-AUTHZEN-0145` | The authorization-detail types could not be read while the AuthZEN catalogue a remote PEP pulls was built, so it carries tokenExchangeDetailTypes as null (#1205). An edge PDP reads that closed: while the token-exchange binding is on, every resource type other than audience and protected_resource beside a token-exchange gate is a detail tuple it answers 501 (STS-XPEP-0140). The next pull that can read them sends the list. | none — logged; the catalogue is still sent |
 
 ## STS-FGA
 

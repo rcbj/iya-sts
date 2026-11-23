@@ -262,6 +262,7 @@ shim) are in git history.
 | `listener.rs` | The HTTPS listener whose pair is re-read from disk, and which asks for a client certificate when `PEP_AUTHZEN_CLIENT_CA` is set (#1179). |
 | `service.rs` | The one handler for both listeners, `/protected`'s decision, `GET /`. |
 | `authzen_catalogue.rs`, `authzen_map.rs` | Ports of `authzen/authzen_catalogue.ts` and `authzen/authzen_map.ts`: the catalogue grammar, the request reading and the fail-closed mapping (#1179). Pure. |
+| `authzen_binding.rs` | Which tuples the OAuth token-exchange binding answers, classified as `authzen/authzen_exchange.ts`'s `plan()` and `strayContext()` classify them, from the pulled settings (#1205). Pure. |
 | `authzen.rs` | The AuthZEN edge PDP's endpoints, the admission of a caller by the pulled list and the optional local narrowing (#1189), the batch and the metadata (#1179), and the forward of an evaluation about an application that enforces fine-grained authorization to the service (#564, P7). |
 | `proxy.rs` | **The reverse proxy (#1760)**: its two listeners, the one handler, the session mechanism's `/.iya-pep/callback` and `/.iya-pep/logout`, and the streamed, bounded forward to the upstream. See *THE REVERSE PROXY*. |
 | `proxy_config.rs` | The pulled configuration (D2, D3) read again by D2's rules and refused whole, the route table and its matching. Pure. |
@@ -902,11 +903,16 @@ place where both can be asked of one holding.
   named (`STS-XPEP-0042`). The pull carries the realm's AuthZEN settings
   that change the mapping or the answer, so `authzen.enabled`,
   `resolveSubjectTypes`, `batchEnabled`, `maxEvaluations`, `maxBodyBytes`
-  and `returnReasons` are the realm's here, not a second copy of them.
+  and `returnReasons` are the realm's here, not a second copy of them —
+  and since #1205 `obligationsProfile` and what classifies a
+  token-exchange tuple (above).
 * **`authzen_cases.json` IS THE CONTRACT, WRITTEN DOWN ONCE.** The service's
   `authzen/` modules and this container's ports are held to the same
   catalogue values and requests: the code each is refused with, and the
-  paths and attributes an accepted one supplies and maps to. It is
+  paths and attributes an accepted one supplies and maps to; and since
+  #1205 the Obligations Profile's outcome (`obligations`) and the
+  binding's classification with the switch on and off (`binding`),
+  `tests/authzen_map.js` S4 and S5 on the service's side. It is
   `enforcement_cases.json`'s arrangement, for the same reason — two
   implementations kept apart on purpose, and one expectation. Two details
   the port had to reproduce to pass it: members are walked in
@@ -1103,13 +1109,30 @@ before the first pull, one not on the local list 403 (`-0037`). No
   501 (`STS-XPEP-0138`) before admission. The Access Request paths — the
   collection, the schema, a task, and cancel — are 501 (`STS-XPEP-0139`)
   the same way, with the evaluation error object; a method the profile does
-  not define stays 404, and so does HEAD of any of them. A token-exchange
-  tuple is 501 (`STS-XPEP-0140`) on the evaluation, as that item inside a
-  batch, and is not forwarded. `signed_metadata` is omitted: this edge holds
-  no realm signing key, and republishing the service's JWT would name the
-  wrong issuer. None of those are advertised.
+  not define stays 404, and so does HEAD of any of them. `signed_metadata`
+  is omitted: this edge holds no realm signing key, and republishing the
+  service's JWT would name the wrong issuer. None of those are advertised.
+* **THE BINDING'S TUPLES ARE CLASSIFIED AS THE SERVICE CLASSIFIES THEM
+  (#1181, #1205 review).** `authzen_binding.rs` is `plan()` and
+  `strayContext()` of `authzen/authzen_exchange.ts`, read from the pulled
+  `authzen.tokenExchange`, `tokenExchangeTokenTypes` and
+  `tokenExchangeDetailTypes`. ON: every gate (any grant) and every scope
+  tuple — a LONE scope too, which the service answers a fixed false
+  (`STS-AUTHZEN-0105`) and which this edge would otherwise evaluate and
+  might answer true — and a declared detail type beside a token-exchange
+  gate, are 501 (`STS-XPEP-0140`), as that item inside a batch, not
+  forwarded, and recorded to the service's audit log (a row deciding
+  nothing). OFF: all of those are ordinary evaluations, as there. Either
+  way a binding context member on a tuple that is not the binding's is 400
+  `STS-AUTHZEN-0101` with the service's sentence. The first version
+  classified without the switch and was wrong both ways round: it 501'd
+  gates the service evaluated, and evaluated lone scopes the service
+  refused. **An absent member is read CLOSED** — the switch on, every type
+  a detail, every token type registered — because a 501 decides nothing.
 * **OBLIGATIONS ARE HANDED WHEN DECLARED (#1177, #1205).** While the pulled
-  `authzen.obligationsProfile` is on (the default; an absent member is on),
+  `authzen.obligationsProfile` is on (ABSENT IS OFF, although the setting's
+  default is on: an older service's catalogue cannot say the profile is
+  on, and handing obligations turns a Permit from false to true),
   a Permit whose obligations all convert and were all named in
   `context.supported_obligations` is `true`, and they travel in
   `context.obligations`. The log obligation is still discharged here and
@@ -1117,8 +1140,14 @@ before the first pull, one not on the local list 403 (`-0037`). No
   that carries any other obligation stays `false`. The metadata lists
   `supported_obligations` only while the profile is on.
   `context.approval` is reserved, stripped before the catalogue walk, and
-  not written as a trusted fact: a presented one is decided without, and
-  recorded `STS-AUTHZEN-0084`.
+  not written as a trusted fact: a presented one is decided without,
+  recorded `STS-AUTHZEN-0084`, and answered with the service's context for
+  an approval it cannot verify, `reason: approval_unverifiable` and
+  `next_action: none`. **The registered types' rules are GENERATED**
+  (#1390: the model is the source): `models/tools/generate_pep.mjs`
+  compiles the service's `models/authzen/authzen_members.tsp` too and
+  writes `sts-model-pep`'s `authzen_obligations.rs`, which
+  `authzen_map.rs` reads; `tests/model_pep.js` fails when it drifts.
 * **FINE-GRAINED AUTHORIZATION IS NOT DECIDED HERE** (#564): it is
   forwarded (above), so it costs a round trip and depends on the service
   being up, and a switch of enforcement reaches here on the next poll.

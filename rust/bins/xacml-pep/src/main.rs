@@ -17,6 +17,7 @@
 
 mod audit;
 mod authzen;
+mod authzen_binding;
 mod authzen_catalogue;
 mod authzen_map;
 mod credential;

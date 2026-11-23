@@ -46,8 +46,9 @@ pub mod components {
     /// when the caller is scoped to more than one (400 STS-AUTHZEN-0027), refused
     /// when not one of them (403 STS-AUTHZEN-0025). supported_obligations and
     /// approval are reserved and are not catalogue properties: a bad shape is 400
-    /// STS-AUTHZEN-0003. An approval is recognized and not used (STS-AUTHZEN-0084).
-    /// Every other member is a catalogue property, as in Properties.
+    /// STS-AUTHZEN-0003. An approval is recognized and not used (STS-AUTHZEN-0084);
+    /// the answer's context then says reason approval_unverifiable and next_action
+    /// none. Every other member is a catalogue property, as in Properties.
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     pub struct Context {
         /// Each item at most 64 characters. Present, including an empty array, is
@@ -96,6 +97,14 @@ pub mod components {
         /// profile is on. A Permit is then true.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub obligations: Option<Vec<crate::pep_authzen::components::Obligation>>,
+        /// When the request presented context.approval: approval_unverifiable,
+        /// since this edge verifies no approval (STS-AUTHZEN-0084), as the service
+        /// answers an approval it cannot verify.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub reason: Option<String>,
+        /// With reason: none, since this edge serves no access-request endpoint.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub next_action: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub error: Option<crate::pep_authzen::components::ErrorDetail>,
         /// The members the schema does not name, which it allows.

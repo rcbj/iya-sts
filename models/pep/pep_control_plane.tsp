@@ -393,8 +393,14 @@ op `getPolicies`(`responses/200/content/application~1json/schema`: `PolicySet`,
   @js(#{`minimum`:1,`maximum`:1000}) `maxEvaluations`: int64;
   @js(#{`minimum`:1024,`maximum`:5242880}) `maxBodyBytes`: int64;
   `returnReasons`: boolean;
-  @js(#{`description`:"The realm's authzen.obligationsProfile. Absent on an older catalogue means on."})
+  @js(#{`description`:"The realm's authzen.obligationsProfile. Absent on an older catalogue is read as off: the edge hands no obligation."})
   `obligationsProfile`: boolean;
+  @js(#{`description`:"The realm's authzen.tokenExchange: on, the edge answers 501 (STS-XPEP-0140) to every tuple the service answers by the binding's fixed rules. Absent on an older catalogue is read as on."})
+  `tokenExchange`: boolean;
+  @js(#{`description`:"The authorization_details types the realm's applications declare, which make a tuple beside a token-exchange gate a detail tuple. null when the service could not read them (STS-AUTHZEN-0145); null or absent, every other resource type beside a gate is read as one."})
+  `tokenExchangeDetailTypes`: string[] | null;
+  @js(#{`description`:"The token types a token-exchange gate (issue:<token type>:token_exchange) may name. Absent, every well-formed one is read as registered."})
+  `tokenExchangeTokenTypes`: string[];
 }
 
 @component model `AuthzenCatalogue` {

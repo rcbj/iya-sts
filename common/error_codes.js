@@ -26070,15 +26070,23 @@ const CODES = [
     spec: 'AuthZEN Access Request and Approval Profile; HTTP 501' },
   { code: 'STS-XPEP-0140',
     summary: 'An access evaluation was one of the OAuth token-exchange ' +
-      'binding\'s tuples: a gate (resource type audience and an action ' +
-      'issue:<type>:<grant>), a context member the binding reads, or, ' +
-      'beside a gate in the same batch, a scope or any other ' +
-      'non-audience resource type. The service holds delegation and the ' +
-      'directory. This edge answers 501 for that item — the whole ' +
+      'binding\'s tuples while the realm\'s authzen.tokenExchange is on ' +
+      '(as the pulled catalogue says; a catalogue that does not say is ' +
+      'read as on): a gate (resource type audience and an action ' +
+      'issue:<token type>:<grant>, whatever the grant), a scope tuple ' +
+      '(resource type protected_resource), lone or not, or a resource ' +
+      'type the realm declares as an authorization_details type in a ' +
+      'request that also carries a token-exchange gate ' +
+      '(issue:<registered token type>:token_exchange). The service ' +
+      'answers those by the binding\'s fixed rules, which need delegation ' +
+      'and the directory. This edge answers 501 for that item — the whole ' +
       'response when the request was one evaluation, and context.error ' +
-      'on a batch item — and does not forward it. The code is logged ' +
-      'and not sent. A lone scope or detail, and an audience whose ' +
-      'action is not a gate, stay ordinary evaluations.',
+      'on a batch item — does not forward it, and records it to the ' +
+      'service\'s audit log (authzen.remote.decision). The code is logged ' +
+      'and not sent. While the binding is off every such tuple is an ' +
+      'ordinary evaluation, as at the service; either way a context ' +
+      'member the binding reads, on a tuple that is not the binding\'s, ' +
+      'is 400 STS-AUTHZEN-0101.',
     spec: 'AuthZEN OAuth token-exchange binding; HTTP 501' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
@@ -26404,7 +26412,10 @@ const CODES = [
     summary: 'An AuthZEN evaluation presented a context.approval this ' +
       'realm cannot resolve, one issued to another caller, or an ' +
       'approval.state whose signature or approval id does not verify; ' +
-      'it was not used and the evaluation was decided as not approved.',
+      'it was not used and the evaluation was decided as not approved. ' +
+      'A remote PEP\'s edge PDP, which holds no approval store, records ' +
+      'it for every approval presented to it, and answers the same ' +
+      'context (#1205).',
     spec: 'context.reason approval_unverifiable, next_action none' },
   { code: 'STS-AUTHZEN-0085',
     summary: 'An AuthZEN evaluation presented a context.approval that was ' +
@@ -26473,7 +26484,9 @@ const CODES = [
     summary: 'An AuthZEN request that is not one of the token-exchange ' +
       'binding\'s gate or scope tuples, or that arrived while ' +
       'authzen.tokenExchange is off, carried a context member only ' +
-      'the binding\'s fixed rules read (#1181).',
+      'the binding\'s fixed rules read (#1181). A remote PEP\'s edge PDP ' +
+      'refuses the same requests the same way, from the switch its ' +
+      'pulled catalogue carries (#1205).',
     spec: 'HTTP 400, an error message (a batch item\'s context.error)' },
   { code: 'STS-AUTHZEN-0102',
     summary: 'An AuthZEN token-exchange binding tuple named a subject.type ' +
@@ -26719,6 +26732,15 @@ const CODES = [
       'by evaluation_id; it is still requestable by its binding_token ' +
       '(#1204). Logged when the store fills, not per denial.',
     spec: 'none — logged and audited once' },
+  { code: 'STS-AUTHZEN-0145',
+    summary: 'The authorization-detail types could not be read while the ' +
+      'AuthZEN catalogue a remote PEP pulls was built, so it carries ' +
+      'tokenExchangeDetailTypes as null (#1205). An edge PDP reads that ' +
+      'closed: while the token-exchange binding is on, every resource ' +
+      'type other than audience and protected_resource beside a ' +
+      'token-exchange gate is a detail tuple it answers 501 ' +
+      '(STS-XPEP-0140). The next pull that can read them sends the list.',
+    spec: 'none — logged; the catalogue is still sent' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +
