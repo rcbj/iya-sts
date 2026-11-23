@@ -6,11 +6,12 @@ title: Hardware tokens
 
 A **hardware token** is one physical security key or smart card, such as a
 YubiKey. One token can hold several credentials: passkeys, certificates,
-one-time code secrets imported from a vendor's seed file (see
-[One-time code tokens](one-time-code-tokens.md)), and in later releases SSH
-and OpenPGP keys. Each
-trust realm keeps a **register of its hardware tokens**. There is one record
-per physical token, keyed by its vendor and serial number. The record holds:
+one-time code secrets from a vendor's seed file or a YubiKey OTP slot (see
+[One-time code tokens](one-time-code-tokens.md) and
+[YubiKey OTP](yubiotp.md)), an OpenSSH user certificate for an attested
+security key, and an OpenPGP key. Each trust realm keeps a **register of
+its hardware tokens**. There is one record per physical token, keyed by
+its vendor and serial number. The record holds:
 
 - who holds the token (the person's directory entry);
 - its model, firmware and form factor, where its evidence gives them;
