@@ -16,10 +16,13 @@
 //   * a realm's classical SIGNING KEYS held in the HSM (`generateKeyPair()`,
 //     `publicKeyOf()`, `sign()` / `signSync()`), for
 //     `keys.signingKeyStore=pkcs11` (`common/helpers.js`, `common/crypto.js`).
-//     `sign()` uses `C_SignAsync`. `signSync()`, and a module with no
-//     asynchronous sign, call blocking `C_Sign` only while
-//     `keys.pkcs11SynchronousSign` is on; otherwise they refuse
-//     (STS-KEYS-0209).
+//     `sign()` uses `C_SignAsync`, and `decryptOaep()` / `deriveEcdh()`
+//     asked asynchronously `C_DecryptAsync` / `C_DeriveKeyAsync`. A blocking
+//     call — `signSync()`, a synchronous decryption or agreement, or a
+//     module with no asynchronous call — is made only while
+//     `keys.pkcs11SynchronousSign` is on; otherwise it refuses
+//     (STS-KEYS-0209). Every door in `crypto.js` has the asynchronous road
+//     (the P8 follow-up, 2026-11-23).
 //
 // IT IS AN ENGINE, AND `common/crypto.js` IS THE DOOR. Nothing outside
 // `crypto.js` requires this file; `crypto.js` hands out a `Pkcs11Token` and
@@ -57,8 +60,11 @@
 // token holds a small POOL of sessions (`maxSessions`), each lent to one
 // operation and handed back. An asynchronous operation (the binding's
 // `C_SignAsync`, `C_EncryptAsync`, `C_DecryptAsync`, which compute off the
-// event loop) holds its session until it settles; a synchronous one borrows an
-// idle session or opens one more. EVERY THREAD HOLDS ITS OWN: a request worker
+// event loop) holds its session until it settles; its session is opened and
+// logged in, its key found and its operation begun off the event loop too,
+// by the module's CONTROL THREAD (below, `Pkcs11Control`). A synchronous one
+// borrows an idle session or the one blocking session the token keeps for
+// it, never one past that. EVERY THREAD HOLDS ITS OWN: a request worker
 // is a `worker_threads` Worker, the binding is loaded per thread, and so is
 // this module and its sessions. C_Initialize is process-wide in a PKCS#11
 // module, so a second thread's answer CKR_CRYPTOKI_ALREADY_INITIALIZED is
@@ -72,9 +78,12 @@
 // like. An operation that meets one of those discards its session, opens a
 // fresh one (logging in again) and runs ONCE more; where even that fails with
 // CKR_CRYPTOKI_NOT_INITIALIZED or a device error the module is finalized and
-// initialized again first. Nothing polls: the next operation after an outage
-// is what reconnects, and an operation that still fails is refused with
-// STS-KEYS-0201 — a refusal, never a crash.
+// initialized again first — ONCE for every token on the module, after the
+// operations holding its sessions drain, and with every session from before
+// forgotten rather than closed or lent (`reinitializeEntry()`). Nothing
+// polls: the next operation after an outage is what reconnects, and an
+// operation that still fails is refused with STS-KEYS-0201 — a refusal,
+// never a crash.
 //
 // POST-QUANTUM SIGNING COMES HERE ONLY WHEN THE MODULE OFFERS IT. PKCS#11
 // 3.2 (OASIS, 3 June 2026) defines CKM_ML_DSA — pure ML-DSA, FIPS 204, no
@@ -259,11 +268,15 @@ function codeFor(err) {
          UNSUPPORTED.has(ckr) ? 'STS-KEYS-0207' : 'STS-KEYS-0201';
 }
 
-// Whether a blocking C_Sign is allowed. Off by default
-// (keys.pkcs11SynchronousSign): a synchronous door refuses rather than
-// holding the event loop for the token. Read lazily. This file is required
-// by crypto.js, which has already required config.js, so the require hits
-// the cache; a load that is not ready is treated as off.
+// Whether a blocking call with a realm's key in the token — C_Sign, and
+// since the P8 follow-up (2026-11-23) C_Decrypt and C_DeriveKey too — is
+// allowed. Off by default (keys.pkcs11SynchronousSign): every door has an
+// asynchronous road (`crypto.js`'s `…OffLoop()` doors), so a blocking call
+// is refused (STS-KEYS-0209) rather than made, which is what a door left on
+// the synchronous road, or a module with no asynchronous call, gets. On, it
+// is the opt-in to waiting on the token on the event loop. Read lazily.
+// This file is required by crypto.js, which has already required config.js,
+// so the require hits the cache; a load that is not ready is treated as off.
 function synchronousSignAllowed() {
   log.debug('Entering synchronousSignAllowed().');
   let allowed = false;
@@ -370,10 +383,531 @@ function splitBound(plain, aad) {
 }
 
 // ---------------------------------------------------------------------------
+// THE CALLS PKCS11JS HAS NO ASYNCHRONOUS FORM FOR, MADE OFF THE EVENT LOOP
+// (#1955 P8 follow-up, 2026-11-23; rcbj: "I do not want this activity to block
+// the main event loop").
+//
+// pkcs11js 2.1.7 computes ten calls on libuv's pool — C_EncryptAsync,
+// C_DecryptAsync, C_DigestAsync, C_SignAsync, C_VerifyAsync,
+// C_GenerateKeyAsync, C_GenerateKeyPairAsync, C_WrapKeyAsync,
+// C_UnwrapKeyAsync, C_DeriveKeyAsync (its index.d.ts) — and nothing else.
+// C_OpenSession, C_Login, C_FindObjects*, C_GetAttributeValue,
+// C_CreateObject, C_DestroyObject, C_CloseSession, every C_*Init, and
+// C_Finalize / C_Initialize are blocking, and against a YubiHSM 2 each is a
+// round trip to yubihsm-connector (C_Login derives the session keys). Three
+// roads were open, and this is why it is the third:
+//
+//   * PREWARMING sessions and handles at start, and refreshing them off the
+//     hot path, still makes the refresh on SOME event loop turn, and a
+//     YubiHSM 2 has sixteen sessions for every process and thread of a
+//     deployment: opening keys.pkcs11Sessions of them per thread eagerly
+//     could exhaust the device at start where a lazy pool does not;
+//   * the binding's asynchronous calls cover none of the above;
+//   * so A THREAD OF ITS OWN makes them (`pkcs11_thread.js`), one per loaded
+//     module per thread that loaded it, started at its first call and
+//     unref'd while nothing waits on it. PKCS#11 sessions and object handles
+//     belong to the APPLICATION (the process), not to the thread that opened
+//     them, and with CKF_OS_LOCKING_OK the module serialises its own state —
+//     so a session the control thread opened and logged in is the session
+//     C_SignAsync then runs on here, and the C_SignInit the control thread
+//     made on it is the one that C_SignAsync completes (one operation per
+//     session still: the session is lent to one operation from its Init to
+//     its answer, `run()`).
+//
+// The control thread runs the same functions this file runs in place
+// (`CONTROL_OPS`), so the two cannot disagree. A binding this process did not
+// load from a file — a test's fake (`tests/tools/fake-pkcs11.js`) — cannot be
+// loaded in a thread, and its calls are made in place: a fake does not block.
+// What stays on the event loop is the asynchronous call's own dispatch, and
+// the start: `connect()` opens the first session, reads the mechanism list
+// and finds the slot before the listener binds (`keystore.start()`,
+// `secrets.js`). The blocking door (`runSync()`) is the opt-in
+// (keys.pkcs11SynchronousSign), a key's first resolution in a thread
+// (`keyPair()`, once per key) and the key-encryption key's lookup at start.
+// ---------------------------------------------------------------------------
+
+// Every Buffer a thread posts arrives as a Uint8Array; the binding takes
+// Buffers, so handles, templates and answers are made Buffers again.
+function revive(value) {
+  log.debug('Entering revive().');
+  let out = value;
+  if (value instanceof Uint8Array && !Buffer.isBuffer(value)) {
+    out = Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+  } else if (Array.isArray(value)) {
+    out = value.map(revive);
+  } else if (value && typeof value === 'object' && !Buffer.isBuffer(value)) {
+    out = {};
+    for (const k of Object.keys(value)) {
+      out[k] = revive(value[k]);
+    }
+  }
+  log.debug('Leaving revive().');
+  return out;
+}
+
+// What an error a thread posts carries back: the module's CKR, and the two
+// facts a caller reads off it.
+function errorFields(err) {
+  log.debug('Entering errorFields().');
+  log.debug('Leaving errorFields().');
+  return { message: String((err && err.message) || err),
+           code: ckrOf(err),
+           notFound: err && err.notFound !== undefined ? err.notFound
+                                                      : undefined,
+           pinRefused: !!(err && err.pinRefused) };
+}
+
+// The error those fields describe, on this side.
+function errorFrom(fields) {
+  log.debug('Entering errorFrom().');
+  const e = new Error(String(fields.message));
+  /** @type {any} */ (e).code = Number(fields.code) || 0;
+  if (fields.notFound !== undefined && fields.notFound !== null) {
+    /** @type {any} */ (e).notFound = fields.notFound;
+  }
+  if (fields.pinRefused) {
+    /** @type {any} */ (e).pinRefused = true;
+  }
+  log.debug('Leaving errorFrom().');
+  return e;
+}
+
+// Every object a template names, on a session this call holds.
+function findOn(lib, session, template) {
+  log.debug('Entering findOn().');
+  lib.C_FindObjectsInit(session, template);
+  const out = [];
+  try {
+    for (;;) {
+      const batch = lib.C_FindObjects(session, 16);
+      if (!batch || !batch.length) {
+        break;
+      }
+      for (const h of batch) {
+        out.push(h);
+      }
+      if (out.length > 64) {
+        break;
+      }
+    }
+  } finally {
+    lib.C_FindObjectsFinal(session);
+  }
+  log.debug('Leaving findOn(). ' + out.length + '.');
+  return out;
+}
+
+// The handle a key names: the one held, or the one its template finds,
+// which must be exactly one (`notFound` carries the count otherwise).
+function keyHandleOn(lib, session, key) {
+  log.debug('Entering keyHandleOn().');
+  if (key.handle !== null && key.handle !== undefined) {
+    log.debug('Leaving keyHandleOn(). Held.');
+    return key.handle;
+  }
+  const found = findOn(lib, session, key.template);
+  if (found.length !== 1) {
+    const e = new Error('the key was found ' + found.length + ' times');
+    /** @type {any} */ (e).notFound = found.length;
+    throw e;
+  }
+  log.debug('Leaving keyHandleOn(). Found.');
+  return found[0];
+}
+
+const BEGIN_KINDS = new Set(['Sign', 'Encrypt', 'Decrypt']);
+
+// ---------------------------------------------------------------------------
+// THE CALLS THE CONTROL THREAD MAKES, each `(lib, ...args)`, synchronous, and
+// made in place for a binding that cannot be loaded in a thread. A keyed one
+// takes `{ handle, template }` (the handle null when it must be found again)
+// and answers `{ handle, value }`, so the caller keeps the handle it found.
+// ---------------------------------------------------------------------------
+const CONTROL_OPS = Object.freeze({
+  // C_OpenSession and C_Login. A refused PIN closes the session it opened
+  // and says so (`pinRefused`); CKR_USER_ALREADY_LOGGED_IN is expected (a
+  // login is per application).
+  open: function (lib, slot, pin) {
+    log.debug('Entering CONTROL_OPS.open().');
+    const session = lib.C_OpenSession(slot, CK.CKF_SERIAL_SESSION |
+                                      CK.CKF_RW_SESSION);
+    if (pin !== null && pin !== undefined) {
+      try {
+        lib.C_Login(session, CK.CKU_USER, String(pin));
+      } catch (e) {
+        log.debug('Caught in CONTROL_OPS.open(): ' + ((e && e.message) || e));
+        if (ckrOf(e) !== CK.CKR_USER_ALREADY_LOGGED_IN) {
+          try {
+            lib.C_CloseSession(session);
+          } catch (c) {
+            // The session the refused login left is not worth more than the
+            // refusal; the module closes it with the application anyway.
+            log.debug('Caught in CONTROL_OPS.open(): ' +
+                      ((c && c.message) || c));
+          }
+          /** @type {any} */ (e).pinRefused = true;
+          throw e;
+        }
+      }
+    }
+    log.debug('Leaving CONTROL_OPS.open().');
+    return session;
+  },
+  close: function (lib, session) {
+    log.debug('Entering CONTROL_OPS.close().');
+    lib.C_CloseSession(session);
+    log.debug('Leaving CONTROL_OPS.close().');
+    return true;
+  },
+  find: function (lib, session, template) {
+    log.debug('Entering CONTROL_OPS.find().');
+    const found = findOn(lib, session, template);
+    log.debug('Leaving CONTROL_OPS.find().');
+    return found;
+  },
+  // Each attribute asked alone: a sensitive one (CKA_VALUE of a secret key)
+  // is refused by design and is absent from the answer.
+  attributes: function (lib, session, handle, types) {
+    log.debug('Entering CONTROL_OPS.attributes().');
+    const out = [];
+    for (const type of types) {
+      try {
+        const got = lib.C_GetAttributeValue(session, handle, [{ type: type }]);
+        if (got && got[0] && got[0].value !== undefined) {
+          out.push([type, Buffer.from(got[0].value)]);
+        }
+      } catch (e) {
+        log.debug('Caught in CONTROL_OPS.attributes(): ' +
+                  ((e && e.message) || e));
+      }
+    }
+    log.debug('Leaving CONTROL_OPS.attributes().');
+    return out;
+  },
+  // C_SignInit / C_EncryptInit / C_DecryptInit, the key found first where
+  // its handle has to be found again.
+  begin: function (lib, session, key, kind, mechanism) {
+    log.debug('Entering CONTROL_OPS.begin(). ' + kind);
+    if (!BEGIN_KINDS.has(kind)) {
+      // error-code: none — a programming error: the three kinds are this
+      // file's own.
+      throw new Error('pkcs11: no operation of the kind "' + kind + '"');
+    }
+    const handle = keyHandleOn(lib, session, key);
+    lib['C_' + kind + 'Init'](session, mechanism, handle);
+    log.debug('Leaving CONTROL_OPS.begin().');
+    return { handle: handle, value: null };
+  },
+  locate: function (lib, session, key) {
+    log.debug('Entering CONTROL_OPS.locate().');
+    const handle = keyHandleOn(lib, session, key);
+    log.debug('Leaving CONTROL_OPS.locate().');
+    return { handle: handle, value: handle };
+  },
+  // The value of a short-lived secret (an ECDH agreement's Z), read and the
+  // object destroyed.
+  readSecret: function (lib, session, obj) {
+    log.debug('Entering CONTROL_OPS.readSecret().');
+    try {
+      const got = lib.C_GetAttributeValue(session, obj,
+                                          [{ type: CK.CKA_VALUE }]);
+      log.debug('Leaving CONTROL_OPS.readSecret().');
+      return Buffer.from(got[0].value);
+    } finally {
+      lib.C_DestroyObject(session, obj);
+    }
+  },
+  // `k1`: the bound data key as a session object, wrapped under the
+  // key-encryption key with CKM_AES_KEY_WRAP_PAD, and destroyed.
+  kwpWrap: function (lib, session, key, template, room) {
+    log.debug('Entering CONTROL_OPS.kwpWrap().');
+    const handle = keyHandleOn(lib, session, key);
+    const obj = lib.C_CreateObject(session, template);
+    try {
+      const wrapped = lib.C_WrapKey(session,
+        { mechanism: CK.CKM_AES_KEY_WRAP_PAD }, handle, obj,
+        Buffer.alloc(Number(room)));
+      log.debug('Leaving CONTROL_OPS.kwpWrap().');
+      return { handle: handle, value: Buffer.from(wrapped) };
+    } finally {
+      lib.C_DestroyObject(session, obj);
+    }
+  },
+  // `k1` reversed: unwrapped as a session object, its value read, destroyed.
+  kwpUnwrap: function (lib, session, key, wrapped, template) {
+    log.debug('Entering CONTROL_OPS.kwpUnwrap().');
+    const handle = keyHandleOn(lib, session, key);
+    const obj = lib.C_UnwrapKey(session,
+      { mechanism: CK.CKM_AES_KEY_WRAP_PAD }, handle, wrapped, template);
+    try {
+      const got = lib.C_GetAttributeValue(session, obj,
+                                          [{ type: CK.CKA_VALUE }]);
+      log.debug('Leaving CONTROL_OPS.kwpUnwrap().');
+      return { handle: handle, value: Buffer.from(got[0].value) };
+    } finally {
+      lib.C_DestroyObject(session, obj);
+    }
+  },
+  // C_Finalize (unless the module already says it is not initialized) and
+  // C_Initialize; CKR_CRYPTOKI_ALREADY_INITIALIZED is another thread having
+  // done it first.
+  reinitialize: function (lib, finalizeFirst) {
+    log.debug('Entering CONTROL_OPS.reinitialize(). ' + !!finalizeFirst);
+    if (finalizeFirst) {
+      try {
+        lib.C_Finalize();
+      } catch (e) {
+        // A module that lost its device may refuse to finalize too; it is
+        // initialized again either way, which is the point.
+        log.debug('Caught in CONTROL_OPS.reinitialize(): ' +
+                  ((e && e.message) || e));
+      }
+    }
+    try {
+      lib.C_Initialize({ flags: CK.CKF_OS_LOCKING_OK });
+    } catch (e) {
+      log.debug('Caught in CONTROL_OPS.reinitialize(): ' +
+                ((e && e.message) || e));
+      if (ckrOf(e) !== CK.CKR_CRYPTOKI_ALREADY_INITIALIZED) {
+        throw e;
+      }
+    }
+    log.debug('Leaving CONTROL_OPS.reinitialize().');
+    return true;
+  },
+  // The slots with a token, and what each token says it is.
+  slots: function (lib) {
+    log.debug('Entering CONTROL_OPS.slots().');
+    const out = [];
+    for (const slot of lib.C_GetSlotList(true) || []) {
+      let info = null;
+      try {
+        info = lib.C_GetTokenInfo(slot);
+      } catch (e) {
+        // One slot that cannot describe its token is not a reason to refuse
+        // the others; it simply is not the one asked for.
+        log.debug('Caught in CONTROL_OPS.slots(): ' + ((e && e.message) || e));
+        continue;
+      }
+      out.push({ slot: slot,
+                 label: String((info && info.label) || '').trim(),
+                 serial: String((info && info.serialNumber) || '').trim() });
+    }
+    log.debug('Leaving CONTROL_OPS.slots(). ' + out.length + '.');
+    return out;
+  }
+});
+
+// The file a binding was loaded from, which a thread can load again; null
+// for one this process built itself (a test's fake).
+function bindingPathOf(binding) {
+  log.debug('Entering bindingPathOf().');
+  const cache = require.cache || {};
+  for (const id of Object.keys(cache)) {
+    const m = cache[id];
+    if (m && m.exports === binding && m.filename) {
+      log.debug('Leaving bindingPathOf(). Loaded from a file.');
+      return String(m.filename);
+    }
+  }
+  log.debug('Leaving bindingPathOf(). Built in process.');
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// THE CONTROL CHANNEL of one loaded module: `call(op, args)` answers a
+// promise of `CONTROL_OPS[op](lib, ...args)`, made by the control thread, or
+// in place for a binding with no file. The thread is unref'd whenever no
+// call waits on it, so a process with nothing else to do still exits, and
+// ref'd while one does, so a call awaited alone is not abandoned. A thread
+// that fails or exits refuses every call waiting on it (STS-KEYS-0211) and
+// the next call starts another. No timer.
+// ---------------------------------------------------------------------------
+class Pkcs11Control {
+  /**
+   * @param entry - the loaded module (`libraryFor()`)
+   * @param bindingPath - the binding's file, or null to call in place
+   */
+  constructor(entry, bindingPath) {
+    log.debug('Entering Pkcs11Control.constructor().');
+    this.entry = entry;
+    this.bindingPath = bindingPath;
+    /** @type {any} */
+    this.worker = null;
+    this.pending = new Map();
+    this.nextId = 1;
+    this.started = 0;
+    log.debug('Leaving Pkcs11Control.constructor().');
+  }
+
+  /**
+   * Makes one control call.
+   *
+   * @param op - a `CONTROL_OPS` name
+   * @param args - its arguments after the module
+   * @returns a promise of its answer
+   */
+  call(op, args) {
+    log.debug('Entering Pkcs11Control.call(). ' + op);
+    if (!this.bindingPath) {
+      // In place, and at once, so a fake behaves exactly as it did when
+      // these calls were made inline.
+      try {
+        const out = CONTROL_OPS[op].apply(null, [this.entry.lib].concat(args));
+        log.debug('Leaving Pkcs11Control.call(). In place.');
+        return Promise.resolve(out);
+      } catch (e) {
+        log.debug('Caught in Pkcs11Control.call(): ' + ((e && e.message) || e));
+        log.debug('Leaving Pkcs11Control.call(). Refused in place.');
+        return Promise.reject(e);
+      }
+    }
+    const self = this;
+    let worker;
+    try {
+      worker = this.thread();
+    } catch (e) {
+      log.debug('Caught in Pkcs11Control.call(): ' + ((e && e.message) || e));
+      log.debug('Leaving Pkcs11Control.call(). No thread.');
+      return Promise.reject(refusal('STS-KEYS-0211', 'the PKCS#11 control ' +
+        'thread for "' + this.entry.modulePath + '" could not start', e));
+    }
+    const id = this.nextId++;
+    log.debug('Leaving Pkcs11Control.call(). Posted.');
+    return new Promise(function (resolve, reject) {
+      self.pending.set(id, { resolve: resolve, reject: reject });
+      if (self.pending.size === 1) {
+        worker.ref();
+      }
+      worker.postMessage({ id: id, op: op, args: args });
+    });
+  }
+
+  // The thread, started when there is none.
+  thread() {
+    log.debug('Entering Pkcs11Control.thread().');
+    if (this.worker) {
+      log.debug('Leaving Pkcs11Control.thread(). Running.');
+      return this.worker;
+    }
+    const self = this;
+    const workerThreads = require('worker_threads');
+    const worker = new workerThreads.Worker(
+      require('path').join(__dirname, 'pkcs11_thread.js'),
+      { workerData: { bindingPath: this.bindingPath,
+                      modulePath: this.entry.modulePath } });
+    worker.unref();
+    worker.on('message', function (m) {
+      self.settle(worker, m);
+    });
+    worker.on('error', function (e) {
+      self.lost(worker, e);
+    });
+    worker.on('exit', function (code) {
+      self.lost(worker, new Error('the thread exited (' + code + ')'));
+    });
+    this.worker = worker;
+    this.started++;
+    log.debug('Leaving Pkcs11Control.thread(). Started.');
+    return worker;
+  }
+
+  // One answer from the thread.
+  settle(worker, m) {
+    log.debug('Entering Pkcs11Control.settle().');
+    const waiting = m && this.pending.get(m.id);
+    if (!waiting) {
+      log.debug('Leaving Pkcs11Control.settle(). Nobody waits.');
+      return;
+    }
+    this.pending.delete(m.id);
+    if (!this.pending.size && this.worker === worker) {
+      worker.unref();
+    }
+    if (m.error) {
+      waiting.reject(errorFrom(m.error));
+    } else {
+      waiting.resolve(revive(m.value));
+    }
+    log.debug('Leaving Pkcs11Control.settle().');
+  }
+
+  // The thread failed or exited: every call waiting on it is refused.
+  lost(worker, err) {
+    log.debug('Entering Pkcs11Control.lost().');
+    if (this.worker !== worker) {
+      log.debug('Leaving Pkcs11Control.lost(). Not the current thread.');
+      return;
+    }
+    this.worker = null;
+    const waiting = Array.from(this.pending.values());
+    this.pending.clear();
+    if (waiting.length) {
+      log.error(errorCodes.tag('STS-KEYS-0211') + 'pkcs11: the control ' +
+                'thread for "' + this.entry.modulePath + '" stopped (' +
+                ((err && err.message) || err) + '); ' + waiting.length +
+                ' call(s) waiting on it are refused, and the next call ' +
+                'starts a new thread.');
+    }
+    for (const w of waiting) {
+      w.reject(refusal('STS-KEYS-0211', 'the PKCS#11 control thread for "' +
+                       this.entry.modulePath + '" stopped', err));
+    }
+    log.debug('Leaving Pkcs11Control.lost().');
+  }
+
+  /**
+   * Stops the thread, for a test that forgets its modules.
+   */
+  stop() {
+    log.debug('Entering Pkcs11Control.stop().');
+    const worker = this.worker;
+    if (worker) {
+      this.lost(worker, new Error('stopped'));
+      Promise.resolve(worker.terminate()).catch(function (e) {
+        log.debug('Caught in Pkcs11Control.stop(): ' +
+                  ((e && e.message) || e));
+      });
+    }
+    log.debug('Leaving Pkcs11Control.stop().');
+  }
+}
+
+// ---------------------------------------------------------------------------
 // ONE LOADED MODULE PER PATH, PER THREAD. `lib.load()` dlopens the module and
 // C_Initialize is called once; a second token on the same module shares it.
+//
+// THE ENTRY IS WHAT EVERY TOKEN ON THE MODULE SHARES, and so it is what a
+// recovery acts on (`recover()`): C_Finalize ends every session of the
+// module, not only the session that met the outage. `inflight` counts the
+// operations of this thread holding a session on it, `epoch` the times it
+// was initialised again (a session remembers its epoch, and one from before
+// is never closed — its handle may since name somebody else's session — nor
+// lent again), `recovering` the one re-initialisation in progress that
+// every token meeting the outage joins, and `tokens` the tokens to tell.
 // ---------------------------------------------------------------------------
 const LIBRARIES = new Map();
+
+/**
+ * The shared state of one loaded module, for `libraryFor()` and a test that
+ * builds a token by hand.
+ *
+ * @param binding - the binding
+ * @param lib - its loaded module (`new binding.PKCS11()`)
+ * @param modulePath - the module's path
+ * @returns the entry
+ */
+function newEntry(binding, lib, modulePath) {
+  log.debug('Entering newEntry().');
+  const entry = { binding: binding, lib: lib, initialized: false,
+                  modulePath: String(modulePath || ''), tokens: new Set(),
+                  inflight: 0, drainWaiters: [], recovering: null, epoch: 0,
+                  control: null };
+  entry.control = new Pkcs11Control(entry, bindingPathOf(binding));
+  entry.channel = outageChannel(entry);
+  log.debug('Leaving newEntry().');
+  return entry;
+}
 
 function libraryFor(binding, modulePath) {
   log.debug('Entering libraryFor(). ' + modulePath);
@@ -390,7 +924,7 @@ function libraryFor(binding, modulePath) {
     throw refusal('STS-KEYS-0202', 'the PKCS#11 module "' + modulePath +
                   '" could not be loaded', e);
   }
-  const entry = { binding: binding, lib: lib, initialized: false };
+  const entry = newEntry(binding, lib, modulePath);
   initialize(entry);
   LIBRARIES.set(modulePath, entry);
   log.debug('Leaving libraryFor(). Loaded.');
@@ -415,22 +949,194 @@ function initialize(entry) {
   log.debug('Leaving initialize().');
 }
 
-function reinitialize(entry) {
-  log.debug('Entering reinitialize().');
-  try {
-    entry.lib.C_Finalize();
-  } catch (e) {
-    // A module that lost its device may refuse to finalize too; it is
-    // initialized again either way, which is the point.
-    log.debug('Caught in reinitialize(): ' + ((e && e.message) || e));
+// One operation of this thread took or gave back a session on the module.
+function inflightMoved(entry, by) {
+  log.debug('Entering inflightMoved(). ' + by);
+  entry.inflight = Math.max(0, (Number(entry.inflight) || 0) + by);
+  if (entry.inflight === 0 && entry.drainWaiters &&
+      entry.drainWaiters.length) {
+    const waiting = entry.drainWaiters.splice(0);
+    for (const w of waiting) {
+      w();
+    }
   }
-  initialize(entry);
-  log.debug('Leaving reinitialize().');
+  log.debug('Leaving inflightMoved(). ' + entry.inflight + ' in flight.');
+}
+
+// A promise that settles once no operation of this thread holds a session
+// on the module.
+function drained(entry) {
+  log.debug('Entering drained(). ' + entry.inflight + ' in flight.');
+  if (!entry.inflight) {
+    log.debug('Leaving drained(). Already.');
+    return Promise.resolve();
+  }
+  log.debug('Leaving drained(). Waiting.');
+  return new Promise(function (resolve) {
+    entry.drainWaiters.push(resolve);
+  });
+}
+
+/**
+ * Initialises a module again, ONCE for every token on it that met the
+ * outage: the operations of this thread holding its sessions drain first
+ * (they complete or meet the outage and join this), then C_Finalize and
+ * C_Initialize are made off the event loop, the epoch moves — so every
+ * session from before is forgotten rather than closed or lent — and every
+ * token on the module drops its idle sessions and finds its slot again.
+ * New operations wait for it in `acquire()`.
+ *
+ * CKR_CRYPTOKI_NOT_INITIALIZED is answered without C_Finalize: somebody
+ * (another thread of this process — C_Finalize is process-wide) finalized
+ * it already, and finalizing again would end the sessions that thread has
+ * just opened. The other threads of the process each meet the outage on
+ * their own sessions and reopen them; a thread's count cannot see another
+ * thread's calls, so a device that really went away can cost an operation
+ * in flight on another thread its one retry (STS-KEYS-0201), never a crash.
+ *
+ * @param entry - the module
+ * @param finalizeFirst - false when the module is already not initialized
+ * @returns a promise settled once it is done
+ */
+function reinitializeEntry(entry, finalizeFirst, seenEpoch) {
+  log.debug('Entering reinitializeEntry().');
+  if (entry.recovering) {
+    log.debug('Leaving reinitializeEntry(). Joined.');
+    return entry.recovering;
+  }
+  const done = function () {
+    entry.recovering = null;
+  };
+  // Whether the module was initialised again — by another thread, which
+  // said so on the outage channel — since the session that met the outage
+  // was opened: then that is what ended it, and finalizing again would end
+  // the sessions the other thread has just opened.
+  const since = function () {
+    return seenEpoch !== undefined && seenEpoch !== null &&
+           entry.epoch !== seenEpoch;
+  };
+  let skipped = false;
+  entry.recovering = drained(entry).then(function () {
+    if (since()) {
+      skipped = true;
+      return true;
+    }
+    return entry.control.call('reinitialize', [!!finalizeFirst]);
+  }).then(function () {
+    if (skipped) {
+      log.info('pkcs11: "' + entry.modulePath + '" was initialised again ' +
+               'by another thread since the session that met the outage ' +
+               'was opened; it is not finalized again.');
+    } else {
+      entry.epoch++;
+      announceReinitialized(entry);
+    }
+    return Promise.all(Array.from(entry.tokens).map(function (t) {
+      return t.afterReinitialize();
+    }));
+  }).then(function () {
+    done();
+  }, function (e) {
+    log.debug('Caught in reinitializeEntry(): ' + ((e && e.message) || e));
+    done();
+    throw e;
+  });
+  log.debug('Leaving reinitializeEntry(). Started.');
+  return entry.recovering;
+}
+
+// ---------------------------------------------------------------------------
+// THE OUTAGE CHANNEL: ONE RE-INITIALISATION FOR THE PROCESS, NOT ONE PER
+// THREAD (#1955 P8 follow-up). C_Finalize is process-wide, and each thread
+// that loaded a module (the front, every request worker) counts only its own
+// operations. Without this, a device that really went away was met by
+// several threads at once, each finalized the module after the others had
+// initialised it again, and an operation another thread had just retried
+// lost its one retry (STS-KEYS-0201). So a thread that has initialised a
+// module again says so on a BroadcastChannel of that module's path — every
+// thread of the process hears it with no plumbing through the pool — and
+// each other thread moves its epoch (its sessions from before are forgotten,
+// not closed: their handles may now name the announcer's), finds its slots
+// again, and — the point — does not finalize for an outage met on a session
+// opened before the announcement (`reinitializeEntry()`'s `seenEpoch`). What
+// is left is the time a message takes to arrive: two threads that both
+// finalize inside it still cost each other's retries, as before.
+// ---------------------------------------------------------------------------
+function outageChannel(entry) {
+  log.debug('Entering outageChannel().');
+  let channel = null;
+  try {
+    const workerThreads = require('worker_threads');
+    channel = new workerThreads.BroadcastChannel('iya-sts-pkcs11:' +
+                                                 entry.modulePath);
+    channel.onmessage = function (event) {
+      if (event && event.data && event.data.reinitialized) {
+        foreignReinitialized(entry);
+      }
+    };
+    if (typeof channel.unref === 'function') {
+      channel.unref();
+    }
+  } catch (e) {
+    // A runtime with no BroadcastChannel recovers each thread on its own,
+    // as before it existed.
+    log.debug('Caught in outageChannel(): ' + ((e && e.message) || e));
+    channel = null;
+  }
+  log.debug('Leaving outageChannel().');
+  return channel;
+}
+
+// Tells the other threads this one initialised the module again.
+function announceReinitialized(entry) {
+  log.debug('Entering announceReinitialized().');
+  if (entry.channel) {
+    try {
+      entry.channel.postMessage({ reinitialized: true });
+    } catch (e) {
+      log.debug('Caught in announceReinitialized(): ' +
+                ((e && e.message) || e));
+    }
+  }
+  log.debug('Leaving announceReinitialized().');
+}
+
+// Another thread initialised the module again: every session of this thread
+// from before is gone with it.
+function foreignReinitialized(entry) {
+  log.debug('Entering foreignReinitialized(). ' + entry.modulePath);
+  entry.epoch++;
+  const tokens = Array.from(entry.tokens);
+  for (const t of tokens) {
+    t.generation++;
+    t.dropIdle();
+  }
+  if (!entry.recovering) {
+    const done = function () {
+      entry.recovering = null;
+    };
+    entry.recovering = Promise.all(tokens.map(function (t) {
+      return t.findSlotAsync().then(function (slot) {
+        t.slot = slot;
+      }, function (e) {
+        // The next operation meets the module as it is.
+        log.debug('Caught in foreignReinitialized(): ' +
+                  ((e && e.message) || e));
+      });
+    })).then(done, done);
+  }
+  log.debug('Leaving foreignReinitialized().');
 }
 
 // ---------------------------------------------------------------------------
 // A TOKEN: one slot of one module, logged in as the user, with its pool of
 // sessions. Built by `common/crypto.js`'s `openPkcs11Token()`.
+//
+// A SESSION is held as `{ h, epoch }`: the binding's handle and the module's
+// epoch it was opened under (`newEntry()`). `open` counts this token's
+// sessions that exist — idle, lent, and the one blocking session — and is
+// only ever moved one session at a time, never reset while sessions are
+// lent: a session from an earlier epoch is forgotten when it comes back.
 // ---------------------------------------------------------------------------
 class Pkcs11Token {
   /**
@@ -449,70 +1155,76 @@ class Pkcs11Token {
                   o.slotId === '' ? null : String(o.slotId);
     this.pin = o.pin === undefined || o.pin === null ? null : String(o.pin);
     this.maxSessions = Math.max(1, Math.min(64, Number(o.maxSessions) || 4));
+    /** @type {any} */
     this.entry = null;
     this.slot = null;
     this.idle = [];
     this.open = 0;
+    this.lent = 0;
     this.waiters = [];
     this.loggedIn = false;
     this.mechanisms = null;
     this.reconnects = 0;
+    // THE BLOCKING SESSION. A synchronous call (`runSync()`) cannot wait for
+    // a session an asynchronous one holds, so where none is idle it takes
+    // this one, opened once and kept: synchronous calls on one thread never
+    // overlap, so one is enough, and the pool never grows past
+    // `maxSessions` lent plus this one. Until the P8 follow-up it opened a
+    // session past the cap for each such call and closed it after.
+    /** @type {any} */
+    this.blocking = null;
     // OBJECT HANDLES DO NOT OUTLIVE THE LOGIN. When the last session closes
     // the module logs the application out, and SoftHSM2 then answers
     // CKR_OBJECT_HANDLE_INVALID for a handle found before (2026-11-20, the
     // first run against it); a connector restart does the same. So a key is
     // held as the TEMPLATE that finds it, and its handle is found again
-    // whenever this counter has moved since (`handleOf()`).
+    // whenever this counter has moved since — off the event loop, on the
+    // session the operation holds, by the control thread (`keyed()`).
     this.generation = 0;
     log.debug('Leaving Pkcs11Token.constructor().');
   }
 
   /**
-   * Loads the module, finds the slot and opens (and logs in) one session, so
-   * that a wrong label or PIN is refused at start rather than at the first
-   * operation.
+   * Loads the module, finds the slot, reads the mechanism list and opens
+   * (and logs in) one session, so that a wrong label or PIN is refused at
+   * start rather than at the first operation. Synchronous, at start: it is
+   * called before the listener binds (`keystore.start()`), and what it
+   * reads is what every later operation would otherwise read on its first
+   * call.
    *
    * @returns this token
    */
   connect() {
     log.debug('Entering Pkcs11Token.connect().');
     this.entry = libraryFor(this.binding, this.modulePath);
+    this.entry.tokens.add(this);
     this.slot = this.findSlot();
-    const session = this.openSession();
+    const session = this.openSessionSync();
     this.idle.push(session);
+    try {
+      this.mechanismFlags();
+    } catch (e) {
+      // Read again by the first caller that needs it, which refuses with
+      // the module's answer (STS-KEYS-0204).
+      log.debug('Caught in Pkcs11Token.connect(): ' + ((e && e.message) || e));
+    }
     log.debug('Leaving Pkcs11Token.connect().');
     return this;
   }
 
-  findSlot() {
-    log.debug('Entering Pkcs11Token.findSlot().');
-    const lib = this.entry.lib;
-    let slots;
-    try {
-      slots = lib.C_GetSlotList(true) || [];
-    } catch (e) {
-      throw refusal('STS-KEYS-0202', 'the PKCS#11 module listed no slots', e);
-    }
+  // The one slot this token's label, serial and slot-id name, of the module's
+  // answer (`CONTROL_OPS.slots()`).
+  chooseSlot(listed) {
+    log.debug('Entering Pkcs11Token.chooseSlot().');
     const matches = [];
-    for (const slot of slots) {
-      let info;
-      try {
-        info = lib.C_GetTokenInfo(slot);
-      } catch (e) {
-        // One slot that cannot describe its token is not a reason to refuse
-        // the others; it simply is not the one asked for.
-        log.debug('Caught in Pkcs11Token.findSlot(): ' +
-                  ((e && e.message) || e));
-        continue;
-      }
-      const label = String((info && info.label) || '').trim();
-      const serial = String((info && info.serialNumber) || '').trim();
+    for (const one of listed) {
+      const slot = one.slot;
       const id = Buffer.isBuffer(slot) ? String(attrUlong(slot)) :
                  String(slot);
-      if (this.tokenLabel && label !== this.tokenLabel) {
+      if (this.tokenLabel && one.label !== this.tokenLabel) {
         continue;
       }
-      if (this.serial && serial !== this.serial) {
+      if (this.serial && one.serial !== this.serial) {
         continue;
       }
       if (this.slotId !== null && id !== this.slotId) {
@@ -526,8 +1238,32 @@ class Pkcs11Token {
         this.describe() + (matches.length ? '; name its serial or slot-id ' +
         'as well' : ''));
     }
-    log.debug('Leaving Pkcs11Token.findSlot().');
+    log.debug('Leaving Pkcs11Token.chooseSlot().');
     return matches[0];
+  }
+
+  findSlot() {
+    log.debug('Entering Pkcs11Token.findSlot().');
+    let listed;
+    try {
+      listed = CONTROL_OPS.slots(this.entry.lib);
+    } catch (e) {
+      throw refusal('STS-KEYS-0202', 'the PKCS#11 module listed no slots', e);
+    }
+    log.debug('Leaving Pkcs11Token.findSlot().');
+    return this.chooseSlot(listed);
+  }
+
+  async findSlotAsync() {
+    log.debug('Entering Pkcs11Token.findSlotAsync().');
+    let listed;
+    try {
+      listed = await this.entry.control.call('slots', []);
+    } catch (e) {
+      throw refusal('STS-KEYS-0202', 'the PKCS#11 module listed no slots', e);
+    }
+    log.debug('Leaving Pkcs11Token.findSlotAsync().');
+    return this.chooseSlot(listed);
   }
 
   /**
@@ -552,51 +1288,84 @@ class Pkcs11Token {
     return parts.join(', ') || 'the only token';
   }
 
-  openSession() {
-    log.debug('Entering Pkcs11Token.openSession().');
-    const lib = this.entry.lib;
-    let session;
-    try {
-      session = lib.C_OpenSession(this.slot,
-                                  CK.CKF_SERIAL_SESSION | CK.CKF_RW_SESSION);
-    } catch (e) {
-      throw refusal('STS-KEYS-0201', 'no session could be opened on ' +
-                    this.describe(), e);
-    }
-    this.open++;
-    if (this.pin !== null) {
-      try {
-        lib.C_Login(session, CK.CKU_USER, this.pin);
-      } catch (e) {
-        if (ckrOf(e) !== CK.CKR_USER_ALREADY_LOGGED_IN) {
-          this.closeSession(session);
-          throw refusal('STS-KEYS-0205', 'the PIN was refused by ' +
-                        this.describe(), e);
-        }
-        // A login is per application: another session of this process
-        // (or another thread) already holds it.
-        log.debug('Caught in Pkcs11Token.openSession(): already logged in: ' +
-                  ((e && e.message) || e));
-      }
-      this.loggedIn = true;
-    }
-    log.debug('Leaving Pkcs11Token.openSession().');
-    return session;
+  // The refusal a failed C_OpenSession or C_Login is.
+  openRefusal(e) {
+    log.debug('Entering Pkcs11Token.openRefusal().');
+    log.debug('Leaving Pkcs11Token.openRefusal().');
+    return e && e.pinRefused
+      ? refusal('STS-KEYS-0205', 'the PIN was refused by ' + this.describe(),
+                e)
+      : refusal('STS-KEYS-0201', 'no session could be opened on ' +
+                this.describe(), e);
   }
 
-  closeSession(session) {
-    log.debug('Entering Pkcs11Token.closeSession().');
+  // A session opened in place: at start, and for the blocking door.
+  openSessionSync() {
+    log.debug('Entering Pkcs11Token.openSessionSync().');
+    const epoch = this.entry.epoch;
+    let h;
+    try {
+      h = CONTROL_OPS.open(this.entry.lib, this.slot, this.pin);
+    } catch (e) {
+      throw this.openRefusal(e);
+    }
+    this.open++;
+    this.loggedIn = this.pin !== null;
+    log.debug('Leaving Pkcs11Token.openSessionSync().');
+    return { h: h, epoch: epoch };
+  }
+
+  // A session opened off the event loop, counted from the moment it is
+  // asked for, so two callers cannot both pass the cap.
+  async openSessionAsync() {
+    log.debug('Entering Pkcs11Token.openSessionAsync().');
+    const epoch = this.entry.epoch;
+    this.open++;
+    let h;
+    try {
+      h = await this.entry.control.call('open', [this.slot, this.pin]);
+    } catch (e) {
+      this.open = Math.max(0, this.open - 1);
+      throw this.openRefusal(e);
+    }
+    this.loggedIn = this.pin !== null;
+    log.debug('Leaving Pkcs11Token.openSessionAsync().');
+    return { h: h, epoch: epoch };
+  }
+
+  // Whether a session is from the module's current epoch.
+  current(session) {
+    log.debug('Entering Pkcs11Token.current().');
+    const out = !!session && session.epoch === this.entry.epoch;
+    log.debug('Leaving Pkcs11Token.current(). ' + out);
+    return out;
+  }
+
+  // A session that no longer exists in the module (an earlier epoch's)
+  // leaves the count without C_CloseSession: its handle may since have been
+  // given to another session.
+  forgetSession(session) {
+    log.debug('Entering Pkcs11Token.forgetSession().');
     this.open = Math.max(0, this.open - 1);
     if (this.open === 0) {
       this.generation++;
     }
-    try {
-      this.entry.lib.C_CloseSession(session);
-    } catch (e) {
-      // A session the device already lost cannot be closed, and does not
-      // need to be.
-      log.debug('Caught in Pkcs11Token.closeSession(): ' +
-                ((e && e.message) || e));
+    log.debug('Leaving Pkcs11Token.forgetSession().');
+  }
+
+  // Closes a session off the event loop, or forgets it when it is from an
+  // earlier epoch.
+  closeSession(session) {
+    log.debug('Entering Pkcs11Token.closeSession().');
+    const live = this.current(session);
+    this.forgetSession(session);
+    if (live) {
+      this.entry.control.call('close', [session.h]).catch(function (e) {
+        // A session the device already lost cannot be closed, and does not
+        // need to be.
+        log.debug('Caught in Pkcs11Token.closeSession(): ' +
+                  ((e && e.message) || e));
+      });
     }
     log.debug('Leaving Pkcs11Token.closeSession().');
   }
@@ -612,41 +1381,125 @@ class Pkcs11Token {
     for (const s of idle) {
       this.closeSession(s);
     }
+    if (this.blocking) {
+      const b = this.blocking;
+      this.blocking = null;
+      this.closeSession(b);
+    }
     this.maxSessions = 0;
+    if (this.entry && this.entry.tokens) {
+      this.entry.tokens.delete(this);
+    }
     log.debug('Leaving Pkcs11Token.close().');
   }
 
-  // Lends a session: an idle one, a new one under the cap, or a promise of
-  // the next one handed back.
-  acquire() {
-    log.debug('Entering Pkcs11Token.acquire().');
-    if (this.idle.length) {
-      log.debug('Leaving Pkcs11Token.acquire(). Idle.');
-      return Promise.resolve(this.idle.pop());
+  // An idle session of the current epoch, or null; an earlier epoch's is
+  // forgotten on the way.
+  takeIdle() {
+    log.debug('Entering Pkcs11Token.takeIdle().');
+    while (this.idle.length) {
+      const s = this.idle.pop();
+      if (this.current(s)) {
+        log.debug('Leaving Pkcs11Token.takeIdle(). One.');
+        return s;
+      }
+      this.forgetSession(s);
     }
-    if (this.open < this.maxSessions) {
-      try {
-        const s = this.openSession();
+    log.debug('Leaving Pkcs11Token.takeIdle(). None.');
+    return null;
+  }
+
+  // How many sessions the pool may lend: every open one but the blocking
+  // session.
+  pooled() {
+    log.debug('Entering Pkcs11Token.pooled().');
+    log.debug('Leaving Pkcs11Token.pooled().');
+    return this.open - (this.blocking ? 1 : 0);
+  }
+
+  lend(session) {
+    log.debug('Entering Pkcs11Token.lend().');
+    this.lent++;
+    inflightMoved(this.entry, 1);
+    log.debug('Leaving Pkcs11Token.lend().');
+  }
+
+  unlend(session) {
+    log.debug('Entering Pkcs11Token.unlend().');
+    this.lent = Math.max(0, this.lent - 1);
+    inflightMoved(this.entry, -1);
+    log.debug('Leaving Pkcs11Token.unlend().');
+  }
+
+  // Wakes one waiter to try again (`null`), when a session left the pool.
+  wakeOne() {
+    log.debug('Entering Pkcs11Token.wakeOne().');
+    const next = this.waiters.shift();
+    if (next) {
+      next(null);
+    }
+    log.debug('Leaving Pkcs11Token.wakeOne().');
+  }
+
+  // Lends a session: an idle one, a new one under the cap (opened off the
+  // event loop), or the next one handed back. Waits first for a
+  // re-initialisation of the module in progress.
+  async acquire() {
+    log.debug('Entering Pkcs11Token.acquire().');
+    for (;;) {
+      if (this.entry.recovering) {
+        try {
+          await this.entry.recovering;
+        } catch (e) {
+          // The recovery's own refusal is the operation that started it;
+          // this one opens a session and meets the module as it now is.
+          log.debug('Caught in Pkcs11Token.acquire(): ' +
+                    ((e && e.message) || e));
+        }
+        continue;
+      }
+      const idle = this.takeIdle();
+      if (idle) {
+        this.lend(idle);
+        log.debug('Leaving Pkcs11Token.acquire(). Idle.');
+        return idle;
+      }
+      if (this.pooled() < this.maxSessions) {
+        const opened = await this.openSessionAsync();
+        if (!this.current(opened)) {
+          // The module was initialised again while it opened.
+          this.forgetSession(opened);
+          continue;
+        }
+        this.lend(opened);
         log.debug('Leaving Pkcs11Token.acquire(). Opened.');
-        return Promise.resolve(s);
-      } catch (e) {
-        log.debug('Leaving Pkcs11Token.acquire(). Refused.');
-        return Promise.reject(e);
+        return opened;
+      }
+      const waiters = this.waiters;
+      const handed = await new Promise(function (resolve) {
+        waiters.push(resolve);
+      });
+      if (handed) {
+        log.debug('Leaving Pkcs11Token.acquire(). Handed on.');
+        return handed;
       }
     }
-    const waiters = this.waiters;
-    log.debug('Leaving Pkcs11Token.acquire(). Waiting.');
-    return new Promise(function (resolve) {
-      waiters.push(resolve);
-    });
   }
 
   release(session) {
     log.debug('Entering Pkcs11Token.release().');
+    this.unlend(session);
+    if (!this.current(session)) {
+      this.forgetSession(session);
+      this.wakeOne();
+      log.debug('Leaving Pkcs11Token.release(). From before.');
+      return;
+    }
     const next = this.waiters.shift();
     if (next) {
+      this.lend(session);
       next(session);
-    } else if (this.open > this.maxSessions) {
+    } else if (this.pooled() > this.maxSessions) {
       this.closeSession(session);
     } else {
       this.idle.push(session);
@@ -654,44 +1507,63 @@ class Pkcs11Token {
     log.debug('Leaving Pkcs11Token.release().');
   }
 
-  // A lost session is not handed back; a waiter is handed a fresh one.
+  // A lost session is not handed back; a waiter is woken to open another.
   discard(session) {
     log.debug('Entering Pkcs11Token.discard().');
+    this.unlend(session);
     this.closeSession(session);
-    const next = this.waiters.shift();
-    if (next) {
-      try {
-        next(this.openSession());
-      } catch (e) {
-        // The waiter's own operation will meet the outage and reconnect; it
-        // is handed nothing better than a retry.
-        log.debug('Caught in Pkcs11Token.discard(): ' +
-                  ((e && e.message) || e));
-        this.waiters.unshift(next);
-      }
-    }
+    this.wakeOne();
     log.debug('Leaving Pkcs11Token.discard().');
   }
 
-  // After an outage: every idle session is dropped (they were lost with the
-  // one that failed), and the module is initialized again where the error
-  // says the library itself lost the device.
-  recover(err) {
-    log.debug('Entering Pkcs11Token.recover().');
-    this.reconnects++;
-    this.generation++;
-    if (!DEVICE_LOST.has(ckrOf(err))) {
-      log.debug('Leaving Pkcs11Token.recover(). Only that session.');
-      return;
-    }
+  // Every idle session of this token, closed (or forgotten): they were lost
+  // with the one that failed.
+  dropIdle() {
+    log.debug('Entering Pkcs11Token.dropIdle().');
     const idle = this.idle.splice(0);
     for (const s of idle) {
       this.closeSession(s);
     }
-    if (REINITIALIZE_ON.has(ckrOf(err))) {
-      reinitialize(this.entry);
-      this.open = 0;
-      this.slot = this.findSlot();
+    if (this.blocking) {
+      const b = this.blocking;
+      this.blocking = null;
+      this.closeSession(b);
+    }
+    log.debug('Leaving Pkcs11Token.dropIdle().');
+  }
+
+  /**
+   * After the module was initialised again (`reinitializeEntry()`): the
+   * handles found before are found again, every session from before is
+   * forgotten (the module ended them), and the slot is found again.
+   *
+   * @returns a promise settled once the slot is found
+   */
+  async afterReinitialize() {
+    log.debug('Entering Pkcs11Token.afterReinitialize().');
+    this.generation++;
+    this.dropIdle();
+    this.slot = await this.findSlotAsync();
+    log.debug('Leaving Pkcs11Token.afterReinitialize().');
+  }
+
+  // After an outage met off the event loop: every idle session is dropped
+  // (they were lost with the one that failed), and the module is initialised
+  // again, once, where the error says the library itself lost the device.
+  async recover(err, seenEpoch) {
+    log.debug('Entering Pkcs11Token.recover().');
+    this.reconnects++;
+    this.generation++;
+    const ckr = ckrOf(err);
+    if (!DEVICE_LOST.has(ckr)) {
+      log.debug('Leaving Pkcs11Token.recover(). Only that session.');
+      return;
+    }
+    this.dropIdle();
+    if (REINITIALIZE_ON.has(ckr)) {
+      await reinitializeEntry(this.entry,
+                              ckr !== CK.CKR_CRYPTOKI_NOT_INITIALIZED,
+                              seenEpoch);
     }
     log.warn(errorCodes.tag('STS-KEYS-0201') + 'pkcs11: ' + this.describe() +
              ' answered ' + ((err && err.message) || err) + '; the session ' +
@@ -699,20 +1571,90 @@ class Pkcs11Token {
     log.debug('Leaving Pkcs11Token.recover().');
   }
 
+  // The same, met on the blocking door. Initialising the module again in
+  // place is safe only while no asynchronous operation of this thread holds
+  // a session on it; otherwise it is started off the event loop, where it
+  // waits for them, and this call is refused (STS-KEYS-0212).
+  recoverSync(err, what, seenEpoch) {
+    log.debug('Entering Pkcs11Token.recoverSync().');
+    this.reconnects++;
+    this.generation++;
+    const ckr = ckrOf(err);
+    if (!DEVICE_LOST.has(ckr)) {
+      log.debug('Leaving Pkcs11Token.recoverSync(). Only that session.');
+      return;
+    }
+    this.dropIdle();
+    // Initialised again by another thread since that session was opened:
+    // nothing to finalize (`reinitializeEntry()`).
+    const since = seenEpoch !== undefined && seenEpoch !== this.entry.epoch;
+    if (REINITIALIZE_ON.has(ckr) && !since) {
+      if (this.entry.inflight > 0 || this.entry.recovering) {
+        reinitializeEntry(this.entry, ckr !== CK.CKR_CRYPTOKI_NOT_INITIALIZED,
+                          seenEpoch)
+          .catch(function (e) {
+            // The next operation meets the module as it is, and refuses
+            // with its own answer.
+            log.debug('Caught in Pkcs11Token.recoverSync(): ' +
+                      ((e && e.message) || e));
+          });
+        log.debug('Leaving Pkcs11Token.recoverSync(). Off the loop.');
+        throw refusal('STS-KEYS-0212', what + ' on ' + this.describe() +
+          ' met a lost device while asynchronous calls hold sessions on ' +
+          'the module; it is initialised again off the event loop once ' +
+          'they drain', err);
+      }
+      CONTROL_OPS.reinitialize(this.entry.lib,
+                               ckr !== CK.CKR_CRYPTOKI_NOT_INITIALIZED);
+      this.entry.epoch++;
+      announceReinitialized(this.entry);
+      for (const t of Array.from(this.entry.tokens)) {
+        t.generation++;
+        t.dropIdle();
+        t.slot = t.findSlot();
+      }
+    }
+    log.warn(errorCodes.tag('STS-KEYS-0201') + 'pkcs11: ' + this.describe() +
+             ' answered ' + ((err && err.message) || err) + '; the session ' +
+             'was dropped and the operation is tried once more.');
+    log.debug('Leaving Pkcs11Token.recoverSync().');
+  }
+
   /**
    * Runs one operation on a lent session, asynchronously, reconnecting once
    * after an outage.
    *
    * @param what - what the operation is, for a refusal
-   * @param fn - `(lib, session) => value | Promise<value>`
+   * @param fn - `(lib, session) => value | Promise<value>`, `session` the
+   *   binding's handle
    * @returns a promise of what `fn` answered
    */
   async run(what, fn) {
     log.debug('Entering Pkcs11Token.run(). ' + what);
     for (let attempt = 0; attempt < 2; attempt++) {
-      const session = await this.acquire();
+      let session;
       try {
-        const out = await fn(this.entry.lib, session);
+        session = await this.acquire();
+      } catch (e) {
+        // A session that could not be opened for the same reason an
+        // operation fails (the device went away) is the same outage, and
+        // reconnects the same way; a refused PIN is not.
+        const ckr = ckrOf(e) || Number(/** @type {any} */ (e).ckr) || 0;
+        log.debug('Caught in Pkcs11Token.run(): ' + ((e && e.message) || e));
+        if (attempt === 0 && RECONNECT_ON.has(ckr)) {
+          try {
+            await this.recover({ code: ckr, message: e.message });
+          } catch (r) {
+            throw refusal('STS-KEYS-0201', what + ' failed on ' +
+                          this.describe() + ', and reconnecting failed', r);
+          }
+          continue;
+        }
+        log.debug('Leaving Pkcs11Token.run(). No session.');
+        throw e;
+      }
+      try {
+        const out = await fn(this.entry.lib, session.h);
         this.release(session);
         log.debug('Leaving Pkcs11Token.run().');
         return out;
@@ -722,7 +1664,7 @@ class Pkcs11Token {
                     '; reconnecting once.');
           this.discard(session);
           try {
-            this.recover(e);
+            await this.recover(e, session.epoch);
           } catch (r) {
             // The device is still away: the reconnect itself failed, which
             // is this operation's refusal, not a different one.
@@ -741,40 +1683,92 @@ class Pkcs11Token {
     throw refusal('STS-KEYS-0201', what + ' failed on ' + this.describe());
   }
 
+  // The blocking session, opened once where it is not.
+  blockingSession() {
+    log.debug('Entering Pkcs11Token.blockingSession().');
+    if (this.blocking && this.current(this.blocking)) {
+      log.debug('Leaving Pkcs11Token.blockingSession(). Held.');
+      return this.blocking;
+    }
+    if (this.blocking) {
+      this.forgetSession(this.blocking);
+      this.blocking = null;
+    }
+    this.blocking = this.openSessionSync();
+    log.debug('Leaving Pkcs11Token.blockingSession(). Opened.');
+    return this.blocking;
+  }
+
+  // A session the blocking door took, given back: the blocking one is kept,
+  // an idle one goes back to the pool (or to a waiter).
+  giveBackSync(session) {
+    log.debug('Entering Pkcs11Token.giveBackSync().');
+    if (session === this.blocking) {
+      log.debug('Leaving Pkcs11Token.giveBackSync(). The blocking one.');
+      return;
+    }
+    const next = this.waiters.shift();
+    if (next) {
+      this.lend(session);
+      next(session);
+    } else {
+      this.idle.push(session);
+    }
+    log.debug('Leaving Pkcs11Token.giveBackSync().');
+  }
+
+  // A session the blocking door lost.
+  dropSync(session) {
+    log.debug('Entering Pkcs11Token.dropSync().');
+    if (session === this.blocking) {
+      this.blocking = null;
+    }
+    this.closeSession(session);
+    log.debug('Leaving Pkcs11Token.dropSync().');
+  }
+
   /**
-   * Runs one operation synchronously on an idle session (or one more), for
-   * a caller that cannot wait — `signJws()`'s synchronous door. Reconnects
-   * once after an outage.
+   * Runs one operation synchronously — the event loop waits for the module —
+   * on an idle session or the blocking one: the opt-in blocking door
+   * (`keys.pkcs11SynchronousSign`), a key's first resolution in a thread and
+   * the lookups made at start. Reconnects once after an outage; refused
+   * (STS-KEYS-0212) while the module is being initialised again.
    *
    * @param what - what the operation is, for a refusal
-   * @param fn - `(lib, session) => value`
+   * @param fn - `(lib, session) => value`, `session` the binding's handle
    * @returns what `fn` answered
    */
   runSync(what, fn) {
     log.debug('Entering Pkcs11Token.runSync(). ' + what);
+    if (this.entry.recovering) {
+      log.debug('Leaving Pkcs11Token.runSync(). Reconnecting.');
+      throw refusal('STS-KEYS-0212', what + ' was asked while ' +
+                    this.describe() + ' is being initialised again');
+    }
     for (let attempt = 0; attempt < 2; attempt++) {
-      const session = this.idle.length ? this.idle.pop() : this.openSession();
+      const session = this.takeIdle() || this.blockingSession();
       try {
-        const out = fn(this.entry.lib, session);
-        this.release(session);
+        const out = fn(this.entry.lib, session.h);
+        this.giveBackSync(session);
         log.debug('Leaving Pkcs11Token.runSync().');
         return out;
       } catch (e) {
         if (attempt === 0 && RECONNECT_ON.has(ckrOf(e))) {
           log.debug('Caught in Pkcs11Token.runSync(): ' +
                     ((e && e.message) || e) + '; reconnecting once.');
-          this.discard(session);
+          this.dropSync(session);
           try {
-            this.recover(e);
+            this.recoverSync(e, what, session.epoch);
           } catch (r) {
             // The device is still away: the reconnect itself failed, which
             // is this operation's refusal, not a different one.
-            throw refusal('STS-KEYS-0201', what + ' failed on ' +
-                          this.describe() + ', and reconnecting failed', r);
+            throw errorCodes.codeOf(r) === 'STS-KEYS-0212' ? r :
+              refusal('STS-KEYS-0201', what + ' failed on ' +
+                      this.describe() + ', and reconnecting failed', r);
           }
           continue;
         }
-        this.release(session);
+        this.giveBackSync(session);
         log.debug('Leaving Pkcs11Token.runSync(). Refused.');
         throw errorCodes.codeOf(e) ? e : refusal(codeFor(e),
           what + ' failed on ' + this.describe(), e);
@@ -785,7 +1779,8 @@ class Pkcs11Token {
   }
 
   /**
-   * The mechanisms the token offers, with their flags, read once.
+   * The mechanisms the token offers, with their flags, read once (at
+   * `connect()`).
    *
    * @returns a Map of mechanism number to flags
    */
@@ -832,28 +1827,73 @@ class Pkcs11Token {
   // OBJECTS
   // -------------------------------------------------------------------------
   /**
-   * The handle of a key this token found before, found again when the login
-   * it was found under has gone (see `generation`).
+   * The handle of a key this token found before, found again ON THE SESSION
+   * GIVEN when the login it was found under has gone (see `generation`) —
+   * for the blocking door, which holds that session already.
    *
    * @param key - `{ template, handle, generation, what }`
+   * @param lib - the module
+   * @param session - the binding's handle of the session the caller holds
    * @returns the handle
    */
-  handleOf(key) {
+  handleOf(key, lib, session) {
     log.debug('Entering Pkcs11Token.handleOf().');
     if (key.generation === this.generation && key.handle !== null) {
       log.debug('Leaving Pkcs11Token.handleOf(). Held.');
       return key.handle;
     }
-    const found = this.find(key.template);
+    const found = findOn(lib, session, key.template);
     if (found.length !== 1) {
-      throw refusal('STS-KEYS-0203', key.what + ' is ' +
-        (found.length ? 'no longer unique' : 'no longer') + ' on ' +
-        this.describe());
+      throw this.keyGone(key, found.length);
     }
     key.handle = found[0];
     key.generation = this.generation;
     log.debug('Leaving Pkcs11Token.handleOf(). Found again.');
     return key.handle;
+  }
+
+  // The refusal a key that is no longer (or no longer once) on the token is.
+  keyGone(key, count) {
+    log.debug('Entering Pkcs11Token.keyGone().');
+    log.debug('Leaving Pkcs11Token.keyGone().');
+    return refusal('STS-KEYS-0203', key.what + ' is ' +
+      (count ? 'no longer unique' : 'no longer') + ' on ' + this.describe());
+  }
+
+  /**
+   * A keyed control call off the event loop (`CONTROL_OPS`' `begin`,
+   * `locate`, `kwpWrap`, `kwpUnwrap`) on the session the operation holds:
+   * the key's handle is passed where it is still good and found again by
+   * the call where it is not, and kept.
+   *
+   * @param op - the call
+   * @param session - the binding's handle of the session
+   * @param key - `{ template, handle, generation, what }`
+   * @param args - the call's other arguments
+   * @returns a promise of the call's value
+   */
+  async keyed(op, session, key, args) {
+    log.debug('Entering Pkcs11Token.keyed(). ' + op);
+    const generation = this.generation;
+    const held = key.generation === generation && key.handle !== null
+      ? key.handle : null;
+    let out;
+    try {
+      out = await this.entry.control.call(op,
+        [session, { handle: held, template: key.template }].concat(args));
+    } catch (e) {
+      log.debug('Caught in Pkcs11Token.keyed(): ' + ((e && e.message) || e));
+      if (e && e.notFound !== undefined) {
+        throw this.keyGone(key, Number(e.notFound));
+      }
+      throw e;
+    }
+    if (held === null) {
+      key.handle = out.handle;
+      key.generation = generation;
+    }
+    log.debug('Leaving Pkcs11Token.keyed().');
+    return out.value;
   }
 
   /**
@@ -865,28 +1905,25 @@ class Pkcs11Token {
   find(template) {
     log.debug('Entering Pkcs11Token.find().');
     const found = this.runSync('a search', function (lib, session) {
-      lib.C_FindObjectsInit(session, template);
-      const out = [];
-      try {
-        for (;;) {
-          const batch = lib.C_FindObjects(session, 16);
-          if (!batch || !batch.length) {
-            break;
-          }
-          for (const h of batch) {
-            out.push(h);
-          }
-          if (out.length > 64) {
-            break;
-          }
-        }
-      } finally {
-        lib.C_FindObjectsFinal(session);
-      }
-      return out;
+      return findOn(lib, session, template);
     });
     log.debug('Leaving Pkcs11Token.find(). ' + found.length + '.');
     return found;
+  }
+
+  /**
+   * Finds objects by a template, off the event loop.
+   *
+   * @param template - PKCS#11 attributes
+   * @returns a promise of the handles
+   */
+  findAsync(template) {
+    log.debug('Entering Pkcs11Token.findAsync().');
+    const control = this.entry.control;
+    log.debug('Leaving Pkcs11Token.findAsync().');
+    return this.run('a search', function (lib, session) {
+      return control.call('find', [session, template]);
+    });
   }
 
   /**
@@ -898,25 +1935,28 @@ class Pkcs11Token {
    */
   attributes(handle, types) {
     log.debug('Entering Pkcs11Token.attributes().');
-    const out = new Map();
-    const self = this;
-    for (const type of types) {
-      try {
-        const got = self.runSync('an attribute read', function (lib, s) {
-          return lib.C_GetAttributeValue(s, handle, [{ type: type }]);
-        });
-        if (got && got[0] && got[0].value !== undefined) {
-          out.set(type, Buffer.from(got[0].value));
-        }
-      } catch (e) {
-        // A sensitive attribute (CKA_VALUE of a secret key) is refused by
-        // design; it is absent from the answer, which is what a caller asks.
-        log.debug('Caught in Pkcs11Token.attributes(): ' +
-                  ((e && e.message) || e));
-      }
-    }
+    const got = this.runSync('an attribute read', function (lib, s) {
+      return CONTROL_OPS.attributes(lib, s, handle, types);
+    });
     log.debug('Leaving Pkcs11Token.attributes().');
-    return out;
+    return new Map(got);
+  }
+
+  /**
+   * Reads attributes of one object, off the event loop.
+   *
+   * @param handle - the object
+   * @param types - the attribute numbers
+   * @returns a promise of a Map of attribute number to its bytes
+   */
+  async attributesAsync(handle, types) {
+    log.debug('Entering Pkcs11Token.attributesAsync().');
+    const control = this.entry.control;
+    const got = await this.run('an attribute read', function (lib, s) {
+      return control.call('attributes', [s, handle, types]);
+    });
+    log.debug('Leaving Pkcs11Token.attributesAsync().');
+    return new Map(got);
   }
 
   // -------------------------------------------------------------------------
@@ -1068,9 +2108,9 @@ class Pkcs11Token {
     if (tag === 'g1') {
       const iv = nodeCrypto.randomBytes(12);
       log.debug('Leaving Pkcs11Token.wrapData(). GCM.');
-      return this.run('a wrap', function (lib, session) {
-        lib.C_EncryptInit(session, gcmMechanism(binding, iv, aad),
-                          self.handleOf(key));
+      return this.run('a wrap', async function (lib, session) {
+        await self.keyed('begin', session, key,
+                         ['Encrypt', gcmMechanism(binding, iv, aad)]);
         return encryptAsync(lib, session, plain, plain.length + 64);
       }).then(function (ct) {
         return 'g1.' + b64u(iv) + '.' + b64u(ct);
@@ -1079,24 +2119,20 @@ class Pkcs11Token {
     const bound = Buffer.concat([plain, aadDigest(aad)]);
     if (tag === 'y1') {
       log.debug('Leaving Pkcs11Token.wrapData(). YubiHSM CCM wrap.');
-      return this.run('a wrap', function (lib, session) {
-        lib.C_EncryptInit(session, { mechanism: CK.CKM_YUBICO_AES_CCM_WRAP },
-                          self.handleOf(key));
+      return this.run('a wrap', async function (lib, session) {
+        await self.keyed('begin', session, key,
+          ['Encrypt', { mechanism: CK.CKM_YUBICO_AES_CCM_WRAP }]);
         return encryptAsync(lib, session, bound, bound.length + 64);
       }).then(function (blob) {
         return 'y1.' + b64u(blob);
       });
     }
+    // KWP: the session object, C_WrapKey and C_DestroyObject are made
+    // together by the control thread, off the event loop.
     log.debug('Leaving Pkcs11Token.wrapData(). KWP.');
     return this.run('a wrap', function (lib, session) {
-      const obj = lib.C_CreateObject(session, sessionSecret(bound));
-      try {
-        return lib.C_WrapKey(session, { mechanism: CK.CKM_AES_KEY_WRAP_PAD },
-                             self.handleOf(key), obj,
-                             Buffer.alloc(bound.length + 16));
-      } finally {
-        lib.C_DestroyObject(session, obj);
-      }
+      return self.keyed('kwpWrap', session, key,
+                        [sessionSecret(bound), bound.length + 16]);
     }).then(function (wrapped) {
       return 'k1.' + b64u(wrapped);
     });
@@ -1119,9 +2155,9 @@ class Pkcs11Token {
       const iv = Buffer.from(parts[1], 'base64url');
       const ct = Buffer.from(parts[2], 'base64url');
       log.debug('Leaving Pkcs11Token.unwrapData(). GCM.');
-      return this.run('an unwrap', function (lib, session) {
-        lib.C_DecryptInit(session, gcmMechanism(binding, iv, aad),
-                          self.handleOf(key));
+      return this.run('an unwrap', async function (lib, session) {
+        await self.keyed('begin', session, key,
+                         ['Decrypt', gcmMechanism(binding, iv, aad)]);
         return decryptAsync(lib, session, ct, ct.length + 16);
       }).then(function (plain) {
         return Buffer.from(plain);
@@ -1130,9 +2166,9 @@ class Pkcs11Token {
     if (parts[0] === 'y1' && parts.length === 2) {
       const blob = Buffer.from(parts[1], 'base64url');
       log.debug('Leaving Pkcs11Token.unwrapData(). YubiHSM CCM wrap.');
-      return this.run('an unwrap', function (lib, session) {
-        lib.C_DecryptInit(session, { mechanism: CK.CKM_YUBICO_AES_CCM_WRAP },
-                          self.handleOf(key));
+      return this.run('an unwrap', async function (lib, session) {
+        await self.keyed('begin', session, key,
+          ['Decrypt', { mechanism: CK.CKM_YUBICO_AES_CCM_WRAP }]);
         return decryptAsync(lib, session, blob, blob.length + 16);
       }).then(function (plain) {
         return splitBound(plain, aad);
@@ -1142,16 +2178,8 @@ class Pkcs11Token {
       const wrapped = Buffer.from(parts[1], 'base64url');
       log.debug('Leaving Pkcs11Token.unwrapData(). KWP.');
       return this.run('an unwrap', function (lib, session) {
-        const obj = lib.C_UnwrapKey(session,
-          { mechanism: CK.CKM_AES_KEY_WRAP_PAD }, self.handleOf(key),
-          wrapped, sessionSecret(null));
-        try {
-          const got = lib.C_GetAttributeValue(session, obj,
-                                              [{ type: CK.CKA_VALUE }]);
-          return Buffer.from(got[0].value);
-        } finally {
-          lib.C_DestroyObject(session, obj);
-        }
+        return self.keyed('kwpUnwrap', session, key,
+                          [wrapped, sessionSecret(null)]);
       }).then(function (plain) {
         return splitBound(plain, aad);
       });
@@ -1202,16 +2230,22 @@ class Pkcs11Token {
   async generateKeyPairAsync(spec, label, id) {
     log.debug('Entering Pkcs11Token.generateKeyPairAsync(). ' + spec.kty);
     const plan = this.keyPairPlan(spec, label, id);
-    const pair = await this.run('generating a signing key',
-      function (lib, session) {
-        if (typeof lib.C_GenerateKeyPairAsync === 'function') {
-          return lib.C_GenerateKeyPairAsync(session,
-            { mechanism: plan.mech }, plan.pub, plan.priv);
-        }
-        return lib.C_GenerateKeyPair(session, { mechanism: plan.mech },
-                                     plan.pub, plan.priv);
+    const control = this.entry.control;
+    // The public half's attributes are read by the control thread on the
+    // same session, so nothing of the generation waits on the event loop.
+    const made = await this.run('generating a signing key',
+      async function (lib, session) {
+        const pair = typeof lib.C_GenerateKeyPairAsync === 'function'
+          ? await lib.C_GenerateKeyPairAsync(session,
+            { mechanism: plan.mech }, plan.pub, plan.priv)
+          : lib.C_GenerateKeyPair(session, { mechanism: plan.mech },
+                                  plan.pub, plan.priv);
+        const attrs = await control.call('attributes',
+          [session, pair.publicKey, publicTypes(spec)]);
+        return { pair: pair, attrs: new Map(attrs) };
       });
-    const publicKey = this.publicKeyOf(pair.publicKey, spec);
+    const pair = made.pair;
+    const publicKey = this.publicKeyFrom(made.attrs, spec);
     log.debug('Leaving Pkcs11Token.generateKeyPairAsync().');
     return { key: this.privateKeyRef(id, pair.privateKey),
              publicKey: publicKey };
@@ -1334,6 +2368,42 @@ class Pkcs11Token {
     return { key: this.privateKeyRef(idBuf, priv[0]), publicKey: publicKey };
   }
 
+  /**
+   * `keyPair()`, off the event loop: both searches and the public half's
+   * attributes made by the control thread, on one session.
+   *
+   * @param id - CKA_ID (bytes)
+   * @param spec - what the key should be: `{ kty, crv }`
+   * @returns a promise of `{ key, publicKey }`
+   */
+  async keyPairAsync(id, spec) {
+    log.debug('Entering Pkcs11Token.keyPairAsync().');
+    const idBuf = Buffer.from(id);
+    const control = this.entry.control;
+    const got = await this.run('a search', async function (lib, session) {
+      const priv = await control.call('find', [session,
+        [{ type: CK.CKA_CLASS, value: CK.CKO_PRIVATE_KEY },
+         { type: CK.CKA_ID, value: idBuf }]]);
+      const pub = await control.call('find', [session,
+        [{ type: CK.CKA_CLASS, value: CK.CKO_PUBLIC_KEY },
+         { type: CK.CKA_ID, value: idBuf }]]);
+      const attrs = pub.length === 1
+        ? await control.call('attributes', [session, pub[0],
+                                            publicTypes(spec)])
+        : [];
+      return { priv: priv, pub: pub, attrs: new Map(attrs) };
+    });
+    if (got.priv.length !== 1 || got.pub.length !== 1) {
+      throw refusal('STS-KEYS-0203', 'the signing key ' + b64u(idBuf) +
+        ' is not on ' + this.describe() + ' (' + got.priv.length +
+        ' private, ' + got.pub.length + ' public half/halves)');
+    }
+    const publicKey = this.publicKeyFrom(got.attrs, spec);
+    log.debug('Leaving Pkcs11Token.keyPairAsync().');
+    return { key: this.privateKeyRef(idBuf, got.priv[0]),
+             publicKey: publicKey };
+  }
+
   privateKeyRef(id, handle) {
     log.debug('Entering Pkcs11Token.privateKeyRef().');
     log.debug('Leaving Pkcs11Token.privateKeyRef().');
@@ -1345,15 +2415,29 @@ class Pkcs11Token {
 
   publicKeyOf(handle, spec) {
     log.debug('Entering Pkcs11Token.publicKeyOf().');
+    const out = this.publicKeyFrom(this.attributes(handle, publicTypes(spec)),
+                                   spec);
+    log.debug('Leaving Pkcs11Token.publicKeyOf().');
+    return out;
+  }
+
+  /**
+   * A public key from the attributes its object answered
+   * (`publicTypes()`), however they were read.
+   *
+   * @param a - a Map of attribute number to its bytes
+   * @param spec - `{ kty, crv }` or `{ kty: 'AKP', alg }`
+   * @returns the public key
+   */
+  publicKeyFrom(a, spec) {
+    log.debug('Entering Pkcs11Token.publicKeyFrom().');
     if (spec.kty === 'AKP') {
-      const made = this.mlDsaPublicKey(handle, spec);
-      log.debug('Leaving Pkcs11Token.publicKeyOf(). ML-DSA.');
+      const made = this.mlDsaPublicKeyFrom(a.get(CK.CKA_VALUE), spec);
+      log.debug('Leaving Pkcs11Token.publicKeyFrom(). ML-DSA.');
       return made;
     }
     let jwk;
     if (spec.kty === 'RSA') {
-      const a = this.attributes(handle, [CK.CKA_MODULUS,
-                                         CK.CKA_PUBLIC_EXPONENT]);
       if (!a.has(CK.CKA_MODULUS) || !a.has(CK.CKA_PUBLIC_EXPONENT)) {
         throw refusal('STS-KEYS-0207', 'the HSM did not answer an RSA ' +
                       'public key\'s modulus and exponent');
@@ -1362,7 +2446,6 @@ class Pkcs11Token {
               e: b64u(a.get(CK.CKA_PUBLIC_EXPONENT)) };
     } else {
       const curve = CURVES[spec.crv];
-      const a = this.attributes(handle, [CK.CKA_EC_POINT]);
       if (!curve || !a.has(CK.CKA_EC_POINT)) {
         throw refusal('STS-KEYS-0207', 'the HSM did not answer the public ' +
                       'point of a ' + spec.crv + ' key');
@@ -1381,7 +2464,7 @@ class Pkcs11Token {
       }
     }
     const key = nodeCrypto.createPublicKey({ key: jwk, format: 'jwk' });
-    log.debug('Leaving Pkcs11Token.publicKeyOf().');
+    log.debug('Leaving Pkcs11Token.publicKeyFrom().');
     return key;
   }
 
@@ -1404,7 +2487,7 @@ class Pkcs11Token {
     }
     const self = this;
     log.debug('Leaving Pkcs11Token.sign().');
-    return this.run('a signature', function (lib, session) {
+    return this.run('a signature', async function (lib, session) {
       if (typeof lib.C_SignAsync !== 'function' &&
           !synchronousSignAllowed()) {
         // No asynchronous sign, and blocking C_Sign is off. Refuse before
@@ -1413,7 +2496,9 @@ class Pkcs11Token {
                       'off (keys.pkcs11SynchronousSign), and this module ' +
                       'has no asynchronous C_Sign');
       }
-      lib.C_SignInit(session, plan.mechanism, self.handleOf(key));
+      // C_SignInit (and the key's search, where its handle went with a
+      // login) by the control thread, on this session; C_SignAsync here.
+      await self.keyed('begin', session, key, ['Sign', plan.mechanism]);
       if (typeof lib.C_SignAsync === 'function') {
         return lib.C_SignAsync(session, plan.input,
                                Buffer.alloc(SIGN_ROOM));
@@ -1449,7 +2534,8 @@ class Pkcs11Token {
     }
     const self = this;
     const sig = this.runSync('a signature', function (lib, session) {
-      lib.C_SignInit(session, plan.mechanism, self.handleOf(key));
+      lib.C_SignInit(session, plan.mechanism,
+                     self.handleOf(key, lib, session));
       return lib.C_Sign(session, plan.input, Buffer.alloc(SIGN_ROOM));
     });
     log.debug('Leaving Pkcs11Token.signSync().');
@@ -1484,10 +2570,32 @@ class Pkcs11Token {
                    sourceData: label && label.length ? Buffer.from(label)
                                                      : undefined } };
     const input = Buffer.from(data);
-    const op = function (lib, session) {
-      lib.C_DecryptInit(session, mechanism, self.handleOf(key));
-      return async ? decryptAsync(lib, session, input, input.length)
-                   : lib.C_Decrypt(session, input, Buffer.alloc(input.length));
+    // A BLOCKING C_Decrypt — asked synchronously, or by a module with no
+    // C_DecryptAsync — only while keys.pkcs11SynchronousSign is on
+    // (#1955 P8 follow-up); otherwise STS-KEYS-0209, before C_DecryptInit.
+    if (!async && !synchronousSignAllowed()) {
+      log.debug('Leaving Pkcs11Token.decryptOaep(). Refused.');
+      throw refusal('STS-KEYS-0209', 'a blocking PKCS#11 decryption is off ' +
+                    '(keys.pkcs11SynchronousSign); use the asynchronous door');
+    }
+    const noAsync = function (lib) {
+      if (typeof lib.C_DecryptAsync !== 'function' &&
+          !synchronousSignAllowed()) {
+        throw refusal('STS-KEYS-0209', 'a blocking PKCS#11 decryption is ' +
+                      'off (keys.pkcs11SynchronousSign), and this module ' +
+                      'has no asynchronous C_Decrypt');
+      }
+    };
+    // Off the loop: C_DecryptInit by the control thread, C_DecryptAsync
+    // here. In place (the opt-in): both here.
+    const op = async ? async function (lib, session) {
+      noAsync(lib);
+      await self.keyed('begin', session, key, ['Decrypt', mechanism]);
+      return decryptAsync(lib, session, input, input.length);
+    } : function (lib, session) {
+      noAsync(lib);
+      lib.C_DecryptInit(session, mechanism, self.handleOf(key, lib, session));
+      return lib.C_Decrypt(session, input, Buffer.alloc(input.length));
     };
     // A MODULE THAT DOES NOT DO THIS DIGEST answers CKR_ARGUMENTS_BAD or
     // CKR_MECHANISM_PARAM_INVALID — SoftHSM2 2.6 offers OAEP over SHA-1
@@ -1547,25 +2655,37 @@ class Pkcs11Token {
       { type: CK.CKA_SENSITIVE, value: false },
       { type: CK.CKA_EXTRACTABLE, value: true },
       { type: CK.CKA_VALUE_LEN, value: Number(bytes) }];
-    const read = function (lib, session, obj) {
-      try {
-        const got = lib.C_GetAttributeValue(session, obj,
-                                            [{ type: CK.CKA_VALUE }]);
-        return Buffer.from(got[0].value);
-      } finally {
-        lib.C_DestroyObject(session, obj);
+    const control = this.entry.control;
+    // A blocking C_DeriveKey only while keys.pkcs11SynchronousSign is on,
+    // as for decryptOaep().
+    if (!async && !synchronousSignAllowed()) {
+      log.debug('Leaving Pkcs11Token.deriveEcdh(). Refused.');
+      throw refusal('STS-KEYS-0209', 'a blocking PKCS#11 key agreement is ' +
+                    'off (keys.pkcs11SynchronousSign); use the asynchronous ' +
+                    'door');
+    }
+    const noAsync = function (lib) {
+      if (typeof lib.C_DeriveKeyAsync !== 'function' &&
+          !synchronousSignAllowed()) {
+        throw refusal('STS-KEYS-0209', 'a blocking PKCS#11 key agreement ' +
+                      'is off (keys.pkcs11SynchronousSign), and this module ' +
+                      'has no asynchronous C_DeriveKey');
       }
     };
-    const op = function (lib, session) {
-      const handle = self.handleOf(key);
-      if (async && typeof lib.C_DeriveKeyAsync === 'function') {
-        return lib.C_DeriveKeyAsync(session, mechanism, handle, template)
-          .then(function (obj) {
-            return read(lib, session, obj);
-          });
-      }
-      return read(lib, session,
-                  lib.C_DeriveKey(session, mechanism, handle, template));
+    // Off the loop: the key found and Z read (and its object destroyed) by
+    // the control thread, C_DeriveKeyAsync here. In place: all here.
+    const op = async ? async function (lib, session) {
+      noAsync(lib);
+      const handle = await self.keyed('locate', session, key, []);
+      const obj = typeof lib.C_DeriveKeyAsync === 'function'
+        ? await lib.C_DeriveKeyAsync(session, mechanism, handle, template)
+        : lib.C_DeriveKey(session, mechanism, handle, template);
+      return control.call('readSecret', [session, obj]);
+    } : function (lib, session) {
+      noAsync(lib);
+      return CONTROL_OPS.readSecret(lib, session,
+        lib.C_DeriveKey(session, mechanism, self.handleOf(key, lib, session),
+                        template));
     };
     log.debug('Leaving Pkcs11Token.deriveEcdh().');
     if (async) {
@@ -1612,11 +2732,23 @@ class Pkcs11Token {
    */
   mlDsaPublicKey(handle, spec) {
     log.debug('Entering Pkcs11Token.mlDsaPublicKey(). ' + spec.alg);
-    const row = ML_DSA[spec.alg];
     const a = this.attributes(handle, [CK.CKA_VALUE]);
-    const raw = a.get(CK.CKA_VALUE);
+    log.debug('Leaving Pkcs11Token.mlDsaPublicKey().');
+    return this.mlDsaPublicKeyFrom(a.get(CK.CKA_VALUE), spec);
+  }
+
+  /**
+   * The public half of an ML-DSA key from its CKA_VALUE.
+   *
+   * @param raw - the raw FIPS 204 public key
+   * @param spec - `{ kty: 'AKP', alg }`
+   * @returns a public-key object whose `parameterSet` is the algorithm
+   */
+  mlDsaPublicKeyFrom(raw, spec) {
+    log.debug('Entering Pkcs11Token.mlDsaPublicKeyFrom(). ' + spec.alg);
+    const row = ML_DSA[spec.alg];
     if (!row || !raw || raw.length !== row.publicBytes) {
-      log.debug('Leaving Pkcs11Token.mlDsaPublicKey(). Refused.');
+      log.debug('Leaving Pkcs11Token.mlDsaPublicKeyFrom(). Refused.');
       throw refusal('STS-KEYS-0207', 'the HSM did not answer an ' +
         (spec.alg || 'ML-DSA') + ' public key of ' +
         (row ? row.publicBytes : '?') + ' octets');
@@ -1656,7 +2788,7 @@ class Pkcs11Token {
         return Buffer.from(spki);
       }
     };
-    log.debug('Leaving Pkcs11Token.mlDsaPublicKey().');
+    log.debug('Leaving Pkcs11Token.mlDsaPublicKeyFrom().');
     return out;
   }
 
@@ -1674,6 +2806,15 @@ class Pkcs11Token {
     log.debug('Leaving Pkcs11Token.signingAlgorithms().');
     return out;
   }
+}
+
+// The attributes a public key of this kind is read from.
+function publicTypes(spec) {
+  log.debug('Entering publicTypes(). ' + spec.kty);
+  log.debug('Leaving publicTypes().');
+  return spec.kty === 'AKP' ? [CK.CKA_VALUE]
+    : spec.kty === 'RSA' ? [CK.CKA_MODULUS, CK.CKA_PUBLIC_EXPONENT]
+      : [CK.CKA_EC_POINT];
 }
 
 function refText(ref) {
@@ -1787,6 +2928,14 @@ function openToken(binding, options) {
  */
 function forgetLibraries() {
   log.debug('Entering forgetLibraries().');
+  LIBRARIES.forEach(function (entry) {
+    if (entry.control) {
+      entry.control.stop();
+    }
+    if (entry.channel) {
+      entry.channel.close();
+    }
+  });
   LIBRARIES.clear();
   log.debug('Leaving forgetLibraries().');
 }
@@ -1796,6 +2945,12 @@ module.exports = {
   CURVES: CURVES,
   SIGNING: SIGNING,
   Pkcs11Token: Pkcs11Token,
+  // The calls a control thread makes (`pkcs11_thread.js`), and how what it
+  // posts back is read.
+  CONTROL_OPS: CONTROL_OPS,
+  revive: revive,
+  errorFields: errorFields,
+  newEntry: newEntry,
   openToken: openToken,
   forgetLibraries: forgetLibraries
 };

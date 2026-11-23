@@ -2200,12 +2200,12 @@
     "text": "el token se abre una vez, al arrancar, en cada proceso"
   },
   "keys.pkcs11SynchronousSign|label": {
-    "en": "c8e3fedf4601518d",
-    "text": "Permitir la firma PKCS#11 síncrona"
+    "en": "66785a52cf616805",
+    "text": "Permitir llamadas PKCS#11 bloqueantes"
   },
   "keys.pkcs11SynchronousSign|description": {
-    "en": "1cb742f146d4c7c1",
-    "text": "Apagado, el valor predeterminado: una firma con una clave en el HSM se hace solo mediante el `C_Sign` asíncrono del enlace. Las puertas síncronas (un JWS, una firma XML, una aserción SAML) rechazan una clave del HSM (`STS-KEYS-0209`) en lugar de esperar al token en el bucle de eventos. Encendido, esas puertas llaman a `C_Sign` y el bucle de eventos espera. Un módulo sin firma asíncrona solo puede firmar mientras esto está encendido. El descifrado no cambia. Ajustable por dominio."
+    "en": "328ad6368a172a36",
+    "text": "Desactivado, el valor predeterminado: nada de lo que se hace con una clave del dominio en el HSM espera en el bucle de eventos. Cada puerta (un JWS o token de acceso, una firma XML, una aserción SAML, una respuesta de WS-Federation, un token de WS-Trust, un descifrado XML o JWE, los certificados de un conjunto de claves) usa `C_SignAsync`, `C_DecryptAsync` y `C_DeriveKeyAsync`, asíncronos, del enlace. Una llamada bloqueante se rechaza (`STS-KEYS-0209`): es lo que recibe un módulo sin llamada asíncrona. Activado, la aceptación expresa de las llamadas bloqueantes: ese módulo llama a `C_Sign`, `C_Decrypt` o `C_DeriveKey` y el bucle de eventos espera al token. Configurable por dominio."
   },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",

@@ -473,16 +473,36 @@ class HttpSignatures {
     res.end = function (...args: any[]) {
       if (!state.done) {
         state.done = true;
-        self.signResponse(res, args, message, verified, state.wrote);
+        // A REALM KEY IN THE HSM SIGNS OFF THE EVENT LOOP (#1955 P8
+        // follow-up): the response ends once the signature is in its
+        // headers. `signResponse()` never rejects; a software key signs in
+        // place and the response ends here, as before.
+        const later = self.signResponse(res, args, message, verified,
+                                        state.wrote);
+        if (later) {
+          // Ended whatever the signature came to: a response is always
+          // sent, signed or not. Until then `writableEnded` is false.
+          const end = function (): void {
+            originalEnd.apply(res, args);
+          };
+          later.then(end, function (e: any) {
+            log.debug("Caught in HttpSignatures.armResponse(): " +
+                      ((e && e.message) || e));
+            end();
+          });
+          return res;
+        }
       }
       return originalEnd.apply(res, args);
     };
     log.debug("Leaving HttpSignatures.armResponse().");
   }
 
-  // Section 5.3.2.1. Never throws: a response is always sent.
+  // Section 5.3.2.1. Never throws: a response is always sent. Answers a
+  // promise, which never rejects, where the realm's key is in the HSM and
+  // the signature is made off the event loop (#1955 P8 follow-up).
   private signResponse(res: Json, args: any[], request: Json, verified: Json,
-                       wrote: boolean): void {
+                       wrote: boolean): Promise<void> | undefined {
     const { log, config, errorCodes, stsCrypto, nowSec, signingKeyFor,
             publishedKidFor } = this.deps;
     log.debug("Entering HttpSignatures.signResponse().");
@@ -522,7 +542,7 @@ class HttpSignatures {
       });
       const message = { status: res.statusCode, headers: headers,
                         request: request };
-      const signed = stsCrypto.signHttpMessage(message, {
+      const signOptions = {
         label: RESPONSE_LABEL,
         components: components.concat(this.requestComponents(request,
                                                               verified)),
@@ -531,18 +551,35 @@ class HttpSignatures {
                  ['tag', RESPONSE_TAG]],
         key: signer.key,
         algorithm: alg
-      });
-      if (!signed.ok) {
-        log.warn(errorCodes.tag('STS-OAUTH-0942') + 'FAPI 2.0 HTTP ' +
-                 'Signatures: a resource response could not be signed, and ' +
-                 'is sent unsigned: ' + signed.why);
-        log.debug("Leaving HttpSignatures.signResponse(). Refused.");
-        return;
+      };
+      if (stsCrypto.isHsmKey(signer.key)) {
+        log.debug("Leaving HttpSignatures.signResponse(). Off the event " +
+                  "loop.");
+        return stsCrypto.signHttpMessageOffLoop(message, signOptions)
+          .then(function (signed: Json) {
+            try {
+              HttpSignatures.setSignature(res, signed, alg);
+            } catch (e) {
+              // The headers were sent while it signed: unsigned, as below.
+              log.debug("Caught in HttpSignatures.signResponse(): " +
+                        ((e && e.message) || e));
+              log.warn(errorCodes.tag('STS-OAUTH-0942') + 'FAPI 2.0 HTTP ' +
+                       'Signatures: a resource response could not be ' +
+                       'signed, and is sent unsigned: ' +
+                       ((e && e.message) || e));
+            }
+          }, function (e: any) {
+            log.debug("Caught in HttpSignatures.signResponse(): " +
+                      ((e && e.message) || e));
+            log.warn(errorCodes.tag('STS-OAUTH-0942') + 'FAPI 2.0 HTTP ' +
+                     'Signatures: a resource response could not be ' +
+                     'signed, and is sent unsigned: ' +
+                     ((e && e.message) || e));
+          });
       }
-      res.setHeader('Signature-Input', signed.signatureInput);
-      res.setHeader('Signature', signed.signature);
-      log.debug("Leaving HttpSignatures.signResponse(). Signed with " + alg +
-                ".");
+      HttpSignatures.setSignature(res,
+        stsCrypto.signHttpMessage(message, signOptions), alg);
+      log.debug("Leaving HttpSignatures.signResponse().");
     } catch (e) {
       log.debug("Caught in HttpSignatures.signResponse(): " +
                 ((e && e.message) || e));
@@ -554,6 +591,25 @@ class HttpSignatures {
                'sent unsigned: ' + ((e && e.message) || e));
       log.debug("Leaving HttpSignatures.signResponse(). Threw.");
     }
+    return undefined;
+  }
+
+  // The answer of the signer, into the response's headers, or the refusal
+  // logged and the response left unsigned.
+  private static setSignature(res: Json, signed: Json, alg: string): void {
+    const { log } = helpers;
+    log.debug("Entering HttpSignatures.setSignature().");
+    if (!signed.ok) {
+      log.warn(errorCodes.tag('STS-OAUTH-0942') + 'FAPI 2.0 HTTP ' +
+               'Signatures: a resource response could not be signed, and ' +
+               'is sent unsigned: ' + signed.why);
+      log.debug("Leaving HttpSignatures.setSignature(). Refused.");
+      return;
+    }
+    res.setHeader('Signature-Input', signed.signatureInput);
+    res.setHeader('Signature', signed.signature);
+    log.debug("Leaving HttpSignatures.setSignature(). Signed with " + alg +
+              ".");
   }
 
   /**

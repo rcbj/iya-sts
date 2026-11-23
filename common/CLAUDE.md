@@ -8107,7 +8107,23 @@ SLH-DSA has no mechanism here. `docs/v1.2.0/hsm.md` is the operator half.
   `STS-KEYS-0201`. **A key is held as the template that finds it**, not its
   handle: SoftHSM2 answered CKR_OBJECT_HANDLE_INVALID after its last session
   closed (the login went with it), so the handle is found again whenever the
-  token's `generation` moved. No timer anywhere.
+  token's `generation` moved. No timer anywhere. **A re-initialisation is the
+  MODULE's, not the token's** (the P8 follow-up): C_Finalize ends every
+  session of every token on it, so it is made once for all of them
+  (`reinitializeEntry()`), after the operations of this thread holding its
+  sessions drain, with the module's `epoch` moved so a session from before
+  is forgotten — never closed (its handle may name a new session) nor lent
+  again — and `open` never reset while sessions are lent.
+  CKR_CRYPTOKI_NOT_INITIALIZED skips C_Finalize: another thread did it, and
+  finalizing again would end the sessions that thread just opened. **And
+  the threads tell each other** (`outageChannel()`): a thread that
+  initialised the module again posts on a BroadcastChannel named for the
+  module's path — every thread hears it, no plumbing through the pool — and
+  the others move their epoch and do not finalize for an outage met on a
+  session opened before it (`tests/pkcs11_signing.js` N). What is left is the
+  message's own flight time: two threads finalizing inside it still cost
+  each other's retries. A SharedArrayBuffer would close that too, at the
+  price of handing one to every request worker through the pool; not done.
 * **A SIGNING KEY IN THE HSM TRAVELS WHERE A PEM TRAVELS.** Its "PEM" is a
   reference, `pkcs11-key:v1:<b64url {token, id, kty, crv, bits}>` — what
   `export()` answers and what `keystore.js` seals — and `privateKeyFrom()`
@@ -8150,16 +8166,86 @@ SLH-DSA has no mechanism here. `docs/v1.2.0/hsm.md` is the operator half.
   a rotation's `mintStandbyKey()` generate off the loop
   (`C_GenerateKeyPairAsync`). Signer-group, pinned and credential-signer keys
   stay software.
+* **EVERY DOOR OFF THE EVENT LOOP (the P8 follow-up, 2026-11-23).** rcbj:
+  "I do not want this activity to block the main event loop." Until then the
+  synchronous doors either waited on the token there
+  (`keys.pkcs11SynchronousSign` on) or refused (`STS-KEYS-0209`, the
+  default) — so a realm with its keys in the HSM issued no access token
+  through `signJwt()`, and its SAML assertions went out UNSIGNED
+  (`buildSamlAssertion()` answers a failed signature with the assertion
+  unsigned, STS-SAML-0023). Now each synchronous door has a twin,
+  `crypto.js`'s `…OffLoop()` (section 19, *Every door off the event loop*),
+  and every service caller with a realm key awaits the twin:
+  - **for a software key the twin IS the synchronous door**, called and
+    resolved: the same bytes, in the same order, an await the only change.
+    Not `signJwsAsync()` / `signJwtAsync()`, which put a software RSA or
+    curve key on libuv — a different road their own callers chose;
+  - **a signature is deferred**: the door runs with `hsmDeferred`, which
+    records the octets C_Sign would get and answers a unique placeholder;
+    C_SignAsync signs them and the signature replaces the placeholder — an
+    XML SignatureValue (outside SignedInfo, so nothing signed changes), a
+    certificate's signature (re-encoded). The engine is our own
+    `xmldsig.signXml()`, never xml-crypto, so the `Id="_0"` trap does not
+    arise and the reference is the one `signXml()` already resolves;
+  - **a decryption is a pass**: the door runs with `hsmPass` set, the first
+    ask it has no answer for is recorded and the pass abandoned, the answer
+    is fetched off the loop, and the door runs again. Answers are keyed by
+    the ask (key, parameters, bytes), never by position. A door that cannot
+    run twice — `wstrust.handleRst()` records and consumes on its way — has
+    its decryption run ahead over an opened copy (`hsmAnswersFor()`), and
+    then runs once with the answers in hand (`withHsmAnswers()`);
+  - **a synchronous API tests read stays**, with an `…Async` twin the
+    service calls (`buildSamlAssertion()`, `metadataFor()`,
+    `signPublishedDocument()`, `buildToken()`); `handleRst()` takes the
+    twin only where `helpers.keysInHsm()`, so a software realm's RSTR is
+    built in the same tick as ever.
+  The setting keeps its meaning, the opt-in to BLOCKING calls, and now
+  covers C_Decrypt and C_DeriveKey as well as C_Sign: off, a blocking call
+  — a synchronous door, or a module with no asynchronous call — refuses
+  `STS-KEYS-0209`; no service door takes that road with a realm key. The
+  doors are listed in the PR of the follow-up and in `docs/v1.2.0/hsm.md`.
+  **AND THE CALLS PKCS11JS HAS NO ASYNCHRONOUS FORM FOR ARE A THREAD'S**
+  (`crypto_impl/pkcs11_thread.js`, one per loaded module per thread that
+  loaded it): C_OpenSession and C_Login, C_FindObjects*, C_GetAttributeValue,
+  every C_*Init, the `k1` wrap's session object, C_Finalize / C_Initialize.
+  PKCS#11 sessions and handles are the process's, so the session it opens is
+  the one C_SignAsync runs on here. Prewarming was the alternative and was
+  refused: the refresh after an outage is still made on some turn of the
+  loop, and eager sessions could exhaust a YubiHSM 2's sixteen at start. A
+  test's fake has no file to load in a thread and is called in place.
+  `tests/pkcs11_signing.js` K20 records every call the serving thread's
+  binding gets on SoftHSM2 and holds the list to the `…Async` ones,
+  including a thread's first use of a key: the resolver is synchronous by
+  design, so the references are resolved AHEAD through the control thread
+  (`crypto.resolveHsmKeysAsync()`, the same resolver slot asked with
+  `{ async: true }`) at the keystore's start, for every stored realm, and in
+  `helpers.prepareKeySet()` for a realm first met later (E2, K20). A
+  reference adopted after both — a rotation another node made — is still
+  resolved in place, once. What stays on the loop is the start
+  (`connect()`) and the blocking opt-in, which takes an idle session or the token's one blocking
+  session — never one past `maxSessions` + 1. Key GENERATION is asynchronous
+  through `prepareKeySet()` and a rotation; the synchronous `makeStsKeys()`
+  road still generates in place, for a set nobody prepared (`app.js`
+  prepares the request's realm first).
+* **LIBUV'S THREAD POOL.** The asynchronous pkcs11js calls run on libuv's
+  pool — one per process, shared by the front thread and every request
+  worker, and by scrypt and post-quantum signing (`pq_native.js`). A call
+  holds a pool thread as long as the token takes and its session as long as
+  the call, so at most `keys.pkcs11Sessions` × (1 + `workers.requestCount`
+  + `workers.surfaceCount`) run at once; where that reaches
+  `UV_THREADPOOL_SIZE` (node's 4, compose's 32) `secrets.js` warns at start
+  (`STS-KEYS-0210`, front process) with the size that leaves room. A
+  request worker's loop is no more held than the front's: the same doors,
+  the same pool.
 * **Measured on SoftHSM2** (2 CPUs): RS256 ~0.7–0.95 ms per signature in
   place (0.47 ms in software), ES256 ~0.05 ms in place or 200 at once off the
-  loop, a SAML signature ~1.2 ms, an XML OAEP decryption ~0.2 ms. The
-  synchronous signing doors (access tokens, SAML) call `C_Sign` only while
-  `keys.pkcs11SynchronousSign` is on — off by default, and a door that would
-  block refuses (`STS-KEYS-0209`). XML decryption stays synchronous. On
-  SoftHSM2 an opted-in signature holds the loop about as long as software
-  did; `docs/v1.2.0/hsm.md` gives the YubiHSM's cost and the EC-key advice.
-  `tests/pkcs11_kek.js` and `tests/pkcs11_signing.js` hold both features to a
-  fake module and to SoftHSM2; no real YubiHSM 2 has been run.
+  loop, a SAML signature ~1.2 ms, an XML OAEP decryption ~0.2 ms; off the
+  loop, `docs/v1.2.0/hsm.md` gives the figures `tests/pkcs11_signing.js` H3
+  measures. `docs/v1.2.0/hsm.md` gives the YubiHSM's cost and the EC-key
+  advice. `tests/pkcs11_kek.js` and `tests/pkcs11_signing.js` hold both
+  features to a fake module and to SoftHSM2 — K holds every door to a fake
+  whose asynchronous calls settle late and whose blocking ones throw; no
+  real YubiHSM 2 has been run.
 
 ### `storeReport()`: THE SAME MODULE ANSWERING A MONITORING QUESTION (2026-09-12)
 

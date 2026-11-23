@@ -1487,6 +1487,9 @@ async function startOnce() {
   let loaded = 0;
   let pkiLoaded = 0;
   let dekRows = 0;
+  // The HSM key references the key sets hold, resolved off the event loop
+  // below before this process serves (#1955 P8 follow-up).
+  const hsmRefs = [];
   // THE DATA-KEY ROWS FIRST (#391): every other row is sealed under one of
   // their DEKs. A DEK of this process's scope that will not unwrap stops the
   // start here, for the reason the error below gives about a signing key.
@@ -1543,6 +1546,9 @@ async function startOnce() {
     // was made to stop. `JSON.parse` runs too, so a row that decrypts to
     // something malformed also fails at startup rather than at first use.
     const blob = JSON.parse(plain);
+    if (realmId.indexOf(PKI_ROW_PREFIX) !== 0) {
+      Array.prototype.push.apply(hsmRefs, crypto.hsmRefsIn(blob));
+    }
     // ---------------------------------------------------------------------
     // **A `pki:` ROW IS A CERTIFICATE AUTHORITY AND NOT A KEY SET.** They
     // share this table on purpose — see attachPki() — and they are told apart
@@ -1583,6 +1589,17 @@ async function startOnce() {
            'THIS PROCESS IS THE CIPHERTEXT: a private key is decrypted when ' +
            'something signs with it and dropped again (' +
            retentionSentence() + ').');
+  // A REALM'S HSM KEYS, FOUND BEFORE THIS PROCESS SERVES (#1955 P8
+  // follow-up): every reference above is resolved through the token's
+  // control thread now, so a key set read later finds its keys held and no
+  // first use searches the token on the event loop
+  // (`crypto.resolveHsmKeysAsync()`). Never refuses: a reference that does
+  // not resolve here is resolved, and refused, where it is used.
+  if (hsmRefs.length) {
+    const found = await crypto.resolveHsmKeysAsync(hsmRefs);
+    log.info('keystore: ' + found + ' of ' + hsmRefs.length + ' signing ' +
+             'key(s) in the HSM were found on the token off the event loop.');
+  }
   started = true;
   await purgeOrphanRows(orphans, 'at this start');
   log.debug('Leaving startOnce(). ' + loaded + ' realm(s).');

@@ -2200,12 +2200,12 @@
     "text": "tokenet öppnas en gång, vid start, i varje process"
   },
   "keys.pkcs11SynchronousSign|label": {
-    "en": "c8e3fedf4601518d",
-    "text": "Tillåt synkron PKCS#11-signering"
+    "en": "66785a52cf616805",
+    "text": "Tillåt blockerande PKCS#11-anrop"
   },
   "keys.pkcs11SynchronousSign|description": {
-    "en": "1cb742f146d4c7c1",
-    "text": "Av, standard: en signatur med en nyckel i HSM:en görs bara genom bindningens asynkrona `C_Sign`. De synkrona dörrarna (en JWS, en XML-signatur, en SAML-assertion) nekar en HSM-nyckel (`STS-KEYS-0209`) i stället för att vänta på token på händelseloopen. På anropar de dörrarna `C_Sign` och händelseloopen väntar. En modul utan asynkron signering kan signera bara medan detta är på. Dekryptering ändras inte. Ställbar per sfär."
+    "en": "328ad6368a172a36",
+    "text": "Av, standard: inget som görs med en av sfärens nycklar i HSM:en väntar på händelseloopen. Varje dörr (en JWS eller åtkomsttoken, en XML-signatur, ett SAML-intyg, ett WS-Federation-svar, en WS-Trust-token, en XML- eller JWE-dekryptering, en nyckeluppsättnings certifikat) använder bindningens asynkrona `C_SignAsync`, `C_DecryptAsync` och `C_DeriveKeyAsync`. Ett blockerande anrop vägras (`STS-KEYS-0209`): det är vad en modul utan asynkront anrop får. På, det uttryckliga medgivandet till blockerande anrop: en sådan modul anropar `C_Sign`, `C_Decrypt` eller `C_DeriveKey` och händelseloopen väntar på token. Kan ställas in per sfär."
   },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",

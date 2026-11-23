@@ -15,7 +15,7 @@ through PKCS#11:
 * **A realm's classical signing keys** (`keys.signingKeyStore=pkcs11`, off by
   default). The RSA key that signs JWTs, the XML signing key, and the
   elliptic-curve keys are generated in the HSM and cannot be extracted. Every
-  signature is a PKCS#11 `C_Sign` call.
+  signature is a PKCS#11 call, made without blocking the event loop.
 
 Two modules have been tested: **SoftHSM2** and a fake module in the test
 suite. The **YubiHSM 2** settings below come from Yubico's PKCS#11 module, but
@@ -144,7 +144,7 @@ them is done in the HSM:
 
 | What arrives | The HSM operation |
 |---|---|
-| A SAML `EncryptedID`, `EncryptedAssertion` in an RFC 7522 grant, or a WS-Trust encrypted request (`rsa-oaep-mgf1p`, `rsa-oaep`) | `CKM_RSA_PKCS_OAEP` with the document's digest |
+| A SAML `EncryptedID`, `EncryptedAssertion` in an RFC 7522 grant, or a WS-Trust encrypted request (`rsa-oaep-mgf1p`, `rsa-oaep`) | `CKM_RSA_PKCS_OAEP` with the document's digest, without blocking the event loop |
 | A JWE assertion with `RSA-OAEP` or `RSA-OAEP-256` | `CKM_RSA_PKCS_OAEP`, without blocking the event loop |
 | A JWE with `ECDH-ES` or `ECDH-ES+A*KW` to an EC key | `CKM_ECDH1_DERIVE`, without blocking the event loop; the Concat KDF runs in the service |
 
@@ -162,54 +162,129 @@ them is done in the HSM:
   `POST /admin-api/keys/rotate` or the `signing.rotate-now` job makes new keys
   that can decrypt. Until then, documents encrypted to that key do not open.
 
-**Latency and the event loop.** These figures are from SoftHSM2 on a laptop
-with two cores:
+**The event loop is never held.** Every operation with a realm's key in the
+HSM is an asynchronous PKCS#11 call (`C_SignAsync`, `C_DecryptAsync`,
+`C_DeriveKeyAsync`), and the service waits for it without blocking the event
+loop, in the front process and in every request worker. That covers every
+place a realm key is used:
+
+* **Signatures:** access, refresh and ID tokens, signed UserInfo responses,
+  logout tokens, request objects, introspection and JARM responses, signed
+  metadata (OAuth, OpenID, SAML, WS-Federation, the cryptographic metadata
+  document), software statements, FAPI client assertions, Security Event
+  Tokens, GNAP access tokens, OpenID4VP request objects, SAML 2.0 and SAML
+  1.1 assertions and responses, SAML logout messages and their
+  HTTP-Redirect signatures, WS-Trust tokens (SAML and JWT), WS-Federation
+  sign-in responses, AuthnRequests sent to a federation partner, and the
+  self-signed certificate made over each RSA key when a key set is created
+  or rotated.
+* **Decryptions:** SAML `EncryptedID` and `EncryptedAssertion`, a WS-Trust
+  encrypted request, and a JWE to the realm's RSA or EC keys.
+
+For an XML signature, the service canonicalizes the `SignedInfo` itself,
+signs it in the HSM asynchronously, and writes the `SignatureValue` into the
+document. A key in software is signed exactly as before.
+
+`keys.pkcs11SynchronousSign` is the opt-in to **blocking** calls, and it is
+off by default. Off, no blocking call is made: a module that offers no
+asynchronous call for an operation is refused with `STS-KEYS-0209` rather
+than waited for. On, such a module calls `C_Sign`, `C_Decrypt` or
+`C_DeriveKey`, and the event loop waits for the token while it does.
+SoftHSM2 and Yubico's module both offer the asynchronous calls through
+`pkcs11js`.
+
+The calls `pkcs11js` has no asynchronous form for are not made on the event
+loop either. Opening and logging in a session, finding a key's handle after
+an outage, reading a new key's public half, the `C_SignInit` /
+`C_DecryptInit` / `C_EncryptInit` that starts each operation, the session
+object of an `aes-key-wrap-pad` wrap, and initialising the module again
+after a lost device are made by a **control thread**: one small thread per
+loaded module, in each process and request worker that uses it, started at
+its first call and idle otherwise. PKCS#11 sessions belong to the process,
+so the session that thread opens is the one the asynchronous call then runs
+on. If that thread fails, the calls waiting on it are refused with
+`STS-KEYS-0211` and the next call starts a new one.
+
+What still runs on the event loop is the start (the first session, the slot
+and the mechanism list are read before the service listens) and the
+blocking calls `keys.pkcs11SynchronousSign` opts in to. A realm's keys are
+found on the token off the event loop before they are used: every stored key
+when a process or request worker starts, and a realm's keys before the first
+request that reads them. A key adopted after that (a rotation made on another
+node) is found in place, once, the first time it is used. A blocking call uses
+an idle session or one extra session the token keeps for blocking calls, so
+a token never has more than `keys.pkcs11Sessions` + 1 sessions open.
+
+**Latency.** These figures are from SoftHSM2 on a laptop with two cores:
 
 | Operation | Time each |
 |---|---|
-| RS256 (RSA 2048) signature, synchronous | about 0.7–0.95 ms (0.47 ms in software) |
-| ES256 signature, synchronous | about 0.05–0.07 ms |
+| RS256 (RSA 2048) signature, synchronous (setting on) | about 0.7–0.95 ms (0.47 ms in software) |
+| RS256 signature, 200 at a time without blocking the event loop | about 0.32 ms each |
+| ES256 signature, synchronous (setting on) | about 0.05–0.07 ms |
 | ES256, 200 at a time without blocking the event loop | about 0.05 ms each |
-| SAML assertion signature (RSA), synchronous | about 1.2 ms |
-| XML RSA-OAEP decryption, synchronous | about 0.2 ms |
+| SAML assertion signature (RSA), synchronous (setting on) | about 1.2 ms |
+| SAML assertion signature (RSA), 50 at a time without blocking | about 0.52 ms each |
+| XML RSA-OAEP decryption, synchronous (setting on) | about 0.2 ms |
+| XML RSA-OAEP decryption, 50 at a time without blocking | about 0.25 ms each |
 
-These paths do not block the event loop (`C_SignAsync`, `C_DecryptAsync`,
-`C_DeriveKeyAsync`): the ID Token, the signed UserInfo response, Security Event
-Tokens, a key set's generation and rotation, and a JWE assertion's decryption.
+While those ran off the event loop, its longest gap was 17 ms: the
+canonicalization and the bookkeeping of 200 operations started together, not
+the token.
 
-Other signatures (an access token, a SAML assertion, a WS-Federation
-response) are synchronous, as they are with a software key. They call
-`C_Sign` only while `keys.pkcs11SynchronousSign` is on. Off, the default,
-those doors refuse an HSM key (`STS-KEYS-0209`) rather than wait for the
-token on the event loop. A module with no asynchronous sign can sign only
-while the setting is on. XML decryptions stay synchronous either way.
-On SoftHSM2 an opted-in signature holds the event loop for about as long as
-a software key does. A YubiHSM 2 is much slower: Yubico's published figures
-are tens of milliseconds for ECDSA P-256 and hundreds for RSA-2048. Each
-synchronous operation holds the loop for that long, so a realm signing a
-high volume of access tokens with a YubiHSM 2 should sign them with an EC
-key (`keys.signingAlgorithms`), and should leave synchronous signing off
-unless a door has no asynchronous path.
+A YubiHSM 2 is much slower: Yubico's published figures are tens of
+milliseconds for ECDSA P-256 and hundreds for RSA-2048. Off the event loop
+that is latency for the one request, not a stall for every request, but it
+still holds a thread of libuv's pool (below). A realm that signs a high
+volume of tokens with a YubiHSM 2 should sign them with an EC key
+(`keys.signingAlgorithms`).
 
 ## Sessions, workers and outages
 
 * Each process and request worker opens its own sessions, at most
-  `keys.pkcs11Sessions` (4) for each token. One session runs one operation at a
-  time. A YubiHSM 2 has 16 sessions in total across every process on every
-  node, so keep sessions × processes × nodes below 16.
+  `keys.pkcs11Sessions` (4) for each token, plus one for blocking calls if
+  one is made. Sessions are opened when an operation needs one, not at start.
+  One session runs one operation at a time. A YubiHSM 2 has 16 sessions in
+  total across every process on every node, so keep sessions × processes ×
+  nodes below 16.
+* **libuv's thread pool.** An asynchronous PKCS#11 call runs on libuv's
+  thread pool, which a process shares between its front thread, its request
+  workers, password hashing (scrypt) and post-quantum signing. A call holds
+  a pool thread for as long as the token takes, so a process can have
+  `keys.pkcs11Sessions` × (1 + `workers.requestCount` +
+  `workers.surfaceCount`) of them running at once. When that reaches
+  `UV_THREADPOOL_SIZE` (node's default is 4; the compose stack sets 32), the
+  service logs `STS-KEYS-0210` at start with the size to set: a slow token
+  could otherwise hold every pool thread while sign-ins wait to hash a
+  password. The event loop is not blocked either way.
 * If `yubihsm-connector` restarts, or the device goes away, every session is
   lost. The next operation opens a new session, logs in again and tries once
   more. No timer is involved. An operation that still fails is refused with
   `STS-KEYS-0201`, and the service keeps running. If a data key cannot be
   unwrapped at start, the start stops.
+* When the module itself must be initialised again (a device error, or the
+  module saying it is not initialised), it is done once for every token on
+  that module, after the operations using its sessions finish. Operations
+  that arrive meanwhile wait for it. A blocking call that meets this is
+  refused with `STS-KEYS-0212`, and the module is initialised again without
+  blocking.
+* A module is shared by every thread of a process (the front and each
+  request worker), and finalizing it ends every thread's sessions. A thread
+  that initialises it again tells the others, which then do not finalize it
+  again for an outage they meet on a session from before. Two threads that
+  both finalize within the moment that message takes to arrive can still
+  cost an operation in flight its one retry (`STS-KEYS-0201`).
 * The other codes: `STS-KEYS-0202` (the module or token cannot be used),
   `STS-KEYS-0203` (the key), `STS-KEYS-0204` (no mechanism), `STS-KEYS-0205`
   (the URI or PIN), `STS-KEYS-0206` (a key in the HSM was asked to do
   something it cannot do, or cannot be reached), `STS-KEYS-0207` (the module
   cannot make a key of that kind, or cannot decrypt with that digest),
   `STS-KEYS-0208` (a key made before the HSM keys could decrypt),
-  `STS-KEYS-0209` (a synchronous signature while
-  `keys.pkcs11SynchronousSign` is off). See
+  `STS-KEYS-0209` (a blocking call, by a module with no asynchronous call,
+  while `keys.pkcs11SynchronousSign` is off), `STS-KEYS-0210` (libuv's
+  thread pool is smaller than the PKCS#11 calls that can run at once),
+  `STS-KEYS-0211` (the control thread failed), `STS-KEYS-0212` (a blocking
+  call while the module is initialised again). See
   [Error codes](error-codes.md).
 
 ## SoftHSM2
