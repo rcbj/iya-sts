@@ -247,6 +247,8 @@ import cellLocator = require('./../common/cell_locator');
 import cellPlacement = require('./../common/cell_placement');
 import cells = require('./../common/cells');
 import cellRouting = require('./../common/cell_routing');
+// A refusal as a catalog sentence (#2006): a leaf library.
+import Sentence = require('./../common/sentence');
 
 const { DOMParser, XMLSerializer } = xmldom;
 
@@ -943,7 +945,11 @@ class FederationSp {
   // `data-sts-state` (`federation_pages.ts`), the status unchanged. On the
   // assertion consumer service — a specification's endpoint — it is drawn
   // here, since #1327 as `common/error_page.ts`'s page (`refusalPage()`).
-  // `what` and `why` are TEXT either way.
+  // `what` and `why` are TEXT either way — or, where the endpoint is a page
+  // of the surface, a catalog `Sentence` (#2006), which is English to every
+  // text reader here (`fedLastError`, the audit, the ACS page's
+  // diagnostics) and carries its key to the view, so the page draws it in
+  // its language.
   //
   // `extra` (#1327) is DATA for the page's diagnostics, never markup:
   // `{ error, rows }`, `error` a value the PARTNER sent (a SAML StatusCode,
@@ -956,14 +962,14 @@ class FederationSp {
     if (id) federation.recordFailure(id, what + ': ' + why);
     // A SESSION A STEP-UP'S SECOND FACTOR STARTED does not outlive the
     // refusal of the sign-in it was for (rcbj's decision 3 on #729).
-    this.endStepUpSession(res, what);
+    this.endStepUpSession(res, String(what));
     if (FederationPages.onSurface(res)) {
       FederationPages.send(res, status,
                            FederationPages.refusedView(what, why, id));
       log.debug("Leaving FederationSp.refuse(). " + status + ', the shell.');
       return;
     }
-    this.refusalPage(res, record, status, what, why, extra);
+    this.refusalPage(res, record, status, String(what), String(why), extra);
     log.debug("Leaving FederationSp.refuse(). " + status + '.');
   }
 
@@ -2703,10 +2709,10 @@ class FederationSp {
     if (!context || context.kind !== 'link') {
       errorCodes.mark(res, 'STS-FED-0100');
       log.debug("Leaving the federation linking endpoint. No such link.");
-      return this.refuse(res, null, 400, 'There is no link waiting',
-        'The linking step "' + handle + '" is not one this service started, ' +
-        'it has already been used, or it expired (federation.requestTtlMin). ' +
-        'Start the federated sign-in again.');
+      return this.refuse(res, null, 400,
+        Sentence.say('refusals.federation.what.noLinkWaiting'),
+        Sentence.say('refusals.federation.noLinkWaiting',
+                     { handle: String(handle) }));
     }
     const record = federation.get(context.id);
     if (!record || record.fedRole !== 'service-provider' ||
@@ -2715,10 +2721,10 @@ class FederationSp {
         ? 'STS-FED-0006' : 'STS-FED-0005');
       log.debug("Leaving the federation linking endpoint. The relationship " +
                 "is not usable now.");
-      return this.refuse(res, record || null, 403, 'That relationship is ' +
-                                                   'not usable',
-        'The relationship "' + context.id + '" is disabled, ' +
-        'half-configured or gone since the partner answered.');
+      return this.refuse(res, record || null, 403,
+        Sentence.say('refusals.federation.what.relationshipNotUsable'),
+        Sentence.say('refusals.federation.relationshipGonePartner',
+                     { id: String(context.id) }));
     }
     // THE BROWSER THAT STARTED IT (see LINK_COOKIE), asked before anything
     // else about the person, and the cookie is spent whatever follows.
@@ -2729,10 +2735,9 @@ class FederationSp {
                                         String(context.bindingHash || ''))) {
       errorCodes.mark(res, 'STS-FED-0111');
       log.debug("Leaving the federation linking endpoint. Another browser.");
-      return this.refuse(res, record, 403, 'The account was not linked',
-        'This linking step was started in a different browser, or the ' +
-        'cookie that ties it to the one it began in is gone. Nothing was ' +
-        'linked. Start the federated sign-in again, in one browser.');
+      return this.refuse(res, record, 403,
+        Sentence.say('refusals.federation.what.accountNotLinked'),
+        Sentence.say('refusals.federation.linkOtherBrowser'));
     }
     const asked = String((req.query || {}).authn_error || '');
     if (asked) {
@@ -2749,11 +2754,11 @@ class FederationSp {
       errorCodes.mark(res, 'STS-FED-0099');
       log.debug("Leaving the federation linking endpoint. The local sign-in " +
                 "did not happen.");
-      return this.refuse(res, record, 403, 'The account was not linked',
-        'Linking your account at the partner to ' + context.username + ' ' +
-        'needs you to sign in here as ' + context.username + ' first, and ' +
-        'that sign-in ended without one (' + asked + '). Nothing was linked ' +
-        'and nothing was written.');
+      return this.refuse(res, record, 403,
+        Sentence.say('refusals.federation.what.accountNotLinked'),
+        Sentence.say('refusals.federation.linkSignInEnded',
+                     { username: String(context.username),
+                       asked: String(asked) }));
     }
     // THE PERSON THE LINK IS FOR, WHERE THE BROWSER HOLDS SEVERAL ACCOUNTS
     // (#561): the linking sign-in returns here with a selection ticket for
@@ -2780,11 +2785,11 @@ class FederationSp {
       errorCodes.mark(res, 'STS-FED-0101');
       log.debug("Leaving the federation linking endpoint. No fresh local " +
                 "sign-in as " + context.username + ".");
-      return this.refuse(res, record, 403, 'The account was not linked',
-        'This step needs a sign-in here as ' + context.username + ', made ' +
-        'through the linking screen just now, and this browser holds ' +
-        (session ? 'a different one' : 'none') + '. Nothing was linked. ' +
-        'Start the federated sign-in again.');
+      return this.refuse(res, record, 403,
+        Sentence.say('refusals.federation.what.accountNotLinked'),
+        Sentence.say('refusals.federation.linkNeedsSignIn',
+                     { username: String(context.username),
+                       held: session ? 'different' : 'none' }));
     }
     const mapped = fedMap.mapIncoming(record, context.result.bag,
                                       context.result.subject);
@@ -2800,11 +2805,14 @@ class FederationSp {
       errorCodes.mark(res, 'STS-FED-0101');
       log.debug("Leaving the federation linking endpoint. The subject now " +
                 "names somebody else.");
-      return this.refuse(res, record, 403, 'The account was not linked',
-        'While you were signing in, the partner\'s subject came to name ' +
-        (decision.username || 'somebody else') + ' rather than ' +
-        context.username + '. Nothing was linked. Start the federated ' +
-        'sign-in again.');
+      return this.refuse(res, record, 403,
+        Sentence.say('refusals.federation.what.accountNotLinked'),
+        decision.username
+          ? Sentence.say('refusals.federation.linkSubjectChanged',
+                         { named: String(decision.username),
+                           username: String(context.username) })
+          : Sentence.say('refusals.federation.linkSubjectChangedSomebody',
+                         { username: String(context.username) }));
     }
     // The signer, asked again: the answer was verified before the local
     // sign-in this step waited for (heldSigner()).
@@ -3501,10 +3509,10 @@ class FederationSp {
     if (!context || context.kind !== 'stepup') {
       errorCodes.mark(res, 'STS-FED-0100');
       log.debug("Leaving the federation step-up endpoint. No such step.");
-      return this.refuse(res, null, 400, 'There is no sign-in waiting',
-        'The step "' + handle + '" is not one this service started, it has ' +
-        'already been used, or it expired (federation.requestTtlMin). Start ' +
-        'the federated sign-in again.');
+      return this.refuse(res, null, 400,
+        Sentence.say('refusals.federation.what.noSignInWaiting'),
+        Sentence.say('refusals.federation.noStepFederated',
+                     { handle: String(handle) }));
     }
     // THE SESSION THIS STEP'S SECOND FACTOR STARTED, if it did (rcbj's
     // decision 3 on #729): held on the response, so a refusal of the
@@ -3516,10 +3524,10 @@ class FederationSp {
       errorCodes.mark(res, record && federation.isEnabled(record)
         ? 'STS-FED-0006' : 'STS-FED-0005');
       log.debug("Leaving the federation step-up endpoint. Not usable now.");
-      return this.refuse(res, record || null, 403, 'That relationship is ' +
-                                                   'not usable',
-        'The relationship "' + context.id + '" is disabled, ' +
-        'half-configured or gone since the partner answered.');
+      return this.refuse(res, record || null, 403,
+        Sentence.say('refusals.federation.what.relationshipNotUsable'),
+        Sentence.say('refusals.federation.relationshipGonePartner',
+                     { id: String(context.id) }));
     }
     const presented = String(authn.cookiesOf(req)[LINK_COOKIE] || '');
     res.append('Set-Cookie', LINK_COOKIE + '=; Path=/; HttpOnly; ' +
@@ -3528,10 +3536,9 @@ class FederationSp {
                                         String(context.bindingHash || ''))) {
       errorCodes.mark(res, 'STS-FED-0111');
       log.debug("Leaving the federation step-up endpoint. Another browser.");
-      return this.refuse(res, record, 403, 'Authentication failed',
-        'This step was started in a different browser, or the cookie that ' +
-        'ties it to the one it began in is gone. Start the federated ' +
-        'sign-in again, in one browser.');
+      return this.refuse(res, record, 403,
+        Sentence.say('refusals.federation.what.authenticationFailed'),
+        Sentence.say('refusals.federation.stepOtherBrowserFederated'));
     }
     const session = authn.sessionOf(req);
     const events = session && Array.isArray(session.events)
@@ -3550,11 +3557,11 @@ class FederationSp {
       errorCodes.mark(res, 'STS-FED-0178');
       log.debug("Leaving the federation step-up endpoint. No fresh second " +
                 "factor as " + context.username + ".");
-      return this.refuse(res, record, 403, 'Authentication failed',
-        'This sign-in needed a second factor held here, as ' +
-        context.username + ', made just now, and this browser holds ' +
-        (session ? 'a different authentication' : 'none') + '. Start the ' +
-        'federated sign-in again.');
+      return this.refuse(res, record, 403,
+        Sentence.say('refusals.federation.what.authenticationFailed'),
+        Sentence.say('refusals.federation.stepUpNeedsFactor',
+                     { username: String(context.username),
+                       held: session ? 'different' : 'none' }));
     }
     // The factor proved here, behind `federated`: the session's own record
     // of what happened, and what meets the step-up the policy asked for.
@@ -3849,10 +3856,10 @@ class FederationSp {
     if (!context || context.kind !== 'profile') {
       errorCodes.mark(res, 'STS-FED-0100');
       log.debug("Leaving FederationSp.profileContext(). No such step.");
-      this.refuse(res, null, 400, 'There is no sign-in waiting',
-        'The step "' + handle + '" is not one this service started, it has ' +
-        'already been used, or it expired (federation.requestTtlMin). Start ' +
-        'the sign-in again.');
+      this.refuse(res, null, 400,
+        Sentence.say('refusals.federation.what.noSignInWaiting'),
+        Sentence.say('refusals.federation.noStep',
+                     { handle: String(handle) }));
       return null;
     }
     const presented = String(authn.cookiesOf(req)[LINK_COOKIE] || '');
@@ -3864,10 +3871,9 @@ class FederationSp {
       }
       errorCodes.mark(res, 'STS-FED-0111');
       log.debug("Leaving FederationSp.profileContext(). Another browser.");
-      this.refuse(res, null, 403, 'Authentication failed',
-        'This step was started in a different browser, or the cookie that ' +
-        'ties it to the one it began in is gone. Start the sign-in again, ' +
-        'in one browser.');
+      this.refuse(res, null, 403,
+        Sentence.say('refusals.federation.what.authenticationFailed'),
+        Sentence.say('refusals.federation.stepOtherBrowser'));
       return null;
     }
     const record = federation.get(context.id);
@@ -3876,9 +3882,10 @@ class FederationSp {
       errorCodes.mark(res, record && federation.isEnabled(record)
         ? 'STS-FED-0006' : 'STS-FED-0005');
       log.debug("Leaving FederationSp.profileContext(). Not usable now.");
-      this.refuse(res, record || null, 403, 'That relationship is not usable',
-        'The relationship "' + context.id + '" is disabled, ' +
-        'half-configured or gone since the provider answered.');
+      this.refuse(res, record || null, 403,
+        Sentence.say('refusals.federation.what.relationshipNotUsable'),
+        Sentence.say('refusals.federation.relationshipGoneProvider',
+                     { id: String(context.id) }));
       return null;
     }
     log.debug("Leaving FederationSp.profileContext().");
@@ -3947,9 +3954,9 @@ class FederationSp {
                  'SameSite=Lax; Max-Age=0');
       errorCodes.mark(res, 'STS-FED-0189');
       log.debug("Leaving the federation profile submission. No token.");
-      return this.refuse(res, record, 403, 'Authentication failed',
-        'The form did not carry the token this step was given, so nothing ' +
-        'was created. Start the sign-in again.');
+      return this.refuse(res, record, 403,
+        Sentence.say('refusals.federation.what.authenticationFailed'),
+        Sentence.say('refusals.federation.formNoToken'));
     }
     const values: Record<string, string> = {};
     const problems: string[] = [];
@@ -4003,10 +4010,10 @@ class FederationSp {
         errorCodes.mark(res, 'STS-FED-0191');
         log.debug("Leaving the federation profile submission. Too many " +
                   "tries.");
-        return this.refuse(res, record, 400, 'Authentication failed',
-          'The form was sent ' + attempts + ' times without the values ' +
-          'this service needs, so nothing was created. Start the sign-in ' +
-          'again.');
+        return this.refuse(res, record, 400,
+          Sentence.say('refusals.federation.what.authenticationFailed'),
+          Sentence.say('refusals.federation.formIncomplete',
+                       { attempts: Number(attempts) }));
       }
       const again = Object.assign({}, context, {
         attempts: attempts, problem: problems.join(' ') });
@@ -4332,9 +4339,9 @@ class FederationSp {
         errorCodes.mark(res, 'STS-FED-0179');
         log.debug("Leaving FederationSp.startFederatedSession(). Creation " +
                   "refused.");
-        return this.refuse(res, record, 403, 'Authentication failed',
-          'The assertion verified, and this service will not create an ' +
-          'account from it.');
+        return this.refuse(res, record, 403,
+          Sentence.say('refusals.federation.what.authenticationFailed'),
+          Sentence.say('refusals.federation.noAccountCreated'));
       }
       // WHAT THE ATTRIBUTE POLICY NEEDS AND THE PARTNER DID NOT SEND
       // (rcbj's decision 2 on #729, for every relationship since #701): the
@@ -4390,13 +4397,10 @@ class FederationSp {
       errorCodes.mark(res, 'STS-FED-0158');
       log.debug("Leaving FederationSp.startFederatedSession(). Attribute " +
                 "policy.");
-      return this.refuse(res, record, 403, 'This person has not been ' +
-                                           'provisioned',
-        'The assertion verified and the partner is configured, but this ' +
-        'realm\'s attribute policy requires ' + missing.join(', ') +
-        ' of every person and the partner supplied no value of it, so ' +
-        'nobody was created. Map the attribute on the relationship ' +
-        '(fedAttributeMap), or provision the person first.');
+      return this.refuse(res, record, 403,
+        Sentence.say('refusals.federation.what.notProvisioned'),
+        Sentence.say('refusals.federation.attributePolicyMissing',
+                     { missing: missing.join(', ') }));
     }
     if (!session && hasSubjectResolver() &&
         !subjectForName(username)) {
@@ -4409,18 +4413,13 @@ class FederationSp {
                  : 'off on this relationship.'));
       errorCodes.mark(res, 'STS-FED-0090');
       log.debug("Leaving FederationSp.startFederatedSession().");
-      return this.refuse(res, record, 403, 'This person has not been ' +
-                                           'provisioned',
-        'The assertion verified and the partner is configured, but this ' +
-        'service holds no directory entry for ' + username + ', and ' +
-        (this.autocreateOn(record)
-          ? 'the directory would not create one (the subject policy ' +
-            'refused it, the relationship\'s fedProvisionCap is full, or ' +
-            'the directory is full).'
-          : 'dynamic provisioning (fedAutocreateUsers) is off on this ' +
-            'relationship, so the person has to be created here first — ' +
-            'through SCIM, /admin/users/new or the management API — and ' +
-            'linked to the partner\'s subject.'));
+      return this.refuse(res, record, 403,
+        Sentence.say('refusals.federation.what.notProvisioned'),
+        this.autocreateOn(record)
+          ? Sentence.say('refusals.federation.noEntryNotCreated',
+                         { username: String(username) })
+          : Sentence.say('refusals.federation.noEntryAutocreateOff',
+                         { username: String(username) }));
     }
     // A STEP-UP THE POLICY ASKED FOR (#565, the risk design's decision 1):
     // answered here with a factor the person holds, for a person who already
@@ -4440,23 +4439,19 @@ class FederationSp {
       errorCodes.mark(res, said.refusedWith === 'STS-RISK-0017'
         ? 'STS-RISK-0017' : 'STS-RISK-0016');
       log.debug("Leaving FederationSp.startFederatedSession(). Risk.");
-      return this.refuse(res, record, 403, 'Authentication failed',
-        'The assertion verified, and this service will not start a session ' +
-        'from it.');
+      return this.refuse(res, record, 403,
+        Sentence.say('refusals.federation.what.authenticationFailed'),
+        Sentence.say('refusals.federation.noSessionStarted'));
     }
     if (!session) {
       log.info('federation: the issuance policy refused a session for ' +
                username + ' arriving through ' + record.fedId + '.');
       errorCodes.mark(res, 'STS-FED-0044');
       log.debug("Leaving FederationSp.startFederatedSession().");
-      return this.refuse(res, record, 403, 'The issuance policy refused the ' +
-                                           'session',
-        'The assertion verified and the partner is configured — this service ' +
-        'will not start a session for ' + username + ' because the ' +
-        'issuance policy said no. That is a POLICY decision rather than a ' +
-        'problem with the assertion or with the partner, so retrying will ' +
-        'not change it. The role an application requires is on /admin/roles ' +
-        'and the document that decides is on /admin/xacml.');
+      return this.refuse(res, record, 403,
+        Sentence.say('refusals.federation.what.policyRefusedSession'),
+        Sentence.say('refusals.federation.policyRefusedSession',
+                     { username: String(username) }));
     }
     log.info('federation: ' + username + ' signed in through ' +
              record.fedId +
@@ -4557,9 +4552,10 @@ class FederationSp {
                                     result, session, t), t));
     }, function (why: string): void {
       // error-code: none — afterSignIn() marked STS-ATTR-0012 on `res`
-      self.refuse(res, record, 403, 'An attribute source refused the sign-in',
-                  why + ' This realm\'s attribute source says a sign-in it ' +
-                  'cannot read is refused, and the session was ended.');
+      self.refuse(res, record, 403,
+        Sentence.say('refusals.federation.what.attributeSourceRefused'),
+        Sentence.say('refusals.federation.attributeSourceRefused',
+                     { why: why }));
     });
     log.debug("Leaving FederationSp.sendSignedIn(). " +
               (returnTo ? "Sending them on to " + returnTo + "."
@@ -6160,49 +6156,44 @@ class FederationSp {
     }
     if (record.fedRole !== 'service-provider') {
       errorCodes.mark(res, 'STS-FED-0004');
-      return this.refuse(res, null, 400, 'That relationship goes the other way',
-        '"' + id + '" is an identity-provider-side relationship: this ' +
-        'service ASSERTS to that partner rather than consuming from it. ' +
-        'There is nothing to sign in to here. A partner this service both ' +
-        'consumes from and asserts to is two relationships — see ' +
-        'federation/CLAUDE.md.');
+      return this.refuse(res, null, 400,
+        Sentence.say('refusals.federation.what.otherWay'),
+        Sentence.say('refusals.federation.otherWay',
+                     { id: String(id) }));
     }
     // A PARTNER THAT ONLY SENDS SHARED SIGNALS (#374) has nowhere to send
     // anybody: it is a transmitter, and nothing more.
     if (!federation.signsIn(record)) {
       errorCodes.mark(res, 'STS-FED-0155');
       log.debug("Leaving the federation login endpoint. Signals only.");
-      return this.refuse(res, record, 400, 'That partner signs nobody in',
-        '"' + id + '" is an ssf relationship: the partner sends this ' +
-        'service Shared Signals, and signs nobody in.');
+      return this.refuse(res, record, 400,
+        Sentence.say('refusals.federation.what.signsNobodyIn'),
+        Sentence.say('refusals.federation.ssfSignsNobodyIn',
+                     { id: String(id) }));
     }
     if (!federation.isEnabled(record)) {
       errorCodes.mark(res, 'STS-FED-0005');
-      return this.refuse(res, record, 403, 'That relationship is disabled',
-        'It exists and is configured, and fedEnabled is FALSE. ' +
-        'Every relationship is created disabled deliberately: a partner that ' +
-        'half-exists and silently accepts assertions is the failure this ' +
-        'whole register is arranged to prevent. Enable it on ' +
-        '/admin/federation.');
+      return this.refuse(res, record, 403,
+        Sentence.say('refusals.federation.what.disabled'),
+        Sentence.say('refusals.federation.disabled'));
     }
     // A CONSUMER PROVIDER IN A REALM THAT HAS THEM OFF (#565), named by its
     // own code rather than as a missing field.
     if (federation.categoryOf(record) === 'consumer' &&
         !federation.consumerProvidersOn()) {
       errorCodes.mark(res, 'STS-FED-0175');
-      return this.refuse(res, record, 403, 'Consumer providers are off here',
-        'This relationship is a consumer or social provider, and this ' +
-        'realm has federation.consumerProviders off.');
+      return this.refuse(res, record, 403,
+        Sentence.say('refusals.federation.what.consumerProvidersOff'),
+        Sentence.say('refusals.federation.consumerProvidersOff'));
     }
     const readiness = federation.readinessOf(record);
     if (!readiness.ready) {
       errorCodes.mark(res, 'STS-FED-0006');
-      return this.refuse(res, record, 409, 'That relationship is not fully ' +
-                                           'configured',
-        'It is enabled, but ' + readiness.missing.join(', ') + ' ' +
-        (readiness.missing.length === 1 ? 'is' : 'are') + ' still empty. It ' +
-        'refuses rather than half-working — a federated sign-in that got ' +
-        'half way and produced a session would be the worst possible outcome.');
+      return this.refuse(res, record, 409,
+        Sentence.say('refusals.federation.what.notConfigured'),
+        Sentence.say('refusals.federation.notConfigured',
+                     { missing: readiness.missing.join(', '),
+                       count: readiness.missing.length }));
     }
 
     const base = baseUrlOf(req);
@@ -6342,8 +6333,9 @@ class FederationSp {
           // error-code: none — the resolution's own code, in got.code
           errorCodes.mark(res, String(got.code || 'STS-FED-0148'));
           log.debug("Leaving the federation login endpoint. Not resolved.");
-          return this.refuse(res, record, 502, 'The OpenID Provider could ' +
-                             'not be trusted', String(got.why));
+          return this.refuse(res, record, 502,
+            Sentence.say('refusals.federation.what.opNotTrusted'),
+            String(got.why));
         }
         const handle = this.putContext(contextRecord);
         return this.authorizationParamsAsync(base, got.record,
@@ -6361,8 +6353,9 @@ class FederationSp {
                   ' threw while starting a federated sign-in: ' +
                   (e && e.stack ? e.stack : e));
         errorCodes.mark(res, 'STS-FED-0042');
-        this.refuse(res, record, 500, 'This service failed while starting ' +
-                    'the sign-in', String((e && e.message) || e));
+        this.refuse(res, record, 500,
+          Sentence.say('refusals.federation.what.failedStarting'),
+          String((e && e.message) || e));
       });
       log.debug("Leaving the federation login endpoint. Resolving the OP.");
       return;
@@ -6378,12 +6371,10 @@ class FederationSp {
       errorCodes.mark(res, 'STS-FED-0243');
       log.debug("Leaving the federation login endpoint. FAPI without " +
                 "discovery.");
-      return this.refuse(res, record, 502, 'This FAPI profile needs the ' +
-                         'partner\'s discovery document',
-                         'fedFapi is ' + fapiProfile + ' and fedDiscovery ' +
-                         'is off. The pushed authorization request endpoint ' +
-                         'is read from that document, so the sign-in is not ' +
-                         'started.');
+      return this.refuse(res, record, 502,
+        Sentence.say('refusals.federation.what.fapiNeedsDiscovery'),
+        Sentence.say('refusals.federation.fapiNeedsDiscovery',
+                     { profile: String(fapiProfile) }));
     }
 
     // A PARTNER READ FROM ITS DISCOVERY DOCUMENT (#930): the endpoints of
@@ -6398,8 +6389,9 @@ class FederationSp {
           errorCodes.mark(res, got.errorCode);
           log.debug("Leaving the federation login endpoint. Not discovered.");
           // error-code: none — discovered()'s own code, in got.errorCode
-          return this.refuse(res, record, 502, 'The OpenID Provider\'s ' +
-                             'configuration could not be used', got.why);
+          return this.refuse(res, record, 502,
+            Sentence.say('refusals.federation.what.opConfigurationUnusable'),
+            got.why);
         }
         // SELF-REGISTRATION (#930), where the relationship holds no client
         // registered with this issuer.
@@ -6412,9 +6404,9 @@ class FederationSp {
             log.debug("Leaving the federation login endpoint. Not " +
                       "registered.");
             // error-code: none — ensureRegistered()'s own code
-            return this.refuse(res, record, 502, 'This service could not ' +
-                               'register at the OpenID Provider',
-                               registered.why);
+            return this.refuse(res, record, 502,
+              Sentence.say('refusals.federation.what.notRegistered'),
+              registered.why);
           }
           current = registered.record;
         }
@@ -6425,11 +6417,10 @@ class FederationSp {
           errorCodes.mark(res, 'STS-FED-0243');
           log.debug("Leaving the federation login endpoint. No PAR " +
                     "endpoint.");
-          return this.refuse(res, record, 502, 'The partner publishes no ' +
-                             'pushed authorization request endpoint',
-                             'fedFapi is ' + profile + ' and the discovery ' +
-                             'document names no ' +
-                             'pushed_authorization_request_endpoint.');
+          return this.refuse(res, record, 502,
+            Sentence.say('refusals.federation.what.noParEndpoint'),
+            Sentence.say('refusals.federation.noParEndpoint',
+                         { profile: String(profile) }));
         }
         if (FapiClient.usesDpop(profile)) {
           contextRecord.fapiKey = FapiClient.newKey();
@@ -6453,9 +6444,10 @@ class FederationSp {
                     ((e && e.message) || e));
           const code = profile ? 'STS-FED-0245' : 'STS-FED-0214';
           errorCodes.mark(res, code);
-          return this.refuse(res, record, 500, profile
-            ? 'The FAPI request could not be signed'
-            : 'The Request Object could not be signed',
+          return this.refuse(res, record, 500,
+            profile
+              ? Sentence.say('refusals.federation.what.fapiNotSigned')
+              : Sentence.say('refusals.federation.what.requestObjectNotSigned'),
             String((e && e.message) || e));
         }
         res.redirect(302, url);
@@ -6467,8 +6459,9 @@ class FederationSp {
                   ' threw while reading its OP\'s configuration: ' +
                   (e && e.stack ? e.stack : e));
         errorCodes.mark(res, 'STS-FED-0042');
-        this.refuse(res, record, 500, 'This service failed while starting ' +
-                    'the sign-in', String((e && e.message) || e));
+        this.refuse(res, record, 500,
+          Sentence.say('refusals.federation.what.failedStarting'),
+          String((e && e.message) || e));
       });
       log.debug("Leaving the federation login endpoint. Reading the OP's " +
                 "configuration.");
@@ -6485,9 +6478,9 @@ class FederationSp {
                   'sign-in through ' + record.fedId + ' threw: ' +
                   ((e && e.message) || e));
         errorCodes.mark(res, 'STS-FED-0042');
-        return this.refuse(res, record, 500, 'This service failed while ' +
-                           'starting the sign-in', 'The request could not be ' +
-                           'made.');
+        return this.refuse(res, record, 500,
+          Sentence.say('refusals.federation.what.failedStarting'),
+          Sentence.say('refusals.federation.requestNotMade'));
       });
     }
     const handle = this.putContext(contextRecord);
@@ -6506,9 +6499,10 @@ class FederationSp {
         const code = FapiClient.profileOf(record) ? 'STS-FED-0245'
                                                   : 'STS-FED-0214';
         errorCodes.mark(res, code);
-        return this.refuse(res, record, 500, FapiClient.profileOf(record)
-          ? 'The FAPI request could not be signed'
-          : 'The Request Object could not be signed',
+        return this.refuse(res, record, 500,
+          FapiClient.profileOf(record)
+            ? Sentence.say('refusals.federation.what.fapiNotSigned')
+            : Sentence.say('refusals.federation.what.requestObjectNotSigned'),
           String((e && e.message) || e));
       });
   }
@@ -7447,11 +7441,9 @@ class FederationSp {
     if (!federation.webFingers(record) || !federation.isUsable(record)) {
       errorCodes.mark(res, 'STS-FED-0215');
       log.debug("Leaving the WebFinger endpoint. Not answered here.");
-      return this.refuse(res, record, 403, 'That partner is not found by ' +
-                                           'WebFinger here',
-        'fedWebFinger and fedDiscovery must both be on, and the ' +
-        'relationship enabled and fully configured, before an identifier ' +
-        'is looked up for it.');
+      return this.refuse(res, record, 403,
+        Sentence.say('refusals.federation.what.notFoundByWebFinger'),
+        Sentence.say('refusals.federation.notFoundByWebFinger'));
     }
     const params: any = this.paramsOf(req);
     const typed = String(params.resource || '').trim().slice(0, 512);
@@ -7466,9 +7458,9 @@ class FederationSp {
     if (!target) {
       errorCodes.mark(res, 'STS-FED-0216');
       log.debug("Leaving the WebFinger endpoint. Not an identifier.");
-      return this.refuse(res, record, 400, 'That is not an identifier ' +
-                                           'WebFinger can look up',
-        'Type an address such as user@example.com, or a URL.');
+      return this.refuse(res, record, 400,
+        Sentence.say('refusals.federation.what.notAnIdentifier'),
+        Sentence.say('refusals.federation.notAnIdentifier'));
     }
     log.debug("Leaving the WebFinger endpoint. Looking it up.");
     return fedHttp.fetchPublished(target.url, {
@@ -7488,28 +7480,30 @@ class FederationSp {
         })[0];
       if (!link) {
         errorCodes.mark(res, 'STS-FED-0216');
-        return this.refuse(res, record, 502, 'No OpenID Provider was found ' +
-                                             'for that identifier',
-          'WebFinger at ' + target.host + ' ' + (answer.ok
-            ? 'named no OpenID Connect issuer.'
-            : 'did not answer: ' + answer.why + '.'));
+        return this.refuse(res, record, 502,
+          Sentence.say('refusals.federation.what.noProviderFound'),
+          answer.ok
+            ? Sentence.say('refusals.federation.webFingerNoIssuer',
+                           { host: String(target.host) })
+            : Sentence.say('refusals.federation.webFingerNoAnswer',
+                           { host: String(target.host), why: String(answer.why) }));
       }
       const issuer = String(link.href);
       const peer = String(record.fedPeer || '').trim();
       if (!FederationSp.issuerWithin(issuer, peer)) {
         errorCodes.mark(res, 'STS-FED-0217');
-        return this.refuse(res, record, 403, 'That OpenID Provider is not ' +
-                                             'this partner',
-          'WebFinger named the issuer "' + issuer + '", which does not ' +
-          'begin with this relationship\'s fedPeer "' + peer + '". Only an ' +
-          'issuer within the partner an administrator configured is used.');
+        return this.refuse(res, record, 403,
+          Sentence.say('refusals.federation.what.providerNotThisPartner'),
+          Sentence.say('refusals.federation.providerNotThisPartner',
+                       { issuer: String(issuer), peer: String(peer) }));
       }
       return this.discovered(record, issuer).then((got) => {
         if (!got.ok) {
           errorCodes.mark(res, got.errorCode);
           // error-code: none — discovered()'s own code, in got.errorCode
-          return this.refuse(res, record, 502, 'The OpenID Provider\'s ' +
-                             'configuration could not be used', got.why);
+          return this.refuse(res, record, 502,
+            Sentence.say('refusals.federation.what.opConfigurationUnusable'),
+            got.why);
         }
         const handle = this.putContext({ kind: 'webfinger', id: id,
                                          issuer: issuer });
@@ -7526,8 +7520,9 @@ class FederationSp {
                 ' threw while looking up an identifier: ' +
                 (e && e.stack ? e.stack : e));
       errorCodes.mark(res, 'STS-FED-0042');
-      this.refuse(res, record, 500, 'This service failed while looking the ' +
-                  'identifier up', String((e && e.message) || e));
+      this.refuse(res, record, 500,
+        Sentence.say('refusals.federation.what.failedLookingUp'),
+        String((e && e.message) || e));
     });
   }
 
@@ -7845,11 +7840,10 @@ class FederationSp {
     if (!federation.boolOf(record.fedInitiateLogin, false)) {
       errorCodes.mark(res, 'STS-FED-0205');
       log.debug("Leaving the login initiation endpoint. Not accepted.");
-      return this.refuse(res, record, 403, 'That partner may not start a ' +
-                                           'sign-in here',
-        'fedInitiateLogin is off on "' + id + '", so a sign-in its partner ' +
-        'starts (OpenID Connect Core 1.0 section 4) is refused. Turn it on ' +
-        'to accept one; until then a person signs in from this service.');
+      return this.refuse(res, record, 403,
+        Sentence.say('refusals.federation.what.mayNotStart'),
+        Sentence.say('refusals.federation.initiateLoginOff',
+                     { id: String(id) }));
     }
     const params: any = this.paramsOf(req);
     const iss = String(params.iss || '');
@@ -7857,12 +7851,13 @@ class FederationSp {
     if (!iss || iss !== peer) {
       errorCodes.mark(res, 'STS-FED-0206');
       log.debug("Leaving the login initiation endpoint. Another issuer.");
-      return this.refuse(res, record, 400, 'That is not this partner',
-        (iss ? 'The request names the issuer "' + iss + '"'
-             : 'The request names no issuer') + ', and this relationship ' +
-        'is with "' + peer + '". OpenID Connect Core 1.0 section 4 makes ' +
-        'iss REQUIRED, and it is how this service knows which partner ' +
-        'started the sign-in.');
+      return this.refuse(res, record, 400,
+        Sentence.say('refusals.federation.what.notThisPartner'),
+        iss
+          ? Sentence.say('refusals.federation.issuerNotPeer',
+                         { iss: String(iss), peer: String(peer) })
+          : Sentence.say('refusals.federation.noIssuer',
+                         { peer: String(peer) }));
     }
     // `target_link_uri` on THIS service only, as a path; returnToOf() then
     // narrows it the way every return address here is narrowed.
