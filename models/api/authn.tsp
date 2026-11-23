@@ -1133,7 +1133,8 @@ op `getPasswordChange`(`parameters/0/schema`: SignInId,
     `csrf`?: string;
     `uiLocales`?: string;
     `preferredLanguage`?: WithValuePopulated;
-    `view`?: {`id`?: string; `username`?: string; `notice`?: string}
+    `view`?: {`id`?: string; `username`?: string; `notice`?: string;
+              `noticeRefusal`?: NullableRefusal}
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."

@@ -16593,8 +16593,15 @@ class Authn {
   passwordChangeView(changeId, step): any {
     const { log } = this.deps;
     log.debug("Entering Authn.passwordChangeView().");
-    const view = { id: String(changeId), username: String(step.username),
-                   notice: String(step.notice || '') };
+    const view: any = { id: String(changeId),
+                        username: String(step.username),
+                        notice: String(step.notice || '') };
+    // The notice as an answer carries it (#2006), drawn in the page's
+    // language.
+    if (step.notice && step.noticeMessage) {
+      view.noticeRefusal = { errors: [String(step.notice)],
+                             messages: [step.noticeMessage] };
+    }
     log.debug("Leaving Authn.passwordChangeView().");
     return view;
   }
@@ -19292,11 +19299,14 @@ class Authn {
       pendingPasswordChange.set(changeId, {
         authn: record, username: username, secondFactor: secondFactor,
         // WHY, where the screen has a reason to give (#62 P6): the page the
-        // step is drawn on says it — English, as every refusal (#539).
+        // step is drawn on says it, in its own language (#2006) — the
+        // English, and its catalog message kept beside it, as a stored
+        // record keeps only the English (`screenErrorMessage`'s reason).
         notice: breachedAtSignIn
-          ? 'The password you signed in with has appeared in a data ' +
-            'breach, so it has to be changed now. Choose one you have ' +
-            'not used anywhere else.' : '',
+          ? String(Sentence.say('refusals.password.breachedAtSignIn')) : '',
+        noticeMessage: breachedAtSignIn
+          ? Sentence.say('refusals.password.breachedAtSignIn').message()
+          : null,
         expires: Date.now() + this.mfaStepTtlMs()
       });
       pendingPasswordChange.forEach(function (v, k) {

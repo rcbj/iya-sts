@@ -12027,16 +12027,16 @@ class Credentials {
     if (!key) {
       log.debug("Leaving Credentials.keyUpgradeRefusal(). Not theirs.");
       return coded('STS-AUTHN-0451', { ok: false, reason: 'upgrade',
-               errors: ['No passkey of that id is registered for ' +
-                        String(username || '') + '.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeNotTheirs',
+                 { name: String(username || '') })] });
     }
     if (Credentials.keyAlgorithm(key).postQuantum) {
       log.debug("Leaving Credentials.keyUpgradeRefusal(). Already " +
                 "post-quantum.");
       return coded('STS-AUTHN-0452', { ok: false, reason: 'upgrade',
-               errors: ['That passkey is already post-quantum (' +
-                        Credentials.keyAlgorithm(key).name + '); there is ' +
-                        'nothing to upgrade.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeAlreadyPq',
+                 { algorithm: String(Credentials.keyAlgorithm(key).name) })]
+             });
     }
     const held = this.keysOf(username);
     if (key.upgradedTo && held.some(function (one) {
@@ -12045,9 +12045,7 @@ class Credentials {
       log.debug("Leaving Credentials.keyUpgradeRefusal(). Upgraded " +
                 "already.");
       return coded('STS-AUTHN-0453', { ok: false, reason: 'upgrade',
-               errors: ['That passkey was already upgraded: its ' +
-                        'post-quantum passkey is beside it. Remove that one ' +
-                        'first to upgrade again.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeDone')] });
     }
     const enrolment = webauthnPolicy.enrolmentAllowed();
     if (!enrolment.ok) {
@@ -12060,9 +12058,8 @@ class Credentials {
         held.length >= webauthnPolicy.settings().maxKeysPerPerson) {
       log.debug("Leaving Credentials.keyUpgradeRefusal(). At the cap.");
       return coded('STS-AUTHN-0067', { ok: false, reason: 'upgrade',
-               errors: ['You already hold ' + held.length + ' passkey(s), ' +
-                        'the most this realm allows, and the upgrade adds ' +
-                        'one beside this passkey. Remove one first.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeAtCap',
+                 { count: held.length })] });
     }
     log.debug("Leaving Credentials.keyUpgradeRefusal(). Allowed.");
     return { ok: true };
@@ -12123,8 +12120,8 @@ class Credentials {
     const directory = this.directory;
     if (!directory || typeof directory.replaceWebauthn !== 'function') {
       log.debug("Leaving Credentials.beginKeyUpgrade(). No store.");
-      return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
-                   'store is installed, so no passkey can be upgraded.'] });
+      return coded('STS-AUTHN-0059', { ok: false, errors: [Sentence.say(
+                   'refusals.passkey.upgradeNoStore')] });
     }
     const key = this.keysOf(name).filter(function (one) {
       return String(one.credentialId) === String(credentialId || '');
@@ -12206,18 +12203,15 @@ class Credentials {
       log.debug("Leaving Credentials.upgradeInHand(). None in progress.");
       return { held: null, refused: coded('STS-AUTHN-0454',
         { ok: false, reason: 'expired',
-          errors: ['That passkey upgrade is not the one in progress, or it ' +
-                   'has expired. Your passkey is unchanged; start again.'] }) };
+          errors: [Sentence.say('refusals.passkey.upgradeNotInProgress')] }) };
     }
     if (held.upgrade.phase !== phase) {
       log.debug("Leaving Credentials.upgradeInHand(). Out of order.");
       return { held: null, refused: coded('STS-AUTHN-0456',
         { ok: false, reason: 'mismatch',
           errors: [phase === 'proof'
-            ? 'This passkey has already been used for this upgrade; create ' +
-              'the post-quantum passkey now.'
-            : 'Use your passkey first, to show it is yours, before the ' +
-              'post-quantum passkey is created.'] }) };
+            ? Sentence.say('refusals.passkey.upgradeProofDone')
+            : Sentence.say('refusals.passkey.upgradeProofFirst')] }) };
     }
     log.debug("Leaving Credentials.upgradeInHand().");
     return { held: held, refused: null };
@@ -12485,17 +12479,15 @@ class Credentials {
                 ((e && e.message) || e));
       log.debug("Leaving Credentials.checkKeyUpgrade(). It threw.");
       return coded('STS-AUTHN-0027', { ok: false, reason: 'invalid',
-               errors: ['The registration could not be checked: ' +
-                        ((e && e.message) || e) + '. Your passkey is ' +
-                        'unchanged.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeUnchecked',
+                 { detail: String((e && e.message) || e) })] });
     }
     if (!verdict.ok) {
       log.debug("Leaving Credentials.checkKeyUpgrade(). It did not verify.");
       return coded(webauthnPolicy.failureCodeFor(verdict),
                    { ok: false, reason: 'invalid',
-               errors: ['The post-quantum passkey did not verify — ' +
-                        (verdict.failed || []).join('; ') + '. Your ' +
-                        'passkey is unchanged.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeNotVerified',
+                 { checks: (verdict.failed || []).join('; ') })] });
     }
     // THE EXCLUSION, as an enrolment checks it, and the classical
     // credential itself: an authenticator answering with the key being
@@ -12504,8 +12496,7 @@ class Credentials {
         String(verdict.credentialId) === String(held.upgrade.credentialId)) {
       log.debug("Leaving Credentials.checkKeyUpgrade(). Already enrolled.");
       return coded('STS-AUTHN-0095', { ok: false, reason: 'duplicate',
-               errors: ['That authenticator is already enrolled. Your ' +
-                        'passkey is unchanged.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeDuplicate')] });
     }
     log.debug("Leaving Credentials.checkKeyUpgrade(). Verifying the " +
               "attestation, then writing through the claim.");
