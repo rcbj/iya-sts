@@ -1197,35 +1197,36 @@ function verifyXmlSignature(xml, opts) {
              signerCertB64: keyInfoCert }, 'STS-KEYS-0014');
   }
 
-  // INCLUSIVE CANONICALIZATION OF THE SIGNEDINFO (#37 follow-up). The
-  // SignedInfo is always nested — inside the Signature, inside the signed
-  // element — and inclusive c14n renders every namespace declaration IN
-  // SCOPE there, including the ancestors'. The engine canonicalizes it from
-  // the Signature serialized on its own, which drops those, so an inclusive
-  // signature on even a ROOT element never verified. The in-scope
-  // declarations are therefore copied onto the Signature before it is
-  // serialized: inclusive c14n puts all of them on the SignedInfo either way,
-  // so the octets are the signer's. (Exclusive c14n ignores them, and is left
-  // alone.)
-  if (c14nAlg && c14nAlg.indexOf('xml-exc-c14n') === -1) {
-    const declared = {};
-    for (let node = sigEl.parentNode; node && node.nodeType === 1;
-         node = node.parentNode) {
-      for (let i = 0; i < node.attributes.length; i++) {
-        const attr = node.attributes[i];
-        const name = String(attr.name || '');
-        if ((name === 'xmlns' || name.indexOf('xmlns:') === 0) &&
-            !Object.prototype.hasOwnProperty.call(declared, name)) {
-          declared[name] = attr.value;
-        }
+  // THE NAMESPACES IN SCOPE, COPIED ONTO THE SIGNATURE (#37 follow-up;
+  // exclusive c14n too since #2020). The SignedInfo is always nested —
+  // inside the Signature, inside the signed element — and the engine
+  // canonicalizes it from the Signature serialized on its own, which drops
+  // the ancestors' declarations. Inclusive c14n renders every declaration in
+  // scope, so an inclusive signature on even a ROOT element never verified.
+  // EXCLUSIVE c14n renders a prefix an InclusiveNamespaces PrefixList names
+  // whenever it is in scope (Shibboleth's and SimpleSAMLphp's `xs`), so a
+  // signature listing one declared on an ancestor was refused too: this was
+  // "left alone" on the claim that exclusive c14n ignores them, which is
+  // true only without a PrefixList (#1917's WSS4J round trip found the
+  // same in the WS-Security verifiers). Copying all of them changes the
+  // exclusive octets only where a PrefixList asks, which is the point.
+  const declared = {};
+  for (let node = sigEl.parentNode; node && node.nodeType === 1;
+       node = node.parentNode) {
+    for (let i = 0; i < node.attributes.length; i++) {
+      const attr = node.attributes[i];
+      const name = String(attr.name || '');
+      if ((name === 'xmlns' || name.indexOf('xmlns:') === 0) &&
+          !Object.prototype.hasOwnProperty.call(declared, name)) {
+        declared[name] = attr.value;
       }
     }
-    Object.keys(declared).forEach(function (name) {
-      if (!sigEl.hasAttribute(name)) {
-        sigEl.setAttribute(name, declared[name]);
-      }
-    });
   }
+  Object.keys(declared).forEach(function (name) {
+    if (!sigEl.hasAttribute(name)) {
+      sigEl.setAttribute(name, declared[name]);
+    }
+  });
 
   const serializer = new xmldom.XMLSerializer();
   // With a key from here, the engine is not shown the certificate text: it
@@ -1234,7 +1235,12 @@ function verifyXmlSignature(xml, opts) {
     ? withoutCertificateText(serializer.serializeToString(sigEl))
     : serializer.serializeToString(sigEl);
   sigEl.parentNode.removeChild(sigEl);
-  const referencedXml = serializer.serializeToString(target);
+  // The signed element too, for the same reason: a Reference's exclusive
+  // transform may carry a PrefixList, and the element is serialized on its
+  // own (#2020).
+  const referencedXml = serializer.serializeToString(
+    target.parentNode && target.parentNode.nodeType === 1
+      ? withInScopeNamespaces(target) : target);
 
   let result;
   try {
