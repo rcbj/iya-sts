@@ -2024,8 +2024,8 @@
     "text": "HORS SPÉCIFICATION. Ce avec quoi une destination de secrets peut être ajoutée, en JSON : chaque champ de la création et si la création est refusée sans lui — l’identifiant et le fournisseur toujours, et certains pour certains fournisseurs seulement (requiredWhen) : l’identifiant d’écriture pour tous sauf file, la région pour aws, le point de terminaison pour azure et vault, le répertoire pour file. ELLE N’AJOUTE RIEN : la création est POST /admin-api/secret-destinations/add-destination. Reflète GET /admin/secret-destinations/new."
   },
   "stsmetadata.endpoints./admin-api/policies/new.what": {
-    "en": "2c58d79f3a71506e",
-    "text": "HORS SPÉCIFICATION. Les types dont une politique nommée peut être faite et, pour le type demandé, chaque champ de son enregistrement et si l’enregistrement est refusé sans lui — toujours le nom, car un enregistrement sans nom modifie la politique par défaut, et chaque champ dont la valeur n’est pas conservée s’il est omis. ELLE N’ENREGISTRE RIEN : une politique nommée est l’enregistrement du type sous un nom que le domaine ne détient pas encore. Reflète GET /admin/policies/new."
+    "en": "8b0523b4a594c8c1",
+    "text": "HORS SPÉCIFICATION. Les types dont une politique nommée peut être faite et, pour le type demandé, chaque champ de son enregistrement et si l’enregistrement est refusé sans lui — toujours le nom, car un enregistrement sans nom est refusé, et chaque champ dont la valeur n’est pas conservée s’il est omis. ELLE N’ENREGISTRE RIEN : une politique nommée est l’enregistrement du type sous un nom que le domaine ne détient pas encore. Reflète GET /admin/policies/new."
   },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",

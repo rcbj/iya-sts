@@ -551,6 +551,7 @@ async function test() {
     profile[f.key] = f.value;
   });
   profile.requireSecondFactor = "always";
+  profile.profile = "default";
   await ok(EVERY.api + "/policies/save-authn-policy", profile,
            "required a second factor of everybody in " + EVERY.id);
   for (const realm of [PROD, EVERY]) {

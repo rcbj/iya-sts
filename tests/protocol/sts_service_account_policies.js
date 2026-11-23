@@ -242,7 +242,7 @@ async function fullPolicy(api, changes) {
   log.debug("Entering fullPolicy().");
   const r = await send(api + "/policies");
   const out = Object.assign({}, r.body.serviceAccount.defaults,
-                            changes || {});
+                            { profile: "default" }, changes || {});
   log.debug("Leaving fullPolicy().");
   return out;
 }

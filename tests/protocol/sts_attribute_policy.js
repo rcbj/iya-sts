@@ -198,8 +198,13 @@ async function recording(api, code, fn, target) {
 
 function policy(api, action, payload) {
   log.debug("Entering policy(). " + action);
+  const body = Object.assign({}, payload);
+  if (String(action).indexOf("save-") === 0 &&
+      body.profile === undefined) {
+    body.profile = "default";
+  }
   log.debug("Leaving policy().");
-  return post(api + "/policies/" + action, payload);
+  return post(api + "/policies/" + action, body);
 }
 
 async function attributesView(api, query) {

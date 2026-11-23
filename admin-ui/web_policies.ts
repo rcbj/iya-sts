@@ -1586,8 +1586,9 @@ class PoliciesPage {
   }
 
   // A NEW POLICY'S NAME (#1132), the one field every kind's create refuses
-  // without — a save with no name edits the DEFAULT policy — drawn as a
-  // required field is everywhere else: outlined, starred, "required".
+  // without — a save with no name is refused — drawn as a required field
+  // is everywhere else: outlined, starred, "required". The bubble's
+  // sentence is ConsoleRuntime.wirePolicyNames().
   static nameCell(id, name, label, value, example, max, t) {
     return '<div id="fgc-' + kit.esc(id) + '" class="fg-cell fg-required ' +
       'fg-solo"><label class="fg-name" for="' + kit.esc(id) + '">' + label +
