@@ -475,6 +475,10 @@
     "en": "a670f321ddd2f009",
     "text": "Se connecter avec un certificat client"
   },
+  "endpoints.route./authn/certificate/continue.name": {
+    "en": "801f4e0b4934b5df",
+    "text": "Connexion par certificat sur son propre écouteur"
+  },
   "endpoints.route./tls/server-certificate.name": {
     "en": "9458f47a8a347911",
     "text": "Le certificat du serveur (PEM)"
@@ -1286,6 +1290,14 @@
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
     "en": "33209f967f070175",
     "text": "Actions sur les jetons matériels"
+  },
+  "endpoints.route./admin-api/hardware-tokens/ssh-certificates.name": {
+    "en": "3bb1ef22ae2ed554",
+    "text": "Les certificats utilisateur SSH d’une personne"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "Clés PIV séquestrées"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
@@ -2650,13 +2662,5 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (un certificat client demandé, jamais exigé)"
-  },
-  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
-    "en": "f46d01f7581b5379",
-    "text": "Clés PIV séquestrées"
-  },
-  "endpoints.route./admin-api/hardware-tokens/ssh-certificates.name": {
-    "en": "3bb1ef22ae2ed554",
-    "text": "Les certificats utilisateur SSH d’une personne"
   }
 }

@@ -611,6 +611,8 @@ module.exports = {
   root: root,
   keyPair: keyPair,
   certificate: certificate,
+  // An extension from its DER, for a kit that adds its own (#2012).
+  extension: extension,
   credential: credential,
   ceremony: ceremony,
   packed: packed,

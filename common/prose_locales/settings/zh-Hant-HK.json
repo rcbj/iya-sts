@@ -1543,6 +1543,46 @@
     "en": "a1bd9f7dd30ee833",
     "text": "服務 Root 在建構接聽程式的 TLS 內容時放入其客戶端信任儲存區"
   },
+  "certSignIn.profiles|label": {
+    "en": "45c9a918accd04eb",
+    "text": "證書登入設定檔（JSON）"
+  },
+  "certSignIn.profiles|description": {
+    "en": "4a9b75892efe6f41",
+    "text": "一個 JSON 陣列，列出適用於此服務未營運之授權單位所簽發客戶端證書的證書登入設定檔。每一項為 {\"id\", \"issuers\", \"keyUsage\", \"extendedKeyUsage\", \"policies\", \"bindings\", \"lowAffinity\"}：issuers 是每個涵蓋 CA 之 SubjectPublicKeyInfo 的 SHA-256，經驗證的路徑中包含其中之一的證書由第一個這樣的設定檔涵蓋；keyUsage 是它必須全部攜帶的位元；extendedKeyUsage 是它必須攜帶其中之一的用途；policies 是 RFC 5280 原則處理必須沿其路徑帶過其中之一的原則（遵循原則對應）；bindings 是指出其帳戶的方法（certificate-sha256、issuer-serial、issuer-ski、spki-sha256 與 card-uuid，只有在 lowAffinity 為 true 時才包括名稱方法 upn、email、issuer-subject 與 subject；預設為 certificate-sha256 與 issuer-serial）。每種方法都會被詢問；兩個帳戶或沒有帳戶都不會讓任何人登入。繫結儲存在此人的 stsCertificateBinding 中。空白（預設值）時不涵蓋任何證書：外部證書仍是將其儲存在 userCertificate 中的項目，或依 piv.externalIssuers 對應的 PIV 卡片，與以往相同。"
+  },
+  "certSignIn.requireRevocation|label": {
+    "en": "d14071167a900fe4",
+    "text": "證書登入時要求經驗證的撤銷狀態"
+  },
+  "certSignIn.requireRevocation|description": {
+    "en": "13f77eb21eb17caf",
+    "text": "客戶端證書是否只有在撤銷狀態經過驗證時才讓某人登入：其路徑中的每個證書都已查詢，且沒有一個在清單上。auto（預設值）在產品模式下要求如此，在開發模式下照舊交由 pki.revocationCheck 決定；on 在每種模式下都要求，因此 soft-fail 原本會接受的狀態（未知或未查詢）會拒絕登入（STS-TLS-0071）。它只決定登入：/tls/sign-in、登入畫面與證書交接。"
+  },
+  "certSignIn.handoff|label": {
+    "en": "37bcae84a89e5ef8",
+    "text": "在獨立的接聽程式上提供證書登入"
+  },
+  "certSignIn.handoff|description": {
+    "en": "2cd83e3c2c6b4cb0",
+    "text": "開啟時，登入畫面提供「使用智慧卡或憑證登入」，它會將瀏覽器送到託管應用程式 certificate-sign-in 所對應之接聽程式（listeners.applications）上的 /authn/certificate/continue——一個其 clientAuth 會要求證書的自訂接聽程式——然後返回畫面，畫面以證書持有者的身分繼續。證書會繫結至該待處理的登入與瀏覽器的登入工作階段，因此該接聽程式必須與主連接埠共用主機名稱，或兩者都位於 authn.cookieDomain 之下。開啟 tls.mainPortDisableOptionalClientCertificate 後，主連接埠便不再向任何連線要求證書，其他登入途徑也永遠不會看到提示。關閉（預設值）時，畫面只提供其自身連線上的證書。"
+  },
+  "tls.trustedProxyCertificates|label": {
+    "en": "56e567aa855102b5",
+    "text": "終止 TLS 之代理的客戶端證書（SHA-256）"
+  },
+  "tls.trustedProxyCertificates|description": {
+    "en": "5ebd0abc01f9dfdf",
+    "text": "終止 TLS 的代理連線到此處時出示之客戶端證書的 SHA-256 指紋。對於出示其中之一的連線上、來自 tls.trustedProxyAddresses 中某個地址的請求，其 RFC 9440 標頭 Client-Cert 與 Client-Cert-Chain 會在此處對照客戶端信任存放區與撤銷狀態進行驗證，該證書在每道門上都代替交握中的證書。兩個設定都是必要的；來自任何其他傳送者時，這兩個標頭會被移除並記錄（STS-TLS-0072），且從不讀取。空白（預設值）時只從交握中讀取證書。"
+  },
+  "tls.trustedProxyAddresses|label": {
+    "en": "4bc0cf2135bd81af",
+    "text": "終止 TLS 之代理的地址"
+  },
+  "tls.trustedProxyAddresses|description": {
+    "en": "92e72546afce7f59",
+    "text": "tls.trustedProxyCertificates 中的代理所連線的地址或 CIDR 範圍（10.0.0.0/8、fd00::/8）。兩個設定都具備後才會讀取轉送的客戶端證書。既不是地址也不是範圍的值會被忽略並記錄，絕不會被放寬。"
+  },
   "tls.hostnames|label": {
     "en": "fbb4cf44ba96aa51",
     "text": "證書主機名稱"

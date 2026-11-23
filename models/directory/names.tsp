@@ -317,6 +317,13 @@ namespace IyaSts.Directory;
   // (`common/piv_attestation.ts`, `ldap_server.js`'s `pivCardHolders()`).
   // Not a secret: the card says it to every reader.
   "stsPivCardUuid",
+  // A CERTIFICATE SIGN-IN BINDING (#2012): what a certificate a realm's
+  // `certSignIn.profiles` covers is bound to this person by — issuer and
+  // serial, issuer and subjectKeyIdentifier, the key's or the certificate's
+  // SHA-256, a subject DN — in the grammar
+  // `common/certificate_binding.ts`'s `bindingValueOf()` canonicalises.
+  // Not a secret: each value is read off a certificate its holder presents.
+  "stsCertificateBinding",
   // A PERSON'S OpenPGP PUBLIC KEY (#1955 P6): the armored key they proved
   // they hold by signing a challenge, its fingerprint, and what the page
   // draws about it (version, algorithms, the matching user ids, whether it

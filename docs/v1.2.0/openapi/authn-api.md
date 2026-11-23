@@ -6588,8 +6588,10 @@ The door of the sign-in surface's `GET /authn/login`.
 | `view.application` | string |  |  |
 | `view.base` | string |  |  |
 | `view.certificate` | object |  |  |
+| `view.certificate.handoff` | string |  | Where `certSignIn.handoff` is on and no certificate has arrived yet (#2012): the link to the listener that asks for a smart card or certificate, `/authn/certificate/continue?h=…`, with `name` empty. |
 | `view.certificate.mfaNote` | boolean |  |  |
 | `view.certificate.name` | string |  |  |
+| `view.certificate.refused` | string |  | What that listener refused last, in English, or empty (#2012). |
 | `view.chooseRoles` | boolean |  |  |
 | `view.clientDisplay` | object |  |  |
 | `view.clientDisplay.logo` | string |  |  |

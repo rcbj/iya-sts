@@ -32,6 +32,7 @@ const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
 const portal = require("./portal_signin.js");
+const authnSignin = require("./authn_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -701,24 +702,115 @@ async function reviewPlainListener() {
   log.debug("Leaving reviewPlainListener().");
 }
 
-async function reviewScopedToken(rb) {
-  log.debug("Entering reviewScopedToken().");
-  await ok(rb + "/admin-api/applications/create", { identifier: R_APP,
-    name: R_APP, protocols: ["oauth2"], fields: {
-      oauthClientId: [R_APP], oauthClientSecret: R_SECRET,
-      oauthRedirectUri: ["https://rp.example/" + R_APP + "/cb"],
-      oauthTokenEndpointAuthMethod: "client_secret_basic",
-      oauthGrantType: ["password"],
-      oauthAllowedScope: ["ssh:certificate"],
-      oauthDelegatedPermission: ["urn:sts:account-api:ssh:certificate"] } },
-    "registered " + R_APP);
+// A JAR'S COOKIES as a header, and a response's Set-Cookie lines written
+// back into it (an emptied one removed), for the code flow below.
+function jarHeader(jar) {
+  log.debug("Entering jarHeader().");
+  log.debug("Leaving jarHeader().");
+  return Object.keys(jar).map(function (k) {
+    return k + "=" + jar[k];
+  }).join("; ");
+}
+
+function keepCookies(jar, lines) {
+  log.debug("Entering keepCookies().");
+  (lines || []).forEach(function (line) {
+    const pair = String(line).split(";")[0];
+    const at = pair.indexOf("=");
+    if (at <= 0) {
+      return;
+    }
+    const value = pair.slice(at + 1);
+    if (value === "" || /Expires=Thu, 01 Jan 1970/i.test(String(line))) {
+      delete jar[pair.slice(0, at)];
+    } else {
+      jar[pair.slice(0, at)] = value;
+    }
+  });
+  log.debug("Leaving keepCookies().");
+}
+
+// THE AUTHORIZATION CODE GRANT WITH PKCE for R_APP, the person signing in
+// with a password on the sign-in screen and any consent answered Allow:
+// answers the token endpoint's answer. It was the password grant until run
+// 45189343764, which product mode refuses (RFC 9700 section 2.4,
+// unsupported_grant_type) — every mode but memory runs product, so the
+// section passed in memory alone.
+async function scopedTokenByCode(rb, redirectUri) {
+  log.debug("Entering scopedTokenByCode().");
+  const agent = { "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) " +
+                                "sts_ssh_user_ca" };
+  const jar = {};
+  const verifier = nodeCrypto.randomBytes(32).toString("base64url");
+  const state = nodeCrypto.randomBytes(16).toString("base64url");
+  const authorize = rb + "/oauth2/authorize?" + new URLSearchParams({
+    response_type: "code", client_id: R_APP, redirect_uri: redirectUri,
+    scope: "ssh:certificate", state: state,
+    code_challenge: nodeCrypto.createHash("sha256").update(verifier)
+      .digest("base64url"),
+    code_challenge_method: "S256",
+    resource: rb + "/account-api" }).toString();
+  const first = await fetch(authorize, { redirect: "manual",
+                                         headers: agent });
+  await first.text();
+  keepCookies(jar, first.headers.getSetCookie());
+  const login = new URL(String(first.headers.get("location") || ""), rb)
+    .toString();
+  assert.ok(/\/authn\/login/.test(login),
+            "R_APP's authorization request did not reach the sign-in " +
+            "screen: " + first.status + " " + login);
+  let at = await authnSignin.signInWithJar(rb, login,
+    { action: "login", username: R_OWNER, password: PASSWORD }, jar,
+    { ignoreOffer: true, headers: agent });
+  let location = String(at.location || "");
+  for (let i = 0; i < 8 && location.indexOf(redirectUri) !== 0; i++) {
+    const where = new URL(location, rb).toString();
+    if (at.status !== 302 && at.status !== 303) {
+      break;
+    }
+    if (authnSignin.isConsent(where)) {
+      at = await authnSignin.consentWithJar(where, "allow", jar,
+                                            { headers: agent });
+    } else {
+      const r = await fetch(where, { redirect: "manual",
+        headers: Object.assign({ cookie: jarHeader(jar) }, agent) });
+      keepCookies(jar, r.headers.getSetCookie());
+      at = { status: r.status, location: r.headers.get("location") || "",
+             text: await r.text() };
+    }
+    location = String(at.location || "");
+  }
+  assert.ok(location.indexOf(redirectUri) === 0,
+            "R_APP's authorization request did not come back to its " +
+            "redirect URI: " + at.status + " " + location + " " +
+            String(at.text || "").slice(0, 300));
+  const back = new URL(location);
+  assert.strictEqual(back.searchParams.get("state"), state, location);
   const granted = await send(rb + "/oauth2/token", { method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded",
                authorization: "Basic " + Buffer.from(R_APP + ":" +
                  R_SECRET).toString("base64") },
-    body: new URLSearchParams({ grant_type: "password", username: R_OWNER,
-      password: PASSWORD, scope: "ssh:certificate",
+    body: new URLSearchParams({ grant_type: "authorization_code",
+      code: String(back.searchParams.get("code") || ""),
+      redirect_uri: redirectUri, code_verifier: verifier,
       resource: rb + "/account-api" }).toString() });
+  log.debug("Leaving scopedTokenByCode(). " + granted.status);
+  return granted;
+}
+
+async function reviewScopedToken(rb) {
+  log.debug("Entering reviewScopedToken().");
+  const redirectUri = "https://rp.example/" + R_APP + "/cb";
+  await ok(rb + "/admin-api/applications/create", { identifier: R_APP,
+    name: R_APP, protocols: ["oauth2"], fields: {
+      oauthClientId: [R_APP], oauthClientSecret: R_SECRET,
+      oauthRedirectUri: [redirectUri],
+      oauthTokenEndpointAuthMethod: "client_secret_basic",
+      oauthGrantType: ["authorization_code"],
+      oauthAllowedScope: ["ssh:certificate"],
+      oauthDelegatedPermission: ["urn:sts:account-api:ssh:certificate"] } },
+    "registered " + R_APP);
+  const granted = await scopedTokenByCode(rb, redirectUri);
   const token = granted.body && granted.body.access_token;
   const bearer = { authorization: "Bearer " + String(token || ""),
                    accept: "application/json" };

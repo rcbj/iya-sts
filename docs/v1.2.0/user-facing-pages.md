@@ -30,7 +30,8 @@ started the sign-in.
 
 | Page | Path | What a person does there | Language |
 |---|---|---|---|
-| Sign-in screen | `/authn/login` | Types a username and password, or picks a passkey, an emailed code or link, a federation partner, Kerberos or a wallet | Yes |
+| Sign-in screen | `/authn/login` | Types a username and password, or picks a passkey, an emailed code or link, a federation partner, Kerberos, a wallet or a smart card or certificate | Yes |
+| Certificate sign-in handoff | `/authn/certificate/continue` | Nothing to type: the browser asks for a smart card or certificate and its PIN, then returns to the sign-in screen. Off by default (`certSignIn.handoff`); see [Configuring TLS](configure-tls.md#a-listener-of-its-own-for-the-card-the-handoff) | No (a refusal is English plain text) |
 | Choose an identity provider | `/authn/select-idp` | Picks one of the federation partners an application allows | Yes |
 | Forced password change | `/authn/password-change` | Sets a new password before the sign-in continues | Yes |
 | Second-factor set-up | `/authn/mfa-setup` | Enrols an authenticator app or a passkey that the realm requires | Yes |

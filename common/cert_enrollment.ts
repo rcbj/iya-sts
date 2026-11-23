@@ -545,6 +545,13 @@ class CertEnrollment {
   //                                     whose stsPivCardUuid holds that card
   //                                     UUID (#1955 P2, D8). OPTIONAL, as
   //                                     certificateHolders is.
+  //   certificateBindingHolders(kind, value)
+  //                                  -> [{ kind, id, dn }] of the people a
+  //                                     certificate sign-in binding names
+  //                                     (#2012): `binding` a canonical
+  //                                     stsCertificateBinding value, `upn` a
+  //                                     userPrincipalName, `mail` an address.
+  //                                     OPTIONAL, as certificateHolders is.
   //
   // Validated whole, for `setLogoutReader()`'s reason: half a store is a
   // register that can issue a credential it cannot find again.
@@ -566,6 +573,32 @@ class CertEnrollment {
     }
     const out = directory.pivCardHolders(String(uuid || '')) || [];
     log.debug("Leaving CertEnrollment.pivCardHolders(). " + out.length + ".");
+    return out;
+  }
+
+  /**
+   * The people of the ambient realm a certificate sign-in binding names
+   * (#2012), through the directory slot; null when the slot offers no such
+   * lookup.
+   *
+   * @param kind - `binding`, `upn` or `mail`
+   * @param value - the canonical value, lower case
+   * @returns the holders, or null
+   */
+  certificateBindingHolders(kind, value) {
+    const { log } = this.deps;
+    log.debug("Entering CertEnrollment.certificateBindingHolders(). " + kind);
+    const directory = this.directory;
+    if (!directory ||
+        typeof directory.certificateBindingHolders !== 'function') {
+      log.debug("Leaving CertEnrollment.certificateBindingHolders(). " +
+                "No directory.");
+      return null;
+    }
+    const out = directory.certificateBindingHolders(String(kind || ''),
+                                                    String(value || '')) || [];
+    log.debug("Leaving CertEnrollment.certificateBindingHolders(). " +
+              out.length + ".");
     return out;
   }
 
@@ -5474,6 +5507,7 @@ export = {
   escrowedOf: slot.forward('escrowedOf'),
   escrowedKeyOf: slot.forward('escrowedKeyOf'),
   pivCardHolders: slot.forward('pivCardHolders'),
+  certificateBindingHolders: slot.forward('certificateBindingHolders'),
   createEab: slot.forward('createEab'),
   findEab: slot.forward('findEab'),
   bindEab: slot.forward('bindEab'),

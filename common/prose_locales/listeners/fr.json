@@ -139,6 +139,14 @@
     "en": "1d66f74984228996",
     "text": "Le service de connexion et ses seconds facteurs, les connexions par portefeuille, SPNEGO et certificat, et la déconnexion."
   },
+  "listeners.applications.certificate-sign-in.label": {
+    "en": "b64346dfecab1d4d",
+    "text": "Connexion par certificat"
+  },
+  "listeners.applications.certificate-sign-in.what": {
+    "en": "4eb1f17babcf76e5",
+    "text": "L’écouteur auquel une connexion par certificat est confiée : la seule requête qui demande une carte à puce ou un certificat."
+  },
   "listeners.applications.portal.label": {
     "en": "00cf214ba77e7497",
     "text": "Portail utilisateur"

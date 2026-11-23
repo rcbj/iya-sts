@@ -475,6 +475,10 @@
     "en": "a670f321ddd2f009",
     "text": "使用客户端证书登录"
   },
+  "endpoints.route./authn/certificate/continue.name": {
+    "en": "801f4e0b4934b5df",
+    "text": "在独立的监听器上进行证书登录"
+  },
   "endpoints.route./tls/server-certificate.name": {
     "en": "9458f47a8a347911",
     "text": "服务器证书（PEM）"
@@ -1286,6 +1290,14 @@
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
     "en": "33209f967f070175",
     "text": "硬件令牌操作"
+  },
+  "endpoints.route./admin-api/hardware-tokens/ssh-certificates.name": {
+    "en": "3bb1ef22ae2ed554",
+    "text": "某人的 SSH 用户证书"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "托管的 PIV 密钥"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
@@ -2650,13 +2662,5 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS（请求客户端证书，但从不强制要求）"
-  },
-  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
-    "en": "f46d01f7581b5379",
-    "text": "托管的 PIV 密钥"
-  },
-  "endpoints.route./admin-api/hardware-tokens/ssh-certificates.name": {
-    "en": "3bb1ef22ae2ed554",
-    "text": "某人的 SSH 用户证书"
   }
 }

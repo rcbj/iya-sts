@@ -12628,6 +12628,96 @@ const SETTINGS = [
                  'was before; the portal still issues, and says the ' +
                  'listeners will not accept what it issues.' },
 
+  // #2012: CERTIFICATE SIGN-IN PROFILES, THE REVOCATION A SIGN-IN NEEDS, THE
+  // HANDOFF TO A LISTENER THAT ASKS FOR A CERTIFICATE, AND A PROXY THAT
+  // TERMINATES TLS (RFC 9440). `common/certificate_binding.ts`,
+  // `tls/certificate_handoff.ts` and `common/forwarded_client_certificate.ts`
+  // argue them; each is off or empty by default, which is the service as it
+  // was.
+  { key: 'certSignIn.profiles', group: 'TLS',
+    label: 'Certificate sign-in profiles (JSON)',
+    env: 'STS_CERT_SIGN_IN_PROFILES', type: 'string', dflt: '',
+    runtime: true,
+    description: 'A JSON array of certificate sign-in profiles for client ' +
+                 'certificates from authorities this service does not run. ' +
+                 'Each is {"id", "issuers", "keyUsage", "extendedKeyUsage", ' +
+                 '"policies", "bindings", "lowAffinity"}: issuers is the ' +
+                 'SHA-256 of each covered CA\'s SubjectPublicKeyInfo, and a ' +
+                 'certificate whose validated path holds one of them is ' +
+                 'covered by the first such profile; keyUsage bits it must ' +
+                 'all carry; extendedKeyUsage purposes, one of which it must ' +
+                 'carry; policies, one of which RFC 5280 policy processing ' +
+                 'must carry through its path (policy mappings honoured); ' +
+                 'bindings, the methods that name its account ' +
+                 '(certificate-sha256, issuer-serial, issuer-ski, ' +
+                 'spki-sha256 and card-uuid, and only with lowAffinity true ' +
+                 'the name methods upn, email, issuer-subject and subject; ' +
+                 'certificate-sha256 and issuer-serial by default). Every ' +
+                 'method is asked; two accounts, or none, sign nobody in. ' +
+                 'Bindings are stored in stsCertificateBinding on the ' +
+                 'person. EMPTY, the default, covers no certificate: an ' +
+                 'outside certificate is the entry storing it in ' +
+                 'userCertificate, or a PIV card by piv.externalIssuers, as ' +
+                 'before.' },
+  { key: 'certSignIn.requireRevocation', group: 'TLS',
+    label: 'Require a verified revocation status at certificate sign-in',
+    env: 'STS_CERT_SIGN_IN_REQUIRE_REVOCATION', type: 'enum',
+    enumValues: ['auto', 'on'], dflt: 'auto', runtime: true,
+    description: 'Whether a client certificate signs a person in only with ' +
+                 'a verified revocation status: every certificate in its ' +
+                 'path looked up and none on a list. auto, the default, ' +
+                 'requires it in product mode and leaves development to ' +
+                 'pki.revocationCheck, as before; on requires it in every ' +
+                 'mode, so a status soft-fail would accept (unknown, or not ' +
+                 'consulted) refuses the sign-in (STS-TLS-0071). It decides ' +
+                 'only sign-ins: /tls/sign-in, the sign-in screen and the ' +
+                 'certificate handoff.' },
+  { key: 'certSignIn.handoff', group: 'TLS',
+    label: 'Offer a certificate sign-in on its own listener',
+    env: 'STS_CERT_SIGN_IN_HANDOFF', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'On, the sign-in screen offers "Sign in with a smart card ' +
+                 'or certificate", which sends the browser to ' +
+                 '/authn/certificate/continue on the listener the ' +
+                 'certificate-sign-in hosted application is mapped to ' +
+                 '(listeners.applications) — a custom listener whose ' +
+                 'clientAuth asks for a certificate — and back to the ' +
+                 'screen, which continues as the certificate\'s holder. The ' +
+                 'certificate is bound to that pending sign-in and to the ' +
+                 'browser\'s sign-on session, so the listener must share the ' +
+                 'main port\'s host name or both be under ' +
+                 'authn.cookieDomain. With ' +
+                 'tls.mainPortDisableOptionalClientCertificate on, the main ' +
+                 'port then asks no connection for a ' +
+                 'certificate and the other ways in never see a prompt. Off, ' +
+                 'the default, the screen offers only the certificate on its ' +
+                 'own connection.' },
+  { key: 'tls.trustedProxyCertificates', group: 'TLS',
+    label: 'TLS-terminating proxies\' client certificates (SHA-256)',
+    env: 'STS_TLS_TRUSTED_PROXY_CERTIFICATES', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The SHA-256 fingerprints of the client certificates a ' +
+                 'proxy that terminates TLS presents when it connects here. ' +
+                 'A request on a connection presenting one of them, from an ' +
+                 'address in tls.trustedProxyAddresses, has its RFC 9440 ' +
+                 'Client-Cert and Client-Cert-Chain headers verified here ' +
+                 'against the client truststore and revocation, and that ' +
+                 'certificate stands for the handshake\'s at every door. ' +
+                 'Both settings are required; from any other sender the two ' +
+                 'headers are removed and recorded (STS-TLS-0072) and never ' +
+                 'read. EMPTY, the default, reads a certificate only off the ' +
+                 'handshake.' },
+  { key: 'tls.trustedProxyAddresses', group: 'TLS',
+    label: 'TLS-terminating proxies\' addresses',
+    env: 'STS_TLS_TRUSTED_PROXY_ADDRESSES', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The addresses or CIDR ranges a proxy in ' +
+                 'tls.trustedProxyCertificates connects from ' +
+                 '(10.0.0.0/8, fd00::/8). Both settings are required before ' +
+                 'a forwarded client certificate is read. A value that is ' +
+                 'not an address or a range is ignored and logged, never ' +
+                 'widened.' },
+
   { key: 'tls.hostnames', group: 'TLS', label: 'Certificate hostnames',
     env: 'STS_TLS_HOSTNAMES', type: 'csv',
     dflt: 'localhost,sts,sts-mock,sts.example.com', runtime: false,

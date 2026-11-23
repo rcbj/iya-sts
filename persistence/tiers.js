@@ -402,6 +402,9 @@ const CELL_MINTED = [
   // ring itself: another cell's cursor would point into events it never held.
   'audit.export.cursors',
   'audit.nums', 'authn.pending',
+  // A certificate sign-in handoff (#2012): a pending sign-in's, bound to a
+  // browser's session, beside the pending sign-in itself.
+  'tls.certificateHandoffs',
   'authn.pendingMfa', 'authn.pendingPasswordChange', 'authn.sessions',
   'authn.webauthnCredentials', 'authorization_details.consented',
   'caep.register', 'cells.deliveries', 'cells.exports', 'cells.projections',

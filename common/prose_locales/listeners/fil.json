@@ -139,6 +139,14 @@
     "en": "1d66f74984228996",
     "text": "Ang sign-in service at ang mga second factor nito, ang wallet, SPNEGO at certificate sign-in, at ang sign-out."
   },
+  "listeners.applications.certificate-sign-in.label": {
+    "en": "b64346dfecab1d4d",
+    "text": "Certificate sign-in"
+  },
+  "listeners.applications.certificate-sign-in.what": {
+    "en": "4eb1f17babcf76e5",
+    "text": "Ang listener na pinagpapasahan ng certificate sign-in: ang iisang request na humihingi ng smart card o certificate."
+  },
   "listeners.applications.portal.label": {
     "en": "00cf214ba77e7497",
     "text": "User portal"
