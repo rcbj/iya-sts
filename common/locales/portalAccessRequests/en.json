@@ -11,5 +11,9 @@
   "waits": "It waits until {when}.",
   "approve": "Approve",
   "deny": "Deny",
-  "done": "{status, select, approved {The access request is approved. The application can ask again now.} denied {The access request is denied.} other {The access request is {status}.}}"
+  "done": "{status, select, approved {The access request is approved. The application can ask again now.} denied {The access request is denied.} other {The access request is {status}.}}",
+  "yours": "Approvals you gave that are still in force. Revoking one means a later evaluation that carries it is not approved.",
+  "until": "This approval lasts until {when}.",
+  "revoke": "Revoke",
+  "revoked": "The approval is revoked. A later evaluation that carries it is not approved."
 }

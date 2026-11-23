@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5967** of them, in **57** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5968** of them, in **57** subsystems.
 
 ## Where a code appears
 
@@ -93,7 +93,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 252
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 114
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 115
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 301
@@ -5725,6 +5725,7 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0135` | An AuthZEN access request's callback will not be delivered again: the attempt bound is spent, or the failure cannot succeed (an HTTP status below 500, or a URL the outbound policy refuses). The task's own status is unchanged. The task status endpoint remains the record (#1202). | none — logged and audited |
 | `STS-AUTHZEN-0136` | An access request callback was refused because the caller is not an application. set-callbacks writes appAuthzenCallbackUri only on an application, and a submission that names a callback from a person or a service account is refused. A value already stored as stsAuthzenCallbackUri is left in place and is not honoured (#1202). | HTTP 400 on a submission; the console's refusal on set-callbacks |
 | `STS-AUTHZEN-0137` | An access request callback override was refused: attempts or backoff was not an integer in range (attempts 1 to 20, backoff 60 to 86400), or a token was not attempts=N or backoff=S, or one of them was repeated (#1202). | the console's refusal |
+| `STS-AUTHZEN-0138` | The requester of a revoked AuthZEN access approval could not be mailed; the revocation stands (#1203). | none — logged |
 
 ## STS-FGA
 

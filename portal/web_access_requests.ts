@@ -10,7 +10,8 @@
 // `GET /account-api/access-requests` (`portal_access_requests.ts`): the
 // AuthZEN access requests waiting for the signed-in approver, a card each
 // with who it is about, what it asks, through which PEP, and the Approve and
-// Deny buttons.
+// Deny buttons. A second list is the live approvals that person gave, each
+// with Revoke (#1203).
 //
 // The subject, action, resource, PEP and application are the denied
 // tuple's — DATA, shown as code and never as wording, in every language.
@@ -32,7 +33,7 @@ class AccessRequestPages {
   /**
    * One answer's form.
    *
-   * @param action - `approve` or `deny`
+   * @param action - `approve`, `deny` or `revoke`
    * @param id - the request
    * @param label - the button's label, already HTML
    * @param danger - whether the button is the dangerous one
@@ -54,9 +55,10 @@ class AccessRequestPages {
    *
    * @param row - the request
    * @param t - the translator
+   * @param kind - `pending` (the default) or `granted`
    * @returns the HTML
    */
-  static card(row: Json, t: Json): string {
+  static card(row: Json, t: Json, kind?: string): string {
     const code = function (value: unknown): string {
       return '<code>' + kit.esc(String(value == null ? '' : value)) +
         '</code>';
@@ -64,6 +66,21 @@ class AccessRequestPages {
     const subject = row.subject || {};
     const resource = row.resource || {};
     const action = row.action || {};
+    const granted = kind === 'granted';
+    const approval = row.approval || {};
+    const when = granted
+      ? t.html('portalAccessRequests.until',
+               { when: t.date(Number(approval.approvedUntil) * 1000) })
+      : t.html('portalAccessRequests.waits',
+               { when: t.date(Number(row.expiresAt) * 1000) });
+    const buttons = granted
+      ? AccessRequestPages.form('revoke', String(row.id),
+                                t.html('portalAccessRequests.revoke'), true)
+      : AccessRequestPages.form('approve', String(row.id),
+                                t.html('portalAccessRequests.approve'),
+                                false) +
+        AccessRequestPages.form('deny', String(row.id),
+                                t.html('portalAccessRequests.deny'), true);
     return '<div class="card access-request" id="access-request-' +
       kit.esc(String(row.id).slice(4, 16)) + '"><p>' +
       t.html('portalAccessRequests.asks') + '</p><table>' +
@@ -77,13 +94,7 @@ class AccessRequestPages {
       '</th><td>' + code(row.application) + '</td></tr>' +
       '<tr><th>' + t.html('portalAccessRequests.requester') + '</th><td>' +
       code(row.requester) + '</td></tr></table>' +
-      '<p class="sub">' + t.html('portalAccessRequests.waits',
-        { when: t.date(Number(row.expiresAt) * 1000) }) + '</p>' +
-      AccessRequestPages.form('approve', String(row.id),
-                              t.html('portalAccessRequests.approve'), false) +
-      AccessRequestPages.form('deny', String(row.id),
-                              t.html('portalAccessRequests.deny'), true) +
-      '</div>';
+      '<p class="sub">' + when + '</p>' + buttons + '</div>';
   }
 
   /**
@@ -96,16 +107,25 @@ class AccessRequestPages {
   static render(view: Json, ctx: Json): string {
     const t = ctx.t;
     const rows: Json[] = view.rows || [];
-    const body = rows.length
-      ? rows.map(function (row: Json): string {
-          return AccessRequestPages.card(row, t);
+    const granted: Json[] = view.granted || [];
+    const waiting = rows.map(function (row: Json): string {
+      return AccessRequestPages.card(row, t, 'pending');
+    }).join('');
+    const yours = granted.length
+      ? '<div class="card"><p class="sub">' +
+        t.html('portalAccessRequests.yours') + '</p></div>' +
+        granted.map(function (row: Json): string {
+          return AccessRequestPages.card(row, t, 'granted');
         }).join('')
+      : '';
+    const empty = rows.length || granted.length
+      ? ''
       : '<div class="card"><p class="sub">' +
         t.html('portalAccessRequests.none') + '</p></div>';
     return '<div class="card"><p class="sub">' +
       t.html('portalAccessRequests.sub') +
       (view.enabled ? '' : ' ' + t.html('portalAccessRequests.off')) +
-      '</p></div>' + body;
+      '</p></div>' + waiting + yours + empty;
   }
 
   /**

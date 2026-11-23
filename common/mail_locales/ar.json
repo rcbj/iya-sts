@@ -75,6 +75,11 @@
       "text": "مُنح وصول طارئ فورًا، من دون معتمد، لطلب يسمّيك، {{username}}، أحد المعتمدين له: يجوز لـ {{subject}} {{action}} {{resource}} في التطبيق {{application}}، عبر {{requester}}، لمدة قصيرة.\n\nالتبرير المقدَّم: {{justification}}\n\nتسمح السياسة بوصول طارئ إلى هذا. راجعه، واسحبه إذا لم يكن مبررًا:\n\n{{link}}\n",
       "html": "<p>مُنح وصول طارئ فورًا، من دون معتمد، لطلب يسمّيك، <strong>{{username}}</strong>، أحد المعتمدين له: يجوز لـ <strong>{{subject}}</strong> <strong>{{action}}</strong> <strong>{{resource}}</strong> في التطبيق <strong>{{application}}</strong>، عبر {{requester}}، لمدة قصيرة.</p><p>التبرير المقدَّم: {{justification}}</p><p>تسمح السياسة بوصول طارئ إلى هذا. <a href=\"{{link}}\">راجعه</a>، واسحبه إذا لم يكن مبررًا.</p>"
     },
+    "authzen-access-revoked": {
+      "subject": "{{service}}: أُلغيت موافقة على طلب وصول قدّمته",
+      "text": "أُلغيت موافقة على طلب وصول قدّمته، {{username}}، بواسطة {{approver}}.\n\nطلب {{subject}} أن {{action}} {{resource}} في التطبيق {{application}}. لم تعد تلك الموافقة سارية. التقييم اللاحق الذي يحملها غير موافق عليه. قدّم طلب وصول جديد إذا كان الوصول لا يزال مطلوباً.\n",
+      "html": "<p>أُلغيت موافقة على طلب وصول قدّمته، <strong>{{username}}</strong>، بواسطة <strong>{{approver}}</strong>.</p><p>طلب <strong>{{subject}}</strong> أن <strong>{{action}}</strong> <strong>{{resource}}</strong> في التطبيق <strong>{{application}}</strong>. لم تعد تلك الموافقة سارية. التقييم اللاحق الذي يحملها غير موافق عليه. قدّم طلب وصول جديد إذا كان الوصول لا يزال مطلوباً.</p>"
+    },
     "pki-pin-status": {
       "subject": "{{service}}: تغيّرت حالة شهادة يعتمد عليها نطاق الثقة هذا",
       "text": "وجد التدقيق اليومي للشهادات التي يعتمد عليها نطاق الثقة هذا هذه التغييرات:\n\n{{changes}}\n\nتعرض صفحة ثقة PKI في وحدة تحكم المسؤول كل واحدة منها. تتلقى هذه الرسالة لأن لديك Admin Write في نطاق الثقة هذا.\n",

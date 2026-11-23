@@ -893,13 +893,20 @@ header argues each. What a maintainer needs quickly:
   **A task from before the index** is noted by the sweep job, which walks
   every task already: the backfill, within a minute of the upgrade and never
   on the delete path; a delete inside that minute misses such a task.
+* **The portal lists and revokes the approvals that person gave** (#1203),
+  through the same `decide()` door and the same `approve-access-request`
+  question. `grantedBy()` is the list: status `approved`, a live approval
+  whose `approver` is that username, and `mayDecide()` on the portal door.
+  The requester is mailed (`authzen-access-revoked`) when the channel can
+  address their own entry; a failure to mail is `0138` and the revocation
+  stands. An emergency approval, whose approver is the door rather than a
+  person, stays on the console.
 * Not built: `evaluation_id` binding by reference, `approval.state`, the
   hashed binding, `form_url` / `request_schema_url`, `display`, BULK, ACTOR,
-  CATALOG, a `failed` transition of the task's own status, and revocation
-  from the portal (the console revokes). A delivery that will not succeed
-  is `callbackDelivery.state` `failed` (#1202), which is not that
-  transition. `tests/authzen_access_request.js` holds it in process and
-  `tests/protocol/sts_authzen.js` section 9 over HTTP.
+  CATALOG, and a `failed` transition of the task's own status. A delivery
+  that will not succeed is `callbackDelivery.state` `failed` (#1202), which
+  is not that transition. `tests/authzen_access_request.js` holds it in
+  process and `tests/protocol/sts_authzen.js` section 9 over HTTP.
 
 ## THE REQUEST SHAPES ARE THE MODEL'S (#1579, 2026-11-10)
 
@@ -1000,4 +1007,5 @@ dropped), 0134 an empty audience withdrawing the target; 0135–0137 the
 callback retry (#1202): 0135 the delivery will not be tried again (the
 task status is unchanged), 0136 a callback registered for somebody who is
 not an application, 0137 a per-URL `attempts` or `backoff` that is not an
-integer in range.
+integer in range; 0138 the requester of a revoked approval could not be
+mailed, and the revocation stands (#1203).

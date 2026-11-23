@@ -1083,6 +1083,61 @@ class MailUses {
     return out;
   }
 
+  /**
+   * Tells the requester that an approval of their access request was
+   * revoked (#1203). No link. Skips a requester the channel cannot
+   * address, so an application never becomes a refused send.
+   *
+   * @param username - the requester
+   * @param facts - `approver`, `subject`, `action`, `resource`,
+   *   `application` (data, from the task) and `dedupKey`
+   * @returns what `send()` answered, or `{ ok: false, skipped }`
+   */
+  authzenAccessRevoked(username: string, facts: Json): Json {
+    const { log, mail, errorCodes, realms } = this.deps;
+    log.debug("Entering MailUses.authzenAccessRevoked(). " + username);
+    const f = facts || {};
+    let out: Json = { ok: false, skipped: 'no transport' };
+    try {
+      if (!username || !mail.available()) {
+        log.debug("Leaving MailUses.authzenAccessRevoked(). Nobody, or " +
+                  "no transport.");
+        return out;
+      }
+      const person = mail.recipient(username);
+      if (!person || !person.address) {
+        out = { ok: false, skipped: 'no address' };
+        log.debug("Leaving MailUses.authzenAccessRevoked(). No address.");
+        return out;
+      }
+      out = mail.send({
+        username: username,
+        template: 'authzen-access-revoked',
+        values: { username: username,
+                  approver: String(f.approver || ''),
+                  subject: String(f.subject || ''),
+                  action: String(f.action || ''),
+                  resource: String(f.resource || ''),
+                  application: String(f.application || '') },
+        dedupKey: String(f.dedupKey || ('authzen-access-revoked:' +
+                                        username)),
+        via: 'an AuthZEN access revocation',
+        actor: String(f.approver || '')
+      });
+    } catch (e) {
+      // The revocation already stands. This is only the notice.
+      log.debug("Caught in MailUses.authzenAccessRevoked(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-AUTHZEN-0138') + 'mail: the AuthZEN ' +
+               'access revocation notice for ' + username + ' in the "' +
+               realms.currentId() + '" realm could not be queued: ' +
+               ((e && e.message) || e));
+      out = { ok: false, skipped: 'threw' };
+    }
+    log.debug("Leaving MailUses.authzenAccessRevoked().");
+    return out;
+  }
+
   // An account was disabled (`common/account_state.ts`), by `by`.
   /**
    * Sends the account-disabled notice.
@@ -1194,6 +1249,7 @@ export = {
   addressChanged: slot.forward('addressChanged'),
   accessRequested: slot.forward('accessRequested'),
   authzenAccessRequested: slot.forward('authzenAccessRequested'),
+  authzenAccessRevoked: slot.forward('authzenAccessRevoked'),
   postLoginReminder: slot.forward('postLoginReminder'),
   pkiPinStatus: slot.forward('pkiPinStatus')
 };

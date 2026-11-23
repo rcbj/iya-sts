@@ -75,6 +75,11 @@
       "text": "Nödåtkomst beviljades direkt, utan godkännare, för en begäran som anger dig, {{username}}, som en av sina godkännare: {{subject}} får {{action}} {{resource}} i programmet {{application}}, via {{requester}}, under en kort tid.\n\nDen angivna motiveringen: {{justification}}\n\nPolicyn tillåter nödåtkomst till detta. Granska den och återkalla den om den inte var befogad:\n\n{{link}}\n",
       "html": "<p>Nödåtkomst beviljades direkt, utan godkännare, för en begäran som anger dig, <strong>{{username}}</strong>, som en av sina godkännare: <strong>{{subject}}</strong> får <strong>{{action}}</strong> <strong>{{resource}}</strong> i programmet <strong>{{application}}</strong>, via {{requester}}, under en kort tid.</p><p>Den angivna motiveringen: {{justification}}</p><p>Policyn tillåter nödåtkomst till detta. <a href=\"{{link}}\">Granska den</a> och återkalla den om den inte var befogad.</p>"
     },
+    "authzen-access-revoked": {
+      "subject": "{{service}}: ett godkännande av en åtkomstbegäran du skickade återkallades",
+      "text": "Ett godkännande av en åtkomstbegäran du skickade, {{username}}, återkallades av {{approver}}.\n\n{{subject}} bad om att {{action}} {{resource}} i programmet {{application}}. Det godkännandet gäller inte längre. En senare utvärdering som bär det godkänns inte. Skicka en ny åtkomstbegäran om åtkomsten fortfarande behövs.\n",
+      "html": "<p>Ett godkännande av en åtkomstbegäran du skickade, <strong>{{username}}</strong>, återkallades av <strong>{{approver}}</strong>.</p><p><strong>{{subject}}</strong> bad om att <strong>{{action}}</strong> <strong>{{resource}}</strong> i programmet <strong>{{application}}</strong>. Det godkännandet gäller inte längre. En senare utvärdering som bär det godkänns inte. Skicka en ny åtkomstbegäran om åtkomsten fortfarande behövs.</p>"
+    },
     "pki-pin-status": {
       "subject": "{{service}}: ett certifikat som den här sfären förlitar sig på har ändrat tillstånd",
       "text": "Den dagliga granskningen av de certifikat som den här sfären förlitar sig på fann följande ändringar:\n\n{{changes}}\n\nSidan PKI-förtroende i administrationskonsolen visar var och en. Du får detta eftersom du har Admin Write i den här sfären.\n",

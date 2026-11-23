@@ -2094,7 +2094,7 @@ model XacmlPepListenerTuningFields {
 
 @hoisted model WithUserClaims { `user`?: string; `claims`?: WithDescriptionClaimsReportEtc4 }
 
-@hoisted model WithEnabledRows { `enabled`?: boolean; `rows`?: (WithIdStatusRequesterEtc25)[] }
+@hoisted model WithEnabledRows { `enabled`?: boolean; `rows`?: (WithIdStatusRequesterEtc25)[]; `granted`?: (WithIdStatusRequesterEtc25)[] }
 
 @hoisted model WithStatusUsableAudSubs { `status`?: WithOptedInKindUsableEtc8; `usable`?: boolean; `audSubs`?: (string)[] }
 

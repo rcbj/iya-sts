@@ -71,9 +71,9 @@ Each operation's method, path, access and the portal page or form it is the door
 
 `getAccessRequests`
 
-**The AuthZEN access requests waiting for you to decide**
+**The AuthZEN access requests waiting for you, and the approvals you can revoke**
 
-The pending access requests (#1180) whose denying policy named you an approver — its approver role, its approver group, or the application's owners — and that the access-control policy lets you decide: each with who it is about, what it asks to do to what, through which PEP and application, and until when it waits. `enabled` is false where the realm has the profile off.
+The pending access requests (#1180) whose denying policy named you an approver — its approver role, its approver group, or the application's owners — and that the access-control policy lets you decide: each with who it is about, what it asks to do to what, through which PEP and application, and until when it waits. `granted` is the live approvals you gave that you may still revoke (#1203). `enabled` is false where the realm has the profile off.
 
 The door of the portal's `GET /portal/access-requests`.
 
@@ -91,6 +91,46 @@ Scope: `account:manage`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `enabled` | boolean |  |  |
+| `granted` | list |  |  |
+| `granted[].action` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `granted[].application` | string, or null |  |  |
+| `granted[].approval` | object |  |  |
+| `granted[].approval.approvedAt` | string or number, or null |  |  |
+| `granted[].approval.approvedUntil` | string or number, or null |  |  |
+| `granted[].approval.approver` | string, or null |  |  |
+| `granted[].approval.id` | string |  |  |
+| `granted[].approval.revoked` | boolean |  |  |
+| `granted[].approvers` | object |  |  |
+| `granted[].approvers.groups` | list |  |  |
+| `granted[].approvers.groups[]` | string |  |  |
+| `granted[].approvers.owners` | boolean |  |  |
+| `granted[].approvers.roles` | list |  |  |
+| `granted[].approvers.roles[]` | string |  |  |
+| `granted[].callbackDelivery` | object |  |  |
+| `granted[].callbackDelivery.attempts` | list |  |  |
+| `granted[].callbackDelivery.attempts[].at` | number |  |  |
+| `granted[].callbackDelivery.attempts[].ok` | boolean |  |  |
+| `granted[].callbackDelivery.attempts[].status` | number |  |  |
+| `granted[].callbackDelivery.attempts[].why` | string |  |  |
+| `granted[].callbackDelivery.backoffS` | number |  |  |
+| `granted[].callbackDelivery.bound` | number |  |  |
+| `granted[].callbackDelivery.nextAt` | number |  |  |
+| `granted[].callbackDelivery.state` | one of `pending`, `delivered`, `failed` |  |  |
+| `granted[].client` | object |  |  |
+| `granted[].client.id` | string |  |  |
+| `granted[].client.name` | string |  |  |
+| `granted[].context` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `granted[].createdAt` | string or number, or null |  |  |
+| `granted[].decidedBy` | string |  |  |
+| `granted[].emergency` | boolean |  |  |
+| `granted[].expiresAt` | string or number, or null |  |  |
+| `granted[].finishedAt` | string or number, or null |  |  |
+| `granted[].id` | string |  |  |
+| `granted[].justification` | string |  |  |
+| `granted[].requester` | string, or null |  |  |
+| `granted[].resource` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `granted[].status` | string |  |  |
+| `granted[].subject` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
 | `rows` | list |  |  |
 | `rows[].action` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
 | `rows[].application` | string, or null |  |  |
@@ -166,9 +206,9 @@ Scope: `account:manage`.
 
 `decideAccessRequest`
 
-**Approves or denies an AuthZEN access request**
+**Approves, denies or revokes an AuthZEN access request**
 
-Decides one request as you, after the access-control policy (action approve-access-request on resource authzen-access-request) said you may: an approval is handed to the PEP to carry on its next evaluation, which the realm's policy decides afresh; a denial ends the request. Refused for a request you may not decide, your own included where the policy forbids self-approval, and for one no longer pending.
+Decides one request as you, after the access-control policy (action approve-access-request on resource authzen-access-request) said you may. An approval is handed to the PEP to carry on its next evaluation, which the realm's policy decides afresh. A denial ends the request. A revocation withdraws an approval you may decide: the task stays approved, a later evaluation that carries it is not approved, and the requester is mailed when the channel can address them (#1203). Refused when you may not decide, your own request included where the policy forbids self-approval, when a request is no longer pending, and when there is no live approval to revoke.
 
 The door of the portal's `POST /portal/access-requests`.
 
@@ -185,7 +225,7 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `action` | one of `approve`, `deny` | yes | approve or deny. |
+| `action` | one of `approve`, `deny`, `revoke` | yes | approve, deny or revoke. |
 | `request` | string | yes | The access request, from the list. |
 
 **200**: The answer.
@@ -206,6 +246,46 @@ Scope: `account:manage`.
 | `ok` | boolean | yes |  |
 | `view` | object |  |  |
 | `view.enabled` | boolean |  |  |
+| `view.granted` | list |  |  |
+| `view.granted[].action` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `view.granted[].application` | string, or null |  |  |
+| `view.granted[].approval` | object |  |  |
+| `view.granted[].approval.approvedAt` | string or number, or null |  |  |
+| `view.granted[].approval.approvedUntil` | string or number, or null |  |  |
+| `view.granted[].approval.approver` | string, or null |  |  |
+| `view.granted[].approval.id` | string |  |  |
+| `view.granted[].approval.revoked` | boolean |  |  |
+| `view.granted[].approvers` | object |  |  |
+| `view.granted[].approvers.groups` | list |  |  |
+| `view.granted[].approvers.groups[]` | string |  |  |
+| `view.granted[].approvers.owners` | boolean |  |  |
+| `view.granted[].approvers.roles` | list |  |  |
+| `view.granted[].approvers.roles[]` | string |  |  |
+| `view.granted[].callbackDelivery` | object |  |  |
+| `view.granted[].callbackDelivery.attempts` | list |  |  |
+| `view.granted[].callbackDelivery.attempts[].at` | number |  |  |
+| `view.granted[].callbackDelivery.attempts[].ok` | boolean |  |  |
+| `view.granted[].callbackDelivery.attempts[].status` | number |  |  |
+| `view.granted[].callbackDelivery.attempts[].why` | string |  |  |
+| `view.granted[].callbackDelivery.backoffS` | number |  |  |
+| `view.granted[].callbackDelivery.bound` | number |  |  |
+| `view.granted[].callbackDelivery.nextAt` | number |  |  |
+| `view.granted[].callbackDelivery.state` | one of `pending`, `delivered`, `failed` |  |  |
+| `view.granted[].client` | object |  |  |
+| `view.granted[].client.id` | string |  |  |
+| `view.granted[].client.name` | string |  |  |
+| `view.granted[].context` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `view.granted[].createdAt` | string or number, or null |  |  |
+| `view.granted[].decidedBy` | string |  |  |
+| `view.granted[].emergency` | boolean |  |  |
+| `view.granted[].expiresAt` | string or number, or null |  |  |
+| `view.granted[].finishedAt` | string or number, or null |  |  |
+| `view.granted[].id` | string |  |  |
+| `view.granted[].justification` | string |  |  |
+| `view.granted[].requester` | string, or null |  |  |
+| `view.granted[].resource` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `view.granted[].status` | string |  |  |
+| `view.granted[].subject` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
 | `view.rows` | list |  |  |
 | `view.rows[].action` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
 | `view.rows[].application` | string, or null |  |  |

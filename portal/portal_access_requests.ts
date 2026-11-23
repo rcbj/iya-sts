@@ -11,7 +11,9 @@
 // .ts`); the people the policy's advice named — holding its approver role,
 // in its approver group, or owning the application — approve or deny it
 // here, beside the other approvals a person makes in the portal (a CIBA
-// sign-in, a GNAP grant, on `/portal/ciba`). A page of its own rather than
+// sign-in, a GNAP grant, on `/portal/ciba`). The same page revokes an
+// approval that person gave (#1203), through the same `decide()` door.
+// A page of its own rather than
 // a section of that one: those are requests about the PERSON, answered as
 // their resource owner; this is a request about somebody else, answered as
 // its approver, and the two must never be mistaken for each other.
@@ -87,10 +89,11 @@ class PortalAccessRequests {
   }
 
   /**
-   * The page's view: the requests waiting for this person.
+   * The page's view: the requests waiting for this person, and the live
+   * approvals they gave.
    *
    * @param username - the signed-in person
-   * @returns `{ enabled, rows }`
+   * @returns `{ enabled, rows, granted }`
    */
   view(username: string): Json {
     const { log } = this.deps;
@@ -98,13 +101,15 @@ class PortalAccessRequests {
     const requests = this.deps.accessRequests();
     // THE PERSON IS THE TOKEN'S, and nothing else names them.
     const out = { enabled: requests.enabled(),
-                  rows: requests.awaiting(String(username)) };
-    log.debug("Leaving PortalAccessRequests.view(). " + out.rows.length);
+                  rows: requests.awaiting(String(username)),
+                  granted: requests.grantedBy(String(username)) };
+    log.debug("Leaving PortalAccessRequests.view(). " + out.rows.length +
+              " waiting, " + out.granted.length + " granted.");
     return out;
   }
 
   /**
-   * Approves or denies one request, as the signed-in person.
+   * Approves, denies or revokes one request, as the signed-in person.
    *
    * @param ctx - the account API's helpers
    * @param res - the response
@@ -129,12 +134,17 @@ class PortalAccessRequests {
         'That access request cannot be decided.',
         { view: this.view(who) });
     }
+    const revoked = String(body.action) === 'revoke';
+    const words = ctx.translatorFor(who);
+    // Revoke leaves the task `approved`. `done` has no revoked arm.
+    const message = revoked
+      ? words.text('portalAccessRequests.revoked')
+      : words.text('portalAccessRequests.done',
+                   { status: result.task.status });
     log.debug("Leaving PortalAccessRequests.decide(). " +
               result.task.status);
     return ctx.json(res, 200, { ok: true,
-      go: ctx.PORTAL + '/access-requests',
-      message: ctx.translatorFor(who).text(
-        'portalAccessRequests.done', { status: result.task.status }) });
+      go: ctx.PORTAL + '/access-requests', message: message });
   }
 
   /**
