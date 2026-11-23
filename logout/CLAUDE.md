@@ -150,7 +150,12 @@ draws that view rather than leaving the refusal over the old page.
 (`refusedNameMessage()`, `nobodyMessage()`), the account step's and the
 re-authentication's are `refusals.logout.*` `Sentence`s, which the page draws
 in its language and the JSON door's `error_description` sends as English. A
-result row's `message` is still the model's English, as on `/admin/logout`.
+result row's failure (`ok: false` from a family's `terminate()`, and the
+loop's own *no answer*, *ending this failed* and *cannot be ended*) is a
+`refusals.logout.row.*` sentence: `message` keeps its English everywhere —
+`/admin/logout`, the JSON door, the sealed result — and the page's result
+view carries the key beside it as `said`. A success row, and an inventory
+row's `why`, are still the model's English.
 
 **THIS SERVICE DOES NOT RECALL ANYTHING IT HAS ALREADY ISSUED** — a SAML
 assertion, a Kerberos service ticket, an X509-SVID. **Still true, and QUALIFIED

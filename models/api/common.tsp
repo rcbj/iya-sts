@@ -740,7 +740,7 @@ namespace IyaSts.Api.Common;
 
 @hoisted model WithLabelValueNote {`label`?: string; `value`?: string; `note`?: string}
 
-@hoisted model WithIdLabelMessage {`id`?: string; `label`?: string; `message`?: string}
+@hoisted model WithIdLabelMessage {`id`?: string; `label`?: string; `message`?: string; @js(#{`description`:"Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language."}) `said`?: RefusalMessage}
 
 @hoisted model WithQProtocol { `q`?: NullableString; `protocol`?: NullableString }
 

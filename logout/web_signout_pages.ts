@@ -37,6 +37,7 @@
 // them: one fold rule for both, rather than a second copy of when a
 // paragraph is long enough to collapse. A leaf `web_` module.
 import kit = require('../admin-ui/web_kit');
+import WebSaid = require('../common/web_said');
 
 type Json = any;
 
@@ -321,7 +322,10 @@ class SignoutPages {
     const listOf = function (rows: Json[], cls: string): string {
       return '<table><tbody>' + rows.map(function (one: Json) {
         return '<tr><td><code>' + esc(one.label || one.id) +
-          '</code></td><td class="' + cls + '">' + esc(one.message) +
+          '</code></td><td class="' + cls + '">' +
+          // A failure's catalog sentence in the page's language (#2006);
+          // the model's English otherwise.
+          esc(WebSaid.sentence(t, one.said) || one.message) +
           '</td></tr>';
       }).join('') + '</tbody></table>';
     };

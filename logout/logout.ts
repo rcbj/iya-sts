@@ -1109,9 +1109,9 @@ class Logout {
           return ended
             ? { ok: true,
                 message: 'the sign-on session ' + r.handle + ' was ended' }
-            : { ok: false, message: 'there was no session ' + r.handle +
-                                    ' to ' + 'end; it had already expired or ' +
-                                    'already been signed out' };
+            : { ok: false, message:
+                Sentence.say('refusals.logout.row.noSession',
+                             { handle: String(r.handle) }) };
         } },
 
       // -----------------------------------------------------------------------
@@ -1160,9 +1160,8 @@ class Logout {
           const clientId = parts.slice(1).join('|');
           if (!session) {
             log.debug("Leaving oidc-rp.terminate().");
-            return { ok: false, message: 'the session that relying party was ' +
-                                         'signed into on has already ended, ' +
-                                         'which signed it out too' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.rpSessionEnded') };
           }
           // The notification is built BEFORE the client is forgotten, because
           // the list it is built from is the thing about to be removed.
@@ -1253,9 +1252,8 @@ class Logout {
           const session = authn.sessionById(parts[0]);
           if (!session) {
             log.debug("Leaving wsfed-rp.terminate().");
-            return { ok: false, message: 'the session that realm was signed ' +
-                                         'into on has already ended, which ' +
-                                         'took its cleanup list with it' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.realmSessionEnded') };
           }
           // WHICH REALM THE HANDLE NAMES (2026-11-15). `collect()` gives a
           // realm's first address `<sid>|<realm>` and each later one
@@ -1361,10 +1359,8 @@ class Logout {
           const entityId = parts.slice(1).join('|');
           if (!session) {
             log.debug("Leaving saml2-sp.terminate().");
-            return { ok: false, message: 'the session that service provider ' +
-                                         'was signed into on has already ' +
-                                         'ended, which took its logout list ' +
-                                         'with it' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.spSessionEnded') };
           }
           // SIGNED AHEAD, off the event loop, where the door could wait and
           // the realm's keys are in the HSM (#1955 P8 follow-up,
@@ -1458,8 +1454,8 @@ class Logout {
           const session = authn.sessionById(parts[0]);
           if (!session) {
             log.debug("Leaving federation-partner.terminate().");
-            return { ok: false, message: 'the session that partner signed ' +
-                                         'in has already ended' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.partnerSessionEnded') };
           }
           // Signed ahead, off the event loop, where the realm's keys are in
           // the HSM (#1955 P8 follow-up, `signedAhead()`).
@@ -1471,16 +1467,16 @@ class Logout {
           if (!aheadP && helpers.keysInHsm()) {
             log.debug("Leaving federation-partner.terminate(). Not signed " +
                       "ahead.");
-            return { ok: false, message: 'the partner cannot be told: ' +
-                     'its sign-out is signed by a key in the HSM, and it ' +
-                     'was not signed ahead of this sign-out' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.partnerHsm') };
           }
           const built = aheadP ||
                         federationSlo.partnerLogoutFor(session, ctx.base);
           if (!built.ok) {
             log.debug("Leaving federation-partner.terminate(). " + built.why);
-            return { ok: false, message: 'the partner cannot be told: ' +
-                                         built.why };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.partnerCannotBeTold',
+                             { why: String(built.why) }) };
           }
           ctx.partnerLogouts.push(built.target);
           log.debug("Leaving federation-partner.terminate().");
@@ -1536,8 +1532,8 @@ class Logout {
           })[0];
           if (!held) {
             log.debug("Leaving oauth-grant.terminate(). Gone.");
-            return { ok: false, message: 'that grant has already been ' +
-                                         'revoked or has expired' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.grantGone') };
           }
           const done = grantManagement.revoke(r.handle, ctx.key,
             ctx.by || 'a sign-out', ctx.initiatingEntity || 'admin');
@@ -1550,7 +1546,8 @@ class Logout {
           return done && done.ok
             ? { ok: true, message: 'the grant of ' + done.clientId + ' was ' +
                 'revoked, and ' + done.revoked + ' token(s) with it' }
-            : { ok: false, message: 'that grant has already been revoked' };
+            : { ok: false, message:
+                Sentence.say('refusals.logout.row.grantRevoked') };
         } },
 
       // -----------------------------------------------------------------------
@@ -1656,10 +1653,8 @@ class Logout {
           })[0];
           if (!match) {
             log.debug("Leaving code.terminate().");
-            return { ok: false, message: 'that authorization code has ' +
-                                         'already been redeemed or has ' +
-                                         'expired, so there is nothing left ' +
-                                         'to end' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.codeRedeemed') };
           }
           oauth2.dropCode(match.code);
           log.debug("Leaving code.terminate().");
@@ -1723,10 +1718,8 @@ class Logout {
           });
           if (!found) {
             log.debug("Leaving vci-code.terminate().");
-            return { ok: false, message: 'that pre-authorized code has ' +
-                                         'already been redeemed or has ' +
-                                         'expired, so there is nothing left ' +
-                                         'to end' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.preAuthorizedRedeemed') };
           }
           vcOffers.preAuthorizedCodes.deleteDigest(found);
           log.debug("Leaving vci-code.terminate().");
@@ -1777,9 +1770,8 @@ class Logout {
           if (!match || !vcVerifier.withdrawSignIn(match.state,
                                                    'a sign-out')) {
             log.debug("Leaving wallet-signin.terminate(). Nothing left.");
-            return { ok: false, message: 'that wallet sign-in has already ' +
-                                         'been collected or has expired, so ' +
-                                         'there is nothing left to end' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.walletSignInCollected') };
           }
           log.debug("Leaving wallet-signin.terminate().");
           return { ok: true, message: 'a wallet sign-in was withdrawn before ' +
@@ -1867,8 +1859,8 @@ class Logout {
           if (!match || !vcIssued.disown(match.key, ctx.by ||
                                          'a global sign-out')) {
             log.debug("Leaving wallet-credential.terminate(). Gone.");
-            return { ok: false, message: 'that wallet credential has already ' +
-                                         'been disowned or has expired' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.walletCredentialDisowned') };
           }
           log.debug("Leaving wallet-credential.terminate().");
           return { ok: true, message: 'a wallet credential was disowned: it ' +
@@ -1938,8 +1930,8 @@ class Logout {
           })[0];
           if (!grant) {
             log.debug("Leaving gnap.terminate(). Gone.");
-            return { ok: false, message: 'that GNAP grant has already been ' +
-                                         'revoked or finalized' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.gnapGrantGone') };
           }
           const tokens = (grant.tokens || []).length;
           const ended = this.deps.gnapRevocation.endGrant(grant, {
@@ -1951,8 +1943,8 @@ class Logout {
             ? { ok: true, message: 'the GNAP grant ' + grant.id + ' of ' +
                 grant.client.identifier + ' is finalized and its ' + tokens +
                 ' token(s) are revoked' }
-            : { ok: false, message: 'that GNAP grant had already been ' +
-                                    'finalized' };
+            : { ok: false, message:
+                Sentence.say('refusals.logout.row.gnapGrantFinalized') };
         } },
 
       // -----------------------------------------------------------------------
@@ -1995,8 +1987,8 @@ class Logout {
           return gone
             ? { ok: true, message: 'the persisted claims token held by ' +
                 r.label + ' is ended' }
-            : { ok: false, message: 'that persisted claims token had ' +
-                                    'already ended' };
+            : { ok: false, message:
+                Sentence.say('refusals.logout.row.claimsTokenEnded') };
         } },
 
       // -----------------------------------------------------------------------
@@ -2329,12 +2321,8 @@ class Logout {
           const record = stats.artifactByKey(r.handle);
           if (!record) {
             log.debug("Leaving issued.terminate(). No such credential.");
-            return { ok: false, message: 'that credential is no longer in ' +
-                                         'the issued register — it has been ' +
-                                         'forgotten to the cap since this ' +
-                                         'list was drawn, at which point ' +
-                                         'this service has no position on ' +
-                                         'it left to state' };
+            return { ok: false, message:
+                Sentence.say('refusals.logout.row.credentialForgotten') };
           }
           const first = stats.revokeArtifact(record, ctx.by ||
                                              'a global sign-out');
@@ -3641,13 +3629,15 @@ class Logout {
           // plainly rather than ignoring.
           skipped.push({ id: r.id, family: family.id, kind: r.kind,
                          label: r.label,
-                         message: r.why || 'this cannot be ended' });
+                         message: r.why ||
+                           Sentence.say('refusals.logout.row.cannotBeEnded') });
           return;
         }
         let outcome;
         try {
           outcome = family.terminate(r, ctx) ||
-                    { ok: false, message: 'no answer' };
+                    { ok: false,
+                      message: Sentence.say('refusals.logout.row.noAnswer') };
         } catch (e) {
           log.warn(errorCodes.tag('STS-LOGOUT-0006') +
                    'logout: ending ' + r.id + ' failed: ' + e.message);
@@ -3659,7 +3649,9 @@ class Logout {
                 ' item during a sign-out failed',
             detail: { family: family.id, kind: String(r.kind || ''),
                       why: e.message } });
-          outcome = { ok: false, message: 'ending this failed: ' + e.message };
+          outcome = { ok: false, message:
+              Sentence.say('refusals.logout.row.endingFailed',
+                           { error: String(e.message) }) };
         }
         const entry: Loose = {
           id: r.id, family: family.id, kind: r.kind, label: r.label,
@@ -4751,13 +4743,21 @@ class Logout {
 
   // The result as the page draws it where there is nothing to fan out:
   // `resultPage()`'s facts. The messages are the model's words, as on the
-  // server-drawn page.
+  // server-drawn page; a row's failure that is a catalog sentence (#2006)
+  // carries its key as `said`, which the page draws in its language.
   private resultView(result?, remaining?) {
     const { log } = this.deps;
     log.debug("Entering Logout.resultView().");
     const rows = function (list) {
       return (list || []).map(function (one) {
-        return { id: one.id, label: one.label || '', message: one.message };
+        const row: Loose = { id: one.id, label: one.label || '',
+                             message: String(one.message == null
+                               ? '' : one.message) };
+        const said = Sentence.stored(one.message);
+        if (said) {
+          row.said = said;
+        }
+        return row;
       });
     };
     log.debug("Leaving Logout.resultView().");
