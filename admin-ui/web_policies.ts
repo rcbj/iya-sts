@@ -1223,7 +1223,8 @@ class PoliciesPage {
       fields: (named.fields || []).map(function (field) {
         const posted = one(field.key);
         if (field.type === 'bool') {
-          // An unticked box posts nothing, so its absence is "no".
+          // The pair posts TRUE or FALSE. A pair that posts nothing (a
+          // disabled control) is "no".
           return Object.assign({}, field, {
             value: /^(true|on|1|yes)$/i.test(String(posted || '')) });
         }
@@ -1708,9 +1709,10 @@ class PoliciesPage {
   // construction.
   //
   // **THE FORM CARRIES EVERY FIELD**, because a save replaces the whole
-  // profile; the action is told it came from the console so that an unticked
-  // checkbox — which posts nothing — reads as "no" here and as a refusal from
-  // an API caller that forgot one.
+  // profile. A yes/no pair posts TRUE or FALSE, and No is checked when the
+  // answer is no. The action is told it came from the console so that a
+  // pair which posts nothing — a disabled control — reads as "no" here and
+  // as a refusal from an API caller that forgot one.
   //
   // **THE RESET IS ITS OWN FORM, NOT A SECOND BUTTON IN THE SAVE FORM**, for
   // `/admin/users/new`'s reason: two submit buttons named `action` make
@@ -1741,10 +1743,19 @@ class PoliciesPage {
     const off = field.disabled ? ' disabled' : '';
     let control;
     if (field.type === 'bool') {
-      control = '<input type="checkbox" id="' + kit.esc(id) + '" name="' +
-        kit.esc(field.key) + '" value="TRUE"' +
-        (field.value ? ' checked' : '') + off +
-        hint + '>' +
+      // A YES AND A NO, AND ONE IS ALWAYS CHECKED (#1132). An unticked
+      // checkbox used to mean "no", which reads as nothing chosen. No is
+      // checked when the value is not yes. The pair posts TRUE or FALSE.
+      const yes = field.value === true ||
+        /^(true|on|1|yes)$/i.test(String(field.value || ''));
+      const radio = function (suffix, value, label, checked) {
+        return '<label class="fg-radio"><input type="radio" id="' +
+          kit.esc(id + suffix) + '" name="' + kit.esc(field.key) +
+          '" value="' + value + '"' + (checked ? ' checked' : '') + off +
+          hint + '> ' + kit.esc(label) + '</label>';
+      };
+      control = radio('', 'TRUE', t.text('consolePolicies.yes'), yes) +
+        ' ' + radio('-no', 'FALSE', t.text('consolePolicies.no'), !yes) +
         (field.disabled
           ? ' <span class="off">' + kit.esc(field.disabledWhy) + '</span>'
           : '');
@@ -1809,8 +1820,8 @@ class PoliciesPage {
     }
     // A FIELD A NEW POLICY'S SAVE REFUSES WITHOUT (#1132), on New policy's
     // page: the row outlined, the name starred and "required" said, as a
-    // field grid cell is. A box has no empty state — unticked is "no" — so
-    // a boolean is never marked.
+    // field grid cell is. A yes/no pair always has one checked — No when
+    // the answer is no — so a boolean is never marked.
     const marked = !!field.required && field.type !== 'bool';
     return '<tr' + (marked ? ' class="fg-required-row"' : '') +
       '><td><label for="' + kit.esc(id) + '"' + hint + '>' +
