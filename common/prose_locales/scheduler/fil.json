@@ -36,8 +36,8 @@
     "text": "Pag-expire ng AuthZEN access request"
   },
   "sched.jobs.authzen.access-requests.describe": {
-    "en": "f219a842a3345525",
-    "text": "Inililipat sa expired ang bawat pending na AuthZEN access request (#1180) na lampas na sa expires_at nito — isinusulat ang audit row nito at ipinapadala ang callback nito — inaalis ang tapos na isa isang araw matapos itong matapos, o kapag naubos na ang approval nito kung mas huli iyon, at sinusubukang muli ang callback delivery na nabigo dahil sa network error o HTTP 5xx, hanggang sa attempt bound (#1202). Ang pagbasa mismo ang nagpapatupad ng deadline, kaya ito ang record at ang clean-up, hindi kailanman ang nagpapasya."
+    "en": "19cf8cda48af4f1e",
+    "text": "Inililipat sa expired ang bawat nakabinbing kahilingan sa access ng AuthZEN (#1180) na lampas na sa expires_at nito — isinusulat ang audit row nito at ipinapadala ang callback nito —, inaalis ang isang tapos na isang araw matapos itong matapos, o kapag naubos ang pag-apruba nito kung mas huli iyon, inaalis ang isang pagtangging maaaring hilingin isang araw matapos ang window nito, at inuulit ang paghahatid ng callback na nabigo dahil sa network error o HTTP 5xx, hanggang sa hangganan ng mga pagsubok, ang bawat paghihintay ay doble ng nauna (#1202). Pinananatili ang isang tapos habang sinusubukan pa ang callback nito, at inililipat sa failed ang isang nakabinbin na ang mga tagapag-apruba ay walang sinuman. Ang isang pagbasa mismo ang naglalapat ng deadline, kaya ito ang tala at ang paglilinis, hindi kailanman ang nagpapasya."
   },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",
@@ -654,6 +654,14 @@
   "sched.jobs.ssf.stream-maintenance.describe": {
     "en": "bd4794eda9c5d2d2",
     "text": "Pina-pause, dini-disable o binubura ang stream na hindi aktibo ang receiver sa loob ng ssf.inactivityTimeoutS (SSF 1.0 section 8.1.1), na inaanunsyo muna ang pause o disable gamit ang stream-updated event, at nagpapadala ng verification event sa bawat naka-enable na stream na walang natanggap mula sa transmitter na ito sa loob ng ssf.verificationEveryS (section 8.1.4)."
+  },
+  "sched.jobs.ssh-user-ca.krl.title": {
+    "en": "9694f71884ac8e1b",
+    "text": "Revocation list ng SSH user CA"
+  },
+  "sched.jobs.ssh-user-ca.krl.describe": {
+    "en": "c84b42d3aab3bdde",
+    "text": "Nire-refresh ang KRL ng OpenSSH user CA ng bawat realm pagkatapos ng mga pagbawi ng inilabas na certificate at inaalis ang mga expired na pagbawi."
   },
   "sched.jobs.tls.ticket-key-rotate.title": {
     "en": "8bb62416b0f1932c",

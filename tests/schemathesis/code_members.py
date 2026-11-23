@@ -167,6 +167,13 @@ HELP_TEXT_BY_ROUTE = {
         ".rows[].what",
         ".specifications[].coverage",
     ),
+    # The same-subject trust-anchor warning (#1242). Fixed text: it names
+    # STS-TLS-0064 and the earlier fingerprint, whatever was added. `message`
+    # appends that same sentence.
+    "/admin-api/tls/trust/add": (
+        ".warning",
+        ".message",
+    ),
 }
 
 # The account API's OpenAPI document as the console's page holds it: its

@@ -123,3 +123,9 @@ kerberos/spnego-pages-spa.js.gz
 # Python bytecode (#1303: a stale sts_adapter .pyc had been tracked since #212).
 __pycache__/
 *.pyc
+
+# A second checkout placed IN this repository, named `wt-iya-sts-*` (#1968):
+# another copy of the whole service, never this one's source. `.dockerignore`
+# and both `tsconfig*.json` excludes carry the same pattern, for the image
+# build's and the type check's sake.
+wt-iya-sts-*/

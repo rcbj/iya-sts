@@ -1178,6 +1178,7 @@ async function childBody() {
           'reads them (URIs, defaults written in)', brief(pulled));
   t.check(settings.enabled === true && settings.batchEnabled === true &&
           settings.returnReasons === false &&
+          settings.obligationsProfile === true &&
           settings.maxEvaluations === 64 &&
           settings.maxBodyBytes === 262144 &&
           JSON.stringify(settings.resolveSubjectTypes) === '["user"]',

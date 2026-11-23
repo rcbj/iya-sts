@@ -312,8 +312,8 @@
     "text": "प्रमाणपत्र प्राधिकरण"
   },
   "listeners.applications.pki.what": {
-    "en": "8b280b2baedbdfe6",
-    "text": "CRL, OCSP, CA प्रमाणपत्र और शृंखलाएँ, तथा क्रिप्टोग्राफ़िक मेटाडेटा दस्तावेज़।"
+    "en": "227bec56922b2292",
+    "text": "CRL, OCSP, CA के प्रमाणपत्र और शृंखलाएँ, क्रिप्टोग्राफ़िक मेटाडेटा दस्तावेज़ और Web Key Directory की OpenPGP कुंजियाँ।"
   },
   "listeners.applications.kerberos.label": {
     "en": "43c19a093b34b581",

@@ -312,8 +312,8 @@
     "text": "سلطة الشهادات"
   },
   "listeners.applications.pki.what": {
-    "en": "8b280b2baedbdfe6",
-    "text": "CRL وOCSP، وشهادات CA والسلاسل، ومستندات البيانات الوصفية التشفيرية."
+    "en": "227bec56922b2292",
+    "text": "قوائم CRL وOCSP وشهادات CA وسلاسلها ووثائق البيانات الوصفية التشفيرية ومفاتيح OpenPGP في Web Key Directory."
   },
   "listeners.applications.kerberos.label": {
     "en": "43c19a093b34b581",

@@ -450,7 +450,7 @@ class AuthzenSurface {
     // THE TOKEN-EXCHANGE BINDING'S TUPLES (#1181) are answered by its fixed
     // conversion, never by the root policy; everything else is the API as
     // it was, less a context member only those tuples may carry.
-    const planned = plan || self.planOf([body]);
+    const planned = plan || self.planOf([body], req);
     const entry = planned.entries[index || 0] || { kind: '' };
     if (entry.kind) {
       const bound = self.evaluateBinding(body, caller, rows, batchId, where,
@@ -594,13 +594,28 @@ class AuthzenSurface {
    * API's own while `authzen.tokenExchange` is off.
    *
    * @param bodies - the items, defaults merged
+   * @param req - the request, for the authorization server's base a
+   *   subject token issued here names (#1201's review); none leaves it
+   *   unknown
    * @returns the plan
    */
-  planOf(bodies: unknown[]): any {
+  planOf(bodies: unknown[], req?: Req): any {
     const { log } = this.deps;
     log.debug("Entering AuthzenSurface.planOf().");
     const plan = this.deps.exchange.plan(bodies);
     exchange.AuthzenTokenExchange.noteScopes(plan, bodies);
+    if (req) {
+      try {
+        plan.asBase = String(this.deps.helpers.baseUrlOf(req, 'oauth-oidc') ||
+                             '');
+      } catch (e) {
+        // No base is no issuer: a subject token is then not issued here,
+        // the safe direction for the bound it decides.
+        log.debug("Caught in AuthzenSurface.planOf(): " +
+                  ((e && e.message) || e));
+        plan.asBase = '';
+      }
+    }
     log.debug("Leaving AuthzenSurface.planOf().");
     return plan;
   }
@@ -1366,7 +1381,7 @@ class AuthzenSurface {
     if (!items.length) {
       const single = AuthzenSurface.merged(body, {});
       const one = self.evaluateOne(single, caller, rows, id, where,
-                                   self.planOf([single]), 0, req);
+                                   self.planOf([single], req), 0, req);
       if (one.error) {
         errorCodes.mark(res, one.code);
         // error-code: none — marked on the line above with the item's code.
@@ -1394,7 +1409,7 @@ class AuthzenSurface {
     const requests = items.map(function (item: unknown) {
       return AuthzenSurface.merged(body, item);
     });
-    const plan = self.planOf(requests);
+    const plan = self.planOf(requests, req);
     for (let i = 0; i < items.length; i += 1) {
       const request = requests[i];
       const one = request === null

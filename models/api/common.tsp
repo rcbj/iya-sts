@@ -102,7 +102,8 @@ namespace IyaSts.Api.Common;
           `at`:#{`type`:"number"},
           `status`:#{`type`:"number"},
           `ok`:#{`type`:"boolean"},
-          `why`:#{`type`:"string"}
+          `why`:#{`type`:"string"},
+          `code`:#{`type`:"string", `description`:"Empty for a delivery. STS-AUTHZEN-0091 for a failed attempt the job tries again, STS-AUTHZEN-0135 for the last one."}
         }
       }
     }

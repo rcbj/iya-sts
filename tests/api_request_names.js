@@ -474,8 +474,9 @@ async function run(t) {
           JSON.stringify(R.accountPost));
   t.equal(JSON.stringify(report.indexQuery['/account-api/me']), '[]',
           'the index says a parameterless GET takes no query');
+  // `reauthenticate` since #1072 P5: the portal's sign-in-again links.
   t.equal(JSON.stringify(report.indexQuery['/account-api/applications']),
-          JSON.stringify(['done', 'page']),
+          JSON.stringify(['done', 'page', 'reauthenticate']),
           'and names what one takes');
 
   t.log.info('=== C. /authn-api ===');

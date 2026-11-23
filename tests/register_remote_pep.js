@@ -364,8 +364,14 @@ function childMain() {
          /haproxy:3\.2\.23-alpine/.test(sharedCompose) &&
          /\n  companion:\n/.test(sharedCompose) &&
          /iya-sts-companion/.test(sharedCompose) &&
-         /127\.0\.0\.1:\$\{COMPANION_HOST_PORT:-9700\}:9700/
-           .test(sharedCompose) &&
+         // #1972: the companion publishes no host port (its route trusts
+         // identity headers) and never turns TLS verification off; with a
+         // CA the anchor is mounted beside the variable that names it.
+         !/COMPANION_HOST_PORT|:9700:9700/.test(sharedCompose) &&
+         !/COMPANION_STS_TLS_INSECURE/.test(sharedCompose) &&
+         (!/COMPANION_STS_CA_FILE/.test(sharedCompose) ||
+          /pep-cluster-service-ca\.pem:\/certs\/service-ca\.pem:ro/
+            .test(sharedCompose)) &&
          /COMPANION_KRB5_SERVICE_PORT: "off"/.test(sharedCompose) &&
          !/^  sts:/m.test(sharedCompose) &&
          /balance source/.test(haproxy) &&

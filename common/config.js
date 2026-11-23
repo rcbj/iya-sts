@@ -1462,8 +1462,9 @@ const SETTINGS = [
                  'for the first administrator is written to the file ' +
                  'bootstrap-admin-password in persistence.dataDir, readable ' +
                  'only by this service, and the log says where. ' +
-                 'A later start deletes that file, once somebody already ' +
-                 'holds a credential. ' +
+                 'A trust realm\'s file adds a hyphen and the realm id to ' +
+                 'that name. A later start deletes a file once the password ' +
+                 'in it no longer opens its account. ' +
                  'On, it is written to the service log instead. WARNING: on, ' +
                  'ASVS 5.0.0 requirement 16.2.5 is not met, because a ' +
                  'credential reaches the log.' },
@@ -1717,8 +1718,9 @@ const SETTINGS = [
                  'name, written with its password to the file ' +
                  'bootstrap-admin-password in persistence.dataDir at first ' +
                  'start (see admin.logBootstrapPassword). ' +
-                 'A later start deletes that file, once somebody already ' +
-                 'holds a credential. ' +
+                 'A trust realm\'s file adds a hyphen and the realm id to ' +
+                 'that name. A later start deletes a file once the password ' +
+                 'in it no longer opens its account. ' +
                  'On, the ' +
                  'configured name is used as it is. WARNING: ASVS 5.0.0 ' +
                  'requirement 6.3.2 forbids a default account name, so leave ' +
@@ -1750,8 +1752,9 @@ const SETTINGS = [
                  'only by this service (the log says where, and carries them ' +
                  'itself only with admin.logBootstrapPassword on), and are ' +
                  'the only way into a fresh product deployment. ' +
-                 'A later start deletes that file, once somebody already ' +
-                 'holds a credential. ' +
+                 'A trust realm\'s file adds a hyphen and the realm id to ' +
+                 'that name. A later start deletes a file once the password ' +
+                 'in it no longer opens its account. ' +
                  'The generated password is never ' +
                  'written where somebody already holds a credential, so it ' +
                  'cannot overwrite a password. The forced change applies ' +
@@ -8398,8 +8401,9 @@ const SETTINGS = [
   // first classical name in this list (or ssh-ed25519 when the list names
   // none). ssh-mldsa-65 is this service's own wire name: a raw ML-DSA-65
   // public key and a raw signature, in the ssh-ed25519 shape. It is a
-  // second authority, stored beside the classical one, and it is not
-  // concatenated onto TrustedUserCAKeys.
+  // second authority, stored beside the classical one, published at the
+  // same path with ?algorithm=ssh-mldsa-65 and never concatenated onto
+  // TrustedUserCAKeys.
   { key: 'pki.sshUserCaAlgorithms', group: 'PKI',
     label: 'SSH user CA algorithms',
     env: 'STS_PKI_SSH_USER_CA_ALGORITHMS', type: 'csv',
@@ -8421,22 +8425,29 @@ const SETTINGS = [
                  'stays the first classical algorithm in this list, or ' +
                  'ssh-ed25519 when the list names only ssh-mldsa-65. A ' +
                  'peer that does not understand ML-DSA keeps trusting that ' +
-                 'line. ssh-rsa (SHA-1) is not offered. The ML-DSA ' +
+                 'line. The ML-DSA authority\'s key is published at ' +
+                 'GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65; ' +
+                 'stock OpenSSH cannot verify an ML-DSA certificate yet. ' +
+                 'ssh-rsa (SHA-1) is not offered. The ML-DSA ' +
                  'authority is created only when this runtime can generate ' +
                  'the key; otherwise certificates stay classical ' +
                  '(STS-PKI-0290 is recorded and the classical authority ' +
-                 'still answers).' },
+                 'still answers), unless pki.sshUserCaPqcOnly is on.' },
   { key: 'pki.sshUserCaPqcOnly', group: 'PKI',
     label: 'SSH user certificates are post-quantum only',
     env: 'STS_PKI_SSH_USER_CA_PQC_ONLY', type: 'bool', dflt: false,
     runtime: true,
     description: 'When on, a new SSH user certificate is signed by the ' +
-                 'ML-DSA authority, and only when that authority exists. ' +
-                 'The published TrustedUserCAKeys line stays the classical ' +
-                 'key, so an OpenSSH client that already trusts it is not ' +
-                 'handed an algorithm it cannot parse. On a runtime that ' +
-                 'cannot generate ML-DSA the certificate stays classical ' +
-                 'and the request does not fail. Already issued classical ' +
+                 'ML-DSA authority and by nothing else. Stock OpenSSH ' +
+                 'cannot verify an ML-DSA certificate yet, so only an SSH ' +
+                 'server built to verify ssh-mldsa-65, trusting the key at ' +
+                 'GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65, ' +
+                 'accepts these certificates. The default line at that ' +
+                 'path stays the classical key. When the realm has no ' +
+                 'ML-DSA authority (this runtime cannot generate ML-DSA, ' +
+                 'or ssh-mldsa-65 is not in pki.sshUserCaAlgorithms) the ' +
+                 'request is refused (STS-PKI-0297) rather than answered ' +
+                 'with a classical certificate. Already issued classical ' +
                  'certificates keep verifying. Cannot be on while ' +
                  'pki.sshUserCaPqcAlongsideClassical is on (STS-PKI-0296). ' +
                  'Off by default.' },
@@ -16351,6 +16362,15 @@ const SETTINGS = [
     description: 'The most access requests one realm holds pending; past ' +
                  'it a submission is refused 503 until some are decided or ' +
                  'expire.' },
+  { key: 'authzen.accessRequestMaxDenials', group: 'AuthZEN',
+    label: 'Requestable denials a realm records',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_MAX_DENIALS', type: 'int',
+    dflt: 100000, min: 1, max: 10000000, runtime: true,
+    description: 'The most requestable denials one realm records by ' +
+                 'evaluation_id (#1204). Past it a new denial is not ' +
+                 'recorded, and is still requestable by its ' +
+                 'binding_token; the access request job removes a record ' +
+                 'a day after its window.' },
   { key: 'authzen.callbackAttempts', group: 'AuthZEN',
     label: 'Access request callback attempts',
     env: 'STS_AUTHZEN_CALLBACK_ATTEMPTS', type: 'int',
@@ -16367,8 +16387,9 @@ const SETTINGS = [
     label: 'Access request callback backoff (seconds)',
     env: 'STS_AUTHZEN_CALLBACK_BACKOFF_S', type: 'int',
     dflt: 60, min: 60, max: 86400, runtime: true,
-    description: 'How long to wait after a failed access request ' +
-                 'callback before the next attempt (#1202). The ' +
+    description: 'How long to wait after the first failed access ' +
+                 'request callback before the next attempt (#1202). Each ' +
+                 'later wait is twice the one before it, up to a day. The ' +
                  'authzen.access-requests job runs every 60 seconds, so ' +
                  'a shorter wait could not be honoured. An ' +
                  'application\'s appAuthzenCallbackConfig may set a ' +

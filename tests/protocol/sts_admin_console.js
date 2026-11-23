@@ -4273,7 +4273,13 @@ function writeForms(stamp) {
     // it carries TWO names on one line to drive the comma split as well as the
     // newline one, since a members box that only ever received a single value
     // would be a control this suite presses without exercising.
-    { path: "/admin/groups", button: "Create",
+    //
+    // THE FORM MOVED TO ITS OWN PAGE ON 2026-11-20 (#1132): every Directory
+    // object's create is `/admin/<object>/new` now, and the list's Create tab
+    // is a link to it. So the form is pressed on `/admin/groups/new` and the
+    // value is read back off the list, `/admin/groups` — which is what
+    // `readBack` names, a create page drawing nothing it created.
+    { path: "/admin/groups/new", readBack: "/admin/groups", button: "Create",
       values: { group: "console-group-" + stamp.slice(0, 8),
                 note: "Created by the console UI test.",
                 members: GROUP_MEMBER_A + ", " + GROUP_MEMBER_B },
@@ -4313,7 +4319,7 @@ async function everyWriteRoundTrips(driver) {
 
     // AND THE VALUE COMES BACK. This is the half a notice cannot give.
     if (one.expect.text) {
-      const redrawn = await open(driver, realm(one.path));
+      const redrawn = await open(driver, realm(one.readBack || one.path));
       // THE WHOLE PAGE, NOT THE VISIBLE TAB: since the console's pages became
       // tabs (#428, Metadata first), the list a write lands in is often a
       // panel the page does not open on, and `innerText` leaves a hidden
@@ -4322,7 +4328,7 @@ async function everyWriteRoundTrips(driver) {
         "return document.body ? document.body.textContent : '';"));
       check(one.path + " draws the value it was given", function () {
         assert.ok(drawn.indexOf(one.expect.text) >= 0,
-          "AFTER THE WRITE, " + one.path + " MUST DRAW " +
+          "AFTER THE WRITE, " + (one.readBack || one.path) + " MUST DRAW " +
           JSON.stringify(one.expect.text) + ". The console answered with a " +
           "notice and the page does not show it — which is exactly what a " +
           "handler that accepts a field, reports success and stores " +
@@ -6244,14 +6250,17 @@ async function theGroupPageAddsAMember(driver) {
 
   // The group this control needs, made through the control beside it — so a
   // Create that broke would fail HERE too rather than leaving this section
-  // silently skipped for want of a group.
-  await open(driver, realm("/admin/groups"));
+  // silently skipped for want of a group. The control is on its own page
+  // since #1132 (2026-11-20), `/admin/groups/new`, which the list links to.
+  await open(driver, realm("/admin/groups/new"));
   const createForm = await formIndexFilling(driver, ["group", "members"]);
-  check("/admin/groups draws a create control", function () {
+  check("/admin/groups/new draws a create control", function () {
     assert.ok(createForm >= 0,
-      "/admin/groups should draw a form carrying `group` and `members`. It " +
-      "was a read-only page until 2026-09-06; a form that is not here is " +
-      "that change reverted rather than renamed.");
+      "/admin/groups/new should draw a form carrying `group` and " +
+      "`members`. /admin/groups was a read-only page until 2026-09-06 and " +
+      "its create moved to a page of its own on 2026-11-20 (#1132); a form " +
+      "that is not here is one of those changes reverted rather than " +
+      "renamed.");
   });
   await fillAndPress(driver, createForm,
                      { group: name, note: "Created by the console UI test.",
@@ -6268,9 +6277,9 @@ async function theGroupPageAddsAMember(driver) {
       "creating " + name + " on /admin/groups was refused: " +
       outcomeOf(landedOn, "error"));
     assert.ok(landedOn.indexOf("group=") >= 0,
-      "after a create, /admin/groups should send the reader to the group it " +
-      "just made — the Add member control is there and nowhere else. It " +
-      "landed on " + landedOn + ".");
+      "after a create, /admin/groups/new should send the reader to the " +
+      "group it just made — the Add member control is there and nowhere " +
+      "else. It landed on " + landedOn + ".");
   });
 
   // THE DN, TAKEN OFF THE URL THE CONSOLE ITSELF BUILT rather than scraped out

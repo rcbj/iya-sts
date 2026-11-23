@@ -100,8 +100,8 @@
     "text": "partial: Access Evaluation API (अनुभाग 6), XACML इंजन द्वारा क्षेत्र की मूल नीति के विरुद्ध, प्रति-क्षेत्र विशेषता कैटलॉग के माध्यम से निर्णित, X-Request-ID और अनुभाग 11.3 की चुनौती के साथ; अपनी तीन अर्थ-व्यवस्थाओं के साथ Access Evaluations API (अनुभाग 7); और दोनों रूपों पर PDP मेटाडेटा (अनुभाग 9), signed_metadata सहित; प्रकार घोषित करने वाले PEP के लिए Obligations Profile draft; और इस सेवा के अपने लोगों, अनुप्रयोगों, API, प्रत्यायोजन संबंधों और नीति क्रियाओं पर तीन Search API (अनुभाग 8), पृष्ठबद्ध और transitive नहीं। नहीं है: खोज में प्रति-परिणाम obligation, और OAuth प्रोफ़ाइल, जो अभी भी draft है।"
   },
   "stsmetadata.specs.authzen-arap.coverage": {
-    "en": "e785acbe5ead52ad",
-    "text": "partial: माँगे जा सकने वाला अस्वीकार (context.access_request, evaluation_id, evaluated_at, reason) जहाँ क्षेत्र की नीति Deny को access-request advice से चिह्नित करती है, मान द्वारा बंधा, binding_token से जिसे यह क्षेत्र हस्ताक्षरित करता है (इनलाइन दावे); Idempotency-Key के साथ प्रस्तुति, 201 या 202 और एक Task Handle; Retry-After के साथ कार्य-स्थिति एंडपॉइंट; POST या DELETE द्वारा रद्दीकरण; छह स्थितियाँ; reevaluate समापन मोड, approval.id विश्वसनीय अवस्था में हल होता है और अनुमोदन नीति तक विश्वसनीय तथ्यों के रूप में पहुँचता है; next_action और पाँच कारण; प्रत्येक problem type; मेटाडेटा सदस्य, jwks_uri और capability। नहीं है: संदर्भ द्वारा बंधन के रूप में evaluation_id, approval.state, हैश किया बंधन रूप, मशीन-पठनीय प्रपत्र (form_url, request_schema_url), display, तथा BULK, ACTOR और CATALOG साथी।"
+    "en": "6be544a62f94329b",
+    "text": "partial: अनुरोध-योग्य अस्वीकृति (context.access_request, evaluation_id, evaluated_at, reason) जहाँ रेल्म की नीति किसी Deny को access-request सलाह से चिह्नित करती है, इस रेल्म द्वारा हस्ताक्षरित binding_token से मान द्वारा बंधी (इनलाइन claims और binding_hash) और अस्वीकृति रिकॉर्ड से संदर्भ द्वारा; Idempotency-Key, 201 या 202 और एक Task Handle के साथ सबमिशन; Retry-After के साथ कार्य-स्थिति endpoint; POST या DELETE से रद्दीकरण; छह स्थितियाँ; reevaluate पूर्णता मोड, विश्वसनीय स्थिति में हल हुआ approval.id, जारी और सत्यापित approval.state जिसमें lookup अब भी आवश्यक है, और विश्वसनीय तथ्यों के रूप में नीति तक पहुँचती स्वीकृति; next_action और पाँच कारण; हर समस्या प्रकार; मेटाडेटा सदस्य, jwks_uri और क्षमता; अनुरोध-योग्य अस्वीकृति पर request_schema_url, सबमिशन के वैकल्पिक अंशों का समान-origin JSON Schema। अनुपस्थित: होस्ट किया गया फ़ॉर्म (form_url) और display, तथा BULK, ACTOR और CATALOG सहयोगी।"
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
     "en": "ca5109eae0e95b17",
@@ -715,6 +715,14 @@
     "en": "59b1734815ece664",
     "text": "partial: PKCS#10 अनुरोध का id-aa-attestation एट्रिब्यूट (अधिकतम एक, ठीक एक AttestationBundle, केवल certificate और अन्य विकल्प), EST, SCEP और ACME पर। दो कथन प्रकार सत्यापित होते हैं: TCG का tcg-attest-tpm-certify, संशोधन 20 के परिशिष्ट A.2.3 की सिंटैक्स में, डिवाइस प्रोफ़ाइल के लिए (#257), और हर प्रोफ़ाइल के लिए YubiKey PIV अटेस्टेशन (#1955), 1.3.6.1.4.1.41482.3.2 के अंतर्गत, जिसमें स्लॉट प्रमाणपत्र stmt है और f9 प्रमाणपत्र certs में है — यह प्रकार इस सेवा ने चुना क्योंकि ड्राफ़्ट कोई प्रकार परिभाषित नहीं करता। CRMF एक्सटेंशन नहीं पढ़ा जाता (यहाँ कोई CMP नहीं), और अन्य कथन प्रकार दर्ज किए जाते हैं, सत्यापित नहीं। ताज़गी (खंड 6.2) EST पर draft-ietf-lamps-attestation-freshness के माध्यम से, केवल TPM कथनों के लिए: PIV अटेस्टेशन में कोई nonce नहीं होता।"
   },
+  "stsmetadata.specs.yubico-piv-attestation.coverage": {
+    "en": "244659759ede3102",
+    "text": "partial: स्लॉट अटेस्टेशन प्रमाणपत्र को f9 अटेस्टेशन प्रमाणपत्र के माध्यम से Yubico के PIV रूट (Serial 263751, और फ़र्मवेयर 5.7.4 और बाद के लिए अपने PIV मध्यवर्ती प्रमाणपत्रों सहित Attestation Root 1, साथ आए और पिन किए हुए) या किसी विश्वास क्षेत्र के अपने रूट तक सत्यापित किया जाता है; उसकी कुंजी को अनुरोध की कुंजी से मिलाया जाता है; फ़र्मवेयर, सीरियल नंबर, PIN और स्पर्श नीति तथा फ़ॉर्म फ़ैक्टर एक्सटेंशन पढ़े जाते हैं, और नीतियों को विश्वास क्षेत्र की नीतियों से मिलाया जाता है। कार्ड का स्वयं कभी प्रबंधन नहीं होता: कोई PIN, PUK या स्लॉट लेखन नहीं।"
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "322d92ba9eb36fde",
+    "text": "minimal: चार कुंजी स्लॉट प्रमाणपत्र प्रोफ़ाइलों के रूप में (PIV Authentication 9a, Digital Signature 9c, Key Management 9d, Card Authentication 9e, जो डिफ़ॉल्ट रूप से किसी को साइन इन नहीं कराता), और बाहरी PIV या CAC कार्ड जो PIV Authentication नीति घोषित करने पर अपने urn:uuid subjectAltName के कार्ड UUID से मैप होता है (डिफ़ॉल्ट रूप से बंद)। कोई FASC-N, CHUID, कार्ड प्रबंधन या बायोमेट्रिक्स नहीं।"
+  },
   "stsmetadata.specs.lamps-attestation-freshness.coverage": {
     "en": "555e31da7393d476",
     "text": "partial: HTTPS पर EST (अनुभाग 5.1) — GET से और application/est-attestation-freshness+json के साथ POST से /nonce, len का सम्मान 8..64 के भीतर (16 ऑक्टेट तक बढ़ाकर), समाप्ति, जहाँ प्रमाण न चाहिए वहाँ खाली nonce, 400 और 503, प्रमाणित, तथा कुकी और प्रिंसिपल से CSR से बंधा। nonce TPM2_Certify का qualifyingData है, TPMS_ATTEST extraData के रूप में जाँचा जाता है और एक बार खर्च होता है। अनुपस्थित: कोई reqTypeInfo प्रकार परिभाषित नहीं (503), तथा CMP (अनुभाग 4), CoAP पर EST (5.2) और CMC (6), जिन्हें यह सेवा बोलती नहीं।"
@@ -762,6 +770,10 @@
   "stsmetadata.specs.rfc9580.coverage": {
     "en": "a2930bdb8ffe747d",
     "text": "partial: एक हस्तांतरणीय सार्वजनिक कुंजी, v6 और (RFC 4880) v4, पढ़ना, उसकी किसी हस्ताक्षर कुंजी द्वारा किए गए cleartext हस्ताक्षर को सत्यापित करना, और उसकी एन्क्रिप्शन कुंजी के लिए संदेश एन्क्रिप्ट करना, पारंपरिक एल्गोरिथ्म openpgp.js से गुजरते हैं। RFC 9980 के मिश्रित रूप यहाँ पढ़े जाते हैं (rfc9980 देखें)। Ed25519, Ed448, NIST वक्रों पर ECDSA और ECDH, X25519, X448 और openpgp.minRsaBits का RSA स्वीकार किए जाते हैं; DSA, ElGamal और Brainpool अस्वीकार किए जाते हैं। अनुपलब्ध: हस्ताक्षर, डिक्रिप्शन, keyring, keyserver।"
+  },
+  "stsmetadata.specs.rfc9980.coverage": {
+    "en": "5feb46765c8bc465",
+    "text": "partial: पंजीकरण पर और संग्रहीत कुंजी के उपयोग पर ML-DSA-65+Ed25519 और ML-DSA-87+Ed448 हस्ताक्षर, तथा ML-KEM-768+X25519 और ML-KEM-1024+X448 एन्क्रिप्शन। मिश्रित रूप पोस्ट-क्वांटम गिना जाता है। openpgp.pqcOnly केवल पंजीकरण को संकीर्ण करता है। हस्ताक्षर के दोनों आधे common/crypto_impl/openpgp_pqc.js जाँचता है। अनुपलब्ध: SLH-DSA (एल्गोरिथ्म पहचान 32-34), और यह सेवा RFC 9980 कुंजी उत्पन्न नहीं करती। openpgp.js इन कुंजियों को नहीं पढ़ता।"
   },
   "stsmetadata.specs.rfc3156.coverage": {
     "en": "aa799b14a54ace0f",
@@ -878,6 +890,10 @@
   "stsmetadata.endpoints./access/v1/access-requests.what": {
     "en": "15c0d860d27c7cbe",
     "text": "अस्वीकृत मूल्यांकन के subject, resource, action और context को मिली अस्वीकृति के साथ POST करें (उसके binding_token और expires_at, ज्यों के त्यों); 202 और Task Handle पाएँ, या तुरंत निर्णय होने पर परिणाम सहित 201 (आपातकालीन पहुँच जिसे नीति दे)। केवल वह Deny अनुरोध योग्य है जिसे विश्वास क्षेत्र की नीति ने सलाह urn:sts:xacml:advice:access-request से चिह्नित किया हो। कॉलर का द्वार और AUTHZEN_PEPS मूल्यांकन जैसे ही; Idempotency-Key प्रति कॉलर माना जाता है; कॉलबैक केवल कॉलर के लिए पंजीकृत URL पर। प्रत्येक अस्वीकृति problem+json होती है।"
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/schema.what": {
+    "en": "ec6a3b36123f646a",
+    "text": "उन अतिरिक्त अंशों का JSON Schema (draft 2020-12) GET करता है जिन्हें एक सबमिशन जोड़ सकता है: context.business_justification, तथा requested_access.requested_until और emergency, जिनमें अंतिम के लिए औचित्य आवश्यक है। सार्वजनिक, access_request_endpoint के समान origin; अनुरोध-योग्य अस्वीकृति का request_schema_url इसी को इंगित करता है। कोई फ़ॉर्म होस्ट नहीं किया जाता, इसलिए किसी अस्वीकृति में form_url नहीं होता। API या प्रोफ़ाइल बंद रहने पर 501 देता है। कार्य-स्थिति पथ से पहले पंजीकृत, अन्यथा वह \"schema\" को id मान लेता।"
   },
   "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
     "en": "264083b977756230",
@@ -1074,6 +1090,14 @@
   "stsmetadata.endpoints./pki/revocation.what": {
     "en": "6e82cd30ac736775",
     "text": "NON-SPEC, और जान-बूझकर फिर भी यहाँ: इन एंडपॉइंट पर क्लाइंट इंगित करने वाले व्यक्ति को यह जानना होता है कि पते क्या हैं, और उन्हें `openssl x509 -text` से प्रमाणपत्र में से पढ़ना पहला कदम के रूप में कमज़ोर है। प्रत्येक प्राधिकारी की एक पंक्ति, उसके विषय के साथ, उसने कितने प्रमाणपत्र निरस्त किए हैं, और उसके CRL दोनों स्कीमों (http, ldap) में, उसके OCSP और caIssuers पतों के साथ। इसमें कोई सीरियल नंबर नहीं है — क्या निरस्त है इसकी सूची CRL है, और उसके पास JSON की एक प्रति उसी प्रश्न का दूसरा उत्तर होती: वह जो बासी हो जाता है, और वह जिस पर किसी ने हस्ताक्षर नहीं किए। यह स्पष्ट शब्दों में कहता है कि यह सेवा निरस्तीकरण प्रकाशित करती है और किसी को उसे देखने के लिए बाध्य नहीं कर सकती, जो प्रत्येक प्रमाणपत्र प्राधिकारी के बारे में सत्य है और यही कारण है कि एक क्लाइंट लेखक अपना स्टैक यहाँ इंगित करेगा। बिना गेट, क्योंकि इसमें जो कुछ है वह इस सेवा द्वारा दिए जाने वाले प्रत्येक प्रमाणपत्र के भीतर पहले से है।"
+  },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "c8819f794e61f398",
+    "text": "NON-SPEC (#1955 P3): क्षेत्र-विशिष्ट OpenSSH उपयोगकर्ता CA कुंजी, SSH सर्वरों के भरोसे के लिए authorized-key पंक्ति के रूप में प्रकाशित। बिना गेट के और `no-store`; संबंधित CA निजी कुंजी इस सेवा से कभी बाहर नहीं जाती।"
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "ed928008015e78a8",
+    "text": "NON-SPEC (#1955 P3): क्षेत्र-विशिष्ट OpenSSH KRL, जो तब अद्यतन होती है जब कोई कॉलर प्रमाणपत्र निरस्त करता है या हार्डवेयर टोकन खोने की सूचना देता है। बिना गेट के और `no-store`; SSH सर्वरों को इसे देखने के लिए कॉन्फ़िगर करना होगा क्योंकि यह सेवा किसी भरोसेमंद पक्ष से ऐसा नहीं करवा सकती।"
   },
   "stsmetadata.endpoints./admin-api/xacml.what": {
     "en": "2efd1b442d450758",
@@ -2220,12 +2244,16 @@
     "text": "NON-SPEC (#1955 P4). वे HOTP और TOTP टोकन जिन्हें व्यवस्थापकों ने विक्रेताओं की PSKC सीड फ़ाइलों से आयात किया, असाइन नहीं, असाइन या सेवानिवृत्त, पृष्ठों में और सीरियल नंबर या व्यक्ति से खोजे जा सकने वाले। कभी कोई सीक्रेट नहीं। GET /admin/hardware-tokens (उसके OATH टैब) का प्रतिबिंब।"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-"en": "0d649147af0cbe04",
-"text": "NON-SPEC (#1955)। lost, { key } के साथ: टोकन को खोया हुआ चिह्नित किया जाता है, उस पर की हर पासकी हटाई जाती है, उस पर का हर प्रमाणपत्र keyCompromise के लिए रद्द किया जाता है, हर एक के लिए CAEP credential-change भेजा जाता है और उनसे साइन इन हुए सत्र समाप्त किए जाते हैं। enrol-piv, { username, profile, csr, attestationCertificate?, attestationIssuer? } के साथ: उस व्यक्ति को EST जारीकर्ता CA से जारी PIV स्लॉट प्रमाणपत्र, उसका YubiKey PIV अटेस्टेशन सत्यापित और YubiKey दर्ज। recover-key, { username, serial } के साथ: उस व्यक्ति की एस्क्रो की गई piv-key-management कुंजी, जिसकी अनुमति अभिगम-नियंत्रण नीति केवल PIV_KEY_RECOVERY को देती है। उस पृष्ठ पर कंसोल की तीन क्रियाएँ।"
+    "en": "0d649147af0cbe04",
+    "text": "NON-SPEC (#1955)। lost, { key } के साथ: टोकन को खोया हुआ चिह्नित किया जाता है, उस पर की हर पासकी हटाई जाती है, उस पर का हर प्रमाणपत्र keyCompromise के लिए रद्द किया जाता है, हर एक के लिए CAEP credential-change भेजा जाता है और उनसे साइन इन हुए सत्र समाप्त किए जाते हैं। enrol-piv, { username, profile, csr, attestationCertificate?, attestationIssuer? } के साथ: उस व्यक्ति को EST जारीकर्ता CA से जारी PIV स्लॉट प्रमाणपत्र, उसका YubiKey PIV अटेस्टेशन सत्यापित और YubiKey दर्ज। recover-key, { username, serial } के साथ: उस व्यक्ति की एस्क्रो की गई piv-key-management कुंजी, जिसकी अनुमति अभिगम-नियंत्रण नीति केवल PIV_KEY_RECOVERY को देती है। उस पृष्ठ पर कंसोल की तीन क्रियाएँ।"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
     "en": "b55c0cdd477d183e",
-"text": "हार्डवेयर टोकन को खोया हुआ बताता है और उसके क्रेडेंशियल हटाता है, PIV स्लॉट प्रमाणपत्र जारी करता है, या एस्क्रो की गई कुंजी सौंपता है"
+    "text": "हार्डवेयर टोकन को खोया हुआ बताता है और उसके क्रेडेंशियल हटाता है, PIV स्लॉट प्रमाणपत्र जारी करता है, या एस्क्रो की गई कुंजी सौंपता है"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
+    "en": "1716521c9c5e119d",
+    "text": "NON-SPEC (#1955)। किसी व्यक्ति के एस्क्रो किए गए piv-key-management प्रमाणपत्र (piv.keyEscrow): सीरियल नंबर, विषय, वैधता और क्या प्रत्येक रद्द किया गया। कभी कोई कुंजी नहीं। GET /admin/hardware-tokens का प्रतिरूप।"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -3131,19 +3159,19 @@
     "en": "9547cda6898c37a6",
     "text": "साइन-इन के बाद एक पोस्ट-क्वांटम पासकी माँगता है, फिर उस साइन-ऑन सत्र को स्थापित करता है जिसे उसने रोके रखा था"
   },
-"stsmetadata.endpoints./wsapi/2.0/verify.what": {
+  "stsmetadata.endpoints./wsapi/2.0/verify.what": {
     "en": "ff0550a4318594c6",
     "text": "YUBICO का सत्यापन प्रोटोकॉल 2.0 (#1955 P5)। id, otp, nonce और h का GET या POST। डिफ़ॉल्ट रूप से बंद: मार्ग OPERATION_NOT_ALLOWED उत्तर देता है और कुछ हस्ताक्षरित नहीं करता। चालू होने पर क्लाइंट id और HMAC-SHA1 हर मोड में जाँचे जाते हैं, विकास सहित; nonce पाँच मिनट याद रहता है; मेल खाता OTP खर्च होता है। Cache-Control: no-store। YubiCloud को कुछ नहीं भेजा जाता।"
   },
-"stsmetadata.endpoints./wsapi/2.0/verify.effect": {
+  "stsmetadata.endpoints./wsapi/2.0/verify.effect": {
     "en": "bb2bc4011c8240ac",
     "text": "उस क्लाइंट के लिए YubiKey OTP जाँचता है जिसने अनुरोध पर हस्ताक्षर किया, या yubiotp.ykval बंद होने पर OPERATION_NOT_ALLOWED उत्तर देता है"
   },
-"stsmetadata.endpoints./authn/roles.what": {
+  "stsmetadata.endpoints./authn/roles.what": {
     "en": "88814e89f81f8d86",
     "text": "गतिशील रूप से चयन-योग्य भूमिकाएँ (#1072)। सभी फ़ैक्टर के बाद, ऐसे एप्लिकेशन में साइन-इन जिसके realm में कोई गतिशील भूमिका परिभाषित है (जब तक roles.dynamicSelection या एप्लिकेशन का appDynamicRoleSelection इसे बंद न करे) रोका जाता है, जबकि व्यक्ति के लिए हर गतिशील भूमिका की अपनी XACML पात्रता नीति तय की जाती है; केवल Permit कोई भूमिका पेश करता है। यदि व्यक्ति ने \"इस साइन-इन के लिए भूमिकाएँ चुनें\" पर टिक किया, या कोई आवश्यक भूमिका पेश की गई, तो यह पेज चुनने योग्य भूमिकाएँ दिखाता है; जारी रखें (/authn-api/mfa/{id}/roles) चयन को चरण की पेशकश और फिर से नीतियों से जाँचता है, और सत्र को चयन के साथ सत्र रिकॉर्ड में शुरू करता है, निर्देशिका में कभी नहीं। उस एप्लिकेशन का टोकन तब चुनी गई भूमिकाएँ रखता है, और हर जारी करने पर हर एक की नीति फिर से पूछी जाती है। रोके गए साइन-इन से बनी ?mfa= id चाहिए; उसके बिना उत्तर 400 होता है।"
   },
-"stsmetadata.endpoints./authn/roles.effect": {
+  "stsmetadata.endpoints./authn/roles.effect": {
     "en": "fc2116e31d3ead37",
     "text": "पूछता है कि इस साइन-इन के लिए कौन-सी गतिशील रूप से चयन-योग्य भूमिकाएँ उपयोग करनी हैं, फिर रोके गए सत्र को उस चयन के साथ शुरू करता है"
   },
@@ -4186,21 +4214,5 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "एक पैरामीटर"
-  },
-  "stsmetadata.specs.yubico-piv-attestation.coverage": {
-    "en": "244659759ede3102",
-    "text": "partial: स्लॉट अटेस्टेशन प्रमाणपत्र को f9 अटेस्टेशन प्रमाणपत्र के माध्यम से Yubico के PIV रूट (Serial 263751, और फ़र्मवेयर 5.7.4 और बाद के लिए अपने PIV मध्यवर्ती प्रमाणपत्रों सहित Attestation Root 1, साथ आए और पिन किए हुए) या किसी विश्वास क्षेत्र के अपने रूट तक सत्यापित किया जाता है; उसकी कुंजी को अनुरोध की कुंजी से मिलाया जाता है; फ़र्मवेयर, सीरियल नंबर, PIN और स्पर्श नीति तथा फ़ॉर्म फ़ैक्टर एक्सटेंशन पढ़े जाते हैं, और नीतियों को विश्वास क्षेत्र की नीतियों से मिलाया जाता है। कार्ड का स्वयं कभी प्रबंधन नहीं होता: कोई PIN, PUK या स्लॉट लेखन नहीं।"
-  },
-  "stsmetadata.specs.fips201.coverage": {
-    "en": "322d92ba9eb36fde",
-    "text": "minimal: चार कुंजी स्लॉट प्रमाणपत्र प्रोफ़ाइलों के रूप में (PIV Authentication 9a, Digital Signature 9c, Key Management 9d, Card Authentication 9e, जो डिफ़ॉल्ट रूप से किसी को साइन इन नहीं कराता), और बाहरी PIV या CAC कार्ड जो PIV Authentication नीति घोषित करने पर अपने urn:uuid subjectAltName के कार्ड UUID से मैप होता है (डिफ़ॉल्ट रूप से बंद)। कोई FASC-N, CHUID, कार्ड प्रबंधन या बायोमेट्रिक्स नहीं।"
-  },
-  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
-    "en": "1716521c9c5e119d",
-    "text": "NON-SPEC (#1955)। किसी व्यक्ति के एस्क्रो किए गए piv-key-management प्रमाणपत्र (piv.keyEscrow): सीरियल नंबर, विषय, वैधता और क्या प्रत्येक रद्द किया गया। कभी कोई कुंजी नहीं। GET /admin/hardware-tokens का प्रतिरूप।"
-  },
-  "stsmetadata.specs.rfc9980.coverage": {
-    "en": "5feb46765c8bc465",
-    "text": "partial: पंजीकरण पर और संग्रहीत कुंजी के उपयोग पर ML-DSA-65+Ed25519 और ML-DSA-87+Ed448 हस्ताक्षर, तथा ML-KEM-768+X25519 और ML-KEM-1024+X448 एन्क्रिप्शन। मिश्रित रूप पोस्ट-क्वांटम गिना जाता है। openpgp.pqcOnly केवल पंजीकरण को संकीर्ण करता है। हस्ताक्षर के दोनों आधे common/crypto_impl/openpgp_pqc.js जाँचता है। अनुपलब्ध: SLH-DSA (एल्गोरिथ्म पहचान 32-34), और यह सेवा RFC 9980 कुंजी उत्पन्न नहीं करती। openpgp.js इन कुंजियों को नहीं पढ़ता।"
   }
 }

@@ -109,6 +109,7 @@ Scope: `account:manage`.
 | `granted[].callbackDelivery` | object |  |  |
 | `granted[].callbackDelivery.attempts` | list |  |  |
 | `granted[].callbackDelivery.attempts[].at` | number |  |  |
+| `granted[].callbackDelivery.attempts[].code` | string |  | Empty for a delivery. STS-AUTHZEN-0091 for a failed attempt the job tries again, STS-AUTHZEN-0135 for the last one. |
 | `granted[].callbackDelivery.attempts[].ok` | boolean |  |  |
 | `granted[].callbackDelivery.attempts[].status` | number |  |  |
 | `granted[].callbackDelivery.attempts[].why` | string |  |  |
@@ -149,6 +150,7 @@ Scope: `account:manage`.
 | `rows[].callbackDelivery` | object |  |  |
 | `rows[].callbackDelivery.attempts` | list |  |  |
 | `rows[].callbackDelivery.attempts[].at` | number |  |  |
+| `rows[].callbackDelivery.attempts[].code` | string |  | Empty for a delivery. STS-AUTHZEN-0091 for a failed attempt the job tries again, STS-AUTHZEN-0135 for the last one. |
 | `rows[].callbackDelivery.attempts[].ok` | boolean |  |  |
 | `rows[].callbackDelivery.attempts[].status` | number |  |  |
 | `rows[].callbackDelivery.attempts[].why` | string |  |  |
@@ -208,7 +210,7 @@ Scope: `account:manage`.
 
 **Approves, denies or revokes an AuthZEN access request**
 
-Decides one request as you, after the access-control policy (action approve-access-request on resource authzen-access-request) said you may. An approval is handed to the PEP to carry on its next evaluation, which the realm's policy decides afresh. A denial ends the request. A revocation withdraws an approval you may decide: the task stays approved, a later evaluation that carries it is not approved, and the requester is mailed when the channel can address them (#1203). Refused when you may not decide, your own request included where the policy forbids self-approval, when a request is no longer pending, and when there is no live approval to revoke.
+Decides one request as you, after the access-control policy said you may (action approve-access-request on resource authzen-access-request for an approval or a denial, revoke-access-request for a revocation). An approval is handed to the PEP to carry on its next evaluation, which the realm's policy decides afresh. A denial ends the request. A revocation withdraws an approval you gave: the task stays approved, a later evaluation that carries it is not approved, and the requester is mailed when the channel can address them (#1203). Refused when you may not decide, your own request included where the policy forbids self-approval, when a request is no longer pending, when there is no live approval to revoke, and when the approval is one somebody else gave.
 
 The door of the portal's `POST /portal/access-requests`.
 
@@ -264,6 +266,7 @@ Scope: `account:manage`.
 | `view.granted[].callbackDelivery` | object |  |  |
 | `view.granted[].callbackDelivery.attempts` | list |  |  |
 | `view.granted[].callbackDelivery.attempts[].at` | number |  |  |
+| `view.granted[].callbackDelivery.attempts[].code` | string |  | Empty for a delivery. STS-AUTHZEN-0091 for a failed attempt the job tries again, STS-AUTHZEN-0135 for the last one. |
 | `view.granted[].callbackDelivery.attempts[].ok` | boolean |  |  |
 | `view.granted[].callbackDelivery.attempts[].status` | number |  |  |
 | `view.granted[].callbackDelivery.attempts[].why` | string |  |  |
@@ -304,6 +307,7 @@ Scope: `account:manage`.
 | `view.rows[].callbackDelivery` | object |  |  |
 | `view.rows[].callbackDelivery.attempts` | list |  |  |
 | `view.rows[].callbackDelivery.attempts[].at` | number |  |  |
+| `view.rows[].callbackDelivery.attempts[].code` | string |  | Empty for a delivery. STS-AUTHZEN-0091 for a failed attempt the job tries again, STS-AUTHZEN-0135 for the last one. |
 | `view.rows[].callbackDelivery.attempts[].ok` | boolean |  |  |
 | `view.rows[].callbackDelivery.attempts[].status` | number |  |  |
 | `view.rows[].callbackDelivery.attempts[].why` | string |  |  |

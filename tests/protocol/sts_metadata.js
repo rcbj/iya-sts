@@ -247,6 +247,10 @@ function theProtocolListIsHonest(doc, page) {
                     // paying that here is cheaper than making the rule
                     // conditional on whether a group is a protocol.
                     "User portal",
+                    // OPENPGP (#1955 P6): a person's OpenPGP key, its Web Key
+                    // Directory and the mail encrypted to it, carded after
+                    // the portal where the key is registered.
+                    "OpenPGP",
                     // NOT A PROTOCOL (#956). The reports application has a
                     // card because the page refuses an endpoint group no
                     // card claims.
@@ -285,6 +289,10 @@ function theProtocolListIsHonest(doc, page) {
                     // answer the same endpoint group — Authentication — and
                     // this list is in the page's order.
                     "One-time passwords (TOTP)",
+                    // YUBICO OTP (#1955 P5): a YubiKey's OTP slot, checked
+                    // here, and YK-VAL 2.0 — beside TOTP, another one-time
+                    // code at the same step.
+                    "Yubico OTP",
                     // THE THIRD SECOND FACTOR (2026-09-10), beside the other
                     // two for the same reason and answering the same endpoint
                     // group. It carried `notAProtocol` until #283: NIST SP

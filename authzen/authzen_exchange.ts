@@ -82,10 +82,13 @@
 // carries `token_lifetime` (the subject token's remaining life and this
 // realm's access-token lifetime for the client, the lesser) and, for a
 // request naming no scope, `granted_scope` (the subject token's scope,
-// narrowed by the same per-scope questions). `audience` and `claims` may
-// narrow too, and nothing else: an audience is sent only by being this
-// gate's own resource id (an empty array withdraws the target), and a
-// claim only when the subject token already carries it and the value is
+// narrowed by the same per-scope questions), and nothing else. The
+// profile's `audience` and `claims` keys are never built: no fixed rule
+// produces one (the review of #1201 chose to say so rather than invent a
+// rule the ticket does not define). `shape()` is the last check over what
+// leaves, and holds either key were one ever built: an audience only by
+// being this gate's own resource id (an empty array withdraws the target),
+// a claim only when the subject token already carries it and the value is
 // narrower. Never `sub`, `aud`, `act` or `may_act`, and never a claim the
 // profile reserves: a PDP that wrote `act` could fabricate a delegation
 // history.
@@ -262,15 +265,6 @@ const FIXED_RULES = Object.freeze([
           'whose access-token lifetime bounds token_lifetime' },
   { member: 'context.cnf, .acr, .amr, .auth_time, .jti',
     rule: 'read for their type only; no rule decides on them' },
-  { member: 'context.issuance.audience',
-    rule: 'on the subject gate only, and only when every value is that ' +
-          'gate\'s resource.id, which does not narrow one target so it is ' +
-          'left out; any other value is not sent, and an empty array ' +
-          'withdraws the target' },
-  { member: 'context.issuance.claims',
-    rule: 'on the subject gate only, and only a claim the subject token ' +
-          'already carries, narrowed; a reserved name, a new claim or a ' +
-          'wider value is not sent' },
   { member: 'exchange_semantics',
     rule: 'not sent: the policy chooses by its precedence, as for a local ' +
           'exchange that named none' },
@@ -305,6 +299,11 @@ interface Entry {
 
 // What `plan()` answers.
 interface Plan {
+  // The authorization server's base as the AuthZEN request reached this
+  // realm (`helpers.baseUrlOf(req, 'oauth-oidc')`), the base the token
+  // endpoint names itself from on the main listener (#1201's review).
+  // Absent for a plan built without a request.
+  asBase?: string;
   entries: Entry[];
   groups: Group[];
   hasScopes: boolean;
@@ -1120,7 +1119,7 @@ class AuthzenTokenExchange {
         'tuple names the exchange subject; this one names somebody else.');
     }
     if (entry.kind === 'subject-detail') {
-      const detailed = self.detailVerdict(body, fixed);
+      const detailed = self.detailVerdict(body, fixed, plan.asBase);
       log.debug("Leaving AuthzenTokenExchange.answer(). A detail.");
       return Object.assign(out, detailed);
     }
@@ -1315,14 +1314,17 @@ class AuthzenTokenExchange {
   /**
    * This realm's issuer identifier, the local substitute for "issued here":
    * a pinned `oauth2.issuer` (https-upgraded when this port is HTTPS), else
-   * the authorization server's advertised base plus the realm prefix. The
-   * main listener has no advertised base of its own, and then nothing
-   * matches — the binding does not re-verify the token, and a request
-   * this path does not have cannot supply one.
+   * the authorization server's advertised base plus the realm prefix, else
+   * — the main listener, which advertises no base of its own — the issuer
+   * the token endpoint names itself by for the base the AuthZEN request
+   * reached (#1201's review: '' there refused every enforcing type's cell
+   * on a default deployment, `STS-AUTHZEN-0129`). The binding does not
+   * re-verify the token.
    *
-   * @returns the issuer, or ''
+   * @param asBase - the authorization server's base for this request
+   * @returns the issuer, or '' when there is no request to read one from
    */
-  ownIssuer(): string {
+  ownIssuer(asBase?: string): string {
     const { log, config } = this.deps;
     log.debug("Entering AuthzenTokenExchange.ownIssuer().");
     if (config.value('oauth2.issuer')) {
@@ -1334,8 +1336,11 @@ class AuthzenTokenExchange {
     const base = String(this.deps.loadListenerMap()
       .advertisedBase('oauth-oidc') || '');
     if (!base) {
+      const asked = String(asBase || '').replace(/\/+$/, '');
+      const issuer = asked
+        ? String(this.deps.loadJwt().issuerFor(asked) || '') : '';
       log.debug("Leaving AuthzenTokenExchange.ownIssuer(). Main.");
-      return '';
+      return issuer;
     }
     const trimmed = base.replace(/\/+$/, '');
     const prefix = String(this.deps.loadRealms().currentPrefix() || '');
@@ -1347,12 +1352,13 @@ class AuthzenTokenExchange {
    * Whether `iss` is this realm's issuer. Empty on either side is not.
    *
    * @param iss - `context.subject_token.iss`
+   * @param asBase - the authorization server's base for this request
    * @returns true when the two are the same non-empty string
    */
-  issuedHere(iss: unknown): boolean {
+  issuedHere(iss: unknown, asBase?: string): boolean {
     const { log } = this.deps;
     log.debug("Entering AuthzenTokenExchange.issuedHere().");
-    const own = this.ownIssuer();
+    const own = this.ownIssuer(asBase);
     const here = typeof iss === 'string' && iss.length > 0 &&
       own.length > 0 && iss === own;
     log.debug("Leaving AuthzenTokenExchange.issuedHere(). " + here);
@@ -1367,9 +1373,10 @@ class AuthzenTokenExchange {
    *
    * @param body - the tuple
    * @param fixed - the fixed context
+   * @param asBase - the authorization server's base for this request
    * @returns the fields `answer()` copies onto its result
    */
-  detailVerdict(body: Json, fixed: Fixed): Json {
+  detailVerdict(body: Json, fixed: Fixed, asBase?: string): Json {
     const self = this;
     const { log, applications, delegation } = this.deps;
     log.debug("Entering AuthzenTokenExchange.detailVerdict().");
@@ -1408,7 +1415,7 @@ class AuthzenTokenExchange {
     // covered" into a fault.
     if (enforced) {
       const bound = details.exchangeBoundProblem([cell],
-        token.authorization_details, self.issuedHere(token.iss));
+        token.authorization_details, self.issuedHere(token.iss, asBase));
       if (bound) {
         log.debug("Leaving AuthzenTokenExchange.detailVerdict(). " +
                   "Uncovered.");

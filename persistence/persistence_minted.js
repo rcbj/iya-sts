@@ -3156,13 +3156,16 @@ function olderSavesBetween(floor, limit, except) {
   log.debug("Entering olderSavesBetween().");
   const out = [];
   const consider = function (save) {
+    log.debug("Entering consider().");
     if (!save || save.life !== flightLife || save.promise === except) {
+      log.debug("Leaving consider(). Not one to wait for.");
       return;
     }
     const mark = save.takenAt > 0 ? save.takenAt : save.readAt;
     if (mark > floor && mark < limit) {
       out.push(save.promise);
     }
+    log.debug("Leaving consider().");
   };
   flights.forEach(consider);
   if (openBatch && !openBatch.sent) {

@@ -232,8 +232,8 @@
     "text": "记录生成的引导密码"
   },
   "admin.logBootstrapPassword|description": {
-    "en": "856dddf1ed8c2407",
-    "text": "仅限产品模式。默认关闭时，为首位管理员生成的密码写入 persistence.dataDir 中仅此服务可读的 bootstrap-admin-password 文件，日志说明位置。开启时写入服务日志。警告：开启后不满足 ASVS 5.0.0 要求 16.2.5，因为凭据进入了日志。 之后的启动会删除该文件，一旦已有人持有凭据。"
+    "en": "8591cfda7dde139a",
+    "text": "仅限产品模式。默认关闭时，为首位管理员生成的密码写入 persistence.dataDir 中仅此服务可读的 bootstrap-admin-password 文件，日志说明位置。开启时写入服务日志。警告：开启后不满足 ASVS 5.0.0 要求 16.2.5，因为凭据进入了日志。 信任领域的文件在该名称后加上连字符和领域 ID。之后的启动会在文件中的密码不再能打开其账户时删除该文件。"
   },
   "oauth2.allowConfidentialWithoutPkce|label": {
     "en": "c33a0a31a1d623b1",
@@ -424,8 +424,8 @@
     "text": "在产品模式下允许默认管理员名称"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "7375f4bf636f5366",
-    "text": "仅限产品模式。默认关闭时，名为 admin、root、sa 或 administrator 或没有名称的引导管理员会获得一个不可预测的生成名称，并在首次启动时与其密码一起写入 persistence.dataDir 中的 bootstrap-admin-password 文件（参见 admin.logBootstrapPassword）。开启时按配置的名称使用。警告：ASVS 5.0.0 要求 6.3.2 禁止默认账户名称，因此除测试环境外请保持关闭。 之后的启动会删除该文件，一旦已有人持有凭据。"
+    "en": "7007ae597c41e813",
+    "text": "仅限产品模式。默认关闭时，名为 admin、root、sa 或 administrator 或没有名称的引导管理员会获得一个不可预测的生成名称，并在首次启动时与其密码一起写入 persistence.dataDir 中的 bootstrap-admin-password 文件（参见 admin.logBootstrapPassword）。开启时按配置的名称使用。警告：ASVS 5.0.0 要求 6.3.2 禁止默认账户名称，因此除测试环境外请保持关闭。 信任领域的文件在该名称后加上连字符和领域 ID。之后的启动会在文件中的密码不再能打开其账户时删除该文件。"
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "引导管理员账户"
   },
   "admin.bootstrapUsername|description": {
-    "en": "8b69eb9d4cb0b130",
-    "text": "引导管理员的用户名（2026-09-13），存在于默认领域中，并自 2026-09-14 起存在于每个信任领域中，在那里它只管理该领域：若不存在则在启动时创建，同时是两个控制台角色的成员，首次登录时被强制修改密码，且不可删除或重命名。在它首次登录 /admin 之前，每个已登录的人都可以使用控制台（admin.openWhenEmpty）。在开发模式下，与其他所有人一样，任何密码都能使其登录。在产品模式下，当本服务启动且领域中没有任何人持有凭据时，它也是获得生成密码的账户；该名称和密码只写入一次，写入 persistence.dataDir 中的 bootstrap-admin-password 文件，该文件仅本服务可读（日志会说明其位置，只有在开启 admin.logBootstrapPassword 时日志本身才会包含它们），并且是进入全新产品部署的唯一途径。若已有人持有凭据，生成的密码绝不会被写入，因此它不会覆盖任何密码。强制修改只适用于此步骤创建的账户——同名的现有账户保留其密码，只是被授予两个角色。 之后的启动会删除该文件，一旦已有人持有凭据。"
+    "en": "938e9e0c7b3b97fa",
+    "text": "引导管理员的用户名（2026-09-13），存在于默认领域中，并自 2026-09-14 起存在于每个信任领域中，在那里它只管理该领域：若不存在则在启动时创建，同时是两个控制台角色的成员，首次登录时被强制修改密码，且不可删除或重命名。在它首次登录 /admin 之前，每个已登录的人都可以使用控制台（admin.openWhenEmpty）。在开发模式下，与其他所有人一样，任何密码都能使其登录。在产品模式下，当本服务启动且领域中没有任何人持有凭据时，它也是获得生成密码的账户；该名称和密码只写入一次，写入 persistence.dataDir 中的 bootstrap-admin-password 文件，该文件仅本服务可读（日志会说明其位置，只有在开启 admin.logBootstrapPassword 时日志本身才会包含它们），并且是进入全新产品部署的唯一途径。若已有人持有凭据，生成的密码绝不会被写入，因此它不会覆盖任何密码。强制修改只适用于此步骤创建的账户——同名的现有账户保留其密码，只是被授予两个角色。 信任领域的文件在该名称后加上连字符和领域 ID。之后的启动会在文件中的密码不再能打开其账户时删除该文件。"
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -3307,61 +3307,149 @@
     "en": "e0341e4e47f3b2f8",
     "text": "什么能让 PKINIT 登录声明硬件绑定的密钥（pkinit-hardware 指示符和 amr hwk）。`inference`：默认值，也是 #1955 之前的行为——本服务未生成其密钥的智能卡登录证书，或已记录的证明证据。`evidence`：仅限硬件令牌的证明所覆盖的密钥。通过 TLS 的证书登录只有在有证据时才获得 hwk，以及智能卡上密钥的 sc，两种情况都是如此。"
   },
-"pskc.allowPlaintextImport|label": {
+  "pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
     "text": "在产品模式下接受明文 PSKC 种子文件"
   },
-"pskc.allowPlaintextImport|description": {
+  "pskc.allowPlaintextImport|description": {
     "en": "7efe34e872e4772e",
     "text": "在产品模式下，管理员是否可以导入令牌密钥未加密的 PSKC 种子文件（RFC 6030）。默认关闭：这样的文件在其经过的每个磁盘和邮箱中都是一份可用第二因素的清单，而供应商可以用预共享密钥或密码对其加密（第 6.1 和 6.2 节）。开发模式无论如何都会接受。"
   },
-"yubiotp.allowPlaintextImport|label": {
-    "en": "b1c1ac235f98cc47",
-    "text": "在产品模式下接受明文 YubiKey OTP CSV 文件"
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "PIV 证明根证书（PEM）"
   },
-"yubiotp.allowPlaintextImport|description": {
-    "en": "f409449d46d5831a",
-    "text": "管理员在产品模式下是否可以导入 YubiKey OTP 密钥的 CSV（序列号、公开身份、私有身份、AES 密钥）。默认关闭：该文件是一份可用第二因素的清单。开发模式无论如何都会接受。文件被接受时密钥即被密封，文件不予保留。"
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "YubiKey PIV 密钥证明必须链接到的根证书，以 PEM 包形式提供。为空时使用 Yubico 发布的两个根证书（Yubico PIV Root CA Serial 263751，以及适用于固件 5.7.4 及更高版本的 Yubico Attestation Root 1），它们随附于 common/pki_piv_anchors.json 并在其中以 SHA-256 固定，同时附带 Yubico 的 PIV 中间证书。此处填写的证书会替换随附的根证书。"
   },
-"openpgp.wkd|label": {
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "要求 PIV 配置文件提供 PIV 证明"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "开启时，piv-auth、piv-sign、piv-key-management 或 piv-card-auth 证书的请求若未携带可验证的 YubiKey PIV 证明则会被拒绝（STS-PIV-0010）。来自 EST /serverkeygen 的托管 piv-key-management 密钥是例外：它由本服务生成。关闭（默认值）时，此类未带证明的请求会在没有硬件证据的情况下签发；携带无法验证之证明的请求在两种情况下都会被拒绝。"
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "经证明的 PIV 密钥可具有的最弱 PIN 策略"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "证明中的 PIN 策略至少必须达到的程度。`once`：每个会话输入一次 PIN（Bio 密钥的 match-once 也算）；`always`：每次使用前都输入 PIN（match-always 也算）。`any`（默认值）不要求任何 PIN 策略。证明更弱的密钥会被拒绝（STS-PIV-0011）。"
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "经证明的 PIV 密钥可具有的最弱触摸策略"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "证明中的触摸策略至少必须达到的程度。`cached`：一次触摸，记住 15 秒；`always`：每次使用都需触摸。`any`（默认值）不作要求。证明更弱的密钥会被拒绝（STS-PIV-0012）。"
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "允许 piv-card-auth 证书登录"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "1852da24c3fbfade",
+    "text": "piv-card-auth（插槽 9e）密钥无需 PIN 即可使用，用于物理门禁，因此除非开启此项，否则其证书在 TLS 登录和 PKINIT 时会被拒绝（STS-PIV-0013）。"
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "托管 piv-key-management 密钥"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "开启时，针对 piv-key-management 配置文件的 EST /serverkeygen 会保留所生成的私钥，并以密钥加密密钥密封，以便持有人（在门户上，重新登录后）或拥有 PIV 密钥恢复角色的管理员在卡丢失后恢复它并解密旧邮件。若未持有密钥加密密钥则拒绝（STS-PIV-0020）。托管密钥绝不是硬件证据。关闭（默认值）时，/serverkeygen 会拒绝 piv-key-management 配置文件（STS-PIV-0021），因此 9d 密钥在卡上生成，且不保存在任何其他地方。"
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "按卡 UUID 映射的外部 PIV 或 CAC 签发 CA（PEM）"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "其 PIV 或 CAC 卡证书可按 FIPS 201 卡 UUID 为某人登录的签发 CA：由其中一个 CA 直接签发、声明 piv.externalPolicyOids 中某项策略、且恰好携带一个 urn:uuid subjectAltName 的客户端证书，会映射到其 stsPivCardUuid 保存该 UUID 的唯一一个人。绝不按其名称映射，也不会创建任何条目。该 CA 还必须位于某个客户端信任库中，否则握手会先拒绝它。为空（默认值）时不映射任何内容。"
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "外部卡必须声明的 PIV Authentication 策略"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "外部卡的证书必须声明其中之一才能按其卡 UUID 映射的证书策略：默认为 id-fpki-common-authentication（Federal PKI Common Policy 的 PIV Authentication）和 id-fpki-certpcy-pivi-hardware（PIV-I）。请在此添加 CAC 签发者自己的硬件策略。"
+  },
+  "openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",
     "text": "在 Web 密钥目录中发布密钥"
   },
-"openpgp.wkd|description": {
+  "openpgp.wkd|description": {
     "en": "7822103f89ac59b3",
     "text": "为此领域的邮件域响应 Web 密钥目录（draft-koch-openpgp-webkey-service）：/.well-known/openpgpkey/<domain>/hu/<hash>（高级方式，位于 openpgpkey.<domain>）和 /.well-known/openpgpkey/hu/<hash>（直接方式），以及各自的策略文件。只返回在门户上选择发布的人员的密钥。默认关闭。"
   },
-"openpgp.wkdDomains|label": {
+  "openpgp.wkdDomains|label": {
     "en": "d1c4b728593ff000",
     "text": "Web 密钥目录服务的邮件域"
   },
-"openpgp.wkdDomains|description": {
+  "openpgp.wkdDomains|description": {
     "en": "ad64f7216191123c",
     "text": "此领域的 Web 密钥目录所响应的邮件域，以逗号分隔。留空（默认）表示领域自身的 DNS 域。路径中不含领域的请求，由服务其域的领域响应，默认领域优先。"
   },
-"openpgp.challengeLifetimeS|label": {
+  "openpgp.challengeLifetimeS|label": {
     "en": "dbf558cf0b4b8f90",
     "text": "注册质询有效期（秒）"
   },
-"openpgp.challengeLifetimeS|description": {
+  "openpgp.challengeLifetimeS|description": {
     "en": "e9130c8e82368cc6",
     "text": "个人为注册 OpenPGP 密钥而用 gpg --clearsign 签署的质询的有效时长。质询只能使用一次，每人同一时间只有一个。"
   },
-"openpgp.signatureSkewS|label": {
+  "openpgp.signatureSkewS|label": {
     "en": "d927cf1f04bd9d51",
     "text": "证明签名时钟偏差（秒）"
   },
-"openpgp.signatureSkewS|description": {
+  "openpgp.signatureSkewS|description": {
     "en": "2772763d3d363b6d",
     "text": "签名计算机的时钟与本服务时钟允许相差多少：证明签名时间早于质询发出时间或晚于当前时间，且超出此值的，将被拒绝（STS-OPENPGP-0010）。"
   },
-"openpgp.minRsaBits|label": {
+  "openpgp.algorithms|label": {
+    "en": "6973a8aeaa30b96b",
+    "text": "接受的算法"
+  },
+  "openpgp.algorithms|description": {
+    "en": "7bf4b57c9c6e7d1f",
+    "text": "密钥可以使用的 OpenPGP 算法，按优先顺序。先是 RFC 9980 复合算法：ML-DSA-65+Ed25519 与 ML-DSA-87+Ed448 用于签名，ML-KEM-768+X25519 与 ML-KEM-1024+X448 用于加密。然后是经典名称：ed25519、ed448、eddsaLegacy/ed25519Legacy，nistP256、nistP384 和 nistP521 上的 ecdsa，rsaSign 与 rsaEncryptSign，x25519、x448，curve25519Legacy 及相同 NIST 曲线上的 ecdh，以及 rsaEncrypt。不在此列表中的名称在登记和验证时被拒绝（STS-OPENPGP-0004）。未实现 SLH-DSA。默认值列出上述每一个。"
+  },
+  "openpgp.pqcOnly|label": {
+    "en": "d3ff53ec011bbf1f",
+    "text": "仅登记后量子密钥"
+  },
+  "openpgp.pqcOnly|description": {
+    "en": "a42ec597602f45d5",
+    "text": "开启后，新登记的密钥必须使用 openpgp.algorithms 点名的后量子算法：签名密钥为 ML-DSA-65+Ed25519 或 ML-DSA-87+Ed448，若有加密密钥则为 ML-KEM-768+X25519 或 ML-KEM-1024+X448。它只收窄登记：已经登记的经典密钥仍可验证，仍可接收邮件。不能与 openpgp.pqcAlongsideClassical 同时开启（STS-OPENPGP-0027）。默认关闭。"
+  },
+  "openpgp.pqcAlongsideClassical|label": {
+    "en": "57f71c1990eb46d9",
+    "text": "后量子密钥与经典密钥并存"
+  },
+  "openpgp.pqcAlongsideClassical|description": {
+    "en": "2b5f6cf2a07130e5",
+    "text": "开启后，新登记的密钥必须同时带有后量子算法和另一个经典算法。ML-DSA-65+Ed25519 这样的复合名称只算后量子，因此经典的一半是另一把密钥，例如旁边的 Ed25519 或 X25519 子密钥。已经登记的密钥保持原样。不能与 openpgp.pqcOnly 同时开启（STS-OPENPGP-0027）。默认关闭。"
+  },
+  "openpgp.minRsaBits|label": {
     "en": "f3dc9f85de143630",
     "text": "最小 RSA OpenPGP 密钥"
   },
-"openpgp.minRsaBits|description": {
+  "openpgp.minRsaBits|description": {
     "en": "cd16018c848ce538",
     "text": "OpenPGP 注册所接受的最短 RSA 密钥（主密钥或子密钥）。接受 Ed25519、Ed448、P-256、P-384 和 P-521 上的 ECDSA 和 ECDH、X25519 和 X448，以及 openpgp.algorithms 点名时的 RFC 9980 复合算法 ML-DSA-65+Ed25519、ML-DSA-87+Ed448、ML-KEM-768+X25519 和 ML-KEM-1024+X448。DSA、ElGamal、Brainpool 曲线和 SLH-DSA 一律不接受（STS-OPENPGP-0004）。"
+  },
+  "yubiotp.allowPlaintextImport|label": {
+    "en": "b1c1ac235f98cc47",
+    "text": "在产品模式下接受明文 YubiKey OTP CSV 文件"
+  },
+  "yubiotp.allowPlaintextImport|description": {
+    "en": "f409449d46d5831a",
+    "text": "管理员在产品模式下是否可以导入 YubiKey OTP 密钥的 CSV（序列号、公开身份、私有身份、AES 密钥）。默认关闭：该文件是一份可用第二因素的清单。开发模式无论如何都会接受。文件被接受时密钥即被密封，文件不予保留。"
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
@@ -3931,6 +4019,30 @@
     "en": "a28c6bc9859fc3aa",
     "text": "本服务构建的证书颁发机构在其经典密钥之外额外携带的后量子密钥，位于 ITU-T X.509 (2019) 第 9.8 条的非关键扩展 subjectAltPublicKeyInfo、altSignatureAlgorithm 和 altSignatureValue 中——即混合证书。**默认关闭（`none`）**（rcbj，2026-09-26）：混合证书对许多产品来说过大或过于陌生——libest 会拒绝任何超过 4 KB 的注册响应，而每个混合叶证书都超过这个大小——因此默认采用原始的层级结构，每种用例、每个签名都使用其自己的经典密钥对。设置一个值后，此后构建的每个颁发机构都会对其签发的每个证书签名两次：在普通字段中以经典方式签名，所有验证器都会读取；并用此密钥对 preTBSCertificate 签名，支持混合证书的验证器会读取。本服务就是这样的验证器：由持有替代密钥的颁发机构签发的证书必须带有有效的替代签名才能在此通过验证（STS-PKI-0201、STS-PKI-0202），因此仅凭经典签名永远无法绕过它。推荐值为 ML-DSA-87（FIPS 204，类别 5），因为颁发机构的寿命比它所认证的密钥更长。该值在某一层的下一次构建时读取；层级结构保留其构建时所用的设置。SLH-DSA（FIPS 205）用于基于哈希的信任锚，每个签名（即每签发一个证书）需要数秒。警告：设为 `none` 时，颁发机构仅使用经典算法，其证书可被具备量子能力的攻击者伪造。"
   },
+  "pki.sshUserCaAlgorithms|label": {
+    "en": "1fa9bf9eedbabd99",
+    "text": "SSH 用户 CA 算法"
+  },
+  "pki.sshUserCaAlgorithms|description": {
+    "en": "5c4c22c2ab500fd4",
+    "text": "SSH 用户证书颁发机构可以使用的算法，按优先顺序排列。ssh-mldsa-65 是 ML-DSA-65（FIPS 204），使用本服务定义的线路名称，因为 OpenSSH 没有定义：公钥和签名都是原始格式，形式与 ssh-ed25519 相同。本服务发布的 OpenSSH TrustedUserCAKeys 行始终是此列表中的第一个经典算法；若列表只列出 ssh-mldsa-65，则为 ssh-ed25519。不理解 ML-DSA 的对端继续信任该行。ML-DSA 颁发机构的密钥发布在 GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65；标准 OpenSSH 目前还无法验证 ML-DSA 证书。不提供 ssh-rsa（SHA-1）。只有在此运行环境能够生成该密钥时才会创建 ML-DSA 颁发机构；否则证书保持经典算法（记录 STS-PKI-0290，经典颁发机构仍然应答），除非 pki.sshUserCaPqcOnly 已开启。"
+  },
+  "pki.sshUserCaPqcOnly|label": {
+    "en": "74aae1308361ba58",
+    "text": "SSH 用户证书仅使用后量子算法"
+  },
+  "pki.sshUserCaPqcOnly|description": {
+    "en": "dcbf21b3230dcf07",
+    "text": "开启后，新的 SSH 用户证书只由 ML-DSA 颁发机构签名，不使用其他任何机构。标准 OpenSSH 目前还无法验证 ML-DSA 证书，因此只有能够验证 ssh-mldsa-65 并信任 GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65 上密钥的 SSH 服务器才会接受这些证书。该路径上的默认行仍是经典密钥。如果领域没有 ML-DSA 颁发机构（此运行环境无法生成 ML-DSA，或 ssh-mldsa-65 不在 pki.sshUserCaAlgorithms 中），请求会被拒绝（STS-PKI-0297），而不是返回一张经典证书。已签发的经典证书仍可验证。不能与 pki.sshUserCaPqcAlongsideClassical 同时开启（STS-PKI-0296）。默认关闭。"
+  },
+  "pki.sshUserCaPqcAlongsideClassical|label": {
+    "en": "c3201f8841200c32",
+    "text": "SSH 用户证书同时带有后量子证书"
+  },
+  "pki.sshUserCaPqcAlongsideClassical|description": {
+    "en": "b38eab63ec092b6c",
+    "text": "开启后，当 ML-DSA 机构存在时，新的 SSH 用户证书签发两次：经典证书，即 OpenSSH 客户端使用的那一份，以及旁边的一份 ML-DSA 证书。不能与 pki.sshUserCaPqcOnly 同时开启（STS-PKI-0296）。默认关闭。复合签名不是 OpenSSH 的概念；经典证书和 ML-DSA 证书是两个签名，不是一个混合签名。"
+  },
   "pki.organisation|label": {
     "en": "163fd96758a3b8b3",
     "text": "默认组织名称（O=）"
@@ -4322,6 +4434,22 @@
   "pki.paranoidPkinit|description": {
     "en": "4cd0d308a974fcbd",
     "text": "用例 `pkinit`：RFC 4556 AS-REQ 中的客户端证书。该检查原本就已完整（通往领域身份 CA 的路径、以 krb5.clockSkew 计的有效期、id-pkinit-KPClientAuth 或 Microsoft 智能卡 EKU、吊销）；偏执模式让它成为对入口的一次调用，因而与其他每个用例是同一份代码。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "偏执：YubiKey PIV 密钥证明链"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "用例 `piv-attestation`（#1955）：PIV 注册的插槽证明证书和 f9 证明证书。偏执模式检查当前时刻的有效期、到 piv.attestationAnchors 的路径，以及在证书链指明列表时的吊销状态。关闭时，仅此用例只执行路径检查而不执行字段检查，其他每一行和总开关均不受影响；在产品模式下关闭时，会记录一次日志（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "偏执：按卡 UUID 映射的外部 PIV 或 CAC 卡"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "用例 `piv-card`（#1955）：来自 piv.externalIssuers 中签发 CA、按其卡 UUID 映射的客户端证书。偏执模式在一跳签发者检查之外，还检查 keyUsage digitalSignature 和叶证书的有效期。关闭时，仅此用例只执行签发者检查，其他每一行和总开关均不受影响；在产品模式下关闭时，会记录一次日志（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
   },
   "pki.paranoidEnrollmentCredential|label": {
     "en": "ce5c0d1996e12403",
@@ -8387,6 +8515,14 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "一个领域最多可同时持有的待处理访问请求数；超过后，提交会被以 503 拒绝，直到其中一些被决定或过期。"
   },
+  "authzen.accessRequestMaxDenials|label": {
+    "en": "09e695949f0cc1cc",
+    "text": "一个领域记录的可申请拒绝"
+  },
+  "authzen.accessRequestMaxDenials|description": {
+    "en": "698617c5a3485120",
+    "text": "一个领域按 evaluation_id 记录的可申请拒绝的最大数量（#1204）。超过后，新的拒绝不会被记录，但仍可凭其 binding_token 申请；访问请求作业会在记录的时间窗口结束一天后将其删除。"
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"
@@ -8400,8 +8536,8 @@
     "text": "Access request callback backoff (seconds)"
   },
   "authzen.callbackBackoffS|description": {
-    "en": "27141a0f28d94b83",
-    "text": "How long to wait after a failed access request callback before the next attempt (#1202). The authzen.access-requests job runs every 60 seconds, so a shorter wait could not be honoured. An application's appAuthzenCallbackConfig may set a longer wait for one URL."
+    "en": "43f2cb7740fc7efe",
+    "text": "访问请求回调首次失败后，到下一次尝试前等待的时间（#1202）。之后每次等待都是前一次的两倍，最长一天。authzen.access-requests 作业每 60 秒运行一次，因此更短的等待无法兑现。应用的 appAuthzenCallbackConfig 可以为某个 URL 设置更长的等待。"
   },
   "authzen.externalPdp|label": {
     "en": "8a0af08389fe6cda",
@@ -9718,6 +9854,14 @@
   "roles.xacmlUserGroup|description": {
     "en": "d19a9234253beccc",
     "text": "其成员拥有内置 XACML_USER 角色的目录组，这是三个 XACML 端点本身所要求的角色——GET /xacml、POST /xacml/pdp 和 GET /xacml/policies。出示了经本服务验证的客户端证书的调用方，是本服务能够指明身份的一方；而该组的成员身份才使其成为本服务允许进入的一方，两者被分开的理由与上面的 roles.remotePepGroup 相同：证书证明身份，组授予权限。这是第二个组，而不是同一个组：REMOTE_PEPS 可访问三个 /xacml/pep 端点，它们分发本服务用于执行其自身访问控制的文档，若由一个组同时授予两者，那么允许调用方访问XACML 界面本身就会悄无声息地允许其访问那些端点。设置为空字符串表示没有人拥有该角色，这会对每个调用方关闭这三个端点；这是在不关闭 xacml.enabled、从而不连带失去嵌入式签发和访问 PEP 的情况下移除 XACML 界面的方法。"
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "授予 PIV_KEY_RECOVERY 角色的组"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "其成员持有内置 PIV_KEY_RECOVERY 角色（#1955）的目录组；访问控制策略要求在 Admin Write 之外还具备该角色，才能恢复他人的托管 piv-key-management 密钥（piv.keyEscrow）。该密钥可以解密此人的邮件，因此在管理员将人员加入该组之前，没有人持有该角色。为空时，任何人都不能恢复他人的密钥；持有人可在门户上恢复自己的密钥。"
   },
   "roles.authzenPepGroup|label": {
     "en": "8dacfdf5504e732a",
@@ -12954,141 +13098,5 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "仅针对协议调试器监听器：http.http2MaxConcurrentStreams。-1（默认值）时遵循 http.http2MaxConcurrentStreams；其他任何值只对此监听器作出决定。一个 HTTP/2 连接可同时打开的请求数（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的流会被拒绝，直到有流结束。默认值 100 是 RFC 9113 建议的最小值；node 自身的值没有上限，这会让一个连接承载成千上万个连接的工作量。它限制一个连接上的工作量，正如 http.maxConnections 限制连接数。新连接会立即遵循更改，已打开的连接会收到新值。"
-  },
-  "piv.attestationAnchors|label": {
-    "en": "ebc10f6a7dcbbf58",
-    "text": "PIV 证明根证书（PEM）"
-  },
-  "piv.attestationAnchors|description": {
-    "en": "487e76edeb4446b9",
-    "text": "YubiKey PIV 密钥证明必须链接到的根证书，以 PEM 包形式提供。为空时使用 Yubico 发布的两个根证书（Yubico PIV Root CA Serial 263751，以及适用于固件 5.7.4 及更高版本的 Yubico Attestation Root 1），它们随附于 common/pki_piv_anchors.json 并在其中以 SHA-256 固定，同时附带 Yubico 的 PIV 中间证书。此处填写的证书会替换随附的根证书。"
-  },
-  "piv.requireAttestation|label": {
-    "en": "4e11b0db111faccf",
-    "text": "要求 PIV 配置文件提供 PIV 证明"
-  },
-  "piv.requireAttestation|description": {
-    "en": "ef38975436c5ac4f",
-    "text": "开启时，piv-auth、piv-sign、piv-key-management 或 piv-card-auth 证书的请求若未携带可验证的 YubiKey PIV 证明则会被拒绝（STS-PIV-0010）。来自 EST /serverkeygen 的托管 piv-key-management 密钥是例外：它由本服务生成。关闭（默认值）时，此类未带证明的请求会在没有硬件证据的情况下签发；携带无法验证之证明的请求在两种情况下都会被拒绝。"
-  },
-  "piv.pinPolicy|label": {
-    "en": "0f683a0cb1db1988",
-    "text": "经证明的 PIV 密钥可具有的最弱 PIN 策略"
-  },
-  "piv.pinPolicy|description": {
-    "en": "c3f9fcec406b9806",
-    "text": "证明中的 PIN 策略至少必须达到的程度。`once`：每个会话输入一次 PIN（Bio 密钥的 match-once 也算）；`always`：每次使用前都输入 PIN（match-always 也算）。`any`（默认值）不要求任何 PIN 策略。证明更弱的密钥会被拒绝（STS-PIV-0011）。"
-  },
-  "piv.touchPolicy|label": {
-    "en": "a88f111c7b13657f",
-    "text": "经证明的 PIV 密钥可具有的最弱触摸策略"
-  },
-  "piv.touchPolicy|description": {
-    "en": "d78f0d5df0256787",
-    "text": "证明中的触摸策略至少必须达到的程度。`cached`：一次触摸，记住 15 秒；`always`：每次使用都需触摸。`any`（默认值）不作要求。证明更弱的密钥会被拒绝（STS-PIV-0012）。"
-  },
-  "piv.cardAuthSignIn|label": {
-    "en": "61b2226403ad5c61",
-    "text": "允许 piv-card-auth 证书登录"
-  },
-  "piv.cardAuthSignIn|description": {
-    "en": "1852da24c3fbfade",
-    "text": "piv-card-auth（插槽 9e）密钥无需 PIN 即可使用，用于物理门禁，因此除非开启此项，否则其证书在 TLS 登录和 PKINIT 时会被拒绝（STS-PIV-0013）。"
-  },
-  "piv.keyEscrow|label": {
-    "en": "f2efc85c3d2bac38",
-    "text": "托管 piv-key-management 密钥"
-  },
-  "piv.keyEscrow|description": {
-    "en": "cf9618144b67dff3",
-    "text": "开启时，针对 piv-key-management 配置文件的 EST /serverkeygen 会保留所生成的私钥，并以密钥加密密钥密封，以便持有人（在门户上，重新登录后）或拥有 PIV 密钥恢复角色的管理员在卡丢失后恢复它并解密旧邮件。若未持有密钥加密密钥则拒绝（STS-PIV-0020）。托管密钥绝不是硬件证据。关闭（默认值）时，/serverkeygen 会拒绝 piv-key-management 配置文件（STS-PIV-0021），因此 9d 密钥在卡上生成，且不保存在任何其他地方。"
-  },
-  "piv.externalIssuers|label": {
-    "en": "e96143ab9556db35",
-    "text": "按卡 UUID 映射的外部 PIV 或 CAC 签发 CA（PEM）"
-  },
-  "piv.externalIssuers|description": {
-    "en": "0fb91dba2cb957d3",
-    "text": "其 PIV 或 CAC 卡证书可按 FIPS 201 卡 UUID 为某人登录的签发 CA：由其中一个 CA 直接签发、声明 piv.externalPolicyOids 中某项策略、且恰好携带一个 urn:uuid subjectAltName 的客户端证书，会映射到其 stsPivCardUuid 保存该 UUID 的唯一一个人。绝不按其名称映射，也不会创建任何条目。该 CA 还必须位于某个客户端信任库中，否则握手会先拒绝它。为空（默认值）时不映射任何内容。"
-  },
-  "piv.externalPolicyOids|label": {
-    "en": "930c5800dfa36905",
-    "text": "外部卡必须声明的 PIV Authentication 策略"
-  },
-  "piv.externalPolicyOids|description": {
-    "en": "2398931e8d58f5c4",
-    "text": "外部卡的证书必须声明其中之一才能按其卡 UUID 映射的证书策略：默认为 id-fpki-common-authentication（Federal PKI Common Policy 的 PIV Authentication）和 id-fpki-certpcy-pivi-hardware（PIV-I）。请在此添加 CAC 签发者自己的硬件策略。"
-  },
-  "pki.paranoidPivAttestation|label": {
-    "en": "e645d02c49d2f9bf",
-    "text": "偏执：YubiKey PIV 密钥证明链"
-  },
-  "pki.paranoidPivAttestation|description": {
-    "en": "fdb7c0eb631758ea",
-    "text": "用例 `piv-attestation`（#1955）：PIV 注册的插槽证明证书和 f9 证明证书。偏执模式检查当前时刻的有效期、到 piv.attestationAnchors 的路径，以及在证书链指明列表时的吊销状态。关闭时，仅此用例只执行路径检查而不执行字段检查，其他每一行和总开关均不受影响；在产品模式下关闭时，会记录一次日志（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
-  },
-  "pki.paranoidPivCard|label": {
-    "en": "4078a93e7117d6f9",
-    "text": "偏执：按卡 UUID 映射的外部 PIV 或 CAC 卡"
-  },
-  "pki.paranoidPivCard|description": {
-    "en": "d4d5fb070575e1c6",
-    "text": "用例 `piv-card`（#1955）：来自 piv.externalIssuers 中签发 CA、按其卡 UUID 映射的客户端证书。偏执模式在一跳签发者检查之外，还检查 keyUsage digitalSignature 和叶证书的有效期。关闭时，仅此用例只执行签发者检查，其他每一行和总开关均不受影响；在产品模式下关闭时，会记录一次日志（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
-  },
-  "roles.pivKeyRecoveryGroup|label": {
-    "en": "2f231e1e99785dc6",
-    "text": "授予 PIV_KEY_RECOVERY 角色的组"
-  },
-  "roles.pivKeyRecoveryGroup|description": {
-    "en": "801616eea12559a5",
-    "text": "其成员持有内置 PIV_KEY_RECOVERY 角色（#1955）的目录组；访问控制策略要求在 Admin Write 之外还具备该角色，才能恢复他人的托管 piv-key-management 密钥（piv.keyEscrow）。该密钥可以解密此人的邮件，因此在管理员将人员加入该组之前，没有人持有该角色。为空时，任何人都不能恢复他人的密钥；持有人可在门户上恢复自己的密钥。"
-  },
-  "openpgp.algorithms|label": {
-    "en": "6973a8aeaa30b96b",
-    "text": "接受的算法"
-  },
-  "openpgp.algorithms|description": {
-    "en": "7bf4b57c9c6e7d1f",
-    "text": "密钥可以使用的 OpenPGP 算法，按优先顺序。先是 RFC 9980 复合算法：ML-DSA-65+Ed25519 与 ML-DSA-87+Ed448 用于签名，ML-KEM-768+X25519 与 ML-KEM-1024+X448 用于加密。然后是经典名称：ed25519、ed448、eddsaLegacy/ed25519Legacy，nistP256、nistP384 和 nistP521 上的 ecdsa，rsaSign 与 rsaEncryptSign，x25519、x448，curve25519Legacy 及相同 NIST 曲线上的 ecdh，以及 rsaEncrypt。不在此列表中的名称在登记和验证时被拒绝（STS-OPENPGP-0004）。未实现 SLH-DSA。默认值列出上述每一个。"
-  },
-  "openpgp.pqcOnly|label": {
-    "en": "d3ff53ec011bbf1f",
-    "text": "仅登记后量子密钥"
-  },
-  "openpgp.pqcOnly|description": {
-    "en": "a42ec597602f45d5",
-    "text": "开启后，新登记的密钥必须使用 openpgp.algorithms 点名的后量子算法：签名密钥为 ML-DSA-65+Ed25519 或 ML-DSA-87+Ed448，若有加密密钥则为 ML-KEM-768+X25519 或 ML-KEM-1024+X448。它只收窄登记：已经登记的经典密钥仍可验证，仍可接收邮件。不能与 openpgp.pqcAlongsideClassical 同时开启（STS-OPENPGP-0027）。默认关闭。"
-  },
-  "openpgp.pqcAlongsideClassical|label": {
-    "en": "57f71c1990eb46d9",
-    "text": "后量子密钥与经典密钥并存"
-  },
-  "openpgp.pqcAlongsideClassical|description": {
-    "en": "2b5f6cf2a07130e5",
-    "text": "开启后，新登记的密钥必须同时带有后量子算法和另一个经典算法。ML-DSA-65+Ed25519 这样的复合名称只算后量子，因此经典的一半是另一把密钥，例如旁边的 Ed25519 或 X25519 子密钥。已经登记的密钥保持原样。不能与 openpgp.pqcOnly 同时开启（STS-OPENPGP-0027）。默认关闭。"
-  },
-  "pki.sshUserCaAlgorithms|label": {
-    "en": "1fa9bf9eedbabd99",
-    "text": "SSH 用户 CA 算法"
-  },
-  "pki.sshUserCaAlgorithms|description": {
-    "en": "bdb54445a0279b8d",
-    "text": "SSH 用户证书机构可以使用的算法，按优先顺序。ssh-mldsa-65 是本服务定义的线路名称下的 ML-DSA-65（FIPS 204），因为 OpenSSH 没有定义：公钥和签名是原始字节，形状与 ssh-ed25519 相同。本服务发布的 OpenSSH TrustedUserCAKeys 行仍是此列表中的第一个经典算法，若列表只点名 ssh-mldsa-65 则为 ssh-ed25519。不理解 ML-DSA 的对端继续信任那一行。不提供 ssh-rsa（SHA-1）。只有本运行时能够生成该密钥时才创建 ML-DSA 机构；否则证书保持经典（记录 STS-PKI-0290，经典机构仍然应答）。"
-  },
-  "pki.sshUserCaPqcOnly|label": {
-    "en": "74aae1308361ba58",
-    "text": "SSH 用户证书仅使用后量子算法"
-  },
-  "pki.sshUserCaPqcOnly|description": {
-    "en": "39b21e5b95f84da1",
-    "text": "开启后，新的 SSH 用户证书由 ML-DSA 机构签名，并且仅当该机构存在时。发布的 TrustedUserCAKeys 行仍是经典密钥，因此已经信任它的 OpenSSH 客户端不会收到它无法解析的算法。在不能生成 ML-DSA 的运行时上，证书保持经典，请求不会失败。已经签发的经典证书继续验证。不能与 pki.sshUserCaPqcAlongsideClassical 同时开启（STS-PKI-0296）。默认关闭。"
-  },
-  "pki.sshUserCaPqcAlongsideClassical|label": {
-    "en": "c3201f8841200c32",
-    "text": "SSH 用户证书同时带有后量子证书"
-  },
-  "pki.sshUserCaPqcAlongsideClassical|description": {
-    "en": "b38eab63ec092b6c",
-    "text": "开启后，当 ML-DSA 机构存在时，新的 SSH 用户证书签发两次：经典证书，即 OpenSSH 客户端使用的那一份，以及旁边的一份 ML-DSA 证书。不能与 pki.sshUserCaPqcOnly 同时开启（STS-PKI-0296）。默认关闭。复合签名不是 OpenSSH 的概念；经典证书和 ML-DSA 证书是两个签名，不是一个混合签名。"
   }
 }
