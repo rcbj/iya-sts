@@ -38,7 +38,18 @@
 //   J. synchronous signing is off unless keys.pkcs11SynchronousSign is on
 //      (STS-KEYS-0209). The child opts in so C–H can sign, then turns it
 //      off. A module with no C_SignAsync refuses sign() the same way, and
-//      signs once the setting is on.
+//      signs once the setting is on; one with no C_DecryptAsync or
+//      C_DeriveKeyAsync refuses a decryption or an agreement the same way.
+//   K. (#1955 P8 follow-up, 2026-11-23) with the setting OFF, every door
+//      signs or decrypts off the event loop: an access token, a JWS of each
+//      kind, a SAML 2.0 and a SAML 1.1 assertion, a Redirect-binding
+//      signature, any XML document, an EncryptedAssertion, answers fetched
+//      ahead for WS-Trust, a JWE, a WS-Trust token, a key set and a
+//      rotation — and holds nothing. Against the fake module the
+//      asynchronous calls settle 25 ms later and the blocking calls throw,
+//      so a timer scheduled before each operation fires before it resolves;
+//      against SoftHSM2 the binding's blocking calls are made to throw.
+//   H. (SoftHSM2) the latency, in place and off the loop.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -364,6 +375,302 @@ function childMain() {
     note(legacyOpened && !legacyOpened.ok,
          'I4. RSA PKCS#1 v1.5 is never asked of an HSM key',
          legacyOpened && (legacyOpened.why || ''));
+    // ------------------------------------------------------------ K
+    // EVERY DOOR OFF THE EVENT LOOP, WITH THE SETTING OFF (#1955 P8
+    // follow-up, 2026-11-23; rcbj: "I do not want this activity to block
+    // the main event loop"). Each door signs or decrypts with
+    // keys.pkcs11SynchronousSign off, and holds nothing:
+    //   * the FAKE module's asynchronous calls settle 25 ms later on a timer
+    //     and its blocking C_Sign / C_Decrypt / C_DeriveKey throw, so a
+    //     timer scheduled before the operation fires before it resolves;
+    //   * on SOFTHSM2 the binding's blocking C_Sign, C_Decrypt and
+    //     C_DeriveKey are replaced by ones that throw, so a door that called
+    //     one would fail — and the timer is reported (a real module may
+    //     answer inside a millisecond, so it is not asserted there).
+    config.setOverride('keys.pkcs11SynchronousSign', false);
+    const heldToken = secrets.heldSigningToken().token;
+    const realLib = heldToken.entry.lib;
+    const blockingMade = [];
+    const unpatched = {};
+    if (WHICH === 'softhsm') {
+      ['C_Sign', 'C_Decrypt', 'C_DeriveKey'].forEach(function (name) {
+        unpatched[name] = realLib[name];
+        realLib[name] = function () {
+          blockingMade.push(name);
+          throw new Error('the blocking ' + name + ' was called');
+        };
+      });
+    } else {
+      binding.slowAsyncOnly(25);
+    }
+    async function offTheLoop(fn) {
+      let fired = false;
+      const timer = setTimeout(function () {
+        fired = true;
+      }, 0);
+      const t0 = process.hrtime.bigint();
+      let out;
+      let error = null;
+      try {
+        out = await fn();
+      } catch (e) {
+        error = e;
+      }
+      const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+      clearTimeout(timer);
+      return { out: out, error: error, fired: fired, ms: ms };
+    }
+    function heldNothing(r) {
+      return WHICH === 'softhsm' ? !r.error : (!r.error && r.fired);
+    }
+    function how(r) {
+      return (r.error ? 'error: ' + ((r.error && r.error.message) ||
+                                     r.error) + ' ' : '') +
+             'timer first: ' + r.fired + ', ' + r.ms.toFixed(2) + ' ms';
+    }
+    const verifyJose = function (jws, publicKey, alg) {
+      const parts = String(jws || '').split('.');
+      const input = Buffer.from(parts[0] + '.' + parts[1]);
+      const sig = Buffer.from(parts[2] || '', 'base64url');
+      if (alg === 'EdDSA') {
+        return nodeCrypto.verify(null, input, publicKey, sig);
+      }
+      return nodeCrypto.verify(alg === 'RS256' ? 'sha256' : 'sha256',
+        input, alg === 'RS256' ? publicKey
+                               : { key: publicKey,
+                                   dsaEncoding: 'ieee-p1363' }, sig);
+    };
+
+    const k1 = await offTheLoop(function () {
+      return helpers.signJwtOffLoop({ sub: 'k1', typ: 'Bearer' },
+                                    { kind: 'access_token' });
+    });
+    let k1Ok = false;
+    try {
+      k1Ok = !!helpers.verifyOwnJws(k1.out);
+    } catch (e) {
+      k1Ok = String((e && e.message) || e);
+    }
+    note(heldNothing(k1) && k1Ok === true,
+         'K1. an access token (helpers.signJwtOffLoop, RS256) signs in the ' +
+         'HSM with the setting off, holding nothing', how(k1) + ' ' + k1Ok);
+    const k2 = await offTheLoop(function () {
+      return helpers.signJwtAsOffLoop({ sub: 'k2' }, 'ES256', null, {});
+    });
+    note(heldNothing(k2) && verifyJose(k2.out, es.privateKey.publicKey,
+                                       'ES256'),
+         'K2. an ES256 JWS (helpers.signJwtAsOffLoop: WS-Trust JWTs, SETs, ' +
+         'software statements, FAPI client assertions) signs off the loop',
+         how(k2));
+    const k3 = await offTheLoop(function () {
+      return stsCrypto.signJwsOffLoop({ sub: 'k3' }, ed.privateKey,
+                                      { algorithm: 'EdDSA' });
+    });
+    note(heldNothing(k3) && verifyJose(k3.out, ed.privateKey.publicKey,
+                                       'EdDSA'),
+         'K3. an EdDSA JWS (stsCrypto.signJwsOffLoop) signs off the loop',
+         how(k3));
+    const k4 = await offTheLoop(function () {
+      return saml2.buildSamlAssertionAsync('k4-alice', 'https://sp.k4.test',
+                                           5);
+    });
+    let k4Ok = 'not built';
+    try {
+      k4Ok = stsCrypto.verifyXmlSignature(k4.out, {
+        element: 'Assertion', certPem: helpers.STS.xml.certPem }).ok;
+    } catch (e) {
+      k4Ok = String((e && e.message) || e);
+    }
+    note(heldNothing(k4) && k4Ok === true && /<ds:SignatureValue>/.test(
+           String(k4.out)),
+         'K4. a SAML 2.0 assertion (saml2.buildSamlAssertionAsync: SSO, ' +
+         'WS-Federation, WS-Trust) is signed off the loop and verifies',
+         how(k4) + ' ' + k4Ok);
+    const saml11 = require(ROOT + '/saml/saml11');
+    const k5 = await offTheLoop(function () {
+      return saml11.buildSaml11AssertionAsync({ subject: 'k5-alice',
+        audience: 'https://rp.k5.test', lifetimeMin: 5 });
+    });
+    let k5Ok = 'not built';
+    try {
+      k5Ok = stsCrypto.verifyXmlSignature(k5.out, {
+        element: 'Assertion', certPem: helpers.STS.xml.certPem }).ok;
+    } catch (e) {
+      k5Ok = String((e && e.message) || e);
+    }
+    note(heldNothing(k5) && k5Ok === true,
+         'K5. a SAML 1.1 assertion (saml11.buildSaml11AssertionAsync) is ' +
+         'signed off the loop and verifies', how(k5) + ' ' + k5Ok);
+    const RSA_SHA256 = 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256';
+    const qs = 'SAMLResponse=abc&RelayState=k6&SigAlg=' +
+               encodeURIComponent(RSA_SHA256);
+    const k6 = await offTheLoop(function () {
+      return stsCrypto.signQueryStringOffLoop(qs,
+        helpers.STS.xmlSigner.privateKeyPem, RSA_SHA256,
+        helpers.STS.xmlSigner.privateKey);
+    });
+    note(heldNothing(k6) && nodeCrypto.verify('sha256', Buffer.from(qs),
+           stsCrypto.publicKeyOf(helpers.STS.xml.certPem),
+           Buffer.from(String(k6.out || ''), 'base64')),
+         'K6. an HTTP-Redirect binding signature ' +
+         '(stsCrypto.signQueryStringOffLoop) is made off the loop',
+         how(k6));
+    const k7doc = '<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:' +
+      '2.0:metadata" ID="_k7" entityID="https://k7.test"/>';
+    const k7 = await offTheLoop(function () {
+      return stsCrypto.signXmlOffLoop(k7doc, {
+        privateKeyPem: helpers.STS.xmlSigner.privateKeyPem,
+        privateKey: helpers.STS.xmlSigner.privateKey,
+        certPem: helpers.STS.xmlSigner.certPem,
+        placement: stsCrypto.PLACEMENT.FIRST, refUri: '#_k7' });
+    });
+    let k7Ok = 'not signed';
+    try {
+      k7Ok = stsCrypto.verifyXmlSignature(k7.out, {
+        element: 'EntityDescriptor',
+        certPem: helpers.STS.xml.certPem }).ok;
+    } catch (e) {
+      k7Ok = String((e && e.message) || e);
+    }
+    note(heldNothing(k7) && k7Ok === true,
+         'K7. any XML document (stsCrypto.signXmlOffLoop: metadata, ' +
+         'protocol messages) is signed off the loop and verifies',
+         how(k7) + ' ' + k7Ok);
+    const sealedK = stsCrypto.encryptElement(plainXml,
+      helpers.STS.xml.certPem, { keyTransport: 'rsa-oaep-mgf1p' });
+    const k8 = await offTheLoop(function () {
+      return helpers.decryptOwnElementOffLoop(sealedK);
+    });
+    note(heldNothing(k8) && k8.out && k8.out.ok && k8.out.xml === plainXml,
+         'K8. an EncryptedAssertion (helpers.decryptOwnElementOffLoop: ' +
+         'SAML Single Logout\'s EncryptedID, an RFC 7522 grant) opens ' +
+         'off the loop', how(k8) + ' ' + (k8.out && k8.out.why));
+    const answers = await stsCrypto.hsmAnswersFor(function () {
+      return helpers.decryptOwnElement(sealedK);
+    });
+    const k9 = stsCrypto.withHsmAnswers(answers, function () {
+      return helpers.decryptOwnElement(sealedK);
+    });
+    const k9Bare = helpers.decryptOwnElement(sealedK);
+    note(answers.size >= 1 && k9 && k9.ok && k9.xml === plainXml &&
+         k9Bare && !k9Bare.ok,
+         'K9. answers fetched ahead (stsCrypto.hsmAnswersFor: a WS-Trust ' +
+         'encrypted request) open the synchronous door, which without them ' +
+         'refuses', answers.size + ' answer(s); bare: ' +
+         (k9Bare && k9Bare.why));
+    const k10 = await offTheLoop(function () {
+      return stsCrypto.decryptJweCompactAsync(rsaJwe,
+        { privateKey: keys.privateKey, allowedEnc: ['A256GCM'] });
+    });
+    const k11 = await offTheLoop(function () {
+      return stsCrypto.decryptJweCompactAsync(ecJwe,
+        { privateKey: es.privateKey, allowedEnc: ['A128GCM'] });
+    });
+    note(heldNothing(k10) && heldNothing(k11) &&
+         k10.out.plaintext === 'jwe-rsa' && k11.out.plaintext === 'jwe-ec',
+         'K10. a JWE to the RS256 key (RSA-OAEP) and to the ES256 key ' +
+         '(ECDH-ES+A128KW) opens off the loop', how(k10) + ' / ' + how(k11));
+    const WsModel = require(ROOT + '/ws-trust/ws_model');
+    const wstrust = require(ROOT + '/ws-trust/wstrust');
+    const k12 = await offTheLoop(function () {
+      return wstrust.buildTokenAsync(WsModel.term('wst.tokenType', 'saml2'),
+        'k12-alice', 'https://rp.k12.test', 5);
+    });
+    const k12j = await offTheLoop(function () {
+      return wstrust.buildTokenAsync(WsModel.term('wst.tokenType', 'jwt'),
+        'k12-alice', 'https://rp.k12.test', 5);
+    });
+    let k12Ok = 'not built';
+    try {
+      k12Ok = stsCrypto.verifyXmlSignature(k12.out.xml, {
+        element: 'Assertion', certPem: helpers.STS.xml.certPem }).ok;
+    } catch (e) {
+      k12Ok = String((e && e.message) || e);
+    }
+    const k12Jwt = /<wsse:BinarySecurityToken[^>]*>([^<]+)</.exec(
+      String((k12j.out || {}).xml || ''));
+    let k12jOk = false;
+    try {
+      k12jOk = !!helpers.verifyOwnJws(k12Jwt ? k12Jwt[1] : '');
+    } catch (e) {
+      k12jOk = String((e && e.message) || e);
+    }
+    note(heldNothing(k12) && heldNothing(k12j) && k12Ok === true &&
+         k12jOk === true,
+         'K11. a WS-Trust token (wstrust.buildTokenAsync), SAML 2.0 and JWT, ' +
+         'is signed off the loop and verifies',
+         how(k12) + ' ' + k12Ok + ' / ' + how(k12j) + ' ' + k12jOk);
+    const syncXml = await refusedWith(function () {
+      return stsCrypto.signXml(k7doc, {
+        privateKeyPem: helpers.STS.xmlSigner.privateKeyPem,
+        certPem: helpers.STS.xmlSigner.certPem });
+    });
+    const syncDec = stsCrypto.decryptElement(sealedK,
+                                             keys.xmlKey.privateKeyPem);
+    note(/STS-KEYS-0209/.test(syncXml) && syncDec && !syncDec.ok,
+         'K12. the synchronous doors themselves still refuse an HSM key ' +
+         'while the setting is off (STS-KEYS-0209), signing and decrypting',
+         syncXml.slice(0, 120) + ' | ' + (syncDec && syncDec.why));
+    // A key set made and rotated with the setting off: the certificate
+    // over each RSA key is signed with C_SignAsync (prepareKeySet()).
+    const realmsK = require(ROOT + '/common/realms');
+    let k13 = 'not made';
+    try {
+      realmsK.create({ id: 'p8k' });
+      const madeK = await offTheLoop(function () {
+        return helpers.prepareKeySet('p8k');
+      });
+      const setK = helpers.stsKeysFor.of('p8k');
+      const certK = new nodeCrypto.X509Certificate(setK.certPem);
+      const xmlCertK = new nodeCrypto.X509Certificate(
+        setK.xmlKey.selfSignedCertPem || setK.xmlKey.certPem);
+      k13 = (stsCrypto.isHsmKey(setK.privateKeyPem) &&
+             stsCrypto.isHsmKey(setK.xmlKey.privateKeyPem) &&
+             certK.verify(setK.privateKey.publicKey) &&
+             certK.publicKey.export({ format: 'jwk' }).n ===
+               setK.privateKey.publicKey.export({ format: 'jwk' }).n &&
+             !!xmlCertK && (WHICH === 'softhsm' || madeK.fired))
+        ? 'made' : 'wrong: ' + how(madeK);
+    } catch (e) {
+      k13 = String((e && e.stack) || e).slice(0, 400);
+    }
+    note(k13 === 'made',
+         'K13. a realm\'s key set is made in the HSM with the setting off, ' +
+         'its self-signed certificates signed off the loop', k13);
+    let k14 = 'not minted';
+    try {
+      const mintedK = await realmsK.run(realmsK.get('p8k'), function () {
+        return helpers.ensureNextGenerations('p8k',
+                                             { units: ['jose:RS256'] });
+      });
+      const nextK = helpers.standbyOf(helpers.stsKeysFor.of('p8k'),
+                                      'jose:RS256')
+        .filter(function (one) { return one.role === 'next'; })[0];
+      k14 = mintedK.ok && nextK && stsCrypto.isHsmKey(nextK.privateKey) &&
+            new nodeCrypto.X509Certificate(nextK.certPem)
+              .verify(nextK.privateKey.publicKey)
+        ? 'minted' : 'wrong: ' + JSON.stringify(mintedK);
+    } catch (e) {
+      k14 = String((e && e.stack) || e).slice(0, 400);
+    }
+    note(k14 === 'minted',
+         'K14. a rotation\'s next RSA key is made with the setting off, its ' +
+         'certificate signed off the loop', k14);
+    if (WHICH === 'softhsm') {
+      Object.keys(unpatched).forEach(function (name) {
+        realLib[name] = unpatched[name];
+      });
+      note(blockingMade.length === 0,
+           'K15. no door called a blocking C_Sign, C_Decrypt or C_DeriveKey ' +
+           'with the setting off', JSON.stringify(blockingMade));
+    } else {
+      const made = binding.slowAsyncOnly(0);
+      note(made.length === 0,
+           'K15. no door called a blocking C_Sign, C_Decrypt or C_DeriveKey ' +
+           'with the setting off', JSON.stringify(made));
+    }
+    config.setOverride('keys.pkcs11SynchronousSign', true);
+
     if (WHICH !== 'softhsm') {
       // A KEY MADE BEFORE THE KEYS COULD DECRYPT: its CKA_DECRYPT and
       // CKA_DERIVE taken away, as the first cut of P8 made them.
@@ -514,6 +821,45 @@ function childMain() {
         stsCrypto.decryptElement(sealedM, k.xmlKey.privateKeyPem);
       }
       const decSync = Number(process.hrtime.bigint() - a) / 1e6 / 50;
+      // OFF THE LOOP (#1955 P8 follow-up): the same operations through the
+      // asynchronous doors, N at once — wall time per operation, and the
+      // longest the event loop went without turning while they ran.
+      const lag = { worst: 0, last: Date.now(), on: true };
+      const beat = function () {
+        const now = Date.now();
+        lag.worst = Math.max(lag.worst, now - lag.last);
+        lag.last = now;
+        if (lag.on) {
+          setTimeout(beat, 1);
+        }
+      };
+      setTimeout(beat, 1);
+      a = process.hrtime.bigint();
+      await Promise.all(Array.from({ length: N }, function (x, i) {
+        return stsCrypto.signJwsOffLoop({ sub: 'm' + i }, k.privateKey,
+                                        { algorithm: 'RS256' });
+      }));
+      const rsAsync = Number(process.hrtime.bigint() - a) / 1e6 / N;
+      a = process.hrtime.bigint();
+      await Promise.all(Array.from({ length: 50 }, function () {
+        return stsCrypto.signXmlOffLoop(xmlDoc,
+          { privateKeyPem: k.xmlKey.privateKeyPem,
+            certPem: helpers.STS.xml.certPem });
+      }));
+      const xmlAsync = Number(process.hrtime.bigint() - a) / 1e6 / 50;
+      a = process.hrtime.bigint();
+      await Promise.all(Array.from({ length: 50 }, function () {
+        return stsCrypto.decryptElementOffLoop(sealedM,
+                                               k.xmlKey.privateKeyPem);
+      }));
+      const decAsync = Number(process.hrtime.bigint() - a) / 1e6 / 50;
+      lag.on = false;
+      note(true, 'H3. off the loop, measured: RS256 ' + rsAsync.toFixed(3) +
+           ' ms each with ' + N + ' at once; a SAML signature ' +
+           xmlAsync.toFixed(3) + ' ms each with 50 at once; an XML ' +
+           'RSA-OAEP decryption ' + decAsync.toFixed(3) + ' ms each with ' +
+           '50 at once; the event loop\'s longest gap meanwhile ' +
+           lag.worst + ' ms');
       note(true, 'H2. what holds the event loop, measured: a software ' +
            'RS256 (RSA-2048) signature ' + softSync.toFixed(3) + ' ms in ' +
            'place against ' + rsSync.toFixed(3) + ' ms in the HSM; a SAML ' +
@@ -534,6 +880,7 @@ function childMain() {
         .fakeBinding({ modulePath: nosyncPath,
                        tokens: [{ label: 'nosync', pin: '4321' }] });
       delete b2.PKCS11.prototype.C_SignAsync;
+      delete b2.PKCS11.prototype.C_DeriveKeyAsync;
       const token = pkcs11.openToken(b2, {
         modulePath: nosyncPath, tokenLabel: 'nosync', pin: '4321' });
       const pair = token.generateKeyPair({ kty: 'EC', crv: 'P-256' },
@@ -556,6 +903,22 @@ function childMain() {
       note(/STS-KEYS-0209/.test(noAsync) && /STS-KEYS-0209/.test(noSync),
            'J4. with no C_SignAsync, sign() and signSync refuse while ' +
            'synchronous signing is off', noAsync + ' | ' + noSync);
+      const peerJwk = nodeCrypto.generateKeyPairSync('ec',
+        { namedCurve: 'prime256v1' }).publicKey.export({ format: 'jwk' });
+      const peerPoint = Buffer.concat([Buffer.from([4]),
+        Buffer.from(peerJwk.x, 'base64url'),
+        Buffer.from(peerJwk.y, 'base64url')]);
+      let noDerive = 'not refused';
+      try {
+        await token.deriveEcdh(pair.key, peerPoint, 32, true);
+        noDerive = 'derived';
+      } catch (e) {
+        noDerive = (codeOf(e) || '') + ' ' + ((e && e.message) || e);
+      }
+      note(/STS-KEYS-0209/.test(noDerive),
+           'J4a. with no C_DeriveKeyAsync, an ECDH agreement asked off the ' +
+           'loop refuses while the setting is off, before C_DeriveKey',
+           noDerive);
       config.setOverride('keys.pkcs11SynchronousSign', true);
       let blocked = null;
       try {
@@ -570,6 +933,16 @@ function childMain() {
                                       Buffer.from('def'));
       note(Buffer.isBuffer(fallen) && fallen.length > 0,
            'J6. sign() falls back to C_Sign only while the setting is on');
+      let derivedOn = null;
+      try {
+        derivedOn = await token.deriveEcdh(pair.key, peerPoint, 32, true);
+      } catch (e) {
+        derivedOn = String((e && e.message) || e);
+      }
+      note(Buffer.isBuffer(derivedOn) && derivedOn.length === 32,
+           'J6a. and the agreement falls back to C_DeriveKey only while the ' +
+           'setting is on', Buffer.isBuffer(derivedOn) ? derivedOn.length
+                                                     : derivedOn);
     }
   })().catch(function (e) {
     note(false, 'the child ran to the end', e && e.stack);
@@ -661,8 +1034,8 @@ module.exports = {
   name: 'pkcs11_signing',
   describe: 'a realm\'s classical signing keys in a PKCS#11 HSM: made there, ' +
             'published, signing JWTs and SAML, restored, rotated, refused ' +
-            'where they cannot be held, and refusing a synchronous signature ' +
-            'while keys.pkcs11SynchronousSign is off — against a fake module ' +
-            'and SoftHSM2',
+            'where they cannot be held, and signing and decrypting off the ' +
+            'event loop on every door while keys.pkcs11SynchronousSign is ' +
+            'off — against a fake module and SoftHSM2',
   run: run
 };

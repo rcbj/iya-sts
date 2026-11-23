@@ -2200,12 +2200,12 @@
     "text": "令牌在启动时于每个进程中打开一次"
   },
   "keys.pkcs11SynchronousSign|label": {
-    "en": "c8e3fedf4601518d",
-    "text": "允许同步 PKCS#11 签名"
+    "en": "66785a52cf616805",
+    "text": "允许阻塞的 PKCS#11 调用"
   },
   "keys.pkcs11SynchronousSign|description": {
-    "en": "1cb742f146d4c7c1",
-    "text": "关闭为默认：用 HSM 中的密钥签名只通过绑定的异步 `C_Sign`。同步路径（JWS、XML 签名、SAML 断言）拒绝 HSM 密钥（`STS-KEYS-0209`），而不在事件循环上等待令牌。开启后这些路径调用 `C_Sign`，事件循环会等待。没有异步签名的模块只有在此项开启时才能签名。解密不变。可按领域设置。"
+    "en": "328ad6368a172a36",
+    "text": "关闭（默认）：用 HSM 中领域密钥所做的任何事都不会在事件循环上等待。每个入口（JWS 或访问令牌、XML 签名、SAML 断言、WS-Federation 响应、WS-Trust 令牌、XML 或 JWE 解密、密钥集的证书）都使用绑定的异步 `C_SignAsync`、`C_DecryptAsync` 和 `C_DeriveKeyAsync`。阻塞调用会被拒绝（`STS-KEYS-0209`）：没有异步调用的模块得到的就是这个结果。开启：明确同意阻塞调用——这样的模块调用 `C_Sign`、`C_Decrypt` 或 `C_DeriveKey`，事件循环等待令牌。可按领域设置。"
   },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",

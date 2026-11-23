@@ -3967,10 +3967,21 @@ const CODES = [
       '(#1955).',
     spec: '' },
   { code: 'STS-KEYS-0209',
-    summary: 'A signature with a key in the HSM was asked of a synchronous ' +
-      'door, or of a module with no asynchronous C_Sign, while ' +
-      'keys.pkcs11SynchronousSign is off. The event loop is not held for ' +
-      'the token; turn the setting on to sign that way (#1955).',
+    summary: 'A blocking PKCS#11 call with a realm key in the HSM (C_Sign, ' +
+      'C_Decrypt or C_DeriveKey) was asked while ' +
+      'keys.pkcs11SynchronousSign is off: by a module with no ' +
+      'asynchronous call for it, or by a synchronous door no service ' +
+      'caller uses with a realm key. Every service door signs and ' +
+      'decrypts off the event loop; turn the setting on to allow the ' +
+      'blocking call (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0210',
+    summary: 'A warning at start: the PKCS#11 calls this process can run at ' +
+      'once with realm keys in the HSM (keys.pkcs11Sessions times its ' +
+      'threads) reach libuv\'s thread pool size (UV_THREADPOOL_SIZE), ' +
+      'which they share with password hashing and post-quantum signing. ' +
+      'Nothing blocks the event loop; a slow token could hold every pool ' +
+      'thread. The line names the size that leaves room (#1955).',
     spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +

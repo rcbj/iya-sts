@@ -4891,21 +4891,28 @@ const SETTINGS = [
                  'sessions are the keys.pkcs11* settings. Empty opens no ' +
                  'token.' },
 
-  // Off by default (#1955): a synchronous door (JWS, XML, SAML) must not
-  // hold the event loop for the token unless an operator asks. Decryption
-  // is not gated here.
+  // Off by default (#1955). Since the P8 follow-up (2026-11-23; rcbj: "I do
+  // not want this activity to block the main event loop") every door with
+  // a realm's key in the HSM signs, decrypts and agrees off the event loop,
+  // so OFF no longer means "the synchronous doors refuse": it means no
+  // blocking call is made, which only a module with no asynchronous call, or
+  // a synchronous door no service caller uses with a realm key, would need.
+  // ON keeps its meaning, the opt-in to blocking calls.
   { key: 'keys.pkcs11SynchronousSign', group: 'Key material',
-    label: 'Allow synchronous PKCS#11 signing',
+    label: 'Allow blocking PKCS#11 calls',
     env: 'STS_KEYS_PKCS11_SYNCHRONOUS_SIGN', type: 'bool',
     dflt: false, runtime: true,
-    description: 'Off, the default: a signature with a key in the HSM is ' +
-                 'made only through the binding\'s asynchronous `C_Sign`. ' +
-                 'The synchronous doors (a JWS, an XML signature, a SAML ' +
-                 'assertion) refuse an HSM key (`STS-KEYS-0209`) rather ' +
-                 'than wait for the token on the event loop. On, those ' +
-                 'doors call `C_Sign` and the event loop waits. A module ' +
-                 'with no asynchronous sign can sign only while this is ' +
-                 'on. Decryption is not changed. Settable per realm.' },
+    description: 'Off, the default: nothing done with a realm\'s key in ' +
+                 'the HSM waits on the event loop. Every door (a JWS or ' +
+                 'access token, an XML signature, a SAML assertion, a ' +
+                 'WS-Federation response, a WS-Trust token, an XML or JWE ' +
+                 'decryption, a key set\'s certificates) uses the ' +
+                 'binding\'s asynchronous `C_SignAsync`, `C_DecryptAsync` ' +
+                 'and `C_DeriveKeyAsync`. A blocking call is refused ' +
+                 '(`STS-KEYS-0209`): what a module with no asynchronous ' +
+                 'call gets. On, the opt-in to blocking calls: such a ' +
+                 'module calls `C_Sign`, `C_Decrypt` or `C_DeriveKey` and ' +
+                 'the event loop waits for the token. Settable per realm.' },
 
   // -------------------------------------------------------------------------
   // THE CELL KEY-ENCRYPTION KEY (#98, 2026-09-28). What a cell stores of its

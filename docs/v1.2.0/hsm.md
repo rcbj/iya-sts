@@ -15,7 +15,7 @@ through PKCS#11:
 * **A realm's classical signing keys** (`keys.signingKeyStore=pkcs11`, off by
   default). The RSA key that signs JWTs, the XML signing key, and the
   elliptic-curve keys are generated in the HSM and cannot be extracted. Every
-  signature is a PKCS#11 `C_Sign` call.
+  signature is a PKCS#11 call, made without blocking the event loop.
 
 Two modules have been tested: **SoftHSM2** and a fake module in the test
 suite. The **YubiHSM 2** settings below come from Yubico's PKCS#11 module, but
@@ -144,7 +144,7 @@ them is done in the HSM:
 
 | What arrives | The HSM operation |
 |---|---|
-| A SAML `EncryptedID`, `EncryptedAssertion` in an RFC 7522 grant, or a WS-Trust encrypted request (`rsa-oaep-mgf1p`, `rsa-oaep`) | `CKM_RSA_PKCS_OAEP` with the document's digest |
+| A SAML `EncryptedID`, `EncryptedAssertion` in an RFC 7522 grant, or a WS-Trust encrypted request (`rsa-oaep-mgf1p`, `rsa-oaep`) | `CKM_RSA_PKCS_OAEP` with the document's digest, without blocking the event loop |
 | A JWE assertion with `RSA-OAEP` or `RSA-OAEP-256` | `CKM_RSA_PKCS_OAEP`, without blocking the event loop |
 | A JWE with `ECDH-ES` or `ECDH-ES+A*KW` to an EC key | `CKM_ECDH1_DERIVE`, without blocking the event loop; the Concat KDF runs in the service |
 
@@ -162,34 +162,63 @@ them is done in the HSM:
   `POST /admin-api/keys/rotate` or the `signing.rotate-now` job makes new keys
   that can decrypt. Until then, documents encrypted to that key do not open.
 
-**Latency and the event loop.** These figures are from SoftHSM2 on a laptop
-with two cores:
+**The event loop is never held.** Every operation with a realm's key in the
+HSM is an asynchronous PKCS#11 call (`C_SignAsync`, `C_DecryptAsync`,
+`C_DeriveKeyAsync`), and the service waits for it without blocking the event
+loop, in the front process and in every request worker. That covers every
+place a realm key is used:
+
+* **Signatures:** access, refresh and ID tokens, signed UserInfo responses,
+  logout tokens, request objects, introspection and JARM responses, signed
+  metadata (OAuth, OpenID, SAML, WS-Federation, the cryptographic metadata
+  document), software statements, FAPI client assertions, Security Event
+  Tokens, GNAP access tokens, OpenID4VP request objects, SAML 2.0 and SAML
+  1.1 assertions and responses, SAML logout messages and their
+  HTTP-Redirect signatures, WS-Trust tokens (SAML and JWT), WS-Federation
+  sign-in responses, AuthnRequests sent to a federation partner, and the
+  self-signed certificate made over each RSA key when a key set is created
+  or rotated.
+* **Decryptions:** SAML `EncryptedID` and `EncryptedAssertion`, a WS-Trust
+  encrypted request, and a JWE to the realm's RSA or EC keys.
+
+For an XML signature, the service canonicalizes the `SignedInfo` itself,
+signs it in the HSM asynchronously, and writes the `SignatureValue` into the
+document. A key in software is signed exactly as before.
+
+`keys.pkcs11SynchronousSign` is the opt-in to **blocking** calls, and it is
+off by default. Off, no blocking call is made: a module that offers no
+asynchronous call for an operation is refused with `STS-KEYS-0209` rather
+than waited for. On, such a module calls `C_Sign`, `C_Decrypt` or
+`C_DeriveKey`, and the event loop waits for the token while it does.
+SoftHSM2 and Yubico's module both offer the asynchronous calls through
+`pkcs11js`.
+
+Four short calls stay synchronous: opening and logging in a session (once
+per session, and again after an outage), finding a key's handle (once per
+key, and after an outage), and the `C_SignInit` / `C_DecryptInit` that
+starts each operation. None of them performs the cryptographic operation.
+
+**Latency.** These figures are from SoftHSM2 on a laptop with two cores:
 
 | Operation | Time each |
 |---|---|
-| RS256 (RSA 2048) signature, synchronous | about 0.7–0.95 ms (0.47 ms in software) |
-| ES256 signature, synchronous | about 0.05–0.07 ms |
+| RS256 (RSA 2048) signature, synchronous (setting on) | about 0.7–0.95 ms (0.47 ms in software) |
+| RS256 signature, 200 at a time without blocking the event loop | P8A_RS_ASYNC |
+| ES256 signature, synchronous (setting on) | about 0.05–0.07 ms |
 | ES256, 200 at a time without blocking the event loop | about 0.05 ms each |
-| SAML assertion signature (RSA), synchronous | about 1.2 ms |
-| XML RSA-OAEP decryption, synchronous | about 0.2 ms |
+| SAML assertion signature (RSA), synchronous (setting on) | about 1.2 ms |
+| SAML assertion signature (RSA), 50 at a time without blocking | P8A_XML_ASYNC |
+| XML RSA-OAEP decryption, synchronous (setting on) | about 0.2 ms |
+| XML RSA-OAEP decryption, 50 at a time without blocking | P8A_DEC_ASYNC |
 
-These paths do not block the event loop (`C_SignAsync`, `C_DecryptAsync`,
-`C_DeriveKeyAsync`): the ID Token, the signed UserInfo response, Security Event
-Tokens, a key set's generation and rotation, and a JWE assertion's decryption.
+While those ran off the event loop, its longest gap was P8A_LAG.
 
-Other signatures (an access token, a SAML assertion, a WS-Federation
-response) are synchronous, as they are with a software key. They call
-`C_Sign` only while `keys.pkcs11SynchronousSign` is on. Off, the default,
-those doors refuse an HSM key (`STS-KEYS-0209`) rather than wait for the
-token on the event loop. A module with no asynchronous sign can sign only
-while the setting is on. XML decryptions stay synchronous either way.
-On SoftHSM2 an opted-in signature holds the event loop for about as long as
-a software key does. A YubiHSM 2 is much slower: Yubico's published figures
-are tens of milliseconds for ECDSA P-256 and hundreds for RSA-2048. Each
-synchronous operation holds the loop for that long, so a realm signing a
-high volume of access tokens with a YubiHSM 2 should sign them with an EC
-key (`keys.signingAlgorithms`), and should leave synchronous signing off
-unless a door has no asynchronous path.
+A YubiHSM 2 is much slower: Yubico's published figures are tens of
+milliseconds for ECDSA P-256 and hundreds for RSA-2048. Off the event loop
+that is latency for the one request, not a stall for every request, but it
+still holds a thread of libuv's pool (below). A realm that signs a high
+volume of tokens with a YubiHSM 2 should sign them with an EC key
+(`keys.signingAlgorithms`).
 
 ## Sessions, workers and outages
 
@@ -197,6 +226,16 @@ unless a door has no asynchronous path.
   `keys.pkcs11Sessions` (4) for each token. One session runs one operation at a
   time. A YubiHSM 2 has 16 sessions in total across every process on every
   node, so keep sessions × processes × nodes below 16.
+* **libuv's thread pool.** An asynchronous PKCS#11 call runs on libuv's
+  thread pool, which a process shares between its front thread, its request
+  workers, password hashing (scrypt) and post-quantum signing. A call holds
+  a pool thread for as long as the token takes, so a process can have
+  `keys.pkcs11Sessions` × (1 + `workers.requestCount` +
+  `workers.surfaceCount`) of them running at once. When that reaches
+  `UV_THREADPOOL_SIZE` (node's default is 4; the compose stack sets 32), the
+  service logs `STS-KEYS-0210` at start with the size to set: a slow token
+  could otherwise hold every pool thread while sign-ins wait to hash a
+  password. The event loop is not blocked either way.
 * If `yubihsm-connector` restarts, or the device goes away, every session is
   lost. The next operation opens a new session, logs in again and tries once
   more. No timer is involved. An operation that still fails is refused with
@@ -208,8 +247,9 @@ unless a door has no asynchronous path.
   something it cannot do, or cannot be reached), `STS-KEYS-0207` (the module
   cannot make a key of that kind, or cannot decrypt with that digest),
   `STS-KEYS-0208` (a key made before the HSM keys could decrypt),
-  `STS-KEYS-0209` (a synchronous signature while
-  `keys.pkcs11SynchronousSign` is off). See
+  `STS-KEYS-0209` (a blocking call, by a module with no asynchronous call,
+  while `keys.pkcs11SynchronousSign` is off), `STS-KEYS-0210` (libuv's
+  thread pool is smaller than the PKCS#11 calls that can run at once). See
   [Error codes](error-codes.md).
 
 ## SoftHSM2

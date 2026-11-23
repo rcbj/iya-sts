@@ -244,8 +244,8 @@
     "text": "而且金鑰絕不能存放在它所保護的磁碟上。與存放區位於同一未加密磁碟區上的金鑰檔案，會把兩半都交給取走該磁碟區的人；這對開發堆疊來說沒問題，也是 `file` 提供者為預設值的原因，但這不是部署。keys.kekProvider 可改為選擇秘密存放區。"
   },
   "encryption.notes.signingKeys": {
-    "en": "d0eeec647d97c442",
-    "text": "此領域在何處簽署（#1955）。當 keys.signingKeyStore 為 pkcs11 時，列為位於 HSM 中的傳統簽署金鑰是在 keys.signingKeyToken 所指名的權杖中建立的，且絕不離開它：每次簽署都是一次 PKCS#11 呼叫。後量子金鑰一律在軟體中建立，因為這裡沒有任何 PKCS#11 模組提供 ML-DSA 或 SLH-DSA，模組不建立的任何曲線也是如此。此設定適用於其變更後建立或輪替的金鑰組。 同步簽章只在 keys.pkcs11SynchronousSign 開啟時進行；否則該路徑拒絕（STS-KEYS-0209），非同步路徑仍然簽章。"
+    "en": "42b4a12838250b88",
+    "text": "此領域在何處簽章（#1955）。在 keys.signingKeyStore 為 pkcs11 時，列為在 HSM 中的傳統簽章金鑰是在 keys.signingKeyToken 指定的權杖中產生的，且從不離開它：用它們進行的每次簽章與解密都是一次 PKCS#11 呼叫，在事件迴圈之外完成（C_SignAsync、C_DecryptAsync、C_DeriveKeyAsync）。只有在 keys.pkcs11SynchronousSign 開啟時，才會為沒有非同步呼叫的模組進行阻塞呼叫；否則會被拒絕（STS-KEYS-0209）。後量子金鑰總是在軟體中產生，因為這裡沒有提供 ML-DSA 或 SLH-DSA 的 PKCS#11 模組，模組不產生的任何曲線也是如此。此設定適用於其變更後產生或輪替的金鑰集。"
   },
   "encryption.notes.accountingNote": {
     "en": "4e3af979f8ed8bd7",

@@ -114,8 +114,34 @@ function fakeBinding(options) {
     nextSession: 1,
     down: 0,
     loseOnce: 0,
+    // `slowAsyncOnly()` (#1955 P8 follow-up): the asynchronous calls
+    // settle after `asyncDelayMs` on a timer, and a BLOCKING C_Sign,
+    // C_Decrypt or C_DeriveKey throws — so a test can tell a door that
+    // waited off the event loop from one that held it.
+    asyncDelayMs: 0,
+    refuseBlocking: false,
+    blockingCalls: [],
     calls: []
   };
+
+  // The point an asynchronous call settles at: the next turn of the loop,
+  // or `asyncDelayMs` later on a timer.
+  function later() {
+    return new Promise(function (resolve) {
+      if (state.asyncDelayMs > 0) {
+        setTimeout(resolve, state.asyncDelayMs);
+      } else {
+        setImmediate(resolve);
+      }
+    });
+  }
+  // A blocking call, refused while `refuseBlocking` is set.
+  function blocking(name) {
+    state.blockingCalls.push(name);
+    if (state.refuseBlocking) {
+      fail('CKR_FUNCTION_FAILED', 0x6);
+    }
+  }
 
   function token(slot) {
     const t = state.tokens[Number(slot)];
@@ -400,22 +426,20 @@ function fakeBinding(options) {
     return cipherRun(s, data);
   };
   PKCS11.prototype.C_Decrypt = function (s, data) {
+    const op = state.sessions.get(Number(s));
+    if (op && op.op && op.op.kind === 'rsa-dec') {
+      blocking('C_Decrypt');
+    }
     return cipherRun(s, data);
   };
   PKCS11.prototype.C_EncryptAsync = function (s, data) {
-    const self = this;
-    return new Promise(function (resolve) {
-      setImmediate(resolve);
-    }).then(function () {
-      return self.C_Encrypt(s, data);
+    return later().then(function () {
+      return cipherRun(s, data);
     });
   };
   PKCS11.prototype.C_DecryptAsync = function (s, data) {
-    const self = this;
-    return new Promise(function (resolve) {
-      setImmediate(resolve);
-    }).then(function () {
-      return self.C_Decrypt(s, data);
+    return later().then(function () {
+      return cipherRun(s, data);
     });
   };
   const KWP_IV = Buffer.from('a65959a6', 'hex');
@@ -496,6 +520,10 @@ function fakeBinding(options) {
     return { publicKey: pub, privateKey: priv };
   };
   PKCS11.prototype.C_DeriveKey = function (s, mech, h, template) {
+    blocking('C_DeriveKey');
+    return deriveNow(s, mech, h, template);
+  };
+  function deriveNow(s, mech, h, template) {
     check('C_DeriveKey');
     const sess = session(s);
     const obj = object(sess, h);
@@ -513,13 +541,10 @@ function fakeBinding(options) {
     const z = nodeCrypto.diffieHellman({ privateKey: obj.privateKey,
                                          publicKey: peer });
     return addObject(token(sess.slot), template, { secret: z });
-  };
+  }
   PKCS11.prototype.C_DeriveKeyAsync = function (s, mech, h, template) {
-    const self = this;
-    return new Promise(function (resolve) {
-      setImmediate(resolve);
-    }).then(function () {
-      return self.C_DeriveKey(s, mech, h, template);
+    return later().then(function () {
+      return deriveNow(s, mech, h, template);
     });
   };
   PKCS11.prototype.C_SignInit = function (s, mech, h) {
@@ -532,6 +557,10 @@ function fakeBinding(options) {
     sess.op = { kind: 'sign', mech: mech, key: obj.privateKey };
   };
   PKCS11.prototype.C_Sign = function (s, data) {
+    blocking('C_Sign');
+    return signNow(s, data);
+  };
+  function signNow(s, data) {
     check('C_Sign');
     const sess = session(s);
     const op = sess.op;
@@ -556,13 +585,10 @@ function fakeBinding(options) {
     }
     // CKM_ECDSA over a digest, answering r || s.
     return ecdsaSignDigest(op.key, data);
-  };
+  }
   PKCS11.prototype.C_SignAsync = function (s, data) {
-    const self = this;
-    return new Promise(function (resolve) {
-      setImmediate(resolve);
-    }).then(function () {
-      return self.C_Sign(s, data);
+    return later().then(function () {
+      return signNow(s, data);
     });
   };
 
@@ -610,6 +636,17 @@ function fakeBinding(options) {
     // The device stays away until put back.
     breakAlways: function (down) {
       state.down = down ? 1 : 0;
+    },
+    // Asynchronous calls settle `ms` later on a timer, and a blocking
+    // C_Sign, C_Decrypt (RSA) or C_DeriveKey throws (#1955 P8 follow-up);
+    // `slowAsyncOnly(0)` puts both back. Answers the blocking calls made
+    // since the last call.
+    slowAsyncOnly: function (ms) {
+      const made = state.blockingCalls.slice();
+      state.blockingCalls.length = 0;
+      state.asyncDelayMs = Number(ms) || 0;
+      state.refuseBlocking = Number(ms) > 0;
+      return made;
     }
   };
   return binding;
