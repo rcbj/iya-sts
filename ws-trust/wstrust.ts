@@ -4741,6 +4741,20 @@ class WsTrust {
                body: this.soapFault(version, roleAnswer.why, 'RequestFailed',
                                     trustNs) };
     }
+    // A REQUIRED DYNAMIC ROLE (#1072, rcbj's decision 5): an RST has no
+    // sign-in screen to choose one on, so the token is refused rather than
+    // issued without it. `wst:RequestFailed`, as the policy's own refusal.
+    const roleRefusal = subject && subject !== 'anonymous'
+      ? require('../authn/role_selection').noBrowserRefusal({
+        username: String(subject), application: String(audience || ''),
+        protocol: 'WS-Trust' })
+      : null;
+    if (roleRefusal) {
+      log.debug("Leaving the RST handler. A required dynamic role.");
+      return { status: 403, version: version, errorCode: 'STS-XACML-0332',
+               body: this.soapFault(version, roleRefusal.why, 'RequestFailed',
+                                    trustNs) };
+    }
 
     // #487: SAML 1.1 by either of its two names; anything else that is not
     // the JWT's is answered with SAML 2.0, as it always was.

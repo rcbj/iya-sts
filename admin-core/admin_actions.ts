@@ -10195,29 +10195,35 @@ class AdminActions {
     const fill = serverProse.fill;
     const MESSAGES = policyKinds.MESSAGES;
     const submitted: Record<string, any> = Object.assign({}, body);
-    // A SAVE WITH NO NAME OVERWROTE cn=default (the #1132 notes).
-    // `newProfile` is console-only, so the management API never saw the
-    // check that used to require it, and a save that omitted the name
-    // wrote the default. The name itself is what is required: missing,
-    // null or blank after trim is refused before anything is read or
-    // written. An explicit `default`, including surrounding spaces, still
-    // writes the default. A reset that omits the name still resets the
-    // default. A present malformed name is the kind's own refusal.
-    const namedAuthnSave = action === 'save-named-authn-policy';
-    if (found.verb === 'save' || namedAuthnSave) {
-      const raw = namedAuthnSave ? submitted.name : submitted.profile;
-      const named = (raw === undefined || raw === null) ? ''
-        : String(raw).trim();
-      if (named === '') {
+    // A NAME GIVEN AND EMPTY IS REFUSED, AND A NAME LEFT OUT IS THE DEFAULT
+    // (the #1132 notes; rcbj's backwards-compatibility directive since
+    // 1.0.0). A save that OMITS `profile` edits the default profile, as it
+    // always has, so an API caller written against 1.0.0 is answered as it
+    // was. What is refused is a name that is THERE and says nothing — null,
+    // or blank after trim — and the console's new-policy create
+    // (`newProfile`), which has no default to fall back on: either one
+    // overwrote cn=default before. An explicit `default`, surrounding spaces
+    // included, still writes the default; a present malformed name is the
+    // kind's own refusal. `save-named-authn-policy` is not this check's:
+    // its `name` is always required and never `default`, and its own
+    // refusal (STS-AUTHN-0532) is what it always answered.
+    const creatingNamedProfile = submitted.newProfile === true ||
+      String(submitted.newProfile || '') === '1';
+    if (found.verb === 'save') {
+      const present = Object.prototype.hasOwnProperty.call(submitted,
+                                                           'profile');
+      const raw = submitted.profile;
+      const blank = present && (raw === null ||
+                                String(raw).trim() === '');
+      if (blank || (creatingNamedProfile && !present)) {
         log.debug("Leaving AdminActions.policiesAction(). A name is " +
                   "required.");
         return this.refused('STS-ADMIN-0549', {
           ok: false, errors: ['A name is required.'] });
       }
     }
-    const profileName = found.verb === 'save'
-      ? String(submitted.profile).trim()
-      : String(submitted.profile || module.DEFAULT_PROFILE).trim();
+    const profileName = String(submitted.profile ||
+                                module.DEFAULT_PROFILE).trim();
     // The profile the act is about (#535: a named passkey profile too).
     const before = module.read(profileName || module.DEFAULT_PROFILE);
     const valuesOf = function (profile) {

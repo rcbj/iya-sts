@@ -771,7 +771,7 @@ async function syncedPasskeys(deviceBound) {
       String(done.text).slice(0, 300));
   });
   const set = await call("POST", "/policies/save-passkey-policy",
-                         { profile: "default", allowUsernameless: true,
+                         { allowUsernameless: true,
                            requireUsernameless: false,
                            securityKeyResidentKey: "required",
                            backupEligibility: "disallow",
@@ -836,7 +836,7 @@ async function test() {
   // #527: the realm's own passkey policy, saved whole.
   const savePolicy = async function (allow) {
   const set = await call("POST", "/policies/save-passkey-policy",
-                         { profile: "default", allowUsernameless: allow,
+                         { allowUsernameless: allow,
                            requireUsernameless: false,
                            securityKeyResidentKey: "required",
                            backupEligibility: "allow",

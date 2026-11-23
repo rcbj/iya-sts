@@ -717,10 +717,16 @@ one, owes a row here, and that test fails otherwise.
   name, and its fields are the kind's own (each module's `FIELDS`, its
   `optional` rows the ones a save keeps in force), so `newPolicyJson()` in
   `admin_views.ts` derives them; a second copy here would be the drift.
-* **A save with no name is refused** (`policiesAction`, STS-ADMIN-0549,
-  "A name is required."), whether or not `newProfile` is present. Send
-  `profile` — or `name`, for `save-named-authn-policy` — as `default` to
-  edit the default. A reset that omits the name still resets the default.
+* **A name given empty is refused; a name left out is the default**
+  (`policiesAction`, STS-ADMIN-0549, "A name is required."). A save whose
+  `profile` is null or blank after trim is refused, and so is the console's
+  new-policy create (`newProfile`) without one: either used to overwrite
+  `cn=default`. A save that OMITS `profile` edits the default profile, as
+  it did in 1.0.0 — rcbj's backwards-compatibility directive forbids
+  refusing an input an earlier release accepted. `save-named-authn-policy`
+  is the kind's own act: its `name` is always required and is never
+  `default`, and its refusal is `authn_policy.ts`'s STS-AUTHN-0532, as it
+  always was. A reset that omits the name still resets the default.
 * **A library (rule 3)**: it requires `helpers` alone, so any module may
   require it without moving a route or closing a cycle.
 

@@ -2492,7 +2492,34 @@ class WebKit {
       }
       chosen[row.name] = value;
     });
+    // A FIELD ANOTHER ROW'S REQUIREMENT NAMES, DRAWN OUTSIDE THE GRID
+    // (#1132's follow-ups: New user's service-account box), read from what
+    // the form holds, so the outline agrees with the box as drawn.
+    (rows || []).forEach(function (row) {
+      const field = row.requiredWhen ? String(row.requiredWhen.field) : '';
+      if (field && chosen[field] === undefined) {
+        const raw = values[field];
+        chosen[field] = Array.isArray(raw) ? (raw.length ? String(raw[0]) : '')
+          : raw === undefined || raw === null || raw === false ? ''
+          : String(raw);
+      }
+    });
     return chosen;
+  }
+
+  /**
+   * Whether a choice meets a `requiredWhen`'s values: one of them, or, for
+   * `*`, anything at all (two fields that go together).
+   *
+   * @param values - `requiredWhen.values`
+   * @param current - what the named field holds
+   * @returns true when the field is required for it
+   */
+  static whenMet(values, current) {
+    const list = (values || []).map(String);
+    const now = String(current == null ? '' : current);
+    return list.indexOf('*') >= 0 ? now.trim() !== ''
+                                  : list.indexOf(now) >= 0;
   }
 
   /**
@@ -2518,7 +2545,7 @@ class WebKit {
       return false;
     }
     const current = String((chosen && chosen[when.field]) || '');
-    return (when.values || []).map(String).indexOf(current) >= 0;
+    return WebKit.whenMet(when.values, current);
   }
 
   /**
@@ -2542,10 +2569,13 @@ class WebKit {
     return '<span class="fg-req-word"' + (active ? '' : ' hidden') + '>' +
       t.html('consoleKit.grid.required') + '</span>' +
       '<span class="fg-req-when"' + (active ? ' hidden' : '') + '>' +
-      t.html('consoleKit.create.requiredWhen', {
-        field: String(when.field),
-        values: (when.values || []).join(', ')
-      }) + '</span>';
+      ((when.values || []).map(String).indexOf('*') >= 0
+        ? t.html('consoleKit.create.requiredWhenFilled',
+                 { field: String(when.field) })
+        : t.html('consoleKit.create.requiredWhen', {
+          field: String(when.field),
+          values: (when.values || []).join(', ')
+        })) + '</span>';
   }
 
   /**

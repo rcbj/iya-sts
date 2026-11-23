@@ -848,6 +848,22 @@ class IssuanceRefused extends Error {
   }
 }
 
+// THE GRANTS WITH NO BROWSER IN THEM (#1072, rcbj's decision 5), by the
+// label each passes as `opts.grant`: they never carry a dynamic role a
+// session chose — the session they name, where they name one, is the one a
+// person approved on or signed in to an EARLIER client with — and a person
+// the client would require to choose one is refused them (STS-XACML-0332).
+// A refresh token is judged by the grant it descends from (`origin_grant`,
+// its `grant_type` claim), so a device grant's refresh token carries none
+// either. `client_credentials` and the pre-authorized code have no person
+// to choose; they are here for the first half alone.
+const NO_ROLE_SELECTION_GRANTS = [
+  'password', 'token exchange', 'native sso exchange',
+  'urn:ietf:params:oauth:grant-type:jwt-bearer',
+  'urn:ietf:params:oauth:grant-type:saml2-bearer',
+  'device_code', 'ciba', 'client_credentials', 'pre-authorized code'
+];
+
 // ---------------------------------------------------------------------------
 // OpenID Connect Core 1.0 section 5.5 — THE `claims` REQUEST PARAMETER.
 //
@@ -3923,6 +3939,42 @@ class OAuth2Server {
   // `sessionId` (#1072): the sign-on session the token rests on, whose
   // chosen dynamic roles the roles claim may carry (`roles.js`'s selection
   // reader). A direct grant has none, and gets none.
+  // THE SESSION WHOSE CHOSEN DYNAMIC ROLES A GRANT'S TOKENS MAY CARRY
+  // (#1072): the grant's own session, unless the grant — or, for a
+  // refresh, the grant it descends from — has no browser in it, when ''.
+  // The session id still goes on the tokens for its other uses (`sid`, the
+  // revocation on sign-out); only the roles are not read from it.
+  private selectionSessionOf(opts: Json): string {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.selectionSessionOf().");
+    const origin = String((opts && opts.grant === 'refresh_token'
+      ? opts.origin_grant : opts && opts.grant) || '');
+    const out = NO_ROLE_SELECTION_GRANTS.indexOf(origin) >= 0 ? ''
+      : String((opts && opts.session_id) || '');
+    log.debug("Leaving OAuth2Server.selectionSessionOf(). " +
+              (out ? 'The session.' : 'None.'));
+    return out;
+  }
+
+  // UserInfo's half of `selectionSessionOf()`: the grant the presented
+  // access token descends from, read off the token register by its jti.
+  // `refresh_token` there is a refresh whose origin was never recorded —
+  // a row from before #1072's follow-ups — and is read as a grant with no
+  // browser: SAFE, because it may descend from the device grant or CIBA,
+  // and leaving a chosen role off a UserInfo answer grants nothing.
+  private userinfoSelectionSession(claims: Json): string {
+    const { log, stats } = this.deps;
+    log.debug("Entering OAuth2Server.userinfoSelectionSession().");
+    const descends = String(stats.grantOfJti(claims && claims.jti) || '');
+    const sessionId = String((claims && claims.sid) ||
+                             stats.sessionIdOfJti(claims && claims.jti) || '');
+    const out = descends === 'refresh_token' ? ''
+      : this.selectionSessionOf({ grant: descends, session_id: sessionId });
+    log.debug("Leaving OAuth2Server.userinfoSelectionSession(). " +
+              (out ? 'The session.' : 'None.'));
+    return out;
+  }
+
   private customClaimContext(base: Json, payload: Json, user: Json,
                              grant?: string, sessionId?: string): Json {
     const { log } = this.deps;
@@ -3989,6 +4041,11 @@ class OAuth2Server {
              grantId: String((opts && (opts.grant_id || opts.grant_family ||
                                        opts.set_id)) || ''),
              grantRefresh: !!(opts && opts.grant_family),
+             // WHERE A REFRESH CAME FROM (#1072): the grant its chain began
+             // with (the refresh token's `grant_type`), so UserInfo holds a
+             // refreshed device or CIBA token to its origin's rule.
+             originGrant: opts && opts.grant === 'refresh_token'
+               ? String(opts.origin_grant || '') : '',
              // THE KEY UNDER A BOUND CERTIFICATE (#432 follow-up): the
              // SubjectPublicKeyInfo SHA-256 of the client certificate on the
              // Token Request, which the register keeps beside `x5t` when the
@@ -4323,7 +4380,7 @@ class OAuth2Server {
     const clientClaims = stats.jwtClaims('access_token',
                                          self.customClaimContext(
                                            base, payload, user, opts.grant,
-                                           opts.session_id));
+                                           self.selectionSessionOf(opts)));
     const resourceLayer = opts.grant === 'client_credentials' ? null
       : self.resourceServerClaims(payload.aud, user, granted);
     const combined = resourceLayer
@@ -5241,8 +5298,8 @@ class OAuth2Server {
                                        self.customClaimContext(base, payload,
                                                                user,
                                                                opts.grant,
-                                                               opts.session_id
-                                                               )),
+                                                               self
+                                                 .selectionSessionOf(opts))),
                        opts.scope, 'ID Token'),
       payload);
     // ---------------------------------------------------------------------
@@ -5493,6 +5550,29 @@ class OAuth2Server {
         throw new IssuanceRefused(log, answer, kinds[i]);
       }
     }
+    // A REQUIRED DYNAMIC ROLE, ON A GRANT WITH NO BROWSER IN IT (#1072,
+    // rcbj's decision 5): the person cannot choose it here, so the client
+    // is refused rather than handed a token without it.
+    // The pre-authorized code is not one of decision 5's: its offer was
+    // made on a session (`decided_on_session_id`), and it carries no choice.
+    if (subject.kind === 'user' && subject.name &&
+        NO_ROLE_SELECTION_GRANTS.indexOf(String(opts.grant || '')) >= 0 &&
+        opts.grant !== 'pre-authorized code') {
+      const roleRefusal = require('../authn/role_selection').noBrowserRefusal({
+        username: String(subject.name),
+        application: String(opts.client_id || ''),
+        protocol: 'OAuth 2.0 (' + String(opts.grant) + ')',
+        acr: String(opts.acr || ''),
+        amr: Array.isArray(opts.amr) ? opts.amr : [] });
+      if (roleRefusal) {
+        log.debug("Leaving OAuth2Server.checkIssuance(). A required " +
+                  "dynamic role.");
+        throw new IssuanceRefused(log, { allowed: false,
+                                         why: roleRefusal.why,
+                                         roleSelection: true },
+                                  'role selection');
+      }
+    }
     log.debug("Leaving OAuth2Server.checkIssuance(). Allowed.");
     return null;
   }
@@ -5679,8 +5759,8 @@ class OAuth2Server {
         self.issuanceSubjectOf(opts),
         { clientId: opts.client_id, grant: opts.grant,
           // #1072: the session's chosen dynamic roles count, for this
-          // client; a direct grant has no session and none.
-          sessionId: opts.session_id || '' });
+          // client; a grant with no browser in it carries none.
+          sessionId: self.selectionSessionOf(opts) });
       if (narrowed.emptied) {
         log.debug("Leaving OAuth2Server.tokenSet(). Nothing but gated " +
                   "permissions the subject may not hold was asked for.");
@@ -12458,9 +12538,23 @@ class OAuth2Server {
         'person from the one signed in here, and prompt=none forbids asking ' +
         'them to sign in (OIDC Core section 3.1.2.1).');
     }
+    // A REQUIRED DYNAMIC ROLE THE SESSION CHOSE NOTHING FOR (#1072): single
+    // sign-on carries no new choice (decision 4), so the person signs in
+    // again, where the role step is drawn; prompt=none cannot ask.
+    const roleOwed = !!session && promptList.indexOf('login') < 0 &&
+      typeof authn.roleChoiceOwed === 'function' &&
+      authn.roleChoiceOwed(session, String(q.client_id || ''));
+    if (roleOwed && promptList.indexOf('none') >= 0) {
+      log.debug("Leaving the authorization endpoint. A role choice is owed, " +
+                "and prompt=none.");
+      errorCodes.mark(res, 'STS-XACML-0333');
+      return fail('interaction_required', 'This application needs the ' +
+        'person to choose a role when they sign in, and prompt=none forbids ' +
+        'asking (OIDC Core section 3.1.2.6).');
+    }
     const forcePrompt = promptList.indexOf('login') >= 0 ||
                         promptList.indexOf('select_account') >= 0 ||
-                        hintMismatch;
+                        hintMismatch || roleOwed;
     // -------------------------------------------------------------------------
     // RFC 9470 AND OPENID CONNECT CORE 3.1.2.1: A SESSION IS NOT AN ANSWER TO A
     // REQUEST IT DOES NOT MEET (2026-09-13).
@@ -14192,7 +14286,10 @@ class OAuth2Server {
     const configured = scopeClaims.gate(
       stats.jwtClaims('userinfo', self.customClaimContext(
         base, claims, user, undefined,
-        String(claims.sid || stats.sessionIdOfJti(claims.jti) || ''))),
+        // Not for a token of a grant with no browser in it (#1072), a
+        // refresh judged by where it came from; a refresh whose origin the
+        // register does not hold carries none (`grantOfJti()` argues it).
+        self.userinfoSelectionSession(claims))),
       claims.scope, 'UserInfo response');
     Object.assign(body, configured);
     if (Object.keys(configured).length) {
@@ -14999,6 +15096,15 @@ class OAuth2Server {
         errorCodes.mark(res, 'STS-CORE-0121');
         log.debug("Leaving OAuth2Server.tokenEndpoint().");
         return self.oauthError(res, 400, 'invalid_grant', e.message);
+      }
+      // A REQUIRED DYNAMIC ROLE THIS GRANT CANNOT ASK FOR (#1072).
+      if (e && e.name === 'IssuanceRefused' && e.issuance &&
+          e.issuance.roleSelection) {
+        log.debug("Leaving the token endpoint's refusal wrapper. A " +
+                  "required dynamic role.");
+        errorCodes.mark(res, 'STS-XACML-0332');
+        log.debug("Leaving OAuth2Server.tokenEndpoint().");
+        return self.oauthError(res, 400, 'access_denied', e.message);
       }
       if (e && e.name === 'IssuanceRefused') {
         log.debug("Leaving the token endpoint's refusal wrapper. The " +

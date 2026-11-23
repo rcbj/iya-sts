@@ -25228,6 +25228,24 @@ const CODES = [
       'object or null. Nothing of it is recorded; the refusal names the ' +
       'member.',
     spec: 'none — 400 invalid_request on POST /xacml/pep/heartbeat' },
+  { code: 'STS-XACML-0332',
+    summary: 'A flow that cannot draw the role step — the password grant, ' +
+      'a token exchange, the RFC 7523 or RFC 7522 grant, the device grant, ' +
+      'CIBA, WS-Trust, a Kerberos ticket or an LDAP bind — was refused ' +
+      'because the application (or the realm, where it names none) would ' +
+      'require the person to choose a dynamic role (#1072, rcbj\'s ' +
+      'decision 5).',
+    spec: 'access_denied at the token endpoint (RFC 6749 section 5.2); ' +
+      'wst:RequestFailed; KDC_ERR_POLICY (RFC 4120 section 7.5.9); LDAP ' +
+      'unwillingToPerform (RFC 4511 section 4.1.9)' },
+  { code: 'STS-XACML-0333',
+    summary: 'Single sign-on into an application that requires a dynamic ' +
+      'role was not answered from the session, which chose none for it (a ' +
+      'sign-in for another application, or at a door that names none): the ' +
+      'person was sent to sign in again and choose, or, where the request ' +
+      'forbids asking (prompt=none, IsPassive), it was refused (#1072).',
+    spec: 'interaction_required (OIDC Core section 3.1.2.6) with ' +
+      'prompt=none; NoPassive with IsPassive' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +

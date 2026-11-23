@@ -20621,6 +20621,16 @@ function externalBind(req, res, next) {
       new ldap.InvalidCredentialsError('the bind name is not the entry this ' +
         'client certificate was issued to; send an empty name'));
   }
+  // A REQUIRED DYNAMIC ROLE (#1072), as at a simple bind.
+  const roleRefusal = require('../authn/role_selection').noBrowserRefusal({
+    username: usernameOfEntry(entry), application: '',
+    protocol: 'LDAP' });
+  if (roleRefusal) {
+    log.debug("Leaving externalBind(). A required dynamic role.");
+    return refuse('STS-XACML-0332', 'a required dynamic role cannot be ' +
+      'chosen over LDAP', new ldap.UnwillingToPerformError(roleRefusal.why),
+      entryDn);
+  }
   const authz = authzIdOf(req);
   if (authz.kind !== 'none') {
     const sameEntry = authz.kind === 'dn'
@@ -21072,6 +21082,22 @@ server.bind('', function (req, res, next) {
   // THE ACCEPTED BIND, split out so the shared limiter's answer can come first.
   function bindAccepted() {
   log.debug("Entering bindAccepted().");
+  // A REQUIRED DYNAMIC ROLE (#1072, rcbj's decision 5): a bind has no
+  // sign-in screen to choose one on and names no application, so a person
+  // a realm-wide required role would ask is refused, unwillingToPerform.
+  const boundEntry = dn ? getEntry(dn) : null;
+  const roleRefusal = boundEntry && isPersonEntry(boundEntry)
+    ? require('../authn/role_selection').noBrowserRefusal({
+      username: usernameOfEntry(boundEntry), application: '',
+      protocol: 'LDAP' })
+    : null;
+  if (roleRefusal) {
+    log.debug("Leaving bindAccepted(). A required dynamic role.");
+    return next(ldapRefusal(req, 'STS-XACML-0332', 'a bind as ' + dn +
+      ' was refused: a required dynamic role cannot be chosen over LDAP',
+      coded('STS-XACML-0332', new ldap.UnwillingToPerformError(
+        roleRefusal.why)), dn, 'refused'));
+  }
   // A successful bind writes TWO audit rows and they are not duplicates: this
   // one says an LDAP bind happened on this socket, and the `authentication` row
   // recordAuthentication() writes below says a credential was accepted — the

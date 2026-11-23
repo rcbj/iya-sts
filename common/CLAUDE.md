@@ -7020,16 +7020,47 @@ is duplicated.
   and `authn/role_selection.ts` requires it, so a require from here closes a
   cycle; and the answer needs the session and the PDP). **Empty is nobody's
   choice.** The context carries `sessionId` and `selectionApplications`
-  (the applications the token is for AND the client it is issued to — a
-  person chooses signing in to a CLIENT whose access token is often for
-  another resource); `applications` still decides where an application's
-  own role is carried (#310). The callers that pass a session: the roles
-  claim (`admin_stats.js`'s `resolvedRoleClaims()`, from `oauth2.ts`'s
-  `customClaimContext()` and the two SAML builders' SessionIndex), the role
-  PEP (`asked.session`) and `narrowScope()` (`context.sessionId`). A direct
-  grant, WS-Trust, Kerberos and LDAP pass none and carry none (decision 5).
+  — THE APPLICATION THE SIGN-IN WAS FOR, and nothing else (the review of
+  2026-11-23): the client an OAuth token is issued to, never the resource
+  an access token is for, whose own sign-in may have chosen otherwise; with
+  no client, the caller's application or the assertion's audience (the
+  service provider or relying party signed in to). `resolvedRoleClaims()`
+  and `narrowScope()` ask it the same way. `applications` still decides
+  where an application's own role is carried (#310). The callers that pass
+  a session: the roles claim (`admin_stats.js`'s `resolvedRoleClaims()`,
+  from `oauth2.ts`'s `customClaimContext()` and the two SAML builders'
+  SessionIndex), the role PEP (`asked.session`) and `narrowScope()`
+  (`context.sessionId`).
+* **A grant with no browser in it reads no session's choice** (decision 5):
+  `oauth2.ts`'s `NO_ROLE_SELECTION_GRANTS` — the password grant, token
+  exchange and Native SSO, the two assertion grants, the device grant, CIBA
+  — and a refresh descending from one (`origin_grant`), through
+  `selectionSessionOf()`; UserInfo asks the token register's
+  `grantOfJti()`, which answers a refresh by its `originGrant` (the
+  refresh token's `grant_type`, recorded since 2026-11-23), and reads a
+  refresh with none recorded as a grant with no browser — safe, since it
+  may descend from the device grant or CIBA. The session id still goes on those tokens for `sid` and
+  the sign-out's revocation. WS-Trust, Kerberos and LDAP pass none.
+* **A required role refuses a flow with no browser** (decision 5):
+  `authn/role_selection.ts`'s `noBrowserRefusal()` (STS-XACML-0332),
+  asked at the token endpoint's issuance check, the RST handler, the AS
+  and TGS exchanges and both LDAP binds. A flow naming no application (a
+  bind, a TGT, `/tls/sign-in`) is asked about the realm-wide required
+  roles; `role_eligibility.ts`'s `requiredFor()` is the one answer, the
+  same the role step's offer gives.
+* **Single sign-on owes a required role's choice**: `authn.roleChoiceOwed()`
+  (`role_selection.ts`'s `owedFor()`) is a force-login at the authorization
+  endpoint, both SAML 2.0 doors, SAML 1.1 and both WS-Federation doors, and
+  `interaction_required` / NoPassive where the request forbids asking
+  (STS-XACML-0333).
+* **Every name for an application is its registry identifier**
+  (`role_eligibility.ts`'s `applicationOf()`): the offer, the decision, the
+  rows the step records and every reader, so a client_id, entityID or
+  service principal that is not the identifier names the same choice.
 * **`roles.dynamicSelection`**, with `appDynamicRoleSelection` overriding it,
-  turns the box, the offer and the carrying off together.
+  turns the box, the offer, the requirement and the carrying off together
+  (`role_eligibility.ts`'s `selectionOn()`; `selectedFor()` asks it per
+  application).
 
 ## `setId` IS THE THIRD THING THE TOKEN REGISTRY IS TOLD OUT OF BAND (2026-09-05)
 

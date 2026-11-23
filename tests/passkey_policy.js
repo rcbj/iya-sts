@@ -458,8 +458,7 @@ function kind(t) {
           'P7b. the page\'s view draws it from its fields',
           JSON.stringify(view.passkey && view.passkey.fields));
   const saved = adminActions.policiesAction(Object.assign(
-    { action: 'save-passkey-policy' }, withDefaults(),
-    { profile: 'default' }), { via: 'api' });
+    { action: 'save-passkey-policy' }, withDefaults()), { via: 'api' });
   t.check(saved.ok && saved.kind === 'passkey',
           'P7c. save-passkey-policy is handed to the passkey policy',
           JSON.stringify(saved.errors));
