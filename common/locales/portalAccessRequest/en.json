@@ -13,6 +13,8 @@
   "justificationHint": "The approvers read this.",
   "duration": "For how long",
   "durationLongest": "As long as the policy allows",
+  "entitlement": "Which access",
+  "chosen": "The access asked for:",
   "duration3600": "One hour",
   "duration86400": "One day",
   "duration604800": "One week",

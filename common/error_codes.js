@@ -26632,6 +26632,25 @@ const CODES = [
     summary: 'An access request was submitted on the hosted form while ' +
       'authzen.accessRequestForm (or the profile) is off (#1204).',
     spec: 'none — the portal answers 403' },
+  { code: 'STS-AUTHZEN-0149',
+    summary: 'A Catalogs Document or Catalog Endpoint of the AuthZEN access ' +
+      'request catalogs (#1204) was asked for a denial this realm did not ' +
+      'record, whose advice lists no entitlements, or by a caller it was ' +
+      'not answered to or that is no longer scoped to its application.',
+    spec: 'the CATALOG companion\'s sections 7 and 11; 404 problem+json' },
+  { code: 'STS-AUTHZEN-0150',
+    summary: 'A Catalog Endpoint call carried a cursor this endpoint did ' +
+      'not issue for the same search (#1204).',
+    spec: 'the CATALOG companion\'s section 7; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0151',
+    summary: 'An access request for a denial whose catalog lists ' +
+      'entitlements carried no requested_access.entitlement, or one the ' +
+      'catalog does not list (#1204).',
+    spec: 'the CATALOG companion\'s section 10.3; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0152',
+    summary: 'The access request catalogs were called while ' +
+      'authzen.accessRequestCatalogs (or the profile) is off (#1204).',
+    spec: 'none — 501 problem+json' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +

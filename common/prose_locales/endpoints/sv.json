@@ -99,6 +99,14 @@
     "en": "e39be1976aa651db",
     "text": "Inlämningsschemat för en åtkomstbegäran"
   },
+  "endpoints.route./access/v1/access-requests/catalogs/:evaluation.name": {
+    "en": "c633cd939009e41d",
+    "text": "En åtkomstbegärans Catalogs Document"
+  },
+  "endpoints.route./access/v1/access-requests/catalogs/:evaluation/entitlements.name": {
+    "en": "2fc2571728b32fa3",
+    "text": "En åtkomstbegärans katalog över behörigheter"
+  },
   "endpoints.route./access/v1/access-requests/:id.name": {
     "en": "c8bcbb33d07cfb8f",
     "text": "En åtkomstbegärans uppgiftsstatus"

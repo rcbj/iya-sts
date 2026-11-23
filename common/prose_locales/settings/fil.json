@@ -8539,6 +8539,14 @@
     "en": "37c92b9ca48d6f87",
     "text": "Ang naka-host na form ng Access Request and Approval Profile (#1204): ang isang pagtangging maaaring hilingin na naitala ng realm na ito ay may form_url, ang pahina ng portal na /portal/access-request, kung saan nagsa-sign in ang subject ng pagtanggi at isinusumite ang kahilingan sa access na may katwiran; makukuha muli ng tinanggihang PEP ang gawaing iyon kapag isinumite nito ang parehong pagtanggi. Ang isang Task Handle ay may links.ticket, ang parehong pahina, kung saan nakikita ng subject ang katayuan ng kahilingan. Kapag naka-off, walang ipinapadala at walang kahilingang ginagawa ang pahina."
   },
+  "authzen.accessRequestCatalogs|label": {
+    "en": "ccb71d0eb2d2512b",
+    "text": "Mga catalog para sa mga kahilingan sa access"
+  },
+  "authzen.accessRequestCatalogs|description": {
+    "en": "1f38cbb80e80bafc",
+    "text": "Ang AuthZEN Access Request Catalog Profile (#1204): ang isang naitalang pagtangging maaaring hilingin na ang advice ay naglilista ng mga halagang urn:sts:xacml:advice:access-request:entitlement ay may request_catalogs_url, sumasagot ang Catalogs Document at Catalog Endpoint nito sa tumawag na sinagot ng pagtanggi, kailangang pumili ang isang pagsusumite ng isa sa mga entitlement sa requested_access.entitlement, at dinadala ito ng pag-apruba sa patakaran bilang pinagkakatiwalaang katotohanan. Kapag naka-off, binabalewala ang mga entitlement ng advice at sumasagot ng 501 ang dalawang endpoint."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

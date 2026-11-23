@@ -8539,6 +8539,14 @@
     "en": "37c92b9ca48d6f87",
     "text": "النموذج المستضاف في ملف Access Request and Approval (#1204): يحمل الرفض القابل للطلب الذي سجّله هذا النطاق form_url، وهي صفحة البوابة /portal/access-request، حيث يسجّل صاحب الرفض الدخول ويقدّم طلب الوصول مع مبرّر؛ ويستعيد الـ PEP المرفوض تلك المهمة عندما يقدّم الرفض نفسه. يحمل Task Handle الحقل links.ticket، وهو الصفحة نفسها، حيث يرى صاحب الطلب حالته. عند الإيقاف لا يُرسل أي منهما ولا تُنشئ الصفحة أي طلب."
   },
+  "authzen.accessRequestCatalogs|label": {
+    "en": "ccb71d0eb2d2512b",
+    "text": "فهارس طلبات الوصول"
+  },
+  "authzen.accessRequestCatalogs|description": {
+    "en": "1f38cbb80e80bafc",
+    "text": "ملف AuthZEN Access Request Catalog (#1204): يحمل الرفض القابل للطلب المسجَّل الذي يسرد الـ advice فيه قيم urn:sts:xacml:advice:access-request:entitlement الحقل request_catalogs_url، ويجيب Catalogs Document وCatalog Endpoint الخاصان به المستدعي الذي أُجيب بالرفض، ويجب أن يختار الطلب أحد الاستحقاقات في requested_access.entitlement، وتحمله الموافقة إلى السياسة حقيقةً موثوقة. عند الإيقاف تُتجاهل استحقاقات الـ advice ويجيب نقطتا النهاية بـ 501."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

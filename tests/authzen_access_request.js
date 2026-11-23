@@ -81,6 +81,12 @@
 //      a Task Handle names links.ticket, the ticket shows only the subject,
 //      the page lists their requests and draws a real submit button, and
 //      off it is refused 0148.
+//   V. THE CATALOGS (#1204): none by default (501); on, a denial whose
+//      advice lists entitlements names request_catalogs_url, the Catalogs
+//      Document and the Catalog Endpoint answer only its caller, search,
+//      page and refuse a foreign cursor, the schema describes the member,
+//      a submission must choose a listed entitlement, and the approved one
+//      reaches the policy as a fact.
 //   O. OFF: authzen.accessRequests off answers 501, the schema too, and
 //      no denial is requestable.
 // ---------------------------------------------------------------------------
@@ -119,6 +125,9 @@ const POLICY = [
   '        id = "urn:sts:xacml:protocol" type = string }',
   '    attribute approval { category = environmentCat',
   '        id = "urn:sts:xacml:authzen:approval-id" type = string }',
+  '    attribute entitled { category = environmentCat',
+  '        id = "urn:sts:xacml:authzen:approved-entitlement"',
+  '        type = string }',
   '    policy azarqRoot {',
   '        id = "urn:test:azarq-root"',
   '        apply firstApplicable',
@@ -136,6 +145,23 @@ const POLICY = [
   '                    "' + ADVICE + ':approver-group" = "azapprovers"',
   '                    "' + ADVICE + ':max-approval-seconds" = "3600"',
   '                    "' + ADVICE + ':emergency" = "true"',
+  '                }',
+  '            }',
+  '        }',
+  '        rule entitledShare {',
+  '            permit',
+  '            target clause act == "share"',
+  '            condition integerGreaterThan(stringBagSize(entitled), 0)',
+  '        }',
+  '        rule catalogedShare {',
+  '            deny',
+  '            target clause act == "share"',
+  '            on deny {',
+  '                advice "' + ADVICE + '" {',
+  '                    "' + ADVICE + ':approver-group" = "azapprovers"',
+  '                    "' + ADVICE + ':entitlement" = "read-only|Read only"',
+  '                    "' + ADVICE + ':entitlement" = ' +
+  '"read-write|Read and write"',
   '                }',
   '            }',
   '        }',
@@ -1855,6 +1881,130 @@ async function childBody() {
           JSON.stringify(sub) + ' / ' + brief(r));
   inRealm(function () {
     config.clearOverride('authzen.accessRequestForm');
+  });
+
+  // -------------------------------------------------------------------------
+  // V. THE CATALOG COMPANION (#1204): off by default; on, a denial whose
+  // advice lists entitlements names request_catalogs_url, the Catalogs
+  // Document and the Catalog Endpoint answer only its own caller, a
+  // submission must choose a listed entitlement, and the approval carries
+  // it to the policy.
+  // -------------------------------------------------------------------------
+  const share = function () {
+    log.debug("Entering share().");
+    log.debug("Leaving share().");
+    return evaluation({ action: { name: 'share' } });
+  };
+  r = await request(port, 'POST', EVAL, pepCred, share());
+  const plainShare = r.json || {};
+  const offCat = await request(port, 'GET', SUBMIT + '/catalogs/' +
+    String((plainShare.context || {}).evaluation_id || 'x'), pepCred);
+  t.check(r.status === 200 && plainShare.decision === false &&
+          !((plainShare.context || {}).access_request || {})
+            .request_catalogs_url &&
+          offCat.status === 501 && problemOf(offCat) === 'about:blank',
+          'V1. by default no denial names request_catalogs_url and the ' +
+          'catalogs answer 501', brief(r) + ' / ' + brief(offCat));
+  inRealm(function () {
+    config.setOverride('authzen.accessRequestCatalogs', true);
+  });
+  r = await request(port, 'POST', EVAL, pepCred, share());
+  const catDenied = r.json || {};
+  const catEval = String((catDenied.context || {}).evaluation_id || '');
+  const catAr = (catDenied.context || {}).access_request || {};
+  const readAr = ((await request(port, 'POST', EVAL, pepCred,
+    evaluation())).json || { context: {} }).context.access_request || {};
+  t.check(r.status === 200 && catAr.request_catalogs_url === own +
+            '/access/v1/access-requests/catalogs/' + catEval &&
+          catAr.request_schema_url && !readAr.request_catalogs_url,
+          'V2. on, a denial whose advice lists entitlements names ' +
+          'request_catalogs_url beside request_schema_url, and one whose ' +
+          'advice lists none does not', brief(r));
+  r = await request(port, 'GET', pathOf(catAr.request_catalogs_url),
+                    pepCred);
+  const field = (((r.json || {}).fields || {})['/requested_access/' +
+                                                 'entitlement']) || {};
+  t.check(r.status === 200 && field.endpoint === catAr.request_catalogs_url +
+            '/entitlements' && field.search_param === 'q' &&
+          Object.keys((r.json || {}).fields || {}).length === 1,
+          'V3. the Catalogs Document names the one field and its endpoint',
+          brief(r));
+  since = marks.length;
+  r = await request(port, 'GET', pathOf(catAr.request_catalogs_url),
+                    pep2Cred);
+  const otherItems = await request(port, 'GET',
+    pathOf(field.endpoint), pep2Cred);
+  t.check(r.status === 404 && otherItems.status === 404 &&
+          markedSince(since, 'STS-AUTHZEN-0149') &&
+          !/read-write/.test(otherItems.text),
+          'V4. another caller is told nothing of the catalog (0149)',
+          brief(r) + ' / ' + brief(otherItems));
+  const ITEMS = pathOf(field.endpoint);
+  r = await request(port, 'GET', ITEMS, pepCred);
+  const all = (r.json || {}).items || [];
+  const written = await request(port, 'GET', ITEMS + '?q=WRITE', pepCred);
+  const pageOne = await request(port, 'GET', ITEMS + '?limit=1', pepCred);
+  const next = String((pageOne.json || {}).next_cursor || '');
+  const pageTwo = await request(port, 'GET', ITEMS + '?limit=1&cursor=' +
+                                encodeURIComponent(next), pepCred);
+  since = marks.length;
+  const wrongCursor = await request(port, 'GET', ITEMS + '?q=only&cursor=' +
+                                    encodeURIComponent(next), pepCred);
+  t.check(r.status === 200 && all.length === 2 && r.json.total === 2 &&
+          all[0].value === 'read-only' && all[0].label === 'Read only' &&
+          ((written.json || {}).items || []).length === 1 &&
+          written.json.items[0].value === 'read-write' &&
+          ((pageOne.json || {}).items || []).length === 1 && next &&
+          ((pageTwo.json || {}).items || [])[0].value === 'read-write' &&
+          !pageTwo.json.next_cursor &&
+          wrongCursor.status === 400 &&
+          markedSince(since, 'STS-AUTHZEN-0150'),
+          'V5. the Catalog Endpoint searches, pages, and refuses a cursor ' +
+          'for another search (0150)', brief(r) + ' / ' + brief(pageTwo) +
+          ' / ' + brief(wrongCursor));
+  r = await request(port, 'GET', PREFIX +
+                    '/access/v1/access-requests/schema', null);
+  t.check(r.status === 200 &&
+          ((((r.json || {}).properties || {}).requested_access || {})
+            .properties || {}).entitlement,
+          'V6. the submission schema describes the entitlement while the ' +
+          'catalogs are on', brief(r));
+  since = marks.length;
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(catDenied, {
+    action: { name: 'share' } }));
+  const unlisted = await request(port, 'POST', SUBMIT, pepCred,
+    submission(catDenied, { action: { name: 'share' },
+                            requested_access: { entitlement: 'admin' } }));
+  t.check(r.status === 400 && unlisted.status === 400 &&
+          markedSince(since, 'STS-AUTHZEN-0151'),
+          'V7. a submission without an entitlement, or with one the ' +
+          'catalog does not list, is refused (0151)',
+          brief(r) + ' / ' + brief(unlisted));
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(catDenied, {
+    action: { name: 'share' },
+    requested_access: { entitlement: 'read-write' } }));
+  const catTask = (r.json || {}).task || {};
+  const catRow = inRealm(function () {
+    return requests.viewOf(requests.task(String(catTask.id)));
+  });
+  t.check(r.status === 202 && catRow.entitlement === 'read-write',
+          'V8. a listed entitlement submits, and the approvers see it',
+          brief(r) + ' / ' + JSON.stringify(catRow));
+  const catDecided = inRealm(function () {
+    return requests.decide(String(catTask.id), 'approve',
+                           { username: 'azbob', door: 'portal' });
+  });
+  r = await request(port, 'GET', SUBMIT + '/' + catTask.id, pepCred);
+  const catApproval = (((r.json || {}).result || {}).approval) || {};
+  r = await request(port, 'POST', EVAL, pepCred, evaluation({
+    action: { name: 'share' },
+    context: { application: 'todo-app', approval: catApproval } }));
+  t.check(catDecided.ok && r.status === 200 && r.json &&
+          r.json.decision === true,
+          'V9. the approved entitlement reaches the policy as a trusted ' +
+          'fact, and the policy permits by it', brief(r));
+  inRealm(function () {
+    config.clearOverride('authzen.accessRequestCatalogs');
   });
 
   // -------------------------------------------------------------------------

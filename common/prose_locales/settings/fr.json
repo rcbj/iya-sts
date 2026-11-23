@@ -8539,6 +8539,14 @@
     "en": "37c92b9ca48d6f87",
     "text": "Le formulaire hébergé du profil Access Request and Approval (#1204) : un refus demandable que ce domaine a enregistré porte form_url, la page du portail /portal/access-request, où le sujet du refus se connecte et soumet la demande d’accès avec une justification ; le PEP qui a été refusé récupère cette tâche lorsqu’il soumet le même refus. Un Task Handle porte links.ticket, la même page, où le sujet voit l’état de la demande. Désactivé, aucun n’est envoyé et la page ne crée aucune demande."
   },
+  "authzen.accessRequestCatalogs|label": {
+    "en": "ccb71d0eb2d2512b",
+    "text": "Catalogues des demandes d’accès"
+  },
+  "authzen.accessRequestCatalogs|description": {
+    "en": "1f38cbb80e80bafc",
+    "text": "Le profil AuthZEN Access Request Catalog (#1204) : un refus demandable enregistré dont l’advice énumère des valeurs urn:sts:xacml:advice:access-request:entitlement porte request_catalogs_url, son Catalogs Document et son Catalog Endpoint répondent à l’appelant à qui le refus a été répondu, une soumission doit choisir l’un des droits dans requested_access.entitlement, et l’approbation le transmet à la politique comme fait de confiance. Désactivé, les droits de l’advice sont ignorés et les deux points de terminaison répondent 501."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

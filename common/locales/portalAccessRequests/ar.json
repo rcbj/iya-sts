@@ -8,6 +8,7 @@
   "resource": "على",
   "application": "التطبيق",
   "requester": "طلبه",
+  "entitlement": "الوصول المطلوب",
   "waits": "ينتظر حتى {when}.",
   "approve": "موافقة",
   "deny": "رفض",

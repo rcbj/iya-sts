@@ -992,7 +992,21 @@ header argues each. What a maintainer needs quickly:
   augmentations (`sameAugmentations()`, else 0076). The draft does not
   say how a form's input reaches the task; making the denial's own
   submission is this service's answer.
-* Not built: BULK, ACTOR, CATALOG.
+* **The CATALOG companion (#1204)**, behind `authzen.accessRequestCatalogs`
+  (off by default). A catalog is the POLICY'S: the advice's repeatable
+  `entitlement` (`value` or `value|label`) is `Terms.entitlements`, so it
+  is inside the binding token and the denial record, and the list is
+  scoped to the denied tuple by construction. `request_catalogs_url` only
+  for a recorded denial that lists some. The Catalogs Document and the
+  Catalog Endpoint (`catalogDenial()`) answer only the denial's own caller,
+  still scoped (`applicationOf()`), 0149 otherwise. The cursor is bound to
+  the search it continues (0150). `requestedAccess()` requires and checks
+  `requested_access.entitlement` against the denial's list (0151), for a
+  PEP's submission and the form's alike. `factsOf()` hands it to
+  `xacml_request.js` as `urn:sts:xacml:authzen:approved-entitlement`,
+  added only when one was chosen. A query string is never logged.
+* Not built: BULK, ACTOR; of CATALOG, `scope_params`, `granted`,
+  `risk_level`, `owner` and agent-protocol catalogs.
   `tests/authzen_access_request.js` holds it in process and
   `tests/protocol/sts_authzen.js` section 9 over HTTP.
 
@@ -1105,4 +1119,7 @@ approval's state could not be signed, and the approval stands by id
 resolve to nobody, each a task moved to `failed` (#1202), 0144 the denial
 store full (#1204); 0145–0148 the hosted form (#1204): 0145 a denial the
 record does not hold, 0146 a person who is not the subject, 0147 a
-window that has passed, 0148 the form off.
+window that has passed, 0148 the form off; 0149–0152 the catalogs
+(#1204): 0149 a catalog call for a denial that is not the caller's, 0150 a
+cursor this endpoint did not issue, 0151 a submission's entitlement
+missing or not listed, 0152 the catalogs off.

@@ -164,6 +164,14 @@ const SCHEMA_PATH = REQUESTS_PATH + '/schema';
 const FORM_PATH = '/portal/access-request';
 // The most of a person's own requests the page lists.
 const MAX_MINE = 50;
+// THE CATALOG COMPANION (#1204): a denial's Catalogs Document, and the one
+// catalog under it, the entitlements the policy's advice lists.
+const CATALOGS_PATH = REQUESTS_PATH + '/catalogs';
+const ENTITLEMENT_POINTER = '/requested_access/entitlement';
+// A Catalog Endpoint page's default and largest size (the draft's section
+// 7: the endpoint MAY clamp `limit`).
+const CATALOG_PAGE = 20;
+const CATALOG_PAGE_MAX = 50;
 
 // The access-control question (`common/access_gate.ts`).
 const GATE_RESOURCE = 'authzen-access-request';
@@ -283,6 +291,10 @@ interface Terms {
   // gives it, so a binding_token's terms are unchanged otherwise.
   displayTitle?: string;
   displayDescription?: string;
+  // The entitlements the advice lists (#1204, the CATALOG companion),
+  // `{ value, label }`. Present only when the advice names any, so a
+  // binding_token's terms are unchanged otherwise.
+  entitlements?: { value: string; label: string }[];
 }
 
 // An approver, as the two doors name one.
@@ -792,6 +804,21 @@ class AccessRequests {
         } else if (name === 'display-description') {
           out.displayDescription = out.displayDescription ||
             text.slice(0, MAX_TEXT);
+        } else if (name === 'entitlement') {
+          // `value` or `value|label` (#1204): one catalog item.
+          const cut = text.indexOf('|');
+          const value = (cut < 0 ? text : text.slice(0, cut)).trim()
+            .slice(0, MAX_ID);
+          const label = (cut < 0 ? '' : text.slice(cut + 1)).trim()
+            .slice(0, 256) || value;
+          const list = out.entitlements || [];
+          if (value && list.length < MAX_LIST &&
+              !list.some(function (one) {
+                return one.value === value;
+              })) {
+            list.push({ value: value, label: label });
+          }
+          out.entitlements = list;
         }
       });
     });
@@ -955,6 +982,13 @@ class AccessRequests {
     if (recorded && self.formOn()) {
       accessRequest.form_url = self.formUrlOf(base, evaluationId);
     }
+    // THE CATALOG COMPANION (#1204, its section 5): only for a recorded
+    // denial whose advice lists entitlements; `request_schema_url`, which
+    // the draft requires beside it, is always present.
+    if (recorded && self.catalogsOn() && (terms.entitlements || []).length) {
+      accessRequest.request_catalogs_url = base + CATALOGS_PATH + '/' +
+        encodeURIComponent(evaluationId);
+    }
     log.debug("Leaving AccessRequests.requestableDenial().");
     return { evaluation_id: evaluationId, evaluated_at: instant(now * 1000),
              reason: terms.reason || 'approval_required',
@@ -987,7 +1021,8 @@ class AccessRequests {
     // status's phrase (RFC 9457 section 4.2.1), and "Bad request" would
     // tell the caller the body was wrong when it was never read.
     const untitled = status >= 500 ? 'Server error'
-      : status === 415 ? 'Unsupported media type' : 'Bad request';
+      : status === 415 ? 'Unsupported media type'
+        : status === 404 ? 'Not found' : 'Bad request';
     const body: Json = {
       type: named ? named.uri : 'about:blank',
       title: named ? named.title : untitled,
@@ -1745,6 +1780,8 @@ class AccessRequests {
       requestedUntil: asked.until,
       emergency: asked.emergency,
       justification: asked.justification,
+      // The catalog item the request chose (#1204), '' when none.
+      entitlement: String(asked.entitlement || ''),
       callback: spec.callback || null,
       createdAt: now,
       expiresAt: now + self.seconds('authzen.accessRequestLifetimeS'),
@@ -1783,6 +1820,8 @@ class AccessRequests {
         String(task.action.name || '') + ' a ' +
         String(task.resource.type || '') + ', application "' +
         task.application + '"' + (task.emergency ? ', as an emergency' : '') +
+        (task.entitlement ? ', for the entitlement "' +
+          String(task.entitlement).slice(0, 128) + '"' : '') +
         (key ? ', with an Idempotency-Key' : '') +
         (task.origin === 'form' ? ', by its subject on the hosted form, ' +
           'for the PEP ' + String(task.requester) : '') + '.'
@@ -1824,9 +1863,176 @@ class AccessRequests {
     const out = !asked.problem &&
       Number(asked.until || 0) === Number(task.requestedUntil || 0) &&
       !!asked.emergency === !!task.emergency &&
-      String(asked.justification || '') === String(task.justification || '');
+      String(asked.justification || '') ===
+        String(task.justification || '') &&
+      String(asked.entitlement || '') === String(task.entitlement || '');
     log.debug("Leaving AccessRequests.sameAugmentations(). " + out);
     return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE CATALOG COMPANION (#1204). A catalog here is the POLICY'S: the
+  // entitlements the access-request advice lists for the denied tuple, so
+  // it is scoped to the original Subject, Resource and Action by
+  // construction (its sections 7 and 11). The Catalogs Document and the
+  // Catalog Endpoint answer only the caller the denial was answered to,
+  // while it is still scoped to the application; anybody else is told
+  // nothing (0149). A query string is never logged (section 13).
+  // -------------------------------------------------------------------------
+  /**
+   * Whether the catalogs answer (`authzen.accessRequestCatalogs`).
+   *
+   * @returns true when it and the profile are on
+   */
+  catalogsOn(): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering AccessRequests.catalogsOn().");
+    log.debug("Leaving AccessRequests.catalogsOn().");
+    return this.enabled() &&
+      config.value('authzen.accessRequestCatalogs') === true;
+  }
+
+  /**
+   * The recorded denial a catalog call names, for its own caller, or null
+   * with the refusal written.
+   *
+   * @param res - the response
+   * @param caller - the admitted caller
+   * @param evaluationId - the denial's id, from the path
+   * @param scope - `(caller, application)` → the caller's scope check
+   * @returns the record, or null
+   */
+  private catalogDenial(res: Res, caller: Json, evaluationId: string,
+                        scope: (caller: Json, application: string) => Json):
+    Json | null {
+    const self = this;
+    const { log, denials } = this.deps;
+    log.debug("Entering AccessRequests.catalogDenial().");
+    if (!self.catalogsOn()) {
+      self.problem(res, 501, '', 'STS-AUTHZEN-0152', 'The access request ' +
+                   'catalogs are turned off in this realm ' +
+                   '(authzen.accessRequestCatalogs).');
+      log.debug("Leaving AccessRequests.catalogDenial(). Off.");
+      return null;
+    }
+    const id = String(evaluationId || '').slice(0, MAX_ID);
+    const row = id ? denials.get(id) : null;
+    const ok = !!row && Number(row.keepUntil) > self.nowS() &&
+      String(row.caller) === String(caller.name) &&
+      ((row.terms || {}).entitlements || []).length > 0 &&
+      !!scope(caller, String(row.application || '')).application;
+    if (!ok) {
+      self.problem(res, 404, '', 'STS-AUTHZEN-0149', 'There is no catalog ' +
+                   'for this caller under that denial.');
+      log.debug("Leaving AccessRequests.catalogDenial(). Unknown.");
+      return null;
+    }
+    log.debug("Leaving AccessRequests.catalogDenial().");
+    return row;
+  }
+
+  /**
+   * Answers a denial's Catalogs Document (the CATALOG companion's
+   * section 6): the one catalog-backed field and its endpoint.
+   *
+   * @param req - the request, for the base
+   * @param res - the response
+   * @param caller - the admitted caller
+   * @param evaluationId - the denial's id
+   * @param scope - the caller's scope check
+   */
+  catalogsDocument(req: Req, res: Res, caller: Json, evaluationId: string,
+                   scope: (caller: Json, application: string) => Json):
+    void {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.catalogsDocument().");
+    const row = self.catalogDenial(res, caller, evaluationId, scope);
+    if (!row) {
+      log.debug("Leaving AccessRequests.catalogsDocument(). Refused.");
+      return;
+    }
+    const fields: Json = {};
+    fields[ENTITLEMENT_POINTER] = {
+      endpoint: self.baseOf(req) + CATALOGS_PATH + '/' +
+        encodeURIComponent(String(row.evaluationId)) + '/entitlements',
+      search_param: 'q'
+    };
+    const body = authzenModel.held('catalogs-document', { fields: fields },
+                                   'the Catalogs Document');
+    res.status(200).type('application/json').set('Cache-Control', 'no-store')
+       .send(JSON.stringify(body, null, 2));
+    log.debug("Leaving AccessRequests.catalogsDocument().");
+  }
+
+  /**
+   * Answers the entitlements Catalog Endpoint (the CATALOG companion's
+   * sections 7 and 8): the denial's items matching `q`, a page at a time.
+   *
+   * @param req - the request, for `q`, `cursor` and `limit`
+   * @param res - the response
+   * @param caller - the admitted caller
+   * @param evaluationId - the denial's id
+   * @param scope - the caller's scope check
+   */
+  catalogItems(req: Req, res: Res, caller: Json, evaluationId: string,
+               scope: (caller: Json, application: string) => Json): void {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.catalogItems().");
+    const row = self.catalogDenial(res, caller, evaluationId, scope);
+    if (!row) {
+      log.debug("Leaving AccessRequests.catalogItems(). Refused.");
+      return;
+    }
+    // A hot path of one read: no Entering/Leaving pair.
+    const first = function (value: unknown): string {
+      return String((Array.isArray(value) ? value[0] : value) || '');
+    };
+    const query: Json = req.query || {};
+    const q = first(query.q).trim().toLowerCase().slice(0, 256);
+    const asked = Math.floor(Number(first(query.limit)) || 0);
+    const limit = asked > 0 ? Math.min(asked, CATALOG_PAGE_MAX)
+      : CATALOG_PAGE;
+    const tag = stsCrypto.digest('sha256', q, 'base64url').slice(0, 16);
+    let offset = 0;
+    const cursor = first(query.cursor);
+    if (cursor) {
+      let read: Json = null;
+      try {
+        read = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+      } catch (e) {
+        log.debug("Caught in AccessRequests.catalogItems(): " +
+                  ((e && e.message) || e));
+        read = null;
+      }
+      if (!isObject(read) || read.q !== tag ||
+          !Number.isInteger(read.o) || read.o < 0) {
+        self.problem(res, 400, '', 'STS-AUTHZEN-0150', 'cursor is not one ' +
+                     'this Catalog Endpoint issued for this search.');
+        log.debug("Leaving AccessRequests.catalogItems(). A bad cursor.");
+        return;
+      }
+      offset = read.o;
+    }
+    const matching = ((row.terms || {}).entitlements || []).filter(
+      function (one: Json) {
+        return !q || String(one.value).toLowerCase().indexOf(q) >= 0 ||
+          String(one.label).toLowerCase().indexOf(q) >= 0;
+      });
+    const page = matching.slice(offset, offset + limit).map(
+      function (one: Json) {
+        return { value: String(one.value), label: String(one.label) };
+      });
+    const body: Json = { items: page, total: matching.length };
+    if (offset + limit < matching.length) {
+      body.next_cursor = Buffer.from(JSON.stringify(
+        { o: offset + limit, q: tag }), 'utf8').toString('base64url');
+    }
+    res.status(200).type('application/json').set('Cache-Control', 'no-store')
+       .send(JSON.stringify(authzenModel.held('catalog-response', body,
+         'the Catalog Endpoint'), null, 2));
+    log.debug("Leaving AccessRequests.catalogItems(). " + page.length);
   }
 
   // -------------------------------------------------------------------------
@@ -1957,6 +2163,10 @@ class AccessRequests {
       application: String(row.application || ''),
       expiresAt: until,
       emergency: terms.emergency === true,
+      entitlements: this.catalogsOn()
+        ? (terms.entitlements || []).map(function (one: Json) {
+          return { value: String(one.value), label: String(one.label) };
+        }) : [],
       maxApprovalS: Number(terms.maxSeconds) > 0
         ? Math.min(Number(terms.maxSeconds),
                    this.seconds('authzen.accessRequestMaxApprovalS'))
@@ -2000,6 +2210,9 @@ class AccessRequests {
     if (task.status === 'approved' && task.approval &&
         !task.approval.revoked) {
       out.approvedUntil = Number(task.approval.approvedUntil) || 0;
+    }
+    if (task.entitlement) {
+      out.entitlement = String(task.entitlement);
     }
     log.debug("Leaving AccessRequests.formTaskOf().");
     return out;
@@ -2178,6 +2391,10 @@ class AccessRequests {
     if ((given || {}).emergency === true) {
       augmented.requested_access.emergency = true;
     }
+    if ((given || {}).entitlement) {
+      augmented.requested_access.entitlement =
+        String((given || {}).entitlement);
+    }
     const asked = self.requestedAccess(augmented, bound.terms || {});
     if (asked.problem) {
       log.debug("Leaving AccessRequests.submitByForm(). " + asked.code);
@@ -2301,7 +2518,7 @@ class AccessRequests {
    * @param id - the document's own URL
    * @returns the schema
    */
-  static submissionSchema(id: string): Json {
+  static submissionSchema(id: string, catalogs?: boolean): Json {
     log.debug("Entering AccessRequests.submissionSchema().");
     const justification: Json = {
       type: 'string',
@@ -2370,6 +2587,20 @@ class AccessRequests {
         }
       }]
     };
+    // THE CATALOG'S FIELD (#1204), described while the catalogs answer:
+    // its values are the Catalog Endpoint's, so the schema says only its
+    // shape (the CATALOG companion's section 6: the schema defines the
+    // data, the Catalogs Document where it comes from).
+    if (catalogs) {
+      out.properties.requested_access.properties.entitlement = {
+        type: 'string',
+        minLength: 1,
+        maxLength: MAX_ID,
+        description: 'Required when the denial names ' +
+                     'request_catalogs_url: one of the values its ' +
+                     'Catalog Endpoint lists, exactly as listed.'
+      };
+    }
     log.debug("Leaving AccessRequests.submissionSchema().");
     return out;
   }
@@ -2425,9 +2656,31 @@ class AccessRequests {
                         'in context.business_justification.',
                code: 'STS-AUTHZEN-0083' };
     }
+    // THE CATALOG'S VALUE, VALIDATED WHEN THE SUBMISSION ARRIVES (the
+    // CATALOG companion's section 10.3): one of the denial's own
+    // entitlements, required when it lists any. Off, the advice's list is
+    // ignored, and so is the member.
+    let entitlement = '';
+    const listed: Json[] = this.catalogsOn()
+      ? (terms.entitlements || []) : [];
+    if (listed.length) {
+      const chosen = asked.entitlement;
+      const known = typeof chosen === 'string' &&
+        listed.some(function (one: Json) {
+          return one.value === chosen;
+        });
+      if (!known) {
+        log.debug("Leaving AccessRequests.requestedAccess(). No " +
+                  "entitlement.");
+        return { problem: 'requested_access.entitlement must be one of the ' +
+                          'values the denial\'s catalog lists.',
+                 code: 'STS-AUTHZEN-0151' };
+      }
+      entitlement = String(chosen);
+    }
     log.debug("Leaving AccessRequests.requestedAccess().");
     return { until: until, emergency: emergency,
-             justification: justification };
+             justification: justification, entitlement: entitlement };
   }
 
   // -------------------------------------------------------------------------
@@ -3580,8 +3833,12 @@ class AccessRequests {
     const approval = task.approval || null;
     log.debug("Leaving AccessRequests.viewOf().");
     // Made on the hosted form (#1204): by whom, for the console.
-    const form = task.origin === 'form'
+    const form: Json = task.origin === 'form'
       ? { formSubmittedBy: String(task.formSubmittedBy || '') } : {};
+    // The catalog item it chose (#1204), for the approver.
+    if (task.entitlement) {
+      form.entitlement = String(task.entitlement);
+    }
     return Object.assign({
       id: task.id, status: task.status, requester: task.requester,
       client: task.client, application: task.application,
@@ -4033,9 +4290,12 @@ class AccessRequests {
     }
     const approval = verdict.task.approval;
     log.debug("Leaving AccessRequests.factsOf().");
+    // The entitlement the approved request chose (#1204), a fourth
+    // trusted fact; '' (and so absent) when it chose none.
     return { approvalId: approval.id,
              approvedUntil: instant(Number(approval.approvedUntil) * 1000),
-             approver: String(approval.approver || '') };
+             approver: String(approval.approver || ''),
+             approvedEntitlement: String(verdict.task.entitlement || '') };
   }
 
   /**
@@ -4424,6 +4684,10 @@ export = {
   formView: slot.forward('formView'),
   submitByForm: slot.forward('submitByForm'),
   FORM_PATH: FORM_PATH,
+  CATALOGS_PATH: CATALOGS_PATH,
+  catalogsOn: slot.forward('catalogsOn'),
+  catalogsDocument: slot.forward('catalogsDocument'),
+  catalogItems: slot.forward('catalogItems'),
   verify: slot.forward('verify'),
   decide: slot.forward('decide'),
   cancelByAdministrator: slot.forward('cancelByAdministrator'),

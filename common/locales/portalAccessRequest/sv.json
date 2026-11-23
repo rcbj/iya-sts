@@ -13,6 +13,8 @@
   "justificationHint": "Godkännarna läser detta.",
   "duration": "Hur länge",
   "durationLongest": "Så länge policyn tillåter",
+  "entitlement": "Vilken åtkomst",
+  "chosen": "Den begärda åtkomsten:",
   "duration3600": "En timme",
   "duration86400": "En dag",
   "duration604800": "En vecka",

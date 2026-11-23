@@ -13,6 +13,8 @@
   "justificationHint": "Los aprobadores lo leen.",
   "duration": "Durante cuánto tiempo",
   "durationLongest": "Tanto como permita la política",
+  "entitlement": "Qué acceso",
+  "chosen": "El acceso solicitado:",
   "duration3600": "Una hora",
   "duration86400": "Un día",
   "duration604800": "Una semana",

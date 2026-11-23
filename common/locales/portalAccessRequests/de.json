@@ -8,6 +8,7 @@
   "resource": "Auf",
   "application": "Anwendung",
   "requester": "Gefragt von",
+  "entitlement": "Angeforderter Zugriff",
   "waits": "Sie wartet bis {when}.",
   "approve": "Genehmigen",
   "deny": "Ablehnen",

@@ -8539,6 +8539,14 @@
     "en": "37c92b9ca48d6f87",
     "text": "Access Request and Approval 配置文件的托管表单（#1204）：本领域记录的可申请拒绝携带 form_url，即门户页面 /portal/access-request，拒绝的主体在该页登录并附上理由提交访问申请；被拒绝的 PEP 提交同一拒绝时会取回该任务。Task Handle 携带 links.ticket，即同一页面，主体可在其中查看申请状态。关闭时两者都不发送，该页面也不发起申请。"
   },
+  "authzen.accessRequestCatalogs|label": {
+    "en": "ccb71d0eb2d2512b",
+    "text": "访问申请的目录"
+  },
+  "authzen.accessRequestCatalogs|description": {
+    "en": "1f38cbb80e80bafc",
+    "text": "AuthZEN Access Request Catalog 配置文件（#1204）：advice 列出 urn:sts:xacml:advice:access-request:entitlement 值的已记录可申请拒绝携带 request_catalogs_url，其 Catalogs Document 和 Catalog Endpoint 只答复该拒绝所答复的调用方，提交必须在 requested_access.entitlement 中选择其中一项权限，批准会将其作为可信事实带给策略。关闭时忽略 advice 的权限，两个端点返回 501。"
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

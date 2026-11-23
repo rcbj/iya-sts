@@ -99,6 +99,14 @@
     "en": "e39be1976aa651db",
     "text": "存取請求的提交結構描述"
   },
+  "endpoints.route./access/v1/access-requests/catalogs/:evaluation.name": {
+    "en": "c633cd939009e41d",
+    "text": "存取申請的 Catalogs Document"
+  },
+  "endpoints.route./access/v1/access-requests/catalogs/:evaluation/entitlements.name": {
+    "en": "2fc2571728b32fa3",
+    "text": "存取申請的權限目錄"
+  },
   "endpoints.route./access/v1/access-requests/:id.name": {
     "en": "c8bcbb33d07cfb8f",
     "text": "存取請求的工作狀態"

@@ -145,7 +145,9 @@ class PortalAccessRequest {
         : String(body.business_justification),
       durationS: body.duration === undefined || body.duration === ''
         ? 0 : Number(body.duration),
-      emergency: String(body.emergency || '') === 'true' });
+      emergency: String(body.emergency || '') === 'true',
+      entitlement: body.entitlement === undefined ? ''
+        : String(body.entitlement) });
     if (!result.ok) {
       log.debug("Leaving PortalAccessRequest.submit(). Refused.");
       // error-code: none — the library's own code, carried on its refusal.

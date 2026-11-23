@@ -178,6 +178,10 @@ const TODO_POLICY = [
   '                advice "urn:sts:xacml:advice:access-request" {',
   '                    "urn:sts:xacml:advice:access-request:approver-group"',
   '                        = "todo-approvers"',
+  // The CATALOG companion's one catalog (#1204), read only while
+  // authzen.accessRequestCatalogs is on.
+  '                    "urn:sts:xacml:advice:access-request:entitlement"',
+  '                        = "publish-once|Publish once"',
   '                }',
   '            }',
   '        }',
@@ -809,6 +813,42 @@ async function theAccessRequests() {
         function () {
     assert.ok(formApi.status === 401 || formApi.status === 403,
       "answered " + formApi.status + " " + String(formApi.text).slice(0, 300));
+  });
+  // THE CATALOG COMPANION (#1204): off by default; on, the denial names
+  // request_catalogs_url, and its document and endpoint answer the caller.
+  check("by default a requestable denial names no request_catalogs_url",
+        function () {
+    assert.ok(!ar.request_catalogs_url, String(ar.request_catalogs_url));
+  });
+  const catOn = await postJson(api("/config/set"),
+    { key: "authzen.accessRequestCatalogs", value: true });
+  assert.ok(catOn.status === 200, "setting authzen.accessRequestCatalogs " +
+            "answered " + catOn.status + " " + catOn.text);
+  let catDenial = null;
+  let catDoc = null;
+  let catItems = null;
+  try {
+    catDenial = await evaluate(asked);
+    const catUrl = String((((catDenial.body || {}).context || {})
+      .access_request || {}).request_catalogs_url || "");
+    catDoc = catUrl ? await pep("GET", catUrl, caller) : null;
+    const endpoint = String(((((catDoc || {}).body || {}).fields || {})[
+      "/requested_access/entitlement"] || {}).endpoint || "");
+    catItems = endpoint ? await pep("GET", endpoint + "?q=publish", caller)
+      : null;
+  } finally {
+    await postJson(api("/config/reset"),
+                   { key: "authzen.accessRequestCatalogs" });
+  }
+  check("with authzen.accessRequestCatalogs on, the denial's Catalogs " +
+        "Document and Catalog Endpoint answer its caller", function () {
+    const items = (((catItems || {}).body) || {}).items || [];
+    assert.ok(catDoc && catDoc.status === 200 && catItems &&
+              catItems.status === 200 && items.length === 1 &&
+              items[0].value === "publish-once",
+      "answered " + (catDenial && catDenial.status) + " / " +
+      (catDoc && String(catDoc.text).slice(0, 300)) + " / " +
+      (catItems && String(catItems.text).slice(0, 300)));
   });
   log.debug("Leaving theAccessRequests().");
 }

@@ -682,7 +682,7 @@ const SPECS: Spec[] = [
               'authzen.accessRequestDisplay is on; form_url, the portal\'s ' +
               'hosted form where the denial\'s subject submits it, and ' +
               'links.ticket, while authzen.accessRequestForm is on. ' +
-              'Missing: the BULK, ACTOR and CATALOG companions.' },
+              'Missing: the BULK and ACTOR companions.' },
   { id: 'authzen-arap-callback',
     name: 'AuthZEN Callback Notifications Profile 1.0 (draft)',
     where: 'OpenID Foundation AuthZEN WG',
@@ -697,6 +697,21 @@ const SPECS: Spec[] = [
               'the attempt bound; an HTTP 4xx or a URL the outbound policy ' +
               'refuses is not. Missing: the partial event (BULK) and ' +
               'deployment-level event subscriptions.' },
+  { id: 'authzen-arap-catalog',
+    name: 'AuthZEN Access Request Catalog Profile 1.0 (draft)',
+    where: 'OpenID Foundation AuthZEN WG',
+    url: 'https://openid.github.io/authzen/' +
+         'authzen-access-request-catalog-profile-1_0.html',
+    coverage: 'partial: request_catalogs_url on a recorded requestable ' +
+              'denial whose policy advice lists entitlements, while ' +
+              'authzen.accessRequestCatalogs is on; the Catalogs Document ' +
+              'with its one field, requested_access.entitlement; the ' +
+              'Catalog Endpoint with q, cursor and limit, answered only to ' +
+              'the caller the denial was answered to; the value validated ' +
+              'at submission and reaching the policy as a trusted fact of ' +
+              'the approval. Missing: scope_params (one catalog has nothing ' +
+              'to scope by), granted, risk_level and owner, and the agent ' +
+              'protocol catalogs.' },
   { id: 'xacmljson', name: 'JSON Profile of XACML 3.0 v1.1',
     where: 'OASIS',
     url: 'https://docs.oasis-open.org/xacml/xacml-json-http/v1.1/os/' +
@@ -4143,6 +4158,26 @@ const ENDPOINTS: EndpointEntry[] = [
           '501 while the API or the profile ' +
           'is off. Registered before the task-status path, which would ' +
           'otherwise read "schema" as an id.' },
+  { path: '/access/v1/access-requests/catalogs/:evaluation',
+    group: 'AuthZEN',
+    name: 'An access request\'s Catalogs Document',
+    specs: ['authzen-arap-catalog'],
+    what: 'GET the Catalogs Document a requestable denial names as ' +
+          'request_catalogs_url: the one catalog-backed field, ' +
+          'requested_access.entitlement, and its Catalog Endpoint. Only ' +
+          'for a recorded denial whose policy advice lists entitlements, ' +
+          'and only to the caller it was answered to, still scoped to the ' +
+          'application. The same door and AUTHZEN_PEPS as a submission. ' +
+          'Answers 501 while authzen.accessRequestCatalogs is off.' },
+  { path: '/access/v1/access-requests/catalogs/:evaluation/entitlements',
+    group: 'AuthZEN',
+    name: 'An access request\'s entitlements catalog',
+    specs: ['authzen-arap-catalog'],
+    what: 'GET the entitlements the denial\'s policy advice lists, as ' +
+          'Catalog Items (value and label): q matches either, cursor ' +
+          'continues the same search and limit is clamped to 50. The same ' +
+          'caller as the Catalogs Document. A submission\'s ' +
+          'requested_access.entitlement must be one of them.' },
   { path: '/access/v1/access-requests/:id', group: 'AuthZEN',
     name: 'An access request\'s task status', specs: ['authzen-arap'],
     what: 'GET the task: its status (pending, approved, denied, expired, ' +
@@ -10950,7 +10985,8 @@ const PROTOCOLS: Protocol[] = [
           'authenticated elsewhere and asked whether they may. Held to the ' +
           'OASIS conformance suite rather than to a test written here.' },
   { name: 'AuthZEN', groups: ['AuthZEN'],
-    specs: ['authzen10', 'authzen-arap', 'authzen-arap-callback'],
+    specs: ['authzen10', 'authzen-arap', 'authzen-arap-callback',
+            'authzen-arap-catalog'],
     what: 'The AuthZEN Authorization API over the XACML engine: a Policy ' +
           'Enforcement Point asks one question per access and is told true ' +
           'or false, decided against the realm\'s root policy. An ADAPTER: ' +

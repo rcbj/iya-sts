@@ -356,6 +356,11 @@ model RequestedAccess {
 
   @field(#{ cite: "AuthZEN Access Request and Approval Profile, requested_access" })
   emergency?: unknown;
+
+  /** The CATALOG companion's value (#1204): one of the denial's own. */
+  @field(#{ deferred: true,
+            cite: "AuthZEN Access Request Catalog Profile section 10.3" })
+  entitlement?: unknown;
 }
 
 /** The CALLBACK companion's request member. */

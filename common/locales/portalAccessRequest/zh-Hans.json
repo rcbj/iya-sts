@@ -13,6 +13,8 @@
   "justificationHint": "审批人会阅读此内容。",
   "duration": "多长时间",
   "durationLongest": "策略允许的最长时间",
+  "entitlement": "哪种访问",
+  "chosen": "申请的访问：",
   "duration3600": "一小时",
   "duration86400": "一天",
   "duration604800": "一周",

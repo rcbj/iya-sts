@@ -83,6 +83,7 @@ request body**, so a policy can rely on them:
 | `urn:sts:xacml:authzen:application` | the application the question is scoped to (chosen with `context.application`, checked against the caller's scope) |
 | `urn:sts:xacml:authzen:supplied` | a bag naming every member the caller sent, by path: `subject.properties.department`, `context.source_ip` |
 | `urn:sts:xacml:authzen:approval-id`, `:approved-until` (a dateTime), `:approver` | only when the request carried a `context.approval` this service verified (see [Access requests and approvals](#access-requests-and-approvals)) |
+| `urn:sts:xacml:authzen:approved-entitlement` | with those, when the approved request chose an entitlement from the denial's catalog (see [Catalogs](#catalogs)) |
 
 **Subjects that are directory people.** For a `subject.type` listed in
 `authzen.resolveSubjectTypes` (default `user`), `subject.id` names a person in
@@ -927,6 +928,7 @@ assignments, each named `urn:sts:xacml:advice:access-request:<name>`, say:
 | `context-member` | a `context` member that binds the request and the approval (repeatable); none means only subject, resource and action bind |
 | `template`, `reason` | echoed as `context.access_request.template` and `context.reason` |
 | `display-title`, `display-description` | the denial's `display`, sent as written while `authzen.accessRequestDisplay` is on (below) |
+| `entitlement` | one item of the denial's catalog, `value` or `value\|label` (repeatable, at most 32), while `authzen.accessRequestCatalogs` is on (see *Catalogs*) |
 
 An example in ALFA:
 
@@ -1051,6 +1053,64 @@ form is on the portal's origin.** On a default installation that is the
 access request endpoint's origin, so a PEP's same-origin check (the
 profile, section 11.2) passes. If the portal has a listener of its own,
 add that origin to the PEP's list of trusted hosts.
+
+### Catalogs
+
+This service implements the draft [AuthZEN Access Request Catalog
+Profile 1.0](https://openid.github.io/authzen/authzen-access-request-catalog-profile-1_0.html).
+A catalog here is the policy's. With `authzen.accessRequestCatalogs` on (it
+is off by default), the advice may list the entitlements a person may ask
+for:
+
+```
+advice "urn:sts:xacml:advice:access-request" {
+    "urn:sts:xacml:advice:access-request:approver-group" = "doc-approvers"
+    "urn:sts:xacml:advice:access-request:entitlement" = "read-only|Read only"
+    "urn:sts:xacml:advice:access-request:entitlement" = "read-write|Read and write"
+}
+```
+
+The denial then carries `request_catalogs_url`, next to `request_schema_url`.
+That is `GET /access/v1/access-requests/catalogs/<evaluation_id>`, a
+Catalogs Document with one field:
+
+```json
+{
+  "fields": {
+    "/requested_access/entitlement": {
+      "endpoint": "https://sts.example.com/realm/acme/access/v1/access-requests/catalogs/eval_…/entitlements",
+      "search_param": "q"
+    }
+  }
+}
+```
+
+The Catalog Endpoint answers `{ "items": [{ "value", "label" }], "total" }`,
+and `next_cursor` while there is more. `q` matches a value or a label,
+`cursor` continues the same search, and `limit` is clamped to 50.
+
+Both endpoints answer only the caller the denial was answered to, through
+the same caller door and `AUTHZEN_PEPS`, while it is still scoped to the
+application. Anybody else gets `404`. The list is the one the policy
+computed for the denied tuple, so it never shows an entry the requester
+could not ask for.
+
+**A submission must choose one.** When the denial lists entitlements,
+`requested_access.entitlement` is required and must be one of them,
+exactly as listed. Otherwise the submission is refused `400`. The
+submission schema describes the member while the catalogs are on. The
+approvers see the choice, and the hosted form offers it as a list. At
+re-evaluation an approval that chose one adds the trusted fact
+`urn:sts:xacml:authzen:approved-entitlement`, so a policy can, say, permit
+a write only under an approval for `read-write`. The approval still
+permits nothing by itself.
+
+A denial whose record was not kept has no `request_catalogs_url`, as it
+has no `form_url`. With the catalogs off, the advice's entitlements are
+ignored: nothing is advertised, required or recorded, and the two
+endpoints answer `501`. Not built: `scope_params` (a single catalog has
+nothing to scope by), `granted`, `risk_level` and `owner`, and catalogs
+over an agent protocol.
 
 ### Submitting, polling and cancelling
 
@@ -1293,6 +1353,7 @@ live source; this table is a copy.
 | `authzen.accessRequestMaxDenials` | `STS_AUTHZEN_ACCESS_REQUEST_MAX_DENIALS` | `100000` | Requestable denials a realm records by `evaluation_id`; past it a new one is requestable by its `binding_token` only |
 | `authzen.accessRequestDisplay` | `STS_AUTHZEN_ACCESS_REQUEST_DISPLAY` | `false` | A requestable denial carries `access_request.display` and a Task Handle `task.display` (see *Display hints*) |
 | `authzen.accessRequestForm` | `STS_AUTHZEN_ACCESS_REQUEST_FORM` | `false` | A recorded requestable denial carries `form_url`, the portal's `/portal/access-request`, and a Task Handle `links.ticket` (see *The hosted form and the ticket*) |
+| `authzen.accessRequestCatalogs` | `STS_AUTHZEN_ACCESS_REQUEST_CATALOGS` | `false` | A recorded requestable denial whose advice lists entitlements carries `request_catalogs_url`, and a submission must choose one (see *Catalogs*) |
 | `authzen.callbackAttempts` | `STS_AUTHZEN_CALLBACK_ATTEMPTS` | `5` | How many times a finished access request's callback is sent, the first included. `1` is one attempt. An application's `appAuthzenCallbackConfig` may set another bound for one URL |
 | `authzen.callbackBackoffS` | `STS_AUTHZEN_CALLBACK_BACKOFF_S` | `60` | Seconds to wait after the first failed callback; each later wait doubles, up to a day. The job runs every 60 seconds, so a shorter wait is not offered. An application's `appAuthzenCallbackConfig` may set a longer wait for one URL |
 | `authzen.externalPdp` | `STS_AUTHZEN_EXTERNAL_PDP` | `false` | Ask an external PDP before issuing an OAuth access token for a token exchange (see *Asking an external PDP*) |
@@ -1324,9 +1385,11 @@ live source; this table is a copy.
 
 None of these is advertised in the metadata:
 
-* Of the Access Request and Approval Profile: the BULK, ACTOR and CATALOG
-  companions. A denial carries `request_schema_url` and, when switched
-  on, `display` and `form_url`. It may be submitted by `evaluation_id` or
+* Of the Access Request and Approval Profile: the BULK and ACTOR
+  companions, and of the CATALOG companion `scope_params`, `granted`,
+  `risk_level`, `owner` and agent-protocol catalogs. A denial carries
+  `request_schema_url` and, when switched on, `display`, `form_url` and
+  `request_catalogs_url`. It may be submitted by `evaluation_id` or
   by `binding_token` (which also carries `binding_hash`), and an approval
   may carry `state`.
 * Of the Callback Notifications Profile: the `partial` event and

@@ -13,6 +13,8 @@
   "justificationHint": "Die Genehmiger lesen dies.",
   "duration": "Wie lange",
   "durationLongest": "So lange, wie die Richtlinie erlaubt",
+  "entitlement": "Welcher Zugriff",
+  "chosen": "Der angeforderte Zugriff:",
   "duration3600": "Eine Stunde",
   "duration86400": "Einen Tag",
   "duration604800": "Eine Woche",

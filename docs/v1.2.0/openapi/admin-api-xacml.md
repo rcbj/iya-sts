@@ -1629,6 +1629,7 @@ Scope: `admin:read`.
 | `accessRequests.rows[].createdAt` | number |  |  |
 | `accessRequests.rows[].decidedBy` | string |  |  |
 | `accessRequests.rows[].emergency` | boolean |  |  |
+| `accessRequests.rows[].entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `accessRequests.rows[].expiresAt` | number |  |  |
 | `accessRequests.rows[].finishedAt` | number |  |  |
 | `accessRequests.rows[].formSubmittedBy` | string |  | The person who made the request on the hosted form (#1204), when it was made there. |
@@ -1838,6 +1839,7 @@ Scope: `admin:write`.
 | `task.createdAt` | number |  |  |
 | `task.decidedBy` | string |  |  |
 | `task.emergency` | boolean |  |  |
+| `task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `task.expiresAt` | number |  |  |
 | `task.finishedAt` | number |  |  |
 | `task.formSubmittedBy` | string |  | The person who made the request on the hosted form (#1204), when it was made there. |
@@ -1890,6 +1892,7 @@ Scope: `admin:write`.
 | `task.createdAt` | number |  |  |
 | `task.decidedBy` | string |  |  |
 | `task.emergency` | boolean |  |  |
+| `task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `task.expiresAt` | number |  |  |
 | `task.finishedAt` | number |  |  |
 | `task.formSubmittedBy` | string |  | The person who made the request on the hosted form (#1204), when it was made there. |
@@ -1967,6 +1970,7 @@ Scope: `admin:write`.
 | `task.createdAt` | number |  |  |
 | `task.decidedBy` | string |  |  |
 | `task.emergency` | boolean |  |  |
+| `task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `task.expiresAt` | number |  |  |
 | `task.finishedAt` | number |  |  |
 | `task.formSubmittedBy` | string |  | The person who made the request on the hosted form (#1204), when it was made there. |
@@ -2019,6 +2023,7 @@ Scope: `admin:write`.
 | `task.createdAt` | number |  |  |
 | `task.decidedBy` | string |  |  |
 | `task.emergency` | boolean |  |  |
+| `task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `task.expiresAt` | number |  |  |
 | `task.finishedAt` | number |  |  |
 | `task.formSubmittedBy` | string |  | The person who made the request on the hosted form (#1204), when it was made there. |
@@ -2096,6 +2101,7 @@ Scope: `admin:write`.
 | `task.createdAt` | number |  |  |
 | `task.decidedBy` | string |  |  |
 | `task.emergency` | boolean |  |  |
+| `task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `task.expiresAt` | number |  |  |
 | `task.finishedAt` | number |  |  |
 | `task.formSubmittedBy` | string |  | The person who made the request on the hosted form (#1204), when it was made there. |
@@ -2148,6 +2154,7 @@ Scope: `admin:write`.
 | `task.createdAt` | number |  |  |
 | `task.decidedBy` | string |  |  |
 | `task.emergency` | boolean |  |  |
+| `task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `task.expiresAt` | number |  |  |
 | `task.finishedAt` | number |  |  |
 | `task.formSubmittedBy` | string |  | The person who made the request on the hosted form (#1204), when it was made there. |
@@ -2293,6 +2300,7 @@ Scope: `admin:write`.
 | `task.createdAt` | number |  |  |
 | `task.decidedBy` | string |  |  |
 | `task.emergency` | boolean |  |  |
+| `task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `task.expiresAt` | number |  |  |
 | `task.finishedAt` | number |  |  |
 | `task.formSubmittedBy` | string |  | The person who made the request on the hosted form (#1204), when it was made there. |
@@ -2345,6 +2353,7 @@ Scope: `admin:write`.
 | `task.createdAt` | number |  |  |
 | `task.decidedBy` | string |  |  |
 | `task.emergency` | boolean |  |  |
+| `task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `task.expiresAt` | number |  |  |
 | `task.finishedAt` | number |  |  |
 | `task.formSubmittedBy` | string |  | The person who made the request on the hosted form (#1204), when it was made there. |

@@ -8539,6 +8539,14 @@
     "en": "37c92b9ca48d6f87",
     "text": "Access Request and Approval 設定檔的託管表單（#1204）：本領域記錄的可申請拒絕帶有 form_url，即入口網站頁面 /portal/access-request，拒絕的主體在該頁登入並附上理由提交存取申請；被拒絕的 PEP 提交同一拒絕時會取回該工作。Task Handle 帶有 links.ticket，即同一頁面，主體可在其中查看申請狀態。關閉時兩者都不傳送，該頁面也不發起申請。"
   },
+  "authzen.accessRequestCatalogs|label": {
+    "en": "ccb71d0eb2d2512b",
+    "text": "存取申請的目錄"
+  },
+  "authzen.accessRequestCatalogs|description": {
+    "en": "1f38cbb80e80bafc",
+    "text": "AuthZEN Access Request Catalog 設定檔（#1204）：advice 列出 urn:sts:xacml:advice:access-request:entitlement 值的已記錄可申請拒絕帶有 request_catalogs_url，其 Catalogs Document 與 Catalog Endpoint 只回應該拒絕所回應的呼叫端，提交必須在 requested_access.entitlement 中選擇其中一項權限，核准會將其作為可信事實帶給政策。關閉時忽略 advice 的權限，兩個端點回應 501。"
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

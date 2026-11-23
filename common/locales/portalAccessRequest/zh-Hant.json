@@ -13,6 +13,8 @@
   "justificationHint": "核准人會閱讀此內容。",
   "duration": "多長時間",
   "durationLongest": "政策允許的最長時間",
+  "entitlement": "哪種存取",
+  "chosen": "申請的存取：",
   "duration3600": "一小時",
   "duration86400": "一天",
   "duration604800": "一週",

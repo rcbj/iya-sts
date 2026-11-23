@@ -8539,6 +8539,14 @@
     "en": "37c92b9ca48d6f87",
     "text": "El formulario alojado del perfil Access Request and Approval (#1204): una denegación solicitable que este dominio registró lleva form_url, la página del portal /portal/access-request, donde el sujeto de la denegación inicia sesión y envía la solicitud de acceso con una justificación; el PEP denegado recupera esa tarea cuando envía la misma denegación. Un Task Handle lleva links.ticket, la misma página, donde el sujeto ve el estado de la solicitud. Desactivado, no se envía ninguno y la página no crea ninguna solicitud."
   },
+  "authzen.accessRequestCatalogs|label": {
+    "en": "ccb71d0eb2d2512b",
+    "text": "Catálogos para solicitudes de acceso"
+  },
+  "authzen.accessRequestCatalogs|description": {
+    "en": "1f38cbb80e80bafc",
+    "text": "El perfil AuthZEN Access Request Catalog (#1204): una denegación solicitable registrada cuyo advice enumera valores urn:sts:xacml:advice:access-request:entitlement lleva request_catalogs_url, su Catalogs Document y su Catalog Endpoint responden al llamador al que se respondió la denegación, una solicitud debe elegir uno de los derechos en requested_access.entitlement, y la aprobación lo lleva a la política como hecho de confianza. Desactivado, los derechos del advice se ignoran y los dos puntos de conexión responden 501."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

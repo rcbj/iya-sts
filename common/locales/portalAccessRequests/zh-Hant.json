@@ -8,6 +8,7 @@
   "resource": "資源",
   "application": "應用程式",
   "requester": "請求方",
+  "entitlement": "申請的存取",
   "waits": "等待至 {when}。",
   "approve": "核准",
   "deny": "拒絕",

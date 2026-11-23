@@ -13,6 +13,8 @@
   "justificationHint": "يقرأ المعتمدون هذا.",
   "duration": "لأي مدة",
   "durationLongest": "أطول مدة تسمح بها السياسة",
+  "entitlement": "أي وصول",
+  "chosen": "الوصول المطلوب:",
   "duration3600": "ساعة واحدة",
   "duration86400": "يوم واحد",
   "duration604800": "أسبوع واحد",

@@ -8539,6 +8539,14 @@
     "en": "37c92b9ca48d6f87",
     "text": "Access Request and Approval प्रोफ़ाइल का होस्ट किया गया फ़ॉर्म (#1204): इस realm द्वारा दर्ज अनुरोध-योग्य अस्वीकृति form_url रखती है, पोर्टल पृष्ठ /portal/access-request, जहाँ अस्वीकृति का विषय साइन इन करके औचित्य के साथ एक्सेस अनुरोध सबमिट करता है; अस्वीकृत PEP वही अस्वीकृति सबमिट करने पर वह कार्य वापस पाता है। Task Handle links.ticket रखता है, वही पृष्ठ, जहाँ विषय अनुरोध की स्थिति देखता है। बंद होने पर कोई भी नहीं भेजा जाता और पृष्ठ कोई अनुरोध नहीं बनाता।"
   },
+  "authzen.accessRequestCatalogs|label": {
+    "en": "ccb71d0eb2d2512b",
+    "text": "एक्सेस अनुरोधों के लिए कैटलॉग"
+  },
+  "authzen.accessRequestCatalogs|description": {
+    "en": "1f38cbb80e80bafc",
+    "text": "AuthZEN Access Request Catalog प्रोफ़ाइल (#1204): दर्ज अनुरोध-योग्य अस्वीकृति, जिसका advice urn:sts:xacml:advice:access-request:entitlement मान सूचीबद्ध करता है, request_catalogs_url रखती है, उसका Catalogs Document और Catalog Endpoint उसी कॉलर को उत्तर देते हैं जिसे अस्वीकृति दी गई थी, सबमिशन को requested_access.entitlement में किसी एक अधिकार को चुनना होता है, और अनुमोदन उसे विश्वसनीय तथ्य के रूप में नीति तक ले जाता है। बंद होने पर advice के अधिकार अनदेखे होते हैं और दोनों endpoint 501 देते हैं।"
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

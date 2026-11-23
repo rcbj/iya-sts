@@ -96,6 +96,19 @@ class AccessRequestFormPages {
         return '<option value="' + seconds + '">' +
           t.html('portalAccessRequest.duration' + seconds) + '</option>';
       }).join('');
+    // THE CATALOG'S CHOICE (#1204): one of the denial's own entitlements,
+    // required when it lists any.
+    const entitlements: Json[] = Array.isArray(request.entitlements)
+      ? request.entitlements : [];
+    const choice = entitlements.length
+      ? '<p><label>' + t.html('portalAccessRequest.entitlement') +
+        ' <select name="entitlement" required ' +
+        'id="access-request-entitlement">' +
+        entitlements.map(function (one: Json): string {
+          return '<option value="' + kit.esc(one.value) + '">' +
+            kit.esc(one.label || one.value) + '</option>';
+        }).join('') + '</select></label></p>'
+      : '';
     const emergency = request.emergency
       ? '<p><label><input type="checkbox" name="emergency" value="true" ' +
         'id="access-request-emergency"> ' +
@@ -118,7 +131,7 @@ class AccessRequestFormPages {
       t.html('portalAccessRequest.justificationHint') + '</span></p>' +
       '<p><label>' + t.html('portalAccessRequest.duration') +
       ' <select name="duration" id="access-request-duration">' + options +
-      '</select></label></p>' + emergency +
+      '</select></label></p>' + choice + emergency +
       '<button type="submit" id="access-request-submit">' +
       t.html('portalAccessRequest.submit') + '</button></form></div>';
   }
@@ -142,6 +155,8 @@ class AccessRequestFormPages {
       t.html('portalAccessRequest.status', { status: task.status }) +
       '</p>' + until +
       AccessRequestFormPages.asks(task, t) +
+      (task.entitlement ? '<p>' + t.html('portalAccessRequest.chosen') +
+        ' ' + AccessRequestFormPages.code(task.entitlement) + '</p>' : '') +
       '<p class="sub">' + t.html('portalAccessRequest.made', {
         origin: task.origin,
         when: t.date(Number(task.createdAt) * 1000) }) + '</p></div>';

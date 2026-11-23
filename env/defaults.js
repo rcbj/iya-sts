@@ -1298,6 +1298,7 @@ var config = {
     accessRequestMaxDenials: 100000,   // Requestable denials a realm records
     accessRequestDisplay: false,       // Display hints on access requests
     accessRequestForm: false,          // Hosted form for access requests
+    accessRequestCatalogs: false,      // Catalogs for access requests
     callbackAttempts: 5,               // Access request callback attempts
     callbackBackoffS: 60,              // Access request callback backoff (seconds)
     externalPdp: false,                // Ask an external PDP before a token exchange.

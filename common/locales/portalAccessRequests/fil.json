@@ -8,6 +8,7 @@
   "resource": "Sa",
   "application": "Application",
   "requester": "Hiniling ng",
+  "entitlement": "Hiniling na access",
   "waits": "Naghihintay ito hanggang {when}.",
   "approve": "Aprubahan",
   "deny": "Tanggihan",

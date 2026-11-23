@@ -8539,6 +8539,14 @@
     "en": "37c92b9ca48d6f87",
     "text": "Das gehostete Formular des Access Request and Approval Profile (#1204): Eine anforderbare Ablehnung, die dieser Bereich aufgezeichnet hat, trägt form_url, die Portalseite /portal/access-request, auf der sich das Subjekt der Ablehnung anmeldet und die Zugriffsanfrage mit einer Begründung einreicht; der abgelehnte PEP erhält diese Aufgabe zurück, wenn er dieselbe Ablehnung einreicht. Ein Task Handle trägt links.ticket, dieselbe Seite, auf der das Subjekt den Status der Anfrage sieht. Aus: Keines wird gesendet, und die Seite stellt keine Anfrage."
   },
+  "authzen.accessRequestCatalogs|label": {
+    "en": "ccb71d0eb2d2512b",
+    "text": "Kataloge für Zugriffsanfragen"
+  },
+  "authzen.accessRequestCatalogs|description": {
+    "en": "1f38cbb80e80bafc",
+    "text": "Das AuthZEN Access Request Catalog Profile (#1204): Eine aufgezeichnete anforderbare Ablehnung, deren Advice Werte urn:sts:xacml:advice:access-request:entitlement aufführt, trägt request_catalogs_url, ihr Catalogs Document und ihr Catalog Endpoint antworten dem Aufrufer, dem die Ablehnung geantwortet wurde, eine Einreichung muss eine der Berechtigungen in requested_access.entitlement wählen, und die Genehmigung bringt sie als vertrauenswürdige Tatsache zur Richtlinie. Aus: Die Berechtigungen des Advice werden ignoriert und die beiden Endpunkte antworten 501."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

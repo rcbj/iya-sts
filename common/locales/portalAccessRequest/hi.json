@@ -13,6 +13,8 @@
   "justificationHint": "अनुमोदक इसे पढ़ते हैं।",
   "duration": "कितने समय के लिए",
   "durationLongest": "जितना नीति अनुमति देती है",
+  "entitlement": "कौन-सा एक्सेस",
+  "chosen": "माँगा गया एक्सेस:",
   "duration3600": "एक घंटा",
   "duration86400": "एक दिन",
   "duration604800": "एक सप्ताह",

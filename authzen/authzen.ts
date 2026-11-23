@@ -16,6 +16,7 @@
 //                                 the three searches (section 8) — #1175
 //   POST /access/v1/access-requests
 //   GET  /access/v1/access-requests/schema
+//   GET  /access/v1/access-requests/catalogs/:evaluation[/entitlements]
 //   GET  /access/v1/access-requests/:id
 //   POST|DELETE /access/v1/access-requests/:id/cancel
 //                                 the Access Request and Approval Profile's
@@ -1646,8 +1647,43 @@ class AuthzenSurface {
       const url = ar.baseOf(req) + accessRequests.SCHEMA_PATH;
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
-         .send(JSON.stringify(ar.submissionSchema(url)));
+         .send(JSON.stringify(ar.submissionSchema(url, ar.catalogsOn())));
       log.debug('Leaving GET ' + accessRequests.SCHEMA_PATH + '.');
+    });
+    // THE CATALOG COMPANION (#1204): a denial's Catalogs Document and its
+    // one Catalog Endpoint, behind the same door as a submission (its
+    // section 11: the same caller credentials, the same origin), and
+    // answered only to the caller the denial was answered to. Registered
+    // before `/:id` for the schema's reason.
+    const CATALOGS = accessRequests.CATALOGS_PATH;
+    const scopeOf = function (who: any, application: string): any {
+      log.debug('Entering scopeOf().');
+      log.debug('Leaving scopeOf().');
+      return self.deps.caller.applicationOf(who, application);
+    };
+    app.get(CATALOGS + '/:evaluation', function (req, res) {
+      log.debug('Entering GET ' + CATALOGS + '/:evaluation.');
+      const caller = requestsOpen(req, res, 'GET ' + CATALOGS);
+      if (!caller) {
+        log.debug('Leaving GET ' + CATALOGS + '/:evaluation. Refused.');
+        return;
+      }
+      ar.catalogsDocument(req, res, caller,
+                          String(req.params.evaluation || ''), scopeOf);
+      log.debug('Leaving GET ' + CATALOGS + '/:evaluation.');
+    });
+    app.get(CATALOGS + '/:evaluation/entitlements', function (req, res) {
+      log.debug('Entering GET ' + CATALOGS + '/:evaluation/entitlements.');
+      const caller = requestsOpen(req, res, 'GET ' + CATALOGS +
+                                  ' entitlements');
+      if (!caller) {
+        log.debug('Leaving GET ' + CATALOGS + '/:evaluation/entitlements. ' +
+                  'Refused.');
+        return;
+      }
+      ar.catalogItems(req, res, caller, String(req.params.evaluation || ''),
+                      scopeOf);
+      log.debug('Leaving GET ' + CATALOGS + '/:evaluation/entitlements.');
     });
     app.get(REQUESTS + '/:id', function (req, res) {
       log.debug('Entering GET ' + REQUESTS + '/:id.');

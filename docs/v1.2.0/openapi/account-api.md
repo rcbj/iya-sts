@@ -98,6 +98,7 @@ Scope: `account:manage`.
 | `mine[].application` | string | yes |  |
 | `mine[].approvedUntil` | number |  |  |
 | `mine[].createdAt` | number | yes |  |
+| `mine[].entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `mine[].expiresAt` | number | yes |  |
 | `mine[].id` | string | yes |  |
 | `mine[].origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
@@ -112,6 +113,9 @@ Scope: `account:manage`.
 | `request.display.description` | string |  |  |
 | `request.display.title` | string |  |  |
 | `request.emergency` | boolean | yes |  |
+| `request.entitlements` | list |  | The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off. |
+| `request.entitlements[].label` | string | yes |  |
+| `request.entitlements[].value` | string | yes |  |
 | `request.evaluationId` | string | yes |  |
 | `request.expiresAt` | number | yes | Until when it can be made, epoch seconds. |
 | `request.maxApprovalS` | number | yes | The longest an approval lasts, in seconds. |
@@ -122,6 +126,7 @@ Scope: `account:manage`.
 | `task.application` | string | yes |  |
 | `task.approvedUntil` | number |  |  |
 | `task.createdAt` | number | yes |  |
+| `task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `task.expiresAt` | number | yes |  |
 | `task.id` | string | yes |  |
 | `task.origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
@@ -144,6 +149,7 @@ Scope: `account:manage`.
 | `view.mine[].application` | string | yes |  |
 | `view.mine[].approvedUntil` | number |  |  |
 | `view.mine[].createdAt` | number | yes |  |
+| `view.mine[].entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `view.mine[].expiresAt` | number | yes |  |
 | `view.mine[].id` | string | yes |  |
 | `view.mine[].origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
@@ -158,6 +164,9 @@ Scope: `account:manage`.
 | `view.request.display.description` | string |  |  |
 | `view.request.display.title` | string |  |  |
 | `view.request.emergency` | boolean | yes |  |
+| `view.request.entitlements` | list |  | The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off. |
+| `view.request.entitlements[].label` | string | yes |  |
+| `view.request.entitlements[].value` | string | yes |  |
 | `view.request.evaluationId` | string | yes |  |
 | `view.request.expiresAt` | number | yes | Until when it can be made, epoch seconds. |
 | `view.request.maxApprovalS` | number | yes | The longest an approval lasts, in seconds. |
@@ -168,6 +177,7 @@ Scope: `account:manage`.
 | `view.task.application` | string | yes |  |
 | `view.task.approvedUntil` | number |  |  |
 | `view.task.createdAt` | number | yes |  |
+| `view.task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `view.task.expiresAt` | number | yes |  |
 | `view.task.id` | string | yes |  |
 | `view.task.origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
@@ -210,6 +220,7 @@ Scope: `account:manage`.
 | `view.mine[].application` | string | yes |  |
 | `view.mine[].approvedUntil` | number |  |  |
 | `view.mine[].createdAt` | number | yes |  |
+| `view.mine[].entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `view.mine[].expiresAt` | number | yes |  |
 | `view.mine[].id` | string | yes |  |
 | `view.mine[].origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
@@ -224,6 +235,9 @@ Scope: `account:manage`.
 | `view.request.display.description` | string |  |  |
 | `view.request.display.title` | string |  |  |
 | `view.request.emergency` | boolean | yes |  |
+| `view.request.entitlements` | list |  | The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off. |
+| `view.request.entitlements[].label` | string | yes |  |
+| `view.request.entitlements[].value` | string | yes |  |
 | `view.request.evaluationId` | string | yes |  |
 | `view.request.expiresAt` | number | yes | Until when it can be made, epoch seconds. |
 | `view.request.maxApprovalS` | number | yes | The longest an approval lasts, in seconds. |
@@ -234,6 +248,7 @@ Scope: `account:manage`.
 | `view.task.application` | string | yes |  |
 | `view.task.approvedUntil` | number |  |  |
 | `view.task.createdAt` | number | yes |  |
+| `view.task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `view.task.expiresAt` | number | yes |  |
 | `view.task.id` | string | yes |  |
 | `view.task.origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
@@ -256,6 +271,7 @@ Scope: `account:manage`.
 | `view.mine[].application` | string | yes |  |
 | `view.mine[].approvedUntil` | number |  |  |
 | `view.mine[].createdAt` | number | yes |  |
+| `view.mine[].entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `view.mine[].expiresAt` | number | yes |  |
 | `view.mine[].id` | string | yes |  |
 | `view.mine[].origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
@@ -270,6 +286,9 @@ Scope: `account:manage`.
 | `view.request.display.description` | string |  |  |
 | `view.request.display.title` | string |  |  |
 | `view.request.emergency` | boolean | yes |  |
+| `view.request.entitlements` | list |  | The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off. |
+| `view.request.entitlements[].label` | string | yes |  |
+| `view.request.entitlements[].value` | string | yes |  |
 | `view.request.evaluationId` | string | yes |  |
 | `view.request.expiresAt` | number | yes | Until when it can be made, epoch seconds. |
 | `view.request.maxApprovalS` | number | yes | The longest an approval lasts, in seconds. |
@@ -280,6 +299,7 @@ Scope: `account:manage`.
 | `view.task.application` | string | yes |  |
 | `view.task.approvedUntil` | number |  |  |
 | `view.task.createdAt` | number | yes |  |
+| `view.task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `view.task.expiresAt` | number | yes |  |
 | `view.task.id` | string | yes |  |
 | `view.task.origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
@@ -313,6 +333,7 @@ Scope: `account:manage`.
 | `business_justification` | string |  | Why you need the access, for the approvers. |
 | `duration` | string |  | The longest the approval should last, in seconds; empty for as long as the policy allows. |
 | `emergency` | one of `true`, `false` |  | `true` asks for emergency access, where the policy allows it. |
+| `entitlement` | string |  | One of the entitlements the denial's catalog lists, when it lists any (#1204). |
 | `evaluation_id` | string | yes | The requestable denial's `evaluation_id`. |
 
 **200**: The answer.
@@ -338,6 +359,7 @@ Scope: `account:manage`.
 | `view.mine[].application` | string | yes |  |
 | `view.mine[].approvedUntil` | number |  |  |
 | `view.mine[].createdAt` | number | yes |  |
+| `view.mine[].entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `view.mine[].expiresAt` | number | yes |  |
 | `view.mine[].id` | string | yes |  |
 | `view.mine[].origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
@@ -352,6 +374,9 @@ Scope: `account:manage`.
 | `view.request.display.description` | string |  |  |
 | `view.request.display.title` | string |  |  |
 | `view.request.emergency` | boolean | yes |  |
+| `view.request.entitlements` | list |  | The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off. |
+| `view.request.entitlements[].label` | string | yes |  |
+| `view.request.entitlements[].value` | string | yes |  |
 | `view.request.evaluationId` | string | yes |  |
 | `view.request.expiresAt` | number | yes | Until when it can be made, epoch seconds. |
 | `view.request.maxApprovalS` | number | yes | The longest an approval lasts, in seconds. |
@@ -362,6 +387,7 @@ Scope: `account:manage`.
 | `view.task.application` | string | yes |  |
 | `view.task.approvedUntil` | number |  |  |
 | `view.task.createdAt` | number | yes |  |
+| `view.task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `view.task.expiresAt` | number | yes |  |
 | `view.task.id` | string | yes |  |
 | `view.task.origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
@@ -394,6 +420,7 @@ Scope: `account:manage`.
 | `view.mine[].application` | string | yes |  |
 | `view.mine[].approvedUntil` | number |  |  |
 | `view.mine[].createdAt` | number | yes |  |
+| `view.mine[].entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `view.mine[].expiresAt` | number | yes |  |
 | `view.mine[].id` | string | yes |  |
 | `view.mine[].origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
@@ -408,6 +435,9 @@ Scope: `account:manage`.
 | `view.request.display.description` | string |  |  |
 | `view.request.display.title` | string |  |  |
 | `view.request.emergency` | boolean | yes |  |
+| `view.request.entitlements` | list |  | The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off. |
+| `view.request.entitlements[].label` | string | yes |  |
+| `view.request.entitlements[].value` | string | yes |  |
 | `view.request.evaluationId` | string | yes |  |
 | `view.request.expiresAt` | number | yes | Until when it can be made, epoch seconds. |
 | `view.request.maxApprovalS` | number | yes | The longest an approval lasts, in seconds. |
@@ -418,6 +448,7 @@ Scope: `account:manage`.
 | `view.task.application` | string | yes |  |
 | `view.task.approvedUntil` | number |  |  |
 | `view.task.createdAt` | number | yes |  |
+| `view.task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `view.task.expiresAt` | number | yes |  |
 | `view.task.id` | string | yes |  |
 | `view.task.origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
@@ -440,6 +471,7 @@ Scope: `account:manage`.
 | `view.mine[].application` | string | yes |  |
 | `view.mine[].approvedUntil` | number |  |  |
 | `view.mine[].createdAt` | number | yes |  |
+| `view.mine[].entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `view.mine[].expiresAt` | number | yes |  |
 | `view.mine[].id` | string | yes |  |
 | `view.mine[].origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
@@ -454,6 +486,9 @@ Scope: `account:manage`.
 | `view.request.display.description` | string |  |  |
 | `view.request.display.title` | string |  |  |
 | `view.request.emergency` | boolean | yes |  |
+| `view.request.entitlements` | list |  | The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off. |
+| `view.request.entitlements[].label` | string | yes |  |
+| `view.request.entitlements[].value` | string | yes |  |
 | `view.request.evaluationId` | string | yes |  |
 | `view.request.expiresAt` | number | yes | Until when it can be made, epoch seconds. |
 | `view.request.maxApprovalS` | number | yes | The longest an approval lasts, in seconds. |
@@ -464,6 +499,7 @@ Scope: `account:manage`.
 | `view.task.application` | string | yes |  |
 | `view.task.approvedUntil` | number |  |  |
 | `view.task.createdAt` | number | yes |  |
+| `view.task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `view.task.expiresAt` | number | yes |  |
 | `view.task.id` | string | yes |  |
 | `view.task.origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
@@ -486,6 +522,7 @@ Scope: `account:manage`.
 | `view.mine[].application` | string | yes |  |
 | `view.mine[].approvedUntil` | number |  |  |
 | `view.mine[].createdAt` | number | yes |  |
+| `view.mine[].entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `view.mine[].expiresAt` | number | yes |  |
 | `view.mine[].id` | string | yes |  |
 | `view.mine[].origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
@@ -500,6 +537,9 @@ Scope: `account:manage`.
 | `view.request.display.description` | string |  |  |
 | `view.request.display.title` | string |  |  |
 | `view.request.emergency` | boolean | yes |  |
+| `view.request.entitlements` | list |  | The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off. |
+| `view.request.entitlements[].label` | string | yes |  |
+| `view.request.entitlements[].value` | string | yes |  |
 | `view.request.evaluationId` | string | yes |  |
 | `view.request.expiresAt` | number | yes | Until when it can be made, epoch seconds. |
 | `view.request.maxApprovalS` | number | yes | The longest an approval lasts, in seconds. |
@@ -510,6 +550,7 @@ Scope: `account:manage`.
 | `view.task.application` | string | yes |  |
 | `view.task.approvedUntil` | number |  |  |
 | `view.task.createdAt` | number | yes |  |
+| `view.task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `view.task.expiresAt` | number | yes |  |
 | `view.task.id` | string | yes |  |
 | `view.task.origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
@@ -532,6 +573,7 @@ Scope: `account:manage`.
 | `view.mine[].application` | string | yes |  |
 | `view.mine[].approvedUntil` | number |  |  |
 | `view.mine[].createdAt` | number | yes |  |
+| `view.mine[].entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `view.mine[].expiresAt` | number | yes |  |
 | `view.mine[].id` | string | yes |  |
 | `view.mine[].origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
@@ -546,6 +588,9 @@ Scope: `account:manage`.
 | `view.request.display.description` | string |  |  |
 | `view.request.display.title` | string |  |  |
 | `view.request.emergency` | boolean | yes |  |
+| `view.request.entitlements` | list |  | The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off. |
+| `view.request.entitlements[].label` | string | yes |  |
+| `view.request.entitlements[].value` | string | yes |  |
 | `view.request.evaluationId` | string | yes |  |
 | `view.request.expiresAt` | number | yes | Until when it can be made, epoch seconds. |
 | `view.request.maxApprovalS` | number | yes | The longest an approval lasts, in seconds. |
@@ -556,6 +601,7 @@ Scope: `account:manage`.
 | `view.task.application` | string | yes |  |
 | `view.task.approvedUntil` | number |  |  |
 | `view.task.createdAt` | number | yes |  |
+| `view.task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `view.task.expiresAt` | number | yes |  |
 | `view.task.id` | string | yes |  |
 | `view.task.origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
@@ -578,6 +624,7 @@ Scope: `account:manage`.
 | `view.mine[].application` | string | yes |  |
 | `view.mine[].approvedUntil` | number |  |  |
 | `view.mine[].createdAt` | number | yes |  |
+| `view.mine[].entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `view.mine[].expiresAt` | number | yes |  |
 | `view.mine[].id` | string | yes |  |
 | `view.mine[].origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
@@ -592,6 +639,9 @@ Scope: `account:manage`.
 | `view.request.display.description` | string |  |  |
 | `view.request.display.title` | string |  |  |
 | `view.request.emergency` | boolean | yes |  |
+| `view.request.entitlements` | list |  | The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off. |
+| `view.request.entitlements[].label` | string | yes |  |
+| `view.request.entitlements[].value` | string | yes |  |
 | `view.request.evaluationId` | string | yes |  |
 | `view.request.expiresAt` | number | yes | Until when it can be made, epoch seconds. |
 | `view.request.maxApprovalS` | number | yes | The longest an approval lasts, in seconds. |
@@ -602,6 +652,7 @@ Scope: `account:manage`.
 | `view.task.application` | string | yes |  |
 | `view.task.approvedUntil` | number |  |  |
 | `view.task.createdAt` | number | yes |  |
+| `view.task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
 | `view.task.expiresAt` | number | yes |  |
 | `view.task.id` | string | yes |  |
 | `view.task.origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
@@ -666,6 +717,7 @@ Scope: `account:manage`.
 | `granted[].createdAt` | string or number, or null |  |  |
 | `granted[].decidedBy` | string |  |  |
 | `granted[].emergency` | boolean |  |  |
+| `granted[].entitlement` | string |  |  |
 | `granted[].expiresAt` | string or number, or null |  |  |
 | `granted[].finishedAt` | string or number, or null |  |  |
 | `granted[].formSubmittedBy` | string |  |  |
@@ -708,6 +760,7 @@ Scope: `account:manage`.
 | `rows[].createdAt` | string or number, or null |  |  |
 | `rows[].decidedBy` | string |  |  |
 | `rows[].emergency` | boolean |  |  |
+| `rows[].entitlement` | string |  |  |
 | `rows[].expiresAt` | string or number, or null |  |  |
 | `rows[].finishedAt` | string or number, or null |  |  |
 | `rows[].formSubmittedBy` | string |  |  |
@@ -825,6 +878,7 @@ Scope: `account:manage`.
 | `view.granted[].createdAt` | string or number, or null |  |  |
 | `view.granted[].decidedBy` | string |  |  |
 | `view.granted[].emergency` | boolean |  |  |
+| `view.granted[].entitlement` | string |  |  |
 | `view.granted[].expiresAt` | string or number, or null |  |  |
 | `view.granted[].finishedAt` | string or number, or null |  |  |
 | `view.granted[].formSubmittedBy` | string |  |  |
@@ -867,6 +921,7 @@ Scope: `account:manage`.
 | `view.rows[].createdAt` | string or number, or null |  |  |
 | `view.rows[].decidedBy` | string |  |  |
 | `view.rows[].emergency` | boolean |  |  |
+| `view.rows[].entitlement` | string |  |  |
 | `view.rows[].expiresAt` | string or number, or null |  |  |
 | `view.rows[].finishedAt` | string or number, or null |  |  |
 | `view.rows[].formSubmittedBy` | string |  |  |

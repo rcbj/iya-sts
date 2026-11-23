@@ -13,6 +13,8 @@
   "justificationHint": "Binabasa ito ng mga tagapag-apruba.",
   "duration": "Gaano katagal",
   "durationLongest": "Hangga't pinapayagan ng patakaran",
+  "entitlement": "Aling access",
+  "chosen": "Ang hiniling na access:",
   "duration3600": "Isang oras",
   "duration86400": "Isang araw",
   "duration604800": "Isang linggo",

@@ -5931,7 +5931,11 @@ op `submitAccessRequestForm`(`requestBody/content/application~1json/schema`: {
       `pattern`:"^[0-9]*$",
       `description`:"The longest the approval should last, in seconds; empty for as long as the policy allows."
     }) `duration`?: string;
-    @js(#{`description`:"`true` asks for emergency access, where the policy allows it."}) `emergency`?: "true" | "false"
+    @js(#{`description`:"`true` asks for emergency access, where the policy allows it."}) `emergency`?: "true" | "false";
+    @js(#{
+      `maxLength`:128,
+      `description`:"One of the entitlements the denial's catalog lists, when it lists any (#1204)."
+    }) `entitlement`?: string
   },
   `responses/200/content/application~1json/schema`: WithOkMessageGo,
   `responses/400/content/application~1json/schema`: WithOkErrorsErrorAccessRequestFormView,
@@ -5967,6 +5971,7 @@ op `submitAccessRequestForm`(`requestBody/content/application~1json/schema`: {
   @js(#{`description`:"Until when it can be made, epoch seconds."}) `expiresAt`: numeric;
   `emergency`: boolean;
   @js(#{`description`:"The longest an approval lasts, in seconds."}) `maxApprovalS`: numeric;
+  @js(#{`description`:"The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off."}) `entitlements`?: ({ `value`: string; `label`: string })[];
   `display`?: { `title`?: string; `description`?: string }
 }
 
@@ -5981,7 +5986,8 @@ op `submitAccessRequestForm`(`requestBody/content/application~1json/schema`: {
   `application`: string;
   `createdAt`: numeric;
   `expiresAt`: numeric;
-  `approvedUntil`?: numeric
+  `approvedUntil`?: numeric;
+  @js(#{`description`:"The entitlement the request chose from the denial's catalog (#1204)."}) `entitlement`?: string
 }
 
 /** A refusal that draws the page. */

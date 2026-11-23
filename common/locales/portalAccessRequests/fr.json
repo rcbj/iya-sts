@@ -8,6 +8,7 @@
   "resource": "Sur",
   "application": "Application",
   "requester": "Demandé par",
+  "entitlement": "Accès demandé",
   "waits": "Elle attend jusqu’au {when}.",
   "approve": "Approuver",
   "deny": "Refuser",

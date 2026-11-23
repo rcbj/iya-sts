@@ -93,7 +93,11 @@ class AccessRequestPages {
       '<tr><th>' + t.html('portalAccessRequests.application') +
       '</th><td>' + code(row.application) + '</td></tr>' +
       '<tr><th>' + t.html('portalAccessRequests.requester') + '</th><td>' +
-      code(row.requester) + '</td></tr></table>' +
+      code(row.requester) + '</td></tr>' +
+      // The catalog item the request chose (#1204), when it chose one.
+      (row.entitlement ? '<tr><th>' +
+        t.html('portalAccessRequests.entitlement') + '</th><td>' +
+        code(row.entitlement) + '</td></tr>' : '') + '</table>' +
       '<p class="sub">' + when + '</p>' + buttons + '</div>';
   }
 

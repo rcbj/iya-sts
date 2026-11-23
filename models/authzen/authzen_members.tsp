@@ -342,6 +342,52 @@ model Display {
   description?: string;
 }
 
+// ---------------------------------------------------------------------------
+// THE CATALOG COMPANION (#1204): a denial's Catalogs Document and its
+// Catalog Endpoint's answer.
+// ---------------------------------------------------------------------------
+
+/** The CATALOG companion's section 6. */
+@members(#{ id: "catalogs-document", cite: "AuthZEN Access Request Catalog Profile section 6", members: "closed" })
+model CatalogsDocument {
+  /** JSON Pointer → Catalog Reference: here, the one entitlement field. */
+  @member(#{ cite: "AuthZEN Access Request Catalog Profile section 6" })
+  fields: Record<CatalogReference>;
+}
+
+/** A Catalog Reference (section 6). */
+@members(#{ id: "catalog-reference", cite: "AuthZEN Access Request Catalog Profile section 6", members: "closed" })
+model CatalogReference {
+  @member(#{ cite: "AuthZEN Access Request Catalog Profile section 6" })
+  endpoint: string;
+
+  @member(#{ cite: "AuthZEN Access Request Catalog Profile section 6" })
+  search_param?: string;
+}
+
+/** The CATALOG companion's section 8. */
+@members(#{ id: "catalog-response", cite: "AuthZEN Access Request Catalog Profile section 8", members: "closed" })
+model CatalogResponse {
+  @member(#{ cite: "AuthZEN Access Request Catalog Profile section 8" })
+  items: CatalogItem[];
+
+  @member(#{ cite: "AuthZEN Access Request Catalog Profile section 8" })
+  next_cursor?: string;
+
+  @member(#{ cite: "AuthZEN Access Request Catalog Profile section 8" })
+  total?: int32;
+}
+
+/** One Catalog Item (section 8): the value and its label, nothing else. */
+@members(#{ id: "catalog-item", cite: "AuthZEN Access Request Catalog Profile section 8", members: "closed" })
+model CatalogItem {
+  @member(#{ cite: "AuthZEN Access Request Catalog Profile section 8" })
+  value: string;
+
+  @member(#{ cite: "AuthZEN Access Request Catalog Profile section 8" })
+  label?: string;
+}
+
 /** What a registered callback is sent, once. */
 @members(#{ id: "callback-notification", cite: "AuthZEN Access Request Callback companion profile", members: "closed" })
 model CallbackNotification {

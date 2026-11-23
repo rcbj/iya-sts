@@ -16397,6 +16397,20 @@ const SETTINGS = [
                  'Task Handle carries links.ticket, the same page, where ' +
                  'the subject sees the request\'s status. Off, neither is ' +
                  'sent and the page makes no request.' },
+  { key: 'authzen.accessRequestCatalogs', group: 'AuthZEN',
+    label: 'Catalogs for access requests',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_CATALOGS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'The AuthZEN Access Request Catalog Profile (#1204): a ' +
+                 'recorded requestable denial whose advice lists ' +
+                 'urn:sts:xacml:advice:access-request:entitlement values ' +
+                 'carries request_catalogs_url, its Catalogs Document and ' +
+                 'Catalog Endpoint answer the caller the denial was ' +
+                 'answered to, a submission must choose one of the ' +
+                 'entitlements in requested_access.entitlement, and the ' +
+                 'approval carries it to the policy as a trusted fact. ' +
+                 'Off, the advice\'s entitlements are ignored and the two ' +
+                 'endpoints answer 501.' },
   { key: 'authzen.callbackAttempts', group: 'AuthZEN',
     label: 'Access request callback attempts',
     env: 'STS_AUTHZEN_CALLBACK_ATTEMPTS', type: 'int',
