@@ -693,100 +693,162 @@ function readPublicKey(input, at) {
   }
   const fp = fingerprintOf(primary.body);
   const subkeys = [];
-  const users = [];
-  let direct = null;
+  const userRecords = [];
+  const directs = [];
   let lastSub = null;
+  let lastUser = null;
   let revoked = false;
-  let expiresAt = '';
-  let expired = false;
   let unchecked = '';
-  const pendingUsers = [];
+  const primaryKey = { spec: primary.spec, material: primary.material,
+                       algorithm: primary.algorithm };
+  // EVERY SELF-SIGNATURE IS CHECKED BEFORE ANYTHING IT SAYS IS BELIEVED.
+  // A packet a third party appended to a published key — a subkey with no
+  // binding, a revocation, a direct-key signature with an expiry — costs
+  // that party nothing, so what a signature asserts (flags, expiry,
+  // revocation, which subkey is bound) is read only from one that
+  // verified by the primary key. A signature this runtime cannot check
+  // makes the whole key `unchecked` rather than half-believed.
+  const checked = function (sig, over) {
+    const v = verifyComposite(sig, over, primaryKey);
+    if (v.mldsa === 'unavailable') {
+      unchecked = v.why;
+    }
+    return v;
+  };
   packets.forEach(function (p) {
     if (p.tag === 13) {
-      pendingUsers.push(p.body);
+      lastUser = { body: p.body, certs: [], revocations: [] };
+      userRecords.push(lastUser);
+      lastSub = null;
+    } else if (p.tag === 17) {
+      // A user attribute: its signatures follow it and bind no address.
+      lastUser = null;
+      lastSub = null;
     } else if (p.tag === 14) {
       lastSub = parsePublicKey(p.body);
+      lastSub.bindings = [];
+      lastSub.revocations = [];
+      lastSub.pending = [];
       subkeys.push(lastSub);
+      lastUser = null;
     } else if (p.tag === 2) {
       const sig = parseSignature(p.body);
       if (sig.type === 0x1f) {
-        direct = sig;
+        sig.verified = checked(sig, toSign(0x1f, primary.body, null,
+                                           sig.version));
+        directs.push(sig);
       } else if (sig.type === 0x20) {
-        const over = toSign(0x20, primary.body, null, sig.version);
-        const v = verifyComposite(sig, over,
-          { spec: primary.spec, material: primary.material,
-            algorithm: primary.algorithm });
+        const v = checked(sig, toSign(0x20, primary.body, null,
+                                      sig.version));
         if (v.ok) {
           revoked = true;
-        } else if (v.mldsa === 'unavailable') {
-          unchecked = v.why;
         }
       } else if ((sig.type === 0x10 || sig.type === 0x11 ||
-                  sig.type === 0x12 || sig.type === 0x13) &&
-                 pendingUsers.length) {
-        const uid = pendingUsers[pendingUsers.length - 1];
-        const over = toSign(sig.type, primary.body, uid, sig.version);
-        const v = verifyComposite(sig, over,
-          { spec: primary.spec, material: primary.material,
-            algorithm: primary.algorithm });
-        const text = uid.toString('utf8');
-        const email = (text.match(/<([^>]+)>/) || [])[1] || '';
-        users.push({ text: text, email: email, valid: v.ok === true,
-                     signature: v });
-        if (v.mldsa === 'unavailable') {
-          unchecked = v.why;
+                  sig.type === 0x12 || sig.type === 0x13 ||
+                  sig.type === 0x30) && lastUser) {
+        const v = checked(sig, toSign(sig.type, primary.body, lastUser.body,
+                                      sig.version));
+        if (v.ok) {
+          (sig.type === 0x30 ? lastUser.revocations : lastUser.certs)
+            .push(sig);
         }
-      } else if ((sig.type === 0x18 || sig.type === 0x19) && lastSub) {
-        // An encryption subkey is usable only with a binding signature
-        // the primary made (RFC 9580 section 5.2.1). Unchecked when
-        // ML-DSA cannot run; refused when the binding does not verify.
-        const over = toSign(sig.type, primary.body, lastSub.body,
-                            sig.version);
-        const bound = verifyComposite(sig, over, {
-          spec: primary.spec, material: primary.material,
-          algorithm: primary.algorithm });
-        lastSub.binding = bound;
-        if (bound.mldsa === 'unavailable') {
-          unchecked = bound.why;
+        lastUser.last = v;
+      } else if ((sig.type === 0x18 || sig.type === 0x28) && lastSub) {
+        // A subkey is usable only with a binding signature the primary
+        // made (RFC 9580 section 5.2.1), and not after a subkey
+        // revocation (0x28) the primary made. Neither is believed
+        // unverified.
+        const v = checked(sig, toSign(sig.type, primary.body, lastSub.body,
+                                      sig.version));
+        if (v.ok) {
+          (sig.type === 0x28 ? lastSub.revocations : lastSub.bindings)
+            .push(sig);
+        } else if (sig.type === 0x18 && v.eddsa === true &&
+                   v.mldsa === 'unavailable') {
+          // Only for the description of a key refused as unchecked: the
+          // reader answers ok: false whenever this list is used.
+          lastSub.pending.push(sig);
         }
       }
     }
   });
-  if (direct) {
-    const over = toSign(0x1f, primary.body, null, direct.version);
-    const v = verifyComposite(direct, over,
-      { spec: primary.spec, material: primary.material,
-        algorithm: primary.algorithm });
-    direct.verified = v;
-    if (v.mldsa === 'unavailable') {
-      unchecked = v.why;
-    }
-    if (direct.keyExpires) {
-      const exp = (primary.created + direct.keyExpires) * 1000;
-      expiresAt = new Date(exp).toISOString();
-      expired = exp <= when.getTime();
-    }
+  const newest = function (list) {
+    return list.slice().sort(function (a, b) {
+      return b.created - a.created;
+    })[0] || null;
+  };
+  // A user id is valid while its newest verified certification is newer
+  // than every verified certification revocation (0x30) of it.
+  const users = userRecords.map(function (u) {
+    const cert = newest(u.certs);
+    const revocation = newest(u.revocations);
+    const valid = !!cert && (!revocation || cert.created > revocation.created);
+    const text = u.body.toString('utf8');
+    const email = (text.match(/<([^>]+)>/) || [])[1] || '';
+    return { text: text, email: email, valid: valid, cert: cert,
+             revokedCertification: !!revocation && !valid && !!cert };
+  });
+  // The primary key's expiry and flags come from its newest VERIFIED
+  // direct-key signature, else from the newest valid user id
+  // certification. An unverified one says nothing.
+  const direct = newest(directs.filter(function (one) {
+    return one.verified && one.verified.ok;
+  }));
+  const selfSig = direct || newest(users.filter(function (u) {
+    return u.valid;
+  }).map(function (u) {
+    return u.cert;
+  }));
+  let expiresAt = '';
+  let expired = false;
+  if (selfSig && selfSig.keyExpires) {
+    const exp = (primary.created + selfSig.keyExpires) * 1000;
+    expiresAt = new Date(exp).toISOString();
+    expired = exp <= when.getTime();
   }
+  const primaryFlags = selfSig ? selfSig.flags : null;
   const subDescribed = [];
   let encryption = null;
+  let encryptionCreated = -1;
+  const encryptionKeys = [];
   subkeys.forEach(function (sub) {
     const info = Object.assign({
       fingerprint: fingerprintOf(sub.body) },
       algorithmInfo(sub.spec, sub.algorithm));
-    subDescribed.push(info);
-    const boundOk = sub.binding && sub.binding.ok === true;
-    const boundPending = sub.binding &&
-      sub.binding.mldsa === 'unavailable';
-    if (sub.spec && sub.spec.use === 'encrypt' && !encryption &&
-        (boundOk || boundPending)) {
+    const binding = newest(sub.bindings) ||
+      (unchecked ? newest(sub.pending) : null);
+    const subRevoked = sub.revocations.length > 0;
+    const subExpired = !!(binding && binding.keyExpires &&
+      (sub.created + binding.keyExpires) * 1000 <= when.getTime());
+    // KEY FLAGS (RFC 9580 section 5.2.3.29): a binding that states them
+    // must name an encryption use for the subkey to be encrypted to.
+    const flagsAllow = !binding || binding.flags === null ||
+      (binding.flags & (FLAG_ENCRYPT_COMMS | FLAG_ENCRYPT_STORAGE)) !== 0;
+    sub.usable = !!binding && !subRevoked && !subExpired && flagsAllow &&
+      sub.created * 1000 <= when.getTime() + 60000 &&
+      !!sub.spec && sub.spec.use === 'encrypt';
+    sub.fingerprint = info.fingerprint;
+    subDescribed.push(Object.assign({ bound: !!binding,
+                                      revoked: subRevoked }, info));
+    if (sub.usable) {
+      encryptionKeys.push(info);
+    }
+    // The newest usable subkey is the one mail is encrypted to, and the
+    // one `encryptTo()` encrypts to (it reads this choice, never its own).
+    if (sub.usable && sub.created > encryptionCreated) {
       encryption = Object.assign({ keyId: info.fingerprint.slice(0, 16) },
                                  info);
+      encryptionCreated = sub.created;
     }
   });
-  const signing = {
-    fingerprint: fp, keyId: fp.slice(0, 16),
-    algorithm: primary.spec.name, curve: '', bits: 0
-  };
+  // The primary signs only when its newest verified self-signature lets it
+  // (a stated key-flags subpacket without the sign flag means it does not);
+  // this reader knows no signing subkey, so then the key has none.
+  const signing = primaryFlags !== null && primaryFlags !== undefined &&
+    (primaryFlags & FLAG_SIGN) === 0 ? null : {
+      fingerprint: fp, keyId: fp.slice(0, 16),
+      algorithm: primary.spec.name, curve: '', bits: 0
+    };
   const description = {
     fingerprint: fp,
     keyId: fp.slice(0, 16),
@@ -796,6 +858,8 @@ function readPublicKey(input, at) {
     subkeys: subDescribed,
     signing: signing,
     encryption: encryption,
+    signingKeys: signing ? [signing] : [],
+    encryptionKeys: encryptionKeys,
     users: users.map(function (u) {
       return { text: u.text, email: u.email, valid: u.valid };
     }),
@@ -805,17 +869,17 @@ function readPublicKey(input, at) {
     pqc: true
   };
   const key = { pqc: true, binary: binary, description: description,
-                primary: primary, subkeys: subkeys, direct: direct };
+                primary: primary, subkeys: subkeys, direct: direct,
+                signing: !!signing };
   if (unchecked && !revoked) {
     log.debug("Leaving readPublicKey(). Unchecked.");
     return { ok: false, reason: 'unchecked', why: unchecked,
              description: description, binary: binary, key: key };
   }
-  const bound = direct && direct.verified && direct.verified.ok;
   const certified = users.some(function (u) {
     return u.valid;
   });
-  if (!bound && !certified) {
+  if (!direct && !certified) {
     log.debug("Leaving readPublicKey(). No self-signature.");
     return { ok: false, reason: 'bad-signature',
              why: 'no composite self-signature verified',
@@ -1133,6 +1197,33 @@ function verifyCleartext(signedText, key) {
     lines.pop();
   }
   const message = lines.join('\n');
+  // A PROOF OF POSSESSION CARRIES EXACTLY ONE SIGNATURE. With several, which
+  // one made the proof — and whose creation time is judged — would be a
+  // choice among signatures a caller supplied.
+  let count = 0;
+  try {
+    count = readPackets(bytesOf(text.slice(sigAt))).filter(function (p) {
+      return p.tag === 2;
+    }).length;
+  } catch (e) {
+    log.debug("Caught in verifyCleartext(): " + ((e && e.message) || e));
+    log.debug("Leaving verifyCleartext(). Unreadable signature.");
+    return { ok: false, reason: 'unreadable',
+             why: String((e && e.message) || e) };
+  }
+  if (count !== 1) {
+    log.debug("Leaving verifyCleartext(). " + count + " signatures.");
+    return { ok: false, reason: count ? 'several' : 'unsigned',
+             why: count ? 'the message carries ' + count + ' signatures; ' +
+               'a proof of possession carries exactly one'
+               : 'no signature packet' };
+  }
+  const source = key && key.primary ? key : (key && key.key ? key.key : null);
+  if (source && source.signing === false) {
+    log.debug("Leaving verifyCleartext(). The key does not sign.");
+    return { ok: false, reason: 'other-key',
+             why: 'made by a key whose self-signature does not let it sign' };
+  }
   const verified = verifyDetached(text.slice(sigAt), message + '\n', key);
   if (!verified.ok && verified.eddsa !== true) {
     const again = verifyDetached(text.slice(sigAt), message, key);
@@ -1269,6 +1360,27 @@ function literalPacket(data) {
 }
 
 /**
+ * The subkey a message to this key is encrypted to: the one
+ * `readPublicKey()` chose as `description.encryption` — bound by a
+ * verified binding signature, not revoked, not expired, its flags naming
+ * an encryption use — and never merely the first subkey of an encryption
+ * algorithm, which anybody can append to a published key.
+ *
+ * @param key - a key `readPublicKey()` answered
+ * @returns the subkey, or null
+ */
+function encryptionSubkeyOf(key) {
+  log.debug("Entering encryptionSubkeyOf().");
+  const chosen = key && key.description && key.description.encryption;
+  const wanted = chosen ? String(chosen.fingerprint || '') : '';
+  const sub = wanted ? (key.subkeys || []).filter(function (s) {
+    return s.usable === true && s.fingerprint === wanted;
+  })[0] || null : null;
+  log.debug("Leaving encryptionSubkeyOf(). " + (sub ? wanted : 'None.'));
+  return sub;
+}
+
+/**
  * Encrypts bytes to a composite encryption subkey. ML-KEM encapsulation
  * needs node's OpenSSL 3.5; when it is absent this throws, and the
  * caller records its own code.
@@ -1279,12 +1391,11 @@ function literalPacket(data) {
  */
 function encryptTo(data, key) {
   log.debug("Entering encryptTo().");
-  const sub = (key.subkeys || []).filter(function (s) {
-    return s.spec && s.spec.use === 'encrypt';
-  })[0];
+  const sub = encryptionSubkeyOf(key);
   if (!sub) {
     log.debug("Leaving encryptTo(). No encryption key.");
-    throw new Error('the key has no composite encryption subkey');
+    throw new Error('the key has no bound, unrevoked composite ' +
+                    'encryption subkey');
   }
   const pubs = splitPublic(sub.material, sub.spec);
   const x = sub.spec.ecc === 'x448'
@@ -1343,5 +1454,7 @@ module.exports = {
   decryptWithShares: decryptWithShares,
   encryptSeipd: encryptSeipd,
   encryptTo: encryptTo,
+  encryptionSubkeyOf: encryptionSubkeyOf,
+  toSign: toSign,
   armorPublic: armorPublic
 };

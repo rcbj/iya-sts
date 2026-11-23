@@ -1219,12 +1219,12 @@ create page, and each calls out its required fields the way New user does.
   the field grid's `fg-required` — a red rule, an asterisk, "required" in
   words — and the browser's `required`, with a note above the form naming
   what is required. A policy's field table marks its rows the same way
-  (`fg-required-row`); a checkbox is never marked, having no empty state.
-  A field required only for some choices (`requiredWhen`; a secret
-  destination's region) is marked the same way while that choice is
-  selected — the outline, the asterisk, the word required, the browser's
-  `required` and the note — and not while it is not. Changing the choice
-  moves the mark.
+  (`fg-required-row`); a yes/no pair is never marked: No is checked when
+  the answer is no, so the field has no empty state. A field required
+  only for some choices (`requiredWhen`; a secret destination's region)
+  is marked the same way while that choice is selected — the outline,
+  the asterisk, the word required, the browser's `required` and the
+  note — and not while it is not. Changing the choice moves the mark.
 * **A REFUSED CREATE KEEPS WHAT WAS TYPED** (`WebAnswers` `CREATE_PAGES`):
   each page posts to itself, its action resolved through the object's
   `mirrors`, so a refusal redraws it with `state.draft` and the reasons in

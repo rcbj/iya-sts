@@ -5495,6 +5495,18 @@ const CODES = [
       'certificate to the ML-DSA authority; the other issues a classical ' +
       'certificate and an ML-DSA certificate. They cannot both be on.',
     spec: 'The console and the management API refuse the write' },
+  { code: 'STS-PKI-0297',
+    summary: 'An SSH user certificate was asked for while ' +
+      'pki.sshUserCaPqcOnly is on, and the realm has no ML-DSA SSH user CA: ' +
+      'this runtime cannot generate ML-DSA, ssh-mldsa-65 is not in ' +
+      'pki.sshUserCaAlgorithms, or the authority could not be made. No ' +
+      'classical certificate is issued in its place.',
+    spec: 'The account API refuses the request with HTTP 503' },
+  { code: 'STS-PKI-0298',
+    summary: 'A public SSH user CA request named an algorithm other than ' +
+      'ssh-mldsa-65, or asked for the ML-DSA authority of a realm that has ' +
+      'none.',
+    spec: 'GET /pki/ssh-user-ca/{scope} answers 400 or 404' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -23638,6 +23650,21 @@ const CODES = [
       '3.5). The message was not sent under a classical algorithm ' +
       'instead.',
     spec: 'the mail send; STS-MAIL-0243 carries the sentence' },
+  { code: 'STS-OPENPGP-0029',
+    summary: 'The proof of possession offered with an OpenPGP key carries ' +
+      'more than one signature. A proof is signed once, by one key, so ' +
+      'that the signer and the creation time judged are the signature ' +
+      'that verified.',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0030',
+    summary: 'A person\'s mail address changed and the OpenPGP key whose ' +
+      'user ids name only the former address could not be retired from ' +
+      'their entry, or an S/MIME choice whose certificate does not name ' +
+      'the new address could not be put back to none. Mail is still not ' +
+      'encrypted to either for the new address: a key or certificate is ' +
+      'used only for an address it names.',
+    spec: 'none (a log line; the directory write that changed the address ' +
+      'is unaffected)' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile was named with something ' +

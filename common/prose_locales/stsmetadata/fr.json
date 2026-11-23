@@ -100,8 +100,8 @@
     "text": "partial : l’Access Evaluation API (section 6), décidée par le moteur XACML contre la politique racine du domaine au moyen d’un catalogue d’attributs par domaine, avec X-Request-ID et le défi de la section 11.3, l’Access Evaluations API (section 7) avec ses trois sémantiques, et les métadonnées du PDP (section 9) sous ses deux formes, signed_metadata comprises, et le brouillon Obligations Profile pour un PEP qui en déclare les types, et les trois Search APIs (section 8) sur les personnes, applications, API, relations de délégation et actions de politique propres à ce service, paginées et non transitives. Manquent : les obligations par résultat dans une recherche, et le profil OAuth, toujours un brouillon."
   },
   "stsmetadata.specs.authzen-arap.coverage": {
-    "en": "e785acbe5ead52ad",
-    "text": "partial : le refus demandable (context.access_request, evaluation_id, evaluated_at, reason) là où la politique du domaine marque un Deny avec l’advice access-request, lié par valeur au moyen d’un binding_token que ce domaine signe (les claims en ligne) ; la soumission avec Idempotency-Key, 201 ou 202 et un Task Handle ; le point de terminaison d’état de la tâche avec Retry-After ; l’annulation par POST ou DELETE ; les six statuts ; le mode d’achèvement reevaluate, approval.id résolu dans l’état de confiance et l’approbation parvenant à la politique sous forme de faits de confiance ; next_action et les cinq raisons ; chaque type de problème ; le membre de métadonnées, jwks_uri et la capacité. Manquent : evaluation_id comme liaison par référence, approval.state, la forme de liaison hachée, les formes lisibles par machine (form_url, request_schema_url), display, et les compléments BULK, ACTOR et CATALOG."
+    "en": "6be544a62f94329b",
+    "text": "partial : le refus demandable (context.access_request, evaluation_id, evaluated_at, reason) là où la politique du domaine marque un Deny avec l’advice access-request, lié par valeur au moyen d’un binding_token que ce domaine signe (les claims en ligne et binding_hash) et par référence depuis l’enregistrement du refus ; la soumission avec Idempotency-Key, 201 ou 202 et un Task Handle ; le point de terminaison d’état de la tâche avec Retry-After ; l’annulation par POST ou DELETE ; les six statuts ; le mode d’achèvement reevaluate, approval.id résolu dans l’état de confiance, approval.state émis et vérifié, la consultation restant requise, et l’approbation parvenant à la politique sous forme de faits de confiance ; next_action et les cinq raisons ; chaque type de problème ; le membre de métadonnées, jwks_uri et la capacité ; request_schema_url sur un refus demandable, le JSON Schema de même origine des ajouts facultatifs de la soumission. Manquent : un formulaire hébergé (form_url) et display, et les compléments BULK, ACTOR et CATALOG."
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
     "en": "ca5109eae0e95b17",
@@ -715,6 +715,14 @@
     "en": "59b1734815ece664",
     "text": "partial : l’attribut id-aa-attestation d’une demande PKCS#10 (un au plus, exactement un AttestationBundle, le certificat et les autres choix seulement), via EST, SCEP et ACME. Deux types de déclaration sont vérifiés : le tcg-attest-tpm-certify du TCG dans la syntaxe de l’annexe A.2.3 de la révision 20, pour le profil d’appareil (#257), et une attestation PIV de YubiKey pour chaque profil (#1955), sous 1.3.6.1.4.1.41482.3.2, avec le certificat de l’emplacement comme stmt et le certificat f9 dans certs, un type que ce service a choisi parce que le brouillon n’en définit aucun. L’extension CRMF n’est pas lue (pas de CMP ici), et les autres types de déclaration sont enregistrés, non vérifiés. La fraîcheur (section 6.2) via draft-ietf-lamps-attestation-freshness sur EST, pour les déclarations TPM seulement : une attestation PIV ne porte aucun nonce."
   },
+  "stsmetadata.specs.yubico-piv-attestation.coverage": {
+    "en": "244659759ede3102",
+    "text": "partial : le certificat d’attestation de l’emplacement est vérifié, au travers du certificat d’attestation f9, jusqu’aux racines PIV de Yubico (Serial 263751, et Attestation Root 1 avec ses intermédiaires PIV pour le micrologiciel 5.7.4 et ultérieur, livrées et épinglées) ou celles propres à un domaine ; sa clé est confrontée à celle de la demande ; les extensions de micrologiciel, de numéro de série, de politique de PIN et de toucher et de facteur de forme sont lues, et les politiques confrontées à celles du domaine. La carte elle-même n’est jamais gérée : aucune écriture de PIN, de PUK ni d’emplacement."
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "322d92ba9eb36fde",
+    "text": "minimal : les quatre emplacements de clé comme profils de certificat (PIV Authentication 9a, Digital Signature 9c, Key Management 9d, Card Authentication 9e, qui ne connecte personne par défaut), et une carte PIV ou CAC externe associée par l’UUID de carte de son subjectAltName urn:uuid lorsqu’elle affirme une politique PIV Authentication (désactivé par défaut). Pas de FASC-N, de CHUID, de gestion de carte ni de biométrie."
+  },
   "stsmetadata.specs.lamps-attestation-freshness.coverage": {
     "en": "555e31da7393d476",
     "text": "partial : EST sur HTTPS (section 5.1) — /nonce par GET et par POST avec application/est-attestation-freshness+json, len respecté dans l’intervalle 8..64 (porté à 16 octets), expiration, le nonce vide lorsqu’aucune preuve n’est nécessaire, 400 et 503, authentifié, et lié à la CSR par un cookie et le principal. Le nonce est le qualifyingData de TPM2_Certify, vérifié comme extraData de TPMS_ATTEST et consommé une seule fois. Absents : aucun type reqTypeInfo n’est défini (503), ainsi que CMP (section 4), EST sur CoAP (5.2) et CMC (6), que ce service ne parle pas."
@@ -762,6 +770,10 @@
   "stsmetadata.specs.rfc9580.coverage": {
     "en": "a2930bdb8ffe747d",
     "text": "partial : lecture d'une clé publique transférable, v6 et (RFC 4880) v4, vérification d'une signature en clair par l'une de ses clés de signature et chiffrement d'un message pour sa clé de chiffrement, Les algorithmes classiques passent par openpgp.js. Les composites RFC 9980 sont lus ici (voir rfc9980). Ed25519, Ed448, ECDSA et ECDH sur les courbes NIST, X25519, X448 et RSA d'au moins openpgp.minRsaBits sont acceptés ; DSA, ElGamal et Brainpool sont refusés. Manquent : la signature, le déchiffrement, un trousseau, un serveur de clés."
+  },
+  "stsmetadata.specs.rfc9980.coverage": {
+    "en": "5feb46765c8bc465",
+    "text": "partial : signatures ML-DSA-65+Ed25519 et ML-DSA-87+Ed448, et chiffrement ML-KEM-768+X25519 et ML-KEM-1024+X448, à l’enregistrement et lorsqu’une clé déjà enregistrée est utilisée. Un composite compte comme post-quantique. openpgp.pqcOnly ne restreint que l’enregistrement. Les deux moitiés d’une signature sont vérifiées par common/crypto_impl/openpgp_pqc.js. Manquent : SLH-DSA (identifiants d’algorithme 32-34), et ce service ne génère pas de clé RFC 9980. openpgp.js n’analyse pas ces clés."
   },
   "stsmetadata.specs.rfc3156.coverage": {
     "en": "aa799b14a54ace0f",
@@ -878,6 +890,10 @@
   "stsmetadata.endpoints./access/v1/access-requests.what": {
     "en": "15c0d860d27c7cbe",
     "text": "POST le sujet, la ressource, l’action et le contexte d’une évaluation refusée avec le refus reçu (son binding_token et son expires_at, renvoyés tels quels) ; obtenez 202 et un Task Handle, ou 201 avec le résultat lorsqu’elle est décidée immédiatement (accès d’urgence que la politique autorise). Seul un Deny que la politique du domaine a marqué avec l’advice urn:sts:xacml:advice:access-request est demandable. La même porte d’appelant et AUTHZEN_PEPS qu’une évaluation ; Idempotency-Key honoré par appelant ; un rappel (callback) uniquement vers une URL enregistrée pour l’appelant. Tout refus est en problem+json."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/schema.what": {
+    "en": "ec6a3b36123f646a",
+    "text": "GET du JSON Schema (brouillon 2020-12) des ajouts qu’une soumission peut apporter : context.business_justification, ainsi que requested_access.requested_until et emergency, ce dernier exigeant la justification. Public, de même origine que access_request_endpoint ; le request_schema_url d’un refus demandable le nomme. Aucun formulaire n’est hébergé, donc aucun refus ne porte form_url. Répond 501 tant que l’API ou le profil est désactivé. Enregistré avant le chemin d’état de la tâche, qui lirait sinon « schema » comme un identifiant."
   },
   "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
     "en": "264083b977756230",
@@ -1074,6 +1090,14 @@
   "stsmetadata.endpoints./pki/revocation.what": {
     "en": "6e82cd30ac736775",
     "text": "NON-SPEC, et délibérément ici malgré tout : une personne qui dirige un client vers ces points de terminaison doit savoir ce que SONT ces adresses, et les lire dans un certificat avec `openssl x509 -text` est une mauvaise première étape. Une ligne par autorité avec son sujet, le nombre de certificats qu’elle a révoqués, et sa CRL dans les deux schémas (http, ldap) à côté de ses adresses OCSP et caIssuers. AUCUN NUMÉRO DE SÉRIE N’Y FIGURE — la liste de ce qui est révoqué est la CRL, et une copie JSON à côté serait une seconde réponse à la même question : celle qui devient obsolète, et celle que personne n’a signée. Il dit en toutes lettres que ce service PUBLIE la révocation et ne peut obliger personne à la consulter, ce qui vaut pour toute autorité de certification et explique pourquoi l’auteur d’un client dirigerait sa pile ici. Sans contrôle d’accès, car tout ce qu’il contient figure déjà dans chaque certificat que ce service délivre."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "c8819f794e61f398",
+    "text": "NON-SPEC (#1955 P3) : la clé de l’AC utilisateurs OpenSSH propre au domaine, publiée sous forme de ligne authorized-key pour que les serveurs SSH lui fassent confiance. Sans contrôle d’accès et `no-store` ; la clé privée correspondante de l’AC ne quitte jamais ce service."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "ed928008015e78a8",
+    "text": "NON-SPEC (#1955 P3) : la KRL OpenSSH propre au domaine, mise à jour quand un appelant révoque un certificat ou déclare un jeton matériel perdu. Sans contrôle d’accès et `no-store` ; les serveurs SSH doivent être configurés pour la consulter, car ce service ne peut pas y contraindre une partie de confiance."
   },
   "stsmetadata.endpoints./admin-api/xacml.what": {
     "en": "2efd1b442d450758",
@@ -2220,12 +2244,16 @@
     "text": "NON-SPEC (#1955 P4). Les jetons HOTP et TOTP que les administrateurs ont importés depuis les fichiers de semences PSKC des fournisseurs, non attribués, attribués ou retirés, paginés et recherchés par numéro de série ou personne. Jamais un secret. Reflète GET /admin/hardware-tokens (son onglet OATH)."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-"en": "0d649147af0cbe04",
-"text": "NON-SPEC (#1955). lost, avec { key } : le jeton est marqué perdu, chaque clé d’accès qu’il porte supprimée, chaque certificat qu’il porte révoqué pour keyCompromise, un credential-change CAEP envoyé pour chacun et les sessions qu’ils ont ouvertes fermées. enrol-piv, avec { username, profile, csr, attestationCertificate?, attestationIssuer? } : un certificat d’emplacement PIV émis pour cette personne par l’AC émettrice EST, son attestation PIV de YubiKey vérifiée et la YubiKey enregistrée. recover-key, avec { username, serial } : la clé piv-key-management séquestrée de cette personne, que la politique de contrôle d’accès ne permet qu’à PIV_KEY_RECOVERY. Les trois actions de la console sur cette page."
+    "en": "0d649147af0cbe04",
+    "text": "NON-SPEC (#1955). lost, avec { key } : le jeton est marqué perdu, chaque clé d’accès qu’il porte supprimée, chaque certificat qu’il porte révoqué pour keyCompromise, un credential-change CAEP envoyé pour chacun et les sessions qu’ils ont ouvertes fermées. enrol-piv, avec { username, profile, csr, attestationCertificate?, attestationIssuer? } : un certificat d’emplacement PIV émis pour cette personne par l’AC émettrice EST, son attestation PIV de YubiKey vérifiée et la YubiKey enregistrée. recover-key, avec { username, serial } : la clé piv-key-management séquestrée de cette personne, que la politique de contrôle d’accès ne permet qu’à PIV_KEY_RECOVERY. Les trois actions de la console sur cette page."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
     "en": "b55c0cdd477d183e",
-"text": "déclare un jeton matériel perdu et retire ses identifiants, émet un certificat d’emplacement PIV ou remet une clé séquestrée"
+    "text": "déclare un jeton matériel perdu et retire ses identifiants, émet un certificat d’emplacement PIV ou remet une clé séquestrée"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
+    "en": "1716521c9c5e119d",
+    "text": "NON-SPEC (#1955). Les certificats piv-key-management séquestrés d’une personne (piv.keyEscrow) : numéro de série, sujet, validité et si chacun a été révoqué. Jamais une clé. Reflète GET /admin/hardware-tokens."
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -3131,19 +3159,19 @@
     "en": "9547cda6898c37a6",
     "text": "demande une clé d’accès post-quantique après une connexion, puis établit la session de connexion qu’elle retenait"
   },
-"stsmetadata.endpoints./wsapi/2.0/verify.what": {
+  "stsmetadata.endpoints./wsapi/2.0/verify.what": {
     "en": "ff0550a4318594c6",
     "text": "PROTOCOLE DE VALIDATION 2.0 DE YUBICO (#1955 P5). GET ou POST de id, otp, nonce et h. Désactivé par défaut : la route répond OPERATION_NOT_ALLOWED et ne signe rien. Activé, l’identifiant du client et le HMAC-SHA1 sont vérifiés dans tous les modes, y compris le développement ; un nonce est retenu cinq minutes ; un OTP correspondant est consommé. Cache-Control: no-store. Rien n’est envoyé à YubiCloud."
   },
-"stsmetadata.endpoints./wsapi/2.0/verify.effect": {
+  "stsmetadata.endpoints./wsapi/2.0/verify.effect": {
     "en": "bb2bc4011c8240ac",
     "text": "vérifie un OTP YubiKey pour un client qui a signé la requête, ou répond OPERATION_NOT_ALLOWED tant que yubiotp.ykval est désactivé"
   },
-"stsmetadata.endpoints./authn/roles.what": {
+  "stsmetadata.endpoints./authn/roles.what": {
     "en": "88814e89f81f8d86",
     "text": "RÔLES DYNAMIQUES SÉLECTIONNABLES (#1072). Après tous les facteurs, une connexion à une application dont le domaine définit un rôle dynamique (sauf si roles.dynamicSelection ou appDynamicRoleSelection de l’application le désactive) est SUSPENDUE pendant que la politique d’éligibilité XACML de chaque rôle dynamique est décidée pour la personne ; seul Permit propose un rôle. Si la personne a coché « Choisir des rôles pour cette connexion » ou si un rôle obligatoire est proposé, cette page liste les choix possibles ; Continuer (/authn-api/mfa/{id}/roles) confronte le choix à l’offre de l’étape et de nouveau aux politiques, puis démarre la session avec ce choix inscrit sur l’enregistrement de session, jamais dans l’annuaire. Un jeton pour cette application porte alors les rôles choisis, chacun soumis de nouveau à sa politique à chaque émission. Exige un identifiant ?mfa= émis par la connexion suspendue ; suivi seul, il répond 400."
   },
-"stsmetadata.endpoints./authn/roles.effect": {
+  "stsmetadata.endpoints./authn/roles.effect": {
     "en": "fc2116e31d3ead37",
     "text": "demande quels rôles dynamiques sélectionnables utiliser pour cette connexion, puis établit la session qu’elle avait suspendue avec ce choix"
   },
@@ -4186,21 +4214,5 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "un paramètre"
-  },
-  "stsmetadata.specs.yubico-piv-attestation.coverage": {
-    "en": "244659759ede3102",
-    "text": "partial : le certificat d’attestation de l’emplacement est vérifié, au travers du certificat d’attestation f9, jusqu’aux racines PIV de Yubico (Serial 263751, et Attestation Root 1 avec ses intermédiaires PIV pour le micrologiciel 5.7.4 et ultérieur, livrées et épinglées) ou celles propres à un domaine ; sa clé est confrontée à celle de la demande ; les extensions de micrologiciel, de numéro de série, de politique de PIN et de toucher et de facteur de forme sont lues, et les politiques confrontées à celles du domaine. La carte elle-même n’est jamais gérée : aucune écriture de PIN, de PUK ni d’emplacement."
-  },
-  "stsmetadata.specs.fips201.coverage": {
-    "en": "322d92ba9eb36fde",
-    "text": "minimal : les quatre emplacements de clé comme profils de certificat (PIV Authentication 9a, Digital Signature 9c, Key Management 9d, Card Authentication 9e, qui ne connecte personne par défaut), et une carte PIV ou CAC externe associée par l’UUID de carte de son subjectAltName urn:uuid lorsqu’elle affirme une politique PIV Authentication (désactivé par défaut). Pas de FASC-N, de CHUID, de gestion de carte ni de biométrie."
-  },
-  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
-    "en": "1716521c9c5e119d",
-    "text": "NON-SPEC (#1955). Les certificats piv-key-management séquestrés d’une personne (piv.keyEscrow) : numéro de série, sujet, validité et si chacun a été révoqué. Jamais une clé. Reflète GET /admin/hardware-tokens."
-  },
-  "stsmetadata.specs.rfc9980.coverage": {
-    "en": "5feb46765c8bc465",
-    "text": "partial : signatures ML-DSA-65+Ed25519 et ML-DSA-87+Ed448, et chiffrement ML-KEM-768+X25519 et ML-KEM-1024+X448, à l’enregistrement et lorsqu’une clé déjà enregistrée est utilisée. Un composite compte comme post-quantique. openpgp.pqcOnly ne restreint que l’enregistrement. Les deux moitiés d’une signature sont vérifiées par common/crypto_impl/openpgp_pqc.js. Manquent : SLH-DSA (identifiants d’algorithme 32-34), et ce service ne génère pas de clé RFC 9980. openpgp.js n’analyse pas ces clés."
   }
 }

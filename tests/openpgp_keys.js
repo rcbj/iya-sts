@@ -27,6 +27,9 @@
 //      queued message reaches the transport with its encryption; a required
 //      message to a person without a key, and a chosen encryption that
 //      cannot be kept, are refused.
+//      A key is used only for an address one of its user ids names: to
+//      another address it is not used, and a change of `mail` to an address
+//      it does not name retires it from the entry and the directory.
 //   5. THE LOST-KEY RETIRER: a token holding the key, reported lost, takes
 //      it off the entry.
 //   6. REALM ISOLATION: a challenge issued in one realm is none in another.
@@ -176,6 +179,36 @@ async function checkRegistration(t) {
   const short = await keyFor(mailOf(ALICE), 'rsa2048');
   t.equal(code((await proved(ALICE, short)).answer), 'STS-OPENPGP-0004',
           '2i. an RSA key shorter than openpgp.minRsaBits is refused');
+  // TWO SIGNATURES ON ONE PROOF (#1955 P6 review): Alice's and a
+  // stranger's over the same challenge. Exactly one is accepted.
+  const issuedTwice = keys.issueChallenge(ALICE, { actor: ALICE });
+  const twice = await openpgp.sign({
+    message: await openpgp.createCleartextMessage({
+      text: issuedTwice.challenge.text + '\n' }),
+    signingKeys: [alice.privateKey, mallory.privateKey] });
+  t.equal(code(await keys.register(ALICE, {
+    publicKey: alice.publicKey.armor(), signed: twice },
+    { actor: ALICE })), 'STS-OPENPGP-0029',
+          '2i-ii. a proof carrying two signatures is refused ' +
+          '(STS-OPENPGP-0029)');
+  // A WEAK SUBKEY BESIDE A STRONG ONE: an RSA 2048 encryption subkey an
+  // hour old, and a newer X25519 one the library prefers. Every key the
+  // key would encrypt to is judged, not only the preferred one.
+  const mixed = await openpgp.generateKey({
+    userIDs: [{ name: 'P6 test', email: mailOf(ALICE) }],
+    type: 'ecc', curve: 'curve25519Legacy', format: 'object',
+    subkeys: [{ type: 'rsa', rsaBits: 2048 }],
+    date: new Date(Date.now() - 3600 * 1000) });
+  const strong = await mixed.privateKey.addSubkey({
+    type: 'ecc', curve: 'curve25519Legacy' });
+  const preferred = await strong.toPublic().getEncryptionKey();
+  t.check(preferred.getAlgorithmInfo().algorithm !== 'rsaEncryptSign',
+          '2i-iii. (the library prefers the strong subkey)',
+          preferred.getAlgorithmInfo().algorithm);
+  t.equal(code((await proved(ALICE, { privateKey: strong,
+    publicKey: strong.toPublic() })).answer), 'STS-OPENPGP-0004',
+          '2i-iv. a weak encryption subkey the key would still use is ' +
+          'refused (STS-OPENPGP-0004)');
   t.check(!keys.view(ALICE).key, '2j. none of those left a key behind');
   const good = await proved(ALICE, alice);
   const fingerprint = alice.publicKey.getFingerprint();
@@ -478,6 +511,82 @@ async function checkUnkept(t) {
   log.debug("Leaving checkUnkept().");
 }
 
+async function settle() {
+  log.debug("Entering settle().");
+  for (let i = 0; i < 5; i++) {
+    await new Promise(function (resolve) {
+      setImmediate(resolve);
+    });
+  }
+  log.debug("Leaving settle().");
+}
+
+// 4n-4w. A KEY IS USED ONLY FOR AN ADDRESS IT NAMES, and is retired when
+// the entry's `mail` moves to one it does not.
+async function checkAddressChange(t) {
+  log.debug("Entering checkAddressChange().");
+  t.log.info('=== 4b. a key is bound to its address ===');
+  const channel = new mail.Mail(mail.Mail.defaultDeps());
+  const spec = { id: 'address-changed' };
+  keys.setMailEncryption(ALICE, 'openpgp', { actor: ALICE });
+  t.equal(channel.encryptionPlan(spec, ALICE, mailOf(ALICE), false).kind,
+          'openpgp', '4n. to her own address, mail is encrypted to her key');
+  t.equal(keys.encryptionFor(ALICE, 'someone@else.example').kind, 'unbound',
+          '4o. the key does not name another address');
+  config.setOverride('mail.encryptionRequired', ['address-changed']);
+  try {
+    const plan = channel.encryptionPlan(spec, ALICE, 'someone@else.example',
+                                        true);
+    t.check(plan.kind === 'none' && !plan.refused,
+            '4p. to another address (a former or pending one) it is not ' +
+            'used, and the notice goes unencrypted even when required',
+            JSON.stringify(plan));
+  } finally {
+    config.clearOverride('mail.encryptionRequired');
+  }
+  const before = keys.view(ALICE);
+  t.check(before.key && before.wkd.published,
+          '4q. (she has a key, published)', JSON.stringify(before.wkd));
+  const moved = 'pgp-alice-new-' + RUN + '@' + DOMAIN;
+  const located = ldap.locateEntry(ALICE);
+  const view = { dn: located && located.stored && located.stored.dn };
+  const attrs = Object.assign({}, (located && located.stored &&
+    located.stored.attributes) || {});
+  Object.keys(attrs).forEach(function (k) {
+    if (k.toLowerCase() === 'mail') {
+      delete attrs[k];
+    }
+  });
+  attrs.mail = [moved];
+  const wrote = !!(ldap.writePerson(view.dn, attrs) || {}).ok;
+  t.check(wrote, '4r. her mail is changed in the directory');
+  t.equal(keys.encryptionFor(ALICE).kind, 'unbound',
+          '4s. at once, her key is not used for the new address');
+  await settle();
+  const after = keys.view(ALICE);
+  t.check(after.ok && after.mail === moved && !after.key &&
+          after.mailEncryption.choice === 'none',
+          '4t. the key whose user id names only the old address is retired, ' +
+          'and her choice with it', JSON.stringify([after.mail,
+            !!after.key, after.mailEncryption.choice]));
+  const routes = routesOf();
+  const local = moved.split('@')[0];
+  const r = await ask(routes['/.well-known/openpgpkey/:domain/hu/:hash'],
+                      { domain: DOMAIN, hash: stsCrypto.wkdHash(local) },
+                      { l: local });
+  t.equal(r.statusCode, 404, '4u. the Web Key Directory answers nothing ' +
+          'for the new address');
+  const old = await ask(routes['/.well-known/openpgpkey/:domain/hu/:hash'],
+                        { domain: DOMAIN, hash: stsCrypto.wkdHash(ALICE) },
+                        { l: ALICE });
+  t.equal(old.statusCode, 404, '4v. nor for the old one');
+  attrs.mail = [mailOf(ALICE)];
+  t.check(!!(ldap.writePerson(view.dn, attrs) || {}).ok,
+          '4w. (her address is put back for what follows)');
+  await settle();
+  log.debug("Leaving checkAddressChange().");
+}
+
 async function checkRetirer(t, made) {
   log.debug("Entering checkRetirer().");
   t.log.info('=== 5. the lost-key retirer ===');
@@ -542,6 +651,7 @@ async function run(t) {
     await checkPublication(t, made);
     await checkMail(t, made);
     await checkUnkept(t);
+    await checkAddressChange(t);
     await checkRetirer(t, made);
     await checkIsolation(t);
   } finally {

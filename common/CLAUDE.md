@@ -8222,12 +8222,17 @@ The realm's OpenSSH user CA is not an X.509 tier and is not signed by the
 service Root. It has its own classical key in the realm's sealed PKI row
 (the first classical name in `pki.sshUserCaAlgorithms`, or `ssh-ed25519`),
 and `pki_merge.js` merges the CA first-writer-wins and its issued serials by
-union. `ssh-mldsa-65` is a second member, `sshUserCaPqc`, published nowhere
-on `GET /pki/ssh-user-ca`: OpenSSH defines no post-quantum signature, so that
-line stays classical. `pki.sshUserCaPqcOnly` signs a new certificate with the
-ML-DSA authority when this runtime can generate it, and does not fail the
-request when it cannot (`STS-PKI-0290`). `pki.sshUserCaPqcAlongsideClassical`
-issues both certificates. The two switches refuse together (`STS-PKI-0296`).
+union. `ssh-mldsa-65` is a second member, `sshUserCaPqc`, kept off the
+default `GET /pki/ssh-user-ca` line: OpenSSH defines no post-quantum
+signature, so that line stays classical. Its own line is published at the
+same path with `?algorithm=ssh-mldsa-65` (404 `STS-PKI-0298` when the realm
+has none), never concatenated onto the classical one, so a server built to
+verify ML-DSA has a key to trust. `pki.sshUserCaPqcOnly` signs a new
+certificate with the ML-DSA authority alone and REFUSES (`STS-PKI-0297`)
+when there is none, the way `openpgp.pqcOnly` and `webauthn.pqcOnly` refuse:
+until 2026-11-23 it fell back to a classical certificate without a word.
+`pki.sshUserCaPqcAlongsideClassical` issues both certificates. The two
+switches refuse together (`STS-PKI-0296`).
 `ssh_user_ca.ts` issues only for a caller's UID or group CN, asks XACML once
 per requested principal, and records the token subject as owner of each
 serial. The Account API's issue operation requires recent authentication,
@@ -13024,6 +13029,20 @@ The file's header is the argument; what a maintainer needs beside it:
   (`mail_transports.ts` `composeEncrypted()`), never sent in the clear
   against either (STS-MAIL-0240..0243). The refusal is the uses' existing
   handling of an unsent message, so no use grew a second path.
+* **A key belongs to the addresses its user ids name** (2026-11-23):
+  `stsOpenPgpKeyInfo.addresses`, read back from `userIds` for a key stored
+  before. To the entry's `mail`, a key that does not name it is a choice
+  that cannot be kept (STS-MAIL-0241). To another address — `former` in
+  `mail.ts` `queueOne()`: the former address, a pending recovery address
+  or sign-in name — such a key is not used and the message goes
+  UNENCRYPTED, even under `mail.encryptionRequired`: refusing would make
+  an address change impossible to finish, and a message encrypted to a key
+  that address does not hold cannot be read there. A `mail` change is
+  observed in `ldap/ldap_server.js` `noteAccountChange()`, which calls
+  `addressChanged()`: a key that does not name the new address is RETIRED
+  (`removeKey()`, audited `openpgp.key-removed`, STS-OPENPGP-0030 when it
+  cannot be), and an S/MIME choice whose certificate does not name it goes
+  back to `none`.
 * **Tests**: `tests/openpgp_keys.js` (every key and certificate made at run
   time; S/MIME opened by `openssl cms`), `tests/openpgp_pqc.js`,
   `tests/smime_pqc.js`, `tests/protocol/sts_openpgp.js`.

@@ -13072,16 +13072,16 @@
     "text": "Algoritmer för SSH-användar-CA"
   },
   "pki.sshUserCaAlgorithms|description": {
-    "en": "bdb54445a0279b8d",
-    "text": "Vilka algoritmer SSH-användarcertifikatets CA får använda, i preferensordning. ssh-mldsa-65 är ML-DSA-65 (FIPS 204) under ett trådnamn som den här tjänsten definierar, eftersom OpenSSH inte definierar något: den publika nyckeln och signaturen är råa, i den form ssh-ed25519 använder. OpenSSH-raden TrustedUserCAKeys som den här tjänsten publicerar förblir den första klassiska algoritmen i listan, eller ssh-ed25519 när listan bara nämner ssh-mldsa-65. En part som inte förstår ML-DSA fortsätter att lita på den raden. ssh-rsa (SHA-1) erbjuds inte. ML-DSA-auktoriteten skapas bara när den här körningen kan generera nyckeln; annars förblir certifikaten klassiska (STS-PKI-0290 registreras och den klassiska auktoriteten svarar fortfarande)."
+    "en": "5c4c22c2ab500fd4",
+    "text": "Vilka algoritmer certifikatutfärdaren för SSH-användare får använda, i prioritetsordning. ssh-mldsa-65 är ML-DSA-65 (FIPS 204) under ett överföringsnamn som den här tjänsten definierar, eftersom OpenSSH inte definierar något: den publika nyckeln och signaturen är råa, i den form ssh-ed25519 använder. Den OpenSSH-rad för TrustedUserCAKeys som tjänsten publicerar förblir den första klassiska algoritmen i listan, eller ssh-ed25519 när listan bara nämner ssh-mldsa-65. En motpart som inte förstår ML-DSA fortsätter att lita på den raden. ML-DSA-utfärdarens nyckel publiceras på GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65; standard-OpenSSH kan ännu inte verifiera ett ML-DSA-certifikat. ssh-rsa (SHA-1) erbjuds inte. ML-DSA-utfärdaren skapas bara när den här körmiljön kan generera nyckeln; annars förblir certifikaten klassiska (STS-PKI-0290 registreras och den klassiska utfärdaren svarar fortfarande), om inte pki.sshUserCaPqcOnly är på."
   },
   "pki.sshUserCaPqcOnly|label": {
     "en": "74aae1308361ba58",
     "text": "SSH-användarcertifikat är endast postkvantum"
   },
   "pki.sshUserCaPqcOnly|description": {
-    "en": "39b21e5b95f84da1",
-    "text": "På innebär att ett nytt SSH-användarcertifikat signeras av ML-DSA-auktoriteten, och bara när den auktoriteten finns. Den publicerade TrustedUserCAKeys-raden förblir den klassiska nyckeln, så att en OpenSSH-klient som redan litar på den inte får en algoritm den inte kan tolka. På en körning som inte kan generera ML-DSA förblir certifikatet klassiskt och begäran misslyckas inte. Redan utfärdade klassiska certifikat verifieras fortfarande. Kan inte vara på samtidigt som pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Av som standard."
+    "en": "dcbf21b3230dcf07",
+    "text": "När den är på signeras ett nytt SSH-användarcertifikat av ML-DSA-utfärdaren och av inget annat. Standard-OpenSSH kan ännu inte verifiera ett ML-DSA-certifikat, så bara en SSH-server byggd för att verifiera ssh-mldsa-65, som litar på nyckeln på GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65, godtar dessa certifikat. Standardraden på den sökvägen förblir den klassiska nyckeln. När sfären saknar ML-DSA-utfärdare (körmiljön kan inte generera ML-DSA, eller ssh-mldsa-65 finns inte i pki.sshUserCaAlgorithms) avvisas begäran (STS-PKI-0297) i stället för att besvaras med ett klassiskt certifikat. Redan utfärdade klassiska certifikat fortsätter att verifieras. Kan inte vara på samtidigt som pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Av som standard."
   },
   "pki.sshUserCaPqcAlongsideClassical|label": {
     "en": "c3201f8841200c32",

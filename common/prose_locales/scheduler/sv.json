@@ -36,8 +36,8 @@
     "text": "Utgång av AuthZEN-åtkomstbegäranden"
   },
   "sched.jobs.authzen.access-requests.describe": {
-    "en": "f219a842a3345525",
-    "text": "Flyttar varje väntande AuthZEN-åtkomstbegäran (#1180) som passerat sin expires_at till expired — skriver dess granskningsrad och skickar dess callback — tar bort en avslutad en dag efter att den avslutades, eller när dess godkännande löpt ut om det är senare, och försöker igen med en callback-leverans som misslyckades med ett nätverksfel eller ett HTTP 5xx, upp till försöksgränsen (#1202). En läsning tillämpar själv tidsgränsen, så det här är registret och städningen, aldrig det som avgör."
+    "en": "fae6b34a12fb0695",
+    "text": "Flyttar varje väntande AuthZEN-åtkomstbegäran (#1180) som passerat sin expires_at till expired — skriver dess granskningsrad och skickar dess callback — tar bort en avslutad en dag efter att den avslutades, eller när dess godkännande löpt ut om det är senare, tar bort ett begärbart nekande en dag efter dess fönster, och försöker igen med en callback-leverans som misslyckades med ett nätverksfel eller ett HTTP 5xx, upp till försöksgränsen (#1202). En läsning tillämpar själv tidsgränsen, så det här är registret och städningen, aldrig det som avgör."
   },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",
@@ -654,6 +654,14 @@
   "sched.jobs.ssf.stream-maintenance.describe": {
     "en": "bd4794eda9c5d2d2",
     "text": "Pausar, inaktiverar eller tar bort en ström vars mottagare har varit inaktiv i ssf.inactivityTimeoutS (SSF 1.0 avsnitt 8.1.1), och meddelar en paus eller inaktivering med en stream-updated-händelse först, och skickar en verifieringshändelse till varje aktiverad ström som inte har fått någon från den här sändaren på ssf.verificationEveryS (avsnitt 8.1.4)."
+  },
+  "sched.jobs.ssh-user-ca.krl.title": {
+    "en": "9694f71884ac8e1b",
+    "text": "Återkallelselista för SSH-användar-CA"
+  },
+  "sched.jobs.ssh-user-ca.krl.describe": {
+    "en": "c84b42d3aab3bdde",
+    "text": "Uppdaterar varje sfärs KRL för OpenSSH-användar-CA:n efter återkallelser av utfärdade certifikat och tar bort utgångna återkallelser."
   },
   "sched.jobs.tls.ticket-key-rotate.title": {
     "en": "8bb62416b0f1932c",

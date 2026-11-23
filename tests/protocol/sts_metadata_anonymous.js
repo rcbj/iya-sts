@@ -1199,6 +1199,25 @@ const CONTROLS = [
 // read, and it is in DOCUMENTS.
 // ---------------------------------------------------------------------------
 const NO_PUBLIC_METADATA = {
+  // #1955 P6: NOT IN DOCUMENTS for UMA's reason. The Web Key Directory is
+  // off by default (`openpgp.wkd`), answered only for a domain a realm's
+  // `openpgp.wkdDomains` names, and holds a key only for a person who chose
+  // to publish one, so the stack this job meets has nothing there to fetch.
+  // `tests/protocol/sts_openpgp.js` turns it on in a realm of its own and
+  // reads the policy file and a published key.
+  "OpenPGP":
+    "off by default (openpgp.wkd): the Web Key Directory, the one thing a " +
+    "stranger reads, answers only once a realm turns it on and names its " +
+    "domain, and holds only the keys people chose to publish; " +
+    "sts_openpgp.js reads it in a realm where it is on.",
+  // #1955 P5. YK-VAL 2.0 is a verify call with an HMAC under a client key;
+  // the protocol defines no document a client reads first.
+  "Yubico OTP":
+    "neither the YubiKey OTP format nor the Validation Protocol 2.0 defines " +
+    "a discovery document. A validation client is configured with the " +
+    "server's URL and its own id and HMAC key; GET /wsapi/2.0/verify " +
+    "answers OPERATION_NOT_ALLOWED until yubiotp.ykval is on, and needs " +
+    "that key when it is.",
   // NOT IN DOCUMENTS because the stack this job meets has it off:
   // uma.enabled defaults to false, and while it is off the discovery
   // document answers 501 like the rest of the family (uma/uma.ts). Its

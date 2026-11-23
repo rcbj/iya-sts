@@ -95,6 +95,10 @@
     "en": "4b0c4feb0af59f04",
     "text": "تقديم طلب وصول"
   },
+  "endpoints.route./access/v1/access-requests/schema.name": {
+    "en": "e39be1976aa651db",
+    "text": "مخطط تقديم طلب الوصول"
+  },
   "endpoints.route./access/v1/access-requests/:id.name": {
     "en": "c8bcbb33d07cfb8f",
     "text": "حالة مهمة طلب وصول"
@@ -290,6 +294,14 @@
   "endpoints.route./pki/revocation.name": {
     "en": "f399711ce1261bf4",
     "text": "كل CRL وكل مستجيب OCSP تنشرهما هذه الخدمة"
+  },
+  "endpoints.route./pki/ssh-user-ca/:scope.name": {
+    "en": "a3f367e6aa3bd539",
+    "text": "المفتاح العام لمرجع شهادات مستخدمي OpenSSH في نطاق الثقة"
+  },
+  "endpoints.route./pki/ssh-user-krl/:scope.name": {
+    "en": "a6ecaa76d097f280",
+    "text": "قائمة إلغاء مفاتيح مستخدمي OpenSSH في نطاق الثقة"
   },
   "endpoints.route./admin-api/xacml.name": {
     "en": "d3b1d402a612012c",
@@ -1264,8 +1276,12 @@
     "text": "رموز OATH المستوردة"
   },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-"en": "33209f967f070175",
-"text": "إجراءات الرموز العتادية"
+    "en": "33209f967f070175",
+    "text": "إجراءات الرموز العتادية"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "مفاتيح PIV المودَعة"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
@@ -1911,11 +1927,11 @@
     "en": "69876d051e66729c",
     "text": "خطوة نشاط ما بعد تسجيل الدخول"
   },
-"endpoints.route./wsapi/2.0/verify.name": {
+  "endpoints.route./wsapi/2.0/verify.name": {
     "en": "0734c12f6e3eb870",
     "text": "تحقق YK-VAL 2.0"
   },
-"endpoints.route./authn/roles.name": {
+  "endpoints.route./authn/roles.name": {
     "en": "d10487ebcbc8b238",
     "text": "خطوة الأدوار الديناميكية"
   },
@@ -2630,9 +2646,5 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (شهادة عميل تُطلب ولا تُشترط أبدًا)"
-  },
-  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
-    "en": "f46d01f7581b5379",
-    "text": "مفاتيح PIV المودَعة"
   }
 }

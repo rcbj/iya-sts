@@ -13072,16 +13072,16 @@
     "text": "Algorithmen der SSH-Benutzer-CA"
   },
   "pki.sshUserCaAlgorithms|description": {
-    "en": "bdb54445a0279b8d",
-    "text": "Welche Algorithmen die Zertifizierungsstelle für SSH-Benutzerzertifikate verwenden darf, in der Reihenfolge der Bevorzugung. ssh-mldsa-65 ist ML-DSA-65 (FIPS 204) unter einem Leitungsnamen, den dieser Dienst definiert, weil OpenSSH keinen definiert: der öffentliche Schlüssel und die Signatur sind roh, in der Form, die ssh-ed25519 verwendet. Die OpenSSH-Zeile TrustedUserCAKeys, die dieser Dienst veröffentlicht, bleibt der erste klassische Algorithmus dieser Liste, oder ssh-ed25519, wenn die Liste nur ssh-mldsa-65 nennt. Ein Partner, der ML-DSA nicht versteht, vertraut dieser Zeile weiter. ssh-rsa (SHA-1) wird nicht angeboten. Die ML-DSA-Stelle wird nur angelegt, wenn diese Laufzeit den Schlüssel erzeugen kann; sonst bleiben die Zertifikate klassisch (STS-PKI-0290 wird aufgezeichnet und die klassische Stelle antwortet weiter)."
+    "en": "5c4c22c2ab500fd4",
+    "text": "Welche Algorithmen die SSH-Benutzerzertifizierungsstelle in der Reihenfolge der Präferenz verwenden darf. ssh-mldsa-65 ist ML-DSA-65 (FIPS 204) unter einem Übertragungsnamen, den dieser Dienst festlegt, weil OpenSSH keinen festlegt: Öffentlicher Schlüssel und Signatur sind roh, in der Form, die ssh-ed25519 verwendet. Die OpenSSH-Zeile TrustedUserCAKeys, die dieser Dienst veröffentlicht, bleibt der erste klassische Algorithmus dieser Liste, oder ssh-ed25519, wenn die Liste nur ssh-mldsa-65 nennt. Eine Gegenstelle, die ML-DSA nicht versteht, vertraut weiter dieser Zeile. Der Schlüssel der ML-DSA-Stelle wird unter GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65 veröffentlicht; Standard-OpenSSH kann ein ML-DSA-Zertifikat noch nicht prüfen. ssh-rsa (SHA-1) wird nicht angeboten. Die ML-DSA-Stelle wird nur erzeugt, wenn diese Laufzeitumgebung den Schlüssel erzeugen kann; andernfalls bleiben Zertifikate klassisch (STS-PKI-0290 wird protokolliert und die klassische Stelle antwortet weiter), außer wenn pki.sshUserCaPqcOnly eingeschaltet ist."
   },
   "pki.sshUserCaPqcOnly|label": {
     "en": "74aae1308361ba58",
     "text": "SSH-Benutzerzertifikate sind nur Post-Quanten"
   },
   "pki.sshUserCaPqcOnly|description": {
-    "en": "39b21e5b95f84da1",
-    "text": "Ein signiert ein neues SSH-Benutzerzertifikat durch die ML-DSA-Stelle, und nur wenn diese Stelle existiert. Die veröffentlichte TrustedUserCAKeys-Zeile bleibt der klassische Schlüssel, damit ein OpenSSH-Client, der ihr schon vertraut, keinen Algorithmus erhält, den er nicht lesen kann. Auf einer Laufzeit, die ML-DSA nicht erzeugen kann, bleibt das Zertifikat klassisch und die Anfrage schlägt nicht fehl. Bereits ausgestellte klassische Zertifikate werden weiter geprüft. Kann nicht an sein, während pki.sshUserCaPqcAlongsideClassical an ist (STS-PKI-0296). Standardmäßig aus."
+    "en": "dcbf21b3230dcf07",
+    "text": "Wenn eingeschaltet, wird ein neues SSH-Benutzerzertifikat von der ML-DSA-Stelle und von nichts anderem signiert. Standard-OpenSSH kann ein ML-DSA-Zertifikat noch nicht prüfen; nur ein SSH-Server, der ssh-mldsa-65 prüfen kann und dem Schlüssel unter GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65 vertraut, akzeptiert diese Zertifikate. Die Standardzeile unter diesem Pfad bleibt der klassische Schlüssel. Hat der Realm keine ML-DSA-Stelle (diese Laufzeitumgebung kann ML-DSA nicht erzeugen, oder ssh-mldsa-65 steht nicht in pki.sshUserCaAlgorithms), wird die Anfrage abgelehnt (STS-PKI-0297), statt mit einem klassischen Zertifikat beantwortet zu werden. Bereits ausgestellte klassische Zertifikate bleiben prüfbar. Kann nicht eingeschaltet sein, während pki.sshUserCaPqcAlongsideClassical eingeschaltet ist (STS-PKI-0296). Standardmäßig aus."
   },
   "pki.sshUserCaPqcAlongsideClassical|label": {
     "en": "c3201f8841200c32",

@@ -8787,6 +8787,10 @@ class Credentials {
       mfaKeys: mechanisms.mfaKeys || 0,
       totp: !!mechanisms.totp,
       totpUsable: !!mechanisms.totpUsable,
+      // `interpretValues()`'s two #1955 facts (P4, P5), in its order, so
+      // the census answers the same members by either door.
+      hotp: !!mechanisms.hotp,
+      yubi: !!mechanisms.yubi,
       mfaRequired: !!mechanisms.mfaRequired,
       secondFactor: mechanisms.secondFactor || '',
       usable: !!mechanisms.usable

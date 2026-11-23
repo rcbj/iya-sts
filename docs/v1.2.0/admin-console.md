@@ -829,8 +829,9 @@ each of the kind's fields that the save refuses without; the note above the
 form names them. A field whose
 value is kept when it is left out (a password policy's hash costs, some of the
 passkey policy's) is optional, and so are the precedence (100 when empty) and
-the description. A checkbox is never marked: unticked means *no*. A refused
-save keeps every box as you typed it; a save lands you on the kind's *Named
+the description. A yes or no is two choices, and No is checked when the
+answer is no, so it is not marked required. A refused save keeps every box
+as you typed it; a save lands you on the kind's *Named
 policies*. `GET /admin-api/policies/new?kind=<kind>` answers the same fields,
 each with `required`.
 

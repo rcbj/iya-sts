@@ -360,8 +360,8 @@
     "text": "本領域中每個實體硬體權杖（YubiKey、智慧卡）一列，依廠商與序號索引：誰持有、型號及其上的憑證。序號只依證明記錄。從不包含機密。"
   },
   "caches.store.hardware_tokens.register.bound": {
-    "en": "260467c777c74957",
-    "text": "處理程序持有的列是每個領域 5,000 筆的快取；登錄冊本身受其列出的憑證限制（FIDO 為 webauthn.maxKeysPerPerson）。"
+    "en": "b2eadcf654a8cb28",
+    "text": "強制：程序持有的資料列是每個領域 5,000 筆的快取，最舊的會被捨棄，下次請求時再從儲存區讀取；登記冊本身受其列出的憑證限制（FIDO 為 webauthn.maxKeysPerPerson）。"
   },
   "caches.store.hardware_tokens.register.lifetime": {
     "en": "c18bfda6fa452b2b",
@@ -728,8 +728,8 @@
     "text": "管理員從供應商的 PSKC 種子檔案（RFC 6030）匯入的每把 HOTP 或 TOTP 金鑰各佔一列，依供應商、序號與金鑰 id 索引：未指派（其密鑰已密封）、已指派給某人（密鑰已移除，現位於其項目上）或已停用。"
   },
   "caches.store.oath_tokens.inventory.bound": {
-    "en": "cbe61377f99c025d",
-    "text": "程序持有的資料列是每個領域 5,000 筆的快取；清冊的大小受管理員匯入量限制，每個檔案最多 2,000 把金鑰。"
+    "en": "c93f702fb2bd8e60",
+    "text": "強制：程序持有的資料列是每個領域 5,000 筆的快取，最舊的會被捨棄，下次請求時再從儲存區讀取；清單受管理員匯入的內容限制，每個檔案最多 2,000 個金鑰。"
   },
   "caches.store.oath_tokens.inventory.lifetime": {
     "en": "4f13467dac65d62f",
@@ -1148,8 +1148,8 @@
     "text": "每位正在註冊 OpenPGP 金鑰的人一個挑戰：其以 gpg --clearsign 簽署的文字、其隨機數（nonce）以及失效時間。只能使用一次，透過對該隨機數的叢集宣告來達成。"
   },
   "caches.store.openpgp.challenges.bound": {
-    "en": "70f8ecd02c4392d1",
-    "text": "每人一個（以 entryUUID 為鍵），每個的有效期為 openpgp.challengeLifetimeS。"
+    "en": "bcb019b421b3e33e",
+    "text": "強制：程序持有的挑戰是每個領域 5,000 個的快取，最舊的會被捨棄，下次請求時再從儲存區讀取；儲存區為每人保存一個（以 entryUUID 為鍵），每個持續 openpgp.challengeLifetimeS。"
   },
   "caches.store.openpgp.wkd.title": {
     "en": "dc47d455d5283de5",
@@ -1160,8 +1160,8 @@
     "text": "Web 金鑰目錄針對每個雜湊地址回應哪一把 OpenPGP 金鑰：持有者（一個 entryUUID）及其發布的指紋。這只是一個指標：金鑰本身從項目中讀取。絕非機密。"
   },
   "caches.store.openpgp.wkd.bound": {
-    "en": "e8a7abbcc8bba7fc",
-    "text": "處理程序持有的資料列是每個領域 5,000 筆的快取；登記冊中每位已選擇發布者一列。"
+    "en": "67c6603e0b96fd95",
+    "text": "強制：程序持有的資料列是每個領域 5,000 筆的快取，最舊的會被捨棄，下次請求時再從儲存區讀取；登記冊為每位選擇加入的人保存一列。"
   },
   "caches.store.openpgp.wkd.lifetime": {
     "en": "06861887c7e6c8f1",
@@ -1692,8 +1692,8 @@
     "text": "管理員從 CSV 匯入的每個 YubiKey OTP 各佔一列，依序號索引：未指派（其 AES 金鑰已密封）、已指派給某人（密鑰已移除，現位於其項目上）或已停用。"
   },
   "caches.store.yubiotp.inventory.bound": {
-    "en": "9f558f556a019acc",
-    "text": "程序持有的資料列是每個領域 5,000 筆的快取。"
+    "en": "1b2409611ca2ae53",
+    "text": "強制：程序持有的資料列是每個領域 5,000 筆的快取，最舊的會被捨棄，下次請求時再從儲存區讀取。"
   },
   "caches.store.yubiotp.inventory.lifetime": {
     "en": "4f13467dac65d62f",

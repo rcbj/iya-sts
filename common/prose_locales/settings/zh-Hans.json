@@ -13072,16 +13072,16 @@
     "text": "SSH 用户 CA 算法"
   },
   "pki.sshUserCaAlgorithms|description": {
-    "en": "bdb54445a0279b8d",
-    "text": "SSH 用户证书机构可以使用的算法，按优先顺序。ssh-mldsa-65 是本服务定义的线路名称下的 ML-DSA-65（FIPS 204），因为 OpenSSH 没有定义：公钥和签名是原始字节，形状与 ssh-ed25519 相同。本服务发布的 OpenSSH TrustedUserCAKeys 行仍是此列表中的第一个经典算法，若列表只点名 ssh-mldsa-65 则为 ssh-ed25519。不理解 ML-DSA 的对端继续信任那一行。不提供 ssh-rsa（SHA-1）。只有本运行时能够生成该密钥时才创建 ML-DSA 机构；否则证书保持经典（记录 STS-PKI-0290，经典机构仍然应答）。"
+    "en": "5c4c22c2ab500fd4",
+    "text": "SSH 用户证书颁发机构可以使用的算法，按优先顺序排列。ssh-mldsa-65 是 ML-DSA-65（FIPS 204），使用本服务定义的线路名称，因为 OpenSSH 没有定义：公钥和签名都是原始格式，形式与 ssh-ed25519 相同。本服务发布的 OpenSSH TrustedUserCAKeys 行始终是此列表中的第一个经典算法；若列表只列出 ssh-mldsa-65，则为 ssh-ed25519。不理解 ML-DSA 的对端继续信任该行。ML-DSA 颁发机构的密钥发布在 GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65；标准 OpenSSH 目前还无法验证 ML-DSA 证书。不提供 ssh-rsa（SHA-1）。只有在此运行环境能够生成该密钥时才会创建 ML-DSA 颁发机构；否则证书保持经典算法（记录 STS-PKI-0290，经典颁发机构仍然应答），除非 pki.sshUserCaPqcOnly 已开启。"
   },
   "pki.sshUserCaPqcOnly|label": {
     "en": "74aae1308361ba58",
     "text": "SSH 用户证书仅使用后量子算法"
   },
   "pki.sshUserCaPqcOnly|description": {
-    "en": "39b21e5b95f84da1",
-    "text": "开启后，新的 SSH 用户证书由 ML-DSA 机构签名，并且仅当该机构存在时。发布的 TrustedUserCAKeys 行仍是经典密钥，因此已经信任它的 OpenSSH 客户端不会收到它无法解析的算法。在不能生成 ML-DSA 的运行时上，证书保持经典，请求不会失败。已经签发的经典证书继续验证。不能与 pki.sshUserCaPqcAlongsideClassical 同时开启（STS-PKI-0296）。默认关闭。"
+    "en": "dcbf21b3230dcf07",
+    "text": "开启后，新的 SSH 用户证书只由 ML-DSA 颁发机构签名，不使用其他任何机构。标准 OpenSSH 目前还无法验证 ML-DSA 证书，因此只有能够验证 ssh-mldsa-65 并信任 GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65 上密钥的 SSH 服务器才会接受这些证书。该路径上的默认行仍是经典密钥。如果领域没有 ML-DSA 颁发机构（此运行环境无法生成 ML-DSA，或 ssh-mldsa-65 不在 pki.sshUserCaAlgorithms 中），请求会被拒绝（STS-PKI-0297），而不是返回一张经典证书。已签发的经典证书仍可验证。不能与 pki.sshUserCaPqcAlongsideClassical 同时开启（STS-PKI-0296）。默认关闭。"
   },
   "pki.sshUserCaPqcAlongsideClassical|label": {
     "en": "c3201f8841200c32",

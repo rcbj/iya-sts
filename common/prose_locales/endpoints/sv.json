@@ -95,6 +95,10 @@
     "en": "4b0c4feb0af59f04",
     "text": "Skicka in en åtkomstbegäran"
   },
+  "endpoints.route./access/v1/access-requests/schema.name": {
+    "en": "e39be1976aa651db",
+    "text": "En åtkomstbegärans inskickningsschema"
+  },
   "endpoints.route./access/v1/access-requests/:id.name": {
     "en": "c8bcbb33d07cfb8f",
     "text": "En åtkomstbegärans uppgiftsstatus"
@@ -290,6 +294,14 @@
   "endpoints.route./pki/revocation.name": {
     "en": "f399711ce1261bf4",
     "text": "Varje CRL och OCSP-responder som den här tjänsten publicerar"
+  },
+  "endpoints.route./pki/ssh-user-ca/:scope.name": {
+    "en": "a3f367e6aa3bd539",
+    "text": "Sfärens publika nyckel för OpenSSH-användar-CA:n"
+  },
+  "endpoints.route./pki/ssh-user-krl/:scope.name": {
+    "en": "a6ecaa76d097f280",
+    "text": "Sfärens återkallelselista för OpenSSH-användarnycklar"
   },
   "endpoints.route./admin-api/xacml.name": {
     "en": "d3b1d402a612012c",
@@ -1264,8 +1276,12 @@
     "text": "Importerade OATH-tokens"
   },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-"en": "33209f967f070175",
-"text": "Åtgärder för maskinvarutokens"
+    "en": "33209f967f070175",
+    "text": "Åtgärder för maskinvarutokens"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "Deponerade PIV-nycklar"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
@@ -1911,11 +1927,11 @@
     "en": "69876d051e66729c",
     "text": "Steg för aktivitet efter inloggning"
   },
-"endpoints.route./wsapi/2.0/verify.name": {
+  "endpoints.route./wsapi/2.0/verify.name": {
     "en": "0734c12f6e3eb870",
     "text": "YK-VAL 2.0-verifiering"
   },
-"endpoints.route./authn/roles.name": {
+  "endpoints.route./authn/roles.name": {
     "en": "d10487ebcbc8b238",
     "text": "Steg för dynamiska roller"
   },
@@ -2630,9 +2646,5 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (ett klientcertifikat begärs, krävs aldrig)"
-  },
-  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
-    "en": "f46d01f7581b5379",
-    "text": "Deponerade PIV-nycklar"
   }
 }

@@ -96,5 +96,7 @@
   "grid.required": " &middot; krävs",
   "create.requiredFields": "Krävs: {list}. Vart och ett är rödmarkerat och har *; alla andra fält är valfria.",
   "create.nothingRequired": "Inget i det här formuläret krävs.",
-  "create.requiredWhen": " &middot; krävs när {field} är {values}"
+  "create.requiredWhen": " &middot; krävs när {field} är {values}",
+  "create.yes": "ja",
+  "create.no": "nej"
 }
