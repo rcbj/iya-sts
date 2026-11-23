@@ -2220,12 +2220,12 @@
     "text": "NON-SPEC (#1955 P4). De HOTP- och TOTP-tokens som administratörer importerat från leverantörers PSKC-fröfiler, ej tilldelade, tilldelade eller avvecklade, sidindelade och sökbara på serienummer eller person. Aldrig en hemlighet. Speglar GET /admin/hardware-tokens (dess OATH-flik)."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-"en": "0d649147af0cbe04",
-"text": "NON-SPEC (#1955). lost, med { key }: token markeras som förlorad, varje nyckel på den tas bort, varje certifikat på den återkallas för keyCompromise, en CAEP credential-change skickas för var och en och de sessioner de loggade in avslutas. enrol-piv, med { username, profile, csr, attestationCertificate?, attestationIssuer? }: ett PIV-platscertifikat utfärdat till den personen via EST:s utfärdande CA, med dess YubiKey-PIV-attestering verifierad och YubiKey registrerad. recover-key, med { username, serial }: den personens deponerade piv-key-management-nyckel, som åtkomstkontrollpolicyn bara tillåter för PIV_KEY_RECOVERY. Konsolens tre åtgärder på den sidan."
+"en": "cdbf34a1fbdf290e",
+"text": "NON-SPEC (#1955). lost, med { key }: token markeras som förlorad, varje passkey på den tas bort, varje certifikat på den återkallas för keyCompromise, en CAEP credential-change skickas för var och en och de sessioner de loggade in avslutas. enrol-piv, med { username, profile, csr, attestationCertificate?, attestationIssuer? }: ett PIV-platscertifikat utfärdat till den personen över EST:s utfärdande CA, dess YubiKey-PIV-attestering verifierad och YubiKey registrerad. recover-key, med { username, serial }: den personens deponerade piv-key-management-nyckel, som åtkomstpolicyn endast tillåter PIV_KEY_RECOVERY, efter en nylig inloggning. revoke-ssh, med { username, serial }: den personens SSH-användarcertifikat återkallat och lagt på sfärens KRL. Konsolens fyra åtgärder på den sidan."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "b55c0cdd477d183e",
-"text": "anmäler en maskinvarutoken som förlorad och drar tillbaka dess inloggningsuppgifter, utfärdar ett PIV-platscertifikat eller lämnar över en deponerad nyckel"
+    "en": "f5b724d2c79b5f74",
+"text": "anmäler en hårdvarutoken som förlorad och drar tillbaka dess autentiseringsuppgifter, utfärdar ett PIV-platscertifikat, lämnar ut en deponerad nyckel eller återkallar en persons SSH-certifikat"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -4202,5 +4202,17 @@
   "stsmetadata.specs.rfc9980.coverage": {
     "en": "5feb46765c8bc465",
     "text": "partial: signaturer ML-DSA-65+Ed25519 och ML-DSA-87+Ed448, och kryptering ML-KEM-768+X25519 och ML-KEM-1024+X448, vid registrering och när en lagrad nyckel används. En komposit räknas som postkvant. openpgp.pqcOnly begränsar bara registreringen. Båda halvorna av en signatur verifieras av common/crypto_impl/openpgp_pqc.js. Saknas: SLH-DSA (algoritm-id 32-34), och den här tjänsten genererar ingen RFC 9980-nyckel. openpgp.js tolkar inte dessa nycklar."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "e83d747632c38b14",
+    "text": "NON-SPEC (#1955 P3): sfärens egen OpenSSH-användar-CA-nyckel, publicerad som en authorized-key-rad som SSH-servrar litar på. Utan grind och `no-store`, endast på huvudporten: den okrypterade HTTP-lyssnaren för återkallelse avvisar den, eftersom nyckeln är ett förtroendeankare. Motsvarande privata CA-nyckel lämnar aldrig denna tjänst."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "2e4cdead67408937",
+    "text": "NON-SPEC (#1955 P3): sfärens egen OpenSSH-KRL, uppdaterad när en anropare återkallar ett certifikat eller anmäler en hårdvarutoken som förlorad. Utan grind och `no-store`, endast på huvudporten: KRL:en är inte signerad, så den okrypterade HTTP-lyssnaren för återkallelse avvisar den. SSH-servrar måste konfigureras att läsa den, eftersom denna tjänst inte kan tvinga en förlitande part att göra det."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/ssh-certificates.what": {
+    "en": "84ce6fea3694d4c0",
+    "text": "NON-SPEC (granskningen av #1955). De OpenSSH-användarcertifikat som utfärdats till en person och inte gått ut, återkallade markerade: serienummer, nyckeltyp och fingeravtryck, principaler, giltighet och om ett hårdvarubevis täckte nyckeln. Aldrig en nyckel. Speglar GET /admin/hardware-tokens (dess flik SSH-certifikat)."
   }
 }

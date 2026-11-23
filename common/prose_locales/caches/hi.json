@@ -1786,5 +1786,21 @@
   "caches.remaining.disowned": {
     "en": "0e9453a606f40a73",
     "text": "बासी: क्रेडेंशियल को त्याग दिया गया"
+  },
+  "caches.store.ssh_user_ca.issued.title": {
+    "en": "d075b5ec478b0ed7",
+    "text": "जारी किए गए SSH उपयोगकर्ता प्रमाणपत्र"
+  },
+  "caches.store.ssh_user_ca.issued.description": {
+    "en": "75dbc5d0d0bd9054",
+    "text": "इस रीयल्म के SSH उपयोगकर्ता CA द्वारा जारी हर OpenSSH उपयोगकर्ता प्रमाणपत्र की एक पंक्ति, सीरियल के अनुसार: वह किसका है (urn:uuid), कुंजी का फ़िंगरप्रिंट, उसके प्रिंसिपल, उसकी अवधि और क्या वह रद्द किया गया। कभी कोई कुंजी नहीं।"
+  },
+  "caches.store.ssh_user_ca.issued.bound": {
+    "en": "36fc38da0e0699e8",
+    "text": "एक प्रक्रिया जो पंक्तियाँ रखती है वे प्रति रीयल्म 5,000 का कैश हैं; प्रमाणपत्र की समाप्ति पर पंक्ति स्टोर से निकल जाती है।"
+  },
+  "caches.store.ssh_user_ca.issued.lifetime": {
+    "en": "fdcbaa82a4ac533d",
+    "text": "प्रमाणपत्र की समाप्ति तक।"
   }
 }

@@ -367,7 +367,13 @@ const GLOBAL_MINTED = {
   // A YK-VAL nonce is chosen by the client and is valid at every cell that
   // answers the endpoint. A replay set per cell would accept it once per
   // cell. A row is a client id and a nonce — the OTP is not stored.
-  'yubiotp.nonces': 'YK-VAL nonces already accepted'
+  'yubiotp.nonces': 'YK-VAL nonces already accepted',
+  // THE SSH CERTIFICATES A REALM ISSUED (the #1955 review; they were on the
+  // global PKI row until then): one KRL per realm, published by every cell,
+  // so a certificate issued in one cell and revoked in another must be on
+  // every cell's KRL. A row is a serial, a key fingerprint, two times and
+  // the owner's urn:uuid subject — what the PKI row held, globally.
+  'ssh_user_ca.issued': 'the SSH user certificates a realm issued'
 };
 
 // Cell-tier: minted here, or somebody's. Listed rather than defaulted — see

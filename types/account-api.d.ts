@@ -90,6 +90,11 @@ export interface AccountOperationRow {
   // spends a single-use secret it carries (an activation or reset link);
   // `public`: nobody, nothing spent (the forgot-password form, the index).
   access: 'person' | 'link' | 'public';
+  // A scope a token may carry INSTEAD of `account:manage` for this one
+  // operation (the #1955 review: `ssh:certificate`, for an SSH command
+  // line on the device grant). Each is protected and declared like
+  // `account:manage`; a token holding only one is refused everywhere else.
+  scopes?: string[];
   // The portal page or form this operation is the door of — rule 7's twin:
   // `GET /portal/keys`, `POST /portal/keys`. The runtime sends a form to the
   // operation that mirrors it.

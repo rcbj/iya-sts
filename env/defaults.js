@@ -687,6 +687,10 @@ var config = {
     sshUserCaAlgorithms: "ssh-mldsa-65,ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,rsa-sha2-256,rsa-sha2-512", // SSH user CA algorithms
     sshUserCaPqcOnly: false,                                                                                                               // SSH user certificates are post-quantum only
     sshUserCaPqcAlongsideClassical: false,                                                                                                 // SSH user certificates carry a post-quantum certificate too
+    sshSoftwareLifetimeSeconds: 300,                                                                                                       // Longest SSH user certificate without hardware evidence (s)
+    sshHardwareLifetimeSeconds: 3600,                                                                                                      // Longest SSH user certificate with hardware evidence (s)
+    sshUserCertificateExtensions: "permit-X11-forwarding,permit-agent-forwarding,permit-port-forwarding,permit-pty,permit-user-rc",        // Extensions an SSH user certificate carries
+    sshGroupPrincipals: "",                                                                                                                // Groups whose names may be SSH principals
     organisation: "iya-sts",                                                                                                               // Default organisation name (O=)
     personSelfService: true,                                                                                                               // Let a person issue their own signing key pair
     leafLifetimeDays: 365,                                                                                                                 // Default lifetime of an issued key pair (days)

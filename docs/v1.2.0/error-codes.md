@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5981** of them, in **57** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5981** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -89,6 +89,7 @@ is an ordinary outcome.
 * [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 36
 * [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 32
 * [PIV key attestation (`STS-PIV`)](#sts-piv) — 28
+* [OpenSSH user certificates (`STS-SSHCA`)](#sts-sshca) — 5
 * [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 28
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 252
@@ -5111,6 +5112,20 @@ Raised from: common/piv_attestation.ts, common/cert_enrollment.ts, common/piv_en
 | `STS-PIV-0035` | A card UUID written to stsPivCardUuid is already held by another entry of the realm, which would make the card name two people; nothing was written (#1955, D8). | HTTP 400 (the directory write); LDAP constraintViolation |
 | `STS-PIV-0036` | A PIV attestation's subject names no slot, and the profile asked is a PIV slot profile or one that signs in (tls-client, tls-server-client, smartcard-logon), for which the slot is the point of the check (#1955). | HTTP 400 |
 | `STS-PIV-0037` | A PIV attestation of slot 9e, the Card Authentication key that works without a PIN, was offered for a profile other than piv-card-auth (#1955). | HTTP 400 |
+
+## STS-SSHCA
+
+**OpenSSH user certificates.** The realm's OpenSSH user certificate authority (#1955 P3): which principals a person may ask for, the security-key attestation that earns the longer lifetime, the register of issued certificates, and where the CA key and the KRL are served.
+
+Raised from: common/ssh_user_ca.ts, common/ssh_issued.ts, common/pki.js, pki/pki_service.ts, account-api/ssh_user_ca.ts, mgmt-api/hardware_tokens_api.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-SSHCA-0001` | The SSH user CA's public key or its KRL was asked for on the plain-HTTP revocation listener, where neither is served: the CA key is a trust anchor and the KRL is unsigned, so plain HTTP would let anybody on the path replace them (#1955). | HTTP 404, text/plain |
+| `STS-SSHCA-0002` | An SSH certificate principal named a group whose name is a person's uid in the realm, or a system account such as root, which a server would sign the member in as (#1955). | HTTP 403 |
+| `STS-SSHCA-0003` | An SSH security-key attestation was sent without the challenge ssh-keygen was given, which the attestation signed, so it could not be verified (#1955). | HTTP 400 |
+| `STS-SSHCA-0004` | An administrator's SSH certificate act named nobody of the realm's directory (#1955). | HTTP 404 |
+| `STS-SSHCA-0005` | A person's SSH user certificates could not be read or revoked: the register threw (#1955). | HTTP 500 or 503 |
 
 ## STS-OPENPGP
 

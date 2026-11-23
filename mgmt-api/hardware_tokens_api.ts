@@ -57,10 +57,13 @@ interface HardwareTokensApiDeps {
   // The PIV enrolment form and escrow (#1955 P2), lazily, for the same
   // reason.
   loadPivEnrolment(): Json;
+  // The SSH user CA (the #1955 review): a person's certificates and an
+  // administrator's revocation, lazily for the same reason.
+  loadSshUserCa(): Json;
 }
 
 // The acts, in the order the unknown-action sentence names them.
-const ACTIONS = ['lost', 'enrol-piv', 'recover-key'];
+const ACTIONS = ['lost', 'enrol-piv', 'recover-key', 'revoke-ssh'];
 
 const BASE = '/admin-api';
 
@@ -102,6 +105,9 @@ class HardwareTokensApi {
       },
       loadPivEnrolment: function (): Json {
         return require('../common/piv_enrolment');
+      },
+      loadSshUserCa: function (): Json {
+        return require('../common/ssh_user_ca');
       }
     };
   }
@@ -207,8 +213,21 @@ class HardwareTokensApi {
     // The pager's members, the offset left out (the page says which rows).
     // #1955 P2: the enrolment form's rules, and the escrowed certificates
     // of the person a search names (none for a serial or nobody).
+    // The #1955 review: the SSH user certificates of the person a search
+    // names, revocable from the page (rule 7).
+    let ssh: Json[] = [];
+    try {
+      ssh = q ? await this.deps.loadSshUserCa().certificatesOfPerson(
+        require('../common/realms').currentId(), q) : [];
+    } catch (e) {
+      log.error(this.deps.errorCodes.tag('STS-SSHCA-0005') + 'hardware ' +
+                'tokens: the SSH certificates of ' + q + ' could not be ' +
+                'read: ' + ((e && e.message) || e));
+      ssh = [];
+    }
     return { piv: this.pivRules(),
              escrowed: q ? this.deps.loadPivEnrolment().escrowedOf(q) : [],
+             sshCertificates: ssh,
              tokens: page.tokens,
              paging: { page: paging.page, pages: paging.pages,
                        perPage: paging.perPage, firstRow: paging.firstRow,
@@ -478,6 +497,52 @@ class HardwareTokensApi {
     const status = Number((answer && answer.status) || 400);
     helpers.log.debug("Leaving HardwareTokensApi.statusOf().");
     return allowed.indexOf(status) >= 0 ? status : 400;
+  }
+
+  // AN ADMINISTRATOR REVOKES A PERSON'S SSH CERTIFICATE (the #1955 review,
+  // rule 7): the serial must be the person's `username` names.
+  /**
+   * Answers `revoke-ssh`.
+   *
+   * @param res - the response
+   * @param actor - the token's subject
+   * @param body - `{ username, serial }`
+   */
+  revokeSsh(res: Json, actor: string, body: Json): void {
+    const { log, errorCodes: codes } = this.deps;
+    const self = this;
+    log.debug("Entering HardwareTokensApi.revokeSsh().");
+    const username = String(body.username || '').slice(0, 256);
+    const serial = String(body.serial || '').slice(0, 64);
+    Promise.resolve().then(function (): Json {
+      return self.deps.loadSshUserCa().adminRevoke({
+        realm: require('../common/realms').currentId(), username: username,
+        serialHex: serial, actor: actor, via: 'api' });
+    }).then(function (done: Json): void {
+      if (!done || !done.ok) {
+        // error-code: none — the act's own code, read off the result
+        codes.mark(res, codes.codeOf(done) || 'STS-PKI-0291');
+        const code = codes.codeOf(done);
+        self.sendJson(res, code === 'STS-PKI-0290' ? 503
+          : (code === 'STS-PKI-0291' || code === 'STS-SSHCA-0004' ? 404
+                                                                  : 400),
+          { ok: false, errors: (done && done.errors) || ['refused'] });
+        log.debug("Leaving HardwareTokensApi.revokeSsh(). Refused.");
+        return;
+      }
+      self.sendJson(res, 200, { ok: true, serialHex: String(done.serialHex),
+        message: 'The SSH user certificate ' + String(done.serialHex) +
+                 ' of ' + username + ' is revoked, and the realm\'s KRL ' +
+                 'lists it.' });
+      log.debug("Leaving HardwareTokensApi.revokeSsh(). Revoked.");
+    }).catch(function (e: Json): void {
+      log.error(codes.tag('STS-SSHCA-0005') + 'hardware tokens: revoking ' +
+                'an SSH certificate threw: ' + ((e && e.message) || e));
+      codes.mark(res, 'STS-SSHCA-0005');
+      self.sendJson(res, 500, { ok: false, errors: [
+        'The SSH certificate could not be revoked.'] });
+      log.debug("Leaving HardwareTokensApi.revokeSsh(). Threw.");
+    });
   }
 
   // THE TWO PIV ACTS (header): `enrol-piv` for the person `username`
@@ -757,8 +822,44 @@ class HardwareTokensApi {
           { action: 'ykval-client-remove',
             operationId: 'removeYkvalClient' },
           { action: 'enrol-piv', operationId: 'enrolPivCertificate' },
-          { action: 'recover-key', operationId: 'recoverEscrowedPivKey' }
+          { action: 'recover-key', operationId: 'recoverEscrowedPivKey' },
+          { action: 'revoke-ssh', operationId: 'revokeUserSshCertificate' }
         ] }),
+
+      // A PERSON'S SSH USER CERTIFICATES (the #1955 review, rule 7): which
+      // there are and whether each is revoked, never a key.
+      { method: 'GET', path: BASE + '/hardware-tokens/ssh-certificates',
+        tag: 'Directory', operationId: 'getUserSshCertificates',
+        mirrors: 'GET /admin/hardware-tokens',
+        parameters: [
+          { name: 'username', in: 'query', required: true,
+            schema: { type: 'string', maxLength: 256,
+                      examples: ['alice'] },
+            description: 'The person whose SSH certificates to list.' }
+        ],
+        handler: function (req, res): void {
+          log.debug("Entering the management API SSH certificates " +
+                    "endpoint.");
+          const username = String((req.query && req.query.username) || '')
+            .slice(0, 256);
+          Promise.resolve().then(function (): Json {
+            return self.deps.loadSshUserCa().certificatesOfPerson(
+              require('../common/realms').currentId(), username);
+          }).then(function (rows: Json): void {
+            self.sendJson(res, 200, { username: username,
+                                      certificates: rows || [] });
+            log.debug("Leaving the management API SSH certificates " +
+                      "endpoint.");
+          }).catch(function (e: Json): void {
+            log.error(codes.tag('STS-SSHCA-0005') + 'the SSH certificates ' +
+                      'could not be listed: ' + ((e && e.message) || e));
+            codes.mark(res, 'STS-SSHCA-0005');
+            self.sendJson(res, 500, { ok: false, errors: [
+              'The SSH certificates could not be read.'] });
+            log.debug("Leaving the management API SSH certificates " +
+                      "endpoint. Threw.");
+          });
+        } },
 
 
       // A PERSON'S ESCROWED KEY-MANAGEMENT CERTIFICATES (#1955 P2, D7):

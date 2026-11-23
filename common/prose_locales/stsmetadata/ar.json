@@ -2220,12 +2220,12 @@
     "text": "NON-SPEC (#1955 P4). رموز HOTP وTOTP التي استوردها المسؤولون من ملفات بذور PSKC للمورّدين، غير مُسنَدة أو مُسنَدة أو مُوقَفة، مقسّمة إلى صفحات وقابلة للبحث بالرقم التسلسلي أو الشخص. ليست سرًّا أبدًا. تطابق GET /admin/hardware-tokens (علامة تبويب OATH فيها)."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-"en": "0d649147af0cbe04",
-"text": "NON-SPEC (#1955). ‏lost، مع { key }: يُعلَّم الرمز مفقودًا، ويُزال كل مفتاح مرور عليه، وتُلغى كل شهادة عليه بسبب keyCompromise، ويُرسل CAEP credential-change لكل منها، وتُنهى الجلسات التي سجّلت الدخول بها. enrol-piv، مع { username, profile, csr, attestationCertificate?, attestationIssuer? }: شهادة فتحة PIV تُصدَر لذلك الشخص عبر جهة إصدار EST، مع التحقق من إثبات PIV من YubiKey وتسجيل الـ YubiKey. recover-key، مع { username, serial }: مفتاح piv-key-management المودَع لذلك الشخص، الذي لا تسمح به سياسة التحكم في الوصول إلا لـ PIV_KEY_RECOVERY. إجراءات وحدة التحكم الثلاثة في تلك الصفحة."
+"en": "cdbf34a1fbdf290e",
+"text": "NON-SPEC (#1955). lost، مع { key }: يُعلَّم الرمز مفقودًا، ويُزال كل مفتاح مرور عليه، وتُبطَل كل شهادة عليه بسبب keyCompromise، ويُرسل CAEP credential-change لكل منها وتُنهى الجلسات التي سجّلت دخولها. enrol-piv، مع { username, profile, csr, attestationCertificate?, attestationIssuer? }: شهادة فتحة PIV تصدر لذلك الشخص عبر جهة الإصدار في EST، مع التحقق من إثبات YubiKey PIV وتسجيل الـ YubiKey. recover-key، مع { username, serial }: مفتاح piv-key-management المودَع لذلك الشخص، الذي لا تسمح به سياسة التحكم في الوصول إلا لـ PIV_KEY_RECOVERY، بعد تسجيل دخول حديث. revoke-ssh، مع { username, serial }: إبطال شهادة مستخدم SSH لذلك الشخص ووضعها في قائمة KRL للنطاق. الإجراءات الأربعة لوحدة التحكم في تلك الصفحة."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "b55c0cdd477d183e",
-"text": "يبلّغ عن فقدان رمز عتادي ويسحب بيانات اعتماده، أو يُصدر شهادة فتحة PIV، أو يسلّم مفتاحًا مودَعًا"
+    "en": "f5b724d2c79b5f74",
+"text": "يبلّغ عن فقدان رمز عتادي ويسحب بيانات اعتماده، أو يصدر شهادة فتحة PIV، أو يسلّم مفتاحًا مودَعًا، أو يبطل شهادة SSH لشخص"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -4202,5 +4202,17 @@
   "stsmetadata.specs.rfc9980.coverage": {
     "en": "5feb46765c8bc465",
     "text": "partial: توقيعات ML-DSA-65+Ed25519 وML-DSA-87+Ed448، وتشفير ML-KEM-768+X25519 وML-KEM-1024+X448، عند التسجيل وعند استخدام مفتاح مخزّن. يُحسب المركّب ما بعد الكم. يضيّق openpgp.pqcOnly التسجيل فقط. يتحقق common/crypto_impl/openpgp_pqc.js من نصفي التوقيع. الناقص: SLH-DSA (معرّفات الخوارزمية 32-34)، ولا يولّد هذا الخدمة مفتاح RFC 9980. لا يحلّل openpgp.js هذه المفاتيح."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "e83d747632c38b14",
+    "text": "NON-SPEC (#1955 P3): مفتاح جهة OpenSSH للمستخدمين الخاص بالنطاق، منشورًا كسطر authorized-key تثق به خوادم SSH. دون بوابة و`no-store`، على المنفذ الرئيسي فقط: يرفضه مستمع الإبطال عبر HTTP غير المشفر، لأن المفتاح مرساة ثقة. لا يغادر المفتاح الخاص المقابل للجهة هذه الخدمة أبدًا."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "2e4cdead67408937",
+    "text": "NON-SPEC (#1955 P3): قائمة KRL الخاصة بـ OpenSSH للنطاق، تُحدَّث عندما يبطل مستدعٍ شهادة أو يبلّغ عن فقدان رمز عتادي. دون بوابة و`no-store`، على المنفذ الرئيسي فقط: القائمة غير موقّعة، لذا يرفضها مستمع الإبطال عبر HTTP غير المشفر. يجب إعداد خوادم SSH لقراءتها، لأن هذه الخدمة لا تستطيع إجبار طرف معتمِد على ذلك."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/ssh-certificates.what": {
+    "en": "84ce6fea3694d4c0",
+    "text": "NON-SPEC (مراجعة #1955). شهادات مستخدم OpenSSH الصادرة لشخص ولم تنتهِ صلاحيتها، مع تمييز المبطلة: الرقم التسلسلي، ونوع المفتاح وبصمته، والأسماء الرئيسية، والصلاحية، وما إذا غطى دليل عتادي المفتاح. لا يحوي مفتاحًا أبدًا. يعكس GET /admin/hardware-tokens (علامة تبويب شهادات SSH)."
   }
 }

@@ -350,6 +350,10 @@ class ProtocolStack {
     // #1955 P3: the per-realm SSH user CA's policy and hardware-token
     // retirer. Its periodic KRL job is installed with the other scheduler
     // jobs, after the scheduler itself is available below.
+    // The register of the certificates it issued (the #1955 review), a
+    // library over a store of its own, reached by `pki.js` at the moment of
+    // use.
+    this.build('common/ssh_issued', require('./ssh_issued'), 'SshIssued');
     this.build('common/ssh_user_ca', require('./ssh_user_ca'), 'SshUserCa');
     // #1955 P2: YubiKey PIV key attestation, the PIV slot profiles' rules
     // and the outside PIV card mapping. A library (rule 3) of libraries; the

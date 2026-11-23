@@ -13090,5 +13090,37 @@
   "pki.sshUserCaPqcAlongsideClassical|description": {
     "en": "b38eab63ec092b6c",
     "text": "Kapag naka-on, ang bagong SSH user certificate ay inilalabas nang dalawang beses kapag umiiral ang awtoridad na ML-DSA: ang classical na certificate, na siyang ginagamit ng OpenSSH client, at isang ML-DSA na certificate sa tabi nito. Hindi maaaring naka-on habang naka-on ang pki.sshUserCaPqcOnly (STS-PKI-0296). Naka-off bilang default. Hindi konsepto ng OpenSSH ang composite; ang classical na certificate at ang ML-DSA na certificate ay dalawang lagda, hindi isang hybrid na lagda."
+  },
+  "pki.sshSoftwareLifetimeSeconds|label": {
+    "en": "e65480d5e0de0ff6",
+    "text": "Pinakamahabang SSH user certificate nang walang ebidensiya ng hardware (s)"
+  },
+  "pki.sshSoftwareLifetimeSeconds|description": {
+    "en": "45980657cb573f83",
+    "text": "Ang pinakamahabang tagal, sa segundo, na maaaring iisyu ang isang SSH user certificate para sa key na walang napatunayang ebidensiya ng hardware: isang karaniwang key, o isang sk- security key na ipinadala nang walang pinagkakatiwalaang attestation. Maaaring humingi ng mas maikli ang kahilingan. Limang minuto bilang default."
+  },
+  "pki.sshHardwareLifetimeSeconds|label": {
+    "en": "58130ddb50b2cf1b",
+    "text": "Pinakamahabang SSH user certificate na may ebidensiya ng hardware (s)"
+  },
+  "pki.sshHardwareLifetimeSeconds|description": {
+    "en": "93fab84d44ca2078",
+    "text": "Ang pinakamahabang tagal, sa segundo, na maaaring iisyu ang isang SSH user certificate para sa key na may napatunayang ebidensiya ng hardware: isang sk- security key na napatunayan at pinagkakatiwalaan ang attestation, o isang key na sinertipika ng isang attested na PIV certificate. Maaaring humingi ng mas maikli ang kahilingan. Isang oras bilang default, na siya ring pinakamataas."
+  },
+  "pki.sshUserCertificateExtensions|label": {
+    "en": "7bd63846ccd81f4e",
+    "text": "Mga extension na dala ng isang SSH user certificate"
+  },
+  "pki.sshUserCertificateExtensions|description": {
+    "en": "66d53e3e95faddca",
+    "text": "Ang mga OpenSSH certificate extension (PROTOCOL.certkeys) na dala ng isang bagong SSH user certificate, pinaghihiwalay ng kuwit. Ang default ay ang sariling set ng ssh-keygen; ang certificate na walang anuman ay nagpapa-sign in sa may-hawak nang walang terminal, forwarding o rc file. Maaaring idagdag ang no-touch-required. Itinatapon ang pangalang hindi tinutukoy ng OpenSSH."
+  },
+  "pki.sshGroupPrincipals|label": {
+    "en": "92bc72613cff7a8d",
+    "text": "Mga grupong maaaring maging SSH principal ang pangalan"
+  },
+  "pki.sshGroupPrincipals|description": {
+    "en": "401372878bd26042",
+    "text": "Ang mga grupo sa directory na ang common name ay maaaring hingin ng isang miyembro bilang principal ng SSH certificate, pinaghihiwalay ng kuwit, bawat isa ay pinagpapasyahan pa rin ng access-control policy (resource ssh-user-ca, action issue-ssh-principal). Ang walang laman, ang default, ay wala: ang certificate ay nagpapangalan lamang sa uid ng tao, dahil walang ibinibigay ang isang grupo dahil lamang grupo ito. Ang grupong ang pangalan ay uid ng isang tao, o isang system account gaya ng root, ay tinatanggihan anuman ang sabihin nito."
   }
 }

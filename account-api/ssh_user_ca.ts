@@ -10,6 +10,11 @@
 // subject is the only identity this provider passes to the issuer. Its
 // certificates are returned in the no-store account API response, and its
 // serials can be revoked only by that same subject.
+//
+// Since the #1955 review: the subject's own certificates are LISTED
+// (`GET /account-api/ssh/certificates`), and the three operations take
+// `ssh:certificate` as well as `account:manage`, so an SSH command line on
+// the device grant holds nothing else of the person's account.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
@@ -24,6 +29,9 @@ type AccountCaller = import('../types/account-api').AccountCaller;
 
 const ISSUE_FORM = ModelZod.body('account', 'issueSshCertificate');
 const REVOKE_FORM = ModelZod.body('account', 'revokeSshCertificate');
+
+// The narrower scope these operations take beside `account:manage`.
+const SSH_SCOPES = ['ssh:certificate'];
 
 interface AccountSshUserCaDeps {
   log: typeof helpers.log;
@@ -68,7 +76,8 @@ class AccountSshUserCa {
       log.debug("Leaving AccountSshUserCa.statusOf(). 404.");
       return 404;
     }
-    if (code === 'STS-PKI-0293' || code === 'STS-PKI-0294') {
+    if (code === 'STS-PKI-0293' || code === 'STS-PKI-0294' ||
+        code === 'STS-SSHCA-0002') {
       log.debug("Leaving AccountSshUserCa.statusOf(). 403.");
       return 403;
     }
@@ -99,7 +108,8 @@ class AccountSshUserCa {
     const answer = await issuer.issue({
       username: caller.username, subject: caller.sub, realm: caller.realm,
       publicKey: body.publicKey, principals: body.principals,
-      lifetimeS: body.lifetimeS, attestation: body.attestation
+      lifetimeS: body.lifetimeS, attestation: body.attestation,
+      attestationChallenge: body.attestationChallenge
     });
     if (!answer || !answer.ok) {
       const code = String(ctx.errorCodes.codeOf(answer) || 'STS-PKI-0290');
@@ -141,6 +151,29 @@ class AccountSshUserCa {
     return ctx.json(res, 200, { ok: true, revoked: true });
   }
 
+  private async list(ctx: AccountContext, res: Json,
+                     caller: AccountCaller): Promise<unknown> {
+    const { log, sshUserCa: issuer } = this.deps;
+    log.debug("Entering AccountSshUserCa.list().");
+    let rows: Json[] = [];
+    try {
+      rows = await issuer.certificatesOf(caller.realm, caller.sub);
+    } catch (e) {
+      log.error(ctx.errorCodes.tag('STS-SSHCA-0005') + 'account-api: the ' +
+                'SSH certificates of ' + caller.username + ' could not be ' +
+                'read: ' + ((e && e.message) || e));
+      log.debug("Leaving AccountSshUserCa.list(). Threw.");
+      return ctx.refuse(res, 503, 'STS-SSHCA-0005',
+                        'Your SSH certificates could not be read just now.');
+    }
+    const limits = issuer.lifetimes();
+    log.debug("Leaving AccountSshUserCa.list(). " + rows.length);
+    return ctx.json(res, 200, { certificates: rows,
+                                lifetimes: { softwareSeconds: limits.software,
+                                             hardwareSeconds:
+                                               limits.hardware } });
+  }
+
   /**
    * The Account API operations.
    *
@@ -153,9 +186,18 @@ class AccountSshUserCa {
     log.debug("Entering AccountSshUserCa.accountOperations().");
     const rows: AccountOperation[] = [
       {
+        method: 'GET', path: ctx.BASE + '/ssh/certificates',
+        operationId: 'listSshCertificates', access: 'person',
+        scopes: SSH_SCOPES,
+        handler: function (req, res, caller: AccountCaller):
+            Promise<unknown> {
+          return self.list(ctx, res, caller);
+        }
+      },
+      {
         method: 'POST', path: ctx.BASE + '/ssh/certificates',
         operationId: 'issueSshCertificate', access: 'person',
-        recentAuth: true, body: ISSUE_FORM,
+        recentAuth: true, body: ISSUE_FORM, scopes: SSH_SCOPES,
         handler: function (req, res, caller: AccountCaller,
                            input): Promise<unknown> {
           return self.issue(ctx, req, res, caller, input.body);
@@ -164,7 +206,7 @@ class AccountSshUserCa {
       {
         method: 'POST', path: ctx.BASE + '/ssh/certificates/revoke',
         operationId: 'revokeSshCertificate', access: 'person',
-        recentAuth: true, body: REVOKE_FORM,
+        recentAuth: true, body: REVOKE_FORM, scopes: SSH_SCOPES,
         handler: function (req, res, caller: AccountCaller,
                            input): Promise<unknown> {
           return self.revoke(ctx, req, res, caller, input.body);

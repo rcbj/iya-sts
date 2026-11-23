@@ -13090,5 +13090,37 @@
   "pki.sshUserCaPqcAlongsideClassical|description": {
     "en": "b38eab63ec092b6c",
     "text": "På innebär att ett nytt SSH-användarcertifikat utfärdas två gånger när ML-DSA-auktoriteten finns: det klassiska certifikatet, som en OpenSSH-klient använder, och ett ML-DSA-certifikat bredvid. Kan inte vara på samtidigt som pki.sshUserCaPqcOnly (STS-PKI-0296). Av som standard. En komposit är inget begrepp OpenSSH har; det klassiska certifikatet och ML-DSA-certifikatet är två signaturer, inte en hybridsignatur."
+  },
+  "pki.sshSoftwareLifetimeSeconds|label": {
+    "en": "e65480d5e0de0ff6",
+    "text": "Längsta SSH-användarcertifikat utan hårdvarubevis (s)"
+  },
+  "pki.sshSoftwareLifetimeSeconds|description": {
+    "en": "45980657cb573f83",
+    "text": "Den längsta livslängd, i sekunder, som ett SSH-användarcertifikat får utfärdas med för en nyckel som inget verifierat hårdvarubevis täcker: en vanlig nyckel, eller en sk-säkerhetsnyckel som skickats utan betrodd attestering. Begäran får be om mindre. Fem minuter som standard."
+  },
+  "pki.sshHardwareLifetimeSeconds|label": {
+    "en": "58130ddb50b2cf1b",
+    "text": "Längsta SSH-användarcertifikat med hårdvarubevis (s)"
+  },
+  "pki.sshHardwareLifetimeSeconds|description": {
+    "en": "93fab84d44ca2078",
+    "text": "Den längsta livslängd, i sekunder, som ett SSH-användarcertifikat får utfärdas med för en nyckel som ett verifierat hårdvarubevis täcker: en sk-säkerhetsnyckel vars attestering verifierats och är betrodd, eller en nyckel som ett attesterat PIV-certifikat certifierar. Begäran får be om mindre. En timme som standard, vilket också är det högsta."
+  },
+  "pki.sshUserCertificateExtensions|label": {
+    "en": "7bd63846ccd81f4e",
+    "text": "Tillägg som ett SSH-användarcertifikat bär"
+  },
+  "pki.sshUserCertificateExtensions|description": {
+    "en": "66d53e3e95faddca",
+    "text": "De OpenSSH-certifikattillägg (PROTOCOL.certkeys) som ett nytt SSH-användarcertifikat bär, kommaseparerade. Standard är ssh-keygens egen uppsättning; ett certifikat utan tillägg låter innehavaren logga in utan terminal, vidarebefordran eller rc-fil. no-touch-required kan läggas till. Ett namn som OpenSSH inte definierar tas bort."
+  },
+  "pki.sshGroupPrincipals|label": {
+    "en": "92bc72613cff7a8d",
+    "text": "Grupper vars namn får vara SSH-principaler"
+  },
+  "pki.sshGroupPrincipals|description": {
+    "en": "401372878bd26042",
+    "text": "De katalog­grupper vars common name en medlem får begära som principal i ett SSH-certifikat, kommaseparerade, var och en fortfarande avgjord av åtkomstpolicyn (resurs ssh-user-ca, åtgärd issue-ssh-principal). Tomt, standardvärdet, betyder ingen: ett certifikat namnger bara personens uid, eftersom en grupp inte ger något bara genom att vara en grupp. En grupp vars namn är en persons uid eller ett systemkonto som root avvisas oavsett detta."
   }
 }

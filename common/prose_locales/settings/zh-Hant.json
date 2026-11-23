@@ -13090,5 +13090,37 @@
   "pki.sshUserCaPqcAlongsideClassical|description": {
     "en": "b38eab63ec092b6c",
     "text": "開啟後，當 ML-DSA 機構存在時，新的 SSH 使用者憑證簽發兩次：經典憑證，即 OpenSSH 用戶端使用的那一份，以及旁邊的一份 ML-DSA 憑證。不能與 pki.sshUserCaPqcOnly 同時開啟（STS-PKI-0296）。預設關閉。複合簽章不是 OpenSSH 的概念；經典憑證和 ML-DSA 憑證是兩個簽章，不是一個混合簽章。"
+  },
+  "pki.sshSoftwareLifetimeSeconds|label": {
+    "en": "e65480d5e0de0ff6",
+    "text": "無硬體證據時 SSH 使用者憑證的最長有效期（秒）"
+  },
+  "pki.sshSoftwareLifetimeSeconds|description": {
+    "en": "45980657cb573f83",
+    "text": "對於沒有經過驗證的硬體證據涵蓋的金鑰（一般金鑰，或未附可信證明的 sk- 安全金鑰），SSH 使用者憑證可簽發的最長有效期，以秒計。請求可以要求更短。預設五分鐘。"
+  },
+  "pki.sshHardwareLifetimeSeconds|label": {
+    "en": "58130ddb50b2cf1b",
+    "text": "有硬體證據時 SSH 使用者憑證的最長有效期（秒）"
+  },
+  "pki.sshHardwareLifetimeSeconds|description": {
+    "en": "93fab84d44ca2078",
+    "text": "對於有經過驗證的硬體證據涵蓋的金鑰（其證明已驗證且可信的 sk- 安全金鑰，或由經過證明的 PIV 憑證認證的金鑰），SSH 使用者憑證可簽發的最長有效期，以秒計。請求可以要求更短。預設一小時，這也是上限。"
+  },
+  "pki.sshUserCertificateExtensions|label": {
+    "en": "7bd63846ccd81f4e",
+    "text": "SSH 使用者憑證攜帶的延伸"
+  },
+  "pki.sshUserCertificateExtensions|description": {
+    "en": "66d53e3e95faddca",
+    "text": "新 SSH 使用者憑證攜帶的 OpenSSH 憑證延伸（PROTOCOL.certkeys），以逗號分隔。預設是 ssh-keygen 自己的一組；沒有任何延伸的憑證使其持有人登入時沒有終端機、轉送或 rc 檔案。可以加上 no-touch-required。OpenSSH 未定義的名稱會被捨棄。"
+  },
+  "pki.sshGroupPrincipals|label": {
+    "en": "92bc72613cff7a8d",
+    "text": "名稱可作為 SSH 主體的群組"
+  },
+  "pki.sshGroupPrincipals|description": {
+    "en": "401372878bd26042",
+    "text": "成員可將其通用名稱請求為 SSH 憑證主體的目錄群組，以逗號分隔，每個仍由存取控制原則決定（資源 ssh-user-ca，動作 issue-ssh-principal）。空白（預設）即沒有：憑證只寫入此人的 uid，因為群組不會僅因為是群組而授予任何東西。名稱為某人 uid 或系統帳戶（如 root）的群組無論如何都會被拒絕。"
   }
 }

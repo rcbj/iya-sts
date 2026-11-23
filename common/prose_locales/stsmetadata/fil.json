@@ -2220,12 +2220,12 @@
     "text": "NON-SPEC (#1955 P4). Ang mga HOTP at TOTP token na in-import ng mga administrator mula sa mga PSKC seed file ng mga vendor, hindi naka-assign, naka-assign o retirado, naka-page at hinahanap ayon sa serial o tao. Hindi kailanman secret. Kapareho ng GET /admin/hardware-tokens (ang OATH tab nito)."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-"en": "0d649147af0cbe04",
-"text": "NON-SPEC (#1955). lost, na may { key }: minamarkahang nawala ang token, inaalis ang bawat passkey dito, binabawi ang bawat sertipiko dito dahil sa keyCompromise, nagpapadala ng CAEP credential-change para sa bawat isa at tinatapos ang mga session na in-sign in ng mga ito. enrol-piv, na may { username, profile, csr, attestationCertificate?, attestationIssuer? }: isang PIV slot certificate na inilabas sa taong iyon sa pamamagitan ng EST Issuing CA, vine-verify ang YubiKey PIV attestation nito at itinatala ang YubiKey. recover-key, na may { username, serial }: ang naka-escrow na piv-key-management key ng taong iyon, na pinahihintulutan lamang ng access-control policy sa PIV_KEY_RECOVERY. Ang tatlong aksiyon ng console sa page na iyon."
+"en": "cdbf34a1fbdf290e",
+"text": "NON-SPEC (#1955). lost, na may { key }: minamarkahang nawala ang token, inaalis ang bawat passkey dito, nire-revoke ang bawat certificate dito dahil sa keyCompromise, nagpapadala ng CAEP credential-change para sa bawat isa at tinatapos ang mga session na kanilang na-sign in. enrol-piv, na may { username, profile, csr, attestationCertificate?, attestationIssuer? }: isang PIV slot certificate na inisyu sa taong iyon sa pamamagitan ng EST Issuing CA, napatunayan ang YubiKey PIV attestation nito at naitala ang YubiKey. recover-key, na may { username, serial }: ang naka-escrow na piv-key-management key ng taong iyon, na pinahihintulutan lamang ng access-control policy sa PIV_KEY_RECOVERY, pagkatapos ng kamakailang sign-in. revoke-ssh, na may { username, serial }: nire-revoke ang SSH user certificate ng taong iyon at inilalagay sa KRL ng realm. Ang apat na aksiyon ng console sa pahinang iyon."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "b55c0cdd477d183e",
-"text": "iniuulat na nawala ang isang hardware token at inaalis ang mga credential nito, naglalabas ng PIV slot certificate, o nag-aabot ng naka-escrow na key"
+    "en": "f5b724d2c79b5f74",
+"text": "nag-uulat ng nawalang hardware token at nagreretiro ng mga credential nito, nag-iisyu ng PIV slot certificate, nagbibigay ng naka-escrow na key, o nire-revoke ang SSH certificate ng isang tao"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -4202,5 +4202,17 @@
   "stsmetadata.specs.rfc9980.coverage": {
     "en": "5feb46765c8bc465",
     "text": "partial: mga pirma ng ML-DSA-65+Ed25519 at ML-DSA-87+Ed448, at pag-encrypt ng ML-KEM-768+X25519 at ML-KEM-1024+X448, sa pagrehistro at kapag ginamit ang isang nakaimbak na key. Ang composite ay post-quantum. Nililimitahan ng openpgp.pqcOnly ang pagrehistro lamang. Ang parehong hati ng isang pirma ay sine-verify ng common/crypto_impl/openpgp_pqc.js. Kulang: SLH-DSA (mga algorithm id 32-34), at hindi bumubuo ang serbisyong ito ng key na RFC 9980. Hindi binibigyang-kahulugan ng openpgp.js ang mga key na ito."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "e83d747632c38b14",
+    "text": "NON-SPEC (#1955 P3): ang OpenSSH user CA key ng realm, inilathala bilang authorized-key line na pinagkakatiwalaan ng mga SSH server. Walang gate at `no-store`, sa pangunahing port lamang: tinatanggihan ito ng plain-HTTP revocation listener, dahil trust anchor ang key. Hindi kailanman umaalis sa serbisyong ito ang kaukulang pribadong key ng CA."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "2e4cdead67408937",
+    "text": "NON-SPEC (#1955 P3): ang OpenSSH KRL ng realm, ina-update kapag nag-revoke ng certificate ang isang tumatawag o nag-ulat ng nawalang hardware token. Walang gate at `no-store`, sa pangunahing port lamang: hindi pinirmahan ang KRL, kaya tinatanggihan ito ng plain-HTTP revocation listener. Kailangang i-configure ang mga SSH server para basahin ito, dahil hindi kayang pilitin ng serbisyong ito ang isang relying party."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/ssh-certificates.what": {
+    "en": "84ce6fea3694d4c0",
+    "text": "NON-SPEC (ang pagsusuri ng #1955). Ang mga OpenSSH user certificate na inisyu sa isang tao na hindi pa nag-e-expire, may marka ang mga na-revoke: serial, uri at fingerprint ng key, mga principal, bisa at kung may ebidensiya ng hardware na sumaklaw sa key. Kailanman ay hindi isang key. Sumasalamin sa GET /admin/hardware-tokens (ang tab nitong Mga SSH certificate)."
   }
 }

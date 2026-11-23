@@ -46608,6 +46608,7 @@ op `getHardwareTokens`(@js(#{`maxLength`:256,`examples`:#["12345678"]}) `paramet
   `responses/200/content/application~1json/schema`: {
     @js(#{`description`:"What the PIV enrolment form may issue here (#1955 P2)."}) `piv`: PivAdminRules;
     @js(#{`description`:"The escrowed piv-key-management certificates of the person `q` names; empty for a serial, nobody, or no search."}) `escrowed`: (PivEscrowedAdminRow)[];
+    @js(#{`description`:"The SSH user certificates of the person `q` names that have not expired, revoked ones marked; empty for a serial, nobody, or no search."}) `sshCertificates`: (SshCertificateAdminRow)[];
     `tokens`: (HardwareTokenAdminRow)[];
     `paging`: WithPagePagesPerPageEtc8;
     `capped`: boolean;
@@ -47514,6 +47515,10 @@ op `enrolPivCertificate`(@js(#{`examples`:#[#{`username`:"alice",`profile`:"piv-
         `description`:"The request was refused.",
         `content`:#{`application/json`:#{`schema`:null}}
       },
+      `401`:#{
+        `description`:"The caller signed in longer ago than account.recentAuthMinutes allows for a recovery (RFC 9470 `insufficient_user_authentication`, with `max_age`): sign in again and resend.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
       `403`:#{
         `description`:"The access-control policy did not permit the recovery.",
         `content`:#{`application/json`:#{`schema`:null}}
@@ -47547,9 +47552,100 @@ op `recoverEscrowedPivKey`(@js(#{`examples`:#[#{`username`:"alice",`serial`:"1a2
     `chainPem`: (string)[]
   },
   `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@hoisted model SshCertificateAdminRow {
+  @js(#{`description`:"The serial, lower-case hex: what `revokeUserSshCertificate` names."}) `serialHex`: string;
+  @js(#{`description`:"The certified key's OpenSSH type."}) `keyType`: string;
+  @js(#{`description`:"The certified key's SHA256 fingerprint."}) `keyFingerprint`: string;
+  `principals`: string[];
+  `issuedAt`: string;
+  `notAfter`: string;
+  @js(#{`description`:"Whether verified hardware evidence covered the key."}) `hardwareBound`: boolean;
+  @js(#{`description`:"`classical`, or `ssh-mldsa-65` for a certificate the ML-DSA authority signed."}) `authority`: string;
+  `revoked`: boolean;
+  @js(#{`description`:"When it was revoked; empty for one that was not."}) `revokedAt`: string
+}
+
+@endpoint("/admin-api/hardware-tokens/revoke-ssh",
+  "post",
+  #{
+    `operationId`:"revokeUserSshCertificate",
+    `summary`:"Revoke a person's SSH user certificate",
+    `description`:"Revokes the SSH user certificate `serial` of `username` and rebuilds the realm's OpenSSH KRL, which lists it until it expires. The serial must be that person's. 404 for nobody of that name or a serial that is not theirs. Acting on a Security Administrator's certificate needs admin:security.\n\n**Mirrors** `POST /admin/hardware-tokens` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The certificate is revoked.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The request was refused.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"Nobody of that name, or no certificate of theirs with that serial.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `503`:#{
+        `description`:"The revocation could not be recorded.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `revokeUserSshCertificate`(@js(#{`examples`:#[#{`username`:"alice",`serial`:"1a2b3c"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The person whose certificate it is.",`maxLength`:256}) `username`: string;
+    @js(#{`description`:"The certificate's serial, hex.",`maxLength`:64}) `serial`: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string;
+    `serialHex`: string
+  },
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/hardware-tokens/ssh-certificates",
+  "get",
+  #{
+    `operationId`:"getUserSshCertificates",
+    `summary`:"A person's SSH user certificates",
+    `description`:"The SSH user certificates issued to `username` that have not expired, newest first, revoked ones marked: serial, key type and fingerprint, principals, validity, whether hardware evidence covered the key, and which authority signed it. Never a key; revoking one is `revokeUserSshCertificate`.\n\n**Mirrors** `GET /admin/hardware-tokens` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The certificates.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{`name`:"username",`in`:"query",`required`:true,`schema`:null,`description`:"The person whose SSH certificates to list."}
+    ],
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getUserSshCertificates`(@js(#{`maxLength`:256,`examples`:#["alice"]}) `parameters/0/schema`: string,
+  `responses/200/content/application~1json/schema`: {
+    `username`: string;
+    `certificates`: (SshCertificateAdminRow)[]
+  },
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
 
 

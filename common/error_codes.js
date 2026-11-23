@@ -407,6 +407,15 @@ const SUBSYSTEMS = [
           'the four PIV slot profiles, the escrow of piv-key-management ' +
           'keys, and the mapping of an outside PIV or CAC card by its card ' +
           'UUID.' },
+  { id: 'SSHCA', label: 'OpenSSH user certificates',
+    where: 'common/ssh_user_ca.ts, common/ssh_issued.ts, common/pki.js, ' +
+           'pki/pki_service.ts, account-api/ssh_user_ca.ts, ' +
+           'mgmt-api/hardware_tokens_api.ts',
+    what: 'The realm\'s OpenSSH user certificate authority (#1955 P3): ' +
+          'which principals a person may ask for, the security-key ' +
+          'attestation that earns the longer lifetime, the register of ' +
+          'issued certificates, and where the CA key and the KRL are ' +
+          'served.' },
   { id: 'OPENPGP', label: 'OpenPGP keys and mail encryption',
     where: 'common/openpgp_keys.ts, common/crypto.js (section 19), ' +
            'portal/account_openpgp.ts, mgmt-api/openpgp_api.ts',

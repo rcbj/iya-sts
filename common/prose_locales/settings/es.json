@@ -13090,5 +13090,37 @@
   "pki.sshUserCaPqcAlongsideClassical|description": {
     "en": "b38eab63ec092b6c",
     "text": "Activado, un certificado de usuario SSH nuevo se emite dos veces cuando existe la autoridad ML-DSA: el certificado clásico, que es el que usa un cliente OpenSSH, y un certificado ML-DSA junto a él. No puede estar activado mientras lo esté pki.sshUserCaPqcOnly (STS-PKI-0296). Desactivado de manera predeterminada. Un compuesto no es un concepto que tenga OpenSSH; el certificado clásico y el certificado ML-DSA son dos firmas, no una firma híbrida."
+  },
+  "pki.sshSoftwareLifetimeSeconds|label": {
+    "en": "e65480d5e0de0ff6",
+    "text": "Certificado de usuario SSH más largo sin evidencia de hardware (s)"
+  },
+  "pki.sshSoftwareLifetimeSeconds|description": {
+    "en": "45980657cb573f83",
+    "text": "La vigencia más larga, en segundos, con la que se puede emitir un certificado de usuario SSH para una clave que no cubre ninguna evidencia de hardware verificada: una clave común, o una llave de seguridad sk- enviada sin atestación de confianza. La solicitud puede pedir menos. Cinco minutos por defecto."
+  },
+  "pki.sshHardwareLifetimeSeconds|label": {
+    "en": "58130ddb50b2cf1b",
+    "text": "Certificado de usuario SSH más largo con evidencia de hardware (s)"
+  },
+  "pki.sshHardwareLifetimeSeconds|description": {
+    "en": "93fab84d44ca2078",
+    "text": "La vigencia más larga, en segundos, con la que se puede emitir un certificado de usuario SSH para una clave que cubre una evidencia de hardware verificada: una llave de seguridad sk- cuya atestación se verificó y es de confianza, o una clave que certifica un certificado PIV atestado. La solicitud puede pedir menos. Una hora por defecto, que es también el máximo."
+  },
+  "pki.sshUserCertificateExtensions|label": {
+    "en": "7bd63846ccd81f4e",
+    "text": "Extensiones de un certificado de usuario SSH"
+  },
+  "pki.sshUserCertificateExtensions|description": {
+    "en": "66d53e3e95faddca",
+    "text": "Las extensiones de certificado OpenSSH (PROTOCOL.certkeys) que lleva un nuevo certificado de usuario SSH, separadas por comas. Por defecto, el conjunto propio de ssh-keygen; un certificado sin ninguna permite a su titular iniciar sesión sin terminal, reenvío ni archivo rc. Se puede añadir no-touch-required. Un nombre que OpenSSH no define se descarta."
+  },
+  "pki.sshGroupPrincipals|label": {
+    "en": "92bc72613cff7a8d",
+    "text": "Grupos cuyos nombres pueden ser principales SSH"
+  },
+  "pki.sshGroupPrincipals|description": {
+    "en": "401372878bd26042",
+    "text": "Los grupos del directorio cuyo nombre común puede pedir un miembro como principal de un certificado SSH, separados por comas, cada uno decidido igualmente por la política de control de acceso (recurso ssh-user-ca, acción issue-ssh-principal). Vacío, el valor por defecto, es ninguno: un certificado nombra solo el uid de la persona, porque un grupo no concede nada por ser un grupo. Un grupo cuyo nombre es el uid de una persona o una cuenta del sistema como root se rechaza en todo caso."
   }
 }

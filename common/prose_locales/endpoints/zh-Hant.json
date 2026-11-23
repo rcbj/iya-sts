@@ -2634,5 +2634,9 @@
   "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
     "en": "f46d01f7581b5379",
     "text": "託管的 PIV 金鑰"
+  },
+  "endpoints.route./admin-api/hardware-tokens/ssh-certificates.name": {
+    "en": "3bb1ef22ae2ed554",
+    "text": "某人的 SSH 使用者憑證"
   }
 }

@@ -2220,12 +2220,12 @@
     "text": "NON-SPEC (#1955 P4)。管理员从供应商 PSKC 种子文件导入的 HOTP 和 TOTP 令牌，包括未分配、已分配或已停用的，可分页并按序列号或人员搜索。绝不包含密钥。对应 GET /admin/hardware-tokens（其 OATH 标签页）。"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-"en": "0d649147af0cbe04",
-"text": "NON-SPEC (#1955)。lost，带 { key }：将令牌标记为丢失，删除其上的每个通行密钥，以 keyCompromise 为由吊销其上的每个证书，为每一项发送 CAEP credential-change，并结束由它们登录的会话。enrol-piv，带 { username, profile, csr, attestationCertificate?, attestationIssuer? }：通过 EST 签发 CA 为此人签发 PIV 插槽证书，验证其 YubiKey PIV 证明并记录该 YubiKey。recover-key，带 { username, serial }：此人的托管 piv-key-management 密钥，访问控制策略仅允许 PIV_KEY_RECOVERY 执行。即控制台在该页面上的三项操作。"
+"en": "cdbf34a1fbdf290e",
+"text": "NON-SPEC（#1955）。lost，带 { key }：令牌被标记为丢失，其上的每个通行密钥被移除，其上的每张证书因 keyCompromise 被吊销，为每项发送 CAEP credential-change，并结束它们登录的会话。enrol-piv，带 { username, profile, csr, attestationCertificate?, attestationIssuer? }：通过 EST 签发 CA 为此人签发 PIV 槽证书，验证其 YubiKey PIV 证明并记录该 YubiKey。recover-key，带 { username, serial }：此人托管的 piv-key-management 密钥，访问控制策略只允许 PIV_KEY_RECOVERY 在近期登录后取得。revoke-ssh，带 { username, serial }：吊销此人的 SSH 用户证书并将其列入领域的 KRL。该页面上控制台的四个操作。"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "b55c0cdd477d183e",
-"text": "报告硬件令牌丢失并停用其凭据、签发 PIV 插槽证书，或移交托管密钥"
+    "en": "f5b724d2c79b5f74",
+"text": "报告硬件令牌丢失并撤销其凭据、签发 PIV 槽证书、交出托管密钥，或吊销某人的 SSH 证书"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -4202,5 +4202,17 @@
   "stsmetadata.specs.rfc9980.coverage": {
     "en": "5feb46765c8bc465",
     "text": "partial：登记时以及使用已存储密钥时的 ML-DSA-65+Ed25519 与 ML-DSA-87+Ed448 签名，以及 ML-KEM-768+X25519 与 ML-KEM-1024+X448 加密。复合算法计为后量子。openpgp.pqcOnly 只收窄登记。签名的两部分由 common/crypto_impl/openpgp_pqc.js 核验。缺少：SLH-DSA（算法标识 32-34），且本服务不生成 RFC 9980 密钥。openpgp.js 不解析这些密钥。"
+  },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "e83d747632c38b14",
+    "text": "NON-SPEC（#1955 P3）：领域范围的 OpenSSH 用户 CA 密钥，以 authorized-key 行发布，供 SSH 服务器信任。无门控且 `no-store`，仅在主端口提供：明文 HTTP 吊销监听器拒绝它，因为该密钥是信任锚。对应的 CA 私钥从不离开本服务。"
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "2e4cdead67408937",
+    "text": "NON-SPEC（#1955 P3）：领域范围的 OpenSSH KRL，在调用者吊销证书或报告硬件令牌丢失时更新。无门控且 `no-store`，仅在主端口提供：KRL 未签名，因此明文 HTTP 吊销监听器拒绝它。SSH 服务器必须配置为查阅它，因为本服务无法让依赖方这样做。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/ssh-certificates.what": {
+    "en": "84ce6fea3694d4c0",
+    "text": "NON-SPEC（#1955 审查）。签发给某人且尚未到期的 OpenSSH 用户证书，已吊销的有标记：序列号、密钥类型与指纹、主体、有效期以及是否有硬件证据覆盖该密钥。从不包含密钥。对应 GET /admin/hardware-tokens（其 SSH 证书选项卡）。"
   }
 }

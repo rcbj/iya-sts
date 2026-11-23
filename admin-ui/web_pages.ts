@@ -349,8 +349,9 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/applications': ['applications', 'add', 'settings'],
   '/admin/devices': ['devices', 'register'],
   // #1955 P1: the register's list; P4: imported OATH tokens;
-  // P2: PIV enrolment and escrowed keys.
-  '/admin/hardware-tokens': ['tokens', 'oath', 'enrol', 'escrow'],
+  // P2: PIV enrolment and escrowed keys; the #1955 review: a person's SSH
+  // user certificates.
+  '/admin/hardware-tokens': ['tokens', 'oath', 'enrol', 'escrow', 'ssh'],
   // #1955 P6: the person, the registration, the directory.
   '/admin/openpgp': ['person', 'register', 'directory'],
   '/admin/attribute-sources': ['sources', 'add', 'person', 'settings'],

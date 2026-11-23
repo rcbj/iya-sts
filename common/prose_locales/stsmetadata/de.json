@@ -2220,12 +2220,12 @@
     "text": "NON-SPEC (#1955 P4). Die HOTP- und TOTP-Token, die Administratoren aus PSKC-Seed-Dateien von Herstellern importiert haben, nicht zugewiesen, zugewiesen oder außer Betrieb, seitenweise und nach Seriennummer oder Person durchsuchbar. Nie ein Geheimnis. Entspricht GET /admin/hardware-tokens (seinem OATH-Tab)."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-"en": "0d649147af0cbe04",
-"text": "NON-SPEC (#1955). lost, mit { key }: Das Token wird als verloren markiert, jeder Passkey darauf entfernt, jedes Zertifikat darauf wegen keyCompromise widerrufen, für jedes ein CAEP credential-change gesendet und die damit angemeldeten Sitzungen beendet. enrol-piv, mit { username, profile, csr, attestationCertificate?, attestationIssuer? }: ein PIV-Slot-Zertifikat, das dieser Person über die EST-Ausstellungs-CA ausgestellt wird, wobei ihre YubiKey-PIV-Attestierung verifiziert und der YubiKey erfasst wird. recover-key, mit { username, serial }: der hinterlegte piv-key-management-Schlüssel dieser Person, den die Zugriffskontrollrichtlinie nur PIV_KEY_RECOVERY erlaubt. Die drei Aktionen der Konsole auf dieser Seite."
+"en": "cdbf34a1fbdf290e",
+"text": "NON-SPEC (#1955). lost, mit { key }: das Token wird als verloren markiert, jeder Passkey darauf entfernt, jedes Zertifikat darauf wegen keyCompromise widerrufen, für jedes ein CAEP credential-change gesendet und die damit angemeldeten Sitzungen beendet. enrol-piv, mit { username, profile, csr, attestationCertificate?, attestationIssuer? }: ein PIV-Slot-Zertifikat für diese Person über die EST-Issuing-CA, dessen YubiKey-PIV-Attestierung geprüft und der YubiKey aufgezeichnet. recover-key, mit { username, serial }: der hinterlegte piv-key-management-Schlüssel dieser Person, den die Zugriffsrichtlinie nur PIV_KEY_RECOVERY erlaubt, nach einer kürzlichen Anmeldung. revoke-ssh, mit { username, serial }: das SSH-Benutzerzertifikat dieser Person widerrufen und auf die KRL des Realms gesetzt. Die vier Aktionen der Konsole auf dieser Seite."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "b55c0cdd477d183e",
-"text": "meldet ein Hardware-Token als verloren und zieht seine Anmeldedaten zurück, stellt ein PIV-Slot-Zertifikat aus oder übergibt einen hinterlegten Schlüssel"
+    "en": "f5b724d2c79b5f74",
+"text": "meldet ein Hardware-Token als verloren und zieht seine Anmeldedaten zurück, stellt ein PIV-Slot-Zertifikat aus, gibt einen hinterlegten Schlüssel heraus oder widerruft das SSH-Zertifikat einer Person"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -4202,5 +4202,17 @@
   "stsmetadata.specs.rfc9980.coverage": {
     "en": "5feb46765c8bc465",
     "text": "partial: Signaturen ML-DSA-65+Ed25519 und ML-DSA-87+Ed448 sowie Verschlüsselung ML-KEM-768+X25519 und ML-KEM-1024+X448, bei der Registrierung und wenn ein gespeicherter Schlüssel verwendet wird. Ein Komposit zählt als Post-Quanten. openpgp.pqcOnly schränkt nur die Registrierung ein. Beide Hälften einer Signatur prüft common/crypto_impl/openpgp_pqc.js. Es fehlen: SLH-DSA (Algorithmus-IDs 32-34), und dieser Dienst erzeugt keinen RFC-9980-Schlüssel. openpgp.js liest diese Schlüssel nicht."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "e83d747632c38b14",
+    "text": "NON-SPEC (#1955 P3): der realmbezogene OpenSSH-Benutzer-CA-Schlüssel, als authorized-key-Zeile veröffentlicht, der SSH-Server vertrauen. Ohne Gate und `no-store`, nur auf dem Hauptport: der Klartext-HTTP-Sperr-Listener lehnt ihn ab, weil der Schlüssel ein Vertrauensanker ist. Der zugehörige private CA-Schlüssel verlässt diesen Dienst nie."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "2e4cdead67408937",
+    "text": "NON-SPEC (#1955 P3): die realmbezogene OpenSSH-KRL, aktualisiert, wenn ein Aufrufer ein Zertifikat widerruft oder ein Hardware-Token als verloren meldet. Ohne Gate und `no-store`, nur auf dem Hauptport: die KRL ist nicht signiert, daher lehnt der Klartext-HTTP-Sperr-Listener sie ab. SSH-Server müssen so konfiguriert werden, dass sie sie lesen, weil dieser Dienst eine vertrauende Partei nicht dazu bringen kann."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/ssh-certificates.what": {
+    "en": "84ce6fea3694d4c0",
+    "text": "NON-SPEC (die Prüfung von #1955). Die noch nicht abgelaufenen OpenSSH-Benutzerzertifikate einer Person, widerrufene markiert: Seriennummer, Schlüsseltyp und Fingerabdruck, Principals, Gültigkeit und ob ein Hardware-Nachweis den Schlüssel abdeckte. Niemals ein Schlüssel. Spiegelt GET /admin/hardware-tokens (dessen Reiter SSH-Zertifikate)."
   }
 }

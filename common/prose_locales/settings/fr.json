@@ -13090,5 +13090,37 @@
   "pki.sshUserCaPqcAlongsideClassical|description": {
     "en": "b38eab63ec092b6c",
     "text": "Activé, un nouveau certificat utilisateur SSH est émis deux fois lorsque l’autorité ML-DSA existe : le certificat classique, celui qu’utilise un client OpenSSH, et un certificat ML-DSA à côté. Ne peut pas être activé en même temps que pki.sshUserCaPqcOnly (STS-PKI-0296). Désactivé par défaut. Un composite n’est pas une notion qu’OpenSSH a ; le certificat classique et le certificat ML-DSA sont deux signatures, pas une signature hybride."
+  },
+  "pki.sshSoftwareLifetimeSeconds|label": {
+    "en": "e65480d5e0de0ff6",
+    "text": "Certificat utilisateur SSH le plus long sans preuve matérielle (s)"
+  },
+  "pki.sshSoftwareLifetimeSeconds|description": {
+    "en": "45980657cb573f83",
+    "text": "La durée de vie la plus longue, en secondes, avec laquelle un certificat utilisateur SSH peut être émis pour une clé qu’aucune preuve matérielle vérifiée ne couvre : une clé ordinaire, ou une clé de sécurité sk- envoyée sans attestation de confiance. La demande peut demander moins. Cinq minutes par défaut."
+  },
+  "pki.sshHardwareLifetimeSeconds|label": {
+    "en": "58130ddb50b2cf1b",
+    "text": "Certificat utilisateur SSH le plus long avec preuve matérielle (s)"
+  },
+  "pki.sshHardwareLifetimeSeconds|description": {
+    "en": "93fab84d44ca2078",
+    "text": "La durée de vie la plus longue, en secondes, avec laquelle un certificat utilisateur SSH peut être émis pour une clé qu’une preuve matérielle vérifiée couvre : une clé de sécurité sk- dont l’attestation est vérifiée et de confiance, ou une clé qu’un certificat PIV attesté certifie. La demande peut demander moins. Une heure par défaut, qui est aussi le maximum."
+  },
+  "pki.sshUserCertificateExtensions|label": {
+    "en": "7bd63846ccd81f4e",
+    "text": "Extensions d’un certificat utilisateur SSH"
+  },
+  "pki.sshUserCertificateExtensions|description": {
+    "en": "66d53e3e95faddca",
+    "text": "Les extensions de certificat OpenSSH (PROTOCOL.certkeys) qu’un nouveau certificat utilisateur SSH porte, séparées par des virgules. Par défaut, le jeu de ssh-keygen ; un certificat sans extension permet à son titulaire de se connecter sans terminal, redirection ni fichier rc. no-touch-required peut être ajouté. Un nom qu’OpenSSH ne définit pas est ignoré."
+  },
+  "pki.sshGroupPrincipals|label": {
+    "en": "92bc72613cff7a8d",
+    "text": "Groupes dont les noms peuvent être des principaux SSH"
+  },
+  "pki.sshGroupPrincipals|description": {
+    "en": "401372878bd26042",
+    "text": "Les groupes de l’annuaire dont un membre peut demander le nom commun comme principal d’un certificat SSH, séparés par des virgules, chacun toujours décidé par la politique de contrôle d’accès (ressource ssh-user-ca, action issue-ssh-principal). Vide, la valeur par défaut, signifie aucun : un certificat ne nomme que l’uid de la personne, car un groupe n’accorde rien du seul fait d’être un groupe. Un groupe dont le nom est l’uid d’une personne ou un compte système comme root est refusé quoi qu’il en soit."
   }
 }

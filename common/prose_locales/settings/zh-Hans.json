@@ -13090,5 +13090,37 @@
   "pki.sshUserCaPqcAlongsideClassical|description": {
     "en": "b38eab63ec092b6c",
     "text": "开启后，当 ML-DSA 机构存在时，新的 SSH 用户证书签发两次：经典证书，即 OpenSSH 客户端使用的那一份，以及旁边的一份 ML-DSA 证书。不能与 pki.sshUserCaPqcOnly 同时开启（STS-PKI-0296）。默认关闭。复合签名不是 OpenSSH 的概念；经典证书和 ML-DSA 证书是两个签名，不是一个混合签名。"
+  },
+  "pki.sshSoftwareLifetimeSeconds|label": {
+    "en": "e65480d5e0de0ff6",
+    "text": "无硬件证据时 SSH 用户证书的最长有效期（秒）"
+  },
+  "pki.sshSoftwareLifetimeSeconds|description": {
+    "en": "45980657cb573f83",
+    "text": "对于没有经过验证的硬件证据覆盖的密钥（普通密钥，或未附可信证明的 sk- 安全密钥），SSH 用户证书可签发的最长有效期，以秒计。请求可以要求更短。默认五分钟。"
+  },
+  "pki.sshHardwareLifetimeSeconds|label": {
+    "en": "58130ddb50b2cf1b",
+    "text": "有硬件证据时 SSH 用户证书的最长有效期（秒）"
+  },
+  "pki.sshHardwareLifetimeSeconds|description": {
+    "en": "93fab84d44ca2078",
+    "text": "对于有经过验证的硬件证据覆盖的密钥（其证明已验证且可信的 sk- 安全密钥，或由经过证明的 PIV 证书认证的密钥），SSH 用户证书可签发的最长有效期，以秒计。请求可以要求更短。默认一小时，这也是上限。"
+  },
+  "pki.sshUserCertificateExtensions|label": {
+    "en": "7bd63846ccd81f4e",
+    "text": "SSH 用户证书携带的扩展"
+  },
+  "pki.sshUserCertificateExtensions|description": {
+    "en": "66d53e3e95faddca",
+    "text": "新 SSH 用户证书携带的 OpenSSH 证书扩展（PROTOCOL.certkeys），以逗号分隔。默认是 ssh-keygen 自己的一组；没有任何扩展的证书使其持有人登录时没有终端、转发或 rc 文件。可以加上 no-touch-required。OpenSSH 未定义的名称会被丢弃。"
+  },
+  "pki.sshGroupPrincipals|label": {
+    "en": "92bc72613cff7a8d",
+    "text": "名称可作为 SSH 主体的组"
+  },
+  "pki.sshGroupPrincipals|description": {
+    "en": "401372878bd26042",
+    "text": "成员可将其通用名称请求为 SSH 证书主体的目录组，以逗号分隔，每个仍由访问控制策略决定（资源 ssh-user-ca，操作 issue-ssh-principal）。为空（默认）即没有：证书只写入此人的 uid，因为组不会仅因为是组而授予任何东西。名称为某人 uid 或系统账户（如 root）的组无论如何都会被拒绝。"
   }
 }

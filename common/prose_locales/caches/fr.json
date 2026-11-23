@@ -1786,5 +1786,21 @@
   "caches.remaining.disowned": {
     "en": "0e9453a606f40a73",
     "text": "périmé : le justificatif a été désavoué"
+  },
+  "caches.store.ssh_user_ca.issued.title": {
+    "en": "d075b5ec478b0ed7",
+    "text": "Certificats utilisateur SSH émis"
+  },
+  "caches.store.ssh_user_ca.issued.description": {
+    "en": "75dbc5d0d0bd9054",
+    "text": "Une ligne par certificat utilisateur OpenSSH que l’AC utilisateur SSH de ce domaine a émis, par numéro de série : à qui il appartient (urn:uuid), l’empreinte de la clé, ses principaux, sa durée de vie et s’il a été révoqué. Jamais une clé."
+  },
+  "caches.store.ssh_user_ca.issued.bound": {
+    "en": "36fc38da0e0699e8",
+    "text": "Les lignes qu’un processus détient sont un cache de 5 000 par domaine ; une ligne quitte le magasin quand son certificat expire."
+  },
+  "caches.store.ssh_user_ca.issued.lifetime": {
+    "en": "fdcbaa82a4ac533d",
+    "text": "Jusqu’à l’expiration du certificat."
   }
 }

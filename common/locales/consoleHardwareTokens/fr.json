@@ -57,5 +57,16 @@
 "escrowSerial": "Numéro de série du certificat",
 "escrowSubject": "Sujet",
 "escrowExpires": "Expire",
-"escrowRecover": "Récupérer la clé"
+"escrowRecover": "Récupérer la clé",
+  "sshTab": "Certificats SSH",
+  "sshWhat": "Les certificats utilisateur OpenSSH que ce domaine a émis pour la personne, jusqu’à l’expiration de chacun. En révoquer un l’inscrit dans la KRL du domaine (GET /pki/ssh-user-krl), que lisent les serveurs qui font confiance à cette AC.",
+  "sshSearch": "Recherchez une personne dans l’onglet Jetons pour lister ici ses certificats SSH.",
+  "sshNone": "Aucun certificat SSH de {who} n’est valide.",
+  "sshSerial": "Numéro de série",
+  "sshKey": "Clé",
+  "sshPrincipals": "Principaux",
+  "sshExpires": "Expire",
+  "sshHardware": "lié au matériel",
+  "sshRevoked": "révoqué",
+  "sshRevoke": "Révoquer"
 }

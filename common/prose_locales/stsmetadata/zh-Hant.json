@@ -2220,12 +2220,12 @@
     "text": "NON-SPEC (#1955 P4)。管理員從供應商 PSKC 種子檔案匯入的 HOTP 與 TOTP 權杖，包括未指派、已指派或已停用者，可分頁並依序號或人員搜尋。絕不包含密鑰。對應 GET /admin/hardware-tokens（其 OATH 分頁）。"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-"en": "0d649147af0cbe04",
-"text": "NON-SPEC (#1955)。lost，帶 { key }：將權杖標記為遺失，移除其上的每個密碼金鑰，以 keyCompromise 為由撤銷其上的每張憑證，為每一項傳送 CAEP credential-change，並結束由它們登入的工作階段。enrol-piv，帶 { username, profile, csr, attestationCertificate?, attestationIssuer? }：透過 EST 簽發 CA 為此人簽發 PIV 插槽憑證，驗證其 YubiKey PIV 證明並記錄該 YubiKey。recover-key，帶 { username, serial }：此人的託管 piv-key-management 金鑰，存取控制原則僅允許 PIV_KEY_RECOVERY 執行。即主控台在該頁面上的三項動作。"
+"en": "cdbf34a1fbdf290e",
+"text": "NON-SPEC（#1955）。lost，帶 { key }：權杖被標記為遺失，其上的每個通行金鑰被移除，其上的每張憑證因 keyCompromise 被撤銷，為每項傳送 CAEP credential-change，並結束它們登入的工作階段。enrol-piv，帶 { username, profile, csr, attestationCertificate?, attestationIssuer? }：透過 EST 簽發 CA 為此人簽發 PIV 槽憑證，驗證其 YubiKey PIV 證明並記錄該 YubiKey。recover-key，帶 { username, serial }：此人託管的 piv-key-management 金鑰，存取控制原則只允許 PIV_KEY_RECOVERY 在近期登入後取得。revoke-ssh，帶 { username, serial }：撤銷此人的 SSH 使用者憑證並將其列入領域的 KRL。該頁面上主控台的四個動作。"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "b55c0cdd477d183e",
-"text": "回報硬體權杖遺失並停用其憑證、簽發 PIV 插槽憑證，或移交託管金鑰"
+    "en": "f5b724d2c79b5f74",
+"text": "回報硬體權杖遺失並撤回其憑證資料、簽發 PIV 槽憑證、交出託管金鑰，或撤銷某人的 SSH 憑證"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -4202,5 +4202,17 @@
   "stsmetadata.specs.rfc9980.coverage": {
     "en": "5feb46765c8bc465",
     "text": "partial：登記時以及使用已儲存金鑰時的 ML-DSA-65+Ed25519 與 ML-DSA-87+Ed448 簽章，以及 ML-KEM-768+X25519 與 ML-KEM-1024+X448 加密。複合演算法計為後量子。openpgp.pqcOnly 只收窄登記。簽章的兩個部分由 common/crypto_impl/openpgp_pqc.js 核驗。缺少：SLH-DSA（演算法識別碼 32-34），且本服務不產生 RFC 9980 金鑰。openpgp.js 不解析這些金鑰。"
+  },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "e83d747632c38b14",
+    "text": "NON-SPEC（#1955 P3）：領域範圍的 OpenSSH 使用者 CA 金鑰，以 authorized-key 行發布，供 SSH 伺服器信任。無閘控且 `no-store`，僅在主連接埠提供：明文 HTTP 撤銷監聽器拒絕它，因為該金鑰是信任錨。對應的 CA 私密金鑰從不離開本服務。"
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "2e4cdead67408937",
+    "text": "NON-SPEC（#1955 P3）：領域範圍的 OpenSSH KRL，在呼叫者撤銷憑證或回報硬體權杖遺失時更新。無閘控且 `no-store`，僅在主連接埠提供：KRL 未簽署，因此明文 HTTP 撤銷監聽器拒絕它。SSH 伺服器必須設定為查閱它，因為本服務無法讓依賴方這樣做。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/ssh-certificates.what": {
+    "en": "84ce6fea3694d4c0",
+    "text": "NON-SPEC（#1955 審查）。簽發給某人且尚未到期的 OpenSSH 使用者憑證，已撤銷的有標記：序號、金鑰類型與指紋、主體、有效期以及是否有硬體證據涵蓋該金鑰。從不包含金鑰。對應 GET /admin/hardware-tokens（其 SSH 憑證分頁）。"
   }
 }

@@ -8455,6 +8455,54 @@ const SETTINGS = [
                  'default. A composite is not a concept OpenSSH has; the ' +
                  'classical certificate and the ML-DSA certificate are ' +
                  'two signatures, not one hybrid signature.' },
+  // THE #1955 REVIEW OF THE SSH USER CA: the two lifetimes, the extensions
+  // a certificate carries, and the groups whose names may be principals.
+  // Each default is what the code did before, but the last two, which were
+  // gaps: a certificate with no extensions opens no shell, and every group
+  // a person was in was a principal. `common/ssh_user_ca.ts` argues them.
+  { key: 'pki.sshSoftwareLifetimeSeconds', group: 'PKI',
+    label: 'Longest SSH user certificate without hardware evidence (s)',
+    env: 'STS_PKI_SSH_SOFTWARE_LIFETIME_SECONDS', type: 'int', dflt: 300,
+    min: 60, max: 3600, runtime: true,
+    description: 'The longest lifetime, in seconds, an SSH user certificate ' +
+                 'may be issued with for a key no verified hardware ' +
+                 'evidence covers: a plain key, or an sk- security key ' +
+                 'sent without a trusted attestation. The request may ask ' +
+                 'for less. Five minutes by default.' },
+  { key: 'pki.sshHardwareLifetimeSeconds', group: 'PKI',
+    label: 'Longest SSH user certificate with hardware evidence (s)',
+    env: 'STS_PKI_SSH_HARDWARE_LIFETIME_SECONDS', type: 'int', dflt: 3600,
+    min: 60, max: 3600, runtime: true,
+    description: 'The longest lifetime, in seconds, an SSH user certificate ' +
+                 'may be issued with for a key verified hardware evidence ' +
+                 'covers: an sk- security key whose attestation verified ' +
+                 'and is trusted, or a key an attested PIV certificate ' +
+                 'certifies. The request may ask for less. One hour by ' +
+                 'default, which is also the most.' },
+  { key: 'pki.sshUserCertificateExtensions', group: 'PKI',
+    label: 'Extensions an SSH user certificate carries',
+    env: 'STS_PKI_SSH_USER_CERTIFICATE_EXTENSIONS', type: 'csv',
+    dflt: 'permit-X11-forwarding,permit-agent-forwarding,' +
+          'permit-port-forwarding,permit-pty,permit-user-rc',
+    runtime: true,
+    description: 'The OpenSSH certificate extensions (PROTOCOL.certkeys) a ' +
+                 'new SSH user certificate carries, comma-separated. The ' +
+                 'default is ssh-keygen\'s own set; a certificate with ' +
+                 'none lets its holder sign in without a terminal, ' +
+                 'forwarding or rc file. no-touch-required may be added ' +
+                 'too. A name OpenSSH does not define is dropped.' },
+  { key: 'pki.sshGroupPrincipals', group: 'PKI',
+    label: 'Groups whose names may be SSH principals',
+    env: 'STS_PKI_SSH_GROUP_PRINCIPALS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The directory groups whose common names a member may ask ' +
+                 'for as an SSH certificate principal, comma-separated, ' +
+                 'each still decided by the access-control policy (resource ' +
+                 'ssh-user-ca, action issue-ssh-principal). Empty, the ' +
+                 'default, is none: a certificate names only the person\'s ' +
+                 'uid, since a group grants nothing by being a group. A ' +
+                 'group whose name is a person\'s uid, or a system account ' +
+                 'such as root, is refused whatever this says.' },
   { key: 'pki.organisation', group: 'PKI',
     label: 'Default organisation name (O=)',
     env: 'STS_PKI_ORGANISATION', type: 'string',

@@ -13090,5 +13090,37 @@
   "pki.sshUserCaPqcAlongsideClassical|description": {
     "en": "b38eab63ec092b6c",
     "text": "Ein stellt ein neues SSH-Benutzerzertifikat zweimal aus, wenn die ML-DSA-Stelle existiert: das klassische Zertifikat, das ein OpenSSH-Client verwendet, und ein ML-DSA-Zertifikat daneben. Kann nicht an sein, während pki.sshUserCaPqcOnly an ist (STS-PKI-0296). Standardmäßig aus. Ein Komposit ist kein Begriff, den OpenSSH hat; das klassische Zertifikat und das ML-DSA-Zertifikat sind zwei Signaturen, nicht eine Hybridsignatur."
+  },
+  "pki.sshSoftwareLifetimeSeconds|label": {
+    "en": "e65480d5e0de0ff6",
+    "text": "Längstes SSH-Benutzerzertifikat ohne Hardware-Nachweis (s)"
+  },
+  "pki.sshSoftwareLifetimeSeconds|description": {
+    "en": "45980657cb573f83",
+    "text": "Die längste Laufzeit in Sekunden, mit der ein SSH-Benutzerzertifikat für einen Schlüssel ausgestellt werden darf, den kein geprüfter Hardware-Nachweis abdeckt: ein einfacher Schlüssel oder ein sk-Sicherheitsschlüssel ohne vertrauenswürdige Attestierung. Die Anfrage darf weniger verlangen. Standardmäßig fünf Minuten."
+  },
+  "pki.sshHardwareLifetimeSeconds|label": {
+    "en": "58130ddb50b2cf1b",
+    "text": "Längstes SSH-Benutzerzertifikat mit Hardware-Nachweis (s)"
+  },
+  "pki.sshHardwareLifetimeSeconds|description": {
+    "en": "93fab84d44ca2078",
+    "text": "Die längste Laufzeit in Sekunden, mit der ein SSH-Benutzerzertifikat für einen Schlüssel ausgestellt werden darf, den ein geprüfter Hardware-Nachweis abdeckt: ein sk-Sicherheitsschlüssel, dessen Attestierung geprüft und vertrauenswürdig ist, oder ein Schlüssel, den ein attestiertes PIV-Zertifikat zertifiziert. Die Anfrage darf weniger verlangen. Standardmäßig eine Stunde, was zugleich das Maximum ist."
+  },
+  "pki.sshUserCertificateExtensions|label": {
+    "en": "7bd63846ccd81f4e",
+    "text": "Erweiterungen eines SSH-Benutzerzertifikats"
+  },
+  "pki.sshUserCertificateExtensions|description": {
+    "en": "66d53e3e95faddca",
+    "text": "Die OpenSSH-Zertifikatserweiterungen (PROTOCOL.certkeys), die ein neues SSH-Benutzerzertifikat trägt, durch Kommas getrennt. Standard ist der Satz von ssh-keygen; ein Zertifikat ohne Erweiterungen lässt seinen Inhaber ohne Terminal, Weiterleitung oder rc-Datei anmelden. no-touch-required kann ergänzt werden. Ein Name, den OpenSSH nicht definiert, wird verworfen."
+  },
+  "pki.sshGroupPrincipals|label": {
+    "en": "92bc72613cff7a8d",
+    "text": "Gruppen, deren Namen SSH-Principals sein dürfen"
+  },
+  "pki.sshGroupPrincipals|description": {
+    "en": "401372878bd26042",
+    "text": "Die Verzeichnisgruppen, deren Common Names ein Mitglied als Principal eines SSH-Zertifikats verlangen darf, durch Kommas getrennt, jeweils weiterhin von der Zugriffsrichtlinie entschieden (Ressource ssh-user-ca, Aktion issue-ssh-principal). Leer, der Standard, bedeutet keine: ein Zertifikat nennt nur die uid der Person, denn eine Gruppe gewährt nichts dadurch, dass sie eine Gruppe ist. Eine Gruppe, deren Name die uid einer Person oder ein Systemkonto wie root ist, wird in jedem Fall abgelehnt."
   }
 }
