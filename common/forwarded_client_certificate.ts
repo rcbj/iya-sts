@@ -406,8 +406,14 @@ class ForwardedClientCertificate {
           object.issuerCertificate = objects[i + 1];
         }
       });
+      // SELF-ISSUED IN RFC 5280 SECTION 3.3's SENSE, subject equal to issuer
+      // (`crypto.certificateFacts()`' `selfIssued`), and not node's
+      // `checkIssued()`: this only links the legacy object as node links a
+      // handshake's, after the door (`CertificateTrust.path()`) has decided
+      // the path, so it decides nothing and asks no path function
+      // (`tests/certificate_trust_callers.js`, run 45236493306).
       const top = path[path.length - 1];
-      if (top.checkIssued(top)) {
+      if (String(top.subject) === String(top.issuer)) {
         objects[objects.length - 1].issuerCertificate =
           objects[objects.length - 1];
       }

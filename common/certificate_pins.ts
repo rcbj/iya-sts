@@ -344,6 +344,33 @@ class CertificatePins {
   }
 
   /**
+   * The TLS-terminating proxies trusted to forward a client certificate
+   * (#2012, `tls.trustedProxyCertificates`): SHA-256 fingerprints, so each
+   * is a thumbprint row, as a registered thumbprint is. The certificate is
+   * not here to read; what is listed is that the realm pins one, and its
+   * handshake is the client truststore's (`tls-client`).
+   *
+   * @returns the rows
+   */
+  static fromTrustedProxies(): PinnedSource[] {
+    helpers.log.debug("Entering CertificatePins.fromTrustedProxies().");
+    const raw = config.value('tls.trustedProxyCertificates');
+    const rows: PinnedSource[] = [];
+    (Array.isArray(raw) ? raw : String(raw || '').split(','))
+      .map(function (one: unknown): string {
+        return String(one).trim();
+      }).filter(Boolean).forEach(function (one: string, i: number) {
+        rows.push({ source: 'setting',
+                    where: 'tls.trustedProxyCertificates #' + (i + 1),
+                    purpose: 'tls-client', thumbprint: one,
+                    href: '/admin/listeners' });
+      });
+    helpers.log.debug("Leaving CertificatePins.fromTrustedProxies(). " +
+                      rows.length);
+    return rows;
+  }
+
+  /**
    * Hands every source to the door.
    */
   static install(): void {
@@ -362,6 +389,8 @@ class CertificatePins {
                                        CertificatePins.fromCloudAnchors);
     CertificateTrust.registerPinSource('client-truststore',
                                        CertificatePins.fromClientTruststore);
+    CertificateTrust.registerPinSource('trusted-proxies',
+                                       CertificatePins.fromTrustedProxies);
     helpers.log.debug("Leaving CertificatePins.install().");
   }
 }
