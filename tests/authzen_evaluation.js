@@ -1179,6 +1179,10 @@ async function childBody() {
   t.check(settings.enabled === true && settings.batchEnabled === true &&
           settings.returnReasons === false &&
           settings.obligationsProfile === true &&
+          settings.tokenExchange === false &&
+          Array.isArray(settings.tokenExchangeDetailTypes) &&
+          Array.isArray(settings.tokenExchangeTokenTypes) &&
+          settings.tokenExchangeTokenTypes.indexOf('access_token') >= 0 &&
           settings.maxEvaluations === 64 &&
           settings.maxBodyBytes === 262144 &&
           JSON.stringify(settings.resolveSubjectTypes) === '["user"]',

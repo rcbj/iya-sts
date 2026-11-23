@@ -18,6 +18,12 @@
 //                                           surface, two-space JSON
 //   rust/crates/sts-model-pep/src/generated/<document>.rs, unions.rs
 //                                           the data types (`pep_lib.mjs`)
+//   rust/crates/sts-model-pep/src/generated/authzen_obligations.rs
+//                                           the Obligations Profile's
+//                                           registered types, compiled
+//                                           from the SERVICE's AuthZEN
+//                                           model, which the edge PDP maps
+//                                           obligations by (#1205)
 //
 // UNLIKE `generate.mjs` THESE FILES ARE COMMITTED: the Rust crate is built
 // by `cargo` from a checkout and by the PEP's image from `rust/`, neither of
@@ -35,7 +41,8 @@ import path from 'path';
 import url from 'url';
 import bunyan from 'bunyan';
 import { documents } from '../lib/api_lib.mjs';
-import { documentFile, documentText, renderPepRust }
+import { readAuthzen } from '../lib/authzen_lib.mjs';
+import { documentFile, documentText, renderObligationRules, renderPepRust }
   from '../lib/pep_lib.mjs';
 
 const log = bunyan.createLogger({
@@ -75,6 +82,31 @@ function compilerUrl() {
 }
 
 /**
+ * Compiles one entry point, refusing one that does not compile.
+ *
+ * @param compiler - the TypeSpec compiler module
+ * @param entry - the entry file, under the root
+ * @returns the program
+ */
+async function compiled(compiler, entry) {
+  log.debug("Entering compiled(). " + entry);
+  const program = await compiler.compile(compiler.NodeHost,
+    path.join(ROOT, entry), { noEmit: true });
+  const errors = program.diagnostics.filter(function (one) {
+    return one.severity === 'error';
+  });
+  if (errors.length > 0) {
+    log.debug("Leaving compiled(). It did not compile.");
+    throw new Error(entry + ' does not compile: ' +
+      errors.map(function (one) {
+        return one.code + ': ' + one.message;
+      }).join('; '));
+  }
+  log.debug("Leaving compiled().");
+  return program;
+}
+
+/**
  * Compiles the PEP's model and renders every file it generates.
  *
  * @returns every file's text, by its absolute path
@@ -82,18 +114,8 @@ function compilerUrl() {
 export async function render() {
   log.debug("Entering render().");
   const compiler = await import(compilerUrl());
-  const program = await compiler.compile(compiler.NodeHost,
-    path.join(ROOT, 'models', 'pep', 'main.tsp'), { noEmit: true });
-  const errors = program.diagnostics.filter(function (one) {
-    return one.severity === 'error';
-  });
-  if (errors.length > 0) {
-    log.debug("Leaving render(). The model did not compile.");
-    throw new Error('The PEP model does not compile: ' +
-      errors.map(function (one) {
-        return one.code + ': ' + one.message;
-      }).join('; '));
-  }
+  const program = await compiled(compiler, path.join('models', 'pep',
+    'main.tsp'));
   const served = documents(program);
   if (Object.keys(served).length === 0) {
     log.debug("Leaving render(). No document.");
@@ -108,6 +130,13 @@ export async function render() {
   Object.keys(rust.files).forEach(function (file) {
     out[path.join(RUST_DIR, file)] = rust.files[file];
   });
+  // THE OBLIGATION RULES ARE THE SERVICE'S MODEL (#1205, #1390), compiled
+  // from its own file — which imports only its decorators — rather than
+  // copied into the PEP's, so a type added there reaches the edge.
+  const members = await compiled(compiler, path.join('models', 'authzen',
+    'authzen_members.tsp'));
+  out[path.join(RUST_DIR, 'authzen_obligations.rs')] =
+    renderObligationRules(readAuthzen(members));
   log.debug("Leaving render(). " + Object.keys(out).length + " file(s).");
   return out;
 }
