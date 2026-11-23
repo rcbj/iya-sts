@@ -8,6 +8,12 @@ A YubiKey's OTP slot, checked on this service. The format is [Yubico's published
 
 Enrolment is off until an operator turns on both `yubiotp.offered` and the authentication policy's `yubico-otp` second-factor row. That row is off by default. Off on that row, nobody may enrol, assign or claim one, even when `yubiotp.offered` is on. A credential already held is still checked at the one-time-code step. The settings are in [Configuration](configuration.md#yubikey-otp).
 
+## The algorithms are fixed
+
+There is no signature-algorithm setting for a YubiKey OTP. The OTP itself is AES-128-ECB of one 16-byte block, which is Yubico's format. A YK-VAL request is signed with HMAC-SHA1, which is Validation Protocol 2.0. Neither can be changed.
+
+`yubiotp.offered` (`STS_YUBIOTP_OFFERED`) and `yubiotp.ykval` (`STS_YUBIOTP_YKVAL`) are on **Protocols → TOTP MFA** (`/admin/totp`). `yubiotp.allowPlaintextImport` (`STS_YUBIOTP_ALLOW_PLAINTEXT_IMPORT`) is in the Devices group, on **Protocols → Device registration** (`/admin/device-registration`). All three take effect while the service is running. They turn enrolment, the verify endpoint and plaintext import on or off. They leave AES-128-ECB and HMAC-SHA1 as they are.
+
 ## Set one up
 
 On `/portal/mfa`, **Set up a YubiKey OTP** shows one line:
