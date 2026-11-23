@@ -819,8 +819,11 @@ profile of every kind. The authentication policy's named profiles use
 #### Creating a named policy — `/admin/policies/new`
 
 A kind's **New policy** sub-tab takes you to `/admin/policies/new?kind=<kind>`,
-the kind's create form. **The name is always required.** A save that omits
-the name is refused; send `default` to edit the default profile. It is
+the kind's create form. **The name is always required**: the form is
+refused without one ("A name is required."), and so is a save through the
+management API that sends an empty or null `profile`. A management API save
+that leaves `profile` out edits the *default* policy, as it always has. A
+named authentication policy is never called `default`. It is
 outlined in red and marked *required*, as on `/admin/users/new`, and so is
 each of the kind's fields that the save refuses without; the note above the
 form names them. A field whose

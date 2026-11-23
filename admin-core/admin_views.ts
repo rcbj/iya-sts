@@ -9142,6 +9142,33 @@ class AdminViews {
     return out;
   }
 
+  // THE USERS TABLE, AS THIS REALM'S DEFAULT SERVICE-ACCOUNT POLICY HAS IT
+  // (#1132's follow-ups): an owner is required of a new service account
+  // only while `requireOwner` is on, so where the default policy turns it
+  // off the owners field is optional. A create that names another policy
+  // is held to that one's rule, as ever.
+  private newUserFields(): any[] {
+    const { log, serviceAccountPolicy } = this.deps;
+    log.debug("Entering AdminViews.newUserFields().");
+    let ownerRequired = true;
+    try {
+      ownerRequired = serviceAccountPolicy.requiresOwner();
+    } catch (e) {
+      log.debug("Caught in AdminViews.newUserFields(): " +
+                ((e && e.message) || e));
+      ownerRequired = true;
+    }
+    const out = CreateForms.fieldsOf('users').map(function (row: any) {
+      if (row.name === 'owners' && !ownerRequired) {
+        return { name: row.name, required: false };
+      }
+      return row;
+    });
+    log.debug("Leaving AdminViews.newUserFields(). owner " +
+              (ownerRequired ? 'required' : 'optional') + ".");
+    return out;
+  }
+
   /**
    * Builds `/admin/users/new`'s JSON: the attribute catalogue and credential
    * choices.
@@ -9185,8 +9212,9 @@ class AdminViews {
       container: container,
       realm: { id: realms.currentId(), name: realm ? realm.name : '' },
       // THE FORM'S OWN REQUIRED FIELD (#1132): the username, beside the
-      // grid's, which are the attribute policy's (`requiredAttributes`).
-      createFields: CreateForms.fieldsOf('users'),
+      // grid's, which are the attribute policy's (`requiredAttributes`), and
+      // the service account's, required only with its box ticked.
+      createFields: this.newUserFields(),
       mode: mode.current(),
       // WHETHER THE BUTTON IS THERE, published rather than left to be inferred
       // from `mode`: a caller of GET /admin-api/users/new reading this document
@@ -11051,13 +11079,14 @@ class AdminViews {
   // the realm does not hold yet, so its fields are the kind's own table
   // (each module's FIELDS, its `optional` rows the ones a save keeps the
   // value in force for), behind the name — refused when empty or not a
-  // policy name, where a save with no name at all is refused, which is
-  // why the page insists on one — and the precedence, which
+  // policy name, where a save with no name at all edits the DEFAULT policy,
+  // which is why the page insists on one — and the precedence, which
   // defaults to 100. Two kinds are their own: the authentication policy's
   // named create takes `name`, its mechanisms optional (none allows every
   // one), and the attribute policy's console form sends its list even when
   // empty. A boolean is required of an API caller and is never empty on the
-  // console's form, where No is checked when the answer is no.
+  // console's form, where No is checked when the answer is no. A sent field
+  // whose save takes it EMPTY is not required (`fieldsRefusedEmpty()`).
   /**
    * Builds `GET /admin-api/policies/new`: the kinds, and the asked kind's
    * create fields with which of them are required.
@@ -11096,16 +11125,71 @@ class AdminViews {
         { name: 'secondFactors', required: false }
       ];
     } else {
+      const refusedEmpty = this.fieldsRefusedEmpty(kind.module);
       out.createFields = [
         { name: 'profile', required: true },
         { name: 'precedence', required: false },
         { name: 'description', required: false }
       ].concat((kind.module.FIELDS || []).map(function (field) {
-        return { name: String(field.key), required: !field.optional };
+        return { name: String(field.key),
+                 required: !field.optional && !!refusedEmpty[field.key] };
       }));
     }
     log.debug("Leaving AdminViews.newPolicyJson(). kind=" + kind.id + ", " +
               out.createFields.length + " field(s).");
+    return out;
+  }
+
+  // WHICH OF A KIND'S FIELDS ITS SAVE REFUSES EMPTY (#1132's follow-ups). A
+  // row that is not `optional` must be SENT, but several take an empty
+  // value and mean something by it — the passkey policy's sign-in hints
+  // (none), its enterprise serial attribute (off), the attribute policy's
+  // required attributes (none of the realm's own) — and outlining those as
+  // required told the person to fill in what the save accepts blank. So the
+  // kind's own validation is ASKED, not described a second time: the
+  // default profile as it stands, then that with one field emptied; a field
+  // whose emptying adds a problem is required. Read-only — `validate()`
+  // writes nothing — and asked only of this page's answer. A kind whose
+  // validation cannot be asked, or throws, keeps every sent row required.
+  private fieldsRefusedEmpty(module: any): Record<string, boolean> {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.fieldsRefusedEmpty().");
+    const fields = (module && module.FIELDS) || [];
+    const out: Record<string, boolean> = {};
+    fields.forEach(function (field) {
+      out[String(field.key)] = true;
+    });
+    if (!module || typeof module.validate !== 'function' ||
+        typeof module.read !== 'function') {
+      log.debug("Leaving AdminViews.fieldsRefusedEmpty(). Not askable.");
+      return out;
+    }
+    try {
+      const current = module.read(module.DEFAULT_PROFILE) || {};
+      const base: Record<string, string> = {};
+      fields.forEach(function (field) {
+        const value = current[field.key];
+        base[field.key] = Array.isArray(value) ? value.join(', ')
+          : value === undefined || value === null ? '' : String(value);
+      });
+      const problemsOf = function (body: Record<string, string>): number {
+        const checked = module.validate(body) || {};
+        return (checked.problems || []).length;
+      };
+      const baseline = problemsOf(base);
+      fields.forEach(function (field) {
+        const emptied = Object.assign({}, base);
+        emptied[field.key] = '';
+        out[String(field.key)] = problemsOf(emptied) > baseline;
+      });
+    } catch (e) {
+      log.debug("Caught in AdminViews.fieldsRefusedEmpty(): " +
+                ((e && e.message) || e));
+      fields.forEach(function (field) {
+        out[String(field.key)] = true;
+      });
+    }
+    log.debug("Leaving AdminViews.fieldsRefusedEmpty().");
     return out;
   }
 

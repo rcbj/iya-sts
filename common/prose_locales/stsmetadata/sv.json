@@ -2024,8 +2024,8 @@
     "text": "UTANFÖR SPECIFIKATION. Vad ett mål för hemligheter kan läggas till med, som JSON: varje fält i skapandet och om skapandet avvisas utan det — identifieraren och leverantören alltid, och vissa bara för vissa leverantörer (requiredWhen): skrivuppgiften för alla utom file, regionen för aws, slutpunkten för azure och vault, katalogen för file. DEN LÄGGER INTE TILL NÅGOT: skapandet är POST /admin-api/secret-destinations/add-destination. Speglar GET /admin/secret-destinations/new."
   },
   "stsmetadata.endpoints./admin-api/policies/new.what": {
-    "en": "8b0523b4a594c8c1",
-    "text": "UTANFÖR SPECIFIKATION. De sorter en namngiven policy kan göras av och, för den efterfrågade sorten, varje fält i dess sparande och om sparandet avvisas utan det — alltid namnet, eftersom ett sparande utan namn avvisas, och varje fält vars värde inte behålls när det utelämnas. DEN SPARAR INGENTING: en namngiven policy är sortens sparande under ett namn som realmen ännu inte har. Speglar GET /admin/policies/new."
+    "en": "76e1013ae3d82e5b",
+    "text": "UTANFÖR SPECIFIKATION. De sorter en namngiven policy kan göras av och, för den efterfrågade sorten, varje fält i dess sparande och om sparandet avvisas utan det — alltid namnet, eftersom ett sparande utan namn ändrar standardpolicyn, och varje fält som sparandet avvisar tomt. DEN SPARAR INGENTING: en namngiven policy är sortens sparande under ett namn som realmen ännu inte har. Speglar GET /admin/policies/new."
   },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",

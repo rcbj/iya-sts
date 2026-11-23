@@ -725,10 +725,16 @@ class UsersPage {
         // required was said only in the note under it.
         kit.frame('<h2>' +
         t.html('consoleUsers.newUserBody.whoHeading') + '</h2>' +
-        kit.createFields([{ name: 'username', required: true,
-          label: t.html('consoleUsers.newUserBody.username'),
-          placeholder: t.text('consoleUsers.newUserBody.usernameHint'),
-          attrs: { maxlength: 256 } }], { username: username }, t) +
+        // FROM THE ANSWER'S `createFields` (#1132's follow-ups), as every
+        // create page draws its required fields, rather than a row of its
+        // own that could disagree with the create.
+        kit.createFields(kit.createRows(UsersPage.createFieldsNamed(json,
+          ['username']), {
+          username: { label: t.html('consoleUsers.newUserBody.username'),
+                      placeholder: t.text(
+                        'consoleUsers.newUserBody.usernameHint'),
+                      attrs: { maxlength: 256 } } }),
+          { username: username }, t) +
         // NOT THE ONLY REQUIRED FIELD (#1066): the attribute policy requires
         // cn and sn as well, and the realm may add more, each outlined in
         // the grid below.
@@ -780,23 +786,29 @@ class UsersPage {
         t.html('consoleUsers.newUserBody.saLabel') + '</label></div>' +
         // THE OWNERS (#600), one per line — a create has no person page yet
         // to search from; the person's Service account tab is where owners
-        // are found and added afterwards. The placeholder was drawn
-        // unescaped (its apostrophe as itself), so it is drawn as markup: a
-        // translation holds no quote.
-        '<div class="formrow"><label>' +
-        t.html('consoleUsers.newUserBody.owner') + ' <textarea ' +
-        'name="owners" rows="3" cols="60" placeholder="' +
-        t.html('consoleUsers.newUserBody.ownerHint') + '">' +
-        kit.esc([].concat(given.owners == null ? [] : given.owners)
-          .join('\n')) + '</textarea></label></div>' +
-        '<div class="formrow"><label>' +
-        t.html('consoleUsers.newUserBody.destination') + ' <input ' +
-        'type="text" ' +
-        'name="destination" size="40" value="' +
-        kit.esc(given.destination || '') + '"></label><label>' +
-        t.html('consoleUsers.newUserBody.secretName') + ' ' +
-        '<input type="text" name="secretName" size="28" value="' +
-        kit.esc(given.secretName || '') + '"></label></div>' +
+        // are found and added afterwards — and the push destination with
+        // the secret's name there. CELLS OF THE ANSWER'S `createFields`
+        // (#1132's follow-ups): the owners are required while the box is
+        // ticked (and the realm's policy requires one), and the destination
+        // and the secret's name each once the other holds anything, marked
+        // as the create refuses (STS-SVCACCT-0023, 0026), the mark moving
+        // with the box and the text (`wireConditionalRequirements()`).
+        kit.createFields(kit.createRows(UsersPage.createFieldsNamed(json,
+          ['owners', 'destination', 'secretName']), {
+          owners: { label: t.html('consoleUsers.newUserBody.owner'),
+                    type: 'long',
+                    placeholder: kit.unescapeText(
+                      t.html('consoleUsers.newUserBody.ownerHint')) },
+          destination: { label: t.html('consoleUsers.newUserBody.destination'),
+                         attrs: { size: 40 } },
+          secretName: { label: t.html('consoleUsers.newUserBody.secretName'),
+                        attrs: { size: 28 } } }),
+          { serviceAccount: given.serviceAccount === true ||
+                            given.serviceAccount === 'true' ? 'true' : '',
+            owners: [].concat(given.owners == null ? [] : given.owners)
+              .join('\n'),
+            destination: given.destination || '',
+            secretName: given.secretName || '' }, t) +
         kit.note(t.html('consoleUsers.newUserBody.saBefore') + '<a ' +
         'href="/admin/policies#serviceAccount">' +
         t.html('consoleUsers.newUserBody.saPolicy') + '</a>' +
@@ -1005,6 +1017,25 @@ class UsersPage {
         }).join('') + '</div></div>';
     }).join('');
     return html;
+  }
+
+  /**
+   * The answer's `createFields` rows for some of New user's fields, in the
+   * order asked (#1132): a field the answer does not carry is drawn as an
+   * optional one, so an older answer still draws its form.
+   *
+   * @param json - the `/admin-api/users/new` answer
+   * @param names - the fields wanted
+   * @returns `[{ name, required, requiredWhen }]`
+   */
+  static createFieldsNamed(json, names) {
+    const served = (json && json.createFields) || [];
+    return names.map(function (name) {
+      const found = served.filter(function (one) {
+        return one && one.name === name;
+      })[0];
+      return found || { name: name, required: false };
+    });
   }
 
   /**

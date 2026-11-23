@@ -2024,8 +2024,8 @@
     "text": "NICHT SPEZIFIZIERT. Womit ein Ziel für Geheimnisse hinzugefügt werden kann, als JSON: jedes Feld des Anlegens und ob das Anlegen ohne es abgelehnt wird — Bezeichner und Anbieter immer, manche nur bei manchen Anbietern (requiredWhen): die Schreibberechtigung bei allen außer file, die Region bei aws, der Endpunkt bei azure und vault, das Verzeichnis bei file. ES FÜGT NICHTS HINZU: Das Anlegen ist POST /admin-api/secret-destinations/add-destination. Entspricht GET /admin/secret-destinations/new."
   },
   "stsmetadata.endpoints./admin-api/policies/new.what": {
-    "en": "8b0523b4a594c8c1",
-    "text": "NICHT SPEZIFIZIERT. Die Arten, aus denen eine benannte Richtlinie gemacht werden kann, und für die angefragte Art jedes Feld ihres Speicherns und ob das Speichern ohne es abgelehnt wird — immer der Name, weil ein Speichern ohne Namen abgelehnt wird, und jedes Feld, dessen Wert nicht erhalten bleibt, wenn es fehlt. ES SPEICHERT NICHTS: Eine benannte Richtlinie ist der Speichervorgang der Art unter einem Namen, den der Realm noch nicht hat. Entspricht GET /admin/policies/new."
+    "en": "76e1013ae3d82e5b",
+    "text": "NICHT SPEZIFIZIERT. Die Arten, aus denen eine benannte Richtlinie gemacht werden kann, und für die angefragte Art jedes Feld ihres Speicherns und ob das Speichern ohne es abgelehnt wird — immer der Name, weil ein Speichern ohne Namen die Standardrichtlinie ändert, und jedes Feld, das das Speichern leer ablehnt. ES SPEICHERT NICHTS: Eine benannte Richtlinie ist der Speichervorgang der Art unter einem Namen, den der Realm noch nicht hat. Entspricht GET /admin/policies/new."
   },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",

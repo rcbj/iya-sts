@@ -2382,7 +2382,7 @@ model XacmlPepListenerTuningFields {
   }) @component model `CreateFormField` {
     `name`: string;
     `required`: boolean;
-    @js(#{`description`:"A field required for some choices only: the create refuses without it when `field` holds one of `values`, and is otherwise indifferent. `required` is false for such a field."}) `requiredWhen`?: {
+    @js(#{`description`:"A field required for some choices only: the create refuses without it when `field` holds one of `values` — `*` meaning any value at all, so two fields that go together each name the other — and is otherwise indifferent. `required` is false for such a field."}) `requiredWhen`?: {
       `field`: string;
       `values`: (string)[]
     }

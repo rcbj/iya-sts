@@ -6682,8 +6682,8 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC. The kinds a named policy may be made of and, for the ' +
           'kind asked, each field of its save and whether the save ' +
           'refuses without it — the name always, because a save with no ' +
-          'name is refused, and each field whose value is ' +
-          'not kept when it is left out. IT SAVES NOTHING: a named policy ' +
+          'name changes the default policy, and each field the save ' +
+          'refuses empty. IT SAVES NOTHING: a named policy ' +
           'is the kind\'s save act under a name the realm does not hold ' +
           'yet. Mirrors GET /admin/policies/new.' },
   { path: '/admin-api/applications/new', group: 'Management API',
