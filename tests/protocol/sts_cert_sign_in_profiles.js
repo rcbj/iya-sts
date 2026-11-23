@@ -1,0 +1,281 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
+"use strict";
+//
+// File: sts_cert_sign_in_profiles.js
+//
+// ---------------------------------------------------------------------------
+// A CERTIFICATE SIGN-IN PROFILE AND RFC 9440 FROM A NAMED PROXY, OVER REAL
+// HANDSHAKES (#2012).
+//
+// `tests/certificate_binding.js` holds the logic in process; this holds what
+// a running service does with it, which is the only kind of check an AWS
+// target and product mode can run. An outside chain (Root → Issuing CA →
+// leaf, `tools/pep-credential.js`) is minted and its Root admitted to the
+// client truststore through the gated door (recorded first, removed at the
+// end, #335/#1307); a second chain plays the TLS-terminating proxy. Every
+// setting is written on a throwaway development realm:
+//
+//   A. NO PROFILE: the leaf, stored on nobody, signs nobody in at
+//      `/tls/sign-in` (#1061's rule, as before; STS-TLS-0054).
+//   B. A PROFILE covering the Root, binding by issuer and serial: with the
+//      binding recorded on alice (`users/add-attribute`), `/tls/sign-in`
+//      starts her session; the same binding given to bob is refused.
+//   C. OUTSIDE THE PROFILE: the profile asking extendedKeyUsage
+//      emailProtection, which the leaf does not carry, signs nobody in.
+//   D. LOW AFFINITY WITHOUT OPTING IN: a profile naming `upn` without
+//      `lowAffinity` is refused when written (STS-TLS-0065).
+//   E. RFC 9440: from the named proxy (its certificate and an address range
+//      holding every address), the forwarded leaf signs alice in; the same
+//      headers on a connection presenting no certificate sign nobody in; and
+//      from the proxy's certificate outside the address range the headers
+//      are removed and the proxy's own certificate, stored on nobody, is what
+//      the door sees.
+//
+// NOT CARRIED, and why: the certificate handoff to a second listener needs a
+// custom listener bound by the stack (owed with the listener jobs), and a
+// policy-mapped Federal PKI path is held in process, where the chain can
+// carry certificate policies this minting tool does not write.
+//
+// OWNED HERE (local: true): this repository's own doors.
+// ---------------------------------------------------------------------------
+
+const assert = require("assert");
+const https = require("https");
+const nodeCrypto = require("crypto");
+const anchors = require("../tools/pep-credential.js");
+const K = require("./oauth_wire_kit.js").kit("sts_cert_sign_in_profiles");
+const log = K.log;
+
+const FLOOR = 10;
+const added = [];
+
+function check(what, fn) {
+  log.debug("Entering check().");
+  K.check(what, fn);
+  log.debug("Leaving check().");
+}
+
+// One request on its own connection, presenting `tls` when given.
+function tlsCall(method, url, o) {
+  log.debug("Entering tlsCall(). " + method + " " + url);
+  const opts = o || {};
+  return new Promise(function (resolve, reject) {
+    const u = new URL(url);
+    const headers = Object.assign({ accept: "application/json" },
+                                  opts.headers || {});
+    const req = https.request({ host: u.hostname, port: u.port,
+      path: u.pathname + u.search, method: method, headers: headers,
+      agent: false, cert: opts.tls ? opts.tls.cert : undefined,
+      key: opts.tls ? opts.tls.key : undefined }, function (res) {
+      let text = "";
+      res.setEncoding("utf8");
+      res.on("data", function (chunk) {
+        text += chunk;
+      });
+      res.on("end", function () {
+        let json = null;
+        try {
+          json = JSON.parse(text);
+        } catch (e) {
+          log.debug("Caught in tlsCall(): " + ((e && e.message) || e));
+          // Not JSON: the caller reads the text.
+          json = null;
+        }
+        log.debug("Leaving tlsCall(). " + res.statusCode);
+        resolve({ status: res.statusCode, json: json, text: text,
+                  setCookies: [].concat(res.headers["set-cookie"] || []) });
+      });
+    });
+    req.on("error", function (e) {
+      log.debug("Caught in tlsCall(): " + e.message);
+      reject(e);
+    });
+    req.end();
+  });
+}
+
+// A call the truststore may not have applied yet: retried on a reset (the
+// install races the next handshake, tests/CLAUDE.md, #335).
+async function settled(url, o) {
+  log.debug("Entering settled().");
+  let last = null;
+  for (let i = 0; i < 10; i += 1) {
+    try {
+      const r = await tlsCall("GET", url, o);
+      log.debug("Leaving settled().");
+      return r;
+    } catch (e) {
+      log.debug("Caught in settled(): " + ((e && e.message) || e));
+      // A handshake refused while the anchor is being applied; again.
+      last = e;
+      await K.sleep(300);
+    }
+  }
+  throw last;
+}
+
+// The SHA-256 of a certificate's SubjectPublicKeyInfo, as a profile's
+// `issuers` and an issuer-scoped binding name a CA.
+function spkiSha256(pem) {
+  log.debug("Entering spkiSha256().");
+  const spki = new nodeCrypto.X509Certificate(pem).publicKey
+    .export({ type: "spki", format: "der" });
+  log.debug("Leaving spkiSha256().");
+  return nodeCrypto.createHash("sha256").update(spki).digest("hex");
+}
+
+function derOf(pem) {
+  log.debug("Entering derOf().");
+  log.debug("Leaving derOf().");
+  return new nodeCrypto.X509Certificate(pem).raw;
+}
+
+function started(r) {
+  log.debug("Entering started().");
+  log.debug("Leaving started().");
+  return !!(r.json && r.json.signedIn === true);
+}
+
+async function test() {
+  log.debug("Entering test().");
+  const realm = await K.realm("certprof");
+  const rb = K.rb(realm);
+  const alice = "cpa-" + K.STAMP;
+  const bob = "cpb-" + K.STAMP;
+  for (const who of [alice, bob]) {
+    await K.ok(rb + "/admin-api/users/create", { username: who,
+      invent: false, credential: "none", attributes: { cn: who,
+        givenName: who, sn: who, mail: who + "@cp.example.test" } },
+      "created " + who);
+  }
+  const card = await anchors.mint({ subject: "CN=SMITH.JANE." + K.STAMP +
+                                    ",O=outside authority" });
+  const proxy = await anchors.mint({ subject: "CN=proxy " + K.STAMP +
+                                     ",O=outside authority",
+                                     rootSubject: "CN=proxy Root " +
+                                       K.STAMP });
+  for (const one of [card, proxy]) {
+    const installed = await anchors.trustRecorded(K.base, one.anchorPem,
+                                                  added);
+    assert.ok(installed.ok, "an outside Root was not admitted: " +
+              String(installed.why || installed.status));
+  }
+  const tls = { cert: card.certPem, key: card.keyPem };
+  const binding = "issuer-serial:" + spkiSha256(card.issuing.pem) + ":" +
+    String(card.leaf.serialHex).toLowerCase();
+  const profile = { id: "outside", issuers: [spkiSha256(card.anchorPem)],
+                    keyUsage: ["digitalSignature"],
+                    extendedKeyUsage: ["1.3.6.1.5.5.7.3.2"],
+                    bindings: ["issuer-serial"] };
+
+  log.info("=== A. no profile ===");
+  const none = await settled(rb + "/tls/sign-in", { tls: tls });
+  check("A1. with no profile the leaf, stored on nobody, signs nobody in " +
+        "(NOT_STORED)", function () {
+    assert.ok(!started(none), none.text.slice(0, 300));
+    assert.strictEqual(none.json && none.json.session &&
+                       none.json.session.refusedAsStored, "NOT_STORED",
+                       none.text.slice(0, 300));
+  });
+
+  log.info("=== B. a profile binding by issuer and serial ===");
+  await K.set(realm, "certSignIn.profiles", JSON.stringify([profile]));
+  await K.ok(rb + "/admin-api/users/add-attribute", { user: alice,
+    attribute: "stsCertificateBinding", value: binding.toUpperCase()
+      .replace(/^ISSUER-SERIAL/, "Issuer-Serial") },
+    "bound the leaf to " + alice);
+  const bound = await settled(rb + "/tls/sign-in", { tls: tls });
+  check("B1. the profile binds the leaf to alice: /tls/sign-in starts her " +
+        "session", function () {
+    assert.ok(started(bound), bound.text.slice(0, 300));
+    assert.ok(bound.setCookies.some(function (c) {
+      return /sts_session/.test(c);
+    }), JSON.stringify(bound.setCookies));
+  });
+  const twice = await K.send(rb + "/admin-api/users/add-attribute", { json: {
+    user: bob, attribute: "stsCertificateBinding", value: binding } });
+  check("B2. the same binding given to bob is refused, and no code is sent",
+        function () {
+    assert.ok(twice.status >= 400, twice.status + " " + twice.text);
+    assert.ok(!/STS-[A-Z]+-\d{4}/.test(twice.text), twice.text);
+  });
+
+  log.info("=== C. outside the profile ===");
+  await K.set(realm, "certSignIn.profiles", JSON.stringify([Object.assign(
+    {}, profile, { extendedKeyUsage: ["1.3.6.1.5.5.7.3.4"] })]));
+  const outside = await settled(rb + "/tls/sign-in", { tls: tls });
+  check("C1. a leaf outside its profile's extendedKeyUsage signs nobody in, " +
+        "however it is bound", function () {
+    assert.ok(!started(outside), outside.text.slice(0, 300));
+    assert.strictEqual(outside.json && outside.json.session &&
+                       outside.json.session.refusedAsStored, "NOT_STORED",
+                       outside.text.slice(0, 300));
+  });
+
+  log.info("=== D. low affinity without opting in ===");
+  const low = await K.send(K.base + "/admin-api/realms/set", { json: {
+    id: realm, key: "certSignIn.profiles", value: JSON.stringify([
+      Object.assign({}, profile, { bindings: ["upn"] })]) } });
+  check("D1. a name binding without lowAffinity is refused when written",
+        function () {
+    assert.ok(low.status >= 400, low.status + " " + low.text);
+    assert.ok(!/STS-[A-Z]+-\d{4}/.test(low.text), low.text);
+  });
+  await K.set(realm, "certSignIn.profiles", JSON.stringify([profile]));
+
+  log.info("=== E. RFC 9440 from the named proxy ===");
+  const forwarded = {
+    "client-cert": ":" + derOf(card.leaf.pem).toString("base64") + ":",
+    "client-cert-chain": ":" + derOf(card.issuing.pem).toString("base64") +
+                         ":"
+  };
+  const proxyTls = { cert: proxy.certPem, key: proxy.keyPem };
+  const proxySha = nodeCrypto.createHash("sha256")
+    .update(derOf(proxy.leaf.pem)).digest("hex");
+  await K.set(realm, "tls.trustedProxyCertificates", proxySha);
+  await K.set(realm, "tls.trustedProxyAddresses", "0.0.0.0/0,::/0");
+  const viaProxy = await settled(rb + "/tls/sign-in", { tls: proxyTls,
+                                                         headers: forwarded });
+  check("E1. from the named proxy, the forwarded leaf signs alice in",
+        function () {
+    assert.ok(started(viaProxy), viaProxy.text.slice(0, 300));
+  });
+  const direct = await settled(rb + "/tls/sign-in", { headers: forwarded });
+  check("E2. the same headers on a connection presenting no certificate " +
+        "sign nobody in", function () {
+    assert.ok(!started(direct), direct.text.slice(0, 300));
+    assert.ok(!(direct.json && direct.json.clientCertificate &&
+                direct.json.clientCertificate.presented),
+              direct.text.slice(0, 300));
+  });
+  await K.set(realm, "tls.trustedProxyAddresses", "192.0.2.0/24");
+  const elsewhere = await settled(rb + "/tls/sign-in", { tls: proxyTls,
+                                                          headers: forwarded });
+  check("E3. from the proxy's certificate outside its address range the " +
+        "headers are removed, and the proxy's own certificate signs nobody " +
+        "in", function () {
+    assert.ok(!started(elsewhere), elsewhere.text.slice(0, 300));
+    assert.strictEqual(elsewhere.json && elsewhere.json.session &&
+                       elsewhere.json.session.refusedAsStored, "NOT_STORED",
+                       elsewhere.text.slice(0, 300));
+  });
+  log.debug("Leaving test().");
+}
+
+async function guarded() {
+  log.debug("Entering guarded().");
+  let failure = null;
+  try {
+    await test();
+  } catch (e) {
+    log.debug("Caught in guarded(): " + ((e && e.message) || e));
+    // Rethrown after the anchors are removed.
+    failure = e;
+  }
+  await anchors.settleAnchors(K.base, added, failure);
+  log.debug("Leaving guarded().");
+}
+
+K.main(guarded, FLOOR);
