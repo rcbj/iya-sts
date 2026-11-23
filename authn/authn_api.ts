@@ -919,7 +919,7 @@ class AuthnApi {
       authn.answerJson(res, 429, { ok: false, next: 'refused',
                                    errors: [String(allowed.detail)],
                                    messages: Sentence.messagesOf(
-                                     [allowed.detail]) });
+                                     [allowed.said || allowed.detail]) });
       log.debug("Leaving AuthnApi.passkeyOptions(). Rate limited.");
       return;
     }

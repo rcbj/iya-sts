@@ -662,7 +662,8 @@ class EmailFactor {
     const allowed = await websecurity.attemptShared('sign-in', req, username);
     if (!allowed.ok) {
       errorCodes.mark(res, 'STS-AUTHN-0008');
-      authn.refuseAtScreen(res, record, allowed.detail, 429);
+      authn.refuseAtScreen(res, record, allowed.said || allowed.detail,
+                           429);
       log.debug("Leaving EmailFactor.beginFirstFactor(). Rate limited.");
       return;
     }
@@ -877,7 +878,7 @@ class EmailFactor {
                                                     step.username);
     if (!allowed.ok) {
       errorCodes.mark(res, 'STS-AUTHN-0040');
-      this.stayRefused(res, 429, allowed.detail);
+      this.stayRefused(res, 429, allowed.said || allowed.detail);
       log.debug("Leaving EmailFactor.codeAct(). Rate limited.");
       return;
     }
@@ -943,7 +944,7 @@ class EmailFactor {
       errorCodes.mark(res, 'STS-AUTHN-0040');
       this.endAnswer(res, 429,
         Sentence.say('refusals.authn.emailEndTooManyAttempts'),
-        allowed.detail);
+        allowed.said || allowed.detail);
       log.debug("Leaving EmailFactor.openAct(). Rate limited.");
       return;
     }

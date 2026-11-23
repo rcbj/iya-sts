@@ -2532,11 +2532,15 @@ function retiringRefusal(realmOrId) {
       : Sentence.say('refusals.account.realmRetiringInterrupted',
                      { realm: id, since: state.sinceIso }));
   log.debug("Leaving retiringRefusal(). Refused.");
+  // `why` IS THE ENGLISH, as it always was: three issuers hand it to a
+  // protocol's own error answer; `said` is the sentence the sign-in screen
+  // draws in the page's language (#2006, `issuance_gate.js`'s `asText()`).
   return errorCodes.mark({
     realm: id,
     since: state ? state.since : 0,
     interrupted: !!(state && state.interrupted),
-    why: why
+    why: String(why),
+    said: why
   }, 'STS-CORE-0121');
 }
 

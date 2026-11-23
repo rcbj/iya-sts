@@ -6424,7 +6424,7 @@ class Authn {
         policy: answer.policy || ''
       }) });
     detail.refusedWith = code;
-    detail.refusedWhy = answer.why;
+    detail.refusedWhy = answer.said || answer.why;
     log.info('authn: a session for "' + username + '" was REFUSED on its ' +
              'device (' + answer.device.refusal + ').');
     log.debug("Leaving Authn.refusedOnDevice(). Refused.");
@@ -8132,7 +8132,7 @@ class Authn {
       })
     });
     extra.refusedWith = code;
-    extra.refusedWhy = answer.why;
+    extra.refusedWhy = answer.said || answer.why;
     log.debug("Leaving Authn.refuseOnMechanism().");
     return null;
   }
@@ -8175,7 +8175,7 @@ class Authn {
           attemptMethod), { why: retiring.why })
       });
       extra.refusedWith = 'STS-CORE-0121';
-      extra.refusedWhy = retiring.why;
+      extra.refusedWhy = retiring.said || retiring.why;
       log.debug("Leaving Authn.startSessionHere(). The realm is being removed.");
       return null;
     }
@@ -8755,7 +8755,7 @@ class Authn {
           ? (sessionAnswer.device.refusal === 'compromised'
             ? 'STS-DEVICE-0038' : 'STS-DEVICE-0037')
           : 'STS-AUTHN-0010';
-        extra.refusedWhy = sessionAnswer.why;
+        extra.refusedWhy = sessionAnswer.said || sessionAnswer.why;
         log.debug("Leaving Authn.startSessionHere(). The issuance policy refused " +
                   "it.");
         return null;
@@ -13431,7 +13431,8 @@ class Authn {
     });
     if (!roleAnswer.allowed) {
       log.debug("Leaving Authn.beginSecondFactorAfterWallet(). Refused.");
-      return { handled: false, refused: roleAnswer.why };
+      return { handled: false,
+               refused: roleAnswer.said || roleAnswer.why };
     }
     const base = this.deps.baseUrlOf(req);
     const firstAmr = [].concat(outcome.amr || ['pop']).map(String);
@@ -16108,7 +16109,7 @@ class Authn {
                                                : 'STS-AUTHN-0009');
       log.debug("Leaving Authn.finishPasswordSignIn().");
       return this.screenRefused(res, record,
-        roleAnswer.why);
+        roleAnswer.said || roleAnswer.why);
     }
 
     // The security key, in whichever role. On the second-factor path the
@@ -19202,7 +19203,8 @@ class Authn {
         errorCodes.mark(res, 'STS-AUTHN-0008');
         this.noteRefusedAuthentication(record, username, 'password',
           'STS-AUTHN-0008', String(allowed.kind || 'rate-limit'));
-        return this.screenRefused(res, record, allowed.detail,
+        return this.screenRefused(res, record,
+          allowed.said || allowed.detail,
                                   { status: 429 });
       }
       // `allowPasswordReset`: this is the one door that can ask for a new
@@ -19525,7 +19527,7 @@ class Authn {
                step.username + '" (' + allowed.kind + ' bucket). Refusing ' +
                'for ' + allowed.retryAfterS + 's.');
       errorCodes.mark(res, 'STS-AUTHN-0040');
-      this.stepRefused(res, allowed.detail, 429);
+      this.stepRefused(res, allowed.said || allowed.detail, 429);
       log.debug('Leaving Authn.mfaTotpAct(). Rate limited.');
       return;
     }
@@ -19597,7 +19599,7 @@ class Authn {
                step.username + '" (' + allowed.kind + ' bucket). Refusing ' +
                'for ' + allowed.retryAfterS + 's.');
       errorCodes.mark(res, 'STS-AUTHN-0042');
-      this.stepRefused(res, allowed.detail, 429);
+      this.stepRefused(res, allowed.said || allowed.detail, 429);
       log.debug('Leaving Authn.mfaBackupCodeAct(). Rate limited.');
       return;
     }
@@ -19654,7 +19656,7 @@ class Authn {
                                                     step.username);
     if (!allowed.ok) {
       errorCodes.mark(res, 'STS-AUTHN-0008');
-      this.stepRefused(res, allowed.detail, 429);
+      this.stepRefused(res, allowed.said || allowed.detail, 429);
       log.debug('Leaving Authn.mfaPasswordAct(). Rate limited.');
       return;
     }
@@ -20056,7 +20058,7 @@ class Authn {
                                                     step.username);
     if (!allowed.ok) {
       errorCodes.mark(res, 'STS-AUTHN-0040');
-      this.stepRefused(res, allowed.detail, 429);
+      this.stepRefused(res, allowed.said || allowed.detail, 429);
       log.debug('Leaving Authn.mfaSetupAct(). Rate limited.');
       return;
     }

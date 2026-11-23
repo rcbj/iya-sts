@@ -206,6 +206,9 @@ interface LimitAnswer {
   retryAfterS?: number;
   shared?: boolean;
   detail?: string;
+  // The refusal's sentence (#2006), for a page that draws it in its own
+  // language; `detail` is its English.
+  said?: Sentence;
 }
 
 // ---------------------------------------------------------------------------
@@ -771,8 +774,9 @@ class WebSecurity {
       return errorCodes.mark({ ok: false, kind: found.kind,
                limit: found.limit,
                retryAfterS: found.retryAfterS,
-               detail: Sentence.say('refusals.authn.tooManyAttempts',
-                                    { seconds: found.retryAfterS }) },
+               ...this.said(Sentence.say(
+                 'refusals.authn.tooManyAttempts',
+                 { seconds: found.retryAfterS })) },
                              code);
     }
     log.debug('Leaving WebSecurity.attempt(). Allowed.');
@@ -846,8 +850,9 @@ class WebSecurity {
               ' bucket.');
     return errorCodes.mark({ ok: false, kind: found.kind, limit: found.limit,
              retryAfterS: found.retryAfterS,
-             detail: Sentence.say('refusals.authn.tooManyFailedAttempts',
-                                  { seconds: found.retryAfterS }) }, code);
+             ...this.said(Sentence.say(
+               'refusals.authn.tooManyFailedAttempts',
+               { seconds: found.retryAfterS })) }, code);
   }
 
   // Forget the counters for one identity — what a SUCCESSFUL sign-in does, so
@@ -993,10 +998,29 @@ class WebSecurity {
     return errorCodes.mark({ ok: false, kind: refusal.kind,
              limit: refusal.limit, retryAfterS: refusal.retryAfterS,
              shared: true,
-             detail: Sentence.say(detailLead === 'failed'
+             ...this.said(Sentence.say(detailLead === 'failed'
                ? 'refusals.authn.tooManyFailedAttempts'
                : 'refusals.authn.tooManyAttempts',
-               { seconds: refusal.retryAfterS }) }, code);
+               { seconds: refusal.retryAfterS })) }, code);
+  }
+
+  // A REFUSAL'S `detail` IS ITS ENGLISH, as it always was (#2006): every
+  // door that rate-limits — the token endpoint, LDAP, the portal — hands it
+  // to an answer of its own, some to a protocol's error text, so it stays a
+  // string, and the sentence the sign-in screen draws in the page's language
+  // rides beside it as `said` (the issuance gate's `asText()`, the same
+  // rule).
+  /**
+   * A refusal's `detail` and `said` members.
+   *
+   * @param sentence - the refusal's sentence
+   * @returns `{ detail, said }`
+   */
+  private said(sentence: Sentence): { detail: string; said: Sentence } {
+    const { log } = this.deps;
+    log.debug('Entering WebSecurity.said().');
+    log.debug('Leaving WebSecurity.said().');
+    return { detail: String(sentence), said: sentence };
   }
 
   private secondsLeft(remainingMs: unknown): number {

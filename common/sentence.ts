@@ -69,7 +69,15 @@ interface SentenceMessage {
 /**
  * A refusal's sentence: its catalog key and parameters, and its English.
  */
-class Sentence {
+// A `String` OBJECT WHOSE VALUE IS THE ENGLISH (the merger's review of
+// #2006): a sentence reaches code written for text — a protocol's error
+// builder, an XML escaper, a log line — and every string method there
+// (`replace()`, `indexOf()`, `slice()`, `length`) answers as the English
+// would. `typeof` still says `object`, which is why the issuance gate and the
+// rate limiter hand protocol code their English as text and the sentence
+// beside it (`said`), and why `oauth21.js`'s `sanitizeDescription()` makes
+// any object text before it checks the character set.
+class Sentence extends String {
   // The catalog key, `refusals.<area>.<name>`.
   readonly key: string;
   // The parameters, by name.
@@ -83,10 +91,26 @@ class Sentence {
    * @param key - the catalog key
    * @param params - the parameters
    */
-  private constructor(key: string, params: Record<string, SentenceParam>) {
+  private constructor(key: string, params: Record<string, SentenceParam>,
+                      text: string) {
+    super(text);
     log.debug("Entering Sentence.constructor(). " + key);
     this.key = key;
     this.params = params;
+    this.text = text;
+    log.debug("Leaving Sentence.constructor().");
+  }
+
+  /**
+   * The English of a key and its parameters, from the source catalog.
+   *
+   * @param key - the catalog key
+   * @param params - the parameters
+   * @returns the English
+   */
+  private static englishOf(key: string,
+                           params: Record<string, SentenceParam>): string {
+    log.debug("Entering Sentence.englishOf(). " + key);
     const english: Record<string, string | number> = {};
     Object.keys(params).forEach(function (name) {
       const value = params[name];
@@ -94,8 +118,9 @@ class Sentence {
         : (typeof value === 'number' ? value : String(value == null
           ? '' : value));
     });
-    this.text = i18n.translator([i18n.SOURCE]).text(key, english);
-    log.debug("Leaving Sentence.constructor().");
+    const out = i18n.translator([i18n.SOURCE]).text(key, english);
+    log.debug("Leaving Sentence.englishOf().");
+    return out;
   }
 
   /**
@@ -107,7 +132,8 @@ class Sentence {
    */
   static say(key: string, params?: Record<string, SentenceParam>): Sentence {
     log.debug("Entering Sentence.say().");
-    const out = new Sentence(key, params || {});
+    const given = params || {};
+    const out = new Sentence(key, given, Sentence.englishOf(key, given));
     log.debug("Leaving Sentence.say().");
     return out;
   }
@@ -134,6 +160,17 @@ class Sentence {
    * @returns the English
    */
   toString(): string {
+    return this.text;
+  }
+
+  // NO ENTERING/LEAVING PAIR, for `toString()`'s reason: `+` and template
+  // literals call it.
+  /**
+   * The English, for `+` and a template literal.
+   *
+   * @returns the English
+   */
+  valueOf(): string {
     return this.text;
   }
 
