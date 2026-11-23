@@ -73,5 +73,6 @@
   "jobOnEnd": "。",
   "settings": "設定",
   "newSource.button": "新增來源",
-  "newSource.yes": "是"
+  "newSource.yes": "是",
+  "newSource.no": "否"
 }

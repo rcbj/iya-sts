@@ -2498,9 +2498,9 @@ class WebKit {
   /**
    * Whether a field is required for the values the form holds.
    *
-   * A checkbox is never required. A field that is always required stays
-   * required. A field required for some choices is required only while the
-   * choice it names is selected.
+   * A yes/no pair is never required: No is checked when the answer is no.
+   * A field that is always required stays required. A field required for
+   * some choices is required only while the choice it names is selected.
    *
    * @param row - one field, as `createFields()` takes it
    * @param chosen - each field's value, as `chosenOf()` returns it
@@ -2553,9 +2553,10 @@ class WebKit {
    *
    * @param rows - each field: `name` (the posted name), `label` (HTML),
    *   `hint` (HTML, optional), `type` (`text`, `email`, `number`,
-   *   `password`, `long` for a text area, `select`, `checkbox` for one
-   *   box, `checks` for a box per choice), `choices` for a select or boxes
-   *   (`value`, `label`), `checkedValue` and `boxLabel` for one box,
+   *   `password`, `long` for a text area, `select`, `checkbox` for a
+   *   yes/no pair, `checks` for a box per choice), `choices` for a select
+   *   or boxes (`value`, `label`), `checkedValue`, `uncheckedValue`,
+   *   `boxLabel` and `uncheckedLabel` for the pair,
    *   `value` (what it starts with), `required`, `placeholder`, and `attrs`
    *   (more attributes of the control, by name: `maxlength`, `pattern`, …)
    * @param values - optional; what each field holds, by name (a refused
@@ -2589,12 +2590,32 @@ class WebKit {
           ? ' placeholder="' + WebKit.esc(row.placeholder) + '"' : '') +
         (active ? ' required aria-required="true"' : '');
       let control;
-      if (row.type === 'checkbox' || row.type === 'checks') {
-        // ONE BOX, or A BOX PER CHOICE: what a form posts for a ticked box,
-        // and nothing for an unticked one, so neither is ever required.
-        const boxes = row.type === 'checkbox'
-          ? [{ value: row.checkedValue || 'true', label: row.boxLabel || '' }]
-          : row.choices || [];
+      if (row.type === 'checkbox') {
+        // A YES AND A NO (#1132). One checkbox whose unticked state meant
+        // "no" reads as nothing chosen. No is checked unless the field
+        // holds the yes value, so the pair always posts an answer and is
+        // not marked required.
+        const yesValue = String(row.checkedValue || 'true');
+        const noValue = row.uncheckedValue === undefined ? 'false'
+          : String(row.uncheckedValue);
+        const yesLabel = row.boxLabel || t.text('consoleKit.create.yes');
+        const noLabel = row.uncheckedLabel ||
+          t.text('consoleKit.create.no');
+        const yes = ticked.indexOf(yesValue) >= 0;
+        const radio = function (value, label, checked) {
+          return '<label class="fg-radio"><input type="radio" name="' +
+            WebKit.esc(row.name) + '" value="' + WebKit.esc(value) + '"' +
+            (checked ? ' checked' : '') + '> ' + WebKit.esc(label) +
+            '</label>';
+        };
+        control = '<div class="fg-checks" role="radiogroup" ' +
+          'aria-labelledby="' + WebKit.esc(id) + '-name">' +
+          radio(yesValue, yesLabel, yes) +
+          radio(noValue, noLabel, !yes) + '</div>';
+      } else if (row.type === 'checks') {
+        // A BOX PER CHOICE: a ticked box posts its value and an unticked
+        // one posts nothing, so the group is never marked required.
+        const boxes = row.choices || [];
         control = '<div class="fg-checks" role="group" aria-labelledby="' +
           WebKit.esc(id) + '-name">' + boxes.map(function (one) {
             return '<label class="fg-radio"><input type="checkbox" name="' +

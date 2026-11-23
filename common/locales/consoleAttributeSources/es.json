@@ -73,5 +73,6 @@
   "jobOnEnd": ".",
   "settings": "Configuración",
   "newSource.button": "Añadir un origen",
-  "newSource.yes": "sí"
+  "newSource.yes": "sí",
+  "newSource.no": "no"
 }

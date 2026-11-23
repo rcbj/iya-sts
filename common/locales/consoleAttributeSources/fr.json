@@ -73,5 +73,6 @@
   "jobOnEnd": ".",
   "settings": "Paramètres",
   "newSource.button": "Ajouter une source",
-  "newSource.yes": "oui"
+  "newSource.yes": "oui",
+  "newSource.no": "non"
 }

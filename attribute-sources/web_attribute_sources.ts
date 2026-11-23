@@ -119,7 +119,9 @@ class AttributeSourcesPage {
           trustPublicRoots: {
             label: t.html('consoleAttributeSources.trustPublicRoots'),
             type: 'checkbox', checkedValue: 'true',
-            boxLabel: t.text('consoleAttributeSources.newSource.yes') },
+            uncheckedValue: 'false',
+            boxLabel: t.text('consoleAttributeSources.newSource.yes'),
+            uncheckedLabel: t.text('consoleAttributeSources.newSource.no') },
           table: { label: t.html('consoleAttributeSources.table'),
                    placeholder: 'schema.table' },
           keyColumn: { label: t.html('consoleAttributeSources.keyColumn') },
@@ -195,11 +197,18 @@ class AttributeSourcesPage {
       t.html('consoleAttributeSources.caCertificates') +
       ' <textarea name="caCertificates" rows="4" ' +
       'cols="64" placeholder="-----BEGIN CERTIFICATE-----">' +
-      esc(s.caCertificates || '') + '</textarea></label><label><input ' +
-      'type="checkbox" name="trustPublicRoots" value="true"' +
+      esc(s.caCertificates || '') + '</textarea></label>' +
+      '<span role="radiogroup">' +
+      t.html('consoleAttributeSources.trustPublicRoots') + ' ' +
+      '<label class="fg-radio"><input type="radio" ' +
+      'name="trustPublicRoots" value="true"' +
       (s.trustPublicRoots ? ' checked' : '') + '> ' +
-      t.html('consoleAttributeSources.trustPublicRoots') +
-      '</label></div><div class="formrow">' +
+      t.html('consoleAttributeSources.newSource.yes') + '</label> ' +
+      '<label class="fg-radio"><input type="radio" ' +
+      'name="trustPublicRoots" value="false"' +
+      (s.trustPublicRoots ? '' : ' checked') + '> ' +
+      t.html('consoleAttributeSources.newSource.no') +
+      '</label></span></div><div class="formrow">' +
       text('table', t.text('consoleAttributeSources.table'), s.table,
            'schema.table') +
       text('keyColumn', t.text('consoleAttributeSources.keyColumn'),
