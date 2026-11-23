@@ -133,11 +133,15 @@
 //     compared.
 //   * **EVERY LINK ON EVERY PAGE RESOLVES.** Every same-origin `<a href>` the
 //     console draws, deduplicated and then really visited, has to answer under
-//     400. This is what makes the console routes with no nav row —
+//     400. Visiting them is what makes the console routes with no nav row —
 //     the three delegation drill-downs, all THREE pictures,
 //     `/admin/tokens/credential`, `/admin/tokens/set`, `/admin/users/new`,
 //     `/admin/applications/new` and the realm switcher — covered by
 //     construction rather than by a list somebody has to remember to extend.
+//     The fragment is stripped before the visit and the only question is the
+//     document's status, so a link that changes tab or opens a dialog is
+//     unseen here. `theCertificateDialogStaysOnItsTab()` presses View
+//     details on a Hierarchy CA certificate and reads the tab and the dialog.
 //   * **EVERY GET FORM IS FILLED IN AND SUBMITTED**, and what comes back is
 //     checked: the URL carries the fields, the page redraws, and a filter
 //     really narrows what is listed.
@@ -2078,6 +2082,159 @@ async function everyLinkResolves(driver, links) {
            "endpoint outside this console, and " + skipped.length +
            " sign-out door(s) that would end this run's session.");
   log.debug("Leaving everyLinkResolves().");
+}
+
+// ---------------------------------------------------------------------------
+// PROTOCOLS → PKI, HIERARCHY: VIEW DETAILS OPENS OVER THAT TAB.
+//
+// The crawl above would stay green for the failure a reader hit. It strips
+// the fragment, loads what remains with `driver.get`, and asks only that the
+// document answered under 400. Every `/admin` path answers that one
+// document, so a View details link that dropped `#pki-tree` and never asked
+// `GET /admin-api/certificates` still "resolved": the script redrew the page
+// with no fragment, the tab bar fell back to Metadata, and no dialog was
+// drawn. This section does what that crawl does not. It opens the Hierarchy
+// tab, presses View details on a CA certificate the way a person does, and
+// reads the page the script drew: the dialog is up, it is that certificate,
+// and Hierarchy is the tab on show. Close returns to the same section.
+// ---------------------------------------------------------------------------
+async function theCertificateDialogStaysOnItsTab(driver) {
+  log.debug("Entering theCertificateDialogStaysOnItsTab().");
+  log.info("=== Protocols → PKI, Hierarchy: View details ===");
+  await open(driver, root("/admin/pki"));
+  const tab = await driver.findElement(
+    By.css('.tabbar a[href="#pki-tab-hierarchy"]'));
+  await tab.click();
+  await driver.wait(async function () {
+    return await driver.executeScript(`
+      const panel = document.getElementById('pki-tab-hierarchy');
+      const link = panel && panel.querySelector('a.certdlg-open');
+      return !!(link && getComputedStyle(panel).display !== 'none');
+    `).catch(function (e) {
+      log.debug("Caught waiting for Hierarchy: " + ((e && e.message) || e));
+      return false;
+    });
+  }, 15000, "Hierarchy drew no visible View details link");
+  const offered = await driver.executeScript(`
+    const link = document.querySelector(
+      '#pki-tab-hierarchy a.certdlg-open');
+    const raw = link.getAttribute('href');
+    const url = new URL(raw, location.href);
+    const from = url.searchParams.get('from') || '';
+    const section = from ? document.getElementById(from) : null;
+    const panel = document.getElementById('pki-tab-hierarchy');
+    return {
+      raw: raw,
+      fp: (url.searchParams.get('certificate') || '').toLowerCase(),
+      from: from,
+      hash: url.hash,
+      inHierarchy: !!(section && panel && panel.contains(section))
+    };
+  `);
+  check("View details on a Hierarchy CA certificate names that " +
+        "certificate and the section's own fragment", function () {
+    assert.ok(/^[0-9a-f]{64}$/.test(offered.fp),
+      "the link's certificate is " + JSON.stringify(offered.fp) +
+      " on " + offered.raw);
+    assert.ok(offered.from === "pki-tree" || offered.from === "pki-chain",
+      "the link's section is " + JSON.stringify(offered.from) +
+      " on " + offered.raw);
+    assert.strictEqual(offered.hash, "#" + offered.from,
+      "the link's fragment is " + offered.hash + " on " + offered.raw);
+    assert.strictEqual(offered.inHierarchy, true,
+      "the section " + offered.from + " lies outside the Hierarchy panel");
+  });
+
+  const leaving = await driver.findElement(By.css(".pagehead"));
+  const pressed = await driver.findElement(
+    By.css("#pki-tab-hierarchy a.certdlg-open"));
+  await pressed.click();
+  await pageReplaced(driver, leaving, 20000);
+  await waitForDrawn(driver);
+  await driver.wait(async function () {
+    return await driver.executeScript(`
+      const dialog = document.querySelector('[role="dialog"]');
+      return !!(dialog && dialog.checkVisibility());
+    `).catch(function (e) {
+      log.debug("Caught waiting for the dialog: " +
+                ((e && e.message) || e));
+      return false;
+    });
+  }, 15000, "View details drew no certificate dialog");
+  const openState = await driver.executeScript(`
+    const dialog = document.querySelector('[role="dialog"]');
+    const hierarchy = document.getElementById('pki-tab-hierarchy');
+    const metadata = document.getElementById('pki-tab-metadata');
+    const tab = document.querySelector(
+      '.tabbar a[href="#pki-tab-hierarchy"]');
+    const metaTab = document.querySelector(
+      '.tabbar a[href="#pki-tab-metadata"]');
+    const shown = function (el) {
+      return !!el && getComputedStyle(el).display !== 'none';
+    };
+    return {
+      href: location.href,
+      hash: location.hash,
+      search: location.search,
+      text: dialog ? dialog.innerText : '',
+      hierarchyShown: shown(hierarchy),
+      metadataShown: shown(metadata),
+      hierarchyCurrent: !!(tab && tab.classList.contains('tab-current')),
+      metadataCurrent: !!(metaTab &&
+        metaTab.classList.contains('tab-current'))
+    };
+  `);
+  check("pressing it opens that certificate over the Hierarchy tab",
+        function () {
+    const where = openState.href + " | " + openState.text.slice(0, 240);
+    const shownFp = openState.text.toLowerCase().replace(/[^0-9a-f]/g, "");
+    assert.strictEqual(openState.hash, "#" + offered.from, where);
+    assert.ok(openState.search.indexOf("certificate=" + offered.fp) >= 0,
+      where);
+    // The dialog prints the fingerprint with colons. Stripping every
+    // non-hex leaves the digits in order, so the pressed certificate is
+    // still found.
+    assert.ok(shownFp.indexOf(offered.fp) >= 0,
+      "the dialog's certificate is not the one pressed. " + where);
+    assert.ok(openState.text.indexOf("Certificate not available") < 0,
+      where);
+    assert.strictEqual(openState.hierarchyShown, true, where);
+    assert.strictEqual(openState.metadataShown, false, where);
+    assert.strictEqual(openState.hierarchyCurrent, true, where);
+    assert.strictEqual(openState.metadataCurrent, false, where);
+  });
+
+  const closing = await driver.findElement(By.css(".pagehead"));
+  const close = await driver.findElement(By.css(".certdlg-foot button"));
+  await close.click();
+  await pageReplaced(driver, closing, 20000);
+  await waitForDrawn(driver);
+  const closed = await driver.executeScript(`
+    const dialog = document.querySelector('[role="dialog"]');
+    const hierarchy = document.getElementById('pki-tab-hierarchy');
+    const metadata = document.getElementById('pki-tab-metadata');
+    const shown = function (el) {
+      return !!el && getComputedStyle(el).display !== 'none';
+    };
+    return {
+      href: location.href,
+      hash: location.hash,
+      search: location.search,
+      dialog: !!(dialog && dialog.checkVisibility()),
+      hierarchyShown: shown(hierarchy),
+      metadataShown: shown(metadata)
+    };
+  `);
+  check("Close returns to that same Hierarchy section, with the " +
+        "dialog gone and the certificate query dropped", function () {
+    const where = closed.href;
+    assert.strictEqual(closed.dialog, false, where);
+    assert.strictEqual(closed.hash, "#" + offered.from, where);
+    assert.ok(closed.search.indexOf("certificate=") < 0, where);
+    assert.strictEqual(closed.hierarchyShown, true, where);
+    assert.strictEqual(closed.metadataShown, false, where);
+  });
+  log.debug("Leaving theCertificateDialogStaysOnItsTab().");
 }
 
 // A GET FORM WITH target="_blank" (#717's Preview, the one such form): the
@@ -7960,6 +8117,7 @@ async function test() {
     const walked = await everyPageIsDrawn(driver, pages);
     await noPageNestsAForm(driver, pages);
     await everyLinkResolves(driver, walked.links);
+    await theCertificateDialogStaysOnItsTab(driver);
     await everyControlReachesSomething(driver, pages);
 
     await theRealmIsCreatedOnTheForm(driver);

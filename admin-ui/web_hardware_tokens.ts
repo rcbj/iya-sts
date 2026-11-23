@@ -96,7 +96,10 @@ class HardwareTokensPage {
       params.status = v.status;
     }
     const nav = WebKit.pageNavPair(PAGE, params, v.paging, t);
-    const filters = '<form method="get" action="' + PAGE + '">' +
+    // The fragment is the tokens tab. A GET with none reloads onto
+    // Metadata, and this list stays on this panel.
+    const filters = '<form method="get" action="' + PAGE +
+      '#hardware-tokens-tab-tokens">' +
       '<div class="formrow"><label for="hwt-q">' +
       t.html('consoleHardwareTokens.search') + '</label>' +
       '<input type="text" id="hwt-q" name="q" size="24" maxlength="256" ' +
@@ -190,7 +193,10 @@ class HardwareTokensPage {
             ? t.html('consoleHardwareTokens.oath.status.retired')
             : t.html('consoleHardwareTokens.any')));
     };
-    const filters = '<form method="get" action="' + PAGE + '">' +
+    // The OATH tab's own fragment: the tokens filter above names the
+    // other panel, and a GET with none shows Metadata.
+    const filters = '<form method="get" action="' + PAGE +
+      '#hardware-tokens-tab-oath">' +
       '<div class="formrow"><label for="oath-q">' +
       t.html('consoleHardwareTokens.search') + '</label>' +
       '<input type="text" id="oath-q" name="oq" size="24" maxlength="256" ' +

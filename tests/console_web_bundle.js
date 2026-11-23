@@ -212,12 +212,12 @@ function childMain() {
           return apiAnswer(one.operation, one.params);
         }));
         answers.forEach(function (one, index) {
-          if (one.status !== 200 || !one.body ||
-              typeof one.body !== 'object') {
+          if (!WebPages.composeKept(page, asked[index].member, one)) {
             throw new Error(asked[index].operation + ' answered ' +
                             one.status);
           }
-          view[asked[index].member] = JSON.parse(JSON.stringify(one.body));
+          view[asked[index].member] = JSON.parse(JSON.stringify(
+            one.body != null ? one.body : one.json));
         });
       }
       return view;
@@ -2096,6 +2096,30 @@ function childMain() {
            JSON.stringify({ per: '5', agent: 'a1' }),
          'D-Cert-compose. each tab\'s operation is asked with its own names',
          JSON.stringify(certAsked));
+    const fp = 'ab'.repeat(32);
+    const pkiPage = WebPages.pageFor('/admin/pki');
+    const pkiAsked = WebPages.composeRequests(pkiPage, {
+      certificate: fp, from: 'pki-tree'
+    });
+    const cryptoAsked = WebPages.composeRequests(
+      WebPages.pageFor('/admin/crypto-metadata'), { certificate: fp });
+    note(pkiAsked.length === 1 &&
+         pkiAsked[0].member === 'certificateDetails' &&
+         pkiAsked[0].operation === '/admin-api/certificates' &&
+         pkiAsked[0].params.certificate === fp &&
+         !Object.prototype.hasOwnProperty.call(pkiAsked[0].params, 'from') &&
+         WebPages.composeRequests(pkiPage, {}).length === 0 &&
+         cryptoAsked.length === 1 &&
+         cryptoAsked[0].operation === '/admin-api/certificates' &&
+         WebPages.composeKept(pkiPage, 'certificateDetails',
+           { status: 404, json: { ok: false, errors: ['no'] } }) &&
+         !WebPages.composeKept(pkiPage, 'certificateDetails',
+           { status: 404, json: null }) &&
+         !WebPages.composeKept(pkiPage, 'other',
+           { status: 404, json: { ok: false } }),
+         'D-Cert-dialog. View details composes the certificates operation ' +
+         'into certificateDetails, and a refusal is still drawn',
+         JSON.stringify(pkiAsked));
 
     const report = mode.report();
     const here = WebPages.render('/admin/mode',

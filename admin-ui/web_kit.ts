@@ -1053,7 +1053,9 @@ class WebKit {
   /**
    * Draws a stand-alone rows-per-table form for a drill-down page.
    *
-   * Submitting it resets every table's page to the first.
+   * Submitting it resets every table's page to the first. A path may end
+   * in a fragment: `esc` leaves `#` alone, and a GET on a later tab of a
+   * tabbed page needs one, or the reload shows the first panel.
    *
    * @param path - the page the form submits to
    * @param key - the name of the hidden parameter that selects the drill-down,

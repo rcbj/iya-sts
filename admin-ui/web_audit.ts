@@ -152,7 +152,10 @@ class AuditPage {
       // land somebody on page 6 of a two-page result and the clamp in
       // pagingOf() would then move them again, which reads as the form
       // ignoring them.
-      kit.frame('<form method="get" action="/admin/audit"><div ' +
+      // The fragment is the events tab. A GET with none reloads onto
+      // Metadata, and the filtered log stays on this panel.
+      kit.frame('<form method="get" action="/admin/audit#audit-tab-events">' +
+        '<div ' +
         'class="formrow"><label for="category">' +
         t.html('consoleAudit.category') + '</label><select ' +
         'id="category" name="category">' +
@@ -188,7 +191,7 @@ class AuditPage {
           '" placeholder="10.0.0.">' +
         '<button class="secondary">' + t.html('consoleAudit.filter') +
         '</button>' +
-        (filtering ? ' <a href="/admin/audit">' +
+        (filtering ? ' <a href="/admin/audit#audit-tab-events">' +
           t.html('consoleAudit.clear') + '</a>' : '') +
       '</div></form>' +
       // The link to Error codes is markup, so it sits between two messages.
@@ -297,7 +300,8 @@ class AuditPage {
       '<td><code>' + kit.esc(row.action) + '</code></td>' +
       '<td>' + AuditPage.outcomeCell(row.outcome) +
         (row.errorCode ? '<br><a href="/admin/audit?code=' +
-                         encodeURIComponent(row.errorCode) + '"><code>' +
+                         encodeURIComponent(row.errorCode) +
+                         '#audit-tab-events"><code>' +
                          kit.esc(row.errorCode) + '</code></a>' : '') +
                              '</td>' +
       '<td class="who">' + AuditPage.auditActorCell(row, known, t) + '</td>' +
@@ -370,7 +374,8 @@ class AuditPage {
         kit.esc(t.text('consoleAudit.noAddressTitle')) + '">—</span>';
     }
     return '<a href="/admin/audit?address=' +
-           encodeURIComponent(row.address) + '"><code>' +
+           encodeURIComponent(row.address) +
+           '#audit-tab-events"><code>' +
            kit.esc(row.address) + '</code></a>';
   }
 

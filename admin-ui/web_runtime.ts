@@ -1797,7 +1797,7 @@ class ConsoleRuntime extends SpaClient {
         return;
       }
       const failed = answers.filter(function (one) {
-        return !one.answer || one.answer.status !== 200 || !one.answer.json;
+        return !WebPages.composeKept(page, one.member, one.answer);
       })[0];
       if (failed) {
         const status = failed.answer ? failed.answer.status : 'unavailable';

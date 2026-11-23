@@ -62,13 +62,14 @@ class ErrorCodesPage {
 
     const subsystemRows = json.subsystems.map(function (sub) {
       return '<tr><td><a href="/admin/error-codes?subsystem=' +
-             encodeURIComponent(sub.id) + '"><code>' + kit.esc(sub.prefix) +
+             encodeURIComponent(sub.id) + '#error-codes-tab-codes"><code>' +
+             kit.esc(sub.prefix) +
              '</code></a></td><td>' + kit.esc(sub.label) + '</td><td ' +
              'class="num">' + kit.esc(sub.codes) + '</td>' +
              '<td class="num">' + (sub.seen
                ? '<a href="/admin/audit?code=' +
                  encodeURIComponent(sub.prefix) +
-                 '">' +
+                 '#audit-tab-events">' +
                  kit.esc(sub.seen) + '</a>'
                : '<span class="state-none">0</span>') + '</td>' +
              '<td class="who">' + kit.esc(sub.where) + '</td></tr>';
@@ -84,7 +85,7 @@ class ErrorCodesPage {
               'class="state-none">—</span>') + '</td><td ' +
         'class="num">' + (row.seen
           ? '<a href="/admin/audit?code=' + encodeURIComponent(row.code) +
-            '">' +
+            '#audit-tab-events">' +
             kit.esc(row.seen) + '</a><br><span class="state-none">' +
             t.html('consoleErrorCodes.codes.last',
                    { when: kit.whenText(row.lastSeenAt) }) + '</span>'
@@ -102,8 +103,8 @@ class ErrorCodesPage {
         '</th></tr>' +
         json.unregisteredSeen.map(function (u) {
           return '<tr><td><a href="/admin/audit?code=' +
-                 encodeURIComponent(u.code) +
-                 '"><code>' + kit.esc(u.code) +
+                 encodeURIComponent(u.code) + '#audit-tab-events"><code>' +
+                 kit.esc(u.code) +
                  '</code></a></td><td class="num">' +
                  kit.esc(u.seen) + '</td></tr>';
         }).join('') + '</table>')
@@ -149,8 +150,11 @@ class ErrorCodesPage {
       '</th></tr>' + subsystemRows +
       '</table>') + '<h2 data-tab="codes">' +
       t.html('consoleErrorCodes.codes.heading') +
-      '</h2>' + kit.frame('<form ' +
-      'method="get" action="/admin/error-codes"><div ' +
+      '</h2>' +
+      // The fragment is the codes tab. A GET with none reloads onto
+      // Metadata, and the filtered table stays on this panel.
+      kit.frame('<form method="get" ' +
+        'action="/admin/error-codes#error-codes-tab-codes"><div ' +
       'class="formrow"><label for="subsystem">' +
       t.html('consoleErrorCodes.th.subsystem') + '</label><select ' +
       'id="subsystem" name="subsystem">' +
@@ -171,8 +175,9 @@ class ErrorCodesPage {
           kit.perPageOptions(paging.perPage) + '</select>' +
         '<button class="secondary">' +
         t.html('consoleErrorCodes.filter.filter') + '</button>' +
-        (filtering ? ' <a href="/admin/error-codes">' +
-         t.html('consoleErrorCodes.filter.clear') + '</a>' : '') +
+        (filtering
+          ? ' <a href="/admin/error-codes#error-codes-tab-codes">' +
+            t.html('consoleErrorCodes.filter.clear') + '</a>' : '') +
       '</div></form>' +
       nav.head +
       '<table><tr><th>' + t.html('consoleErrorCodes.th.code') +

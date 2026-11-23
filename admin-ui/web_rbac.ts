@@ -271,7 +271,9 @@ class RbacPage {
     // follow the tabs and `metadataFrame()` keeps them on Metadata.
     const inner = noDirectory + status + tiles +
       '<h2 data-tab="holders">' + t.html('console.nav.rbac') + '</h2>' +
-      kit.frame('<form method="get" action="/admin/rbac">' +
+      // The fragment is the holders tab. A GET with none reloads onto
+      // Metadata, and the filtered table stays on this panel.
+      kit.frame('<form method="get" action="/admin/rbac#rbac-tab-holders">' +
       '<div class="formrow">' +
       personCarry +
       '<label for="q">' + t.html('consoleRbac.body.person') + '</label>' +
@@ -292,7 +294,8 @@ class RbacPage {
       '</select><button ' +
       'type="submit">' + t.html('consoleRbac.body.filter') + '</button>' +
       (wantedText || wantedRole
-        ? ' <a href="/admin/rbac">' + t.html('consoleRbac.body.clear') +
+        ? ' <a href="/admin/rbac#rbac-tab-holders">' +
+          t.html('consoleRbac.body.clear') +
           '</a>'
         : '') +
       '</div></form>' +

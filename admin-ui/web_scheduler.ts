@@ -238,8 +238,10 @@ class SchedulerPage {
            t.html('consoleScheduler.jobs.readOnly') + '</small>' : '');
       const head = '<tr id="job-' + kit.esc(job.id) + '-' +
         kit.esc(job.realm) + '">' +
+        // `job` narrows the runs, not this table, so the link opens Runs.
         '<td><a href="' + kit.esc(PAGE + '?job=' +
-                                    encodeURIComponent(job.id)) +
+                                    encodeURIComponent(job.id) +
+                                    '#scheduler-tab-runs') +
         '"><code>' + kit.esc(job.id) + '</code></a><br>' +
         kit.esc(job.title) + '<br><small>' + kit.esc(job.describe) +
         '</small><br><small>' +
@@ -351,7 +353,10 @@ class SchedulerPage {
         ((json.filters.outcome || '') === o ? ' selected' : '') + '>' +
         outcomeLabel(o, t) + '</option>';
     }).join('');
-    const filter = '<form method="get" action="' + PAGE + '" class="inline">' +
+    // The fragment is the Runs tab. A GET with none reloads onto
+    // Metadata, and this list stays on this panel.
+    const filter = '<form method="get" action="' + PAGE +
+      '#scheduler-tab-runs" class="inline">' +
       '<label>' + t.html('consoleScheduler.filter.job') +
       ' <select name="job">' + jobOptions + '</select></label> ' +
       '<label>' + t.html('consoleScheduler.filter.outcome') +
@@ -469,8 +474,8 @@ class SchedulerPage {
       // A run that is not there is a refusal, and refusals stay English
       // (#539, decision 6).
       return kit.warn('There is no run <code>' + kit.esc(json.run) +
-        '</code> here. <a href="' + PAGE + '">Every recent run</a> is ' +
-        'listed on the Scheduler page.');
+        '</code> here. <a href="' + PAGE + '#scheduler-tab-runs">Every ' +
+        'recent run</a> is listed on the Scheduler page.');
     }
     const r = json.detail;
     const row = function (label: string, value: string): string {

@@ -379,10 +379,12 @@ function theRenderer(t, got) {
           /Subject unique ID/.test(html) && /BEGIN CERTIFICATE/.test(html),
           'the trust chain, the tbsCertificate fields, the extensions and ' +
           'the PEM are all in it');
-  t.check(/href="\/admin\/pki\?certificate=[0-9a-f]{64}&amp;from=pki-tree"/
-            .test(got.link) && got.badLink === '',
-          'the opening link carries the fingerprint and the section, and a ' +
-          'value that is not a fingerprint draws no link at all');
+  const openLink = /href="\/admin\/pki\?certificate=[0-9a-f]{64}/
+    .test(got.link) && /&amp;from=pki-tree#pki-tree"/.test(got.link);
+  t.check(openLink && got.badLink === '',
+          'the opening link carries the fingerprint, the section and that ' +
+          'section\'s fragment, and a value that is not a fingerprint draws ' +
+          'no link at all');
   t.check(/Certificate not available/.test(got.refused) &&
           /Not held here\./.test(got.refused) &&
           /href="\/admin\/crypto-metadata"/.test(got.refused) &&

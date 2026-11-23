@@ -1164,7 +1164,7 @@ class UsersPage {
                                                            json)) },
         { id: 'utab-activity', label: t.text('consoleUsers.detail.tabActivity'),
           html:
-      kit.perPageForm('/admin/users', 'user', key,
+      kit.perPageForm('/admin/users#utab-activity', 'user', key,
                        json.artifactsPaging.perPage,
                        t.html('consoleUsers.detail.blocksNote',
                               { blocks: page.blocksPerPage,
@@ -1560,7 +1560,8 @@ class UsersPage {
         // one, or for an act that came over no socket.
         '<td>' + (event.address
           ? '<a href="/admin/audit?address=' +
-            encodeURIComponent(event.address) + '"><code>' +
+            encodeURIComponent(event.address) +
+            '#audit-tab-events"><code>' +
             kit.esc(event.address) + '</code></a>'
           : '<span class="state-none" title="' +
             kit.esc(t.text('consoleUsers.authenticationTable.noAddressTitle')) +
