@@ -677,7 +677,7 @@ const SPECS: Spec[] = [
               'request_schema_url), display, and the BULK, ACTOR and ' +
               'CATALOG companions.' },
   { id: 'authzen-arap-callback',
-    name: 'AuthZEN Access Request Callback Profile 1.0 (draft)',
+    name: 'AuthZEN Callback Notifications Profile 1.0 (draft)',
     where: 'OpenID Foundation AuthZEN WG',
     url: 'https://openid.github.io/authzen/' +
          'authzen-access-request-callback-profile-1_0.html',
@@ -686,8 +686,10 @@ const SPECS: Spec[] = [
               'registered for the requesting PEP, a notification-only ' +
               'callback for each requested terminal event, authenticated ' +
               'by a short JWT this realm signs, under the outbound policy. ' +
-              'Missing: the partial event (BULK) and deployment-level event ' +
-              'subscriptions; a failed delivery is not retried.' },
+              'A network error, a timeout or an HTTP 5xx is retried up to ' +
+              'the attempt bound; an HTTP 4xx or a URL the outbound policy ' +
+              'refuses is not. Missing: the partial event (BULK) and ' +
+              'deployment-level event subscriptions.' },
   { id: 'xacmljson', name: 'JSON Profile of XACML 3.0 v1.1',
     where: 'OASIS',
     url: 'https://docs.oasis-open.org/xacml/xacml-json-http/v1.1/os/' +

@@ -104,8 +104,8 @@
     "text": "partial：可请求的拒绝（context.access_request、evaluation_id、evaluated_at、reason），即领域策略以 access-request advice 标记的 Deny，按值绑定，使用本领域签署的 binding_token（内联声明）；带 Idempotency-Key 的提交，201 或 202 以及 Task Handle；带 Retry-After 的任务状态端点；通过 POST 或 DELETE 取消；六种状态；reevaluate 完成模式，approval.id 在可信状态中解析，批准作为可信事实到达策略；next_action 及五种 reason；每种 problem 类型；元数据成员、jwks_uri 和能力。缺失：以引用方式绑定的 evaluation_id、approval.state、哈希绑定形式、机器可读形式（form_url、request_schema_url）、display，以及 BULK、ACTOR 和 CATALOG 配套规范。"
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
-    "en": "3a25215ba9e17fe4",
-    "text": "partial：提交的回调（endpoint、state、events），endpoint 限于管理员为请求方 PEP 注册的 URL，为每个请求的终态事件发送仅通知的回调，由本领域签署的短 JWT 认证，并受出站策略约束。缺失：partial 事件（BULK）和部署级事件订阅；投递失败不会重试。"
+    "en": "ca5109eae0e95b17",
+    "text": "partial：提交的回调（endpoint、state、events），endpoint 限于管理员为请求方 PEP 注册的 URL，为每个请求的终态事件发送仅通知的回调，由本领域签署的短 JWT 认证，并受出站策略约束。网络错误、超时或 HTTP 5xx 会重试至尝试上限；HTTP 4xx 或出站策略拒绝的 URL 不会重试。缺失：partial 事件（BULK）和部署级事件订阅。"
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",

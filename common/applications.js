@@ -2698,6 +2698,8 @@ const FIELD_EXAMPLES = {
     '"attributeId":"urn:example:classification"}',
   appAuthzenApplication: 'engineering-portal',
   appAuthzenCallbackUri: 'https://pep.example.com/callbacks/access-requests',
+  appAuthzenCallbackConfig:
+    'https://pep.example.com/callbacks/access-requests attempts=3 backoff=120',
   oauthStepUpAcrValues: 'mfa',
   oauthStepUpMaxAge: '600',
   oauthDefaultAcrValues: 'mfa 1',

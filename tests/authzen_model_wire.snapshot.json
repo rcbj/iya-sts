@@ -1956,7 +1956,7 @@
    "body": {
     "error": {
      "status": 400,
-     "message": "context.client_id is read by the OAuth token-exchange binding's fixed rules, and only on its gate and scope tuples (resource.type audience or protected_resource); the binding is off in this realm (authzen.tokenExchange)."
+     "message": "context.client_id is read by the OAuth token-exchange binding's fixed rules, and only on its gate, scope and authorization-detail tuples (resource.type audience, protected_resource, or a declared authorization_details type beside a gate); the binding is off in this realm (authzen.tokenExchange)."
     }
    }
   },
@@ -2545,16 +2545,16 @@
     "page": {
      "next_token": "<next_token>",
      "count": 2,
-     "total": 15
+     "total": 16
     },
     "results": [
      {
       "type": "application",
-      "id": "sts-account-api"
+      "id": "azapp"
      },
      {
       "type": "application",
-      "id": "sts-admin-console"
+      "id": "sts-account-api"
      }
     ]
    }
@@ -2579,16 +2579,16 @@
     "page": {
      "next_token": "<next_token>",
      "count": 2,
-     "total": 15
+     "total": 16
     },
     "results": [
      {
       "type": "application",
-      "id": "sts-api-client"
+      "id": "sts-admin-console"
      },
      {
       "type": "application",
-      "id": "sts-authzen-api"
+      "id": "sts-api-client"
      }
     ]
    }
@@ -2876,10 +2876,14 @@
    "body": {
     "page": {
      "next_token": "",
-     "count": 15,
-     "total": 15
+     "count": 16,
+     "total": 16
     },
     "results": [
+     {
+      "type": "application",
+      "id": "azapp"
+     },
      {
       "type": "application",
       "id": "sts-account-api"
@@ -3077,10 +3081,14 @@
    "body": {
     "page": {
      "next_token": "",
-     "count": 15,
-     "total": 15
+     "count": 16,
+     "total": 16
     },
     "results": [
+     {
+      "type": "application",
+      "id": "azapp"
+     },
      {
       "type": "application",
       "id": "sts-account-api"
@@ -3169,7 +3177,7 @@
     "results": [
      {
       "type": "application",
-      "id": "sts-account-api"
+      "id": "azapp"
      }
     ],
     "context": {
@@ -3674,6 +3682,84 @@
   },
   {
    "mode": "development",
+   "step": "a requestable denial for the application",
+   "method": "POST",
+   "path": "/realm/azwire/access/v1/evaluation",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "decision": false,
+    "context": {
+     "evaluation_id": "<eval>",
+     "evaluated_at": "<time>",
+     "reason": "approval_required",
+     "access_request": {
+      "expires_at": "<time>",
+      "endpoint": "https://<port>/realm/azwire/access/v1/access-requests",
+      "binding_token": {
+       "jwt": {
+        "header": {
+         "alg": "RS256",
+         "typ": "JWT",
+         "kid": "<kid>",
+         "x5u": "https://<port>/pki/chain/azwire/<digest>.pem"
+        },
+        "claims": {
+         "aud": "https://<port>/realm/azwire/access/v1/access-requests",
+         "sub": "azalice",
+         "jti": "<jti>",
+         "typ": "authzen-access-request-denial",
+         "denial_expires_at": "<time>",
+         "evaluation_id": "<eval>",
+         "subject": {
+          "type": "user",
+          "id": "azalice"
+         },
+         "resource": {
+          "type": "document",
+          "id": "doc-2"
+         },
+         "action": {
+          "name": "read"
+         },
+         "context": {},
+         "binding_context_members": [],
+         "caller": "cn=azapp,ou=applications,dc=azwire,dc=example,dc=com",
+         "application": "todo-app",
+         "terms": {
+          "roles": [],
+          "groups": [
+           "azwapprovers"
+          ],
+          "owners": false,
+          "maxSeconds": 3600,
+          "emergency": true,
+          "contextMembers": [],
+          "template": "",
+          "reason": ""
+         },
+         "iat": "<epoch>",
+         "exp": "<epoch>",
+         "iss": "https://<port>/realm/azwire"
+        },
+        "signed": true
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "mode": "development",
    "step": "submission: callback unregistered",
    "method": "POST",
    "path": "/realm/azwire/access/v1/access-requests",
@@ -3692,7 +3778,7 @@
     "type": "about:blank",
     "title": "Bad request",
     "status": 400,
-    "detail": "callback.endpoint must be an https URL an administrator registered for this caller; this service never dials one taken from a request alone."
+    "detail": "callback.endpoint must be an https URL an administrator registered for this application; this service never dials one taken from a request alone."
    }
   },
   {
@@ -3715,7 +3801,7 @@
     "type": "about:blank",
     "title": "Bad request",
     "status": 400,
-    "detail": "callback.events must be an array of event names."
+    "detail": "A callback is registered only for an application."
    }
   },
   {
@@ -4001,7 +4087,7 @@
          },
          "context": {},
          "binding_context_members": [],
-         "caller": "uid=azpep,ou=users,dc=azwire,dc=example,dc=com",
+         "caller": "cn=azapp,ou=applications,dc=azwire,dc=example,dc=com",
          "application": "todo-app",
          "terms": {
           "roles": [],
@@ -4080,7 +4166,7 @@
          },
          "context": {},
          "binding_context_members": [],
-         "caller": "uid=azpep,ou=users,dc=azwire,dc=example,dc=com",
+         "caller": "cn=azapp,ou=applications,dc=azwire,dc=example,dc=com",
          "application": "todo-app",
          "terms": {
           "roles": [],
@@ -6612,7 +6698,7 @@
    "body": {
     "error": {
      "status": 400,
-     "message": "context.client_id is read by the OAuth token-exchange binding's fixed rules, and only on its gate and scope tuples (resource.type audience or protected_resource); the binding is off in this realm (authzen.tokenExchange)."
+     "message": "context.client_id is read by the OAuth token-exchange binding's fixed rules, and only on its gate, scope and authorization-detail tuples (resource.type audience, protected_resource, or a declared authorization_details type beside a gate); the binding is off in this realm (authzen.tokenExchange)."
     }
    }
   },
@@ -7224,16 +7310,16 @@
     "page": {
      "next_token": "<next_token>",
      "count": 2,
-     "total": 15
+     "total": 16
     },
     "results": [
      {
       "type": "application",
-      "id": "sts-account-api"
+      "id": "azapp"
      },
      {
       "type": "application",
-      "id": "sts-admin-console"
+      "id": "sts-account-api"
      }
     ]
    }
@@ -7259,16 +7345,16 @@
     "page": {
      "next_token": "<next_token>",
      "count": 2,
-     "total": 15
+     "total": 16
     },
     "results": [
      {
       "type": "application",
-      "id": "sts-api-client"
+      "id": "sts-admin-console"
      },
      {
       "type": "application",
-      "id": "sts-authzen-api"
+      "id": "sts-api-client"
      }
     ]
    }
@@ -7566,10 +7652,14 @@
    "body": {
     "page": {
      "next_token": "",
-     "count": 15,
-     "total": 15
+     "count": 16,
+     "total": 16
     },
     "results": [
+     {
+      "type": "application",
+      "id": "azapp"
+     },
      {
       "type": "application",
       "id": "sts-account-api"
@@ -7773,10 +7863,14 @@
    "body": {
     "page": {
      "next_token": "",
-     "count": 15,
-     "total": 15
+     "count": 16,
+     "total": 16
     },
     "results": [
+     {
+      "type": "application",
+      "id": "azapp"
+     },
      {
       "type": "application",
       "id": "sts-account-api"
@@ -7866,7 +7960,7 @@
     "results": [
      {
       "type": "application",
-      "id": "sts-account-api"
+      "id": "azapp"
      }
     ],
     "context": {
@@ -8390,6 +8484,85 @@
   },
   {
    "mode": "product",
+   "step": "a requestable denial for the application",
+   "method": "POST",
+   "path": "/realm/azwirep/access/v1/evaluation",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "decision": false,
+    "context": {
+     "evaluation_id": "<eval>",
+     "evaluated_at": "<time>",
+     "reason": "approval_required",
+     "access_request": {
+      "expires_at": "<time>",
+      "endpoint": "https://<port>/realm/azwirep/access/v1/access-requests",
+      "binding_token": {
+       "jwt": {
+        "header": {
+         "alg": "RS256",
+         "typ": "JWT",
+         "kid": "<kid>",
+         "x5u": "https://<port>/pki/chain/azwirep/<digest>.pem"
+        },
+        "claims": {
+         "aud": "https://<port>/realm/azwirep/access/v1/access-requests",
+         "sub": "azalice",
+         "jti": "<jti>",
+         "typ": "authzen-access-request-denial",
+         "denial_expires_at": "<time>",
+         "evaluation_id": "<eval>",
+         "subject": {
+          "type": "user",
+          "id": "azalice"
+         },
+         "resource": {
+          "type": "document",
+          "id": "doc-2"
+         },
+         "action": {
+          "name": "read"
+         },
+         "context": {},
+         "binding_context_members": [],
+         "caller": "cn=azapp,ou=applications,dc=azwirep,dc=example,dc=com",
+         "application": "todo-app",
+         "terms": {
+          "roles": [],
+          "groups": [
+           "azwapprovers"
+          ],
+          "owners": false,
+          "maxSeconds": 3600,
+          "emergency": true,
+          "contextMembers": [],
+          "template": "",
+          "reason": ""
+         },
+         "iat": "<epoch>",
+         "exp": "<epoch>",
+         "iss": "https://<port>/realm/azwirep"
+        },
+        "signed": true
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "mode": "product",
    "step": "submission: callback unregistered",
    "method": "POST",
    "path": "/realm/azwirep/access/v1/access-requests",
@@ -8409,7 +8582,7 @@
     "type": "about:blank",
     "title": "Bad request",
     "status": 400,
-    "detail": "callback.endpoint must be an https URL an administrator registered for this caller; this service never dials one taken from a request alone."
+    "detail": "callback.endpoint must be an https URL an administrator registered for this application; this service never dials one taken from a request alone."
    }
   },
   {
@@ -8433,7 +8606,7 @@
     "type": "about:blank",
     "title": "Bad request",
     "status": 400,
-    "detail": "callback.events must be an array of event names."
+    "detail": "A callback is registered only for an application."
    }
   },
   {
@@ -8728,7 +8901,7 @@
          },
          "context": {},
          "binding_context_members": [],
-         "caller": "uid=azpep,ou=users,dc=azwirep,dc=example,dc=com",
+         "caller": "cn=azapp,ou=applications,dc=azwirep,dc=example,dc=com",
          "application": "todo-app",
          "terms": {
           "roles": [],
@@ -8808,7 +8981,7 @@
          },
          "context": {},
          "binding_context_members": [],
-         "caller": "uid=azpep,ou=users,dc=azwirep,dc=example,dc=com",
+         "caller": "cn=azapp,ou=applications,dc=azwirep,dc=example,dc=com",
          "application": "todo-app",
          "terms": {
           "roles": [],

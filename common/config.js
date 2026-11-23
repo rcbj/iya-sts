@@ -16351,6 +16351,28 @@ const SETTINGS = [
     description: 'The most access requests one realm holds pending; past ' +
                  'it a submission is refused 503 until some are decided or ' +
                  'expire.' },
+  { key: 'authzen.callbackAttempts', group: 'AuthZEN',
+    label: 'Access request callback attempts',
+    env: 'STS_AUTHZEN_CALLBACK_ATTEMPTS', type: 'int',
+    dflt: 5, min: 1, max: 20, runtime: true,
+    description: 'How many times a finished access request\'s callback ' +
+                 'is sent, the first included (#1202). A network error, a ' +
+                 'timeout or an HTTP 5xx is tried again after ' +
+                 'authzen.callbackBackoffS, by the ' +
+                 'authzen.access-requests job. An HTTP 4xx, or a URL the ' +
+                 'outbound policy refuses, is not tried again. An ' +
+                 'application\'s appAuthzenCallbackConfig may set another ' +
+                 'bound for one URL. 1 is one attempt.' },
+  { key: 'authzen.callbackBackoffS', group: 'AuthZEN',
+    label: 'Access request callback backoff (seconds)',
+    env: 'STS_AUTHZEN_CALLBACK_BACKOFF_S', type: 'int',
+    dflt: 60, min: 60, max: 86400, runtime: true,
+    description: 'How long to wait after a failed access request ' +
+                 'callback before the next attempt (#1202). The ' +
+                 'authzen.access-requests job runs every 60 seconds, so ' +
+                 'a shorter wait could not be honoured. An ' +
+                 'application\'s appAuthzenCallbackConfig may set a ' +
+                 'longer wait for one URL.' },
   { key: 'authzen.externalPdp', group: 'AuthZEN',
     label: 'Ask an external PDP before a token exchange.',
     env: 'STS_AUTHZEN_EXTERNAL_PDP', type: 'bool', dflt: false,

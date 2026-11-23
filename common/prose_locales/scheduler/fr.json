@@ -36,8 +36,8 @@
     "text": "Expiration des demandes d’accès AuthZEN"
   },
   "sched.jobs.authzen.access-requests.describe": {
-    "en": "e0a885271868119c",
-    "text": "Fait passer à expired toute demande d’accès AuthZEN (#1180) en attente dont l’expires_at est dépassé — en écrivant sa ligne d’audit et en envoyant son rappel (callback) — et supprime une demande terminée un jour après sa fin, ou une fois son approbation écoulée si c’est plus tard. Une lecture applique elle-même l’échéance ; il s’agit donc de l’enregistrement et du nettoyage, jamais de ce qui décide."
+    "en": "f219a842a3345525",
+    "text": "Fait passer à expired toute demande d’accès AuthZEN (#1180) en attente dont l’expires_at est dépassé — en écrivant sa ligne d’audit et en envoyant son rappel (callback) — supprime une demande terminée un jour après sa fin, ou une fois son approbation écoulée si c’est plus tard, et réessaie une livraison de rappel qui a échoué par une erreur réseau ou un HTTP 5xx, jusqu’à la borne de tentatives (#1202). Une lecture applique elle-même l’échéance ; il s’agit donc de l’enregistrement et du nettoyage, jamais de ce qui décide."
   },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",

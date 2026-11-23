@@ -36,8 +36,8 @@
     "text": "AuthZEN 存取請求到期"
   },
   "sched.jobs.authzen.access-requests.describe": {
-    "en": "e0a885271868119c",
-    "text": "將每個已超過 expires_at 的待處理 AuthZEN 存取請求（#1180）移為 expired——寫入其稽核列並傳送其回呼——並在已完成一天之後，或其核准失效之後（以較晚者為準）將其移除。讀取時會自行套用截止時間，因此這裡只是記錄與清理，從不負責決定。"
+    "en": "f219a842a3345525",
+    "text": "將每個已超過 expires_at 的待處理 AuthZEN 存取請求（#1180）移為 expired——寫入其稽核列並傳送其回呼——在已完成一天之後，或其核准失效之後（以較晚者為準）將其移除，並重試因網路錯誤或 HTTP 5xx 而失敗的回呼投遞，直至嘗試上限（#1202）。讀取時會自行套用截止時間，因此這裡只是記錄與清理，從不負責決定。"
   },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",

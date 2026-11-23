@@ -735,6 +735,10 @@
     "en": "2e00248f61ba1cad",
     "text": "RAPPEL (CALLBACK) D’UNE DEMANDE D’ACCÈS AUTHZEN (#1180) : une URL https que ce client, en tant que PEP AuthZEN, peut nommer comme callback.endpoint d’une demande d’accès — une par valeur, comparée exactement. Une demande qui en nomme une autre est refusée ; ce service n’appelle jamais une URL de rappel tirée d’une seule demande. Défini par un administrateur, jamais par l’appelant."
   },
+  "applications.schema.attributes.appAuthzenCallbackConfig.what": {
+    "en": "ef3c61a4ecc70072",
+    "text": "RÉESSAI DU RAPPEL AUTHZEN (#1202) : une URL de rappel enregistrée et les tentatives et le délai qui remplacent authzen.callbackAttempts et authzen.callbackBackoffS pour elle. La valeur est l’URL, puis attempts=N (1 à 20) et backoff=S (60 à 86400), l’un, l’autre ou les deux. L’URL doit aussi être une valeur appAuthzenCallbackUri. Absente, cette URL utilise les paramètres du domaine. Défini par un administrateur, jamais par l’appelant."
+  },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "9255177cf4802d85",
     "text": "RFC 9470 section 3 : les valeurs acr que cette application, en tant que serveur de ressources, exige de l’authentification sous-jacente à un jeton d’accès — séparées par des espaces, la préférée en premier. Un jeton dont l’acr ne satisfait aucune d’elles reçoit un défi 401 insufficient_user_authentication avec celles-ci comme acr_values. Les niveaux 0 < 1 < mfa sont ordonnés ; hwk est satisfait par un mot de passe accompagné d’une clé de sécurité ; phr et phrh uniquement par l’authentification résistante à l’hameçonnage qu’ils nomment (#723) ; toute autre valeur uniquement par cet acr exact. VIDE n’exige rien."

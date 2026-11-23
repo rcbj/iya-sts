@@ -38,8 +38,11 @@
 //      the scope is an administrator's: `stsAuthzenApplication` on a person's
 //      or service account's entry, `appAuthzenApplication` on an
 //      application's — and an OAuth caller's own application is always in
-//      it. `context.application` must be in the set (403 otherwise); with
-//      none named and exactly one in the set, that one.
+//      it. An mTLS application is still kind 'entry' (the certificate names
+//      a DN); scopeOf reads appAuthzenApplication when the entry has
+//      appIdentifier (#1202). `context.application` must be in the set
+//      (403 otherwise); with none named and exactly one in the set, that
+//      one.
 //
 // **AND A REMOTE PEP'S TOKEN UNDER EVERY DOOR (#1827's follow-up, rcbj's
 // decision 3 on the PEP token plan, 2026-11-16).** The edge PDP of a remote
@@ -793,8 +796,9 @@ class AuthzenCaller {
 
   /**
    * The applications a caller is scoped to: an entry's
-   * `stsAuthzenApplication`, an application's `appAuthzenApplication` and
-   * its own identifiers.
+   * `stsAuthzenApplication`, and, when that entry is an application,
+   * `appAuthzenApplication` and its own identifier. A bearer caller uses
+   * `appAuthzenApplication` and its own identifiers.
    *
    * @param caller - the caller
    * @returns the application names, in order, without repeats
@@ -817,6 +821,24 @@ class AuthzenCaller {
         ? pip.rawAttribute(stored.attributes, 'stsAuthzenApplication') : null;
       (Array.isArray(values) ? values : (values ? [values] : []))
         .forEach(add);
+      // An mTLS caller is kind 'entry' with the directory DN, person or
+      // application (#1202). byCertificate does not say which. A person
+      // has no appIdentifier, so the rest adds nothing for them. An
+      // application is scoped by appAuthzenApplication and by its own
+      // identifier, the same set the bearer branch adds below.
+      const ident = stored
+        ? pip.rawAttribute(stored.attributes, 'appIdentifier') : null;
+      const appId = Array.isArray(ident) ? String(ident[0] || '').trim()
+                                         : String(ident || '').trim();
+      if (appId) {
+        add(appId);
+        const entry = applications.get(appId);
+        const scoped = entry && entry.fields
+          ? Classes.Application.fromEntry(entry.fields).authzenApplication
+          : null;
+        (Array.isArray(scoped) ? scoped : (scoped ? [scoped] : []))
+          .forEach(add);
+      }
     } else {
       add(caller.identifier);
       add(caller.clientId);

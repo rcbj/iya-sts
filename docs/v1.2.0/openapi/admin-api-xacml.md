@@ -1611,6 +1611,16 @@ Scope: `admin:read`.
 | `accessRequests.rows[].approvers.owners` | boolean |  |  |
 | `accessRequests.rows[].approvers.roles` | list |  |  |
 | `accessRequests.rows[].approvers.roles[]` | string |  |  |
+| `accessRequests.rows[].callbackDelivery` | object |  |  |
+| `accessRequests.rows[].callbackDelivery.attempts` | list |  |  |
+| `accessRequests.rows[].callbackDelivery.attempts[].at` | number |  |  |
+| `accessRequests.rows[].callbackDelivery.attempts[].ok` | boolean |  |  |
+| `accessRequests.rows[].callbackDelivery.attempts[].status` | number |  |  |
+| `accessRequests.rows[].callbackDelivery.attempts[].why` | string |  |  |
+| `accessRequests.rows[].callbackDelivery.backoffS` | number |  |  |
+| `accessRequests.rows[].callbackDelivery.bound` | number |  |  |
+| `accessRequests.rows[].callbackDelivery.nextAt` | number |  |  |
+| `accessRequests.rows[].callbackDelivery.state` | one of `pending`, `delivered`, `failed` |  |  |
 | `accessRequests.rows[].client` | object |  |  |
 | `accessRequests.rows[].client.id` | string |  |  |
 | `accessRequests.rows[].client.name` | string |  |  |
@@ -1633,6 +1643,8 @@ Scope: `admin:read`.
 | `callers` | list |  |  |
 | `callers[].applications` | list |  |  |
 | `callers[].applications[]` | string |  |  |
+| `callers[].callbackConfigs` | list |  |  |
+| `callers[].callbackConfigs[]` | string |  |  |
 | `callers[].callbacks` | list |  |  |
 | `callers[].callbacks[]` | string |  |  |
 | `callers[].dn` | string |  |  |
@@ -1670,6 +1682,8 @@ Scope: `admin:read`.
 | `looked` | object |  |  |
 | `looked.applications` | list |  |  |
 | `looked.applications[]` | string |  |  |
+| `looked.callbackConfigs` | list |  |  |
+| `looked.callbackConfigs[]` | string |  |  |
 | `looked.callbacks` | list |  |  |
 | `looked.callbacks[]` | string |  |  |
 | `looked.dn` | string |  |  |
@@ -1804,6 +1818,16 @@ Scope: `admin:write`.
 | `task.approvers.owners` | boolean |  |  |
 | `task.approvers.roles` | list |  |  |
 | `task.approvers.roles[]` | string |  |  |
+| `task.callbackDelivery` | object |  |  |
+| `task.callbackDelivery.attempts` | list |  |  |
+| `task.callbackDelivery.attempts[].at` | number |  |  |
+| `task.callbackDelivery.attempts[].ok` | boolean |  |  |
+| `task.callbackDelivery.attempts[].status` | number |  |  |
+| `task.callbackDelivery.attempts[].why` | string |  |  |
+| `task.callbackDelivery.backoffS` | number |  |  |
+| `task.callbackDelivery.bound` | number |  |  |
+| `task.callbackDelivery.nextAt` | number |  |  |
+| `task.callbackDelivery.state` | one of `pending`, `delivered`, `failed` |  |  |
 | `task.client` | object |  |  |
 | `task.client.id` | string |  |  |
 | `task.client.name` | string |  |  |
@@ -1844,6 +1868,16 @@ Scope: `admin:write`.
 | `task.approvers.owners` | boolean |  |  |
 | `task.approvers.roles` | list |  |  |
 | `task.approvers.roles[]` | string |  |  |
+| `task.callbackDelivery` | object |  |  |
+| `task.callbackDelivery.attempts` | list |  |  |
+| `task.callbackDelivery.attempts[].at` | number |  |  |
+| `task.callbackDelivery.attempts[].ok` | boolean |  |  |
+| `task.callbackDelivery.attempts[].status` | number |  |  |
+| `task.callbackDelivery.attempts[].why` | string |  |  |
+| `task.callbackDelivery.backoffS` | number |  |  |
+| `task.callbackDelivery.bound` | number |  |  |
+| `task.callbackDelivery.nextAt` | number |  |  |
+| `task.callbackDelivery.state` | one of `pending`, `delivered`, `failed` |  |  |
 | `task.client` | object |  |  |
 | `task.client.id` | string |  |  |
 | `task.client.name` | string |  |  |
@@ -1909,6 +1943,16 @@ Scope: `admin:write`.
 | `task.approvers.owners` | boolean |  |  |
 | `task.approvers.roles` | list |  |  |
 | `task.approvers.roles[]` | string |  |  |
+| `task.callbackDelivery` | object |  |  |
+| `task.callbackDelivery.attempts` | list |  |  |
+| `task.callbackDelivery.attempts[].at` | number |  |  |
+| `task.callbackDelivery.attempts[].ok` | boolean |  |  |
+| `task.callbackDelivery.attempts[].status` | number |  |  |
+| `task.callbackDelivery.attempts[].why` | string |  |  |
+| `task.callbackDelivery.backoffS` | number |  |  |
+| `task.callbackDelivery.bound` | number |  |  |
+| `task.callbackDelivery.nextAt` | number |  |  |
+| `task.callbackDelivery.state` | one of `pending`, `delivered`, `failed` |  |  |
 | `task.client` | object |  |  |
 | `task.client.id` | string |  |  |
 | `task.client.name` | string |  |  |
@@ -1949,6 +1993,16 @@ Scope: `admin:write`.
 | `task.approvers.owners` | boolean |  |  |
 | `task.approvers.roles` | list |  |  |
 | `task.approvers.roles[]` | string |  |  |
+| `task.callbackDelivery` | object |  |  |
+| `task.callbackDelivery.attempts` | list |  |  |
+| `task.callbackDelivery.attempts[].at` | number |  |  |
+| `task.callbackDelivery.attempts[].ok` | boolean |  |  |
+| `task.callbackDelivery.attempts[].status` | number |  |  |
+| `task.callbackDelivery.attempts[].why` | string |  |  |
+| `task.callbackDelivery.backoffS` | number |  |  |
+| `task.callbackDelivery.bound` | number |  |  |
+| `task.callbackDelivery.nextAt` | number |  |  |
+| `task.callbackDelivery.state` | one of `pending`, `delivered`, `failed` |  |  |
 | `task.client` | object |  |  |
 | `task.client.id` | string |  |  |
 | `task.client.name` | string |  |  |
@@ -2014,6 +2068,16 @@ Scope: `admin:write`.
 | `task.approvers.owners` | boolean |  |  |
 | `task.approvers.roles` | list |  |  |
 | `task.approvers.roles[]` | string |  |  |
+| `task.callbackDelivery` | object |  |  |
+| `task.callbackDelivery.attempts` | list |  |  |
+| `task.callbackDelivery.attempts[].at` | number |  |  |
+| `task.callbackDelivery.attempts[].ok` | boolean |  |  |
+| `task.callbackDelivery.attempts[].status` | number |  |  |
+| `task.callbackDelivery.attempts[].why` | string |  |  |
+| `task.callbackDelivery.backoffS` | number |  |  |
+| `task.callbackDelivery.bound` | number |  |  |
+| `task.callbackDelivery.nextAt` | number |  |  |
+| `task.callbackDelivery.state` | one of `pending`, `delivered`, `failed` |  |  |
 | `task.client` | object |  |  |
 | `task.client.id` | string |  |  |
 | `task.client.name` | string |  |  |
@@ -2054,6 +2118,16 @@ Scope: `admin:write`.
 | `task.approvers.owners` | boolean |  |  |
 | `task.approvers.roles` | list |  |  |
 | `task.approvers.roles[]` | string |  |  |
+| `task.callbackDelivery` | object |  |  |
+| `task.callbackDelivery.attempts` | list |  |  |
+| `task.callbackDelivery.attempts[].at` | number |  |  |
+| `task.callbackDelivery.attempts[].ok` | boolean |  |  |
+| `task.callbackDelivery.attempts[].status` | number |  |  |
+| `task.callbackDelivery.attempts[].why` | string |  |  |
+| `task.callbackDelivery.backoffS` | number |  |  |
+| `task.callbackDelivery.bound` | number |  |  |
+| `task.callbackDelivery.nextAt` | number |  |  |
+| `task.callbackDelivery.state` | one of `pending`, `delivered`, `failed` |  |  |
 | `task.client` | object |  |  |
 | `task.client.id` | string |  |  |
 | `task.client.name` | string |  |  |
@@ -2187,6 +2261,16 @@ Scope: `admin:write`.
 | `task.approvers.owners` | boolean |  |  |
 | `task.approvers.roles` | list |  |  |
 | `task.approvers.roles[]` | string |  |  |
+| `task.callbackDelivery` | object |  |  |
+| `task.callbackDelivery.attempts` | list |  |  |
+| `task.callbackDelivery.attempts[].at` | number |  |  |
+| `task.callbackDelivery.attempts[].ok` | boolean |  |  |
+| `task.callbackDelivery.attempts[].status` | number |  |  |
+| `task.callbackDelivery.attempts[].why` | string |  |  |
+| `task.callbackDelivery.backoffS` | number |  |  |
+| `task.callbackDelivery.bound` | number |  |  |
+| `task.callbackDelivery.nextAt` | number |  |  |
+| `task.callbackDelivery.state` | one of `pending`, `delivered`, `failed` |  |  |
 | `task.client` | object |  |  |
 | `task.client.id` | string |  |  |
 | `task.client.name` | string |  |  |
@@ -2227,6 +2311,16 @@ Scope: `admin:write`.
 | `task.approvers.owners` | boolean |  |  |
 | `task.approvers.roles` | list |  |  |
 | `task.approvers.roles[]` | string |  |  |
+| `task.callbackDelivery` | object |  |  |
+| `task.callbackDelivery.attempts` | list |  |  |
+| `task.callbackDelivery.attempts[].at` | number |  |  |
+| `task.callbackDelivery.attempts[].ok` | boolean |  |  |
+| `task.callbackDelivery.attempts[].status` | number |  |  |
+| `task.callbackDelivery.attempts[].why` | string |  |  |
+| `task.callbackDelivery.backoffS` | number |  |  |
+| `task.callbackDelivery.bound` | number |  |  |
+| `task.callbackDelivery.nextAt` | number |  |  |
+| `task.callbackDelivery.state` | one of `pending`, `delivered`, `failed` |  |  |
 | `task.client` | object |  |  |
 | `task.client.id` | string |  |  |
 | `task.client.name` | string |  |  |
@@ -2322,7 +2416,7 @@ Scope: `admin:write`.
 
 **Set the access request callback URLs of an AuthZEN caller**
 
-Replaces the callback URLs registered for a caller (#1180): stsAuthzenCallbackUri on a person's or service account's entry, appAuthzenCallbackUri on an application. An access request's callback.endpoint must be one of them exactly; this service never dials a callback URL taken from a request alone. https only, at most eight. Empty clears them. Audited.
+Replaces the callback URLs registered for an application (#1180, #1202): appAuthzenCallbackUri, and appAuthzenCallbackConfig where a URL overrides authzen.callbackAttempts or authzen.callbackBackoffS. A person or a service account is refused. An access request's callback.endpoint must match a URL exactly; this service never dials a callback URL taken from a request alone. https only, at most eight. One per line, or a URL followed by attempts=N and backoff=S. Empty clears them. Audited.
 
 **Mirrors** `POST /admin/xacml#xacml-tab-authzen` on the admin console.
 
@@ -2350,6 +2444,8 @@ Scope: `admin:write`.
 | `caller` | object |  |  |
 | `caller.applications` | list |  |  |
 | `caller.applications[]` | string |  |  |
+| `caller.callbackConfigs` | list |  |  |
+| `caller.callbackConfigs[]` | string |  |  |
 | `caller.callbacks` | list |  |  |
 | `caller.callbacks[]` | string |  |  |
 | `caller.dn` | string |  |  |
@@ -2369,6 +2465,8 @@ Scope: `admin:write`.
 | `caller` | object |  |  |
 | `caller.applications` | list |  |  |
 | `caller.applications[]` | string |  |  |
+| `caller.callbackConfigs` | list |  |  |
+| `caller.callbackConfigs[]` | string |  |  |
 | `caller.callbacks` | list |  |  |
 | `caller.callbacks[]` | string |  |  |
 | `caller.dn` | string |  |  |
@@ -2415,6 +2513,8 @@ Scope: `admin:write`.
 | `caller` | object |  |  |
 | `caller.applications` | list |  |  |
 | `caller.applications[]` | string |  |  |
+| `caller.callbackConfigs` | list |  |  |
+| `caller.callbackConfigs[]` | string |  |  |
 | `caller.callbacks` | list |  |  |
 | `caller.callbacks[]` | string |  |  |
 | `caller.dn` | string |  |  |
@@ -2434,6 +2534,8 @@ Scope: `admin:write`.
 | `caller` | object |  |  |
 | `caller.applications` | list |  |  |
 | `caller.applications[]` | string |  |  |
+| `caller.callbackConfigs` | list |  |  |
+| `caller.callbackConfigs[]` | string |  |  |
 | `caller.callbacks` | list |  |  |
 | `caller.callbacks[]` | string |  |  |
 | `caller.dn` | string |  |  |

@@ -14,6 +14,7 @@
   "appAuthnPolicy": 10,
   "appAuthorizationServer": 11,
   "appAuthzenApplication": 12,
+  "appAuthzenCallbackConfig": 924,
   "appAuthzenCallbackUri": 13,
   "appCertificateHostName": 14,
   "appCorsOrigin": 15,

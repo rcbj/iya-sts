@@ -44,6 +44,7 @@ declare namespace IyaDomain {
     authzenAttribute?: string[];
     authzenApplication?: string[];
     authzenCallbackUri?: string[];
+    authzenCallbackConfig?: string[];
     softwareStatementIssuer?: string;
     softwareStatementTrusted?: string;
     softwareStatementPublisher?: string;

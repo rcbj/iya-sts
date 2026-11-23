@@ -10116,6 +10116,7 @@ namespace IyaSts.Api.Management {
     `kind`?: string;
     `applications`?: (string)[];
     `callbacks`?: (string)[];
+    `callbackConfigs`?: (string)[];
     `member`?: boolean
   }
 
@@ -10158,7 +10159,8 @@ namespace IyaSts.Api.Management {
     `finishedAt`?: numeric;
     `decidedBy`?: string;
     `approval`?: SharedModel506_approval_h2186;
-    `approvers`?: WithRolesGroupsOwners
+    `approvers`?: WithRolesGroupsOwners;
+    `callbackDelivery`?: NullableAuthzenCallbackDelivery
   }
 
 @component model `WithOkMessageErrors178` {
@@ -45132,6 +45134,7 @@ op `testSecretDestination`(@js(#{`examples`:#[#{`id`:"vault-prod",`secretName`:"
       `kind`:#{`type`:"string"},
       `applications`:#{`type`:"array",`items`:#{`type`:"string"}},
       `callbacks`:#{`type`:"array",`items`:#{`type`:"string"}},
+      `callbackConfigs`:#{`type`:"array",`items`:#{`type`:"string"}},
       `member`:#{`type`:"boolean"}
     },
     `$types`:#["object","null"]
@@ -45355,11 +45358,11 @@ op `setAuthzenScope`(@js(#{`examples`:#[#{`caller`:"todo-pep",`applications`:#["
 
   
 
-@js(#{`maxItems`:8}) @hoisted model post_admin_api_xacml_authzen_set_callbacks_b_application_json_callbacks_v1_h3175 is (StringMax2048)[];
+@js(#{`maxItems`:8}) @hoisted model post_admin_api_xacml_authzen_set_callbacks_b_application_json_callbacks_v1_h3175 is (StringMax2200)[];
   
 
 @js(#{
-    `description`:"The URLs, as a list or as one string separated by commas or spaces.",
+    `description`:"The callbacks, as a list or as one string. One per line when the string contains a newline: an https URL, or that URL followed by attempts=N and backoff=S. A string with no override is separated by commas or spaces.",
     `$comb`:"oneOf"
   }) @hoisted union post_admin_api_xacml_authzen_set_callbacks_b_application_json_callbacks_h3176 {
     StringMax16384,
@@ -45371,7 +45374,7 @@ op `setAuthzenScope`(@js(#{`examples`:#[#{`caller`:"todo-pep",`applications`:#["
   #{
     `operationId`:"setAuthzenCallbacks",
     `summary`:"Set the access request callback URLs of an AuthZEN caller",
-    `description`:"Replaces the callback URLs registered for a caller (#1180): stsAuthzenCallbackUri on a person's or service account's entry, appAuthzenCallbackUri on an application. An access request's callback.endpoint must be one of them exactly; this service never dials a callback URL taken from a request alone. https only, at most eight. Empty clears them. Audited.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-authzen` on the admin console.",
+    `description`:"Replaces the callback URLs registered for an application (#1180, #1202): appAuthzenCallbackUri, and appAuthzenCallbackConfig where a URL overrides authzen.callbackAttempts or authzen.callbackBackoffS. A person or a service account is refused. An access request's callback.endpoint must match a URL exactly; this service never dials a callback URL taken from a request alone. https only, at most eight. One per line, or a URL followed by attempts=N and backoff=S. Empty clears them. Audited.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-authzen` on the admin console.",
     `tags`:#["XACML"],
     `responses`:#{
       `200`:#{

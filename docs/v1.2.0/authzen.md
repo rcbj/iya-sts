@@ -884,9 +884,14 @@ and is not sent.
 
 ## Access requests and approvals
 
-This service implements the draft **AuthZEN Access Request and Approval
-Profile** and its **Callback** companion. It is both the profile's PDP and its
-Access Request Service. An approval never permits anything by itself: the
+This service implements the draft [AuthZEN Access Request and Approval
+Profile 1.0](https://openid.github.io/authzen/authzen-access-request-approval-profile-1_0.html)
+and the [AuthZEN Callback Notifications Profile
+1.0](https://openid.github.io/authzen/authzen-access-request-callback-profile-1_0.html).
+The callback profile is a separate specification: it defines the `callback`
+member and the notification, and it leaves task status and re-evaluation to
+the approval profile. It is both the approval profile's PDP and its Access
+Request Service. An approval never permits anything by itself: the
 PEP asks again, carrying the approval, and the realm's root policy decides
 (or, for an application that enforces
 [fine-grained authorization](fga.md), that application's own policy, which
@@ -1043,15 +1048,32 @@ justification, it is refused.
 ### Callbacks
 
 A submission may carry `callback` (`endpoint`, `state`, `events`). The
-endpoint must be one of the URLs an administrator registered for the
-caller: `appAuthzenCallbackUri` on an application, `stsAuthzenCallbackUri` on
-a person's or service account's entry (set on the AuthZEN tab, or with
-`set-callbacks`). When the task finishes with a requested event the service
-POSTs `{ "state", "task" }` to it, with `Authorization: Bearer <JWT>` signed
-by the realm (verify it with the realm's JWKS). The notification has no
-`result`: fetch the task before enforcing. It goes out under the outbound
-policy (https verified, no redirect, internal addresses refused in product
-mode). A failed delivery is recorded and not retried.
+endpoint must be one of the URLs an administrator registered for the calling
+application, on `appAuthzenCallbackUri` (set on the AuthZEN tab, or with
+`set-callbacks`). A person or a service account cannot register a callback.
+A value already stored in `stsAuthzenCallbackUri` is left in place and is
+not honoured. A direct LDAP write of that attribute is the same: the
+submission ignores it.
+
+When the task finishes with a requested event the service POSTs
+`{ "state", "task" }` to the URL, with `Authorization: Bearer <JWT>` signed
+by the realm (verify it with the realm's JWKS, `GET /oauth2/jwks`). The
+notification has no `result`: fetch the task before enforcing. It goes out
+under the outbound policy (https verified, no redirect, internal addresses
+refused in product mode).
+
+A network error, a timeout or an HTTP 5xx is tried again, up to
+`authzen.callbackAttempts` (the first send included), waiting
+`authzen.callbackBackoffS` between tries. The `authzen.access-requests` job
+sends the later tries. An HTTP 4xx, or a URL the outbound policy refuses,
+is not tried again. One URL may override either number in
+`appAuthzenCallbackConfig`, a line `https://host/path attempts=N backoff=S`
+whose URL is also an `appAuthzenCallbackUri` value. A bare URL uses the
+realm settings. The attempts are on the console's task row and on
+`callbackDelivery` in the management API and the portal. The task's own
+status is unchanged: the status endpoint stays the record the PEP enforces
+from. When the delivery will not succeed, that record's state is `failed`
+and the give-up is audited.
 
 ## The console and the management API
 
@@ -1071,7 +1093,7 @@ The same operations are on the management API:
 | `POST /admin-api/xacml/authzen/set-attribute` | add a row, or replace the row for the same `object` and `property` |
 | `POST /admin-api/xacml/authzen/remove-attribute` | remove the row for an `object` and `property` |
 | `POST /admin-api/xacml/authzen/set-scope` | replace a caller's application scope: `caller` and `applications` |
-| `POST /admin-api/xacml/authzen/set-callbacks` | replace a caller's access request callback URLs: `caller` and `callbacks` |
+| `POST /admin-api/xacml/authzen/set-callbacks` | replace an application's callback URLs: `caller` and `callbacks`, one URL per line, optionally `attempts=N` and `backoff=S` |
 | `POST /admin-api/xacml/authzen/approve-access-request` | approve one: `request` |
 | `POST /admin-api/xacml/authzen/deny-access-request` | deny one: `request` |
 | `POST /admin-api/xacml/authzen/revoke-access-request` | revoke an approval: `request` |
@@ -1117,6 +1139,8 @@ live source; this table is a copy.
 | `authzen.accessRequestEmergencyS` | `STS_AUTHZEN_ACCESS_REQUEST_EMERGENCY_S` | `3600` | The longest emergency access holds |
 | `authzen.accessRequestRetryAfterS` | `STS_AUTHZEN_ACCESS_REQUEST_RETRY_AFTER_S` | `30` | `Retry-After` on a pending task |
 | `authzen.accessRequestMaxPending` | `STS_AUTHZEN_ACCESS_REQUEST_MAX_PENDING` | `10000` | Pending requests a realm holds before a submission is refused 503 |
+| `authzen.callbackAttempts` | `STS_AUTHZEN_CALLBACK_ATTEMPTS` | `5` | How many times a finished access request's callback is sent, the first included. `1` is one attempt. An application's `appAuthzenCallbackConfig` may set another bound for one URL |
+| `authzen.callbackBackoffS` | `STS_AUTHZEN_CALLBACK_BACKOFF_S` | `60` | Seconds to wait after a failed callback before the next attempt. The job runs every 60 seconds, so a shorter wait is not offered. An application's `appAuthzenCallbackConfig` may set a longer wait for one URL |
 | `authzen.externalPdp` | `STS_AUTHZEN_EXTERNAL_PDP` | `false` | Ask an external PDP before issuing an OAuth access token for a token exchange (see *Asking an external PDP*) |
 | `authzen.externalPdpUrl` | `STS_AUTHZEN_EXTERNAL_PDP_URL` | *(empty)* | The external PDP's `POST /access/v1/evaluations`, absolute https, no userinfo, query or fragment |
 | `authzen.externalPdpTimeoutMs` | `STS_AUTHZEN_EXTERNAL_PDP_TIMEOUT_MS` | `5000` | How long to wait for the external PDP, in milliseconds |
@@ -1136,9 +1160,10 @@ live source; this table is a copy.
 * Every access request transition is an `authzen.access-request.*` audit
   row (`submitted`, `approved`, `denied`, `expired`, `cancelled`, `revoked`,
   `approver-refused`, `callback`).
-* The scheduler job `authzen.access-requests` expires pending requests and
+* The scheduler job `authzen.access-requests` expires pending requests,
   removes finished ones a day after they finished (or once their approval
-  ran out, if later).
+  ran out, if later), and sends a callback again when the last attempt
+  failed in a way that can still succeed.
 * `/admin/sts-metadata` lists the endpoints.
 
 ## What is not built yet
@@ -1148,6 +1173,10 @@ None of these is advertised in the metadata:
 * Of the Access Request and Approval Profile: binding a denial by
   `evaluation_id` alone, `approval.state`, machine-readable forms, and the
   BULK, ACTOR and CATALOG companions.
+* Of the Callback Notifications Profile: the `partial` event and
+  deployment-level event subscriptions. Retrying a notification that failed
+  with a network error or an HTTP 5xx is built; see
+  [Callbacks](#callbacks).
 * Direction B, this authorization server asking an external PDP, is built
   (see *Asking an external PDP*). The edge PDP does not answer the binding.
 * The [edge PDP](remote-pep.md#an-authzen-edge-pdp) answers evaluations and

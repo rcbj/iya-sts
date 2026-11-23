@@ -34,13 +34,18 @@
 //      `/account-api`, `authzen/authzen_admin.ts` through `/admin-api`), and
 //      approvers are mailed through the mail channel.
 //   4. **CALLBACK IS IN THE FIRST BUILD**, to a URL registered for the
-//      requester only (`appAuthzenCallbackUri` on an application,
-//      `stsAuthzenCallbackUri` on a person's or service account's entry,
-//      written by an administrator) and never one taken from the request
-//      alone, under the outbound policy every other delivery takes
-//      (`federation_http.deliverJson()`): https verified, no redirect, the
-//      internal-address refusal, the kill switch. `federation/CLAUDE.md`
-//      carries its row among the URLs this service dials.
+//      requester only when that requester is an application
+//      (`appAuthzenCallbackUri`, written by an administrator) and never one
+//      taken from the request alone, under the outbound policy every other
+//      delivery takes (`federation_http.deliverJson()`): https verified, no
+//      redirect, the internal-address refusal, the kill switch.
+//      `federation/CLAUDE.md` carries its row among the URLs this service
+//      dials. A person's or service account's `stsAuthzenCallbackUri` is
+//      left readable and is not honoured (#1202). A failed delivery is
+//      retried by this file's own scheduler job, up to a bound snapshotted
+//      onto the task; the task's status is not moved to `failed` — the
+//      delivery record is, because `failed` is itself a callback event and
+//      `finish()` runs exactly once from `pending`.
 //
 // ---------------------------------------------------------------------------
 // THE INVARIANT THAT GOVERNS EVERYTHING BELOW: AN APPROVAL NEVER TURNS A
@@ -75,10 +80,11 @@
 // `cancelled`, `failed` — every transition one audit row. Expiry is the
 // scheduler job `authzen.access-requests` (rcbj's rule on periodic work):
 // a pending task past its `expires_at` is moved to `expired` (and its
-// callback sent), and a finished one is removed a day after it finished, or
-// after its approval ran out if that is later. A read checks the deadline
-// itself, so an expired task never answers pending whenever the job last
-// ran.
+// callback sent), a finished one is removed a day after it finished, or
+// after its approval ran out if that is later, and a callback whose last
+// attempt failed in a way that can succeed is sent again. A read checks the
+// deadline itself, so an expired task never answers pending whenever the
+// job last ran.
 //
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50): `AccessRequests` takes what it uses through
@@ -148,6 +154,10 @@ const MAX_CALLBACKS = 8;
 // The scheduler job.
 const JOB = 'authzen.access-requests';
 const JOB_EVERY_MS = 60000;
+
+// A callback POST that is already running, keyed by realm and task id. A
+// Promise cannot be stored on the row. `resetForTests()` clears it.
+const flights = new Map<string, Promise<boolean>>();
 
 // ---------------------------------------------------------------------------
 // THE STORES, per realm at their declaration and persisted, so a task
@@ -1062,7 +1072,8 @@ class AccessRequests {
     }
     const callback = self.callbackOf(given.callback, caller);
     if (callback.problem) {
-      self.problem(res, 400, '', 'STS-AUTHZEN-0079', callback.problem);
+      self.problem(res, 400, '', callback.code || 'STS-AUTHZEN-0079',
+                   callback.problem);
       log.debug("Leaving AccessRequests.submit(). A callback refused.");
       return;
     }
@@ -1265,12 +1276,165 @@ class AccessRequests {
   }
 
   // -------------------------------------------------------------------------
-  // THE CALLBACK (the CALLBACK companion), rcbj's decision 4.
+  // THE CALLBACK (the CALLBACK companion), rcbj's decision 4, retried by
+  // the access-request job (#1202). A callback is registered only for an
+  // application. The task status is never written `failed` because of a
+  // delivery: `failed` is itself a callback event, `finish()` moves a task
+  // exactly once from `pending`, and the status endpoint is what a PEP
+  // enforces from. `callbackDelivery.state` is what becomes `failed`.
   // -------------------------------------------------------------------------
+  // An integer setting held to the callback bounds. A value the row already
+  // clamped still passes through here when an old task has none.
+  private clampAttempts(value: number): number {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.clampAttempts().");
+    const n = Math.floor(Number(value));
+    let out = 5;
+    if (n > 20) {
+      out = 20;
+    } else if (n >= 1) {
+      out = n;
+    } else {
+      out = 1;
+    }
+    log.debug("Leaving AccessRequests.clampAttempts().");
+    return out;
+  }
+
+  private clampBackoff(value: number): number {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.clampBackoff().");
+    const n = Math.floor(Number(value));
+    let out = 60;
+    if (n > 86400) {
+      out = 86400;
+    } else if (n >= 60) {
+      out = n;
+    }
+    log.debug("Leaving AccessRequests.clampBackoff().");
+    return out;
+  }
+
+  // The directory entry the caller is, or null when it cannot be read. An
+  // mTLS caller is kind `entry` named by DN, including an application; a
+  // bearer caller is kind `application` named by its client id.
+  private callbackCaller(caller: Json): Json | null {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.callbackCaller().");
+    const key = caller && caller.kind === 'application'
+      ? String(caller.identifier || caller.clientId || caller.name || '')
+      : String((caller && caller.name) || '');
+    let looked: Json = null;
+    try {
+      looked = this.deps.loadAdmin().callerOf(key);
+    } catch (e) {
+      // A registry that cannot be read registers nothing: the request is
+      // then refused a callback, the safe direction.
+      log.debug("Caught in AccessRequests.callbackCaller(): " +
+                ((e && e.message) || e));
+      looked = null;
+    }
+    log.debug("Leaving AccessRequests.callbackCaller().");
+    return looked;
+  }
+
+  // The realm settings, overridden by the config line for this exact URL
+  // (`endpoint` plus a space). A line that does not parse falls back to
+  // the settings: set-callbacks already refused a bad one.
+  private policyFor(endpoint: string, configs: string[]): Json {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.policyFor().");
+    let attempts = self.clampAttempts(
+      self.seconds('authzen.callbackAttempts'));
+    let backoffS = self.clampBackoff(
+      self.seconds('authzen.callbackBackoffS'));
+    const prefix = endpoint + ' ';
+    const line = (configs || []).filter(function (one: string) {
+      return String(one).indexOf(prefix) === 0;
+    })[0];
+    if (line) {
+      String(line).slice(prefix.length).split(/\s+/).forEach(
+        function (token: string) {
+          const attemptsMatch = /^attempts=(\d+)$/.exec(token);
+          const backoffMatch = /^backoff=(\d+)$/.exec(token);
+          if (attemptsMatch) {
+            attempts = self.clampAttempts(Number(attemptsMatch[1]));
+          }
+          if (backoffMatch) {
+            backoffS = self.clampBackoff(Number(backoffMatch[1]));
+          }
+        });
+    }
+    log.debug("Leaving AccessRequests.policyFor().");
+    return { attempts: attempts, backoffS: backoffS };
+  }
+
+  // An old task recorded the endpoint and not the bound. The first attempt
+  // snapshots the settings then in force, so a later change does not
+  // rewrite an in-flight delivery.
+  private ensurePolicy(task: Json): void {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.ensurePolicy().");
+    const callback = task.callback || {};
+    if (!callback.attempts) {
+      callback.attempts = self.clampAttempts(
+        self.seconds('authzen.callbackAttempts'));
+    }
+    if (!callback.backoffS) {
+      callback.backoffS = self.clampBackoff(
+        self.seconds('authzen.callbackBackoffS'));
+    }
+    task.callback = callback;
+    log.debug("Leaving AccessRequests.ensurePolicy().");
+  }
+
+  private ensureDelivery(task: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.ensureDelivery().");
+    if (!task.callbackDelivery) {
+      task.callbackDelivery = {
+        state: 'pending',
+        attempts: [],
+        nextAt: 0,
+        inflightUntil: 0,
+        bound: task.callback.attempts,
+        backoffS: task.callback.backoffS
+      };
+    }
+    log.debug("Leaving AccessRequests.ensureDelivery().");
+    return task.callbackDelivery;
+  }
+
+  private flightKey(task: Json): string {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.flightKey().");
+    log.debug("Leaving AccessRequests.flightKey().");
+    return String(task.realm || '') + '\n' + String(task.id || '');
+  }
+
+  // A network error, a timeout, an unresolved name or an HTTP 5xx can
+  // succeed later. A 4xx, a 3xx and an outbound-policy refusal cannot.
+  private deliveryRetryable(status: number, kind: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.deliveryRetryable().");
+    let retry = false;
+    if (status >= 500) {
+      retry = true;
+    } else if (status === 0 && (kind === '' || kind === 'network' ||
+                                kind === 'timeout' ||
+                                kind === 'unresolved')) {
+      retry = true;
+    }
+    log.debug("Leaving AccessRequests.deliveryRetryable(). " + retry);
+    return retry;
+  }
+
   /**
-   * The callback URLs registered for a caller: `appAuthzenCallbackUri` on
-   * an application, `stsAuthzenCallbackUri` on a person's or service
-   * account's entry — an administrator's, never the caller's.
+   * The callback URLs registered for a caller. Only an application's
+   * `appAuthzenCallbackUri`. A person's stored `stsAuthzenCallbackUri` is
+   * not a registration a submission may name.
    *
    * @param caller - the caller, `{ kind, name, identifier }`
    * @returns the URLs
@@ -1278,21 +1442,9 @@ class AccessRequests {
   registeredCallbacks(caller: Json): string[] {
     const { log } = this.deps;
     log.debug("Entering AccessRequests.registeredCallbacks().");
-    let out: string[] = [];
-    try {
-      const looked = this.deps.loadAdmin().callerOf(
-        caller.kind === 'application'
-          ? String(caller.identifier || caller.clientId || caller.name)
-          : String(caller.name));
-      out = looked && Array.isArray(looked.callbacks) ? looked.callbacks
-                                                       : [];
-    } catch (e) {
-      // A registry that cannot be read registers nothing: the request is
-      // then refused a callback, the safe direction.
-      log.debug("Caught in AccessRequests.registeredCallbacks(): " +
-                ((e && e.message) || e));
-      out = [];
-    }
+    const looked = this.callbackCaller(caller);
+    const out = looked && looked.kind === 'application' &&
+                Array.isArray(looked.callbacks) ? looked.callbacks : [];
     log.debug("Leaving AccessRequests.registeredCallbacks(). " + out.length);
     return out;
   }
@@ -1318,15 +1470,21 @@ class AccessRequests {
       log.debug("Leaving AccessRequests.callbackOf(). Not an object.");
       return { problem: shape.message };
     }
+    const looked = self.callbackCaller(caller);
+    if (!looked || looked.kind !== 'application') {
+      log.debug("Leaving AccessRequests.callbackOf(). Not an application.");
+      return { problem: 'A callback is registered only for an application.',
+               code: 'STS-AUTHZEN-0136' };
+    }
     const asked: Json = given;
     const endpoint = String(asked.endpoint);
-    if (!/^https:\/\//i.test(endpoint) ||
-        self.registeredCallbacks(caller).indexOf(endpoint) < 0) {
+    const urls = Array.isArray(looked.callbacks) ? looked.callbacks : [];
+    if (!/^https:\/\//i.test(endpoint) || urls.indexOf(endpoint) < 0) {
       log.debug("Leaving AccessRequests.callbackOf(). Not registered.");
       return { problem: 'callback.endpoint must be an https URL an ' +
-                        'administrator registered for this caller; this ' +
-                        'service never dials one taken from a request ' +
-                        'alone.' };
+                        'administrator registered for this application; ' +
+                        'this service never dials one taken from a ' +
+                        'request alone.' };
     }
     const listed = authzenModel.field('access-request', 'callback.events',
                                       asked.events);
@@ -1338,8 +1496,11 @@ class AccessRequests {
       : asked.events.map(String);
     const state = asked.state === undefined ? undefined
       : String(asked.state).slice(0, MAX_TEXT);
+    const policy = self.policyFor(endpoint,
+      Array.isArray(looked.callbackConfigs) ? looked.callbackConfigs : []);
     log.debug("Leaving AccessRequests.callbackOf().");
     return { value: { endpoint: endpoint, state: state,
+                      attempts: policy.attempts, backoffS: policy.backoffS,
                       events: events.filter(function (one: string) {
                         return EVENTS.indexOf(one) >= 0;
                       }) } };
@@ -1347,10 +1508,9 @@ class AccessRequests {
 
   /**
    * Sends a finished task's callback, where it asked for one and for this
-   * event. One attempt, never awaited: a callback is a notification and the
-   * task status endpoint stays authoritative (the companion's words), so a
-   * failure is recorded and nothing is retried. The notification carries
-   * no `result`, so a PEP fetches the task before it enforces; it is
+   * event. The first attempt runs from `finish()` and is not awaited. A
+   * later attempt is the access-request job. The notification carries no
+   * `result`, so a PEP fetches the task before it enforces; it is
    * authenticated by a short JWT this realm signs, audienced to the
    * endpoint, as the Bearer — verifiable with the realm's JWKS.
    *
@@ -1359,13 +1519,82 @@ class AccessRequests {
    */
   notify(task: Json): Promise<boolean> {
     const self = this;
-    const { log, audit, errorCodes } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering AccessRequests.notify(). " + task.id);
     const callback = task.callback;
-    if (!callback || callback.events.indexOf(task.status) < 0) {
+    if (!callback || !Array.isArray(callback.events) ||
+        callback.events.indexOf(task.status) < 0) {
       log.debug("Leaving AccessRequests.notify(). Not asked for.");
       return Promise.resolve(false);
     }
+    const key = self.flightKey(task);
+    const flying = flights.get(key);
+    if (flying) {
+      log.debug("Leaving AccessRequests.notify(). Already sending.");
+      return flying;
+    }
+    self.ensurePolicy(task);
+    const delivery = self.ensureDelivery(task);
+    if (delivery.state === 'delivered' || delivery.state === 'failed') {
+      log.debug("Leaving AccessRequests.notify(). Already " +
+                delivery.state + ".");
+      return Promise.resolve(false);
+    }
+    const now = self.nowS();
+    if (Number(delivery.inflightUntil) > now ||
+        (delivery.attempts.length > 0 && Number(delivery.nextAt) > now)) {
+      log.debug("Leaving AccessRequests.notify(). Not due.");
+      return Promise.resolve(false);
+    }
+    const hold = Math.max(Number(delivery.backoffS) || 60, 120);
+    delivery.inflightUntil = now + hold;
+    delivery.nextAt = now + hold;
+    delivery.state = 'pending';
+    delivery.bound = task.callback.attempts;
+    delivery.backoffS = task.callback.backoffS;
+    self.save(task);
+    let settle: (value: boolean) => void = function () {
+      return undefined;
+    };
+    const promise = new Promise<boolean>(function (resolve) {
+      settle = resolve;
+    });
+    flights.set(key, promise);
+    const clear = function (): void {
+      if (flights.get(key) === promise) {
+        flights.delete(key);
+      }
+    };
+    self.sendCallback(task).then(function (result: Json) {
+      const sent = self.settleDelivery(task, result);
+      clear();
+      settle(sent);
+      return sent;
+    }, function (e: Json) {
+      // The POST rejected rather than answering. Recorded as a retryable
+      // attempt, the same as a network error with no policy kind.
+      log.debug("Caught in AccessRequests.notify(): " +
+                ((e && e.message) || e));
+      const sent = self.settleDelivery(task, {
+        ok: false, status: 0, kind: '',
+        why: String((e && e.message) || e)
+      });
+      clear();
+      settle(sent);
+      return sent;
+    });
+    log.debug("Leaving AccessRequests.notify(). Sending.");
+    return promise;
+  }
+
+  // Signs the notification and posts it. A signing failure is an attempt
+  // with status 0 and no policy kind, so it is retried until the bound is
+  // spent: a key can be briefly unreadable.
+  private sendCallback(task: Json): Promise<Json> {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.sendCallback().");
+    const callback = task.callback;
     const payload: Json = { task: self.handleOf(task) };
     if (callback.state !== undefined) {
       payload.state = callback.state;
@@ -1379,27 +1608,16 @@ class AccessRequests {
           status: task.status },
         task.base, 300, 'oauth-signed-metadata') || '');
     } catch (e) {
-      log.debug("Caught in AccessRequests.notify(): " +
+      log.debug("Caught in AccessRequests.sendCallback(): " +
                 ((e && e.message) || e));
       bearer = '';
     }
-    const failed = function (why: string): boolean {
-      log.debug("Entering failed().");
-      log.warn(errorCodes.tag('STS-AUTHZEN-0091') + 'authzen: the ' +
-               'callback for the access request ' + task.id + ' was not ' +
-               'delivered: ' + why);
-      audit.audit({ action: 'authzen.access-request.callback',
-                    actor: 'the access request service', protocol: 'AuthZEN',
-                    errorCode: 'STS-AUTHZEN-0091',
-                    detail: 'The ' + task.status + ' callback for ' +
-                            task.id + ' was not delivered: ' +
-                            String(why).slice(0, 300) + '.' });
-      log.debug("Leaving failed().");
-      return false;
-    };
     if (!bearer) {
-      log.debug("Leaving AccessRequests.notify(). Not signed.");
-      return Promise.resolve(failed('the notification could not be signed'));
+      log.debug("Leaving AccessRequests.sendCallback(). Not signed.");
+      return Promise.resolve({
+        ok: false, status: 0, kind: '',
+        why: 'the notification could not be signed'
+      });
     }
     authzenModel.hold('callback-notification', payload,
                       'an access request callback');
@@ -1410,28 +1628,91 @@ class AccessRequests {
         'authzenCallbackEndpoint', payload,
         { Authorization: 'Bearer ' + bearer }, {});
     } catch (e) {
-      log.debug("Caught in AccessRequests.notify(): " +
+      log.debug("Caught in AccessRequests.sendCallback(): " +
                 ((e && e.message) || e));
-      log.debug("Leaving AccessRequests.notify(). Threw.");
-      return Promise.resolve(failed(String((e && e.message) || e)));
+      log.debug("Leaving AccessRequests.sendCallback(). Threw.");
+      return Promise.resolve({
+        ok: false, status: 0, kind: '',
+        why: String((e && e.message) || e)
+      });
     }
-    log.debug("Leaving AccessRequests.notify(). Sending.");
-    return Promise.resolve(sent).then(function (result: Json): boolean {
-      if (!result || !result.ok) {
-        return failed(String((result && (result.why || result.status)) ||
-                             'no answer'));
-      }
+    log.debug("Leaving AccessRequests.sendCallback(). Sending.");
+    return Promise.resolve(sent).then(function (result: Json): Json {
+      return result || { ok: false, status: 0, kind: '', why: 'no answer' };
+    }, function (e: Json): Json {
+      log.debug("Caught in AccessRequests.sendCallback(): " +
+                ((e && e.message) || e));
+      return { ok: false, status: 0, kind: '',
+               why: String((e && e.message) || e) };
+    });
+  }
+
+  // Records one attempt and either schedules the next, gives up, or marks
+  // the delivery delivered. The task status is not written.
+  private settleDelivery(task: Json, result: Json): boolean {
+    const self = this;
+    const { log, audit, errorCodes } = this.deps;
+    log.debug("Entering AccessRequests.settleDelivery().");
+    const delivery = self.ensureDelivery(task);
+    const ok = !!(result && result.ok);
+    const status = Number(result && result.status) || 0;
+    const kind = String((result && result.kind) || '');
+    const why = String((result && (result.why || result.status)) ||
+                       (ok ? '' : 'no answer')).slice(0, 300);
+    const now = self.nowS();
+    delivery.attempts.push({ at: now, status: status, ok: ok, why: why });
+    const bound = Number(delivery.bound) || 1;
+    if (delivery.attempts.length > bound) {
+      delivery.attempts = delivery.attempts.slice(delivery.attempts.length -
+                                                   bound);
+    }
+    if (ok) {
+      delivery.state = 'delivered';
+      delivery.nextAt = 0;
+      delivery.inflightUntil = 0;
+      self.save(task);
       audit.audit({ action: 'authzen.access-request.callback',
                     actor: 'the access request service', protocol: 'AuthZEN',
                     detail: 'The ' + task.status + ' callback for ' +
-                            task.id + ' was delivered (' + result.status +
-                            ').' });
+                            task.id + ' was delivered (' + status + ').' });
+      log.debug("Leaving AccessRequests.settleDelivery(). Delivered.");
       return true;
-    }, function (e: Json): boolean {
-      log.debug("Caught in AccessRequests.notify(): " +
-                ((e && e.message) || e));
-      return failed(String((e && e.message) || e));
-    });
+    }
+    const retry = self.deliveryRetryable(status, kind) &&
+                  delivery.attempts.length < bound;
+    audit.audit({ action: 'authzen.access-request.callback',
+                  actor: 'the access request service', protocol: 'AuthZEN',
+                  errorCode: 'STS-AUTHZEN-0091',
+                  detail: 'The ' + task.status + ' callback for ' + task.id +
+                          ' was not delivered: ' + why + '.' });
+    log.warn(errorCodes.tag('STS-AUTHZEN-0091') + 'authzen: the callback ' +
+             'for the access request ' + task.id + ' was not delivered: ' +
+             why);
+    if (retry) {
+      delivery.state = 'pending';
+      delivery.nextAt = now + Number(delivery.backoffS);
+      delivery.inflightUntil = 0;
+      self.save(task);
+      log.debug("Leaving AccessRequests.settleDelivery(). Again at " +
+                delivery.nextAt + ".");
+      return false;
+    }
+    delivery.state = 'failed';
+    delivery.nextAt = 0;
+    delivery.inflightUntil = 0;
+    self.save(task);
+    audit.audit({ action: 'authzen.access-request.callback',
+                  actor: 'the access request service', protocol: 'AuthZEN',
+                  errorCode: 'STS-AUTHZEN-0135',
+                  detail: 'The ' + task.status + ' callback for ' + task.id +
+                          ' will not be tried again (' +
+                          delivery.attempts.length + ' of ' + bound +
+                          '). The task status is unchanged.' });
+    log.warn(errorCodes.tag('STS-AUTHZEN-0135') + 'authzen: the callback ' +
+             'for the access request ' + task.id + ' will not be tried ' +
+             'again.');
+    log.debug("Leaving AccessRequests.settleDelivery(). Given up.");
+    return false;
   }
 
   // -------------------------------------------------------------------------
@@ -1855,7 +2136,18 @@ class AccessRequests {
                              revoked: !!approval.revokedAt } : null,
       approvers: { roles: (task.terms || {}).roles || [],
                    groups: (task.terms || {}).groups || [],
-                   owners: !!(task.terms || {}).owners }
+                   owners: !!(task.terms || {}).owners },
+      callbackDelivery: task.callbackDelivery ? {
+        state: String(task.callbackDelivery.state || 'pending'),
+        bound: Number(task.callbackDelivery.bound) || 0,
+        backoffS: Number(task.callbackDelivery.backoffS) || 0,
+        nextAt: Number(task.callbackDelivery.nextAt) || 0,
+        attempts: (task.callbackDelivery.attempts || []).map(
+          function (one: Json) {
+            return { at: Number(one.at) || 0, status: Number(one.status) || 0,
+                     ok: !!one.ok, why: String(one.why || '') };
+          })
+      } : null
     };
   }
 
@@ -2168,7 +2460,8 @@ class AccessRequests {
   /**
    * One run in the ambient realm: every pending task past its deadline
    * moved to `expired` (its callback sent), every finished one past its
-   * retention removed with its index rows.
+   * retention removed with its index rows, and every callback delivery
+   * that is due sent again.
    *
    * @param ctx - the scheduler's run context
    * @returns `{ summary }`
@@ -2180,6 +2473,7 @@ class AccessRequests {
     const now = self.nowS();
     let expired = 0;
     let removed = 0;
+    let retried = 0;
     try {
       const rows: Json[] = [];
       tasks.forEach(function (row: Json) {
@@ -2214,6 +2508,9 @@ class AccessRequests {
             index.delete(row.idempotency.key);
           }
           removed += 1;
+        } else if (self.callbackDue(row, now)) {
+          self.notify(row);
+          retried += 1;
         }
       }
       const stale: string[] = [];
@@ -2230,9 +2527,15 @@ class AccessRequests {
                 'request sweep failed: ' + ((e && e.message) || e));
       throw e;
     }
-    const summary = expired || removed
-      ? expired + ' access request(s) expired, ' + removed + ' removed.'
-      : '';
+    const parts: string[] = [];
+    if (expired || removed) {
+      parts.push(expired + ' access request(s) expired, ' + removed +
+                 ' removed.');
+    }
+    if (retried) {
+      parts.push(retried + ' callback(s) retried.');
+    }
+    const summary = parts.join(' ');
     log.debug("Leaving AccessRequests.sweep(). " + (summary || 'Nothing.'));
     return { summary: summary };
   }
@@ -2256,10 +2559,12 @@ class AccessRequests {
       title: 'AuthZEN access request expiry',
       describe: 'Moves every pending AuthZEN access request (#1180) past ' +
                 'its expires_at to expired — writing its audit row and ' +
-                'sending its callback — and removes a finished one a day ' +
+                'sending its callback — removes a finished one a day ' +
                 'after it finished, or once its approval ran out if that ' +
-                'is later. A read applies the deadline itself, so this is ' +
-                'the record and the clean-up, never what decides.',
+                'is later, and retries a callback delivery that failed ' +
+                'with a network error or an HTTP 5xx, up to the attempt ' +
+                'bound (#1202). A read applies the deadline itself, so ' +
+                'this is the record and the clean-up, never what decides.',
       owner: 'authzen/authzen_access_request.ts',
       kind: 'cluster', scope: 'realm',
       everyMs: function (): number {
@@ -2301,7 +2606,34 @@ class AccessRequests {
     indexKeys.forEach(function (key: string) {
       index.delete(key);
     });
+    flights.clear();
     log.debug("Leaving AccessRequests.resetForTests().");
+  }
+
+  // A finished task whose callback event includes this status, and whose
+  // delivery is not already done, in flight, or waiting for its backoff.
+  // A task that finished before the delivery record existed is due too:
+  // the process can stop between finish()'s save and notify().
+  private callbackDue(row: Json, now: number): boolean {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.callbackDue().");
+    const callback = row && row.callback;
+    let due = false;
+    if (row && row.status !== 'pending' && callback &&
+        Array.isArray(callback.events) &&
+        callback.events.indexOf(row.status) >= 0) {
+      const delivery = row.callbackDelivery;
+      const done = delivery && (delivery.state === 'delivered' ||
+                                delivery.state === 'failed');
+      const inflight = delivery && Number(delivery.inflightUntil) > now;
+      const waiting = delivery && delivery.attempts &&
+                      delivery.attempts.length > 0 &&
+                      Number(delivery.nextAt) > now;
+      due = !done && !inflight && !waiting &&
+            !flights.has(this.flightKey(row));
+    }
+    log.debug("Leaving AccessRequests.callbackDue(). " + due);
+    return due;
   }
 }
 

@@ -735,6 +735,10 @@
     "en": "2e00248f61ba1cad",
     "text": "CALLBACK DE SOLICITUD DE ACCESO AUTHZEN (#1180): una URL https que este cliente, como PEP de AuthZEN, puede nombrar como callback.endpoint de una solicitud de acceso — una por valor, comparada exactamente. Una solicitud que nombre cualquier otra se rechaza; este servicio nunca llama a una URL de callback tomada solo de una solicitud. La define un administrador, nunca el llamador."
   },
+  "applications.schema.attributes.appAuthzenCallbackConfig.what": {
+    "en": "ef3c61a4ecc70072",
+    "text": "REINTENTO DEL CALLBACK AUTHZEN (#1202): una URL de callback registrada y los intentos y la espera que sustituyen authzen.callbackAttempts y authzen.callbackBackoffS para ella. El valor es la URL, luego attempts=N (1 a 20) y backoff=S (60 a 86400), uno, el otro o ambos. La URL debe ser también un valor de appAuthzenCallbackUri. Si falta, esa URL usa la configuración del dominio de confianza. Lo define un administrador, nunca el llamador."
+  },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
     "en": "9255177cf4802d85",
     "text": "RFC 9470 sección 3: los valores acr que esta aplicación, como servidor de recursos, exige de la autenticación que respalda un token de acceso — separados por espacios, el preferido primero. Un token cuyo acr no cumple ninguno recibe el desafío 401 insufficient_user_authentication con estos como acr_values. Los niveles 0 < 1 < mfa están ordenados; hwk se cumple con una contraseña más una llave de seguridad; phr y phrh, solo con la autenticación resistente al phishing que nombran (#723); cualquier otro valor, solo con ese acr exacto. VACÍO no exige nada."

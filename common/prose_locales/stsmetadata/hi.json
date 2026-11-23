@@ -104,8 +104,8 @@
     "text": "partial: माँगे जा सकने वाला अस्वीकार (context.access_request, evaluation_id, evaluated_at, reason) जहाँ क्षेत्र की नीति Deny को access-request advice से चिह्नित करती है, मान द्वारा बंधा, binding_token से जिसे यह क्षेत्र हस्ताक्षरित करता है (इनलाइन दावे); Idempotency-Key के साथ प्रस्तुति, 201 या 202 और एक Task Handle; Retry-After के साथ कार्य-स्थिति एंडपॉइंट; POST या DELETE द्वारा रद्दीकरण; छह स्थितियाँ; reevaluate समापन मोड, approval.id विश्वसनीय अवस्था में हल होता है और अनुमोदन नीति तक विश्वसनीय तथ्यों के रूप में पहुँचता है; next_action और पाँच कारण; प्रत्येक problem type; मेटाडेटा सदस्य, jwks_uri और capability। नहीं है: संदर्भ द्वारा बंधन के रूप में evaluation_id, approval.state, हैश किया बंधन रूप, मशीन-पठनीय प्रपत्र (form_url, request_schema_url), display, तथा BULK, ACTOR और CATALOG साथी।"
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
-    "en": "3a25215ba9e17fe4",
-    "text": "partial: प्रस्तुति का callback (endpoint, state, events), एंडपॉइंट उन URL तक सीमित जिन्हें व्यवस्थापक ने अनुरोध करने वाले PEP के लिए पंजीकृत किया, प्रत्येक माँगे गए अंतिम ईवेंट के लिए केवल-सूचना callback, इस क्षेत्र द्वारा हस्ताक्षरित छोटे JWT से प्रमाणित, आउटबाउंड नीति के अंतर्गत। नहीं है: partial ईवेंट (BULK) और परिनियोजन-स्तर की ईवेंट सदस्यताएँ; असफल वितरण का पुनः प्रयास नहीं होता।"
+    "en": "ca5109eae0e95b17",
+    "text": "partial: प्रस्तुति का callback (endpoint, state, events), एंडपॉइंट उन URL तक सीमित जिन्हें व्यवस्थापक ने अनुरोध करने वाले PEP के लिए पंजीकृत किया, प्रत्येक माँगे गए अंतिम ईवेंट के लिए केवल-सूचना callback, इस क्षेत्र द्वारा हस्ताक्षरित छोटे JWT से प्रमाणित, आउटबाउंड नीति के अंतर्गत। नेटवर्क त्रुटि, समय-समाप्ति या HTTP 5xx को प्रयास सीमा तक पुनः आज़माया जाता है; HTTP 4xx या आउटबाउंड नीति द्वारा अस्वीकृत URL को नहीं। नहीं है: partial ईवेंट (BULK) और परिनियोजन-स्तर की ईवेंट सदस्यताएँ।"
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
