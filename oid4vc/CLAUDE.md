@@ -316,8 +316,9 @@ above is the surface's rule rather than an exception:
   once and REPLACES itself in the history, so Back does not start a second),
   the wait page, the QR code — drawn in the browser by `common/web_qr.ts`,
   the portal's encoder, from the request's text — and a refusal, whose `view`
-  of kind `refused` carries the heading, the presentation's checks and the
-  ways on, under its English sentence.
+  of kind `refused` carries the heading (`headingMessage`), the
+  presentation's checks and the ways on, under its sentence — all drawn in
+  the page's language since #2006, a check's own name and detail excepted.
 * **The poll is the runtime's**: on the QR page every `pollSeconds`, where
   the `<meta>` refresh was (a browser timer, `tests/no_periodic_timers.js`'s
   recorded exception); once at once on a same-device return with its
@@ -341,7 +342,8 @@ above is the surface's rule rather than an exception:
   which is what the Sign in link under the old refusal did.
   `tests/spa_callback_handoff.js`.
 * **What a refusal says is JSON** (`{ ok: false, next: 'refused', errors }`,
-  English, no code), and the codes are the ones the pages were marked with.
+  English, no code, with `messages` beside `errors` for a
+  `refusals.wallet.*` sentence, #2006), and the codes are the ones the pages were marked with.
   `STS-VC-0081` is now an answer sent with nothing in it — the form posted
   without the script is gone.
 
@@ -595,7 +597,8 @@ counted only when it set the status that is read now). Two places use it:
 `reissue` is false for a SUSPENSION alone, because an administrator may lift
 it and a new credential would not explain it. A batch's copies are rows of
 their own, and a global sign-out stamps each, so every copy gives the same
-answer. Refusals stay English (#539).
+answer. The `/oid4vp/response` refusal is a protocol answer and stays
+English; the wallet page's refusals are catalog sentences (#2006).
 
 **An ordinary session sign-out disowns nothing.** `/oauth2/logout`, SAML Single
 Logout, `wsignout1.0` and the console's and portal's Sign out end one session
