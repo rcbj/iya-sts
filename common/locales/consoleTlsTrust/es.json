@@ -36,5 +36,6 @@
   "linkJson": "esta página en JSON",
   "linkApi": "lo mismo por la API de administración",
   "linkSettings": "la configuración de los puertos de escucha TLS",
-  "linkPki": "la autoridad de certificación propia de este servicio"
+  "linkPki": "la autoridad de certificación propia de este servicio",
+  "shadowedBy": "Ocultada por un ancla anterior con el mismo asunto ({fingerprint}). Un certificado emitido por esta ancla no se verifica mientras aquella esté instalada. Presentar este certificado sí se verifica."
 }

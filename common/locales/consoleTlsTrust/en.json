@@ -36,5 +36,6 @@
   "linkJson": "this page as JSON",
   "linkApi": "the same over the management API",
   "linkSettings": "the TLS listeners' settings",
-  "linkPki": "this service's own certificate authority"
+  "linkPki": "this service's own certificate authority",
+  "shadowedBy": "Shadowed by an earlier anchor with this subject ({fingerprint}). A certificate this anchor issued does not verify while that one is installed. Presenting this certificate itself still verifies."
 }

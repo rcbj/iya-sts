@@ -65,6 +65,10 @@ class TlsTrustPage {
         // sentence stays English, as every refusal does.
         (anchor.unadmittable ? '<div class="state-invalid">' +
           kit.esc(anchor.unadmittable) + '</div>' : '') +
+        (anchor.shadowedBy ? '<div class="sub">' +
+          kit.esc(t.text('consoleTlsTrust.shadowedBy',
+                         { fingerprint: anchor.shadowedBy })) +
+          '</div>' : '') +
         '<div class="sub">' + (anchor.ca ? t.html('consoleTlsTrust.ca')
                                          : t.html('consoleTlsTrust.notCa')) +
         '</div></td>' +
