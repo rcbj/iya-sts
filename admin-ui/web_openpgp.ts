@@ -156,7 +156,10 @@ class OpenPgpPage {
     const t = c.t;
     const v = view || {};
     const esc = WebKit.esc;
-    const find = '<form method="get" action="' + PAGE + '"><div ' +
+    // The person tab, whether this form is drawn in it or above it on
+    // Metadata: a search answers there.
+    const find = '<form method="get" action="' + PAGE +
+      '#openpgp-tab-person"><div ' +
       'class="formrow"><label for="pgp-user">' +
       t.html('consoleOpenpgp.user') + '</label><input type="text" ' +
       'id="pgp-user" name="user" size="24" maxlength="256" value="' +

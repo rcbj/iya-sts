@@ -702,10 +702,10 @@ async function signInToTheConsole(base, user, log2, options) {
         }));
         const json = Object.assign({}, answer.json);
         answers.forEach(function (one, index) {
-          assert.ok(one.status === 200 && one.json,
+          assert.ok(table.composeKept(known, members[index].member, one),
                     members[index].operation + " answered " +
                     one.status + " composing " + path);
-          json[members[index].member] = one.json;
+          json[members[index].member] = one.json != null ? one.json : one.body;
         });
         return Object.assign({}, answer, { json: json });
       }

@@ -213,7 +213,10 @@ class RolesPage {
       t.html('consoleRoles.body.madeHeading') + '</h3>' +
       kit.frame(kit.note(t.html('consoleRoles.body.madeNote',
                       { container: register.container || 'ou=roles' })) +
-      '<form method="get" action="/admin/roles"><div class="formrow">' +
+      // `#roles` is the heading's id, kept inside the Roles panel. A GET
+      // with none reloads onto Metadata.
+      '<form method="get" action="/admin/roles#roles"><div ' +
+      'class="formrow">' +
         '<label for="q">' + t.html('consoleRoles.body.text') + '</label>' +
         '<input type="text" id="q" name="q" size="40" value="' + kit.esc(q) +
           '" placeholder="' + kit.esc(t.text('consoleRoles.body.textHint')) +
@@ -411,7 +414,9 @@ class RolesPage {
       // was `required` for one run, and `tests/protocol/sts_admin_console.js`
       // caught it — that job submits every GET form on this console and
       // asserts the browser actually went somewhere.
-      '<form method="get" action="/admin/roles"><div ' +
+      // `#preview` is this tab's heading. The verdict is drawn here, so
+      // Ask has to come back to it.
+      '<form method="get" action="/admin/roles#preview"><div ' +
       'class="formrow"><label>' + t.html('consoleRoles.body.thApplication') +
       ' <input type="text" ' +
       'name="application" list="role-preview-apps" value="' +

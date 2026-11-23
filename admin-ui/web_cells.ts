@@ -167,15 +167,19 @@ class CellsPage {
           }).join('') + '</tbody></table>' +
           (people.next ? '<p><a href="' + PAGE + '?people=' +
                          encodeURIComponent(people.cell) + '&amp;after=' +
-                         encodeURIComponent(people.next) + '">' +
+                         encodeURIComponent(people.next) +
+                         '#cells-tab-residents">' +
                          t.html('consoleCells.nextPage') + '</a></p>'
                        : '');
     }
     const ask = json.multi && json.peers.length
       ? '<h2 data-tab="residents">' +
         t.html('consoleCells.headResidents') + '</h2>' +
+        // The fragment is the residents tab. A GET with none reloads
+        // onto Metadata, and the list stays on this panel.
         kit.frame('<p>' + t.html('consoleCells.residentsText') +
-        '</p><form method="get" action="' + PAGE + '">' +
+        '</p><form method="get" action="' + PAGE +
+        '#cells-tab-residents">' +
         '<select name="people">' + options + '</select> ' +
         '<button type="submit">' + t.html('consoleCells.list') +
         '</button></form>' + listed)

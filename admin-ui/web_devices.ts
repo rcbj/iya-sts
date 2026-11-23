@@ -168,7 +168,10 @@ class DevicesPage {
     const esc = kit.esc.bind(kit);
     const f = json.filter;
     const v = json.vocabulary;
-    const filters = '<form method="get" action="' + LIST + '"><div ' +
+    // The fragment is the Devices tab. A GET with none reloads onto
+    // Metadata, and the filtered list stays on this panel.
+    const filters = '<form method="get" action="' + LIST +
+      '#devices-tab-devices"><div ' +
       'class="formrow"><label for="dev-q">' +
       t.html('consoleDevices.listHtml.search') + '</label><input ' +
       'type="text" id="dev-q" name="q" size="24" value="' + esc(f.q || '') +
@@ -202,7 +205,8 @@ class DevicesPage {
       '<button type="submit">' + t.html('consoleDevices.listHtml.filter') +
       '</button>' +
       (Object.keys(f).length
-        ? ' <a href="' + LIST + '">' + t.html('consoleDevices.listHtml.clear') +
+        ? ' <a href="' + LIST + '#devices-tab-devices">' +
+          t.html('consoleDevices.listHtml.clear') +
           '</a>'
         : '') +
       '</div></form>';
@@ -580,7 +584,7 @@ class DevicesPage {
           t.html('consoleDevices.registrationHtml.notBuilt') + '</span>';
     };
     return kit.note(t.html('consoleDevices.registrationHtml.leadBefore') +
-        '<a href="' + LIST + '">' +
+        '<a href="' + LIST + '#devices-tab-devices">' +
         t.html('consoleDevices.registrationHtml.devices') + '</a>' +
         t.html('consoleDevices.registrationHtml.leadAfter'),
         t.text('consoleDevices.listHtml.whatThisIs')) +
@@ -669,7 +673,7 @@ class DevicesPage {
       '<tr><td>' + t.html('consoleDevices.registrationHtml.doorAdmin') +
       '</td><td>' + state(true) + '</td><td>' +
       t.html('consoleDevices.registrationHtml.adminBefore') +
-      '<a href="' + LIST + '">' +
+      '<a href="' + LIST + '#devices-tab-devices">' +
       t.html('consoleDevices.registrationHtml.devices') + '</a>' +
       t.html('consoleDevices.registrationHtml.adminAfter') + '</td></tr>' +
       '<tr><td>' + t.html('consoleDevices.registrationHtml.doorMdm') +
