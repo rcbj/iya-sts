@@ -15053,10 +15053,16 @@ async function checkSshHostCertificate(cert, principal, authorities,
 // OPENSSH DEFINES NO POST-QUANTUM USER CERTIFICATE. A second authority,
 // `sshUserCaPqc`, signs with this service's own `ssh-mldsa-65` (a raw
 // ML-DSA-65 public key and a raw signature, the ssh-ed25519 shape) when the
-// runtime can generate one. The line `/pki/ssh-user-ca` publishes is always
-// the classical authority: a peer's TrustedUserCAKeys file cannot be asked
-// to parse an algorithm OpenSSH does not name. `pki.sshUserCaPqcOnly`
-// changes what a NEW certificate is signed with, not that published line.
+// runtime can generate one. The line `/pki/ssh-user-ca` publishes by default
+// is always the classical authority: a peer's TrustedUserCAKeys file cannot
+// be asked to parse an algorithm OpenSSH does not name. The ML-DSA
+// authority's line is published BESIDE it, at the same path with
+// `?algorithm=ssh-mldsa-65`, so a server built to verify it has a key to
+// trust; stock OpenSSH verifies no ML-DSA certificate yet.
+// `pki.sshUserCaPqcOnly` changes what a NEW certificate is signed with, and
+// REFUSES (STS-PKI-0297) rather than issue a classical certificate when the
+// ML-DSA authority does not exist, as `openpgp.pqcOnly` and
+// `webauthn.pqcOnly` refuse rather than fall back.
 // ---------------------------------------------------------------------------
 
 const SSH_USER_CA_USE_CASE = 'ssh-user-ca';
@@ -15144,9 +15150,9 @@ async function sshUserCaPublicKeyAsync(scopeId) {
   const row = rawRowFor(realmIdOf(scopeId)) || {};
   const pqc = row.sshUserCaPqc;
   log.debug("Leaving sshUserCaPublicKeyAsync().");
-  // `publicLine` is the classical key only. `pqcPublicLine` is the sibling
-  // for an operator who asked for ML-DSA certificates. The HTTP body is
-  // `publicLine` alone: OpenSSH's TrustedUserCAKeys line stays classical.
+  // `publicLine` is the classical key only. `pqcPublicLine` is the ML-DSA
+  // sibling, published at the same path with `?algorithm=ssh-mldsa-65`
+  // (`pki/pki_service.ts`), never concatenated onto the classical body.
   return { ok: true, publicLine: answer.ca.publicLine,
            fingerprint: answer.ca.fingerprint,
            pqcPublicLine: pqc ? pqc.publicLine : '',
@@ -15204,11 +15210,29 @@ async function issueSshUserCertificateAsync(scopeId, spec) {
   }
   const pqcAnswer = await ensureSshUserCaPqc(id);
   const pqcCa = pqcAnswer && pqcAnswer.ok ? pqcAnswer.ca : null;
-  // pqcOnly signs the new certificate with the ML-DSA authority when that
-  // key exists. It does not exist on a runtime that cannot generate
-  // ML-DSA, and the certificate stays classical rather than failing.
-  // Alongside issues both. The published TrustedUserCAKeys line is neither.
-  const onlyPqc = sshUserCaPqcOnly() && !!pqcCa;
+  // pqcOnly signs the new certificate with the ML-DSA authority and nothing
+  // else. Where that authority does not exist (a runtime that cannot
+  // generate ML-DSA, ssh-mldsa-65 off the algorithm list, or a failed
+  // build) the request is REFUSED: a switch that says post-quantum only
+  // does not quietly hand out a classical certificate, the rule
+  // openpgp.pqcOnly and webauthn.pqcOnly follow. Alongside issues both
+  // when it can, and the classical one alone when it cannot.
+  if (sshUserCaPqcOnly() && !pqcCa) {
+    log.warn(errorCodes.tag('STS-PKI-0297') + 'pki: the "' +
+             (id || 'default') + '" realm has pki.sshUserCaPqcOnly on and ' +
+             'no ML-DSA SSH user CA (' + (stsCrypto.mlDsaAvailable()
+               ? (sshPqCaWanted() ? 'it could not be made'
+                                  : 'ssh-mldsa-65 is not in ' +
+                                    'pki.sshUserCaAlgorithms')
+               : 'this runtime cannot generate ML-DSA') +
+             '), so no SSH user certificate was issued.');
+    log.debug("Leaving issueSshUserCertificateAsync(). No ML-DSA CA.");
+    return errorCodes.mark({ ok: false, errors: [
+      'SSH user certificates are post-quantum only in this realm, and its ' +
+      'ML-DSA certificate authority is not available.'
+    ] }, 'STS-PKI-0297');
+  }
+  const onlyPqc = sshUserCaPqcOnly();
   const beside = sshUserCaAlongside() && !!pqcCa;
   const cas = [];
   if (!onlyPqc) {

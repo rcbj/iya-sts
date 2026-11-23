@@ -13072,16 +13072,16 @@
     "text": "Mga algorithm ng SSH user CA"
   },
   "pki.sshUserCaAlgorithms|description": {
-    "en": "bdb54445a0279b8d",
-    "text": "Kung aling mga algorithm ang maaaring gamitin ng SSH user certificate authority, ayon sa preferensiya. Ang ssh-mldsa-65 ay ML-DSA-65 (FIPS 204) sa ilalim ng wire name na binibigyang-kahulugan ng serbisyong ito, dahil walang binibigyang-kahulugan ang OpenSSH: hilaw ang public key at ang lagda, sa hugis na ginagamit ng ssh-ed25519. Ang linyang OpenSSH TrustedUserCAKeys na inilalathala ng serbisyong ito ay nananatiling unang classical na algorithm sa listahang ito, o ssh-ed25519 kapag ssh-mldsa-65 lamang ang pinangalanan. Ang kapwa na hindi nakakaunawa ng ML-DSA ay patuloy na nagtitiwala sa linyang iyon. Hindi iniaalok ang ssh-rsa (SHA-1). Nilikha ang awtoridad na ML-DSA lamang kapag kaya ng runtime na ito na bumuo ng key; kung hindi, classical pa rin ang mga certificate (itinatala ang STS-PKI-0290 at sumasagot pa rin ang classical na awtoridad)."
+    "en": "5c4c22c2ab500fd4",
+    "text": "Kung aling mga algorithm ang maaaring gamitin ng awtoridad ng sertipiko ng mga user ng SSH, ayon sa pagkakasunod ng kagustuhan. Ang ssh-mldsa-65 ay ML-DSA-65 (FIPS 204) sa ilalim ng pangalang pang-wire na itinakda ng serbisyong ito, dahil walang itinakda ang OpenSSH: hilaw ang public key at ang lagda, sa hugis na ginagamit ng ssh-ed25519. Ang linyang OpenSSH TrustedUserCAKeys na inilalathala ng serbisyong ito ay nananatiling unang klasikong algorithm sa listahang ito, o ssh-ed25519 kapag ssh-mldsa-65 lang ang nasa listahan. Patuloy na nagtitiwala sa linyang iyon ang kabilang panig na hindi nakauunawa ng ML-DSA. Inilalathala ang key ng awtoridad na ML-DSA sa GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65; hindi pa kayang i-verify ng karaniwang OpenSSH ang isang sertipikong ML-DSA. Hindi inaalok ang ssh-rsa (SHA-1). Ginagawa lang ang awtoridad na ML-DSA kapag kayang bumuo ng key ng runtime na ito; kung hindi, nananatiling klasiko ang mga sertipiko (itinatala ang STS-PKI-0290 at sumasagot pa rin ang klasikong awtoridad), maliban kung naka-on ang pki.sshUserCaPqcOnly."
   },
   "pki.sshUserCaPqcOnly|label": {
     "en": "74aae1308361ba58",
     "text": "Ang mga SSH user certificate ay post-quantum lamang"
   },
   "pki.sshUserCaPqcOnly|description": {
-    "en": "39b21e5b95f84da1",
-    "text": "Kapag naka-on, ang bagong SSH user certificate ay pinipirmahan ng awtoridad na ML-DSA, at kapag umiiral lamang ang awtoridad na iyon. Ang inilathalang linyang TrustedUserCAKeys ay nananatiling classical na key, kaya ang OpenSSH client na nagtitiwala na rito ay hindi binibigyan ng algorithm na hindi nito ma-parse. Sa runtime na hindi makabuo ng ML-DSA, classical pa rin ang certificate at hindi nabibigo ang kahilingan. Patuloy na bini-verify ang mga classical na certificate na naibigay na. Hindi maaaring naka-on habang naka-on ang pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Naka-off bilang default."
+    "en": "dcbf21b3230dcf07",
+    "text": "Kapag naka-on, ang bagong sertipiko ng user ng SSH ay nilalagdaan ng awtoridad na ML-DSA at wala nang iba. Hindi pa kayang i-verify ng karaniwang OpenSSH ang isang sertipikong ML-DSA, kaya ang SSH server lang na ginawa para i-verify ang ssh-mldsa-65, na nagtitiwala sa key sa GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65, ang tumatanggap sa mga sertipikong ito. Nananatiling klasikong key ang default na linya sa path na iyon. Kapag walang awtoridad na ML-DSA ang realm (hindi kayang bumuo ng ML-DSA ang runtime na ito, o wala ang ssh-mldsa-65 sa pki.sshUserCaAlgorithms), tinatanggihan ang kahilingan (STS-PKI-0297) sa halip na sagutin ng klasikong sertipiko. Patuloy na nave-verify ang mga klasikong sertipikong naibigay na. Hindi maaaring naka-on habang naka-on ang pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Naka-off bilang default."
   },
   "pki.sshUserCaPqcAlongsideClassical|label": {
     "en": "c3201f8841200c32",

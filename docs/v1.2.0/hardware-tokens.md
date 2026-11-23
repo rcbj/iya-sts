@@ -6,11 +6,12 @@ title: Hardware tokens
 
 A **hardware token** is one physical security key or smart card, such as a
 YubiKey. One token can hold several credentials: passkeys, certificates,
-one-time code secrets imported from a vendor's seed file (see
-[One-time code tokens](one-time-code-tokens.md)), and in later releases SSH
-and OpenPGP keys. Each
-trust realm keeps a **register of its hardware tokens**. There is one record
-per physical token, keyed by its vendor and serial number. The record holds:
+one-time code secrets from a vendor's seed file or a YubiKey OTP slot (see
+[One-time code tokens](one-time-code-tokens.md) and
+[YubiKey OTP](yubiotp.md)), an OpenSSH user certificate for an attested
+security key, and an OpenPGP key. Each trust realm keeps a **register of
+its hardware tokens**. There is one record per physical token, keyed by
+its vendor and serial number. The record holds:
 
 - who holds the token (the person's directory entry);
 - its model, firmware and form factor, where its evidence gives them;
@@ -56,7 +57,7 @@ with evidence `piv-attestation`.
 | `pskc-import` | The serial a vendor's PSKC seed file names, recorded when that token is assigned or claimed |
 | `yubiotp-import` | The serial an administrator's YubiKey OTP CSV names, recorded when that token is assigned or claimed |
 | `ssh-security-key-attestation` | The serial an OpenSSH security key's attestation names when an SSH user certificate is issued for that key |
-| `vendor-import` | An administrator's import of a vendor's token file (a later release) |
+| `vendor-import` | A token recorded from a vendor's file. The vendor imports this release ships record the more specific `pskc-import` (PSKC seed files) and `yubiotp-import` (YubiKey OTP CSV) instead |
 
 ## Seeing them
 
