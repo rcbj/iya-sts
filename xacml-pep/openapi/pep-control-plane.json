@@ -1019,6 +1019,10 @@
           },
           "returnReasons": {
             "type": "boolean"
+          },
+          "obligationsProfile": {
+            "type": "boolean",
+            "description": "The realm's authzen.obligationsProfile. Absent on an older catalogue means on."
           }
         },
         "additionalProperties": false,
@@ -1028,7 +1032,8 @@
           "batchEnabled",
           "maxEvaluations",
           "maxBodyBytes",
-          "returnReasons"
+          "returnReasons",
+          "obligationsProfile"
         ]
       },
       "AuthzenCatalogue": {

@@ -951,8 +951,9 @@ class XacmlSurface {
   // settings that change the MAPPING or the answer (`authzen.enabled` with
   // `xacml.enabled`, `authzen.resolveSubjectTypes`, `authzen.batchEnabled`,
   // `authzen.maxEvaluations`, `authzen.maxBodyBytes`,
-  // `authzen.returnReasons`) beside them, so the container's answer follows
-  // the realm's switches rather than a second copy of them.
+  // `authzen.returnReasons`, `authzen.obligationsProfile`) beside them, so
+  // the container's answer follows the realm's switches rather than a
+  // second copy of them.
   //
   // **ITS OWN SYNC TOKEN, NOT THE POLICIES'.** A digest of exactly what is
   // sent, so a catalogue change and a policy change are two different
@@ -1020,7 +1021,12 @@ class XacmlSurface {
       batchEnabled: config.value('authzen.batchEnabled') !== false,
       maxEvaluations: Number(config.value('authzen.maxEvaluations')),
       maxBodyBytes: Number(config.value('authzen.maxBodyBytes')),
-      returnReasons: config.value('authzen.returnReasons') === true
+      returnReasons: config.value('authzen.returnReasons') === true,
+      // Absent on an older catalogue is on, which is the setting's own
+      // default: an edge that handed obligations while the realm had
+      // turned the profile off would be wider than the service (#1205).
+      obligationsProfile:
+        config.value('authzen.obligationsProfile') !== false
     };
     let fgaApplications: string[] = [];
     try {

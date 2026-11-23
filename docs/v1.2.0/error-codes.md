@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5980** of them, in **57** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5983** of them, in **57** subsystems.
 
 ## Where a code appears
 
@@ -92,7 +92,7 @@ is an ordinary outcome.
 * [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 30
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 252
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 140
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 121
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
@@ -5609,6 +5609,9 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0135` | PEP_TLS_CERT is set, or PEP_TLS_KEY is set beside PEP_ASSERTION_KEY, and the remote PEP no longer presents a client certificate to the service: it authenticates every call with a DPoP-bound access token from its assertion key (PEP_ASSERTION_KEY, certified by issue-pep-credential). The variable is ignored for that; PEP_TLS_KEY alone is still read as the fallback assertion key (STS-XPEP-0127). Logged once at start. | none — a warning in the PEP's log |
 | `STS-XPEP-0136` | The remote PEP has a CRL directory (PEP_CRL_DIR, or crl/ beside PEP_TLS_CERT) and PEP_CRL_HTTP is not set, so the CRL-only plain-HTTP listener on PEP_PORT is not bound: it served the CRLs of the client certificate the PEP no longer presents (phase 4 of #1827's follow-up). PEP_CRL_HTTP=true binds it. Logged once at start. | none — a notice in the PEP's log |
 | `STS-XPEP-0137` | A remote PEP HTTPS listener requires a client certificate (requireClientCertificate) and has no authority to verify one against: no readable trustAnchorsFile, and trustIssuedClientCertificates off or PEP_AUTHZEN_CLIENT_CA not set (a reverse-proxy listener has only the anchors file). The listener is refused, fail-closed: a listener the service defined is not bound and is reported failed (reason other); one of the environment's keeps its socket and closes every connection unanswered, reported failed, with the sentence as GET /'s https.problem. Until 2026-11-16 the API listener asked nobody and admitted everybody. A tuning with a trust source, or without the requirement, serves again. | none — an error in the PEP's log; the listener serves nothing |
+| `STS-XPEP-0138` | A caller asked this edge PDP for one of the AuthZEN Search APIs (POST /access/v1/search/subject, resource or action). Those are answered by the service, which holds the directory and the resource and action catalogues. This edge answers 501, before admission and without reading the body, and does not advertise the paths. The code is logged and not sent. A turned-off edge, or one that has not pulled, answers that condition first (STS-XPEP-0044, STS-XPEP-0043, STS-AUTHZEN-0013, STS-AUTHZEN-0014). HEAD stays 404. | AuthZEN Authorization API 1.0 section 8; HTTP 501 |
+| `STS-XPEP-0139` | A caller asked this edge PDP for the Access Request and Approval Profile (POST /access/v1/access-requests, GET of its schema or of a task, POST or DELETE of a task's cancel). The service holds the approval store. This edge answers 501 with the evaluation error object, not problem+json, before admission and without reading the body, and does not advertise the paths. A POST to the task path without /cancel stays 404. The code is logged and not sent. context.approval on an evaluation is not this refusal: it is recognized and not used (STS-AUTHZEN-0084). | AuthZEN Access Request and Approval Profile; HTTP 501 |
+| `STS-XPEP-0140` | An access evaluation was one of the OAuth token-exchange binding's tuples: a gate (resource type audience and an action issue:<type>:<grant>), a context member the binding reads, or, beside a gate in the same batch, a scope or any other non-audience resource type. The service holds delegation and the directory. This edge answers 501 for that item — the whole response when the request was one evaluation, and context.error on a batch item — and does not forward it. The code is logged and not sent. A lone scope or detail, and an audience whose action is not a gate, stay ordinary evaluations. | AuthZEN OAuth token-exchange binding; HTTP 501 |
 
 ## STS-AUTHZEN
 
