@@ -26179,9 +26179,9 @@ const CODES = [
     spec: 'HTTP 503, application/problem+json' },
   { code: 'STS-AUTHZEN-0079',
     summary: 'An AuthZEN access request\'s callback was not an object with ' +
-      'an https endpoint registered for the caller ' +
-      '(appAuthzenCallbackUri or stsAuthzenCallbackUri); a callback ' +
-      'URL is never taken from a request alone.',
+      'an https endpoint registered for the calling application ' +
+      '(appAuthzenCallbackUri); a callback URL is never taken from a ' +
+      'request alone.',
     spec: 'HTTP 400, application/problem+json' },
   { code: 'STS-AUTHZEN-0080',
     summary: 'An AuthZEN access request task was asked about, or cancelled, ' +
@@ -26237,13 +26237,15 @@ const CODES = [
     spec: 'none — the portal\'s or console\'s refusal' },
   { code: 'STS-AUTHZEN-0091',
     summary: 'An AuthZEN access request\'s callback could not be delivered ' +
-      '(the outbound policy refused the URL, or the endpoint did not ' +
-      'answer 2xx); the task status endpoint remains the record, and ' +
-      'nothing is retried.',
+      '(the outbound policy refused the URL, the endpoint did not ' +
+      'answer 2xx, or the notification could not be signed). A network ' +
+      'error, a timeout or an HTTP 5xx is tried again, up to the ' +
+      'attempt bound; the task status endpoint remains the record.',
     spec: 'none — logged and audited' },
   { code: 'STS-AUTHZEN-0092',
     summary: 'The authzen.access-requests scheduler job failed while ' +
-      'expiring or removing access requests.',
+      'expiring or removing access requests, or while retrying a ' +
+      'callback.',
     spec: 'none — logged; the job\'s run is failed' },
   { code: 'STS-AUTHZEN-0093',
     summary: 'The approvers of an AuthZEN access request could not be ' +
@@ -26458,6 +26460,28 @@ const CODES = [
       'issuance audience, which withdraws that gate\'s target; answered ' +
       'false (#1201).',
     spec: 'decision: false' },
+  { code: 'STS-AUTHZEN-0135',
+    summary: 'An AuthZEN access request\'s callback will not be delivered ' +
+      'again: the attempt bound is spent, or the failure cannot succeed ' +
+      '(an HTTP status below 500, or a URL the outbound policy ' +
+      'refuses). The task\'s own status is unchanged. The task status ' +
+      'endpoint remains the record (#1202).',
+    spec: 'none — logged and audited' },
+  { code: 'STS-AUTHZEN-0136',
+    summary: 'An access request callback was refused because the caller is ' +
+      'not an application. set-callbacks writes appAuthzenCallbackUri ' +
+      'only on an application, and a submission that names a callback ' +
+      'from a person or a service account is refused. A value already ' +
+      'stored as stsAuthzenCallbackUri is left in place and is not ' +
+      'honoured (#1202).',
+    spec: 'HTTP 400 on a submission; the console\'s refusal on ' +
+      'set-callbacks' },
+  { code: 'STS-AUTHZEN-0137',
+    summary: 'An access request callback override was refused: attempts ' +
+      'or backoff was not an integer in range (attempts 1 to 20, ' +
+      'backoff 60 to 86400), or a token was not attempts=N or ' +
+      'backoff=S, or one of them was repeated (#1202).',
+    spec: 'the console\'s refusal' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +

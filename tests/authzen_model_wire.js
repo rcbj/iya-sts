@@ -53,7 +53,11 @@
 // usually with — until GitHub's run 44173065871 fetched the second before the
 // certification landed too. A request now waits for its realm's keys to be
 // certified (`helpers.js`, `certifyLater()` and `runInPreparedRealm()`), so
-// both forms carry `x5u` every time, and the record says so.
+// both forms carry `x5u` every time, and the record says so. And again for
+// #1202: a callback is registered only for an application, so the
+// unregistered callback, the accepted submission and that task's status,
+// re-evaluation and cancellation are the application's certificate, and
+// the application search finds `azapp`.
 //
 // A CHILD PROCESS, as tests/oauth_model_wire.js runs one: the protocol stack
 // and a listener are loaded once, fresh, and nothing leaks into the runner.
@@ -260,11 +264,12 @@ function childMain() {
       const id = MODES[m].id;
       creds[id] = { pep: await mint('CN=' + id + 'pep,O=Outside'),
                     other: await mint('CN=' + id + 'other,O=Outside'),
-                    stray: await mint('CN=' + id + 'stray,O=Outside') };
+                    stray: await mint('CN=' + id + 'stray,O=Outside'),
+                    app: await mint('CN=' + id + 'app,O=Outside') };
     }
     const anchors = [];
     Object.keys(creds).forEach(function (id) {
-      ['pep', 'other', 'stray'].forEach(function (k) {
+      ['pep', 'other', 'stray', 'app'].forEach(function (k) {
         anchors.push(creds[id][k].anchorPem);
       });
     });
@@ -291,6 +296,33 @@ function childMain() {
           ['todo-app'];
         ldap.locateEntry('azother').stored.attributes
           .stsauthzenapplication = ['todo-app', 'wiki'];
+        // A callback is an application's (#1202). Created before the
+        // product-mode switch, as the people are: product mode decides
+        // how a person is created, which is not what is recorded.
+        const made = applications.createApplication({
+          identifier: 'azapp', protocols: ['oauth2'],
+          fields: { oauthClientId: 'azapp' } });
+        if (!made.ok) {
+          record.problems.push(mode.name + ': azapp: ' +
+                               JSON.stringify(made));
+        } else {
+          ldap.changeStoredCertificate('application', 'azapp',
+                                       { add: derOf(creds[mode.id].app) });
+          const appDn = applications.get('azapp').dn;
+          const joined = adminActions.groupsAction({
+            action: 'add-member', group: group, member: appDn });
+          if (!joined.ok) {
+            record.problems.push(mode.name + ': azapp group: ' +
+                                 JSON.stringify(joined));
+          }
+          const scoped = authzenAdmin.act({
+            action: 'set-scope', caller: 'azapp',
+            applications: ['todo-app'] }, { actor: 'azbob', via: 'api' });
+          if (!scoped.ok) {
+            record.problems.push(mode.name + ': azapp scope: ' +
+                                 JSON.stringify(scoped));
+          }
+        }
         ldap.createGroup('azwapprovers', { members: [] });
         adminActions.groupsAction({ action: 'add-member',
                                     group: 'azwapprovers', member: 'azbob' });
@@ -355,6 +387,7 @@ function childMain() {
       const pep = creds[mode.id].pep;
       const other = creds[mode.id].other;
       const stray = creds[mode.id].stray;
+      const appCred = creds[mode.id].app;
       const inRealm = function (fn) {
         return realms.run(realms.get(mode.id), fn);
       };
@@ -769,36 +802,46 @@ function childMain() {
           requested_access: { requested_until: 5 } })],
         ['emergency unjustified', submission(denied, { requested_access: {
           emergency: true } })],
-        ['callback a string', submission(denied, { callback: 'x' })],
-        ['callback unregistered', submission(denied, { callback: {
-          endpoint: 'https://pep.example.com/cb' } })]
+        ['callback a string', submission(denied, { callback: 'x' })]
       ];
       for (let i = 0; i < SUBMISSIONS.length; i++) {
         await step('submission: ' + SUBMISSIONS[i][0], 'POST', SUBMIT, pep,
                    SUBMISSIONS[i][1]);
       }
       const CALLBACK = 'https://127.0.0.1:9/azwire-callback';
+      // A person naming a callback is a different refusal (#1202). The
+      // unregistered URL is the application's, and that denial is not
+      // consumed, so the accepted submission below reuses it.
+      const appDenied = await step(
+        'a requestable denial for the application', 'POST', EVAL, appCred,
+        ok({ resource: { type: 'document', id: 'doc-2' } }));
+      await step('submission: callback unregistered', 'POST', SUBMIT,
+                 appCred, submission(appDenied.body, { callback: {
+                   endpoint: 'https://pep.example.com/cb' } }));
       inRealm(function () {
-        authzenAdmin.act({ action: 'set-callbacks', caller: 'azpep',
+        authzenAdmin.act({ action: 'set-callbacks', caller: 'azapp',
                            callbacks: CALLBACK },
                          { actor: 'azbob', via: 'api' });
       });
       r = await step('submission: callback events a string', 'POST', SUBMIT,
                      pep, submission(denied, { callback: {
                        endpoint: CALLBACK, events: 'approved' } }));
-      r = await step('submission accepted', 'POST', SUBMIT, pep,
-                     submission(denied, { callback: { endpoint: CALLBACK,
-                       state: 's-1', events: ['approved', 'cancelled',
-                                              'nonsense'] } }),
+      r = await step('submission accepted', 'POST', SUBMIT, appCred,
+                     submission(appDenied.body, { callback: {
+                       endpoint: CALLBACK, state: 's-1',
+                       events: ['approved', 'cancelled', 'nonsense'] } }),
                      { 'idempotency-key': 'wire-key-1' });
       const task = (r.body && r.body.task) || {};
-      await step('submission again', 'POST', SUBMIT, pep, submission(denied, {
-        callback: { endpoint: CALLBACK, state: 's-1',
-                    events: ['approved', 'cancelled', 'nonsense'] } }),
+      await step('submission again', 'POST', SUBMIT, appCred,
+                 submission(appDenied.body, { callback: {
+                   endpoint: CALLBACK, state: 's-1',
+                   events: ['approved', 'cancelled', 'nonsense'] } }),
                  { 'idempotency-key': 'wire-key-1' });
-      await step('submission, the key reused', 'POST', SUBMIT, pep,
-                 submission(denied), { 'idempotency-key': 'wire-key-1' });
-      await step('status, pending', 'GET', pathOf(task.status_endpoint), pep);
+      await step('submission, the key reused', 'POST', SUBMIT, appCred,
+                 submission(appDenied.body),
+                 { 'idempotency-key': 'wire-key-1' });
+      await step('status, pending', 'GET', pathOf(task.status_endpoint),
+                 appCred);
       await step('status, another caller', 'GET',
                  pathOf(task.status_endpoint), other);
       await step('status, unknown', 'GET', SUBMIT + '/arq_none', pep);
@@ -806,24 +849,24 @@ function childMain() {
         requests.decide(task.id, 'approve',
                         { username: 'azbob', door: 'portal' });
       });
-      r = await step('status, approved', 'GET', pathOf(task.status_endpoint),
-                     pep);
+      r = await step('status, approved', 'GET',
+                     pathOf(task.status_endpoint), appCred);
       const approval = (r.body && r.body.result &&
                         r.body.result.approval) || {};
-      await step('re-evaluation with the approval', 'POST', EVAL, pep,
+      await step('re-evaluation with the approval', 'POST', EVAL, appCred,
                  ok({ resource: { type: 'document', id: 'doc-2' },
                       context: { application: 'todo-app',
                                  approval: approval } }));
-      await step('re-evaluation, out of scope', 'POST', EVAL, pep,
+      await step('re-evaluation, out of scope', 'POST', EVAL, appCred,
                  ok({ resource: { type: 'document', id: 'doc-9' },
                       context: { application: 'todo-app',
                                  approval: approval } }));
-      await step('re-evaluation, a forged approval', 'POST', EVAL, pep,
+      await step('re-evaluation, a forged approval', 'POST', EVAL, appCred,
                  ok({ resource: { type: 'document', id: 'doc-2' },
                       context: { application: 'todo-app',
                                  approval: { id: 'apr_forged' } } }));
       await step('cancel, finished', 'POST',
-                 pathOf(task.status_endpoint) + '/cancel', pep, {});
+                 pathOf(task.status_endpoint) + '/cancel', appCred, {});
       r = await step('a second submission', 'POST', SUBMIT, pep,
                      submission(await fresh('another requestable denial')));
       const second = (r.body && r.body.task) || {};

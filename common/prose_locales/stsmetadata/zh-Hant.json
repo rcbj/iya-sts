@@ -104,8 +104,8 @@
     "text": "partial：可請求的拒絕（context.access_request、evaluation_id、evaluated_at、reason），即領域原則以 access-request advice 標記的 Deny，依值繫結，使用本領域簽署的 binding_token（內嵌宣告）；帶 Idempotency-Key 的提交，201 或 202 以及 Task Handle；帶 Retry-After 的工作狀態端點；透過 POST 或 DELETE 取消；六種狀態；reevaluate 完成模式，approval.id 在可信狀態中解析，核准作為可信事實到達原則；next_action 及五種 reason；每種 problem 類型；中繼資料成員、jwks_uri 與能力。尚缺：以參照方式繫結的 evaluation_id、approval.state、雜湊繫結形式、機器可讀形式（form_url、request_schema_url）、display，以及 BULK、ACTOR 與 CATALOG 配套規範。"
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
-    "en": "3a25215ba9e17fe4",
-    "text": "partial：提交的回呼（endpoint、state、events），endpoint 限於管理員為請求端 PEP 註冊的 URL，為每個請求的終態事件傳送僅通知的回呼，由本領域簽署的短 JWT 驗證，並受對外政策約束。尚缺：partial 事件（BULK）與部署層級的事件訂閱；傳遞失敗不會重試。"
+    "en": "ca5109eae0e95b17",
+    "text": "partial：提交的回呼（endpoint、state、events），endpoint 限於管理員為請求端 PEP 註冊的 URL，為每個請求的終態事件傳送僅通知的回呼，由本領域簽署的短 JWT 驗證，並受對外政策約束。網路錯誤、逾時或 HTTP 5xx 會重試至嘗試上限；HTTP 4xx 或對外政策拒絕的 URL 不會重試。尚缺：partial 事件（BULK）與部署層級的事件訂閱。"
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",

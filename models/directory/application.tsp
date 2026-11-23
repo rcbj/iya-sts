@@ -1061,6 +1061,22 @@ model Application {
     what: "AUTHZEN ACCESS REQUEST CALLBACK (#1180): an https URL this client, as an AuthZEN PEP, may name as an access request's callback.endpoint — one per value, matched exactly. A request naming any other is refused; this service never dials a callback URL taken from a request alone. Set by an administrator, never by the caller."
   })
   appAuthzenCallbackUri?: string[];
+  // THE PER-URL RETRY OVERRIDE (#1202). A value is stored only when at
+  // least one of attempts or backoff differs from authzen.callbackAttempts
+  // and authzen.callbackBackoffS. The URL is the same string as a value of
+  // appAuthzenCallbackUri, then `attempts=N` and `backoff=S`, either or
+  // both. A bare URL stays only in appAuthzenCallbackUri and means the
+  // realm's settings. A person has no such attribute: a callback is
+  // registered for an application only.
+  @attr(#{
+    editable: "multi",
+    kind: "multi",
+    from: "the console (the AuthZEN tab), the management API, or by hand",
+    families: #["oauth2", "oidc"],
+    familyWhy: "It is the retry bound of a callback URL registered for this client at /access/v1, and that API is an OAuth 2.0 resource; on an entry declared for no OAuth family it would read like a delivery in service.",
+    what: "AUTHZEN CALLBACK RETRY (#1202): one registered callback URL and the attempts and backoff that override authzen.callbackAttempts and authzen.callbackBackoffS for it. The value is the URL, then attempts=N (1 to 20) and backoff=S (60 to 86400), either or both. The URL must also be an appAuthzenCallbackUri value. Absent, that URL uses the realm's settings. Set by an administrator, never by the caller."
+  })
+  appAuthzenCallbackConfig?: string[];
   // -------------------------------------------------------------------
   // RFC 9470, STEP-UP AUTHENTICATION (2026-09-13). TWO ATTRIBUTES ON A
   // RESOURCE: what it requires of the authentication behind an access token

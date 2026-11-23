@@ -106,6 +106,16 @@ Scope: `account:manage`.
 | `rows[].approvers.owners` | boolean |  |  |
 | `rows[].approvers.roles` | list |  |  |
 | `rows[].approvers.roles[]` | string |  |  |
+| `rows[].callbackDelivery` | object |  |  |
+| `rows[].callbackDelivery.attempts` | list |  |  |
+| `rows[].callbackDelivery.attempts[].at` | number |  |  |
+| `rows[].callbackDelivery.attempts[].ok` | boolean |  |  |
+| `rows[].callbackDelivery.attempts[].status` | number |  |  |
+| `rows[].callbackDelivery.attempts[].why` | string |  |  |
+| `rows[].callbackDelivery.backoffS` | number |  |  |
+| `rows[].callbackDelivery.bound` | number |  |  |
+| `rows[].callbackDelivery.nextAt` | number |  |  |
+| `rows[].callbackDelivery.state` | one of `pending`, `delivered`, `failed` |  |  |
 | `rows[].client` | object |  |  |
 | `rows[].client.id` | string |  |  |
 | `rows[].client.name` | string |  |  |
@@ -211,6 +221,16 @@ Scope: `account:manage`.
 | `view.rows[].approvers.owners` | boolean |  |  |
 | `view.rows[].approvers.roles` | list |  |  |
 | `view.rows[].approvers.roles[]` | string |  |  |
+| `view.rows[].callbackDelivery` | object |  |  |
+| `view.rows[].callbackDelivery.attempts` | list |  |  |
+| `view.rows[].callbackDelivery.attempts[].at` | number |  |  |
+| `view.rows[].callbackDelivery.attempts[].ok` | boolean |  |  |
+| `view.rows[].callbackDelivery.attempts[].status` | number |  |  |
+| `view.rows[].callbackDelivery.attempts[].why` | string |  |  |
+| `view.rows[].callbackDelivery.backoffS` | number |  |  |
+| `view.rows[].callbackDelivery.bound` | number |  |  |
+| `view.rows[].callbackDelivery.nextAt` | number |  |  |
+| `view.rows[].callbackDelivery.state` | one of `pending`, `delivered`, `failed` |  |  |
 | `view.rows[].client` | object |  |  |
 | `view.rows[].client.id` | string |  |  |
 | `view.rows[].client.name` | string |  |  |

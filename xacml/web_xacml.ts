@@ -503,7 +503,11 @@ class XacmlPage {
           }).join(', ')
           : '<em>' + t.html('consoleXacml.authzen.noScope') + '</em>') +
         '</td><td>' + ((one.callbacks || []).map(function (url) {
-          return '<code>' + esc(url) + '</code>';
+          const configs = one.callbackConfigs || [];
+          const line = configs.filter(function (item) {
+            return String(item).indexOf(url + ' ') === 0;
+          })[0];
+          return '<code>' + esc(line || url) + '</code>';
         }).join('<br>') || '—') +
         '</td></tr>';
     }).join('') || '<tr><td colspan="4">' +
@@ -517,8 +521,8 @@ class XacmlPage {
         '<table><tr><td>' + t.html('consoleXacml.authzen.caller') +
         '</td><td>' + self.textField('caller', '', 40) +
         '</td></tr><tr><td>' + t.html('consoleXacml.authzen.callbacks') +
-        '</td><td>' + self.textField('callbacks', '', 60) +
-        '</td></tr></table><p class="sub">' +
+        '</td><td><textarea name="callbacks" rows="4" cols="60">' +
+        '</textarea></td></tr></table><p class="sub">' +
         t.html('consoleXacml.authzen.callbacksNote') + '</p>' +
         '<button type="submit">' +
         t.html('consoleXacml.authzen.setCallbacks') + '</button></form>')
@@ -559,6 +563,13 @@ class XacmlPage {
         '<div class="sub">' + code(row.requester) + '</div></td><td>' +
         t.html('consoleXacml.authzen.requestStatus',
                { status: String(row.status) }) +
+        (row.callbackDelivery ? '<div class="sub">' +
+          t.html('consoleXacml.authzen.callbackDelivery', {
+            state: String(row.callbackDelivery.state || ''),
+            done: String((row.callbackDelivery.attempts || []).length),
+            bound: String(row.callbackDelivery.bound == null
+                          ? '' : row.callbackDelivery.bound)
+          }) + '</div>' : '') +
         (row.emergency ? ' <strong>' +
           t.html('consoleXacml.authzen.emergency') + '</strong>' : '') +
         (row.approval ? '<div class="sub">' +

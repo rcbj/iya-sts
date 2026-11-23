@@ -209,11 +209,11 @@ const SENDABLE = ['oauthBackchannelLogoutUri',
   // OpenID Provider Commands (#151): the client's registered
   // `command_endpoint`, sent a Command Token.
   'oauthCommandEndpoint',
-  // An AuthZEN access request's CALLBACK (#1180): the endpoint the request
-  // named, which `authzen_access_request.ts` already held to the URLs an
-  // administrator registered for the requesting PEP (`appAuthzenCallbackUri`,
-  // `stsAuthzenCallbackUri`) — so it is still an address somebody
-  // registered, sent a notification carrying no result.
+  // An AuthZEN access request's CALLBACK (#1180, #1202): the endpoint the
+  // request named, which `authzen_access_request.ts` already held to an
+  // application's `appAuthzenCallbackUri` — so it is still an address an
+  // administrator registered, sent a notification carrying no result. A
+  // person's `stsAuthzenCallbackUri` is not honoured.
   'authzenCallbackEndpoint'];
 
 // ---------------------------------------------------------------------------

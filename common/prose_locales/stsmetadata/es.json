@@ -104,8 +104,8 @@
     "text": "partial: la denegación solicitable (context.access_request, evaluation_id, evaluated_at, reason) donde la política del dominio marca un Deny con el advice access-request, vinculada por valor con un binding_token que este dominio firma (los claims en línea); el envío con Idempotency-Key, 201 o 202 y un Task Handle; el endpoint de estado de la tarea con Retry-After; la cancelación por POST o DELETE; los seis estados; el modo de finalización reevaluate, approval.id resuelto en el estado de confianza y la aprobación llegando a la política como hechos de confianza; next_action y las cinco razones; cada tipo de problema; el miembro de metadatos, jwks_uri y la capacidad. Falta: evaluation_id como vinculación por referencia, approval.state, la forma de vinculación con hash, las formas legibles por máquina (form_url, request_schema_url), display, y los complementos BULK, ACTOR y CATALOG."
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
-    "en": "3a25215ba9e17fe4",
-    "text": "partial: el callback de un envío (endpoint, state, events), con el endpoint limitado a las URL que un administrador registró para el PEP solicitante, un callback de solo notificación para cada evento terminal solicitado, autenticado por un JWT corto que este dominio firma, bajo la política de salida. Falta: el evento partial (BULK) y las suscripciones a eventos a nivel de despliegue; una entrega fallida no se reintenta."
+    "en": "ca5109eae0e95b17",
+    "text": "partial: el callback de un envío (endpoint, state, events), con el endpoint limitado a las URL que un administrador registró para el PEP solicitante, un callback de solo notificación para cada evento terminal solicitado, autenticado por un JWT corto que este dominio firma, bajo la política de salida. Un error de red, un tiempo de espera agotado o un HTTP 5xx se reintenta hasta el límite de intentos; un HTTP 4xx o una URL que la política de salida rechaza no se reintenta. Falta: el evento partial (BULK) y las suscripciones a eventos a nivel de despliegue."
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",

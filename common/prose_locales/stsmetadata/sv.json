@@ -104,8 +104,8 @@
     "text": "partial: det begärbara nekandet (context.access_request, evaluation_id, evaluated_at, reason) där sfärens policy markerar ett Deny med advice för åtkomstbegäran, bundet via värde med en binding_token som den här sfären signerar (de inbäddade anspråken); inskickningen med Idempotency-Key, 201 eller 202 och ett Task Handle; uppgiftsstatus-endpointen med Retry-After; avbrytande via POST eller DELETE; de sex statusarna; reevaluate-slutförandeläget, approval.id löst i betrott tillstånd och godkännandet som når policyn som betrodda fakta; next_action och de fem reasons; varje problemtyp; metadatamedlemmen, jwks_uri och capability. Saknas: evaluation_id som bindning via referens, approval.state, den hashade bindningsformen, maskinläsbara former (form_url, request_schema_url), display samt kompanjonerna BULK, ACTOR och CATALOG."
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
-    "en": "3a25215ba9e17fe4",
-    "text": "partial: en inskicknings callback (endpoint, state, events), där endpointen hålls till de URL:er en administratör registrerat för den begärande PEP:en, en callback enbart för notifiering för varje begärd slutlig händelse, autentiserad med en kort JWT som den här sfären signerar, under den utgående policyn. Saknas: händelsen partial (BULK) och prenumerationer på händelser på driftsättningsnivå; en misslyckad leverans görs inte om."
+    "en": "ca5109eae0e95b17",
+    "text": "partial: en inskicknings callback (endpoint, state, events), där endpointen hålls till de URL:er en administratör registrerat för den begärande PEP:en, en callback enbart för notifiering för varje begärd slutlig händelse, autentiserad med en kort JWT som den här sfären signerar, under den utgående policyn. Ett nätverksfel, en timeout eller HTTP 5xx görs om upp till försöksgränsen; HTTP 4xx eller en URL som den utgående policyn avslår görs inte om. Saknas: händelsen partial (BULK) och prenumerationer på händelser på driftsättningsnivå."
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",

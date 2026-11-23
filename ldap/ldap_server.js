@@ -11050,11 +11050,12 @@ personEditor.setDirectory({
 
 // AN AUTHZEN CALLER'S APPLICATION SCOPE (#563), the same shape as the editor
 // above: `authzen/authzen_admin.ts` lists the members of the group granting
-// AUTHZEN_PEPS and replaces a person's `stsAuthzenApplication` — and, since
-// #1180, `stsAuthzenCallbackUri`, the access request callback URLs
-// registered for the caller — the two attributes it writes, which no other
-// door here offers (an `sts*` name is refused by the person editor, SCIM,
-// federation and attribute sources) — and, since #1210, adds a member to a
+// AUTHZEN_PEPS and replaces a person's `stsAuthzenApplication`. Since
+// #1202 a callback is registered only on an application
+// (`appAuthzenCallbackUri`, `appAuthzenCallbackConfig`); the person
+// attribute `stsAuthzenCallbackUri` stays readable and a submission does
+// not honour it. An `sts*` name is still refused by the person editor,
+// SCIM, federation and attribute sources. Since #1210, adds a member to a
 // group.
 authzenAdmin.setDirectory({
   locate: function locate(key) {

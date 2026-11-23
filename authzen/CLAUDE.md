@@ -274,7 +274,10 @@ DN; `roles.rolesOf()` resolves groups only for a person by itself, so
 
 **The application scope** (decision 1): the realm is the tenant; within it,
 `stsAuthzenApplication` on a person's or service account's entry,
-`appAuthzenApplication` (plus its own identifiers) on an application's.
+`appAuthzenApplication` (plus its own identifiers) on an application's. An
+mTLS caller is `kind: 'entry'` with the directory DN for both a person and
+an application (`byCertificate`); `scopeOf()` reads `appAuthzenApplication`
+when that entry has `appIdentifier` (#1202).
 Administrator-set: `sts*` is refused by every self-service and provisioning
 door, and the attribute is not in the portal's list. `context.application`
 must be in the set (403 `0025`), none named and one in the set picks it,
@@ -847,13 +850,26 @@ header argues each. What a maintainer needs quickly:
 * **Eligibility is computed, the decision is not**: `eligible()` (role,
   group, application owners) is routing — who is mailed, whose
   `/portal/access-requests` lists it — and a fact the rule reads.
-* **The callback** goes only to a URL in `appAuthzenCallbackUri` /
-  `stsAuthzenCallbackUri` (the tab's `set-callbacks`; `ldap_server.js`'s
-  AuthZEN `write` hook now takes both `sts*` names), through
+* **The callback** goes only to a URL in an application's
+  `appAuthzenCallbackUri` (the tab's `set-callbacks`). A person or a service
+  account is refused (`0136`); `stsAuthzenCallbackUri` stays readable and a
+  submission does not honour it. Delivery is
   `federation_http.deliverJson()` under the SENDABLE attribute
-  `authzenCallbackEndpoint`, once, with a 300-second JWT as the Bearer. Not
-  retried: the task status endpoint is the record (`federation/CLAUDE.md`,
-  the twentieth row).
+  `authzenCallbackEndpoint`, with a 300-second JWT as the Bearer. A network
+  error, a timeout or an HTTP 5xx is tried again by this file's
+  `authzen.access-requests` job, up to `authzen.callbackAttempts` (the
+  first included), waiting `authzen.callbackBackoffS`. One URL may set
+  either in `appAuthzenCallbackConfig` (`url attempts=N backoff=S`, stored
+  only when at least one override is set). A 4xx or an outbound-policy
+  refusal is not tried again (`0137` is the set-callbacks refusal for a
+  bad override). Each failed try is `0091`. When the delivery will not
+  succeed, `callbackDelivery.state` is `failed` and the give-up is `0135`.
+  The task's own status is not written `failed`: `finish()` runs exactly
+  once from pending, `bodyOf` and `verify` require `approved`, and `failed`
+  is itself a callback event. The status endpoint stays the record
+  (`federation/CLAUDE.md`, the twentieth row). The attempts are on
+  `viewOf().callbackDelivery` (the console row and the portal), not on the
+  public Task Handle.
 * **The store is cell-tier** (`authzen.accessRequests`,
   `authzen.accessRequestIndex`), and `/access/v1` is placed `local`: under
   cells a PEP must poll the cell it submitted to.
@@ -879,8 +895,10 @@ header argues each. What a maintainer needs quickly:
   on the delete path; a delete inside that minute misses such a task.
 * Not built: `evaluation_id` binding by reference, `approval.state`, the
   hashed binding, `form_url` / `request_schema_url`, `display`, BULK, ACTOR,
-  CATALOG, a `failed` transition, and revocation from the portal (the console
-  revokes). `tests/authzen_access_request.js` holds it in process and
+  CATALOG, a `failed` transition of the task's own status, and revocation
+  from the portal (the console revokes). A delivery that will not succeed
+  is `callbackDelivery.state` `failed` (#1202), which is not that
+  transition. `tests/authzen_access_request.js` holds it in process and
   `tests/protocol/sts_authzen.js` section 9 over HTTP.
 
 ## THE REQUEST SHAPES ARE THE MODEL'S (#1579, 2026-11-10)
@@ -978,4 +996,8 @@ issued here, or whose type can no longer be read, 0130 the application's
 policy denying the cell, 0131 the type list unreadable (logged), 0132 an
 audience that would broaden (logged and dropped), 0133 a claim that
 would broaden, is reserved, or is not on the subject token (logged and
-dropped), 0134 an empty audience withdrawing the target.
+dropped), 0134 an empty audience withdrawing the target; 0135–0137 the
+callback retry (#1202): 0135 the delivery will not be tried again (the
+task status is unchanged), 0136 a callback registered for somebody who is
+not an application, 0137 a per-URL `attempts` or `backoff` that is not an
+integer in range.

@@ -24,7 +24,8 @@
 //      problem+json (STS-AUTHZEN-0122, #936) and makes no task, one sent
 //      with a charset is read; no denial (not_requestable), a changed tuple and
 //      another caller (invalid_denial_binding), a callback nobody
-//      registered, then 202 with a Task Handle and Location; the same
+//      registered for an application (a person is refused), then 202
+//      with a Task Handle and Location; the same
 //      Idempotency-Key and body is the same task, another body 409.
 //   T. THE STATUS: pending with Retry-After for its caller, unknown_task
 //      for another.
@@ -40,7 +41,8 @@
 //   E. EXPIRY by the scheduler job's sweep, and the audit row.
 //   M. EMERGENCY ACCESS: refused without a justification, granted at once
 //      (201) with one.
-//   B. A REGISTERED CALLBACK accepted, and its delivery recorded.
+//   B. A REGISTERED CALLBACK accepted only for an application, retried
+//      on the scheduler job, and recorded as callbackDelivery (#1202).
 //   D. A DELETED SUBJECT (2026-11-16): the person's approval is revoked
 //      and their pending request cancelled, so a person made again under
 //      the name inherits neither; a task from before the subject index is
@@ -210,6 +212,8 @@ async function childBody() {
   const tls = require(ROOT + '/tls/tls_server');
   const ldap = require(ROOT + '/ldap/ldap_server');
   const adminActions = require(ROOT + '/admin-core/admin_actions');
+  const applications = require(ROOT + '/common/applications');
+  const fedHttp = require(ROOT + '/federation/federation_http');
   const store = require(ROOT + '/xacml/xacml_store');
   const xml = require(ROOT + '/xacml/xacml_xml');
   const alfa = require(ROOT + '/xacml/xacml_alfa');
@@ -253,7 +257,9 @@ async function childBody() {
 
   // THE PEOPLE: azalice is the subject (and, to test self-approval, in the
   // approvers' group too); azbob an approver; azcarol nobody; azpep and
-  // azpep2 two PEPs, both in authzen-peps and scoped to todo-app.
+  // azpep2 two PEPs, both in authzen-peps and scoped to todo-app. azapp
+  // is an application in that group, the only kind that may register a
+  // callback (#1202). An mTLS caller is kind 'entry' named by DN.
   const mint = function (subject) {
     log.debug("Entering mint().");
     log.debug("Leaving mint().");
@@ -261,10 +267,12 @@ async function childBody() {
   };
   const pepCred = await mint('CN=azarqpep,O=Outside');
   const pep2Cred = await mint('CN=azarqpep2,O=Outside');
-  const added = tls.addAnchors([pepCred, pep2Cred].map(function (one) {
-    return one.anchorPem;
-  }).join(''));
-  t.check(added && added.added === 2,
+  const appCred = await mint('CN=azarqapp,O=Outside');
+  const added = tls.addAnchors([pepCred, pep2Cred, appCred].map(
+    function (one) {
+      return one.anchorPem;
+    }).join(''));
+  t.check(added && added.added === 3,
           'setup: the outside Root CAs are in the client truststore',
           JSON.stringify(added));
   const derOf = function (minted) {
@@ -287,6 +295,30 @@ async function childBody() {
       ldap.locateEntry(name).stored.attributes.stsauthzenapplication =
         ['todo-app'];
     });
+    const made = applications.createApplication({
+      identifier: 'azapp', protocols: ['oauth2'],
+      fields: { oauthClientId: 'azapp' } });
+    if (!made.ok) {
+      throw new Error('azapp was not created: ' + JSON.stringify(made));
+    }
+    const stored = ldap.changeStoredCertificate('application', 'azapp',
+                                                 { add: derOf(appCred) });
+    if (!stored.ok) {
+      throw new Error('azapp\'s certificate was not stored');
+    }
+    const appDn = applications.get('azapp').dn;
+    const joined = adminActions.groupsAction({
+      action: 'add-member', group: pepGroup, member: appDn });
+    if (!joined.ok) {
+      throw new Error('azapp was not added to ' + pepGroup + ': ' +
+                      JSON.stringify(joined));
+    }
+    const scoped = authzenAdmin.act({ action: 'set-scope', caller: 'azapp',
+                                      applications: ['todo-app'] },
+                                    { actor: 'azcarol', via: 'api' });
+    if (!scoped.ok) {
+      throw new Error('azapp was not scoped: ' + JSON.stringify(scoped));
+    }
     ldap.createGroup('azapprovers', { members: [] });
     ['azbob', 'azalice'].forEach(function (name) {
       adminActions.groupsAction({ action: 'add-member', group: 'azapprovers',
@@ -427,9 +459,22 @@ async function childBody() {
   since = marks.length;
   r = await request(port, 'POST', SUBMIT, pepCred, submission(denied,
     { callback: { endpoint: 'https://pep.example.com/cb' } }));
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0136'),
+          'S4. a callback named by a person is refused ' +
+          '(STS-AUTHZEN-0136); only an application registers one',
+          brief(r));
+  const appEval = await request(port, 'POST', EVAL, appCred, evaluation());
+  const appDenied = appEval.json || {};
+  t.check(appEval.status === 200 && appDenied.decision === false &&
+          appDenied.context && appDenied.context.access_request,
+          'setup: the application certificate is an AuthZEN caller ' +
+          'scoped to todo-app', brief(appEval));
+  since = marks.length;
+  r = await request(port, 'POST', SUBMIT, appCred, submission(appDenied,
+    { callback: { endpoint: 'https://pep.example.com/cb' } }));
   t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0079'),
-          'S4. a callback nobody registered for the caller is refused ' +
-          '(STS-AUTHZEN-0079)', brief(r));
+          'S4b. a callback nobody registered for the application is ' +
+          'refused (STS-AUTHZEN-0079)', brief(r));
   r = await request(port, 'POST', SUBMIT, pepCred, submission(denied),
                     { 'idempotency-key': 'azarq-key-1' });
   const task = (r.json || {}).task || {};
@@ -580,6 +625,12 @@ async function childBody() {
     log.debug("Leaving fresh().");
     return got.json;
   };
+  const freshApp = async function () {
+    log.debug("Entering freshApp().");
+    const got = await request(port, 'POST', EVAL, appCred, evaluation());
+    log.debug("Leaving freshApp().");
+    return got.json;
+  };
 
   // -------------------------------------------------------------------------
   // C. CANCELLATION
@@ -656,33 +707,202 @@ async function childBody() {
           '(201), for the shortest lifetime', brief(r));
 
   // -------------------------------------------------------------------------
-  // B. A REGISTERED CALLBACK
+  // B. A REGISTERED CALLBACK (#1202): an application only, retried by the
+  // access-request job. A network failure or a 5xx schedules another
+  // attempt. A delivery that will not succeed sets
+  // callbackDelivery.state to failed. The task status stays what finish()
+  // wrote. Development dials 127.0.0.1, so a closed port is a retry.
+  // A string detail is stored as the audit row's summary.
   // -------------------------------------------------------------------------
   const CALLBACK = 'https://127.0.0.1:9/azarq-callback';
-  const set = inRealm(function () {
+  const PUBLIC = 'https://pep.example.com/callbacks/access-requests';
+  const callbackAudits = function (id) {
+    log.debug("Entering callbackAudits().");
+    const rows = audit.list().filter(function (row) {
+      const text = String(row.summary || '') + ' ' +
+                   (typeof row.detail === 'string' ? row.detail
+                     : JSON.stringify(row.detail || {}));
+      return row.action === 'authzen.access-request.callback' &&
+             text.indexOf(id) >= 0;
+    });
+    log.debug("Leaving callbackAudits().");
+    return rows;
+  };
+  const codesOf = function (rows) {
+    log.debug("Entering codesOf().");
+    log.debug("Leaving codesOf().");
+    return rows.map(function (row) {
+      return row.errorCode || '';
+    });
+  };
+  since = marks.length;
+  const personSet = inRealm(function () {
     return authzenAdmin.act({ action: 'set-callbacks', caller: 'azpep',
+      callbacks: 'https://pep.example.com/cb' },
+      { actor: 'azcarol', via: 'api' });
+  });
+  t.check(!personSet.ok &&
+          errorCodes.codeOf(personSet) === 'STS-AUTHZEN-0136' &&
+          markedSince(since, 'STS-AUTHZEN-0136'),
+          'B0. set-callbacks refuses a person (STS-AUTHZEN-0136)',
+          JSON.stringify(personSet));
+  const set = inRealm(function () {
+    return authzenAdmin.act({ action: 'set-callbacks', caller: 'azapp',
                               callbacks: CALLBACK },
                             { actor: 'azcarol', via: 'api' });
   });
-  r = await request(port, 'POST', SUBMIT, pepCred, submission(await fresh(),
+  r = await request(port, 'POST', SUBMIT, appCred,
+                    submission(await freshApp(),
     { callback: { endpoint: CALLBACK, state: 's-1',
                   events: ['cancelled'] } }));
   const fifth = ((r.json || {}).task || {});
   t.check(set.ok && r.status === 202 && fifth.id,
-          'B1. a callback registered for the caller is accepted',
+          'B1. a callback registered for the application is accepted',
           JSON.stringify(set) + ' / ' + brief(r));
   const sent = await inRealm(function () {
     requests.cancelByAdministrator(fifth.id, 'azcarol');
     return requests.notify(requests.task(fifth.id));
   });
   const callbackRows = inRealm(function () {
-    return audit.list().filter(function (row) {
-      return row.action === 'authzen.access-request.callback';
+    return callbackAudits(fifth.id);
+  });
+  const fifthTask = inRealm(function () {
+    return requests.task(fifth.id);
+  });
+  const refused = (fifthTask.callbackDelivery &&
+                   fifthTask.callbackDelivery.attempts[0]) || {};
+  t.check(sent === false && fifthTask.status === 'cancelled' &&
+          fifthTask.callbackDelivery &&
+          fifthTask.callbackDelivery.state === 'pending' &&
+          fifthTask.callbackDelivery.attempts.length === 1 &&
+          refused.status === 0 &&
+          /ECONNREFUSED/.test(String(refused.why)) &&
+          fifthTask.callbackDelivery.nextAt > Date.now() / 1000 &&
+          fifthTask.callbackDelivery.inflightUntil === 0 &&
+          fifthTask.callbackDelivery.bound === 5 &&
+          codesOf(callbackRows).indexOf('STS-AUTHZEN-0091') >= 0 &&
+          codesOf(callbackRows).indexOf('STS-AUTHZEN-0135') < 0,
+          'B2. a refused connection is retried, the task stays ' +
+          'cancelled, and the give-up is not audited yet',
+          JSON.stringify({ status: fifthTask.status,
+                           delivery: fifthTask.callbackDelivery,
+                           codes: codesOf(callbackRows) }));
+  const overridden = inRealm(function () {
+    return authzenAdmin.act({ action: 'set-callbacks', caller: 'azapp',
+      callbacks: PUBLIC + ' attempts=2' },
+      { actor: 'azcarol', via: 'api' });
+  });
+  t.check(overridden.ok && overridden.caller &&
+          overridden.caller.callbacks.indexOf(PUBLIC) >= 0 &&
+          overridden.caller.callbackConfigs.length === 1,
+          'B3. a per-callback attempts override is stored for that URL',
+          JSON.stringify(overridden));
+  const realDeliver = fedHttp.deliverJson;
+  fedHttp.deliverJson = function () {
+    return Promise.resolve({ ok: false, status: 503, kind: '',
+                             why: 'unavailable' });
+  };
+  r = await request(port, 'POST', SUBMIT, appCred,
+                    submission(await freshApp(),
+    { callback: { endpoint: PUBLIC, events: ['cancelled'] } }));
+  const retryTask = ((r.json || {}).task || {});
+  const firstTry = await inRealm(function () {
+    requests.cancelByAdministrator(retryTask.id, 'azcarol');
+    return requests.notify(requests.task(retryTask.id));
+  });
+  const pendingDelivery = inRealm(function () {
+    const row = requests.task(retryTask.id);
+    return { status: row.status, delivery: row.callbackDelivery };
+  });
+  t.check(r.status === 202 && firstTry === false &&
+          pendingDelivery.status === 'cancelled' &&
+          pendingDelivery.delivery.state === 'pending' &&
+          pendingDelivery.delivery.attempts.length === 1 &&
+          pendingDelivery.delivery.bound === 2 &&
+          pendingDelivery.delivery.nextAt > Date.now() / 1000,
+          'B4. an HTTP 503 is retried: one attempt, the next not yet due, ' +
+          'the task still cancelled',
+          JSON.stringify(pendingDelivery));
+  // sweep() starts notify() and does not await it. The second notify()
+  // has to join that same flight before the stub's microtask settles it,
+  // so both calls stay in this one turn.
+  const retried = await inRealm(function () {
+    const row = requests.task(retryTask.id);
+    row.callbackDelivery.nextAt = 1;
+    row.callbackDelivery.inflightUntil = 0;
+    const swept = requests.sweep();
+    return requests.notify(row).then(function () {
+      const after = requests.task(retryTask.id);
+      return { swept: swept, status: after.status,
+               delivery: after.callbackDelivery,
+               view: requests.viewOf(after) };
     });
   });
-  t.check(sent === false && callbackRows.length >= 1,
-          'B2. the callback is attempted under the outbound policy and an ' +
-          'undelivered one is recorded', JSON.stringify(callbackRows[0]));
+  const retryAudits = inRealm(function () {
+    return codesOf(callbackAudits(retryTask.id));
+  });
+  t.check(retried.delivery.state === 'failed' &&
+          retried.delivery.attempts.length === 2 &&
+          retried.status === 'cancelled' &&
+          /1 callback\(s\) retried\./.test(String(retried.swept.summary)) &&
+          retryAudits.indexOf('STS-AUTHZEN-0091') >= 0 &&
+          retryAudits.indexOf('STS-AUTHZEN-0135') >= 0 &&
+          retried.view.callbackDelivery.state === 'failed' &&
+          retried.view.callbackDelivery.attempts.length === 2 &&
+          retried.view.status === 'cancelled' &&
+          !Object.prototype.hasOwnProperty.call(retried.view.callbackDelivery,
+                                                 'inflightUntil'),
+          'B5. the job retries once the backoff is due, then gives up ' +
+          'without failing the task',
+          JSON.stringify(retried) + ' / ' + JSON.stringify(retryAudits));
+  since = marks.length;
+  const badOverride = inRealm(function () {
+    return authzenAdmin.act({ action: 'set-callbacks', caller: 'azapp',
+      callbacks: PUBLIC + ' attempts=0' },
+      { actor: 'azcarol', via: 'api' });
+  });
+  const still = inRealm(function () {
+    return authzenAdmin.callerOf('azapp');
+  });
+  t.check(!badOverride.ok &&
+          errorCodes.codeOf(badOverride) === 'STS-AUTHZEN-0137' &&
+          markedSince(since, 'STS-AUTHZEN-0137') &&
+          still.callbacks.indexOf(PUBLIC) >= 0,
+          'B6. a bad override is refused and the registration stays',
+          JSON.stringify(badOverride) + ' / ' + JSON.stringify(still));
+  inRealm(function () {
+    authzenAdmin.act({ action: 'set-callbacks', caller: 'azapp',
+      callbacks: PUBLIC + ' attempts=5' },
+      { actor: 'azcarol', via: 'api' });
+  });
+  fedHttp.deliverJson = function () {
+    return Promise.resolve({ ok: false, status: 400, kind: '',
+                             why: 'bad request' });
+  };
+  r = await request(port, 'POST', SUBMIT, appCred,
+                    submission(await freshApp(),
+    { callback: { endpoint: PUBLIC, events: ['cancelled'] } }));
+  const terminal = ((r.json || {}).task || {});
+  const gaveUp = await inRealm(function () {
+    requests.cancelByAdministrator(terminal.id, 'azcarol');
+    return requests.notify(requests.task(terminal.id));
+  });
+  const terminalRow = inRealm(function () {
+    const row = requests.task(terminal.id);
+    return { sent: gaveUp, status: row.status,
+             delivery: row.callbackDelivery,
+             codes: codesOf(callbackAudits(terminal.id)) };
+  });
+  fedHttp.deliverJson = realDeliver;
+  t.check(terminalRow.sent === false &&
+          terminalRow.delivery.state === 'failed' &&
+          terminalRow.delivery.attempts.length === 1 &&
+          terminalRow.delivery.bound === 5 &&
+          terminalRow.status === 'cancelled' &&
+          terminalRow.codes.indexOf('STS-AUTHZEN-0091') >= 0 &&
+          terminalRow.codes.indexOf('STS-AUTHZEN-0135') >= 0,
+          'B7. an HTTP 400 is not retried, even with attempts left',
+          JSON.stringify(terminalRow));
 
   // -------------------------------------------------------------------------
   // D. A DELETED SUBJECT (2026-11-16, #1612's rule: a person deleted and

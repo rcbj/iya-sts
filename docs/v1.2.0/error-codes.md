@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5964** of them, in **57** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5967** of them, in **57** subsystems.
 
 ## Where a code appears
 
@@ -93,7 +93,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 252
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 111
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 114
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 301
@@ -5669,7 +5669,7 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0076` | An AuthZEN access request reused an Idempotency-Key, or a binding_token, already used by the same caller for a request whose body differs. | HTTP 409, urn:openid:authzen:access-request:error:duplicate_request |
 | `STS-AUTHZEN-0077` | An AuthZEN access request named an application the caller is no longer scoped to. | HTTP 403, application/problem+json |
 | `STS-AUTHZEN-0078` | An AuthZEN access request was refused because the realm already holds authzen.accessRequestMaxPending pending requests. | HTTP 503, application/problem+json |
-| `STS-AUTHZEN-0079` | An AuthZEN access request's callback was not an object with an https endpoint registered for the caller (appAuthzenCallbackUri or stsAuthzenCallbackUri); a callback URL is never taken from a request alone. | HTTP 400, application/problem+json |
+| `STS-AUTHZEN-0079` | An AuthZEN access request's callback was not an object with an https endpoint registered for the calling application (appAuthzenCallbackUri); a callback URL is never taken from a request alone. | HTTP 400, application/problem+json |
 | `STS-AUTHZEN-0080` | An AuthZEN access request task was asked about, or cancelled, by a caller it is not the requester of, or does not exist: the two are one answer, so a leaked task handle tells nobody anything. | HTTP 404, urn:openid:authzen:access-request:error:unknown_task |
 | `STS-AUTHZEN-0081` | An AuthZEN access request task was asked about after its retention ended. | HTTP 410, urn:openid:authzen:access-request:error:task_expired |
 | `STS-AUTHZEN-0082` | An AuthZEN access request task already in a terminal status was asked to be cancelled. | HTTP 409, urn:openid:authzen:access-request:error:invalid_task_state |
@@ -5681,8 +5681,8 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0088` | The access-control policy (action approve-access-request on resource authzen-access-request) refused a person the approval, denial or revocation of an AuthZEN access request. | none — the portal's or console's refusal, audited |
 | `STS-AUTHZEN-0089` | An approval, denial or cancellation named no pending AuthZEN access request of the realm. | none — the portal's or console's refusal |
 | `STS-AUTHZEN-0090` | An AuthZEN access request decision was not approve, deny or revoke, or the portal's or console's form was incomplete. | none — the portal's or console's refusal |
-| `STS-AUTHZEN-0091` | An AuthZEN access request's callback could not be delivered (the outbound policy refused the URL, or the endpoint did not answer 2xx); the task status endpoint remains the record, and nothing is retried. | none — logged and audited |
-| `STS-AUTHZEN-0092` | The authzen.access-requests scheduler job failed while expiring or removing access requests. | none — logged; the job's run is failed |
+| `STS-AUTHZEN-0091` | An AuthZEN access request's callback could not be delivered (the outbound policy refused the URL, the endpoint did not answer 2xx, or the notification could not be signed). A network error, a timeout or an HTTP 5xx is tried again, up to the attempt bound; the task status endpoint remains the record. | none — logged and audited |
+| `STS-AUTHZEN-0092` | The authzen.access-requests scheduler job failed while expiring or removing access requests, or while retrying a callback. | none — logged; the job's run is failed |
 | `STS-AUTHZEN-0093` | The approvers of an AuthZEN access request could not be mailed; the request waits in the portal all the same. | none — logged |
 | `STS-AUTHZEN-0094` | The AuthZEN tab's set-callbacks act was refused: a URL that is not https, more than eight, or a caller who is nobody in the realm. | none — the console's refusal |
 | `STS-AUTHZEN-0095` | An AuthZEN access request approval was asked to be revoked where there is no live approval with that id. | none — the portal's or console's refusal |
@@ -5722,6 +5722,9 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0132` | An AuthZEN token-exchange subject gate was given an issuance audience that is not an array of that gate's resource id. It would broaden the target, so it is not sent (#1201). | none — logged; the envelope is sent without it |
 | `STS-AUTHZEN-0133` | An AuthZEN token-exchange subject gate was given an issuance claim that is reserved, is not on the subject token, or is wider than the subject token's value. It is not sent (#1201). | none — logged; the envelope is sent without that claim |
 | `STS-AUTHZEN-0134` | An AuthZEN token-exchange subject gate was given an empty issuance audience, which withdraws that gate's target; answered false (#1201). | decision: false |
+| `STS-AUTHZEN-0135` | An AuthZEN access request's callback will not be delivered again: the attempt bound is spent, or the failure cannot succeed (an HTTP status below 500, or a URL the outbound policy refuses). The task's own status is unchanged. The task status endpoint remains the record (#1202). | none — logged and audited |
+| `STS-AUTHZEN-0136` | An access request callback was refused because the caller is not an application. set-callbacks writes appAuthzenCallbackUri only on an application, and a submission that names a callback from a person or a service account is refused. A value already stored as stsAuthzenCallbackUri is left in place and is not honoured (#1202). | HTTP 400 on a submission; the console's refusal on set-callbacks |
+| `STS-AUTHZEN-0137` | An access request callback override was refused: attempts or backoff was not an integer in range (attempts 1 to 20, backoff 60 to 86400), or a token was not attempts=N or backoff=S, or one of them was repeated (#1202). | the console's refusal |
 
 ## STS-FGA
 

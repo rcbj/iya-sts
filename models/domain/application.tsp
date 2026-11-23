@@ -662,6 +662,9 @@ model Application {
   @fromAttr(#{attr: "appAuthzenCallbackUri"})
   `authzenCallbackUri`?: string[];
 
+  @fromAttr(#{attr: "appAuthzenCallbackConfig"})
+  `authzenCallbackConfig`?: string[];
+
   @fromAttr(#{attr: "appSoftwareStatementIssuer"})
   `softwareStatementIssuer`?: string;
 
