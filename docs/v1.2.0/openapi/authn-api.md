@@ -23,6 +23,14 @@ Unless an operation below says otherwise, any status it does not list answers th
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 
@@ -65,6 +73,14 @@ Each operation, its method and path, and the sign-in page or control it is the d
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 
@@ -112,6 +128,14 @@ Each signed-in and remembered account of the browser's account set — key, subj
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 
@@ -204,6 +228,14 @@ The door of the sign-in surface's `GET /oauth2/consent`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 
@@ -241,6 +273,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -252,6 +292,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -266,6 +314,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -277,6 +333,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -291,6 +355,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -302,6 +374,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -316,6 +396,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -327,6 +415,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -341,6 +437,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -352,6 +456,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -390,6 +502,14 @@ The door of the sign-in surface's `GET /logout`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
 | `preferredLanguage.populated` | boolean |  |  |
@@ -447,6 +567,14 @@ The door of the sign-in surface's `GET /logout`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
 | `preferredLanguage.populated` | boolean |  |  |
@@ -504,6 +632,14 @@ The door of the sign-in surface's `GET /logout`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
 | `preferredLanguage.populated` | boolean |  |  |
@@ -561,6 +697,14 @@ The door of the sign-in surface's `GET /logout`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
 | `preferredLanguage.populated` | boolean |  |  |
@@ -655,6 +799,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.fields.result` | string |  |  |
 | `form.method` | one of `POST` |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `signed-out`, `inventory`, `refused` |  |  |
 | `ok` | boolean |  |  |
 | `ownSessionEnded` | boolean |  |  |
@@ -677,11 +829,25 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
+| `view.skipped[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.skipped[].said.key` | string | yes |  |
+| `view.skipped[].said.params` | map |  |  |
+| `view.skipped[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.skipped[].said.params.{key}.key` | string | yes |  |
+| `view.skipped[].said.params.{key}.params` | map |  |  |
+| `view.skipped[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
 | `view.terminated[].message` | string |  |  |
+| `view.terminated[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.terminated[].said.key` | string | yes |  |
+| `view.terminated[].said.params` | map |  |  |
+| `view.terminated[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.terminated[].said.params.{key}.key` | string | yes |  |
+| `view.terminated[].said.params.{key}.params` | map |  |  |
+| `view.terminated[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.verifiesCredentials` | boolean |  |  |
 
 **400**: Refused: `{ ok: false, errors }` — the body, the id, or the act itself.
@@ -699,6 +865,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.fields.result` | string |  |  |
 | `form.method` | one of `POST` |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `signed-out`, `inventory`, `refused` |  |  |
 | `ok` | boolean |  |  |
 | `ownSessionEnded` | boolean |  |  |
@@ -721,11 +895,25 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
+| `view.skipped[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.skipped[].said.key` | string | yes |  |
+| `view.skipped[].said.params` | map |  |  |
+| `view.skipped[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.skipped[].said.params.{key}.key` | string | yes |  |
+| `view.skipped[].said.params.{key}.params` | map |  |  |
+| `view.skipped[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
 | `view.terminated[].message` | string |  |  |
+| `view.terminated[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.terminated[].said.key` | string | yes |  |
+| `view.terminated[].said.params` | map |  |  |
+| `view.terminated[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.terminated[].said.params.{key}.key` | string | yes |  |
+| `view.terminated[].said.params.{key}.params` | map |  |  |
+| `view.terminated[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.verifiesCredentials` | boolean |  |  |
 
 **401**: The answer.
@@ -743,6 +931,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.fields.result` | string |  |  |
 | `form.method` | one of `POST` |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `signed-out`, `inventory`, `refused` |  |  |
 | `ok` | boolean |  |  |
 | `ownSessionEnded` | boolean |  |  |
@@ -765,11 +961,25 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
+| `view.skipped[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.skipped[].said.key` | string | yes |  |
+| `view.skipped[].said.params` | map |  |  |
+| `view.skipped[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.skipped[].said.params.{key}.key` | string | yes |  |
+| `view.skipped[].said.params.{key}.params` | map |  |  |
+| `view.skipped[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
 | `view.terminated[].message` | string |  |  |
+| `view.terminated[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.terminated[].said.key` | string | yes |  |
+| `view.terminated[].said.params` | map |  |  |
+| `view.terminated[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.terminated[].said.params.{key}.key` | string | yes |  |
+| `view.terminated[].said.params.{key}.params` | map |  |  |
+| `view.terminated[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.verifiesCredentials` | boolean |  |  |
 
 **403**: No Origin of this service, or no CSRF token bound to this browser's session; or ending another session needs a recent sign-in (`account.recentAuthMinutes`), when the answer's view is `reauthenticate` and names where to sign in again.
@@ -787,6 +997,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.fields.result` | string |  |  |
 | `form.method` | one of `POST` |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `signed-out`, `inventory`, `refused` |  |  |
 | `ok` | boolean |  |  |
 | `ownSessionEnded` | boolean |  |  |
@@ -809,11 +1027,25 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
+| `view.skipped[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.skipped[].said.key` | string | yes |  |
+| `view.skipped[].said.params` | map |  |  |
+| `view.skipped[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.skipped[].said.params.{key}.key` | string | yes |  |
+| `view.skipped[].said.params.{key}.params` | map |  |  |
+| `view.skipped[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
 | `view.terminated[].message` | string |  |  |
+| `view.terminated[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.terminated[].said.key` | string | yes |  |
+| `view.terminated[].said.params` | map |  |  |
+| `view.terminated[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.terminated[].said.params.{key}.key` | string | yes |  |
+| `view.terminated[].said.params.{key}.params` | map |  |  |
+| `view.terminated[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.verifiesCredentials` | boolean |  |  |
 
 **409**: The answer.
@@ -831,6 +1063,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.fields.result` | string |  |  |
 | `form.method` | one of `POST` |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `signed-out`, `inventory`, `refused` |  |  |
 | `ok` | boolean |  |  |
 | `ownSessionEnded` | boolean |  |  |
@@ -853,11 +1093,25 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
+| `view.skipped[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.skipped[].said.key` | string | yes |  |
+| `view.skipped[].said.params` | map |  |  |
+| `view.skipped[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.skipped[].said.params.{key}.key` | string | yes |  |
+| `view.skipped[].said.params.{key}.params` | map |  |  |
+| `view.skipped[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
 | `view.terminated[].message` | string |  |  |
+| `view.terminated[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.terminated[].said.key` | string | yes |  |
+| `view.terminated[].said.params` | map |  |  |
+| `view.terminated[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.terminated[].said.params.{key}.key` | string | yes |  |
+| `view.terminated[].said.params.{key}.params` | map |  |  |
+| `view.terminated[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.verifiesCredentials` | boolean |  |  |
 
 **415**: Not a JSON body.
@@ -875,6 +1129,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.fields.result` | string |  |  |
 | `form.method` | one of `POST` |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `signed-out`, `inventory`, `refused` |  |  |
 | `ok` | boolean |  |  |
 | `ownSessionEnded` | boolean |  |  |
@@ -897,11 +1159,25 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
+| `view.skipped[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.skipped[].said.key` | string | yes |  |
+| `view.skipped[].said.params` | map |  |  |
+| `view.skipped[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.skipped[].said.params.{key}.key` | string | yes |  |
+| `view.skipped[].said.params.{key}.params` | map |  |  |
+| `view.skipped[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
 | `view.terminated[].message` | string |  |  |
+| `view.terminated[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.terminated[].said.key` | string | yes |  |
+| `view.terminated[].said.params` | map |  |  |
+| `view.terminated[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.terminated[].said.params.{key}.key` | string | yes |  |
+| `view.terminated[].said.params.{key}.params` | map |  |  |
+| `view.terminated[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.verifiesCredentials` | boolean |  |  |
 
 **429**: Too many attempts.
@@ -919,6 +1195,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.fields.result` | string |  |  |
 | `form.method` | one of `POST` |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `signed-out`, `inventory`, `refused` |  |  |
 | `ok` | boolean |  |  |
 | `ownSessionEnded` | boolean |  |  |
@@ -941,11 +1225,25 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
+| `view.skipped[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.skipped[].said.key` | string | yes |  |
+| `view.skipped[].said.params` | map |  |  |
+| `view.skipped[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.skipped[].said.params.{key}.key` | string | yes |  |
+| `view.skipped[].said.params.{key}.params` | map |  |  |
+| `view.skipped[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
 | `view.terminated[].message` | string |  |  |
+| `view.terminated[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.terminated[].said.key` | string | yes |  |
+| `view.terminated[].said.params` | map |  |  |
+| `view.terminated[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.terminated[].said.params.{key}.key` | string | yes |  |
+| `view.terminated[].said.params.{key}.params` | map |  |  |
+| `view.terminated[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.verifiesCredentials` | boolean |  |  |
 
 ## GET /authn-api/logout/accounts
@@ -978,6 +1276,14 @@ The door of the sign-in surface's `GET /logout/accounts`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
 | `preferredLanguage.populated` | boolean |  |  |
@@ -1002,6 +1308,14 @@ The door of the sign-in surface's `GET /logout/accounts`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
 | `preferredLanguage.populated` | boolean |  |  |
@@ -1059,6 +1373,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.fields.result` | string |  |  |
 | `form.method` | one of `POST` |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `signed-out`, `inventory`, `refused` |  |  |
 | `ok` | boolean |  |  |
 | `ownSessionEnded` | boolean |  |  |
@@ -1081,11 +1403,25 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
+| `view.skipped[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.skipped[].said.key` | string | yes |  |
+| `view.skipped[].said.params` | map |  |  |
+| `view.skipped[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.skipped[].said.params.{key}.key` | string | yes |  |
+| `view.skipped[].said.params.{key}.params` | map |  |  |
+| `view.skipped[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
 | `view.terminated[].message` | string |  |  |
+| `view.terminated[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.terminated[].said.key` | string | yes |  |
+| `view.terminated[].said.params` | map |  |  |
+| `view.terminated[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.terminated[].said.params.{key}.key` | string | yes |  |
+| `view.terminated[].said.params.{key}.params` | map |  |  |
+| `view.terminated[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.verifiesCredentials` | boolean |  |  |
 
 **400**: Refused: `{ ok: false, errors }` — the body, the id, or the act itself.
@@ -1103,6 +1439,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.fields.result` | string |  |  |
 | `form.method` | one of `POST` |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `signed-out`, `inventory`, `refused` |  |  |
 | `ok` | boolean |  |  |
 | `ownSessionEnded` | boolean |  |  |
@@ -1125,11 +1469,25 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
+| `view.skipped[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.skipped[].said.key` | string | yes |  |
+| `view.skipped[].said.params` | map |  |  |
+| `view.skipped[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.skipped[].said.params.{key}.key` | string | yes |  |
+| `view.skipped[].said.params.{key}.params` | map |  |  |
+| `view.skipped[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
 | `view.terminated[].message` | string |  |  |
+| `view.terminated[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.terminated[].said.key` | string | yes |  |
+| `view.terminated[].said.params` | map |  |  |
+| `view.terminated[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.terminated[].said.params.{key}.key` | string | yes |  |
+| `view.terminated[].said.params.{key}.params` | map |  |  |
+| `view.terminated[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.verifiesCredentials` | boolean |  |  |
 
 **401**: The answer.
@@ -1147,6 +1505,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.fields.result` | string |  |  |
 | `form.method` | one of `POST` |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `signed-out`, `inventory`, `refused` |  |  |
 | `ok` | boolean |  |  |
 | `ownSessionEnded` | boolean |  |  |
@@ -1169,11 +1535,25 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
+| `view.skipped[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.skipped[].said.key` | string | yes |  |
+| `view.skipped[].said.params` | map |  |  |
+| `view.skipped[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.skipped[].said.params.{key}.key` | string | yes |  |
+| `view.skipped[].said.params.{key}.params` | map |  |  |
+| `view.skipped[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
 | `view.terminated[].message` | string |  |  |
+| `view.terminated[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.terminated[].said.key` | string | yes |  |
+| `view.terminated[].said.params` | map |  |  |
+| `view.terminated[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.terminated[].said.params.{key}.key` | string | yes |  |
+| `view.terminated[].said.params.{key}.params` | map |  |  |
+| `view.terminated[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.verifiesCredentials` | boolean |  |  |
 
 **403**: No Origin of this service, or no CSRF token bound to this browser's session.
@@ -1191,6 +1571,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.fields.result` | string |  |  |
 | `form.method` | one of `POST` |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `signed-out`, `inventory`, `refused` |  |  |
 | `ok` | boolean |  |  |
 | `ownSessionEnded` | boolean |  |  |
@@ -1213,11 +1601,25 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
+| `view.skipped[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.skipped[].said.key` | string | yes |  |
+| `view.skipped[].said.params` | map |  |  |
+| `view.skipped[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.skipped[].said.params.{key}.key` | string | yes |  |
+| `view.skipped[].said.params.{key}.params` | map |  |  |
+| `view.skipped[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
 | `view.terminated[].message` | string |  |  |
+| `view.terminated[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.terminated[].said.key` | string | yes |  |
+| `view.terminated[].said.params` | map |  |  |
+| `view.terminated[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.terminated[].said.params.{key}.key` | string | yes |  |
+| `view.terminated[].said.params.{key}.params` | map |  |  |
+| `view.terminated[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.verifiesCredentials` | boolean |  |  |
 
 **409**: The answer.
@@ -1235,6 +1637,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.fields.result` | string |  |  |
 | `form.method` | one of `POST` |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `signed-out`, `inventory`, `refused` |  |  |
 | `ok` | boolean |  |  |
 | `ownSessionEnded` | boolean |  |  |
@@ -1257,11 +1667,25 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
+| `view.skipped[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.skipped[].said.key` | string | yes |  |
+| `view.skipped[].said.params` | map |  |  |
+| `view.skipped[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.skipped[].said.params.{key}.key` | string | yes |  |
+| `view.skipped[].said.params.{key}.params` | map |  |  |
+| `view.skipped[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
 | `view.terminated[].message` | string |  |  |
+| `view.terminated[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.terminated[].said.key` | string | yes |  |
+| `view.terminated[].said.params` | map |  |  |
+| `view.terminated[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.terminated[].said.params.{key}.key` | string | yes |  |
+| `view.terminated[].said.params.{key}.params` | map |  |  |
+| `view.terminated[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.verifiesCredentials` | boolean |  |  |
 
 **415**: Not a JSON body.
@@ -1279,6 +1703,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.fields.result` | string |  |  |
 | `form.method` | one of `POST` |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `signed-out`, `inventory`, `refused` |  |  |
 | `ok` | boolean |  |  |
 | `ownSessionEnded` | boolean |  |  |
@@ -1301,11 +1733,25 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
+| `view.skipped[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.skipped[].said.key` | string | yes |  |
+| `view.skipped[].said.params` | map |  |  |
+| `view.skipped[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.skipped[].said.params.{key}.key` | string | yes |  |
+| `view.skipped[].said.params.{key}.params` | map |  |  |
+| `view.skipped[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
 | `view.terminated[].message` | string |  |  |
+| `view.terminated[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.terminated[].said.key` | string | yes |  |
+| `view.terminated[].said.params` | map |  |  |
+| `view.terminated[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.terminated[].said.params.{key}.key` | string | yes |  |
+| `view.terminated[].said.params.{key}.params` | map |  |  |
+| `view.terminated[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.verifiesCredentials` | boolean |  |  |
 
 **429**: Too many attempts.
@@ -1323,6 +1769,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.fields.result` | string |  |  |
 | `form.method` | one of `POST` |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `signed-out`, `inventory`, `refused` |  |  |
 | `ok` | boolean |  |  |
 | `ownSessionEnded` | boolean |  |  |
@@ -1345,11 +1799,25 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
+| `view.skipped[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.skipped[].said.key` | string | yes |  |
+| `view.skipped[].said.params` | map |  |  |
+| `view.skipped[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.skipped[].said.params.{key}.key` | string | yes |  |
+| `view.skipped[].said.params.{key}.params` | map |  |  |
+| `view.skipped[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
 | `view.terminated[].message` | string |  |  |
+| `view.terminated[].said` | object |  | Where `message` is a catalog sentence (#2006): its key and parameters, which the page draws in its language. |
+| `view.terminated[].said.key` | string | yes |  |
+| `view.terminated[].said.params` | map |  |  |
+| `view.terminated[].said.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.terminated[].said.params.{key}.key` | string | yes |  |
+| `view.terminated[].said.params.{key}.params` | map |  |  |
+| `view.terminated[].said.params.{key}.params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.verifiesCredentials` | boolean |  |  |
 
 ## GET /authn-api/mfa/{id}
@@ -1382,6 +1850,14 @@ The door of the sign-in surface's `GET /authn/totp, /authn/webauthn, /authn/back
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
 | `preferredLanguage.populated` | boolean |  |  |
@@ -1432,6 +1908,14 @@ The door of the sign-in surface's `GET /authn/totp, /authn/webauthn, /authn/back
 | `view.postLogin.separate` | boolean |  |  |
 | `view.postLogin.snoozeDays` | number |  |  |
 | `view.primary` | boolean |  |  |
+| `view.refusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `view.refusal.errors` | list | yes |  |
+| `view.refusal.errors[]` | string |  |  |
+| `view.refusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `view.refusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.refusal.messages[].key` | string | yes |  |
+| `view.refusal.messages[].params` | map |  |  |
+| `view.refusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `view.roles` | object |  |  |
 | `view.roles.offered` | list |  |  |
 | `view.roles.offered[].description` | string |  |  |
@@ -1458,6 +1942,14 @@ The door of the sign-in surface's `GET /authn/totp, /authn/webauthn, /authn/back
 | `view.setup.totp.uri` | string |  |  |
 | `view.state` | one of `ask`, `code`, `wait`, `open`, `elsewhere`, `end` |  |  |
 | `view.title` | string |  |  |
+| `view.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `view.titleRefusal.errors` | list | yes |  |
+| `view.titleRefusal.errors[]` | string |  |  |
+| `view.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `view.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.titleRefusal.messages[].key` | string | yes |  |
+| `view.titleRefusal.messages[].params` | map |  |  |
+| `view.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `view.totp` | object |  |  |
 | `view.totp.digits` | number |  |  |
 | `view.totp.hotp` | boolean |  | An HOTP token is held, so the page offers the two-code resynchronisation (RFC 4226 section 7.4). |
@@ -1499,6 +1991,14 @@ The door of the sign-in surface's `GET /authn/totp, /authn/webauthn, /authn/back
 | `view.webauthn.postQuantumRefused` | object |  |  |
 | `view.webauthn.postQuantumRefused.why` | string |  |  |
 | `view.webauthn.problem` | string |  |  |
+| `view.webauthn.problemRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `view.webauthn.problemRefusal.errors` | list | yes |  |
+| `view.webauthn.problemRefusal.errors[]` | string |  |  |
+| `view.webauthn.problemRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `view.webauthn.problemRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.webauthn.problemRefusal.messages[].key` | string | yes |  |
+| `view.webauthn.problemRefusal.messages[].params` | map |  |  |
+| `view.webauthn.problemRefusal.messages[].params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.webauthn.residentKey` | string |  |  |
 | `view.webauthn.rpId` | string |  |  |
 | `view.webauthn.userVerification` | string |  |  |
@@ -1513,6 +2013,14 @@ The door of the sign-in surface's `GET /authn/totp, /authn/webauthn, /authn/back
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
 | `preferredLanguage.populated` | boolean |  |  |
@@ -1563,6 +2071,14 @@ The door of the sign-in surface's `GET /authn/totp, /authn/webauthn, /authn/back
 | `view.postLogin.separate` | boolean |  |  |
 | `view.postLogin.snoozeDays` | number |  |  |
 | `view.primary` | boolean |  |  |
+| `view.refusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `view.refusal.errors` | list | yes |  |
+| `view.refusal.errors[]` | string |  |  |
+| `view.refusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `view.refusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.refusal.messages[].key` | string | yes |  |
+| `view.refusal.messages[].params` | map |  |  |
+| `view.refusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `view.roles` | object |  |  |
 | `view.roles.offered` | list |  |  |
 | `view.roles.offered[].description` | string |  |  |
@@ -1589,6 +2105,14 @@ The door of the sign-in surface's `GET /authn/totp, /authn/webauthn, /authn/back
 | `view.setup.totp.uri` | string |  |  |
 | `view.state` | one of `ask`, `code`, `wait`, `open`, `elsewhere`, `end` |  |  |
 | `view.title` | string |  |  |
+| `view.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `view.titleRefusal.errors` | list | yes |  |
+| `view.titleRefusal.errors[]` | string |  |  |
+| `view.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `view.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.titleRefusal.messages[].key` | string | yes |  |
+| `view.titleRefusal.messages[].params` | map |  |  |
+| `view.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `view.totp` | object |  |  |
 | `view.totp.digits` | number |  |  |
 | `view.totp.hotp` | boolean |  | An HOTP token is held, so the page offers the two-code resynchronisation (RFC 4226 section 7.4). |
@@ -1630,6 +2154,14 @@ The door of the sign-in surface's `GET /authn/totp, /authn/webauthn, /authn/back
 | `view.webauthn.postQuantumRefused` | object |  |  |
 | `view.webauthn.postQuantumRefused.why` | string |  |  |
 | `view.webauthn.problem` | string |  |  |
+| `view.webauthn.problemRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `view.webauthn.problemRefusal.errors` | list | yes |  |
+| `view.webauthn.problemRefusal.errors[]` | string |  |  |
+| `view.webauthn.problemRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `view.webauthn.problemRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.webauthn.problemRefusal.messages[].key` | string | yes |  |
+| `view.webauthn.problemRefusal.messages[].params` | map |  |  |
+| `view.webauthn.problemRefusal.messages[].params.{key}` | object |  | Nested deeper than this page draws. |
 | `view.webauthn.residentKey` | string |  |  |
 | `view.webauthn.rpId` | string |  |  |
 | `view.webauthn.userVerification` | string |  |  |
@@ -1669,6 +2201,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -1680,6 +2220,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -1694,6 +2242,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -1705,6 +2261,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -1719,6 +2283,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -1730,6 +2302,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -1744,6 +2324,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -1755,6 +2343,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -1769,6 +2365,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -1780,6 +2384,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -1822,6 +2434,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -1833,6 +2453,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -1847,6 +2475,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -1858,6 +2494,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -1872,6 +2516,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -1883,6 +2535,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -1897,6 +2557,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -1908,6 +2576,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -1922,6 +2598,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -1933,6 +2617,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -1975,6 +2667,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -1986,6 +2686,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2000,6 +2708,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2011,6 +2727,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2025,6 +2749,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2036,6 +2768,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2050,6 +2790,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2061,6 +2809,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2075,6 +2831,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2086,6 +2850,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2128,6 +2900,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2139,6 +2919,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2153,6 +2941,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2164,6 +2960,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2178,6 +2982,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2189,6 +3001,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2203,6 +3023,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2214,6 +3042,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2228,6 +3064,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2239,6 +3083,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2281,6 +3133,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2292,6 +3152,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2306,6 +3174,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2317,6 +3193,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2331,6 +3215,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2342,6 +3234,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2356,6 +3256,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2367,6 +3275,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2381,6 +3297,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2392,6 +3316,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2432,6 +3364,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2443,6 +3383,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2457,6 +3405,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2468,6 +3424,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2482,6 +3446,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2493,6 +3465,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2507,6 +3487,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2518,6 +3506,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2532,6 +3528,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2543,6 +3547,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2583,6 +3595,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2594,6 +3614,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2608,6 +3636,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2619,6 +3655,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2633,6 +3677,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2644,6 +3696,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2658,6 +3718,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2669,6 +3737,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2683,6 +3759,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2694,6 +3778,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2737,6 +3829,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2748,6 +3848,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2762,6 +3870,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2773,6 +3889,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2787,6 +3911,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2798,6 +3930,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2812,6 +3952,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2823,6 +3971,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2837,6 +3993,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2848,6 +4012,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2890,6 +4062,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2901,6 +4081,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2915,6 +4103,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2926,6 +4122,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2940,6 +4144,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2951,6 +4163,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2965,6 +4185,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -2976,6 +4204,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -2990,6 +4226,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3001,6 +4245,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3041,6 +4293,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3052,6 +4312,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3066,6 +4334,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3077,6 +4353,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3091,6 +4375,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3102,6 +4394,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3116,6 +4416,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3127,6 +4435,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3141,6 +4457,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3152,6 +4476,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3192,6 +4524,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3203,6 +4543,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3217,6 +4565,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3228,6 +4584,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3242,6 +4606,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3253,6 +4625,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3267,6 +4647,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3278,6 +4666,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3292,6 +4688,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3303,6 +4707,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3343,6 +4755,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3354,6 +4774,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3368,6 +4796,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3379,6 +4815,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3393,6 +4837,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3404,6 +4856,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3418,6 +4878,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3429,6 +4897,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3443,6 +4919,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3454,6 +4938,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3494,6 +4986,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3505,6 +5005,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3519,6 +5027,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3530,6 +5046,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3544,6 +5068,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3555,6 +5087,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3569,6 +5109,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3580,6 +5128,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3594,6 +5150,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3605,6 +5169,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3648,6 +5220,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3659,6 +5239,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3673,6 +5261,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3684,6 +5280,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3698,6 +5302,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3709,6 +5321,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3723,6 +5343,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3734,6 +5362,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3748,6 +5384,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3759,6 +5403,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3801,6 +5453,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3812,6 +5472,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3826,6 +5494,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3837,6 +5513,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3851,6 +5535,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3862,6 +5554,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3876,6 +5576,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3887,6 +5595,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3901,6 +5617,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -3912,6 +5636,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -3968,6 +5700,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `fallback.classical` | boolean |  |  |
 | `fallback.retrying` | boolean |  |  |
 | `fallback.upgrade` | boolean |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `mode` | one of `create`, `get` |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
@@ -4019,6 +5759,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `fallback.classical` | boolean |  |  |
 | `fallback.retrying` | boolean |  |  |
 | `fallback.upgrade` | boolean |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `mode` | one of `create`, `get` |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
@@ -4070,6 +5818,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `fallback.classical` | boolean |  |  |
 | `fallback.retrying` | boolean |  |  |
 | `fallback.upgrade` | boolean |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `mode` | one of `create`, `get` |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
@@ -4121,6 +5877,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `fallback.classical` | boolean |  |  |
 | `fallback.retrying` | boolean |  |  |
 | `fallback.upgrade` | boolean |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `mode` | one of `create`, `get` |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
@@ -4172,6 +5936,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `fallback.classical` | boolean |  |  |
 | `fallback.retrying` | boolean |  |  |
 | `fallback.upgrade` | boolean |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `mode` | one of `create`, `get` |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
@@ -4245,6 +6017,14 @@ Generated from the operation table and its body schemas.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 
@@ -4280,6 +6060,14 @@ The door of the sign-in surface's `GET /authn/password-change`.
 | `view` | object |  |  |
 | `view.id` | string |  |  |
 | `view.notice` | string |  |  |
+| `view.noticeRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `view.noticeRefusal.errors` | list | yes |  |
+| `view.noticeRefusal.errors[]` | string |  |  |
+| `view.noticeRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `view.noticeRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.noticeRefusal.messages[].key` | string | yes |  |
+| `view.noticeRefusal.messages[].params` | map |  |  |
+| `view.noticeRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `view.username` | string |  |  |
 
 **400**: Refused: `{ ok: false, errors }` — the body, the id, or the act itself.
@@ -4290,6 +6078,14 @@ The door of the sign-in surface's `GET /authn/password-change`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 
@@ -4328,6 +6124,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -4339,6 +6143,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -4353,6 +6165,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -4364,6 +6184,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -4378,6 +6206,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -4389,6 +6225,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -4403,6 +6247,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -4414,6 +6266,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -4428,6 +6288,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -4439,6 +6307,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -4479,6 +6355,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -4490,6 +6374,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -4504,6 +6396,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -4515,6 +6415,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -4529,6 +6437,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -4540,6 +6456,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -4554,6 +6478,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -4565,6 +6497,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -4579,6 +6519,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -4590,6 +6538,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -4682,6 +6638,14 @@ The door of the sign-in surface's `GET /authn/login`.
 | `view.postQuantumRequired.register` | string |  |  |
 | `view.protocol` | string |  |  |
 | `view.reauthentication` | string |  |  |
+| `view.refusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `view.refusal.errors` | list | yes |  |
+| `view.refusal.errors[]` | string |  |  |
+| `view.refusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `view.refusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.refusal.messages[].key` | string | yes |  |
+| `view.refusal.messages[].params` | map |  |  |
+| `view.refusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `view.remember` | boolean |  |  |
 | `view.screen` | boolean |  |  |
 | `view.usernameless` | boolean |  |  |
@@ -4700,6 +6664,14 @@ The door of the sign-in surface's `GET /authn/login`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 
@@ -4764,6 +6736,14 @@ The door of the sign-in surface's `GET /authn/accounts`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 
@@ -4775,6 +6755,14 @@ The door of the sign-in surface's `GET /authn/accounts`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 
@@ -4810,6 +6798,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -4821,6 +6817,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -4835,6 +6839,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -4846,6 +6858,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -4860,6 +6880,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -4871,6 +6899,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -4885,6 +6921,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -4896,6 +6940,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -4910,6 +6962,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -4921,6 +6981,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -4935,6 +7003,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -4946,6 +7022,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -4960,6 +7044,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -4971,6 +7063,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5013,6 +7113,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5024,6 +7132,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5038,6 +7154,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5049,6 +7173,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5063,6 +7195,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5074,6 +7214,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5088,6 +7236,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5099,6 +7255,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5113,6 +7277,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5124,6 +7296,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5138,6 +7318,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5149,6 +7337,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5163,6 +7359,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5174,6 +7378,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5216,6 +7428,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5227,6 +7447,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5241,6 +7469,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5252,6 +7488,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5266,6 +7510,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5277,6 +7529,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5291,6 +7551,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5302,6 +7570,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5316,6 +7592,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5327,6 +7611,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5341,6 +7633,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5352,6 +7652,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5366,6 +7674,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5377,6 +7693,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5421,6 +7745,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5432,6 +7764,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5446,6 +7786,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5457,6 +7805,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5473,6 +7829,14 @@ As `application/json`:
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5484,6 +7848,14 @@ As `application/json`:
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5500,6 +7872,14 @@ As `text/plain`.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5511,6 +7891,14 @@ As `text/plain`.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5525,6 +7913,14 @@ As `text/plain`.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5536,6 +7932,14 @@ As `text/plain`.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5576,6 +7980,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5587,6 +7999,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5601,6 +8021,14 @@ An empty object.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5612,6 +8040,14 @@ An empty object.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5628,6 +8064,14 @@ As `application/json`:
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5639,6 +8083,14 @@ As `application/json`:
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5655,6 +8107,14 @@ As `text/plain`.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5666,6 +8126,14 @@ As `text/plain`.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5680,6 +8148,14 @@ As `text/plain`.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5691,6 +8167,14 @@ As `text/plain`.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5735,6 +8219,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5746,6 +8238,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5760,6 +8260,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5771,6 +8279,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5787,6 +8303,14 @@ As `application/json`:
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5798,6 +8322,14 @@ As `application/json`:
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5814,6 +8346,14 @@ As `text/plain`.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5825,6 +8365,14 @@ As `text/plain`.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5839,6 +8387,14 @@ As `text/plain`.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5850,6 +8406,14 @@ As `text/plain`.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5896,6 +8460,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5907,6 +8479,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5921,6 +8501,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5932,6 +8520,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5948,6 +8544,14 @@ As `application/json`:
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5959,6 +8563,14 @@ As `application/json`:
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -5975,6 +8587,14 @@ As `text/plain`.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -5986,6 +8606,14 @@ As `text/plain`.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -6000,6 +8628,14 @@ As `text/plain`.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -6011,6 +8647,14 @@ As `text/plain`.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -6077,6 +8721,14 @@ The door of the sign-in surface's `GET /authn/select-idp`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 
@@ -6117,6 +8769,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -6128,6 +8788,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -6142,6 +8810,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -6153,6 +8829,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -6169,6 +8853,14 @@ As `application/json`:
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -6180,6 +8872,14 @@ As `application/json`:
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -6196,6 +8896,14 @@ As `text/plain`.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -6207,6 +8915,14 @@ As `text/plain`.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -6221,6 +8937,14 @@ As `text/plain`.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -6232,6 +8956,14 @@ As `text/plain`.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -6275,6 +9007,14 @@ An empty object.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `options` | object |  |  |
@@ -6295,6 +9035,14 @@ An empty object.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `options` | object |  |  |
@@ -6315,6 +9063,14 @@ An empty object.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `options` | object |  |  |
@@ -6335,6 +9091,14 @@ An empty object.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `options` | object |  |  |
@@ -6355,6 +9119,14 @@ An empty object.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `options` | object |  |  |
@@ -6406,6 +9178,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -6417,6 +9197,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -6431,6 +9219,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -6442,6 +9238,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -6458,6 +9262,14 @@ As `application/json`:
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -6469,6 +9281,14 @@ As `application/json`:
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -6485,6 +9305,14 @@ As `text/plain`.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -6496,6 +9324,14 @@ As `text/plain`.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -6510,6 +9346,14 @@ As `text/plain`.
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -6521,6 +9365,14 @@ As `text/plain`.
 | `form.method` | one of `GET`, `POST` |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -6562,6 +9414,14 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
@@ -6576,6 +9436,13 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.kind` | string |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
@@ -6592,6 +9459,14 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
@@ -6606,6 +9481,13 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.kind` | string |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
@@ -6622,6 +9504,14 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
@@ -6636,6 +9526,13 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.kind` | string |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
@@ -6652,6 +9549,14 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
@@ -6666,6 +9571,13 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.kind` | string |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
@@ -6682,6 +9594,14 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
@@ -6696,6 +9616,13 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.kind` | string |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
@@ -6712,6 +9639,14 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
@@ -6726,6 +9661,13 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.kind` | string |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
@@ -6742,6 +9684,14 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
@@ -6756,6 +9706,13 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.kind` | string |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
@@ -6772,6 +9729,14 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
@@ -6786,6 +9751,13 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.kind` | string |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
@@ -6802,6 +9774,14 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
@@ -6816,6 +9796,13 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.kind` | string |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
@@ -6862,6 +9849,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -6875,6 +9870,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -6891,6 +9894,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -6902,6 +9912,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -6915,6 +9933,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -6931,6 +9957,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -6942,6 +9975,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -6955,6 +9996,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -6971,6 +10020,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -6982,6 +10038,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -6995,6 +10059,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -7011,6 +10083,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -7022,6 +10101,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -7035,6 +10122,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -7051,6 +10146,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -7062,6 +10164,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -7075,6 +10185,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -7091,6 +10209,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -7102,6 +10227,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -7115,6 +10248,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -7131,6 +10272,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -7142,6 +10290,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -7155,6 +10311,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -7171,6 +10335,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -7182,6 +10353,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -7195,6 +10374,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -7211,6 +10398,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -7222,6 +10416,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -7235,6 +10437,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -7251,6 +10461,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -7262,6 +10479,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -7275,6 +10500,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -7291,6 +10524,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -7324,6 +10564,14 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
@@ -7345,6 +10593,13 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | `view.enrol` | boolean |  |  |
 | `view.expiresIn` | number |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.kind` | string |  |  |
 | `view.mfa` | string |  |  |
 | `view.pollSeconds` | number |  |  |
@@ -7369,6 +10624,14 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
@@ -7390,6 +10653,13 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | `view.enrol` | boolean |  |  |
 | `view.expiresIn` | number |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.kind` | string |  |  |
 | `view.mfa` | string |  |  |
 | `view.pollSeconds` | number |  |  |
@@ -7414,6 +10684,14 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
@@ -7435,6 +10713,13 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | `view.enrol` | boolean |  |  |
 | `view.expiresIn` | number |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.kind` | string |  |  |
 | `view.mfa` | string |  |  |
 | `view.pollSeconds` | number |  |  |
@@ -7459,6 +10744,14 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
@@ -7480,6 +10773,13 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | `view.enrol` | boolean |  |  |
 | `view.expiresIn` | number |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.kind` | string |  |  |
 | `view.mfa` | string |  |  |
 | `view.pollSeconds` | number |  |  |
@@ -7504,6 +10804,14 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
@@ -7525,6 +10833,13 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | `view.enrol` | boolean |  |  |
 | `view.expiresIn` | number |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.kind` | string |  |  |
 | `view.mfa` | string |  |  |
 | `view.pollSeconds` | number |  |  |
@@ -7549,6 +10864,14 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
@@ -7570,6 +10893,13 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | `view.enrol` | boolean |  |  |
 | `view.expiresIn` | number |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.kind` | string |  |  |
 | `view.mfa` | string |  |  |
 | `view.pollSeconds` | number |  |  |
@@ -7594,6 +10924,14 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
@@ -7615,6 +10953,13 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | `view.enrol` | boolean |  |  |
 | `view.expiresIn` | number |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.kind` | string |  |  |
 | `view.mfa` | string |  |  |
 | `view.pollSeconds` | number |  |  |
@@ -7639,6 +10984,14 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
@@ -7660,6 +11013,13 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | `view.enrol` | boolean |  |  |
 | `view.expiresIn` | number |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.kind` | string |  |  |
 | `view.mfa` | string |  |  |
 | `view.pollSeconds` | number |  |  |
@@ -7684,6 +11044,14 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `refused` |  |  |
 | `ok` | boolean |  |  |
 | `preferredLanguage` | object |  |  |
@@ -7705,6 +11073,13 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | `view.enrol` | boolean |  |  |
 | `view.expiresIn` | number |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.kind` | string |  |  |
 | `view.mfa` | string |  |  |
 | `view.pollSeconds` | number |  |  |
@@ -7759,6 +11134,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -7772,6 +11155,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -7788,6 +11179,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -7799,6 +11197,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -7812,6 +11218,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -7828,6 +11242,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -7839,6 +11260,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -7852,6 +11281,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -7868,6 +11305,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -7879,6 +11323,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -7892,6 +11344,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -7908,6 +11368,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -7919,6 +11386,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -7932,6 +11407,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -7948,6 +11431,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -7959,6 +11449,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -7972,6 +11470,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -7988,6 +11494,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -7999,6 +11512,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -8012,6 +11533,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -8028,6 +11557,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -8039,6 +11575,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -8052,6 +11596,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -8068,6 +11620,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -8079,6 +11638,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -8092,6 +11659,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -8108,6 +11683,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -8119,6 +11701,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -8132,6 +11722,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -8148,6 +11746,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -8159,6 +11764,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -8172,6 +11785,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -8188,6 +11809,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -8230,6 +11858,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -8243,6 +11879,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -8259,6 +11903,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -8270,6 +11921,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -8283,6 +11942,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -8299,6 +11966,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -8310,6 +11984,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -8323,6 +12005,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -8339,6 +12029,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -8350,6 +12047,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -8363,6 +12068,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -8379,6 +12092,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -8390,6 +12110,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -8403,6 +12131,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -8419,6 +12155,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -8430,6 +12173,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -8443,6 +12194,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -8459,6 +12218,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -8470,6 +12236,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -8483,6 +12257,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -8499,6 +12281,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -8510,6 +12299,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -8523,6 +12320,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -8539,6 +12344,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -8550,6 +12362,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -8563,6 +12383,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -8579,6 +12407,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -8590,6 +12425,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -8603,6 +12446,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -8619,6 +12470,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
@@ -8630,6 +12488,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `end` | object |  |  |
 | `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
 | `error` | string |  |  |
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
@@ -8643,6 +12509,14 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `go` | string |  |  |
 | `id` | string |  |  |
 | `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `next` | one of `wait`, `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
 | `notice` | string |  |  |
 | `ok` | boolean |  |  |
@@ -8659,6 +12533,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.checks[].name` | string |  |  |
 | `view.checks[].ok` | boolean |  |  |
 | `view.heading` | string |  |  |
+| `view.headingMessage` | object |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `view.headingMessage.key` | string | yes |  |
+| `view.headingMessage.params` | map |  |  |
+| `view.headingMessage.params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `view.headingMessage.params.{key}.key` | string | yes |  |
+| `view.headingMessage.params.{key}.params` | map |  |  |
+| `view.headingMessage.params.{key}.params.{key}` | string, or number |  |  |
 | `view.reissue` | string |  |  |
 | `view.retry` | string |  |  |
 | `view.verdict` | string |  |  |
