@@ -369,7 +369,11 @@ class WebWsTrustProtection {
    */
   static wire(env, t, changed): void {
     const doc = env && env.document;
-    if (!doc || !doc.querySelectorAll) {
+    // A stand-in document (a test's) may offer only part of the DOM; the
+    // page it stands for has none of these controls to wire.
+    if (!doc || typeof doc.querySelectorAll !== 'function' ||
+        typeof doc.querySelector !== 'function' ||
+        typeof doc.getElementById !== 'function') {
       return;
     }
     const touched = function () {
@@ -435,8 +439,9 @@ class WebWsTrustProtection {
     let parsed = null;
     let nodes = [];
     const say = function (element, text, refused) {
+      // Each line's own class, as drawn, and the refusal's beside it.
       element.className = element.id === 'wsp-added' ? 'wsp-added'
-        : 'wsp-status';
+        : element.id === 'wsp-matches' ? 'sub' : 'wsp-status';
       if (refused) {
         element.className += ' state-invalid';
       }
