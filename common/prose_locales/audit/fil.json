@@ -1139,6 +1139,14 @@
     "en": "432e877d55af1913",
     "text": "Naipadala o nabigo ang callback ng isang AuthZEN access request"
   },
+  "audit.actions.authzen.access-request.failed.label": {
+    "en": "ff702bec26fec0b2",
+    "text": "Nabigo ang isang AuthZEN access request"
+  },
+  "audit.actions.authzen.access-request.denials-full.label": {
+    "en": "d4a30614c3be855a",
+    "text": "Puno ang imbakan ng mga AuthZEN denial na maaaring hilingin"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "Tumanggi ang issuance PEP na hayaan ang serbisyong ito na mag-mint ng isang bagay"

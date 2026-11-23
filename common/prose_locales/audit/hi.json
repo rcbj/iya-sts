@@ -1139,6 +1139,14 @@
     "en": "432e877d55af1913",
     "text": "एक AuthZEN पहुँच अनुरोध का कॉलबैक भेजा गया या विफल हुआ"
   },
+  "audit.actions.authzen.access-request.failed.label": {
+    "en": "ff702bec26fec0b2",
+    "text": "एक AuthZEN पहुँच अनुरोध विफल हुआ"
+  },
+  "audit.actions.authzen.access-request.denials-full.label": {
+    "en": "d4a30614c3be855a",
+    "text": "AuthZEN के अनुरोध-योग्य अस्वीकरणों का भंडार भर गया था"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "जारीकरण PEP ने इस सेवा को कुछ निर्मित करने नहीं दिया"

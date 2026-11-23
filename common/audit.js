@@ -1204,6 +1204,15 @@ const ACTIONS = [
            'request' },
   { action: 'authzen.access-request.callback', category: 'authorization',
     label: 'An AuthZEN access request\'s callback was sent or failed' },
+  // A task that could not be completed (#1202): its approval could not be
+  // stored (STS-AUTHZEN-0142), or its approvers resolve to nobody but the
+  // subject (STS-AUTHZEN-0143). Built from the status, like the four above.
+  { action: 'authzen.access-request.failed', category: 'authorization',
+    label: 'An AuthZEN access request failed' },
+  // The requestable-denial store is full (STS-AUTHZEN-0144): written once,
+  // and nothing new is recorded until a sweep makes room.
+  { action: 'authzen.access-request.denials-full', category: 'authorization',
+    label: 'The AuthZEN requestable denial store was full' },
   // THE TWO REFUSALS, AND THEY WERE MISSING FROM THIS TABLE (2026-09-06).
   //
   // `xacml.issuance.refused` has been written by `xacml_role_pep.js` since

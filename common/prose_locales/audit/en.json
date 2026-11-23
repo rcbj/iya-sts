@@ -284,6 +284,8 @@
   "audit.actions.authzen.access-request.revoked.label": "An AuthZEN access request's approval was revoked",
   "audit.actions.authzen.access-request.approver-refused.label": "The policy refused a person the decision of an AuthZEN access request",
   "audit.actions.authzen.access-request.callback.label": "An AuthZEN access request's callback was sent or failed",
+  "audit.actions.authzen.access-request.failed.label": "An AuthZEN access request failed",
+  "audit.actions.authzen.access-request.denials-full.label": "The AuthZEN requestable denial store was full",
   "audit.actions.xacml.issuance.refused.label": "The issuance PEP refused to let this service mint something",
   "audit.actions.xacml.access.refused.label": "The access PEP refused a request to a gated surface",
   "audit.actions.xacml.issuance.alarm.label": "The issuance PEP let an elevated risk through, with no factor to step up to, for an application risk may never lock out",
