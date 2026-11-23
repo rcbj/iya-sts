@@ -379,10 +379,12 @@ const CELL_MINTED = [
   // somebody's sign-in. Each cell's console shows what that cell saw.
   'acme.accountKeys', 'acme.accounts', 'acme.authorizations',
   'acme.certificates', 'acme.orders', 'acme.renewalInfo', 'acme.usedNonces',
-  // AuthZEN access requests and their index (#1180): a request names the
-  // person it is about and the approver who decided it — somebody's, made in
-  // this cell. A PEP polls the cell it submitted to.
-  'authzen.accessRequestIndex', 'authzen.accessRequests',
+  // AuthZEN access requests, the denial record an evaluation_id resolves
+  // (#1204) and their index (#1180): a request names the person it is about
+  // and the approver who decided it — somebody's, made in this cell. A PEP
+  // polls the cell it submitted to.
+  'authzen.accessRequestDenials', 'authzen.accessRequestIndex',
+  'authzen.accessRequests',
   // A browser's account set and its selection tickets (#561), and their
   // counters: a browser and its sessions are pinned to one cell.
   'admin_stats.accountCounts', 'authn.accountSets', 'authn.accountTickets',

@@ -37,7 +37,7 @@ advertised only while it is on.
 | `authzen.ts` | The routes, registered at 23c-ii (`common/protocol_stack.ts`): `POST /access/v1/evaluation`, `POST /access/v1/evaluations`, and the metadata. Thin, as `xacml/xacml.ts` is. |
 | `authzen_exchange.ts` | The OAuth 2.0 Token Exchange Binding, direction A (#1181): which tuples are its gates and scopes, the FIXED conversion rules, and each tuple's answer from the questions a local RFC 8693 exchange asks. Built by `authzen.ts`'s `defaultDeps()` beside the caller and the search. |
 | `authzen_external_pdp.ts` | Direction B (#1200): this authorization server asks an external PDP before it issues an OAuth access token for an RFC 8693 exchange. A library, no route. `oauth2.ts`'s token grant requires it only while `authzen.externalPdp` is on, and only on the branch that mints an access token. |
-| `authzen_access_request.ts` | The Access Request and Approval Profile and its CALLBACK companion (#1180): the requestable denial and its `binding_token`, the submission, the per-realm task store and its index, the status and cancellation, `decide()` (the one door the portal and the console reach), the approval's verification at re-evaluation, the mail, the callback and the `authzen.access-requests` job. A library; `authzen.ts` registers its three routes. |
+| `authzen_access_request.ts` | The Access Request and Approval Profile and its CALLBACK companion (#1180): the requestable denial, its `binding_token` and `binding_hash`, the denial record an `evaluation_id` resolves, `approval.state`, the submission, the per-realm task store and its index, the status and cancellation, `decide()` (the one door the portal and the console reach), the approval's verification at re-evaluation, the mail, the callback and the `authzen.access-requests` job. A library; `authzen.ts` registers its four routes, the submission schema among them. |
 | `authzen_model.ts` | **The AuthZEN model, as the endpoints read it (#1579).** Builds every request's shape pass from `models/generated/authzen.json`, answers the lists the code branches on, and holds every answer to its member set. A leaf. See *THE REQUEST SHAPES ARE THE MODEL'S*, below. |
 | `authzen_admin.ts` | What the AuthZEN tab of `/admin/xacml` shows and does: `view()` and `act()` (`set-attribute`, `remove-attribute`, `set-scope`), shared by the console and `mgmt-api/authzen_api.ts`'s `/admin-api/xacml/authzen` operations (rule 7). A library, built by the root beside the other API modules. |
 
@@ -815,14 +815,36 @@ header argues each. What a maintainer needs quickly:
   `reason`). No per-application switch; `authzen.accessRequests` turns the
   whole profile off. A NotApplicable carries no advice in XACML, so in
   practice only a Deny is requestable.
-* **The denial is bound BY VALUE, the approval BY REFERENCE.** The
+* **The denial is bound BY VALUE AND BY REFERENCE.** The
   `binding_token` is signed with `oauth2.ts`'s `signPublishedDocument()`
   (use case `oauth-signed-metadata`, the metadata's signer) over the tuple
   whole less `subject.properties.act`, the advice's context members, the
-  caller, the application and the advice's terms; nothing is stored per
-  denial, so `evaluation_id` alone is refused (`0073`). The approval is a
-  store row, looked up by a digest of `approval.id`, so revocation is a
-  write. `approval.state` is never issued and never read.
+  caller, the application and the advice's terms, and it always carries
+  `binding_hash` (base64url SHA-256 of the RFC 8785 form of that tuple).
+  The same denial is a row of `authzen.accessRequestDenials`, keyed by
+  `evaluation_id`, so a submission may name it by that id and the echoed
+  `expires_at` (`0073` when this realm has no such denial, `0074` when the
+  echo or the tuple does not match, `0075` when the recorded window has
+  passed). When the token is present it is authoritative. The approval is
+  a store row, looked up by a digest of `approval.id`, and `approve()`
+  also signs `approval.state`. A presented state is verified, and a bad
+  signature is not an approval (`0084`) even when the row would be; a
+  state with no row is not an approval either, so revocation stays a
+  write.
+* **The submission schema is published, and no form is** (#1204). A
+  requestable denial's `request_schema_url` is
+  `GET /access/v1/access-requests/schema` on the same origin as
+  `endpoint`, so a PEP's same-origin check (the profile's section
+  11.2) passes. The document is JSON Schema draft 2020-12 of the
+  augmentations `requestedAccess()` accepts:
+  `context.business_justification`, and
+  `requested_access.requested_until` and `emergency`. None is
+  required on an ordinary submission, and emergency requires the
+  justification. It is public, names no secret, and is not read when
+  a submission arrives — the reader stays the enforcer. While the
+  API or the profile is off it answers 501. `form_url` is omitted:
+  this service hosts no requester-facing form, and a URL that is not
+  one would be a lie.
 * **AN APPROVAL NEVER PERMITS BY ITSELF.** `verify()` (same caller, same
   application, exact tuple, not revoked, inside `approved_until`) adds
   `urn:sts:xacml:authzen:approval-id`, `:approved-until`, `:approver` to the
@@ -871,8 +893,9 @@ header argues each. What a maintainer needs quickly:
   `viewOf().callbackDelivery` (the console row and the portal), not on the
   public Task Handle.
 * **The store is cell-tier** (`authzen.accessRequests`,
-  `authzen.accessRequestIndex`), and `/access/v1` is placed `local`: under
-  cells a PEP must poll the cell it submitted to.
+  `authzen.accessRequestIndex`, `authzen.accessRequestDenials`), and
+  `/access/v1` is placed `local`: under cells a PEP must poll the cell it
+  submitted to.
 * **Expiry**: read-time (a pending task past `expiresAt` is finished as
   expired by `task()`) and the `authzen.access-requests` cluster job, realm
   scope, every minute, which also removes rows past `keepUntil` (a day after
@@ -901,11 +924,10 @@ header argues each. What a maintainer needs quickly:
   address their own entry; a failure to mail is `0138` and the revocation
   stands. An emergency approval, whose approver is the door rather than a
   person, stays on the console.
-* Not built: `evaluation_id` binding by reference, `approval.state`, the
-  hashed binding, `form_url` / `request_schema_url`, `display`, BULK, ACTOR,
-  CATALOG, and a `failed` transition of the task's own status. A delivery
-  that will not succeed is `callbackDelivery.state` `failed` (#1202), which
-  is not that transition. `tests/authzen_access_request.js` holds it in
+* Not built: `form_url`, `display`, BULK, ACTOR, CATALOG, and a
+  `failed` transition of the task's own status. A delivery that will
+  not succeed is `callbackDelivery.state` `failed` (#1202), which is
+  not that transition. `tests/authzen_access_request.js` holds it in
   process and `tests/protocol/sts_authzen.js` section 9 over HTTP.
 
 ## THE REQUEST SHAPES ARE THE MODEL'S (#1579, 2026-11-10)
@@ -1008,4 +1030,7 @@ callback retry (#1202): 0135 the delivery will not be tried again (the
 task status is unchanged), 0136 a callback registered for somebody who is
 not an application, 0137 a per-URL `attempts` or `backoff` that is not an
 integer in range; 0138 the requester of a revoked approval could not be
-mailed, and the revocation stands (#1203).
+mailed, and the revocation stands (#1203); 0139 a requestable denial
+could not be recorded, and the binding_token is still issued; 0140 an
+approval's state could not be signed, and the approval stands by id
+(#1204).

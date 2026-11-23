@@ -15,11 +15,13 @@
 //   POST /access/v1/search/{subject,resource,action}
 //                                 the three searches (section 8) — #1175
 //   POST /access/v1/access-requests
+//   GET  /access/v1/access-requests/schema
 //   GET  /access/v1/access-requests/:id
 //   POST|DELETE /access/v1/access-requests/:id/cancel
 //                                 the Access Request and Approval Profile's
-//                                 submission, task status and cancellation
-//                                 (`authzen_access_request.ts`) — #1180
+//                                 submission, its schema, task status and
+//                                 cancellation (`authzen_access_request.ts`)
+//                                 — #1180, the schema #1204
 //
 // per realm, under the realm's prefix. Deliberately thin, as `xacml/xacml.ts`
 // is: it reads a request, asks `authzen_caller.ts` who is asking and whether
@@ -1603,6 +1605,34 @@ class AuthzenSurface {
                   return self.deps.caller.applicationOf(who, application);
                 });
       log.debug('Leaving POST ' + REQUESTS + '.');
+    });
+    // THE SUBMISSION SCHEMA (#1204), registered before `/:id` so Express
+    // does not read "schema" as a task id. Public, as the metadata is:
+    // the document names no secret, and an autonomous PEP checks that
+    // its origin is the access request endpoint's before fetching (the
+    // profile's section 11.2). It answers 501 while the API or the
+    // profile is off, rather than describing an endpoint that does not
+    // answer. It is not held to the AuthZEN model: it is a JSON Schema.
+    app.get(accessRequests.SCHEMA_PATH, function (req, res) {
+      log.debug('Entering GET ' + accessRequests.SCHEMA_PATH + '.');
+      self.requestId(req, res);
+      if (self.offCheck(res)) {
+        log.debug('Leaving GET ' + accessRequests.SCHEMA_PATH + '. Off.');
+        return;
+      }
+      if (!ar.enabled()) {
+        ar.problem(res, 501, '', 'STS-AUTHZEN-0070', 'The Access Request ' +
+                   'and Approval Profile is turned off in this realm ' +
+                   '(authzen.accessRequests).');
+        log.debug('Leaving GET ' + accessRequests.SCHEMA_PATH +
+                  '. The profile is off.');
+        return;
+      }
+      const url = ar.baseOf(req) + accessRequests.SCHEMA_PATH;
+      res.status(200).type('application/json')
+         .set('Cache-Control', 'no-store')
+         .send(JSON.stringify(ar.submissionSchema(url)));
+      log.debug('Leaving GET ' + accessRequests.SCHEMA_PATH + '.');
     });
     app.get(REQUESTS + '/:id', function (req, res) {
       log.debug('Entering GET ' + REQUESTS + '/:id.');

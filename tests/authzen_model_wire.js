@@ -57,7 +57,16 @@
 // #1202: a callback is registered only for an application, so the
 // unregistered callback, the accepted submission and that task's status,
 // re-evaluation and cancellation are the application's certificate, and
-// the application search finds `azapp`.
+// the application search finds `azapp`. And again for #1204: a requestable
+// denial is also a record, so an evaluation_id this realm did not issue
+// (`eval_never`) is the 0073 this step records; a real id with no echoed
+// expires_at would be 0074 and would not consume the denial. Issued tokens
+// carry binding_hash, and an approved task's result carries approval.state.
+// Echoing that state against another resource is approval_unverifiable,
+// because the state names the approved tuple. Naming the approval by id
+// is still out_of_scope. And again for #1204's forms: a requestable
+// denial carries request_schema_url, the same origin's submission
+// schema. No form_url.
 //
 // A CHILD PROCESS, as tests/oauth_model_wire.js runs one: the protocol stack
 // and a listener are loaded once, fresh, and nothing leaks into the runner.
@@ -784,8 +793,10 @@ function childMain() {
         ['resource a string', submission(denied, { resource: 'x' })],
         ['no denial', submission(denied, { denial: undefined })],
         ['denial a string', submission(denied, { denial: 'x' })],
+        // A real id with no echoed expires_at is 0074 and does not consume
+        // the denial (#1204). This step records an id the realm never issued.
         ['an evaluation_id alone', submission(denied, { denial: {
-          evaluation_id: denied.context.evaluation_id } })],
+          evaluation_id: 'eval_never' } })],
         ['a binding token that does not verify', submission(denied, {
           denial: { binding_token: 'a.b.c',
                     expires_at: denied.context.access_request.expires_at } })],
@@ -857,10 +868,12 @@ function childMain() {
                  ok({ resource: { type: 'document', id: 'doc-2' },
                       context: { application: 'todo-app',
                                  approval: approval } }));
-      await step('re-evaluation, out of scope', 'POST', EVAL, appCred,
-                 ok({ resource: { type: 'document', id: 'doc-9' },
-                      context: { application: 'todo-app',
-                                 approval: approval } }));
+      // The result's approval carries state, which names doc-2. Another
+      // resource does not match that state (#1204).
+      await step('re-evaluation, state for another resource', 'POST', EVAL,
+                 appCred, ok({ resource: { type: 'document', id: 'doc-9' },
+                               context: { application: 'todo-app',
+                                          approval: approval } }));
       await step('re-evaluation, a forged approval', 'POST', EVAL, appCred,
                  ok({ resource: { type: 'document', id: 'doc-2' },
                       context: { application: 'todo-app',

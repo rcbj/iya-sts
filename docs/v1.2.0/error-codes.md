@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5968** of them, in **57** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5970** of them, in **57** subsystems.
 
 ## Where a code appears
 
@@ -93,7 +93,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 252
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 115
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 117
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 301
@@ -5663,10 +5663,10 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0070` | An AuthZEN access request, task status or cancellation reached a realm where authzen.accessRequests (the Access Request and Approval Profile, #1180) is off. | HTTP 501, application/problem+json |
 | `STS-AUTHZEN-0071` | An AuthZEN access request was not a JSON object with subject, resource and action objects, carried a member the profile does not define at its top level, or was a bulk submission (items), which is not implemented. | HTTP 400, application/problem+json (about:blank) |
 | `STS-AUTHZEN-0072` | An AuthZEN access request carried no denial, or a denial with neither binding_token nor evaluation_id, so it is not based on a requestable denial. | HTTP 400, urn:openid:authzen:access-request:error:not_requestable |
-| `STS-AUTHZEN-0073` | An AuthZEN access request's denial carried no binding_token (this PDP keeps no record to resolve an evaluation_id against), or one that did not verify as this realm's, for this endpoint. | HTTP 400, urn:openid:authzen:access-request:error:invalid_denial_binding |
-| `STS-AUTHZEN-0074` | An AuthZEN access request did not match the denial its binding_token names: another caller, a different subject, resource, action or authorization-relevant context member, or a denial.expires_at not echoed unchanged. | HTTP 400, urn:openid:authzen:access-request:error:invalid_denial_binding |
-| `STS-AUTHZEN-0075` | An AuthZEN access request arrived after its requestable denial expired (the earlier of the binding_token's exp and denial.expires_at, with 30 seconds of skew). | HTTP 410, urn:openid:authzen:access-request:error:expired_denial |
-| `STS-AUTHZEN-0076` | An AuthZEN access request reused an Idempotency-Key, or a binding_token, already used by the same caller for a request whose body differs. | HTTP 409, urn:openid:authzen:access-request:error:duplicate_request |
+| `STS-AUTHZEN-0073` | An AuthZEN access request named an evaluation_id this realm has no requestable denial for, or a binding_token that did not verify as this realm's, for this endpoint. | HTTP 400, urn:openid:authzen:access-request:error:invalid_denial_binding |
+| `STS-AUTHZEN-0074` | An AuthZEN access request did not match the denial its binding_token or evaluation_id names: another caller, a different subject, resource, action or authorization-relevant context member, a binding_hash that does not match, an evaluation_id that is not the binding_token's, or a denial.expires_at not echoed unchanged. | HTTP 400, urn:openid:authzen:access-request:error:invalid_denial_binding |
+| `STS-AUTHZEN-0075` | An AuthZEN access request arrived after its requestable denial expired (the earlier of the denial's exp and denial.expires_at, the recorded values when named by evaluation_id, with 30 seconds of skew). | HTTP 410, urn:openid:authzen:access-request:error:expired_denial |
+| `STS-AUTHZEN-0076` | An AuthZEN access request reused an Idempotency-Key, or a denial (its binding_token or its evaluation_id), already used by the same caller for a request whose body differs. | HTTP 409, urn:openid:authzen:access-request:error:duplicate_request |
 | `STS-AUTHZEN-0077` | An AuthZEN access request named an application the caller is no longer scoped to. | HTTP 403, application/problem+json |
 | `STS-AUTHZEN-0078` | An AuthZEN access request was refused because the realm already holds authzen.accessRequestMaxPending pending requests. | HTTP 503, application/problem+json |
 | `STS-AUTHZEN-0079` | An AuthZEN access request's callback was not an object with an https endpoint registered for the calling application (appAuthzenCallbackUri); a callback URL is never taken from a request alone. | HTTP 400, application/problem+json |
@@ -5674,10 +5674,10 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0081` | An AuthZEN access request task was asked about after its retention ended. | HTTP 410, urn:openid:authzen:access-request:error:task_expired |
 | `STS-AUTHZEN-0082` | An AuthZEN access request task already in a terminal status was asked to be cancelled. | HTTP 409, urn:openid:authzen:access-request:error:invalid_task_state |
 | `STS-AUTHZEN-0083` | An AuthZEN access request asked for emergency access where the denying policy's advice does not allow it, or without a context.business_justification. | HTTP 400, application/problem+json |
-| `STS-AUTHZEN-0084` | An AuthZEN evaluation presented a context.approval this realm cannot resolve, or one issued to another caller; it was not used and the evaluation was decided as not approved. | context.reason approval_unverifiable, next_action none |
+| `STS-AUTHZEN-0084` | An AuthZEN evaluation presented a context.approval this realm cannot resolve, one issued to another caller, or an approval.state whose signature or approval id does not verify; it was not used and the evaluation was decided as not approved. | context.reason approval_unverifiable, next_action none |
 | `STS-AUTHZEN-0085` | An AuthZEN evaluation presented a context.approval that was revoked or past its approved_until; it was not used. | context.reason approval_expired |
 | `STS-AUTHZEN-0086` | An AuthZEN evaluation presented a context.approval for another tuple or application than the one it approved; it was not used. | context.reason out_of_scope |
-| `STS-AUTHZEN-0087` | A requestable AuthZEN denial's binding_token could not be signed, so the denial was answered as an ordinary false with no access_request. | none — logged; decision: false |
+| `STS-AUTHZEN-0087` | A requestable AuthZEN denial's binding_token or binding_hash could not be made, so the denial was answered as an ordinary false with no access_request. | none — logged; decision: false |
 | `STS-AUTHZEN-0088` | The access-control policy (action approve-access-request on resource authzen-access-request) refused a person the approval, denial or revocation of an AuthZEN access request. | none — the portal's or console's refusal, audited |
 | `STS-AUTHZEN-0089` | An approval, denial or cancellation named no pending AuthZEN access request of the realm. | none — the portal's or console's refusal |
 | `STS-AUTHZEN-0090` | An AuthZEN access request decision was not approve, deny or revoke, or the portal's or console's form was incomplete. | none — the portal's or console's refusal |
@@ -5726,6 +5726,8 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0136` | An access request callback was refused because the caller is not an application. set-callbacks writes appAuthzenCallbackUri only on an application, and a submission that names a callback from a person or a service account is refused. A value already stored as stsAuthzenCallbackUri is left in place and is not honoured (#1202). | HTTP 400 on a submission; the console's refusal on set-callbacks |
 | `STS-AUTHZEN-0137` | An access request callback override was refused: attempts or backoff was not an integer in range (attempts 1 to 20, backoff 60 to 86400), or a token was not attempts=N or backoff=S, or one of them was repeated (#1202). | the console's refusal |
 | `STS-AUTHZEN-0138` | The requester of a revoked AuthZEN access approval could not be mailed; the revocation stands (#1203). | none — logged |
+| `STS-AUTHZEN-0139` | A requestable AuthZEN denial could not be recorded. The binding_token is still issued; an evaluation_id-only submission of that denial cannot be resolved (#1204). | none — logged; the denial is still requestable by its token |
+| `STS-AUTHZEN-0140` | An AuthZEN approval's state could not be signed. The approval stands by id, and the task result omits state (#1204). | none — logged; the approval is still looked up by id |
 
 ## STS-FGA
 

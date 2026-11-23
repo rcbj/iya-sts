@@ -53,6 +53,13 @@
 // #1202: the callback steps that name a callback, or that read the task
 // that named one, use the application `azapp` and a denial bound to its
 // certificate. A person who does not name a callback stays on `azpep`.
+// #1204: "an evaluation_id alone" posts `eval_never`, an id this realm did
+// not issue, so the recorded 0073 stays that case. A real id with no
+// echoed expires_at is 0074 and does not consume the denial. The
+// re-evaluation that echoes the approved result against another resource
+// is approval_unverifiable, because that result's state names the
+// approved tuple. A requestable denial carries request_schema_url.
+// This deployment hosts no form, so the snapshot has no form_url.
 // ===========================================================================
 
 const assert = require("assert");
@@ -679,8 +686,10 @@ async function conversation(mode, realm) {
     ['resource a string', submission(denied, { resource: 'x' })],
     ['no denial', submission(denied, { denial: undefined })],
     ['denial a string', submission(denied, { denial: 'x' })],
+    // A real id with no echoed expires_at is 0074 and does not consume
+    // the denial (#1204). This step records an id the realm never issued.
     ['an evaluation_id alone', submission(denied, { denial: {
-      evaluation_id: denied.context.evaluation_id } })],
+      evaluation_id: 'eval_never' } })],
     ['a binding token that does not verify', submission(denied, {
       denial: { binding_token: 'a.b.c',
                 expires_at: denied.context.access_request.expires_at } })],
@@ -746,10 +755,12 @@ async function conversation(mode, realm) {
              ok({ resource: { type: 'document', id: 'doc-2' },
                   context: { application: 'todo-app',
                              approval: approval } }));
-  await step('re-evaluation, out of scope', 'POST', EVAL, appCred,
-             ok({ resource: { type: 'document', id: 'doc-9' },
-                  context: { application: 'todo-app',
-                             approval: approval } }));
+  // The result's approval carries state, which names doc-2. Another
+  // resource does not match that state (#1204).
+  await step('re-evaluation, state for another resource', 'POST', EVAL,
+             appCred, ok({ resource: { type: 'document', id: 'doc-9' },
+                           context: { application: 'todo-app',
+                                      approval: approval } }));
   await step('re-evaluation, a forged approval', 'POST', EVAL, appCred,
              ok({ resource: { type: 'document', id: 'doc-2' },
                   context: { application: 'todo-app',
