@@ -738,18 +738,29 @@ deliberately.
 
 ## Algorithms: classical and post-quantum
 
-`webauthn.algorithms` is the list of signature algorithms offered to the
-authenticator, in order of preference. The authenticator takes the first one
-it supports. The default offers every algorithm the service can verify, with
-the post-quantum ones first, strongest first:
+`webauthn.algorithms` (`STS_WEBAUTHN_ALGORITHMS`) is the list of signature
+algorithms offered to the authenticator, in order of preference. It is per
+realm and takes effect while the service is running. Change it on
+**Protocols → WebAuthn** or with `POST /admin-api/config/set`. The
+authenticator takes the first one it supports.
 
-* **Post-quantum (RFC 9964):** `ML-DSA-87`, `ML-DSA-65`, `ML-DSA-44` (COSE
-  -50, -49, -48), so an authenticator that can make every parameter set
-  makes ML-DSA-87
-  ([#1078](https://github.com/rcbj/iya-sts/issues/1078)).
-* **Classical:** `ESP256`, `ES256`, `Ed25519`, `EdDSA`, `ESP384`, `ES384`,
-  `ESP512`, `ES512`, `Ed448`, `ES256K`, `PS256`, `PS384`, `PS512`, `RS256`,
-  `RS384`, `RS512`.
+The default requests six, in this order: `ML-DSA-87`, `ML-DSA-65`,
+`ML-DSA-44`, `EdDSA`, `ES256`, `RS256`. An authenticator that can make
+every ML-DSA parameter set therefore makes ML-DSA-87
+([#1078](https://github.com/rcbj/iya-sts/issues/1078),
+[#1166](https://github.com/rcbj/iya-sts/issues/1166)). Every other
+algorithm this service can verify stays on the page, unticked, until an
+operator chooses it:
+
+* **Post-quantum (RFC 9964), requested by default:** `ML-DSA-87`,
+  `ML-DSA-65`, `ML-DSA-44` (COSE -50, -49, -48).
+* **Classical, requested by default after those three:** `EdDSA`, `ES256`,
+  `RS256`.
+* **Classical, offered and unticked:** `ESP256`, `Ed25519`, `ESP384`,
+  `ES384`, `ESP512`, `ES512`, `Ed448`, `ES256K`, `PS256`, `PS384`,
+  `PS512`, `RS384`, `RS512`. `ES384` is unticked because certain browsers
+  on Windows are incompatible with it. `RS1` (SHA-1) appears only while
+  `webauthn.insecureAlgorithms` is on.
 
 On **Protocols → WebAuthn**, the Settings tab gives each algorithm a checkbox
 (offered or not) and a number (its place in the order). A passkey whose
@@ -771,13 +782,19 @@ algorithm was not offered is refused at registration (`STS-AUTHN-0228`).
   list replaces `webauthn.algorithms` for that profile's people, and the tab
   says so ([#1130](https://github.com/rcbj/iya-sts/issues/1130)).
 
-Two more settings change the list:
-* **`webauthn.pqcOnly`** (default `false`) offers only ML-DSA. A passkey made
-  with anything else is then refused at registration. Passkeys already
-  registered keep working.
-* **`webauthn.insecureAlgorithms`** (default `false`, development mode only)
-  also offers SHA-1's `RS1`. While it is off, a passkey made with `RS1` does
-  not sign in (`STS-AUTHN-0294`). Product mode never uses it.
+Three more settings change what a ceremony requests:
+* **`webauthn.pqcOnly`** (`STS_WEBAUTHN_PQC_ONLY`, default `false`) offers
+  only ML-DSA. A passkey made with anything else is then refused at
+  registration. Passkeys already registered keep working.
+* **`webauthn.insecureAlgorithms`** (`STS_WEBAUTHN_INSECURE_ALGORITHMS`,
+  default `false`, development mode only) also offers SHA-1's `RS1`. While
+  it is off, a passkey made with `RS1` does not sign in (`STS-AUTHN-0294`).
+  Product mode never uses it.
+* **`webauthn.pqcAlongsideClassical`**
+  (`STS_WEBAUTHN_PQC_ALONGSIDE_CLASSICAL`, default `false`) asks for a
+  classical passkey and an ML-DSA passkey in two ceremonies. See
+  [A classical and a post-quantum passkey side by side](#a-classical-and-a-post-quantum-passkey-side-by-side).
+  It cannot be on while `webauthn.pqcOnly` is on (`STS-AUTHN-0353`).
 
 **What an authenticator must support.** The service offers the list and
 verifies whatever comes back. It does not check the browser or the

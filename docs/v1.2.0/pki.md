@@ -94,18 +94,48 @@ hierarchy above: its public key is
 realm's id for another realm. Both endpoints are public and `no-store`.
 
 Configure SSH servers to trust the returned public key with
-`TrustedUserCAKeys`, and to read the KRL with `RevokedKeys`. The published
-line stays the first classical algorithm in `pki.sshUserCaAlgorithms`, or
-`ssh-ed25519` when that list names only `ssh-mldsa-65`. OpenSSH defines no
-post-quantum signature. `ssh-mldsa-65` is this service's own wire name for
-ML-DSA-65, kept as a second authority and not written into that line. Turning
-`pki.sshUserCaPqcOnly` on signs a new certificate with the ML-DSA authority
-when this runtime can generate it, and leaves the published line classical.
-`pki.sshUserCaPqcAlongsideClassical` issues a classical certificate and an
-ML-DSA certificate beside it. The two switches cannot both be on. The KRL
-must be refreshed by the operator's deployment; the service cannot make an
-SSH server consult it. Certificate revocation and lost-token reports rebuild
+`TrustedUserCAKeys`, and to read the KRL with `RevokedKeys`. The KRL must be
+refreshed by the operator's deployment; the service cannot make an SSH
+server consult it. Certificate revocation and lost-token reports rebuild
 the KRL, and a scheduler refreshes it periodically.
+
+#### The signature algorithms
+
+`pki.sshUserCaAlgorithms` (`STS_PKI_SSH_USER_CA_ALGORITHMS`) is which
+algorithms the user CA may sign with, in preference order. It is per realm
+and takes effect while the service is running. On **Protocols → PKI**
+(`/admin/pki`) each name is a checkbox and an order number. **Select all**
+ticks every name, or only `ssh-mldsa-65` while `pki.sshUserCaPqcOnly` is
+on. At least one name must stay ticked; a save of an empty list is refused
+(`STS-ADMIN-0840`). The same value can be set with
+`POST /admin-api/config/set`. The rows are in
+[The SSH user CA](#the-ssh-user-ca) below and in
+[Configuration](configuration.md).
+
+The default, in this order, is `ssh-mldsa-65`, `ssh-ed25519`,
+`ecdsa-sha2-nistp256`, `ecdsa-sha2-nistp384`, `ecdsa-sha2-nistp521`,
+`rsa-sha2-256`, `rsa-sha2-512`. A name outside that list is dropped.
+`ssh-rsa` (SHA-1) is absent from the list.
+
+The line published for `TrustedUserCAKeys` is the first classical name in
+the list, or `ssh-ed25519` when the list names only `ssh-mldsa-65`.
+OpenSSH defines no post-quantum signature. `ssh-mldsa-65` is this service's
+own wire name for a raw ML-DSA-65 public key and signature, in the shape
+`ssh-ed25519` uses. It is a second authority and is left off that line. The
+ML-DSA authority is created only when this runtime can generate the key.
+When it cannot, new certificates stay classical and the failure is recorded
+(`STS-PKI-0290`).
+
+`pki.sshUserCaPqcOnly` (`STS_PKI_SSH_USER_CA_PQC_ONLY`, off by default)
+signs a new certificate with the ML-DSA authority when that authority
+exists, and leaves the published line classical. On a runtime that cannot
+generate ML-DSA the certificate stays classical and the request still
+succeeds. Certificates already issued keep verifying.
+
+`pki.sshUserCaPqcAlongsideClassical`
+(`STS_PKI_SSH_USER_CA_PQC_ALONGSIDE_CLASSICAL`, off by default) issues the
+classical certificate and an ML-DSA certificate beside it, as two
+certificates. The two switches cannot both be on (`STS-PKI-0296`).
 
 The Account API issues a short-lived certificate for a caller's own UID or
 group common names, after a separate access-policy decision for every
@@ -1865,6 +1895,18 @@ is checked — see
 | `pki.applicationTlsClientCertificateMax` | `STS_PKI_APPLICATION_TLS_CLIENT_CERTIFICATE_MAX` | `5` | yes | Valid TLS client certificates an administrator may issue one application; past it the issue is refused (`STS-PKI-0180`). |
 | `pki.messageSigningCertificateMax` | `STS_PKI_MESSAGE_SIGNING_CERTIFICATE_MAX` | `5` | yes | Valid message-signing certificates (what a WS-Trust requester signs its request with) an administrator may issue one person or one application; past it the issue is refused (`STS-PKI-0220`). |
 | `pki.enrollmentMaxCertificatesPerEntry` | `STS_PKI_ENROLLMENT_MAX_CERTIFICATES_PER_ENTRY` | `20` | yes | Certificates issued over [ACME](acme.md), [EST](est.md) or [SCEP](scep.md) one entry may carry at once; past it a request is refused (`STS-ENROLL-0040`) rather than an older certificate being forgotten. |
+
+### The SSH user CA
+
+The algorithms [OpenSSH user certificates](#openssh-user-certificates) are
+signed with. All three are per realm and take effect while the service is
+running, on **Protocols → PKI** (`/admin/pki`).
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `pki.sshUserCaAlgorithms` | `STS_PKI_SSH_USER_CA_ALGORITHMS` | `ssh-mldsa-65,ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,rsa-sha2-256,rsa-sha2-512` | yes | Which algorithms the SSH user CA may sign with, in preference order. Each name is a checkbox and an order number. The published `TrustedUserCAKeys` line is the first classical name, or `ssh-ed25519` when the list names only `ssh-mldsa-65`. `ssh-mldsa-65` is a second authority and is left off that line. `ssh-rsa` (SHA-1) is absent. |
+| `pki.sshUserCaPqcOnly` | `STS_PKI_SSH_USER_CA_PQC_ONLY` | `false` | yes | A new certificate is signed by the ML-DSA authority when that authority exists. The published line stays classical. Cannot be on while `pki.sshUserCaPqcAlongsideClassical` is on (`STS-PKI-0296`). |
+| `pki.sshUserCaPqcAlongsideClassical` | `STS_PKI_SSH_USER_CA_PQC_ALONGSIDE_CLASSICAL` | `false` | yes | A new certificate is issued twice when the ML-DSA authority exists: the classical certificate and an ML-DSA certificate beside it. Cannot be on while `pki.sshUserCaPqcOnly` is on (`STS-PKI-0296`). |
 
 Settings this page discusses that are not `pki.*`: the twelve
 `*CertificateHeader` settings ([above](#a-signed-token-names-its-certificate-chain)),

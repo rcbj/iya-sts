@@ -149,6 +149,23 @@ be with whoever found it.
 An administrator can also clear one person's token on their row under
 **Directory → Users** (or `POST /admin-api/users/clear-hotp`).
 
+## The MAC
+
+A token set up on the portal always uses HMAC-SHA-1 (RFC 4226 section 5).
+The `otpauth://hotp/` URI carries `algorithm=SHA1`. There is no
+`hotp.algorithm` setting, and nothing on **Protocols → TOTP MFA**
+(`/admin/totp`) changes that MAC.
+
+`hotp.digits` (`STS_HOTP_DIGITS`, 6 by default, from 6 to 8) changes the
+length of a new portal token. An imported token keeps the length its seed
+file names. `hotp.window` (`STS_HOTP_WINDOW`) and `hotp.resyncWindow`
+(`STS_HOTP_RESYNC_WINDOW`) are live for every token and change how far
+ahead a code may be. They do not change the MAC.
+
+An imported PSKC seed keeps the MAC the file names: HMAC-SHA-1, SHA-256 or
+SHA-512. A seed that names ML-DSA, ML-KEM or SLH-DSA is skipped. There is
+no post-quantum MAC.
+
 ## Settings
 
 | Setting | Default | What it does |

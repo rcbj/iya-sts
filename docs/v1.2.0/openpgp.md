@@ -58,6 +58,31 @@ already registered still verifies and still receives mail.
 `openpgp.pqcOnly`) asks a new key to carry a post-quantum algorithm and a
 separate classical one.
 
+### Configuring the algorithms
+
+`openpgp.algorithms` (`STS_OPENPGP_ALGORITHMS`) is per realm and takes
+effect while the service is running. On **Directory → OpenPGP keys**
+(`/admin/openpgp`) each name is a checkbox and an order number. **Select
+all** ticks every name, or only the four composites while
+`openpgp.pqcOnly` is on. At least one name must stay ticked; a save of an
+empty list is refused (`STS-ADMIN-0840`). The same value can be set with
+`POST /admin-api/config/set`.
+
+The default names every algorithm below, composites first:
+`ML-DSA-65+Ed25519`, `ML-DSA-87+Ed448`, `ML-KEM-768+X25519`,
+`ML-KEM-1024+X448`, `ed25519`, `ed448`, `eddsaLegacy/ed25519Legacy`,
+`ecdsa/nistP256`, `ecdsa/nistP384`, `ecdsa/nistP521`, `rsaSign`,
+`rsaEncryptSign`, `x25519`, `x448`, `ecdh/curve25519Legacy`,
+`ecdh/nistP256`, `ecdh/nistP384`, `ecdh/nistP521`, `rsaEncrypt`.
+
+A name left out of the list is refused at registration and at verification
+(`STS-OPENPGP-0004`). SLH-DSA is not implemented. DSA, ElGamal and the
+Brainpool curves are never accepted.
+
+`openpgp.pqcOnly` (`STS_OPENPGP_PQC_ONLY`) and
+`openpgp.pqcAlongsideClassical` (`STS_OPENPGP_PQC_ALONGSIDE_CLASSICAL`)
+are on the same page. They cannot both be on (`STS-OPENPGP-0027`).
+
 Both version 4 keys (RFC 4880, what GnuPG 2.2 and 2.4 make) and version 6 keys
 (RFC 9580) are read. An RFC 9980 key is read by this service's own reader,
 which checks both halves of a composite signature. A new registration replaces
