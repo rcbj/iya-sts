@@ -523,7 +523,7 @@ function thePublishedExample(t) {
   t.log.info('=== X. docs/v1.2.0/authzen.md\'s worked example ===');
   const fs = require('fs');
   const text = fs.readFileSync(require('path').join(__dirname, '..', 'docs',
-                                                     'v1.1.0', 'authzen.md'),
+                                                     'v1.2.0', 'authzen.md'),
                                'utf8');
   const start = text.indexOf('namespace docs {');
   const block = start >= 0 ? text.slice(start, text.indexOf('```', start))

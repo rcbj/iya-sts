@@ -17,7 +17,7 @@ namespace IyaSts.Directory;
   container: "ou=attributesources",
   ownContainer: true,
   authored: true,
-  section: "docs/v1.1.0/ldap-schema.md Attribute sources",
+  section: "docs/v1.2.0/ldap-schema.md Attribute sources",
   note: "The source is one JSON value, stsAttributeSourceData.",
   objectClasses: #[
     #{

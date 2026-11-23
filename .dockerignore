@@ -38,7 +38,7 @@ node-ldapjs/.github
 # whatever) edits this repository. They are excluded because the Dockerfile now
 # copies the context whole — before that they were left out by not being named.
 # `docs` WAS HERE until 2026-09-14 and went the way of the three files below:
-# tests/error_codes.js asserts that docs/v1.1.0/error-codes.md is what the
+# tests/error_codes.js asserts that docs/v1.2.0/error-codes.md is what the
 # error-code table generates and that docs/_config.yml lists it, so the
 # directory is the subject of a test that runs in the TESTS image. The service
 # Dockerfile removes it.

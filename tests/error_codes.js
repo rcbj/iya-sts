@@ -668,7 +668,7 @@ function run(t) {
   // so it reads WHEREVER the navigation is, and passes if either names it.
   // Since the site was versioned the sidebar is one file per version, and
   // the latest version's is the one the generated page is written into.
-  const navigation = ['_data/navigation/v1-1-0.yml', '_config.yml']
+  const navigation = ['_data/navigation/v1-2-0.yml', '_config.yml']
     .map(function (one) {
       const at = path.join(ROOT, 'docs', one);
       return fs.existsSync(at) ? fs.readFileSync(at, 'utf8') : '';
@@ -676,7 +676,7 @@ function run(t) {
   t.check(navigation.some(function (one) {
     return one.indexOf('error-codes') >= 0;
   }), 'the page is in the site navigation',
-          'docs/_data/navigation/v1-1-0.yml, or _config.yml\'s ' +
+          'docs/_data/navigation/v1-2-0.yml, or _config.yml\'s ' +
           'header_pages');
 
   log.debug("Leaving run().");
