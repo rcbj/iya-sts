@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6016** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6017** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 447
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 448
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 83
@@ -1845,6 +1845,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0566` | A write of webauthn.u2fAppIds was refused: an entry is not a U2F AppID — an absolute https URL with a host, no user name or password and no fragment, at most 2048 characters (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-AUTHN-0567` | The bootstrap password file could not be removed on a start that found a credential already held. The plaintext is left on disk. | Log line; the service still starts, and the file is left |
 | `STS-AUTHN-0580` | A legacy U2F key was not imported: the person's passkey policy enforces a CTAP 2.1 credProtect level, which an imported key ran no ceremony to report and cannot prove (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0581` | A post-login activity is not asked: the module its row in common/post_login_kinds.ts names could not be loaded, or does not export a whole activity (its id and exposure the row's, and every question it must answer). The other activities are still asked (#2009). | Log line; nobody is asked that activity |
 
 ## STS-OAUTH
 

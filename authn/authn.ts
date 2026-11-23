@@ -8861,13 +8861,22 @@ class Authn {
     //
     // Asked of a person, interactively: never of a keyed caller (SCIM, the
     // SPIRE Server API), an unauthenticated session, a call with no request,
-    // or the session the step itself starts (`postLoginDone`).
+    // or a session marked `postLoginDone`.
+    //
+    // SEVERAL ACTIVITIES MAY BE DUE (#2009 P1, design X3). The step's own
+    // session carries the activities already asked at this sign-in
+    // (`postLoginAsked`) and whether one of them could be skipped
+    // (`postLoginSkippableAsked`); `nextDue()` answers the next — every
+    // required one, at most one that may be skipped — so the person is asked
+    // them one after another and the session starts after the last.
     // -------------------------------------------------------------------------
     const postLoginDue = extra.authenticated === false || extra.key ||
       extra.postLoginDone === true || !extra.request || !username
       ? null
-      : this.deps.postLogin.dueFor(String(username),
-                                   String(extra.application || ''));
+      : this.deps.postLogin.nextDue(String(username),
+          String(extra.application || ''),
+          Array.isArray(extra.postLoginAsked) ? extra.postLoginAsked : [],
+          extra.postLoginSkippableAsked === true);
     if (postLoginDue && extra.postLoginHold === true) {
       extra.postLogin = { due: postLoginDue, amr: (amr || []).slice(),
                           acr: String(acr || ''), via: String(via || '') };
@@ -12152,7 +12161,12 @@ class Authn {
         // The role step's choice (#1072), made before this step was asked.
         rolesDone: said.rolesDone === true,
         selectedRoles: Array.isArray(said.selectedRoles)
-          ? said.selectedRoles : [] },
+          ? said.selectedRoles : [],
+        // The activities asked at this sign-in before this one (#2009),
+        // and whether one of them could be skipped.
+        postLoginAsked: Array.isArray(said.postLoginAsked)
+          ? said.postLoginAsked.map(String) : [],
+        postLoginSkippableAsked: said.postLoginSkippableAsked === true },
       risk: said.risk, riskDecision: said.riskDecision,
       expires: Date.now() + this.mfaStepTtlMs()
     });
@@ -12181,15 +12195,29 @@ class Authn {
 
   // THE SESSION THE POST-LOGIN STEP HELD, STARTED (#1096): as the door would
   // have started it — its amr and acr, its credential, its application and
-  // its risk — and marked `postLoginDone` so it is not held again. The
-  // passkey registered in the step is NOT an authentication of this
-  // sign-in: it is what the person was asked to do after one.
+  // its risk. The passkey registered in the step is NOT an authentication of
+  // this sign-in: it is what the person was asked to do after one.
+  //
+  // SINCE #2009 (P1, design X3) IT MAY BE HELD AGAIN, for the NEXT activity
+  // due: the session is started with `postLoginHold` and the activities
+  // asked so far (this one added), so `startSessionHere()` asks
+  // `nextDue()`, which never answers one already asked at this sign-in, and
+  // a second skippable one only where none was — and `refusedSession()`
+  // draws its step as it drew this one. With nothing more due it starts.
   private finishPostLogin(req: any, res: any, base: string,
                           step: any): void {
     const { log } = this.deps;
     log.debug("Entering Authn.finishPostLogin().");
     const held = step.held || {};
-    const said: any = { request: req, postLoginDone: true,
+    const due = step.postLogin || {};
+    const asked = (Array.isArray(held.postLoginAsked)
+      ? held.postLoginAsked.map(String) : [])
+      .concat(due.activity ? [String(due.activity)] : []);
+    const said: any = { request: req, postLoginHold: true,
+                        postLoginAsked: asked,
+                        postLoginSkippableAsked:
+                          held.postLoginSkippableAsked === true ||
+                          (!!due.activity && due.required !== true),
                         gated: held.gated === true,
                         application: String(held.application || ''),
                         credential: held.credential || { kind: 'password' },

@@ -17,7 +17,17 @@
 // session while the person is asked, and reports back through
 // `noteAsked()`, `noteSkipped()` and `noteDone()`.
 //
-// THE ONE ACTIVITY TODAY, `pqc-passkey-migration`:
+// SEVERAL ACTIVITIES SINCE #2009 (P1, design X1 and X3). The activities are
+// `common/post_login_kinds.ts`'s table, each answering the same four
+// questions (is it on in this profile, its rules with it turned on, Skip
+// and the allotted time, and why this person is due it); everything below
+// that is not about passkeys — who asks, the snooze, the allotted time,
+// the progress row — is the same for each. `dueListFor()` answers every
+// activity due, required first and then by exposure; `nextDue()` is what a
+// sign-in asks next (every required one, at most one that may be skipped);
+// `dueFor()` is the first, or the one named.
+//
+// THE FIRST ACTIVITY, `pqc-passkey-migration` (`passkeyKind()`):
 //
 //   * A person holding a CLASSICAL passkey and NO post-quantum one is due a
 //     post-quantum passkey. (Until #1135 this was asked per role, `primary`
@@ -94,15 +104,36 @@ import passkeyPolicy = require('./passkey_policy');
 import postLoginPolicy = require('./post_login_policy');
 import webauthnPolicy = require('../authn/webauthn_policy');
 import InstanceSlot = require('./instance_slot');
+import errorCodes = require('./error_codes');
+// The activities there are (#2009): a leaf.
+import PostLoginKinds = require('./post_login_kinds');
 
 const { log } = helpers;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * The activity a profile names today.
+ * The passkey migration's id (#1096), the first activity.
  */
-const PQC_MIGRATION = 'pqc-passkey-migration';
+const PQC_MIGRATION = PostLoginKinds.PQC_PASSKEY_MIGRATION;
+
+/**
+ * What one post-login activity answers (#2009 P1): the shape
+ * `common/post_login_kinds.ts` describes, which every module its table
+ * names exports as `kind`.
+ */
+interface Kind {
+  id: string;
+  exposure: string;
+  enabledIn(profile: Record<string, any>): boolean;
+  turnedOn(profile: Record<string, any>): Record<string, any>;
+  timing(rules: Record<string, any>): { snoozeDays: number;
+                                        graceDays: number };
+  due(username: string, rules: Record<string, any>,
+      application: string): { reason: string; enforceable: boolean;
+                              method: string; fallback: string;
+                              [fact: string]: any } | null;
+}
 
 // ---------------------------------------------------------------------------
 // THE STORE: `<username>|<activity>` → `{ invitedAt, snoozedUntil, asks,
@@ -119,11 +150,12 @@ const progress = realms.map({ persist: 'post_login.progress',
  */
 interface Due {
   activity: string;
-  // `classical`: they hold a classical passkey and no
+  // Why they are due it, in the activity's own words. The passkey
+  // migration's: `classical`: they hold a classical passkey and no
   // post-quantum one; `attestation`: their ML-DSA passkeys all
   // fall short of a required post-quantum attestation (#1102); `none`:
   // they hold no passkey at all.
-  reason: 'classical' | 'none' | 'attestation';
+  reason: string;
   // Past the allotted time: Skip is gone and the sign-in is held.
   required: boolean;
   // Whether it can ever be required: a classical passkey to migrate, or a
@@ -169,6 +201,8 @@ interface PostLoginDeps {
   // The started activities (#1126), lazily; absent in a test's deps, when
   // no started activity asks anybody.
   started?: () => any;
+  // The activities asked (#2009), for a test; absent, the table's.
+  kinds?: (self: PostLogin) => Kind[];
 }
 
 /**
@@ -179,6 +213,10 @@ class PostLogin {
    * The activity a profile names today.
    */
   static readonly PQC_MIGRATION = PQC_MIGRATION;
+
+  // The table's activities, once built (`kindsAsked()`).
+  private loadedKinds: Kind[] | null = null;
+
   /**
    * Builds the module over its dependencies.
    *
@@ -395,11 +433,118 @@ class PostLogin {
     return null;
   }
 
-  // THE RUNNING STARTED ACTIVITIES of the PQC migration in this realm
-  // (#1126), oldest first; none where the module cannot be asked — a
-  // started activity that cannot be read asks nobody, and the policy still
-  // does.
-  private runningActivities(): { id: string; groups: string[] }[] {
+  // THE PASSKEY MIGRATION AS AN ACTIVITY (#2009 P1): what this module
+  // answered alone until #2009, behind the shape every activity answers
+  // (`common/post_login_kinds.ts`). Nothing in it changed: the switch is
+  // `enabled` with `activity` naming it, Skip and the allotted time are the
+  // profile's own rows, and who is due is `reasonFor()` after the passkey
+  // policy is selected for the person and the application (#535, #940).
+  /**
+   * The passkey migration, as the activity `dueListFor()` asks.
+   *
+   * @returns its answers
+   */
+  passkeyKind(): Kind {
+    const { log } = this.deps;
+    log.debug("Entering PostLogin.passkeyKind().");
+    const self = this;
+    const out: Kind = {
+      id: PQC_MIGRATION,
+      exposure: 'forgery',
+      enabledIn: function (profile: Record<string, any>): boolean {
+        return profile.enabled === true &&
+               String(profile.activity || '') === PQC_MIGRATION;
+      },
+      turnedOn: function (profile: Record<string, any>):
+          Record<string, any> {
+        return Object.assign({}, profile, { enabled: true,
+                                            activity: PQC_MIGRATION });
+      },
+      timing: function (rules: Record<string, any>):
+          { snoozeDays: number; graceDays: number } {
+        return { snoozeDays: Number(rules.snoozeDays) || 1,
+                 graceDays: Number(rules.graceDays) || 0 };
+      },
+      due: function (username: string, rules: Record<string, any>,
+                     application: string): any {
+        // The WebAuthn policy reads the passkey profile selected for this
+        // person and application (#535, #940).
+        self.deps.passkeyPolicy.select(username, application || '');
+        const found = self.reasonFor(username, rules);
+        if (!found) {
+          return null;
+        }
+        return {
+          reason: found.reason,
+          enforceable: found.reason !== 'none' ||
+                       rules.noPasskey === 'require',
+          method: self.methodFor(rules, found.reason),
+          fallback: found.reason === 'none' &&
+                    rules.noPasskeyFallback === 'classical' ? 'classical'
+                                                            : 'none'
+        };
+      }
+    };
+    log.debug("Leaving PostLogin.passkeyKind().");
+    return out;
+  }
+
+  // THE ACTIVITIES ASKED (#2009 P1): `post_login_kinds.ts`'s table, in its
+  // order — the passkey migration answered here, every other row by the
+  // module it names, required the first time it is asked (the table's
+  // header argues why lazily). A module that is not whole is not asked, and
+  // is logged under STS-AUTHN-0581 once per process: the other activities
+  // are still asked, because one activity that cannot answer must not stop
+  // a person being asked another. A test's deps may hand its own list.
+  private kindsAsked(): Kind[] {
+    const { log } = this.deps;
+    log.debug("Entering PostLogin.kindsAsked().");
+    if (typeof this.deps.kinds === 'function') {
+      const given = this.deps.kinds(this) || [];
+      log.debug("Leaving PostLogin.kindsAsked(). " + given.length +
+                " given.");
+      return given;
+    }
+    if (this.loadedKinds) {
+      log.debug("Leaving PostLogin.kindsAsked(). Held.");
+      return this.loadedKinds;
+    }
+    const out: Kind[] = [];
+    PostLoginKinds.KINDS.forEach((row) => {
+      if (!row.module) {
+        if (row.id === PQC_MIGRATION) {
+          out.push(this.passkeyKind());
+        }
+        return;
+      }
+      let kind: any = null;
+      try {
+        // A lazy require of a module the table names (its header).
+        kind = require(row.module).kind;
+      } catch (e) {
+        log.debug("Caught in PostLogin.kindsAsked(): " +
+                  ((e && e.message) || e));
+        kind = null;
+      }
+      const problem = PostLoginKinds.problemWith(row, kind);
+      if (problem) {
+        log.error(errorCodes.tag('STS-AUTHN-0581') + 'post-login: the ' +
+                  'activity "' + row.id + '" is not asked: its module (' +
+                  row.module + ') ' + problem + '.');
+        return;
+      }
+      out.push(kind as Kind);
+    });
+    this.loadedKinds = out;
+    log.debug("Leaving PostLogin.kindsAsked(). " + out.length + ".");
+    return out;
+  }
+
+  // THE RUNNING STARTED ACTIVITIES of one activity in this realm (#1126),
+  // oldest first; none where the module cannot be asked — a started
+  // activity that cannot be read asks nobody, and the policy still does.
+  private runningActivities(activity: string):
+      { id: string; groups: string[] }[] {
     const { log } = this.deps;
     log.debug("Entering PostLogin.runningActivities().");
     let out: { id: string; groups: string[] }[] = [];
@@ -407,7 +552,7 @@ class PostLogin {
       const started = typeof this.deps.started === 'function'
         ? this.deps.started() : null;
       out = started && typeof started.runningOf === 'function'
-        ? (started.runningOf(PQC_MIGRATION) || []) : [];
+        ? (started.runningOf(activity) || []) : [];
     } catch (e) {
       log.debug("Caught in PostLogin.runningActivities(): " +
                 ((e && e.message) || e));
@@ -450,41 +595,129 @@ class PostLogin {
     return null;
   }
 
+  // ONE ACTIVITY'S DUE FOR ONE PERSON (#2009 P1: the body `dueFor()` was
+  // until then, for every activity). Who asks: the selected profile with
+  // this activity on (`policy`); else, where the selected profile is a
+  // NAMED one, nobody — a named profile with the activity off is how the
+  // policy excludes a group or an application, from a started activity too
+  // (#1126); else the oldest running started activity whose population
+  // holds them, under the selected profile's rules with only the switch
+  // the activity's. Then the activity's own reason, then the snooze and the
+  // allotted time, which are the same for every activity.
+  private dueOf(kind: Kind, username: string, application: string,
+                selected: Record<string, any>,
+                running: { id: string; groups: string[] }[],
+                groupsOf: () => { cn?: string; dn?: string }[]):
+      Due | null {
+    const { log, postLoginPolicy, now } = this.deps;
+    log.debug("Entering PostLogin.dueOf(). " + kind.id);
+    let rules = selected;
+    let askedBy = '';
+    if (kind.enabledIn(selected)) {
+      askedBy = 'policy';
+    } else if (String(selected.name) !==
+               String(postLoginPolicy.DEFAULT_PROFILE || 'default')) {
+      log.debug("Leaving PostLogin.dueOf(). Excluded by the named " +
+                "profile " + selected.name + ".");
+      return null;
+    } else {
+      const by = this.startedReaching(running, groupsOf);
+      if (!by) {
+        log.debug("Leaving PostLogin.dueOf(). The policy does not ask " +
+                  "this person, and no started activity reaches them.");
+        return null;
+      }
+      // The selected profile's rules; only the switch is the activity's.
+      rules = kind.turnedOn(selected);
+      askedBy = by.id;
+    }
+    const found = kind.due(username, rules, application);
+    if (!found) {
+      log.debug("Leaving PostLogin.dueOf(). Not due.");
+      return null;
+    }
+    const timing = kind.timing(rules);
+    const state = this.stateOf(username, kind.id);
+    const at = now();
+    const graceDays = Number(timing.graceDays) || 0;
+    const deadline = graceDays > 0 && state.invitedAt
+      ? Number(state.invitedAt) + graceDays * DAY_MS : 0;
+    const enforceable = found.enforceable === true;
+    const required = enforceable && deadline > 0 && at >= deadline;
+    if (!required && Number(state.snoozedUntil) > at) {
+      log.debug("Leaving PostLogin.dueOf(). Put off until " +
+                new Date(Number(state.snoozedUntil)).toISOString() + ".");
+      return null;
+    }
+    const out: Due = Object.assign({}, found, {
+      activity: kind.id, reason: found.reason,
+      required: required, enforceable: enforceable,
+      method: String(found.method || ''),
+      fallback: String(found.fallback || 'none'),
+      snoozeDays: Number(timing.snoozeDays) || 1,
+      graceDays: graceDays, invitedAt: Number(state.invitedAt) || 0,
+      deadline: enforceable ? deadline : 0, profile: String(rules.name),
+      askedBy: askedBy
+    }) as Due;
+    log.debug("Leaving PostLogin.dueOf(). " + out.reason +
+              (out.required ? ', required' : ', skippable') +
+              ', asked by ' + askedBy + '.');
+    return out;
+  }
+
   /**
-   * Answers whether a person is due a post-login activity at this sign-in:
-   * the profile that reaches them, on — or a running started activity
-   * whose population holds them and no named profile off excluding them
-   * (#1126); their passkeys making them due;
-   * and not put off — unless the allotted time has passed, when it is due
-   * and REQUIRED whatever was put off.
+   * Answers which post-login activities a person is due at this sign-in
+   * (#2009 P1), in the order they are asked: the required ones first, then
+   * by their credential's exposure (`post_login_kinds.ts`), then by the
+   * table's order. Each is due as `dueFor()` always said: the profile that
+   * reaches them with it on — or a running started activity of it whose
+   * population holds them and no named profile off excluding them
+   * (#1126); their credentials making them due; and not put off — unless
+   * the allotted time has passed, when it is due and REQUIRED whatever was
+   * put off.
    *
-   * Never throws: a question that cannot be answered asks nothing.
+   * Never throws: a question that cannot be answered asks nothing, and an
+   * activity that cannot be answered leaves the others asked.
    *
    * @param username - the person
    * @param application - the application signed in to, for the post-login
    *   and passkey policies' selections; omitted outside a sign-in (the
    *   started activities' walk), where the groups alone select
-   * @returns what is due, or null
+   * @returns what is due, possibly nothing
    */
-  dueFor(username: string, application?: string): Due | null {
-    const { log, postLoginPolicy, passkeyPolicy, now } = this.deps;
-    log.debug("Entering PostLogin.dueFor(). username=" + username);
+  dueListFor(username: string, application?: string): Due[] {
+    const { log, postLoginPolicy } = this.deps;
+    log.debug("Entering PostLogin.dueListFor().");
     if (!username) {
-      log.debug("Leaving PostLogin.dueFor(). Nobody.");
-      return null;
+      log.debug("Leaving PostLogin.dueListFor(). No person.");
+      return [];
     }
+    const out: Due[] = [];
     try {
+      const kinds = this.kindsAsked();
+      const running: Record<string, { id: string; groups: string[] }[]> =
+        {};
+      kinds.forEach((kind) => {
+        running[kind.id] = this.runningActivities(kind.id);
+      });
       // THE CHEAP QUESTION FIRST: a realm with every profile off and no
       // started activity running — every realm, by default — reads no
       // keys, no group and no row.
-      const running = this.runningActivities();
-      if (!running.length && !postLoginPolicy.anyEnabled()) {
-        log.debug("Leaving PostLogin.dueFor(). Off in this realm.");
-        return null;
+      const anyRunning = kinds.some(function (kind) {
+        return running[kind.id].length > 0;
+      });
+      if (!anyRunning && !postLoginPolicy.anyEnabled(
+            function (profile: Record<string, any>): boolean {
+              return kinds.some(function (kind) {
+                return kind.enabledIn(profile);
+              });
+            })) {
+        log.debug("Leaving PostLogin.dueListFor(). Nothing is on.");
+        return [];
       }
       // The person's groups — each with the post-login profile it names
-      // (#1239) — asked of the directory at most once for both the
-      // profile's selection and a started activity's groups.
+      // (#1239) — asked of the directory at most once for the profile's
+      // selection and every activity's started activities.
       let held: { cn?: string; dn?: string; value?: string }[] | null = null;
       const groupsOf = function ():
           { cn?: string; dn?: string; value?: string }[] {
@@ -499,77 +732,99 @@ class PostLogin {
       // groups alone (`post_login_policy.ts`'s header argues it).
       const selected = postLoginPolicy.forPerson(username, groupsOf,
                                                  application || '');
-      let rules = selected;
-      let askedBy = '';
-      if (selected.enabled === true) {
-        if (selected.activity !== PQC_MIGRATION) {
-          log.debug("Leaving PostLogin.dueFor(). " + selected.name +
-                    " asks another activity.");
-          return null;
+      kinds.forEach((kind, at) => {
+        try {
+          const due = this.dueOf(kind, username, String(application || ''),
+                                 selected, running[kind.id], groupsOf);
+          if (due) {
+            (due as any).order = at;
+            out.push(due);
+          }
+        } catch (e) {
+          // One activity that cannot be answered asks nothing, and leaves
+          // the others asked.
+          log.debug("Caught in PostLogin.dueListFor(): " + kind.id + ": " +
+                    ((e && e.message) || e));
         }
-        askedBy = 'policy';
-      } else if (String(selected.name) !==
-                 String(postLoginPolicy.DEFAULT_PROFILE || 'default')) {
-        // A NAMED profile off is how the policy excludes a group, and it
-        // excludes them from a started activity too.
-        log.debug("Leaving PostLogin.dueFor(). Excluded by " +
-                  selected.name + ".");
-        return null;
-      } else {
-        const by = this.startedReaching(running, groupsOf);
-        if (!by) {
-          log.debug("Leaving PostLogin.dueFor(). Off for " + selected.name +
-                    ", and no started activity reaches them.");
-          return null;
-        }
-        // The selected profile's rules; only `enabled` is the activity's.
-        rules = Object.assign({}, selected, { enabled: true,
-                                              activity: PQC_MIGRATION });
-        askedBy = by.id;
-      }
-      // The WebAuthn policy reads the passkey profile selected for this
-      // person and application (#535, #940).
-      passkeyPolicy.select(username, application || '');
-      const found = this.reasonFor(username, rules);
-      if (!found) {
-        log.debug("Leaving PostLogin.dueFor(). Nothing due.");
-        return null;
-      }
-      const state = this.stateOf(username, PQC_MIGRATION);
-      const at = now();
-      const graceDays = Number(rules.graceDays) || 0;
-      const deadline = graceDays > 0 && state.invitedAt
-        ? Number(state.invitedAt) + graceDays * DAY_MS : 0;
-      const enforceable = found.reason !== 'none' ||
-                          rules.noPasskey === 'require';
-      const required = enforceable && deadline > 0 && at >= deadline;
-      if (!required && Number(state.snoozedUntil) > at) {
-        log.debug("Leaving PostLogin.dueFor(). Put off until " +
-                  new Date(Number(state.snoozedUntil)).toISOString() + ".");
-        return null;
-      }
-      const out: Due = {
-        activity: PQC_MIGRATION, reason: found.reason,
-        required: required, enforceable: enforceable,
-        method: this.methodFor(rules, found.reason),
-        fallback: found.reason === 'none' &&
-                  rules.noPasskeyFallback === 'classical' ? 'classical'
-                                                          : 'none',
-        snoozeDays: Number(rules.snoozeDays) || 1,
-        graceDays: graceDays, invitedAt: Number(state.invitedAt) || 0,
-        deadline: enforceable ? deadline : 0, profile: String(rules.name),
-        askedBy: askedBy
-      };
-      log.debug("Leaving PostLogin.dueFor(). " + out.reason +
-                (out.required ? ', required' : ', skippable') +
-                ', asked by ' + askedBy + '.');
-      return out;
+      });
     } catch (e) {
       // A question that cannot be answered holds nobody's sign-in.
-      log.debug("Caught in PostLogin.dueFor(): " + ((e && e.message) || e));
-      log.debug("Leaving PostLogin.dueFor(). Unanswerable.");
-      return null;
+      log.debug("Caught in PostLogin.dueListFor(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving PostLogin.dueListFor(). Unanswerable.");
+      return [];
     }
+    const kinds = this.kindsAsked();
+    const exposureOf = function (id: string): number {
+      const kind = kinds.filter(function (one) {
+        return one.id === id;
+      })[0];
+      return PostLoginKinds.exposureRank(kind ? kind.exposure : '');
+    };
+    out.sort(function (a, b) {
+      return (Number(b.required) - Number(a.required)) ||
+             (exposureOf(a.activity) - exposureOf(b.activity)) ||
+             (Number((a as any).order) - Number((b as any).order));
+    });
+    out.forEach(function (one) {
+      delete (one as any).order;
+    });
+    log.debug("Leaving PostLogin.dueListFor(). " + out.length + " due.");
+    return out;
+  }
+
+  /**
+   * Answers whether a person is due a post-login activity at this sign-in:
+   * the first `dueListFor()` answers, or — naming an activity — that one.
+   *
+   * Never throws: a question that cannot be answered asks nothing.
+   *
+   * @param username - the person
+   * @param application - the application signed in to; omitted outside a
+   *   sign-in (the started activities' walk), where the groups alone select
+   * @param activity - the one activity asked about (a started activity's
+   *   mail, #1111); omitted for the first due
+   * @returns what is due, or null
+   */
+  dueFor(username: string, application?: string,
+         activity?: string): Due | null {
+    const { log } = this.deps;
+    log.debug("Entering PostLogin.dueFor().");
+    const list = this.dueListFor(username, application);
+    const out = (activity
+      ? list.filter(function (one) {
+        return one.activity === String(activity);
+      })
+      : list)[0] || null;
+    log.debug("Leaving PostLogin.dueFor(). " +
+              (out ? out.activity : 'Nothing.'));
+    return out;
+  }
+
+  /**
+   * The next activity a sign-in asks (#2009 P1, design X3): of what is
+   * due, the first not already asked at this sign-in — every REQUIRED one,
+   * and at most ONE that may be skipped, so a sign-in does not become a
+   * questionnaire. The others are asked at a later sign-in.
+   *
+   * @param username - the person
+   * @param application - the application signed in to
+   * @param asked - the activities already asked at this sign-in
+   * @param skippableAsked - whether one that could be skipped was
+   * @returns what to ask next, or null
+   */
+  nextDue(username: string, application: string, asked: string[],
+          skippableAsked: boolean): Due | null {
+    const { log } = this.deps;
+    log.debug("Entering PostLogin.nextDue().");
+    const done = (asked || []).map(String);
+    const out = this.dueListFor(username, application).filter(function (one) {
+      return done.indexOf(one.activity) < 0 &&
+             (one.required || !skippableAsked);
+    })[0] || null;
+    log.debug("Leaving PostLogin.nextDue(). " +
+              (out ? out.activity : 'Nothing.'));
+    return out;
   }
 
   /**
@@ -767,8 +1022,9 @@ class PostLogin {
   // #1612). The row is keyed by the NAME, so a person made again under it
   // started with the deleted one's activity done, put off or past its
   // deadline. The directory's one person delete (`removePersonEntry()`)
-  // calls this for every activity there is (`ACTIVITIES`, one today): a
-  // key per activity, never a walk of the store. A re-homing keeps it.
+  // calls this for every activity there is (`post_login_kinds.ts`'s
+  // table, #2009): a key per activity, never a walk of the store. A
+  // re-homing keeps it.
   /**
    * Forgets a deleted person's progress on every activity.
    *
@@ -776,10 +1032,10 @@ class PostLogin {
    * @returns how many rows were held
    */
   forgetPerson(username: string): number {
-    const { log, postLoginPolicy } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering PostLogin.forgetPerson().");
     let held = 0;
-    ((postLoginPolicy && postLoginPolicy.ACTIVITIES) || [PQC_MIGRATION])
+    PostLoginKinds.ids()
       .forEach((activity: string) => {
         if (this.forget(username, activity)) {
           held += 1;
@@ -820,6 +1076,8 @@ export = {
   lane: slot.forward('lane'),
   keyToUpgrade: slot.forward('keyToUpgrade'),
   dueFor: slot.forward('dueFor'),
+  dueListFor: slot.forward('dueListFor'),
+  nextDue: slot.forward('nextDue'),
   noteAsked: slot.forward('noteAsked'),
   noteSkipped: slot.forward('noteSkipped'),
   noteDone: slot.forward('noteDone'),
