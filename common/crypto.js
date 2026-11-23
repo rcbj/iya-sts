@@ -19049,6 +19049,30 @@ function certificateExtensionNode(ext) {
   return /** @type {any} */ (parsed.result);
 }
 
+// The UPN an otherName GeneralName carries, or '' where it is another kind
+// of otherName or cannot be read (#2012). `name` is the asn1js block of the
+// [0] IMPLICIT SEQUENCE { type-id OBJECT IDENTIFIER, value [0] EXPLICIT ANY }.
+function certificateUpnOf(name) {
+  log.debug("Entering certificateUpnOf().");
+  const parts = (name && name.valueBlock && name.valueBlock.value) || [];
+  const typeId = parts[0];
+  if (!(typeId instanceof asn1js.ObjectIdentifier) ||
+      typeId.valueBlock.toString() !== '1.3.6.1.4.1.311.20.2.3') {
+    log.debug("Leaving certificateUpnOf(). Not a UPN.");
+    return '';
+  }
+  const wrapped = parts[1] && parts[1].valueBlock &&
+    parts[1].valueBlock.value && parts[1].valueBlock.value[0];
+  let text = '';
+  if (wrapped && typeof wrapped.getValue === 'function') {
+    text = String(wrapped.getValue() || '');
+  } else if (wrapped && wrapped.valueBlock && wrapped.valueBlock.valueHexView) {
+    text = Buffer.from(wrapped.valueBlock.valueHexView).toString('utf8');
+  }
+  log.debug("Leaving certificateUpnOf(). " + (text ? 'Read.' : 'Empty.'));
+  return text;
+}
+
 // What an IP address in a subjectAltName's OCTET STRING reads as.
 function certificateIpText(bytes) {
   log.debug("Entering certificateIpText().");
@@ -19101,7 +19125,7 @@ function certificateWeakSignature(signatureAlgorithm) {
  * @param cert - PEM text, DER bytes or a parsed certificate
  * @returns `{ subject, issuer, serialHex, notBefore, notAfter, selfIssued,
  *   ca, hasBasicConstraints, pathLen, keyUsage, eku, san, critical,
- *   fingerprint256, spkiSha256, sigAlg, weakSignature, keyAlg, keyBits,
+ *   fingerprint256, spkiSha256, ski, sigAlg, weakSignature, keyAlg, keyBits,
  *   curve, spkiOid }`; `keyUsage` and `eku` are null where the extension is
  *   absent, which is not the same as empty
  * @throws Error when the input is not a certificate
@@ -19120,10 +19144,14 @@ function certificateFacts(cert) {
     selfIssued: parsed.subject === parsed.issuer,
     ca: false, hasBasicConstraints: false, pathLen: null,
     keyUsage: null, eku: null,
-    san: { dns: [], email: [], uri: [], ip: [] },
+    san: { dns: [], email: [], uri: [], ip: [], upn: [] },
     critical: [],
     fingerprint256: String(parsed.fingerprint256 || ''),
     spkiSha256: '',
+    // The subjectKeyIdentifier, lower-case hex, or '' where the certificate
+    // carries none (#2012: a certificate sign-in binding by issuer and SKI
+    // cannot match an absent one).
+    ski: '',
     sigAlg: pk.signatureAlgorithm.algorithmId,
     weakSignature: certificateWeakSignature(pk.signatureAlgorithm),
     keyAlg: '', keyBits: 0, curve: '',
@@ -19168,8 +19196,20 @@ function certificateFacts(cert) {
             facts.san.uri.push(raw.toString('latin1'));
           } else if (tag === 7) {
             facts.san.ip.push(certificateIpText(raw));
+          } else if (tag === 0) {
+            // AN otherName (#2012): the Microsoft UPN (1.3.6.1.4.1.311.20.2.3)
+            // is the one read, a UTF8String inside its [0] EXPLICIT value —
+            // what a smart-card logon certificate names its holder by.
+            const upn = certificateUpnOf(name);
+            if (upn) {
+              facts.san.upn.push(upn);
+            }
           }
         });
+    } else if (ext.extnID === '2.5.29.14') {
+      facts.ski = Buffer.from(
+        certificateExtensionNode(ext).valueBlock.valueHexView || [])
+        .toString('hex');
     }
   });
   try {

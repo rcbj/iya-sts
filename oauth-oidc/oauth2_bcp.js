@@ -425,17 +425,23 @@ const REQUIREMENTS = [
   { id: 'no-certificate-header', section: '2.6', level: 'MUST NOT',
     appliesTo: 'authorization server', enforced: 'always',
     title: 'Never read a client certificate out of a header',
-    note: 'A proxy that terminates mTLS forwards the certificate in a header ' +
-          '— X-Client-Cert, X-Forwarded-Client-Cert, X-SSL-Client-Cert and a ' +
-          'dozen vendor spellings — and an application that believed one ' +
-          'would accept a certificate anybody can forge, since a header ' +
-          'costs nothing to write. THIS SERVICE READS NONE OF THEM, in ' +
-          'either mode: RFC 8705 binding and mTLS client authentication both ' +
-          'read the certificate off the TLS handshake itself. The cost is ' +
-          'real and is stated rather than hidden — a proxy terminating mTLS ' +
-          'in front of this service cannot pass the certificate through — ' +
-          'and Monitoring → TLS connection lists the ones a request carried ' +
-          'so that ' +
+    note: 'A proxy that terminates mTLS forwards the certificate in a ' +
+          'header — X-Client-Cert, X-Forwarded-Client-Cert, ' +
+          'X-SSL-Client-Cert and a dozen vendor spellings — and an ' +
+          'application that believed one would accept a certificate ' +
+          'anybody can forge, since a header costs nothing to write. ' +
+          'THIS SERVICE READS NONE OF THEM, in either mode, from any ' +
+          'sender but one: a TLS-terminating proxy an administrator ' +
+          'names by BOTH the client certificate it connects with ' +
+          '(tls.trustedProxyCertificates) AND its address ' +
+          '(tls.trustedProxyAddresses), whose RFC 9440 Client-Cert ' +
+          'and Client-Cert-Chain are verified here against the client ' +
+          'truststore before any door reads them (#2012, off by ' +
+          'default). From every other sender those two are removed ' +
+          'before anything reads them; RFC 8705 binding and mTLS ' +
+          'client authentication otherwise read the certificate off ' +
+          'the TLS handshake itself, and Monitoring → TLS connection ' +
+          'lists the vendor headers a request carried so that ' +
           'ignoring them is visible rather than silent.' },
 
   { id: 'proxy-sanitizes-headers', section: '2.6', level: 'MUST',

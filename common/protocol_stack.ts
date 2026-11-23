@@ -362,6 +362,19 @@ class ProtocolStack {
                'PivAttestation');
     this.build('common/piv_enrolment', require('./piv_enrolment'),
                'PivEnrolment');
+    // #2012: certificate sign-in profiles and their bindings. A library
+    // (rule 3) whose require adds the write rule `certSignIn.profiles` is
+    // held to; the directory is reached through certificate enrollment's
+    // slot at the moment of use.
+    this.build('common/certificate_binding',
+               require('./certificate_binding'), 'CertificateBinding');
+    // #2012: RFC 9440's forwarded client certificate, believed from a named
+    // TLS-terminating proxy only. A library; `app.js`'s middleware reaches
+    // it at the first request, and the client truststore it verifies to at
+    // the request.
+    this.build('common/forwarded_client_certificate',
+               require('./forwarded_client_certificate'),
+               'ForwardedClientCertificate');
     // #1955 P4: a PSKC seed file's reader, and the OATH token inventory it
     // fills. Two libraries (rule 3); the inventory installs the register's
     // `hotp` and `totp` retirers when it is installed, so after it.

@@ -1004,6 +1004,8 @@ var config = {
   // --- TLS -------------------------------------------------------------
   tls: {
     trustIssuedClientCertificates: true,                                                                                                                                                                                                                                                                       // Trust TLS client certificates issued on the user portal; restart to apply
+    trustedProxyCertificates: "",                                                                                                                                                                                                                                                                              // TLS-terminating proxies' client certificates (SHA-256)
+    trustedProxyAddresses: "",                                                                                                                                                                                                                                                                                 // TLS-terminating proxies' addresses
     hostnames: "localhost,sts,sts-mock,sts.example.com",                                                                                                                                                                                                                                                       // Certificate hostnames; restart to apply
     ips: "127.0.0.1",                                                                                                                                                                                                                                                                                          // Certificate IP addresses; restart to apply
     certificateAlgorithms: "rsa",                                                                                                                                                                                                                                                                              // Server certificate algorithms; restart to apply
@@ -1026,6 +1028,13 @@ var config = {
     trustAnchorsFile: "",                                                                                                                                                                                                                                                                                      // Client certificate trust anchors file; restart to apply
     selfSignedValidityYears: 2,                                                                                                                                                                                                                                                                                // Self-signed certificate validity (years); restart to apply
     selfSignedOrganization: "iya-sts"                                                                                                                                                                                                                                                                          // Self-signed certificate organization; restart to apply
+  },
+
+  // --- TLS -------------------------------------------------------------
+  certSignIn: {
+    profiles: "",              // Certificate sign-in profiles (JSON)
+    requireRevocation: "auto", // Require a verified revocation status at certificate sign-in
+    handoff: false             // Offer a certificate sign-in on its own listener
   },
 
   // --- Listener: LDAPS -------------------------------------------------
