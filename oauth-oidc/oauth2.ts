@@ -843,7 +843,10 @@ class IssuanceRefused extends Error {
     this.name = 'IssuanceRefused';
     this.issuance = answer;
     this.kind = kind;
-    this.message = answer.why;
+    // English text (#2006): a gate's `why` may be a `Sentence`, and an
+    // Error's message, which `oauthError()` sends as `error_description`,
+    // is a string.
+    this.message = String(answer.why || '');
     log.debug("Leaving IssuanceRefused.constructor().");
   }
 }

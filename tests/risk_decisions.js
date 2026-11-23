@@ -319,7 +319,7 @@ function childMain() {
          'B1. LOW, UNSCORED and no facts at all are permitted');
     const high = ask(facts('HIGH', ['tor-exit']));
     note(!high.allowed && high.risk && high.risk.action === 'refuse' &&
-         high.why === 'Authentication failed.',
+         String(high.why) === 'Authentication failed.',
          'B2. HIGH is refused — and the sentence a client may see names ' +
          'neither the level nor the signals', JSON.stringify(high));
     const medium = ask(facts('MEDIUM', ['tor-exit']));

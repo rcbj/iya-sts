@@ -21011,6 +21011,12 @@ const CODES = [
   { code: 'STS-I18N-0015',
     summary: 'POST /authn/language came from a page of another site (#1442).',
     spec: 'HTTP 403' },
+  { code: 'STS-I18N-0016',
+    summary: 'A refusal named a `refusals` catalog key the English catalog ' +
+      'does not have — a sentence a store kept under another build, or a ' +
+      'rollback — so the English it was given, or a general sentence, was ' +
+      'sent instead of the key, with no catalog message beside it (#2006).',
+    spec: 'none — a warning in the log' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',

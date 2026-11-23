@@ -1015,6 +1015,14 @@ const DESCRIPTION_REPLACEMENTS = {
  */
 function sanitizeDescription(text) {
   log.debug("Entering sanitizeDescription().");
+  // A REFUSAL'S SENTENCE (#2006, `common/sentence.ts`) is an object whose
+  // English is `String()`'s: a library's `why` handed to a protocol answer
+  // is one since #2006, and as written it would skip the character set
+  // below and reach the wire with the quotes and dashes RFC 6749 section
+  // 5.2 forbids. Any other object is made text the same way.
+  if (text !== null && typeof text === 'object') {
+    text = String(text);
+  }
   if (typeof text !== 'string') {
     log.debug("Leaving sanitizeDescription(). As written.");
     return text;

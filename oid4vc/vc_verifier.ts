@@ -257,6 +257,8 @@ const VCI_FORMATS = Array.from(new Set(
 // of request is the top-level claim and why a claim that is not in the
 // catalogue can still be asked for.
 import vpConfig = require('./vc_verifier_config');
+// A refusal as a catalog sentence (#2006): a leaf library.
+import Sentence = require('../common/sentence');
 // `oid4vp.presentationRequestTtlS` since 2026-09-12; the constant is its
 // default. Read once per request BUILT, and the transaction carries the expiry
 // it was given.
@@ -1071,13 +1073,8 @@ class VcVerifier {
       if (allowed.indexOf(asked) < 0) {
         log.debug("Leaving VcVerifier.vpWalletFor(). An unregistered wallet " +
                   "URL was refused.");
-        return { error: 'The wallet URL "' + asked + '" is neither ' +
-                        'oid4vp.walletUrl nor one listed in ' +
-                        'oid4vp.allowedWalletUrls, and this realm does not ' +
-                        'send a presentation request to an address the ' +
-                        'request named. Add it to that setting, or leave the ' +
-                        'wallet ' +
-                        'parameter off.' };
+        return { error: Sentence.say('refusals.wallet.walletUrlNotListed',
+                                     { url: asked }) };
       }
     }
     // NO WEB WALLET UNLESS ONE IS CONFIGURED OR NAMED (2026-10-12): the
@@ -4326,10 +4323,14 @@ class VcVerifier {
     const { log, vcIssued, nameForSubject, subjectForName,
             stsCrypto } = this.deps;
     log.debug("Entering VcVerifier.signInOutcome().");
-    const refuse = (errorCode: string, reason: string) => {
+    // `reason` is a catalog sentence (#2006), English to every text reader;
+    // `reasonMessage` keeps its key, because the outcome is put in the
+    // transaction store, which keeps only the English.
+    const refuse = (errorCode: string, reason: string | Sentence): any => {
       log.debug("Leaving VcVerifier.signInOutcome(). " + errorCode);
       return { ok: false, errorCode: errorCode, reason: reason,
-               username: '', subject: '' };
+               reasonMessage: Sentence.stored(reason), username: '',
+               subject: '' };
     };
     // A STATUS REFUSAL IS THE ONE FAILURE THAT GOES ON (#38's follow-ups).
     // `statusCheck()` runs only after everything else verified, so a
@@ -4341,21 +4342,16 @@ class VcVerifier {
     // register is read first and this is decided at the end.
     const statusRefused = !!(verified && verified.statusRefused);
     if (!statusRefused && (!verified || !verified.ok)) {
-      return refuse('STS-VC-0061', 'The presentation did not verify, so it ' +
-                    'signs nobody in. The checks above say which rule it ' +
-                    'broke.');
+      return refuse('STS-VC-0061',
+        Sentence.say('refusals.wallet.presentationNotVerified'));
     }
     const format = String((answer && answer.format) || 'dc+sd-jwt');
     // An mdoc always carries its document signer's certificate (#1862).
     // That is not "another issuer": the issued register says whether
     // this realm minted it. Every other format still refuses here.
     if (verified.issuerCertificatePem && format !== 'mso_mdoc') {
-      return refuse('STS-VC-0058', 'The credential verified against a ' +
-                    'certificate in oid4vp.trustedIssuerCertificates, not ' +
-                    'against this realm\'s own key. A credential another ' +
-                    'issuer signed may be presented to this Verifier, and ' +
-                    'it does not sign anybody in here: only a credential ' +
-                    'this realm issued can say who a person here is.');
+      return refuse('STS-VC-0058',
+        Sentence.say('refusals.wallet.anotherIssuer'));
     }
     let presentedJkt = '';
     try {
@@ -4366,13 +4362,7 @@ class VcVerifier {
                 ((e && e.message) || e));
       presentedJkt = '';
     }
-    const notIssued = 'This realm has no record of issuing this credential ' +
-      'to a person it authenticated. Only a credential this realm\'s ' +
-      'issuer minted on an access token this realm issued and verified — ' +
-      'for a person, for credential issuance, and not disowned since — may ' +
-      'sign somebody in. A credential from another realm, one issued on a ' +
-      'token this service did not issue, or one issued before a restart in ' +
-      'development mode is not one.';
+    const notIssued = Sentence.say('refusals.wallet.notIssuedHere');
     let row = null;
     let candidates = [];
     if (format === 'mso_mdoc') {
@@ -4384,9 +4374,8 @@ class VcVerifier {
         return refuse('STS-VC-0059', notIssued);
       }
       if (!presentedJkt || presentedJkt !== row.jkt) {
-        return refuse('STS-VC-0066', 'The mdoc does not match the device ' +
-                      'key this realm recorded when it issued it, so it ' +
-                      'signs nobody in.');
+        return refuse('STS-VC-0066',
+          Sentence.say('refusals.wallet.mdocKeyMismatch'));
       }
       candidates = [].concat(row.credentials || []);
     } else if (format === 'ldp_vc') {
@@ -4402,10 +4391,8 @@ class VcVerifier {
         return all.indexOf(one) === i;
       });
       if (subjects.length > 1) {
-        return refuse('STS-VC-0066', 'This wallet key was issued credentials ' +
-                      'for more than one person here, and an ldp_vc ' +
-                      'presentation does not say which credential it came ' +
-                      'from, so it signs nobody in.');
+        return refuse('STS-VC-0066',
+          Sentence.say('refusals.wallet.keyForSeveralPeople'));
       }
       row = rows[0];
       candidates = vcIssued.credentialsMatching(row, {
@@ -4427,9 +4414,8 @@ class VcVerifier {
         });
       if ((sub !== row.subject && !boundDid) ||
           !presentedJkt || presentedJkt !== row.jkt) {
-        return refuse('STS-VC-0066', 'The credential does not match what ' +
-                      'this realm recorded when it issued it (its subject or ' +
-                      'the key it is bound to), so it signs nobody in.');
+        return refuse('STS-VC-0066',
+          Sentence.say('refusals.wallet.credentialMismatch'));
       }
       candidates = [].concat(row.credentials || []);
     }
@@ -4439,28 +4425,27 @@ class VcVerifier {
       // wallet page — except for a suspension, which a new credential would
       // not explain and an administrator may lift. `disowned` rides the
       // outcome so the wallet's answer and the browser's page say the same.
-      const refused: any = refuse('STS-VC-0071', 'This credential has been ' +
-        'disowned: ' + disowned.reason + '. It still verifies, and it signs ' +
-        'nobody in here any more — its status list says so too. ' +
-        (disowned.reissue
-          ? 'A credential issued to you after that will: get one issued ' +
-            'again on the Wallet page of your account.'
-          : 'An administrator of this service may reinstate it.'));
+      // The register's reason is its own record of what disowned it, and
+      // is placed as it is.
+      const refused: any = refuse('STS-VC-0071', disowned.reissue
+        ? Sentence.say('refusals.wallet.disownedReissue',
+                       { reason: String(disowned.reason) })
+        : Sentence.say('refusals.wallet.disownedReinstate',
+                       { reason: String(disowned.reason) }));
       refused.disowned = disowned;
       return refused;
     }
     if (statusRefused) {
       return refuse(verified.statusErrorCode || 'STS-VC-0072',
-                    'The credential\'s status says it is ' +
-                    'no longer good (' + (verified.statusDetail || 'revoked ' +
-                    'or suspended') + '), so it signs nobody in.');
+        verified.statusDetail
+          ? Sentence.say('refusals.wallet.statusNotGood',
+                         { detail: String(verified.statusDetail) })
+          : Sentence.say('refusals.wallet.statusRevokedOrSuspended'));
     }
     const username = nameForSubject(row.subject);
     if (!username || subjectForName(username) !== row.subject) {
-      return refuse('STS-VC-0060', 'The directory entry this credential was ' +
-                    'issued for no longer exists — it was deleted, or its ' +
-                    'name now belongs to a different entry — so the ' +
-                    'credential signs nobody in.');
+      return refuse('STS-VC-0060',
+        Sentence.say('refusals.wallet.entryGone'));
     }
     const assurance = this.assuranceOf(row, candidates);
     log.debug("Leaving VcVerifier.signInOutcome(). " + username + ".");
@@ -4896,8 +4881,11 @@ class VcVerifier {
                          checks: [], at: new Date().toISOString() };
       record.signIn.outcome = {
         ok: false, errorCode: 'STS-VC-0037', username: '', subject: '',
-        reason: 'The wallet declined to present a credential (' +
-                String(data.error) + '), so nobody was signed in.' };
+        reason: Sentence.say('refusals.wallet.declined',
+                             { error: String(data.error) }),
+        reasonMessage: Sentence.say('refusals.wallet.declined',
+                                    { error: String(data.error) })
+          .message() };
       record.signIn.via = 'dc_api';
       vpTransactions.set(String(record.state), record);
       log.debug("Leaving VcVerifier.answerDcApi(). The wallet refused.");
@@ -5149,8 +5137,9 @@ class VcVerifier {
       if (withVp) {
         outcome = ok ? this.signInOutcome(answer.verified, answer) :
           { ok: false, errorCode: 'STS-VC-0090', username: '', subject: '',
-            reason: 'The self-issued ID Token and the presentation did not ' +
-                    'both verify for one holder, so nobody was signed in.' };
+            reason: Sentence.say('refusals.wallet.notOneHolder'),
+            reasonMessage:
+              Sentence.say('refusals.wallet.notOneHolder').message() };
       } else if (record.signIn.enrol && idv.ok) {
         // AN ENROLMENT (#129): the key is proved, and the person it is for
         // is the one the transaction was started by; whether it may be
@@ -5325,10 +5314,16 @@ class VcVerifier {
       log.debug("Leaving VcVerifier.withdrawSignIn(). Nothing to withdraw.");
       return false;
     }
+    // The store keeps the English; the message beside it (#2006) is what
+    // `VcSignin.revived()` says again in the page's language. `why` is the
+    // caller's own fragment, placed as data.
+    const withdrawn = why
+      ? Sentence.say('refusals.wallet.signInWithdrawnBecause',
+                     { why: String(why) })
+      : Sentence.say('refusals.wallet.signInWithdrawn');
     record.signIn.outcome = {
       ok: false, errorCode: 'STS-VC-0070', username: '', subject: '',
-      reason: 'This sign-in was ended before this browser collected it: ' +
-              String(why || 'a sign-out') + '. Nobody was signed in.' };
+      reason: String(withdrawn), reasonMessage: Sentence.stored(withdrawn) };
     vpTransactions.set(String(record.state), record);
     log.debug("Leaving VcVerifier.withdrawSignIn(). Withdrawn.");
     return true;
@@ -5585,8 +5580,11 @@ class VcVerifier {
         if (record.signIn) {
           record.signIn.outcome = {
             ok: false, errorCode: 'STS-VC-0037', username: '', subject: '',
-            reason: 'The wallet declined to present a credential (' +
-                    String(body.error) + '), so nobody was signed in.' };
+            reason: Sentence.say('refusals.wallet.declined',
+                                 { error: String(body.error) }),
+            reasonMessage: Sentence.say('refusals.wallet.declined',
+                                        { error: String(body.error) })
+              .message() };
         }
         // THROUGH THE STORE, so the verdict is not a fact only this process
         // holds: `vpTransactions` is `realms.map({persist})` and its journal
