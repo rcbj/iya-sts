@@ -377,7 +377,10 @@ function run(t) {
           html.indexOf('client_id=' + APP) >= 0 &&
           html.indexOf('application=' + CLIENT) >= 0 &&
           html.indexOf('method=password') >= 0 &&
-          html.indexOf('href="/admin/audit?code=STS-AUTHN-0054"') >= 0 &&
+          // The code's link names the events tab (#1987): a GET with no
+          // fragment reloads the audit page onto Metadata.
+          html.indexOf('href="/admin/audit?code=STS-AUTHN-0054' +
+                       '#audit-tab-events"') >= 0 &&
           html.indexOf(PASSWORD) < 0 &&
           html.indexOf('No authentication attempt naming this ' +
                        'application') < 0,

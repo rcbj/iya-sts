@@ -116,7 +116,15 @@ const PASSWORD_CHANGE_BODY = ModelZod.body('authn', 'changePassword');
 //   * `credential` — a ceremony's result, bounded and parsed downstream.
 //   * `key` — the passkey a person chose (#534), a credential id.
 //   * `t` — a mailed link's token, as the link carried it.
+//   * `code2` — the next code of an HOTP token (#1996), on `checkCode`
+//     only: the two-code resynchronisation is a sign-in step's, so the
+//     app enrolment and the emailed code each read their own model and
+//     carry `code` alone.
 const CODE_BODY = ModelZod.body('authn', 'checkCode');
+
+const ENROLMENT_CODE_BODY = ModelZod.body('authn', 'confirmAppEnrolment');
+
+const EMAILED_CODE_BODY = ModelZod.body('authn', 'checkEmailedCode');
 
 const BACKUP_CODE_BODY = ModelZod.body('authn', 'spendRecoveryCode');
 
@@ -320,7 +328,7 @@ const SCREEN_OPERATIONS = [
   { method: 'POST', path: API + '/mfa/:id/setup/confirm',
     operationId: 'confirmAppEnrolment', access: 'mfa',
     action: 'confirm-totp',
-    handler: 'mfaAct', body: CODE_BODY },
+    handler: 'mfaAct', body: ENROLMENT_CODE_BODY },
   { method: 'POST', path: API + '/mfa/:id/setup/webauthn',
     operationId: 'beginKeyEnrolment', access: 'mfa',
     action: 'webauthn',
@@ -350,7 +358,7 @@ const SCREEN_OPERATIONS = [
   { method: 'POST', path: API + '/mfa/:id/email/code',
     operationId: 'checkEmailedCode', access: 'mfa',
     action: 'verify',
-    handler: 'mfaAct', body: CODE_BODY },
+    handler: 'mfaAct', body: EMAILED_CODE_BODY },
   { method: 'POST', path: API + '/mfa/:id/email-link/open',
     operationId: 'spendEmailedLink', access: 'mfa',
     action: 'open',
