@@ -168,6 +168,9 @@ const MAX_MINE = 50;
 // catalog under it, the entitlements the policy's advice lists.
 const CATALOGS_PATH = REQUESTS_PATH + '/catalogs';
 const ENTITLEMENT_POINTER = '/requested_access/entitlement';
+// THE BULK COMPANION (#1204): a bundle's id prefix and its index key.
+const BUNDLE_PREFIX = 'arb_';
+const BUNDLE_KEY = 'bundle:';
 // THE ACTOR COMPANION (#1204): the deepest actor chain read, and the
 // longest of its identifiers.
 const MAX_ACT_DEPTH = 8;
@@ -189,7 +192,12 @@ const GATE_REVOKE_ACTION = 'revoke-access-request';
 // The lifecycle, the first status the only one that is not terminal, and
 // the CALLBACK companion's event names, which are the terminal statuses:
 // the model's Task Handle (`models/authzen/authzen_members.tsp`, #1579).
-const STATES = Object.freeze(authzenModel.valuesOf('task-handle', 'status'));
+// `partial` is a BULK Task Handle's aggregate only (#1204): no single
+// task is ever partial, so it is neither a task's status nor an event.
+const STATES = Object.freeze(authzenModel.valuesOf('task-handle', 'status')
+  .filter(function (one: string): boolean {
+    return one !== 'partial';
+  }));
 const EVENTS = Object.freeze(STATES.slice(1));
 
 // The context members that are the profile's machinery, never part of the
@@ -1563,39 +1571,38 @@ class AccessRequests {
   // THE SUBMISSION (the profile's section on it).
   // -------------------------------------------------------------------------
   /**
-   * Answers one submission: the binding verified, the task made (or found
-   * again by its Idempotency-Key or its binding token), and the approvers
-   * mailed. Writes the response.
+   * Verifies one submission's shape, denial binding, freshness, tuple and
+   * the caller's scope, without consuming anything (#1204: a bulk
+   * submission's every item is checked by this, as a single one is).
    *
-   * @param req - the request
-   * @param res - the response
-   * @param caller - the admitted caller, `{ name, kind, identifier }`
-   * @param body - the parsed body, or undefined when it was not JSON
+   * @param req - the request, for the base
+   * @param caller - the admitted caller
+   * @param body - the submission, or one bulk item made into one
    * @param scope - `(caller, application)` → the caller's scope check
+   * @returns `{ bound, scoped, base }`, or `{ refusal }`
    */
-  submit(req: Req, res: Res, caller: Json, body: unknown,
-         scope: (caller: Json, application: string) => Json): void {
+  private verifyOne(req: Req, caller: Json, body: unknown,
+                    scope: (caller: Json, application: string) => Json):
+    Json {
     const self = this;
     const { log } = this.deps;
-    log.debug("Entering AccessRequests.submit().");
+    log.debug("Entering AccessRequests.verifyOne().");
+    const no = AccessRequests.refusal;
     // THE SHAPE IS THE MODEL'S (#1579): `AccessRequestSubmission` — the
     // members it takes, BULK's refused, the denied tuple's three objects.
     // `denial`, `requested_access` and `callback` are read at their own
     // places below, between the checks that need state.
     const shape = authzenModel.read('access-request', body);
     if (shape) {
-      self.problem(res, 400, '', shape.code, shape.message);
-      log.debug("Leaving AccessRequests.submit(). " + shape.code);
-      return;
+      log.debug("Leaving AccessRequests.verifyOne(). " + shape.code);
+      return no(400, '', shape.code, shape.message);
     }
     const given: Json = body;
     const denial = given.denial;
     const unbound = authzenModel.field('access-request', 'denial', denial);
     if (unbound) {
-      self.problem(res, 400, 'not_requestable', unbound.code,
-                   unbound.message);
-      log.debug("Leaving AccessRequests.submit(). No denial.");
-      return;
+      log.debug("Leaving AccessRequests.verifyOne(). No denial.");
+      return no(400, 'not_requestable', unbound.code, unbound.message);
     }
     const base = self.baseOf(req);
     // THE TOKEN IS AUTHORITATIVE WHEN IT IS PRESENT. evaluation_id is a
@@ -1605,57 +1612,52 @@ class AccessRequests {
     if (denial.binding_token) {
       bound = self.verifyBinding(String(denial.binding_token), base);
       if (!bound) {
-        self.problem(res, 400, 'invalid_denial_binding', 'STS-AUTHZEN-0073',
-                     'denial.binding_token is not one this realm issued ' +
-                     'for this endpoint.');
-        log.debug("Leaving AccessRequests.submit(). Did not verify.");
-        return;
+        log.debug("Leaving AccessRequests.verifyOne(). Did not verify.");
+        return no(400, 'invalid_denial_binding', 'STS-AUTHZEN-0073',
+                  'denial.binding_token is not one this realm issued ' +
+                  'for this endpoint.');
       }
       if (denial.evaluation_id !== undefined &&
           String(denial.evaluation_id) !== String(bound.evaluation_id || '')) {
-        self.problem(res, 400, 'invalid_denial_binding', 'STS-AUTHZEN-0074',
-                     'denial.evaluation_id is not the evaluation the ' +
-                     'binding_token names.');
-        log.debug("Leaving AccessRequests.submit(). evaluation_id differs.");
-        return;
+        log.debug("Leaving AccessRequests.verifyOne(). evaluation_id " +
+                  "differs.");
+        return no(400, 'invalid_denial_binding', 'STS-AUTHZEN-0074',
+                  'denial.evaluation_id is not the evaluation the ' +
+                  'binding_token names.');
       }
     } else {
       bound = self.denialByEvaluation(String(denial.evaluation_id || ''),
                                       base);
       if (!bound) {
-        self.problem(res, 400, 'invalid_denial_binding', 'STS-AUTHZEN-0073',
-                     'denial.evaluation_id names no requestable denial this ' +
-                     'realm issued for this endpoint.');
-        log.debug("Leaving AccessRequests.submit(). No such denial.");
-        return;
+        log.debug("Leaving AccessRequests.verifyOne(). No such denial.");
+        return no(400, 'invalid_denial_binding', 'STS-AUTHZEN-0073',
+                  'denial.evaluation_id names no requestable denial this ' +
+                  'realm issued for this endpoint.');
       }
     }
     const now = self.nowS();
     const echoed = Date.parse(String(denial.expires_at || ''));
     if (String(denial.expires_at || '') !== String(bound.denial_expires_at)) {
-      self.problem(res, 400, 'invalid_denial_binding', 'STS-AUTHZEN-0074',
-                   'denial.expires_at is not the value the denial carried; ' +
-                   'echo it unchanged.');
-      log.debug("Leaving AccessRequests.submit(). expires_at differs.");
-      return;
+      log.debug("Leaving AccessRequests.verifyOne(). expires_at differs.");
+      return no(400, 'invalid_denial_binding', 'STS-AUTHZEN-0074',
+                'denial.expires_at is not the value the denial carried; ' +
+                'echo it unchanged.');
     }
     const deadline = Math.min(Number(bound.exp) || 0,
                               Math.floor(echoed / 1000) || 0);
     if (!(deadline > 0) || now > deadline + SKEW_S) {
-      self.problem(res, 410, 'expired_denial', 'STS-AUTHZEN-0075',
-                   'The requestable denial expired at ' +
-                   String(denial.expires_at) + '; evaluate again for a ' +
-                   'fresh one.');
-      log.debug("Leaving AccessRequests.submit(). Expired.");
-      return;
+      log.debug("Leaving AccessRequests.verifyOne(). Expired.");
+      return no(410, 'expired_denial', 'STS-AUTHZEN-0075',
+                'The requestable denial expired at ' +
+                String(denial.expires_at) + '; evaluate again for a ' +
+                'fresh one.');
     }
     const mismatch = self.bindingMismatch(bound, given, caller.name);
     if (mismatch) {
-      self.problem(res, 400, 'invalid_denial_binding', 'STS-AUTHZEN-0074',
-                   'The request does not match the denial it names: ' +
-                   mismatch + '.');
-      log.debug("Leaving AccessRequests.submit(). " + mismatch);
-      return;
+      log.debug("Leaving AccessRequests.verifyOne(). " + mismatch);
+      return no(400, 'invalid_denial_binding', 'STS-AUTHZEN-0074',
+                'The request does not match the denial it names: ' +
+                mismatch + '.');
     }
     // A token that proved the tuple by hash and carried no inline claims:
     // the task's tuple is the submission's, now that the hash matched.
@@ -1671,12 +1673,60 @@ class AccessRequests {
     // the denial and the submission ends the request here.
     const scoped = scope(caller, String(bound.application || ''));
     if (!scoped.application) {
-      self.problem(res, 403, '', 'STS-AUTHZEN-0077', 'This caller may no ' +
-                   'longer ask about the application "' +
-                   String(bound.application).slice(0, 120) + '".');
-      log.debug("Leaving AccessRequests.submit(). Out of scope.");
+      log.debug("Leaving AccessRequests.verifyOne(). Out of scope.");
+      return no(403, '', 'STS-AUTHZEN-0077', 'This caller may no longer ' +
+                'ask about the application "' +
+                String(bound.application).slice(0, 120) + '".');
+    }
+    log.debug("Leaving AccessRequests.verifyOne().");
+    return { bound: bound, scoped: scoped, base: base };
+  }
+
+  // A refusal `verifyOne()` hands back, written by its caller.
+  private static refusal(status: number, type: string, code: string,
+                         detail: string): Json {
+    log.debug("Entering AccessRequests.refusal(). " + code);
+    log.debug("Leaving AccessRequests.refusal().");
+    return { refusal: { status: status, type: type, code: code,
+                        detail: detail } };
+  }
+
+  /**
+   * Answers one submission: the binding verified, the task made (or found
+   * again by its Idempotency-Key or its binding token), and the approvers
+   * mailed. Writes the response.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param caller - the admitted caller, `{ name, kind, identifier }`
+   * @param body - the parsed body, or undefined when it was not JSON
+   * @param scope - `(caller, application)` → the caller's scope check
+   */
+  submit(req: Req, res: Res, caller: Json, body: unknown,
+         scope: (caller: Json, application: string) => Json): void {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.submit().");
+    // THE BULK COMPANION (#1204): `items`, while it is on, is a bundle of
+    // single submissions; off, the single model refuses `items` as before.
+    if (isObject(body) && (body as Json).items !== undefined &&
+        self.bulkOn()) {
+      self.submitBulk(req, res, caller, body as Json, scope);
+      log.debug("Leaving AccessRequests.submit(). A bulk submission.");
       return;
     }
+    const one = self.verifyOne(req, caller, body, scope);
+    if (one.refusal) {
+      // error-code: none — verifyOne()'s own code, carried on its refusal.
+      self.problem(res, one.refusal.status, one.refusal.type,
+                   one.refusal.code, one.refusal.detail);
+      log.debug("Leaving AccessRequests.submit(). " + one.refusal.code);
+      return;
+    }
+    const given: Json = body;
+    const bound: Json = one.bound;
+    const scoped: Json = one.scoped;
+    const base: string = one.base;
     // IDEMPOTENCY, scoped to the authenticated caller (the profile's
     // SHOULD), compared over the canonical body.
     const key = String(req.headers['idempotency-key'] || '').slice(0, 256);
@@ -1815,6 +1865,11 @@ class AccessRequests {
     if (spec.acting) {
       task.actor = spec.acting;
     }
+    // ONE ITEM OF A BULK REQUEST (#1204): its bundle and its position.
+    if (spec.bundle) {
+      task.bundle = String(spec.bundle);
+      task.position = Number(spec.position) || 0;
+    }
     if (spec.source) {
       task.source = spec.source;
     }
@@ -1893,6 +1948,392 @@ class AccessRequests {
       String(asked.entitlement || '') === String(task.entitlement || '');
     log.debug("Leaving AccessRequests.sameAugmentations(). " + out);
     return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE BULK COMPANION (#1204). This service issues no bundle denial — a
+  // batch evaluation answers each item with a requestable denial of its own
+  // — so every item carries its own `denial` (its section 3.1) and a
+  // top-level one is bundle binding material it never issued. Each item is
+  // checked exactly as a single submission is (`verifyOne()`, with the
+  // top-level subject and context), and becomes an ordinary task: approvers
+  // decide it alone, and its approval verifies alone (section 3.6). The
+  // bundle is an index row holding the items' ids in order; its Task
+  // Handle is built from them whenever it is read (section 3.4). A
+  // callback on a bulk submission is refused: the CALLBACK companion's
+  // `partial` event is not built.
+  // -------------------------------------------------------------------------
+  /**
+   * Whether `items` is read (`authzen.accessRequestBulk`).
+   *
+   * @returns true when it and the profile are on
+   */
+  bulkOn(): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering AccessRequests.bulkOn().");
+    log.debug("Leaving AccessRequests.bulkOn().");
+    return this.enabled() &&
+      config.value('authzen.accessRequestBulk') === true;
+  }
+
+  /**
+   * Answers a bulk submission: every item verified, then every item a
+   * task, then the bundle's Task Handle.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param caller - the admitted caller
+   * @param given - the submission, with `items`
+   * @param scope - `(caller, application)` → the caller's scope check
+   */
+  private submitBulk(req: Req, res: Res, caller: Json, given: Json,
+                     scope: (caller: Json, application: string) => Json):
+    void {
+    const self = this;
+    const { log, helpers, index } = this.deps;
+    log.debug("Entering AccessRequests.submitBulk().");
+    const most = self.seconds('authzen.accessRequestMaxBulkItems');
+    const items: Json[] = Array.isArray(given.items) ? given.items : [];
+    if (!Array.isArray(given.items) || !items.length || items.length > most ||
+        !items.every(isObject)) {
+      self.problem(res, 400, '', 'STS-AUTHZEN-0156', 'items must hold ' +
+                   'from 1 to ' + most + ' objects, each with resource, ' +
+                   'action and its own denial.');
+      log.debug("Leaving AccessRequests.submitBulk(). Bad items.");
+      return;
+    }
+    if (given.resource !== undefined || given.action !== undefined) {
+      self.problem(res, 400, '', 'STS-AUTHZEN-0155', 'With items, the ' +
+                   'top-level resource and action are omitted (the BULK ' +
+                   'companion\'s section 3.1).');
+      log.debug("Leaving AccessRequests.submitBulk(). A top-level tuple.");
+      return;
+    }
+    if (given.denial !== undefined ||
+        !items.every(function (one: Json): boolean {
+          return one.denial !== undefined;
+        })) {
+      self.problem(res, 400, 'invalid_denial_binding', 'STS-AUTHZEN-0157',
+                   'Every item carries its own denial: this service issues ' +
+                   'no bundle denial, so a top-level denial binds nothing.');
+      log.debug("Leaving AccessRequests.submitBulk(). A bundle denial.");
+      return;
+    }
+    if (given.callback !== undefined) {
+      self.problem(res, 400, '', 'STS-AUTHZEN-0159', 'A bulk submission ' +
+                   'takes no callback; poll the bundle\'s status endpoint.');
+      log.debug("Leaving AccessRequests.submitBulk(). A callback.");
+      return;
+    }
+    // IDEMPOTENCY OVER THE WHOLE BODY (section 3.1), per caller, first: a
+    // retry finds its bundle before its items' denials read as used.
+    const key = String(req.headers['idempotency-key'] || '').slice(0, 256);
+    const fingerprint = stsCrypto.digest('sha256',
+      AccessRequests.canonical(given), 'base64url');
+    const again = key ? self.recalled('idem', caller.name + '\n' + key)
+      : null;
+    if (again) {
+      const earlier = self.bundleOf(String(again.task));
+      if (earlier && again.fingerprint === fingerprint &&
+          earlier.row.requester === caller.name) {
+        self.sendBundle(res, earlier, self.languagesOf(req));
+        log.debug("Leaving AccessRequests.submitBulk(). The same bundle.");
+        return;
+      }
+      self.problem(res, 409, 'duplicate_request', 'STS-AUTHZEN-0076',
+                   'This Idempotency-Key was already used for a request ' +
+                   'whose body differs.');
+      log.debug("Leaving AccessRequests.submitBulk(). A duplicate.");
+      return;
+    }
+    // EACH ITEM, AS A SINGLE SUBMISSION WOULD BE CHECKED, before anything
+    // is made.
+    const top: Json = isObject(given.requested_access)
+      ? given.requested_access : {};
+    const checked: Json[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const merged: Json = Object.assign({}, top,
+        isObject(item.requested_access) ? item.requested_access : {});
+      const single: Json = {
+        subject: given.subject, resource: item.resource,
+        action: item.action, denial: item.denial };
+      if (given.context !== undefined) {
+        single.context = given.context;
+      }
+      if (Object.keys(merged).length) {
+        single.requested_access = merged;
+      }
+      const one = self.verifyOne(req, caller, single, scope);
+      if (one.refusal) {
+        // error-code: none — verifyOne()'s own code, carried on its refusal.
+        self.problem(res, one.refusal.status, one.refusal.type,
+                     one.refusal.code, 'items[' + i + ']: ' +
+                     one.refusal.detail);
+        log.debug("Leaving AccessRequests.submitBulk(). Item " + i + ".");
+        return;
+      }
+      if (checked.length &&
+          one.scoped.application !== checked[0].scoped.application) {
+        self.problem(res, 400, '', 'STS-AUTHZEN-0158', 'items[' + i + ']\'s ' +
+                     'denial is about another application: one bulk ' +
+                     'request is one application\'s.');
+        log.debug("Leaving AccessRequests.submitBulk(). Mixed.");
+        return;
+      }
+      const jti = String(one.bound.jti || '');
+      if (self.recalled('jti', jti) ||
+          checked.some(function (done: Json): boolean {
+            return String(done.bound.jti || '') === jti;
+          })) {
+        self.problem(res, 409, 'duplicate_request', 'STS-AUTHZEN-0076',
+                     'items[' + i + ']\'s denial was already requested.');
+        log.debug("Leaving AccessRequests.submitBulk(). Item " + i +
+                  " requested.");
+        return;
+      }
+      const asked = self.requestedAccess(single, one.bound.terms || {});
+      if (asked.problem) {
+        // error-code: none — requestedAccess()'s own code.
+        self.problem(res, 400, '', asked.code, 'items[' + i + ']: ' +
+                     asked.problem);
+        log.debug("Leaving AccessRequests.submitBulk(). " + asked.code);
+        return;
+      }
+      checked.push({ bound: one.bound, scoped: one.scoped, base: one.base,
+                     asked: asked });
+    }
+    const acting = self.actorOf(given.client, caller, checked[0].base);
+    if (acting.problem) {
+      // error-code: none — actorOf()'s own code.
+      self.problem(res, 400, '', acting.code, acting.problem);
+      log.debug("Leaving AccessRequests.submitBulk(). " + acting.code);
+      return;
+    }
+    if (self.pendingCount() + checked.length >
+        self.seconds('authzen.accessRequestMaxPending')) {
+      self.problem(res, 503, '', 'STS-AUTHZEN-0078', 'This realm holds as ' +
+                   'many pending access requests as it may ' +
+                   '(authzen.accessRequestMaxPending); try again later.');
+      log.debug("Leaving AccessRequests.submitBulk(). Full.");
+      return;
+    }
+    const id = BUNDLE_PREFIX + helpers.randomId(24);
+    const client = isObject(given.client)
+      ? { id: String(given.client.id || '').slice(0, MAX_ID),
+          name: String(given.client.name || '').slice(0, MAX_TEXT) }
+      : null;
+    const ids = checked.map(function (one: Json, i: number): string {
+      return String(self.openTask({
+        base: one.base, requester: caller.name, requesterKind: caller.kind,
+        client: client, application: one.scoped.application,
+        bound: one.bound, asked: one.asked, callback: null, key: '',
+        fingerprint: fingerprint, actor: caller.name, origin: 'pep',
+        formSubmittedBy: '', acting: acting.actor, source: acting.source,
+        bundle: id, position: i }).id);
+    });
+    const now = self.nowS();
+    const until = now + self.seconds('authzen.accessRequestLifetimeS') +
+      self.seconds('authzen.accessRequestMaxApprovalS') + RETENTION_S;
+    index.set(BUNDLE_KEY + stsCrypto.credentialDigest(id),
+              { id: id, tasks: ids, requester: caller.name,
+                base: checked[0].base, createdAt: now, until: until });
+    if (key) {
+      self.remember('idem', caller.name + '\n' + key, id,
+                    { fingerprint: fingerprint }, until);
+    }
+    self.deps.audit.audit({
+      action: 'authzen.access-request.submitted',
+      actor: caller.name,
+      protocol: 'AuthZEN',
+      detail: 'The bulk access request ' + id + ' was submitted with ' +
+        ids.length + ' item(s): ' + ids.join(', ') + '.'
+    });
+    self.sendBundle(res, self.bundleOf(id), self.languagesOf(req));
+    log.debug("Leaving AccessRequests.submitBulk(). " + id);
+  }
+
+  /**
+   * A bundle and its items, or null when there is none (or it is gone).
+   *
+   * @param id - the bundle's id
+   * @returns `{ row, tasks }`
+   */
+  bundleOf(id: string): Json {
+    const self = this;
+    const { log, index } = this.deps;
+    log.debug("Entering AccessRequests.bundleOf().");
+    if (String(id || '').indexOf(BUNDLE_PREFIX) !== 0) {
+      log.debug("Leaving AccessRequests.bundleOf(). Not a bundle.");
+      return null;
+    }
+    const row = index.get(BUNDLE_KEY + stsCrypto.credentialDigest(
+      String(id).slice(0, MAX_ID)));
+    if (!row || Number(row.until) <= self.nowS()) {
+      log.debug("Leaving AccessRequests.bundleOf(). None.");
+      return null;
+    }
+    const tasks = (row.tasks || []).map(function (one: string): Json {
+      return self.task(String(one));
+    });
+    log.debug("Leaving AccessRequests.bundleOf(). " + tasks.length);
+    return { row: row, tasks: tasks };
+  }
+
+  /**
+   * A bundle's Task Handle and body (section 3.4): the aggregate status,
+   * and each item's resource, action, status and, once approved, its own
+   * result. No top-level result.
+   *
+   * @param bundle - `bundleOf()`'s answer
+   * @param languages - the caller's languages
+   * @returns `{ task }`
+   */
+  bundleBody(bundle: Json, languages: string[]): Json {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.bundleBody().");
+    const tasks: Json[] = bundle.tasks;
+    const statuses = tasks.map(function (one: Json): string {
+      return one ? String(one.status) : 'expired';
+    });
+    const distinct = statuses.filter(function (one: string, i: number) {
+      return statuses.indexOf(one) === i;
+    });
+    const status = statuses.indexOf('pending') >= 0 ? 'pending'
+      : distinct.length === 1 ? distinct[0] : 'partial';
+    const items = tasks.map(function (one: Json, i: number): Json {
+      if (!one) {
+        return { resource: {}, action: {}, status: statuses[i] };
+      }
+      const item: Json = { resource: one.resource, action: one.action,
+                           status: String(one.status) };
+      const result = self.bodyOf(one).result;
+      if (result) {
+        item.result = result;
+      }
+      return item;
+    });
+    const ends = tasks.map(function (one: Json): number {
+      return one ? Number(one.status === 'pending' ? one.expiresAt
+                                                   : one.keepUntil) : 0;
+    });
+    const endpoint = String(bundle.row.base) + REQUESTS_PATH + '/' +
+      String(bundle.row.id);
+    const handle: Json = { id: String(bundle.row.id), status: status,
+                           status_endpoint: endpoint,
+                           expires_at: instant(Math.max.apply(null,
+                             ends.concat([0])) * 1000),
+                           items: items };
+    if (status === 'pending') {
+      handle.links = { cancel: endpoint + '/cancel' };
+    }
+    const display = self.taskDisplay(status, languages || []);
+    if (display) {
+      handle.display = display;
+    }
+    const out = { task: handle };
+    authzenModel.hold('task-response', out, 'a bulk access request');
+    log.debug("Leaving AccessRequests.bundleBody(). " + status);
+    return out;
+  }
+
+  // Writes a bundle's answer: 202 while any item is pending, 201 once all
+  // are finished.
+  private sendBundle(res: Res, bundle: Json, languages: string[]): void {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.sendBundle().");
+    const body = this.bundleBody(bundle, languages);
+    res.status(body.task.status === 'pending' ? 202 : 201)
+       .type('application/json').set('Cache-Control', 'no-store')
+       .set('Location', body.task.status_endpoint)
+       .send(JSON.stringify(body, null, 2));
+    log.debug("Leaving AccessRequests.sendBundle().");
+  }
+
+  // The bundle a caller may read, or null with unknown_task written.
+  private callersBundle(res: Res, caller: Json, id: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.callersBundle().");
+    const bundle = this.bundleOf(id);
+    if (!bundle || bundle.row.requester !== caller.name) {
+      this.problem(res, 404, 'unknown_task', 'STS-AUTHZEN-0080',
+                   'There is no such task for this caller.');
+      log.debug("Leaving AccessRequests.callersBundle(). Unknown.");
+      return null;
+    }
+    log.debug("Leaving AccessRequests.callersBundle().");
+    return bundle;
+  }
+
+  /**
+   * A bundle's status endpoint.
+   *
+   * @param res - the response
+   * @param caller - the admitted caller
+   * @param id - the bundle's id
+   */
+  private bundleStatus(res: Res, caller: Json, id: string): void {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.bundleStatus().");
+    const bundle = self.callersBundle(res, caller, id);
+    if (!bundle) {
+      log.debug("Leaving AccessRequests.bundleStatus(). Refused.");
+      return;
+    }
+    const body = self.bundleBody(bundle, self.languagesOf((res as Json).req));
+    if (body.task.status === 'pending') {
+      res.set('Retry-After',
+              String(self.seconds('authzen.accessRequestRetryAfterS')));
+    }
+    res.status(200).type('application/json').set('Cache-Control', 'no-store')
+       .send(JSON.stringify(body, null, 2));
+    log.debug("Leaving AccessRequests.bundleStatus(). " + body.task.status);
+  }
+
+  /**
+   * A bundle's cancellation (section 3.6): every pending item cancelled,
+   * the finished ones left; 409 when none was pending.
+   *
+   * @param res - the response
+   * @param caller - the admitted caller
+   * @param id - the bundle's id
+   * @param body - the optional `{ reason }`
+   */
+  private bundleCancel(res: Res, caller: Json, id: string,
+                       body: unknown): void {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.bundleCancel().");
+    const bundle = self.callersBundle(res, caller, id);
+    if (!bundle) {
+      log.debug("Leaving AccessRequests.bundleCancel(). Refused.");
+      return;
+    }
+    const given: Json = isObject(body) ? body : {};
+    let cancelled = 0;
+    bundle.tasks.forEach(function (one: Json) {
+      if (one && one.status === 'pending' &&
+          self.finish(one, 'cancelled', {
+            actor: caller.name,
+            why: 'with its bulk request ' + id + ', by the requesting PEP' +
+              (given.reason ? ' (' + String(given.reason).slice(0, 64) + ')'
+                            : '') })) {
+        cancelled += 1;
+      }
+    });
+    if (!cancelled) {
+      self.problem(res, 409, 'invalid_task_state', 'STS-AUTHZEN-0082',
+                   'Every item of this request has already finished.');
+      log.debug("Leaving AccessRequests.bundleCancel(). Finished.");
+      return;
+    }
+    const answer = self.bundleBody(self.bundleOf(id),
+                                   self.languagesOf((res as Json).req));
+    res.status(200).type('application/json').set('Cache-Control', 'no-store')
+       .send(JSON.stringify(answer, null, 2));
+    log.debug("Leaving AccessRequests.bundleCancel(). " + cancelled);
   }
 
   // -------------------------------------------------------------------------
@@ -3473,6 +3914,11 @@ class AccessRequests {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering AccessRequests.status().");
+    if (String(id || '').indexOf(BUNDLE_PREFIX) === 0) {
+      self.bundleStatus(res, caller, String(id));
+      log.debug("Leaving AccessRequests.status(). A bundle.");
+      return;
+    }
     const task = self.callersTask(res, caller, id);
     if (!task) {
       log.debug("Leaving AccessRequests.status(). Refused.");
@@ -3501,6 +3947,11 @@ class AccessRequests {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering AccessRequests.cancel().");
+    if (String(id || '').indexOf(BUNDLE_PREFIX) === 0) {
+      self.bundleCancel(res, caller, String(id), body);
+      log.debug("Leaving AccessRequests.cancel(). A bundle.");
+      return;
+    }
     const task = self.callersTask(res, caller, id);
     if (!task) {
       log.debug("Leaving AccessRequests.cancel(). Refused.");
@@ -4898,6 +5349,8 @@ export = {
   submitByForm: slot.forward('submitByForm'),
   FORM_PATH: FORM_PATH,
   actorOn: slot.forward('actorOn'),
+  bulkOn: slot.forward('bulkOn'),
+  bundleOf: slot.forward('bundleOf'),
   actorOf: slot.forward('actorOf'),
   CATALOGS_PATH: CATALOGS_PATH,
   catalogsOn: slot.forward('catalogsOn'),

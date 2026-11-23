@@ -8555,6 +8555,22 @@
     "en": "2ad9ec45c4e1ebfe",
     "text": "AuthZEN Actor Delegation-profilen (#1204): en åtkomstbegärans client.actor-kedja verifieras mot anroparens egna autentiseringsuppgift (en länk som är anroparen själv, eller act-kedjan i dess egen åtkomsttoken) och nekas annars, och client.source registreras. Båda visas för godkännarna och i granskningsloggen, och ingen av dem är ett policyfaktum. Av: båda godtas och läses aldrig."
   },
+  "authzen.accessRequestBulk|label": {
+    "en": "626b8aa6d7729f4b",
+    "text": "Åtkomstbegäranden i klump"
+  },
+  "authzen.accessRequestBulk|description": {
+    "en": "8abb7e835c531ac9",
+    "text": "AuthZEN Bulk Access Requests-profilen (#1204): en inlämning med items, var och en med sitt eget avslag, kontrolleras post för post som en enskild, och besvaras med ett Task Handle vars status sammanfattar posterna (partial när de slutade olika) och vars poster var och en bär sitt eget resultat. Varje post godkänns och omprövas för sig. Av: items nekas som tidigare."
+  },
+  "authzen.accessRequestMaxBulkItems|label": {
+    "en": "bed33a03d68efa71",
+    "text": "Poster i en åtkomstbegäran i klump"
+  },
+  "authzen.accessRequestMaxBulkItems|description": {
+    "en": "9a1f15e576f964cb",
+    "text": "Det största antalet poster en åtkomstbegäran i klump får ha (#1204). Var och en räknas mot authzen.accessRequestMaxPending."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

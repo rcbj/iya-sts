@@ -874,6 +874,43 @@ async function theAccessRequests() {
     assert.ok(acted.status === 400,
       "answered " + acted.status + " " + String(acted.text).slice(0, 300));
   });
+  // THE BULK COMPANION (#1204): two items, each with its own denial, are
+  // one pending bundle whose items follow the submission's order.
+  const bulkOn = await postJson(api("/config/set"),
+    { key: "authzen.accessRequestBulk", value: true });
+  assert.ok(bulkOn.status === 200, "setting authzen.accessRequestBulk " +
+            "answered " + bulkOn.status + " " + bulkOn.text);
+  let bulk = null;
+  try {
+    const other = Object.assign({}, asked, {
+      resource: { type: "todo", id: "todo-2",
+                  properties: { ownerID: "morty@the-citadel.com" } } });
+    const one = await evaluate(asked);
+    const two = await evaluate(other);
+    const itemOf = function (question, denied) {
+      log.debug("Entering itemOf().");
+      const got = ((denied.body || {}).context || {}).access_request || {};
+      log.debug("Leaving itemOf().");
+      return { resource: question.resource, action: question.action,
+               denial: { expires_at: got.expires_at,
+                         binding_token: got.binding_token } };
+    };
+    bulk = await pep("POST", PREFIX + "/access/v1/access-requests", caller,
+      { subject: asked.subject, context: asked.context,
+        items: [itemOf(asked, one), itemOf(other, two)] });
+  } finally {
+    await postJson(api("/config/reset"),
+                   { key: "authzen.accessRequestBulk" });
+  }
+  check("with authzen.accessRequestBulk on, two items are one pending " +
+        "bundle", function () {
+    const handle = (bulk.body || {}).task || {};
+    assert.ok(bulk.status === 202 && /^arb_/.test(String(handle.id)) &&
+              handle.status === "pending" &&
+              (handle.items || []).length === 2 &&
+              handle.items[1].resource.id === "todo-2",
+      "answered " + bulk.status + " " + String(bulk.text).slice(0, 400));
+  });
   log.debug("Leaving theAccessRequests().");
 }
 

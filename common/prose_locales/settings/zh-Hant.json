@@ -8555,6 +8555,22 @@
     "en": "2ad9ec45c4e1ebfe",
     "text": "AuthZEN Actor Delegation 設定檔（#1204）：存取申請的 client.actor 鏈依據呼叫端自己的憑證驗證（即呼叫端本身這一環，或其自身存取權杖的 act 鏈），否則拒絕；client.source 會被記錄。兩者都顯示給核准人並寫入稽核日誌，均不作為政策事實。關閉時兩者都被接受但從不讀取。"
   },
+  "authzen.accessRequestBulk|label": {
+    "en": "626b8aa6d7729f4b",
+    "text": "批次存取申請"
+  },
+  "authzen.accessRequestBulk|description": {
+    "en": "8abb7e835c531ac9",
+    "text": "AuthZEN Bulk Access Requests 設定檔（#1204）：帶 items 的提交（每一項都帶自己的拒絕）會像單一提交一樣逐項檢查，並回應一個 Task Handle，其狀態彙總各項（各項結局不同時為 partial），每一項都帶有自己的結果。每一項單獨核准、單獨重新評估。關閉時 items 照舊被拒絕。"
+  },
+  "authzen.accessRequestMaxBulkItems|label": {
+    "en": "bed33a03d68efa71",
+    "text": "一個批次存取申請中的項數"
+  },
+  "authzen.accessRequestMaxBulkItems|description": {
+    "en": "9a1f15e576f964cb",
+    "text": "一個批次存取申請最多可攜帶的項數（#1204）。每一項都計入 authzen.accessRequestMaxPending。"
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

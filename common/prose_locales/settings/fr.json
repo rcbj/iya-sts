@@ -8555,6 +8555,22 @@
     "en": "2ad9ec45c4e1ebfe",
     "text": "Le profil AuthZEN Actor Delegation (#1204) : la chaîne client.actor d’une demande d’accès est vérifiée par rapport au propre justificatif de l’appelant (un maillon qui est l’appelant lui-même, ou la chaîne act de son propre jeton d’accès) et refusée sinon, et client.source est enregistré. Les deux sont montrés aux approbateurs et au journal d’audit, et aucun n’est un fait de politique. Désactivé, les deux sont acceptés et jamais lus."
   },
+  "authzen.accessRequestBulk|label": {
+    "en": "626b8aa6d7729f4b",
+    "text": "Demandes d’accès groupées"
+  },
+  "authzen.accessRequestBulk|description": {
+    "en": "8abb7e835c531ac9",
+    "text": "Le profil AuthZEN Bulk Access Requests (#1204) : une soumission avec items, chacun portant son propre refus, est vérifiée élément par élément comme une soumission unique, et répond un seul Task Handle dont l’état agrège ses éléments (partial quand ils ont abouti différemment) et dont chaque élément porte son propre résultat. Chaque élément est approuvé et réévalué seul. Désactivé, items est refusé comme avant."
+  },
+  "authzen.accessRequestMaxBulkItems|label": {
+    "en": "bed33a03d68efa71",
+    "text": "Éléments d’une demande d’accès groupée"
+  },
+  "authzen.accessRequestMaxBulkItems|description": {
+    "en": "9a1f15e576f964cb",
+    "text": "Le nombre maximal d’éléments d’une demande d’accès groupée (#1204). Chacun compte dans authzen.accessRequestMaxPending."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

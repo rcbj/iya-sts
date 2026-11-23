@@ -309,7 +309,7 @@ model TaskHandle {
 
   @member(#{ cite: "AuthZEN Access Request and Approval Profile, the task" })
   status: "pending" | "approved" | "denied" | "expired" | "cancelled" |
-    "failed";
+    "failed" | "partial";
 
   @member(#{ cite: "AuthZEN Access Request and Approval Profile, the task" })
   status_endpoint: string;
@@ -327,6 +327,28 @@ model TaskHandle {
    * `authzen.accessRequestDisplay` is on. */
   @member(#{ cite: "AuthZEN Access Request and Approval Profile section 7.1" })
   display?: Display;
+
+  /** A bulk request's items, positional (the BULK companion's 3.4). */
+  @member(#{ cite: "AuthZEN Bulk Access Requests Profile section 3.4" })
+  items?: TaskItem[];
+}
+
+/** One item of a bulk Task Handle: its own status and result (3.4). */
+@members(#{ id: "task-item", cite: "AuthZEN Bulk Access Requests Profile section 3.4", members: "closed" })
+model TaskItem {
+  @member(#{ cite: "AuthZEN Bulk Access Requests Profile section 3.4" })
+  resource: Record<unknown>;
+
+  @member(#{ cite: "AuthZEN Bulk Access Requests Profile section 3.4" })
+  action: Record<unknown>;
+
+  @member(#{ cite: "AuthZEN Bulk Access Requests Profile section 3.4" })
+  status: "pending" | "approved" | "denied" | "expired" | "cancelled" |
+    "failed";
+
+  /** REQUIRED once the item is approved: its own `reevaluate` result. */
+  @member(#{ cite: "AuthZEN Bulk Access Requests Profile section 3.4" })
+  result?: Record<unknown>;
 }
 
 /**

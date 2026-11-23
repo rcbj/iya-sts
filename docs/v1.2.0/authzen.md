@@ -1112,6 +1112,49 @@ endpoints answer `501`. Not built: `scope_params` (a single catalog has
 nothing to scope by), `granted`, `risk_level` and `owner`, and catalogs
 over an agent protocol.
 
+### Bulk requests
+
+This service implements the draft [AuthZEN Bulk Access Requests Profile
+1.0](https://openid.github.io/authzen/authzen-access-request-bulk-profile-1_0.html).
+With `authzen.accessRequestBulk` on (it is off by default), one submission
+may ask for several resource and action pairs. It names the `subject` and
+`context` once, and has no top-level `resource`, `action` or `denial`:
+
+```json
+{
+  "subject": { "type": "user", "id": "alice" },
+  "context": { "application": "todo-app" },
+  "items": [
+    { "resource": { "type": "document", "id": "doc-1" }, "action": { "name": "read" },
+      "denial": { "expires_at": "…", "binding_token": "eyJ…" } },
+    { "resource": { "type": "document", "id": "doc-2" }, "action": { "name": "read" },
+      "denial": { "expires_at": "…", "binding_token": "eyJ…" } }
+  ]
+}
+```
+
+**Every item carries its own denial.** This service never issues a bundle
+denial: a batch evaluation answers each item with a requestable denial of
+its own. A top-level `denial`, or an item without one, is refused
+`invalid_denial_binding`. Each item is checked exactly as a single
+submission is checked, and every item's denial must be about the same
+application. The submission may carry at most
+`authzen.accessRequestMaxBulkItems` items. An item's own
+`requested_access` is merged over the top-level one. A bulk submission
+takes no `callback`.
+
+The answer is one Task Handle, `arb_…`, whose `items` follow the
+submission's order. Each item has its own `status`, and once it is
+approved its own `result` with its own `approval`. The handle's `status`
+is `pending` while any item is. Once every item has finished it is the
+status they share, or `partial` when they finished differently. There is
+no top-level `result`: use each item's. Each item is a request of its own
+on the portal and the console, and approvers decide each one separately.
+Re-evaluate each approved item with its own `approval`; it does not reach
+another item's resource. Cancelling the bundle cancels the items still
+pending and leaves the finished ones alone. Once every item has finished,
+cancelling is `409`. `Idempotency-Key` covers the whole body.
+
 ### Acting parties
 
 This service implements the draft [AuthZEN Actor Delegation Profile
@@ -1172,7 +1215,8 @@ submission must come from the caller the denial was answered to, about the
 same tuple, while that caller is still scoped to the application.
 
 `requested_access.requested_until` can shorten an approval. Bulk submissions
-(`items`) are refused.
+(`items`) are refused unless `authzen.accessRequestBulk` is on (see *Bulk
+requests*).
 
 ### Who approves, and where
 
@@ -1395,6 +1439,8 @@ live source; this table is a copy.
 | `authzen.accessRequestForm` | `STS_AUTHZEN_ACCESS_REQUEST_FORM` | `false` | A recorded requestable denial carries `form_url`, the portal's `/portal/access-request`, and a Task Handle `links.ticket` (see *The hosted form and the ticket*) |
 | `authzen.accessRequestCatalogs` | `STS_AUTHZEN_ACCESS_REQUEST_CATALOGS` | `false` | A recorded requestable denial whose advice lists entitlements carries `request_catalogs_url`, and a submission must choose one (see *Catalogs*) |
 | `authzen.accessRequestActor` | `STS_AUTHZEN_ACCESS_REQUEST_ACTOR` | `false` | A submission's `client.actor` chain is verified against the caller's credential, and `client.source` is recorded (see *Acting parties*) |
+| `authzen.accessRequestBulk` | `STS_AUTHZEN_ACCESS_REQUEST_BULK` | `false` | A submission may carry `items`, each with its own denial, answered by one Task Handle (see *Bulk requests*) |
+| `authzen.accessRequestMaxBulkItems` | `STS_AUTHZEN_ACCESS_REQUEST_MAX_BULK_ITEMS` | `16` | The most items one bulk request may carry (2–64) |
 | `authzen.callbackAttempts` | `STS_AUTHZEN_CALLBACK_ATTEMPTS` | `5` | How many times a finished access request's callback is sent, the first included. `1` is one attempt. An application's `appAuthzenCallbackConfig` may set another bound for one URL |
 | `authzen.callbackBackoffS` | `STS_AUTHZEN_CALLBACK_BACKOFF_S` | `60` | Seconds to wait after the first failed callback; each later wait doubles, up to a day. The job runs every 60 seconds, so a shorter wait is not offered. An application's `appAuthzenCallbackConfig` may set a longer wait for one URL |
 | `authzen.externalPdp` | `STS_AUTHZEN_EXTERNAL_PDP` | `false` | Ask an external PDP before issuing an OAuth access token for a token exchange (see *Asking an external PDP*) |
@@ -1426,8 +1472,10 @@ live source; this table is a copy.
 
 None of these is advertised in the metadata:
 
-* Of the Access Request and Approval Profile: the BULK companion; of the
-  ACTOR companion, approval routing by an actor and proofs of a chain
+* Of the Access Request and Approval Profile: of the BULK companion, a
+  bundle denial and the bulk `binding_hash` (this service issues
+  per-item denials only) and a callback on a bulk request; of the ACTOR
+  companion, approval routing by an actor and proofs of a chain
   other than the caller's own credential; and of the CATALOG companion `scope_params`, `granted`,
   `risk_level`, `owner` and agent-protocol catalogs. A denial carries
   `request_schema_url` and, when switched on, `display`, `form_url` and

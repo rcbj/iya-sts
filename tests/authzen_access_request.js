@@ -91,6 +91,11 @@
 //      mTLS caller cannot prove is 0153, a malformed one 0154, the caller
 //      itself is verified and recorded with client.source, and a bearer
 //      caller's token act chain authorizes exactly that chain.
+//   Q. BULK (#1204): items refused by default; on, each bundle refusal has
+//      its code, two items make one pending bundle (idempotent), one item
+//      approved and one denied is partial with a result only on the
+//      approved one, whose approval permits only its own tuple, and
+//      cancellation is 409 once all finished, else cancels the pending.
 //   O. OFF: authzen.accessRequests off answers 501, the schema too, and
 //      no denial is requestable.
 // ---------------------------------------------------------------------------
@@ -2092,6 +2097,144 @@ async function childBody() {
             [fromToken, notToken.code, wrongIss.code]));
   inRealm(function () {
     config.clearOverride('authzen.accessRequestActor');
+  });
+
+  // -------------------------------------------------------------------------
+  // Q. THE BULK COMPANION (#1204): off, items is refused as before; on,
+  // items each with its own denial make one bundle whose status aggregates
+  // its items, each item approved and re-evaluated alone.
+  // -------------------------------------------------------------------------
+  const docEval = function (id) {
+    log.debug("Entering docEval().");
+    log.debug("Leaving docEval().");
+    return evaluation({ resource: { type: 'document', id: id } });
+  };
+  const itemOf = function (denied, id) {
+    log.debug("Entering itemOf().");
+    const ar1 = denied.context.access_request;
+    log.debug("Leaving itemOf().");
+    return { resource: { type: 'document', id: id },
+             action: { name: 'read' },
+             denial: { expires_at: ar1.expires_at,
+                       binding_token: ar1.binding_token } };
+  };
+  const bulkOf = function (items, extra) {
+    log.debug("Entering bulkOf().");
+    log.debug("Leaving bulkOf().");
+    return Object.assign({ subject: { type: 'user', id: 'azalice' },
+                           context: { application: 'todo-app' },
+                           items: items }, extra || {});
+  };
+  let d1 = (await request(port, 'POST', EVAL, pepCred, docEval('doc-1')))
+    .json;
+  let d2 = (await request(port, 'POST', EVAL, pepCred, docEval('doc-2')))
+    .json;
+  r = await request(port, 'POST', SUBMIT, pepCred,
+                    bulkOf([itemOf(d1, 'doc-1'), itemOf(d2, 'doc-2')]));
+  t.check(r.status === 400 && /bulk companion profile/.test(r.text),
+          'Q1. by default a bulk submission is refused as before', brief(r));
+  inRealm(function () {
+    config.setOverride('authzen.accessRequestBulk', true);
+  });
+  since = marks.length;
+  const withTuple = await request(port, 'POST', SUBMIT, pepCred, bulkOf(
+    [itemOf(d1, 'doc-1')], { resource: { type: 'document', id: 'doc-1' } }));
+  const withDenial = await request(port, 'POST', SUBMIT, pepCred, bulkOf(
+    [itemOf(d1, 'doc-1')], { denial: itemOf(d1, 'doc-1').denial }));
+  const noDenial = await request(port, 'POST', SUBMIT, pepCred, bulkOf(
+    [{ resource: { type: 'document', id: 'doc-1' },
+       action: { name: 'read' } }]));
+  const withCallback = await request(port, 'POST', SUBMIT, pepCred, bulkOf(
+    [itemOf(d1, 'doc-1')], { callback: { endpoint: 'https://x.example' } }));
+  const noItems = await request(port, 'POST', SUBMIT, pepCred, bulkOf([]));
+  t.check(withTuple.status === 400 && markedSince(since, 'STS-AUTHZEN-0155') &&
+          withDenial.status === 400 && noDenial.status === 400 &&
+          problemOf(noDenial) ===
+            'urn:openid:authzen:access-request:error:invalid_denial_binding' &&
+          markedSince(since, 'STS-AUTHZEN-0157') &&
+          withCallback.status === 400 &&
+          markedSince(since, 'STS-AUTHZEN-0159') &&
+          noItems.status === 400 && markedSince(since, 'STS-AUTHZEN-0156'),
+          'Q2. a top-level tuple (0155), a bundle denial or an item without ' +
+          'one (0157), a callback (0159) and no items (0156) are refused',
+          [brief(withTuple), brief(noDenial), brief(withCallback)].join(
+            ' / '));
+  r = await request(port, 'POST', SUBMIT, pepCred,
+                    bulkOf([itemOf(d1, 'doc-1'), itemOf(d2, 'doc-2')]),
+                    { 'idempotency-key': 'bulk-1' });
+  const bundle = (r.json || {}).task || {};
+  const bAgain = await request(port, 'POST', SUBMIT, pepCred,
+    bulkOf([itemOf(d1, 'doc-1'), itemOf(d2, 'doc-2')]),
+    { 'idempotency-key': 'bulk-1' });
+  t.check(r.status === 202 && /^arb_/.test(String(bundle.id)) &&
+          bundle.status === 'pending' && (bundle.items || []).length === 2 &&
+          bundle.items[1].resource.id === 'doc-2' &&
+          bundle.items.every(function (one) {
+            return one.status === 'pending' && !one.result;
+          }) && bundle.links && bundle.links.cancel &&
+          !(r.json || {}).result &&
+          bAgain.status === 202 && bAgain.json.task.id === bundle.id,
+          'Q3. two items with their own denials are one bundle, pending, ' +
+          'its items in order; the same Idempotency-Key is the same bundle',
+          brief(r));
+  const bChildren = inRealm(function () {
+    return requests.bundleOf(String(bundle.id)).tasks;
+  });
+  inRealm(function () {
+    requests.decide(String(bChildren[0].id), 'approve',
+                    { username: 'azbob', door: 'portal' });
+    requests.decide(String(bChildren[1].id), 'deny',
+                    { username: 'azbob', door: 'portal' });
+  });
+  r = await request(port, 'GET', SUBMIT + '/' + bundle.id, pepCred);
+  const bMixed = (r.json || {}).task || {};
+  const bFirst = (bMixed.items || [])[0] || {};
+  const bSecond = (bMixed.items || [])[1] || {};
+  t.check(r.status === 200 && bMixed.status === 'partial' &&
+          bFirst.status === 'approved' && bFirst.result &&
+          bFirst.result.mode === 'reevaluate' && bFirst.result.approval &&
+          bSecond.status === 'denied' && !bSecond.result &&
+          !(r.json || {}).result && !bMixed.links,
+          'Q4. one item approved and one denied is partial, a result only ' +
+          'on the approved item and none at the top', brief(r));
+  const okRead = await request(port, 'POST', EVAL, pepCred, evaluation({
+    context: { application: 'todo-app', approval: bFirst.result.approval } }));
+  const otherRead = await request(port, 'POST', EVAL, pepCred, evaluation({
+    resource: { type: 'document', id: 'doc-2' },
+    context: { application: 'todo-app', approval: bFirst.result.approval } }));
+  t.check(okRead.json && okRead.json.decision === true &&
+          otherRead.json && otherRead.json.decision === false,
+          'Q5. the approved item\'s approval permits its own re-evaluation ' +
+          'and not the other item\'s', brief(okRead) + ' / ' +
+          brief(otherRead));
+  r = await request(port, 'POST', SUBMIT + '/' + bundle.id + '/cancel',
+                    pepCred, {});
+  t.check(r.status === 409 && problemOf(r) ===
+            'urn:openid:authzen:access-request:error:invalid_task_state',
+          'Q6. cancelling a bundle whose items all finished is 409',
+          brief(r));
+  d1 = (await request(port, 'POST', EVAL, pepCred, docEval('doc-1'))).json;
+  d2 = (await request(port, 'POST', EVAL, pepCred, docEval('doc-2'))).json;
+  r = await request(port, 'POST', SUBMIT, pepCred,
+                    bulkOf([itemOf(d1, 'doc-1'), itemOf(d2, 'doc-2')]));
+  const bundle2 = (r.json || {}).task || {};
+  const bKids = inRealm(function () {
+    return requests.bundleOf(String(bundle2.id)).tasks;
+  });
+  inRealm(function () {
+    requests.decide(String(bKids[0].id), 'approve',
+                    { username: 'azbob', door: 'portal' });
+  });
+  r = await request(port, 'DELETE', SUBMIT + '/' + bundle2.id + '/cancel',
+                    pepCred);
+  const bAfter = (r.json || {}).task || {};
+  t.check(r.status === 200 && bAfter.status === 'partial' &&
+          bAfter.items[0].status === 'approved' &&
+          bAfter.items[1].status === 'cancelled',
+          'Q7. cancellation cancels the pending item and leaves the ' +
+          'approved one, and the bundle is partial', brief(r));
+  inRealm(function () {
+    config.clearOverride('authzen.accessRequestBulk');
   });
 
   // -------------------------------------------------------------------------

@@ -8555,6 +8555,22 @@
     "en": "2ad9ec45c4e1ebfe",
     "text": "ملف AuthZEN Actor Delegation (#1204): يُتحقق من سلسلة client.actor في طلب الوصول مقابل بيانات اعتماد المستدعي نفسه (حلقة هي المستدعي نفسه، أو سلسلة act في رمز الوصول الخاص به) وتُرفض خلاف ذلك، ويُسجَّل client.source. يُعرض كلاهما على المعتمدين وفي سجل التدقيق، ولا يكون أيٌّ منهما حقيقةً في السياسة. عند الإيقاف يُقبل كلاهما ولا يُقرأ أبدًا."
   },
+  "authzen.accessRequestBulk|label": {
+    "en": "626b8aa6d7729f4b",
+    "text": "طلبات الوصول المجمّعة"
+  },
+  "authzen.accessRequestBulk|description": {
+    "en": "8abb7e835c531ac9",
+    "text": "ملف AuthZEN Bulk Access Requests (#1204): يُفحص التقديم الذي يحمل items، يحمل كلٌّ منها رفضه الخاص، بندًا بندًا كما يُفحص التقديم المفرد، ويُجاب بـ Task Handle واحد تجمع حالته بنوده (partial حين تنتهي بنتائج مختلفة) ويحمل كل بند فيه نتيجته الخاصة. يُوافق على كل بند ويُعاد تقييمه وحده. عند الإيقاف يُرفض items كما كان."
+  },
+  "authzen.accessRequestMaxBulkItems|label": {
+    "en": "bed33a03d68efa71",
+    "text": "بنود طلب الوصول المجمّع الواحد"
+  },
+  "authzen.accessRequestMaxBulkItems|description": {
+    "en": "9a1f15e576f964cb",
+    "text": "أكبر عدد من البنود يجوز أن يحمله طلب وصول مجمّع واحد (#1204). يُحسب كل منها ضمن authzen.accessRequestMaxPending."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

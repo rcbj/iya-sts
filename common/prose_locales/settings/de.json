@@ -8555,6 +8555,22 @@
     "en": "2ad9ec45c4e1ebfe",
     "text": "Das AuthZEN Actor Delegation Profile (#1204): Die client.actor-Kette einer Zugriffsanfrage wird gegen den eigenen Berechtigungsnachweis des Aufrufers geprüft (ein Glied, das der Aufrufer selbst ist, oder die act-Kette seines eigenen Zugriffstokens) und sonst abgelehnt, und client.source wird aufgezeichnet. Beide werden den Genehmigern und dem Audit-Log gezeigt, und keines ist eine Richtlinientatsache. Aus: Beide werden angenommen und nie gelesen."
   },
+  "authzen.accessRequestBulk|label": {
+    "en": "626b8aa6d7729f4b",
+    "text": "Sammel-Zugriffsanfragen"
+  },
+  "authzen.accessRequestBulk|description": {
+    "en": "8abb7e835c531ac9",
+    "text": "Das AuthZEN Bulk Access Requests Profile (#1204): Eine Einreichung mit items, jedes mit seiner eigenen Ablehnung, wird Element für Element wie eine einzelne geprüft und beantwortet ein Task Handle, dessen Status seine Elemente zusammenfasst (partial, wenn sie verschieden geendet haben) und dessen Elemente jeweils ihr eigenes Ergebnis tragen. Jedes Element wird für sich genehmigt und neu bewertet. Aus: items wird wie bisher abgelehnt."
+  },
+  "authzen.accessRequestMaxBulkItems|label": {
+    "en": "bed33a03d68efa71",
+    "text": "Elemente einer Sammel-Zugriffsanfrage"
+  },
+  "authzen.accessRequestMaxBulkItems|description": {
+    "en": "9a1f15e576f964cb",
+    "text": "Die meisten Elemente, die eine Sammel-Zugriffsanfrage tragen darf (#1204). Jedes zählt gegen authzen.accessRequestMaxPending."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

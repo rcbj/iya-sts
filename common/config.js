@@ -16423,6 +16423,24 @@ const SETTINGS = [
                  'are shown to the approvers and the audit log, and ' +
                  'neither is a policy fact. Off, both are accepted and ' +
                  'never read.' },
+  { key: 'authzen.accessRequestBulk', group: 'AuthZEN',
+    label: 'Bulk access requests',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_BULK', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'The AuthZEN Bulk Access Requests Profile (#1204): a ' +
+                 'submission with items, each carrying its own denial, is ' +
+                 'checked item by item as a single one is, and answers one ' +
+                 'Task Handle whose status aggregates its items (partial ' +
+                 'when they finished differently) and whose items each ' +
+                 'carry their own result. Each item is approved and ' +
+                 're-evaluated on its own. Off, items is refused as before.' },
+  { key: 'authzen.accessRequestMaxBulkItems', group: 'AuthZEN',
+    label: 'Items in one bulk access request',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_MAX_BULK_ITEMS', type: 'int',
+    dflt: 16, min: 2, max: 64, runtime: true,
+    description: 'The most items one bulk access request may carry ' +
+                 '(#1204). Each counts against ' +
+                 'authzen.accessRequestMaxPending.' },
   { key: 'authzen.callbackAttempts', group: 'AuthZEN',
     label: 'Access request callback attempts',
     env: 'STS_AUTHZEN_CALLBACK_ATTEMPTS', type: 'int',

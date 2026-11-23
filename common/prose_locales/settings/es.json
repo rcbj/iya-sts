@@ -8555,6 +8555,22 @@
     "en": "2ad9ec45c4e1ebfe",
     "text": "El perfil AuthZEN Actor Delegation (#1204): la cadena client.actor de una solicitud de acceso se verifica con la propia credencial del llamador (un eslabón que es el propio llamador, o la cadena act de su propio token de acceso) y se rechaza en otro caso, y client.source se registra. Ambos se muestran a los aprobadores y al registro de auditoría, y ninguno es un hecho de la política. Desactivado, ambos se aceptan y nunca se leen."
   },
+  "authzen.accessRequestBulk|label": {
+    "en": "626b8aa6d7729f4b",
+    "text": "Solicitudes de acceso en bloque"
+  },
+  "authzen.accessRequestBulk|description": {
+    "en": "8abb7e835c531ac9",
+    "text": "El perfil AuthZEN Bulk Access Requests (#1204): una solicitud con items, cada uno con su propia denegación, se comprueba elemento a elemento como una solicitud única, y responde un solo Task Handle cuyo estado agrega sus elementos (partial cuando terminaron de forma distinta) y cuyos elementos llevan cada uno su propio resultado. Cada elemento se aprueba y se reevalúa por separado. Desactivado, items se rechaza como antes."
+  },
+  "authzen.accessRequestMaxBulkItems|label": {
+    "en": "bed33a03d68efa71",
+    "text": "Elementos de una solicitud de acceso en bloque"
+  },
+  "authzen.accessRequestMaxBulkItems|description": {
+    "en": "9a1f15e576f964cb",
+    "text": "El máximo de elementos que puede llevar una solicitud de acceso en bloque (#1204). Cada uno cuenta para authzen.accessRequestMaxPending."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

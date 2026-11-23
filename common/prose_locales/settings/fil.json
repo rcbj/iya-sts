@@ -8555,6 +8555,22 @@
     "en": "2ad9ec45c4e1ebfe",
     "text": "Ang AuthZEN Actor Delegation Profile (#1204): sinusuri ang client.actor chain ng isang kahilingan sa access laban sa sariling credential ng tumatawag (isang link na ang tumatawag mismo, o ang act chain ng sarili nitong access token) at tinatanggihan kung hindi, at itinatala ang client.source. Parehong ipinapakita sa mga tagapag-apruba at sa audit log, at wala sa mga ito ang katotohanan ng patakaran. Kapag naka-off, parehong tinatanggap at hindi kailanman binabasa."
   },
+  "authzen.accessRequestBulk|label": {
+    "en": "626b8aa6d7729f4b",
+    "text": "Maramihang kahilingan sa access"
+  },
+  "authzen.accessRequestBulk|description": {
+    "en": "8abb7e835c531ac9",
+    "text": "Ang AuthZEN Bulk Access Requests Profile (#1204): ang isang pagsusumite na may items, bawat isa ay may sariling pagtanggi, ay sinusuri isa-isa gaya ng iisang pagsusumite, at sumasagot ng iisang Task Handle na ang katayuan ay pinagsasama ang mga item nito (partial kapag magkakaiba ang kinalabasan) at ang bawat item ay may sariling resulta. Ang bawat item ay inaaprubahan at muling sinusuri nang hiwalay. Kapag naka-off, tinatanggihan ang items gaya ng dati."
+  },
+  "authzen.accessRequestMaxBulkItems|label": {
+    "en": "bed33a03d68efa71",
+    "text": "Mga item sa isang maramihang kahilingan sa access"
+  },
+  "authzen.accessRequestMaxBulkItems|description": {
+    "en": "9a1f15e576f964cb",
+    "text": "Ang pinakamaraming item na maaaring dalhin ng isang maramihang kahilingan sa access (#1204). Ang bawat isa ay binibilang sa authzen.accessRequestMaxPending."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

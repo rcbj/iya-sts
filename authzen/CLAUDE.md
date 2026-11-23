@@ -1017,7 +1017,21 @@ header argues each. What a maintainer needs quickly:
   is context for the approvers and the audit row, and never an XACML
   fact. openid/authzen#756 (pending) would put `subject.properties.act`
   into the binding; `bound()` still strips it.
-* Not built: BULK; of ACTOR, routing by an actor; of CATALOG, `scope_params`, `granted`,
+* **The BULK companion (#1204)**, behind `authzen.accessRequestBulk` (off
+  by default; off, the single model refuses `items` with its old
+  sentence). `submit()` hands a body with `items` to `submitBulk()`.
+  Every item carries its own denial, because this service issues no
+  bundle denial, so a top-level `denial` is 0157. Each item is the single
+  submission it would be, checked by `verifyOne()` (the one check a
+  single submission gets too) and `requestedAccess()`, and opened as an
+  ordinary task with `bundle` and `position`. The bundle is an index row,
+  `bundle:<digest of arb_ id>`, removed by the sweep at its `until`.
+  `bundleBody()` builds the handle from its items when it is read: 3.4's
+  aggregate, `partial` included, each item's own `result`, no top-level
+  one. `STATES` leaves `partial` out, so no task, and no callback event,
+  is ever `partial`. A callback on a bulk submission is 0159.
+* Not built: of BULK, a bundle denial and a bulk callback; of ACTOR,
+  routing by an actor; of CATALOG, `scope_params`, `granted`,
   `risk_level`, `owner` and agent-protocol catalogs.
   `tests/authzen_access_request.js` holds it in process and
   `tests/protocol/sts_authzen.js` section 9 over HTTP.
@@ -1136,4 +1150,7 @@ window that has passed, 0148 the form off; 0149–0152 the catalogs
 cursor this endpoint did not issue, 0151 a submission's entitlement
 missing or not listed, 0152 the catalogs off; 0153–0154 the actor
 (#1204): 0153 a chain the caller's credential does not authorize, 0154 a
-malformed `client.actor` or `client.source`.
+malformed `client.actor` or `client.source`; 0155–0159 the bulk request
+(#1204): 0155 a top-level resource or action, 0156 items out of bounds,
+0157 a bundle denial or an item without its own, 0158 items about different
+applications, 0159 a callback.

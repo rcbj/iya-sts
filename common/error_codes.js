@@ -26663,6 +26663,26 @@ const CODES = [
       'member, a chain deeper than 8, or an external_url that is not https ' +
       '(#1204).',
     spec: 'the ACTOR companion\'s section 3.1; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0155',
+    summary: 'A bulk access request carried a top-level resource or action ' +
+      'beside items (#1204).',
+    spec: 'the BULK companion\'s section 3.1; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0156',
+    summary: 'A bulk access request\'s items were not 1 to ' +
+      'authzen.accessRequestMaxBulkItems objects (#1204).',
+    spec: 'the BULK companion\'s section 3.2; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0157',
+    summary: 'A bulk access request carried a top-level denial, or an item ' +
+      'without its own: this service issues no bundle denial (#1204).',
+    spec: 'the BULK companion\'s section 3.3; invalid_denial_binding' },
+  { code: 'STS-AUTHZEN-0158',
+    summary: 'A bulk access request\'s items named denials about different ' +
+      'applications (#1204).',
+    spec: 'none — 400 problem+json' },
+  { code: 'STS-AUTHZEN-0159',
+    summary: 'A bulk access request carried a callback, which this service ' +
+      'does not take on a bulk request (#1204).',
+    spec: 'none — 400 problem+json' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +

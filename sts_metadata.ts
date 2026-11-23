@@ -682,7 +682,8 @@ const SPECS: Spec[] = [
               'authzen.accessRequestDisplay is on; form_url, the portal\'s ' +
               'hosted form where the denial\'s subject submits it, and ' +
               'links.ticket, while authzen.accessRequestForm is on. ' +
-              'Missing: the BULK companion.' },
+              'Missing: nothing of the base profile; each companion\'s ' +
+              'own note says what it lacks.' },
   { id: 'authzen-arap-callback',
     name: 'AuthZEN Callback Notifications Profile 1.0 (draft)',
     where: 'OpenID Foundation AuthZEN WG',
@@ -726,6 +727,22 @@ const SPECS: Spec[] = [
               'the approvers and never a policy fact. Missing: approval ' +
               'routing by an actor in the chain, and signed assertions or ' +
               'deployment policies as proof of a chain.' },
+  { id: 'authzen-arap-bulk',
+    name: 'AuthZEN Bulk Access Requests Profile 1.0 (draft)',
+    where: 'OpenID Foundation AuthZEN WG',
+    url: 'https://openid.github.io/authzen/' +
+         'authzen-access-request-bulk-profile-1_0.html',
+    coverage: 'partial: items, each with its own denial checked as a ' +
+              'single submission is, from one caller about one ' +
+              'application, while authzen.accessRequestBulk is on; the ' +
+              'Task Handle\'s items with each item\'s own status and ' +
+              'result, the aggregate status with partial, no top-level ' +
+              'result; cancellation of the pending items and 409 once ' +
+              'every item finished; each item approved and re-evaluated ' +
+              'on its own; Idempotency-Key over the whole body. Missing: ' +
+              'a bundle denial and the bulk binding_hash (this service ' +
+              'issues per-item denials only), per-item callbacks and the ' +
+              'partial event.' },
   { id: 'xacmljson', name: 'JSON Profile of XACML 3.0 v1.1',
     where: 'OASIS',
     url: 'https://docs.oasis-open.org/xacml/xacml-json-http/v1.1/os/' +
@@ -11000,7 +11017,8 @@ const PROTOCOLS: Protocol[] = [
           'OASIS conformance suite rather than to a test written here.' },
   { name: 'AuthZEN', groups: ['AuthZEN'],
     specs: ['authzen10', 'authzen-arap', 'authzen-arap-callback',
-            'authzen-arap-catalog', 'authzen-arap-actor'],
+            'authzen-arap-catalog', 'authzen-arap-actor',
+            'authzen-arap-bulk'],
     what: 'The AuthZEN Authorization API over the XACML engine: a Policy ' +
           'Enforcement Point asks one question per access and is told true ' +
           'or false, decided against the realm\'s root policy. An ADAPTER: ' +

@@ -8555,6 +8555,22 @@
     "en": "2ad9ec45c4e1ebfe",
     "text": "AuthZEN Actor Delegation प्रोफ़ाइल (#1204): एक्सेस अनुरोध की client.actor श्रृंखला कॉलर के अपने क्रेडेंशियल के विरुद्ध जाँची जाती है (एक कड़ी जो स्वयं कॉलर है, या उसके अपने एक्सेस टोकन की act श्रृंखला) और अन्यथा अस्वीकार की जाती है, और client.source दर्ज किया जाता है। दोनों अनुमोदकों को और ऑडिट लॉग में दिखाए जाते हैं, और कोई भी नीति का तथ्य नहीं है। बंद होने पर दोनों स्वीकार किए जाते हैं और कभी पढ़े नहीं जाते।"
   },
+  "authzen.accessRequestBulk|label": {
+    "en": "626b8aa6d7729f4b",
+    "text": "थोक एक्सेस अनुरोध"
+  },
+  "authzen.accessRequestBulk|description": {
+    "en": "8abb7e835c531ac9",
+    "text": "AuthZEN Bulk Access Requests प्रोफ़ाइल (#1204): items वाला सबमिशन, जिसमें हर item अपनी अस्वीकृति रखता है, एक-एक item करके वैसे ही जाँचा जाता है जैसे एकल सबमिशन, और एक Task Handle देता है जिसकी स्थिति उसके items को जोड़ती है (अलग-अलग परिणाम होने पर partial) और जिसका हर item अपना परिणाम रखता है। हर item अलग से स्वीकृत और फिर से मूल्यांकित होता है। बंद होने पर items पहले की तरह अस्वीकार होता है।"
+  },
+  "authzen.accessRequestMaxBulkItems|label": {
+    "en": "bed33a03d68efa71",
+    "text": "एक थोक एक्सेस अनुरोध में items"
+  },
+  "authzen.accessRequestMaxBulkItems|description": {
+    "en": "9a1f15e576f964cb",
+    "text": "एक थोक एक्सेस अनुरोध में अधिकतम कितने items हो सकते हैं (#1204)। हर एक authzen.accessRequestMaxPending में गिना जाता है।"
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

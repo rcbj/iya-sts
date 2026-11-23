@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5993** of them, in **57** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5998** of them, in **57** subsystems.
 
 ## Where a code appears
 
@@ -93,7 +93,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 252
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 140
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 131
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 136
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 301
@@ -5752,6 +5752,11 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0152` | The access request catalogs were called while authzen.accessRequestCatalogs (or the profile) is off (#1204). | none — 501 problem+json |
 | `STS-AUTHZEN-0153` | An access request's client.actor named a chain the caller's own credential does not authorize: neither one link that is the caller itself nor, link for link, the act chain of its own access token (#1204, the ACTOR companion). | the ACTOR companion's section 3.2; 400 problem+json |
 | `STS-AUTHZEN-0154` | An access request's client.actor or client.source was malformed: a link without its id or sub, a non-string or overlong member, a chain deeper than 8, or an external_url that is not https (#1204). | the ACTOR companion's section 3.1; 400 problem+json |
+| `STS-AUTHZEN-0155` | A bulk access request carried a top-level resource or action beside items (#1204). | the BULK companion's section 3.1; 400 problem+json |
+| `STS-AUTHZEN-0156` | A bulk access request's items were not 1 to authzen.accessRequestMaxBulkItems objects (#1204). | the BULK companion's section 3.2; 400 problem+json |
+| `STS-AUTHZEN-0157` | A bulk access request carried a top-level denial, or an item without its own: this service issues no bundle denial (#1204). | the BULK companion's section 3.3; invalid_denial_binding |
+| `STS-AUTHZEN-0158` | A bulk access request's items named denials about different applications (#1204). | none — 400 problem+json |
+| `STS-AUTHZEN-0159` | A bulk access request carried a callback, which this service does not take on a bulk request (#1204). | none — 400 problem+json |
 
 ## STS-FGA
 
