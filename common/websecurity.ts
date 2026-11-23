@@ -982,7 +982,7 @@ class WebSecurity {
     });
   }
 
-    // `detailLead` is `failed` for the failed-attempts bucket and anything
+  // `detailLead` is `failed` for the failed-attempts bucket and anything
   // else for the attempts one: a choice of catalog sentence (#2006).
   private sharedRefusal(refusal: Refusal, detailLead: string): LimitAnswer {
     const { log, errorCodes } = this.deps;
@@ -993,7 +993,7 @@ class WebSecurity {
     return errorCodes.mark({ ok: false, kind: refusal.kind,
              limit: refusal.limit, retryAfterS: refusal.retryAfterS,
              shared: true,
-                          detail: Sentence.say(detailLead === 'failed'
+             detail: Sentence.say(detailLead === 'failed'
                ? 'refusals.authn.tooManyFailedAttempts'
                : 'refusals.authn.tooManyAttempts',
                { seconds: refusal.retryAfterS }) }, code);

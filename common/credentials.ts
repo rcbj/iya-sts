@@ -6439,7 +6439,7 @@ class Credentials {
                 'credentials: a code for ' + name + ' verified and could not ' +
                 'be proved unspent (' + (answer.why || answer.reason) + '), ' +
                 'so it was refused.');
-            return coded('STS-AUTHN-0182', { ok: false, reason: 'store',
+      return coded('STS-AUTHN-0182', { ok: false, reason: 'store',
         detail: Sentence.say('refusals.factor.codeUncheckedNext') });
     });
   }
@@ -7033,7 +7033,7 @@ class Credentials {
                 'unspent (' + (answer.why || answer.reason) + '), so it was ' +
                 'refused.');
       log.debug("Leaving Credentials.hotpSpend(). Store.");
-            return coded('STS-OATH-0006', { ok: false, reason: 'store',
+      return coded('STS-OATH-0006', { ok: false, reason: 'store',
         detail: Sentence.say('refusals.factor.codeUncheckedNext') });
     }
     const next = Object.assign({}, record, { counter: verdict.next,
@@ -9806,7 +9806,7 @@ class Credentials {
       log.info('credentials: a recovery code for ' + name + ' was refused as ' +
                'already spent.');
       log.debug("Leaving Credentials.backupFinish().");
-            return coded('STS-AUTHN-0091', { ok: false, reason: 'spent',
+      return coded('STS-AUTHN-0091', { ok: false, reason: 'spent',
                detail: Sentence.say('refusals.factor.backupSpent') });
     }
     if (matchedIndex < 0) {

@@ -13931,7 +13931,7 @@ class Authn {
     return body;
   }
 
-    /**
+  /**
    * A view's own refusal as an answer carries it (#2006): `{ errors,
    * messages }` where the sentence is a catalog message, so the page draws
    * it in its language; null for text, which the page draws as it is.
@@ -17195,7 +17195,7 @@ class Authn {
     const phrhAsked = String((step.authn || {}).phishingClass || '') ===
                       'phrh' && mode === 'get' && !pqRefusal;
     let hardwareKnown = known;
-        let hardwareRefusal: { code: string, why: string | Sentence } | null =
+    let hardwareRefusal: { code: string, why: string | Sentence } | null =
       null;
     if (phrhAsked) {
       const leaf = require('../common/phishing_resistance');
@@ -17203,7 +17203,7 @@ class Authn {
         return leaf.storedKeyEarnsHardware(one);
       });
       if (known.length && !hardwareKnown.length) {
-                hardwareRefusal = { code: 'STS-AUTHN-0459',
+        hardwareRefusal = { code: 'STS-AUTHN-0459',
           why: Sentence.say('refusals.authn.hardwarePasskeyNone') };
       }
     }
@@ -17288,7 +17288,7 @@ class Authn {
       // retry's words to say, and nothing to offer after a failure.
       retrying: !!step.classicalOnly &&
         !(step.clientRule && step.clientRule.narrowed) } : null;
-        // The page's own refusal, and the same sentence as an answer carries
+    // The page's own refusal, and the same sentence as an answer carries
     // it (#2006), so the page draws it in its language.
     const problem = this.rpIdProblem(base) ||
                     (pqRefusal ? pqRefusal.why : '') ||
@@ -17304,7 +17304,7 @@ class Authn {
       // In product mode an RP ID that does not fit is said on the page as
       // well as refused at the act: a ceremony drawn under a refusal would
       // be a browser prompt whose answer is thrown away.
-            problem: String(problem),
+      problem: String(problem),
       problemRefusal: this.viewRefusal(problem),
       // NO POST-QUANTUM KEY WHERE ONE IS REQUIRED (#718): the refusal the
       // ceremony would end in, said before it runs.
@@ -17425,7 +17425,7 @@ class Authn {
       lane), { id: String(held.userHandle || '') });
     const out = {
       mode: mode, passwordless: !!step.passwordless, choices: [],
-            chosen: null, problem: String(this.rpIdProblem(base) || ''),
+      chosen: null, problem: String(this.rpIdProblem(base) || ''),
       problemRefusal: this.viewRefusal(this.rpIdProblem(base)),
       postQuantumRefused: null, hardwareRefused: null,
       postQuantumHelp: null, postQuantumAllowCredentials: '',
@@ -17902,7 +17902,7 @@ class Authn {
     }
     const restricted: string[] = Array.isArray(record.allowedMechanisms)
       ? record.allowedMechanisms : [];
-        const why = record.lockedUsername
+    const why = record.lockedUsername
       ? Sentence.say('refusals.authn.linkNoPasskeyAlone')
       : (!this.deps.authnPolicy.allows('passkey', 'primary')
         ? Sentence.say('refusals.policy.passkeyNotFirstFactorShort')
@@ -18297,7 +18297,7 @@ class Authn {
       // product-mode enrolment refusals (STS-AUTHN-0024, 0206) — carries a
       // `why` and no `failed`. Reading `failed.join()` off one answered 500
       // until 2026-09-21, which hid both refusals behind an error page.
-            const failed = Array.isArray(verdict.failed) && verdict.failed.length
+      const failed = Array.isArray(verdict.failed) && verdict.failed.length
         ? verdict.failed : [verdict.why || 'refused'];
       this.noteRefusedAuthentication(step, step.username, 'webauthn',
         errorCodes.codeOf(verdict) ||
@@ -18305,7 +18305,7 @@ class Authn {
         'assertion-did-not-verify');
       log.debug("Leaving Authn.finishWebauthn(). Refused: " +
                 failed.join('; '));
-            // ONE SENTENCE THAT IS A CATALOG MESSAGE (a policy's refusal, the
+      // ONE SENTENCE THAT IS A CATALOG MESSAGE (a policy's refusal, the
       // attestation's, a counter that did not increase) is placed as itself,
       // so the page translates it too (#2006); a verifier's list of checks
       // is joined as data.

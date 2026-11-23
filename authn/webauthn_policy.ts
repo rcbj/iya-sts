@@ -786,7 +786,7 @@ class WebauthnPolicy {
     const results = (posted && posted.clientExtensionResults) || {};
     const uv = typeof requireUv === 'boolean' ? requireUv
                                               : this.requireUserVerification();
-        let refusal: { code: string; why: string | Sentence } | null = null;
+    let refusal: { code: string; why: string | Sentence } | null = null;
     if (appid && passwordless) {
       refusal = { code: 'STS-AUTHN-0565',
         why: Sentence.say('refusals.passkey.u2fNotAlone') };
@@ -2324,7 +2324,7 @@ class WebauthnPolicy {
     const { log, errorCodes } = this.deps;
     log.debug("Entering WebauthnPolicy.usernamelessOffered().");
     const live = this.settings();
-        const why = !live.enabled
+    const why = !live.enabled
       ? Sentence.say('refusals.passkey.off')
       : (!live.primaryAllowed
         ? Sentence.say('refusals.passkey.usernamelessNotPrimary')

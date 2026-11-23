@@ -86,7 +86,7 @@ interface YubiFields {
 
 type YubiVerdict =
   | { ok: true; fields: YubiFields }
-    | { ok: false; reason: string; detail: string | Sentence };
+  | { ok: false; reason: string; detail: string | Sentence };
 
 /**
  * Yubico OTP as a second factor: the shape of an OTP, its decryption, a
@@ -136,7 +136,7 @@ class YubiOtp {
     };
   }
 
-    private refuse(code: string, reason: string,
+  private refuse(code: string, reason: string,
                  detail: string | Sentence): YubiVerdict {
     const { log, errorCodes: codes } = this.deps;
     log.debug("Entering YubiOtp.refuse(). " + code);
@@ -274,19 +274,19 @@ class YubiOtp {
     }
     const opened = c.yubiotpDecrypt(secret && secret.k, parsed.cipher);
     if (!opened || !opened.ok || !opened.fields) {
-            log.debug("Leaving YubiOtp.open(). Will not decrypt.");
+      log.debug("Leaving YubiOtp.open(). Will not decrypt.");
       return this.refuse('STS-YUBIOTP-0003', 'mismatch',
         Sentence.say('refusals.factor.yubiNotDecrypted'));
     }
     const fields = opened.fields;
     if (!fields.crcOk) {
-            log.debug("Leaving YubiOtp.open(). CRC.");
+      log.debug("Leaving YubiOtp.open(). CRC.");
       return this.refuse('STS-YUBIOTP-0003', 'mismatch',
         Sentence.say('refusals.factor.yubiNotDecrypted'));
     }
     const wantPrivate = String((secret && secret.p) || '').toLowerCase();
     if (!wantPrivate || !c.constantTimeEquals(fields.privateId, wantPrivate)) {
-            log.debug("Leaving YubiOtp.open(). Private id.");
+      log.debug("Leaving YubiOtp.open(). Private id.");
       return this.refuse('STS-YUBIOTP-0003', 'mismatch',
         Sentence.say('refusals.factor.yubiNotDecrypted'));
     }

@@ -294,7 +294,7 @@ class WebAuthnMfa {
         ? t.html('authn.webauthn.subPasswordless',
                  { name: String(v.username) })
         : t.html('authn.webauthn.subSecond', { name: String(v.username) })) +
-            // The step's own refusal in the page's language where it carried
+      // The step's own refusal in the page's language where it carried
       // its catalog message (#2006, `problemRefusal`).
       '</p>' + WebAuthnMfa.error(ctx, (w.problemRefusal &&
         WebSaid.saidWith(t, w.problemRefusal)) || w.problem) +

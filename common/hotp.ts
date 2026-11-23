@@ -84,7 +84,7 @@ interface HotpSettings {
 
 type HotpVerdict =
   | { ok: true; counter: number; next: number; ahead: number }
-    | { ok: false; reason: string; detail: string | Sentence };
+  | { ok: false; reason: string; detail: string | Sentence };
 
 interface HotpDeps {
   log: {
@@ -281,7 +281,7 @@ class Hotp {
     }
     const secret = this.secretOf(record);
     if (!secret) {
-            log.debug("Leaving Hotp.verify(). The secret is unusable.");
+      log.debug("Leaving Hotp.verify(). The secret is unusable.");
       return codes.mark({ ok: false, reason: 'store',
         detail: Sentence.say('refusals.factor.secretUnreadable') },
         'STS-OATH-0002');
@@ -345,7 +345,7 @@ class Hotp {
     }
     const secret = this.secretOf(record);
     if (!secret) {
-            log.debug("Leaving Hotp.resync(). The secret is unusable.");
+      log.debug("Leaving Hotp.resync(). The secret is unusable.");
       return codes.mark({ ok: false, reason: 'store',
         detail: Sentence.say('refusals.factor.secretUnreadable') },
         'STS-OATH-0002');

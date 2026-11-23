@@ -153,7 +153,7 @@ interface TotpSettings {
 // `error_codes.js`'s Symbol, which is not part of this shape.
 type VerifyResult =
   | { ok: true; counter: number; drift: number }
-    | { ok: false; reason: string; detail: string | Sentence;
+  | { ok: false; reason: string; detail: string | Sentence;
       counter?: number };
 
 interface OtpauthSpec {
