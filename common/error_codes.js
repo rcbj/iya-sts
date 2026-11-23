@@ -8613,6 +8613,19 @@ const CODES = [
       'ran no ceremony to report and cannot prove (#1955).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-AUTHN-0581',
+    summary: 'A post-login activity is not asked: the module its row in ' +
+      'common/post_login_kinds.ts names could not be loaded, or does not ' +
+      'export a whole activity (its id and exposure the row\'s, and every ' +
+      'question it must answer). The other activities are still asked ' +
+      '(#2009).',
+    spec: 'Log line; nobody is asked that activity' },
+  { code: 'STS-AUTHN-0582',
+    summary: 'A post-login activity could not say whether a person is due ' +
+      'it (its answer threw), so it was not asked at that sign-in, even ' +
+      'where it may have been required. The other activities are still ' +
+      'asked. Logged at error level once per activity in a process (#2009).',
+    spec: 'Log line; the sign-in goes on without that activity' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

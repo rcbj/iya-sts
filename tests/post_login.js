@@ -45,6 +45,13 @@
 //      not counted by the removal guard, cleared by a use.
 //   L. Two lanes per population (#1104).
 //   M. The portal's Upgrade is gone (#1100), and so is webauthn.pqcUpgrade.
+//   N. SEVERAL ACTIVITIES IN TURN (#2009 P1): a REQUIRED passkey migration,
+//      then a second (test) activity at the same sign-in, through authn's
+//      own chain — the passkey step done, the held session held again for
+//      the next, Skip, and only then the session and the return to the
+//      relying party. A role offer that appears while the person is at the
+//      step is NOT asked after it: the roles were settled before the first
+//      post-login step (`rolesSettled`).
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -197,7 +204,7 @@ function childMain() {
                 oauthGrantType: ['authorization_code'] } });
     // pla-gus has no password: the passkeys are the only way in (K).
     ['pla-ann', 'pla-bob', 'pla-cat', 'pla-dan', 'pla-eve', 'pla-fay',
-     'pla-gus', 'pla-hal', 'pla-ivy'].forEach(function (name) {
+     'pla-gus', 'pla-hal', 'pla-ivy', 'pla-jay'].forEach(function (name) {
       ldap.createUser(name, { invent: false });
       if (name !== 'pla-gus') {
         credentials.setPassword(name, PASSWORD);
@@ -225,6 +232,9 @@ function childMain() {
     // have to.
     const danOld = await makeAuthenticator(-7, RPID, ORIGIN, MODEL);
     const danSeed = await enrol('pla-dan', danOld);
+    // jay's answers N's chain.
+    const jayOld = await makeAuthenticator(-7, RPID, ORIGIN, MODEL);
+    const jaySeed = await enrol('pla-jay', jayOld);
     credentials.addKey('pla-eve', { credentialId: 'pla-eve-ec',
                                     publicKeyJwk: EC });
     credentials.addKey('pla-cat', { credentialId: 'pla-cat-ec',
@@ -613,6 +623,128 @@ function childMain() {
     }) && setting === undefined,
          'M. /account-api has no upgrade operation and webauthn.pqcUpgrade ' +
          'is no setting', String(setting));
+
+    // N. Several activities in turn (#2009 P1).
+    policy.reset('default');
+    policy.save('default', fields({ enabled: true, snoozeDays: 3,
+                                    graceDays: 1, method: 'alongside' }));
+    const probe = {
+      id: 'pla-probe', exposure: 'other',
+      enabledIn: function () {
+        return true;
+      },
+      turnedOn: function (p) {
+        return p;
+      },
+      timing: function () {
+        return { snoozeDays: 2, graceDays: 0 };
+      },
+      due: function (u) {
+        return u === 'pla-jay'
+          ? { reason: 'probe', enforceable: false, method: '',
+              fallback: 'none' }
+          : null;
+      }
+    };
+    const chained = new postLogin.PostLogin(Object.assign(
+      postLogin.PostLogin.defaultDeps(), { kinds: function (self) {
+        return [self.passkeyKind(), probe];
+      } }));
+    // The root installed the module's instance already, and one may not be
+    // installed twice; authn asks through the module's exports, so N points
+    // those at this instance and puts them back after.
+    const exported = {};
+    Object.keys(postLogin).forEach(function (name) {
+      if (typeof postLogin[name] === 'function' &&
+          typeof chained[name] === 'function' &&
+          ['PostLogin', 'installInstance', 'instanceOrigin']
+            .indexOf(name) < 0) {
+        exported[name] = postLogin[name];
+        postLogin[name] = chained[name].bind(chained);
+      }
+    });
+    const jayPast = new postLogin.PostLogin(Object.assign(
+      postLogin.PostLogin.defaultDeps(),
+      { now: function () { return Date.now() - 2 * DAY; } }));
+    jayPast.noteSkipped('pla-jay', jayPast.dueFor('pla-jay'));
+    const jayList = postLogin.dueListFor('pla-jay').map(function (one) {
+      return one.activity + (one.required ? '!' : '');
+    });
+    note(jaySeed.ok && jayList.join(',') ===
+           'pqc-passkey-migration!,pla-probe',
+         'N1. two due: the required passkey migration first, then the ' +
+         'second activity', JSON.stringify(jayList));
+    const jayAsked = rows('authn.post-login.asked', 'pla-jay').length;
+    const jayStarts = rows('session.start', 'pla-jay').length;
+    s = await signIn('pla-jay', jayOld);
+    opened = await openStep(s.b, s.answer);
+    const firstView = (opened.view || {}).postLogin || {};
+    // A ROLE OFFER APPEARS WHILE JAY IS AT THE STEP: a required dynamic
+    // role, offered for every application. Before #2009 the session after
+    // the step asked the role question a second time.
+    const eligibility = require(ROOT + '/xacml/role_eligibility');
+    const rolesModule = require(ROOT + '/common/roles');
+    const realRoles = { selectionOn: eligibility.selectionOn,
+                        offer: eligibility.offer,
+                        dynamicRoles: rolesModule.dynamicRoles };
+    eligibility.selectionOn = function () {
+      return true;
+    };
+    eligibility.offer = function () {
+      return [{ role: 'pla-role', selection: 'required' }];
+    };
+    rolesModule.dynamicRoles = function () {
+      return [{ name: 'pla-role', selection: 'required' }];
+    };
+    let second = {};
+    let skippedSecond = {};
+    let secondView = {};
+    try {
+      const jayCreate = await stepAct(s.b, opened, 'post-login/register');
+      const jayPage = jayCreate.next === 'mfa'
+        ? await openStep(s.b, jayCreate) : {};
+      const jayPq = await makeAuthenticator(-48, RPID, ORIGIN);
+      const jayMade = await authnScreen.passkeyStep({ port: port,
+        jar: s.b.jar, opened: jayPage }, function (armed) {
+        return jayPq.register(armed.challenge, armed.user && armed.user.id);
+      });
+      second = jayMade.answer || {};
+      const secondPage = second.next === 'mfa' && second.step === 'post-login'
+        ? await openStep(s.b, second) : {};
+      secondView = (secondPage.view || {}).postLogin || {};
+      skippedSecond = secondPage.view
+        ? await stepAct(s.b, secondPage, 'post-login/skip') : {};
+    } finally {
+      eligibility.selectionOn = realRoles.selectionOn;
+      eligibility.offer = realRoles.offer;
+      rolesModule.dynamicRoles = realRoles.dynamicRoles;
+    }
+    const jayRows = rows('authn.post-login.asked', 'pla-jay')
+      .slice(jayAsked).map(function (row) {
+        return row.detail && row.detail.activity;
+      });
+    note(firstView.activity === 'pqc-passkey-migration' &&
+         firstView.required === true &&
+         second.next === 'mfa' && second.step === 'post-login' &&
+         secondView.activity === 'pla-probe' &&
+         secondView.canSkip === true &&
+         rows('session.start', 'pla-jay').length === jayStarts + 1 &&
+         startsSession(skippedSecond) &&
+         jayRows.sort().join(',') === 'pla-probe,pqc-passkey-migration',
+         'N2. the required passkey step done, the held session is held ' +
+         'again for the second activity, and Skip there starts it and ' +
+         'returns to the relying party: one session, two asks',
+         JSON.stringify([firstView, second.json || second, secondView,
+                         skippedSecond.json || skippedSecond, jayRows]));
+    note(second.step !== 'roles' && postLogin.stateOf('pla-jay',
+           'pla-probe').skips === 1,
+         'N3. the role offer that appeared at the step is not asked after ' +
+         'it, and the second activity\'s Skip is on its own row',
+         JSON.stringify([second.step, postLogin.stateOf('pla-jay',
+                                                        'pla-probe')]));
+    Object.keys(exported).forEach(function (name) {
+      postLogin[name] = exported[name];
+    });
 
     ldap.setGroupPolicy('pla-excluded', 'stsPostLoginPolicy', '');
     policy.reset('pla-excluded');

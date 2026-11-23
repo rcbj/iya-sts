@@ -8808,11 +8808,13 @@ class Authn {
     // decision 5): it never assumes a choice.
     //
     // Never for a keyed caller, an unauthenticated session, a call with no
-    // request or application, or the session the step itself starts
-    // (`rolesDone`).
+    // request or application, the session the step itself starts
+    // (`rolesDone`), or the session a post-login step held, whose roles were
+    // settled before it was asked (`rolesSettled`, #2009).
     // -------------------------------------------------------------------------
     const roleAsked = !(extra.authenticated === false || extra.key ||
-      extra.rolesDone === true || !extra.request || !username);
+      extra.rolesDone === true || extra.rolesSettled === true ||
+      !extra.request || !username);
     const roleOffer = roleAsked && extra.application
       ? this.roleOfferFor(String(username), String(extra.application),
                           amr, String(acr || ''))
@@ -8882,13 +8884,23 @@ class Authn {
     //
     // Asked of a person, interactively: never of a keyed caller (SCIM, the
     // SPIRE Server API), an unauthenticated session, a call with no request,
-    // or the session the step itself starts (`postLoginDone`).
+    // or a session marked `postLoginDone`.
+    //
+    // SEVERAL ACTIVITIES MAY BE DUE (#2009 P1, design X3). The step's own
+    // session carries the activities already asked at this sign-in
+    // (`postLoginAsked`) and whether one of them could be skipped
+    // (`postLoginSkippableAsked`); `nextDue()` answers the next — every
+    // required one, at most one that may be skipped (rcbj's decision D2 on
+    // #2009, 2026-11-23) — so the person is asked them one after another
+    // and the session starts after the last.
     // -------------------------------------------------------------------------
     const postLoginDue = extra.authenticated === false || extra.key ||
       extra.postLoginDone === true || !extra.request || !username
       ? null
-      : this.deps.postLogin.dueFor(String(username),
-                                   String(extra.application || ''));
+      : this.deps.postLogin.nextDue(String(username),
+          String(extra.application || ''),
+          Array.isArray(extra.postLoginAsked) ? extra.postLoginAsked : [],
+          extra.postLoginSkippableAsked === true);
     if (postLoginDue && extra.postLoginHold === true) {
       extra.postLogin = { due: postLoginDue, amr: (amr || []).slice(),
                           acr: String(acr || ''), via: String(via || '') };
@@ -12171,7 +12183,12 @@ class Authn {
         // The role step's choice (#1072), made before this step was asked.
         rolesDone: said.rolesDone === true,
         selectedRoles: Array.isArray(said.selectedRoles)
-          ? said.selectedRoles : [] },
+          ? said.selectedRoles : [],
+        // The activities asked at this sign-in before this one (#2009),
+        // and whether one of them could be skipped.
+        postLoginAsked: Array.isArray(said.postLoginAsked)
+          ? said.postLoginAsked.map(String) : [],
+        postLoginSkippableAsked: said.postLoginSkippableAsked === true },
       risk: said.risk, riskDecision: said.riskDecision,
       expires: Date.now() + this.mfaStepTtlMs()
     });
@@ -12200,15 +12217,46 @@ class Authn {
 
   // THE SESSION THE POST-LOGIN STEP HELD, STARTED (#1096): as the door would
   // have started it — its amr and acr, its credential, its application and
-  // its risk — and marked `postLoginDone` so it is not held again. The
-  // passkey registered in the step is NOT an authentication of this
-  // sign-in: it is what the person was asked to do after one.
+  // its risk. The passkey registered in the step is NOT an authentication of
+  // this sign-in: it is what the person was asked to do after one.
+  //
+  // SINCE #2009 (P1, design X3) IT MAY BE HELD AGAIN, for the NEXT activity
+  // due: the session is started with `postLoginHold` and the activities
+  // asked so far (this one added), so `startSessionHere()` asks
+  // `nextDue()`, which never answers one already asked at this sign-in, and
+  // a second skippable one only where none was (rcbj's D2) — and
+  // `refusedSession()` draws its step as it drew this one. With nothing
+  // more due it starts.
+  //
+  // AND THE ROLES ARE SETTLED (`rolesSettled`), because the role step is
+  // asked BEFORE any post-login step: this sign-in's roles were decided
+  // when this step was held — chosen at the role step, or none offered.
+  // Until #2009 the session after the step was started without
+  // `postLoginHold` and without `rolesDone`, so the role question was asked
+  // a SECOND time after the activity: a sign-in naming no application ran
+  // `role_eligibility.requiredFor()` again and could be refused
+  // (STS-XACML-0329) after the person had done what they were asked, and
+  // an offer that appeared during the step refused a required role or was
+  // silently dropped. Asked once now, at the place #1072 put it; the
+  // choice already made (`selectedRoles`) is kept as before. NOT
+  // `rolesDone`, which also REPLACES the session's choice for the
+  // application (`startSessionHere()`'s #1072 block): a sign-in whose role
+  // step did not run must leave an earlier choice alone.
   private finishPostLogin(req: any, res: any, base: string,
                           step: any): void {
     const { log } = this.deps;
     log.debug("Entering Authn.finishPostLogin().");
     const held = step.held || {};
-    const said: any = { request: req, postLoginDone: true,
+    const due = step.postLogin || {};
+    const asked = (Array.isArray(held.postLoginAsked)
+      ? held.postLoginAsked.map(String) : [])
+      .concat(due.activity ? [String(due.activity)] : []);
+    const said: any = { request: req, postLoginHold: true,
+                        rolesSettled: true,
+                        postLoginAsked: asked,
+                        postLoginSkippableAsked:
+                          held.postLoginSkippableAsked === true ||
+                          (!!due.activity && due.required !== true),
                         gated: held.gated === true,
                         application: String(held.application || ''),
                         credential: held.credential || { kind: 'password' },
@@ -12345,7 +12393,12 @@ class Authn {
       acr: String(hold.acr || ''), via: String(hold.via || ''),
       application: String(said.application || ''),
       credential: said.credential || null, gated: said.gated === true,
-      method: said.method ? String(said.method) : '' };
+      method: said.method ? String(said.method) : '',
+      // The post-login activities asked at this sign-in so far (#2009), so
+      // a session the role step holds never asks one of them again.
+      postLoginAsked: Array.isArray(said.postLoginAsked)
+        ? said.postLoginAsked.map(String) : [],
+      postLoginSkippableAsked: said.postLoginSkippableAsked === true };
   }
 
   // THE ROLE STEP, OR THE SESSION AT ONCE: the step where the person ticked
@@ -12416,6 +12469,10 @@ class Authn {
     log.debug("Entering Authn.finishRoles(). " + rows.length + " role(s).");
     const held = step.held || {};
     const said: any = { request: req, rolesDone: true, postLoginHold: true,
+                        postLoginAsked: Array.isArray(held.postLoginAsked)
+                          ? held.postLoginAsked : [],
+                        postLoginSkippableAsked:
+                          held.postLoginSkippableAsked === true,
                         selectedRoles: rows, gated: held.gated === true,
                         application: String(held.application || ''),
                         credential: held.credential || { kind: 'password' },

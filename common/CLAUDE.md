@@ -16592,6 +16592,41 @@ policy's to say; there is no second switch.
 * **`lanes`** on the passkey policy (#1104) feeds
   `webauthnPolicy.alongsideClassical()` through `registrationRows()`.
 
+### 3ct, continued: several activities, one table (#2009 P1, 2026-11-23)
+
+rcbj: post-login activities for the other credentials a token carries
+(#1955) — the mail-encryption key and the PIV certificates — designed on
+#2009 from the passkey activity. P1 is the framework and adds no activity;
+`post_login_kinds.ts`'s header argues it. What reaches outside it:
+
+* **`post_login_kinds.ts` is the ONE list.** The started activities'
+  `ACTIVITIES` and `forgetPerson()` read it; the policy's `activity` row
+  stays a one-value enum meaning the passkey migration (design X2: each new
+  activity gets a BLOCK of rows with its own switch, so a profile saved
+  before reads it as off — backwards compatibility, no migration). The
+  report's filter (`report/catalog.ts`) is still its own copy until P4:
+  that module requires nothing of this service.
+* **A closed table read lazily, not a hook** (rule 3e, failed both ways
+  round in the header). A row names the module that answers for its
+  activity; one that is not whole is not asked, and the others are.
+* **`dueListFor()` answers every activity due**, required first, then by
+  exposure (`decrypt-later` — an encryption key, harvest now — before
+  `forgery`), then the table's order. `dueFor()` is its first, or the one
+  named (the started activities' mail asks for its own). `nextDue()` is the
+  sign-in's question: never one already asked at this sign-in, and at most
+  ONE that may be skipped, every required one asked (rcbj's decision D2 on
+  #2009). How the sign-in asks them in turn is `authn/CLAUDE.md`'s.
+* **A failure is never quiet.** A row whose module does not load is not
+  asked (STS-AUTHN-0581) and is tried again at the next question, only what
+  loaded being kept; an activity whose answer throws is not asked at that
+  sign-in (STS-AUTHN-0582). Each is an error line once per activity in a
+  process, debug after, because a line per sign-in would bury the log.
+* **What every activity shares is `dueOf()`**: who asks (the policy with
+  the activity on; a named profile with it off excludes; else the oldest
+  running started activity of it), then the snooze and the allotted time
+  from the activity's own `timing()`. The passkey migration is
+  `passkeyKind()`, its answers unchanged.
+
 ## 3cx. `policy_selection.ts`: WHAT A NAMED POLICY COVERS NAMES IT, AND ONE RANKING FOR EVERY KIND (#1235, 2026-10-30)
 
 rcbj's decisions on #1234 (2026-10-30, twice that day): every kind on
