@@ -420,7 +420,444 @@ is shown on the screen and recorded under `STS-AUTHN-0463` to
   an entry or not.
 * **A certificate from an outside authority stored on no entry, or on more
   than one**, answered with `refusedAsStored` (`NOT_STORED` or
-  `STORED_TWICE`). Its common name and subject are never read.
+  `STORED_TWICE`). Its common name and subject are never read, unless a
+  [certificate sign-in profile](#smart-card-and-certificate-sign-in) covers
+  it and the administrator opted in to a name.
+* **A certificate a profile covers that is outside it, or whose bindings name
+  nobody or more than one account**, answered the same way (below).
+
+## Smart-card and certificate sign-in
+
+A person can sign in with a client certificate from an authority this service
+does not run: a federal PIV card, a CAC, an enterprise smart card, or a
+software certificate from your own CA. Storing each certificate on its entry
+(above) works for a few people. For a whole population, give the realm a
+**certificate sign-in profile** for the CA. It says what a certificate from
+that CA must carry, and how the service finds the one account it belongs to
+without anybody storing the certificate.
+
+Everything here is off or empty by default, and then the service behaves as
+the sections above describe. The logic is held by `tests/certificate_binding.js`,
+in process, over certificates it makes at run time. No test job yet drives a
+physical card, the handoff over two real listeners, or a real proxy.
+
+### What decides a certificate
+
+Every door that reads a certificate as a person asks the same question:
+`GET /tls/sign-in`, the sign-in screen, the certificate handoff below, SCIM,
+the XACML gates, Shared Signals, WS-Trust and LDAP SASL EXTERNAL. The answer
+comes from the first of these that applies:
+
+1. **A profile covers it** when one of the profile's `issuers` is in the
+   certificate's validated path, above the leaf: the chain the handshake built
+   to an anchor of the client truststore. The first such profile in the list
+   decides, and the older mappings below are never asked.
+2. **No profile covers it**: the certificate stored in `userCertificate` on
+   exactly one entry, or, for a card from a CA in `piv.externalIssuers`, the
+   card UUID in `stsPivCardUuid`
+   ([Hardware tokens](hardware-tokens.md#outside-piv-and-cac-cards)).
+
+A profile does not replace verification. The certificate must still chain to
+the [client truststore](#trust-a-ca-for-client-certificates) and pass the
+revocation check.
+
+### The members of a profile
+
+`certSignIn.profiles` is a JSON array of profiles, set per realm. It holds at
+most 32 profiles, and each list in a profile at most 32 values.
+
+| Member | Required | What it is |
+|---|---|---|
+| `id` | yes | Lower-case letters, digits and hyphens, at most 64; unique in the array. It appears in the log and in every refusal. |
+| `issuers` | yes | The CAs the profile covers: the SHA-256 of each CA's DER SubjectPublicKeyInfo, 64 hexadecimal digits (colons and a `sha256:` prefix are accepted). Because it names the CA's **key**, a CA certificate renewed under the same key is still covered. Name a root, and every CA under it is covered. Only a CA whose signature over the certificate below it verifies counts: a certificate a client merely sends along does not. This service's own CAs are refused here, since the certificates they issue are identities by their own rules. |
+| `keyUsage` | no | keyUsage bits the leaf must **all** carry: `digitalSignature`, `nonRepudiation`, `keyEncipherment`, `dataEncipherment`, `keyAgreement`, `keyCertSign`, `cRLSign`, `encipherOnly`, `decipherOnly`. |
+| `extendedKeyUsage` | no | Purposes as dotted OIDs, **one** of which the leaf must carry, such as `1.3.6.1.5.5.7.3.2` (clientAuth). |
+| `policies` | no | Certificate policies as dotted OIDs. RFC 5280 section 6.1 policy processing runs over the validated path with these as the initial policy set and an explicit policy required, so the path must carry one of them down to the leaf. Policy mappings are honoured: an agency policy mapped to one of these through a bridge counts. |
+| `bindings` | no | The methods that say which account the certificate is (below). Default `["certificate-sha256", "issuer-serial"]`. |
+| `lowAffinity` | no | `true` lets `bindings` name a low-affinity (name) method. Without it, a name method is refused when the setting is written. |
+| `description` | no | Free text, at most 500 characters. |
+
+A write that is not a well-formed array is refused with `STS-TLS-0065` and a
+sentence naming the profile and the member. A stored value that is not
+well-formed is logged under the same code and covers nothing.
+
+### Binding methods
+
+**High-affinity** methods are tied to one certificate or one key:
+
+| Method | Matches | Where the value lives |
+|---|---|---|
+| `certificate-sha256` | The leaf itself, byte for byte | The certificate in `userCertificate` (**Users →** the person **→ Stored certificates**, as above), or its SHA-256 in `stsCertificateBinding` |
+| `issuer-serial` | The issuing CA and the leaf's serial number | `stsCertificateBinding` |
+| `issuer-ski` | The issuing CA and the leaf's subjectKeyIdentifier. A leaf without one matches nobody | `stsCertificateBinding` |
+| `spki-sha256` | The leaf's public key | `stsCertificateBinding` |
+| `card-uuid` | The FIPS 201 card UUID: the one `urn:uuid:` URI in the leaf's subjectAltName | `stsPivCardUuid` |
+
+**Low-affinity** methods match a name, which another certificate can carry too.
+They are accepted only on a profile with `"lowAffinity": true`:
+
+| Method | Matches | Where the value lives |
+|---|---|---|
+| `upn` | The one UPN in the leaf's subjectAltName, ignoring case | The person's `userPrincipalName` |
+| `email` | The one rfc822Name in the leaf's subjectAltName | The person's `mail` |
+| `issuer-subject` | The issuing CA and the leaf's subject DN | `stsCertificateBinding` |
+| `subject` | The leaf's subject DN alone | `stsCertificateBinding` |
+
+"The issuing CA" is the CA that signed the leaf, named by the SHA-256 of its
+SubjectPublicKeyInfo, exactly as in `issuers`. For a federal card that is the
+agency's issuing CA, not the root the profile names.
+
+**Every method in `bindings` is asked, and the ones that find somebody must
+agree.** The certificate signs in the one person they all found. It signs
+nobody in when:
+
+* no method finds anybody, or only a name does where the profile names a
+  high-affinity method too (`STS-TLS-0068` in the log; the door answers
+  `NOT_STORED`: `STS-TLS-0054` at `/tls/sign-in`, `STS-AUTHN-0468` on the
+  screen);
+* one method finds two people, or two methods find different people
+  (`STS-TLS-0067`; the door answers `STORED_TWICE`: `STS-TLS-0055`,
+  `STS-AUTHN-0469`);
+* the leaf is outside its profile: a keyUsage bit missing, none of the listed
+  extendedKeyUsage purposes, or a path that does not carry a listed policy
+  (`STS-TLS-0066`; answered as `NOT_STORED`).
+
+A failed high-affinity match never falls back to a name. A profile without
+`lowAffinity` has no name method to fall back to.
+
+### Example: federal PIV cards
+
+PIV Authentication certificates from any agency whose CA chains to the
+Federal Common Policy CA G2, under `id-fpki-common-authentication`, bound by
+issuer and serial or by the card UUID:
+
+```json
+[{
+  "id": "fpki-piv",
+  "description": "PIV Authentication certificates under the Federal Common Policy",
+  "issuers": ["<SHA-256 of the Federal Common Policy CA G2's SubjectPublicKeyInfo>"],
+  "keyUsage": ["digitalSignature"],
+  "policies": ["2.16.840.1.101.3.2.1.3.13"],
+  "bindings": ["issuer-serial", "card-uuid"]
+}]
+```
+
+Because the policy is checked over the whole path with mappings honoured, an
+agency CA that reaches the root through a bridge and maps its own policy to
+`id-fpki-common-authentication` is accepted. `piv.externalIssuers` cannot do
+that: it accepts only cards a listed CA issued directly. A PIV-I card
+(`2.16.840.1.101.3.2.1.3.18`, `id-fpki-certpcy-pivi-hardware`) is outside
+this profile; add that OID to `policies` to take it as well.
+
+Add the Federal Common Policy root to the client truststore, and the
+intermediate CAs between it and the cards that the browsers do not send with
+the certificate. The truststore holds at most 32 anchors.
+
+### Example: an enterprise CA
+
+Smart-card certificates from your own issuing CA, bound by key, so a renewal
+on the same card needs nothing recorded again:
+
+```json
+[{
+  "id": "corp-smartcard",
+  "issuers": ["<SHA-256 of Example Corp Issuing CA 1's SubjectPublicKeyInfo>"],
+  "keyUsage": ["digitalSignature"],
+  "extendedKeyUsage": ["1.3.6.1.5.5.7.3.2"],
+  "bindings": ["spki-sha256", "issuer-serial"]
+}]
+```
+
+Several profiles go in one array. The first one whose `issuers` match decides,
+so list a narrower profile (an issuing CA) before a wider one (its root).
+
+### Setting the profiles
+
+The setting is read at every sign-in, so no restart is needed. Set it in the
+realm the people sign in to (`/realm/<id>/admin-api/...` for a realm other
+than the default). In the console it is with the other TLS settings, on
+**Server configuration → Listeners**. With the API, keep the array in a file
+and send it as a string:
+
+```bash
+api config/set "$(jq -n --arg v "$(jq -c . profiles.json)" \
+  '{key:"certSignIn.profiles", value:$v}')"
+api config/reset '{"key":"certSignIn.profiles"}'   # back to empty: no profile
+```
+
+### Working out the values
+
+Every hexadecimal value may be written with or without colons, in either case.
+
+```bash
+# A CA's SubjectPublicKeyInfo SHA-256: for "issuers", and the issuer part of
+# issuer-serial, issuer-ski and issuer-subject.
+openssl x509 -in ca.pem -pubkey -noout | openssl pkey -pubin -outform der |
+  openssl dgst -sha256 -r | cut -d' ' -f1
+
+# The same for the leaf's own key: spki-sha256.
+openssl x509 -in card.pem -pubkey -noout | openssl pkey -pubin -outform der |
+  openssl dgst -sha256 -r | cut -d' ' -f1
+
+# The leaf's serial number: issuer-serial. Prints serial=<hex>.
+openssl x509 -in card.pem -noout -serial
+
+# The leaf's subjectKeyIdentifier: issuer-ski.
+openssl x509 -in card.pem -noout -ext subjectKeyIdentifier
+
+# The leaf's subject DN, most specific RDN first: issuer-subject and subject.
+openssl x509 -in card.pem -noout -subject -nameopt RFC2253
+
+# The leaf's own SHA-256, what certificate-sha256 matches.
+openssl x509 -in card.pem -outform der | openssl dgst -sha256 -r | cut -d' ' -f1
+```
+
+To get a card's certificate, export its PIV Authentication certificate
+(slot 9a) with your card middleware. The card UUID is the `urn:uuid:` URI
+among its subjectAltNames
+(`openssl x509 -in card.pem -noout -ext subjectAltName`).
+
+### Recording a binding on a person
+
+A value of `stsCertificateBinding` is one binding, in one of these forms:
+
+```text
+certificate-sha256:<the leaf's SHA-256>
+issuer-serial:<issuing CA's SPKI SHA-256>:<serial, hex>
+issuer-ski:<issuing CA's SPKI SHA-256>:<subjectKeyIdentifier, hex>
+spki-sha256:<the leaf key's SPKI SHA-256>
+issuer-subject:<issuing CA's SPKI SHA-256>:<subject DN>
+subject:<subject DN>
+```
+
+Every write stores a value in one form: the method lower-cased, hexadecimal
+lower-cased without colons, a serial without leading zeros, and a DN
+lower-cased with the spaces around `=` and `,` removed. The colon separates
+the parts, so write the issuer's digest without colons; a serial may keep
+them. So `ISSUER-SERIAL:3B1F…9C0A:00:4F:2A:19` is stored as
+`issuer-serial:3b1f…9c0a:4f2a19`. A person may hold several values, one per
+card or certificate.
+
+* **Console:** **Directory → Users →** the person **→ Attributes**, the
+  *Certificate sign-in bindings* field: one box per value, **+** to add one.
+* **API:**
+  ```bash
+  api users/add-attribute '{"user":"alice","attribute":"stsCertificateBinding",
+    "value":"issuer-serial:3b1f…9c0a:4f2a19"}'
+  api users/remove-attribute '{"user":"alice","attribute":"stsCertificateBinding",
+    "value":"issuer-serial:3b1f…9c0a:4f2a19"}'
+  ```
+* **LDAP, SCIM or a bulk import**, as any attribute of the person.
+
+A card UUID goes in `stsPivCardUuid`, as
+[Hardware tokens](hardware-tokens.md#outside-piv-and-cac-cards) describes; a
+`certificate-sha256` binding is the certificate itself, on **Stored
+certificates**. `upn` and `email` read the person's `userPrincipalName` and
+`mail`, so nothing is recorded for them.
+
+Every write refuses a value in none of the forms above (`STS-TLS-0069`) and
+one another entry of the realm already holds (`STS-TLS-0070`), so one binding
+cannot name two people. Only an administrator writes the attribute: a person
+cannot set it on the portal, because a person who could would choose whose
+certificate signs them in. The holder of a value is found through an index, so
+a sign-in costs the same with a million people as with ten.
+
+### When a certificate is renewed
+
+| Method | New certificate, same key | New key or new card | The CA re-keys |
+|---|---|---|---|
+| `certificate-sha256` | store the new certificate | store the new certificate | store the new certificate |
+| `issuer-serial` | record the new serial | record the new serial | record it again with the new CA key |
+| `issuer-ski` | nothing, where the CA derives the identifier from the key (the usual practice); otherwise record it | record the new identifier | record it again with the new CA key |
+| `spki-sha256` | nothing | record the new key | nothing |
+| `card-uuid` | nothing | a new card: record its UUID | nothing |
+| `upn`, `email` | nothing, while the name is the same | nothing, while the name is the same | nothing |
+| `issuer-subject` | nothing, while the subject is the same | nothing, while the subject is the same | record it again with the new CA key |
+| `subject` | nothing, while the subject is the same | nothing, while the subject is the same | nothing |
+
+A CA certificate renewed under the **same key** changes nothing, because the
+CA is named by its key. A CA that **re-keys** is a new issuer: add its key to
+the profile's `issuers` beside the old one while certificates from both are in
+use. Old bindings can stay on the entry until their certificates expire.
+
+### Low affinity: what you accept by opting in
+
+A name method trusts the CA to have written the right name, and trusts every
+CA the profile covers equally. With `"lowAffinity": true`:
+
+* **Any CA under the profile's `issuers` can sign anybody in**, by writing
+  their UPN, address or subject into a certificate. A profile that names a
+  root or a bridge covers every CA under it. Name the issuing CAs you trust to
+  assign those names, not the root above them.
+* **A name is never a fallback.** On a profile that also names a
+  high-affinity method, a certificate that only a name matches signs nobody
+  in: the names then only corroborate the high-affinity match, and a name
+  naming somebody else is still a disagreement. A name signs a certificate in
+  by itself only on a profile whose `bindings` are names alone.
+* **`upn`, `email` and `subject` are not issuer-scoped.** They match the name
+  wherever in the directory it is held, whichever covered CA wrote it; use
+  `issuer-subject` to tie a subject to one CA.
+* **`email` trusts `mail` as written.** The directory does not prove that a
+  person controls the address in their `mail`, so an administrator or a sync
+  that writes `mail` decides who an `email` binding signs in.
+* **`upn` waits for the index.** On a store kept in a database, a
+  `userPrincipalName` written before this version is indexed by a one-time
+  background walk; until it finishes, the `upn` method matches nobody.
+* **The directory decides who a name is.** Changing a person's `mail` or
+  `userPrincipalName` changes which certificates sign them in, and so does
+  giving that name to somebody else. An address two people hold signs nobody
+  in.
+* **A subject DN is compared as text**, case and spacing aside. A CA that
+  re-orders or re-encodes the DN in a renewal breaks the binding.
+
+Prefer a high-affinity method. Where a name is the only thing that ties your
+certificates to your accounts, keep the profile's `issuers` to the CAs that
+assign those names.
+
+### Require a verified revocation status
+
+`certSignIn.requireRevocation` decides whether a certificate sign-in needs a
+**verified** revocation status: every certificate in the path looked up, and
+none on a list.
+
+| Value | Development | Product |
+|---|---|---|
+| `auto` (default) | as `pki.revocationCheck` says | required |
+| `on` | required | required |
+
+Where it is required, a status that could not be established, or a check that
+was not made (`pki.revocationCheck` off), refuses the sign-in where soft-fail
+would have accepted it: `STS-TLS-0071` at `/tls/sign-in`, `STS-AUTHN-0464` on
+the screen. A revoked certificate is refused either way. It applies to
+sign-ins only (`/tls/sign-in`, the screen and the handoff); RFC 8705 and the
+other doors keep `pki.revocationCheck`. The CRLs and OCSP responders the
+certificates name must be reachable from the service, and the first sign-in
+waits on the fetch (`pki.revocationFetchTimeoutMs`).
+
+```bash
+api config/set '{"key":"certSignIn.requireRevocation","value":"on"}'
+```
+
+### A listener of its own for the card (the handoff)
+
+When the sign-in screen's listener asks every connection for a certificate,
+a browser with a card in the reader asks for it, and for its PIN, whoever came
+to type a password. The **handoff** moves that question to one request, on a
+listener of its own:
+
+1. With `certSignIn.handoff` on, the screen shows **Sign in with a smart card
+   or certificate**. It links to `/authn/certificate/continue` on the listener
+   the `certificate-sign-in` hosted application is mapped to.
+2. There the browser asks for the certificate and the PIN, and the service
+   checks the certificate exactly as the screen does: revocation, the realm's
+   requirement, every profile.
+3. The browser comes back to the screen, which offers **Continue as *name*
+   with your certificate**. The sign-in goes on as it would for a certificate
+   on the screen's own connection: the authentication policy, then a second
+   factor where one is needed.
+
+**Set it up** on **Server configuration → Listeners → Custom listeners**, or
+with the API:
+
+```bash
+# A listener that asks for a certificate, on the main port's host name.
+api listeners/set-listeners '{"value":[{"id":"smartcard","port":8443,
+  "publicBaseUrl":"https://sts.example.com:8443","clientAuth":"optional"}]}'
+
+# The handoff path, and only it, on that listener.
+api listeners/set-applications '{"value":{
+  "certificate-sign-in":{"listeners":["smartcard"]}}}'
+
+api config/set '{"key":"certSignIn.handoff","value":true}'
+
+# Optional: the main port stops asking anybody for a certificate.
+api config/set '{"key":"tls.mainPortDisableOptionalClientCertificate","value":true}'
+```
+
+`clientAuth` may be `optional` or `required`. With `optional`, a browser that
+presents nothing comes back to the screen, which says why. With `required`,
+it gets the browser's own TLS error instead. Turning off the main port's
+question also stops RFC 8705, `GET /tls/sign-in`, EST with a certificate and
+the remote XACML PEP there
+([Require a client certificate, or stop asking for one](#require-a-client-certificate-or-stop-asking-for-one)).
+Move those to a listener that asks, or leave the main port asking.
+
+**The sign-on session cookie must reach the listener.** The certificate is
+bound to the pending sign-in and to the browser's `sts_session` cookie on both
+legs, so a link sent to somebody else cannot attach their certificate to the
+sender's sign-in. Give the listener the main port's host name on another port,
+as above: the cookie is host-only, and ports on one host name share it. A
+listener on another host name needs `authn.cookieDomain` to name a domain both
+are under, and a mapping that breaks this is refused (`STS-CORE-0155`). Read
+[The sign-on session across host names](listeners.md#the-sign-on-session-across-host-names)
+first.
+
+A handoff lasts five minutes and is used once. An expired, used or unknown
+one, or any one while `certSignIn.handoff` is off, is answered 400
+(`STS-TLS-0074`). One arriving without the starting browser's cookie is
+answered 403 (`STS-TLS-0075`). The person starts again from the screen.
+
+### A TLS-terminating proxy in front of certificate sign-in
+
+Where a proxy terminates TLS, the service never sees the client's handshake.
+It can still read the certificate the proxy received, as RFC 9440's
+`Client-Cert` header (and `Client-Cert-Chain` for the certificates the client
+sent with it), but only from a proxy named by **both** of these:
+
+* `tls.trustedProxyCertificates`: the SHA-256 fingerprint of the client
+  certificate the **proxy** presents when it connects to the service
+  (`openssl x509 -in proxy.pem -noout -fingerprint -sha256`; colons and a
+  `sha256:` prefix are accepted);
+* `tls.trustedProxyAddresses`: the addresses or CIDR ranges it connects from.
+
+```bash
+api config/set-many '{"tls.trustedProxyCertificates":"5d:41:…:c2:9a",
+  "tls.trustedProxyAddresses":"10.20.0.0/24"}'
+```
+
+What the service does with it:
+
+* **The proxy's own certificate must verify** against the client truststore,
+  so add its CA there. The listener the proxy connects to must ask for a
+  certificate. The main port does unless
+  `tls.mainPortDisableOptionalClientCertificate` is on; with it on (as with
+  the certificate handoff above), give the proxy a custom listener of its own
+  whose `clientAuth` is `optional` or `required`, and map to it the
+  applications the proxy serves.
+* **The forwarded certificate is verified here** as the listener the proxy
+  reached verifies a handshake's: to that listener's client truststore with
+  every path rule, as a TLS client certificate (its keyUsage and an
+  extendedKeyUsage of clientAuth where it has one), on a NIST curve where its
+  key is EC, and under paranoid PKI mode with the fields a handshake is held
+  to. Revocation, the profiles and the identity rules then
+  apply to it exactly as to a handshake's certificate, at every door.
+* **A request from the proxy with no `Client-Cert`, or with one that does not
+  verify, presents no certificate** (`STS-TLS-0073` in the log for the
+  second). The proxy's own certificate never signs anybody in.
+* **From any other sender both headers are removed** before anything reads
+  them, and that is recorded (`STS-TLS-0072`, at most once a minute).
+* **One setting without the other trusts no proxy** (`STS-TLS-0076` in the
+  log).
+
+The headers are RFC 8941 byte sequences: `Client-Cert: :<base64 DER>:`, and
+`Client-Cert-Chain` a comma-separated list of them, at most eight
+certificates and 32 KB a header.
+
+**What the proxy must do**, because the service believes it:
+
+* remove any `Client-Cert` and `Client-Cert-Chain` a client sends, and set
+  them only from the TLS connection it terminated (RFC 9440's processing
+  rules);
+* send them only to this service, over its own mutual TLS connection;
+* keep its client certificate's key as safe as a CA key: anybody holding it,
+  from inside the trusted range, can present any certificate the truststore
+  accepts.
+
+Keep `tls.trustedProxyAddresses` to the proxy's own addresses. A proxy that
+terminates TLS is also where `global.trustProxy` and `global.trustedProxies`
+come in, for `X-Forwarded-*`
+([TLS → Reverse proxies and load balancers](tls.md#reverse-proxies-and-load-balancers)).
+They are separate settings, and neither implies the other.
 
 ## RFC 8705 `tls_client_auth`: the TLS side
 

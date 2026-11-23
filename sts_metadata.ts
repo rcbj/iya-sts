@@ -2236,8 +2236,21 @@ const SPECS: Spec[] = [
               'client refreshes with a new certificate. An UNVERIFIED ' +
               'certificate still binds, as section 3 permits. Only where the ' +
               'main port is TLS (global.https), and advertised as ' +
-              'tls_client_certificate_bound_access_tokens only there. No ' +
-              'certificate is read from a proxy header.' },
+              'tls_client_certificate_bound_access_tokens only there. A ' +
+              'certificate is read from a header only as RFC 9440\'s, from ' +
+              'a TLS-terminating proxy named by its certificate and its ' +
+              'address (#2012).' },
+  { id: 'rfc9440', name: 'RFC 9440 — Client-Cert HTTP Header Field',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9440',
+    coverage: 'partial: the origin server\'s half, off by default (#2012). ' +
+              'Client-Cert and Client-Cert-Chain are read only from a ' +
+              'TLS-terminating proxy an administrator names by BOTH the ' +
+              'client certificate it connects with and its address ' +
+              '(tls.trustedProxyCertificates, tls.trustedProxyAddresses); ' +
+              'the forwarded chain is verified here to the client ' +
+              'truststore, and then stands for the handshake\'s certificate ' +
+              'at every door. From any other sender the two headers are ' +
+              'removed and recorded. This service is never the proxy.' },
   { id: 'rfc8707', name: 'RFC 8707 — Resource Indicators for OAuth 2.0',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8707',
     coverage: 'full for the authorization code flow: `resource` is read at ' +
@@ -3633,13 +3646,20 @@ const SPECS: Spec[] = [
       'Employees and Contractors (FIPS 201-3) and SP 800-73-4',
     where: 'NIST',
     url: 'https://csrc.nist.gov/pubs/fips/201-3/final',
-    coverage: 'minimal: the four key slots as certificate profiles (PIV ' +
+    coverage: 'partial: the four key slots as certificate profiles (PIV ' +
               'Authentication 9a, Digital Signature 9c, Key Management ' +
               '9d, Card Authentication 9e, which signs nobody in by ' +
-              'default), and an outside PIV or CAC card mapped by the card ' +
+              'default); an outside PIV or CAC card mapped by the card ' +
               'UUID in its urn:uuid subjectAltName when it asserts a PIV ' +
-              'Authentication policy (off by default). No FASC-N, CHUID, ' +
-              'card management or biometrics.' },
+              'Authentication policy (off by default); section 6.2.3.1\'s ' +
+              'PKI-AUTH as certificate sign-in profiles (#2012): the ' +
+              'issuers, keyUsage, extendedKeyUsage and the policies RFC ' +
+              '5280 policy processing carries through the path, mappings ' +
+              'included, and a binding to one account by issuer and ' +
+              'serial, issuer and SKI, the key, the certificate or the card ' +
+              'UUID, with a verified revocation status where the realm ' +
+              'requires one, on a listener of its own if wanted. No FASC-N, ' +
+              'CHUID, card management or biometrics.' },
   { id: 'lamps-attestation-freshness', name: 'Requesting a Freshness Nonce ' +
       'for Attestation Evidence in Certificate Signing Requests ' +
       '(draft-ietf-lamps-attestation-freshness-08)',
@@ -5147,6 +5167,20 @@ const ENDPOINTS: EndpointEntry[] = [
           '(never matched by its common name), and an application\'s ' +
           'certificate (an RFC 8705 credential, not a person) are each ' +
           'answered 200 with no session and the reason.' },
+  { path: '/authn/certificate/continue', group: 'TLS',
+    name: 'Certificate sign-in on its own listener',
+    specs: ['rfc8446', 'rfc5280', 'fips201'],
+    what: 'THE CERTIFICATE SIGN-IN HANDOFF (#2012, off by default: ' +
+          'certSignIn.handoff). The sign-in screen links here, on the ' +
+          'listener the certificate-sign-in application is mapped to — one ' +
+          'whose clientAuth asks for a certificate — so the smart card and ' +
+          'its PIN are asked for on this request alone. The certificate is ' +
+          'held to what the screen\'s own certificate door asks, bound to ' +
+          'the pending sign-in and to the browser\'s sign-on session (both ' +
+          'requests carry it), and the browser is sent back to the screen, ' +
+          'which continues as its holder. An unknown, used or expired ' +
+          'handoff is answered 400, and one arriving without the starting ' +
+          'browser\'s session 403.' },
   { path: '/tls/server-certificate', group: 'TLS', name: 'The server ' +
       'certificate (PEM)',
     specs: ['rfc5280'],
@@ -11279,7 +11313,7 @@ const PROTOCOLS: Protocol[] = [
           'console pages because what they describe is this family.',
     sockets: 'BER over TCP 389, and TLS on 636. Neither is on the router.' },
   { name: 'PKI / X.509', groups: ['TLS'],
-    specs: ['rfc5280', 'rfc8446'],
+    specs: ['rfc5280', 'rfc8446', 'rfc9440', 'fips201'],
     what: 'The other end of a TLS and a MUTUAL-TLS connection: the ' +
           'certificate this service presents, the truststore it verifies a ' +
           'client certificate against, and what a verified one is worth — a ' +

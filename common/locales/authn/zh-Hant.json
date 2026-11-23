@@ -54,6 +54,8 @@
   "options.certificate": "或者，使用您的瀏覽器在此連線上出示的 TLS 用戶端憑證繼續。無需輸入任何內容：此服務已檢查憑證鏈以及憑證是否已被撤銷。",
   "options.certificateMfaNote": "此要求需要兩個因素，因此之後會要求您提供第二個因素。",
   "options.certificateButton": "使用您的憑證以 {name} 身分繼續",
+  "options.certificateHandoff": "或者使用智慧卡或憑證登入。瀏覽器會請您選擇憑證，如有 PIN 碼也會請您輸入。",
+  "options.certificateHandoffButton": "使用智慧卡或憑證登入",
   "selectIdp.title": "選擇登入方式 — 身分驗證服務",
   "selectIdp.heading": "選擇登入方式",
   "selectIdp.at": "身分驗證服務，位址 <code>{base}</code>",

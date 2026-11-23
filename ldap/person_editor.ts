@@ -418,6 +418,9 @@ const FIELD_EXAMPLES: Record<string, string> = {
   schaccountryofcitizenship: 'US', x500uniqueidentifier: '#\'0101\'B',
   description: 'Joined in 2026',
   stspivcarduuid: '3f2b7c1e-9d4a-4e6b-8c2f-1a5d7e9b0c34',
+  stscertificatebinding: 'issuer-serial:' +
+    '5b0e8a1f3c9d2e7b4a6f1c8d3e9b2a7f5c1d8e3b9a2f7c4d1e8b3a9f2c7d4e1b:' +
+    '1a2b3c4d',
   seealso: 'cn=staff,ou=groups,dc=example,dc=com',
   internationalisdnnumber: '+1 555 0105', telexnumber: '123456 ACME US',
   teletexterminalidentifier: 'ACME-01', x121address: '31102100000123',
@@ -688,6 +691,15 @@ class PersonEditor {
     // (`ldap_server.js`'s `pivCardUuidRefusal()`, STS-PIV-0034 and -0035).
     consider('stsPivCardUuid', 'Outside PIV or CAC card UUIDs',
              'FIPS 201-3 card UUID (#1955)', {});
+    // A CERTIFICATE SIGN-IN BINDING (#2012), an administrator's to record
+    // for the card UUID's reason: it binds a certificate a realm's
+    // `certSignIn.profiles` covers to this person, so a person writing one
+    // would choose whose certificate signs them in. The directory
+    // canonicalises it and refuses a malformed or a second holder's
+    // (`ldap_server.js`'s `certificateBindingRefusal()`, STS-TLS-0069 and
+    // -0070).
+    consider('stsCertificateBinding', 'Certificate sign-in bindings',
+             'certificate binding (#2012)', {});
     log.debug("Leaving PersonEditor.universe(). " + editable.length +
               " editable, " + withheld.length + " withheld.");
     return { editable: editable, withheld: withheld };

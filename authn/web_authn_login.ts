@@ -260,6 +260,22 @@ class WebAuthnLogin {
    */
   static certificateRow(v: Json, t: Json): string {
     const c = v.certificate;
+    // THE HANDOFF (#2012): no certificate yet, and a listener that asks for
+    // one. A plain link, because the browser has to make a new connection
+    // there for the smart card to sign; the listener sends it back here.
+    if (c && !c.name && c.handoff) {
+      return '<div class="row cert">' +
+        kit.note(t.html('authn.options.certificateHandoff') +
+          (c.mfaNote ? ' <span id="certificate-mfa-note">' +
+                       t.html('authn.options.certificateMfaNote') + '</span>'
+                     : '')) +
+        (c.refused ? kit.note('<span id="certificate-handoff-refused">' +
+                              WebAuthnLogin.esc(String(c.refused)) +
+                              '</span>') : '') +
+        '<a id="kc-certificate-handoff" class="fedbtn" href="' +
+        WebAuthnLogin.esc(String(c.handoff)) + '">' +
+        t.html('authn.options.certificateHandoffButton') + '</a></div>';
+    }
     if (!c || !c.name) {
       return '';
     }

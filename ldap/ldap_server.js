@@ -4754,6 +4754,73 @@ function pivCardUuidRefusal(dn, attributes) {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// `stsCertificateBinding` ON EVERY WRITE (#2012), for `stsPivCardUuid`'s
+// reason and at the same three doors (`putEntry()`, `writePersonAttribute()`
+// and the LDAP modify): a value is what binds a covered certificate to its
+// holder, so one that is not in the grammar would bind nothing and say
+// nothing, and one another entry holds would make the certificate name two
+// people. Each value is CANONICALISED in place
+// (`certificate_binding.bindingValueOf()`: the method lower-cased, hex
+// lower-cased without colons, a serial without leading zeros, a DN
+// trimmed and lower-cased), repeats dropped; a malformed one is refused
+// (STS-TLS-0069) and one another entry of the realm holds is refused
+// (STS-TLS-0070).
+// ---------------------------------------------------------------------------
+/**
+ * Canonicalises the stsCertificateBinding values of an attribute set in
+ * place and refuses a malformed one or one another entry holds.
+ *
+ * @param dn - the entry being written
+ * @param attributes - its attributes, lower-cased names
+ * @returns null, or `{ code, why }`
+ */
+function certificateBindingRefusal(dn, attributes) {
+  log.debug('Entering certificateBindingRefusal().');
+  const raw = attributes && attributes.stscertificatebinding;
+  if (!raw || !valuesOf(raw).length) {
+    log.debug('Leaving certificateBindingRefusal(). None written.');
+    return null;
+  }
+  const binding = require('../common/certificate_binding');
+  const out = [];
+  const values = valuesOf(raw);
+  for (let i = 0; i < values.length; i++) {
+    const one = binding.bindingValueOf(values[i]);
+    if (!one) {
+      log.debug('Leaving certificateBindingRefusal(). Malformed.');
+      return { code: 'STS-TLS-0069',
+               why: 'stsCertificateBinding holds one certificate sign-in ' +
+                    'binding per value — certificate-sha256:, ' +
+                    'issuer-serial:, issuer-ski:, spki-sha256:, ' +
+                    'issuer-subject: or subject:, each with its issuer\'s ' +
+                    'SubjectPublicKeyInfo SHA-256 where it names one — and "' +
+                    String(values[i]).slice(0, 96) + '" is not one.' };
+    }
+    if (out.indexOf(one) < 0) {
+      out.push(one);
+    }
+  }
+  const self = normalizeDn(dn);
+  for (let i = 0; i < out.length; i++) {
+    const other = certificateBindingHolders('binding', out[i])
+      .filter(function (h) {
+        return normalizeDn(h.dn) !== self;
+      })[0];
+    if (other) {
+      log.debug('Leaving certificateBindingRefusal(). Held elsewhere.');
+      return { code: 'STS-TLS-0070',
+               why: 'The certificate sign-in binding ' + out[i] + ' is ' +
+                    'already in stsCertificateBinding on another entry of ' +
+                    'this realm; a binding names one person.' };
+    }
+  }
+  attributes.stscertificatebinding = out;
+  log.debug('Leaving certificateBindingRefusal(). ' + out.length +
+            ' value(s).');
+  return null;
+}
+
 // putEntry() answers `{ ok: false }` when it writes nothing, and that
 // object is truthy. A writer that then stamps timestamps and audits a
 // create has recorded a write that did not happen (#1416, the same trap
@@ -4825,6 +4892,17 @@ function putEntry(dn, attributes, options) {
     return coded(cardRefusal.code, { ok: false, reason: 'piv-card-uuid',
                                      dn: String(dn), attributes: {},
                                      errors: [cardRefusal.why] });
+  }
+  // A CERTIFICATE SIGN-IN BINDING (#2012), canonicalised and held unique.
+  const bindingRefusal = certificateBindingRefusal(dn, stored.attributes);
+  if (bindingRefusal) {
+    log.warn(errorCodes.tag(bindingRefusal.code) + 'ldap: refused to store ' +
+             dn + ': ' + bindingRefusal.why);
+    log.debug('Leaving putEntry(). Refused a certificate binding.');
+    return coded(bindingRefusal.code, { ok: false,
+                                        reason: 'certificate-binding',
+                                        dn: String(dn), attributes: {},
+                                        errors: [bindingRefusal.why] });
   }
   stored.attributes.createtimestamp = [now];
   stored.attributes.modifytimestamp = [now];
@@ -13573,6 +13651,95 @@ function pivCardHolders(uuid) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// THE PEOPLE A CERTIFICATE SIGN-IN BINDING NAMES (#2012).
+//
+// `common/certificate_binding.ts` resolves a client certificate a realm's
+// `certSignIn.profiles` covers through the methods its profile enables, and
+// asks this, through certificate enrollment's slot for `certificateHolders()`'s
+// reason, who holds each value:
+//
+//   * `binding` — a canonical `stsCertificateBinding` value (issuer and
+//     serial, issuer and SKI, a key's or a certificate's SHA-256, a subject);
+//   * `upn` — a `userPrincipalName`, compared ignoring case;
+//   * `mail` — an address, `peopleByMail()`'s lookup.
+//
+// A windowed process asks the store's `certificatebinding` index alone (a
+// key the codec derives, so no schema moves; a person is always windowed,
+// #349); only a process with no window walks its entries. People only — a binding signs
+// a person in. At most three are answered: the caller asks whether there is
+// exactly one.
+// ---------------------------------------------------------------------------
+/**
+ * The people of the ambient realm a certificate sign-in binding names, each
+ * `{ kind, id, dn }`.
+ *
+ * @param kind - `binding`, `upn` or `mail`
+ * @param value - the canonical value
+ * @returns at most three holders, each once
+ */
+function certificateBindingHolders(kind, value) {
+  log.debug('Entering certificateBindingHolders(). ' + kind);
+  const wanted = String(value || '').trim().toLowerCase();
+  if (!wanted || ['binding', 'upn', 'mail'].indexOf(String(kind)) < 0) {
+    log.debug('Leaving certificateBindingHolders(). Nothing to ask.');
+    return [];
+  }
+  const found = new Map();
+  const add = function (stored) {
+    const key = normalizeDn(stored.dn);
+    if (!found.has(key) && found.size < 3 && isPersonEntry(stored)) {
+      found.set(key, certificateHolderOf(stored));
+    }
+  };
+  if (kind === 'mail') {
+    peopleByMail(wanted).forEach(function (one) {
+      const located = locateEntry(String(one.username || ''));
+      if (located.stored) {
+        add(located.stored);
+      }
+    });
+    const mailed = Array.from(found.values());
+    log.debug('Leaving certificateBindingHolders(). ' + mailed.length +
+              ', by mail.');
+    return mailed;
+  }
+  const key = kind === 'upn' ? 'upn:' + wanted : wanted;
+  const holds = function (stored) {
+    if (!stored) {
+      return false;
+    }
+    const attributes = stored.attributes || {};
+    return kind === 'upn'
+      ? (attributes.userprincipalname || []).some(function (one) {
+        return String(one).trim().toLowerCase() === wanted;
+      })
+      : (attributes.stscertificatebinding || []).some(function (one) {
+        return String(one).trim().toLowerCase() === wanted;
+      });
+  };
+  const asked = windowedFind('byAttribute', ['certificatebinding', key, 3],
+                             holds);
+  if (asked) {
+    // A PERSON IS ALWAYS WINDOWED (#349, `peopleByMail()`'s rule), so the
+    // store's index is the whole answer and nothing is walked on a sign-in
+    // (the #2012 review: no full scans).
+    asked.forEach(add);
+    const indexed = Array.from(found.values());
+    log.debug('Leaving certificateBindingHolders(). ' + indexed.length +
+              ', asked.');
+    return indexed;
+  }
+  eachEntryInRealm(function (entry) {
+    if (holds(entry)) {
+      add(entry);
+    }
+  });
+  const out = Array.from(found.values());
+  log.debug('Leaving certificateBindingHolders(). ' + out.length + '.');
+  return out;
+}
+
 // What the stored-certificate index has done in the ambient realm, for the
 // tests: `userHandleIndexState()`'s shape.
 function certificateIndexState() {
@@ -17168,6 +17335,9 @@ if (typeof certEnrollment.setDirectory === 'function') {
     // THE PEOPLE A PIV CARD UUID NAMES (#1955 P2, D8), on this slot for
     // `certificateHolders`' reason (see `pivCardHolders()`).
     pivCardHolders: pivCardHolders,
+    // THE PEOPLE A CERTIFICATE SIGN-IN BINDING NAMES (#2012), on this slot
+    // for the same reason (see `certificateBindingHolders()`).
+    certificateBindingHolders: certificateBindingHolders,
     // `holders()` WITH THE VALUES, in the same walk and the same order
     // (#352, 2026-09-29): `[{ id, values }]`. The enrollment listings asked
     // `holders()` for the ids and then `read()` for each — a second lookup
@@ -17822,6 +17992,23 @@ function writePersonAttribute(dn, name, values) {
                                        errors: [cardRefusal.why] });
     }
     kept.splice(0, kept.length, ...held.stspivcarduuid);
+  }
+  // A CERTIFICATE SIGN-IN BINDING (#2012), for the card UUID's reason.
+  if (key === 'stscertificatebinding' && kept.length) {
+    const held = { stscertificatebinding: kept };
+    const bindingRefusal = certificateBindingRefusal(dn, held);
+    if (bindingRefusal) {
+      log.warn(errorCodes.tag(bindingRefusal.code) + 'ldap: refused to ' +
+               'write stsCertificateBinding on ' + dn + ': ' +
+               bindingRefusal.why);
+      log.debug('Leaving writePersonAttribute(). Refused a certificate ' +
+                'binding.');
+      return coded(bindingRefusal.code, { ok: false,
+                                          reason: 'certificate-binding',
+                                          dn: String(dn), attributes: {},
+                                          errors: [bindingRefusal.why] });
+    }
+    kept.splice(0, kept.length, ...held.stscertificatebinding);
   }
   if (kept.length) {
     stored.attributes[key] = kept;
@@ -22259,6 +22446,18 @@ function ldapModifyNow(req, res, next) {
       ' was refused: ' + cardRefusal.why,
       coded(cardRefusal.code, new ldap.ConstraintViolationError(
         cardRefusal.why)), dn));
+  }
+  // A CERTIFICATE SIGN-IN BINDING THIS MODIFY WRITES (#2012), the card
+  // UUID's way.
+  const bindingRefusal = certificateBindingRefusal(stored.dn, working);
+  if (bindingRefusal) {
+    log.debug('Leaving the LDAP modify handler. A certificate binding was ' +
+              'refused.');
+    // error-code: none — the refusal's own code, STS-TLS-0069 or -0070
+    return next(ldapRefusal(req, bindingRefusal.code, 'a modify of ' + dn +
+      ' was refused: ' + bindingRefusal.why,
+      coded(bindingRefusal.code, new ldap.ConstraintViolationError(
+        bindingRefusal.why)), dn));
   }
   // AND A PASSWORD THIS MODIFY SETS meets the password policy against the
   // entry as it was BEFORE the modify — its current password and its history —
@@ -32677,6 +32876,7 @@ module.exports = {
   // index's state for the tests.
   certificateHolders: certificateHolders,
   pivCardHolders: pivCardHolders,
+  certificateBindingHolders: certificateBindingHolders,
   storedCertificatesOf: storedCertificatesOf,
   changeStoredCertificate: changeStoredCertificate,
   certificateIndexState: certificateIndexState,

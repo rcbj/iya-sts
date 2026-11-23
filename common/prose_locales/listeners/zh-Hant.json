@@ -139,6 +139,14 @@
     "en": "1d66f74984228996",
     "text": "登入服務及其第二因素、錢包、SPNEGO 與憑證登入，以及登出。"
   },
+  "listeners.applications.certificate-sign-in.label": {
+    "en": "b64346dfecab1d4d",
+    "text": "憑證登入"
+  },
+  "listeners.applications.certificate-sign-in.what": {
+    "en": "4eb1f17babcf76e5",
+    "text": "憑證登入被交接到的接聽程式：唯一一個要求智慧卡或憑證的請求。"
+  },
   "listeners.applications.portal.label": {
     "en": "00cf214ba77e7497",
     "text": "使用者入口網站"

@@ -156,6 +156,12 @@ certificate, a certificate from another realm's authority and an outside one
 stored on no entry (`STS-AUTHN-0468`) or on several (`STS-AUTHN-0469`) are
 refused, and the screen says why. See
 [Sign in with a client certificate](configure-tls.md#sign-in-with-a-client-certificate).
+A realm can instead name the outside CAs it accepts, with certificate sign-in
+profiles that bind a certificate to its account by issuer and serial, key or
+card UUID, and with `certSignIn.handoff` on the screen also offers **Sign in
+with a smart card or certificate**, which asks for the card on a listener of
+its own so nobody else is prompted for one
+([Smart-card and certificate sign-in](configure-tls.md#smart-card-and-certificate-sign-in)).
 
 With `authn.unauthenticatedSessions` on, a third button, **Continue without
 signing in**, starts a real session for the stable `anonymous` principal. The

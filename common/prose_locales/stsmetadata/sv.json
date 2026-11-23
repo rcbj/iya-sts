@@ -440,8 +440,12 @@
     "text": "full: varje auktoriseringssvar bär iss, fel inräknade, och båda upptäcktsdokumenten annonserar authorization_response_iss_parameter_supported så att en klient vet att den kan kräva den."
   },
   "stsmetadata.specs.rfc8705.coverage": {
-    "en": "924a15881d40c04d",
-    "text": "full — avsnitt 2 till 5. AVSNITT 5 (#139): där huvudporten ber om ett klientcertifikat är varje slutpunkt som läser ett sitt eget alias, så mtls_endpoint_aliases namnger token-, återkallelse-, introspektions-, PAR- och UserInfo-slutpunkterna på deras egna adresser. AVSNITT 2: tls_client_auth autentiserar ett certifikat vars kedja verifierats, utfärdat av den här sfären till applikationen (urn:sts:application:) eller som bär den av de fem registrerade subjektparametrarna (subject_dn jämförd som ett namn, san_dns, san_uri, san_ip, san_email); self_signed_tls_client_auth matchar en jwks-x5c eller ett tumavtryck; en deklarerad metod hålls i varje läge, vid token- och PAR-slutpunkterna. AVSNITT 3: cnf[\"x5t#S256\"] på åtkomst- och uppdateringstoken för varje förfrågan som bär ett certifikat, kontrollerat vid varje skyddad slutpunkt och /admin-api, rapporterat vid introspektion; en klient som registrerar tls_client_certificate_bound_access_tokens nekas utan certifikat. AVSNITT 4 och 7.1: en publik klients uppdateringstoken är certifikatbunden, en certifikatautentiserad klient uppdaterar med ett nytt certifikat. Ett OVERIFIERAT certifikat binder ändå, som avsnitt 3 tillåter. Endast där huvudporten är TLS (global.https), och annonserat som tls_client_certificate_bound_access_tokens endast där. Inget certifikat läses från ett proxyhuvud."
+    "en": "b53effdbb54d526a",
+    "text": "full — avsnitt 2 till 5. AVSNITT 5 (#139): där huvudporten ber om ett klientcertifikat är varje slutpunkt som läser ett sitt eget alias, så mtls_endpoint_aliases namnger token-, återkallelse-, introspektions-, PAR- och UserInfo-slutpunkterna på deras egna adresser. AVSNITT 2: tls_client_auth autentiserar ett certifikat vars kedja verifierats, utfärdat av den här sfären till applikationen (urn:sts:application:) eller som bär den av de fem registrerade subjektparametrarna (subject_dn jämförd som ett namn, san_dns, san_uri, san_ip, san_email); self_signed_tls_client_auth matchar en jwks-x5c eller ett tumavtryck; en deklarerad metod hålls i varje läge, vid token- och PAR-slutpunkterna. AVSNITT 3: cnf[\"x5t#S256\"] på åtkomst- och uppdateringstoken för varje förfrågan som bär ett certifikat, kontrollerat vid varje skyddad slutpunkt och /admin-api, rapporterat vid introspektion; en klient som registrerar tls_client_certificate_bound_access_tokens nekas utan certifikat. AVSNITT 4 och 7.1: en publik klients uppdateringstoken är certifikatbunden, en certifikatautentiserad klient uppdaterar med ett nytt certifikat. Ett OVERIFIERAT certifikat binder ändå, som avsnitt 3 tillåter. Endast där huvudporten är TLS (global.https), och annonserat som tls_client_certificate_bound_access_tokens endast där. Ett certifikat läses från ett huvud endast som RFC 9440:s, från en TLS-terminerande proxy som namnges av sitt certifikat och sin adress (#2012)."
+  },
+  "stsmetadata.specs.rfc9440.coverage": {
+    "en": "b761bd646855719e",
+    "text": "partial: ursprungsserverns halva, avstängd som standard (#2012). Client-Cert och Client-Cert-Chain läses endast från en TLS-terminerande proxy som en administratör namnger med BÅDE klientcertifikatet den ansluter med OCH dess adress (tls.trustedProxyCertificates, tls.trustedProxyAddresses); den vidarebefordrade kedjan verifieras här mot klientens förtroendelager och står sedan för handskakningens certifikat vid varje dörr. Från varje annan avsändare tas de två huvudena bort och registreras. Den här tjänsten är aldrig proxyn."
   },
   "stsmetadata.specs.rfc8707.coverage": {
     "en": "bc07e530c0abe862",
@@ -727,6 +731,14 @@
     "en": "59b1734815ece664",
     "text": "partial: attributet id-aa-attestation i en PKCS#10-begäran (högst ett, exakt ett AttestationBundle, endast certifikatet och övriga val), över EST, SCEP och ACME. Två satstyper verifieras: TCG:s tcg-attest-tpm-certify i syntaxen från revision 20:s bilaga A.2.3, för enhetsprofilen (#257), och en YubiKey-PIV-attestering för varje profil (#1955), under 1.3.6.1.4.1.41482.3.2 med platscertifikatet som stmt och f9-certifikatet i certs, en typ som den här tjänsten valde eftersom utkastet inte definierar någon. CRMF-tillägget läses inte (ingen CMP här), och andra satstyper registreras, verifieras inte. Färskhet (avsnitt 6.2) via draft-ietf-lamps-attestation-freshness över EST, endast för TPM-satser: en PIV-attestering bär ingen nonce."
   },
+  "stsmetadata.specs.yubico-piv-attestation.coverage": {
+    "en": "244659759ede3102",
+    "text": "partial: platsens attesteringscertifikat verifieras via f9-attesteringscertifikatet till Yubicos PIV-rötter (Serial 263751, och Attestation Root 1 med dess PIV-mellancertifikat för firmware 5.7.4 och senare, levererade och fästa) eller en sfärs egna; dess nyckel hålls mot begärans; tilläggen för firmware, serienummer, PIN- och beröringspolicy och formfaktor läses, och policyerna hålls mot sfärens. Själva kortet hanteras aldrig: ingen skrivning av PIN, PUK eller plats."
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "d223f1239342ae1c",
+    "text": "partial: de fyra nyckelplatserna som certifikatprofiler (PIV Authentication 9a, Digital Signature 9c, Key Management 9d, Card Authentication 9e, som som standard inte loggar in någon); ett externt PIV- eller CAC-kort mappat via kort-UUID:t i dess urn:uuid-subjectAltName när det anger en PIV Authentication-policy (avstängt som standard); avsnitt 6.2.3.1:s PKI-AUTH som profiler för certifikatinloggning (#2012): utfärdarna, keyUsage, extendedKeyUsage och de policyer som policybehandlingen enligt RFC 5280 bär genom sökvägen, mappningar inräknade, och en bindning till ett konto via utfärdare och serienummer, utfärdare och SKI, nyckeln, certifikatet eller kort-UUID:t, med en verifierad återkallelsestatus där sfären kräver en, på en egen lyssnare om så önskas. Ingen FASC-N, CHUID, korthantering eller biometri."
+  },
   "stsmetadata.specs.lamps-attestation-freshness.coverage": {
     "en": "555e31da7393d476",
     "text": "partial: EST över HTTPS (avsnitt 5.1) — /nonce via GET och via POST med application/est-attestation-freshness+json, len respekterat inom 8..64 (höjt till 16 oktetter), utgångstid, den tomma noncen där inget bevis behövs, 400 och 503, autentiserat och bundet till CSR:en via en cookie och huvudmannen. Noncen är TPM2_Certify:s qualifyingData, kontrolleras som TPMS_ATTEST-extraData och förbrukas en gång. Saknas: ingen reqTypeInfo-typ är definierad (503), samt CMP (avsnitt 4), EST över CoAP (5.2) och CMC (6), som den här tjänsten inte talar."
@@ -774,6 +786,10 @@
   "stsmetadata.specs.rfc9580.coverage": {
     "en": "a2930bdb8ffe747d",
     "text": "partial: läsning av en överförbar publik nyckel, v6 och (RFC 4880) v4, verifiering av en klartextsignatur gjord av en av dess signeringsnycklar och kryptering av ett meddelande till dess krypteringsnyckel, Klassiska algoritmer går genom openpgp.js. RFC 9980-kompositer läses här (se rfc9980). Ed25519, Ed448, ECDSA och ECDH på NIST-kurvorna, X25519, X448 och RSA med openpgp.minRsaBits accepteras; DSA, ElGamal och Brainpool avvisas. Saknas: signering, dekryptering, nyckelring, nyckelserver."
+  },
+  "stsmetadata.specs.rfc9980.coverage": {
+    "en": "5feb46765c8bc465",
+    "text": "partial: signaturer ML-DSA-65+Ed25519 och ML-DSA-87+Ed448, och kryptering ML-KEM-768+X25519 och ML-KEM-1024+X448, vid registrering och när en lagrad nyckel används. En komposit räknas som postkvant. openpgp.pqcOnly begränsar bara registreringen. Båda halvorna av en signatur verifieras av common/crypto_impl/openpgp_pqc.js. Saknas: SLH-DSA (algoritm-id 32-34), och den här tjänsten genererar ingen RFC 9980-nyckel. openpgp.js tolkar inte dessa nycklar."
   },
   "stsmetadata.specs.rfc3156.coverage": {
     "en": "aa799b14a54ace0f",
@@ -1099,6 +1115,14 @@
     "en": "6e82cd30ac736775",
     "text": "ICKE-SPEC, och avsiktligt här ändå: en person som riktar en klient mot dessa slutpunkter behöver veta vad adresserna ÄR, och att läsa ut dem ur ett certifikat med `openssl x509 -text` är ett dåligt första steg. En rad per utfärdare med dess subjekt, hur många certifikat den har återkallat och dess CRL i båda schemana (http, ldap) bredvid dess OCSP- och caIssuers-adresser. INGA SERIENUMMER FINNS I DEN — listan över vad som är återkallat är CRL:en, och en JSON-kopia bredvid den vore ett andra svar på samma fråga: det som blir inaktuellt, och det som ingen signerat. Den säger uttryckligen att den här tjänsten PUBLICERAR återkallelse och inte kan få någon att konsultera den, vilket gäller varje certifikatutfärdare och är skälet till att en klientförfattare skulle rikta sin stack hit. Ogrindad, eftersom allt i den redan finns inuti varje certifikat som den här tjänsten delar ut."
   },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "c6a8759e4a5e40c9",
+    "text": "NON-SPEC (#1955 P3): sfärens egen OpenSSH-användar-CA-nyckel, publicerad som en authorized-key-rad som SSH-servrar litar på. Med `?algorithm=ssh-mldsa-65` svarar den i stället med sfärens ML-DSA-utfärdare, som vanlig OpenSSH ännu inte kan verifiera. Utan grind och `no-store`, endast på huvudporten: den okrypterade HTTP-lyssnaren för återkallelse avvisar den, eftersom nyckeln är ett förtroendeankare. Motsvarande privata CA-nyckel lämnar aldrig denna tjänst."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "2e4cdead67408937",
+    "text": "NON-SPEC (#1955 P3): sfärens egen OpenSSH-KRL, uppdaterad när en anropare återkallar ett certifikat eller anmäler en hårdvarutoken som förlorad. Utan grind och `no-store`, endast på huvudporten: KRL:en är inte signerad, så den okrypterade HTTP-lyssnaren för återkallelse avvisar den. SSH-servrar måste konfigureras att läsa den, eftersom denna tjänst inte kan tvinga en förlitande part att göra det."
+  },
   "stsmetadata.endpoints./admin-api/xacml.what": {
     "en": "2efd1b442d450758",
     "text": "Det som GET /admin/xacml ritar, som data. Ogrindad, som resten av /admin-api."
@@ -1286,6 +1310,10 @@
   "stsmetadata.endpoints./tls/sign-in.what": {
     "en": "b9f18166e17e9c9d",
     "text": "ETT VERIFIERAT KLIENTCERTIFIKAT BLIR EN SESSION (2026-09-05), på den här porten sedan 2026-09-16 — det var en bieffekt av att nå någon av de borttagna TLS-lyssnarna, vilket innebar att du loggades in av att ladda en diagnostiksida. Den svarar vad som kom fram, om det verifierades, det tumavtryck som tokenslutpunkten skulle binda en token till, vad återkallelsekontrollen fann och om en session startades. Den nekar ingen vid handskakningen och kan inte: ett certifikat som inte verifieras, ett som den här tjänsten utfärdat men som inte är en TLS-klientidentitet, ett från en extern certifikatutfärdare som inte är lagrat i userCertificate på exakt en post i sfären (matchas aldrig på sitt vanliga namn), och en applikations certifikat (en RFC 8705-inloggningsuppgift, inte en person) besvaras vart och ett med 200 utan session och med skälet."
+  },
+  "stsmetadata.endpoints./authn/certificate/continue.what": {
+    "en": "7a42e6050c748fd8",
+    "text": "ÖVERLÄMNINGEN AV CERTIFIKATINLOGGNING (#2012, avstängd som standard: certSignIn.handoff). Inloggningsskärmen länkar hit, på den lyssnare som applikationen certificate-sign-in är mappad till — en vars clientAuth begär ett certifikat — så att smartkortet och dess PIN efterfrågas endast i denna begäran. Certifikatet hålls till vad skärmens egen certifikatdörr kräver, binds till den väntande inloggningen och till webbläsarens inloggningssession (båda begärandena bär den), och webbläsaren skickas tillbaka till skärmen, som fortsätter som dess innehavare. En okänd, använd eller utgången överlämning besvaras med 400, och en som anländer utan den startande webbläsarens session med 403."
   },
   "stsmetadata.endpoints./tls/server-certificate.what": {
     "en": "54631edee4eb2352",
@@ -2250,6 +2278,14 @@
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
     "en": "f5b724d2c79b5f74",
     "text": "anmäler en hårdvarutoken som förlorad och drar tillbaka dess autentiseringsuppgifter, utfärdar ett PIV-platscertifikat, lämnar ut en deponerad nyckel eller återkallar en persons SSH-certifikat"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/ssh-certificates.what": {
+    "en": "84ce6fea3694d4c0",
+    "text": "NON-SPEC (granskningen av #1955). De OpenSSH-användarcertifikat som utfärdats till en person och inte gått ut, återkallade markerade: serienummer, nyckeltyp och fingeravtryck, principaler, giltighet och om ett hårdvarubevis täckte nyckeln. Aldrig en nyckel. Speglar GET /admin/hardware-tokens (dess flik SSH-certifikat)."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
+    "en": "1716521c9c5e119d",
+    "text": "NON-SPEC (#1955). En persons deponerade piv-key-management-certifikat (piv.keyEscrow): serienummer, subjekt, giltighet och om vart och ett har återkallats. Aldrig en nyckel. Speglar GET /admin/hardware-tokens."
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -4210,33 +4246,5 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "en parameter"
-  },
-  "stsmetadata.specs.yubico-piv-attestation.coverage": {
-    "en": "244659759ede3102",
-    "text": "partial: platsens attesteringscertifikat verifieras via f9-attesteringscertifikatet till Yubicos PIV-rötter (Serial 263751, och Attestation Root 1 med dess PIV-mellancertifikat för firmware 5.7.4 och senare, levererade och fästa) eller en sfärs egna; dess nyckel hålls mot begärans; tilläggen för firmware, serienummer, PIN- och beröringspolicy och formfaktor läses, och policyerna hålls mot sfärens. Själva kortet hanteras aldrig: ingen skrivning av PIN, PUK eller plats."
-  },
-  "stsmetadata.specs.fips201.coverage": {
-    "en": "322d92ba9eb36fde",
-    "text": "minimal: de fyra nyckelplatserna som certifikatprofiler (PIV Authentication 9a, Digital Signature 9c, Key Management 9d, Card Authentication 9e, som som standard inte loggar in någon), och ett externt PIV- eller CAC-kort som mappas via kort-UUID:t i dess urn:uuid-subjectAltName när det anger en PIV Authentication-policy (av som standard). Ingen FASC-N, CHUID, korthantering eller biometri."
-  },
-  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
-    "en": "1716521c9c5e119d",
-    "text": "NON-SPEC (#1955). En persons deponerade piv-key-management-certifikat (piv.keyEscrow): serienummer, subjekt, giltighet och om vart och ett har återkallats. Aldrig en nyckel. Speglar GET /admin/hardware-tokens."
-  },
-  "stsmetadata.specs.rfc9980.coverage": {
-    "en": "5feb46765c8bc465",
-    "text": "partial: signaturer ML-DSA-65+Ed25519 och ML-DSA-87+Ed448, och kryptering ML-KEM-768+X25519 och ML-KEM-1024+X448, vid registrering och när en lagrad nyckel används. En komposit räknas som postkvant. openpgp.pqcOnly begränsar bara registreringen. Båda halvorna av en signatur verifieras av common/crypto_impl/openpgp_pqc.js. Saknas: SLH-DSA (algoritm-id 32-34), och den här tjänsten genererar ingen RFC 9980-nyckel. openpgp.js tolkar inte dessa nycklar."
-  },
-  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
-    "en": "c6a8759e4a5e40c9",
-    "text": "NON-SPEC (#1955 P3): sfärens egen OpenSSH-användar-CA-nyckel, publicerad som en authorized-key-rad som SSH-servrar litar på. Med `?algorithm=ssh-mldsa-65` svarar den i stället med sfärens ML-DSA-utfärdare, som vanlig OpenSSH ännu inte kan verifiera. Utan grind och `no-store`, endast på huvudporten: den okrypterade HTTP-lyssnaren för återkallelse avvisar den, eftersom nyckeln är ett förtroendeankare. Motsvarande privata CA-nyckel lämnar aldrig denna tjänst."
-  },
-  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
-    "en": "2e4cdead67408937",
-    "text": "NON-SPEC (#1955 P3): sfärens egen OpenSSH-KRL, uppdaterad när en anropare återkallar ett certifikat eller anmäler en hårdvarutoken som förlorad. Utan grind och `no-store`, endast på huvudporten: KRL:en är inte signerad, så den okrypterade HTTP-lyssnaren för återkallelse avvisar den. SSH-servrar måste konfigureras att läsa den, eftersom denna tjänst inte kan tvinga en förlitande part att göra det."
-  },
-  "stsmetadata.endpoints./admin-api/hardware-tokens/ssh-certificates.what": {
-    "en": "84ce6fea3694d4c0",
-    "text": "NON-SPEC (granskningen av #1955). De OpenSSH-användarcertifikat som utfärdats till en person och inte gått ut, återkallade markerade: serienummer, nyckeltyp och fingeravtryck, principaler, giltighet och om ett hårdvarubevis täckte nyckeln. Aldrig en nyckel. Speglar GET /admin/hardware-tokens (dess flik SSH-certifikat)."
   }
 }

@@ -54,6 +54,8 @@
   "options.certificate": "Oder fahren Sie mit dem TLS-Clientzertifikat fort, das Ihr Browser bei dieser Verbindung vorgelegt hat. Es wird nichts eingegeben: dieser Dienst hat die Zertifikatskette geprüft und festgestellt, ob es widerrufen wurde.",
   "options.certificateMfaNote": "Diese Anfrage benötigt zwei Faktoren, daher werden Sie anschließend nach einem zweiten gefragt.",
   "options.certificateButton": "Als {name} mit Ihrem Zertifikat fortfahren",
+  "options.certificateHandoff": "Oder melden Sie sich mit einer Smartcard oder einem Zertifikat an. Ihr Browser fordert Sie auf, es auszuwählen, und gegebenenfalls zur Eingabe der PIN.",
+  "options.certificateHandoffButton": "Mit Smartcard oder Zertifikat anmelden",
   "selectIdp.title": "Wählen Sie, wie Sie sich anmelden — Authentifizierungsdienst",
   "selectIdp.heading": "Wählen Sie, wie Sie sich anmelden",
   "selectIdp.at": "Authentifizierungsdienst unter <code>{base}</code>",

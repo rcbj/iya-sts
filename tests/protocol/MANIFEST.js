@@ -1429,6 +1429,14 @@ const JOBS = [
   // made at run time; the verifier's refusals in full are
   // tests/piv_attestation.js, in process.
   { file: 'sts_piv_attestation.js', browser: false, local: true },
+  // CERTIFICATE SIGN-IN PROFILES AND RFC 9440 OVER REAL HANDSHAKES (#2012):
+  // an outside chain bound by issuer and serial through a realm's
+  // certSignIn.profiles, outside the profile, a name binding refused without
+  // lowAffinity, and a forwarded Client-Cert believed from the named proxy
+  // only. Posts two test Roots to the client truststore and removes them;
+  // every setting is the throwaway realm's. The logic in full is
+  // tests/certificate_binding.js, in process.
+  { file: 'sts_cert_sign_in_profiles.js', browser: false, local: true },
   // OpenPGP KEYS AND THE WEB KEY DIRECTORY OVER HTTP (#1955 P6): a key made
   // here registered through /admin-api/openpgp on its proof, and the
   // directory answering it on a domain only this job uses; the depth is

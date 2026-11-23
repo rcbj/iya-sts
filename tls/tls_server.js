@@ -5753,6 +5753,33 @@ function certificateRefusal(socket, mode, revocation, identity) {
                   '(pki.revocationCheck is ' + revocation.policy + '): ' +
                   revocation.why } };
   }
+  // A VERIFIED STATUS, WHERE THE REALM ASKS FOR ONE (#2012,
+  // `certSignIn.requireRevocation`): `auto` in product mode, `on` in every
+  // mode. A status soft-fail let through — unknown, or not consulted at all —
+  // signs nobody in under it, and the refusal is reported as the revocation
+  // refusal above is, which is what it is: the screen's STS-AUTHN-0464.
+  let unverified = '';
+  try {
+    unverified = require('../common/certificate_binding')
+      .revocationRefusal(revocation);
+  } catch (e) {
+    log.debug('Caught in certificateRefusal(): ' + ((e && e.message) || e));
+    // FAIL CLOSED (the #2012 review): a check that could not answer is a
+    // status nobody verified.
+    unverified = 'the revocation requirement could not be asked (' +
+      String((e && e.message) || e) + ')';
+  }
+  if (unverified) {
+    log.info(errorCodes.tag('STS-TLS-0071') + 'tls: a verified client ' +
+             'certificate on the ' + mode + ' listener started no session: ' +
+             unverified + '.');
+    log.debug('Leaving certificateRefusal(). No verified status.');
+    return { gated: null, refusal: { started: false,
+                                     refusedOnRevocation: true,
+                                     revocationRequired: true,
+             why: 'the certificate verified and its revocation status was ' +
+                  'NOT VERIFIED: ' + unverified } };
+  }
   // NOT AN IDENTITY (2026-09-13): a chain through this service's own Root from
   // an authority that does not issue TLS client identities. See
   // `issuedClientCertificateAnchor()` for why that Root is trusted at all and
@@ -6298,6 +6325,10 @@ function screenCertificateHolder(req) {
       // session: `GET /tls/sign-in`'s answer, from the same evidence.
       amr: certificateAmrOf(peer.cert, peer.username),
       revocationSaid: revocationSaid,
+      // What the certificate says of its holder (#127's facts), kept by the
+      // certificate sign-in handoff (#2012), which rebuilds the
+      // verification below from them once the sign-in completes.
+      verificationFacts: certificateFacts(peer.cert),
       // THE IDENTITY VERIFICATION (#127) `GET /tls/sign-in` records once
       // its session has started, recorded by the screen at the same point.
       recordVerification: function recordVerification() {
@@ -7196,7 +7227,10 @@ function answerCertificateSignIn(req, res) {
       // writes the refusal's row in the realm this request named, as it
       // does for STS-TLS-0054 above. The answer is unchanged: 200,
       // `session.refusedOnRevocation`.
-      if (session.refusedOnRevocation) {
+      if (session.revocationRequired) {
+        // #2012: no verified status where the realm requires one.
+        errorCodes.mark(res, 'STS-TLS-0071');
+      } else if (session.refusedOnRevocation) {
         errorCodes.mark(res, errorCodes.codeOf(revocation) ||
           (revocation && revocation.status === 'revoked' ? 'STS-PKI-0118'
                                                          : 'STS-PKI-0119'));
@@ -8025,6 +8059,11 @@ module.exports = {
   // tests/x509_limbo.js, which holds the main port's posture to x509-limbo.
   holdToPathRules: holdToPathRules,
   anchorCertificates: anchorCertificates,
+  // #2012: a certificate a TLS-terminating proxy forwarded is held to what the
+  // listener the proxy reached holds a handshake's to — its own `ca` list and
+  // #212's curve guard (common/forwarded_client_certificate.ts).
+  caPemsFor: caPemsFor,
+  refusedCurveKey: refusedCurveKey,
   holdConnectionsOn: holdConnectionsOn,
   settledRequest: settledRequest
 };

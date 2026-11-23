@@ -94,6 +94,18 @@ const APPLICATIONS = [
     prefixes: ['/authn', '/authn-api', '/logout', '/launch',
                '/.well-known/hoba', '/wsapi'],
     exact: ['/tls/sign-in'] },
+  // THE CERTIFICATE SIGN-IN HANDOFF (#2012, `tls/certificate_handoff.ts`):
+  // the one path a listener that asks for a client certificate needs to
+  // answer, so an administrator maps it to such a listener and leaves the
+  // screen where it is. A longer prefix than `/authn`, so found first.
+  // `session` because both legs carry the sign-on session's cookie, which is
+  // how the certificate is bound to the browser that started it — so the
+  // cookie rule (`listener_map.js`, D3) holds the listener it is mapped to.
+  { id: 'certificate-sign-in', label: 'Certificate sign-in',
+    session: true,
+    what: 'The listener a certificate sign-in is handed to: the one ' +
+          'request that asks for a smart card or certificate.',
+    prefixes: ['/authn/certificate'], exact: [] },
   // `/account-api` IS THE PORTAL'S (#568): the portal is a static
   // application that draws every page from it, so the two are one
   // application on one listener and the portal never has to be told where

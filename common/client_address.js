@@ -543,5 +543,11 @@ module.exports = {
   trustedProxyRanges: trustedProxyRanges,
   isTrustedProxy: isTrustedProxy,
   normalise: normalise,
+  // The range reader and matcher, for a list of another setting's
+  // (#2012: `tls.trustedProxyAddresses`, common/forwarded_client_certificate.ts),
+  // and the connection's own peer, which a forwarded header cannot change.
+  parseRanges: parseRanges,
+  inRanges: inRanges,
+  peerAddressOf: peerOf,
   reset: reset
 };

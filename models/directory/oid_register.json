@@ -547,6 +547,7 @@
   "stsAuthzenCallbackUri": 747,
   "stsBackupCodes": 533,
   "stsBootstrapAdministrator": 534,
+  "stsCertificateBinding": 950,
   "stsCertificateHostName": 535,
   "stsCibaUserCode": 536,
   "stsClaimProviderData": 537,

@@ -54,6 +54,8 @@
   "options.certificate": "或者，使用您的浏览器在此连接上出示的 TLS 客户端证书继续。无需输入任何内容：此服务已检查证书链以及证书是否已被吊销。",
   "options.certificateMfaNote": "此请求需要两个因素，因此之后会要求您提供第二个因素。",
   "options.certificateButton": "使用您的证书以 {name} 身份继续",
+  "options.certificateHandoff": "或者使用智能卡或证书登录。浏览器会请您选择证书，如有 PIN 码还会请您输入。",
+  "options.certificateHandoffButton": "使用智能卡或证书登录",
   "selectIdp.title": "选择登录方式 — 身份验证服务",
   "selectIdp.heading": "选择登录方式",
   "selectIdp.at": "身份验证服务，地址 <code>{base}</code>",

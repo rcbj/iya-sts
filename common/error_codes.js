@@ -18795,6 +18795,78 @@ const CODES = [
       'certificate (#1242).',
     spec: 'the add succeeds with warning; the handshake of the certificate ' +
       'itself verifies' },
+  { code: 'STS-TLS-0065',
+    summary: 'certSignIn.profiles is not a JSON array of well-formed ' +
+      'certificate sign-in profiles (an id, the issuers\' SubjectPublicKeyInfo ' +
+      'SHA-256s, keyUsage names, extendedKeyUsage and policy OIDs, known ' +
+      'binding methods, a name method only with lowAffinity true). A write ' +
+      'is refused; a stored value that is not one is not used, and no ' +
+      'certificate is covered by a profile (#2012).',
+    spec: 'HTTP 400 (the setting write); none (logged) when read' },
+  { code: 'STS-TLS-0066',
+    summary: 'A client certificate a certificate sign-in profile covers is ' +
+      'outside it: its keyUsage, its extendedKeyUsage, or the certificate ' +
+      'policies RFC 5280 policy processing carries through its path are ' +
+      'not the profile\'s, so it names nobody (#2012).',
+    spec: 'the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468)' },
+  { code: 'STS-TLS-0067',
+    summary: 'A client certificate\'s bindings name more than one account: ' +
+      'one method found several people, two methods found different ' +
+      'people, or the certificate is stored on one person and carries a ' +
+      'PIV card UUID another holds; it names nobody (#2012).',
+    spec: 'the outside-certificate refusal (STS-TLS-0055, STS-AUTHN-0469)' },
+  { code: 'STS-TLS-0068',
+    summary: 'A client certificate a certificate sign-in profile covers is ' +
+      'bound to nobody: none of the profile\'s binding methods found an ' +
+      'account (#2012).',
+    spec: 'the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468)' },
+  { code: 'STS-TLS-0069',
+    summary: 'A value written to stsCertificateBinding is not a certificate ' +
+      'sign-in binding in the grammar certificate_binding.ts canonicalises ' +
+      '(certificate-sha256:, issuer-serial:, issuer-ski:, spki-sha256:, ' +
+      'issuer-subject: or subject:); nothing was written (#2012).',
+    spec: 'HTTP 400 (the directory write); LDAP constraintViolation' },
+  { code: 'STS-TLS-0070',
+    summary: 'A certificate sign-in binding written to stsCertificateBinding ' +
+      'is already held by another entry of the realm, which would make one ' +
+      'certificate name two people; nothing was written (#2012).',
+    spec: 'HTTP 400 (the directory write); LDAP constraintViolation' },
+  { code: 'STS-TLS-0071',
+    summary: 'A certificate sign-in was refused because the realm requires ' +
+      'a verified revocation status (certSignIn.requireRevocation) and the ' +
+      'status was unknown or not consulted (#2012).',
+    spec: 'HTTP 200 (GET /tls/sign-in, session.refusedOnRevocation); the ' +
+      'sign-in screen\'s STS-AUTHN-0464' },
+  { code: 'STS-TLS-0072',
+    summary: 'A request carried an RFC 9440 Client-Cert or Client-Cert-Chain ' +
+      'header from a sender that is not a trusted TLS-terminating proxy ' +
+      '(tls.trustedProxyCertificates and tls.trustedProxyAddresses), so ' +
+      'both were removed before anything read them (#2012).',
+    spec: 'none (recorded): the request goes on without them' },
+  { code: 'STS-TLS-0073',
+    summary: 'A trusted TLS-terminating proxy forwarded a Client-Cert that ' +
+      'is not an RFC 9440 byte sequence of one certificate, or whose chain ' +
+      'does not verify to the client truststore, so the request presents ' +
+      'no client certificate (#2012).',
+    spec: 'none (logged): the request goes on with no certificate' },
+  { code: 'STS-TLS-0074',
+    summary: 'A certificate sign-in handoff (/authn/certificate/continue) ' +
+      'named no live handoff: unknown, used, expired, or certSignIn.handoff ' +
+      'is off (#2012).',
+    spec: 'HTTP 400' },
+  { code: 'STS-TLS-0075',
+    summary: 'A certificate sign-in handoff arrived without the sign-on ' +
+      'session cookie of the browser that started it, so the certificate ' +
+      'was not bound to that sign-in: the listener does not share the ' +
+      'main port\'s host name and is not under authn.cookieDomain, or ' +
+      'another browser opened the link (#2012).',
+    spec: 'HTTP 403' },
+  { code: 'STS-TLS-0076',
+    summary: 'Only one of tls.trustedProxyCertificates and ' +
+      'tls.trustedProxyAddresses is set, so no forwarded client ' +
+      'certificate is read: a TLS-terminating proxy is trusted by both its ' +
+      'certificate and its address (#2012).',
+    spec: 'none (logged)' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +
