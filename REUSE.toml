@@ -113,6 +113,32 @@ SPDX-FileCopyrightText = [
 ]
 SPDX-License-Identifier = "Apache-2.0"
 
+# The embedded PEP corpus (#2024): every iya-pep-<lang> package's engine is
+# held to it, and those packages are MIT. Its cases are converted from the
+# OASIS suite above and stay Apache-2.0 (a modified form: the request
+# converted, the expected answer the reference engine's); its manifest, the
+# copy of xacml-pep/enforcement_cases.json and its README are MIT.
+# xacml/pep-corpus/README.md says so.
+[[annotations]]
+path = "xacml/pep-corpus/oasis/**"
+precedence = "override"
+SPDX-FileCopyrightText = [
+  "2014 AT&T Intellectual Property",
+  "AuthzForce contributors (OW2)",
+  "2026 Iya CyberSecurity Solutions, LLC",
+]
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = [
+  "xacml/pep-corpus/MANIFEST.json",
+  "xacml/pep-corpus/enforcement.json",
+  "xacml/pep-corpus/README.md",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Iya CyberSecurity Solutions, LLC"
+SPDX-License-Identifier = "MIT"
+
 # The SPIRE API SDK's protobuf definitions, the SPIFFE Workload API and the
 # SPIFFE Broker API, copied verbatim. Apache-2.0.
 [[annotations]]

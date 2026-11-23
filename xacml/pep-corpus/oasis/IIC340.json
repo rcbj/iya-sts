@@ -1,0 +1,107 @@
+{
+  "name": "IIC340",
+  "source": "oasis-mandatory",
+  "policies": [
+    {
+      "policyId": "urn:oasis:names:tc:xacml:2.0:conformance-test:IIC340:policy",
+      "kind": "Policy",
+      "version": "1.0",
+      "isRoot": true,
+      "document": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n<Policy xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" \n\t\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" \n\t\tPolicyId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIC340:policy\" \n\t\tRuleCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:rule-combining-algorithm:deny-overrides\" \n\t\tVersion=\"1.0\" \n\t\t>\n    <Description>\n        Policy for Conformance Test IIC341.\n        Purpose - Function Evaluation - Set Functions: dayTimeDuration-intersection\n    </Description>\n    <Target/>\n    <Rule Effect=\"Permit\" RuleId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIC340:rule\">\n        <Condition>\n\t\t  <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:integer-equal\">\n            <Apply FunctionId=\"urn:oasis:names:tc:xacml:3.0:function:dayTimeDuration-bag-size\">\n                <Apply FunctionId=\"urn:oasis:names:tc:xacml:3.0:function:dayTimeDuration-intersection\">\n                    <Apply FunctionId=\"urn:oasis:names:tc:xacml:3.0:function:dayTimeDuration-bag\">\n                        <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#dayTimeDuration\">P5DT2H0M0S</AttributeValue>\n                        <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#dayTimeDuration\">P1DT8H24M</AttributeValue>\n                    </Apply>\n                    <AttributeDesignator AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:test-attr\" \n                    \tCategory=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" \n                    \tDataType=\"http://www.w3.org/2001/XMLSchema#dayTimeDuration\" \n                    \tMustBePresent=\"false\"/>\n                </Apply>\n            </Apply>\n            <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#integer\">2</AttributeValue>\n\t\t  </Apply>\n        </Condition>\n    </Rule>\n</Policy>\n"
+    }
+  ],
+  "request": {
+    "returnPolicyIdList": false,
+    "combinedDecision": false,
+    "categories": [
+      {
+        "category": "urn:oasis:names:tc:xacml:1.0:subject-category:access-subject",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:subject:subject-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "Julius Hibbert"
+              }
+            ]
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:test-attr",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#dayTimeDuration",
+                "value": "P5DT2H0M0S"
+              }
+            ]
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:test-attr",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#dayTimeDuration",
+                "value": "P1DT8H24M"
+              }
+            ]
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:test-attr",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#dayTimeDuration",
+                "value": "P1DT8H24M"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:resource",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:resource:resource-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#anyURI",
+                "value": "http://medico.com/record/patient/BartSimpson"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:action",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:action:action-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "read"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:environment",
+        "hasContent": false,
+        "attributes": []
+      }
+    ]
+  },
+  "expected": {
+    "decision": "Permit",
+    "obligations": [],
+    "advice": []
+  }
+}

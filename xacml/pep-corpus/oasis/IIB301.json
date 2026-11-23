@@ -1,0 +1,97 @@
+{
+  "name": "IIB301",
+  "source": "oasis-mandatory",
+  "policies": [
+    {
+      "policyId": "urn:oasis:names:tc:xacml:2.0:conformance-test:IIB301:policyset",
+      "kind": "PolicySet",
+      "version": "1.0",
+      "isRoot": true,
+      "document": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n<PolicySet xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" \n\t\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" \n\t\tPolicyCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:policy-combining-algorithm:deny-overrides\" \n\t\tPolicySetId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIB301:policyset\" \n\t\tVersion=\"1.0\" \n\t\t>\n    <Description>\n        PolicySet for Conformance Test IIB301.\n        Purpose - Target Matching: Enhanced Target (fail)\n\t    Any Subject can perform anVersion 3.0 enhanced Target mixing categories in same logical operation:\n\t        \t(Doctor AND medical record) AND (read OR write)\n\t    Request for this test does not match => NotApplicable\n    </Description>\n    <Target/>\n    \n    \n\t<Policy xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" \n\t\t\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" \n\t\t\tPolicyId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIB301:policy\" \n\t\t\tRuleCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:rule-combining-algorithm:deny-overrides\" \n\t\t\tVersion=\"1.0\" \n\t\t\t>\n\t    <Description>\n\t        Any Subject can perform anVersion 3.0 enhanced Target mixing categories in same logical operation:\n\t        \t(Doctor AND medical record) AND (read OR write)\n\t        Request for this test does not match => Indeterminate\n\t    </Description>\n\t  <Target>\n\t    <AnyOf>\n\t      <AllOf>\n\t        <Match MatchId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\">\n\t          <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">read</AttributeValue>\n\t          <AttributeDesignator AttributeId=\"urn:oasis:names:tc:xacml:1.0:action:action-id\" \n\t          \t\tCategory=\"urn:oasis:names:tc:xacml:3.0:attribute-category:action\" \n\t          \t\tDataType=\"http://www.w3.org/2001/XMLSchema#string\" \n\t          \t\tMustBePresent=\"false\"/>\n\t        </Match>\n\t      </AllOf>\n\t      <AllOf>\n\t        <Match MatchId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\">\n\t          <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">write</AttributeValue>\n\t          <AttributeDesignator AttributeId=\"urn:oasis:names:tc:xacml:1.0:action:action-id\" \n\t          \t\tCategory=\"urn:oasis:names:tc:xacml:3.0:attribute-category:action\" \n\t          \t\tDataType=\"http://www.w3.org/2001/XMLSchema#string\" \n\t          \t\tMustBePresent=\"false\"/>\n\t        </Match>\n\t      </AllOf>\n\t    </AnyOf>\n\t    <AnyOf>\n\t      <AllOf>\n\t        <Match MatchId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\">\n\t          <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">doctor</AttributeValue>\n\t          <AttributeDesignator AttributeId=\"role\" \n\t          \t\tCategory=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" \n\t          \t\tDataType=\"http://www.w3.org/2001/XMLSchema#string\" \n\t          \t\tMustBePresent=\"false\"/>\n\t        </Match>\n\t        <Match MatchId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\">\n\t          <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">medical record</AttributeValue>\n\t          <AttributeDesignator AttributeId=\"resource-type\" \n\t          \t\tCategory=\"urn:oasis:names:tc:xacml:3.0:attribute-category:resource\" \n\t          \t\tDataType=\"http://www.w3.org/2001/XMLSchema#string\" \n\t          \t\tMustBePresent=\"false\"/>\n\t        </Match>\n\t      </AllOf>\n\t    </AnyOf>\n\t  </Target>\n\t\n\t    <Rule Effect=\"Permit\" RuleId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIB301:rule\">\n\t        <Description>\n\t            Always return Permit.\n\t        </Description>\n\t    </Rule>\n\t</Policy>\n</PolicySet>\n"
+    }
+  ],
+  "request": {
+    "returnPolicyIdList": false,
+    "combinedDecision": false,
+    "categories": [
+      {
+        "category": "urn:oasis:names:tc:xacml:1.0:subject-category:access-subject",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:subject:subject-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "Betty Boop"
+              }
+            ]
+          },
+          {
+            "attributeId": "role",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "cabaret singer"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:resource",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:resource:resource-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#anyURI",
+                "value": "http://medico.com/record/patient/BartSimpson"
+              }
+            ]
+          },
+          {
+            "attributeId": "resource-type",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "medical record"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:action",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:action:action-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "read"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:environment",
+        "hasContent": false,
+        "attributes": []
+      }
+    ]
+  },
+  "expected": {
+    "decision": "NotApplicable",
+    "obligations": [],
+    "advice": []
+  }
+}
