@@ -87,6 +87,10 @@
 //      page and refuse a foreign cursor, the schema describes the member,
 //      a submission must choose a listed entitlement, and the approved one
 //      reaches the policy as a fact.
+//   U. THE ACTOR (#1204): client.actor ignored by default; on, a chain an
+//      mTLS caller cannot prove is 0153, a malformed one 0154, the caller
+//      itself is verified and recorded with client.source, and a bearer
+//      caller's token act chain authorizes exactly that chain.
 //   O. OFF: authzen.accessRequests off answers 501, the schema too, and
 //      no denial is requestable.
 // ---------------------------------------------------------------------------
@@ -2005,6 +2009,89 @@ async function childBody() {
           'fact, and the policy permits by it', brief(r));
   inRealm(function () {
     config.clearOverride('authzen.accessRequestCatalogs');
+  });
+
+  // -------------------------------------------------------------------------
+  // U. THE ACTOR COMPANION (#1204): ignored by default; on, a claimed chain
+  // must be the caller itself or its own token's act chain, a malformed
+  // actor or source is refused, and the verified chain is recorded.
+  // -------------------------------------------------------------------------
+  r = await request(port, 'POST', EVAL, pepCred, evaluation());
+  const actDenied1 = r.json || {};
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(actDenied1, {
+    client: { id: 'x', actor: { id: 'somebody-else' } } }));
+  const ignoredTask = (r.json || {}).task || {};
+  t.check(r.status === 202 && !inRealm(function () {
+            return requests.task(String(ignoredTask.id)).actor;
+          }),
+          'U1. by default client.actor is accepted and never read', brief(r));
+  inRealm(function () {
+    config.setOverride('authzen.accessRequestActor', true);
+  });
+  r = await request(port, 'POST', EVAL, pepCred, evaluation());
+  const actDenied = r.json || {};
+  since = marks.length;
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(actDenied, {
+    client: { actor: { id: 'agent-1', act: { sub: 'azalice' } } } }));
+  const malformed = await request(port, 'POST', SUBMIT, pepCred,
+    submission(actDenied, { client: { actor: { type: 'ai_agent' } } }));
+  const badSource = await request(port, 'POST', SUBMIT, pepCred,
+    submission(actDenied, { client: { source: {
+      external_url: 'http://tickets.example.com/T-1' } } }));
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0153') &&
+          malformed.status === 400 && badSource.status === 400 &&
+          markedSince(since, 'STS-AUTHZEN-0154'),
+          'U2. a chain an mTLS caller\'s certificate does not authorize is ' +
+          '0153, and a malformed actor or a non-https external_url 0154',
+          brief(r) + ' / ' + brief(malformed) + ' / ' + brief(badSource));
+  const pepName = String(inRealm(function () {
+    return requests.task(String(ignoredTask.id)).requester;
+  }));
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(actDenied, {
+    client: { id: 'todo-pep', actor: { id: pepName, type: 'service' },
+              source: { session_id: 'sess-1',
+                        external_url: 'https://tickets.example.com/T-1' } }
+  }));
+  const actTask = (r.json || {}).task || {};
+  const actRow = inRealm(function () {
+    return requests.viewOf(requests.task(String(actTask.id)));
+  });
+  t.check(r.status === 202 && actRow.actor &&
+          actRow.actor.chain.length === 1 &&
+          actRow.actor.chain[0].id === pepName &&
+          actRow.actor.verifiedBy === 'caller' &&
+          actRow.source && actRow.source.session_id === 'sess-1',
+          'U3. the caller naming itself is verified, and the chain and the ' +
+          'source are recorded for the approvers', brief(r) + ' / ' +
+          JSON.stringify(actRow.actor));
+  const tokenCaller = { kind: 'application', name: 'agent-pep',
+                        clientId: 'agent-pep', identifier: 'agent-pep',
+                        iss: own, act: { sub: 'agent-1',
+                                         iss: 'https://agents.example.com',
+                                         act: { sub: 'azalice' } } };
+  const fromToken = inRealm(function () {
+    return requests.actorOf({ actor: {
+      id: 'agent-1', issuer: 'https://agents.example.com',
+      type: 'ai_agent', act: { sub: 'azalice' } } }, tokenCaller, own);
+  });
+  const notToken = inRealm(function () {
+    return requests.actorOf({ actor: { id: 'agent-2' } }, tokenCaller, own);
+  });
+  const wrongIss = inRealm(function () {
+    return requests.actorOf({ actor: { id: 'agent-1',
+      issuer: 'https://elsewhere.example.com',
+      act: { sub: 'azalice' } } }, tokenCaller, own);
+  });
+  t.check(fromToken.actor && fromToken.actor.verifiedBy === 'token' &&
+          fromToken.actor.chain.length === 2 &&
+          fromToken.actor.chain[1].id === 'azalice' &&
+          notToken.code === 'STS-AUTHZEN-0153' &&
+          wrongIss.code === 'STS-AUTHZEN-0153',
+          'U4. a bearer caller\'s token act chain authorizes the same ' +
+          'chain link for link, and no other', JSON.stringify(
+            [fromToken, notToken.code, wrongIss.code]));
+  inRealm(function () {
+    config.clearOverride('authzen.accessRequestActor');
   });
 
   // -------------------------------------------------------------------------

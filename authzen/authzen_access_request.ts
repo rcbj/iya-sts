@@ -168,6 +168,10 @@ const MAX_MINE = 50;
 // catalog under it, the entitlements the policy's advice lists.
 const CATALOGS_PATH = REQUESTS_PATH + '/catalogs';
 const ENTITLEMENT_POINTER = '/requested_access/entitlement';
+// THE ACTOR COMPANION (#1204): the deepest actor chain read, and the
+// longest of its identifiers.
+const MAX_ACT_DEPTH = 8;
+const MAX_URL = 2048;
 // A Catalog Endpoint page's default and largest size (the draft's section
 // 7: the endpoint MAY clamp `limit`).
 const CATALOG_PAGE = 20;
@@ -1716,6 +1720,14 @@ class AccessRequests {
       log.debug("Leaving AccessRequests.submit(). A callback refused.");
       return;
     }
+    // THE ACTOR COMPANION (#1204): a claimed chain verified against the
+    // caller's own credential, or refused; `client.source` as recorded.
+    const acting = self.actorOf(given.client, caller, base);
+    if (acting.problem) {
+      self.problem(res, 400, '', acting.code, acting.problem);
+      log.debug("Leaving AccessRequests.submit(). " + acting.code);
+      return;
+    }
     if (self.pendingCount() >=
         self.seconds('authzen.accessRequestMaxPending')) {
       self.problem(res, 503, '', 'STS-AUTHZEN-0078', 'This realm holds as ' +
@@ -1732,7 +1744,8 @@ class AccessRequests {
         : null,
       application: scoped.application, bound: bound, asked: asked,
       callback: callback.value, key: key, fingerprint: fingerprint,
-      actor: caller.name, origin: 'pep', formSubmittedBy: '' });
+      actor: caller.name, origin: 'pep', formSubmittedBy: '',
+      acting: acting.actor, source: acting.source });
     res.status(task.status === 'pending' ? 202 : 201)
        .type('application/json').set('Cache-Control', 'no-store')
        .set('Location', self.handleOf(task).status_endpoint)
@@ -1797,6 +1810,14 @@ class AccessRequests {
       task.origin = 'form';
       task.formSubmittedBy = String(spec.formSubmittedBy || '');
     }
+    // THE VERIFIED ACTOR CHAIN AND THE SOURCE (#1204, the ACTOR
+    // companion), context for the approvers and the audit, never a fact.
+    if (spec.acting) {
+      task.actor = spec.acting;
+    }
+    if (spec.source) {
+      task.source = spec.source;
+    }
     const indexRow: Json = { fingerprint: spec.fingerprint };
     if (key) {
       const indexKey = 'idem:' + stsCrypto.credentialDigest(
@@ -1822,6 +1843,10 @@ class AccessRequests {
         task.application + '"' + (task.emergency ? ', as an emergency' : '') +
         (task.entitlement ? ', for the entitlement "' +
           String(task.entitlement).slice(0, 128) + '"' : '') +
+        (task.actor ? ', acted for by ' + (task.actor.chain || [])
+          .map(function (one: Json) {
+            return String(one.id).slice(0, 128);
+          }).join(' for ') : '') +
         (key ? ', with an Idempotency-Key' : '') +
         (task.origin === 'form' ? ', by its subject on the hosted form, ' +
           'for the PEP ' + String(task.requester) : '') + '.'
@@ -1868,6 +1893,187 @@ class AccessRequests {
       String(asked.entitlement || '') === String(task.entitlement || '');
     log.debug("Leaving AccessRequests.sameAugmentations(). " + out);
     return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE ACTOR COMPANION (#1204). An AuthZEN caller is the PEP itself — a
+  // directory entry by its certificate, or a client by its own
+  // client_credentials token (`authzen_caller.ts`) — so a credential here
+  // can authorize two chains (its section 3.2): one link that is the
+  // caller itself, or, link for link, the `act` chain of the caller's own
+  // RFC 8693 token. Any other claimed chain is refused (0153): the MUST
+  // governs the MAY of the same section, so nothing unverified is kept.
+  // `client.source` has no verification in the draft and is audit-only.
+  // Neither is ever an XACML fact: the approval question is unchanged.
+  // `subject.properties.act` stays out of the binding (`bound()`), the
+  // base profile's rule today; openid/authzen#756 would change that.
+  // -------------------------------------------------------------------------
+  /**
+   * Whether `client.actor` and `client.source` are read
+   * (`authzen.accessRequestActor`).
+   *
+   * @returns true when it and the profile are on
+   */
+  actorOn(): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering AccessRequests.actorOn().");
+    log.debug("Leaving AccessRequests.actorOn().");
+    return this.enabled() &&
+      config.value('authzen.accessRequestActor') === true;
+  }
+
+  /**
+   * The links of an actor chain, immediate actor first: `{ id, issuer,
+   * type }` each, from `client.actor`'s `id`/`issuer`/`type` and then the
+   * nested `act`'s `sub`/`iss`/`sub_profile`; or a sentence when its shape
+   * is wrong.
+   *
+   * @param actor - `client.actor`
+   * @returns `{ links }` or `{ problem }`
+   */
+  private actorLinks(actor: unknown): Json {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.actorLinks().");
+    const links: Json[] = [];
+    // A hot path of one walk: no Entering/Leaving pair.
+    const text = function (value: unknown, most: number): string | null {
+      if (value === undefined) {
+        return '';
+      }
+      return typeof value === 'string' && value.length <= most
+        ? value : null;
+    };
+    let at: unknown = actor;
+    let depth = 0;
+    while (at !== undefined) {
+      if (!isObject(at) || depth >= MAX_ACT_DEPTH) {
+        log.debug("Leaving AccessRequests.actorLinks(). Not a chain.");
+        return { problem: 'client.actor must be an object, its act ' +
+                          'nested objects, at most ' + MAX_ACT_DEPTH +
+                          ' deep.' };
+      }
+      const one: Json = at;
+      const id = text(depth ? one.sub : one.id, 256);
+      const issuer = text(depth ? one.iss : one.issuer, MAX_URL);
+      const type = text(depth ? one.sub_profile : one.type, 64);
+      if (!id || issuer === null || type === null) {
+        log.debug("Leaving AccessRequests.actorLinks(). A bad link.");
+        return { problem: 'Every link of client.actor needs a string ' +
+                          (depth ? 'sub' : 'id') + ', and its ' +
+                          (depth ? 'iss and sub_profile' :
+                                   'issuer and type') +
+                          ', when present, must be short strings.' };
+      }
+      const link: Json = { id: id };
+      if (issuer) {
+        link.issuer = issuer;
+      }
+      if (type) {
+        link.type = type;
+      }
+      links.push(link);
+      at = one.act;
+      depth += 1;
+    }
+    log.debug("Leaving AccessRequests.actorLinks(). " + links.length);
+    return { links: links };
+  }
+
+  /**
+   * Reads and verifies `client.actor`, and reads `client.source` (the
+   * ACTOR companion's sections 3.1 and 3.2).
+   *
+   * @param client - the submission's `client`
+   * @param caller - the admitted caller
+   * @param base - this realm's base, its issuer for a self link
+   * @returns `{ actor, source }` (each null when absent or off), or
+   *   `{ problem, code }`
+   */
+  actorOf(client: unknown, caller: Json, base: string): Json {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.actorOf().");
+    if (!self.actorOn() || !isObject(client)) {
+      log.debug("Leaving AccessRequests.actorOf(). Not read.");
+      return { actor: null, source: null };
+    }
+    const given: Json = client;
+    let source: Json = null;
+    if (given.source !== undefined) {
+      const s: Json = given.source;
+      const fine = isObject(s) &&
+        ['session_id', 'integration_id'].every(function (name: string) {
+          return s[name] === undefined ||
+            (typeof s[name] === 'string' && s[name].length <= 256);
+        }) &&
+        (s.external_url === undefined ||
+         (typeof s.external_url === 'string' &&
+          s.external_url.length <= MAX_URL &&
+          /^https:\/\/[^\s/?#]+/i.test(s.external_url)));
+      if (!fine) {
+        log.debug("Leaving AccessRequests.actorOf(). A bad source.");
+        return { problem: 'client.source must be an object whose ' +
+                          'session_id and integration_id are short ' +
+                          'strings and whose external_url is an https ' +
+                          'URL.', code: 'STS-AUTHZEN-0154' };
+      }
+      source = {};
+      ['session_id', 'external_url', 'integration_id'].forEach(
+        function (name: string) {
+          if (s[name]) {
+            source[name] = String(s[name]);
+          }
+        });
+      if (!Object.keys(source).length) {
+        source = null;
+      }
+    }
+    if (given.actor === undefined) {
+      log.debug("Leaving AccessRequests.actorOf(). No actor.");
+      return { actor: null, source: source };
+    }
+    const read = self.actorLinks(given.actor);
+    if (read.problem) {
+      log.debug("Leaving AccessRequests.actorOf(). A bad chain.");
+      return { problem: read.problem, code: 'STS-AUTHZEN-0154' };
+    }
+    const links: Json[] = read.links;
+    const own = [caller.name, caller.clientId, caller.identifier]
+      .filter(Boolean).map(String);
+    const issuers = [String(base || ''), String(caller.iss || '')]
+      .filter(Boolean);
+    // 1. ONE LINK THAT IS THE CALLER ITSELF.
+    const itself = links.length === 1 &&
+      own.indexOf(String(links[0].id)) >= 0 &&
+      (!links[0].issuer || issuers.indexOf(String(links[0].issuer)) >= 0);
+    // 2. THE CALLER'S OWN TOKEN'S `act` CHAIN, LINK FOR LINK.
+    let carried = false;
+    if (!itself && isObject(caller.act)) {
+      const chain: Json[] = [];
+      let at: Json = caller.act;
+      while (isObject(at) && chain.length <= MAX_ACT_DEPTH) {
+        chain.push(at);
+        at = at.act;
+      }
+      carried = chain.length === links.length &&
+        links.every(function (link: Json, i: number) {
+          const token = chain[i];
+          const iss = String(token.iss || caller.iss || '');
+          return String(token.sub || '') === String(link.id) &&
+            (!link.issuer || String(link.issuer) === iss);
+        });
+    }
+    if (!itself && !carried) {
+      log.debug("Leaving AccessRequests.actorOf(). Not authorized.");
+      return { problem: 'The caller\'s credential does not authorize the ' +
+                        'actor chain in client.actor.',
+               code: 'STS-AUTHZEN-0153' };
+    }
+    log.debug("Leaving AccessRequests.actorOf(). " + links.length +
+              " link(s), " + (itself ? 'the caller itself' : 'its token'));
+    return { actor: { chain: links,
+                      verifiedBy: itself ? 'caller' : 'token' },
+             source: source };
   }
 
   // -------------------------------------------------------------------------
@@ -3839,6 +4045,13 @@ class AccessRequests {
     if (task.entitlement) {
       form.entitlement = String(task.entitlement);
     }
+    // Who acted, and where it came from (#1204, the ACTOR companion).
+    if (task.actor) {
+      form.actor = task.actor;
+    }
+    if (task.source) {
+      form.source = task.source;
+    }
     return Object.assign({
       id: task.id, status: task.status, requester: task.requester,
       client: task.client, application: task.application,
@@ -4684,6 +4897,8 @@ export = {
   formView: slot.forward('formView'),
   submitByForm: slot.forward('submitByForm'),
   FORM_PATH: FORM_PATH,
+  actorOn: slot.forward('actorOn'),
+  actorOf: slot.forward('actorOf'),
   CATALOGS_PATH: CATALOGS_PATH,
   catalogsOn: slot.forward('catalogsOn'),
   catalogsDocument: slot.forward('catalogsDocument'),

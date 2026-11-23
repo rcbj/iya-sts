@@ -686,6 +686,12 @@ Scope: `account:manage`.
 | `enabled` | boolean |  |  |
 | `granted` | list |  |  |
 | `granted[].action` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `granted[].actor` | object |  |  |
+| `granted[].actor.chain` | list |  |  |
+| `granted[].actor.chain[].id` | string |  |  |
+| `granted[].actor.chain[].issuer` | string |  |  |
+| `granted[].actor.chain[].type` | string |  |  |
+| `granted[].actor.verifiedBy` | one of `caller`, `token` |  |  |
 | `granted[].application` | string, or null |  |  |
 | `granted[].approval` | object |  |  |
 | `granted[].approval.approvedAt` | string or number, or null |  |  |
@@ -725,10 +731,20 @@ Scope: `account:manage`.
 | `granted[].justification` | string |  |  |
 | `granted[].requester` | string, or null |  |  |
 | `granted[].resource` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `granted[].source` | object |  |  |
+| `granted[].source.external_url` | string |  |  |
+| `granted[].source.integration_id` | string |  |  |
+| `granted[].source.session_id` | string |  |  |
 | `granted[].status` | string |  |  |
 | `granted[].subject` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
 | `rows` | list |  |  |
 | `rows[].action` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `rows[].actor` | object |  |  |
+| `rows[].actor.chain` | list |  |  |
+| `rows[].actor.chain[].id` | string |  |  |
+| `rows[].actor.chain[].issuer` | string |  |  |
+| `rows[].actor.chain[].type` | string |  |  |
+| `rows[].actor.verifiedBy` | one of `caller`, `token` |  |  |
 | `rows[].application` | string, or null |  |  |
 | `rows[].approval` | object |  |  |
 | `rows[].approval.approvedAt` | string or number, or null |  |  |
@@ -768,6 +784,10 @@ Scope: `account:manage`.
 | `rows[].justification` | string |  |  |
 | `rows[].requester` | string, or null |  |  |
 | `rows[].resource` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `rows[].source` | object |  |  |
+| `rows[].source.external_url` | string |  |  |
+| `rows[].source.integration_id` | string |  |  |
+| `rows[].source.session_id` | string |  |  |
 | `rows[].status` | string |  |  |
 | `rows[].subject` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
 
@@ -847,6 +867,12 @@ Scope: `account:manage`.
 | `view.enabled` | boolean |  |  |
 | `view.granted` | list |  |  |
 | `view.granted[].action` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `view.granted[].actor` | object |  |  |
+| `view.granted[].actor.chain` | list |  |  |
+| `view.granted[].actor.chain[].id` | string |  |  |
+| `view.granted[].actor.chain[].issuer` | string |  |  |
+| `view.granted[].actor.chain[].type` | string |  |  |
+| `view.granted[].actor.verifiedBy` | one of `caller`, `token` |  |  |
 | `view.granted[].application` | string, or null |  |  |
 | `view.granted[].approval` | object |  |  |
 | `view.granted[].approval.approvedAt` | string or number, or null |  |  |
@@ -886,10 +912,20 @@ Scope: `account:manage`.
 | `view.granted[].justification` | string |  |  |
 | `view.granted[].requester` | string, or null |  |  |
 | `view.granted[].resource` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `view.granted[].source` | object |  |  |
+| `view.granted[].source.external_url` | string |  |  |
+| `view.granted[].source.integration_id` | string |  |  |
+| `view.granted[].source.session_id` | string |  |  |
 | `view.granted[].status` | string |  |  |
 | `view.granted[].subject` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
 | `view.rows` | list |  |  |
 | `view.rows[].action` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `view.rows[].actor` | object |  |  |
+| `view.rows[].actor.chain` | list |  |  |
+| `view.rows[].actor.chain[].id` | string |  |  |
+| `view.rows[].actor.chain[].issuer` | string |  |  |
+| `view.rows[].actor.chain[].type` | string |  |  |
+| `view.rows[].actor.verifiedBy` | one of `caller`, `token` |  |  |
 | `view.rows[].application` | string, or null |  |  |
 | `view.rows[].approval` | object |  |  |
 | `view.rows[].approval.approvedAt` | string or number, or null |  |  |
@@ -929,6 +965,10 @@ Scope: `account:manage`.
 | `view.rows[].justification` | string |  |  |
 | `view.rows[].requester` | string, or null |  |  |
 | `view.rows[].resource` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `view.rows[].source` | object |  |  |
+| `view.rows[].source.external_url` | string |  |  |
+| `view.rows[].source.integration_id` | string |  |  |
+| `view.rows[].source.session_id` | string |  |  |
 | `view.rows[].status` | string |  |  |
 | `view.rows[].subject` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
 

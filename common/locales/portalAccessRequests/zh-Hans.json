@@ -9,6 +9,7 @@
   "application": "应用程序",
   "requester": "请求方",
   "entitlement": "申请的访问",
+  "actor": "代理方",
   "waits": "等待至 {when}。",
   "approve": "批准",
   "deny": "拒绝",

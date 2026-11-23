@@ -850,6 +850,30 @@ async function theAccessRequests() {
       (catDoc && String(catDoc.text).slice(0, 300)) + " / " +
       (catItems && String(catItems.text).slice(0, 300)));
   });
+  // THE ACTOR COMPANION (#1204): on, a chain the caller's certificate does
+  // not authorize is refused before anything is made.
+  const actOn = await postJson(api("/config/set"),
+    { key: "authzen.accessRequestActor", value: true });
+  assert.ok(actOn.status === 200, "setting authzen.accessRequestActor " +
+            "answered " + actOn.status + " " + actOn.text);
+  let acted = null;
+  try {
+    const fresh = await evaluate(asked);
+    const far = ((fresh.body || {}).context || {}).access_request || {};
+    acted = await pep("POST", PREFIX + "/access/v1/access-requests", caller,
+      Object.assign({}, asked, {
+        client: { actor: { id: "an-agent-nobody-vouched-for" } },
+        denial: { expires_at: far.expires_at,
+                  binding_token: far.binding_token } }));
+  } finally {
+    await postJson(api("/config/reset"),
+                   { key: "authzen.accessRequestActor" });
+  }
+  check("with authzen.accessRequestActor on, an actor chain the caller " +
+        "cannot prove is refused", function () {
+    assert.ok(acted.status === 400,
+      "answered " + acted.status + " " + String(acted.text).slice(0, 300));
+  });
   log.debug("Leaving theAccessRequests().");
 }
 

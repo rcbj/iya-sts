@@ -8547,6 +8547,14 @@
     "en": "1f38cbb80e80bafc",
     "text": "AuthZEN Access Request Catalog प्रोफ़ाइल (#1204): दर्ज अनुरोध-योग्य अस्वीकृति, जिसका advice urn:sts:xacml:advice:access-request:entitlement मान सूचीबद्ध करता है, request_catalogs_url रखती है, उसका Catalogs Document और Catalog Endpoint उसी कॉलर को उत्तर देते हैं जिसे अस्वीकृति दी गई थी, सबमिशन को requested_access.entitlement में किसी एक अधिकार को चुनना होता है, और अनुमोदन उसे विश्वसनीय तथ्य के रूप में नीति तक ले जाता है। बंद होने पर advice के अधिकार अनदेखे होते हैं और दोनों endpoint 501 देते हैं।"
   },
+  "authzen.accessRequestActor|label": {
+    "en": "746cf58e932ffdab",
+    "text": "एक्सेस अनुरोधों में कार्य करने वाले पक्ष"
+  },
+  "authzen.accessRequestActor|description": {
+    "en": "2ad9ec45c4e1ebfe",
+    "text": "AuthZEN Actor Delegation प्रोफ़ाइल (#1204): एक्सेस अनुरोध की client.actor श्रृंखला कॉलर के अपने क्रेडेंशियल के विरुद्ध जाँची जाती है (एक कड़ी जो स्वयं कॉलर है, या उसके अपने एक्सेस टोकन की act श्रृंखला) और अन्यथा अस्वीकार की जाती है, और client.source दर्ज किया जाता है। दोनों अनुमोदकों को और ऑडिट लॉग में दिखाए जाते हैं, और कोई भी नीति का तथ्य नहीं है। बंद होने पर दोनों स्वीकार किए जाते हैं और कभी पढ़े नहीं जाते।"
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

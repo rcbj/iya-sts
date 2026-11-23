@@ -8547,6 +8547,14 @@
     "en": "1f38cbb80e80bafc",
     "text": "AuthZEN Access Request Catalog 設定檔（#1204）：advice 列出 urn:sts:xacml:advice:access-request:entitlement 值的已記錄可申請拒絕帶有 request_catalogs_url，其 Catalogs Document 與 Catalog Endpoint 只回應該拒絕所回應的呼叫端，提交必須在 requested_access.entitlement 中選擇其中一項權限，核准會將其作為可信事實帶給政策。關閉時忽略 advice 的權限，兩個端點回應 501。"
   },
+  "authzen.accessRequestActor|label": {
+    "en": "746cf58e932ffdab",
+    "text": "存取申請中的代理方"
+  },
+  "authzen.accessRequestActor|description": {
+    "en": "2ad9ec45c4e1ebfe",
+    "text": "AuthZEN Actor Delegation 設定檔（#1204）：存取申請的 client.actor 鏈依據呼叫端自己的憑證驗證（即呼叫端本身這一環，或其自身存取權杖的 act 鏈），否則拒絕；client.source 會被記錄。兩者都顯示給核准人並寫入稽核日誌，均不作為政策事實。關閉時兩者都被接受但從不讀取。"
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

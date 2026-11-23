@@ -100,8 +100,8 @@
     "text": "partial: واجهة Access Evaluation API (القسم 6)، يقررها محرك XACML مقابل سياسة الجذر لنطاق الثقة عبر فهرس سمات لكل نطاق ثقة، مع X-Request-ID وتحدي القسم 11.3، وواجهة Access Evaluations API (القسم 7) بدلالاتها الثلاث، وبيانات PDP الوصفية (القسم 9) في شكليها كليهما بما في ذلك signed_metadata، ومسودة Obligations Profile لـ PEP يصرّح بالأنواع، وواجهات Search API الثلاث (القسم 8) على أشخاص هذه الخدمة وتطبيقاتها وواجهاتها وعلاقات التفويض وإجراءات السياسة، مرقَّمة الصفحات وغير متعدية. الناقص: الالتزامات لكل نتيجة في بحث، وملف OAuth، وهو ما زال مسودة."
   },
   "stsmetadata.specs.authzen-arap.coverage": {
-    "en": "fd8e9c9fe5c89141",
-    "text": "partial: الرفض القابل للطلب (context.access_request وevaluation_id وevaluated_at وreason) حيث تضع سياسة النطاق علامة على Deny باستخدام نصيحة access-request، مربوطًا بالقيمة عبر binding_token يوقعه هذا النطاق (مطالبات مضمنة وbinding_hash) وبالمرجع من سجل الرفض؛ والطلب مع Idempotency-Key و201 أو 202 وTask Handle؛ ونقطة نهاية حالة المهمة مع Retry-After؛ والإلغاء عبر POST أو DELETE؛ والحالات الست؛ ووضع الإكمال reevaluate، وapproval.id المحلول في حالة موثوقة، وapproval.state الصادر والمتحقق منه مع بقاء البحث مطلوبًا، ووصول الموافقة إلى السياسة كحقائق موثوقة؛ وnext_action والأسباب الخمسة؛ وكل نوع مشكلة؛ وعضو البيانات الوصفية وjwks_uri والقدرة؛ وrequest_schema_url على الرفض القابل للطلب، أي مخطط JSON Schema من الأصل نفسه لإضافات الطلب الاختيارية؛ وdisplay على الرفض القابل للطلب وعلى Task Handle، بكلمات الـ advice نفسها أو بكلمات الخدمة باللغة المطلوبة، ما دام authzen.accessRequestDisplay مفعّلًا؛ وform_url، النموذج المستضاف في البوابة الذي يقدّم فيه صاحب الرفض الطلب، وlinks.ticket، ما دام authzen.accessRequestForm مفعّلًا. الناقص: المرافقان BULK وACTOR."
+    "en": "07c3ff344e2ee6dc",
+    "text": "partial: الرفض القابل للطلب (context.access_request وevaluation_id وevaluated_at وreason) حيث تضع سياسة النطاق علامة على Deny باستخدام نصيحة access-request، مربوطًا بالقيمة عبر binding_token يوقعه هذا النطاق (مطالبات مضمنة وbinding_hash) وبالمرجع من سجل الرفض؛ والطلب مع Idempotency-Key و201 أو 202 وTask Handle؛ ونقطة نهاية حالة المهمة مع Retry-After؛ والإلغاء عبر POST أو DELETE؛ والحالات الست؛ ووضع الإكمال reevaluate، وapproval.id المحلول في حالة موثوقة، وapproval.state الصادر والمتحقق منه مع بقاء البحث مطلوبًا، ووصول الموافقة إلى السياسة كحقائق موثوقة؛ وnext_action والأسباب الخمسة؛ وكل نوع مشكلة؛ وعضو البيانات الوصفية وjwks_uri والقدرة؛ وrequest_schema_url على الرفض القابل للطلب، أي مخطط JSON Schema من الأصل نفسه لإضافات الطلب الاختيارية؛ وdisplay على الرفض القابل للطلب وعلى Task Handle، بكلمات الـ advice نفسها أو بكلمات الخدمة باللغة المطلوبة، ما دام authzen.accessRequestDisplay مفعّلًا؛ وform_url، النموذج المستضاف في البوابة الذي يقدّم فيه صاحب الرفض الطلب، وlinks.ticket، ما دام authzen.accessRequestForm مفعّلًا. الناقص: المرافق BULK."
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
     "en": "ca5109eae0e95b17",
@@ -110,6 +110,10 @@
   "stsmetadata.specs.authzen-arap-catalog.coverage": {
     "en": "10acf494ad5f24ef",
     "text": "partial: request_catalogs_url على رفض قابل للطلب مسجَّل يسرد advice السياسة فيه استحقاقات، ما دام authzen.accessRequestCatalogs مفعّلًا؛ وCatalogs Document بحقله الوحيد requested_access.entitlement؛ وCatalog Endpoint مع q وcursor وlimit، ولا يجيب إلا المستدعي الذي أُجيب بالرفض؛ والقيمة التي يُتحقق منها عند التقديم وتصل إلى السياسة حقيقةً موثوقة من الموافقة. الناقص: scope_params (فهرس واحد لا شيء يُقيَّد به)، وgranted وrisk_level وowner، والفهارس عبر بروتوكول الوكلاء."
+  },
+  "stsmetadata.specs.authzen-arap-actor.coverage": {
+    "en": "3b5295559cb3ed65",
+    "text": "partial: client.actor، ومعرّفه وissuer وtype وسلسلة act المتداخلة، يُتحقق منها مقابل بيانات اعتماد المستدعي نفسه (حلقة هي المستدعي نفسه، أو سلسلة act في رمز الوصول الخاص به، حلقةً حلقة) وتُرفض خلاف ذلك، ما دام authzen.accessRequestActor مفعّلًا؛ وclient.source مسجَّل بيانات تدقيق؛ ويُعرض كلاهما على المعتمدين ولا يكون أبدًا حقيقةً في السياسة. الناقص: توجيه الموافقة بحسب فاعل في السلسلة، والتأكيدات الموقّعة أو سياسات النشر دليلًا على سلسلة."
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",

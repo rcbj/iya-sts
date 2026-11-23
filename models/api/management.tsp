@@ -10163,7 +10163,9 @@ namespace IyaSts.Api.Management {
     `approvers`?: WithRolesGroupsOwners;
     `callbackDelivery`?: NullableAuthzenCallbackDelivery;
     @js(#{`description`:"The person who made the request on the hosted form (#1204), when it was made there."}) `formSubmittedBy`?: string;
-    @js(#{`description`:"The entitlement the request chose from the denial's catalog (#1204)."}) `entitlement`?: string
+    @js(#{`description`:"The entitlement the request chose from the denial's catalog (#1204)."}) `entitlement`?: string;
+    @js(#{`description`:"The verified actor chain (#1204, the ACTOR companion): immediate actor first, and whether the caller itself or its token's act chain authorized it."}) `actor`?: { `chain`?: ({ `id`?: string; `issuer`?: string; `type`?: string })[]; `verifiedBy`?: "caller" | "token" };
+    @js(#{`description`:"The submission's client.source, as recorded (#1204): audit metadata, never verified and never a policy fact."}) `source`?: { `session_id`?: string; `external_url`?: string; `integration_id`?: string }
   }
 
 @component model `WithOkMessageErrors178` {

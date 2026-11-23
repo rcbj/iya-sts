@@ -8547,6 +8547,14 @@
     "en": "1f38cbb80e80bafc",
     "text": "Le profil AuthZEN Access Request Catalog (#1204) : un refus demandable enregistré dont l’advice énumère des valeurs urn:sts:xacml:advice:access-request:entitlement porte request_catalogs_url, son Catalogs Document et son Catalog Endpoint répondent à l’appelant à qui le refus a été répondu, une soumission doit choisir l’un des droits dans requested_access.entitlement, et l’approbation le transmet à la politique comme fait de confiance. Désactivé, les droits de l’advice sont ignorés et les deux points de terminaison répondent 501."
   },
+  "authzen.accessRequestActor|label": {
+    "en": "746cf58e932ffdab",
+    "text": "Parties agissantes des demandes d’accès"
+  },
+  "authzen.accessRequestActor|description": {
+    "en": "2ad9ec45c4e1ebfe",
+    "text": "Le profil AuthZEN Actor Delegation (#1204) : la chaîne client.actor d’une demande d’accès est vérifiée par rapport au propre justificatif de l’appelant (un maillon qui est l’appelant lui-même, ou la chaîne act de son propre jeton d’accès) et refusée sinon, et client.source est enregistré. Les deux sont montrés aux approbateurs et au journal d’audit, et aucun n’est un fait de politique. Désactivé, les deux sont acceptés et jamais lus."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

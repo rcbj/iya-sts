@@ -1112,6 +1112,46 @@ endpoints answer `501`. Not built: `scope_params` (a single catalog has
 nothing to scope by), `granted`, `risk_level` and `owner`, and catalogs
 over an agent protocol.
 
+### Acting parties
+
+This service implements the draft [AuthZEN Actor Delegation Profile
+1.0](https://openid.github.io/authzen/authzen-access-request-actor-profile-1_0.html).
+With `authzen.accessRequestActor` on (it is off by default), a submission
+may say who is acting, and where the request came from:
+
+```json
+"client": {
+  "id": "renewal_assistant",
+  "actor": { "id": "renewal_assistant", "type": "ai_agent" },
+  "source": { "session_id": "session_…", "external_url": "https://tickets.example.com/T-1042" }
+}
+```
+
+**A claimed actor chain must be one the caller's own credential
+authorizes.** An AuthZEN caller is the PEP itself: a directory entry by
+its certificate, or a client by its own `client_credentials` token. So two
+chains are accepted:
+
+* one link that is the caller itself, whose `id` is its DN, client_id or
+  application identifier, and whose `issuer`, if given, is this realm's;
+* the `act` chain of the caller's own access token (as OAuth 2.0 Token
+  Exchange writes it), link for link: `client.actor.id` against the first
+  `act.sub`, each nested `act.sub` against the next, and any `issuer` or
+  `iss` given against the token's.
+
+Anything else is refused `400`, and so is a malformed actor or source: a
+link without its id, a chain deeper than 8, or an `external_url` that is
+not `https`. `external_url` is recorded and never fetched.
+
+The verified chain and the source are kept on the request, named in its
+audit row, and shown to the approvers on the portal and the console. They
+are context for the decision. Neither becomes an XACML fact, so the
+approval question and the re-evaluation are unchanged.
+`subject.properties.act` stays outside the binding, as the profile says
+today. A pending revision of the draft would bring it back in, and this
+section will change if that is adopted. While the setting is off,
+`client.actor` and `client.source` are accepted and never read.
+
 ### Submitting, polling and cancelling
 
 The same caller door and the `AUTHZEN_PEPS` role as an evaluation apply.
@@ -1354,6 +1394,7 @@ live source; this table is a copy.
 | `authzen.accessRequestDisplay` | `STS_AUTHZEN_ACCESS_REQUEST_DISPLAY` | `false` | A requestable denial carries `access_request.display` and a Task Handle `task.display` (see *Display hints*) |
 | `authzen.accessRequestForm` | `STS_AUTHZEN_ACCESS_REQUEST_FORM` | `false` | A recorded requestable denial carries `form_url`, the portal's `/portal/access-request`, and a Task Handle `links.ticket` (see *The hosted form and the ticket*) |
 | `authzen.accessRequestCatalogs` | `STS_AUTHZEN_ACCESS_REQUEST_CATALOGS` | `false` | A recorded requestable denial whose advice lists entitlements carries `request_catalogs_url`, and a submission must choose one (see *Catalogs*) |
+| `authzen.accessRequestActor` | `STS_AUTHZEN_ACCESS_REQUEST_ACTOR` | `false` | A submission's `client.actor` chain is verified against the caller's credential, and `client.source` is recorded (see *Acting parties*) |
 | `authzen.callbackAttempts` | `STS_AUTHZEN_CALLBACK_ATTEMPTS` | `5` | How many times a finished access request's callback is sent, the first included. `1` is one attempt. An application's `appAuthzenCallbackConfig` may set another bound for one URL |
 | `authzen.callbackBackoffS` | `STS_AUTHZEN_CALLBACK_BACKOFF_S` | `60` | Seconds to wait after the first failed callback; each later wait doubles, up to a day. The job runs every 60 seconds, so a shorter wait is not offered. An application's `appAuthzenCallbackConfig` may set a longer wait for one URL |
 | `authzen.externalPdp` | `STS_AUTHZEN_EXTERNAL_PDP` | `false` | Ask an external PDP before issuing an OAuth access token for a token exchange (see *Asking an external PDP*) |
@@ -1385,8 +1426,9 @@ live source; this table is a copy.
 
 None of these is advertised in the metadata:
 
-* Of the Access Request and Approval Profile: the BULK and ACTOR
-  companions, and of the CATALOG companion `scope_params`, `granted`,
+* Of the Access Request and Approval Profile: the BULK companion; of the
+  ACTOR companion, approval routing by an actor and proofs of a chain
+  other than the caller's own credential; and of the CATALOG companion `scope_params`, `granted`,
   `risk_level`, `owner` and agent-protocol catalogs. A denial carries
   `request_schema_url` and, when switched on, `display`, `form_url` and
   `request_catalogs_url`. It may be submitted by `evaluation_id` or

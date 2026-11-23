@@ -8547,6 +8547,14 @@
     "en": "1f38cbb80e80bafc",
     "text": "ملف AuthZEN Access Request Catalog (#1204): يحمل الرفض القابل للطلب المسجَّل الذي يسرد الـ advice فيه قيم urn:sts:xacml:advice:access-request:entitlement الحقل request_catalogs_url، ويجيب Catalogs Document وCatalog Endpoint الخاصان به المستدعي الذي أُجيب بالرفض، ويجب أن يختار الطلب أحد الاستحقاقات في requested_access.entitlement، وتحمله الموافقة إلى السياسة حقيقةً موثوقة. عند الإيقاف تُتجاهل استحقاقات الـ advice ويجيب نقطتا النهاية بـ 501."
   },
+  "authzen.accessRequestActor|label": {
+    "en": "746cf58e932ffdab",
+    "text": "الأطراف الفاعلة في طلبات الوصول"
+  },
+  "authzen.accessRequestActor|description": {
+    "en": "2ad9ec45c4e1ebfe",
+    "text": "ملف AuthZEN Actor Delegation (#1204): يُتحقق من سلسلة client.actor في طلب الوصول مقابل بيانات اعتماد المستدعي نفسه (حلقة هي المستدعي نفسه، أو سلسلة act في رمز الوصول الخاص به) وتُرفض خلاف ذلك، ويُسجَّل client.source. يُعرض كلاهما على المعتمدين وفي سجل التدقيق، ولا يكون أيٌّ منهما حقيقةً في السياسة. عند الإيقاف يُقبل كلاهما ولا يُقرأ أبدًا."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

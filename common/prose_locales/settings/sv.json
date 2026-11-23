@@ -8547,6 +8547,14 @@
     "en": "1f38cbb80e80bafc",
     "text": "AuthZEN Access Request Catalog-profilen (#1204): ett registrerat begärbart avslag vars advice listar värden urn:sts:xacml:advice:access-request:entitlement bär request_catalogs_url, dess Catalogs Document och Catalog Endpoint svarar den anropare som avslaget gavs till, en begäran måste välja en av behörigheterna i requested_access.entitlement, och godkännandet för den till policyn som ett betrott faktum. Av: advicens behörigheter ignoreras och de två slutpunkterna svarar 501."
   },
+  "authzen.accessRequestActor|label": {
+    "en": "746cf58e932ffdab",
+    "text": "Agerande parter i åtkomstbegäranden"
+  },
+  "authzen.accessRequestActor|description": {
+    "en": "2ad9ec45c4e1ebfe",
+    "text": "AuthZEN Actor Delegation-profilen (#1204): en åtkomstbegärans client.actor-kedja verifieras mot anroparens egna autentiseringsuppgift (en länk som är anroparen själv, eller act-kedjan i dess egen åtkomsttoken) och nekas annars, och client.source registreras. Båda visas för godkännarna och i granskningsloggen, och ingen av dem är ett policyfaktum. Av: båda godtas och läses aldrig."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

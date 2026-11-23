@@ -682,7 +682,7 @@ const SPECS: Spec[] = [
               'authzen.accessRequestDisplay is on; form_url, the portal\'s ' +
               'hosted form where the denial\'s subject submits it, and ' +
               'links.ticket, while authzen.accessRequestForm is on. ' +
-              'Missing: the BULK and ACTOR companions.' },
+              'Missing: the BULK companion.' },
   { id: 'authzen-arap-callback',
     name: 'AuthZEN Callback Notifications Profile 1.0 (draft)',
     where: 'OpenID Foundation AuthZEN WG',
@@ -712,6 +712,20 @@ const SPECS: Spec[] = [
               'the approval. Missing: scope_params (one catalog has nothing ' +
               'to scope by), granted, risk_level and owner, and the agent ' +
               'protocol catalogs.' },
+  { id: 'authzen-arap-actor',
+    name: 'AuthZEN Actor Delegation Profile 1.0 (draft)',
+    where: 'OpenID Foundation AuthZEN WG',
+    url: 'https://openid.github.io/authzen/' +
+         'authzen-access-request-actor-profile-1_0.html',
+    coverage: 'partial: client.actor, its id, issuer and type and the ' +
+              'nested act chain, verified against the caller\'s own ' +
+              'credential (one link that is the caller itself, or the act ' +
+              'chain of its own access token, link for link) and refused ' +
+              'otherwise, while authzen.accessRequestActor is on; ' +
+              'client.source recorded as audit metadata; both shown to ' +
+              'the approvers and never a policy fact. Missing: approval ' +
+              'routing by an actor in the chain, and signed assertions or ' +
+              'deployment policies as proof of a chain.' },
   { id: 'xacmljson', name: 'JSON Profile of XACML 3.0 v1.1',
     where: 'OASIS',
     url: 'https://docs.oasis-open.org/xacml/xacml-json-http/v1.1/os/' +
@@ -10986,7 +11000,7 @@ const PROTOCOLS: Protocol[] = [
           'OASIS conformance suite rather than to a test written here.' },
   { name: 'AuthZEN', groups: ['AuthZEN'],
     specs: ['authzen10', 'authzen-arap', 'authzen-arap-callback',
-            'authzen-arap-catalog'],
+            'authzen-arap-catalog', 'authzen-arap-actor'],
     what: 'The AuthZEN Authorization API over the XACML engine: a Policy ' +
           'Enforcement Point asks one question per access and is told true ' +
           'or false, decided against the realm\'s root policy. An ADAPTER: ' +

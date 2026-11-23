@@ -9,6 +9,7 @@
   "application": "Anwendung",
   "requester": "Gefragt von",
   "entitlement": "Angeforderter Zugriff",
+  "actor": "Gehandelt durch",
   "waits": "Sie wartet bis {when}.",
   "approve": "Genehmigen",
   "deny": "Ablehnen",

@@ -16411,6 +16411,18 @@ const SETTINGS = [
                  'approval carries it to the policy as a trusted fact. ' +
                  'Off, the advice\'s entitlements are ignored and the two ' +
                  'endpoints answer 501.' },
+  { key: 'authzen.accessRequestActor', group: 'AuthZEN',
+    label: 'Acting parties on access requests',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_ACTOR', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'The AuthZEN Actor Delegation Profile (#1204): an access ' +
+                 'request\'s client.actor chain is verified against the ' +
+                 'caller\'s own credential (one link that is the caller ' +
+                 'itself, or the act chain of its own access token) and ' +
+                 'refused otherwise, and client.source is recorded. Both ' +
+                 'are shown to the approvers and the audit log, and ' +
+                 'neither is a policy fact. Off, both are accepted and ' +
+                 'never read.' },
   { key: 'authzen.callbackAttempts', group: 'AuthZEN',
     label: 'Access request callback attempts',
     env: 'STS_AUTHZEN_CALLBACK_ATTEMPTS', type: 'int',

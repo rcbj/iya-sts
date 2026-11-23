@@ -100,8 +100,8 @@
     "text": "partial：访问评估 API（第 6 节），由 XACML 引擎依据领域根策略、通过每个领域的属性目录作出决定，支持 X-Request-ID 和第 11.3 节的质询；访问批量评估 API（第 7 节）及其三种语义；PDP 元数据（第 9 节）的两种形式，包括 signed_metadata；面向声明了类型的 PEP 的 Obligations Profile 草案；以及针对本服务自有的人员、应用程序、API、委托关系和策略操作的三个搜索 API（第 8 节），分页且不具传递性。缺失：搜索中逐结果的 obligations，以及仍为草案的 OAuth 配置文件。"
   },
   "stsmetadata.specs.authzen-arap.coverage": {
-    "en": "fd8e9c9fe5c89141",
-    "text": "partial：可申请的拒绝（context.access_request、evaluation_id、evaluated_at、reason），即领域策略用 access-request 建议标记的 Deny，通过本领域签名的 binding_token 按值绑定（内联声明和 binding_hash），并通过拒绝记录按引用绑定；带 Idempotency-Key 的提交、201 或 202 以及 Task Handle；带 Retry-After 的任务状态端点；通过 POST 或 DELETE 取消；六种状态；reevaluate 完成模式、在可信状态中解析的 approval.id、签发并验证的 approval.state（仍需查找），以及以可信事实到达策略的批准；next_action 和五种原因；每种问题类型；元数据成员、jwks_uri 和能力；可申请拒绝上的 request_schema_url，即同源的提交可选补充内容的 JSON Schema；在 authzen.accessRequestDisplay 开启时，可申请拒绝和 Task Handle 上的 display，使用 advice 自己的措辞或服务以所请求语言给出的措辞。在 authzen.accessRequestForm 开启时，提供 form_url（拒绝的主体在其中提交申请的门户托管表单）和 links.ticket。缺少：BULK 和 ACTOR 配套规范。"
+    "en": "07c3ff344e2ee6dc",
+    "text": "partial：可申请的拒绝（context.access_request、evaluation_id、evaluated_at、reason），即领域策略用 access-request 建议标记的 Deny，通过本领域签名的 binding_token 按值绑定（内联声明和 binding_hash），并通过拒绝记录按引用绑定；带 Idempotency-Key 的提交、201 或 202 以及 Task Handle；带 Retry-After 的任务状态端点；通过 POST 或 DELETE 取消；六种状态；reevaluate 完成模式、在可信状态中解析的 approval.id、签发并验证的 approval.state（仍需查找），以及以可信事实到达策略的批准；next_action 和五种原因；每种问题类型；元数据成员、jwks_uri 和能力；可申请拒绝上的 request_schema_url，即同源的提交可选补充内容的 JSON Schema；在 authzen.accessRequestDisplay 开启时，可申请拒绝和 Task Handle 上的 display，使用 advice 自己的措辞或服务以所请求语言给出的措辞。在 authzen.accessRequestForm 开启时，提供 form_url（拒绝的主体在其中提交申请的门户托管表单）和 links.ticket。缺少：BULK 配套规范。"
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
     "en": "ca5109eae0e95b17",
@@ -110,6 +110,10 @@
   "stsmetadata.specs.authzen-arap-catalog.coverage": {
     "en": "10acf494ad5f24ef",
     "text": "partial：在 authzen.accessRequestCatalogs 开启时，策略 advice 列出权限的已记录可申请拒绝上的 request_catalogs_url；只有一个字段 requested_access.entitlement 的 Catalogs Document；带 q、cursor 和 limit 的 Catalog Endpoint，只答复该拒绝所答复的调用方；在提交时校验、并作为批准的可信事实带给策略的值。缺少：scope_params（单个目录没有可据以限定的内容）、granted、risk_level 和 owner，以及通过代理协议提供的目录。"
+  },
+  "stsmetadata.specs.authzen-arap-actor.coverage": {
+    "en": "3b5295559cb3ed65",
+    "text": "partial：在 authzen.accessRequestActor 开启时，client.actor（其 id、issuer、type 及嵌套的 act 链）依据调用方自己的凭据校验（调用方本身这一环，或其自身访问令牌的 act 链，逐环比对），否则拒绝；client.source 作为审计元数据记录；两者都展示给审批人，且从不作为策略事实。缺少：按链中某个代理方路由审批，以及以签名断言或部署策略证明链。"
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",

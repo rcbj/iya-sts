@@ -8547,6 +8547,14 @@
     "en": "1f38cbb80e80bafc",
     "text": "Ang AuthZEN Access Request Catalog Profile (#1204): ang isang naitalang pagtangging maaaring hilingin na ang advice ay naglilista ng mga halagang urn:sts:xacml:advice:access-request:entitlement ay may request_catalogs_url, sumasagot ang Catalogs Document at Catalog Endpoint nito sa tumawag na sinagot ng pagtanggi, kailangang pumili ang isang pagsusumite ng isa sa mga entitlement sa requested_access.entitlement, at dinadala ito ng pag-apruba sa patakaran bilang pinagkakatiwalaang katotohanan. Kapag naka-off, binabalewala ang mga entitlement ng advice at sumasagot ng 501 ang dalawang endpoint."
   },
+  "authzen.accessRequestActor|label": {
+    "en": "746cf58e932ffdab",
+    "text": "Mga kumikilos na partido sa mga kahilingan sa access"
+  },
+  "authzen.accessRequestActor|description": {
+    "en": "2ad9ec45c4e1ebfe",
+    "text": "Ang AuthZEN Actor Delegation Profile (#1204): sinusuri ang client.actor chain ng isang kahilingan sa access laban sa sariling credential ng tumatawag (isang link na ang tumatawag mismo, o ang act chain ng sarili nitong access token) at tinatanggihan kung hindi, at itinatala ang client.source. Parehong ipinapakita sa mga tagapag-apruba at sa audit log, at wala sa mga ito ang katotohanan ng patakaran. Kapag naka-off, parehong tinatanggap at hindi kailanman binabasa."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

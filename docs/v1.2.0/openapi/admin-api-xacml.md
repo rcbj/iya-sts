@@ -1598,6 +1598,12 @@ Scope: `admin:read`.
 | `accessRequests.maxCallbacks` | integer |  |  |
 | `accessRequests.rows` | list |  |  |
 | `accessRequests.rows[].action` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
+| `accessRequests.rows[].actor` | object |  | The verified actor chain (#1204, the ACTOR companion): immediate actor first, and whether the caller itself or its token's act chain authorized it. |
+| `accessRequests.rows[].actor.chain` | list |  |  |
+| `accessRequests.rows[].actor.chain[].id` | string |  |  |
+| `accessRequests.rows[].actor.chain[].issuer` | string |  |  |
+| `accessRequests.rows[].actor.chain[].type` | string |  |  |
+| `accessRequests.rows[].actor.verifiedBy` | one of `caller`, `token` |  |  |
 | `accessRequests.rows[].application` | string, or null |  |  |
 | `accessRequests.rows[].approval` | object |  |  |
 | `accessRequests.rows[].approval.approvedAt` | number |  |  |
@@ -1637,6 +1643,10 @@ Scope: `admin:read`.
 | `accessRequests.rows[].justification` | string |  |  |
 | `accessRequests.rows[].requester` | string |  |  |
 | `accessRequests.rows[].resource` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
+| `accessRequests.rows[].source` | object |  | The submission's client.source, as recorded (#1204): audit metadata, never verified and never a policy fact. |
+| `accessRequests.rows[].source.external_url` | string |  |  |
+| `accessRequests.rows[].source.integration_id` | string |  |  |
+| `accessRequests.rows[].source.session_id` | string |  |  |
 | `accessRequests.rows[].status` | string |  |  |
 | `accessRequests.rows[].subject` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
 | `apiObject` | boolean |  |  |
@@ -1808,6 +1818,12 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `task` | object |  |  |
 | `task.action` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
+| `task.actor` | object |  | The verified actor chain (#1204, the ACTOR companion): immediate actor first, and whether the caller itself or its token's act chain authorized it. |
+| `task.actor.chain` | list |  |  |
+| `task.actor.chain[].id` | string |  |  |
+| `task.actor.chain[].issuer` | string |  |  |
+| `task.actor.chain[].type` | string |  |  |
+| `task.actor.verifiedBy` | one of `caller`, `token` |  |  |
 | `task.application` | string, or null |  |  |
 | `task.approval` | object |  |  |
 | `task.approval.approvedAt` | number |  |  |
@@ -1847,6 +1863,10 @@ Scope: `admin:write`.
 | `task.justification` | string |  |  |
 | `task.requester` | string |  |  |
 | `task.resource` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
+| `task.source` | object |  | The submission's client.source, as recorded (#1204): audit metadata, never verified and never a policy fact. |
+| `task.source.external_url` | string |  |  |
+| `task.source.integration_id` | string |  |  |
+| `task.source.session_id` | string |  |  |
 | `task.status` | string |  |  |
 | `task.subject` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
 
@@ -1861,6 +1881,12 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `task` | object |  |  |
 | `task.action` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
+| `task.actor` | object |  | The verified actor chain (#1204, the ACTOR companion): immediate actor first, and whether the caller itself or its token's act chain authorized it. |
+| `task.actor.chain` | list |  |  |
+| `task.actor.chain[].id` | string |  |  |
+| `task.actor.chain[].issuer` | string |  |  |
+| `task.actor.chain[].type` | string |  |  |
+| `task.actor.verifiedBy` | one of `caller`, `token` |  |  |
 | `task.application` | string, or null |  |  |
 | `task.approval` | object |  |  |
 | `task.approval.approvedAt` | number |  |  |
@@ -1900,6 +1926,10 @@ Scope: `admin:write`.
 | `task.justification` | string |  |  |
 | `task.requester` | string |  |  |
 | `task.resource` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
+| `task.source` | object |  | The submission's client.source, as recorded (#1204): audit metadata, never verified and never a policy fact. |
+| `task.source.external_url` | string |  |  |
+| `task.source.integration_id` | string |  |  |
+| `task.source.session_id` | string |  |  |
 | `task.status` | string |  |  |
 | `task.subject` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
 
@@ -1939,6 +1969,12 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `task` | object |  |  |
 | `task.action` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
+| `task.actor` | object |  | The verified actor chain (#1204, the ACTOR companion): immediate actor first, and whether the caller itself or its token's act chain authorized it. |
+| `task.actor.chain` | list |  |  |
+| `task.actor.chain[].id` | string |  |  |
+| `task.actor.chain[].issuer` | string |  |  |
+| `task.actor.chain[].type` | string |  |  |
+| `task.actor.verifiedBy` | one of `caller`, `token` |  |  |
 | `task.application` | string, or null |  |  |
 | `task.approval` | object |  |  |
 | `task.approval.approvedAt` | number |  |  |
@@ -1978,6 +2014,10 @@ Scope: `admin:write`.
 | `task.justification` | string |  |  |
 | `task.requester` | string |  |  |
 | `task.resource` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
+| `task.source` | object |  | The submission's client.source, as recorded (#1204): audit metadata, never verified and never a policy fact. |
+| `task.source.external_url` | string |  |  |
+| `task.source.integration_id` | string |  |  |
+| `task.source.session_id` | string |  |  |
 | `task.status` | string |  |  |
 | `task.subject` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
 
@@ -1992,6 +2032,12 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `task` | object |  |  |
 | `task.action` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
+| `task.actor` | object |  | The verified actor chain (#1204, the ACTOR companion): immediate actor first, and whether the caller itself or its token's act chain authorized it. |
+| `task.actor.chain` | list |  |  |
+| `task.actor.chain[].id` | string |  |  |
+| `task.actor.chain[].issuer` | string |  |  |
+| `task.actor.chain[].type` | string |  |  |
+| `task.actor.verifiedBy` | one of `caller`, `token` |  |  |
 | `task.application` | string, or null |  |  |
 | `task.approval` | object |  |  |
 | `task.approval.approvedAt` | number |  |  |
@@ -2031,6 +2077,10 @@ Scope: `admin:write`.
 | `task.justification` | string |  |  |
 | `task.requester` | string |  |  |
 | `task.resource` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
+| `task.source` | object |  | The submission's client.source, as recorded (#1204): audit metadata, never verified and never a policy fact. |
+| `task.source.external_url` | string |  |  |
+| `task.source.integration_id` | string |  |  |
+| `task.source.session_id` | string |  |  |
 | `task.status` | string |  |  |
 | `task.subject` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
 
@@ -2070,6 +2120,12 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `task` | object |  |  |
 | `task.action` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
+| `task.actor` | object |  | The verified actor chain (#1204, the ACTOR companion): immediate actor first, and whether the caller itself or its token's act chain authorized it. |
+| `task.actor.chain` | list |  |  |
+| `task.actor.chain[].id` | string |  |  |
+| `task.actor.chain[].issuer` | string |  |  |
+| `task.actor.chain[].type` | string |  |  |
+| `task.actor.verifiedBy` | one of `caller`, `token` |  |  |
 | `task.application` | string, or null |  |  |
 | `task.approval` | object |  |  |
 | `task.approval.approvedAt` | number |  |  |
@@ -2109,6 +2165,10 @@ Scope: `admin:write`.
 | `task.justification` | string |  |  |
 | `task.requester` | string |  |  |
 | `task.resource` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
+| `task.source` | object |  | The submission's client.source, as recorded (#1204): audit metadata, never verified and never a policy fact. |
+| `task.source.external_url` | string |  |  |
+| `task.source.integration_id` | string |  |  |
+| `task.source.session_id` | string |  |  |
 | `task.status` | string |  |  |
 | `task.subject` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
 
@@ -2123,6 +2183,12 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `task` | object |  |  |
 | `task.action` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
+| `task.actor` | object |  | The verified actor chain (#1204, the ACTOR companion): immediate actor first, and whether the caller itself or its token's act chain authorized it. |
+| `task.actor.chain` | list |  |  |
+| `task.actor.chain[].id` | string |  |  |
+| `task.actor.chain[].issuer` | string |  |  |
+| `task.actor.chain[].type` | string |  |  |
+| `task.actor.verifiedBy` | one of `caller`, `token` |  |  |
 | `task.application` | string, or null |  |  |
 | `task.approval` | object |  |  |
 | `task.approval.approvedAt` | number |  |  |
@@ -2162,6 +2228,10 @@ Scope: `admin:write`.
 | `task.justification` | string |  |  |
 | `task.requester` | string |  |  |
 | `task.resource` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
+| `task.source` | object |  | The submission's client.source, as recorded (#1204): audit metadata, never verified and never a policy fact. |
+| `task.source.external_url` | string |  |  |
+| `task.source.integration_id` | string |  |  |
+| `task.source.session_id` | string |  |  |
 | `task.status` | string |  |  |
 | `task.subject` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
 
@@ -2269,6 +2339,12 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `task` | object |  |  |
 | `task.action` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
+| `task.actor` | object |  | The verified actor chain (#1204, the ACTOR companion): immediate actor first, and whether the caller itself or its token's act chain authorized it. |
+| `task.actor.chain` | list |  |  |
+| `task.actor.chain[].id` | string |  |  |
+| `task.actor.chain[].issuer` | string |  |  |
+| `task.actor.chain[].type` | string |  |  |
+| `task.actor.verifiedBy` | one of `caller`, `token` |  |  |
 | `task.application` | string, or null |  |  |
 | `task.approval` | object |  |  |
 | `task.approval.approvedAt` | number |  |  |
@@ -2308,6 +2384,10 @@ Scope: `admin:write`.
 | `task.justification` | string |  |  |
 | `task.requester` | string |  |  |
 | `task.resource` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
+| `task.source` | object |  | The submission's client.source, as recorded (#1204): audit metadata, never verified and never a policy fact. |
+| `task.source.external_url` | string |  |  |
+| `task.source.integration_id` | string |  |  |
+| `task.source.session_id` | string |  |  |
 | `task.status` | string |  |  |
 | `task.subject` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
 
@@ -2322,6 +2402,12 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `task` | object |  |  |
 | `task.action` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
+| `task.actor` | object |  | The verified actor chain (#1204, the ACTOR companion): immediate actor first, and whether the caller itself or its token's act chain authorized it. |
+| `task.actor.chain` | list |  |  |
+| `task.actor.chain[].id` | string |  |  |
+| `task.actor.chain[].issuer` | string |  |  |
+| `task.actor.chain[].type` | string |  |  |
+| `task.actor.verifiedBy` | one of `caller`, `token` |  |  |
 | `task.application` | string, or null |  |  |
 | `task.approval` | object |  |  |
 | `task.approval.approvedAt` | number |  |  |
@@ -2361,6 +2447,10 @@ Scope: `admin:write`.
 | `task.justification` | string |  |  |
 | `task.requester` | string |  |  |
 | `task.resource` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
+| `task.source` | object |  | The submission's client.source, as recorded (#1204): audit metadata, never verified and never a policy fact. |
+| `task.source.external_url` | string |  |  |
+| `task.source.integration_id` | string |  |  |
+| `task.source.session_id` | string |  |  |
 | `task.status` | string |  |  |
 | `task.subject` | any JSON |  | What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them. |
 

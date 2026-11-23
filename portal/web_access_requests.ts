@@ -97,7 +97,14 @@ class AccessRequestPages {
       // The catalog item the request chose (#1204), when it chose one.
       (row.entitlement ? '<tr><th>' +
         t.html('portalAccessRequests.entitlement') + '</th><td>' +
-        code(row.entitlement) + '</td></tr>' : '') + '</table>' +
+        code(row.entitlement) + '</td></tr>' : '') +
+      // The verified actor chain (#1204, the ACTOR companion), immediate
+      // actor first.
+      (row.actor && Array.isArray(row.actor.chain) && row.actor.chain.length
+        ? '<tr><th>' + t.html('portalAccessRequests.actor') + '</th><td>' +
+          row.actor.chain.map(function (one: Json): string {
+            return code(one.id);
+          }).join(' → ') + '</td></tr>' : '') + '</table>' +
       '<p class="sub">' + when + '</p>' + buttons + '</div>';
   }
 

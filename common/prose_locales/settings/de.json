@@ -8547,6 +8547,14 @@
     "en": "1f38cbb80e80bafc",
     "text": "Das AuthZEN Access Request Catalog Profile (#1204): Eine aufgezeichnete anforderbare Ablehnung, deren Advice Werte urn:sts:xacml:advice:access-request:entitlement aufführt, trägt request_catalogs_url, ihr Catalogs Document und ihr Catalog Endpoint antworten dem Aufrufer, dem die Ablehnung geantwortet wurde, eine Einreichung muss eine der Berechtigungen in requested_access.entitlement wählen, und die Genehmigung bringt sie als vertrauenswürdige Tatsache zur Richtlinie. Aus: Die Berechtigungen des Advice werden ignoriert und die beiden Endpunkte antworten 501."
   },
+  "authzen.accessRequestActor|label": {
+    "en": "746cf58e932ffdab",
+    "text": "Handelnde Parteien bei Zugriffsanfragen"
+  },
+  "authzen.accessRequestActor|description": {
+    "en": "2ad9ec45c4e1ebfe",
+    "text": "Das AuthZEN Actor Delegation Profile (#1204): Die client.actor-Kette einer Zugriffsanfrage wird gegen den eigenen Berechtigungsnachweis des Aufrufers geprüft (ein Glied, das der Aufrufer selbst ist, oder die act-Kette seines eigenen Zugriffstokens) und sonst abgelehnt, und client.source wird aufgezeichnet. Beide werden den Genehmigern und dem Audit-Log gezeigt, und keines ist eine Richtlinientatsache. Aus: Beide werden angenommen und nie gelesen."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

@@ -26651,6 +26651,18 @@ const CODES = [
     summary: 'The access request catalogs were called while ' +
       'authzen.accessRequestCatalogs (or the profile) is off (#1204).',
     spec: 'none — 501 problem+json' },
+  { code: 'STS-AUTHZEN-0153',
+    summary: 'An access request\'s client.actor named a chain the caller\'s ' +
+      'own credential does not authorize: neither one link that is the ' +
+      'caller itself nor, link for link, the act chain of its own access ' +
+      'token (#1204, the ACTOR companion).',
+    spec: 'the ACTOR companion\'s section 3.2; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0154',
+    summary: 'An access request\'s client.actor or client.source was ' +
+      'malformed: a link without its id or sub, a non-string or overlong ' +
+      'member, a chain deeper than 8, or an external_url that is not https ' +
+      '(#1204).',
+    spec: 'the ACTOR companion\'s section 3.1; 400 problem+json' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +

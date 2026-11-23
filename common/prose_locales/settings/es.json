@@ -8547,6 +8547,14 @@
     "en": "1f38cbb80e80bafc",
     "text": "El perfil AuthZEN Access Request Catalog (#1204): una denegación solicitable registrada cuyo advice enumera valores urn:sts:xacml:advice:access-request:entitlement lleva request_catalogs_url, su Catalogs Document y su Catalog Endpoint responden al llamador al que se respondió la denegación, una solicitud debe elegir uno de los derechos en requested_access.entitlement, y la aprobación lo lleva a la política como hecho de confianza. Desactivado, los derechos del advice se ignoran y los dos puntos de conexión responden 501."
   },
+  "authzen.accessRequestActor|label": {
+    "en": "746cf58e932ffdab",
+    "text": "Partes que actúan en las solicitudes de acceso"
+  },
+  "authzen.accessRequestActor|description": {
+    "en": "2ad9ec45c4e1ebfe",
+    "text": "El perfil AuthZEN Actor Delegation (#1204): la cadena client.actor de una solicitud de acceso se verifica con la propia credencial del llamador (un eslabón que es el propio llamador, o la cadena act de su propio token de acceso) y se rechaza en otro caso, y client.source se registra. Ambos se muestran a los aprobadores y al registro de auditoría, y ninguno es un hecho de la política. Desactivado, ambos se aceptan y nunca se leen."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

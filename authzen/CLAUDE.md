@@ -1005,7 +1005,19 @@ header argues each. What a maintainer needs quickly:
   PEP's submission and the form's alike. `factsOf()` hands it to
   `xacml_request.js` as `urn:sts:xacml:authzen:approved-entitlement`,
   added only when one was chosen. A query string is never logged.
-* Not built: BULK, ACTOR; of CATALOG, `scope_params`, `granted`,
+* **The ACTOR companion (#1204)**, behind `authzen.accessRequestActor`
+  (off by default). `actorOf()` verifies `client.actor` against the
+  caller's own credential, which is the PEP's: one link that IS the
+  caller (its DN, client_id or identifier), or link for link the `act`
+  chain of its own access token. The bearer door carries the verified
+  token's `iss` and `act` on the caller for this. Anything else is 0153,
+  and a malformed actor or source is 0154. Section 3.2's MUST reject
+  governs its MAY retain, so nothing unverified is kept. `client.source`
+  is audit metadata only, and `external_url` is never dialled. The chain
+  is context for the approvers and the audit row, and never an XACML
+  fact. openid/authzen#756 (pending) would put `subject.properties.act`
+  into the binding; `bound()` still strips it.
+* Not built: BULK; of ACTOR, routing by an actor; of CATALOG, `scope_params`, `granted`,
   `risk_level`, `owner` and agent-protocol catalogs.
   `tests/authzen_access_request.js` holds it in process and
   `tests/protocol/sts_authzen.js` section 9 over HTTP.
@@ -1122,4 +1134,6 @@ record does not hold, 0146 a person who is not the subject, 0147 a
 window that has passed, 0148 the form off; 0149–0152 the catalogs
 (#1204): 0149 a catalog call for a denial that is not the caller's, 0150 a
 cursor this endpoint did not issue, 0151 a submission's entitlement
-missing or not listed, 0152 the catalogs off.
+missing or not listed, 0152 the catalogs off; 0153–0154 the actor
+(#1204): 0153 a chain the caller's credential does not authorize, 0154 a
+malformed `client.actor` or `client.source`.
