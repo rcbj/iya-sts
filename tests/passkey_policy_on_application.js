@@ -411,10 +411,13 @@ function refusedNew(t, drawn, names) {
           /name="precedence" min="1" max="1000" value="9"/.test(form) &&
           /name="minPinLength"[^>]*value="12"/.test(form) &&
           /name="allowUsernameless"[^>]*value="TRUE" checked/.test(form) &&
+          /name="requireUsernameless"[^>]*value="FALSE" checked/.test(form) &&
+          !/name="requireUsernameless"[^>]*value="TRUE" checked/.test(form) &&
           /value="disallow" selected/.test(form) &&
           form.indexOf(why) >= 0,
           'E4. the New policy form still holds the name, the precedence, ' +
-          'the PIN length, the ticked box, the chosen enum and the refusal');
+          'the PIN length, Yes on the chosen boolean, No on one that was ' +
+          'not, the chosen enum and the refusal');
   const namedAt = html.indexOf('id="passkey-profile-' + names.group + '"');
   const namedForm = html.slice(namedAt, html.indexOf('</form>', namedAt));
   t.check(namedForm.indexOf('value="12"') < 0 &&

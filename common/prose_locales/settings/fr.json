@@ -232,8 +232,8 @@
     "text": "Journaliser le mot de passe d’amorçage généré"
   },
   "admin.logBootstrapPassword|description": {
-    "en": "856dddf1ed8c2407",
-    "text": "Mode produit uniquement. Désactivé, par défaut, le mot de passe généré pour le premier administrateur est écrit dans le fichier bootstrap-admin-password de persistence.dataDir, lisible par ce seul service, et le journal indique où. Activé, il est écrit dans le journal du service. AVERTISSEMENT : activé, l’exigence 16.2.5 d’ASVS 5.0.0 n’est pas respectée, car un identifiant atteint le journal. Un démarrage ultérieur supprime ce fichier, dès que quelqu’un détient déjà un identifiant."
+    "en": "8591cfda7dde139a",
+    "text": "Mode produit uniquement. Désactivé, par défaut, le mot de passe généré pour le premier administrateur est écrit dans le fichier bootstrap-admin-password de persistence.dataDir, lisible par ce seul service, et le journal indique où. Activé, il est écrit dans le journal du service. AVERTISSEMENT : activé, l’exigence 16.2.5 d’ASVS 5.0.0 n’est pas respectée, car un identifiant atteint le journal. Le fichier d’un domaine de confiance ajoute à ce nom un trait d’union et l’identifiant du domaine. Un démarrage ultérieur supprime un fichier dès que le mot de passe qu’il contient n’ouvre plus son compte."
   },
   "oauth2.allowConfidentialWithoutPkce|label": {
     "en": "c33a0a31a1d623b1",
@@ -424,8 +424,8 @@
     "text": "Autoriser un nom d’administrateur par défaut en production"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "7375f4bf636f5366",
-    "text": "Mode produit uniquement. Désactivé, par défaut, un administrateur d’amorçage nommé admin, root, sa ou administrator, ou sans nom, reçoit un nom généré imprévisible, écrit avec son mot de passe dans le fichier bootstrap-admin-password de persistence.dataDir au premier démarrage (voir admin.logBootstrapPassword). Activé, le nom configuré est utilisé tel quel. AVERTISSEMENT : l’exigence 6.3.2 d’ASVS 5.0.0 interdit un nom de compte par défaut ; laissez ce réglage désactivé hors d’une pile de test. Un démarrage ultérieur supprime ce fichier, dès que quelqu’un détient déjà un identifiant."
+    "en": "7007ae597c41e813",
+    "text": "Mode produit uniquement. Désactivé, par défaut, un administrateur d’amorçage nommé admin, root, sa ou administrator, ou sans nom, reçoit un nom généré imprévisible, écrit avec son mot de passe dans le fichier bootstrap-admin-password de persistence.dataDir au premier démarrage (voir admin.logBootstrapPassword). Activé, le nom configuré est utilisé tel quel. AVERTISSEMENT : l’exigence 6.3.2 d’ASVS 5.0.0 interdit un nom de compte par défaut ; laissez ce réglage désactivé hors d’une pile de test. Le fichier d’un domaine de confiance ajoute à ce nom un trait d’union et l’identifiant du domaine. Un démarrage ultérieur supprime un fichier dès que le mot de passe qu’il contient n’ouvre plus son compte."
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "Compte administrateur d’amorçage"
   },
   "admin.bootstrapUsername|description": {
-    "en": "8b69eb9d4cb0b130",
-    "text": "Le nom d’utilisateur de l’administrateur d’amorçage (2026-09-13), dans le domaine PAR DÉFAUT et, depuis le 2026-09-14, dans chaque domaine de confiance, où il n’administre que ce domaine : créé au démarrage s’il est absent, membre des deux rôles de la console, obligé de changer son mot de passe à sa première connexion, et impossible à supprimer ou à renommer. Tant qu’il ne s’est pas connecté une première fois à /admin, toute personne connectée peut utiliser la console (admin.openWhenEmpty). En développement, n’importe quel mot de passe le connecte, comme pour tout le monde. EN MODE PRODUIT, c’est aussi lui qui reçoit un mot de passe généré lorsque ce service démarre et que PERSONNE dans le domaine ne détient d’identifiant ; le nom et ce mot de passe sont écrits une seule fois dans le fichier bootstrap-admin-password de persistence.dataDir, lisible uniquement par ce service (le journal indique où, et ne les contient lui-même qu’avec admin.logBootstrapPassword activé), et sont le seul moyen d’entrer dans un déploiement produit neuf. Le mot de passe généré n’est jamais écrit là où quelqu’un détient déjà un identifiant ; il ne peut donc écraser aucun mot de passe. Le changement obligatoire ne s’applique qu’à un compte que cette étape a CRÉÉ — un compte existant portant ce nom conserve son mot de passe et reçoit seulement les deux rôles. Un démarrage ultérieur supprime ce fichier, dès que quelqu’un détient déjà un identifiant."
+    "en": "938e9e0c7b3b97fa",
+    "text": "Le nom d’utilisateur de l’administrateur d’amorçage (2026-09-13), dans le domaine PAR DÉFAUT et, depuis le 2026-09-14, dans chaque domaine de confiance, où il n’administre que ce domaine : créé au démarrage s’il est absent, membre des deux rôles de la console, obligé de changer son mot de passe à sa première connexion, et impossible à supprimer ou à renommer. Tant qu’il ne s’est pas connecté une première fois à /admin, toute personne connectée peut utiliser la console (admin.openWhenEmpty). En développement, n’importe quel mot de passe le connecte, comme pour tout le monde. EN MODE PRODUIT, c’est aussi lui qui reçoit un mot de passe généré lorsque ce service démarre et que PERSONNE dans le domaine ne détient d’identifiant ; le nom et ce mot de passe sont écrits une seule fois dans le fichier bootstrap-admin-password de persistence.dataDir, lisible uniquement par ce service (le journal indique où, et ne les contient lui-même qu’avec admin.logBootstrapPassword activé), et sont le seul moyen d’entrer dans un déploiement produit neuf. Le mot de passe généré n’est jamais écrit là où quelqu’un détient déjà un identifiant ; il ne peut donc écraser aucun mot de passe. Le changement obligatoire ne s’applique qu’à un compte que cette étape a CRÉÉ — un compte existant portant ce nom conserve son mot de passe et reçoit seulement les deux rôles. Le fichier d’un domaine de confiance ajoute à ce nom un trait d’union et l’identifiant du domaine. Un démarrage ultérieur supprime un fichier dès que le mot de passe qu’il contient n’ouvre plus son compte."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -4024,16 +4024,16 @@
     "text": "Algorithmes de l’AC utilisateur SSH"
   },
   "pki.sshUserCaAlgorithms|description": {
-    "en": "bdb54445a0279b8d",
-    "text": "Les algorithmes que l’autorité de certification des certificats utilisateur SSH peut utiliser, par ordre de préférence. ssh-mldsa-65 est ML-DSA-65 (FIPS 204) sous un nom de fil que ce service définit, parce qu’OpenSSH n’en définit aucun : la clé publique et la signature sont brutes, dans la forme qu’utilise ssh-ed25519. La ligne OpenSSH TrustedUserCAKeys que ce service publie reste le premier algorithme classique de cette liste, ou ssh-ed25519 lorsque la liste ne nomme que ssh-mldsa-65. Un pair qui ne comprend pas ML-DSA continue de faire confiance à cette ligne. ssh-rsa (SHA-1) n’est pas offert. L’autorité ML-DSA n’est créée que lorsque ce moteur peut générer la clé ; sinon les certificats restent classiques (STS-PKI-0290 est enregistré et l’autorité classique répond encore)."
+    "en": "5c4c22c2ab500fd4",
+    "text": "Les algorithmes que l’autorité de certification des utilisateurs SSH peut utiliser, par ordre de préférence. ssh-mldsa-65 est ML-DSA-65 (FIPS 204) sous un nom de transport que ce service définit, car OpenSSH n’en définit aucun : la clé publique et la signature sont brutes, sous la forme qu’utilise ssh-ed25519. La ligne OpenSSH TrustedUserCAKeys que ce service publie reste le premier algorithme classique de cette liste, ou ssh-ed25519 lorsque la liste ne nomme que ssh-mldsa-65. Un pair qui ne comprend pas ML-DSA continue de faire confiance à cette ligne. La clé de l’autorité ML-DSA est publiée à GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65 ; OpenSSH standard ne sait pas encore vérifier un certificat ML-DSA. ssh-rsa (SHA-1) n’est pas proposé. L’autorité ML-DSA n’est créée que si cet environnement d’exécution peut générer la clé ; sinon les certificats restent classiques (STS-PKI-0290 est enregistré et l’autorité classique répond toujours), sauf si pki.sshUserCaPqcOnly est activé."
   },
   "pki.sshUserCaPqcOnly|label": {
     "en": "74aae1308361ba58",
     "text": "Les certificats utilisateur SSH sont uniquement post-quantiques"
   },
   "pki.sshUserCaPqcOnly|description": {
-    "en": "39b21e5b95f84da1",
-    "text": "Activé, un nouveau certificat utilisateur SSH est signé par l’autorité ML-DSA, et seulement lorsque cette autorité existe. La ligne TrustedUserCAKeys publiée reste la clé classique, afin qu’un client OpenSSH qui lui fait déjà confiance ne reçoive pas un algorithme qu’il ne peut pas analyser. Sur un moteur qui ne peut pas générer ML-DSA, le certificat reste classique et la demande n’échoue pas. Les certificats classiques déjà émis continuent d’être vérifiés. Ne peut pas être activé en même temps que pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Désactivé par défaut."
+    "en": "dcbf21b3230dcf07",
+    "text": "Activé, un nouveau certificat utilisateur SSH est signé par l’autorité ML-DSA et par rien d’autre. OpenSSH standard ne sait pas encore vérifier un certificat ML-DSA : seul un serveur SSH conçu pour vérifier ssh-mldsa-65, et qui fait confiance à la clé publiée à GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65, accepte ces certificats. La ligne par défaut à ce chemin reste la clé classique. Lorsque le domaine n’a pas d’autorité ML-DSA (cet environnement d’exécution ne sait pas générer ML-DSA, ou ssh-mldsa-65 n’est pas dans pki.sshUserCaAlgorithms), la demande est refusée (STS-PKI-0297) au lieu de recevoir un certificat classique. Les certificats classiques déjà émis restent vérifiables. Ne peut pas être activé en même temps que pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Désactivé par défaut."
   },
   "pki.sshUserCaPqcAlongsideClassical|label": {
     "en": "c3201f8841200c32",

@@ -1196,9 +1196,33 @@ class RequestWorker {
       log.debug("Leaving exit().");
       process.exit(0);
     };
-    const timer = setTimeout(exit, RELEASE_WAIT_MS);
+    // ITS OWN FLUSH SETTLES FIRST (#1934's follow-up). A worker retired
+    // because that flush was stuck, or stopped while one was out, would
+    // otherwise be gone RELEASE_WAIT_MS later with the statement still in
+    // flight and the writes in it — a revocation among them — nowhere but
+    // in this thread's memory. `settleOwnFlush()` waits for it to land or
+    // fail, bounded by the instant persistence gives it up on, which is the
+    // same instant the front process's retirement waits for; a flush that
+    // fails leaves its writes dirty for releaseOrigin()'s own flush below.
+    let timer: any = null;
+    const persistence = require('../persistence/persistence');
     Promise.resolve().then(function (): any {
-      return require('../persistence/persistence').releaseOrigin();
+      return typeof persistence.settleOwnFlush === 'function'
+        ? persistence.settleOwnFlush() : true;
+    }).then(function (settled: any): void {
+      if (!settled) {
+        log.error(errorCodes.tag('STS-WORKER-0057') + 'request_worker ' +
+                  WorkerChannel.id() + ': its own flush did not settle ' +
+                  'within the bound persistence gives it, so it exits with ' +
+                  'that flush still out; the writes in it may not have ' +
+                  'reached the store.');
+      }
+    }, function (e: any): void {
+      log.debug("Caught in RequestWorker.releaseThenExit(): " +
+                ((e && e.message) || e));
+    }).then(function (): any {
+      timer = setTimeout(exit, RELEASE_WAIT_MS);
+      return persistence.releaseOrigin();
     }).then(function (): void {
       clearTimeout(timer);
       exit();

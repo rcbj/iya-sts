@@ -2066,7 +2066,13 @@ refuses every read-your-write request for as long as that flush stays out —
 replace, the worker is marked `retiring` (out of `readyWorkers()`, so no
 request, session pin or scheduler run goes to it), sent `stop`, and ended
 past `RETIRE_DRAIN_MS` (8000, `stop()`'s default) if its drain waits on the
-commit that never comes (STS-WORKER-0056). `reap()` then forks the
+commit that never comes (STS-WORKER-0056). **Not while its own flush is out**
+(the follow-up of 2026-11-23): the ask comes only once that flush has been
+out four bounds (STS-STORE-0177) and carries `flushing.giveUpAt`, ten bounds
+after it began; the worker's drain waits for the flush to settle
+(`persistence.settleOwnFlush()`), and the front ends it no sooner than
+`RETIRE_DRAIN_MS` past `giveUpAt` (STS-WORKER-0057), so a flush that is only
+slow keeps its writes. `reap()` then forks the
 replacement into its slot. STS-WORKER-0055 names each, or says why the worker
 is kept. Its exit counts as a stopped exit, not a crash.
 
@@ -8079,7 +8085,8 @@ SLH-DSA has no mechanism here. `docs/v1.2.0/hsm.md` is the operator half.
   not require it back). The object answers `type`, `asymmetricKeyType` and
   `asymmetricKeyDetails` like a KeyObject, so the key set, its generations,
   the pool's key channel and the store needed no change, and **no schema
-  change** (1.1.1 is a patch release). Every signing door asks `isHsmKey()`
+  change** (none was needed; it was written while develop was 1.1.1, a
+  patch release). Every signing door asks `isHsmKey()`
   first: `signJws()` (jsonwebtoken's framing kept exactly — through
   `classicalSigningInput()`, or a throwaway key of the same kind whose
   signature is discarded), `signJwsAsync()` (`C_SignAsync`), `signXml()` (the
@@ -8215,12 +8222,17 @@ The realm's OpenSSH user CA is not an X.509 tier and is not signed by the
 service Root. It has its own classical key in the realm's sealed PKI row
 (the first classical name in `pki.sshUserCaAlgorithms`, or `ssh-ed25519`),
 and `pki_merge.js` merges the CA first-writer-wins and its issued serials by
-union. `ssh-mldsa-65` is a second member, `sshUserCaPqc`, published nowhere
-on `GET /pki/ssh-user-ca`: OpenSSH defines no post-quantum signature, so that
-line stays classical. `pki.sshUserCaPqcOnly` signs a new certificate with the
-ML-DSA authority when this runtime can generate it, and does not fail the
-request when it cannot (`STS-PKI-0290`). `pki.sshUserCaPqcAlongsideClassical`
-issues both certificates. The two switches refuse together (`STS-PKI-0296`).
+union. `ssh-mldsa-65` is a second member, `sshUserCaPqc`, kept off the
+default `GET /pki/ssh-user-ca` line: OpenSSH defines no post-quantum
+signature, so that line stays classical. Its own line is published at the
+same path with `?algorithm=ssh-mldsa-65` (404 `STS-PKI-0298` when the realm
+has none), never concatenated onto the classical one, so a server built to
+verify ML-DSA has a key to trust. `pki.sshUserCaPqcOnly` signs a new
+certificate with the ML-DSA authority alone and REFUSES (`STS-PKI-0297`)
+when there is none, the way `openpgp.pqcOnly` and `webauthn.pqcOnly` refuse:
+until 2026-11-23 it fell back to a classical certificate without a word.
+`pki.sshUserCaPqcAlongsideClassical` issues both certificates. The two
+switches refuse together (`STS-PKI-0296`).
 `ssh_user_ca.ts` issues only for a caller's UID or group CN, asks XACML once
 per requested principal, and records the token subject as owner of each
 serial. The Account API's issue operation requires recent authentication,
@@ -13017,6 +13029,20 @@ The file's header is the argument; what a maintainer needs beside it:
   (`mail_transports.ts` `composeEncrypted()`), never sent in the clear
   against either (STS-MAIL-0240..0243). The refusal is the uses' existing
   handling of an unsent message, so no use grew a second path.
+* **A key belongs to the addresses its user ids name** (2026-11-23):
+  `stsOpenPgpKeyInfo.addresses`, read back from `userIds` for a key stored
+  before. To the entry's `mail`, a key that does not name it is a choice
+  that cannot be kept (STS-MAIL-0241). To another address — `former` in
+  `mail.ts` `queueOne()`: the former address, a pending recovery address
+  or sign-in name — such a key is not used and the message goes
+  UNENCRYPTED, even under `mail.encryptionRequired`: refusing would make
+  an address change impossible to finish, and a message encrypted to a key
+  that address does not hold cannot be read there. A `mail` change is
+  observed in `ldap/ldap_server.js` `noteAccountChange()`, which calls
+  `addressChanged()`: a key that does not name the new address is RETIRED
+  (`removeKey()`, audited `openpgp.key-removed`, STS-OPENPGP-0030 when it
+  cannot be), and an S/MIME choice whose certificate does not name it goes
+  back to `none`.
 * **Tests**: `tests/openpgp_keys.js` (every key and certificate made at run
   time; S/MIME opened by `openssl cms`), `tests/openpgp_pqc.js`,
   `tests/smime_pqc.js`, `tests/protocol/sts_openpgp.js`.
@@ -13320,12 +13346,19 @@ above the function named; what a maintainer needs before touching them:
   because a node whose seed committed after another node's password write
   replaced the entry with one holding none. The winner catches up, runs, waits
   for its commit and releases; a loser logs who holds it and prints nothing; a
-  store that cannot be asked runs nothing (`STS-AUTHN-0185`). A start that
-  finds a credential already held removes
-  `persistence.dataDir/bootstrap-admin-password`. A start that wrote the file
-  itself does not, so a later realm in the same process still has the password,
-  and a node that loses the claim does not remove it (`STS-AUTHN-0567` when
-  the removal fails; the service still starts).
+  store that cannot be asked runs nothing (`STS-AUTHN-0185`). **The password
+  file is one per realm (#1969)**: the default realm's is
+  `persistence.dataDir/bootstrap-admin-password`, as it always was, and a trust
+  realm's is `bootstrap-admin-password-<realm id>` — one shared name let each
+  realm of a first start overwrite the last. A start that finds a credential
+  already held removes its realm's file **only once the password in it no
+  longer opens the account it names** (verified against the stored hash, not
+  by comparing an mtime with a node's clock): the winner releases the claim
+  as soon as it commits, so a node starting a moment later on a shared data
+  directory wins the claim and reaches the removal, and an age rule would
+  delete the only unread copy. A start that wrote the file itself does not
+  remove it, and a node that loses the claim never reaches the removal
+  (`STS-AUTHN-0567` when it fails; the service still starts).
 * **`cert_enrollment.ts`**: `bindEabOnce()` claims the key id before the binding
   is written (the same account retrying at a second node before replication is
   refused once — the claim cannot say which account holds it);

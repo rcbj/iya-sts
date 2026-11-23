@@ -295,6 +295,14 @@
     "en": "f399711ce1261bf4",
     "text": "Jede CRL und jeder OCSP-Responder, den dieser Dienst veröffentlicht"
   },
+  "endpoints.route./pki/ssh-user-ca/:scope.name": {
+    "en": "a3f367e6aa3bd539",
+    "text": "Der öffentliche Schlüssel der OpenSSH-Benutzer-CA des Realms"
+  },
+  "endpoints.route./pki/ssh-user-krl/:scope.name": {
+    "en": "a6ecaa76d097f280",
+    "text": "Die Schlüsselsperrliste der OpenSSH-Benutzer des Realms"
+  },
   "endpoints.route./admin-api/xacml.name": {
     "en": "d3b1d402a612012c",
     "text": "Die XACML-Konsolenseite über JSON"

@@ -232,8 +232,8 @@
     "text": "Das erzeugte Bootstrap-Passwort protokollieren"
   },
   "admin.logBootstrapPassword|description": {
-    "en": "856dddf1ed8c2407",
-    "text": "Nur im Produktmodus. Aus, der Standard, wird das für den ersten Administrator erzeugte Passwort in die Datei bootstrap-admin-password in persistence.dataDir geschrieben, lesbar nur für diesen Dienst, und das Protokoll nennt den Ort. An wird es stattdessen in das Dienstprotokoll geschrieben. WARNUNG: an ist ASVS 5.0.0 Anforderung 16.2.5 nicht erfüllt, weil Anmeldedaten das Protokoll erreichen. Ein späterer Start löscht diese Datei, sobald bereits jemand Zugangsdaten besitzt."
+    "en": "8591cfda7dde139a",
+    "text": "Nur im Produktmodus. Aus, der Standard, wird das für den ersten Administrator erzeugte Passwort in die Datei bootstrap-admin-password in persistence.dataDir geschrieben, lesbar nur für diesen Dienst, und das Protokoll nennt den Ort. An wird es stattdessen in das Dienstprotokoll geschrieben. WARNUNG: an ist ASVS 5.0.0 Anforderung 16.2.5 nicht erfüllt, weil Anmeldedaten das Protokoll erreichen. Die Datei eines Vertrauensbereichs hängt an diesen Namen einen Bindestrich und die ID des Vertrauensbereichs an. Ein späterer Start löscht eine Datei, sobald das Passwort darin sein Konto nicht mehr öffnet."
   },
   "oauth2.allowConfidentialWithoutPkce|label": {
     "en": "c33a0a31a1d623b1",
@@ -424,8 +424,8 @@
     "text": "Einen Standard-Administratornamen im Produkt erlauben"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "7375f4bf636f5366",
-    "text": "Nur im Produktmodus. Aus, der Standard, erhält ein Bootstrap-Administrator mit dem Namen admin, root, sa oder administrator, oder ganz ohne Namen, einen nicht vorhersagbaren erzeugten Namen, der mit seinem Passwort beim ersten Start in die Datei bootstrap-admin-password in persistence.dataDir geschrieben wird (siehe admin.logBootstrapPassword). An wird der konfigurierte Name so verwendet, wie er ist. WARNUNG: ASVS 5.0.0 Anforderung 6.3.2 verbietet einen Standardnamen für ein Konto; lassen Sie dies daher außerhalb eines Teststapels aus. Ein späterer Start löscht diese Datei, sobald bereits jemand Zugangsdaten besitzt."
+    "en": "7007ae597c41e813",
+    "text": "Nur im Produktmodus. Aus, der Standard, erhält ein Bootstrap-Administrator mit dem Namen admin, root, sa oder administrator, oder ganz ohne Namen, einen nicht vorhersagbaren erzeugten Namen, der mit seinem Passwort beim ersten Start in die Datei bootstrap-admin-password in persistence.dataDir geschrieben wird (siehe admin.logBootstrapPassword). An wird der konfigurierte Name so verwendet, wie er ist. WARNUNG: ASVS 5.0.0 Anforderung 6.3.2 verbietet einen Standardnamen für ein Konto; lassen Sie dies daher außerhalb eines Teststapels aus. Die Datei eines Vertrauensbereichs hängt an diesen Namen einen Bindestrich und die ID des Vertrauensbereichs an. Ein späterer Start löscht eine Datei, sobald das Passwort darin sein Konto nicht mehr öffnet."
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "Konto des Bootstrap-Administrators"
   },
   "admin.bootstrapUsername|description": {
-    "en": "8b69eb9d4cb0b130",
-    "text": "Der Benutzername des Bootstrap-Administrators (2026-09-13), im STANDARD-Vertrauensbereich und seit 2026-09-14 in jedem Vertrauensbereich, wo er nur diesen Vertrauensbereich verwaltet: beim Start angelegt, falls er fehlt, Mitglied beider Rollen der Konsole, bei der ersten Anmeldung zur Änderung seines Passworts gezwungen und unmöglich zu löschen oder umzubenennen. Bis zur ersten Anmeldung bei /admin darf jede angemeldete Person die Konsole verwenden (admin.openWhenEmpty). In der Entwicklung meldet jedes Passwort ihn an, wie bei allen anderen. IM PRODUKTMODUS ist er außerdem derjenige, der ein erzeugtes Passwort erhält, wenn dieser Dienst startet und NIEMAND im Vertrauensbereich Anmeldedaten besitzt; der Name und dieses Passwort werden einmal in die Datei bootstrap-admin-password in persistence.dataDir geschrieben, lesbar nur für diesen Dienst (das Protokoll nennt den Ort und trägt sie selbst nur, wenn admin.logBootstrapPassword an ist), und sie sind der einzige Weg in eine frische Produktbereitstellung. Das erzeugte Passwort wird niemals geschrieben, wo bereits jemand Anmeldedaten besitzt, sodass es kein Passwort überschreiben kann. Die erzwungene Änderung gilt nur für ein Konto, das dieser Schritt ANGELEGT hat — ein bestehendes Konto dieses Namens behält sein Passwort und erhält nur die beiden Rollen. Ein späterer Start löscht diese Datei, sobald bereits jemand Zugangsdaten besitzt."
+    "en": "938e9e0c7b3b97fa",
+    "text": "Der Benutzername des Bootstrap-Administrators (2026-09-13), im STANDARD-Vertrauensbereich und seit 2026-09-14 in jedem Vertrauensbereich, wo er nur diesen Vertrauensbereich verwaltet: beim Start angelegt, falls er fehlt, Mitglied beider Rollen der Konsole, bei der ersten Anmeldung zur Änderung seines Passworts gezwungen und unmöglich zu löschen oder umzubenennen. Bis zur ersten Anmeldung bei /admin darf jede angemeldete Person die Konsole verwenden (admin.openWhenEmpty). In der Entwicklung meldet jedes Passwort ihn an, wie bei allen anderen. IM PRODUKTMODUS ist er außerdem derjenige, der ein erzeugtes Passwort erhält, wenn dieser Dienst startet und NIEMAND im Vertrauensbereich Anmeldedaten besitzt; der Name und dieses Passwort werden einmal in die Datei bootstrap-admin-password in persistence.dataDir geschrieben, lesbar nur für diesen Dienst (das Protokoll nennt den Ort und trägt sie selbst nur, wenn admin.logBootstrapPassword an ist), und sie sind der einzige Weg in eine frische Produktbereitstellung. Das erzeugte Passwort wird niemals geschrieben, wo bereits jemand Anmeldedaten besitzt, sodass es kein Passwort überschreiben kann. Die erzwungene Änderung gilt nur für ein Konto, das dieser Schritt ANGELEGT hat — ein bestehendes Konto dieses Namens behält sein Passwort und erhält nur die beiden Rollen. Die Datei eines Vertrauensbereichs hängt an diesen Namen einen Bindestrich und die ID des Vertrauensbereichs an. Ein späterer Start löscht eine Datei, sobald das Passwort darin sein Konto nicht mehr öffnet."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -4024,16 +4024,16 @@
     "text": "Algorithmen der SSH-Benutzer-CA"
   },
   "pki.sshUserCaAlgorithms|description": {
-    "en": "bdb54445a0279b8d",
-    "text": "Welche Algorithmen die Zertifizierungsstelle für SSH-Benutzerzertifikate verwenden darf, in der Reihenfolge der Bevorzugung. ssh-mldsa-65 ist ML-DSA-65 (FIPS 204) unter einem Leitungsnamen, den dieser Dienst definiert, weil OpenSSH keinen definiert: der öffentliche Schlüssel und die Signatur sind roh, in der Form, die ssh-ed25519 verwendet. Die OpenSSH-Zeile TrustedUserCAKeys, die dieser Dienst veröffentlicht, bleibt der erste klassische Algorithmus dieser Liste, oder ssh-ed25519, wenn die Liste nur ssh-mldsa-65 nennt. Ein Partner, der ML-DSA nicht versteht, vertraut dieser Zeile weiter. ssh-rsa (SHA-1) wird nicht angeboten. Die ML-DSA-Stelle wird nur angelegt, wenn diese Laufzeit den Schlüssel erzeugen kann; sonst bleiben die Zertifikate klassisch (STS-PKI-0290 wird aufgezeichnet und die klassische Stelle antwortet weiter)."
+    "en": "5c4c22c2ab500fd4",
+    "text": "Welche Algorithmen die SSH-Benutzerzertifizierungsstelle in der Reihenfolge der Präferenz verwenden darf. ssh-mldsa-65 ist ML-DSA-65 (FIPS 204) unter einem Übertragungsnamen, den dieser Dienst festlegt, weil OpenSSH keinen festlegt: Öffentlicher Schlüssel und Signatur sind roh, in der Form, die ssh-ed25519 verwendet. Die OpenSSH-Zeile TrustedUserCAKeys, die dieser Dienst veröffentlicht, bleibt der erste klassische Algorithmus dieser Liste, oder ssh-ed25519, wenn die Liste nur ssh-mldsa-65 nennt. Eine Gegenstelle, die ML-DSA nicht versteht, vertraut weiter dieser Zeile. Der Schlüssel der ML-DSA-Stelle wird unter GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65 veröffentlicht; Standard-OpenSSH kann ein ML-DSA-Zertifikat noch nicht prüfen. ssh-rsa (SHA-1) wird nicht angeboten. Die ML-DSA-Stelle wird nur erzeugt, wenn diese Laufzeitumgebung den Schlüssel erzeugen kann; andernfalls bleiben Zertifikate klassisch (STS-PKI-0290 wird protokolliert und die klassische Stelle antwortet weiter), außer wenn pki.sshUserCaPqcOnly eingeschaltet ist."
   },
   "pki.sshUserCaPqcOnly|label": {
     "en": "74aae1308361ba58",
     "text": "SSH-Benutzerzertifikate sind nur Post-Quanten"
   },
   "pki.sshUserCaPqcOnly|description": {
-    "en": "39b21e5b95f84da1",
-    "text": "Ein signiert ein neues SSH-Benutzerzertifikat durch die ML-DSA-Stelle, und nur wenn diese Stelle existiert. Die veröffentlichte TrustedUserCAKeys-Zeile bleibt der klassische Schlüssel, damit ein OpenSSH-Client, der ihr schon vertraut, keinen Algorithmus erhält, den er nicht lesen kann. Auf einer Laufzeit, die ML-DSA nicht erzeugen kann, bleibt das Zertifikat klassisch und die Anfrage schlägt nicht fehl. Bereits ausgestellte klassische Zertifikate werden weiter geprüft. Kann nicht an sein, während pki.sshUserCaPqcAlongsideClassical an ist (STS-PKI-0296). Standardmäßig aus."
+    "en": "dcbf21b3230dcf07",
+    "text": "Wenn eingeschaltet, wird ein neues SSH-Benutzerzertifikat von der ML-DSA-Stelle und von nichts anderem signiert. Standard-OpenSSH kann ein ML-DSA-Zertifikat noch nicht prüfen; nur ein SSH-Server, der ssh-mldsa-65 prüfen kann und dem Schlüssel unter GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65 vertraut, akzeptiert diese Zertifikate. Die Standardzeile unter diesem Pfad bleibt der klassische Schlüssel. Hat der Realm keine ML-DSA-Stelle (diese Laufzeitumgebung kann ML-DSA nicht erzeugen, oder ssh-mldsa-65 steht nicht in pki.sshUserCaAlgorithms), wird die Anfrage abgelehnt (STS-PKI-0297), statt mit einem klassischen Zertifikat beantwortet zu werden. Bereits ausgestellte klassische Zertifikate bleiben prüfbar. Kann nicht eingeschaltet sein, während pki.sshUserCaPqcAlongsideClassical eingeschaltet ist (STS-PKI-0296). Standardmäßig aus."
   },
   "pki.sshUserCaPqcAlongsideClassical|label": {
     "en": "c3201f8841200c32",

@@ -101,6 +101,12 @@ function handshake(bundlePem, keyPem, anchorPem) {
         port: server.address().port,
         ca: anchorPem ? [anchorPem] : undefined,
         rejectUnauthorized: !!anchorPem,
+        // NO NAME CHECK, DELIBERATELY (#1954's review): what this file holds
+        // is which certificates the server SENDS and whether they chain to
+        // the one Root, and the listener's leaf names the service's
+        // hostnames, not the 127.0.0.1 this dials. A name check here would
+        // fail every case for a reason the file is not about; the jobs,
+        // which dial the service by name, verify the name.
         checkServerIdentity: function () {
           log.debug("Entering checkServerIdentity().");
           log.debug("Leaving checkServerIdentity().");

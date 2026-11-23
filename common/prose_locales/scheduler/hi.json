@@ -655,6 +655,14 @@
     "en": "bd4794eda9c5d2d2",
     "text": "उस स्ट्रीम को विराम देता है, अक्षम करता है या मिटाता है जिसका रिसीवर ssf.inactivityTimeoutS की अवधि से निष्क्रिय रहा हो (SSF 1.0 section 8.1.1); विराम या अक्षमता की घोषणा पहले stream-updated घटना से करता है, और प्रत्येक सक्षम स्ट्रीम को सत्यापन घटना भेजता है जिसे इस ट्रांसमीटर से ssf.verificationEveryS तक कोई न मिली हो (section 8.1.4)।"
   },
+  "sched.jobs.ssh-user-ca.krl.title": {
+    "en": "9694f71884ac8e1b",
+    "text": "SSH उपयोगकर्ता CA निरसन सूची"
+  },
+  "sched.jobs.ssh-user-ca.krl.describe": {
+    "en": "c84b42d3aab3bdde",
+    "text": "जारी प्रमाणपत्रों के निरसन के बाद प्रत्येक क्षेत्र की OpenSSH उपयोगकर्ता CA की KRL ताज़ा करता है और समाप्त निरसन हटाता है।"
+  },
   "sched.jobs.tls.ticket-key-rotate.title": {
     "en": "8bb62416b0f1932c",
     "text": "TLS सत्र-टिकट कुंजी चक्रण"

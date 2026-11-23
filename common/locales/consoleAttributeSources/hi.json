@@ -73,5 +73,6 @@
   "jobOnEnd": ".",
   "settings": "सेटिंग्स",
   "newSource.button": "स्रोत जोड़ें",
-  "newSource.yes": "हाँ"
+  "newSource.yes": "हाँ",
+  "newSource.no": "नहीं"
 }

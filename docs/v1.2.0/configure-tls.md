@@ -238,6 +238,15 @@ with. A runtime anchor is written to the directory (`ou=trustAnchors`), so it
 survives a restart wherever the directory is persisted. There is no bulk
 clear: remove the rows you mean.
 
+Two anchors with the same subject and different keys are both kept. When
+OpenSSL cannot tell them apart as issuers — the later one has no authority
+key identifier, or one that names the earlier anchor — the add's `warning`
+names `STS-TLS-0064` and the earlier fingerprint, and the later row's
+`shadowedBy` is that fingerprint. Presenting the later certificate itself
+still verifies. A certificate it issued does not, while the earlier one is
+installed. An authority key identifier that names a different subject key
+identifier is not a collision.
+
 ### At startup
 
 `tls.trustAnchorsFile` names a PEM file of CA certificates loaded before any

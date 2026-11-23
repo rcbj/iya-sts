@@ -632,12 +632,21 @@ function drawn(t) {
            !/ required[ >]/.test(cell(name));
   }), 'E2. its optional fields are drawn and not marked');
   const box = { name: 'enabled', label: 'Enabled', type: 'checkbox',
-                required: true, checkedValue: 'yes', boxLabel: 'Enabled' };
+                required: true, checkedValue: 'yes', boxLabel: 'yes',
+                uncheckedValue: 'no', uncheckedLabel: 'no' };
   const boxHtml = kit.createFields([box], {}, kit.context().t);
   t.check(boxHtml.indexOf('fg-required') < 0 &&
           !/ required(?:[ >]|=)/.test(boxHtml) &&
-          kit.requiredNote([box], kit.context().t).indexOf('Enabled') < 0,
-          'E3. an unchecked box is never marked required');
+          kit.requiredNote([box], kit.context().t).indexOf('Enabled') < 0 &&
+          /name="enabled"[^>]*value="no" checked/.test(boxHtml) &&
+          !/name="enabled"[^>]*value="yes" checked/.test(boxHtml),
+          'E3. a yes/no pair checks No when nothing was chosen, and is ' +
+          'never marked required');
+  const yesHtml = kit.createFields([box], { enabled: 'yes' },
+                                    kit.context().t);
+  t.check(/name="enabled"[^>]*value="yes" checked/.test(yesHtml) &&
+          !/name="enabled"[^>]*value="no" checked/.test(yesHtml),
+          'E3b. a yes value checks Yes');
   log.debug("Leaving drawn().");
 }
 

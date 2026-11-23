@@ -182,6 +182,34 @@ async function describeKey(key, at) {
   const encryption = await quietly(function () {
     return key.getEncryptionKey(null, date);
   });
+  // EVERY KEY OF IT THAT WOULD SIGN OR BE ENCRYPTED TO, not only the one
+  // the library prefers today: the preferred encryption subkey changes as
+  // subkeys expire or are added, and a cleartext may be signed by any
+  // valid signing subkey. Each is judged at `date`, or at its own creation
+  // when that is later, so a subkey dated ahead is judged as it will be.
+  const signingKeys = [];
+  const encryptionKeys = [];
+  for (const candidate of [key].concat(key.subkeys)) {
+    const created = candidate.getCreationTime();
+    const when = created instanceof Date && created.getTime() > date.getTime()
+      ? created : date;
+    const id = candidate.getKeyID();
+    const signer = await quietly(function () {
+      return key.getSigningKey(id, when);
+    });
+    const recipient = await quietly(function () {
+      return key.getEncryptionKey(id, when);
+    });
+    const described = Object.assign({
+      fingerprint: candidate.getFingerprint().toLowerCase() },
+      algorithmOf(candidate));
+    if (signer) {
+      signingKeys.push(described);
+    }
+    if (recipient) {
+      encryptionKeys.push(described);
+    }
+  }
   const users = [];
   for (const user of key.users) {
     if (!user.userID) {
@@ -212,6 +240,8 @@ async function describeKey(key, at) {
       fingerprint: encryption.getFingerprint().toLowerCase(),
       keyId: encryption.getKeyID().toHex().toLowerCase() },
       algorithmOf(encryption)) : null,
+    signingKeys: signingKeys,
+    encryptionKeys: encryptionKeys,
     users: users,
     revoked: revoked,
     expiresAt: expiresAt,
@@ -272,9 +302,22 @@ async function verifyCleartext(signedText, key, at) {
                                                           e) };
   }
   const ids = message.getSigningKeyIDs();
-  if (!ids.length) {
+  const count = message.signature && message.signature.packets
+    ? message.signature.packets.length : ids.length;
+  if (!ids.length || !count) {
     log.debug("Leaving verifyCleartext(). No signature.");
     return { ok: false, reason: 'unsigned', why: 'no signature' };
+  }
+  // A PROOF OF POSSESSION CARRIES EXACTLY ONE SIGNATURE. With several, the
+  // signer used to be the first issuer id that named a key of this one,
+  // the proof passed if ANY signature verified, and the creation time was
+  // read from the first: three answers that could come from three
+  // different signatures, one of them a stranger's.
+  if (count !== 1) {
+    log.debug("Leaving verifyCleartext(). " + count + " signatures.");
+    return { ok: false, reason: 'several',
+             why: 'the message carries ' + count + ' signatures; a proof ' +
+               'of possession carries exactly one' };
   }
   // THE SIGNER MUST BE A SIGNING-CAPABLE KEY OF THIS ONE, valid now: asked
   // of the key by the signature's issuer id before the signature is
@@ -306,17 +349,24 @@ async function verifyCleartext(signedText, key, at) {
     return { ok: false, reason: 'bad-signature',
              why: String((e && e.message) || e) };
   }
-  const first = result.signatures[0];
+  // THE SIGNER AND THE CREATION TIME COME FROM THE SIGNATURE THAT VERIFIED,
+  // and it must be the one made by the signing key named above.
+  const first = result.signatures.length === 1 ? result.signatures[0] : null;
   let created = '';
   try {
+    if (!first || !(await first.verified) ||
+        !first.keyID.equals(signer.getKeyID())) {
+      // error-code: none — the caller marks the refusal with its own code.
+      throw new Error('the verified signature is not the named signer\'s');
+    }
     const signature = await first.signature;
     const packet = signature.packets[0];
     created = packet && packet.created ? packet.created.toISOString() : '';
   } catch (e) {
     log.debug("Caught in verifyCleartext(): " + ((e && e.message) || e));
-    // expectSigned has already established the signature verified; a
-    // creation time it does not carry is judged by the caller as absent.
-    created = '';
+    log.debug("Leaving verifyCleartext(). Did not verify.");
+    return { ok: false, reason: 'bad-signature',
+             why: String((e && e.message) || e) };
   }
   log.debug("Leaving verifyCleartext(). Verified.");
   return {

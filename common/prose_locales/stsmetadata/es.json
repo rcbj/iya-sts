@@ -1091,6 +1091,14 @@
     "en": "6e82cd30ac736775",
     "text": "NO ESTÁNDAR, y aun así deliberadamente aquí: una persona que apunta un cliente a estos endpoints necesita saber QUÉ SON las direcciones, y leerlas de un certificado con `openssl x509 -text` es un mal primer paso. Una fila por autoridad con su sujeto, cuántos certificados ha revocado y su CRL en ambos esquemas (http, ldap) junto a sus direcciones OCSP y caIssuers. NO CONTIENE NÚMEROS DE SERIE: la lista de lo revocado es la CRL, y una copia JSON a su lado sería una segunda respuesta a la misma pregunta: la que queda desactualizada y la que nadie firmó. Dice expresamente que este servicio PUBLICA la revocación y no puede obligar a nadie a consultarla, lo cual es cierto de toda autoridad de certificación y es la razón por la que el autor de un cliente apuntaría su pila aquí. Sin control de acceso, porque todo lo que contiene ya está dentro de cada certificado que entrega este servicio."
   },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "c8819f794e61f398",
+    "text": "NON-SPEC (#1955 P3): la clave de la CA de usuarios OpenSSH del dominio, publicada como línea authorized-key para que los servidores SSH confíen en ella. Sin control de acceso y `no-store`; la clave privada correspondiente de la CA nunca sale de este servicio."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "ed928008015e78a8",
+    "text": "NON-SPEC (#1955 P3): la KRL de OpenSSH del dominio, actualizada cuando un llamante revoca un certificado o declara perdido un token de hardware. Sin control de acceso y `no-store`; los servidores SSH deben configurarse para consultarla, porque este servicio no puede obligar a una parte que confía a hacerlo."
+  },
   "stsmetadata.endpoints./admin-api/xacml.what": {
     "en": "2efd1b442d450758",
     "text": "Lo que dibuja GET /admin/xacml, como datos. Sin control de acceso, como el resto de /admin-api."

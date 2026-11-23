@@ -147,6 +147,11 @@ interface WebPage {
   // Members listed here are always composed, even when `composeWhen` names
   // query parameters that are absent. Those parameters are still forwarded.
   composeAlways?: string[];
+  // Members listed here are drawn from their answer even when the status is
+  // not 200, so a refusal is the page's to show. The certificate dialog is
+  // the one: `GET /admin-api/certificates` answers 400, 404 or 500 with the
+  // view the dialog draws as why it could not open.
+  composeKeep?: string[];
   // THE DRILL-DOWN AT THE SAME PATH (#446): `/admin/groups?group=<dn>` is
   // one group, answered by the same operation asked with the same query, so
   // a drill-down is not a page of its own but a second renderer chosen when
@@ -576,8 +581,16 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return ConsentPage.body(ctx || WebKit.context(), view);
     } },
+  // THE CERTIFICATE DIALOG, the same composition as `/admin/pki` below:
+  // View details adds `?certificate=` and the page asks
+  // `GET /admin-api/certificates` for `certificateDetails`. A refusal is
+  // still that view (`composeKeep`).
   { path: '/admin/crypto-metadata', title: 'Cryptography',
-    operation: '/admin-api/crypto', render: CryptoMetadataPage.render },
+    operation: '/admin-api/crypto',
+    compose: { certificateDetails: '/admin-api/certificates' },
+    composeWhen: { certificateDetails: ['certificate'] },
+    composeKeep: ['certificateDetails'],
+    render: CryptoMetadataPage.render },
   { path: '/admin', title: 'Admin console',
     operation: '/admin-api/console/dashboard',
     render: function (view: Json, ctx?: Json): string {
@@ -906,8 +919,17 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/openpgp', render: OpenPgpPage.render },
   { path: '/admin/pki/trust', title: 'PKI trust',
     operation: '/admin-api/pki/trust', render: PkiTrustPage.render },
+  // THE CERTIFICATE DIALOG (#446). `GET /admin-api/pki` does not carry one
+  // certificate. View details adds `?certificate=` and the page composes
+  // `GET /admin-api/certificates` into `certificateDetails`; `composeKeep`
+  // draws a refusal too, so the dialog opens and says why. The link's
+  // fragment is the section, so the Hierarchy tab stays the one shown.
   { path: '/admin/pki', title: 'PKI', operation: '/admin-api/pki',
-    fixed: { rows: 'shown' }, render: PkiPage.render },
+    fixed: { rows: 'shown' },
+    compose: { certificateDetails: '/admin-api/certificates' },
+    composeWhen: { certificateDetails: ['certificate'] },
+    composeKeep: ['certificateDetails'],
+    render: PkiPage.render },
   { path: '/admin/policies', title: 'Policies',
     operation: '/admin-api/policies',
     // THE EXPORT AND IMPORT TAB'S READ (#1713): this realm's export signer
@@ -1614,6 +1636,41 @@ class WebPages {
       return { member: member, operation: page.compose[member],
                params: params };
     });
+  }
+
+  /**
+   * Whether a composed member's answer is drawn. A 200 whose body is an
+   * object is. A member named in `composeKeep` is too when that body is an
+   * object and not an array, because the page draws the refusal. Anything
+   * else, including no body, is a failure of the page. `answer` is the
+   * runtime's `{ status, json }` or a draw helper's `{ status, body }`.
+   *
+   * @param page - the page's row
+   * @param member - the composed member
+   * @param answer - `{ status, json }` or `{ status, body }`, or null
+   * @returns whether the page draws this answer
+   */
+  static composeKept(page: WebPage, member: string, answer: Json): boolean {
+    let body = null;
+    if (answer && answer.json !== undefined && answer.json !== null) {
+      body = answer.json;
+    } else if (answer && answer.body !== undefined &&
+               answer.body !== null) {
+      body = answer.body;
+    }
+    // A 200 of any object, an array included, is what the draw helpers
+    // already accepted. A refusal kept for the dialog is an object.
+    if (!answer || body === null || typeof body !== 'object') {
+      return false;
+    }
+    if (answer.status === 200) {
+      return true;
+    }
+    if (Array.isArray(body)) {
+      return false;
+    }
+    const keep = (page && page.composeKeep) || [];
+    return keep.indexOf(member) >= 0;
   }
 
   /**

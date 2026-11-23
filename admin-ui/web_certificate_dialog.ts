@@ -132,7 +132,9 @@ class CertificateDialogView {
   // ---------------------------------------------------------------------------
   // THE LINK THAT OPENS ONE. `pagePath` is the page it is drawn on, so the
   // dialog opens over that page; `from` is the id of the section the link
-  // sits in.
+  // sits in. The fragment is that same id. A tabbed page shows its first
+  // tab when the address has no fragment, and on a Protocols page that tab
+  // is Metadata — a link that only set the query sent the reader there.
   // ---------------------------------------------------------------------------
   /**
    * Draws the link that opens a certificate's dialog over the page it is on.
@@ -156,7 +158,8 @@ class CertificateDialogView {
     }
     const back = self.fromOf(from);
     return '<a class="certdlg-open" href="' + esc(pagePath) + '?' + PARAM +
-      '=' + fp + (back ? '&amp;' + FROM + '=' + esc(back) : '') + '" ' +
+      '=' + fp + (back ? '&amp;' + FROM + '=' + esc(back) +
+                         '#' + esc(back) : '') + '" ' +
       'title="' + esc(t.text('consoleCertificateDialog.linkTip')) + '">' +
       esc(text || t.text('consoleCertificateDialog.viewDetails')) + '</a>';
   }

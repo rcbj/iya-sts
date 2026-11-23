@@ -232,8 +232,8 @@
     "text": "記錄產生的引導密碼"
   },
   "admin.logBootstrapPassword|description": {
-    "en": "856dddf1ed8c2407",
-    "text": "僅限產品模式。預設關閉時，為首位管理員產生的密碼寫入 persistence.dataDir 中僅此服務可讀的 bootstrap-admin-password 檔案，日誌說明位置。開啟時寫入服務日誌。警告：開啟後不符合 ASVS 5.0.0 要求 16.2.5，因為憑證進入了日誌。 之後的啟動會刪除該檔案，一旦已有人持有認證。"
+    "en": "8591cfda7dde139a",
+    "text": "僅限產品模式。預設關閉時，為首位管理員產生的密碼寫入 persistence.dataDir 中僅此服務可讀的 bootstrap-admin-password 檔案，日誌說明位置。開啟時寫入服務日誌。警告：開啟後不符合 ASVS 5.0.0 要求 16.2.5，因為憑證進入了日誌。 信任領域的檔案在該名稱後加上連字號與領域 ID。之後的啟動會在檔案中的密碼不再能開啟其帳戶時刪除該檔案。"
   },
   "oauth2.allowConfidentialWithoutPkce|label": {
     "en": "c33a0a31a1d623b1",
@@ -424,8 +424,8 @@
     "text": "在產品模式下允許預設管理員名稱"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "7375f4bf636f5366",
-    "text": "僅限產品模式。預設關閉時，名為 admin、root、sa 或 administrator 或沒有名稱的啟動管理員會取得一個無法預測的產生名稱，並在首次啟動時與其密碼一併寫入 persistence.dataDir 中的 bootstrap-admin-password 檔案（請參閱 admin.logBootstrapPassword）。開啟時按設定的名稱使用。警告：ASVS 5.0.0 要求 6.3.2 禁止預設帳戶名稱，因此除測試環境外請保持關閉。 之後的啟動會刪除該檔案，一旦已有人持有認證。"
+    "en": "7007ae597c41e813",
+    "text": "僅限產品模式。預設關閉時，名為 admin、root、sa 或 administrator 或沒有名稱的啟動管理員會取得一個無法預測的產生名稱，並在首次啟動時與其密碼一併寫入 persistence.dataDir 中的 bootstrap-admin-password 檔案（請參閱 admin.logBootstrapPassword）。開啟時按設定的名稱使用。警告：ASVS 5.0.0 要求 6.3.2 禁止預設帳戶名稱，因此除測試環境外請保持關閉。 信任領域的檔案在該名稱後加上連字號與領域 ID。之後的啟動會在檔案中的密碼不再能開啟其帳戶時刪除該檔案。"
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "初始管理員帳戶"
   },
   "admin.bootstrapUsername|description": {
-    "en": "8b69eb9d4cb0b130",
-    "text": "初始管理員的使用者名稱（2026-09-13），存在於「預設」領域，並自 2026-09-14 起存在於每個信任領域，在該處只管理該領域：不存在時於啟動時建立，同時是兩種主控台角色的成員，首次登入時被強制變更密碼，且無法刪除或重新命名。在它首次登入 /admin 之前，每位已登入者都可使用主控台（admin.openWhenEmpty）。在開發模式中，如同所有人一樣，任何密碼都能讓它登入。在產品模式中，當本服務啟動而領域中「沒有任何人」持有認證時，它也是取得產生密碼的帳戶；名稱與該密碼只寫入一次，寫入 persistence.dataDir 中的 bootstrap-admin-password 檔案，該檔案僅本服務可讀取（記錄會說明其位置，只有在 admin.logBootstrapPassword 開啟時記錄本身才會包含它們），是進入全新產品部署的唯一途徑。在已有人持有認證時絕不寫入產生的密碼，因此它無法覆寫密碼。強制變更只適用於此步驟「建立」的帳戶——同名的既有帳戶保留其密碼，只會被賦予兩種角色。 之後的啟動會刪除該檔案，一旦已有人持有認證。"
+    "en": "938e9e0c7b3b97fa",
+    "text": "初始管理員的使用者名稱（2026-09-13），存在於「預設」領域，並自 2026-09-14 起存在於每個信任領域，在該處只管理該領域：不存在時於啟動時建立，同時是兩種主控台角色的成員，首次登入時被強制變更密碼，且無法刪除或重新命名。在它首次登入 /admin 之前，每位已登入者都可使用主控台（admin.openWhenEmpty）。在開發模式中，如同所有人一樣，任何密碼都能讓它登入。在產品模式中，當本服務啟動而領域中「沒有任何人」持有認證時，它也是取得產生密碼的帳戶；名稱與該密碼只寫入一次，寫入 persistence.dataDir 中的 bootstrap-admin-password 檔案，該檔案僅本服務可讀取（記錄會說明其位置，只有在 admin.logBootstrapPassword 開啟時記錄本身才會包含它們），是進入全新產品部署的唯一途徑。在已有人持有認證時絕不寫入產生的密碼，因此它無法覆寫密碼。強制變更只適用於此步驟「建立」的帳戶——同名的既有帳戶保留其密碼，只會被賦予兩種角色。 信任領域的檔案在該名稱後加上連字號與領域 ID。之後的啟動會在檔案中的密碼不再能開啟其帳戶時刪除該檔案。"
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -4024,16 +4024,16 @@
     "text": "SSH 使用者 CA 演算法"
   },
   "pki.sshUserCaAlgorithms|description": {
-    "en": "bdb54445a0279b8d",
-    "text": "SSH 使用者憑證機構可以使用的演算法，依優先順序。ssh-mldsa-65 是本服務定義的線路名稱下的 ML-DSA-65（FIPS 204），因為 OpenSSH 沒有定義：公開金鑰和簽章是原始位元組，形狀與 ssh-ed25519 相同。本服務發布的 OpenSSH TrustedUserCAKeys 行仍是此清單中的第一個經典演算法，若清單只點名 ssh-mldsa-65 則為 ssh-ed25519。不理解 ML-DSA 的對端繼續信任那一行。不提供 ssh-rsa（SHA-1）。只有本執行環境能夠產生該金鑰時才建立 ML-DSA 機構；否則憑證保持經典（記錄 STS-PKI-0290，經典機構仍然回應）。"
+    "en": "5c4c22c2ab500fd4",
+    "text": "SSH 使用者憑證授權單位可使用的演算法，依偏好順序排列。ssh-mldsa-65 是 ML-DSA-65（FIPS 204），使用本服務定義的傳輸名稱，因為 OpenSSH 沒有定義：公開金鑰與簽章都是原始格式，形式與 ssh-ed25519 相同。本服務發布的 OpenSSH TrustedUserCAKeys 行始終是此清單中的第一個傳統演算法；若清單只列出 ssh-mldsa-65，則為 ssh-ed25519。不理解 ML-DSA 的對端會繼續信任該行。ML-DSA 授權單位的金鑰發布在 GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65；標準 OpenSSH 目前還無法驗證 ML-DSA 憑證。不提供 ssh-rsa（SHA-1）。只有在此執行環境能產生該金鑰時才會建立 ML-DSA 授權單位；否則憑證維持傳統演算法（記錄 STS-PKI-0290，傳統授權單位仍會回應），除非 pki.sshUserCaPqcOnly 已開啟。"
   },
   "pki.sshUserCaPqcOnly|label": {
     "en": "74aae1308361ba58",
     "text": "SSH 使用者憑證僅使用後量子演算法"
   },
   "pki.sshUserCaPqcOnly|description": {
-    "en": "39b21e5b95f84da1",
-    "text": "開啟後，新的 SSH 使用者憑證由 ML-DSA 機構簽章，並且僅當該機構存在時。發布的 TrustedUserCAKeys 行仍是經典金鑰，因此已經信任它的 OpenSSH 用戶端不會收到它無法解析的演算法。在不能產生 ML-DSA 的執行環境上，憑證保持經典，請求不會失敗。已經簽發的經典憑證繼續驗證。不能與 pki.sshUserCaPqcAlongsideClassical 同時開啟（STS-PKI-0296）。預設關閉。"
+    "en": "dcbf21b3230dcf07",
+    "text": "開啟後，新的 SSH 使用者憑證只由 ML-DSA 授權單位簽署，不使用其他任何單位。標準 OpenSSH 目前還無法驗證 ML-DSA 憑證，因此只有能驗證 ssh-mldsa-65 並信任 GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65 上金鑰的 SSH 伺服器才會接受這些憑證。該路徑上的預設行仍是傳統金鑰。如果領域沒有 ML-DSA 授權單位（此執行環境無法產生 ML-DSA，或 ssh-mldsa-65 不在 pki.sshUserCaAlgorithms 中），請求會被拒絕（STS-PKI-0297），而不是回傳一張傳統憑證。已簽發的傳統憑證仍可驗證。不能與 pki.sshUserCaPqcAlongsideClassical 同時開啟（STS-PKI-0296）。預設關閉。"
   },
   "pki.sshUserCaPqcAlongsideClassical|label": {
     "en": "c3201f8841200c32",

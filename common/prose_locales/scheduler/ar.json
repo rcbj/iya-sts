@@ -655,6 +655,14 @@
     "en": "bd4794eda9c5d2d2",
     "text": "يوقف مؤقتًا تدفقًا أو يعطّله أو يحذفه إذا ظل مستقبله غير نشط لمدة ssf.inactivityTimeoutS (SSF 1.0 section 8.1.1)، معلنًا الإيقاف المؤقت أو التعطيل بحدث stream-updated أولًا، ويرسل حدث تحقق إلى كل تدفق مفعّل لم يصله أي حدث من هذا المرسِل لمدة ssf.verificationEveryS (section 8.1.4)."
   },
+  "sched.jobs.ssh-user-ca.krl.title": {
+    "en": "9694f71884ac8e1b",
+    "text": "قائمة إلغاء مرجع شهادات مستخدمي SSH"
+  },
+  "sched.jobs.ssh-user-ca.krl.describe": {
+    "en": "c84b42d3aab3bdde",
+    "text": "يحدّث قائمة KRL لمرجع شهادات مستخدمي OpenSSH في كل نطاق ثقة بعد إلغاء شهادات صادرة، ويزيل الإلغاءات المنتهية."
+  },
   "sched.jobs.tls.ticket-key-rotate.title": {
     "en": "8bb62416b0f1932c",
     "text": "تدوير مفتاح تذكرة جلسة TLS"

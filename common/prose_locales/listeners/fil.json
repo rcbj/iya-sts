@@ -312,8 +312,8 @@
     "text": "Certificate authority"
   },
   "listeners.applications.pki.what": {
-    "en": "8b280b2baedbdfe6",
-    "text": "Mga CRL, OCSP, ang mga CA certificate at chain, at ang mga cryptographic metadata document."
+    "en": "227bec56922b2292",
+    "text": "Mga CRL, OCSP, ang mga certificate at chain ng CA, ang mga cryptographic metadata document at ang mga OpenPGP key ng Web Key Directory."
   },
   "listeners.applications.kerberos.label": {
     "en": "43c19a093b34b581",

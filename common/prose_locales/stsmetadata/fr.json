@@ -1091,6 +1091,14 @@
     "en": "6e82cd30ac736775",
     "text": "NON-SPEC, et délibérément ici malgré tout : une personne qui dirige un client vers ces points de terminaison doit savoir ce que SONT ces adresses, et les lire dans un certificat avec `openssl x509 -text` est une mauvaise première étape. Une ligne par autorité avec son sujet, le nombre de certificats qu’elle a révoqués, et sa CRL dans les deux schémas (http, ldap) à côté de ses adresses OCSP et caIssuers. AUCUN NUMÉRO DE SÉRIE N’Y FIGURE — la liste de ce qui est révoqué est la CRL, et une copie JSON à côté serait une seconde réponse à la même question : celle qui devient obsolète, et celle que personne n’a signée. Il dit en toutes lettres que ce service PUBLIE la révocation et ne peut obliger personne à la consulter, ce qui vaut pour toute autorité de certification et explique pourquoi l’auteur d’un client dirigerait sa pile ici. Sans contrôle d’accès, car tout ce qu’il contient figure déjà dans chaque certificat que ce service délivre."
   },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "c8819f794e61f398",
+    "text": "NON-SPEC (#1955 P3) : la clé de l’AC utilisateurs OpenSSH propre au domaine, publiée sous forme de ligne authorized-key pour que les serveurs SSH lui fassent confiance. Sans contrôle d’accès et `no-store` ; la clé privée correspondante de l’AC ne quitte jamais ce service."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "ed928008015e78a8",
+    "text": "NON-SPEC (#1955 P3) : la KRL OpenSSH propre au domaine, mise à jour quand un appelant révoque un certificat ou déclare un jeton matériel perdu. Sans contrôle d’accès et `no-store` ; les serveurs SSH doivent être configurés pour la consulter, car ce service ne peut pas y contraindre une partie de confiance."
+  },
   "stsmetadata.endpoints./admin-api/xacml.what": {
     "en": "2efd1b442d450758",
     "text": "Ce qu’affiche GET /admin/xacml, sous forme de données. Sans contrôle d’accès, comme le reste de /admin-api."

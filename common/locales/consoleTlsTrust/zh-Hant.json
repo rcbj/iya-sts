@@ -36,5 +36,6 @@
   "linkJson": "此頁面的 JSON",
   "linkApi": "透過管理 API 取得的相同內容",
   "linkSettings": "TLS 監聽器的設定",
-  "linkPki": "本服務自己的憑證授權單位"
+  "linkPki": "本服務自己的憑證授權單位",
+  "shadowedBy": "被同一主體的較早信任錨遮蓋（{fingerprint}）。在該錨仍安裝時，由此錨簽發的憑證無法驗證。出示本憑證本身仍然可以驗證。"
 }

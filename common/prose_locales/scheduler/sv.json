@@ -655,6 +655,14 @@
     "en": "bd4794eda9c5d2d2",
     "text": "Pausar, inaktiverar eller tar bort en ström vars mottagare har varit inaktiv i ssf.inactivityTimeoutS (SSF 1.0 avsnitt 8.1.1), och meddelar en paus eller inaktivering med en stream-updated-händelse först, och skickar en verifieringshändelse till varje aktiverad ström som inte har fått någon från den här sändaren på ssf.verificationEveryS (avsnitt 8.1.4)."
   },
+  "sched.jobs.ssh-user-ca.krl.title": {
+    "en": "9694f71884ac8e1b",
+    "text": "Återkallelselista för SSH-användar-CA"
+  },
+  "sched.jobs.ssh-user-ca.krl.describe": {
+    "en": "c84b42d3aab3bdde",
+    "text": "Uppdaterar varje sfärs KRL för OpenSSH-användar-CA:n efter återkallelser av utfärdade certifikat och tar bort utgångna återkallelser."
+  },
   "sched.jobs.tls.ticket-key-rotate.title": {
     "en": "8bb62416b0f1932c",
     "text": "Rotation av TLS-sessionsbiljettnyckeln"

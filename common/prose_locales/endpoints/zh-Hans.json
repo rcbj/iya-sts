@@ -295,6 +295,14 @@
     "en": "f399711ce1261bf4",
     "text": "本服务发布的每个 CRL 和 OCSP 响应程序"
   },
+  "endpoints.route./pki/ssh-user-ca/:scope.name": {
+    "en": "a3f367e6aa3bd539",
+    "text": "领域的 OpenSSH 用户 CA 公钥"
+  },
+  "endpoints.route./pki/ssh-user-krl/:scope.name": {
+    "en": "a6ecaa76d097f280",
+    "text": "领域的 OpenSSH 用户密钥吊销列表"
+  },
   "endpoints.route./admin-api/xacml.name": {
     "en": "d3b1d402a612012c",
     "text": "以 JSON 形式提供的 XACML 控制台页面"

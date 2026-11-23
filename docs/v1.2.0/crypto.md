@@ -24,6 +24,8 @@ Each is per realm and takes effect at once. Set them on `/admin/config` or with 
 
 Passkeys have their own settings, `webauthn.algorithms`, `webauthn.pqcOnly` and `webauthn.insecureAlgorithms`, and none of the settings above change them.
 
+The SSH user certificate authority has its own settings too: `pki.sshUserCaAlgorithms`, `pki.sshUserCaPqcOnly` and `pki.sshUserCaPqcAlongsideClassical` ([PKI](pki.md#the-signature-algorithms)). **Stock OpenSSH cannot verify an ML-DSA certificate yet**: `ssh-mldsa-65` is this service's own wire name, so a certificate it signs is accepted only by an SSH server built to verify it. With `pki.sshUserCaPqcOnly` on and no ML-DSA authority, a certificate request is refused (`STS-PKI-0297`) rather than answered classically.
+
 [Every setting](configuration.md) has its full description.
 
 ## How a list behaves

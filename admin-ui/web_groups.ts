@@ -152,7 +152,10 @@ class GroupsPage {
       // EACH TAB'S CONTENT IS A FRAME (`secframe`, rcbj 2026-11-16), as Key
       // pairs' are: after its heading, which `WebPages.protocolTabs()` cuts
       // at the top level and turns into the tab's label.
-      kit.frame('<form method="get" action="/admin/groups"><div ' +
+      // The fragment is the Groups tab. A GET with none reloads onto
+      // Metadata, and the filtered list stays on this panel.
+      kit.frame('<form method="get" action="/admin/groups#groups-tab-groups">' +
+      '<div ' +
       'class="formrow"><label for="q">' + t.html('consoleGroups.body.group') +
       '</label><input type="text" ' +
       'id="q" name="q" value="' + kit.esc(wantedText) + '" ' +
@@ -164,7 +167,8 @@ class GroupsPage {
       '</select><button ' +
       'type="submit">' + t.html('consoleGroups.body.filter') + '</button>' +
       (wantedText
-        ? ' <a href="/admin/groups">' + t.html('consoleGroups.body.clear') +
+        ? ' <a href="/admin/groups#groups-tab-groups">' +
+          t.html('consoleGroups.body.clear') +
           '</a>'
         : '') +
       '</div></form>' +
@@ -389,7 +393,8 @@ class GroupsPage {
     const info = json;
     const back = kit.note('<a href="' +
       kit.esc('/admin/groups' +
-               kit.queryWith(kit.listViewOf('/admin/groups', ctx.query), {})) +
+               kit.queryWith(kit.listViewOf('/admin/groups', ctx.query), {}) +
+               '#groups-tab-groups') +
       '">' + t.html('consoleGroups.detail.back') + '</a>.');
 
     let inner;

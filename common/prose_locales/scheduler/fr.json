@@ -655,6 +655,14 @@
     "en": "bd4794eda9c5d2d2",
     "text": "Met en pause, désactive ou supprime un flux dont le récepteur est inactif depuis ssf.inactivityTimeoutS (SSF 1.0 section 8.1.1), en annonçant d’abord une pause ou une désactivation par un événement stream-updated, et envoie un événement de vérification à chaque flux activé qui n’en a reçu aucun de ce transmetteur depuis ssf.verificationEveryS (section 8.1.4)."
   },
+  "sched.jobs.ssh-user-ca.krl.title": {
+    "en": "9694f71884ac8e1b",
+    "text": "Liste de révocation de l’AC utilisateurs SSH"
+  },
+  "sched.jobs.ssh-user-ca.krl.describe": {
+    "en": "c84b42d3aab3bdde",
+    "text": "Actualise la KRL de l’AC utilisateurs OpenSSH de chaque domaine après les révocations de certificats délivrés et supprime les révocations expirées."
+  },
   "sched.jobs.tls.ticket-key-rotate.title": {
     "en": "8bb62416b0f1932c",
     "text": "Rotation de la clé de tickets de session TLS"

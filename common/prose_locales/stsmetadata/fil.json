@@ -1091,6 +1091,14 @@
     "en": "6e82cd30ac736775",
     "text": "NON-SPEC, at sadyang narito pa rin: kailangang malaman ng taong nagtuturo ng client sa mga endpoint na ito kung ANO ang mga address, at ang pagbasa sa mga ito mula sa certificate gamit ang `openssl x509 -text` ay mahinang unang hakbang. Isang row bawat authority na may subject nito, kung ilang certificate na ang na-revoke nito, at ang CRL nito sa parehong scheme (http, ldap) katabi ng mga OCSP at caIssuers address nito. WALANG SERIAL NUMBER DITO — ang listahan ng mga na-revoke ay ang CRL, at ang JSON na kopya sa tabi nito ay magiging ikalawang sagot sa parehong tanong: ang nagiging luma, at ang walang pumirma. Malinaw nitong sinasabi na NAGLALATHALA ng revocation ang serbisyong ito at hindi nito mapipilit ang sinuman na kumonsulta rito, na totoo sa bawat certificate authority at siyang dahilan kung bakit ituturo rito ng isang client author ang stack niya. Walang gate, dahil lahat ng nasa loob nito ay nasa bawat certificate na ibinibigay ng serbisyong ito."
   },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "c8819f794e61f398",
+    "text": "NON-SPEC (#1955 P3): ang key ng OpenSSH user CA na saklaw ng realm, inilathala bilang authorized-key line para pagkatiwalaan ng mga SSH server. Walang gate at `no-store`; hindi kailanman umaalis sa serbisyong ito ang katumbas na private key ng CA."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "ed928008015e78a8",
+    "text": "NON-SPEC (#1955 P3): ang OpenSSH KRL na saklaw ng realm, ina-update kapag binawi ng isang caller ang certificate o iniulat na nawala ang hardware token. Walang gate at `no-store`; kailangang i-configure ang mga SSH server para konsultahin ito dahil hindi mapipilit ng serbisyong ito ang relying party na gawin iyon."
+  },
   "stsmetadata.endpoints./admin-api/xacml.what": {
     "en": "2efd1b442d450758",
     "text": "Ang iginuguhit ng GET /admin/xacml, bilang data. Walang gate, gaya ng natitirang bahagi ng /admin-api."

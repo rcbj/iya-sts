@@ -3448,8 +3448,9 @@ const REQUIREMENTS = [
     development: 'The generated password is written to the service log.',
     product: 'It is written to a file only this service can read, and the ' +
              'log says where, unless admin.logBootstrapPassword is on. A ' +
-             'later start deletes that file, once somebody already holds a ' +
-             'credential.',
+             'trust realm\'s file adds a hyphen and the realm id to that ' +
+             'name. A later start deletes a file once the password in it no ' +
+             'longer opens its account.',
     where: 'common/credentials.ts' },
   // #1495 (ASVS 5.0.0 10.4.6).
   { id: 'pkce-every-client',

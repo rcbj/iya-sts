@@ -260,11 +260,21 @@ async function theDocumentIsServedAndWellFormed() {
         method + " " + path + " needs a summary and a description.");
       assert.ok(operation.responses && operation.responses["200"],
         method + " " + path + " should document its 200.");
+      // A REFUSAL IS DOCUMENTED, AND MOST ARE A 400. An operation whose only
+      // refusal is about its referent may document that alone instead: since
+      // #1955, `ykval-client-remove` refuses nothing but an id the realm
+      // holds no client for, and answers that 404 with `errors`. So a POST
+      // documents a 400, or another 4xx; a POST documenting no refusal at all
+      // is still the gap this was written to find.
       if (method === "post") {
-        assert.ok(operation.responses["400"],
-          "POST " + path + " should document its 400 — a refusal is the " +
-          "reply half of these operations that a caller has to handle, and " +
-          "it carries `errors` rather than a status alone.");
+        assert.ok(operation.responses["400"] ||
+                  Object.keys(operation.responses).some(function (code) {
+                    return /^4\d\d$/.test(code);
+                  }),
+          "POST " + path + " should document its 400, or the 4xx it " +
+          "refuses with — a refusal is the reply half of these operations " +
+          "that a caller has to handle, and it carries `errors` rather than " +
+          "a status alone.");
       }
     });
   });

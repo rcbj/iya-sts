@@ -655,6 +655,14 @@
     "en": "bd4794eda9c5d2d2",
     "text": "Pausiert, deaktiviert oder löscht einen Stream, dessen Receiver seit ssf.inactivityTimeoutS inaktiv ist (SSF 1.0 section 8.1.1), kündigt eine Pause oder Deaktivierung zuerst mit einem stream-updated-Ereignis an und sendet ein verification-Ereignis an jeden aktivierten Stream, der von diesem Transmitter seit ssf.verificationEveryS keines erhalten hat (section 8.1.4)."
   },
+  "sched.jobs.ssh-user-ca.krl.title": {
+    "en": "9694f71884ac8e1b",
+    "text": "Sperrliste der SSH-Benutzer-CA"
+  },
+  "sched.jobs.ssh-user-ca.krl.describe": {
+    "en": "c84b42d3aab3bdde",
+    "text": "Aktualisiert die KRL der OpenSSH-Benutzer-CA jedes Vertrauensbereichs nach Widerrufen ausgestellter Zertifikate und entfernt abgelaufene Widerrufe."
+  },
   "sched.jobs.tls.ticket-key-rotate.title": {
     "en": "8bb62416b0f1932c",
     "text": "Rotation des TLS-Session-Ticket-Schlüssels"

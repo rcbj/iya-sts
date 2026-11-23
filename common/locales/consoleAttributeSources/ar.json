@@ -73,5 +73,6 @@
   "jobOnEnd": ".",
   "settings": "الإعدادات",
   "newSource.button": "إضافة مصدر",
-  "newSource.yes": "نعم"
+  "newSource.yes": "نعم",
+  "newSource.no": "لا"
 }

@@ -655,6 +655,14 @@
     "en": "bd4794eda9c5d2d2",
     "text": "暫停、停用或刪除接收者已閒置 ssf.inactivityTimeoutS 的串流（SSF 1.0 section 8.1.1），暫停或停用前會先以 stream-updated 事件通告；並對已有 ssf.verificationEveryS 未從此傳送者收到驗證事件的每個已啟用串流送出驗證事件（section 8.1.4）。"
   },
+  "sched.jobs.ssh-user-ca.krl.title": {
+    "en": "9694f71884ac8e1b",
+    "text": "SSH 使用者 CA 撤銷清單"
+  },
+  "sched.jobs.ssh-user-ca.krl.describe": {
+    "en": "c84b42d3aab3bdde",
+    "text": "在已簽發憑證被撤銷後重新整理每個領域的 OpenSSH 使用者 CA KRL，並移除已過期的撤銷。"
+  },
   "sched.jobs.tls.ticket-key-rotate.title": {
     "en": "8bb62416b0f1932c",
     "text": "TLS 工作階段票證金鑰輪替"

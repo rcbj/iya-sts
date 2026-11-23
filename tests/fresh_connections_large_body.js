@@ -39,6 +39,8 @@
 // process dying.
 // ===========================================================================
 
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 
@@ -46,23 +48,19 @@ const PRELOAD = path.join(__dirname, 'tools', 'fresh-connections.js');
 
 // The child's program, as a string: it runs in a `node -e` child, so its
 // functions carry no Entering/Leaving pair (the code-style exemption).
+//
+// VERIFIED (#1954's follow-up): the server's certificate is made HERE, before
+// the child starts, and handed to it as NODE_EXTRA_CA_CERTS, which node reads
+// only at start. Until then the child set NODE_TLS_REJECT_UNAUTHORIZED=0 for
+// its whole process, and a fetch with its own dispatcher would bypass the
+// preload this file exists to hold.
 const CHILD = `
+const fs = require('fs');
 const https = require('https');
-const forge = require('node-forge');
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-const keys = forge.pki.rsa.generateKeyPair(2048);
-const cert = forge.pki.createCertificate();
-cert.publicKey = keys.publicKey;
-cert.serialNumber = '01';
-cert.validity.notBefore = new Date();
-cert.validity.notAfter = new Date(Date.now() + 86400000);
-cert.setSubject([{ name: 'commonName', value: 'localhost' }]);
-cert.setIssuer([{ name: 'commonName', value: 'localhost' }]);
-cert.sign(keys.privateKey, forge.md.sha256.create());
 const body = Buffer.alloc(Number(process.env.BODY), 0x41);
 const srv = https.createServer({
-  key: forge.pki.privateKeyToPem(keys.privateKey),
-  cert: forge.pki.certificateToPem(cert)
+  key: fs.readFileSync(process.env.KEY_FILE),
+  cert: fs.readFileSync(process.env.CERT_FILE)
 }, function (req, res) {
   res.setHeader('content-type', 'application/json');
   res.setHeader('content-length', String(body.length));
@@ -113,6 +111,36 @@ function runChild(env) {
   return promise;
 }
 
+/**
+ * A self-signed certificate for localhost, written to a directory of its own.
+ *
+ * @param {string} dir - where to write `key.pem` and `cert.pem`
+ * @returns {{ key: string, cert: string }} the two paths
+ */
+function localhostCertificate(dir) {
+  log.debug("Entering localhostCertificate().");
+  const forge = require('node-forge');
+  const keys = forge.pki.rsa.generateKeyPair(2048);
+  const cert = forge.pki.createCertificate();
+  cert.publicKey = keys.publicKey;
+  cert.serialNumber = '01';
+  cert.validity.notBefore = new Date();
+  cert.validity.notAfter = new Date(Date.now() + 86400000);
+  cert.setSubject([{ name: 'commonName', value: 'localhost' }]);
+  cert.setIssuer([{ name: 'commonName', value: 'localhost' }]);
+  // The name is checked: a SAN, since a client ignores the CN beside one.
+  cert.setExtensions([{ name: 'subjectAltName',
+                        altNames: [{ type: 2, value: 'localhost' }] }]);
+  cert.sign(keys.privateKey, forge.md.sha256.create());
+  const out = { key: path.join(dir, 'key.pem'),
+                cert: path.join(dir, 'cert.pem') };
+  fs.writeFileSync(out.key, forge.pki.privateKeyToPem(keys.privateKey),
+                   { mode: 0o600 });
+  fs.writeFileSync(out.cert, forge.pki.certificateToPem(cert));
+  log.debug("Leaving localhostCertificate().");
+  return out;
+}
+
 let log = null;
 
 module.exports = {
@@ -122,13 +150,23 @@ module.exports = {
   run: async function (t) {
     log = t.log;
     log.debug("Entering run().");
-    const result = await runChild({
-      STS_TEST_FRESH_CONNECTIONS: '1',
-      BODY: '67480',
-      N: '1500',
-      NODE_PATH: path.join(__dirname, 'node_modules') + path.delimiter +
-                 path.join(__dirname, '..', 'node_modules')
-    });
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-fresh-'));
+    let result;
+    try {
+      const pems = localhostCertificate(dir);
+      result = await runChild({
+        STS_TEST_FRESH_CONNECTIONS: '1',
+        BODY: '67480',
+        N: '1500',
+        KEY_FILE: pems.key,
+        CERT_FILE: pems.cert,
+        NODE_EXTRA_CA_CERTS: pems.cert,
+        NODE_PATH: path.join(__dirname, 'node_modules') + path.delimiter +
+                   path.join(__dirname, '..', 'node_modules')
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
     const paused = /assert\(!this\.paused\)/.test(result.err);
     t.check(!paused, 'the child did not die on undici\'s ' +
             '`assert(!this.paused)`', result.err.slice(-600));

@@ -11057,7 +11057,7 @@ class AdminViews {
   // named create takes `name`, its mechanisms optional (none allows every
   // one), and the attribute policy's console form sends its list even when
   // empty. A boolean is required of an API caller and is never empty on the
-  // console's form, where an unticked box is "no".
+  // console's form, where No is checked when the answer is no.
   /**
    * Builds `GET /admin-api/policies/new`: the kinds, and the asked kind's
    * create fields with which of them are required.

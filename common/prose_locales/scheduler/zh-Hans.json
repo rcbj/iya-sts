@@ -655,6 +655,14 @@
     "en": "bd4794eda9c5d2d2",
     "text": "对接收方已不活动达 ssf.inactivityTimeoutS 的流进行暂停、禁用或删除（SSF 1.0 section 8.1.1），暂停或禁用前先以 stream-updated 事件通告；并向每个已启用、且在 ssf.verificationEveryS 内未从本发送方收到验证事件的流发送验证事件（section 8.1.4）。"
   },
+  "sched.jobs.ssh-user-ca.krl.title": {
+    "en": "9694f71884ac8e1b",
+    "text": "SSH 用户 CA 吊销列表"
+  },
+  "sched.jobs.ssh-user-ca.krl.describe": {
+    "en": "c84b42d3aab3bdde",
+    "text": "在已签发证书被吊销后刷新每个领域的 OpenSSH 用户 CA KRL，并移除已过期的吊销。"
+  },
   "sched.jobs.tls.ticket-key-rotate.title": {
     "en": "8bb62416b0f1932c",
     "text": "TLS 会话票据密钥轮换"

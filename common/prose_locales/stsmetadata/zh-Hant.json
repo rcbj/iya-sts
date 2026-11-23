@@ -1091,6 +1091,14 @@
     "en": "6e82cd30ac736775",
     "text": "非規格端點，但仍刻意放在這裡：將用戶端指向這些端點的人需要知道這些位址「是」什麼，而用 `openssl x509 -text` 從憑證中讀出它們並不是好的第一步。每個授權單位一列，含其主體、已撤銷的憑證數量，以及兩種協定（http、ldap）的 CRL，旁邊是其 OCSP 與 caIssuers 位址。其中「沒有」序號——已撤銷清單就是 CRL，旁邊再放一份 JSON 複本就成了同一問題的第二個答案：會過時的那個，也是沒有人簽署的那個。它明白地說明本服務「發布」撤銷資訊，但無法讓任何人去查詢它，這對每個憑證授權單位都成立，也正是用戶端作者會將其堆疊指向這裡的原因。不設閘門，因為其中的一切早已包含在本服務發出的每張憑證中。"
   },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "c8819f794e61f398",
+    "text": "NON-SPEC（#1955 P3）：領域範圍的 OpenSSH 使用者 CA 金鑰，以 authorized-key 行發布，供 SSH 伺服器信任。無門控且 `no-store`；對應的 CA 私密金鑰從不離開本服務。"
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "ed928008015e78a8",
+    "text": "NON-SPEC（#1955 P3）：領域範圍的 OpenSSH KRL，在呼叫方撤銷憑證或回報硬體權杖遺失時更新。無門控且 `no-store`；必須設定 SSH 伺服器去查詢它，因為本服務無法讓信賴方這樣做。"
+  },
   "stsmetadata.endpoints./admin-api/xacml.what": {
     "en": "2efd1b442d450758",
     "text": "GET /admin/xacml 所繪製的內容，以資料形式提供。與 /admin-api 其他部分一樣不設閘門。"

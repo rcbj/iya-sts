@@ -212,12 +212,12 @@ function childMain() {
           return apiAnswer(one.operation, one.params);
         }));
         answers.forEach(function (one, index) {
-          if (one.status !== 200 || !one.body ||
-              typeof one.body !== 'object') {
+          if (!WebPages.composeKept(page, asked[index].member, one)) {
             throw new Error(asked[index].operation + ' answered ' +
                             one.status);
           }
-          view[asked[index].member] = JSON.parse(JSON.stringify(one.body));
+          view[asked[index].member] = JSON.parse(JSON.stringify(
+            one.body != null ? one.body : one.json));
         });
       }
       return view;
@@ -826,10 +826,15 @@ function childMain() {
         const value = (/\bvalue="([^"]*)"/i.exec(tag) || [])[1];
         const typed = type === 'text' || type === 'email' ||
                       type === 'url' || type === 'tel';
+        // `checked` AS AN ATTRIBUTE, not a word inside one: a yes/no pair
+        // (#1132) carries its field's description in `title`, and the
+        // passkey policy's `allowUsernameless` says "checked" there, which
+        // read both radios as chosen.
+        const bare = tag.replace(/"[^"]*"/g, '""');
         if (name && name !== 'action' && type !== 'submit' &&
             type !== 'file' &&
             ((type !== 'checkbox' && type !== 'radio') ||
-             /\bchecked\b/i.test(tag) || (filled && type === 'checkbox'))) {
+             /\bchecked\b/i.test(bare) || (filled && type === 'checkbox'))) {
           add(name, filled && typed && !value ? 'filled'
             : value === undefined ? (type === 'checkbox' ? 'on' : '')
                                   : value.replace(/&amp;/g, '&')
@@ -2096,6 +2101,30 @@ function childMain() {
            JSON.stringify({ per: '5', agent: 'a1' }),
          'D-Cert-compose. each tab\'s operation is asked with its own names',
          JSON.stringify(certAsked));
+    const fp = 'ab'.repeat(32);
+    const pkiPage = WebPages.pageFor('/admin/pki');
+    const pkiAsked = WebPages.composeRequests(pkiPage, {
+      certificate: fp, from: 'pki-tree'
+    });
+    const cryptoAsked = WebPages.composeRequests(
+      WebPages.pageFor('/admin/crypto-metadata'), { certificate: fp });
+    note(pkiAsked.length === 1 &&
+         pkiAsked[0].member === 'certificateDetails' &&
+         pkiAsked[0].operation === '/admin-api/certificates' &&
+         pkiAsked[0].params.certificate === fp &&
+         !Object.prototype.hasOwnProperty.call(pkiAsked[0].params, 'from') &&
+         WebPages.composeRequests(pkiPage, {}).length === 0 &&
+         cryptoAsked.length === 1 &&
+         cryptoAsked[0].operation === '/admin-api/certificates' &&
+         WebPages.composeKept(pkiPage, 'certificateDetails',
+           { status: 404, json: { ok: false, errors: ['no'] } }) &&
+         !WebPages.composeKept(pkiPage, 'certificateDetails',
+           { status: 404, json: null }) &&
+         !WebPages.composeKept(pkiPage, 'other',
+           { status: 404, json: { ok: false } }),
+         'D-Cert-dialog. View details composes the certificates operation ' +
+         'into certificateDetails, and a refusal is still drawn',
+         JSON.stringify(pkiAsked));
 
     const report = mode.report();
     const here = WebPages.render('/admin/mode',

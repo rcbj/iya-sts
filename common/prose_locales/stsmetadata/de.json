@@ -1091,6 +1091,14 @@
     "en": "6e82cd30ac736775",
     "text": "NON-SPEC, und dennoch absichtlich hier: Wer einen Client auf diese Endpunkte richtet, muss wissen, was die Adressen SIND, und sie mit `openssl x509 -text` aus einem Zertifikat zu lesen, ist ein schlechter erster Schritt. Eine Zeile je Zertifizierungsstelle mit ihrem Subject, wie viele Zertifikate sie widerrufen hat, und ihrer CRL in beiden Schemata (http, ldap) neben ihren OCSP- und caIssuers-Adressen. KEINE SERIENNUMMERN STEHEN DARIN — die Liste des Widerrufenen ist die CRL, und eine JSON-Kopie daneben wäre eine zweite Antwort auf dieselbe Frage: diejenige, die veraltet, und diejenige, die niemand signiert hat. Es sagt ausdrücklich, dass dieser Dienst den Widerruf VERÖFFENTLICHT und niemanden dazu bringen kann, ihn zu befragen, was für jede Zertifizierungsstelle gilt und der Grund ist, aus dem ein Autor eines Clients seinen Stack hierher richten würde. Ungesperrt, weil alles darin bereits in jedem Zertifikat steht, das dieser Dienst aushändigt."
   },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "c8819f794e61f398",
+    "text": "NON-SPEC (#1955 P3): der Schlüssel der OpenSSH-Benutzer-CA des Vertrauensbereichs, als authorized-key-Zeile veröffentlicht, damit SSH-Server ihm vertrauen. Ohne Schranke und `no-store`; der zugehörige private Schlüssel der CA verlässt diesen Dienst nie."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "ed928008015e78a8",
+    "text": "NON-SPEC (#1955 P3): die KRL von OpenSSH des Vertrauensbereichs, aktualisiert, wenn ein Aufrufer ein Zertifikat widerruft oder ein Hardware-Token als verloren meldet. Ohne Schranke und `no-store`; SSH-Server müssen so konfiguriert werden, dass sie sie abfragen, weil dieser Dienst eine vertrauende Partei nicht dazu bringen kann."
+  },
   "stsmetadata.endpoints./admin-api/xacml.what": {
     "en": "2efd1b442d450758",
     "text": "Was GET /admin/xacml darstellt, als Daten. Ungesperrt, wie der Rest von /admin-api."

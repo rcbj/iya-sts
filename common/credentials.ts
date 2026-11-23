@@ -1092,9 +1092,10 @@ class Credentials {
 
   private directory = null;
 
-  // Set when this process's bootstrap wrote the password file. A later
-  // realm in the same start must not delete the only copy of that password.
-  private bootstrapPasswordWritten = false;
+  // The realms whose bootstrap password file this process wrote. Each realm
+  // has a file of its own (#1969), so this guards only a second bootstrap of
+  // the SAME realm in one start, which must not delete the copy it just made.
+  private bootstrapPasswordWritten = new Set<string>();
 
   /**
    * Fills the directory slot. Refused whole unless it carries at least
@@ -2881,19 +2882,79 @@ class Credentials {
   }
 
   /**
-   * The path of the generated bootstrap password, under persistence.dataDir.
+   * The path of the ambient realm's generated bootstrap password, under
+   * persistence.dataDir.
+   *
+   * ONE FILE PER REALM (#1969). A first product start bootstraps the default
+   * realm and then every configured realm, and when they shared one name
+   * each write replaced the last, so only the last realm's password
+   * survived. The default realm keeps the name it always had,
+   * `bootstrap-admin-password`, because the documentation, the deployment
+   * scripts and every operator's notes name it; a trust realm's is
+   * `bootstrap-admin-password-<realm id>`. A realm id is `[a-z0-9-]` only
+   * (`realms.js`'s ID_PATTERN), so it cannot leave the directory.
    *
    * @returns the file's path
    */
   private bootstrapPasswordFile(): string {
-    const { log, config } = this.deps;
+    const { log, config, realms } = this.deps;
     log.debug("Entering Credentials.bootstrapPasswordFile().");
     const nodePath = require('path');
     const dir = nodePath.resolve(String(
       config.value('persistence.dataDir')));
-    const file = nodePath.join(dir, 'bootstrap-admin-password');
+    const realmId = String(realms.currentId() || realms.DEFAULT_ID);
+    const name = realmId === realms.DEFAULT_ID
+      ? 'bootstrap-admin-password'
+      : 'bootstrap-admin-password-' + realmId;
+    const file = nodePath.join(dir, name);
     log.debug("Leaving Credentials.bootstrapPasswordFile().");
     return file;
+  }
+
+  /**
+   * Whether a bootstrap password file still opens the account it names.
+   *
+   * @param file - the file's path
+   * @returns true when its `name:password` verifies against that account's
+   *   stored password now
+   */
+  private bootstrapPasswordStillOpens(file: string): boolean {
+    const { log, crypto } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.bootstrapPasswordStillOpens().");
+    let text = '';
+    try {
+      text = String(require('fs').readFileSync(file, 'utf8'));
+    } catch (e) {
+      // Absent or unreadable: nothing in it opens anything, and the unlink
+      // that follows reports what is wrong with it.
+      log.debug("Caught in Credentials.bootstrapPasswordStillOpens(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving Credentials.bootstrapPasswordStillOpens(). " +
+                "Unreadable.");
+      return false;
+    }
+    const line = text.replace(/\r?\n$/, '');
+    const colon = line.indexOf(':');
+    if (colon <= 0 || !directory ||
+        typeof directory.readPassword !== 'function') {
+      log.debug("Leaving Credentials.bootstrapPasswordStillOpens(). " +
+                "Not a name and a password.");
+      return false;
+    }
+    let stored = null;
+    try {
+      stored = directory.readPassword(line.slice(0, colon));
+    } catch (e) {
+      log.debug("Caught in Credentials.bootstrapPasswordStillOpens(): " +
+                ((e && e.message) || e));
+      stored = null;
+    }
+    const opens = !!stored && !!crypto.verifySecret(line.slice(colon + 1),
+                                                    stored);
+    log.debug("Leaving Credentials.bootstrapPasswordStillOpens(). " +
+              (opens ? "Yes." : "No."));
+    return opens;
   }
 
   /**
@@ -2931,22 +2992,47 @@ class Credentials {
   }
 
   /**
-   * Removes the bootstrap password file a previous start left behind.
+   * Removes the ambient realm's bootstrap password file a previous start
+   * left behind, once the password in it no longer opens the account.
    *
-   * A start that wrote the file itself does not: another realm in this
-   * process may still need that password. ENOENT is success. Any other
-   * failure is logged (STS-AUTHN-0567) and the start continues.
+   * Only this realm's own file is touched (#1969). A start that wrote it
+   * itself leaves it. A file whose password still verifies is left too: see
+   * the rule below. ENOENT is success. Any other failure is logged
+   * (STS-AUTHN-0567) and the start continues.
    */
   private removeLeftoverBootstrapPassword(): void {
-    const { log, errorCodes } = this.deps;
+    const { log, errorCodes, realms } = this.deps;
     log.debug("Entering Credentials.removeLeftoverBootstrapPassword().");
-    if (this.bootstrapPasswordWritten) {
+    if (this.bootstrapPasswordWritten.has(String(realms.currentId()))) {
       log.debug("Leaving Credentials.removeLeftoverBootstrapPassword(). " +
                 "Written this start.");
       return;
     }
     const nodeFs = require('fs');
     const file = this.bootstrapPasswordFile();
+    // REMOVED ONLY ONCE IT IS STALE (#1969). `bootstrapOnce()` gives its
+    // claim back as soon as the winner's writes commit, so a node that
+    // starts a moment later wins the claim, finds the credential the winner
+    // just made, and reaches this line. Where the nodes share
+    // persistence.dataDir, deleting here would delete the only copy of a
+    // password nobody has read yet, and nobody could sign in. So the rule
+    // is the file's CONTENT rather than its age: the file is removed once
+    // the password in it no longer opens the account it names — the account
+    // was given a new password (its first sign-in forces one), lost its
+    // password, or is gone — and is left while it still does. It is the
+    // same file either way, so this never keeps a working password that
+    // somebody could not already read there, and it asks no clock: a file's
+    // mtime on a shared volume and a node's timestamp on the entry come
+    // from different clocks, and comparing them would be right only as
+    // often as they agree.
+    if (this.bootstrapPasswordStillOpens(file)) {
+      log.info('credentials: kept the bootstrap password file ' + file +
+               ' because the password in it still opens its account; a ' +
+               'start after that password is changed removes it.');
+      log.debug("Leaving Credentials.removeLeftoverBootstrapPassword(). " +
+                "Still opens.");
+      return;
+    }
     try {
       nodeFs.unlinkSync(file);
     } catch (e) {
@@ -2969,7 +3055,7 @@ class Credentials {
       return;
     }
     log.info('credentials: removed the bootstrap password file ' + file +
-             ' because somebody already holds a credential.');
+             ' because the password in it no longer opens its account.');
     log.debug("Leaving Credentials.removeLeftoverBootstrapPassword().");
   }
 
@@ -2978,8 +3064,9 @@ class Credentials {
    * reached through, with a generated password announced in the log.
    *
    * It does not run in development mode. A product start that finds a
-   * credential already held removes the password file a previous start
-   * wrote, unless this process wrote that file itself.
+   * credential already held removes this realm's password file a previous
+   * start wrote, once the password in it no longer opens its account,
+   * unless this process wrote that file itself.
    * @param opts - `username`, `admin` by default; the password is
    *   `admin.bootstrapPassword` or a generated one
    * @returns `{ ran, username, … }`, or `{ ran: false, why }`
@@ -3018,10 +3105,11 @@ class Credentials {
     }
     if (anybody) {
       // A LATER START. The file from the start that generated the password
-      // is the plaintext, and this start did not generate one. A start that
-      // wrote the file itself leaves it, so another realm in this process
-      // still has the only copy. A node that lost bootstrapOnce() never
-      // reaches here, and so does not remove a file the winner just wrote.
+      // is the plaintext, and this start did not generate one. It is this
+      // realm's file only, and it is removed only once the password in it
+      // no longer opens its account (#1969), so a node that wins the claim
+      // just after another node bootstrapped does not delete the file that
+      // node just wrote. A node that lost bootstrapOnce() never reaches here.
       this.removeLeftoverBootstrapPassword();
       log.debug('Leaving Credentials.bootstrap(). Somebody already holds a ' +
                 'credential.');
@@ -3119,15 +3207,17 @@ class Credentials {
     // this service's user can read, unless an operator asked for the old way.
     const held = this.writeBootstrapPassword(username, password);
     if (held) {
-      // Another realm in this start still needs the only copy.
-      this.bootstrapPasswordWritten = true;
+      // A second bootstrap of this realm in this start must leave it.
+      this.bootstrapPasswordWritten.add(
+        String(this.deps.realms.currentId()));
     }
     log.warn('=======================================================\n' +
              'PRODUCT MODE BOOTSTRAP — THIS IS SHOWN ONCE AND NEVER AGAIN.\n' +
              '\n' +
              '  username: ' + username + '\n' +
              (held ? '  password: in the file ' + held + '\n' +
-                     '  A later start removes this file.\n'
+                     '  A start after this password is changed removes this ' +
+                     'file.\n'
                    : '  password: ' + password + '\n') +
              '\nNobody in this realm\'s ' +
              'directory held a credential, so this one was generated so that ' +
@@ -3165,7 +3255,10 @@ class Credentials {
   // **WHAT A NODE THAT LOSES SEES**: one info line naming the node holding the
   // claim and when it took it, and NO password — it seeds nothing and writes
   // nothing, and it does not remove the password file, which the winner may
-  // have just written on a data directory the nodes share. The password is in
+  // have just written on a data directory the nodes share. A node that wins
+  // the claim AFTER the winner gave it back does reach the removal, which is
+  // why that removal waits until the password in the file no longer opens its
+  // account (`removeLeftoverBootstrapPassword()`, #1969). The password is in
   // the winner's file, or its log when admin.logBootstrapPassword is on. If
   // the winner died
   // before it wrote, the claim expires (`BOOTSTRAP_CLAIM_TTL_MS`) and the next
@@ -8694,6 +8787,10 @@ class Credentials {
       mfaKeys: mechanisms.mfaKeys || 0,
       totp: !!mechanisms.totp,
       totpUsable: !!mechanisms.totpUsable,
+      // `interpretValues()`'s two #1955 facts (P4, P5), in its order, so
+      // the census answers the same members by either door.
+      hotp: !!mechanisms.hotp,
+      yubi: !!mechanisms.yubi,
       mfaRequired: !!mechanisms.mfaRequired,
       secondFactor: mechanisms.secondFactor || '',
       usable: !!mechanisms.usable

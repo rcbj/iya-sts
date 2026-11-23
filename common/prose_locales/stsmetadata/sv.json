@@ -1091,6 +1091,14 @@
     "en": "6e82cd30ac736775",
     "text": "ICKE-SPEC, och avsiktligt här ändå: en person som riktar en klient mot dessa slutpunkter behöver veta vad adresserna ÄR, och att läsa ut dem ur ett certifikat med `openssl x509 -text` är ett dåligt första steg. En rad per utfärdare med dess subjekt, hur många certifikat den har återkallat och dess CRL i båda schemana (http, ldap) bredvid dess OCSP- och caIssuers-adresser. INGA SERIENUMMER FINNS I DEN — listan över vad som är återkallat är CRL:en, och en JSON-kopia bredvid den vore ett andra svar på samma fråga: det som blir inaktuellt, och det som ingen signerat. Den säger uttryckligen att den här tjänsten PUBLICERAR återkallelse och inte kan få någon att konsultera den, vilket gäller varje certifikatutfärdare och är skälet till att en klientförfattare skulle rikta sin stack hit. Ogrindad, eftersom allt i den redan finns inuti varje certifikat som den här tjänsten delar ut."
   },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "c8819f794e61f398",
+    "text": "NON-SPEC (#1955 P3): sfärens nyckel för OpenSSH-användar-CA:n, publicerad som en authorized-key-rad som SSH-servrar kan lita på. Ospärrad och `no-store`; den motsvarande privata CA-nyckeln lämnar aldrig den här tjänsten."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "ed928008015e78a8",
+    "text": "NON-SPEC (#1955 P3): sfärens OpenSSH-KRL, uppdaterad när en anropare återkallar ett certifikat eller anmäler en hårdvarutoken som förlorad. Ospärrad och `no-store`; SSH-servrar måste konfigureras att fråga den, eftersom den här tjänsten inte kan få en förlitande part att göra det."
+  },
   "stsmetadata.endpoints./admin-api/xacml.what": {
     "en": "2efd1b442d450758",
     "text": "Det som GET /admin/xacml ritar, som data. Ogrindad, som resten av /admin-api."

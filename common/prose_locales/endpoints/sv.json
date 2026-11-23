@@ -295,6 +295,14 @@
     "en": "f399711ce1261bf4",
     "text": "Varje CRL och OCSP-responder som den här tjänsten publicerar"
   },
+  "endpoints.route./pki/ssh-user-ca/:scope.name": {
+    "en": "a3f367e6aa3bd539",
+    "text": "Sfärens publika nyckel för OpenSSH-användar-CA:n"
+  },
+  "endpoints.route./pki/ssh-user-krl/:scope.name": {
+    "en": "a6ecaa76d097f280",
+    "text": "Sfärens återkallelselista för OpenSSH-användarnycklar"
+  },
   "endpoints.route./admin-api/xacml.name": {
     "en": "d3b1d402a612012c",
     "text": "XACML-konsolsidan som JSON"

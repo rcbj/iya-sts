@@ -1635,7 +1635,8 @@ const CODES = [
     summary: 'A request worker reported that its change-log pull waited on ' +
       'its own flush past workers.readBarrierTimeoutMs (STS-STORE-0176), ' +
       'so the front process retired it — nothing more routed to it, then ' +
-      'drained — and forks a replacement into its slot when it exits. A ' +
+      'drained, waiting for its own flush to settle — and forks a ' +
+      'replacement into its slot when it exits. A ' +
       'pool that is stopping or has given up keeps the worker, and the ' +
       'line says why.',
     spec: '' },
@@ -1644,6 +1645,13 @@ const CODES = [
       'wedged (STS-WORKER-0055) did not finish draining within 8000 ms and ' +
       'was ended; its replacement follows as for any worker that exits.',
     spec: '' },
+  { code: 'STS-WORKER-0057',
+    summary: 'A request worker was ended, or exited, with its own flush ' +
+      'still out past ten times workers.readBarrierTimeoutMs after it ' +
+      'began (5 minutes by default): the flush was given up on, and the ' +
+      'writes in it may not have reached the store. A flush that settles ' +
+      'before then is waited for.',
+    spec: 'Log line' },
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',
     spec: '' },
@@ -2240,10 +2248,17 @@ const CODES = [
       'process\'s own flush of that entry past workers.readBarrierTimeoutMs ' +
       'and the flush had not settled. The pull fails before its position ' +
       'moves, so the row is read again and never dropped; a request worker ' +
-      'asks the front process to replace it (STS-WORKER-0055). Reported ' +
-      'once a flush; a read barrier\'s STS-STORE-0039 line names the wait ' +
-      'while it lasts.',
+      'asks the front process to replace it only once the flush is stuck ' +
+      '(STS-STORE-0177). Reported once a flush; a read barrier\'s ' +
+      'STS-STORE-0039 line names the wait while it lasts.',
     spec: '' },
+  { code: 'STS-STORE-0177',
+    summary: 'A request worker\'s own flush has been out four times ' +
+      'workers.readBarrierTimeoutMs (2 minutes by default), so the worker ' +
+      'asks the front process to replace it (STS-WORKER-0055). Its drain ' +
+      'waits for that flush to settle until ten times the bound after it ' +
+      'began, so a flush that is only slow keeps its writes.',
+    spec: 'Log line' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +
@@ -5480,6 +5495,18 @@ const CODES = [
       'certificate to the ML-DSA authority; the other issues a classical ' +
       'certificate and an ML-DSA certificate. They cannot both be on.',
     spec: 'The console and the management API refuse the write' },
+  { code: 'STS-PKI-0297',
+    summary: 'An SSH user certificate was asked for while ' +
+      'pki.sshUserCaPqcOnly is on, and the realm has no ML-DSA SSH user CA: ' +
+      'this runtime cannot generate ML-DSA, ssh-mldsa-65 is not in ' +
+      'pki.sshUserCaAlgorithms, or the authority could not be made. No ' +
+      'classical certificate is issued in its place.',
+    spec: 'The account API refuses the request with HTTP 503' },
+  { code: 'STS-PKI-0298',
+    summary: 'A public SSH user CA request named an algorithm other than ' +
+      'ssh-mldsa-65, or asked for the ML-DSA authority of a realm that has ' +
+      'none.',
+    spec: 'GET /pki/ssh-user-ca/{scope} answers 400 or 404' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -18683,6 +18710,16 @@ const CODES = [
       'at every door that asks it; each door refuses it under its own code ' +
       'for a certificate that is not an identity.',
     spec: 'none (logged): the door\'s own refusal' },
+  { code: 'STS-TLS-0064',
+    summary: 'Two client-truststore anchors share a subject and not a key. ' +
+      'OpenSSL looks an issuer up by subject name, so the later one is ' +
+      'shadowed: a certificate it issued does not verify ' +
+      '(DEPTH_ZERO_SELF_SIGNED_CERT) while the earlier one is installed. ' +
+      'The add is kept and warned (the row\'s shadowedBy names the earlier ' +
+      'fingerprint). Presenting the shadowed certificate itself is ' +
+      'recognised by its fingerprint and verified (#1242).',
+    spec: 'the add succeeds with warning; the handshake of the certificate ' +
+      'itself verifies' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +
@@ -23623,6 +23660,21 @@ const CODES = [
       '3.5). The message was not sent under a classical algorithm ' +
       'instead.',
     spec: 'the mail send; STS-MAIL-0243 carries the sentence' },
+  { code: 'STS-OPENPGP-0029',
+    summary: 'The proof of possession offered with an OpenPGP key carries ' +
+      'more than one signature. A proof is signed once, by one key, so ' +
+      'that the signer and the creation time judged are the signature ' +
+      'that verified.',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0030',
+    summary: 'A person\'s mail address changed and the OpenPGP key whose ' +
+      'user ids name only the former address could not be retired from ' +
+      'their entry, or an S/MIME choice whose certificate does not name ' +
+      'the new address could not be put back to none. Mail is still not ' +
+      'encrypted to either for the new address: a key or certificate is ' +
+      'used only for an address it names.',
+    spec: 'none (a log line; the directory write that changed the address ' +
+      'is unaffected)' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile was named with something ' +

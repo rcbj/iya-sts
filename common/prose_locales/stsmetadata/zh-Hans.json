@@ -1091,6 +1091,14 @@
     "en": "6e82cd30ac736775",
     "text": "非规范，但仍刻意放在这里：把客户端指向这些端点的人需要知道这些地址是什么，而用 `openssl x509 -text` 从证书中读出它们是一个糟糕的起点。每个颁发机构一行，包括其主题、已吊销的证书数量，以及两种方案（http、ldap）的 CRL 和旁边的 OCSP 与 caIssuers 地址。其中没有序列号——已吊销内容的列表就是 CRL，在旁边放一份 JSON 副本将是对同一问题的第二个答案：一个会过时、且没有人签名的答案。它明确说明本服务发布吊销信息，但无法强制任何人去查询，这对每个证书颁发机构都成立，也是客户端开发者会把自己的软件栈指向这里的原因。不设关卡，因为其中的一切本来就在本服务分发的每张证书里。"
   },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "c8819f794e61f398",
+    "text": "NON-SPEC（#1955 P3）：领域范围的 OpenSSH 用户 CA 密钥，以 authorized-key 行发布，供 SSH 服务器信任。无门控且 `no-store`；对应的 CA 私钥从不离开本服务。"
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "ed928008015e78a8",
+    "text": "NON-SPEC（#1955 P3）：领域范围的 OpenSSH KRL，在调用方吊销证书或报告硬件令牌丢失时更新。无门控且 `no-store`；必须配置 SSH 服务器去查询它，因为本服务无法让依赖方这样做。"
+  },
   "stsmetadata.endpoints./admin-api/xacml.what": {
     "en": "2efd1b442d450758",
     "text": "GET /admin/xacml 所绘制的内容，以数据形式提供。与 /admin-api 的其余部分一样不设关卡。"
