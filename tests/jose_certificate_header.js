@@ -21,7 +21,8 @@
 //      not know.
 //   B. EVERY SIGNER NAMES A USE CASE. A scan of the source for every call that
 //      signs a JWS — `signJwt`, `signJwtAs`, `signJwtAsAsync`, `.signJws`,
-//      `.signJwsAsync`, `signPublishedDocument` — outside the primitive itself.
+//      `.signJwsAsync`, `signPublishedDocument`, and their off-the-loop
+//      twins — outside the primitive itself.
 //      Each must name one or carry `// certificate-header: none — <why>`. This
 //      is what makes "anywhere a certified key signs" a property of the build
 //      rather than of a reviewer's memory, and it is the only section that
@@ -83,8 +84,11 @@ const SKIP_FILES = ['common/crypto.js', 'admin-ui/console.bundle.js',
                     'authn/authn-spa.js'];
 
 // `signJwtAsync` since #820 (2026-10-21): the access, refresh and ID tokens a
-// caller can wait for are signed on libuv's thread pool.
-const SIGNING_CALL = /(?:\bsignJwt|\bsignJwtAs|\bsignJwtAsync|\bsignJwtAsAsync|\.signJws|\.signJwsAsync|\bsignPublishedDocument)\(/g;
+// caller can wait for are signed on libuv's thread pool. The `…OffLoop` and
+// `signPublishedDocumentAsync` doors since #1955's P8 follow-up (2026-11-23):
+// a realm key in the HSM signs off the event loop through them, so they sign
+// what the synchronous doors signed and name a use case the same way.
+const SIGNING_CALL = /(?:\bsignJwt|\bsignJwtAs|\bsignJwtAsync|\bsignJwtAsAsync|\bsignJwtOffLoop|\bsignJwtAsOffLoop|\.signJws|\.signJwsAsync|\.signJwsOffLoop|\bsignPublishedDocument|\bsignPublishedDocumentAsync)\(/g;
 
 // A TOKEN'S SIGNING PLAN (#820, 2026-10-21): `accessTokenUnsigned()` and
 // `refreshTokenPlan()` build the payload and the signing options together,

@@ -21,9 +21,12 @@ function tokenWith(lib, mechanisms) {
   log.debug("Entering tokenWith().");
   const pkcs11 = require('../common/crypto_impl/pkcs11');
   const token = new pkcs11.Pkcs11Token({}, { modulePath: 'fake' });
-  token.entry = { lib: lib };
+  // The module's shared state as `libraryFor()` builds it; the fake is no
+  // file, so its calls are made in place (#1955 P8 follow-up).
+  token.entry = pkcs11.newEntry({}, lib, 'fake');
   token.mechanisms = mechanisms;
-  token.idle = [1];
+  token.idle = [{ h: 1, epoch: 0 }];
+  token.open = 1;
   token.generation = 0;
   token.slot = 0;
   log.debug("Leaving tokenWith().");
@@ -114,12 +117,16 @@ function run(t) {
           }
         }, new Map());
         const pub = reader.publicKeyOf(3, { kty: 'AKP', alg: 'ML-DSA-65' });
-        t.equal(pub.asymmetricKeyType, 'ml-dsa',
-                '14. the public half says ml-dsa on a runtime that cannot ' +
-                'import it');
+        // Node 24's OpenSSL imports ML-DSA (`ml-dsa-65`); an older one
+        // cannot, and the half says `ml-dsa` with the parameter set beside
+        // it. Either is right; the tests image runs node 24.
+        t.check(pub.asymmetricKeyType === 'ml-dsa' ||
+                pub.asymmetricKeyType === 'ml-dsa-65',
+                '14. the public half says ml-dsa (ml-dsa-65 on a runtime ' +
+                'that imports it)', String(pub.asymmetricKeyType));
         t.equal(pub.asymmetricKeyDetails.parameterSet, 'ML-DSA-65',
                 '15. the parameter set is recorded on the public half');
-        t.equal(pub.export()[0], 0x30,
+        t.equal(pub.export({ format: 'der', type: 'spki' })[0], 0x30,
                 '16. the public half exports a SubjectPublicKeyInfo');
         log.debug("Leaving run().");
       });

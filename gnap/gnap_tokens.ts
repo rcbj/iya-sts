@@ -616,15 +616,15 @@ class GnapTokens {
         expiresAt: valid.model.exp ? Number(valid.model.exp) * 1000 : 0 });
       // `gnap.accessTokenCertificateHeader` decides the `x5c` / `x5u`, on the
       // JWS in both JWT formats — never on the JWE around jwt-encrypted, which
-      // is encrypted to a resource server's key or to a secret.
-      const signed = helpers.signJwt(this.claimsOf(valid.model, statusRef,
-                                                   context),
-                                     { grant: 'gnap',
-                                       setId: context.setId || null,
-                                       sessionId: context.sessionId || null },
-                                     { certificateHeader:
-                                         'gnap-access-token',
-                                       header: { typ: JWT_HEADER_TYP } });
+      // is encrypted to a resource server's key or to a secret. Off the
+      // event loop for a realm key in the HSM (#1955 P8 follow-up); a
+      // software key signs in place, as `signJwt()` does.
+      const signed = await helpers.signJwtOffLoop(
+        this.claimsOf(valid.model, statusRef, context),
+        { grant: 'gnap', setId: context.setId || null,
+          sessionId: context.sessionId || null },
+        { certificateHeader: 'gnap-access-token',
+          header: { typ: JWT_HEADER_TYP } });
       if (typeof signed !== 'string' || signed.split('.').length !== 3) {
         log.debug("Leaving GnapTokens.mint(). The signer produced no JWS.");
         throw new Error('the ' + format + ' access token could not be ' +

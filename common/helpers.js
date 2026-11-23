@@ -1323,6 +1323,38 @@ async function hsmRsaKeyAsync(hsm, useCaseId) {
   return pair.privateKey.ref;
 }
 
+// ---------------------------------------------------------------------------
+// DOES THE AMBIENT REALM SIGN OR DECRYPT WITH A KEY IN THE HSM? (#1955 P8
+// follow-up.) For a door whose SYNCHRONOUS answer callers and tests read —
+// `wstrust.handleRst()` is the one — the off-the-loop road is taken only
+// where it is needed, so a realm with software keys answers exactly as it
+// always did, not one microtask later. True where the realm keeps its keys
+// in the HSM or any key of its set is there (one made before the setting
+// changed is still used); a false yes only costs an await.
+// ---------------------------------------------------------------------------
+/**
+ * Answers whether the ambient realm's signing keys are, or may be, in the
+ * HSM.
+ *
+ * @returns true when a door should take its off-the-loop road
+ */
+function keysInHsm() {
+  log.debug("Entering keysInHsm().");
+  if (String(config.value('keys.signingKeyStore') || 'software') ===
+      'pkcs11') {
+    log.debug("Leaving keysInHsm(). The realm's store.");
+    return true;
+  }
+  const keys = stsKeysFor();
+  const any = stsCrypto.isHsmKey(keys.privateKeyPem) ||
+    !!(keys.xmlKey && stsCrypto.isHsmKey(keys.xmlKey.privateKeyPem)) ||
+    (keys.extraKeys || []).some(function (one) {
+      return stsCrypto.isHsmKey(one.privateKey);
+    });
+  log.debug("Leaving keysInHsm(). " + any);
+  return any;
+}
+
 /**
  * Says which of the ambient realm's signing keys are in the HSM and which in
  * software — for `/admin-api` and the console, which say so per realm.
@@ -1355,8 +1387,15 @@ function hsmKeyReport() {
            inSoftware: inSoftware };
 }
 
-function makeRsaSigningKey(useCaseId, privateKeyPem) {
+function makeRsaSigningKey(useCaseId, privateKeyPem, premade) {
   log.debug("Entering makeRsaSigningKey(). use=" + useCaseId);
+  // A CERTIFICATE ALREADY MADE OFF THE EVENT LOOP over this key
+  // (`makeRsaSigningKeyAsync()`), for an HSM key: its signature was
+  // C_SignAsync, and this door would otherwise make it with C_Sign.
+  if (premade && premade.privateKeyPem === privateKeyPem) {
+    log.debug("Leaving makeRsaSigningKey(). Made off the loop.");
+    return premade;
+  }
   const unit = RSA_SIGNING_UNITS[useCaseId] || RSA_SIGNING_UNITS.jose;
   // IN THE HSM where the realm asks and no key was handed in (#1955 P8): a
   // key handed in is one `prepareKeySet()` or a rotation already made — in
@@ -1378,6 +1417,27 @@ function makeRsaSigningKey(useCaseId, privateKeyPem) {
     years: 5
   });
   log.debug("Leaving makeRsaSigningKey().");
+  return made;
+}
+
+// The same for a key already made (#1955 P8 follow-up): for an HSM key, the
+// certificate's signature is C_SignAsync, off the event loop; a software
+// key's certificate is `makeRsaSigningKey()`'s, made in place as before.
+async function makeRsaSigningKeyAsync(useCaseId, privateKeyPem) {
+  log.debug("Entering makeRsaSigningKeyAsync(). use=" + useCaseId);
+  if (!stsCrypto.isHsmKey(privateKeyPem)) {
+    log.debug("Leaving makeRsaSigningKeyAsync(). In place.");
+    return makeRsaSigningKey(useCaseId, privateKeyPem);
+  }
+  const unit = RSA_SIGNING_UNITS[useCaseId] || RSA_SIGNING_UNITS.jose;
+  const made = await stsCrypto.selfSignedRsaCertificateOffLoop({
+    bits: require('./mode').defaultRsaBits(),
+    rsaPrivateKeyPem: privateKeyPem,
+    commonName: unit.commonName,
+    serialPrefix: unit.serialPrefix,
+    years: 5
+  });
+  log.debug("Leaving makeRsaSigningKeyAsync(). In the HSM.");
   return made;
 }
 
@@ -1460,7 +1520,7 @@ function pqKeyFrom(alg, pair) {
 function makeStsKeys(made) {
   log.debug("Entering makeStsKeys().");
   const pre = made || {};
-  const keys = makeRsaSigningKey('jose', pre.signingPem);
+  const keys = makeRsaSigningKey('jose', pre.signingPem, pre.signingCert);
   // -------------------------------------------------------------------------
   // THE OTHER SIGNING KEYS, AND WHY THEY ARE GENERATED UNCONDITIONALLY.
   //
@@ -1525,7 +1585,7 @@ function makeStsKeys(made) {
     // the reason the others are: the set is what the key channel agrees and
     // the keystore seals. See makeRsaSigningKey(). Its view — the certificate
     // `pki.js` issued over it, and its kid — is installed by xmlKeyView().
-    xmlKey: makeRsaSigningKey('xml', pre.xmlPem),
+    xmlKey: makeRsaSigningKey('xml', pre.xmlPem, pre.xmlCert),
     // A `kid` names a KEY, so it is derived from the key material rather than
     // hard-coded. This key is regenerated on every start, and the kid was
     // previously a constant — so two instances of this mock (a stale container
@@ -3196,6 +3256,46 @@ function keySetNeedsMaking(realmId) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// A REALM'S HSM KEYS, FOUND OFF THE EVENT LOOP BEFORE A HANDLER READS ITS SET
+// (#1955 P8 follow-up). The keystore's start resolves every realm it held
+// then; a realm whose stored set this thread first meets later — created on
+// another node, adopted since — has its references resolved here, through
+// the token's control thread (`stsCrypto.resolveHsmKeysAsync()`), once per
+// realm per thread. The request middleware is the road (`app.js`). A
+// reference adopted after that — a rotation another node made — is resolved
+// in place at its first use, once.
+// ---------------------------------------------------------------------------
+const hsmResolvedRealms = new Set();
+
+// A promise that settles once the realm's stored HSM keys are held, or null
+// when there is nothing to find (or it was done). Never rejects.
+function hsmKeysAhead(realmId) {
+  log.debug("Entering hsmKeysAhead().");
+  if (hsmResolvedRealms.has(realmId) ||
+      !String(config.value('keys.signingKeyToken') || '').trim()) {
+    log.debug("Leaving hsmKeysAhead(). Nothing to do.");
+    return null;
+  }
+  const realm = realmForKeys(realmId);
+  const stored = keystore.storedFor(realm.id);
+  if (!stored) {
+    // Asked again next time: a set may be stored for it later.
+    log.debug("Leaving hsmKeysAhead(). Nothing stored.");
+    return null;
+  }
+  hsmResolvedRealms.add(realmId);
+  const refs = stsCrypto.hsmRefsIn(stored);
+  if (!refs.length) {
+    log.debug("Leaving hsmKeysAhead(). No HSM key.");
+    return null;
+  }
+  log.debug("Leaving hsmKeysAhead(). " + refs.length + " reference(s).");
+  return stsCrypto.resolveHsmKeysAsync(refs).then(function () {
+    return undefined;
+  });
+}
+
 // On libuv's thread pool, through `crypto.js`'s generateKeyPairAsync() (#453).
 function generateRsaPairAsync(bits, asPem) {
   log.debug("Entering generateRsaPairAsync(). bits=" + bits);
@@ -3228,6 +3328,13 @@ function generateRsaPairAsync(bits, asPem) {
 function prepareKeySet(realmId, options) {
   log.debug("Entering prepareKeySet(). realm=" + realmId);
   const id = String(realmId || '');
+  const ahead = hsmKeysAhead(id);
+  if (ahead) {
+    log.debug("Leaving prepareKeySet(). Its HSM keys are found first.");
+    return ahead.then(function () {
+      return prepareKeySet(realmId, options);
+    });
+  }
   const awaitCertificate = !(options && options.awaitCertificate === false);
   if (!keySetNeedsMaking(id)) {
     // HELD — BUT PERHAPS NOT YET CERTIFIED (2026-11-17): a set a read made
@@ -3281,7 +3388,12 @@ function prepareKeySet(realmId, options) {
     hsm ? inRealm(function () {
       return hsmRsaKeyAsync(hsm, 'jose');
     }).then(function (ref) {
-      return { privateKey: ref };
+      // Its certificate too, signed off the loop (#1955 P8 follow-up).
+      return inRealm(function () {
+        return makeRsaSigningKeyAsync('jose', ref);
+      }).then(function (cert) {
+        return { privateKey: ref, cert: cert };
+      });
     }) : generateRsaPairAsync(bits.signing, true),
     generateRsaPairAsync(bits.vci),
     generateRsaPairAsync(bits.refresh),
@@ -3290,7 +3402,11 @@ function prepareKeySet(realmId, options) {
     hsm ? inRealm(function () {
       return hsmRsaKeyAsync(hsm, 'xml');
     }).then(function (ref) {
-      return { privateKey: ref };
+      return inRealm(function () {
+        return makeRsaSigningKeyAsync('xml', ref);
+      }).then(function (cert) {
+        return { privateKey: ref, cert: cert };
+      });
     }) : generateRsaPairAsync(bits.signing, true),
     // And the curve keys, in the HSM only: in software they are a few
     // milliseconds on the loop, as they always were.
@@ -3308,9 +3424,11 @@ function prepareKeySet(realmId, options) {
     // listed by its sts-<realm>- label for an operator to delete.)
     if (keySetNeedsMaking(id)) {
       preparedSets.set(realm.id, { signingPem: pairs[0].privateKey,
+                                   signingCert: pairs[0].cert,
                                    vci: pairs[1], refresh: pairs[2],
                                    requestObject: pairs[3],
                                    xmlPem: pairs[4].privateKey,
+                                   xmlCert: pairs[4].cert,
                                    curvePairs: pairs[5] });
       stsKeysFor.of(id);
       preparedSets.delete(realm.id);
@@ -4740,6 +4858,7 @@ function xmlSignatureChoice() {
  */
 function resetStsKeys() {
   log.debug("Entering resetStsKeys().");
+  hsmResolvedRealms.clear();
   const held = stsKeysFor.existing();
   if (held && typeof held.clear === 'function') {
     held.clear();
@@ -6156,6 +6275,37 @@ function decryptOwnElement(xml, opts) {
   return first;
 }
 
+/**
+ * `decryptOwnElement()`, with a key in the HSM decrypting off the event loop
+ * (`stsCrypto.decryptElementOffLoop()`, #1955 P8 follow-up): the same keys,
+ * in the same order, and the same answer. A software key's answer is
+ * `decryptElement()`'s, as it was.
+ *
+ * @param xml - the document holding the encrypted element
+ * @param opts - `stsCrypto.decryptElement()`'s options
+ * @returns a promise of `decryptOwnElement()`'s answer
+ */
+async function decryptOwnElementOffLoop(xml, opts) {
+  log.debug("Entering decryptOwnElementOffLoop().");
+  const keys = ownRsaDecryptionKeys('xml');
+  let first = null;
+  for (let i = 0; i < keys.length; i++) {
+    const opened = await stsCrypto.decryptElementOffLoop(String(xml),
+      keys[i].privateKeyPem, opts);
+    if (opened && opened.ok) {
+      log.debug("Leaving decryptOwnElementOffLoop(). Opened by " +
+                keys[i].kid + ".");
+      return opened;
+    }
+    if (!first) {
+      first = opened;
+    }
+  }
+  log.debug("Leaving decryptOwnElementOffLoop(). None of " + keys.length +
+            " opened it.");
+  return first;
+}
+
 // Every PUBLIC signing key of this realm a verifier may find by `kid`: the
 // current curve and post-quantum keys and every live standby one of any unit.
 // For the verifiers that look their own keys up in a list —
@@ -6412,7 +6562,13 @@ async function mintStandbyKey(unitRow, role, realmId) {
           return hsmRsaKeyAsync(hsm, unitRow.useCase);
         }) }
       : await generateRsaPairAsync(require('./mode').defaultRsaBits(), true);
-    const made = makeRsaSigningKey(unitRow.useCase, pair.privateKey);
+    // Its certificate's signature off the loop for an HSM key (#1955 P8
+    // follow-up); made in place for a software key, as before.
+    const made = hsm
+      ? await inRealm(function () {
+        return makeRsaSigningKeyAsync(unitRow.useCase, pair.privateKey);
+      })
+      : makeRsaSigningKey(unitRow.useCase, pair.privateKey);
     const kid = kidOf(made.certB64);
     log.debug("Leaving mintStandbyKey(). RSA " + kid);
     return Object.assign(base, {
@@ -9023,6 +9179,58 @@ function signJwtAs(payload, alg, secret, opts) {
 }
 
 // ---------------------------------------------------------------------------
+// `signJwtAs()` AND `signJwt()` OFF THE EVENT LOOP FOR A KEY IN THE HSM
+// (#1955 P8 follow-up, 2026-11-23; rcbj: "I do not want this activity to
+// block the main event loop"). The same refusals, the same key, the same
+// header and the same recording, in the same order; the signature is
+// `stsCrypto.signJwsOffLoop()`'s, which for a software key IS `signJws()` —
+// so a caller moved here from the synchronous door signs the same bytes —
+// and for a realm key in the HSM is C_SignAsync. Every service caller of the
+// synchronous two with a realm key is on these (the list is
+// `common/CLAUDE.md`'s, *Keys in a hardware security module*). They are not
+// `signJwtAsync()` / `signJwtAsAsync()`, which sign a software RSA or curve
+// key on libuv: a different road their own callers chose.
+// ---------------------------------------------------------------------------
+/**
+ * `signJwtAs()`, with an HSM key's signature made off the event loop.
+ *
+ * @param payload - the claims
+ * @param alg - the JWS algorithm
+ * @param secret - the client secret, for HS*
+ * @param opts - as `signJwtAs()`
+ * @returns a promise of the compact JWS
+ */
+function signJwtAsOffLoop(payload, alg, secret, opts) {
+  log.debug("Entering signJwtAsOffLoop(). alg=" + alg);
+  const options = opts || {};
+  const spec = stsCrypto.JWS_ALGS[alg];
+  let signer;
+  try {
+    const refused = signatureRefusal(alg, options);
+    if (refused || (spec && spec.family === 'hmac')) {
+      // A refusal, or an HMAC signature, which no HSM key makes: the
+      // synchronous door's own answer.
+      // certificate-header: none — `opts` is the caller's, use case and
+      // all, handed on whole.
+      const own = signJwtAs(payload, alg, secret, opts);
+      log.debug("Leaving signJwtAsOffLoop(). signJwtAs().");
+      return Promise.resolve(own);
+    }
+    signer = signingKeyFor(alg, options.certificateHeader);
+  } catch (e) {
+    log.debug("Caught in signJwtAsOffLoop(): " + ((e && e.message) || e));
+    log.debug("Leaving signJwtAsOffLoop(). Refused.");
+    return Promise.reject(e);
+  }
+  log.debug("Leaving signJwtAsOffLoop(). " + alg + ".");
+  return stsCrypto.signJwsOffLoop(payload, signer.key,
+    { algorithm: alg, keyid: publishedKidFor(signer.kid),
+      header: withCertificateHeader(options.header,
+                                    options.certificateHeader, alg,
+                                    signer.kid) });
+}
+
+// ---------------------------------------------------------------------------
 // THE SAME SIGNATURE, OFF THIS PROCESS'S THREAD, and the two call sites that
 // use it are the two a CLIENT can point at a post-quantum algorithm: the ID
 // Token (`id_token_signed_response_alg`) and the signed UserInfo response
@@ -9122,13 +9330,55 @@ function signJwtAsAsync(payload, alg, secret, opts) {
  */
 function signJwt(payload, context, opts) {
   log.debug("Entering signJwt(). typ=" + (payload.typ || '(none)'));
+  const plan = signJwtPlan(payload, opts);
+  // certificate-header: none — the header is the plan's, which
+  // signJwtPlan() built from the caller's own certificateHeader.
+  const signed = stsCrypto.signJws(payload, plan.key, plan.options);
+  signJwtRecorded(payload, context, signed);
+  log.debug("Leaving signJwt().");
+  return signed;
+}
+
+/**
+ * `signJwt()`, with an HSM key's signature made off the event loop
+ * (`signJwtAsOffLoop()`'s note): the same plan and the same recording.
+ *
+ * @param payload - the claims
+ * @param context - as `signJwt()`'s, for the token registry
+ * @param opts - as `signJwt()`'s
+ * @returns a promise of the compact JWS
+ */
+function signJwtOffLoop(payload, context, opts) {
+  log.debug("Entering signJwtOffLoop(). typ=" + (payload.typ || '(none)'));
+  let plan;
+  try {
+    plan = signJwtPlan(payload, opts);
+  } catch (e) {
+    log.debug("Caught in signJwtOffLoop(): " + ((e && e.message) || e));
+    log.debug("Leaving signJwtOffLoop(). Refused.");
+    return Promise.reject(e);
+  }
+  log.debug("Leaving signJwtOffLoop().");
+  // certificate-header: none — the header is the plan's, which
+  // signJwtPlan() built from the caller's own certificateHeader.
+  return stsCrypto.signJwsOffLoop(payload, plan.key, plan.options)
+    .then(function (signed) {
+      signJwtRecorded(payload, context, signed);
+      return signed;
+    });
+}
+
+// `signJwt()` up to the signature: the refusal, the signer, the header, and
+// the artifact logged before signing. Throws what `signJwt()` threw.
+function signJwtPlan(payload, opts) {
+  log.debug("Entering signJwtPlan().");
   const alg = String((opts && opts.algorithm) ||
                      signaturePolicy.defaultJoseAlg());
   // Held to the same answer as signJwtAs() since #1368: a signature this realm
   // publishes no key for helps nobody.
   const refused = signatureRefusal(alg, opts);
   if (refused) {
-    log.debug("Leaving signJwt(). Refused by the policy.");
+    log.debug("Leaving signJwtPlan(). Refused by the policy.");
     throw refused;
   }
   // The use case's signer-group key where the realm is in that model (#68),
@@ -9150,9 +9400,16 @@ function signJwt(payload, context, opts) {
               { header: Object.assign({ alg: alg, kid: kid },
                                       certificateHeaderMembers || {}),
                 payload: payload });
-  const signed = stsCrypto.signJws(payload, signer.key,
-                                   { algorithm: alg, keyid: kid,
-                                     header: certificateHeaderMembers });
+  log.debug("Leaving signJwtPlan().");
+  return { key: signer.key,
+           options: { algorithm: alg, keyid: kid,
+                      header: certificateHeaderMembers } };
+}
+
+// `signJwt()` after the signature: the artifact logged, and the token
+// handed to the recorder.
+function signJwtRecorded(payload, context, signed) {
+  log.debug("Entering signJwtRecorded().");
   logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')', 'after ' +
       'signing', signed);
   // Every token this service issues passes through here, which is what makes
@@ -9168,8 +9425,7 @@ function signJwt(payload, context, opts) {
                 'unaffected: ' + e.message);
     }
   }
-  log.debug("Leaving signJwt().");
-  return signed;
+  log.debug("Leaving signJwtRecorded().");
 }
 
 // ---------------------------------------------------------------------------
@@ -9968,6 +10224,8 @@ module.exports = {
   verifyOwnXml: verifyOwnXml,
   ownRsaDecryptionKeys: ownRsaDecryptionKeys,
   decryptOwnElement: decryptOwnElement,
+  keysInHsm: keysInHsm,
+  decryptOwnElementOffLoop: decryptOwnElementOffLoop,
   allVerificationKeys: allVerificationKeys,
   allVerificationKeysAsync: allVerificationKeysAsync,
   xmlKeyFor: xmlKeyFor,
@@ -9983,6 +10241,7 @@ module.exports = {
   allSigningKeysAsync: allSigningKeysAsync,
   curveSigningKeys: curveSigningKeys,
   signJwtAs: signJwtAs,
+  signJwtAsOffLoop: signJwtAsOffLoop,
   signJwtAsAsync: signJwtAsAsync,
   certificateHeaderFor: certificateHeaderFor,
   certificateHeaderForAsync: certificateHeaderForAsync,
@@ -10054,6 +10313,7 @@ module.exports = {
   oauthError: oauthError,
   vciError: vciError,
   signJwt: signJwt,
+  signJwtOffLoop: signJwtOffLoop,
   signJwtAsync: signJwtAsync,
   ownPublicJwkFor: ownPublicJwkFor,
   ownPublicJwkForAsync: ownPublicJwkForAsync,

@@ -2200,12 +2200,12 @@
     "text": "das Token wird einmal geöffnet, beim Start, in jedem Prozess"
   },
   "keys.pkcs11SynchronousSign|label": {
-    "en": "c8e3fedf4601518d",
-    "text": "Synchrones PKCS#11-Signieren erlauben"
+    "en": "66785a52cf616805",
+    "text": "Blockierende PKCS#11-Aufrufe erlauben"
   },
   "keys.pkcs11SynchronousSign|description": {
-    "en": "1cb742f146d4c7c1",
-    "text": "Aus, der Standard: eine Signatur mit einem Schlüssel im HSM wird nur über das asynchrone `C_Sign` der Bindung erzeugt. Die synchronen Türen (ein JWS, eine XML-Signatur, eine SAML-Assertion) verweigern einen HSM-Schlüssel (`STS-KEYS-0209`), statt auf dem Ereignisloop auf das Token zu warten. Ein, rufen diese Türen `C_Sign` auf und der Ereignisloop wartet. Ein Modul ohne asynchrones Signieren kann nur signieren, solange dies eingeschaltet ist. Die Entschlüsselung ändert sich nicht. Je Vertrauensbereich setzbar."
+    "en": "328ad6368a172a36",
+    "text": "Aus, der Standard: nichts, was mit einem Schlüssel des Vertrauensbereichs im HSM getan wird, wartet auf dem Ereignisloop. Jede Tür (ein JWS oder Zugriffstoken, eine XML-Signatur, eine SAML-Assertion, eine WS-Federation-Antwort, ein WS-Trust-Token, eine XML- oder JWE-Entschlüsselung, die Zertifikate eines Schlüsselsatzes) verwendet die asynchronen `C_SignAsync`, `C_DecryptAsync` und `C_DeriveKeyAsync` der Bindung. Ein blockierender Aufruf wird verweigert (`STS-KEYS-0209`): das bekommt ein Modul ohne asynchronen Aufruf. Ein, die bewusste Zustimmung zu blockierenden Aufrufen: ein solches Modul ruft `C_Sign`, `C_Decrypt` oder `C_DeriveKey` auf, und der Ereignisloop wartet auf das Token. Je Vertrauensbereich setzbar."
   },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",

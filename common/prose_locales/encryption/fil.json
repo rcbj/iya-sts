@@ -244,8 +244,8 @@
     "text": "AT HINDI DAPAT NAKATIRA ANG KEY SA DISK NA PINOPROTEKTAHAN NITO. Ang key file sa parehong hindi naka-encrypt na volume ng store ay nag-aabot ng dalawang kalahati sa sinumang kukuha ng volume; ayos iyon para sa development stack at iyan ang dahilan kung bakit default ang `file` provider, at hindi iyon isang deployment. Pumipili ng secret store ang keys.kekProvider sa halip."
   },
   "encryption.notes.signingKeys": {
-    "en": "d0eeec647d97c442",
-    "text": "KUNG SAAN PUMIPIRMA ANG REALM NA ITO (#1955). Kapag keys.signingKeyStore pkcs11, ang mga classical signing key na nakalistang nasa HSM ay ginawa sa token na pinangangalanan ng keys.signingKeyToken at hindi kailanman umaalis doon: bawat signature ay isang PKCS#11 call. Laging ginagawa sa software ang mga post-quantum key, dahil walang PKCS#11 module dito na nag-aalok ng ML-DSA o SLH-DSA, at ganoon din ang anumang curve na hindi ginagawa ng module. Nalalapat ang setting sa mga key set na ginawa o ni-rotate pagkatapos itong magbago. Ang kasabay na lagda ay ginagawa lamang habang naka-on ang keys.pkcs11SynchronousSign; kung hindi, tinatanggihan ng pintong iyon (STS-KEYS-0209) at patuloy na pumipirma ang mga asynchronous na pinto."
+    "en": "42b4a12838250b88",
+    "text": "KUNG SAAN PUMIPIRMA ANG REALM NA ITO (#1955). Sa keys.signingKeyStore pkcs11, ang mga klasikong susi sa pagpirma na nakalistang nasa HSM ay ginawa sa token na pinangangalanan ng keys.signingKeyToken at hindi kailanman umaalis dito: bawat pirma at decryption gamit ang mga ito ay isang tawag sa PKCS#11, ginagawa sa labas ng event loop (C_SignAsync, C_DecryptAsync, C_DeriveKeyAsync). Ginagawa lamang ang isang humaharang na tawag habang naka-on ang keys.pkcs11SynchronousSign, para sa module na walang asynchronous na tawag; kung hindi, tinatanggihan ito (STS-KEYS-0209). Palaging ginagawa sa software ang mga post-quantum na susi, dahil walang PKCS#11 module dito ang nag-aalok ng ML-DSA o SLH-DSA, at gayundin ang anumang curve na hindi ginagawa ng module. Nalalapat ang setting sa mga key set na ginawa o inikot matapos itong baguhin."
   },
   "encryption.notes.accountingNote": {
     "en": "4e3af979f8ed8bd7",

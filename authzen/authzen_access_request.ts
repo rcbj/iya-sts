@@ -679,10 +679,15 @@ class AccessRequests {
    * @param terms - the advice's terms
    * @param caller - the trusted caller's name
    * @param application - the trusted application
+   * @param deferred - #1955 P8 follow-up: where the realm's keys are in the
+   *   HSM, a list the binding token's signature is DEFERRED to — the token
+   *   is signed off the event loop by `signDeferredDenials()` before the
+   *   answer is sent; absent, it is signed here, as it always was
    * @returns the context members, or null
    */
   requestableDenial(req: Req, body: Json, terms: Terms | null,
-                    caller: string, application: string): Json | null {
+                    caller: string, application: string,
+                    deferred?: Json[]): Json | null {
     const self = this;
     const { log, errorCodes, helpers } = this.deps;
     log.debug("Entering AccessRequests.requestableDenial().");
@@ -736,7 +741,38 @@ class AccessRequests {
       application: application,
       terms: terms
     };
+    const record: Json = {
+      evaluationId: evaluationId,
+      jti: jti,
+      subject: subject,
+      resource: resource,
+      action: action,
+      context: context,
+      bindingContextMembers: terms.contextMembers.slice(0),
+      bindingHash: hash,
+      caller: caller,
+      application: application,
+      terms: terms,
+      denialExpiresAt: expiresAt,
+      base: base,
+      evaluatedAt: instant(now * 1000),
+      reason: terms.reason || 'approval_required',
+      template: terms.template || ''
+    };
     let token = '';
+    if (deferred) {
+      const pending: Json = { claims: claims, base: base,
+                              lifetime: lifetime, denial: null,
+                              record: record, now: now,
+                              expiresAt: expiresAt };
+      deferred.push(pending);
+      const later = self.denialFrom(evaluationId, now, expiresAt, base,
+                                    terms, '');
+      pending.denial = later;
+      log.debug("Leaving AccessRequests.requestableDenial(). Its token is " +
+                "signed off the event loop.");
+      return later;
+    }
     try {
       token = String(self.deps.loadOauth2().signPublishedDocument(
         claims, base, lifetime, 'oauth-signed-metadata') || '');
@@ -751,6 +787,21 @@ class AccessRequests {
       log.debug("Leaving AccessRequests.requestableDenial(). Not signed.");
       return null;
     }
+    self.recordSigned(record, token, now, lifetime, expiresAt);
+    log.debug("Leaving AccessRequests.requestableDenial().");
+    return self.denialFrom(evaluationId, now, expiresAt, base, terms, token);
+  }
+
+  // Records a requestable denial once its binding token is signed, with the
+  // expiry the token itself carries (the lifetime asked of the signer when
+  // it cannot be read back). Shared by the synchronous door and by
+  // `signDeferredDenials()` (#1955 P8 follow-up), so a deferred denial is
+  // recorded exactly as one signed in place.
+  private recordSigned(record: Json, token: string, now: number,
+                       lifetime: number, expiresAt: string): void {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.recordSigned().");
     let exp = now + lifetime;
     try {
       const part = token.split('.')[1] || '';
@@ -761,31 +812,24 @@ class AccessRequests {
       }
     } catch (e) {
       // The lifetime asked of the signer is the expiry the record keeps.
-      log.debug("Caught in AccessRequests.requestableDenial(): " +
+      log.debug("Caught in AccessRequests.recordSigned(): " +
                 ((e && e.message) || e));
     }
     const deadline = Math.min(exp,
       Math.floor(Date.parse(expiresAt) / 1000) || exp);
-    self.recordDenial({
-      evaluationId: evaluationId,
-      jti: jti,
-      subject: subject,
-      resource: resource,
-      action: action,
-      context: context,
-      bindingContextMembers: terms.contextMembers.slice(0),
-      bindingHash: hash,
-      caller: caller,
-      application: application,
-      terms: terms,
-      denialExpiresAt: expiresAt,
+    const full: Json = Object.assign({}, record, {
       exp: exp,
-      base: base,
-      evaluatedAt: instant(now * 1000),
-      reason: terms.reason || 'approval_required',
-      template: terms.template || '',
       keepUntil: deadline + SKEW_S + RETENTION_S
     });
+    self.recordDenial(full);
+    log.debug("Leaving AccessRequests.recordSigned().");
+  }
+
+  // The context members of a requestable denial, around its binding token.
+  private denialFrom(evaluationId: string, now: number, expiresAt: string,
+                     base: string, terms: Terms, token: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.denialFrom().");
     const accessRequest: Json = { expires_at: expiresAt,
                                   endpoint: base + REQUESTS_PATH,
                                   request_schema_url: base + SCHEMA_PATH,
@@ -793,10 +837,55 @@ class AccessRequests {
     if (terms.template) {
       accessRequest.template = terms.template;
     }
-    log.debug("Leaving AccessRequests.requestableDenial().");
+    log.debug("Leaving AccessRequests.denialFrom().");
     return { evaluation_id: evaluationId, evaluated_at: instant(now * 1000),
              reason: terms.reason || 'approval_required',
              access_request: accessRequest };
+  }
+
+  /**
+   * Signs the binding tokens `requestableDenial()` deferred (#1955 P8
+   * follow-up), off the event loop, writing each into its denial's
+   * `access_request`. A token that cannot be signed is logged as the
+   * synchronous door logs it (`STS-AUTHZEN-0087`) and its evaluation id
+   * answered, so the caller turns that denial back into an ordinary `false`.
+   *
+   * @param deferred - the list handed to `requestableDenial()`
+   * @returns a promise of the evaluation ids whose token was not signed
+   */
+  async signDeferredDenials(deferred: Json[]): Promise<string[]> {
+    const self = this;
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AccessRequests.signDeferredDenials(). " +
+              deferred.length);
+    const unsigned: string[] = [];
+    for (let i = 0; i < deferred.length; i++) {
+      const one = deferred[i];
+      let token = '';
+      try {
+        token = String(await self.deps.loadOauth2()
+          .signPublishedDocumentAsync(one.claims, one.base, one.lifetime,
+                                      'oauth-signed-metadata') || '');
+      } catch (e) {
+        log.debug("Caught in AccessRequests.signDeferredDenials(): " +
+                  ((e && e.message) || e));
+        log.error(errorCodes.tag('STS-AUTHZEN-0087') + 'authzen: a ' +
+                  'requestable denial\'s binding_token could not be signed, ' +
+                  'so the denial is answered as an ordinary false: ' +
+                  ((e && e.message) || e));
+        token = '';
+      }
+      if (token) {
+        one.denial.access_request.binding_token = token;
+        self.recordSigned(one.record, token, one.now, one.lifetime,
+                          one.expiresAt);
+      } else {
+        unsigned.push(String(one.denial.evaluation_id));
+      }
+    }
+    log.debug("Leaving AccessRequests.signDeferredDenials(). " +
+              unsigned.length + " unsigned.");
+    return unsigned;
   }
 
   // -------------------------------------------------------------------------
@@ -2187,7 +2276,10 @@ class AccessRequests {
   // Signs the notification and posts it. A signing failure is an attempt
   // with status 0 and no policy kind, so it is retried until the bound is
   // spent: a key can be briefly unreadable.
-  private sendCallback(task: Json): Promise<Json> {
+  // The bearer is signed off the event loop for a realm key in the HSM
+  // (#1955 P8 follow-up): `signPublishedDocumentAsync()`, which signs a
+  // software key in place.
+  private async sendCallback(task: Json): Promise<Json> {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering AccessRequests.sendCallback().");
@@ -2198,7 +2290,7 @@ class AccessRequests {
     }
     let bearer = '';
     try {
-      bearer = String(self.deps.loadOauth2().signPublishedDocument(
+      bearer = String(await self.deps.loadOauth2().signPublishedDocumentAsync(
         { aud: callback.endpoint, sub: task.requester,
           jti: self.deps.helpers.randomId(18),
           typ: 'authzen-access-request-callback', task_id: task.id,
@@ -2633,22 +2725,7 @@ class AccessRequests {
     log.debug("Entering AccessRequests.approvalState(). " + task.id);
     const now = self.nowS();
     const until = Number(approval.approvedUntil);
-    const claims: Json = {
-      aud: task.base,
-      typ: 'authzen-access-request-approval',
-      id: approval.id,
-      task_id: task.id,
-      subject: task.subject,
-      resource: task.resource,
-      action: task.action,
-      context: task.context || {},
-      binding_context_members: task.contextMembers || [],
-      approved_at: instant(Number(approval.approvedAt) * 1000),
-      approved_until: instant(until * 1000),
-      approver: approval.approver,
-      caller: task.requester,
-      application: task.application
-    };
+    const claims: Json = self.approvalClaims(task, approval);
     let token = '';
     try {
       token = String(self.deps.loadOauth2().signPublishedDocument(
@@ -2666,6 +2743,65 @@ class AccessRequests {
     }
     log.debug("Leaving AccessRequests.approvalState(). " + !!token);
     return token;
+  }
+
+  // The claims `approval.state` signs.
+  private approvalClaims(task: Json, approval: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.approvalClaims(). " + task.id);
+    log.debug("Leaving AccessRequests.approvalClaims().");
+    return {
+      aud: task.base,
+      typ: 'authzen-access-request-approval',
+      id: approval.id,
+      task_id: task.id,
+      subject: task.subject,
+      resource: task.resource,
+      action: task.action,
+      context: task.context || {},
+      binding_context_members: task.contextMembers || [],
+      approved_at: instant(Number(approval.approvedAt) * 1000),
+      approved_until: instant(Number(approval.approvedUntil) * 1000),
+      approver: approval.approver,
+      caller: task.requester,
+      application: task.application
+    };
+  }
+
+  /**
+   * Signs `approval.state` off the event loop, for a realm whose keys are in
+   * the HSM (#1955 P8 follow-up), and writes it onto the approval once it is
+   * made — unless the approval was revoked or replaced meanwhile. A failure
+   * is `approvalState()`'s: logged, and the approval stands by id.
+   *
+   * @param task - the row
+   * @param approval - the approval just stored on it
+   * @returns a promise settled once the state is written or given up
+   */
+  private approvalStateLater(task: Json, approval: Json): Promise<void> {
+    const self = this;
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AccessRequests.approvalStateLater(). " + task.id);
+    const until = Number(approval.approvedUntil);
+    const lifetime = Math.max(1, until - self.nowS());
+    log.debug("Leaving AccessRequests.approvalStateLater().");
+    return Promise.resolve().then(function () {
+      return self.deps.loadOauth2().signPublishedDocumentAsync(
+        self.approvalClaims(task, approval), task.base, lifetime,
+        'oauth-signed-metadata');
+    }).then(function (signed: any) {
+      const token = String(signed || '');
+      if (token && task.approval === approval && !approval.revokedAt) {
+        approval.state = token;
+        self.save(task);
+      }
+    }, function (e: any) {
+      log.debug("Caught in AccessRequests.approvalStateLater(): " +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-AUTHZEN-0140') + 'authzen: an ' +
+                'approval\'s state could not be signed, so the approval ' +
+                'stands by id: ' + ((e && e.message) || e));
+    });
   }
 
   /**
@@ -2719,9 +2855,18 @@ class AccessRequests {
                              approvedUntil: Math.min.apply(null, limits),
                              approver: approver.username || approver.door,
                              door: approver.door, revokedAt: 0 };
-    const state = self.approvalState(task, approval);
-    if (state) {
-      approval.state = state;
+    // WITH THE REALM'S KEYS IN THE HSM the state is signed off the event
+    // loop (#1955 P8 follow-up) and written onto the approval when it is
+    // made; until then the approval stands by id, as it does when a state
+    // cannot be signed at all. `decide()` stays synchronous for its three
+    // doors (the portal, the console, `/admin-api`).
+    if (helpers.keysInHsm()) {
+      self.approvalStateLater(task, approval);
+    } else {
+      const state = self.approvalState(task, approval);
+      if (state) {
+        approval.state = state;
+      }
     }
     // THE APPROVAL IS STORED BEFORE THE TASK SAYS APPROVED (#1202): its
     // index row first, kept as long as the task will be, then the task. A
@@ -3785,6 +3930,7 @@ export = {
   enabled: slot.forward('enabled'),
   baseOf: slot.forward('baseOf'),
   requestableDenial: slot.forward('requestableDenial'),
+  signDeferredDenials: slot.forward('signDeferredDenials'),
   submit: slot.forward('submit'),
   status: slot.forward('status'),
   cancel: slot.forward('cancel'),
