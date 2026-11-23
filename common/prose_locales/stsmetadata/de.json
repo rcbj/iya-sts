@@ -727,14 +727,6 @@
     "en": "59b1734815ece664",
     "text": "partial: das Attribut id-aa-attestation einer PKCS#10-Anforderung (höchstens eines, genau ein AttestationBundle, nur das Zertifikat und andere Auswahlen), über EST, SCEP und ACME. Zwei Statement-Typen werden verifiziert: tcg-attest-tpm-certify der TCG in der Syntax von Anhang A.2.3 der Revision 20, für das Geräteprofil (#257), und eine YubiKey-PIV-Attestierung für jedes Profil (#1955), unter 1.3.6.1.4.1.41482.3.2 mit dem Slot-Zertifikat als stmt und dem f9-Zertifikat in certs – ein Typ, den dieser Dienst gewählt hat, weil der Entwurf keinen definiert. Die CRMF-Erweiterung wird nicht gelesen (hier kein CMP), und andere Statement-Typen werden erfasst, nicht verifiziert. Aktualität (Abschnitt 6.2) über draft-ietf-lamps-attestation-freshness über EST, nur für TPM-Statements: Eine PIV-Attestierung trägt keine Nonce."
   },
-  "stsmetadata.specs.yubico-piv-attestation.coverage": {
-    "en": "244659759ede3102",
-    "text": "partial: Das Attestierungszertifikat des Slots wird über das f9-Attestierungszertifikat zu Yubicos PIV-Wurzeln (Serial 263751 sowie Attestation Root 1 mit ihren PIV-Zwischenzertifikaten für Firmware 5.7.4 und neuer, ausgeliefert und fixiert) oder zu den eigenen eines Bereichs verifiziert; sein Schlüssel wird mit dem der Anforderung abgeglichen; die Erweiterungen für Firmware, Seriennummer, PIN- und Berührungsrichtlinie sowie Formfaktor werden gelesen, und die Richtlinien werden mit denen des Bereichs abgeglichen. Die Karte selbst wird nie verwaltet: kein Schreiben von PIN, PUK oder Slots."
-  },
-  "stsmetadata.specs.fips201.coverage": {
-    "en": "322d92ba9eb36fde",
-    "text": "minimal: die vier Schlüssel-Slots als Zertifikatsprofile (PIV Authentication 9a, Digital Signature 9c, Key Management 9d, Card Authentication 9e, das standardmäßig niemanden anmeldet) und eine externe PIV- oder CAC-Karte, zugeordnet über die Karten-UUID in ihrem urn:uuid-subjectAltName, wenn sie eine PIV-Authentication-Richtlinie zusichert (standardmäßig aus). Kein FASC-N, CHUID, keine Kartenverwaltung und keine Biometrie."
-  },
   "stsmetadata.specs.lamps-attestation-freshness.coverage": {
     "en": "555e31da7393d476",
     "text": "partial: EST über HTTPS (Abschnitt 5.1) — /nonce per GET und per POST mit application/est-attestation-freshness+json, len innerhalb von 8..64 beachtet (auf 16 Oktette angehoben), der Ablauf, die leere Nonce, wo kein Nachweis nötig ist, 400 und 503, authentifiziert und über ein Cookie und den Principal an den CSR gebunden. Die Nonce ist das qualifyingData von TPM2_Certify, geprüft als das extraData von TPMS_ATTEST und einmal verbraucht. Fehlend: kein Typ reqTypeInfo ist definiert (503), sowie CMP (Abschnitt 4), EST über CoAP (5.2) und CMC (6), die dieser Dienst nicht spricht."
@@ -782,10 +774,6 @@
   "stsmetadata.specs.rfc9580.coverage": {
     "en": "a2930bdb8ffe747d",
     "text": "partial: Lesen eines übertragbaren öffentlichen Schlüssels, v6 und (RFC 4880) v4, Prüfen einer Klartextsignatur durch einen seiner Signierschlüssel und Verschlüsseln einer Nachricht an seinen Verschlüsselungsschlüssel, Klassische Algorithmen laufen über openpgp.js. RFC-9980-Komposite werden hier gelesen (siehe rfc9980). Ed25519, Ed448, ECDSA und ECDH auf den NIST-Kurven, X25519, X448 und RSA mit openpgp.minRsaBits werden akzeptiert; DSA, ElGamal und Brainpool werden abgelehnt. Es fehlen: Signieren, Entschlüsseln, ein Schlüsselbund, ein Keyserver."
-  },
-  "stsmetadata.specs.rfc9980.coverage": {
-    "en": "5feb46765c8bc465",
-    "text": "partial: Signaturen ML-DSA-65+Ed25519 und ML-DSA-87+Ed448 sowie Verschlüsselung ML-KEM-768+X25519 und ML-KEM-1024+X448, bei der Registrierung und wenn ein gespeicherter Schlüssel verwendet wird. Ein Komposit zählt als Post-Quanten. openpgp.pqcOnly schränkt nur die Registrierung ein. Beide Hälften einer Signatur prüft common/crypto_impl/openpgp_pqc.js. Es fehlen: SLH-DSA (Algorithmus-IDs 32-34), und dieser Dienst erzeugt keinen RFC-9980-Schlüssel. openpgp.js liest diese Schlüssel nicht."
   },
   "stsmetadata.specs.rfc3156.coverage": {
     "en": "aa799b14a54ace0f",
@@ -1110,14 +1098,6 @@
   "stsmetadata.endpoints./pki/revocation.what": {
     "en": "6e82cd30ac736775",
     "text": "NON-SPEC, und dennoch absichtlich hier: Wer einen Client auf diese Endpunkte richtet, muss wissen, was die Adressen SIND, und sie mit `openssl x509 -text` aus einem Zertifikat zu lesen, ist ein schlechter erster Schritt. Eine Zeile je Zertifizierungsstelle mit ihrem Subject, wie viele Zertifikate sie widerrufen hat, und ihrer CRL in beiden Schemata (http, ldap) neben ihren OCSP- und caIssuers-Adressen. KEINE SERIENNUMMERN STEHEN DARIN — die Liste des Widerrufenen ist die CRL, und eine JSON-Kopie daneben wäre eine zweite Antwort auf dieselbe Frage: diejenige, die veraltet, und diejenige, die niemand signiert hat. Es sagt ausdrücklich, dass dieser Dienst den Widerruf VERÖFFENTLICHT und niemanden dazu bringen kann, ihn zu befragen, was für jede Zertifizierungsstelle gilt und der Grund ist, aus dem ein Autor eines Clients seinen Stack hierher richten würde. Ungesperrt, weil alles darin bereits in jedem Zertifikat steht, das dieser Dienst aushändigt."
-  },
-  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
-    "en": "c8819f794e61f398",
-    "text": "NON-SPEC (#1955 P3): der Schlüssel der OpenSSH-Benutzer-CA des Vertrauensbereichs, als authorized-key-Zeile veröffentlicht, damit SSH-Server ihm vertrauen. Ohne Schranke und `no-store`; der zugehörige private Schlüssel der CA verlässt diesen Dienst nie."
-  },
-  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
-    "en": "ed928008015e78a8",
-    "text": "NON-SPEC (#1955 P3): die KRL von OpenSSH des Vertrauensbereichs, aktualisiert, wenn ein Aufrufer ein Zertifikat widerruft oder ein Hardware-Token als verloren meldet. Ohne Schranke und `no-store`; SSH-Server müssen so konfiguriert werden, dass sie sie abfragen, weil dieser Dienst eine vertrauende Partei nicht dazu bringen kann."
   },
   "stsmetadata.endpoints./admin-api/xacml.what": {
     "en": "2efd1b442d450758",
@@ -2068,8 +2048,8 @@
     "text": "NICHT SPEZIFIZIERT. Womit ein Ziel für Geheimnisse hinzugefügt werden kann, als JSON: jedes Feld des Anlegens und ob das Anlegen ohne es abgelehnt wird — Bezeichner und Anbieter immer, manche nur bei manchen Anbietern (requiredWhen): die Schreibberechtigung bei allen außer file, die Region bei aws, der Endpunkt bei azure und vault, das Verzeichnis bei file. ES FÜGT NICHTS HINZU: Das Anlegen ist POST /admin-api/secret-destinations/add-destination. Entspricht GET /admin/secret-destinations/new."
   },
   "stsmetadata.endpoints./admin-api/policies/new.what": {
-    "en": "8b0523b4a594c8c1",
-    "text": "NICHT SPEZIFIZIERT. Die Arten, aus denen eine benannte Richtlinie gemacht werden kann, und für die angefragte Art jedes Feld ihres Speicherns und ob das Speichern ohne es abgelehnt wird — immer der Name, weil ein Speichern ohne Namen abgelehnt wird, und jedes Feld, dessen Wert nicht erhalten bleibt, wenn es fehlt. ES SPEICHERT NICHTS: Eine benannte Richtlinie ist der Speichervorgang der Art unter einem Namen, den der Realm noch nicht hat. Entspricht GET /admin/policies/new."
+    "en": "76e1013ae3d82e5b",
+    "text": "NICHT SPEZIFIZIERT. Die Arten, aus denen eine benannte Richtlinie gemacht werden kann, und für die angefragte Art jedes Feld ihres Speicherns und ob das Speichern ohne es abgelehnt wird — immer der Name, weil ein Speichern ohne Namen die Standardrichtlinie ändert, und jedes Feld, das das Speichern leer ablehnt. ES SPEICHERT NICHTS: Eine benannte Richtlinie ist der Speichervorgang der Art unter einem Namen, den der Realm noch nicht hat. Entspricht GET /admin/policies/new."
   },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",
@@ -2264,16 +2244,12 @@
     "text": "NON-SPEC (#1955 P4). Die HOTP- und TOTP-Token, die Administratoren aus PSKC-Seed-Dateien von Herstellern importiert haben, nicht zugewiesen, zugewiesen oder außer Betrieb, seitenweise und nach Seriennummer oder Person durchsuchbar. Nie ein Geheimnis. Entspricht GET /admin/hardware-tokens (seinem OATH-Tab)."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "0d649147af0cbe04",
-    "text": "NON-SPEC (#1955). lost, mit { key }: Das Token wird als verloren markiert, jeder Passkey darauf entfernt, jedes Zertifikat darauf wegen keyCompromise widerrufen, für jedes ein CAEP credential-change gesendet und die damit angemeldeten Sitzungen beendet. enrol-piv, mit { username, profile, csr, attestationCertificate?, attestationIssuer? }: ein PIV-Slot-Zertifikat, das dieser Person über die EST-Ausstellungs-CA ausgestellt wird, wobei ihre YubiKey-PIV-Attestierung verifiziert und der YubiKey erfasst wird. recover-key, mit { username, serial }: der hinterlegte piv-key-management-Schlüssel dieser Person, den die Zugriffskontrollrichtlinie nur PIV_KEY_RECOVERY erlaubt. Die drei Aktionen der Konsole auf dieser Seite."
+    "en": "cdbf34a1fbdf290e",
+    "text": "NON-SPEC (#1955). lost, mit { key }: das Token wird als verloren markiert, jeder Passkey darauf entfernt, jedes Zertifikat darauf wegen keyCompromise widerrufen, für jedes ein CAEP credential-change gesendet und die damit angemeldeten Sitzungen beendet. enrol-piv, mit { username, profile, csr, attestationCertificate?, attestationIssuer? }: ein PIV-Slot-Zertifikat für diese Person über die EST-Issuing-CA, dessen YubiKey-PIV-Attestierung geprüft und der YubiKey aufgezeichnet. recover-key, mit { username, serial }: der hinterlegte piv-key-management-Schlüssel dieser Person, den die Zugriffsrichtlinie nur PIV_KEY_RECOVERY erlaubt, nach einer kürzlichen Anmeldung. revoke-ssh, mit { username, serial }: das SSH-Benutzerzertifikat dieser Person widerrufen und auf die KRL des Realms gesetzt. Die vier Aktionen der Konsole auf dieser Seite."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "b55c0cdd477d183e",
-    "text": "meldet ein Hardware-Token als verloren und zieht seine Anmeldedaten zurück, stellt ein PIV-Slot-Zertifikat aus oder übergibt einen hinterlegten Schlüssel"
-  },
-  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
-    "en": "1716521c9c5e119d",
-    "text": "NON-SPEC (#1955). Die hinterlegten piv-key-management-Zertifikate einer Person (piv.keyEscrow): Seriennummer, Antragsteller, Gültigkeit und ob jedes widerrufen wurde. Nie ein Schlüssel. Entspricht GET /admin/hardware-tokens."
+    "en": "f5b724d2c79b5f74",
+    "text": "meldet ein Hardware-Token als verloren und zieht seine Anmeldedaten zurück, stellt ein PIV-Slot-Zertifikat aus, gibt einen hinterlegten Schlüssel heraus oder widerruft das SSH-Zertifikat einer Person"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -4234,5 +4210,33 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "ein Parameter"
+  },
+  "stsmetadata.specs.yubico-piv-attestation.coverage": {
+    "en": "244659759ede3102",
+    "text": "partial: Das Attestierungszertifikat des Slots wird über das f9-Attestierungszertifikat zu Yubicos PIV-Wurzeln (Serial 263751 sowie Attestation Root 1 mit ihren PIV-Zwischenzertifikaten für Firmware 5.7.4 und neuer, ausgeliefert und fixiert) oder zu den eigenen eines Bereichs verifiziert; sein Schlüssel wird mit dem der Anforderung abgeglichen; die Erweiterungen für Firmware, Seriennummer, PIN- und Berührungsrichtlinie sowie Formfaktor werden gelesen, und die Richtlinien werden mit denen des Bereichs abgeglichen. Die Karte selbst wird nie verwaltet: kein Schreiben von PIN, PUK oder Slots."
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "322d92ba9eb36fde",
+    "text": "minimal: die vier Schlüssel-Slots als Zertifikatsprofile (PIV Authentication 9a, Digital Signature 9c, Key Management 9d, Card Authentication 9e, das standardmäßig niemanden anmeldet) und eine externe PIV- oder CAC-Karte, zugeordnet über die Karten-UUID in ihrem urn:uuid-subjectAltName, wenn sie eine PIV-Authentication-Richtlinie zusichert (standardmäßig aus). Kein FASC-N, CHUID, keine Kartenverwaltung und keine Biometrie."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
+    "en": "1716521c9c5e119d",
+    "text": "NON-SPEC (#1955). Die hinterlegten piv-key-management-Zertifikate einer Person (piv.keyEscrow): Seriennummer, Antragsteller, Gültigkeit und ob jedes widerrufen wurde. Nie ein Schlüssel. Entspricht GET /admin/hardware-tokens."
+  },
+  "stsmetadata.specs.rfc9980.coverage": {
+    "en": "5feb46765c8bc465",
+    "text": "partial: Signaturen ML-DSA-65+Ed25519 und ML-DSA-87+Ed448 sowie Verschlüsselung ML-KEM-768+X25519 und ML-KEM-1024+X448, bei der Registrierung und wenn ein gespeicherter Schlüssel verwendet wird. Ein Komposit zählt als Post-Quanten. openpgp.pqcOnly schränkt nur die Registrierung ein. Beide Hälften einer Signatur prüft common/crypto_impl/openpgp_pqc.js. Es fehlen: SLH-DSA (Algorithmus-IDs 32-34), und dieser Dienst erzeugt keinen RFC-9980-Schlüssel. openpgp.js liest diese Schlüssel nicht."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "c6a8759e4a5e40c9",
+    "text": "NON-SPEC (#1955 P3): der realmbezogene OpenSSH-Benutzer-CA-Schlüssel, als authorized-key-Zeile veröffentlicht, der SSH-Server vertrauen. Mit `?algorithm=ssh-mldsa-65` antwortet er stattdessen mit der ML-DSA-Autorität des Realms, die Standard-OpenSSH noch nicht prüfen kann. Ohne Gate und `no-store`, nur auf dem Hauptport: der Klartext-HTTP-Sperr-Listener lehnt ihn ab, weil der Schlüssel ein Vertrauensanker ist. Der zugehörige private CA-Schlüssel verlässt diesen Dienst nie."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "2e4cdead67408937",
+    "text": "NON-SPEC (#1955 P3): die realmbezogene OpenSSH-KRL, aktualisiert, wenn ein Aufrufer ein Zertifikat widerruft oder ein Hardware-Token als verloren meldet. Ohne Gate und `no-store`, nur auf dem Hauptport: die KRL ist nicht signiert, daher lehnt der Klartext-HTTP-Sperr-Listener sie ab. SSH-Server müssen so konfiguriert werden, dass sie sie lesen, weil dieser Dienst eine vertrauende Partei nicht dazu bringen kann."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/ssh-certificates.what": {
+    "en": "84ce6fea3694d4c0",
+    "text": "NON-SPEC (die Prüfung von #1955). Die noch nicht abgelaufenen OpenSSH-Benutzerzertifikate einer Person, widerrufene markiert: Seriennummer, Schlüsseltyp und Fingerabdruck, Principals, Gültigkeit und ob ein Hardware-Nachweis den Schlüssel abdeckte. Niemals ein Schlüssel. Spiegelt GET /admin/hardware-tokens (dessen Reiter SSH-Zertifikate)."
   }
 }

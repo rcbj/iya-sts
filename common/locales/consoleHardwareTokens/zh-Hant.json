@@ -57,5 +57,16 @@
 "escrowSerial": "憑證序號",
 "escrowSubject": "主體",
 "escrowExpires": "到期",
-"escrowRecover": "復原金鑰"
+"escrowRecover": "復原金鑰",
+  "sshTab": "SSH 憑證",
+  "sshWhat": "此領域為該人員簽發的 OpenSSH 使用者憑證，直到各自到期。撤銷一個憑證會將其列入領域的 KRL（GET /pki/ssh-user-krl），信任此 CA 的伺服器會讀取它。",
+  "sshSearch": "在「權杖」分頁中搜尋一個人員，即可在此列出其 SSH 憑證。",
+  "sshNone": "{who} 沒有有效的 SSH 憑證。",
+  "sshSerial": "序號",
+  "sshKey": "金鑰",
+  "sshPrincipals": "主體",
+  "sshExpires": "到期",
+  "sshHardware": "綁定硬體",
+  "sshRevoked": "已撤銷",
+  "sshRevoke": "撤銷"
 }

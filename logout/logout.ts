@@ -464,6 +464,15 @@ class Logout {
   // The static sign-out's bundle, read once (#577).
   private bundleFile: ReturnType<typeof ShellDocument.readFile> | null =
     null;
+  // THE SAML 2.0 LogoutRequests SIGNED AHEAD (#1955 P8 follow-up): session
+  // id -> `saml2Sso.logoutTargetsForAsync()`'s rows, set by a door that can
+  // wait for the one synchronous terminate() it runs, and cleared after it.
+  // A module field because that call is ONE synchronous call: nothing else
+  // runs on this thread between the set and the clear.
+  private saml2Ahead: Map<string, Loose[]> | null = null;
+  // The federation partners' sign-outs signed ahead, the same way: session
+  // id -> `federationSlo.partnerLogoutForAsync()`'s answer.
+  private partnerAhead: Map<string, Loose> | null = null;
 
   /**
    * Builds the families and the expiry rules from the modules given.
@@ -625,6 +634,134 @@ class Logout {
       why: '',
       sessionId: ''
     }, detail || {});
+  }
+
+  // WHAT A BROWSER'S SIGN-OUT OFFERS, SIGNED AHEAD (#1955 P8 follow-up):
+  // the SAML 2.0 LogoutRequests and the federation partners' sign-outs
+  // every session of `keys` would be offered, signed off the event loop —
+  // only where the realm's keys are in the HSM, so a software realm's
+  // sign-out builds them in terminate() exactly as it always did. Null
+  // where nothing was signed ahead. `withSignedAhead()` hands them to the
+  // one synchronous terminate() a browser's door runs.
+  private async signedAhead(keys: string[], base: string): Promise<Loose> {
+    const { log, saml2Sso, federationSlo, errorCodes } = this.deps;
+    log.debug("Entering Logout.signedAhead().");
+    if (!helpers.keysInHsm()) {
+      log.debug("Leaving Logout.signedAhead(). Software keys.");
+      return null;
+    }
+    const saml2 = new Map();
+    const partner = new Map();
+    for (let k = 0; k < keys.length; k++) {
+      const sessions = this.sessionsForKey(keys[k]);
+      for (let i = 0; i < sessions.length; i++) {
+        const session = sessions[i];
+        if (!session) {
+          continue;
+        }
+        // A SIGNATURE THAT FAILS leaves its session out of the map, and
+        // terminate() then offers no LogoutRequest (or tells no partner)
+        // for it: an HSM that cannot sign never stops a person signing out.
+        if (session.saml2ServiceProviders &&
+            Object.keys(session.saml2ServiceProviders).length) {
+          try {
+            saml2.set(String(session.id),
+                      await saml2Sso.logoutTargetsForAsync(session));
+          } catch (e) {
+            log.debug("Caught in Logout.signedAhead(): " +
+                      ((e && e.message) || e));
+            log.warn(errorCodes.tag('STS-LOGOUT-0016') + 'logout: the ' +
+                     'SAML 2.0 LogoutRequests of a session could not be ' +
+                     'signed, so none is offered for it: ' +
+                     ((e && e.message) || e));
+          }
+        }
+        const held = session.fedPartnerSession;
+        if (base && held && held.relationship &&
+            federationSlo.canTellPartner(held).ok) {
+          try {
+            partner.set(String(session.id),
+              await federationSlo.partnerLogoutForAsync(session, base));
+          } catch (e) {
+            log.debug("Caught in Logout.signedAhead(): " +
+                      ((e && e.message) || e));
+            log.warn(errorCodes.tag('STS-LOGOUT-0016') + 'logout: a ' +
+                     'federation partner\'s sign-out could not be signed, ' +
+                     'so the partner is not told: ' +
+                     ((e && e.message) || e));
+          }
+        }
+      }
+    }
+    log.debug("Leaving Logout.signedAhead(). " + saml2.size + " / " +
+              partner.size + " session(s).");
+    return { saml2: saml2, partner: partner };
+  }
+
+  // Runs `fn` — one synchronous call, so nothing else runs on this thread
+  // between the set and the clear — with what `signedAhead()` made.
+  private withSignedAhead(ahead: Loose, fn: () => any): any {
+    const { log } = this.deps;
+    log.debug("Entering Logout.withSignedAhead().");
+    this.saml2Ahead = ahead ? ahead.saml2 : null;
+    this.partnerAhead = ahead ? ahead.partner : null;
+    try {
+      const out = fn();
+      log.debug("Leaving Logout.withSignedAhead().");
+      return out;
+    } finally {
+      this.saml2Ahead = null;
+      this.partnerAhead = null;
+    }
+  }
+
+  /**
+   * `signOutAct()`, with what the sign-out offers the browser signed off the
+   * event loop first where the realm's keys are in the HSM (#1955 P8
+   * follow-up); `signOutAct()` itself otherwise.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param body - the act's body
+   * @returns a promise of `signOutAct()`'s answer
+   */
+  async signOutActAsync(req?, res?, body?): Promise<Loose> {
+    const { log, baseUrlOf } = this.deps;
+    log.debug("Entering Logout.signOutActAsync().");
+    const subject = this.subjectOf(req, body || {});
+    // Nothing is signed for an act `signOutAct()` will refuse.
+    const ahead = subject.refused || !subject.key ||
+      this.reauthenticationOwed(subject, body || {}) ? null
+      : await this.signedAhead([subject.key], req ? baseUrlOf(req) : '');
+    log.debug("Leaving Logout.signOutActAsync().");
+    return this.withSignedAhead(ahead, () => {
+      return this.signOutAct(req, res, body);
+    });
+  }
+
+  /**
+   * `signOutAccountsAct()`, with what the sign-out offers signed off the
+   * event loop first where the realm's keys are in the HSM (#1955 P8
+   * follow-up).
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param body - the act's body
+   * @returns a promise of `signOutAccountsAct()`'s answer
+   */
+  async signOutAccountsActAsync(req?, res?, body?): Promise<Loose> {
+    const { log, authn, stats, baseUrlOf } = this.deps;
+    log.debug("Entering Logout.signOutAccountsActAsync().");
+    const all = String((body && body.account) || '') === 'all' &&
+                authn.multipleAccounts();
+    const ahead = all ? await this.signedAhead(
+      authn.signedInAccounts(req).map(function (one) {
+        return stats.identityKeyOf(one.username);
+      }), req ? baseUrlOf(req) : '') : null;
+    log.debug("Leaving Logout.signOutAccountsActAsync().");
+    return this.withSignedAhead(ahead, () => {
+      return this.signOutAccountsAct(req, res, body);
+    });
   }
 
   // The sessions this identity holds, worked out once per inventory because
@@ -1196,11 +1333,14 @@ class Logout {
           log.debug("Entering saml2-sp.collect().");
           const rows = [];
           ctx.sessions.forEach((session) => {
-            saml2Sso.logoutTargetsFor(session).forEach((target) => {
+            // THE ADDRESSES ONLY (#1955 P8 follow-up): a row says whether a
+            // LogoutRequest has somewhere to go, which needs nothing signed,
+            // so listing a session signs nothing with a realm key.
+            saml2Sso.logoutAddressesFor(session).forEach((target) => {
               rows.push(this.row('saml2-sp', 'service provider',
                             session.id + '|' + target.entityId, {
                 label: target.entityId,
-                detail: target.url ? 'a LogoutRequest is ready for ' +
+                detail: target.destination ? 'a LogoutRequest is ready for ' +
                     target.from
                                    : 'no SingleLogoutService is known for ' +
                                      'it, so there is nowhere to send a ' +
@@ -1224,10 +1364,25 @@ class Logout {
                                          'ended, which took its logout list ' +
                                          'with it' };
           }
-          const target = saml2Sso.logoutTargetsFor(session).filter((one) => {
-            return one.entityId === entityId;
-          })[0];
-          if (target) ctx.logoutRequests.push(target);
+          // SIGNED AHEAD, off the event loop, where the door could wait and
+          // the realm's keys are in the HSM (#1955 P8 follow-up,
+          // `signedAhead()`); built here otherwise, as before.
+          // With the realm's keys in the HSM and nothing signed ahead — a
+          // sign-out no browser follows (an administrator's, a policy's, a
+          // partner's back channel), or a signature that failed — no
+          // LogoutRequest is offered: it would be a signature on the event
+          // loop, refused (STS-KEYS-0209) or blocking it.
+          const ahead = this.saml2Ahead &&
+                        this.saml2Ahead.get(String(session.id));
+          const unsigned = !ahead && helpers.keysInHsm();
+          const target = unsigned ? null
+            : (ahead || saml2Sso.logoutTargetsFor(session))
+              .filter((one) => {
+                return one.entityId === entityId;
+              })[0];
+          if (target) {
+            ctx.logoutRequests.push(target);
+          }
           // And the store is told, as for `wsfed-rp` above (2026-11-15).
           if (session.saml2ServiceProviders) {
             delete session.saml2ServiceProviders[entityId];
@@ -1304,7 +1459,22 @@ class Logout {
             return { ok: false, message: 'the session that partner signed ' +
                                          'in has already ended' };
           }
-          const built = federationSlo.partnerLogoutFor(session, ctx.base);
+          // Signed ahead, off the event loop, where the realm's keys are in
+          // the HSM (#1955 P8 follow-up, `signedAhead()`).
+          const aheadP = this.partnerAhead &&
+                         this.partnerAhead.get(String(session.id));
+          // Nothing signed ahead with the realm's keys in the HSM: the
+          // partner is not told, rather than signed for on the event loop
+          // (as for `saml2-sp` above).
+          if (!aheadP && helpers.keysInHsm()) {
+            log.debug("Leaving federation-partner.terminate(). Not signed " +
+                      "ahead.");
+            return { ok: false, message: 'the partner cannot be told: ' +
+                     'its sign-out is signed by a key in the HSM, and it ' +
+                     'was not signed ahead of this sign-out' };
+          }
+          const built = aheadP ||
+                        federationSlo.partnerLogoutFor(session, ctx.base);
           if (!built.ok) {
             log.debug("Leaving federation-partner.terminate(). " + built.why);
             return { ok: false, message: 'the partner cannot be told: ' +
@@ -4872,7 +5042,10 @@ class Logout {
     // bookmark of a result — is sent to the page with a 303, which ends
     // nothing and shows what there is to end.
     // -------------------------------------------------------------------------
-    app.post(LOGOUT_PATH, (req, res) => {
+    // Async since #1955 P8 follow-up: the SAML 2.0 LogoutRequests are signed
+    // off the event loop before the sign-out runs, where the realm's keys
+    // are in the HSM; the promise is returned to the express guard.
+    app.post(LOGOUT_PATH, async (req, res) => {
       log.debug("Entering the logout action endpoint.");
       if (!this.wantsJson(req)) {
         errorCodes.mark(res, 'STS-LOGOUT-0010');
@@ -4958,7 +5131,10 @@ class Logout {
         log.debug("Leaving the logout action endpoint. Sign in again.");
         return;
       }
-      const ended = this.endFor(req, res, subject, body);
+      const ahead = await this.signedAhead([subject.key], baseUrlOf(req));
+      const ended = this.withSignedAhead(ahead, () => {
+        return this.endFor(req, res, subject, body);
+      });
       res.status(200).type('application/json').set('Cache-Control',
                                                    'no-store')
          .send(JSON.stringify(Object.assign({ username: subject.username,
@@ -5134,10 +5310,12 @@ export = {
   SIGNED_OUT_PATH: SIGNED_OUT_PATH,
   signOutView: slot.forward('signOutView'),
   signOutAct: slot.forward('signOutAct'),
+  signOutActAsync: slot.forward('signOutActAsync'),
   // The sign-out's account step (#561), for `GET` and `POST
   // /authn-api/logout/accounts`.
   signOutAccountsView: slot.forward('signOutAccountsView'),
   signOutAccountsAct: slot.forward('signOutAccountsAct'),
+  signOutAccountsActAsync: slot.forward('signOutAccountsActAsync'),
   surfacePaths: slot.forward('surfacePaths'),
   // The list of families, for /admin/logout and the management API's OpenAPI
   // document — both describe what this endpoint reaches, and a second list

@@ -131,7 +131,6 @@ async function passwordProfile(id, minLength) {
     body[field.key] = field.default;
   });
   body.minLength = minLength;
-  body.profile = "default";
   log.debug("Leaving passwordProfile().");
   return body;
 }

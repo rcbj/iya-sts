@@ -106,7 +106,7 @@ namespace IyaSts.Pep.Authzen {
   @js(#{`minLength`:1,`maxLength`:1024}) `id`: string;
 }
 
-@js(#{`$apTrue`:true,`description`:"application names the application asked about, one of the caller's; required when the caller is scoped to more than one (400 STS-AUTHZEN-0027), refused when not one of them (403 STS-AUTHZEN-0025). supported_obligations and approval are reserved and are not catalogue properties: a bad shape is 400 STS-AUTHZEN-0003. An approval is recognized and not used (STS-AUTHZEN-0084). Every other member is a catalogue property, as in Properties."})
+@js(#{`$apTrue`:true,`description`:"application names the application asked about, one of the caller's; required when the caller is scoped to more than one (400 STS-AUTHZEN-0027), refused when not one of them (403 STS-AUTHZEN-0025). supported_obligations and approval are reserved and are not catalogue properties: a bad shape is 400 STS-AUTHZEN-0003. An approval is recognized and not used (STS-AUTHZEN-0084); the answer's context then says reason approval_unverifiable and next_action none. Every other member is a catalogue property, as in Properties."})
 @component model `Context` {
   @js(#{`maxItems`:32,`description`:"Each item at most 64 characters. Present, including an empty array, is supplied and not mapped."})
   `supported_obligations`?: string[];
@@ -178,6 +178,10 @@ namespace IyaSts.Pep.Authzen {
   `advice`?: `Advice`[];
   @js(#{`description`:"Handed when the PEP declared every type and the realm's obligations profile is on. A Permit is then true."})
   `obligations`?: `Obligation`[];
+  @js(#{`description`:"When the request presented context.approval: approval_unverifiable, since this edge verifies no approval (STS-AUTHZEN-0084), as the service answers an approval it cannot verify."})
+  `reason`?: "approval_unverifiable";
+  @js(#{`description`:"With reason: none, since this edge serves no access-request endpoint."})
+  `next_action`?: "none";
   `error`?: `ErrorDetail`;
 }
 
@@ -205,7 +209,7 @@ namespace IyaSts.Pep.Authzen {
 @endpoint("/access/v1/evaluation", "post", #{
   `operationId`:"postEvaluation",
   `summary`:"Access evaluation (AuthZEN 1.0 section 6)",
-  `description`:"Decided here against the pulled root policy, deny-biased, the PIP consulted when subject.type is one of the realm's resolveSubjectTypes; or, for an application that enforces fine-grained authorization, forwarded to the service's POST /access/v1/evaluation with context.application set, and its answer passed through. A token-exchange binding tuple is 501 (STS-XPEP-0140) before it is read or forwarded. Content-Type must be application/json after admission (415 STS-AUTHZEN-0117).",
+  `description`:"Decided here against the pulled root policy, deny-biased, the PIP consulted when subject.type is one of the realm's resolveSubjectTypes; or, for an application that enforces fine-grained authorization, forwarded to the service's POST /access/v1/evaluation with context.application set, and its answer passed through. While the realm's authzen.tokenExchange is on, a token-exchange binding tuple (every gate and scope tuple, and a declared detail type beside a token-exchange gate) is 501 (STS-XPEP-0140) before it is read or forwarded; off, it is an ordinary evaluation. Either way a context member the binding reads, on a tuple that is not the binding's, is 400 STS-AUTHZEN-0101. Content-Type must be application/json after admission (415 STS-AUTHZEN-0117).",
   `security`:#[#{`mutualTLS`:#[]}],
   `parameters`:#[
     #{`name`:"X-Request-ID",`in`:"header",`required`:false,`description`:"Echoed on the answer when it matches the pattern; else neither echoed nor forwarded.",`schema`:#{`type`:"string",`pattern`:"^[\\x21-\\x7e]{1,128}$"}}
@@ -213,7 +217,7 @@ namespace IyaSts.Pep.Authzen {
   `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
   `responses`:#{
     `200`:#{`description`:"The decision.",`content`:#{`application/json`:#{`schema`:null}}},
-    `400`:#{`description`:"The request's shape or the catalogue refused it (STS-AUTHZEN-0001 to 0008), it names no application among several (0027), or the service answered 400 to a forward (STS-XPEP-0057).",`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"The request's shape or the catalogue refused it (STS-AUTHZEN-0001 to 0008), a context member the token-exchange binding reads on a tuple that is not the binding's (0101), it names no application among several (0027), or the service answered 400 to a forward (STS-XPEP-0057).",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"Admission: see the mutualTLS scheme.",`content`:#{`application/json`:#{`schema`:null}}},
     `403`:#{`description`:"Admission, or an application the caller is not scoped to (STS-AUTHZEN-0025) or no application at all (0026).",`content`:#{`application/json`:#{`schema`:null}}},
     `404`:#{`description`:"On the CRL-only listener (STS-XPEP-0114).",`content`:#{`application/json`:#{`schema`:null}}},

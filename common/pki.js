@@ -4156,39 +4156,13 @@ function asciiOf(node) {
 // with a string value compared as RFC 5280 section 7.1 asks — case folded,
 // leading and trailing space removed, internal space collapsed — and any
 // other value by its DER. Two names are the same name when these lists are
-// equal; a directoryName constraint is a PREFIX of this list.
+// equal; a directoryName constraint is a PREFIX of this list. The reading is
+// `common/crypto.js`'s `certificateNameRdns()` since #1242, so the client
+// truststore's same-subject question and these path rules read a name one
+// way; it was this function's body until then.
 function rdnsOfName(node) {
   log.debug("Entering rdnsOfName().");
-  if (!(node instanceof asn1js.Sequence)) {
-    log.debug("Leaving rdnsOfName(). Not a Name.");
-    throw new Error('a Name is not a SEQUENCE');
-  }
-  // An EMPTY RDN (a SET with no attribute) is read as no RDN at all: the
-  // ASN.1 says SIZE (1..MAX), and pkijs writes one for an empty name — the
-  // Fulcio-shaped certificates the SPIFFE sigstore tests make, and a TPM
-  // attestation key's — so what it means is not in doubt.
-  const sets = node.valueBlock.value.filter(function (set) {
-    return !(set instanceof asn1js.Set) || set.valueBlock.value.length > 0;
-  });
-  const out = sets.map(function (set) {
-    if (!(set instanceof asn1js.Set)) {
-      throw new Error('a RelativeDistinguishedName is not a SET');
-    }
-    return set.valueBlock.value.map(function (atv) {
-      // asn1js declares a generic ValueBlock; a constructed one has `value`.
-      const block = /** @type {any} */ (atv.valueBlock);
-      const parts = block && block.value;
-      if (!parts || parts.length !== 2 ||
-          !(parts[0] instanceof asn1js.ObjectIdentifier)) {
-        throw new Error('an attribute is not a type and a value');
-      }
-      const value = parts[1];
-      const text = value instanceof asn1js.BaseStringBlock
-        ? String(value.getValue()).trim().replace(/\s+/g, ' ').toLowerCase()
-        : '#' + Buffer.from(value.toBER(false)).toString('hex');
-      return parts[0].getValue() + '=' + text;
-    }).sort().join('+');
-  });
+  const out = stsCrypto.certificateNameRdns(node);
   log.debug("Leaving rdnsOfName(). " + out.length + " RDN(s).");
   return out;
 }
@@ -15159,13 +15133,60 @@ async function sshUserCaPublicKeyAsync(scopeId) {
            pqcFingerprint: pqc ? pqc.fingerprint : '' };
 }
 
+// THE REGISTER OF ISSUED SSH CERTIFICATES (`common/ssh_issued.ts`, the
+// #1955 review): a store of its own, reached at the moment of use (it
+// requires the realms and the cache registry). Until the review the serials
+// were a member of the PKI row, `sshIssued`, which every issuance rewrote
+// whole; what is on the row is still read (backwards compatibility), and
+// nothing new is written there.
+function sshIssuedRegister() {
+  log.debug("Entering sshIssuedRegister().");
+  log.debug("Leaving sshIssuedRegister().");
+  return require('./ssh_issued');
+}
+
+/**
+ * The OpenSSH certificate extensions a realm's user certificates carry
+ * (`pki.sshUserCertificateExtensions`): the names PROTOCOL.certkeys
+ * defines, in the order given, an unknown name dropped. The default is
+ * `ssh-keygen`'s own set.
+ *
+ * @returns the extension names
+ */
+function sshUserCertificateExtensions() {
+  log.debug("Entering sshUserCertificateExtensions().");
+  const raw = config.value('pki.sshUserCertificateExtensions');
+  const asked = Array.isArray(raw) ? raw.map(String)
+    : String(raw === undefined || raw === null ? '' : raw).split(',');
+  const out = [];
+  asked.map(function (one) {
+    return String(one).trim();
+  }).forEach(function (one) {
+    if (SSH_USER_EXTENSIONS.indexOf(one) >= 0 && out.indexOf(one) < 0) {
+      out.push(one);
+    }
+  });
+  log.debug("Leaving sshUserCertificateExtensions(). " + out.length);
+  return out;
+}
+
+/**
+ * The extensions PROTOCOL.certkeys defines for a user certificate.
+ */
+const SSH_USER_EXTENSIONS = ['no-touch-required', 'permit-X11-forwarding',
+  'permit-agent-forwarding', 'permit-port-forwarding', 'permit-pty',
+  'permit-user-rc'];
+
 /**
  * Issues and records a short-lived SSH user certificate.
  *
  * @param scopeId - the realm
  * @param spec - `{ subjectBlob, principals, ownerSubject, lifetimeS,
- *   hardwareBound }`
- * @returns `{ ok, line, serialHex, validAfter, validBefore }`, or a refusal
+ *   hardwareBound, evidence, extensions }` — `extensions` the names the
+ *   certificate carries, the realm's `pki.sshUserCertificateExtensions`
+ *   where omitted
+ * @returns `{ ok, line, serialHex, validAfter, validBefore, pqcLine,
+ *   pqcSerialHex }`, or a refusal
  */
 async function issueSshUserCertificateAsync(scopeId, spec) {
   log.debug("Entering issueSshUserCertificateAsync().");
@@ -15241,18 +15262,27 @@ async function issueSshUserCertificateAsync(scopeId, spec) {
   if (onlyPqc || beside) {
     cas.push({ ca: pqcCa, member: 'sshUserCaPqc' });
   }
+  // THE EXTENSIONS (the #1955 review): a certificate issued with none lets
+  // its holder open no shell — OpenSSH grants no pty, forwarding or rc
+  // without them — so the realm's list, ssh-keygen's own set by default.
+  const extensions = Array.isArray(s.extensions)
+    ? s.extensions.filter(function (one) {
+      return SSH_USER_EXTENSIONS.indexOf(String(one)) >= 0;
+    }).map(String)
+    : sshUserCertificateExtensions();
   const now = Math.floor(Date.now() / 1000);
   const validAfter = now - 30;
   const validBefore = now + seconds;
+  let signed = [];
   try {
-    const signed = cas.map(function (one) {
+    signed = cas.map(function (one) {
       const serial = nextSshUserSerial();
       const serialHex = serial.toString(16);
       const certificate = buildSshCertificate({
         subjectBlob: subject.blob, serial: serial,
         keyId: 'sts:' + serialHex, principals: principals,
         validAfter: validAfter, validBefore: validBefore,
-        criticalOptions: {}, extensions: [],
+        criticalOptions: {}, extensions: extensions,
         caAlgorithm: one.ca.algorithm,
         caPrivateKey: one.ca.privateSeedB64
           ? Buffer.from(one.ca.privateSeedB64, 'base64')
@@ -15262,49 +15292,92 @@ async function issueSshUserCertificateAsync(scopeId, spec) {
       return { line: certificate.line, serialHex: serialHex,
                member: one.member };
     });
-    const row = rawRowFor(id) || {};
-    const issued = (row.sshIssued || []).filter(function (one) {
-      return !one.notAfter || new Date(one.notAfter).getTime() > Date.now();
-    });
-    signed.forEach(function (one) {
-      issued.push({
-        serialHex: one.serialHex, keyType: subject.type,
-        keyFingerprint: sshFingerprint(subject),
-        ownerSubject: String(s.ownerSubject || ''),
-        issuedAt: new Date(now * 1000).toISOString(),
-        notAfter: new Date(validBefore * 1000).toISOString(),
-        hardwareBound: s.hardwareBound === true,
-        caMember: one.member
-      });
-    });
-    saveRow(id, Object.assign({}, row, { sshIssued: issued }));
-    const outcome = await keystore.pkiSettled(id);
-    if (keystore.persists() && (!outcome || !outcome.ok)) {
-      log.error(errorCodes.tag('STS-PKI-0290') + 'pki: an SSH user ' +
-                'certificate was signed but its serial could not be ' +
-                'recorded in the key store.');
-      log.debug("Leaving issueSshUserCertificateAsync(). Store failed.");
-      return errorCodes.mark({ ok: false, errors: [
-        'The SSH user certificate could not be recorded.'
-      ] }, 'STS-PKI-0290');
-    }
-    log.debug("Leaving issueSshUserCertificateAsync(). Issued.");
-    const primary = signed[0];
-    const extra = signed.length > 1 ? signed[1] : null;
-    const pqc = extra || (onlyPqc ? primary : null);
-    return { ok: true, line: primary.line, serialHex: primary.serialHex,
-             validAfter: validAfter, validBefore: validBefore,
-             pqcLine: pqc ? pqc.line : '',
-             pqcSerialHex: pqc ? pqc.serialHex : '' };
   } catch (e) {
     log.error(errorCodes.tag('STS-PKI-0290') + 'pki: an SSH user ' +
-              'certificate could not be signed or recorded: ' +
-              ((e && e.message) || e));
+              'certificate could not be signed: ' + ((e && e.message) || e));
     log.debug("Leaving issueSshUserCertificateAsync(). Failed.");
     return errorCodes.mark({ ok: false, errors: [
       'The SSH user certificate could not be issued.'
     ] }, 'STS-PKI-0290');
   }
+  // RECORDED, ONE ROW PER CERTIFICATE, BEFORE IT IS ANSWERED (the register's
+  // header): a certificate the register did not keep could not be revoked.
+  const rows = signed.map(function (one) {
+    return {
+      serialHex: one.serialHex, keyType: subject.type,
+      keyFingerprint: sshFingerprint(subject),
+      ownerSubject: String(s.ownerSubject || ''),
+      principals: principals.slice(),
+      issuedAt: new Date(now * 1000).toISOString(),
+      notAfter: new Date(validBefore * 1000).toISOString(),
+      hardwareBound: s.hardwareBound === true,
+      evidence: s.evidence ? String(s.evidence) : '',
+      extensions: extensions.slice(),
+      caMember: one.member
+    };
+  });
+  let kept = false;
+  try {
+    kept = await sshIssuedRegister().record(id, rows);
+  } catch (e) {
+    log.debug("Caught in issueSshUserCertificateAsync(): " +
+              ((e && e.message) || e));
+    kept = false;
+  }
+  if (!kept && keystore.persists()) {
+    log.error(errorCodes.tag('STS-PKI-0290') + 'pki: an SSH user ' +
+              'certificate was signed but its serial could not be ' +
+              'recorded.');
+    log.debug("Leaving issueSshUserCertificateAsync(). Store failed.");
+    return errorCodes.mark({ ok: false, errors: [
+      'The SSH user certificate could not be recorded.'
+    ] }, 'STS-PKI-0290');
+  }
+  log.debug("Leaving issueSshUserCertificateAsync(). Issued.");
+  const primary = signed[0];
+  const extra = signed.length > 1 ? signed[1] : null;
+  const pqc = extra || (onlyPqc ? primary : null);
+  return { ok: true, line: primary.line, serialHex: primary.serialHex,
+           validAfter: validAfter, validBefore: validBefore,
+           pqcLine: pqc ? pqc.line : '',
+           pqcSerialHex: pqc ? pqc.serialHex : '',
+           extensions: extensions.slice() };
+}
+
+/**
+ * A person's SSH user certificates that have not expired, newest first:
+ * the register's, and those the PKI row recorded before the #1955 review.
+ *
+ * @param scopeId - the realm
+ * @param ownerSubject - the person's subject (`urn:uuid:...`)
+ * @returns a promise of the rows
+ */
+async function sshUserCertificatesOfAsync(scopeId, ownerSubject) {
+  log.debug("Entering sshUserCertificatesOfAsync().");
+  const id = realmIdOf(scopeId);
+  const owner = String(ownerSubject || '');
+  if (!owner) {
+    log.debug("Leaving sshUserCertificatesOfAsync(). Nobody.");
+    return [];
+  }
+  const nowMs = Date.now();
+  const fresh = await sshIssuedRegister().ofOwner(id, owner, nowMs);
+  const seen = {};
+  fresh.forEach(function (one) {
+    seen[pkiMerge.normalSerial(one.serialHex)] = true;
+  });
+  const legacy = ((rawRowFor(id) || {}).sshIssued || [])
+    .filter(function (one) {
+      const at = new Date(one.notAfter).getTime();
+      return one.ownerSubject === owner &&
+        !seen[pkiMerge.normalSerial(one.serialHex)] &&
+        (!Number.isFinite(at) || at > nowMs);
+    });
+  const out = fresh.concat(legacy).sort(function (a, b) {
+    return String(b.issuedAt || '').localeCompare(String(a.issuedAt || ''));
+  });
+  log.debug("Leaving sshUserCertificatesOfAsync(). " + out.length);
+  return out;
 }
 
 /**
@@ -15313,7 +15386,7 @@ async function issueSshUserCertificateAsync(scopeId, spec) {
  * @param scopeId - the realm
  * @param serialHex - the certificate serial as hexadecimal
  * @param ownerSubject - when given, the serial must belong to this subject
- * @returns `{ ok }`, or a marked refusal
+ * @returns `{ ok, certificate }`, or a marked refusal
  */
 async function revokeSshUserCertificateAsync(scopeId, serialHex,
                                              ownerSubject) {
@@ -15326,36 +15399,69 @@ async function revokeSshUserCertificateAsync(scopeId, serialHex,
       'The SSH certificate serial is not valid.'
     ] }, 'STS-PKI-0291');
   }
-  const row = rawRowFor(id) || {};
-  const issued = row.sshIssued || [];
-  const index = issued.findIndex(function (one) {
-    return pkiMerge.normalSerial(one.serialHex) === serial &&
-      (ownerSubject === undefined ||
-       one.ownerSubject === String(ownerSubject));
-  });
-  if (index < 0) {
-    log.debug("Leaving revokeSshUserCertificateAsync(). Unknown serial.");
+  const unknown = function () {
+    log.debug("Entering unknown().");
+    log.debug("Leaving unknown().");
     return errorCodes.mark({ ok: false, errors: [
       'The SSH certificate serial was not issued by this realm.'
     ] }, 'STS-PKI-0291');
-  }
-  const next = Object.assign({}, row);
-  next.sshIssued = issued.slice();
-  if (!next.sshIssued[index].revokedAt) {
-    next.sshIssued[index] = Object.assign({}, next.sshIssued[index], {
-      revokedAt: new Date().toISOString()
-    });
-  }
-  saveRow(id, next);
-  const outcome = await keystore.pkiSettled(id);
-  if (keystore.persists() && (!outcome || !outcome.ok)) {
+  };
+  const unsettled = function () {
+    log.debug("Entering unsettled().");
     log.error(errorCodes.tag('STS-PKI-0290') + 'pki: an SSH user ' +
-              'certificate was marked revoked but the key store did not ' +
-              'settle the change.');
-    log.debug("Leaving revokeSshUserCertificateAsync(). Store failed.");
+              'certificate was marked revoked but the store did not settle ' +
+              'the change.');
+    log.debug("Leaving unsettled().");
     return errorCodes.mark({ ok: false, errors: [
       'The SSH certificate revocation could not be recorded.'
     ] }, 'STS-PKI-0290');
+  };
+  const register = sshIssuedRegister();
+  const held = await register.get(id, serial);
+  let certificate = null;
+  if (held) {
+    if (ownerSubject !== undefined &&
+        held.ownerSubject !== String(ownerSubject)) {
+      log.debug("Leaving revokeSshUserCertificateAsync(). Another's.");
+      return unknown();
+    }
+    const marked = await register.markRevoked(id, serial,
+                                              new Date().toISOString());
+    if (!marked.ok && keystore.persists()) {
+      log.debug("Leaving revokeSshUserCertificateAsync(). Store failed.");
+      return unsettled();
+    }
+    certificate = held;
+  } else {
+    // A CERTIFICATE ISSUED BEFORE THE REVIEW, on the PKI row. The row this
+    // process holds may be behind another node's (the #1955 review): read
+    // the store's first, as the KRL build does.
+    await keystore.refreshPki(id);
+    const row = rawRowFor(id) || {};
+    const issued = row.sshIssued || [];
+    const index = issued.findIndex(function (one) {
+      return pkiMerge.normalSerial(one.serialHex) === serial &&
+        (ownerSubject === undefined ||
+         one.ownerSubject === String(ownerSubject));
+    });
+    if (index < 0) {
+      log.debug("Leaving revokeSshUserCertificateAsync(). Unknown serial.");
+      return unknown();
+    }
+    certificate = issued[index];
+    if (!issued[index].revokedAt) {
+      const next = Object.assign({}, row);
+      next.sshIssued = issued.slice();
+      next.sshIssued[index] = Object.assign({}, issued[index], {
+        revokedAt: new Date().toISOString()
+      });
+      saveRow(id, next);
+      const outcome = await keystore.pkiSettled(id);
+      if (keystore.persists() && (!outcome || !outcome.ok)) {
+        log.debug("Leaving revokeSshUserCertificateAsync(). Store failed.");
+        return unsettled();
+      }
+    }
   }
   const krl = await buildSshUserKrlAsync(id);
   if (!krl || !krl.ok) {
@@ -15363,7 +15469,7 @@ async function revokeSshUserCertificateAsync(scopeId, serialHex,
     return krl;
   }
   log.debug("Leaving revokeSshUserCertificateAsync(). Revoked.");
-  return { ok: true };
+  return { ok: true, certificate: certificate };
 }
 
 /**
@@ -15377,10 +15483,39 @@ async function revokeSshUserKeyAsync(scopeId, fingerprint) {
   log.debug("Entering revokeSshUserKeyAsync().");
   const id = realmIdOf(scopeId);
   const wanted = String(fingerprint || '');
-  const row = rawRowFor(id) || {};
   const now = new Date();
-  const issued = (row.sshIssued || []).slice();
+  const unsettled = function () {
+    log.debug("Entering unsettled().");
+    log.error(errorCodes.tag('STS-PKI-0290') + 'pki: SSH certificates for ' +
+              'a lost hardware key were marked revoked but the store did ' +
+              'not settle the change.');
+    log.debug("Leaving unsettled().");
+    return errorCodes.mark({ ok: false, errors: [
+      'The SSH certificate revocation could not be recorded.'
+    ] }, 'STS-PKI-0290');
+  };
   let revoked = 0;
+  // THE REGISTER'S, by the key's index.
+  const register = sshIssuedRegister();
+  const live = await register.ofKey(id, wanted, now.getTime());
+  for (const one of live) {
+    if (one.revokedAt) {
+      continue;
+    }
+    const marked = await register.markRevoked(id, one.serialHex,
+                                              now.toISOString());
+    if (!marked.ok && keystore.persists()) {
+      log.debug("Leaving revokeSshUserKeyAsync(). Store failed.");
+      return unsettled();
+    }
+    revoked += 1;
+  }
+  // AND THOSE ON THE PKI ROW FROM BEFORE THE REVIEW, the store's row read
+  // first (the #1955 review: the one this process holds may be behind).
+  await keystore.refreshPki(id);
+  const row = rawRowFor(id) || {};
+  const issued = (row.sshIssued || []).slice();
+  let legacy = 0;
   for (let i = 0; i < issued.length; i++) {
     const expires = new Date(issued[i].notAfter).getTime();
     if (issued[i].keyFingerprint !== wanted || issued[i].revokedAt ||
@@ -15390,22 +15525,20 @@ async function revokeSshUserKeyAsync(scopeId, fingerprint) {
     issued[i] = Object.assign({}, issued[i], {
       revokedAt: now.toISOString()
     });
-    revoked += 1;
+    legacy += 1;
   }
+  if (legacy) {
+    saveRow(id, Object.assign({}, row, { sshIssued: issued }));
+    const outcome = await keystore.pkiSettled(id);
+    if (keystore.persists() && (!outcome || !outcome.ok)) {
+      log.debug("Leaving revokeSshUserKeyAsync(). Store failed.");
+      return unsettled();
+    }
+  }
+  revoked += legacy;
   if (!revoked) {
     log.debug("Leaving revokeSshUserKeyAsync(). Nothing live.");
     return { ok: true, revoked: 0 };
-  }
-  saveRow(id, Object.assign({}, row, { sshIssued: issued }));
-  const outcome = await keystore.pkiSettled(id);
-  if (keystore.persists() && (!outcome || !outcome.ok)) {
-    log.error(errorCodes.tag('STS-PKI-0290') + 'pki: SSH certificates for ' +
-              'a lost hardware key were marked revoked but the key store ' +
-              'did not settle the change.');
-    log.debug("Leaving revokeSshUserKeyAsync(). Store failed.");
-    return errorCodes.mark({ ok: false, errors: [
-      'The SSH certificate revocation could not be recorded.'
-    ] }, 'STS-PKI-0290');
   }
   const krl = await buildSshUserKrlAsync(id);
   if (!krl || !krl.ok) {
@@ -15417,7 +15550,9 @@ async function revokeSshUserKeyAsync(scopeId, fingerprint) {
 }
 
 /**
- * Builds a current OpenSSH KRL, refreshing the persisted cache when needed.
+ * Builds a current OpenSSH KRL, refreshing the persisted cache when needed:
+ * the revoked certificates of the register and of the PKI row (before the
+ * #1955 review), the expired ones left off.
  *
  * @param scopeId - the realm
  * @returns `{ ok, bytes }`, or null before a CA exists
@@ -15433,21 +15568,32 @@ async function buildSshUserKrlAsync(scopeId) {
     return null;
   }
   const now = Math.floor(Date.now() / 1000);
-  const serials = (row.sshIssued || []).filter(function (one) {
+  let fresh = [];
+  try {
+    fresh = await sshIssuedRegister().revoked(id, now * 1000);
+  } catch (e) {
+    log.error(errorCodes.tag('STS-PKI-0290') + 'pki: the SSH user KRL ' +
+              'could not read the issued register: ' +
+              ((e && e.message) || e));
+    log.debug("Leaving buildSshUserKrlAsync(). No register.");
+    return errorCodes.mark({ ok: false, errors: [
+      'The SSH user key revocation list could not be built.'
+    ] }, 'STS-PKI-0290');
+  }
+  const legacy = (row.sshIssued || []).filter(function (one) {
     const expires = new Date(one.notAfter).getTime();
     return !!one.revokedAt &&
       (!one.notAfter || !Number.isFinite(expires) || expires > now * 1000);
-  }).map(function (one) {
-    return pkiMerge.normalSerial(one.serialHex);
-  }).sort();
-  const pqcCa = row.sshUserCaPqc;
-  const classicalSerials = [];
-  const pqcSerials = [];
+  });
   const bySerial = {};
-  (row.sshIssued || []).forEach(function (one) {
+  legacy.concat(fresh).forEach(function (one) {
     bySerial[pkiMerge.normalSerial(one.serialHex)] = one.caMember ||
       'sshUserCa';
   });
+  const serials = Object.keys(bySerial).sort();
+  const pqcCa = row.sshUserCaPqc;
+  const classicalSerials = [];
+  const pqcSerials = [];
   serials.forEach(function (one) {
     if (bySerial[one] === 'sshUserCaPqc') {
       pqcSerials.push(one);
@@ -17012,6 +17158,9 @@ module.exports = {
   revokeSshUserCertificateAsync: revokeSshUserCertificateAsync,
   revokeSshUserKeyAsync: revokeSshUserKeyAsync,
   buildSshUserKrlAsync: buildSshUserKrlAsync,
+  sshUserCertificatesOfAsync: sshUserCertificatesOfAsync,
+  sshUserCertificateExtensions: sshUserCertificateExtensions,
+  SSH_USER_EXTENSIONS: SSH_USER_EXTENSIONS,
   awsIidCertificate: awsIidCertificate,
   azureImdsRoots: azureImdsRoots,
   deviceAttestationAnchors: deviceAttestationAnchors,

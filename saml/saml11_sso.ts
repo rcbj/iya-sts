@@ -672,6 +672,7 @@ interface Saml11SsoDeps {
   errorCodes: typeof errorCodes;
   gate: typeof gate;
   buildSaml11Assertion: typeof saml11.buildSaml11Assertion;
+  buildSaml11AssertionAsync: typeof saml11.buildSaml11AssertionAsync;
   CONFIRMATION_BEARER: typeof saml11.CONFIRMATION_BEARER;
   CONFIRMATION_ARTIFACT: typeof saml11.CONFIRMATION_ARTIFACT;
   NAMEID_FORMAT_UNSPECIFIED: typeof saml11.NAMEID_FORMAT_UNSPECIFIED;
@@ -742,6 +743,7 @@ class Saml11Sso {
       errorCodes: errorCodes,
       gate: gate,
       buildSaml11Assertion: saml11.buildSaml11Assertion,
+      buildSaml11AssertionAsync: saml11.buildSaml11AssertionAsync,
       CONFIRMATION_BEARER: saml11.CONFIRMATION_BEARER,
       CONFIRMATION_ARTIFACT: saml11.CONFIRMATION_ARTIFACT,
       NAMEID_FORMAT_UNSPECIFIED: saml11.NAMEID_FORMAT_UNSPECIFIED,
@@ -1206,7 +1208,10 @@ class Saml11Sso {
   // **NONE OF THEM DOES NOW**: `common/crypto.js` resolves `AssertionID`, `ResponseID`,
   // `RequestID` and `ID` from the document itself, so there is no argument left
   // to pass and no way to pass it wrongly.
-  private signDocument(xml, rootLocalName, id, placement) {
+  // Async since #1955 P8 follow-up: `stsCrypto.signXmlOffLoop()`, which
+  // signs a realm key in the HSM off the event loop and a software key in
+  // place, the same bytes as `signXml()`.
+  private async signDocument(xml, rootLocalName, id, placement) {
     const { STS, documentSettings, log, stsCrypto } = this.deps;
     log.debug("Entering Saml11Sso.signDocument(). root=" + rootLocalName +
               ", placement=" +
@@ -1228,7 +1233,7 @@ class Saml11Sso {
     // good. The configured algorithms since 2026-09-12. See
     // saml/document_settings.ts.
     const how = documentSettings.signatureOptions();
-    const signed = stsCrypto.signXml(xml, {
+    const signed = await stsCrypto.signXmlOffLoop(xml, {
       // The XML signing key (#42, D2): `STS.xml`, not the JOSE key — and
       // `STS.xmlSigner`, the one for the configured algorithm (#68).
       privateKeyPem: STS.xmlSigner.privateKeyPem,
@@ -1369,7 +1374,8 @@ class Saml11Sso {
     return applications.settingFor(rpId, key, config);
   }
 
-  private buildResponse(opts) {
+  // Async since #1955 P8 follow-up: signDocument()'s reason.
+  private async buildResponse(opts) {
     const { errorCodes, genId, iso, log, logArtifact, xmlEscape } = this.deps;
     // `opts.rp` is the relying party; see settingFor() above.
     log.debug("Entering Saml11Sso.buildResponse(). status=" + opts.status);
@@ -1404,7 +1410,7 @@ class Saml11Sso {
       // 'prepend' — ds:Signature is the FIRST child of a 1.1 Response. See
       // signDocument()'s header, where all four positions in this service are
       // counted.
-      const signed = this.signDocument(xml, 'Response', id, 'prepend');
+      const signed = await this.signDocument(xml, 'Response', id, 'prepend');
       logArtifact('SAML 1.1 Response', 'after signing', signed);
       log.debug("Leaving Saml11Sso.buildResponse(). Signed.");
       return { xml: SamlModel.hold('saml11.Response', signed,
@@ -1431,9 +1437,11 @@ class Saml11Sso {
 
   // The assertion, from the one builder. Everything the browser profiles
   // require of it and nothing this file decided for itself — see decision 7.
-  private buildAssertionFor(ctx) {
+  // Async since #1955 P8 follow-up: the builder's async twin signs a realm
+  // key in the HSM off the event loop.
+  private async buildAssertionFor(ctx) {
     const { CONFIRMATION_ARTIFACT, CONFIRMATION_BEARER,
-            NAMEID_FORMAT_UNSPECIFIED, buildSaml11Assertion, config,
+            NAMEID_FORMAT_UNSPECIFIED, buildSaml11AssertionAsync, config,
             log } = this.deps;
     log.debug("Entering Saml11Sso.buildAssertionFor(). rp=" + ctx.rpId +
               ", profile=" +
@@ -1457,7 +1465,7 @@ class Saml11Sso {
     // When they authenticated, read through the `Session` concept (#1579).
     const authnInstant = new Date((authn.sessionView(session).authTime || 0) *
                                   1000).toISOString();
-    const assertion = buildSaml11Assertion({
+    const assertion = await buildSaml11AssertionAsync({
       // The sign-on session (#1072): its chosen dynamic roles.
       sessionId: session.id,
       subject: user.username,
@@ -1712,7 +1720,9 @@ class Saml11Sso {
   // chosen. The two profiles differ in WHAT travels through the browser — the
   // assertion itself, or a reference to it — which is the whole distinction
   // between them.
-  private deliver(res, opts) {
+  // Async since #1955 P8 follow-up: the Response is signed off the event
+  // loop for a realm key in the HSM.
+  private async deliver(res, opts) {
     const { log } = this.deps;
     log.debug("Entering Saml11Sso.deliver(). profile=" + opts.profile);
     if (opts.profile === 'artifact') {
@@ -1753,7 +1763,7 @@ class Saml11Sso {
       log.debug("Leaving Saml11Sso.deliver(). By artifact.");
       return;
     }
-    const response = this.buildResponse({
+    const response = await this.buildResponse({
       status: STATUS_SUCCESS, rp: opts.rpId,
       // Recipient, and NO InResponseTo: there was no request. See
       // buildResponse().
@@ -2185,7 +2195,13 @@ class Saml11Sso {
     // carries the held `fid`, and goes on with the new sign-in.
     const forced = !held && String((req.query || {}).forceAuthn || '')
       .toLowerCase() === 'true';
-    if (!session || forced) {
+    // And a required dynamic role the session chose nothing for (#1072):
+    // single sign-on carries no new choice, so the person signs in again,
+    // where the role step is drawn. Not on the held return.
+    const roleOwed = !held && !!session && !forced &&
+      typeof authn.roleChoiceOwed === 'function' &&
+      authn.roleChoiceOwed(session, rpId);
+    if (!session || forced || roleOwed) {
       // Hold the parameters and go to authn.js's screen. The return address is
       // a GET on this endpoint carrying the held id, so coming back runs this
       // function again from the top with a session in place.
@@ -2506,7 +2522,9 @@ class Saml11Sso {
 
     pendingFlows.delete(String(params.fid || ''));
     notePresented(session, 'SAML 1.1', req, rpId);
-    this.issueSignIn(res, req, {
+    // RETURNED (#1955 P8 follow-up): the sign-in is signed off the event
+    // loop, and the express guard answers a rejection.
+    const issued = this.issueSignIn(res, req, {
       session: session, rpId: rpId, providerId: providerId, acsUrl: acsUrl,
       profile: wanted.profile, target: String(carried.TARGET || ''),
       how: who,
@@ -2522,15 +2540,18 @@ class Saml11Sso {
     });
     log.debug("Leaving Saml11Sso.interSiteTransfer(). An assertion went to " +
               rpId + ".");
+    return issued;
   }
 
-  private issueSignIn(res, req, ctx) {
+  // Async since #1955 P8 follow-up: the assertion and the Response are
+  // signed off the event loop for a realm key in the HSM.
+  private async issueSignIn(res, req, ctx) {
     const { log, noteSessionChanged } = this.deps;
     log.debug("Entering Saml11Sso.issueSignIn(). rp=" + ctx.rpId + ", " +
         "profile=" +
               ctx.profile);
     const session = ctx.session;
-    const assertion = this.buildAssertionFor({
+    const assertion = await this.buildAssertionFor({
       session: session, rpId: ctx.rpId, providerId: ctx.providerId,
       profile: ctx.profile, locality: this.localityOf(req),
       requestedUris: ctx.requestedUris
@@ -2585,7 +2606,7 @@ class Saml11Sso {
     // lists it too: `authn.noteSessionChanged()` carries the argument.
     noteSessionChanged(session);
 
-    this.deliver(res, {
+    await this.deliver(res, {
       profile: ctx.profile, destination: ctx.acsUrl, assertion: assertion,
       target: ctx.target,
       providerId: ctx.providerId, rpId: ctx.rpId, scopedId: ctx.scopedId,
@@ -2812,10 +2833,12 @@ class Saml11Sso {
     // refusal has only the path segment. Omitting it falls back to that
     // segment, which is the right answer for every refusal and for the unscoped
     // endpoint, where it is '' and settingFor() reads the service-wide value.
-    const answer = (status, message, assertion, inResponseTo, recipient,
-                    rp?) => {
+    // Async since #1955 P8 follow-up: the Response is signed off the event
+    // loop for a realm key in the HSM; every caller returns it.
+    const answer = async (status, message, assertion, inResponseTo, recipient,
+                          rp?) => {
       log.debug("Entering answer().");
-      const response = this.buildResponse({
+      const response = await this.buildResponse({
         status: status, statusMessage: message, assertion: assertion || '',
         inResponseTo: inResponseTo, recipient: recipient,
         rp: rp || scoped.id || ''
@@ -3108,9 +3131,12 @@ class Saml11Sso {
 
   // A query, once it is known to be answered HERE (see respond()): the
   // product release policy, then an AuthenticationQuery or an AttributeQuery.
-  private answerQuery(req, res, request, query, attributeQuery, authnQuery,
-                      scoped, requestId, answer) {
-    const { CONFIRMATION_BEARER, buildSaml11Assertion, errorCodes, iso, log,
+  // Async since #1955 P8 follow-up: the assertion is signed off the event
+  // loop for a realm key in the HSM; respond() returns its promise.
+  private async answerQuery(req, res, request, query, attributeQuery,
+                            authnQuery, scoped, requestId, answer) {
+    const { CONFIRMATION_BEARER, buildSaml11AssertionAsync, errorCodes, iso,
+            log,
             mode, sessionsOf, userFor } = this.deps;
     log.debug("Entering Saml11Sso.answerQuery().");
     // -----------------------------------------------------------------------
@@ -3254,7 +3280,7 @@ class Saml11Sso {
                       'return', '', requestId, rpId, rpId);
       }
       const how = this.authnMethodFor(live);
-      const assertion = buildSaml11Assertion({
+      const assertion = await buildSaml11AssertionAsync({
         subject: username,
         audience: rpId,
         lifetimeMin: Number(this.settingFor(rpId,
@@ -3287,7 +3313,7 @@ class Saml11Sso {
     // false` leaves it out; what is left is the attribute statement the query
     // asked for, in both modes.
     const now = iso(0);
-    const assertion = buildSaml11Assertion({
+    const assertion = await buildSaml11AssertionAsync({
       subject: username,
       audience: rpId,
       lifetimeMin: Number(this.settingFor(rpId,
@@ -3394,7 +3420,24 @@ class Saml11Sso {
     return out;
   }
 
-  private serveMetadata(req, res) {
+  /**
+   * `metadataFor()`, signed off the event loop for a realm key in the HSM
+   * (#1955 P8 follow-up): `saml2_sso.metadataForAsync()`.
+   *
+   * @param base - the realm's base URL
+   * @param rpId - the relying party's identifier
+   * @returns a promise of the metadata document
+   */
+  async metadataForAsync(base, rpId) {
+    const { log } = this.deps;
+    log.debug("Entering Saml11Sso.metadataForAsync(). rp=" +
+              (rpId || '(unscoped)'));
+    const out = await require('./saml2_sso').metadataForAsync(base, rpId);
+    log.debug("Leaving Saml11Sso.metadataForAsync().");
+    return out;
+  }
+
+  private async serveMetadata(req, res) {
     const { baseUrlOf, errorCodes, log } = this.deps;
     log.debug("Entering the SAML 1.1 metadata endpoint.");
     const base = baseUrlOf(req);
@@ -3423,10 +3466,13 @@ class Saml11Sso {
     // key is regenerated on every start, so a cached copy describes a key that
     // is gone and the failure looks like a broken signature rather than a stale
     // document.
+    // Signed off the event loop for a realm key in the HSM (#1955 P8
+    // follow-up).
+    const document = await this.metadataForAsync(base, scoped.id);
     res.status(200)
        .type('application/samlmetadata+xml')
        .set('Cache-Control', 'no-store')
-       .send(this.metadataFor(base, scoped.id));
+       .send(document);
     log.debug("Leaving the SAML 1.1 metadata endpoint. rp=" +
               (scoped.id || '(unscoped)'));
   }
@@ -3778,6 +3824,7 @@ export = {
   providerId: slot.forward('providerId'),
   endpointsFor: slot.forward('endpointsFor'),
   metadataFor: slot.forward('metadataFor'),
+  metadataForAsync: slot.forward('metadataForAsync'),
   metadataParts: slot.forward('metadataParts'),
   artifactCount: slot.forward('artifactCount'),
   cachedAssertionCount: slot.forward('cachedAssertionCount'),

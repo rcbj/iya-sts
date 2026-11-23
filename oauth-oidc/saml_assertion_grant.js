@@ -369,8 +369,12 @@ function textOf(el) {
 // OUT of this — which is the ordering that makes an encrypted unsigned
 // assertion fail for the right reason.
 // ---------------------------------------------------------------------------
-function decryptIfNeeded(xml) {
+// `how` (#1955 P8 follow-up): `{ defer: true }` answers `{ deferred, element }`
+// where a decryption would be made, and `{ opened }` hands in that
+// decryption's answer — `decryptIfNeededAsync()`'s two halves.
+function decryptIfNeeded(xml, how) {
   log.debug('Entering decryptIfNeeded().');
+  const asked = how || {};
   let doc = null;
   try {
     doc = new DOMParser().parseFromString(String(xml), 'text/xml');
@@ -389,8 +393,13 @@ function decryptIfNeeded(xml) {
     log.debug('Leaving decryptIfNeeded(). Not encrypted.');
     return { ok: true, xml: String(xml), encrypted: false };
   }
+  if (asked.defer) {
+    log.debug('Leaving decryptIfNeeded(). The decryption is deferred.');
+    return { deferred: true, element: String(xml) };
+  }
   // Any of this realm's RSA keys, every live generation (#42).
-  const opened = require('../common/helpers').decryptOwnElement(String(xml));
+  const opened = asked.opened ||
+    require('../common/helpers').decryptOwnElement(String(xml));
   if (!opened.ok) {
     log.debug('Leaving decryptIfNeeded(). It would not decrypt.');
     return { ok: false, why: 'this assertion arrived as a ' +
@@ -403,6 +412,37 @@ function decryptIfNeeded(xml) {
   return { ok: true, xml: opened.xml, encrypted: true,
            encryption: { algorithm: opened.algorithm,
                          keyTransport: opened.keyTransport } };
+}
+
+// `decryptIfNeeded()` with the decryption made off the event loop for a realm
+// key in the HSM (#1955 P8 follow-up): the same checks, then
+// `helpers.decryptOwnElementOffLoop()`, whose answer for a software key is
+// `decryptOwnElement()`'s.
+async function decryptIfNeededAsync(xml) {
+  log.debug('Entering decryptIfNeededAsync().');
+  const plan = decryptIfNeeded(xml, { defer: true });
+  if (!plan.deferred) {
+    log.debug('Leaving decryptIfNeededAsync(). Nothing to decrypt.');
+    return plan;
+  }
+  const opened = await require('../common/helpers')
+    .decryptOwnElementOffLoop(plan.element);
+  log.debug('Leaving decryptIfNeededAsync().');
+  return decryptIfNeeded(xml, { opened: opened });
+}
+
+// `read()` with an EncryptedID opened off the event loop, as above.
+async function readAsync(xml) {
+  log.debug('Entering readAsync().');
+  const plan = read(xml, { defer: true });
+  if (!plan.deferred) {
+    log.debug('Leaving readAsync(). Nothing to decrypt.');
+    return plan;
+  }
+  const opened = await require('../common/helpers')
+    .decryptOwnElementOffLoop(plan.element);
+  log.debug('Leaving readAsync().');
+  return read(xml, { opened: opened });
 }
 
 // ---------------------------------------------------------------------------
@@ -422,11 +462,14 @@ function decryptIfNeeded(xml) {
  * nothing read is believed until the signature has verified.
  *
  * @param xml - the assertion's XML
+ * @param how - as for decryptIfNeeded() (#1955 P8 follow-up), for the
+ *   EncryptedID: `{ defer }` or `{ opened }`; absent, it is decrypted here
  * @returns the parts (`id`, `issuer`, `subject`, `confirmations`, `audiences`,
  *   `attributes`, `signed` and the rest), or `{ ok: false, why }`
  */
-function read(xml) {
+function read(xml, how) {
   log.debug('Entering read().');
+  const asked = how || {};
   let doc = null;
   try {
     doc = new DOMParser().parseFromString(String(xml), 'text/xml');
@@ -467,8 +510,13 @@ function read(xml) {
   let nameIdFormat = attr(nameId, 'Format');
   let idWasEncrypted = false;
   if (!nameId && encryptedId) {
-    const opened = require('../common/helpers').decryptOwnElement(
-      new XMLSerializer().serializeToString(encryptedId));
+    const element = new XMLSerializer().serializeToString(encryptedId);
+    if (asked.defer) {
+      log.debug('Leaving read(). The EncryptedID is deferred.');
+      return { deferred: true, element: element };
+    }
+    const opened = asked.opened ||
+      require('../common/helpers').decryptOwnElement(element);
     if (opened.ok) {
       const inner = new DOMParser().parseFromString(opened.xml, 'text/xml');
       const el = inner && inner.documentElement;
@@ -988,14 +1036,15 @@ async function verify(opts) {
   }
 
   // --- RFC 7522 section 3 item 10: it may be encrypted ----------------------
-  const opened = decryptIfNeeded(decoded.xml);
+  // Off the event loop for a realm key in the HSM (#1955 P8 follow-up).
+  const opened = await decryptIfNeededAsync(decoded.xml);
   if (!opened.ok) {
     log.debug('Leaving verify(). It would not decrypt.');
     return refuse('STS-OAUTH-0058', opened.why);
   }
   const xml = opened.xml;
 
-  const parsed = read(xml);
+  const parsed = await readAsync(xml);
   if (!parsed.ok) {
     log.debug('Leaving verify(). It would not parse.');
     return refuse('STS-OAUTH-0059', parsed.why);

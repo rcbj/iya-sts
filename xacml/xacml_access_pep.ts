@@ -125,6 +125,7 @@ interface AccessQuestion {
     approverIdentity: string[];
   } | null;
   sshPrincipal?: string;
+  sshPrincipalKind?: string;
 }
 
 // What a decision answers.
@@ -414,6 +415,13 @@ class XacmlAccessPep {
     if (asked.sshPrincipal) {
       req.resource(ATTRIBUTE.SSH_PRINCIPAL,
                    [String(asked.sshPrincipal)]);
+    }
+    // AND ITS KIND (the #1955 review): `uid` for the person's own name,
+    // `group` for a group `pki.sshGroupPrincipals` offers, so a rule can
+    // refuse group principals, or some of them, without listing names.
+    if (asked.sshPrincipalKind) {
+      req.resource(ATTRIBUTE.SSH_PRINCIPAL_KIND,
+                   [String(asked.sshPrincipalKind)]);
     }
     // THE REPORT RULE'S QUESTION (#1030): the row's kind and the groups it
     // is shared with, and the person for the PIP's owner identity. The

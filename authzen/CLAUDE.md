@@ -984,7 +984,7 @@ header argues each. What a maintainer needs quickly:
   Task Handle's `links.ticket` names it with the task's id. `formView()`
   answers only the denial's or the task's SUBJECT (`isSubject()`: a type
   in `authzen.resolveSubjectTypes`, an id among `approverIdentity()`'s
-  names) and 0146 otherwise, the same as for nothing. `submitByForm()`
+  names) and 0147 otherwise, the same as for nothing. `submitByForm()`
   opens the task through `openTask()`, the one place a PEP's submission
   makes one too, with `requester` the denial's PEP, `origin: "form"` and
   `formSubmittedBy`. A denial has one task (its `jti`), and the PEP's own
@@ -999,9 +999,9 @@ header argues each. What a maintainer needs quickly:
   scoped to the denied tuple by construction. `request_catalogs_url` only
   for a recorded denial that lists some. The Catalogs Document and the
   Catalog Endpoint (`catalogDenial()`) answer only the denial's own caller,
-  still scoped (`applicationOf()`), 0149 otherwise. The cursor is bound to
-  the search it continues (0150). `requestedAccess()` requires and checks
-  `requested_access.entitlement` against the denial's list (0151), for a
+  still scoped (`applicationOf()`), 0150 otherwise. The cursor is bound to
+  the search it continues (0151). `requestedAccess()` requires and checks
+  `requested_access.entitlement` against the denial's list (0152), for a
   PEP's submission and the form's alike. `factsOf()` hands it to
   `xacml_request.js` as `urn:sts:xacml:authzen:approved-entitlement`,
   added only when one was chosen. A query string is never logged.
@@ -1010,8 +1010,8 @@ header argues each. What a maintainer needs quickly:
   caller's own credential, which is the PEP's: one link that IS the
   caller (its DN, client_id or identifier), or link for link the `act`
   chain of its own access token. The bearer door carries the verified
-  token's `iss` and `act` on the caller for this. Anything else is 0153,
-  and a malformed actor or source is 0154. Section 3.2's MUST reject
+  token's `iss` and `act` on the caller for this. Anything else is 0154,
+  and a malformed actor or source is 0155. Section 3.2's MUST reject
   governs its MAY retain, so nothing unverified is kept. `client.source`
   is audit metadata only, and `external_url` is never dialled. The chain
   is context for the approvers and the audit row, and never an XACML
@@ -1021,7 +1021,7 @@ header argues each. What a maintainer needs quickly:
   by default; off, the single model refuses `items` with its old
   sentence). `submit()` hands a body with `items` to `submitBulk()`.
   Every item carries its own denial, because this service issues no
-  bundle denial, so a top-level `denial` is 0157. Each item is the single
+  bundle denial, so a top-level `denial` is 0158. Each item is the single
   submission it would be, checked by `verifyOne()` (the one check a
   single submission gets too) and `requestedAccess()`, and opened as an
   ordinary task with `bundle` and `position`. The bundle is an index row,
@@ -1029,7 +1029,7 @@ header argues each. What a maintainer needs quickly:
   `bundleBody()` builds the handle from its items when it is read: 3.4's
   aggregate, `partial` included, each item's own `result`, no top-level
   one. `STATES` leaves `partial` out, so no task, and no callback event,
-  is ever `partial`. A callback on a bulk submission is 0159.
+  is ever `partial`. A callback on a bulk submission is 0160.
 * Not built: of BULK, a bundle denial and a bulk callback; of ACTOR,
   routing by an actor; of CATALOG, `scope_params`, `granted`,
   `risk_level`, `owner` and agent-protocol catalogs.
@@ -1143,14 +1143,14 @@ approval's state could not be signed, and the approval stands by id
 (#1204); 0141 a portal revocation of an approval somebody else gave
 (#1203), 0142 an approval that could not be stored and 0143 approvers who
 resolve to nobody, each a task moved to `failed` (#1202), 0144 the denial
-store full (#1204); 0145–0148 the hosted form (#1204): 0145 a denial the
-record does not hold, 0146 a person who is not the subject, 0147 a
-window that has passed, 0148 the form off; 0149–0152 the catalogs
-(#1204): 0149 a catalog call for a denial that is not the caller's, 0150 a
-cursor this endpoint did not issue, 0151 a submission's entitlement
-missing or not listed, 0152 the catalogs off; 0153–0154 the actor
-(#1204): 0153 a chain the caller's credential does not authorize, 0154 a
-malformed `client.actor` or `client.source`; 0155–0159 the bulk request
-(#1204): 0155 a top-level resource or action, 0156 items out of bounds,
-0157 a bundle denial or an item without its own, 0158 items about different
-applications, 0159 a callback.
+store full (#1204); 0146–0149 the hosted form (#1204): 0146 a denial the
+record does not hold, 0147 a person who is not the subject, 0148 a
+window that has passed, 0149 the form off; 0150–0153 the catalogs
+(#1204): 0150 a catalog call for a denial that is not the caller's, 0151 a
+cursor this endpoint did not issue, 0152 a submission's entitlement
+missing or not listed, 0153 the catalogs off; 0154–0155 the actor
+(#1204): 0154 a chain the caller's credential does not authorize, 0155 a
+malformed `client.actor` or `client.source`; 0156–0160 the bulk request
+(#1204): 0156 a top-level resource or action, 0157 items out of bounds,
+0158 a bundle denial or an item without its own, 0159 items about different
+applications, 0160 a callback.

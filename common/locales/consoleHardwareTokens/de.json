@@ -57,5 +57,16 @@
 "escrowSerial": "Seriennummer des Zertifikats",
 "escrowSubject": "Antragsteller",
 "escrowExpires": "Läuft ab",
-"escrowRecover": "Schlüssel wiederherstellen"
+"escrowRecover": "Schlüssel wiederherstellen",
+  "sshTab": "SSH-Zertifikate",
+  "sshWhat": "Die OpenSSH-Benutzerzertifikate, die dieser Realm der Person ausgestellt hat, bis jedes abläuft. Ein Widerruf setzt es auf die KRL des Realms (GET /pki/ssh-user-krl), die die Server lesen, die dieser CA vertrauen.",
+  "sshSearch": "Suchen Sie im Reiter „Token“ nach einer Person, um hier ihre SSH-Zertifikate aufzulisten.",
+  "sshNone": "Kein SSH-Zertifikat von {who} ist gültig.",
+  "sshSerial": "Seriennummer",
+  "sshKey": "Schlüssel",
+  "sshPrincipals": "Principals",
+  "sshExpires": "Läuft ab",
+  "sshHardware": "hardwaregebunden",
+  "sshRevoked": "widerrufen",
+  "sshRevoke": "Widerrufen"
 }

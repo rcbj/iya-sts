@@ -27,6 +27,12 @@
 //   E. A PERSON THE POLICY DOES NOT PERMIT ticks the box and is offered
 //      nothing: no step, signed in, no dynamic role.
 //   F. TURNED OFF for the client (appDynamicRoleSelection FALSE): no box.
+//   G. REQUIRED (the review follow-ups of 2026-11-23): the step is drawn
+//      though the box is not ticked; the password grant, which cannot draw
+//      it, is refused access_denied for the eligible person and not for the
+//      clerk; and single sign-on into a second client the session chose
+//      nothing for is not answered from the session — the sign-in screen,
+//      or interaction_required with prompt=none.
 //
 // `local: true`: this repository's own /authn, /oauth2 and /admin-api.
 // ===========================================================================
@@ -311,6 +317,75 @@ async function turnedOff(realm) {
   log.debug("Leaving turnedOff().");
 }
 
+// G. A required role.
+async function required(realm, op, clerk) {
+  log.debug("Entering required().");
+  const set = await k.call(realm, "POST", "/roles/set-selection",
+    { role: ROLE, selection: "required" });
+  assert.ok(set.status === 200 && set.body.ok !== false,
+            set.raw.slice(0, 300));
+  const held = await signInRaw(realm, op, false);
+  check("G1. a required role draws the step though the box is not ticked",
+    function () {
+      assert.ok(held.answer.next === "mfa" &&
+                /\/authn\/roles[?#]/.test(String(held.answer.location)),
+                k.said(held.answer));
+    });
+  const opened = await authnSignin.step(held.answer.location,
+    { cookie: held.answer.cookie, headers: k.BROWSER });
+  const chosen = await authnSignin.stepAct(opened, "roles",
+                                           { roles: [ROLE] });
+  const grant = async function (name) {
+    log.debug("Entering grant(). " + name);
+    const r = await fetch(realm.base + "/oauth2/token", { method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ grant_type: "password", username: name,
+        password: PASSWORD, client_id: k.CLIENT,
+        scope: "openid" }).toString() });
+    const json = await r.json().catch(function () { return {}; });
+    log.debug("Leaving grant(). " + r.status);
+    return { status: r.status, json: json };
+  };
+  const refusedGrant = await grant(op);
+  const clerkGrant = await grant(clerk);
+  check("G2. the password grant is refused access_denied for the eligible " +
+        "person, and answered for the clerk", function () {
+    assert.ok(refusedGrant.status === 400 &&
+              refusedGrant.json.error === "access_denied",
+              JSON.stringify(refusedGrant).slice(0, 300));
+    assert.ok(clerkGrant.status === 200 && clerkGrant.json.access_token,
+              JSON.stringify(clerkGrant).slice(0, 300));
+  });
+  const second = "dyn-client-2-" + k.STAMP;
+  await k.client(realm, second);
+  const authorize = async function (extra) {
+    log.debug("Entering authorize().");
+    const challenge = fixtures.pkce();
+    const r = await fetch(realm.base + "/oauth2/authorize?" +
+      new URLSearchParams(Object.assign({ client_id: second,
+        redirect_uri: k.REDIRECT, response_type: "code", scope: "openid",
+        state: "g", code_challenge: challenge.challenge,
+        code_challenge_method: challenge.method }, extra || {}))
+        .toString(),
+      { redirect: "manual", headers: Object.assign({}, k.BROWSER,
+        { cookie: String(chosen.cookie || "") }) });
+    await r.text();
+    log.debug("Leaving authorize(). " + r.status);
+    return String(r.headers.get("location") || "");
+  };
+  const toScreen = await authorize();
+  const passive = await authorize({ prompt: "none" });
+  check("G3. single sign-on into a client the session chose nothing for " +
+        "goes to the sign-in screen, and prompt=none is " +
+        "interaction_required", function () {
+    assert.ok(/\/authn\/login/.test(toScreen), toScreen);
+    assert.ok(passive.indexOf(k.REDIRECT) === 0 &&
+              new URL(passive).searchParams.get("error") ===
+                "interaction_required", passive);
+  });
+  log.debug("Leaving required().");
+}
+
 async function test() {
   log.debug("Entering test().");
   const realm = await k.realm("dyn-roles", "development");
@@ -323,8 +398,9 @@ async function test() {
   await k.person(realm, clerk, PASSWORD, { employeeType: "clerk" });
   await definition(realm, op, clerk);
   await signIns(realm, op, clerk);
+  await required(realm, op, clerk);
   await turnedOff(realm);
-  assert.ok(k.checks() >= 14, "only " + k.checks() + " checks ran; a " +
+  assert.ok(k.checks() >= 17, "only " + k.checks() + " checks ran; a " +
             "section has stopped being called.");
   log.debug("Leaving test().");
 }

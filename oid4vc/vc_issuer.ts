@@ -240,7 +240,9 @@ interface VcIssuerDeps {
   lastCredentialRequestStore: typeof lastCredentialRequestStore;
   // `oauth2.js` itself, for its published-document signer. LAZY: see
   // `sendVciMetadata()`.
-  loadOauth2: () => { signPublishedDocument: (...args: any[]) => any };
+  loadOauth2: () => { signPublishedDocument: (...args: any[]) => any;
+                      signPublishedDocumentAsync:
+                        (...args: any[]) => Promise<any> };
 }
 
 // c_nonce values this issuer has handed out and not yet seen used. A nonce is
@@ -1023,7 +1025,7 @@ class VcIssuer {
   // -------------------------------------------------------------------------
   private inInsertedPathRealm(req: any, res: any, wellKnown: string,
                               issuerOf: (r: any) => string,
-                              send: () => void): void {
+                              send: () => any): any {
     const { log, errorCodes } = this.deps;
     log.debug("Entering VcIssuer.inInsertedPathRealm(). " + wellKnown);
     const asked = '/' + String((req.params || {})[0] || '')
@@ -1060,8 +1062,10 @@ class VcIssuer {
       log.debug("Leaving VcIssuer.inInsertedPathRealm(). No such issuer.");
       return;
     }
-    realms.run(found, send);
+    // RETURNED (#1955 P8 follow-up): a document signed off the event loop
+    // answers a promise.
     log.debug("Leaving VcIssuer.inInsertedPathRealm().");
+    return realms.run(found, send);
   }
 
   // -------------------------------------------------------------------------
@@ -1142,16 +1146,19 @@ class VcIssuer {
     return stsCrypto.credentialDigest(String(nonce || ''));
   }
 
-  private sendVciMetadata(req, res) {
+  // `signed_metadata` is signed off the event loop for a realm key in the
+  // HSM (#1955 P8 follow-up), so the answer is a promise the route returns;
+  // a software key signs in place, as before.
+  private async sendVciMetadata(req, res) {
     const { log, logArtifact, errorCodes, loadOauth2 } = this.deps;
     log.debug("Entering VcIssuer.sendVciMetadata().");
     const meta = this.vciMetadata(req);
     const claims = Object.assign({}, meta, { sub: meta.credential_issuer });
     logArtifact('OID4VCI signed_metadata', 'before signing', claims);
     try {
-      meta.signed_metadata = loadOauth2()
-        .signPublishedDocument(claims, meta.credential_issuer, 3600,
-                               'vci-signed-metadata');
+      meta.signed_metadata = await loadOauth2()
+        .signPublishedDocumentAsync(claims, meta.credential_issuer, 3600,
+                                    'vci-signed-metadata');
       logArtifact('OID4VCI signed_metadata', 'after signing',
                   meta.signed_metadata);
     } catch (e) {
@@ -3563,8 +3570,9 @@ class VcIssuer {
             this.sendVciMetadata.bind(this));
 
     app.get('/.well-known/openid-credential-issuer/*', (req, res) => {
-      this.inInsertedPathRealm(req, res, '/.well-known/openid-credential-' +
-        'issuer', (r: any): string => this.vciMetadata(r).credential_issuer,
+      return this.inInsertedPathRealm(req, res, '/.well-known/openid-' +
+        'credential-issuer',
+        (r: any): string => this.vciMetadata(r).credential_issuer,
         () => this.sendVciMetadata(req, res));
     });
 

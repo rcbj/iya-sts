@@ -121,6 +121,19 @@ const TOUCH_REQUIRED: Record<string, number> = { any: -1, cached: 1,
                                                  always: 2 };
 
 const SLOT_SUBJECT = /YubiKey PIV Attestation\s+([0-9a-f]{2})\b/i;
+
+// THE PROFILES A CERTIFICATE SIGNS IN WITH (2026-11-23, the #1955 review):
+// each carries clientAuth, smart-card logon or id-pkinit-KPClientAuth, so
+// the TLS sign-in or PKINIT accepts it. A slot 9e (Card Authentication)
+// key needs no PIN, and an attestation of it is refused for every one of
+// them, not only for the PIV profiles: a 9e key under `smartcard-logon`
+// was a smart-card sign-in with no PIN, earning `hwk` and `sc`.
+const SIGN_IN_PROFILES = ['tls-client', 'tls-server-client',
+                          'smartcard-logon', 'piv-auth'];
+
+// The slot that needs no PIN (SP 800-73-4 Part 1, the Card Authentication
+// key).
+const CARD_AUTH_SLOT = '9e';
 const CARD_UUID = /^urn:uuid:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 const MAX_CERTS = 8;
 
@@ -364,9 +377,16 @@ class PivAttestation {
         anchors.source + '): ' + String(path.reason || 'no path') + '.');
     }
     const facts = c.yubicoPivAttestationFacts(slot.extensions);
-    // The f9 certificate says FIPS or CSPN for the whole key (header).
-    const f9 = (statement.certs || [])[0]
-      ? p.attestationCertificateFacts((statement.certs || [])[0]) : null;
+    // The f9 certificate says FIPS or CSPN for the whole key (header). It is
+    // read from the VALIDATED PATH — the certificate that signed the slot's
+    // — and never from whatever the caller sent first: the path builder
+    // treats what it was given as a pool, so `statement.certs[0]` could be
+    // any certificate, a FIPS-marked one of another key included (the
+    // #1955 review).
+    const issuer = path.chain && path.chain.length > 1 ? path.chain[1]
+                                                       : null;
+    const issuerDer = issuer && issuer.der ? Buffer.from(issuer.der) : null;
+    const f9 = issuerDer ? p.attestationCertificateFacts(issuerDer) : null;
     const f9facts = f9 ? c.yubicoPivAttestationFacts(f9.extensions) : null;
     if (!facts.serial) {
       log.debug("Leaving PivAttestation.verify(). No serial.");
@@ -376,8 +396,26 @@ class PivAttestation {
     }
     const match = SLOT_SUBJECT.exec(String(slot.subject.CN || ''));
     const slotId = match ? match[1].toLowerCase() : '';
-    const wanted = PIV_PROFILES[String(s.profile || '')] || '';
-    if (wanted && slotId && slotId !== wanted) {
+    const profile = String(s.profile || '');
+    const wanted = PIV_PROFILES[profile] || '';
+    const signsIn = SIGN_IN_PROFILES.indexOf(profile) >= 0;
+    // A SLOT THAT CANNOT BE READ IS NOT A SLOT THAT FITS: for a PIV profile,
+    // and for a profile that signs in, the slot check is the point, so an
+    // attestation whose subject names no slot is refused rather than let
+    // through unchecked (the #1955 review).
+    if (!slotId && (wanted || signsIn)) {
+      log.debug("Leaving PivAttestation.verify(). No slot.");
+      return this.refuse('STS-PIV-0036', 'The PIV attestation\'s subject ' +
+        'names no slot ("YubiKey PIV Attestation <slot>"), and a ' + profile +
+        ' certificate is issued only for an attestation of a known slot.');
+    }
+    if (slotId === CARD_AUTH_SLOT && wanted !== CARD_AUTH_SLOT) {
+      log.debug("Leaving PivAttestation.verify(). A card-auth key.");
+      return this.refuse('STS-PIV-0037', 'The PIV attestation is of slot ' +
+        '9e, the Card Authentication key, which works without a PIN; it is ' +
+        'certified only under piv-card-auth, never under ' + profile + '.');
+    }
+    if (wanted && slotId !== wanted) {
       log.debug("Leaving PivAttestation.verify(). Another slot.");
       return this.refuse('STS-PIV-0008', 'The PIV attestation is of slot ' +
         slotId + ', and a ' + s.profile + ' certificate is for slot ' +
@@ -522,8 +560,8 @@ class PivAttestation {
    * Records the token and the issued certificate in the hardware token
    * register.
    *
-   * @param spec - `username`, `serialHex`, `family`, `profile`, `facts`,
-   *   `actor`, `via`
+   * @param spec - `username`, `serialHex`, `thumbprint` (the certificate's
+   *   SHA-256, hex), `family`, `profile`, `facts`, `actor`, `via`
    * @returns the register's answer, or null
    */
   recordToken(spec: Json): Json {
@@ -540,7 +578,13 @@ class PivAttestation {
           (f.fips ? ' FIPS' : ''),
         firmware: String(f.firmware || ''),
         formFactor: String(f.shape || 'other'), fips: f.fips === true,
-        credential: { kind: 'x509', ref: String(s.serialHex || ''),
+        // BY ITS THUMBPRINT, its serial beside it (the #1955 review): a
+        // serial names a certificate only together with its issuer.
+        credential: { kind: 'x509',
+                      ref: s.thumbprint ? 'sha256:' + String(s.thumbprint)
+                                        : String(s.serialHex || ''),
+                      serial: String(s.serialHex || ''),
+                      thumbprint: String(s.thumbprint || ''),
                       family: String(s.family || ''),
                       label: String(s.profile || '') +
                         (f.slot ? ' (slot ' + f.slot + ')' : '') },
@@ -548,6 +592,7 @@ class PivAttestation {
                     format: 'yubico-piv',
                     pinPolicy: String(f.pinPolicy || ''),
                     touchPolicy: String(f.touchPolicy || ''),
+                    slot: String(f.slot || ''),
                     detail: 'slot ' + (f.slot || '?') + ', PIN ' +
                       (f.pinPolicy || '?') + ', touch ' +
                       (f.touchPolicy || '?') },
@@ -581,9 +626,12 @@ class PivAttestation {
    * under.
    *
    * @param serialHex - the certificate's serial, hex
+   * @param thumbprint - the certificate's SHA-256, hex, where the caller
+   *   has the certificate: a serial is unique per issuer only, so an
+   *   enrolled record whose thumbprint differs is another certificate
    * @returns a refusal sentence marked with its code, or null
    */
-  signInRefusal(serialHex: string): Json {
+  signInRefusal(serialHex: string, thumbprint?: string): Json {
     const { log } = this.deps;
     log.debug("Entering PivAttestation.signInRefusal().");
     if (this.flag('piv.cardAuthSignIn')) {
@@ -599,7 +647,22 @@ class PivAttestation {
       // Not enrolled here, or no register to ask: not this rule's.
       found = null;
     }
-    if (!found || !found.record || found.record.profile !== 'piv-card-auth') {
+    const given = String(thumbprint || '').toLowerCase()
+      .replace(/[^0-9a-f]/g, '');
+    if (found && found.record && given && found.record.thumbprint &&
+        String(found.record.thumbprint).toLowerCase() !== given) {
+      log.debug("Leaving PivAttestation.signInRefusal(). Another " +
+                "certificate with the serial.");
+      return null;
+    }
+    // BY THE PROFILE, AND BY THE SLOT THE ATTESTATION NAMED (the #1955
+    // review): a slot 9e key is refused whatever profile it was issued
+    // under. `verify()` refuses that issuance now; a row from before it is
+    // still on the register, and is refused here.
+    const record = (found && found.record) || {};
+    const slot = String((record.attestation || {}).slot || '')
+      .toLowerCase();
+    if (record.profile !== 'piv-card-auth' && slot !== CARD_AUTH_SLOT) {
       log.debug("Leaving PivAttestation.signInRefusal(). Not card auth.");
       return null;
     }

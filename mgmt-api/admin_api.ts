@@ -2120,9 +2120,9 @@ class AdminApi {
         ? { type: 'string', pattern: '^(default|[a-z0-9][a-z0-9-]{0,63})$',
             description: 'Which profile: `default`, or a named profile ' +
                          '(lower-case letters, digits and hyphens), which ' +
-                         'is created by its first save. A save that omits ' +
-                         'it is refused; send `default` to edit the ' +
-                         'default profile.' }
+                         'is created by its first save. Left out, the ' +
+                         'save edits the default profile; given empty, or ' +
+                         'null, it is refused.' }
         : { type: 'string', enum: [module.DEFAULT_PROFILE],
             description: 'Which profile. Only `default` exists.' };
       const properties: Record<string, any> = {

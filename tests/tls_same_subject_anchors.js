@@ -20,14 +20,24 @@
 // run after the fingerprint recognition):
 //
 //   * both certificates verify when presented as themselves;
-//   * the later row's `shadowedBy` is the earlier fingerprint, and the add
-//     warns under STS-TLS-0064;
+//   * BOTH rows' `shadowedBy` names the other (which one OpenSSL finds first
+//     is not promised), and the add warns — naming both fingerprints and no
+//     error code, which goes on the log line alone;
 //   * a certificate the later anchor ISSUED stays unverified while the
 //     earlier one is installed, and verifies once that one is removed — so
 //     the recognition matched the anchor itself and not anything it signed;
 //   * two anchors whose authority key identifiers name different subject key
 //     identifiers are a rollover: no warning, no `shadowedBy`, both verify;
-//   * INVALID_PURPOSE is not promoted.
+//   * INVALID_PURPOSE is not promoted, and neither is a same-subject anchor
+//     whose own extendedKeyUsage refuses client authentication, where
+//     OpenSSL's LAST error is the signature failure and hides the purpose;
+//   * an anchor that is not self-issued — an Intermediate installed alone,
+//     an outside authority's end entity installed alone — is NOT an
+//     identity when its holder presents it (UNABLE_TO_VERIFY_LEAF_SIGNATURE
+//     is not promoted);
+//   * an end entity installed beside its issuer verifies the ordinary way,
+//     and the chain the listener reports names that issuer above it, not
+//     the end entity as its own issuer.
 //
 // In process, like tests/truststore_admin.js: the verdict is the listener's
 // `socket.authorized`, which a request over HTTP against a running service
@@ -121,7 +131,7 @@ function opensslPair(dir, name, commonName) {
 // A leaf the second anchor signed. No authority key identifier, so OpenSSL's
 // lookup is by the issuer name alone. A different subject from the anchor,
 // so the leaf is not itself an anchor.
-function issuedLeaf(caPem, caKeyPem, commonName) {
+function issuedLeaf(caPem, caKeyPem, commonName, extensions) {
   log.debug("Entering issuedLeaf(). " + commonName);
   const forge = require('node-forge');
   const ca = forge.pki.certificateFromPem(caPem);
@@ -134,7 +144,7 @@ function issuedLeaf(caPem, caKeyPem, commonName) {
   cert.validity.notAfter = new Date(Date.now() + 86400 * 1000);
   cert.setSubject([{ name: 'commonName', value: commonName }]);
   cert.setIssuer(ca.subject.attributes);
-  cert.setExtensions([
+  cert.setExtensions(extensions || [
     { name: 'basicConstraints', cA: false },
     { name: 'keyUsage', digitalSignature: true, critical: true }
   ]);
@@ -161,7 +171,8 @@ function presented(server, material) {
       });
       res.on('end', function () {
         const lines = text.split('\n');
-        resolve({ line: lines[0], error: lines[1] || '', body: text });
+        resolve({ line: lines[0], error: lines[1] || '',
+                  issuer: lines[2] || '', body: text });
       });
     });
     req.setTimeout(15000, function () {
@@ -235,6 +246,53 @@ async function run(t) {
     commonName: caName, extensions: caExtensions });
   const leaf = issuedLeaf(caSecond.certPem, caSecond.privateKeyPem,
                           'issue-1242-leaf-' + stamp);
+  // Three anchors of one subject, two for server authentication only, all
+  // with keyUsage digitalSignature and no keyCertSign — the usual shape of
+  // a self-signed client certificate, which node's checkIssued(self) calls
+  // not self-issued and this service's recognition must still take. The
+  // review of #1994 expected OpenSSL to report the later signature failure
+  // and hide the purpose; the OpenSSL in this image reports
+  // INVALID_PURPOSE for every arrangement tried (insertion order either
+  // way, keyUsage or none), so the handshakes below hold that a wrong
+  // purpose is not promoted, and the socket-shaped calls after them hold
+  // the re-check for the error OpenSSL could report.
+  const wrongName = 'issue-1242-wrong-' + stamp;
+  const serverOnly = [
+    { name: 'basicConstraints', cA: false },
+    { name: 'keyUsage', digitalSignature: true, critical: true },
+    { name: 'extKeyUsage', serverAuth: true }
+  ];
+  const wrongFirst = stsCrypto.selfSignedRsaCertificate({
+    commonName: wrongName,
+    extensions: [
+      { name: 'basicConstraints', cA: false },
+      { name: 'keyUsage', digitalSignature: true, critical: true }
+    ]
+  });
+  const wrongSecond = stsCrypto.selfSignedRsaCertificate({
+    commonName: wrongName, extensions: serverOnly });
+  const wrongThird = stsCrypto.selfSignedRsaCertificate({
+    commonName: wrongName, extensions: serverOnly });
+  // An outside Root that is NEVER installed, an Intermediate it issued and
+  // an end entity it issued: each installed alone, neither self-issued.
+  const outsideRoot = stsCrypto.selfSignedRsaCertificate({
+    commonName: 'issue-1242-outside-root-' + stamp,
+    extensions: caExtensions });
+  const intermediate = issuedLeaf(outsideRoot.certPem,
+                                  outsideRoot.privateKeyPem,
+                                  'issue-1242-intermediate-' + stamp, [
+      { name: 'basicConstraints', cA: true, critical: true },
+      { name: 'keyUsage', digitalSignature: true, keyCertSign: true,
+        cRLSign: true, critical: true }
+    ]);
+  const outsideLeaf = issuedLeaf(outsideRoot.certPem,
+                                 outsideRoot.privateKeyPem,
+                                 'issue-1242-outside-leaf-' + stamp);
+  // A CA and an end entity it issued, both installed.
+  const pairCa = stsCrypto.selfSignedRsaCertificate({
+    commonName: 'issue-1242-pair-ca-' + stamp, extensions: caExtensions });
+  const pairLeaf = issuedLeaf(pairCa.certPem, pairCa.privateKeyPem,
+                              'issue-1242-pair-leaf-' + stamp);
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(),
                                            'sts-1242-'));
   let listener = null;
@@ -257,8 +315,13 @@ async function run(t) {
       function (req, res) {
         const raw = req.socket.authorizationError;
         const error = String((raw && raw.code) || raw || '');
+        // The issuer the listener reports above the leaf: what the path
+        // rules, revocation and the identity gate read.
+        const peer = /** @type {any} */ (req.socket).getPeerCertificate(true);
+        const above = peer && peer.issuerCertificate;
         res.end((req.socket.authorized ? 'verified' : 'unverified') +
-                '\n' + error);
+                '\n' + error + '\n' +
+                ((above && above.fingerprint256) || ''));
       });
     await new Promise(function (ok) {
       listener.listen(0, '127.0.0.1', ok);
@@ -279,17 +342,18 @@ async function run(t) {
     const rowFirst = rowOf(tlsServer, first.certPem);
     const rowSecond = rowOf(tlsServer, second.certPem);
     t.check(!!added.warning &&
-            added.warning.indexOf('STS-TLS-0064') >= 0 &&
             added.warning.indexOf(rowFirst.fingerprint256) >= 0 &&
             added.warning.indexOf(rowSecond.fingerprint256) >= 0,
-            'the add warns, naming the code and both fingerprints',
-            added.warning);
+            'the add warns, naming both fingerprints', added.warning);
+    t.check(!/STS-[A-Z0-9]+-\d{4}/.test(added.warning),
+            'the warning carries no error code: it names the caller\'s ' +
+            'subject, so it is not fixed help text', added.warning);
     t.equal(added.warning.split('The subject of ').length, 2,
-            'the warning is the later anchor only');
-    t.equal(rowFirst.shadowedBy, undefined,
-            'the earlier anchor is the one the lookup finds');
+            'the warning is said once, for the anchor that made the pair');
+    t.equal(rowFirst.shadowedBy, rowSecond.fingerprint256,
+            'the first row names the second: no order is promised');
     t.equal(rowSecond.shadowedBy, rowFirst.fingerprint256,
-            'the later row names the earlier fingerprint');
+            'the second row names the first');
 
     const addedOther = tlsServer.truststore.add(other.certPem,
                                                 { strict: true });
@@ -317,17 +381,16 @@ async function run(t) {
       caFirst.certPem + caSecond.certPem, { strict: true });
     t.equal(addedCas.added, 2, 'both CAs are kept');
     t.check(!!addedCas.warning &&
-            addedCas.warning.indexOf('STS-TLS-0064') >= 0,
-            'no authority key identifier on the later CA is a collision',
+            addedCas.warning.indexOf('is shared by') >= 0,
+            'no subject key identifier on either CA is a collision',
             addedCas.warning || '');
     const blocked = await presented(listener, leaf);
     t.equal(blocked.line, 'unverified',
             'the issued leaf stays unverified while the earlier CA is ' +
             'installed (' + blocked.error + ')');
-    t.check(blocked.error.indexOf('CERT_SIGNATURE_FAILURE') >= 0 ||
-            blocked.error.indexOf('UNABLE_TO_VERIFY_LEAF_SIGNATURE') >= 0,
-            'the refusal is the signature, not a promoted anchor',
-            blocked.error);
+    t.equal(blocked.error, 'CERT_SIGNATURE_FAILURE',
+            'the refusal is the signature checked against the other CA, ' +
+            'which is what STS-TLS-0064\'s summary names');
     tlsServer.truststore.remove(rowOf(tlsServer,
                                       caFirst.certPem).fingerprint256);
     const opened = await presented(listener, leaf);
@@ -339,7 +402,7 @@ async function run(t) {
 
     tlsServer.truststore.remove(rowFirst.fingerprint256);
     t.equal(rowOf(tlsServer, second.certPem).shadowedBy, undefined,
-            'removing the earlier end entity clears shadowedBy');
+            'removing the other end entity clears shadowedBy');
     const still = await presented(listener, {
       cert: second.certPem, key: second.privateKeyPem });
     t.equal(still.line, 'verified',
@@ -375,6 +438,120 @@ async function run(t) {
             'INVALID_PURPOSE stays unverified (' + seenPurpose.error + ')');
     t.check(seenPurpose.error.indexOf('INVALID_PURPOSE') >= 0,
             'OpenSSL refused the purpose', seenPurpose.error);
+
+    t.log.info('=== a same-subject anchor with the wrong purpose ===');
+    // Two carry extendedKeyUsage serverAuth alone. Whatever error OpenSSL
+    // reports for them, neither may come out verified.
+    const added2 = tlsServer.truststore.add(
+      wrongFirst.certPem + wrongSecond.certPem + wrongThird.certPem,
+      { strict: true });
+    t.equal(added2.added, 3, 'all three same-subject anchors are kept');
+    t.check(/extendedKeyUsage does not name/.test(
+      stsCrypto.presentedAnchorProblem(wrongSecond.certPem, {
+        keyUsage: ['digitalSignature', 'keyAgreement'],
+        eku: stsCrypto.EKU.clientAuth })),
+            'the purpose check refuses the serverAuth-only certificate');
+    t.equal(stsCrypto.presentedAnchorProblem(first.certPem, {
+      keyUsage: ['digitalSignature', 'keyAgreement'],
+      eku: stsCrypto.EKU.clientAuth }), '',
+            'and passes the certificate with no extensions');
+    t.check(stsCrypto.certificateSelfSigned(wrongFirst.certPem) &&
+            !new crypto.X509Certificate(wrongFirst.certPem)
+              .checkIssued(new crypto.X509Certificate(wrongFirst.certPem)),
+            'a self-signed end entity without keyCertSign is self-signed ' +
+            'here, where node\'s checkIssued(self) says it is not');
+    const hidden = [];
+    for (const wrong of [wrongSecond, wrongThird]) {
+      const seenWrong = await presented(listener, {
+        cert: wrong.certPem, key: wrong.privateKeyPem });
+      t.equal(seenWrong.line, 'unverified',
+              'a same-subject anchor whose own purpose refuses client ' +
+              'authentication is not promoted (' + seenWrong.error + ')');
+      hidden.push(seenWrong.error);
+    }
+    t.log.info('the wrong-purpose anchors were refused with ' +
+               hidden.join(', '));
+    const seenRight = await presented(listener, {
+      cert: wrongFirst.certPem, key: wrongFirst.privateKeyPem });
+    t.equal(seenRight.line, 'verified',
+            'their same-subject partner with no purpose restriction still ' +
+            'verifies, natively or by its fingerprint (' + seenRight.error +
+            ')');
+
+    // This OpenSSL reports the purpose rather than the later signature
+    // failure for every shape this file can mint, so the handshakes above
+    // cannot show the re-check by themselves. A socket shaped as node
+    // leaves one, refused with the error a same-subject lookup produces,
+    // can: only the certificate whose own purpose allows a client is
+    // promoted.
+    const pems = tlsServer.clientTruststoreOptions().ca;
+    const asRefused = function (pem, code) {
+      return {
+        authorized: false, authorizationError: { code: code },
+        getPeerX509Certificate: function () {
+          return new crypto.X509Certificate(pem);
+        }
+      };
+    };
+    const hiddenPurpose = asRefused(wrongSecond.certPem,
+                                    'CERT_SIGNATURE_FAILURE');
+    tlsServer.recogniseInstalledAnchor(hiddenPurpose, pems, 'issue-1242');
+    t.equal(hiddenPurpose.authorized, false,
+            'a purpose hidden behind CERT_SIGNATURE_FAILURE is asked again ' +
+            'and refuses the promotion');
+    const rightPurpose = asRefused(wrongFirst.certPem,
+                                   'CERT_SIGNATURE_FAILURE');
+    tlsServer.recogniseInstalledAnchor(rightPurpose, pems, 'issue-1242');
+    t.equal(rightPurpose.authorized, true,
+            'the same error on the anchor whose purpose allows it is ' +
+            'promoted');
+    const noIssuer = asRefused(wrongFirst.certPem,
+                               'UNABLE_TO_VERIFY_LEAF_SIGNATURE');
+    tlsServer.recogniseInstalledAnchor(noIssuer, pems, 'issue-1242');
+    t.equal(noIssuer.authorized, false,
+            'UNABLE_TO_VERIFY_LEAF_SIGNATURE is never promoted');
+
+    t.log.info('=== an anchor that is not self-issued is not an ' +
+               'identity ===');
+    const addedLone = tlsServer.truststore.add(
+      intermediate.cert + outsideLeaf.cert, { strict: true });
+    t.equal(addedLone.added, 2,
+            'the Intermediate and the outside end entity are kept alone');
+    const seenIntermediate = await presented(listener, intermediate);
+    t.equal(seenIntermediate.line, 'unverified',
+            'an Intermediate installed without its Root is not verified ' +
+            'when its holder presents it (' + seenIntermediate.error + ')');
+    const seenOutside = await presented(listener, outsideLeaf);
+    t.equal(seenOutside.line, 'unverified',
+            'an outside authority\'s end entity installed alone is not ' +
+            'verified (' + seenOutside.error + ')');
+    t.check(!stsCrypto.certificateSelfSigned(intermediate.cert) &&
+            !stsCrypto.certificateSelfSigned(outsideLeaf.cert),
+            'neither is self-signed');
+    const loneIntermediate = asRefused(intermediate.cert,
+                                       'CERT_SIGNATURE_FAILURE');
+    tlsServer.recogniseInstalledAnchor(loneIntermediate,
+                                       tlsServer.clientTruststoreOptions().ca,
+                                       'issue-1242');
+    t.equal(loneIntermediate.authorized, false,
+            'an anchor that is not self-signed is not promoted even on an ' +
+            'error a collision produces');
+
+    t.log.info('=== an end entity installed beside its issuer ===');
+    const addedPair = tlsServer.truststore.add(
+      pairCa.certPem + pairLeaf.cert, { strict: true });
+    t.equal(addedPair.added, 2, 'the CA and its end entity are kept');
+    const seenPair = await presented(listener, pairLeaf);
+    t.equal(seenPair.line, 'verified',
+            'the end entity verifies the ordinary way (' +
+            seenPair.error + ')');
+    t.equal(seenPair.issuer, fingerprintOf(pairCa.certPem),
+            'and the chain the listener reports has its CA above it, not ' +
+            'itself as its own issuer');
+    const seenSelf = await presented(listener, {
+      cert: second.certPem, key: second.privateKeyPem });
+    t.equal(seenSelf.issuer, fingerprintOf(second.certPem),
+            'a self-signed anchor is still reported as its own issuer');
   } finally {
     if (before) {
       tlsServer.truststore.list().anchors.forEach(function (one) {
@@ -394,8 +571,10 @@ async function run(t) {
 
 module.exports = {
   name: 'tls_same_subject_anchors',
-  describe: 'two client-truststore anchors with one subject: the later ' +
+  describe: 'two client-truststore anchors with one subject: each ' +
             'certificate verifies by its fingerprint, one it issued does ' +
-            'not, and a key-id rollover is not a collision (#1242)',
+            'not, a key-id rollover is not a collision, and neither a ' +
+            'wrong purpose nor an anchor that is not self-issued is ' +
+            'promoted (#1242)',
   run: run
 };

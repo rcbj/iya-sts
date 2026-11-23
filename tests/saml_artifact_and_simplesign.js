@@ -165,7 +165,7 @@ async function run(t) {
     const res = kit.fakeRes();
     const req = kit.fakeReq('POST', '/saml2/ars', {}, '', body,
                             socket ? { socket: socket } : {});
-    ars(req, res);
+    await ars(req, res);
     await res.done;
     // RESOLVED is Success WITH the message; a refusal is the EMPTY response
     // saml-core-2.0-os 3.5.3 requires since #160 — Success, nothing
@@ -333,7 +333,7 @@ async function run(t) {
     const resolveScoped = async function (segment, body) {
       log.debug("Entering resolveScoped().");
       const res = kit.fakeRes();
-      scopedArs(kit.fakeReq('POST', '/saml2/ars/' +
+      await scopedArs(kit.fakeReq('POST', '/saml2/ars/' +
                             encodeURIComponent(segment), {}, '', body,
                             { params: { sp: segment } }), res);
       await res.done;
@@ -406,9 +406,9 @@ async function run(t) {
                               socket ? { socket: socket } : {});
       if (segment) {
         req.params = { rp: segment };
-        scopedResponder(req, res);
+        await scopedResponder(req, res);
       } else {
-        responder(req, res);
+        await responder(req, res);
       }
       await res.done;
       // RESOLVED is Success WITH an assertion; a refusal is the response
@@ -558,14 +558,14 @@ async function run(t) {
       log.debug("Leaving simpleForm().");
       return form.toString();
     };
-    const postSimple = function (handler, path, body) {
+    const postSimple = async function (handler, path, body) {
       log.debug("Entering postSimple().");
       const res = kit.fakeRes();
-      handler(kit.fakeReq('POST', path, {}, '', body), res);
+      await handler(kit.fakeReq('POST', path, {}, '', body), res);
       if (res.statusCode === 303 && /\?rid=/.test(res.location)) {
         const rid = res.location.split('?rid=')[1];
         const next = kit.fakeRes();
-        sso(kit.fakeReq('GET', '/saml2/sso',
+        await sso(kit.fakeReq('GET', '/saml2/sso',
                         { rid: decodeURIComponent(rid) }, 'rid=' + rid),
             next);
         log.debug("Leaving postSimple(). Followed the hold.");
@@ -581,7 +581,7 @@ async function run(t) {
       'sso" AssertionConsumerServiceURL="https://sp.simplesign.test/acs">' +
       '<saml:Issuer>' + ssp + '</saml:Issuer>' +
       '</samlp:AuthnRequest>';
-    const simple = postSimple(ssoPost, '/saml2/sso',
+    const simple = await postSimple(ssoPost, '/saml2/sso',
                               simpleForm('SAMLRequest', authn, 'r/s+1', ec));
     t.check(simple.statusCode === 303 && /authn/.test(simple.location) &&
             String(fieldsOf(ssp).samlAuthnRequestVerification)
@@ -590,18 +590,18 @@ async function run(t) {
             'unencoded) and goes on to the sign-in screen',
             simple.statusCode + ' ' + codeOf(simple) + ' ' +
             fieldsOf(ssp).samlAuthnRequestVerification);
-    const tampered = postSimple(ssoPost, '/saml2/sso',
+    const tampered = await postSimple(ssoPost, '/saml2/sso',
       simpleForm('SAMLRequest', authn, 'r/s+1', ec, true));
     t.check(tampered.statusCode === 403 &&
             codeOf(tampered) === 'STS-SAML-0061',
             'a SimpleSign AuthnRequest whose RelayState was changed is ' +
             'REFUSED, STS-SAML-0061',
             tampered.statusCode + ' ' + codeOf(tampered));
-    const forged = postSimple(ssoPost, '/saml2/sso',
+    const forged = await postSimple(ssoPost, '/saml2/sso',
       simpleForm('SAMLRequest', authn, undefined, other));
     t.equal(codeOf(forged), 'STS-SAML-0061',
             'and one signed by another key is refused');
-    const overBase64 = postSimple(ssoPost, '/saml2/sso',
+    const overBase64 = await postSimple(ssoPost, '/saml2/sso',
       simpleForm('SAMLRequest', authn, 'r/s+1', ec, false, true));
     t.check(overBase64.statusCode === 403 &&
             codeOf(overBase64) === 'STS-SAML-0061',
@@ -622,12 +622,12 @@ async function run(t) {
     applications.updateApplication(ssp, {
       attribute: 'samlSingleLogoutService', mode: 'add',
       value: 'https://simplesign.test/slo' });
-    const sloOk = postSimple(sloPost, '/saml2/slo',
+    const sloOk = await postSimple(sloPost, '/saml2/slo',
                              simpleForm('SAMLRequest', logout, 'lo', ec));
     t.check(sloOk.statusCode !== 403,
             'a SimpleSign LogoutRequest is accepted',
             sloOk.statusCode + ' ' + codeOf(sloOk));
-    const sloBad = postSimple(sloPost, '/saml2/slo',
+    const sloBad = await postSimple(sloPost, '/saml2/slo',
       simpleForm('SAMLRequest', logout, 'lo', ec, true));
     t.check(sloBad.statusCode === 403 && codeOf(sloBad) === 'STS-SAML-0061',
             'a tampered SimpleSign LogoutRequest is refused',
@@ -638,12 +638,12 @@ async function run(t) {
       '<samlp:Status><samlp:StatusCode ' +
       'Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status>' +
       '</samlp:LogoutResponse>';
-    const lrOk = postSimple(sloPost, '/saml2/slo',
+    const lrOk = await postSimple(sloPost, '/saml2/slo',
                             simpleForm('SAMLResponse', answer, undefined, ec));
     t.check(lrOk.statusCode === 200 && /verified/.test(lrOk.body),
             'a SimpleSign LogoutResponse is verified',
             lrOk.statusCode + ' ' + codeOf(lrOk));
-    const lrBad = postSimple(sloPost, '/saml2/slo',
+    const lrBad = await postSimple(sloPost, '/saml2/slo',
                              simpleForm('SAMLResponse', answer, undefined,
                                         other));
     t.equal(codeOf(lrBad), 'STS-SAML-0061',
@@ -690,8 +690,12 @@ async function run(t) {
       }
     }, 'alice', [], '1', 'Test', {});
     const sent = kit.fakeRes();
-    kit.withSettings(config, { 'saml2.signResponse': true }, function () {
-      direct.issueSignInResponse(sent, {
+    // Awaited (#1955 P8 follow-up): the Response is signed off the event
+    // loop where the realm's keys are in the HSM, so the issuer answers a
+    // promise, and withSettings() holds the setting until it settles.
+    await kit.withSettings(config, { 'saml2.signResponse': true },
+                           function () {
+      return direct.issueSignInResponse(sent, {
         request: direct.readAuthnRequest(authn.replace(ssp, acsSp)),
         session: session, spEntityId: acsSp,
         idpEntityId: 'https://idp.test/saml2/metadata',

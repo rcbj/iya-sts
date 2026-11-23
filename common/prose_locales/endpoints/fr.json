@@ -1287,10 +1287,6 @@
     "en": "33209f967f070175",
     "text": "Actions sur les jetons matériels"
   },
-  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
-    "en": "f46d01f7581b5379",
-    "text": "Clés PIV séquestrées"
-  },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
     "text": "Clients SCIM sortants"
@@ -2654,5 +2650,13 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (un certificat client demandé, jamais exigé)"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "Clés PIV séquestrées"
+  },
+  "endpoints.route./admin-api/hardware-tokens/ssh-certificates.name": {
+    "en": "3bb1ef22ae2ed554",
+    "text": "Les certificats utilisateur SSH d’une personne"
   }
 }

@@ -105,11 +105,35 @@ pub struct AuthzenSettings {
     pub max_evaluations: usize,
     pub max_body_bytes: usize,
     pub return_reasons: bool,
-    /// The realm's `authzen.obligationsProfile` (#1177, #1205). Absent on
-    /// an older service's catalogue means on, which is that setting's
-    /// default: an edge that handed obligations while the realm had turned
-    /// the profile off would be wider than the service.
+    /// The realm's `authzen.obligationsProfile` (#1177, #1205). ABSENT IS
+    /// OFF, although the setting's own default is on: a catalogue from an
+    /// older service that does not send it cannot say the profile is on,
+    /// and an edge that handed obligations — turning a Permit that carries
+    /// one from false into true — while the realm had turned the profile
+    /// off would be wider than the service. Off hands nothing, and a
+    /// Permit carrying an obligation stays false.
     pub obligations_profile: bool,
+    /// The realm's `authzen.tokenExchange` (#1181, #1205), which decides how
+    /// the service classifies a request's tuples: on, its gate, scope and
+    /// detail tuples are the binding's and answered by its fixed rules (so
+    /// this edge answers them 501, STS-XPEP-0140); off, every tuple is an
+    /// ordinary evaluation. ABSENT IS ON: an older service that does not
+    /// send it may have the binding on, and evaluating one of its tuples
+    /// here as ordinary could answer true where the service answers a fixed
+    /// false (a lone scope, STS-AUTHZEN-0105). A 501 decides nothing.
+    pub token_exchange: bool,
+    /// The `authorization_details` types the realm's applications declare,
+    /// which make a tuple beside a token-exchange gate one of the binding's
+    /// detail tuples. `None` (absent, or the service could not read them)
+    /// counts EVERY other resource type beside a gate as one, the closed
+    /// direction.
+    pub detail_types: Option<Vec<String>>,
+    /// The token types a token-exchange gate may name
+    /// (`issue:<token type>:token_exchange`), the service's registry. Only
+    /// such a gate makes the tuples beside it scopes or details of the
+    /// exchange. `None` (absent) counts every well-formed token type, the
+    /// closed direction.
+    pub token_types: Option<Vec<String>>,
 }
 
 impl Default for AuthzenSettings {
@@ -121,9 +145,24 @@ impl Default for AuthzenSettings {
             max_evaluations: 64,
             max_body_bytes: 262_144,
             return_reasons: false,
-            obligations_profile: true,
+            obligations_profile: false,
+            token_exchange: true,
+            detail_types: None,
+            token_types: None,
         }
     }
+}
+
+/// A list of names a catalogue's settings carry, or `None` when the member
+/// is absent or not an array of strings: an older service, or one that
+/// could not read the list, and both are read in the closed direction.
+fn names(said: &Value) -> Option<Vec<String>> {
+    let list = said.as_array()?;
+    let mut out = Vec::new();
+    for one in list {
+        out.push(one.as_str()?.to_string());
+    }
+    Some(out)
 }
 
 impl AuthzenSettings {
@@ -160,6 +199,11 @@ impl AuthzenSettings {
             obligations_profile: said["obligationsProfile"]
                 .as_bool()
                 .unwrap_or(d.obligations_profile),
+            token_exchange: said["tokenExchange"]
+                .as_bool()
+                .unwrap_or(d.token_exchange),
+            detail_types: names(&said["tokenExchangeDetailTypes"]),
+            token_types: names(&said["tokenExchangeTokenTypes"]),
         }
     }
 }
@@ -678,7 +722,10 @@ impl Sync {
                     "maxEvaluations": c.settings.max_evaluations,
                     "maxBodyBytes": c.settings.max_body_bytes,
                     "returnReasons": c.settings.return_reasons,
-                    "obligationsProfile": c.settings.obligations_profile
+                    "obligationsProfile": c.settings.obligations_profile,
+                    "tokenExchange": c.settings.token_exchange,
+                    "tokenExchangeDetailTypes": c.settings.detail_types,
+                    "tokenExchangeTokenTypes": c.settings.token_types
                 },
                 "lastPullAt": c.last_pull_at,
                 "lastPullOk": c.last_pull_ok,

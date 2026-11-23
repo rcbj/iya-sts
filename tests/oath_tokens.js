@@ -279,6 +279,38 @@ async function checkIsolation(t) {
   log.debug("Leaving checkIsolation().");
 }
 
+// THE #1955 REVIEW: an assignment takes its row by compare-and-set, so two
+// at once — two administrators, or an administrator and a claim — install
+// the token on one person and refuse the other.
+async function checkConcurrentAssign(t) {
+  log.debug("Entering checkConcurrentAssign().");
+  t.log.info('=== 7. two assignments at once ===');
+  const dan = 'oath-dan-' + RUN;
+  const eve = 'oath-eve-' + RUN;
+  [dan, eve].forEach(function (name) {
+    ldap.createUser(name, { invent: false, attributes: {} });
+  });
+  const made = fixtures.generatedContainer({ serial: 'RACE-' + RUN });
+  const imported = await tokens.importPskc({ pskc: made.xml,
+    preSharedKey: made.key.toString('hex'), actor: ADMIN });
+  const key = imported.imported[0].key;
+  const both = await Promise.all([
+    tokens.assign({ key: key, username: dan, actor: ADMIN, via: 'api' }),
+    tokens.assign({ key: key, username: eve, actor: ADMIN, via: 'api' })]);
+  const won = both.filter(function (one) {
+    return one && one.ok;
+  });
+  t.check(won.length === 1 && both.some(function (one) {
+    return codeOf(one) === 'STS-OATH-0041';
+  }), 'ONE OF TWO CONCURRENT ASSIGNMENTS WINS, the other is refused',
+          JSON.stringify(both.map(codeOf)));
+  t.check([dan, eve].filter(function (name) {
+    const held = credentials.mechanismsFor(name);
+    return !!(held.hotp || held.totp);
+  }).length === 1, 'and the secret is on one person\'s entry, not two');
+  log.debug("Leaving checkConcurrentAssign().");
+}
+
 function allowHotp() {
   log.debug("Entering allowHotp().");
   const saved = authnPolicy.save('default', Object.assign({},
@@ -304,6 +336,7 @@ async function run(t) {
     await checkLost(t);
     await checkRemove(t);
     await checkIsolation(t);
+    await checkConcurrentAssign(t);
   } finally {
     authnPolicy.reset('default');
   }

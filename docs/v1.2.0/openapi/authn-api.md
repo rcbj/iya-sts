@@ -1460,6 +1460,7 @@ The door of the sign-in surface's `GET /authn/totp, /authn/webauthn, /authn/back
 | `view.title` | string |  |  |
 | `view.totp` | object |  |  |
 | `view.totp.digits` | number |  |  |
+| `view.totp.hotp` | boolean |  | An HOTP token is held, so the page offers the two-code resynchronisation (RFC 4226 section 7.4). |
 | `view.totp.period` | number |  |  |
 | `view.username` | string |  |  |
 | `view.webauthn` | object |  |  |
@@ -1590,6 +1591,7 @@ The door of the sign-in surface's `GET /authn/totp, /authn/webauthn, /authn/back
 | `view.title` | string |  |  |
 | `view.totp` | object |  |  |
 | `view.totp.digits` | number |  |  |
+| `view.totp.hotp` | boolean |  | An HOTP token is held, so the page offers the two-code resynchronisation (RFC 4226 section 7.4). |
 | `view.totp.period` | number |  |  |
 | `view.username` | string |  |  |
 | `view.webauthn` | object |  |  |
@@ -3617,7 +3619,7 @@ An empty object.
 
 **Checks a one-time code from an authenticator app**
 
-RFC 6238, checked in every mode and rate limited by identity and address; a refused code keeps the step.
+RFC 6238, checked in every mode and rate limited by identity and address; a refused code keeps the step. With `code2` as well, the two are consecutive codes of the person's HOTP token, which resynchronise it (RFC 4226 section 7.4) and finish the step, behind the same budget.
 
 The door of the sign-in surface's `POST /authn/totp`.
 
@@ -3638,6 +3640,7 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `code` | string |  |  |
+| `code2` | string |  | The code the HOTP token showed next. With it, `code` and `code2` resynchronise the token (RFC 4226 section 7.4) and finish the step. |
 
 **200**: The answer.
 

@@ -74,10 +74,26 @@ pub mod components {
         pub max_body_bytes: i64,
         #[serde(rename = "returnReasons")]
         pub return_reasons: bool,
-        /// The realm's authzen.obligationsProfile. Absent on an older catalogue
-        /// means on.
+        /// The realm's authzen.obligationsProfile. Absent on an older catalogue is
+        /// read as off: the edge hands no obligation.
         #[serde(rename = "obligationsProfile")]
         pub obligations_profile: bool,
+        /// The realm's authzen.tokenExchange: on, the edge answers 501
+        /// (STS-XPEP-0140) to every tuple the service answers by the binding's
+        /// fixed rules. Absent on an older catalogue is read as on.
+        #[serde(rename = "tokenExchange")]
+        pub token_exchange: bool,
+        /// The authorization_details types the realm's applications declare, which
+        /// make a tuple beside a token-exchange gate a detail tuple. null when the
+        /// service could not read them (STS-AUTHZEN-0145); null or absent, every
+        /// other resource type beside a gate is read as one.
+        #[serde(rename = "tokenExchangeDetailTypes")]
+        pub token_exchange_detail_types: Option<Vec<String>>,
+        /// The token types a token-exchange gate (issue:<token
+        /// type>:token_exchange) may name. Absent, every well-formed one is read as
+        /// registered.
+        #[serde(rename = "tokenExchangeTokenTypes")]
+        pub token_exchange_token_types: Vec<String>,
     }
 
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

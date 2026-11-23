@@ -871,10 +871,15 @@ class AccessRequests {
    * @param terms - the advice's terms
    * @param caller - the trusted caller's name
    * @param application - the trusted application
+   * @param deferred - #1955 P8 follow-up: where the realm's keys are in the
+   *   HSM, a list the binding token's signature is DEFERRED to — the token
+   *   is signed off the event loop by `signDeferredDenials()` before the
+   *   answer is sent; absent, it is signed here, as it always was
    * @returns the context members, or null
    */
   requestableDenial(req: Req, body: Json, terms: Terms | null,
-                    caller: string, application: string): Json | null {
+                    caller: string, application: string,
+                    deferred?: Json[]): Json | null {
     const self = this;
     const { log, errorCodes, helpers } = this.deps;
     log.debug("Entering AccessRequests.requestableDenial().");
@@ -928,7 +933,40 @@ class AccessRequests {
       application: application,
       terms: terms
     };
+    const record: Json = {
+      evaluationId: evaluationId,
+      jti: jti,
+      subject: subject,
+      resource: resource,
+      action: action,
+      context: context,
+      bindingContextMembers: terms.contextMembers.slice(0),
+      bindingHash: hash,
+      caller: caller,
+      application: application,
+      terms: terms,
+      denialExpiresAt: expiresAt,
+      base: base,
+      evaluatedAt: instant(now * 1000),
+      reason: terms.reason || 'approval_required',
+      template: terms.template || ''
+    };
     let token = '';
+    if (deferred) {
+      const pending: Json = { claims: claims, base: base,
+                              lifetime: lifetime, denial: null,
+                              record: record, now: now,
+                              expiresAt: expiresAt };
+      deferred.push(pending);
+      const later = self.denialFrom(evaluationId, now, expiresAt, base,
+                                    terms, '', { languages:
+                                      self.languagesOf(req),
+                                      recorded: self.denialRoom() });
+      pending.denial = later;
+      log.debug("Leaving AccessRequests.requestableDenial(). Its token is " +
+                "signed off the event loop.");
+      return later;
+    }
     try {
       token = String(self.deps.loadOauth2().signPublishedDocument(
         claims, base, lifetime, 'oauth-signed-metadata') || '');
@@ -943,6 +981,24 @@ class AccessRequests {
       log.debug("Leaving AccessRequests.requestableDenial(). Not signed.");
       return null;
     }
+    const recorded = self.recordSigned(record, token, now, lifetime,
+                                       expiresAt);
+    log.debug("Leaving AccessRequests.requestableDenial().");
+    return self.denialFrom(evaluationId, now, expiresAt, base, terms, token,
+                           { languages: self.languagesOf(req),
+                             recorded: recorded });
+  }
+
+  // Records a requestable denial once its binding token is signed, with the
+  // expiry the token itself carries (the lifetime asked of the signer when
+  // it cannot be read back). Shared by the synchronous door and by
+  // `signDeferredDenials()` (#1955 P8 follow-up), so a deferred denial is
+  // recorded exactly as one signed in place.
+  private recordSigned(record: Json, token: string, now: number,
+                       lifetime: number, expiresAt: string): boolean {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.recordSigned().");
     let exp = now + lifetime;
     try {
       const part = token.split('.')[1] || '';
@@ -953,31 +1009,43 @@ class AccessRequests {
       }
     } catch (e) {
       // The lifetime asked of the signer is the expiry the record keeps.
-      log.debug("Caught in AccessRequests.requestableDenial(): " +
+      log.debug("Caught in AccessRequests.recordSigned(): " +
                 ((e && e.message) || e));
     }
     const deadline = Math.min(exp,
       Math.floor(Date.parse(expiresAt) / 1000) || exp);
-    const recorded = self.recordDenial({
-      evaluationId: evaluationId,
-      jti: jti,
-      subject: subject,
-      resource: resource,
-      action: action,
-      context: context,
-      bindingContextMembers: terms.contextMembers.slice(0),
-      bindingHash: hash,
-      caller: caller,
-      application: application,
-      terms: terms,
-      denialExpiresAt: expiresAt,
+    const full: Json = Object.assign({}, record, {
       exp: exp,
-      base: base,
-      evaluatedAt: instant(now * 1000),
-      reason: terms.reason || 'approval_required',
-      template: terms.template || '',
       keepUntil: deadline + SKEW_S + RETENTION_S
     });
+    const recorded = self.recordDenial(full);
+    log.debug("Leaving AccessRequests.recordSigned(). " + recorded);
+    return recorded;
+  }
+
+  // Whether the denial store has room for one more record (the 0144 cap):
+  // what a denial whose token is signed later (#1955 P8) is answered on,
+  // corrected by `signDeferredDenials()` if the record was not kept.
+  private denialRoom(): boolean {
+    const { log, denials } = this.deps;
+    log.debug("Entering AccessRequests.denialRoom().");
+    const cap = this.seconds('authzen.accessRequestMaxDenials');
+    const held = typeof denials.size === 'number' ? denials.size : 0;
+    log.debug("Leaving AccessRequests.denialRoom().");
+    return !(cap > 0 && held >= cap);
+  }
+
+  // The context members of a requestable denial, around its binding token.
+  // `extras` (#1204): the request's languages, for `display`, and whether
+  // the denial is recorded, which `form_url` and `request_catalogs_url`
+  // work from.
+  private denialFrom(evaluationId: string, now: number, expiresAt: string,
+                     base: string, terms: Terms, token: string,
+                     extras?: Json): Json {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.denialFrom().");
+    const more: Json = extras || {};
     const accessRequest: Json = { expires_at: expiresAt,
                                   endpoint: base + REQUESTS_PATH,
                                   request_schema_url: base + SCHEMA_PATH,
@@ -985,26 +1053,78 @@ class AccessRequests {
     if (terms.template) {
       accessRequest.template = terms.template;
     }
-    const display = self.denialDisplay(terms, self.languagesOf(req));
+    const display = self.denialDisplay(terms, more.languages || []);
     if (display) {
       accessRequest.display = display;
     }
     // THE HOSTED FORM (#1204) works from the denial's record, so a denial
     // the record could not keep (the 0144 cap) names no form.
-    if (recorded && self.formOn()) {
+    if (more.recorded && self.formOn()) {
       accessRequest.form_url = self.formUrlOf(base, evaluationId);
     }
     // THE CATALOG COMPANION (#1204, its section 5): only for a recorded
     // denial whose advice lists entitlements; `request_schema_url`, which
     // the draft requires beside it, is always present.
-    if (recorded && self.catalogsOn() && (terms.entitlements || []).length) {
+    if (more.recorded && self.catalogsOn() &&
+        (terms.entitlements || []).length) {
       accessRequest.request_catalogs_url = base + CATALOGS_PATH + '/' +
         encodeURIComponent(evaluationId);
     }
-    log.debug("Leaving AccessRequests.requestableDenial().");
+    log.debug("Leaving AccessRequests.denialFrom().");
     return { evaluation_id: evaluationId, evaluated_at: instant(now * 1000),
              reason: terms.reason || 'approval_required',
              access_request: accessRequest };
+  }
+
+  /**
+   * Signs the binding tokens `requestableDenial()` deferred (#1955 P8
+   * follow-up), off the event loop, writing each into its denial's
+   * `access_request`. A token that cannot be signed is logged as the
+   * synchronous door logs it (`STS-AUTHZEN-0087`) and its evaluation id
+   * answered, so the caller turns that denial back into an ordinary `false`.
+   *
+   * @param deferred - the list handed to `requestableDenial()`
+   * @returns a promise of the evaluation ids whose token was not signed
+   */
+  async signDeferredDenials(deferred: Json[]): Promise<string[]> {
+    const self = this;
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AccessRequests.signDeferredDenials(). " +
+              deferred.length);
+    const unsigned: string[] = [];
+    for (let i = 0; i < deferred.length; i++) {
+      const one = deferred[i];
+      let token = '';
+      try {
+        token = String(await self.deps.loadOauth2()
+          .signPublishedDocumentAsync(one.claims, one.base, one.lifetime,
+                                      'oauth-signed-metadata') || '');
+      } catch (e) {
+        log.debug("Caught in AccessRequests.signDeferredDenials(): " +
+                  ((e && e.message) || e));
+        log.error(errorCodes.tag('STS-AUTHZEN-0087') + 'authzen: a ' +
+                  'requestable denial\'s binding_token could not be signed, ' +
+                  'so the denial is answered as an ordinary false: ' +
+                  ((e && e.message) || e));
+        token = '';
+      }
+      if (token) {
+        one.denial.access_request.binding_token = token;
+        const recorded = self.recordSigned(one.record, token, one.now,
+                                           one.lifetime, one.expiresAt);
+        // The record was not kept after all (#1204): no form and no
+        // catalogs work without it.
+        if (!recorded) {
+          delete one.denial.access_request.form_url;
+          delete one.denial.access_request.request_catalogs_url;
+        }
+      } else {
+        unsigned.push(String(one.denial.evaluation_id));
+      }
+    }
+    log.debug("Leaving AccessRequests.signDeferredDenials(). " +
+              unsigned.length + " unsigned.");
+    return unsigned;
   }
 
   // -------------------------------------------------------------------------
@@ -1996,14 +2116,14 @@ class AccessRequests {
     const items: Json[] = Array.isArray(given.items) ? given.items : [];
     if (!Array.isArray(given.items) || !items.length || items.length > most ||
         !items.every(isObject)) {
-      self.problem(res, 400, '', 'STS-AUTHZEN-0156', 'items must hold ' +
+      self.problem(res, 400, '', 'STS-AUTHZEN-0157', 'items must hold ' +
                    'from 1 to ' + most + ' objects, each with resource, ' +
                    'action and its own denial.');
       log.debug("Leaving AccessRequests.submitBulk(). Bad items.");
       return;
     }
     if (given.resource !== undefined || given.action !== undefined) {
-      self.problem(res, 400, '', 'STS-AUTHZEN-0155', 'With items, the ' +
+      self.problem(res, 400, '', 'STS-AUTHZEN-0156', 'With items, the ' +
                    'top-level resource and action are omitted (the BULK ' +
                    'companion\'s section 3.1).');
       log.debug("Leaving AccessRequests.submitBulk(). A top-level tuple.");
@@ -2013,14 +2133,14 @@ class AccessRequests {
         !items.every(function (one: Json): boolean {
           return one.denial !== undefined;
         })) {
-      self.problem(res, 400, 'invalid_denial_binding', 'STS-AUTHZEN-0157',
+      self.problem(res, 400, 'invalid_denial_binding', 'STS-AUTHZEN-0158',
                    'Every item carries its own denial: this service issues ' +
                    'no bundle denial, so a top-level denial binds nothing.');
       log.debug("Leaving AccessRequests.submitBulk(). A bundle denial.");
       return;
     }
     if (given.callback !== undefined) {
-      self.problem(res, 400, '', 'STS-AUTHZEN-0159', 'A bulk submission ' +
+      self.problem(res, 400, '', 'STS-AUTHZEN-0160', 'A bulk submission ' +
                    'takes no callback; poll the bundle\'s status endpoint.');
       log.debug("Leaving AccessRequests.submitBulk(). A callback.");
       return;
@@ -2075,7 +2195,7 @@ class AccessRequests {
       }
       if (checked.length &&
           one.scoped.application !== checked[0].scoped.application) {
-        self.problem(res, 400, '', 'STS-AUTHZEN-0158', 'items[' + i + ']\'s ' +
+        self.problem(res, 400, '', 'STS-AUTHZEN-0159', 'items[' + i + ']\'s ' +
                      'denial is about another application: one bulk ' +
                      'request is one application\'s.');
         log.debug("Leaving AccessRequests.submitBulk(). Mixed.");
@@ -2456,7 +2576,7 @@ class AccessRequests {
         return { problem: 'client.source must be an object whose ' +
                           'session_id and integration_id are short ' +
                           'strings and whose external_url is an https ' +
-                          'URL.', code: 'STS-AUTHZEN-0154' };
+                          'URL.', code: 'STS-AUTHZEN-0155' };
       }
       source = {};
       ['session_id', 'external_url', 'integration_id'].forEach(
@@ -2476,7 +2596,7 @@ class AccessRequests {
     const read = self.actorLinks(given.actor);
     if (read.problem) {
       log.debug("Leaving AccessRequests.actorOf(). A bad chain.");
-      return { problem: read.problem, code: 'STS-AUTHZEN-0154' };
+      return { problem: read.problem, code: 'STS-AUTHZEN-0155' };
     }
     const links: Json[] = read.links;
     const own = [caller.name, caller.clientId, caller.identifier]
@@ -2508,7 +2628,7 @@ class AccessRequests {
       log.debug("Leaving AccessRequests.actorOf(). Not authorized.");
       return { problem: 'The caller\'s credential does not authorize the ' +
                         'actor chain in client.actor.',
-               code: 'STS-AUTHZEN-0153' };
+               code: 'STS-AUTHZEN-0154' };
     }
     log.debug("Leaving AccessRequests.actorOf(). " + links.length +
               " link(s), " + (itself ? 'the caller itself' : 'its token'));
@@ -2556,7 +2676,7 @@ class AccessRequests {
     const { log, denials } = this.deps;
     log.debug("Entering AccessRequests.catalogDenial().");
     if (!self.catalogsOn()) {
-      self.problem(res, 501, '', 'STS-AUTHZEN-0152', 'The access request ' +
+      self.problem(res, 501, '', 'STS-AUTHZEN-0153', 'The access request ' +
                    'catalogs are turned off in this realm ' +
                    '(authzen.accessRequestCatalogs).');
       log.debug("Leaving AccessRequests.catalogDenial(). Off.");
@@ -2569,7 +2689,7 @@ class AccessRequests {
       ((row.terms || {}).entitlements || []).length > 0 &&
       !!scope(caller, String(row.application || '')).application;
     if (!ok) {
-      self.problem(res, 404, '', 'STS-AUTHZEN-0149', 'There is no catalog ' +
+      self.problem(res, 404, '', 'STS-AUTHZEN-0150', 'There is no catalog ' +
                    'for this caller under that denial.');
       log.debug("Leaving AccessRequests.catalogDenial(). Unknown.");
       return null;
@@ -2655,7 +2775,7 @@ class AccessRequests {
       }
       if (!isObject(read) || read.q !== tag ||
           !Number.isInteger(read.o) || read.o < 0) {
-        self.problem(res, 400, '', 'STS-AUTHZEN-0150', 'cursor is not one ' +
+        self.problem(res, 400, '', 'STS-AUTHZEN-0151', 'cursor is not one ' +
                      'this Catalog Endpoint issued for this search.');
         log.debug("Leaving AccessRequests.catalogItems(). A bad cursor.");
         return;
@@ -2931,7 +3051,7 @@ class AccessRequests {
       if (!task || Number(task.keepUntil) <= self.nowS() ||
           !self.isSubject(username, task.subject)) {
         log.debug("Leaving AccessRequests.formView(). Not theirs.");
-        return refuse(404, 'STS-AUTHZEN-0146', 'There is no access ' +
+        return refuse(404, 'STS-AUTHZEN-0147', 'There is no access ' +
                       'request about you with that id.');
       }
       view.mode = 'task';
@@ -2947,13 +3067,13 @@ class AccessRequests {
     const row = denials.get(evaluationId);
     if (!row || Number(row.keepUntil) <= self.nowS()) {
       log.debug("Leaving AccessRequests.formView(). No such denial.");
-      return refuse(404, 'STS-AUTHZEN-0145', 'This link names no access ' +
+      return refuse(404, 'STS-AUTHZEN-0146', 'This link names no access ' +
                     'request that can be made here. Ask the application ' +
                     'again for a new one.');
     }
     if (!self.isSubject(username, row.subject)) {
       log.debug("Leaving AccessRequests.formView(). Not their denial.");
-      return refuse(404, 'STS-AUTHZEN-0146', 'This access request is not ' +
+      return refuse(404, 'STS-AUTHZEN-0147', 'This access request is not ' +
                     'about you, so you cannot make it.');
     }
     const again = self.recalled('jti', String(row.jti || ''));
@@ -2968,7 +3088,7 @@ class AccessRequests {
     if (!(request.expiresAt > 0) ||
         self.nowS() > request.expiresAt + SKEW_S) {
       log.debug("Leaving AccessRequests.formView(). Expired.");
-      return refuse(410, 'STS-AUTHZEN-0147', 'This access request can no ' +
+      return refuse(410, 'STS-AUTHZEN-0148', 'This access request can no ' +
                     'longer be made: its link has expired. Ask the ' +
                     'application again for a new one.');
     }
@@ -2999,7 +3119,7 @@ class AccessRequests {
     };
     if (!self.formOn()) {
       log.debug("Leaving AccessRequests.submitByForm(). Off.");
-      return refuse(403, 'STS-AUTHZEN-0148', 'Access requests cannot be ' +
+      return refuse(403, 'STS-AUTHZEN-0149', 'Access requests cannot be ' +
                     'made here: the hosted form is turned off.', null);
     }
     const shown = self.formView(username,
@@ -3020,7 +3140,7 @@ class AccessRequests {
                                           String(row.base || ''));
     if (!bound) {
       log.debug("Leaving AccessRequests.submitByForm(). Gone.");
-      return refuse(404, 'STS-AUTHZEN-0145', 'This link names no access ' +
+      return refuse(404, 'STS-AUTHZEN-0146', 'This link names no access ' +
                     'request that can be made here.', null);
     }
     // THE SAME READER AS A PEP'S SUBMISSION: the schema's augmentations,
@@ -3321,7 +3441,7 @@ class AccessRequests {
                   "entitlement.");
         return { problem: 'requested_access.entitlement must be one of the ' +
                           'values the denial\'s catalog lists.',
-                 code: 'STS-AUTHZEN-0151' };
+                 code: 'STS-AUTHZEN-0152' };
       }
       entitlement = String(chosen);
     }
@@ -3711,7 +3831,10 @@ class AccessRequests {
   // Signs the notification and posts it. A signing failure is an attempt
   // with status 0 and no policy kind, so it is retried until the bound is
   // spent: a key can be briefly unreadable.
-  private sendCallback(task: Json): Promise<Json> {
+  // The bearer is signed off the event loop for a realm key in the HSM
+  // (#1955 P8 follow-up): `signPublishedDocumentAsync()`, which signs a
+  // software key in place.
+  private async sendCallback(task: Json): Promise<Json> {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering AccessRequests.sendCallback().");
@@ -3722,7 +3845,7 @@ class AccessRequests {
     }
     let bearer = '';
     try {
-      bearer = String(self.deps.loadOauth2().signPublishedDocument(
+      bearer = String(await self.deps.loadOauth2().signPublishedDocumentAsync(
         { aud: callback.endpoint, sub: task.requester,
           jti: self.deps.helpers.randomId(18),
           typ: 'authzen-access-request-callback', task_id: task.id,
@@ -4169,22 +4292,7 @@ class AccessRequests {
     log.debug("Entering AccessRequests.approvalState(). " + task.id);
     const now = self.nowS();
     const until = Number(approval.approvedUntil);
-    const claims: Json = {
-      aud: task.base,
-      typ: 'authzen-access-request-approval',
-      id: approval.id,
-      task_id: task.id,
-      subject: task.subject,
-      resource: task.resource,
-      action: task.action,
-      context: task.context || {},
-      binding_context_members: task.contextMembers || [],
-      approved_at: instant(Number(approval.approvedAt) * 1000),
-      approved_until: instant(until * 1000),
-      approver: approval.approver,
-      caller: task.requester,
-      application: task.application
-    };
+    const claims: Json = self.approvalClaims(task, approval);
     let token = '';
     try {
       token = String(self.deps.loadOauth2().signPublishedDocument(
@@ -4202,6 +4310,65 @@ class AccessRequests {
     }
     log.debug("Leaving AccessRequests.approvalState(). " + !!token);
     return token;
+  }
+
+  // The claims `approval.state` signs.
+  private approvalClaims(task: Json, approval: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.approvalClaims(). " + task.id);
+    log.debug("Leaving AccessRequests.approvalClaims().");
+    return {
+      aud: task.base,
+      typ: 'authzen-access-request-approval',
+      id: approval.id,
+      task_id: task.id,
+      subject: task.subject,
+      resource: task.resource,
+      action: task.action,
+      context: task.context || {},
+      binding_context_members: task.contextMembers || [],
+      approved_at: instant(Number(approval.approvedAt) * 1000),
+      approved_until: instant(Number(approval.approvedUntil) * 1000),
+      approver: approval.approver,
+      caller: task.requester,
+      application: task.application
+    };
+  }
+
+  /**
+   * Signs `approval.state` off the event loop, for a realm whose keys are in
+   * the HSM (#1955 P8 follow-up), and writes it onto the approval once it is
+   * made — unless the approval was revoked or replaced meanwhile. A failure
+   * is `approvalState()`'s: logged, and the approval stands by id.
+   *
+   * @param task - the row
+   * @param approval - the approval just stored on it
+   * @returns a promise settled once the state is written or given up
+   */
+  private approvalStateLater(task: Json, approval: Json): Promise<void> {
+    const self = this;
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AccessRequests.approvalStateLater(). " + task.id);
+    const until = Number(approval.approvedUntil);
+    const lifetime = Math.max(1, until - self.nowS());
+    log.debug("Leaving AccessRequests.approvalStateLater().");
+    return Promise.resolve().then(function () {
+      return self.deps.loadOauth2().signPublishedDocumentAsync(
+        self.approvalClaims(task, approval), task.base, lifetime,
+        'oauth-signed-metadata');
+    }).then(function (signed: any) {
+      const token = String(signed || '');
+      if (token && task.approval === approval && !approval.revokedAt) {
+        approval.state = token;
+        self.save(task);
+      }
+    }, function (e: any) {
+      log.debug("Caught in AccessRequests.approvalStateLater(): " +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-AUTHZEN-0140') + 'authzen: an ' +
+                'approval\'s state could not be signed, so the approval ' +
+                'stands by id: ' + ((e && e.message) || e));
+    });
   }
 
   /**
@@ -4255,9 +4422,18 @@ class AccessRequests {
                              approvedUntil: Math.min.apply(null, limits),
                              approver: approver.username || approver.door,
                              door: approver.door, revokedAt: 0 };
-    const state = self.approvalState(task, approval);
-    if (state) {
-      approval.state = state;
+    // WITH THE REALM'S KEYS IN THE HSM the state is signed off the event
+    // loop (#1955 P8 follow-up) and written onto the approval when it is
+    // made; until then the approval stands by id, as it does when a state
+    // cannot be signed at all. `decide()` stays synchronous for its three
+    // doors (the portal, the console, `/admin-api`).
+    if (helpers.keysInHsm()) {
+      self.approvalStateLater(task, approval);
+    } else {
+      const state = self.approvalState(task, approval);
+      if (state) {
+        approval.state = state;
+      }
     }
     // THE APPROVAL IS STORED BEFORE THE TASK SAYS APPROVED (#1202): its
     // index row first, kept as long as the task will be, then the task. A
@@ -5338,6 +5514,7 @@ export = {
   enabled: slot.forward('enabled'),
   baseOf: slot.forward('baseOf'),
   requestableDenial: slot.forward('requestableDenial'),
+  signDeferredDenials: slot.forward('signDeferredDenials'),
   submit: slot.forward('submit'),
   status: slot.forward('status'),
   cancel: slot.forward('cancel'),

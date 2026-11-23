@@ -606,9 +606,11 @@ const NOTES = Object.freeze({
     'WHERE THIS REALM SIGNS (#1955). With keys.signingKeyStore pkcs11 ' +
     'the classical signing keys listed as in the HSM were made in the ' +
     'token keys.signingKeyToken names and never leave it: every ' +
-    'signature is a PKCS#11 call. A synchronous signature is made only ' +
-    'while keys.pkcs11SynchronousSign is on; otherwise that door ' +
-    'refuses (STS-KEYS-0209) and the asynchronous doors still sign. ' +
+    'signature and decryption with them is a PKCS#11 call, made off the ' +
+    'event loop (C_SignAsync, C_DecryptAsync, C_DeriveKeyAsync). A ' +
+    'blocking call is made only while keys.pkcs11SynchronousSign is on, ' +
+    'for a module with no asynchronous call; otherwise it is refused ' +
+    '(STS-KEYS-0209). ' +
     'Post-quantum keys are always made ' +
     'in software, because no PKCS#11 module here offers ML-DSA or ' +
     'SLH-DSA, and so is any curve the module does not make. The ' +

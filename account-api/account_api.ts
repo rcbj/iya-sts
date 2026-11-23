@@ -936,24 +936,34 @@ class AccountApi {
       return null;
     }
     const carried = String(claims.scope || '').split(/\s+/).filter(Boolean);
-    if (carried.indexOf(SCOPE) < 0) {
+    // `account:manage`, or a narrower scope THIS operation names instead
+    // (the #1955 review, `ssh:certificate`): the first one the token
+    // carries is the one the client must still declare.
+    const accepted = [SCOPE].concat(Array.isArray((op as Json).scopes)
+      ? (op as Json).scopes.map(String) : []);
+    const used = accepted.filter(function (one: string): boolean {
+      return carried.indexOf(one) >= 0;
+    })[0] || '';
+    if (!used) {
       log.debug("Leaving AccountApi.authenticate(). No account:manage.");
       res.set('WWW-Authenticate', 'DPoP error="insufficient_scope", scope="' +
-              SCOPE + '"');
+              accepted.join(' ') + '"');
       this.refuse(res, 403, 'STS-ACCOUNT-0013',
         'That access token does not carry "' + SCOPE + '", which every ' +
-        'operation of this API takes.', { error: 'insufficient_scope' });
+        'operation of this API takes' + (accepted.length > 1
+          ? ' (or here "' + accepted.slice(1).join('", "') + '")' : '') +
+        '.', { error: 'insufficient_scope' });
       return null;
     }
     // THE CLIENT MUST STILL DECLARE IT (#110's rule, asked again on every
     // call): an allowance taken off a client stops the tokens it holds.
-    if (!lazy.scopePolicy().declares(issuedTo, SCOPE)) {
+    if (!lazy.scopePolicy().declares(issuedTo, used)) {
       log.debug("Leaving AccountApi.authenticate(). Undeclared.");
       this.refuse(res, 403, 'STS-ACCOUNT-0014',
         'The client this token was issued to, ' + JSON.stringify(issuedTo) +
-        ', no longer holds a delegated permission grant of "' + SCOPE +
+        ', no longer holds a delegated permission grant of "' + used +
         '" (urn:sts:account-api:' +
-        SCOPE + ' on sts-account-api, #1141).',
+        used + ' on sts-account-api, #1141).',
         { error: 'forbidden' });
       return null;
     }

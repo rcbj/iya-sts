@@ -225,7 +225,7 @@ using IyaSts.Api.Common;
           `authorizationCode`:#{
             `authorizationUrl`:"/oauth2/authorize",
             `tokenUrl`:"/oauth2/token",
-            `scopes`:#{`account:manage`:"Read and manage your own account."}
+            `scopes`:#{`account:manage`:"Read and manage your own account.",`ssh:certificate`:"List, issue and revoke your own SSH user certificates, and nothing else of your account."}
           }
         }
       }
@@ -5073,8 +5073,70 @@ op `actOnTokens`(`requestBody/content/application~1json/schema`: {
   `serialHex`: string;
   `validAfter`: integer;
   `validBefore`: integer;
-  `hardwareBound`: boolean
+  `hardwareBound`: boolean;
+  @js(#{`description`:"The ML-DSA certificate issued beside the classical one (pki.sshUserCaPqcAlongsideClassical), in authorized-key format under ssh-mldsa-65; absent when none was."}) `pqcCertificate`?: string;
+  @js(#{`description`:"Its serial, lower-case hex; revoked by `revokeSshCertificate` like the classical one's."}) `pqcSerialHex`?: string
 }
+
+@hoisted model SshUserCertificateRow {
+  @js(#{`description`:"The serial, lower-case hex: what `revokeSshCertificate` names."}) `serialHex`: string;
+  @js(#{`description`:"The certified key's OpenSSH type, `ssh-ed25519` or `sk-ssh-ed25519@openssh.com` for example."}) `keyType`: string;
+  @js(#{`description`:"The certified key's SHA256 fingerprint, as `ssh-keygen -l` prints it."}) `keyFingerprint`: string;
+  `principals`: string[];
+  `issuedAt`: string;
+  `notAfter`: string;
+  @js(#{`description`:"Whether verified hardware evidence covered the key."}) `hardwareBound`: boolean;
+  @js(#{`description`:"`classical`, or `ssh-mldsa-65` for a certificate the ML-DSA authority signed."}) `authority`: string;
+  `revoked`: boolean;
+  @js(#{`description`:"When it was revoked; empty for one that was not."}) `revokedAt`: string
+}
+
+@endpoint("/account-api/ssh/certificates",
+  "get",
+  #{
+    `operationId`:"listSshCertificates",
+    `tags`:#[ "SSH" ],
+    `summary`:"Lists the caller's SSH user certificates",
+    `description`:"The OpenSSH user certificates issued to the caller's token subject that have not expired, newest first, revoked ones included and marked, and the two lifetimes this realm issues (`lifetimes`). Never a key.",
+    `parameters`:#[ ],
+    `responses`:#{
+      `200`:#{
+        `description`:"The certificates.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"No valid DPoP-bound account access token.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"The token carries neither `account:manage` nor `ssh:certificate`, or the access policy refused the person.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `503`:#{
+        `description`:"The certificates could not be read.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`portal`:#["account:manage"]},#{`portal`:#["ssh:certificate"]}],
+    `x-access`:"person"
+  })
+op `listSshCertificates`(
+  `responses/200/content/application~1json/schema`: {
+    `certificates`: (SshUserCertificateRow)[];
+    @js(#{`description`:"The longest lifetimes, in seconds, without and with hardware evidence (pki.sshSoftwareLifetimeSeconds, pki.sshHardwareLifetimeSeconds)."}) `lifetimes`: { `softwareSeconds`: integer; `hardwareSeconds`: integer }
+  },
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
+    `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
 
 @endpoint("/account-api/ssh/certificates",
   "post",
@@ -5082,7 +5144,7 @@ op `actOnTokens`(`requestBody/content/application~1json/schema`: {
     `operationId`:"issueSshCertificate",
     `tags`:#[ "SSH" ],
     `summary`:"Issues an SSH user certificate",
-    `description`:"Certifies one authorized public key for principals belonging to the caller, with a separate authorization decision for every principal. Security-key evidence is verified before it can produce a hardware-bound certificate. The caller may revoke only certificates issued to their own token subject.",
+    `description`:"Certifies one authorized public key for principals belonging to the caller — their uid, and the groups of theirs the realm offers as principals (pki.sshGroupPrincipals, none by default) — with a separate authorization decision for every principal. A security key's attestation is verified, with the challenge ssh-keygen was given, by the WebAuthn attestation verifier before it can produce a hardware-bound certificate; an `sk-` key without one is issued the shorter lifetime. The certificate carries the realm's extensions (pki.sshUserCertificateExtensions). The caller may revoke only certificates issued to their own token subject.",
     `parameters`:#[ ],
     `responses`:#{
       `200`:#{
@@ -5114,16 +5176,17 @@ op `actOnTokens`(`requestBody/content/application~1json/schema`: {
         `content`:#{`application/json`:#{`schema`:null}}
       }
     },
-    `security`:#[#{`portal`:#["account:manage"]}],
+    `security`:#[#{`portal`:#["account:manage"]},#{`portal`:#["ssh:certificate"]}],
     `x-access`:"person",
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`publicKey`:"ssh-ed25519 invalid",`principals`:#["alice"]}}}}
   })
 op `issueSshCertificate`(
   `requestBody/content/application~1json/schema`: {
     @js(#{`description`:"One OpenSSH public key line; certificate keys and authorized-key options are not accepted.",`maxLength`:8192}) `publicKey`: string;
-    @js(#{`description`:"The requested principals. Each must be the caller's username or one of their group common names.",`maxItems`:32}) `principals`: string[];
-    @js(#{`description`:"Certificate lifetime in seconds. Defaults to 300; maximum 300 for ordinary keys and 3600 with verified hardware evidence.",`minimum`:60,`maximum`:3600}) `lifetimeS`?: integer;
-    @js(#{`description`:"Base64 OpenSSH security-key attestation evidence, required for `sk-*` keys.",`maxLength`:87384}) `attestation`?: string
+    @js(#{`description`:"The requested principals. Each must be the caller's uid or a group of theirs that pki.sshGroupPrincipals names; a group named like a person's uid or a system account is refused.",`maxItems`:32}) `principals`: string[];
+    @js(#{`description`:"Certificate lifetime in seconds. Defaults to pki.sshSoftwareLifetimeSeconds (300); at most that for ordinary keys, and pki.sshHardwareLifetimeSeconds (3600) with verified hardware evidence.",`minimum`:60,`maximum`:3600}) `lifetimeS`?: integer;
+    @js(#{`description`:"Base64 of the OpenSSH security-key attestation file (`ssh-keygen -O write-attestation=`), for an `sk-*` key; without it the key is issued the shorter lifetime.",`maxLength`:87384}) `attestation`?: string;
+    @js(#{`description`:"Base64 of the challenge ssh-keygen was given (`-O challenge=`), which the attestation signed; required with `attestation`.",`maxLength`:2048}) `attestationChallenge`?: string
   },
   `responses/200/content/application~1json/schema`: SshUserCertificateAnswer,
   @js(#{`description`:"A refusal or a failure, in English. No error code is ever in it."})
@@ -5177,7 +5240,7 @@ op `issueSshCertificate`(
         `content`:#{`application/json`:#{`schema`:null}}
       }
     },
-    `security`:#[#{`portal`:#["account:manage"]}],
+    `security`:#[#{`portal`:#["account:manage"]},#{`portal`:#["ssh:certificate"]}],
     `x-access`:"person",
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`serialHex`:"ffffffffffffffff"}}}}
   })

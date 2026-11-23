@@ -34,7 +34,7 @@
 // `web_access_request.ts`. THE IDENTITY IS THE TOKEN'S AND THERE IS NO
 // PARAMETER FOR IT (portal/CLAUDE.md, OWASP A01): the query names a DENIAL
 // or a REQUEST, and the library answers only when the signed-in person is
-// its subject (STS-AUTHZEN-0146 otherwise, the same answer whether or not
+// its subject (STS-AUTHZEN-0147 otherwise, the same answer whether or not
 // the thing exists).
 //
 // The AuthZEN family is required LAZILY: the portal is built at 8a and

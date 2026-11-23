@@ -1380,15 +1380,30 @@ class FederationSlo {
     const xml = this.logoutResponseXml(base, record, destination,
                                        inResponseTo, status, subStatus,
                                        message);
-    const target = this.outbound(record, destination, 'SAMLResponse', xml,
-                                 String(params.RelayState || ''));
+    // SIGNED OFF THE EVENT LOOP where the realm's XML key is in the HSM
+    // (#1955 P8 follow-up): the page follows the LogoutResponse, and the
+    // promise goes back up the chain to the route.
+    log.debug("Leaving FederationSlo.answerLogoutRequest(). Signing.");
+    return this.outboundAsync(record, destination, 'SAMLResponse', xml,
+                              String(params.RelayState || ''))
+      .then((target) => {
+        this.sendLogoutResponse(res, record, status, fan, summary, target,
+                                t);
+      });
+  }
+
+  // `answerLogoutRequest()` once its LogoutResponse is signed.
+  private sendLogoutResponse(res, record, status, fan, summary, target,
+                             t): void {
+    const { errorCodes, log, app } = this.deps;
+    log.debug("Entering FederationSlo.sendLogoutResponse().");
     if (status !== STATUS_SUCCESS && !errorCodes.codeOf(res)) {
       errorCodes.mark(res, 'STS-FED-0122');
     }
     if (target.kind === 'link' && !fan.html) {
       res.set('Cache-Control', 'no-store').redirect(303, target.url);
-      log.debug("Leaving FederationSlo.answerLogoutRequest(). Redirected.");
-      return undefined;
+      log.debug("Leaving FederationSlo.sendLogoutResponse(). Redirected.");
+      return;
     }
     res.status(200).type('html').set('Cache-Control', 'no-store')
        .set('Content-Security-Policy', app.contentSecurityPolicy(fan.policy))
@@ -1400,8 +1415,7 @@ class FederationSlo {
            t.text('handoff.federation.slo.continueToPartner')) +
          '<p class="note">' + t.html('handoff.federation.slo.noScript') +
          '</p>', t));
-    log.debug("Leaving FederationSlo.answerLogoutRequest(). Drew the page.");
-    return undefined;
+    log.debug("Leaving FederationSlo.sendLogoutResponse(). Drew the page.");
   }
 
   // A link or a form, with a real button and no script.
@@ -1454,45 +1468,100 @@ class FederationSlo {
   // after the Issuer, on a form with a real button. The algorithms are the
   // configured ones (`saml/document_settings.ts`), post-quantum included.
   private outbound(record, destination, field, built, relayState) {
-    const { documentSettings, stsCrypto, STS, log, logArtifact } = this.deps;
+    const { documentSettings, stsCrypto, STS, log } = this.deps;
     log.debug("Entering FederationSlo.outbound(). " + field);
     const how = documentSettings.signatureOptions();
     if (String(record.fedSloBinding || 'HTTP-Redirect') === 'HTTP-POST') {
-      const signed = stsCrypto.signXml(built.xml, {
-        // The key for the configured algorithm (#68): `STS.xmlSigner`.
-        privateKeyPem: STS.xmlSigner.privateKeyPem,
-        privateKey: STS.xmlSigner.privateKey,
-        certPem: STS.xmlSigner.certPem,
-        // The chain through the service Root in KeyInfo (#1064).
-        keyInfoXml: helpers.xmlSignerKeyInfo(STS.xmlSigner),
-        sigAlg: how.sigAlg, c14nAlg: how.c14nAlg,
-        placement: stsCrypto.PLACEMENT.AFTER_ISSUER, refUri: '#' + built.id,
-        what: 'federated SAML 2.0 ' + field
-      });
-      logArtifact('federated SAML 2.0 ' + field, 'after signing', signed);
-      const fields: any = {};
-      fields[field] = Buffer.from(signed, 'utf8').toString('base64');
-      if (relayState) {
-        fields.RelayState = relayState;
-      }
+      const signed = stsCrypto.signXml(built.xml,
+        this.outboundSignature(how, built, field));
       log.debug("Leaving FederationSlo.outbound(). HTTP-POST.");
-      return { kind: 'form', action: destination, fields: fields,
-               url: '', binding: 'HTTP-POST' };
+      return this.outboundForm(destination, field, signed, relayState);
     }
+    const qs = this.outboundQuery(field, built, relayState, how);
+    log.debug("Leaving FederationSlo.outbound(). HTTP-Redirect.");
+    return this.outboundLink(destination, qs + '&Signature=' +
+      encodeURIComponent(stsCrypto.signQueryString(qs,
+        STS.xmlSigner.privateKeyPem, how.sigAlg, STS.xmlSigner.privateKey)));
+  }
+
+  // `outbound()`, signed off the event loop where the realm's XML key is in
+  // the HSM (`signXmlOffLoop()`, `signQueryStringOffLoop()`, #1955 P8
+  // follow-up); a software key signs the same bytes, in place.
+  private async outboundAsync(record, destination, field, built,
+                              relayState) {
+    const { documentSettings, stsCrypto, STS, log } = this.deps;
+    log.debug("Entering FederationSlo.outboundAsync(). " + field);
+    const how = documentSettings.signatureOptions();
+    if (String(record.fedSloBinding || 'HTTP-Redirect') === 'HTTP-POST') {
+      const signed = await stsCrypto.signXmlOffLoop(built.xml,
+        this.outboundSignature(how, built, field));
+      log.debug("Leaving FederationSlo.outboundAsync(). HTTP-POST.");
+      return this.outboundForm(destination, field, signed, relayState);
+    }
+    const qs = this.outboundQuery(field, built, relayState, how);
+    const signature = await stsCrypto.signQueryStringOffLoop(qs,
+      STS.xmlSigner.privateKeyPem, how.sigAlg, STS.xmlSigner.privateKey);
+    log.debug("Leaving FederationSlo.outboundAsync(). HTTP-Redirect.");
+    return this.outboundLink(destination, qs + '&Signature=' +
+                             encodeURIComponent(signature));
+  }
+
+  // What an outbound message's enveloped signature is made with.
+  private outboundSignature(how, built, field): any {
+    const { stsCrypto, STS, log } = this.deps;
+    log.debug("Entering FederationSlo.outboundSignature().");
+    log.debug("Leaving FederationSlo.outboundSignature().");
+    return {
+      // The key for the configured algorithm (#68): `STS.xmlSigner`.
+      privateKeyPem: STS.xmlSigner.privateKeyPem,
+      privateKey: STS.xmlSigner.privateKey,
+      certPem: STS.xmlSigner.certPem,
+      // The chain through the service Root in KeyInfo (#1064).
+      keyInfoXml: helpers.xmlSignerKeyInfo(STS.xmlSigner),
+      sigAlg: how.sigAlg, c14nAlg: how.c14nAlg,
+      placement: stsCrypto.PLACEMENT.AFTER_ISSUER, refUri: '#' + built.id,
+      what: 'federated SAML 2.0 ' + field
+    };
+  }
+
+  // The HTTP-POST target around a signed message.
+  private outboundForm(destination, field, signed, relayState): any {
+    const { log, logArtifact } = this.deps;
+    log.debug("Entering FederationSlo.outboundForm().");
+    logArtifact('federated SAML 2.0 ' + field, 'after signing', signed);
+    const fields: any = {};
+    fields[field] = Buffer.from(signed, 'utf8').toString('base64');
+    if (relayState) {
+      fields.RelayState = relayState;
+    }
+    log.debug("Leaving FederationSlo.outboundForm().");
+    return { kind: 'form', action: destination, fields: fields,
+             url: '', binding: 'HTTP-POST' };
+  }
+
+  // The HTTP-Redirect query up to `&Signature=`: what the detached
+  // signature is over.
+  private outboundQuery(field, built, relayState, how): string {
+    const { log } = this.deps;
+    log.debug("Entering FederationSlo.outboundQuery().");
     let qs = field + '=' + encodeURIComponent(
       zlib.deflateRawSync(Buffer.from(built.xml, 'utf8')).toString('base64'));
     if (relayState) {
       qs += '&RelayState=' + encodeURIComponent(relayState);
     }
     qs += '&SigAlg=' + encodeURIComponent(how.sigAlg);
-    qs += '&Signature=' + encodeURIComponent(
-      stsCrypto.signQueryString(qs, STS.xmlSigner.privateKeyPem, how.sigAlg,
-                                STS.xmlSigner.privateKey));
-    const url = destination + (destination.indexOf('?') >= 0 ? '&' : '?') +
-                qs;
-    log.debug("Leaving FederationSlo.outbound(). HTTP-Redirect.");
-    return { kind: 'link', url: url, action: '', fields: {},
-             binding: 'HTTP-Redirect' };
+    log.debug("Leaving FederationSlo.outboundQuery().");
+    return qs;
+  }
+
+  // The HTTP-Redirect target: the query and its signature.
+  private outboundLink(destination, signedQuery): any {
+    const { log } = this.deps;
+    log.debug("Entering FederationSlo.outboundLink().");
+    log.debug("Leaving FederationSlo.outboundLink().");
+    return { kind: 'link', url: destination +
+               (destination.indexOf('?') >= 0 ? '&' : '?') + signedQuery,
+             action: '', fields: {}, binding: 'HTTP-Redirect' };
   }
 
   // =========================================================================
@@ -2218,7 +2287,9 @@ class FederationSlo {
    * @param base - the sign-out request's base URL
    * @returns `{ ok: true, target }`, or `{ ok: false, why }`
    */
-  partnerLogoutFor(session, base) {
+  // `offLoop` (#1955 P8 follow-up): `partnerLogoutForAsync()`'s, which has
+  // a SAML LogoutRequest signed off the event loop and answers a promise.
+  partnerLogoutFor(session, base, offLoop?: boolean): any {
     const { fedSp, iso, xmlEscape, log, config } = this.deps;
     log.debug("Entering FederationSlo.partnerLogoutFor().");
     const held = session && session.fedPartnerSession;
@@ -2254,12 +2325,23 @@ class FederationSlo {
         '</samlp:LogoutRequest>';
       const handle = fedSp.putContext({ kind: 'slo-request', id: record.fedId,
                                         requestId: id, username: username });
+      const answer = function (target) {
+        log.debug("Entering FederationSlo.partnerLogoutFor.answer().");
+        log.debug("Leaving FederationSlo.partnerLogoutFor.answer().");
+        return { ok: true, target: Object.assign({
+          relationship: record.fedId, label: label, protocol: 'SAML 2.0',
+          what: 'a signed LogoutRequest to ' + destination }, target) };
+      };
+      if (offLoop) {
+        log.debug("Leaving FederationSlo.partnerLogoutFor(). SAML, signed " +
+                  "off the event loop.");
+        return this.outboundAsync(record, destination, 'SAMLRequest',
+                                  { id: id, xml: xml }, handle).then(answer);
+      }
       const target = this.outbound(record, destination, 'SAMLRequest',
                                    { id: id, xml: xml }, handle);
       log.debug("Leaving FederationSlo.partnerLogoutFor(). SAML.");
-      return { ok: true, target: Object.assign({
-        relationship: record.fedId, label: label, protocol: 'SAML 2.0',
-        what: 'a signed LogoutRequest to ' + destination }, target) };
+      return answer(target);
     }
     if (record.fedProtocol === 'oidc') {
       const handle = fedSp.putContext({ kind: 'end-session', id: record.fedId,
@@ -2290,6 +2372,30 @@ class FederationSlo {
       what: 'wsignout1.0 to ' + passive, kind: 'link',
       url: passive + (passive.indexOf('?') >= 0 ? '&' : '?') +
            'wa=wsignout1.0', action: '', fields: {} } };
+  }
+
+  /**
+   * `partnerLogoutFor()`, with a SAML LogoutRequest signed off the event
+   * loop where the realm's XML key is in the HSM (#1955 P8 follow-up); a
+   * software key signs the same bytes, in place. `/logout` awaits this one.
+   *
+   * @param session - the session being ended
+   * @param base - this service's base URL
+   * @returns a promise of `partnerLogoutFor()`'s answer
+   */
+  partnerLogoutForAsync(session, base): Promise<any> {
+    const { log } = this.deps;
+    log.debug("Entering FederationSlo.partnerLogoutForAsync().");
+    try {
+      const out = this.partnerLogoutFor(session, base, true);
+      log.debug("Leaving FederationSlo.partnerLogoutForAsync().");
+      return Promise.resolve(out);
+    } catch (e) {
+      log.debug("Caught in FederationSlo.partnerLogoutForAsync(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving FederationSlo.partnerLogoutForAsync(). Threw.");
+      return Promise.reject(e);
+    }
   }
 
   // How the sign-out page draws the targets partnerLogoutFor() built.
@@ -2384,6 +2490,10 @@ export = {
    * Forwards to `FederationSlo.partnerLogoutFor()` on the installed instance.
    */
   partnerLogoutFor: slot.forward('partnerLogoutFor'),
+  /**
+   * Forwards to `FederationSlo.partnerLogoutForAsync()` (#1955 P8 follow-up).
+   */
+  partnerLogoutForAsync: slot.forward('partnerLogoutForAsync'),
   /**
    * Forwards to `FederationSlo.renderPartnerLogouts()` on the installed
    * instance.

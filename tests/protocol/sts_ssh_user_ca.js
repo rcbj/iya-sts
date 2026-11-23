@@ -508,7 +508,17 @@ async function test() {
       assert.strictEqual(cert.keyId, "sts:" + issued.json.serialHex);
       assert.deepStrictEqual(cert.principals, [OWNER]);
       assert.strictEqual(cert.critical.length, 0);
-      assert.strictEqual(cert.extensions.length, 0);
+      // ssh-keygen's default extensions (pki.sshUserCertificateExtensions,
+      // the #1955 review), each with empty data, in lexical order.
+      const ext = sshReader(cert.extensions);
+      const names = [];
+      while (!ext.done()) {
+        names.push(ext.text());
+        assert.strictEqual(ext.string().length, 0);
+      }
+      assert.deepStrictEqual(names, ["permit-X11-forwarding",
+        "permit-agent-forwarding", "permit-port-forwarding", "permit-pty",
+        "permit-user-rc"]);
       assert.strictEqual(cert.reserved.length, 0);
       assert.strictEqual(cert.validAfter,
                          BigInt(issued.json.validAfter));
@@ -630,3 +640,219 @@ async function main() {
 }
 
 main();
+
+// ---------------------------------------------------------------------------
+// THE #1955 REVIEW (PR #1996), APPENDED. Everything above is the job as it
+// was, untouched so that it merges with the other changes to it; this
+// section runs beside it, in a realm of its own, and fails the process on
+// its own:
+//
+//   f. the CA key and the KRL are refused on the plain-HTTP revocation
+//      listener (PKI_DISTRIBUTION_BASE_URL, the launcher's
+//      `http://sts:8082`, or port 8082 of the service's host, as
+//      sts_http_transport.js reaches it); skipped, and said, when nothing
+//      listens there;
+//   g. GET /account-api/ssh/certificates lists the person's own
+//      certificates, and another person's list does not name them;
+//   h. a group the person is in is not a principal by default;
+//   i. an administrator lists them (GET /admin-api/hardware-tokens/
+//      ssh-certificates) and revokes one (POST .../revoke-ssh), which the
+//      KRL then names;
+//   j. a token holding only ssh:certificate lists the person's
+//      certificates and is refused 403 by another account API operation.
+//      It is a password-grant token of a client this section registers,
+//      so it carries no sign-on session; issuing, which asks for a recent
+//      sign-in, is not driven with it here (the device grant would be).
+// ---------------------------------------------------------------------------
+
+const R_REALM = "sr" + STAMP;
+const R_OWNER = ("rvo" + STAMP).slice(0, 24);
+const R_OTHER = ("rvx" + STAMP).slice(0, 24);
+const R_GROUP = ("rvg" + STAMP).slice(0, 24);
+const R_APP = ("rva" + STAMP).slice(0, 24);
+const R_SECRET = "Ssh-Review-Secret-" + STAMP;
+const R_PLAIN = String(process.env.PKI_DISTRIBUTION_BASE_URL ||
+  "http://" + new URL(base).hostname + ":8082").replace(/\/+$/, "");
+
+async function reviewPlainListener() {
+  log.debug("Entering reviewPlainListener().");
+  for (const path of ["/pki/ssh-user-ca/" + R_REALM,
+                      "/pki/ssh-user-krl/" + R_REALM]) {
+    let answer = null;
+    try {
+      answer = await send(R_PLAIN + path);
+    } catch (e) {
+      log.debug("Caught in reviewPlainListener(): " +
+                ((e && e.message) || e));
+      // pki.httpPort may be 0 on this stack: nothing to refuse there.
+      log.info("  [skipped] nothing answers at " + R_PLAIN + " (" +
+               ((e && e.message) || e) + "), so the plain-HTTP refusal " +
+               "of " + path + " is not checked");
+      continue;
+    }
+    check("f. " + path + " is refused on the plain-HTTP listener, with " +
+          "no error code", function () {
+      assert.strictEqual(answer.status, 404, String(answer.raw).slice(0, 200));
+      assert.ok(/HTTPS/.test(String(answer.raw)),
+                String(answer.raw).slice(0, 200));
+      assert.ok(codeFree(answer.raw), String(answer.raw).slice(0, 200));
+    });
+  }
+  log.debug("Leaving reviewPlainListener().");
+}
+
+async function reviewScopedToken(rb) {
+  log.debug("Entering reviewScopedToken().");
+  await ok(rb + "/admin-api/applications/create", { identifier: R_APP,
+    name: R_APP, protocols: ["oauth2"], fields: {
+      oauthClientId: [R_APP], oauthClientSecret: R_SECRET,
+      oauthRedirectUri: ["https://rp.example/" + R_APP + "/cb"],
+      oauthTokenEndpointAuthMethod: "client_secret_basic",
+      oauthGrantType: ["password"],
+      oauthAllowedScope: ["ssh:certificate"],
+      oauthDelegatedPermission: ["urn:sts:account-api:ssh:certificate"] } },
+    "registered " + R_APP);
+  const granted = await send(rb + "/oauth2/token", { method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded",
+               authorization: "Basic " + Buffer.from(R_APP + ":" +
+                 R_SECRET).toString("base64") },
+    body: new URLSearchParams({ grant_type: "password", username: R_OWNER,
+      password: PASSWORD, scope: "ssh:certificate",
+      resource: rb + "/account-api" }).toString() });
+  const token = granted.body && granted.body.access_token;
+  const bearer = { authorization: "Bearer " + String(token || ""),
+                   accept: "application/json" };
+  const listed = await send(rb + "/account-api/ssh/certificates",
+                            { headers: bearer });
+  const me = await send(rb + "/account-api/me", { headers: bearer });
+  check("j. a token holding only ssh:certificate lists the person's SSH " +
+        "certificates and is refused 403 elsewhere in the account API",
+        function () {
+    assert.strictEqual(granted.status, 200, String(granted.raw).slice(0, 300));
+    assert.ok(token, String(granted.raw).slice(0, 300));
+    assert.strictEqual(listed.status, 200, String(listed.raw).slice(0, 300));
+    assert.ok(Array.isArray(listed.body.certificates),
+              String(listed.raw).slice(0, 300));
+    assert.strictEqual(me.status, 403, String(me.raw).slice(0, 300));
+    assert.ok(codeFree(me.raw), String(me.raw).slice(0, 300));
+  });
+  log.debug("Leaving reviewScopedToken().");
+}
+
+async function reviewTest() {
+  log.debug("Entering reviewTest().");
+  log.info("the #1955 review at " + base + "/realm/" + R_REALM);
+  const rb = await makeRealm(R_REALM);
+  await realmSet(R_REALM, "risk.assessSignIns", false);
+  for (const who of [R_OWNER, R_OTHER]) {
+    await ok(rb + "/admin-api/users/create", userBody(who), "created " + who);
+  }
+  await ok(rb + "/admin-api/groups/create", { group: R_GROUP },
+           "created " + R_GROUP);
+  await ok(rb + "/admin-api/groups/add-member",
+           { group: R_GROUP, member: R_OWNER },
+           R_OWNER + " in " + R_GROUP);
+
+  log.info("=== f. the plain-HTTP listener ===");
+  await reviewPlainListener();
+
+  log.info("=== g. h. the person's list, and a group principal ===");
+  const owner = await portal.signInToThePortal(rb, R_OWNER, log,
+                                               { password: PASSWORD });
+  const other = await portal.signInToThePortal(rb, R_OTHER, log,
+                                               { password: PASSWORD });
+  const material = ed25519Material();
+  const grouped = await owner.api("POST", "/account-api/ssh/certificates",
+    { publicKey: material.line, principals: [R_OWNER, R_GROUP] });
+  const issued = await owner.api("POST", "/account-api/ssh/certificates",
+    { publicKey: material.line, principals: [R_OWNER] });
+  const mine = await owner.api("GET", "/account-api/ssh/certificates");
+  const theirs = await other.api("GET", "/account-api/ssh/certificates");
+  check("h. a group the person is in is no principal by default (403, " +
+        "no error code)", function () {
+    assert.strictEqual(grouped.status, 403, grouped.text.slice(0, 200));
+    assert.ok(codeFree(grouped.text), grouped.text.slice(0, 200));
+  });
+  check("g. the person's list names the certificate they were issued, and " +
+        "another person's does not", function () {
+    assert.strictEqual(issued.status, 200, issued.text.slice(0, 300));
+    assert.strictEqual(mine.status, 200, mine.text.slice(0, 300));
+    const row = (mine.json.certificates || []).filter(function (one) {
+      return one.serialHex === issued.json.serialHex;
+    })[0];
+    assert.ok(row, mine.text.slice(0, 300));
+    assert.deepStrictEqual(row.principals, [R_OWNER]);
+    assert.strictEqual(row.revoked, false);
+    assert.ok(/^\d+$/.test(String(mine.json.lifetimes.softwareSeconds)));
+    assert.strictEqual(theirs.status, 200, theirs.text.slice(0, 300));
+    assert.ok(!(theirs.json.certificates || []).some(function (one) {
+      return one.serialHex === issued.json.serialHex;
+    }), theirs.text.slice(0, 300));
+  });
+
+  log.info("=== i. the administrator's list and revoke ===");
+  const adminList = await send(rb + "/admin-api/hardware-tokens/" +
+    "ssh-certificates?username=" + encodeURIComponent(R_OWNER));
+  const wrong = await postJson(rb + "/admin-api/hardware-tokens/revoke-ssh",
+    { username: R_OTHER, serial: issued.json.serialHex });
+  const adminRevoked = await postJson(rb +
+    "/admin-api/hardware-tokens/revoke-ssh",
+    { username: R_OWNER, serial: issued.json.serialHex });
+  const after = await owner.api("GET", "/account-api/ssh/certificates");
+  const krl = await getBytes(rb + "/pki/ssh-user-krl/" + R_REALM);
+  check("i. an administrator lists the person's certificates, cannot " +
+        "revoke one under another person's name, and revokes it under " +
+        "theirs, which puts it on the KRL", function () {
+    assert.strictEqual(adminList.status, 200, adminList.raw.slice(0, 300));
+    assert.ok((adminList.body.certificates || []).some(function (one) {
+      return one.serialHex === issued.json.serialHex;
+    }), adminList.raw.slice(0, 300));
+    assert.strictEqual(wrong.status, 404, wrong.raw.slice(0, 200));
+    assert.ok(codeFree(wrong.raw), wrong.raw.slice(0, 200));
+    assert.strictEqual(adminRevoked.status, 200,
+                       adminRevoked.raw.slice(0, 200));
+    assert.ok((after.json.certificates || []).some(function (one) {
+      return one.serialHex === issued.json.serialHex && one.revoked;
+    }), after.text.slice(0, 300));
+    const serial = BigInt("0x" + issued.json.serialHex);
+    assert.ok(parseKrl(krl.bytes).authorities.some(function (one) {
+      return one.serials.some(function (n) {
+        return n === serial;
+      });
+    }));
+  });
+
+  log.info("=== j. the ssh:certificate scope ===");
+  await reviewScopedToken(rb);
+  log.debug("Leaving reviewTest().");
+}
+
+async function reviewMain() {
+  log.debug("Entering reviewMain().");
+  let failure = null;
+  try {
+    await reviewTest();
+  } catch (e) {
+    log.debug("Caught in reviewMain(): " + ((e && e.message) || e));
+    // Reported below, after the realm is removed.
+    failure = e;
+  }
+  if (process.env.STS_TEST_REMOVE_REALMS === "1") {
+    try {
+      await postJson(base + "/admin-api/realms/remove", { id: R_REALM });
+    } catch (e) {
+      log.debug("Caught in reviewMain() removing the realm: " +
+                ((e && e.message) || e));
+      // A removal that fails does not hide the section's own verdict.
+      log.info("could not remove the realm " + R_REALM);
+    }
+  }
+  if (failure) {
+    log.error("FAILED in the #1955 review section: " +
+              (failure.stack || failure));
+    process.exitCode = 1;
+  }
+  log.debug("Leaving reviewMain().");
+}
+
+reviewMain();

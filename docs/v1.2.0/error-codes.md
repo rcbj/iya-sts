@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5998** of them, in **57** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6016** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -57,13 +57,13 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 198
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 201
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 285
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 446
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 447
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 83
@@ -86,21 +86,22 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
 * [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 13
-* [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 35
-* [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 30
-* [PIV key attestation (`STS-PIV`)](#sts-piv) — 26
+* [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 36
+* [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 32
+* [PIV key attestation (`STS-PIV`)](#sts-piv) — 28
+* [OpenSSH user certificates (`STS-SSHCA`)](#sts-sshca) — 5
 * [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 30
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 252
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 254
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 140
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 136
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 137
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 301
 * [Management API (`STS-API`)](#sts-api) — 97
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
-* [Sign-out (`STS-LOGOUT`)](#sts-logout) — 15
+* [Sign-out (`STS-LOGOUT`)](#sts-logout) — 16
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 191
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 29
@@ -845,7 +846,10 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0206` | A realm whose signing keys are in the HSM was asked for something only a key in this process can do — the private key itself, a decryption, or an algorithm the HSM does not sign — and refused it rather than making a software key (#1955). | — |
 | `STS-KEYS-0207` | A signing key could not be made in, or read back from, the hardware security module: the module offers no key-pair generation for that algorithm or curve, or answered no public key (#1955). | — |
 | `STS-KEYS-0208` | A realm key in the HSM was asked to decrypt (RSA-OAEP) or to agree (ECDH) and the module refused it: the key was made without CKA_DECRYPT or CKA_DERIVE, by a build before the HSM keys could decrypt. Rotating the realm's signing keys makes keys that can (#1955). | — |
-| `STS-KEYS-0209` | A signature with a key in the HSM was asked of a synchronous door, or of a module with no asynchronous C_Sign, while keys.pkcs11SynchronousSign is off. The event loop is not held for the token; turn the setting on to sign that way (#1955). | — |
+| `STS-KEYS-0209` | A blocking PKCS#11 call with a realm key in the HSM (C_Sign, C_Decrypt or C_DeriveKey) was asked while keys.pkcs11SynchronousSign is off: by a module with no asynchronous call for it, or by a synchronous door no service caller uses with a realm key. Every service door signs and decrypts off the event loop; turn the setting on to allow the blocking call (#1955). | — |
+| `STS-KEYS-0210` | A warning at start: the PKCS#11 calls this process can run at once with realm keys in the HSM (keys.pkcs11Sessions times its threads) reach libuv's thread pool size (UV_THREADPOOL_SIZE), which they share with password hashing and post-quantum signing. Nothing blocks the event loop; a slow token could hold every pool thread. The line names the size that leaves room (#1955). | — |
+| `STS-KEYS-0211` | The thread that makes a PKCS#11 token's non-cryptographic calls off the event loop (opening and logging in a session, finding a key, reading its attributes, beginning an operation, the key wrap's session object, initialising the module again) failed or exited. The calls waiting on it are refused and the next one starts a new thread (#1955). | — |
+| `STS-KEYS-0212` | A blocking PKCS#11 call was refused because the module is being initialised again after the device was lost, or must be and asynchronous calls of this thread still hold sessions on it: the module is initialised again off the event loop once they drain, and the next call is made on it (#1955). | — |
 
 ## STS-PKI
 
@@ -1840,6 +1844,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0565` | A sign-in step was answered by a legacy U2F security key that may not answer it: the step is passwordless (a U2F key cannot verify the person), or webauthn.u2fAppIds no longer permits its AppID at this RP ID (#1955). | HTTP 200 page naming the refusal |
 | `STS-AUTHN-0566` | A write of webauthn.u2fAppIds was refused: an entry is not a U2F AppID — an absolute https URL with a host, no user name or password and no fragment, at most 2048 characters (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-AUTHN-0567` | The bootstrap password file could not be removed on a start that found a credential already held. The plaintext is left on disk. | Log line; the service still starts, and the file is left |
+| `STS-AUTHN-0580` | A legacy U2F key was not imported: the person's passkey policy enforces a CTAP 2.1 credProtect level, which an imported key ran no ceremony to report and cannot prove (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-OAUTH
 
@@ -4062,7 +4067,7 @@ Raised from: tls/.
 | `STS-TLS-0061` | A TLS listener already held its bound of connections that failed at the TLS layer, so another was closed at once rather than held for its alert to be read, and the TCP reset could discard the alert (tls/alert_close.ts, 2026-11-13). | none (logged): the connection closes with its alert sent |
 | `STS-TLS-0062` | A server-side TLS socket has no raw socket under it (TLSSocket._parent), so a connection that fails at the TLS layer is closed at once and its alert can be lost to the TCP reset (tls/alert_close.ts, 2026-11-13). | none (logged once) |
 | `STS-TLS-0063` | A certificate this realm issued names its holder as a service account (urn:sts:sa:<name>, #1827), and in its realm that entry is not a service account, or there is none. The TLS client gate (tls_client_certificates.js identityOf()) refuses it as an identity at every door that asks it; each door refuses it under its own code for a certificate that is not an identity. | none (logged): the door's own refusal |
-| `STS-TLS-0064` | Two client-truststore anchors share a subject and not a key. OpenSSL looks an issuer up by subject name, so the later one is shadowed: a certificate it issued does not verify (DEPTH_ZERO_SELF_SIGNED_CERT) while the earlier one is installed. The add is kept and warned (the row's shadowedBy names the earlier fingerprint). Presenting the shadowed certificate itself is recognised by its fingerprint and verified (#1242). | the add succeeds with warning; the handshake of the certificate itself verifies |
+| `STS-TLS-0064` | Two client-truststore anchors share a subject, and their subject key identifiers do not tell them apart. OpenSSL looks an issuer up by subject name and may check a certificate against either, so a certificate one of them issued may not verify (CERT_SIGNATURE_FAILURE) while both are installed; which one it finds first is not promised. The add is kept and warned, and each row's shadowedBy names the other's fingerprint (the lowest, when several share it). Presenting either self-signed certificate itself is recognised by its fingerprint and verified, when its own purpose, key usage, validity and critical extensions allow a client certificate (#1242). | the add succeeds with warning; the handshake of the certificate itself verifies |
 
 ## STS-VC
 
@@ -5036,6 +5041,7 @@ Raised from: common/hotp.ts, common/credentials.ts, common/pskc.ts, common/oath_
 | `STS-OATH-0047` | A lost hardware token's OATH credential could not be retired (#1955). | — |
 | `STS-OATH-0049` | An imported OATH token that is assigned was asked to be removed; it is retired by reporting the token lost instead (#1955). | — |
 | `STS-OATH-0050` | An Account API act on a one-time code token was refused: unknown, or too many attempts in the code budget (#1955). | HTTP 400 |
+| `STS-OATH-0051` | A claim of an imported HOTP token was refused: the code it presented was already spent by another request, so it proves nothing about who holds the token (#1955). | HTTP 400 (the portal or the Account API) |
 
 ## STS-YUBIOTP
 
@@ -5075,6 +5081,8 @@ Raised from: common/yubiotp.ts, common/yubiotp_store.ts, common/credentials.ts, 
 | `STS-YUBIOTP-0028` | A lost hardware token's YubiKey OTP credential could not be retired (#1955 P5). | — |
 | `STS-YUBIOTP-0029` | A YK-VAL client id was not 1 to 16 digits, or that client already exists (#1955 P5). | — |
 | `STS-YUBIOTP-0030` | An operator asked to clear a YubiKey OTP for a person who holds none (#1955 P5). | HTTP 400 (API) or a 303 with error= |
+| `STS-YUBIOTP-0031` | A YK-VAL nonce could not be proved unused: the cluster claim it is spent under had no store to ask, so the request was not checked (#1955). | YK-VAL 2.0 BACKEND_ERROR |
+| `STS-YUBIOTP-0032` | A YK-VAL verify named a YubiKey OTP of a disabled account; it is answered as a bad OTP and nothing is spent (#1955). | YK-VAL 2.0 BAD_OTP |
 
 ## STS-PIV
 
@@ -5110,6 +5118,22 @@ Raised from: common/piv_attestation.ts, common/cert_enrollment.ts, common/piv_en
 | `STS-PIV-0032` | An outside PIV or CAC card's card UUID is in stsPivCardUuid on more than one person, so it names nobody (#1955, D8). | the outside-certificate refusal (STS-TLS-0055, STS-AUTHN-0469) |
 | `STS-PIV-0034` | A value written to stsPivCardUuid is not a card UUID in RFC 9562 form (or is the nil UUID); nothing was written (#1955, D8). | HTTP 400 (the directory write); LDAP constraintViolation |
 | `STS-PIV-0035` | A card UUID written to stsPivCardUuid is already held by another entry of the realm, which would make the card name two people; nothing was written (#1955, D8). | HTTP 400 (the directory write); LDAP constraintViolation |
+| `STS-PIV-0036` | A PIV attestation's subject names no slot, and the profile asked is a PIV slot profile or one that signs in (tls-client, tls-server-client, smartcard-logon), for which the slot is the point of the check (#1955). | HTTP 400 |
+| `STS-PIV-0037` | A PIV attestation of slot 9e, the Card Authentication key that works without a PIN, was offered for a profile other than piv-card-auth (#1955). | HTTP 400 |
+
+## STS-SSHCA
+
+**OpenSSH user certificates.** The realm's OpenSSH user certificate authority (#1955 P3): which principals a person may ask for, the security-key attestation that earns the longer lifetime, the register of issued certificates, and where the CA key and the KRL are served.
+
+Raised from: common/ssh_user_ca.ts, common/ssh_issued.ts, common/pki.js, pki/pki_service.ts, account-api/ssh_user_ca.ts, mgmt-api/hardware_tokens_api.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-SSHCA-0001` | The SSH user CA's public key or its KRL was asked for on the plain-HTTP revocation listener, where neither is served: the CA key is a trust anchor and the KRL is unsigned, so plain HTTP would let anybody on the path replace them (#1955). | HTTP 404, text/plain |
+| `STS-SSHCA-0002` | An SSH certificate principal named a group whose name is a person's uid in the realm, or a system account such as root, which a server would sign the member in as (#1955). | HTTP 403 |
+| `STS-SSHCA-0003` | An SSH security-key attestation was sent without the challenge ssh-keygen was given, which the attestation signed, so it could not be verified (#1955). | HTTP 400 |
+| `STS-SSHCA-0004` | An administrator's SSH certificate act named nobody of the realm's directory (#1955). | HTTP 404 |
+| `STS-SSHCA-0005` | A person's SSH user certificates could not be read or revoked: the register threw (#1955). | HTTP 500 or 503 |
 
 ## STS-OPENPGP
 
@@ -5463,6 +5487,8 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0329` | A session was refused at a door that cannot draw the role step (federation, a wallet, SPNEGO, a certificate) because a required dynamic role was offered to the person (#1072). | — |
 | `STS-XACML-0330` | A sign-in held for the role step had no pending sign-in to draw the step on, so it was refused (#1072). | — |
 | `STS-XACML-0331` | A remote PEP's heartbeat was refused: a member its entry stores carries a value the service cannot hold (fuzz run #595) — a counter that is not a non-negative integer of at most 2^53 - 1, a text member that is not a string or carries a control character, or signals, settings or listeners that are not an object or null. Nothing of it is recorded; the refusal names the member. | none — 400 invalid_request on POST /xacml/pep/heartbeat |
+| `STS-XACML-0332` | A flow that cannot draw the role step — the password grant, a token exchange, the RFC 7523 or RFC 7522 grant, the device grant, CIBA, WS-Trust, a Kerberos ticket or an LDAP bind — was refused because the application (or the realm, where it names none) would require the person to choose a dynamic role (#1072, rcbj's decision 5). | access_denied at the token endpoint (RFC 6749 section 5.2); wst:RequestFailed; KDC_ERR_POLICY (RFC 4120 section 7.5.9); LDAP unwillingToPerform (RFC 4511 section 4.1.9) |
+| `STS-XACML-0333` | Single sign-on into an application that requires a dynamic role was not answered from the session, which chose none for it (a sign-in for another application, or at a door that names none): the person was sent to sign in again and choose, or, where the request forbids asking (prompt=none, IsPassive), it was refused (#1072). | interaction_required (OIDC Core section 3.1.2.6) with prompt=none; NoPassive with IsPassive |
 
 ## STS-XPEP
 
@@ -5611,7 +5637,7 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0137` | A remote PEP HTTPS listener requires a client certificate (requireClientCertificate) and has no authority to verify one against: no readable trustAnchorsFile, and trustIssuedClientCertificates off or PEP_AUTHZEN_CLIENT_CA not set (a reverse-proxy listener has only the anchors file). The listener is refused, fail-closed: a listener the service defined is not bound and is reported failed (reason other); one of the environment's keeps its socket and closes every connection unanswered, reported failed, with the sentence as GET /'s https.problem. Until 2026-11-16 the API listener asked nobody and admitted everybody. A tuning with a trust source, or without the requirement, serves again. | none — an error in the PEP's log; the listener serves nothing |
 | `STS-XPEP-0138` | A caller asked this edge PDP for one of the AuthZEN Search APIs (POST /access/v1/search/subject, resource or action). Those are answered by the service, which holds the directory and the resource and action catalogues. This edge answers 501, before admission and without reading the body, and does not advertise the paths. The code is logged and not sent. A turned-off edge, or one that has not pulled, answers that condition first (STS-XPEP-0044, STS-XPEP-0043, STS-AUTHZEN-0013, STS-AUTHZEN-0014). HEAD stays 404. | AuthZEN Authorization API 1.0 section 8; HTTP 501 |
 | `STS-XPEP-0139` | A caller asked this edge PDP for the Access Request and Approval Profile (POST /access/v1/access-requests, GET of its schema or of a task, POST or DELETE of a task's cancel). The service holds the approval store. This edge answers 501 with the evaluation error object, not problem+json, before admission and without reading the body, and does not advertise the paths. A POST to the task path without /cancel stays 404. The code is logged and not sent. context.approval on an evaluation is not this refusal: it is recognized and not used (STS-AUTHZEN-0084). | AuthZEN Access Request and Approval Profile; HTTP 501 |
-| `STS-XPEP-0140` | An access evaluation was one of the OAuth token-exchange binding's tuples: a gate (resource type audience and an action issue:<type>:<grant>), a context member the binding reads, or, beside a gate in the same batch, a scope or any other non-audience resource type. The service holds delegation and the directory. This edge answers 501 for that item — the whole response when the request was one evaluation, and context.error on a batch item — and does not forward it. The code is logged and not sent. A lone scope or detail, and an audience whose action is not a gate, stay ordinary evaluations. | AuthZEN OAuth token-exchange binding; HTTP 501 |
+| `STS-XPEP-0140` | An access evaluation was one of the OAuth token-exchange binding's tuples while the realm's authzen.tokenExchange is on (as the pulled catalogue says; a catalogue that does not say is read as on): a gate (resource type audience and an action issue:<token type>:<grant>, whatever the grant), a scope tuple (resource type protected_resource), lone or not, or a resource type the realm declares as an authorization_details type in a request that also carries a token-exchange gate (issue:<registered token type>:token_exchange). The service answers those by the binding's fixed rules, which need delegation and the directory. This edge answers 501 for that item — the whole response when the request was one evaluation, and context.error on a batch item — does not forward it, and records it to the service's audit log (authzen.remote.decision). The code is logged and not sent. While the binding is off every such tuple is an ordinary evaluation, as at the service; either way a context member the binding reads, on a tuple that is not the binding's, is 400 STS-AUTHZEN-0101. | AuthZEN OAuth token-exchange binding; HTTP 501 |
 
 ## STS-AUTHZEN
 
@@ -5684,7 +5710,7 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0081` | An AuthZEN access request task was asked about after its retention ended. | HTTP 410, urn:openid:authzen:access-request:error:task_expired |
 | `STS-AUTHZEN-0082` | An AuthZEN access request task already in a terminal status was asked to be cancelled. | HTTP 409, urn:openid:authzen:access-request:error:invalid_task_state |
 | `STS-AUTHZEN-0083` | An AuthZEN access request asked for emergency access where the denying policy's advice does not allow it, or without a context.business_justification. | HTTP 400, application/problem+json |
-| `STS-AUTHZEN-0084` | An AuthZEN evaluation presented a context.approval this realm cannot resolve, one issued to another caller, or an approval.state whose signature or approval id does not verify; it was not used and the evaluation was decided as not approved. | context.reason approval_unverifiable, next_action none |
+| `STS-AUTHZEN-0084` | An AuthZEN evaluation presented a context.approval this realm cannot resolve, one issued to another caller, or an approval.state whose signature or approval id does not verify; it was not used and the evaluation was decided as not approved. A remote PEP's edge PDP, which holds no approval store, records it for every approval presented to it, and answers the same context (#1205). | context.reason approval_unverifiable, next_action none |
 | `STS-AUTHZEN-0085` | An AuthZEN evaluation presented a context.approval that was revoked or past its approved_until; it was not used. | context.reason approval_expired |
 | `STS-AUTHZEN-0086` | An AuthZEN evaluation presented a context.approval for another tuple or application than the one it approved; it was not used. | context.reason out_of_scope |
 | `STS-AUTHZEN-0087` | A requestable AuthZEN denial's binding_token or binding_hash could not be made, so the denial was answered as an ordinary false with no access_request. | none — logged; decision: false |
@@ -5698,7 +5724,7 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0095` | An AuthZEN access request approval was asked to be revoked where there is no live approval with that id. | none — the portal's or console's refusal |
 | `STS-AUTHZEN-0096` | An AuthZEN access request's requested_access was not an object, or its requested_until not an RFC 3339 instant in the future. | HTTP 400, application/problem+json |
 | `STS-AUTHZEN-0100` | An AuthZEN token-exchange binding tuple (#1181) carried a context member its fixed rules read in the wrong JSON type, an unusable subject_token claim, an act chain nested too deep, or a may_act without sub. | HTTP 400, an error message (a batch item's context.error) |
-| `STS-AUTHZEN-0101` | An AuthZEN request that is not one of the token-exchange binding's gate or scope tuples, or that arrived while authzen.tokenExchange is off, carried a context member only the binding's fixed rules read (#1181). | HTTP 400, an error message (a batch item's context.error) |
+| `STS-AUTHZEN-0101` | An AuthZEN request that is not one of the token-exchange binding's gate or scope tuples, or that arrived while authzen.tokenExchange is off, carried a context member only the binding's fixed rules read (#1181). A remote PEP's edge PDP refuses the same requests the same way, from the switch its pulled catalogue carries (#1205). | HTTP 400, an error message (a batch item's context.error) |
 | `STS-AUTHZEN-0102` | An AuthZEN token-exchange binding tuple named a subject.type other than the Token Issuance Profile's user, client or workload (#1181). | HTTP 400, an error message (a batch item's context.error) |
 | `STS-AUTHZEN-0103` | An AuthZEN gate tuple named a grant other than token_exchange (issue:<type>:<grant>); this PDP decides the token-exchange gate only, and answered false (#1181). | decision: false |
 | `STS-AUTHZEN-0104` | An AuthZEN token-exchange gate named a token type that is not a registered short name; answered false (#1181). | decision: false |
@@ -5742,21 +5768,22 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0142` | An AuthZEN access request's approval could not be stored, so the task moved to failed rather than to approved (#1202). The failed callback is sent where it was asked for. | the approver's refusal; the task status failed |
 | `STS-AUTHZEN-0143` | A pending AuthZEN access request moved to failed because the approvers its advice names (configured static roles, groups, the application's owners) resolve to nobody but its subject (#1202). A computed or dynamic role, or a directory that cannot be read, is never taken for nobody. Noticed by the authzen.access-requests job. | the task status failed |
 | `STS-AUTHZEN-0144` | The requestable denial store of a realm is full (authzen.accessRequestMaxDenials), so a new denial is not recorded by evaluation_id; it is still requestable by its binding_token (#1204). Logged when the store fills, not per denial. | none — logged and audited once |
-| `STS-AUTHZEN-0145` | The hosted access request form (/portal/access-request, #1204) was opened or submitted with an evaluation_id this realm holds no requestable denial record for: never issued, removed a day after its window, or not recorded because the store was full. | the profile's section 16, form_url; the portal answers 404 |
-| `STS-AUTHZEN-0146` | The hosted access request form or ticket was opened by somebody who is not the subject of the denial or the request it names (the subject's type is one of authzen.resolveSubjectTypes and its id one of the person's names). The same answer as a request that does not exist (#1204). | the profile's sections 13.1 and 13.3.3; the portal answers 404 |
-| `STS-AUTHZEN-0147` | The hosted access request form was opened or submitted after the requestable denial's window had passed (#1204). | the profile's section 13.2, expired_denial; the portal answers 410 |
-| `STS-AUTHZEN-0148` | An access request was submitted on the hosted form while authzen.accessRequestForm (or the profile) is off (#1204). | none — the portal answers 403 |
-| `STS-AUTHZEN-0149` | A Catalogs Document or Catalog Endpoint of the AuthZEN access request catalogs (#1204) was asked for a denial this realm did not record, whose advice lists no entitlements, or by a caller it was not answered to or that is no longer scoped to its application. | the CATALOG companion's sections 7 and 11; 404 problem+json |
-| `STS-AUTHZEN-0150` | A Catalog Endpoint call carried a cursor this endpoint did not issue for the same search (#1204). | the CATALOG companion's section 7; 400 problem+json |
-| `STS-AUTHZEN-0151` | An access request for a denial whose catalog lists entitlements carried no requested_access.entitlement, or one the catalog does not list (#1204). | the CATALOG companion's section 10.3; 400 problem+json |
-| `STS-AUTHZEN-0152` | The access request catalogs were called while authzen.accessRequestCatalogs (or the profile) is off (#1204). | none — 501 problem+json |
-| `STS-AUTHZEN-0153` | An access request's client.actor named a chain the caller's own credential does not authorize: neither one link that is the caller itself nor, link for link, the act chain of its own access token (#1204, the ACTOR companion). | the ACTOR companion's section 3.2; 400 problem+json |
-| `STS-AUTHZEN-0154` | An access request's client.actor or client.source was malformed: a link without its id or sub, a non-string or overlong member, a chain deeper than 8, or an external_url that is not https (#1204). | the ACTOR companion's section 3.1; 400 problem+json |
-| `STS-AUTHZEN-0155` | A bulk access request carried a top-level resource or action beside items (#1204). | the BULK companion's section 3.1; 400 problem+json |
-| `STS-AUTHZEN-0156` | A bulk access request's items were not 1 to authzen.accessRequestMaxBulkItems objects (#1204). | the BULK companion's section 3.2; 400 problem+json |
-| `STS-AUTHZEN-0157` | A bulk access request carried a top-level denial, or an item without its own: this service issues no bundle denial (#1204). | the BULK companion's section 3.3; invalid_denial_binding |
-| `STS-AUTHZEN-0158` | A bulk access request's items named denials about different applications (#1204). | none — 400 problem+json |
-| `STS-AUTHZEN-0159` | A bulk access request carried a callback, which this service does not take on a bulk request (#1204). | none — 400 problem+json |
+| `STS-AUTHZEN-0145` | The authorization-detail types could not be read while the AuthZEN catalogue a remote PEP pulls was built, so it carries tokenExchangeDetailTypes as null (#1205). An edge PDP reads that closed: while the token-exchange binding is on, every resource type other than audience and protected_resource beside a token-exchange gate is a detail tuple it answers 501 (STS-XPEP-0140). The next pull that can read them sends the list. | none — logged; the catalogue is still sent |
+| `STS-AUTHZEN-0146` | The hosted access request form (/portal/access-request, #1204) was opened or submitted with an evaluation_id this realm holds no requestable denial record for: never issued, removed a day after its window, or not recorded because the store was full. | the profile's section 16, form_url; the portal answers 404 |
+| `STS-AUTHZEN-0147` | The hosted access request form or ticket was opened by somebody who is not the subject of the denial or the request it names (the subject's type is one of authzen.resolveSubjectTypes and its id one of the person's names). The same answer as a request that does not exist (#1204). | the profile's sections 13.1 and 13.3.3; the portal answers 404 |
+| `STS-AUTHZEN-0148` | The hosted access request form was opened or submitted after the requestable denial's window had passed (#1204). | the profile's section 13.2, expired_denial; the portal answers 410 |
+| `STS-AUTHZEN-0149` | An access request was submitted on the hosted form while authzen.accessRequestForm (or the profile) is off (#1204). | none — the portal answers 403 |
+| `STS-AUTHZEN-0150` | A Catalogs Document or Catalog Endpoint of the AuthZEN access request catalogs (#1204) was asked for a denial this realm did not record, whose advice lists no entitlements, or by a caller it was not answered to or that is no longer scoped to its application. | the CATALOG companion's sections 7 and 11; 404 problem+json |
+| `STS-AUTHZEN-0151` | A Catalog Endpoint call carried a cursor this endpoint did not issue for the same search (#1204). | the CATALOG companion's section 7; 400 problem+json |
+| `STS-AUTHZEN-0152` | An access request for a denial whose catalog lists entitlements carried no requested_access.entitlement, or one the catalog does not list (#1204). | the CATALOG companion's section 10.3; 400 problem+json |
+| `STS-AUTHZEN-0153` | The access request catalogs were called while authzen.accessRequestCatalogs (or the profile) is off (#1204). | none — 501 problem+json |
+| `STS-AUTHZEN-0154` | An access request's client.actor named a chain the caller's own credential does not authorize: neither one link that is the caller itself nor, link for link, the act chain of its own access token (#1204, the ACTOR companion). | the ACTOR companion's section 3.2; 400 problem+json |
+| `STS-AUTHZEN-0155` | An access request's client.actor or client.source was malformed: a link without its id or sub, a non-string or overlong member, a chain deeper than 8, or an external_url that is not https (#1204). | the ACTOR companion's section 3.1; 400 problem+json |
+| `STS-AUTHZEN-0156` | A bulk access request carried a top-level resource or action beside items (#1204). | the BULK companion's section 3.1; 400 problem+json |
+| `STS-AUTHZEN-0157` | A bulk access request's items were not 1 to authzen.accessRequestMaxBulkItems objects (#1204). | the BULK companion's section 3.2; 400 problem+json |
+| `STS-AUTHZEN-0158` | A bulk access request carried a top-level denial, or an item without its own: this service issues no bundle denial (#1204). | the BULK companion's section 3.3; invalid_denial_binding |
+| `STS-AUTHZEN-0159` | A bulk access request's items named denials about different applications (#1204). | none — 400 problem+json |
+| `STS-AUTHZEN-0160` | A bulk access request carried a callback, which this service does not take on a bulk request (#1204). | none — 400 problem+json |
 
 ## STS-FGA
 
@@ -6485,6 +6512,7 @@ Raised from: logout/.
 | `STS-LOGOUT-0013` | The sign-out's account step (#561) was asked for in a trust realm with authn.multipleAccounts off, where a browser holds one session and there is no account to choose. | HTTP 400 from /authn-api/logout/accounts |
 | `STS-LOGOUT-0014` | POST /logout in its JSON form came from a page of another site (#1442). | HTTP 403 |
 | `STS-LOGOUT-0015` | Ending another session was refused because the sign-in was not recent enough. | HTTP 403 |
+| `STS-LOGOUT-0016` | A sign-out with the realm's keys in the HSM could not sign, off the event loop, the SAML 2.0 LogoutRequests or a federation partner's sign-out of one of its sessions, so none is offered for that session (or the partner is not told); the sign-out itself goes on (#1955). | — |
 
 ## STS-LAUNCH
 

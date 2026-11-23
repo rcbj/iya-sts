@@ -38,7 +38,32 @@
 //   J. synchronous signing is off unless keys.pkcs11SynchronousSign is on
 //      (STS-KEYS-0209). The child opts in so C–H can sign, then turns it
 //      off. A module with no C_SignAsync refuses sign() the same way, and
-//      signs once the setting is on.
+//      signs once the setting is on; one with no C_DecryptAsync or
+//      C_DeriveKeyAsync refuses a decryption or an agreement the same way.
+//   K. (#1955 P8 follow-up, 2026-11-23) with the setting OFF, every door
+//      signs or decrypts off the event loop: an access token, a JWS of each
+//      kind, a SAML 2.0 and a SAML 1.1 assertion, a Redirect-binding
+//      signature, any XML document, an EncryptedAssertion, answers fetched
+//      ahead for WS-Trust, a JWE, a WS-Trust token, a key set and a
+//      rotation — and holds nothing. Against the fake module the
+//      asynchronous calls settle 25 ms later and the blocking calls throw,
+//      so a timer scheduled before each operation fires before it resolves;
+//      against SoftHSM2 the binding's blocking calls are made to throw.
+//   H. (SoftHSM2) the latency, in place and off the loop.
+//   K20. (SoftHSM2) no blocking PKCS#11 call of ANY kind is made on the
+//      thread that serves — sessions, logins, searches, attribute reads and
+//      each operation's Init are the control thread's.
+//   L. a software key's output is byte-identical through the off-the-loop
+//      twins: a JWS, an XML signature, a Redirect-binding signature, an XML
+//      decryption; and the shared builders' twins answer alike (a published
+//      JWT byte for byte, the PEP proxy's Response but for its fresh ids).
+//   M. two tokens on one module meeting an outage at once recover with one
+//      re-initialisation, after their operations drain, and both sign.
+//   N. (SoftHSM2) another thread hears a re-initialisation on the outage
+//      channel and does not finalize again for an outage met on an older
+//      session, so this thread's new sessions survive.
+//   E2, K20 also hold a thread's FIRST use of a key: found off the event
+//      loop at the keystore's start and by `helpers.prepareKeySet()`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -134,6 +159,11 @@ function childMain() {
     process.env.SOFTHSM2_CONF = conf;
     childProcess.execFileSync('softhsm2-util', ['--init-token', '--free',
       '--label', 'signing', '--so-pin', '5678', '--pin', '4321'],
+      { stdio: 'ignore', env: process.env });
+    // M's second token on the same module, made before the module is
+    // initialised so its slot list holds it.
+    childProcess.execFileSync('softhsm2-util', ['--init-token', '--free',
+      '--label', 'second', '--so-pin', '5678', '--pin', '4321'],
       { stdio: 'ignore', env: process.env });
     fs.writeFileSync(pinFile, '4321');
     binding = require(process.env.PS_PKCS11JS);
@@ -364,6 +394,406 @@ function childMain() {
     note(legacyOpened && !legacyOpened.ok,
          'I4. RSA PKCS#1 v1.5 is never asked of an HSM key',
          legacyOpened && (legacyOpened.why || ''));
+    // ------------------------------------------------------------ K
+    // EVERY DOOR OFF THE EVENT LOOP, WITH THE SETTING OFF (#1955 P8
+    // follow-up, 2026-11-23; rcbj: "I do not want this activity to block
+    // the main event loop"). Each door signs or decrypts with
+    // keys.pkcs11SynchronousSign off, and holds nothing:
+    //   * the FAKE module's asynchronous calls settle 25 ms later on a timer
+    //     and its blocking C_Sign / C_Decrypt / C_DeriveKey throw, so a
+    //     timer scheduled before the operation fires before it resolves;
+    //   * on SOFTHSM2 the binding's blocking C_Sign, C_Decrypt and
+    //     C_DeriveKey are replaced by ones that throw, so a door that called
+    //     one would fail — and the timer is reported (a real module may
+    //     answer inside a millisecond, so it is not asserted there).
+    config.setOverride('keys.pkcs11SynchronousSign', false);
+    const heldToken = secrets.heldSigningToken().token;
+    const realLib = heldToken.entry.lib;
+    const blockingMade = [];
+    const unpatched = {};
+    if (WHICH === 'softhsm') {
+      ['C_Sign', 'C_Decrypt', 'C_DeriveKey'].forEach(function (name) {
+        unpatched[name] = realLib[name];
+        realLib[name] = function () {
+          blockingMade.push(name);
+          throw new Error('the blocking ' + name + ' was called');
+        };
+      });
+    } else {
+      binding.slowAsyncOnly(25);
+    }
+    // NO BLOCKING CALL OF ANY KIND ON THIS THREAD (#1955 P8 follow-up): on
+    // SoftHSM2 every other call of the binding this thread loaded is
+    // recorded while K runs — C_OpenSession, C_Login, C_FindObjects*,
+    // C_GetAttributeValue, every C_*Init, the key wrap's objects, C_Finalize
+    // — after the token is made to open its sessions and find its keys again
+    // (its idle sessions dropped, its generation moved). They are the control
+    // thread's (`pkcs11_thread.js`), on its own copy of the binding, so this
+    // thread may make the asynchronous calls and nothing else.
+    const syncMade = [];
+    const recorded = {};
+    if (WHICH === 'softhsm') {
+      const proto = Object.getPrototypeOf(realLib);
+      Object.getOwnPropertyNames(proto).concat(Object.keys(realLib))
+        .forEach(function (name) {
+          if (!/^C_/.test(name) || /Async$/.test(name) ||
+              Object.prototype.hasOwnProperty.call(recorded, name) ||
+              Object.prototype.hasOwnProperty.call(unpatched, name) ||
+              typeof realLib[name] !== 'function') {
+            return;
+          }
+          recorded[name] = Object.prototype.hasOwnProperty.call(realLib, name)
+            ? realLib[name] : null;
+          const through = realLib[name];
+          realLib[name] = function () {
+            syncMade.push(name);
+            return through.apply(realLib, arguments);
+          };
+        });
+      heldToken.dropIdle();
+      heldToken.generation++;
+    }
+    // AND A THREAD'S FIRST USE OF A KEY: the keys this thread resolved are
+    // forgotten and its key sets dropped, as a new request worker starts
+    // with neither, and the request middleware's road
+    // (`helpers.prepareKeySet()`) finds them again before anything reads a
+    // set — so K20 also holds that no first resolution searched the token on
+    // this thread.
+    stsCrypto.forgetHsmKeys();
+    helpers.resetStsKeys();
+    await helpers.prepareKeySet(REALM);
+    async function offTheLoop(fn) {
+      let fired = false;
+      const timer = setTimeout(function () {
+        fired = true;
+      }, 0);
+      const t0 = process.hrtime.bigint();
+      let out;
+      let error = null;
+      try {
+        out = await fn();
+      } catch (e) {
+        error = e;
+      }
+      const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+      clearTimeout(timer);
+      return { out: out, error: error, fired: fired, ms: ms };
+    }
+    function heldNothing(r) {
+      return WHICH === 'softhsm' ? !r.error : (!r.error && r.fired);
+    }
+    function how(r) {
+      return (r.error ? 'error: ' + ((r.error && r.error.message) ||
+                                     r.error) + ' ' : '') +
+             'timer first: ' + r.fired + ', ' + r.ms.toFixed(2) + ' ms';
+    }
+    const verifyJose = function (jws, publicKey, alg) {
+      const parts = String(jws || '').split('.');
+      const input = Buffer.from(parts[0] + '.' + parts[1]);
+      const sig = Buffer.from(parts[2] || '', 'base64url');
+      if (alg === 'EdDSA') {
+        return nodeCrypto.verify(null, input, publicKey, sig);
+      }
+      return nodeCrypto.verify(alg === 'RS256' ? 'sha256' : 'sha256',
+        input, alg === 'RS256' ? publicKey
+                               : { key: publicKey,
+                                   dsaEncoding: 'ieee-p1363' }, sig);
+    };
+
+    const k1 = await offTheLoop(function () {
+      return helpers.signJwtOffLoop({ sub: 'k1', typ: 'Bearer' },
+                                    { kind: 'access_token' });
+    });
+    let k1Ok = false;
+    try {
+      k1Ok = !!helpers.verifyOwnJws(k1.out);
+    } catch (e) {
+      k1Ok = String((e && e.message) || e);
+    }
+    note(heldNothing(k1) && k1Ok === true,
+         'K1. an access token (helpers.signJwtOffLoop, RS256) signs in the ' +
+         'HSM with the setting off, holding nothing', how(k1) + ' ' + k1Ok);
+    const k2 = await offTheLoop(function () {
+      return helpers.signJwtAsOffLoop({ sub: 'k2' }, 'ES256', null, {});
+    });
+    note(heldNothing(k2) && verifyJose(k2.out, es.privateKey.publicKey,
+                                       'ES256'),
+         'K2. an ES256 JWS (helpers.signJwtAsOffLoop: WS-Trust JWTs, SETs, ' +
+         'software statements, FAPI client assertions) signs off the loop',
+         how(k2));
+    const k3 = await offTheLoop(function () {
+      return stsCrypto.signJwsOffLoop({ sub: 'k3' }, ed.privateKey,
+                                      { algorithm: 'EdDSA' });
+    });
+    note(heldNothing(k3) && verifyJose(k3.out, ed.privateKey.publicKey,
+                                       'EdDSA'),
+         'K3. an EdDSA JWS (stsCrypto.signJwsOffLoop) signs off the loop',
+         how(k3));
+    const k4 = await offTheLoop(function () {
+      return saml2.buildSamlAssertionAsync('k4-alice', 'https://sp.k4.test',
+                                           5);
+    });
+    let k4Ok = 'not built';
+    try {
+      k4Ok = stsCrypto.verifyXmlSignature(k4.out, {
+        element: 'Assertion', certPem: helpers.STS.xml.certPem }).ok;
+    } catch (e) {
+      k4Ok = String((e && e.message) || e);
+    }
+    note(heldNothing(k4) && k4Ok === true && /<ds:SignatureValue>/.test(
+           String(k4.out)),
+         'K4. a SAML 2.0 assertion (saml2.buildSamlAssertionAsync: SSO, ' +
+         'WS-Federation, WS-Trust) is signed off the loop and verifies',
+         how(k4) + ' ' + k4Ok);
+    const saml11 = require(ROOT + '/saml/saml11');
+    const k5 = await offTheLoop(function () {
+      return saml11.buildSaml11AssertionAsync({ subject: 'k5-alice',
+        audience: 'https://rp.k5.test', lifetimeMin: 5 });
+    });
+    let k5Ok = 'not built';
+    try {
+      k5Ok = stsCrypto.verifyXmlSignature(k5.out, {
+        element: 'Assertion', certPem: helpers.STS.xml.certPem }).ok;
+    } catch (e) {
+      k5Ok = String((e && e.message) || e);
+    }
+    note(heldNothing(k5) && k5Ok === true,
+         'K5. a SAML 1.1 assertion (saml11.buildSaml11AssertionAsync) is ' +
+         'signed off the loop and verifies', how(k5) + ' ' + k5Ok);
+    const RSA_SHA256 = 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256';
+    const qs = 'SAMLResponse=abc&RelayState=k6&SigAlg=' +
+               encodeURIComponent(RSA_SHA256);
+    const k6 = await offTheLoop(function () {
+      return stsCrypto.signQueryStringOffLoop(qs,
+        helpers.STS.xmlSigner.privateKeyPem, RSA_SHA256,
+        helpers.STS.xmlSigner.privateKey);
+    });
+    note(heldNothing(k6) && nodeCrypto.verify('sha256', Buffer.from(qs),
+           stsCrypto.publicKeyOf(helpers.STS.xml.certPem),
+           Buffer.from(String(k6.out || ''), 'base64')),
+         'K6. an HTTP-Redirect binding signature ' +
+         '(stsCrypto.signQueryStringOffLoop) is made off the loop',
+         how(k6));
+    const k7doc = '<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:' +
+      '2.0:metadata" ID="_k7" entityID="https://k7.test"/>';
+    const k7 = await offTheLoop(function () {
+      return stsCrypto.signXmlOffLoop(k7doc, {
+        privateKeyPem: helpers.STS.xmlSigner.privateKeyPem,
+        privateKey: helpers.STS.xmlSigner.privateKey,
+        certPem: helpers.STS.xmlSigner.certPem,
+        placement: stsCrypto.PLACEMENT.FIRST, refUri: '#_k7' });
+    });
+    let k7Ok = 'not signed';
+    try {
+      k7Ok = stsCrypto.verifyXmlSignature(k7.out, {
+        element: 'EntityDescriptor',
+        certPem: helpers.STS.xml.certPem }).ok;
+    } catch (e) {
+      k7Ok = String((e && e.message) || e);
+    }
+    note(heldNothing(k7) && k7Ok === true,
+         'K7. any XML document (stsCrypto.signXmlOffLoop: metadata, ' +
+         'protocol messages) is signed off the loop and verifies',
+         how(k7) + ' ' + k7Ok);
+    const sealedK = stsCrypto.encryptElement(plainXml,
+      helpers.STS.xml.certPem, { keyTransport: 'rsa-oaep-mgf1p' });
+    const k8 = await offTheLoop(function () {
+      return helpers.decryptOwnElementOffLoop(sealedK);
+    });
+    note(heldNothing(k8) && k8.out && k8.out.ok && k8.out.xml === plainXml,
+         'K8. an EncryptedAssertion (helpers.decryptOwnElementOffLoop: ' +
+         'SAML Single Logout\'s EncryptedID, an RFC 7522 grant) opens ' +
+         'off the loop', how(k8) + ' ' + (k8.out && k8.out.why));
+    const answers = await stsCrypto.hsmAnswersFor(function () {
+      return helpers.decryptOwnElement(sealedK);
+    });
+    const k9 = stsCrypto.withHsmAnswers(answers, function () {
+      return helpers.decryptOwnElement(sealedK);
+    });
+    const k9Bare = helpers.decryptOwnElement(sealedK);
+    note(answers.size >= 1 && k9 && k9.ok && k9.xml === plainXml &&
+         k9Bare && !k9Bare.ok,
+         'K9. answers fetched ahead (stsCrypto.hsmAnswersFor: a WS-Trust ' +
+         'encrypted request) open the synchronous door, which without them ' +
+         'refuses', answers.size + ' answer(s); bare: ' +
+         (k9Bare && k9Bare.why));
+    const k10 = await offTheLoop(function () {
+      return stsCrypto.decryptJweCompactAsync(rsaJwe,
+        { privateKey: keys.privateKey, allowedEnc: ['A256GCM'] });
+    });
+    const k11 = await offTheLoop(function () {
+      return stsCrypto.decryptJweCompactAsync(ecJwe,
+        { privateKey: es.privateKey, allowedEnc: ['A128GCM'] });
+    });
+    note(heldNothing(k10) && heldNothing(k11) &&
+         k10.out.plaintext === 'jwe-rsa' && k11.out.plaintext === 'jwe-ec',
+         'K10. a JWE to the RS256 key (RSA-OAEP) and to the ES256 key ' +
+         '(ECDH-ES+A128KW) opens off the loop', how(k10) + ' / ' + how(k11));
+    const WsModel = require(ROOT + '/ws-trust/ws_model');
+    const wstrust = require(ROOT + '/ws-trust/wstrust');
+    const k12 = await offTheLoop(function () {
+      return wstrust.buildTokenAsync(WsModel.term('wst.tokenType', 'saml2'),
+        'k12-alice', 'https://rp.k12.test', 5);
+    });
+    const k12j = await offTheLoop(function () {
+      return wstrust.buildTokenAsync(WsModel.term('wst.tokenType', 'jwt'),
+        'k12-alice', 'https://rp.k12.test', 5);
+    });
+    let k12Ok = 'not built';
+    try {
+      k12Ok = stsCrypto.verifyXmlSignature(k12.out.xml, {
+        element: 'Assertion', certPem: helpers.STS.xml.certPem }).ok;
+    } catch (e) {
+      k12Ok = String((e && e.message) || e);
+    }
+    const k12Jwt = /<wsse:BinarySecurityToken[^>]*>([^<]+)</.exec(
+      String((k12j.out || {}).xml || ''));
+    let k12jOk = false;
+    try {
+      k12jOk = !!helpers.verifyOwnJws(k12Jwt ? k12Jwt[1] : '');
+    } catch (e) {
+      k12jOk = String((e && e.message) || e);
+    }
+    note(heldNothing(k12) && heldNothing(k12j) && k12Ok === true &&
+         k12jOk === true,
+         'K11. a WS-Trust token (wstrust.buildTokenAsync), SAML 2.0 and JWT, ' +
+         'is signed off the loop and verifies',
+         how(k12) + ' ' + k12Ok + ' / ' + how(k12j) + ' ' + k12jOk);
+    const syncXml = await refusedWith(function () {
+      return stsCrypto.signXml(k7doc, {
+        privateKeyPem: helpers.STS.xmlSigner.privateKeyPem,
+        certPem: helpers.STS.xmlSigner.certPem });
+    });
+    const syncDec = stsCrypto.decryptElement(sealedK,
+                                             keys.xmlKey.privateKeyPem);
+    note(/STS-KEYS-0209/.test(syncXml) && syncDec && !syncDec.ok,
+         'K12. the synchronous doors themselves still refuse an HSM key ' +
+         'while the setting is off (STS-KEYS-0209), signing and decrypting',
+         syncXml.slice(0, 120) + ' | ' + (syncDec && syncDec.why));
+    // A key set made and rotated with the setting off: the certificate
+    // over each RSA key is signed with C_SignAsync (prepareKeySet()).
+    const realmsK = require(ROOT + '/common/realms');
+    let k13 = 'not made';
+    try {
+      realmsK.create({ id: 'p8k' });
+      const madeK = await offTheLoop(function () {
+        return helpers.prepareKeySet('p8k');
+      });
+      const setK = helpers.stsKeysFor.of('p8k');
+      const certK = new nodeCrypto.X509Certificate(setK.certPem);
+      const xmlCertK = new nodeCrypto.X509Certificate(
+        setK.xmlKey.selfSignedCertPem || setK.xmlKey.certPem);
+      k13 = (stsCrypto.isHsmKey(setK.privateKeyPem) &&
+             stsCrypto.isHsmKey(setK.xmlKey.privateKeyPem) &&
+             certK.verify(setK.privateKey.publicKey) &&
+             certK.publicKey.export({ format: 'jwk' }).n ===
+               setK.privateKey.publicKey.export({ format: 'jwk' }).n &&
+             !!xmlCertK && (WHICH === 'softhsm' || madeK.fired))
+        ? 'made' : 'wrong: ' + how(madeK);
+    } catch (e) {
+      k13 = String((e && e.stack) || e).slice(0, 400);
+    }
+    note(k13 === 'made',
+         'K13. a realm\'s key set is made in the HSM with the setting off, ' +
+         'its self-signed certificates signed off the loop', k13);
+    let k14 = 'not minted';
+    try {
+      const mintedK = await realmsK.run(realmsK.get('p8k'), function () {
+        return helpers.ensureNextGenerations('p8k',
+                                             { units: ['jose:RS256'] });
+      });
+      const nextK = helpers.standbyOf(helpers.stsKeysFor.of('p8k'),
+                                      'jose:RS256')
+        .filter(function (one) { return one.role === 'next'; })[0];
+      k14 = mintedK.ok && nextK && stsCrypto.isHsmKey(nextK.privateKey) &&
+            new nodeCrypto.X509Certificate(nextK.certPem)
+              .verify(nextK.privateKey.publicKey)
+        ? 'minted' : 'wrong: ' + JSON.stringify(mintedK);
+    } catch (e) {
+      k14 = String((e && e.stack) || e).slice(0, 400);
+    }
+    note(k14 === 'minted',
+         'K14. a rotation\'s next RSA key is made with the setting off, its ' +
+         'certificate signed off the loop', k14);
+    // The protocol modules' own async twins (#1955 P8 follow-up): signed
+    // metadata, SAML and WS-Federation, and a published JWT.
+    const docs = [
+      ['K16. SAML 2.0 IdP metadata (saml2_sso.metadataForAsync)',
+       function () {
+         return require(ROOT + '/saml/saml2_sso')
+           .metadataForAsync('https://p8.test', '');
+       }, 'EntityDescriptor'],
+      ['K17. SAML 1.1 metadata (saml11_sso.metadataForAsync)',
+       function () {
+         return require(ROOT + '/saml/saml11_sso')
+           .metadataForAsync('https://p8.test', '');
+       }, 'EntityDescriptor'],
+      ['K18. WS-Federation metadata (wsfed.federationMetadataAsync)',
+       function () {
+         return require(ROOT + '/ws-federation/wsfed')
+           .federationMetadataAsync('https://p8.test');
+       }, 'EntityDescriptor']
+    ];
+    for (let d = 0; d < docs.length; d++) {
+      const r = await offTheLoop(docs[d][1]);
+      const xml = r.out && typeof r.out === 'object' && r.out.xml
+        ? r.out.xml : r.out;
+      let ok = 'not signed';
+      try {
+        ok = /<ds:Signature/.test(String(xml)) &&
+             stsCrypto.verifyXmlSignature(String(xml), {
+               element: docs[d][2],
+               certPem: helpers.STS.xml.certPem }).ok;
+      } catch (e) {
+        ok = String((e && e.message) || e);
+      }
+      note(heldNothing(r) && ok === true,
+           docs[d][0] + ' is signed off the loop and verifies',
+           how(r) + ' ' + ok);
+    }
+    const k19 = await offTheLoop(function () {
+      return require(ROOT + '/oauth-oidc/oauth2').signPublishedDocumentAsync(
+        { sub: 'k19' }, 'https://p8.test', 300, 'oauth-signed-metadata');
+    });
+    let k19Ok = false;
+    try {
+      k19Ok = !!helpers.verifyOwnJws(k19.out);
+    } catch (e) {
+      k19Ok = String((e && e.message) || e);
+    }
+    note(heldNothing(k19) && k19Ok === true,
+         'K19. a published JWT — RFC 8414 signed_metadata, AuthZEN and ' +
+         'OpenID4VCI metadata (oauth2.signPublishedDocumentAsync) — is ' +
+         'signed off the loop and verifies', how(k19) + ' ' + k19Ok);
+    if (WHICH === 'softhsm') {
+      Object.keys(unpatched).forEach(function (name) {
+        realLib[name] = unpatched[name];
+      });
+      Object.keys(recorded).forEach(function (name) {
+        if (recorded[name]) {
+          realLib[name] = recorded[name];
+        } else {
+          delete realLib[name];
+        }
+      });
+      note(blockingMade.length === 0,
+           'K15. no door called a blocking C_Sign, C_Decrypt or C_DeriveKey ' +
+           'with the setting off', JSON.stringify(blockingMade));
+      note(syncMade.length === 0 && heldToken.entry.control.started >= 1,
+           'K20. nor any other blocking PKCS#11 call on this thread — the ' +
+           'sessions were opened and logged in, the keys found again, each ' +
+           'operation begun and the key-set certificates\' public keys read ' +
+           'by the control thread', JSON.stringify(syncMade.slice(0, 40)) +
+           ' (' + syncMade.length + ' call(s)); control threads started: ' +
+           heldToken.entry.control.started);
+    } else {
+      const made = binding.slowAsyncOnly(0);
+      note(made.length === 0,
+           'K15. no door called a blocking C_Sign, C_Decrypt or C_DeriveKey ' +
+           'with the setting off', JSON.stringify(made));
+    }
+    config.setOverride('keys.pkcs11SynchronousSign', true);
+
     if (WHICH !== 'softhsm') {
       // A KEY MADE BEFORE THE KEYS COULD DECRYPT: its CKA_DECRYPT and
       // CKA_DERIVE taken away, as the first cut of P8 made them.
@@ -404,9 +834,41 @@ function childMain() {
     const kid0 = keys.kid;
     keystore.reset();
     keystore.setStore(store);
+    // A START WITH NOTHING RESOLVED (#1955 P8 follow-up): the keystore finds
+    // every stored HSM key through the control thread before it finishes,
+    // so reading the set after it makes no blocking PKCS#11 call here.
+    stsCrypto.forgetHsmKeys();
     await keystore.start();
     helpers.resetStsKeys();
+    const startLib = secrets.heldSigningToken().token.entry.lib;
+    const startCalls = [];
+    const startSaved = {};
+    if (WHICH === 'softhsm') {
+      Object.getOwnPropertyNames(Object.getPrototypeOf(startLib))
+        .forEach(function (name) {
+          if (!/^C_/.test(name) || /Async$/.test(name)) {
+            return;
+          }
+          startSaved[name] = true;
+          const through = startLib[name];
+          startLib[name] = function () {
+            startCalls.push(name);
+            return through.apply(startLib, arguments);
+          };
+        });
+    }
     const back = keysNow();
+    void back.kid;
+    void (back.extraKeys || []).length;
+    if (WHICH === 'softhsm') {
+      Object.keys(startSaved).forEach(function (name) {
+        delete startLib[name];
+      });
+      note(startCalls.length === 0,
+           'E2. the keystore\'s start found the stored HSM keys off the ' +
+           'event loop: reading the restored set made no blocking PKCS#11 ' +
+           'call', JSON.stringify(startCalls.slice(0, 20)));
+    }
     const rs2 = stsCrypto.signJws({ sub: 'p8-again' }, back.privateKey,
       { algorithm: 'RS256', keyid: back.kid });
     let rs2Ok = false;
@@ -514,6 +976,45 @@ function childMain() {
         stsCrypto.decryptElement(sealedM, k.xmlKey.privateKeyPem);
       }
       const decSync = Number(process.hrtime.bigint() - a) / 1e6 / 50;
+      // OFF THE LOOP (#1955 P8 follow-up): the same operations through the
+      // asynchronous doors, N at once — wall time per operation, and the
+      // longest the event loop went without turning while they ran.
+      const lag = { worst: 0, last: Date.now(), on: true };
+      const beat = function () {
+        const now = Date.now();
+        lag.worst = Math.max(lag.worst, now - lag.last);
+        lag.last = now;
+        if (lag.on) {
+          setTimeout(beat, 1);
+        }
+      };
+      setTimeout(beat, 1);
+      a = process.hrtime.bigint();
+      await Promise.all(Array.from({ length: N }, function (x, i) {
+        return stsCrypto.signJwsOffLoop({ sub: 'm' + i }, k.privateKey,
+                                        { algorithm: 'RS256' });
+      }));
+      const rsAsync = Number(process.hrtime.bigint() - a) / 1e6 / N;
+      a = process.hrtime.bigint();
+      await Promise.all(Array.from({ length: 50 }, function () {
+        return stsCrypto.signXmlOffLoop(xmlDoc,
+          { privateKeyPem: k.xmlKey.privateKeyPem,
+            certPem: helpers.STS.xml.certPem });
+      }));
+      const xmlAsync = Number(process.hrtime.bigint() - a) / 1e6 / 50;
+      a = process.hrtime.bigint();
+      await Promise.all(Array.from({ length: 50 }, function () {
+        return stsCrypto.decryptElementOffLoop(sealedM,
+                                               k.xmlKey.privateKeyPem);
+      }));
+      const decAsync = Number(process.hrtime.bigint() - a) / 1e6 / 50;
+      lag.on = false;
+      note(true, 'H3. off the loop, measured: RS256 ' + rsAsync.toFixed(3) +
+           ' ms each with ' + N + ' at once; a SAML signature ' +
+           xmlAsync.toFixed(3) + ' ms each with 50 at once; an XML ' +
+           'RSA-OAEP decryption ' + decAsync.toFixed(3) + ' ms each with ' +
+           '50 at once; the event loop\'s longest gap meanwhile ' +
+           lag.worst + ' ms');
       note(true, 'H2. what holds the event loop, measured: a software ' +
            'RS256 (RSA-2048) signature ' + softSync.toFixed(3) + ' ms in ' +
            'place against ' + rsSync.toFixed(3) + ' ms in the HSM; a SAML ' +
@@ -534,6 +1035,7 @@ function childMain() {
         .fakeBinding({ modulePath: nosyncPath,
                        tokens: [{ label: 'nosync', pin: '4321' }] });
       delete b2.PKCS11.prototype.C_SignAsync;
+      delete b2.PKCS11.prototype.C_DeriveKeyAsync;
       const token = pkcs11.openToken(b2, {
         modulePath: nosyncPath, tokenLabel: 'nosync', pin: '4321' });
       const pair = token.generateKeyPair({ kty: 'EC', crv: 'P-256' },
@@ -556,6 +1058,22 @@ function childMain() {
       note(/STS-KEYS-0209/.test(noAsync) && /STS-KEYS-0209/.test(noSync),
            'J4. with no C_SignAsync, sign() and signSync refuse while ' +
            'synchronous signing is off', noAsync + ' | ' + noSync);
+      const peerJwk = nodeCrypto.generateKeyPairSync('ec',
+        { namedCurve: 'prime256v1' }).publicKey.export({ format: 'jwk' });
+      const peerPoint = Buffer.concat([Buffer.from([4]),
+        Buffer.from(peerJwk.x, 'base64url'),
+        Buffer.from(peerJwk.y, 'base64url')]);
+      let noDerive = 'not refused';
+      try {
+        await token.deriveEcdh(pair.key, peerPoint, 32, true);
+        noDerive = 'derived';
+      } catch (e) {
+        noDerive = (codeOf(e) || '') + ' ' + ((e && e.message) || e);
+      }
+      note(/STS-KEYS-0209/.test(noDerive),
+           'J4a. with no C_DeriveKeyAsync, an ECDH agreement asked off the ' +
+           'loop refuses while the setting is off, before C_DeriveKey',
+           noDerive);
       config.setOverride('keys.pkcs11SynchronousSign', true);
       let blocked = null;
       try {
@@ -570,6 +1088,315 @@ function childMain() {
                                       Buffer.from('def'));
       note(Buffer.isBuffer(fallen) && fallen.length > 0,
            'J6. sign() falls back to C_Sign only while the setting is on');
+      let derivedOn = null;
+      try {
+        derivedOn = await token.deriveEcdh(pair.key, peerPoint, 32, true);
+      } catch (e) {
+        derivedOn = String((e && e.message) || e);
+      }
+      note(Buffer.isBuffer(derivedOn) && derivedOn.length === 32,
+           'J6a. and the agreement falls back to C_DeriveKey only while the ' +
+           'setting is on', Buffer.isBuffer(derivedOn) ? derivedOn.length
+                                                     : derivedOn);
+    }
+
+    // ------------------------------------------------------------ L
+    // A SOFTWARE KEY'S OUTPUT IS BYTE-IDENTICAL through the off-the-loop
+    // twins (#1955 P8 follow-up): the twin IS the synchronous door, called
+    // and resolved. RS256 and RSA-SHA256 (PKCS#1 v1.5) are deterministic, so
+    // the same input signs to the same bytes.
+    config.setOverride('keys.pkcs11SynchronousSign', false);
+    const softPair = nodeCrypto.generateKeyPairSync('rsa',
+      { modulusLength: 2048 });
+    const softPem = softPair.privateKey.export({ type: 'pkcs8',
+                                                 format: 'pem' });
+    const jwsOpts = { algorithm: 'RS256', keyid: 'soft', noTimestamp: true };
+    const softSync = stsCrypto.signJws({ sub: 'l1', n: 1 }, softPem,
+                                       jwsOpts);
+    const softTwin = await stsCrypto.signJwsOffLoop({ sub: 'l1', n: 1 },
+                                                    softPem, jwsOpts);
+    note(typeof softSync === 'string' && softSync === softTwin,
+         'L1. a software RS256 JWS is the same bytes through ' +
+         'signJwsOffLoop() as through signJws()',
+         String(softSync).slice(-24) + ' / ' + String(softTwin).slice(-24));
+    const softCert = stsCrypto.selfSignedRsaCertificate({
+      bits: 2048, rsaPrivateKeyPem: softPem, commonName: 'l2',
+      serialPrefix: 'l2', years: 1 });
+    const lDoc = '<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:' +
+      '2.0:metadata" ID="_l2" entityID="https://l2.test"/>';
+    const xmlOpts = { privateKeyPem: softPem, certPem: softCert.certPem,
+                      placement: stsCrypto.PLACEMENT.FIRST, refUri: '#_l2' };
+    const xmlSyncL = stsCrypto.signXml(lDoc, xmlOpts);
+    const xmlTwinL = await stsCrypto.signXmlOffLoop(lDoc, xmlOpts);
+    note(typeof xmlSyncL === 'string' && xmlSyncL === xmlTwinL,
+         'L2. a software key\'s XML signature is the same bytes through ' +
+         'signXmlOffLoop() as through signXml()',
+         String(xmlSyncL).length + ' / ' + String(xmlTwinL).length);
+    const lQs = 'SAMLRequest=l3&SigAlg=' + encodeURIComponent(
+      'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256');
+    const qsSync = stsCrypto.signQueryString(lQs, softPem,
+      'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256');
+    const qsTwin = await stsCrypto.signQueryStringOffLoop(lQs, softPem,
+      'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256');
+    note(qsSync === qsTwin && !!qsSync,
+         'L3. a software key\'s Redirect-binding signature is the same ' +
+         'bytes off the loop');
+    const lSealed = stsCrypto.encryptElement(plainXml, softCert.certPem,
+                                             { keyTransport: 'rsa-oaep' });
+    const decSyncL = stsCrypto.decryptElement(lSealed, softPem);
+    const decTwinL = await stsCrypto.decryptElementOffLoop(lSealed, softPem);
+    note(decSyncL && decSyncL.ok && decTwinL && decTwinL.ok &&
+         decSyncL.xml === decTwinL.xml && decSyncL.xml === plainXml,
+         'L4. a software key\'s XML decryption answers the same through ' +
+         'decryptElementOffLoop()', (decTwinL && decTwinL.why) || '');
+    config.setOverride('keys.pkcs11SynchronousSign', true);
+    // THE SHARED BUILDERS (#1955 P8 follow-up): the twins of a published
+    // JWT and of the PEP proxy's Response share every step but the
+    // signature. RS256 is deterministic, so a published JWT is the same
+    // bytes both ways within one second (asked again across a boundary).
+    const oauth2L = require(ROOT + '/oauth-oidc/oauth2');
+    let l5 = 'not signed';
+    for (let i = 0; i < 3; i++) {
+      const second0 = Math.floor(Date.now() / 1000);
+      const a5 = oauth2L.signPublishedDocument({ sub: 'l5' },
+        'https://l5.test', 300, 'oauth-signed-metadata');
+      const b5 = await oauth2L.signPublishedDocumentAsync({ sub: 'l5' },
+        'https://l5.test', 300, 'oauth-signed-metadata');
+      if (Math.floor(Date.now() / 1000) !== second0) {
+        continue;
+      }
+      l5 = a5 === b5 ? 'same' : 'different: ' + String(a5).slice(-20) +
+                                 ' / ' + String(b5).slice(-20);
+      break;
+    }
+    note(l5 === 'same',
+         'L5. a published JWT is the same bytes through ' +
+         'signPublishedDocumentAsync() as through signPublishedDocument()',
+         l5);
+    // The Response carries fresh IDs and instants, so it is compared with
+    // those (and the digests and signatures over them) blanked.
+    const sso2L = require(ROOT + '/saml/saml2_sso');
+    const blank = function (xml) {
+      return String(xml || '')
+        .replace(new RegExp('\\b(ID|IssueInstant|NotBefore|NotOnOrAfter|' +
+          'AuthnInstant|SessionIndex|SessionNotOnOrAfter|URI)="[^"]*"', 'g'),
+                 '$1=""')
+        .replace(/<(ds:DigestValue|ds:SignatureValue)>[^<]*</g, '<$1><')
+        .replace(/>_[0-9a-f]{20,}</g, '><');
+    };
+    let l6 = 'not built';
+    try {
+      const sessionL = { id: 'l6-session', user: { username: 'l6-alice' },
+                         authTime: Math.floor(Date.now() / 1000),
+                         amr: ['pwd'] };
+      const optsL = { session: sessionL, spEntityId: 'https://sp.l6.test',
+                      acsUrl: 'https://sp.l6.test/acs' };
+      const a6 = sso2L.pepProxyResponse(optsL);
+      const b6 = await sso2L.pepProxyResponseAsync(optsL);
+      l6 = a6.ok && b6.ok && blank(a6.xml) === blank(b6.xml) &&
+           /<ds:SignatureValue>/.test(a6.xml)
+        ? 'same' : 'different: ' + JSON.stringify([a6.ok, b6.ok,
+                                                  a6.why, b6.why]);
+    } catch (e) {
+      l6 = String((e && e.stack) || e).slice(0, 400);
+    }
+    note(l6 === 'same',
+         'L6. the PEP proxy\'s Response is the same document both ways, ' +
+         'but for its fresh identifiers, instants and the signatures over ' +
+         'them', l6);
+
+    // ------------------------------------------------------------ M
+    // TWO TOKENS ON ONE MODULE RECOVER TOGETHER (#1955 P8 follow-up): an
+    // outage met on both at once initialises the shared module again ONCE,
+    // after the operations holding its sessions drain; every session from
+    // before is forgotten, none is lent again, and both tokens sign after
+    // it. The fake loses its device; SoftHSM2 is told it did (the recovery
+    // itself, C_Finalize and C_Initialize, is real).
+    {
+      const pkcs11M = require(ROOT + '/common/crypto_impl/pkcs11');
+      let bindingM = binding;
+      let modulePathM = String(process.env.STS_KEYS_PKCS11_MODULE);
+      let first;
+      if (WHICH === 'softhsm') {
+        first = heldToken;
+      } else {
+        modulePathM = '/fake/libfake-pkcs11-pair.so';
+        bindingM = require(ROOT + '/tests/tools/fake-pkcs11.js')
+          .fakeBinding({ modulePath: modulePathM,
+                         tokens: [{ label: 'one', pin: '4321' },
+                                  { label: 'second', pin: '4321' }] });
+        first = pkcs11M.openToken(bindingM, { modulePath: modulePathM,
+          tokenLabel: 'one', pin: '4321', maxSessions: 3 });
+      }
+      const second = pkcs11M.openToken(bindingM, { modulePath: modulePathM,
+        tokenLabel: 'second', pin: '4321', maxSessions: 3 });
+      let m = 'not run';
+      try {
+        const keyA = await first.generateKeyPairAsync(
+          { kty: 'EC', crv: 'P-256' }, 'm-a', nodeCrypto.randomBytes(8));
+        const keyB = await second.generateKeyPairAsync(
+          { kty: 'EC', crv: 'P-256' }, 'm-b', nodeCrypto.randomBytes(8));
+        const epoch0 = first.entry.epoch;
+        const sameEntry = first.entry === second.entry;
+        const signs = function (n) {
+          const out = [];
+          for (let i = 0; i < n; i++) {
+            out.push(first.sign(keyA.key, 'ES256', Buffer.from('a' + i)));
+            out.push(second.sign(keyB.key, 'ES256', Buffer.from('b' + i)));
+          }
+          return out;
+        };
+        const before = signs(3);
+        let recovered;
+        if (WHICH === 'softhsm') {
+          // Both tokens meet a lost device while their signatures are in
+          // flight.
+          recovered = Promise.all([first.recover({ code: 0x30,
+                                                   message: 'test' }),
+                                   second.recover({ code: 0x30,
+                                                    message: 'test' })]);
+        } else {
+          bindingM.loseDevice();
+          recovered = Promise.resolve();
+        }
+        const settled = await Promise.allSettled(before.concat([recovered]));
+        const after = await Promise.allSettled(signs(2));
+        const failed = settled.concat(after).filter(function (r) {
+          return r.status !== 'fulfilled';
+        }).map(function (r) {
+          return String((r.reason && r.reason.message) || r.reason);
+        });
+        const verifies = await first.sign(keyA.key, 'ES256',
+                                          Buffer.from('m-check'));
+        const ok = nodeCrypto.verify('sha256', Buffer.from('m-check'),
+          { key: keyA.publicKey, dsaEncoding: 'ieee-p1363' }, verifies);
+        m = JSON.stringify({ sameEntry: sameEntry,
+          epochMoved: first.entry.epoch - epoch0,
+          failed: failed, verifies: ok,
+          lent: [first.lent, second.lent],
+          inflight: first.entry.inflight,
+          open: [first.open, second.open],
+          recovering: !!first.entry.recovering });
+        const parsed = JSON.parse(m);
+        m = sameEntry && parsed.epochMoved === 1 && !failed.length && ok &&
+            parsed.inflight === 0 && !parsed.recovering &&
+            first.lent === 0 && second.lent === 0 &&
+            first.open >= 1 && first.open <= first.maxSessions + 1 &&
+            second.open >= 1 && second.open <= second.maxSessions + 1
+          ? 'recovered ' + m : 'wrong ' + m;
+      } catch (e) {
+        m = String((e && e.stack) || e).slice(0, 600);
+      }
+      note(/^recovered/.test(m),
+           'M1. two tokens on one module meeting an outage at once recover ' +
+           'with ONE re-initialisation, after their operations drain, and ' +
+           'both sign after it', m);
+      second.close();
+    }
+
+    // ------------------------------------------------------------ N
+    // ANOTHER THREAD'S OUTAGE (#1955 P8 follow-up, SoftHSM2): C_Finalize is
+    // process-wide. This thread initialises the module again and says so on
+    // the outage channel; a worker thread on the same module hears it, and
+    // when it then meets a device error on a session opened before, it does
+    // NOT finalize again — so this thread's fresh sessions survive and its
+    // next signature needs no reconnect.
+    if (WHICH === 'softhsm') {
+      const workerThreads = require('worker_threads');
+      const wcode = [
+        "const { parentPort, workerData } = require('worker_threads');",
+        "const binding = require(workerData.bindingPath);",
+        "const pk = require(workerData.root +",
+        "  '/common/crypto_impl/pkcs11');",
+        "(async function () {",
+        "  const t = pk.openToken(binding, {",
+        "    modulePath: workerData.modulePath,",
+        "    tokenLabel: 'second', pin: '4321', maxSessions: 2 });",
+        "  const k = await t.generateKeyPairAsync({ kty: 'EC', crv: 'P-256' },",
+        "    'n', require('crypto').randomBytes(8));",
+        "  await t.sign(k.key, 'ES256', Buffer.from('x'));",
+        "  const epoch0 = t.entry.epoch;",
+        "  parentPort.on('message', async function (m) {",
+        "    try {",
+        "      if (m.ask === 'epoch') {",
+        "        parentPort.postMessage({ epoch: t.entry.epoch });",
+        "      } else if (m.ask === 'outage') {",
+        "        await t.recover({ code: 0x30, message: 'test' }, epoch0);",
+        "        const sig = await t.sign(k.key, 'ES256', Buffer.from('y'));",
+        "        parentPort.postMessage({ recovered: true, sig: sig.length });",
+        "      }",
+        "    } catch (e) {",
+        "      parentPort.postMessage({ error: String((e && e.stack) || e) });",
+        "    }",
+        "  });",
+        "  parentPort.postMessage({ ready: true, epoch: epoch0 });",
+        "})().catch(function (e) {",
+        "  parentPort.postMessage({ error: String((e && e.stack) || e) });",
+        "});"].join('\n');
+      let n = 'not run';
+      const w = new workerThreads.Worker(wcode, { eval: true,
+        workerData: { root: ROOT, bindingPath: process.env.PS_PKCS11JS,
+                      modulePath: String(process.env.STS_KEYS_PKCS11_MODULE) }
+      });
+      const nextOf = function (pred) {
+        return new Promise(function (resolve) {
+          const f = function (msg) {
+            if (msg.error || pred(msg)) {
+              w.off('message', f);
+              resolve(msg);
+            }
+          };
+          w.on('message', f);
+        });
+      };
+      try {
+        const ready = await nextOf(function (msg) {
+          return msg.ready;
+        });
+        if (ready.error) {
+          throw new Error(ready.error);
+        }
+        const mainKey = await heldToken.generateKeyPairAsync(
+          { kty: 'EC', crv: 'P-256' }, 'n-main', nodeCrypto.randomBytes(8));
+        await heldToken.recover({ code: 0x30, message: 'test' });
+        let moved = { epoch: ready.epoch };
+        for (let i = 0; i < 50 && moved.epoch === ready.epoch; i++) {
+          await new Promise(function (resolve) {
+            setTimeout(resolve, 20);
+          });
+          w.postMessage({ ask: 'epoch' });
+          moved = await nextOf(function (msg) {
+            return msg.epoch !== undefined;
+          });
+        }
+        await heldToken.sign(mainKey.key, 'ES256', Buffer.from('n1'));
+        const before = heldToken.reconnects;
+        w.postMessage({ ask: 'outage' });
+        const got = await nextOf(function (msg) {
+          return msg.recovered;
+        });
+        const after = await heldToken.sign(mainKey.key, 'ES256',
+                                           Buffer.from('n2'));
+        n = JSON.stringify({ heard: moved.epoch !== ready.epoch,
+                             worker: got.recovered ? 'signed' : got.error,
+                             reconnects: heldToken.reconnects - before,
+                             signed: nodeCrypto.verify('sha256',
+                               Buffer.from('n2'),
+                               { key: mainKey.publicKey,
+                                 dsaEncoding: 'ieee-p1363' }, after) });
+        const parsed = JSON.parse(n);
+        n = (parsed.heard && parsed.worker === 'signed' &&
+             parsed.reconnects === 0 && parsed.signed ? 'held ' : 'wrong ') +
+            n;
+      } catch (e) {
+        n = String((e && e.stack) || e).slice(0, 600);
+      }
+      await w.terminate();
+      note(/^held/.test(n),
+           'N1. a worker thread hears this thread initialise the module ' +
+           'again, and an outage it then meets on an older session does not ' +
+           'finalize it again: this thread signs after it with no reconnect',
+           n);
     }
   })().catch(function (e) {
     note(false, 'the child ran to the end', e && e.stack);
@@ -661,8 +1488,8 @@ module.exports = {
   name: 'pkcs11_signing',
   describe: 'a realm\'s classical signing keys in a PKCS#11 HSM: made there, ' +
             'published, signing JWTs and SAML, restored, rotated, refused ' +
-            'where they cannot be held, and refusing a synchronous signature ' +
-            'while keys.pkcs11SynchronousSign is off — against a fake module ' +
-            'and SoftHSM2',
+            'where they cannot be held, and signing and decrypting off the ' +
+            'event loop on every door while keys.pkcs11SynchronousSign is ' +
+            'off — against a fake module and SoftHSM2',
   run: run
 };

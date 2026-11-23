@@ -68,6 +68,17 @@ on:
     branches: [develop, main]
   pull_request:
     branches: [develop, main]
+  # THE MERGE QUEUE ON DEVELOP (rcbj, 2026-11-23). Two agents merging at once
+  # landed pull requests before their reviews and cancelled every develop
+  # push run, so develop's ruleset sends every merge through GitHub's merge
+  # queue, one at a time. The queue needs its required checks to run on the
+  # merge group: mirror, dependency-windows and rust do, a few minutes each.
+  # build (and everything that needs it) and openapi-breaking do NOT run on a
+  # merge group: build alone is 30-50 minutes, and a queue that waits on it
+  # lands one pull request an hour. The pull request's own run and the push
+  # run after the merge still run them, and the whole suite is a dispatch.
+  merge_group:
+    types: [checks_requested]
   # THE LONG JOBS RUN ON A MANUAL DISPATCH ONLY (rcbj, 2026-11-14): the six
   # mode jobs and the two OpenID conformance jobs are hours of runner time
   # each, and the account has a finite number of them. A push or a pull
@@ -195,6 +206,8 @@ jobs:
   # and the upload of three to four compressed gigabytes about ten more.
   # ---------------------------------------------------------------------------
   build:
+    # Not on a merge group: see *THE MERGE QUEUE ON DEVELOP* above.
+    if: github.event_name != 'merge_group'
     needs: mirror
     runs-on: ubuntu-latest
     timeout-minutes: 50

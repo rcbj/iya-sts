@@ -1287,10 +1287,6 @@
     "en": "33209f967f070175",
     "text": "Mga aksiyon sa hardware token"
   },
-  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
-    "en": "f46d01f7581b5379",
-    "text": "Mga naka-escrow na PIV key"
-  },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
     "text": "Mga outbound SCIM client"
@@ -2654,5 +2650,13 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (hinihingi ang client certificate, hindi kailanman kinakailangan)"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "Mga naka-escrow na PIV key"
+  },
+  "endpoints.route./admin-api/hardware-tokens/ssh-certificates.name": {
+    "en": "3bb1ef22ae2ed554",
+    "text": "Ang mga SSH user certificate ng isang tao"
   }
 }

@@ -2609,6 +2609,11 @@ class PasskeyPolicy {
         { credProtect: given.credProtect });
       out.credProtect = reported || 1;
       out.credProtectReported = reported !== null;
+      // A level the key reported with no trusted attestation behind it
+      // (the #1955 review): the door sent none, and says why.
+      if (given.credProtectUnattested === true) {
+        out.credProtectUnattested = true;
+      }
     }
     const attribute = this.enterpriseSerialAttribute(rules);
     if (has('serial')) {
@@ -2848,9 +2853,12 @@ class PasskeyPolicy {
       // #1955 P7: CTAP 2.1 section 12.1, at registration only.
       why = 'That passkey protects its credential at level ' +
             String(asked.credProtect || 1) +
-            (asked.credProtectReported === false
-              ? ' (it reported no credential protection, which is level 1)'
-              : '') +
+            (asked.credProtectUnattested === true
+              ? ' (its attestation is not trusted, so the level it ' +
+                'reported is not proof, and counts as level 1)'
+              : (asked.credProtectReported === false
+                ? ' (it reported no credential protection, which is ' +
+                  'level 1)' : '')) +
             ', and this realm requires level ' +
             String(policy.credProtectLevel || '') + ' (the passkey ' +
             'policy\'s credProtect, enforced). Use a security key that ' +

@@ -374,8 +374,17 @@ function signXml(xml, opts) {
       certPem: options.certPem,
       refUri: refUri,
       placement: options.placement || PLACEMENT.AFTER_ISSUER,
+      // OFF THE EVENT LOOP (#1955 P8 follow-up, 2026-11-23): handed a
+      // `hsmDeferred` by `signXmlOffLoop()`, the signer records SignedInfo's
+      // canonical octets and answers a placeholder, and that door makes the
+      // signature with C_SignAsync and writes it where the placeholder is.
+      // SignatureValue is outside SignedInfo, so nothing signed changes.
       signer: function (octets) {
-        return hsmKey.signSync(hsmAlg, Buffer.from(octets, 'binary'));
+        const input = Buffer.from(octets, 'binary');
+        if (options.hsmDeferred) {
+          return options.hsmDeferred.hold(hsmKey, hsmAlg, input);
+        }
+        return hsmKey.signSync(hsmAlg, input);
       }
     });
     const hsmXml = typeof hsmSigned === 'string' ? hsmSigned : hsmSigned.xml;
@@ -7843,7 +7852,7 @@ function rsaPairFromPem(pem) {
 // step (the same algorithm OID on both members, the same TBSCertificate)
 // with only the signature itself made by OpenSSL, so the certificate is the
 // one forge would have made, byte for byte under a deterministic padding.
-function signCertificateNatively(cert, privateKeyPem) {
+function signCertificateNatively(cert, privateKeyPem, hsmDeferred) {
   log.debug("Entering signCertificateNatively().");
   cert.md = forge.md.sha256.create();
   cert.signatureOid = cert.siginfo.algorithmOid =
@@ -7851,8 +7860,12 @@ function signCertificateNatively(cert, privateKeyPem) {
   cert.tbsCertificate = forge.pki.getTBSCertificate(cert);
   const tbs = Buffer.from(forge.asn1.toDer(cert.tbsCertificate).getBytes(),
                           'binary');
+  // `hsmDeferred` (#1955 P8 follow-up): `selfSignedRsaCertificateOffLoop()`
+  // signs the TBSCertificate with C_SignAsync and writes the signature in.
   cert.signature = (isHsmKey(privateKeyPem)
-    ? hsmKeyOf(privateKeyPem).signSync('RS256', tbs)
+    ? (hsmDeferred
+      ? hsmDeferred.hold(hsmKeyOf(privateKeyPem), 'RS256', tbs, cert)
+      : hsmKeyOf(privateKeyPem).signSync('RS256', tbs))
     : nodeCrypto.sign('sha256', tbs, privateKeyPem)).toString('binary');
   log.debug("Leaving signCertificateNatively().");
 }
@@ -7913,7 +7926,8 @@ function selfSignedRsaCertificate(opts) {
   }
   const privateKeyPem = hsmKey ? hsmKey.ref
     : forge.pki.privateKeyToPem(pair.privateKey);
-  signCertificateNatively(cert, hsmKey || privateKeyPem);
+  signCertificateNatively(cert, hsmKey || privateKeyPem,
+                          options.hsmDeferred);
   const certPem = forge.pki.certificateToPem(cert);
   log.debug('Leaving selfSignedRsaCertificate().');
   return {
@@ -15227,7 +15241,12 @@ function httpsigCheckKey(name, entry, key, purpose) {
     log.debug("Leaving httpsigCheckKey(). Secret.");
     return null;
   }
-  if (!(key instanceof nodeCrypto.KeyObject) || key.type === 'secret' ||
+  // A realm key in the HSM (#1955 P8 follow-up) answers `type`,
+  // `asymmetricKeyType` and `asymmetricKeyDetails` as a KeyObject does, and
+  // is checked by them; it signs and never verifies.
+  const hsmSigner = purpose === 'sign' && isHsmKey(key);
+  if ((!(key instanceof nodeCrypto.KeyObject) && !hsmSigner) ||
+      key.type === 'secret' ||
       (purpose === 'sign' && key.type !== 'private')) {
     log.debug("Leaving httpsigCheckKey(). Not an asymmetric key.");
     return httpsigRefuse('STS-KEYS-0131',
@@ -15281,8 +15300,20 @@ function httpsigCheckKey(name, entry, key, purpose) {
 // HTTP_SIGN, section 3.3. Throws whatever the primitive throws; callers map
 // it. A post-quantum or composite JWS algorithm is signed by
 // `jwsSignatureOver()`, the function that signs it inside a JWS.
-function httpsigRawSign(entry, key, data) {
+function httpsigRawSign(entry, key, data, hsmDeferred) {
   log.debug("Entering httpsigRawSign(). " + entry.kind);
+  // A REALM KEY IN THE HSM (#1955 P8 follow-up): C_Sign under the JWS name
+  // the entry's algorithm is in the engine — or, handed a `hsmDeferred` by
+  // `signHttpMessageOffLoop()`, the signature deferred to C_SignAsync.
+  if (isHsmKey(key)) {
+    const hsmKey = hsmKeyOf(key);
+    const hsmAlg = hsmSigningAlg(hsmKey, httpsigJwsName(entry));
+    const hsmOut = hsmDeferred
+      ? hsmDeferred.hold(hsmKey, hsmAlg, data)
+      : hsmKey.signSync(hsmAlg, data);
+    log.debug("Leaving httpsigRawSign(). In the HSM, " + hsmAlg + ".");
+    return hsmOut;
+  }
   let out;
   switch (entry.kind) {
     case 'jws-pq':
@@ -15309,6 +15340,26 @@ function httpsigRawSign(entry, key, data) {
   }
   log.debug("Leaving httpsigRawSign().");
   return out;
+}
+
+// The JWS name of an HTTP signature algorithm's entry, which is what the
+// PKCS#11 engine signs by: RFC 9421 section 3.3's rows map onto RS256,
+// PS512, ES256, ES384 and EdDSA, with the same hash, salt and curve.
+function httpsigJwsName(entry) {
+  log.debug("Entering httpsigJwsName(). " + entry.kind);
+  if (entry.jws) {
+    log.debug("Leaving httpsigJwsName(). " + entry.jws);
+    return entry.jws;
+  }
+  const bits = String(entry.hash || '').replace(/^sha/, '');
+  const named = entry.kind === 'rsa-v1_5' ? 'RS' + bits
+    : entry.kind === 'rsa-pss' ? 'PS' + bits
+    : entry.kind === 'ecdsa'
+      ? ({ prime256v1: 'ES256', secp384r1: 'ES384',
+           secp521r1: 'ES512' }[String(entry.curve)] || '')
+    : entry.kind === 'eddsa' ? 'EdDSA' : '';
+  log.debug("Leaving httpsigJwsName(). " + named);
+  return named;
 }
 
 // HTTP_VERIFY, section 3.3. The HMAC comparison is constant-time, and a
@@ -15434,7 +15485,9 @@ function signHttpMessage(message, options) {
   }
   let signingKey;
   try {
-    signingKey = httpsigKeyOf(entry, opts.key, 'sign');
+    // An HSM key's reference is its key object (#1955 P8 follow-up).
+    signingKey = isHsmKey(opts.key) ? hsmKeyOf(opts.key)
+                                    : httpsigKeyOf(entry, opts.key, 'sign');
   } catch (e) {
     log.debug("Caught in signHttpMessage(): " + ((e && e.message) || e));
     log.debug("Leaving signHttpMessage(). The key cannot be read.");
@@ -15457,7 +15510,7 @@ function signHttpMessage(message, options) {
   let signatureBytes;
   try {
     signatureBytes = httpsigRawSign(entry, signingKey, Buffer.from(built.base,
-                                  'ascii'));
+                                  'ascii'), opts.hsmDeferred);
   } catch (e) {
     log.debug("Caught in signHttpMessage(): " + ((e && e.message) || e));
     log.debug("Leaving signHttpMessage(). Primitive threw.");
@@ -15479,6 +15532,51 @@ function signHttpMessage(message, options) {
     base: built.base,
     signatureBytes: signatureBytes
   };
+}
+
+/**
+ * `signHttpMessage()`, with a realm key in the HSM signing off the event
+ * loop (#1955 P8 follow-up): the signature base is built here, C_SignAsync
+ * signs it, and the signature is written into the answer. Any other key is
+ * `signHttpMessage()` itself, resolved.
+ *
+ * @param message - the HTTP message
+ * @param options - as for `signHttpMessage()`
+ * @returns a promise of `signHttpMessage()`'s answer
+ */
+async function signHttpMessageOffLoop(message, options) {
+  log.debug("Entering signHttpMessageOffLoop().");
+  const opts = options || {};
+  if (!isHsmKey(opts.key)) {
+    log.debug("Leaving signHttpMessageOffLoop(). signHttpMessage().");
+    return signHttpMessage(message, opts);
+  }
+  const deferral = hsmSignDeferral();
+  const pending = signHttpMessage(message,
+    Object.assign({}, opts, { hsmDeferred: deferral }));
+  if (!pending || !pending.ok) {
+    log.debug("Leaving signHttpMessageOffLoop(). Refused.");
+    return pending;
+  }
+  let made;
+  try {
+    made = await hsmDeferredSignature(deferral);
+  } catch (e) {
+    log.debug("Caught in signHttpMessageOffLoop(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving signHttpMessageOffLoop(). The HSM refused.");
+    return httpsigRefuse('STS-KEYS-0136',
+                         'Signing with ' + pending.algorithm +
+                         ' failed inside the cryptographic library: ' +
+                         ((e && e.message) || e));
+  }
+  log.debug("Leaving signHttpMessageOffLoop(). In the HSM.");
+  return Object.assign({}, pending, {
+    signature: opts.label + '=' +
+               sf.serializeItem({ type: 'bytes', value: made.signature,
+                                  params: [] }),
+    signatureBytes: made.signature
+  });
 }
 
 function httpsigHeaderKeyFor(headers, name) {
@@ -18882,9 +18980,12 @@ function pkinitKdf(kdfOid, z, otherInfo, etype) {
 // so the size and the curve are asked here outright. What `rsaKeyProblem()`
 // still answers (the exponent, ROCA) it answers in every mode.
 //
-// **A DN IS NOT COMPARED HERE.** `common/certificate_subject.js` holds the one
-// comparison and it requires this module, so `certificateNameMatches()` is
-// about the subjectAltName forms RFC 9525 names and the door compares a DN.
+// **A DN STRING IS NOT COMPARED HERE.** `common/certificate_subject.js` holds
+// the one comparison of an RFC 4514 string and it requires this module, so
+// `certificateNameMatches()` is about the subjectAltName forms RFC 9525 names
+// and the door compares a DN. An ENCODED Name is read here, as RFC 5280
+// section 7.1 compares it (`certificateNameRdns()`, #1242): `pki.js`'s path
+// rules and the client truststore's issuer-lookup question share it.
 //
 // **PARSED SYNCHRONOUSLY, WITH pkijs ONLY FOR THE EXTENSIONS.** The vendored
 // `describeCertificate()` is asynchronous because of its key import and its
@@ -19275,6 +19376,214 @@ function certificateNameMatches(cert, expected) {
   return members.length > 0 && matched;
 }
 
+// ---------------------------------------------------------------------------
+// A CERTIFICATE'S NAMES AND KEY IDENTIFIERS AS AN ISSUER LOOKUP READS THEM
+// (#1242, moved here from `tls/tls_server.js` and `pki.js`).
+//
+// OpenSSL finds the issuer of a certificate by its issuer NAME, compared as
+// a canonical encoding (case, leading, trailing and repeated spaces, and the
+// string type do not count), and narrows the candidates by the authority key
+// identifier only when the certificate being verified carries one. The
+// client truststore asks exactly that question of its anchors, and
+// `pki.js`'s path rules ask the name half of it, so both read it here.
+// `certificateNameRdns()` is `pki.js`'s `rdnsOfName()` as it was, moved
+// verbatim; `pki.js` now asks this one.
+// ---------------------------------------------------------------------------
+
+/**
+ * A Name as a list of RDNs, each the sorted `oid=value` of its attributes,
+ * with a string value compared as RFC 5280 section 7.1 asks (case folded,
+ * leading and trailing space removed, internal space collapsed, whatever its
+ * string type) and any other value by its DER. Two names are the same name
+ * when these lists are equal; a directoryName constraint is a PREFIX of it.
+ *
+ * @param node - the Name, as asn1js decoded it
+ * @returns the RDNs
+ * @throws Error when it is not a Name
+ */
+function certificateNameRdns(node) {
+  log.debug("Entering certificateNameRdns().");
+  if (!(node instanceof asn1js.Sequence)) {
+    log.debug("Leaving certificateNameRdns(). Not a Name.");
+    // error-code: none — a reader; the caller refuses what does not decode
+    throw new Error('a Name is not a SEQUENCE');
+  }
+  // An EMPTY RDN (a SET with no attribute) is read as no RDN at all: the
+  // ASN.1 says SIZE (1..MAX), and pkijs writes one for an empty name — the
+  // Fulcio-shaped certificates the SPIFFE sigstore tests make, and a TPM
+  // attestation key's — so what it means is not in doubt.
+  const sets = node.valueBlock.value.filter(function (set) {
+    return !(set instanceof asn1js.Set) || set.valueBlock.value.length > 0;
+  });
+  const out = sets.map(function (set) {
+    if (!(set instanceof asn1js.Set)) {
+      // error-code: none — a reader; the caller refuses what does not decode
+      throw new Error('a RelativeDistinguishedName is not a SET');
+    }
+    return set.valueBlock.value.map(function (atv) {
+      // asn1js declares a generic ValueBlock; a constructed one has `value`.
+      const block = /** @type {any} */ (atv.valueBlock);
+      const parts = block && block.value;
+      if (!parts || parts.length !== 2 ||
+          !(parts[0] instanceof asn1js.ObjectIdentifier)) {
+        // error-code: none — a reader; the caller refuses what does not
+        // decode
+        throw new Error('an attribute is not a type and a value');
+      }
+      const value = parts[1];
+      const text = value instanceof asn1js.BaseStringBlock
+        ? String(value.getValue()).trim().replace(/\s+/g, ' ').toLowerCase()
+        : '#' + Buffer.from(value.toBER(false)).toString('hex');
+      return parts[0].getValue() + '=' + text;
+    }).sort().join('+');
+  });
+  log.debug("Leaving certificateNameRdns(). " + out.length + " RDN(s).");
+  return out;
+}
+
+// One Name of a pkijs certificate as it was ENCODED: pkijs re-encodes an
+// empty subject as a SEQUENCE holding an empty SET, which is not what was
+// signed. `pki.js`'s `nameBytesOf()` has the same reason.
+function certificateEncodedName(name) {
+  log.debug("Entering certificateEncodedName().");
+  const kept = name && name.valueBeforeDecode;
+  const bytes = kept && kept.byteLength ? new Uint8Array(kept)
+    : new Uint8Array(name.toSchema().toBER(false));
+  const parsed = asn1js.fromBER(bytes);
+  if (parsed.offset === -1 || parsed.offset !== bytes.byteLength) {
+    log.debug("Leaving certificateEncodedName(). Not one DER value.");
+    // error-code: none — a reader; the caller refuses what does not decode
+    throw new Error('a Name is not one DER value');
+  }
+  log.debug("Leaving certificateEncodedName().");
+  return parsed.result;
+}
+
+/**
+ * Reads what an issuer lookup compares: the subject and issuer as canonical
+ * RDN lists, the subjectKeyIdentifier, and the keyIdentifier of the
+ * authorityKeyIdentifier, each as lower-case hex or '' where absent.
+ *
+ * @param cert - PEM text, DER bytes or a parsed certificate
+ * @returns `{ subject, issuer, subjectKeyIdentifier, authorityKeyIdentifier,
+ *   selfIssued }`; `selfIssued` is the RFC 5280 section 3.3 sense, the two
+ *   names equal, and says nothing about the signature
+ * @throws Error when the input is not a certificate
+ */
+function certificateLookupNames(cert) {
+  log.debug("Entering certificateLookupNames().");
+  const parsed = parseCertificate(cert);
+  const pkijs = require('pkijs');
+  const pk = pkijs.Certificate.fromBER(new Uint8Array(parsed.raw));
+  const out = {
+    subject: certificateNameRdns(certificateEncodedName(pk.subject)),
+    issuer: certificateNameRdns(certificateEncodedName(pk.issuer)),
+    subjectKeyIdentifier: '',
+    authorityKeyIdentifier: '',
+    selfIssued: false
+  };
+  out.selfIssued = out.subject.join(',') === out.issuer.join(',');
+  (pk.extensions || []).forEach(function (ext) {
+    if (ext.extnID === '2.5.29.14') {
+      const node = certificateExtensionNode(ext);
+      const view = node && node.valueBlock && node.valueBlock.valueHexView;
+      out.subjectKeyIdentifier = node instanceof asn1js.OctetString && view
+        ? Buffer.from(view).toString('hex') : '';
+    } else if (ext.extnID === '2.5.29.35') {
+      const node = certificateExtensionNode(ext);
+      const id = node instanceof asn1js.Sequence
+        ? node.valueBlock.value.filter(function (field) {
+          return field.idBlock.tagClass === 3 &&
+                 field.idBlock.tagNumber === 0;
+        })[0] : null;
+      out.authorityKeyIdentifier = id
+        ? Buffer.from(/** @type {any} */ (id.valueBlock).valueHexView ||
+                      []).toString('hex') : '';
+    }
+  });
+  log.debug("Leaving certificateLookupNames().");
+  return out;
+}
+
+/**
+ * Whether a certificate is self-issued (its two names equal, as RFC 5280
+ * section 7.1 compares them) and its signature verifies under its own key.
+ *
+ * Not node's `checkIssued(self)`: that is OpenSSL's `X509_check_issued()`,
+ * which also refuses an issuer whose keyUsage lacks keyCertSign, so a
+ * self-signed client certificate with `keyUsage = digitalSignature` — the
+ * usual shape — answers false there while OpenSSL's chain builder still
+ * takes it as its own issuer.
+ *
+ * @param cert - PEM text, DER bytes or a parsed certificate
+ * @returns true when both hold; false for anything that cannot be read
+ */
+function certificateSelfSigned(cert) {
+  log.debug("Entering certificateSelfSigned().");
+  let signed = false;
+  try {
+    const parsed = parseCertificate(cert);
+    signed = certificateLookupNames(parsed).selfIssued &&
+             parsed.verify(parsed.publicKey) === true;
+  } catch (e) {
+    log.debug("Caught in certificateSelfSigned(): " +
+              ((e && e.message) || e));
+    // A key or a name node cannot read is not a self-signature anybody here
+    // could rely on.
+    signed = false;
+  }
+  log.debug("Leaving certificateSelfSigned(). " + signed);
+  return signed;
+}
+
+/**
+ * Whether a certificate presented by a TLS peer, and matched to an installed
+ * trust anchor by its fingerprint, may be taken as verified although OpenSSL
+ * refused it (#1242). node reports ONE error of a chain OpenSSL continued
+ * through, so another — the purpose, the key usage, a critical extension
+ * nobody reads, the validity — is asked again here rather than trusted to
+ * be the one reported.
+ *
+ * @param cert - PEM text, DER bytes or a parsed certificate
+ * @param purpose - `{ keyUsage, eku, now }`: the keyUsage bits any one of
+ *   which permits the use (RFC 5280 section 4.2.1.3; absent permits all),
+ *   and the extendedKeyUsage OID that must be named when the extension is
+ *   present. anyExtendedKeyUsage does not stand in for it, as it does not in
+ *   OpenSSL's purpose checks.
+ * @returns '' when it may, or the sentence saying why not
+ */
+function presentedAnchorProblem(cert, purpose) {
+  log.debug("Entering presentedAnchorProblem().");
+  const want = purpose || {};
+  let problem = '';
+  try {
+    const parsed = parseCertificate(cert);
+    if (!certificateSelfSigned(parsed)) {
+      problem = 'it is not self-issued with a signature its own key ' +
+                'verifies';
+    } else {
+      const facts = certificateFacts(parsed);
+      const found = certificateFieldProblems(parsed, {
+        role: 'leaf', mayBeCa: true, keyUsage: want.keyUsage || [],
+        eku: null, now: want.now
+      });
+      if (found.length) {
+        problem = found[0].why;
+      } else if (want.eku && facts.eku &&
+                 facts.eku.indexOf(want.eku) === -1) {
+        problem = 'its extendedKeyUsage does not name ' + want.eku;
+      }
+    }
+  } catch (e) {
+    log.debug("Caught in presentedAnchorProblem(): " +
+              ((e && e.message) || e));
+    // A certificate this cannot read is not one to vouch for.
+    problem = 'it could not be read (' + ((e && e.message) || e) + ')';
+  }
+  log.debug("Leaving presentedAnchorProblem(). " + (problem || 'ok'));
+  return problem;
+}
+
 // ===========================================================================
 // SECTION 19 — KEYS IN A HARDWARE SECURITY MODULE, THROUGH PKCS#11 (#1955 P8,
 // 2026-11-20).
@@ -19365,8 +19674,11 @@ let pkcs11KeyResolver = null;
 const hsmKeys = new Map();
 
 /**
- * Hands in how a reference is resolved: `(ref) => { token, key, publicKey }`
- * on a token this thread holds. Filled by `secrets.js` when it loads.
+ * Hands in how a reference is resolved: `(ref, how) => { token, key,
+ * publicKey }` on a token this thread holds, or — `how.async` true — a
+ * promise of it, found off the event loop (`resolveHsmKeysAsync()`, #1955
+ * P8 follow-up; the same slot, asked a second way). Filled by `secrets.js`
+ * when it loads.
  *
  * @param fn - the resolver, or null
  */
@@ -19374,6 +19686,102 @@ function setPkcs11KeyResolver(fn) {
   log.debug('Entering setPkcs11KeyResolver().');
   pkcs11KeyResolver = typeof fn === 'function' ? fn : null;
   log.debug('Leaving setPkcs11KeyResolver().');
+}
+
+// ---------------------------------------------------------------------------
+// A KEY'S FIRST RESOLUTION IN A THREAD, OFF THE EVENT LOOP (#1955 P8
+// follow-up). `hsmKeyOf()` is synchronous — a key set is a property read —
+// and resolving a reference it has not seen is two searches and an attribute
+// read on the token. So the references a thread will be asked for are
+// resolved AHEAD, through the control thread, before it serves: the
+// keystore's start (every realm it holds, in every process and request
+// worker) and `helpers.prepareKeySet()` (a realm first seen later, before a
+// handler reads its set). What is resolved here is held exactly as
+// `hsmKeyOf()` holds what it resolves, so the read that follows finds it.
+// A reference that reaches this thread by no road that passes here — a
+// rotation another node made, adopted between two requests of a realm —
+// is still resolved in place at its first use, once.
+// ---------------------------------------------------------------------------
+/**
+ * The HSM key references in a value — a stored or shared key set, walked to
+ * a bounded depth.
+ *
+ * @param value - anything
+ * @returns the distinct reference texts
+ */
+function hsmRefsIn(value) {
+  log.debug('Entering hsmRefsIn().');
+  const out = new Set();
+  const seen = new Set();
+  const walk = function (v, depth) {
+    if (typeof v === 'string') {
+      if (v.indexOf(HSM_KEY_PREFIX) === 0) {
+        out.add(v);
+      }
+      return;
+    }
+    if (!v || typeof v !== 'object' || depth > 8 || seen.has(v) ||
+        Buffer.isBuffer(v)) {
+      return;
+    }
+    seen.add(v);
+    if (v instanceof Map) {
+      v.forEach(function (one) {
+        walk(one, depth + 1);
+      });
+      return;
+    }
+    for (const k of Object.keys(v)) {
+      walk(v[k], depth + 1);
+    }
+  };
+  walk(value, 0);
+  log.debug('Leaving hsmRefsIn(). ' + out.size + '.');
+  return Array.from(out);
+}
+
+/**
+ * Resolves HSM key references off the event loop, so a later synchronous
+ * `hsmKeyOf()` finds them held. Never rejects: a reference that cannot be
+ * resolved here is resolved (and refused, with its code) at its first use.
+ *
+ * @param refs - reference texts (`hsmRefsIn()`)
+ * @returns a promise of how many were resolved
+ */
+async function resolveHsmKeysAsync(refs) {
+  log.debug('Entering resolveHsmKeysAsync(). ' + (refs || []).length);
+  let made = 0;
+  for (const text of refs || []) {
+    if (hsmKeys.has(text) || !pkcs11KeyResolver) {
+      continue;
+    }
+    const ref = hsmRefOf(text);
+    if (!ref) {
+      continue;
+    }
+    try {
+      const found = await pkcs11KeyResolver(ref, { async: true });
+      if (!hsmKeys.has(text)) {
+        hsmKeys.set(text, makeHsmKey(found.token, found.key, found.publicKey,
+                                     ref));
+        made++;
+      }
+    } catch (e) {
+      log.debug('Caught in resolveHsmKeysAsync(): ' + ((e && e.message) || e));
+    }
+  }
+  log.debug('Leaving resolveHsmKeysAsync(). ' + made + ' resolved.');
+  return made;
+}
+
+/**
+ * Forgets the HSM keys this thread resolved, for a test that plays a new
+ * thread's first use. Nothing in the service calls it.
+ */
+function forgetHsmKeys() {
+  log.debug('Entering forgetHsmKeys().');
+  hsmKeys.clear();
+  log.debug('Leaving forgetHsmKeys().');
 }
 
 function hsmRefText(ref) {
@@ -20207,10 +20615,28 @@ function rsaPrivateDecrypt(key, params, data) {
         'its refusal would be a padding oracle); use RSA-OAEP'),
         'STS-KEYS-0206');
     }
+    const hsmKey = hsmKeyOf(key);
+    const hash = params.oaepHash || 'sha1';
+    if (hsmPass || hsmKnownHas(['oaep', hsmKey.ref, hash,
+        params.oaepLabel ? Buffer.from(params.oaepLabel).toString('base64')
+                         : '', Buffer.from(data).toString('base64')])) {
+      // A PASS OF AN OFF-THE-LOOP DOOR (`decryptElementOffLoop()`), or an
+      // answer fetched off the loop before (`withHsmAnswers()`): the answer
+      // it already has, or the request for one.
+      log.debug('Leaving rsaPrivateDecrypt(). Asked of the pass.');
+      return hsmPassAnswer(['oaep', hsmKey.ref, hash,
+        params.oaepLabel ? Buffer.from(params.oaepLabel).toString('base64')
+                         : '', Buffer.from(data).toString('base64')],
+        function () {
+          return hsmKey.decryptOaep(hash, params.oaepLabel, data, true)
+            .catch(function (e) {
+              throw hsmDecryptRefusal(e);
+            });
+        });
+    }
     let out;
     try {
-      out = hsmKeyOf(key).decryptOaep(params.oaepHash || 'sha1',
-                                      params.oaepLabel, data, false);
+      out = hsmKey.decryptOaep(hash, params.oaepLabel, data, false);
     } catch (e) {
       log.debug('Caught in rsaPrivateDecrypt(): ' + ((e && e.message) || e));
       throw hsmDecryptRefusal(e);
@@ -20258,11 +20684,23 @@ function ecdhSecret(privateKey, publicKey) {
   log.debug('Entering ecdhSecret().');
   if (isHsmKey(privateKey)) {
     const hsmKey = hsmKeyOf(privateKey);
+    const point = ecPointOf(publicKey);
+    const bytes =
+      EC_FIELD_BYTES[(hsmKey.asymmetricKeyDetails || {}).namedCurve] || 32;
+    if (hsmPass || hsmKnownHas(['ecdh', hsmKey.ref, String(bytes),
+                                point.toString('base64')])) {
+      // As in rsaPrivateDecrypt(): a pass of an off-the-loop door.
+      log.debug('Leaving ecdhSecret(). Asked of the pass.');
+      return hsmPassAnswer(['ecdh', hsmKey.ref, String(bytes),
+                            point.toString('base64')], function () {
+        return hsmKey.deriveEcdh(point, bytes, true).catch(function (e) {
+          throw hsmDecryptRefusal(e);
+        });
+      });
+    }
     let out;
     try {
-      out = hsmKey.deriveEcdh(ecPointOf(publicKey),
-        EC_FIELD_BYTES[(hsmKey.asymmetricKeyDetails || {}).namedCurve] || 32,
-        false);
+      out = hsmKey.deriveEcdh(point, bytes, false);
     } catch (e) {
       log.debug('Caught in ecdhSecret(): ' + ((e && e.message) || e));
       throw hsmDecryptRefusal(e);
@@ -20401,6 +20839,353 @@ function hsmSignJws(payload, key, opts, async) {
   return input + '.' + b64u(sig);
 }
 
+// ---------------------------------------------------------------------------
+// EVERY DOOR OFF THE EVENT LOOP FOR A KEY IN THE HSM (#1955 P8 follow-up,
+// 2026-11-23). rcbj: "I do not want this activity to block the main event
+// loop." Until this, the synchronous doors (`signJws()`, `signXml()`,
+// `signQueryString()`, `decryptElement()`, a self-signed certificate) either
+// waited on the token there — `keys.pkcs11SynchronousSign` on — or refused
+// (STS-KEYS-0209), so a realm whose keys are in the HSM issued no access
+// token, SAML assertion or WS-Federation response with the setting off.
+//
+// Each has a twin here, named `…OffLoop()`, that every service caller of the
+// door with a REALM key awaits:
+//
+//   * FOR A SOFTWARE KEY IT IS THE SYNCHRONOUS DOOR, called as it was and its
+//     answer resolved — the same bytes, in the same order, and nothing but
+//     an await added. (`signJwsAsync()` is not that: it signs RSA and curve
+//     JWSs on libuv, which is a different road, chosen by its own callers.)
+//   * FOR AN HSM KEY THE TOKEN'S PART IS ASYNCHRONOUS — C_SignAsync,
+//     C_DecryptAsync, C_DeriveKeyAsync, on libuv's thread pool — and
+//     everything around it is the synchronous door's own code, so a document
+//     signed off the loop is the document signed in place:
+//       - a signature is DEFERRED: the door runs with a `hsmDeferred` that
+//         records what C_Sign would have been given and answers a unique
+//         placeholder, and the real signature is written where the
+//         placeholder is (an XML SignatureValue, which SignedInfo does not
+//         cover; a certificate's signature, re-encoded);
+//       - a decryption is a PASS: the door runs with `hsmPass` set; the first
+//         time it asks the token for something it has no answer to, the ask
+//         is recorded and the pass abandoned; the answer is fetched off the
+//         loop and the door runs again with it. Answers are keyed by what was
+//         asked (the key, the parameters, the bytes), not by position, so a
+//         door that takes a different branch once it has an answer cannot be
+//         handed the wrong one. The door is pure but for its logging, so a
+//         second pass is the first with the answer in it.
+//
+// `hsmPass` is a module variable because a pass is ONE SYNCHRONOUS CALL:
+// nothing else runs on this thread between its set and its clear.
+// ---------------------------------------------------------------------------
+let hsmPass = null;
+const HSM_PASS_PENDING = new Error('an HSM operation is asked of this pass');
+
+// The answer a pass already holds for one ask, or the ask recorded and the
+// pass abandoned (`HSM_PASS_PENDING`, which the door may catch as a failure;
+// its answer is discarded either way).
+function hsmPassAnswer(parts, run) {
+  log.debug('Entering hsmPassAnswer(). ' + parts[0]);
+  const pass = hsmPass || { answers: hsmKnown, asks: new Map() };
+  const id = parts.join('|');
+  if (pass.answers.has(id)) {
+    const held = pass.answers.get(id);
+    if (held.error) {
+      log.debug('Leaving hsmPassAnswer(). Its refusal.');
+      throw held.error;
+    }
+    log.debug('Leaving hsmPassAnswer(). Answered.');
+    return held.value;
+  }
+  if (!pass.asks.has(id)) {
+    pass.asks.set(id, run);
+  }
+  log.debug('Leaving hsmPassAnswer(). Asked.');
+  throw HSM_PASS_PENDING;
+}
+
+// ANSWERS FETCHED AHEAD (`hsmAnswersFor()` / `withHsmAnswers()`): for a door
+// whose caller cannot be run twice — a WS-Trust request records and consumes
+// things on its way to its decryption — the decryption alone is run in passes
+// first, over a copy, and the caller then runs ONCE with those answers in
+// hand. An ask it has no answer for takes the synchronous road.
+let hsmKnown = null;
+
+// Whether an answer fetched ahead is held for this ask.
+function hsmKnownHas(parts) {
+  log.debug('Entering hsmKnownHas().');
+  const out = !!(hsmKnown && hsmKnown.has(parts.join('|')));
+  log.debug('Leaving hsmKnownHas(). ' + out);
+  return out;
+}
+
+/**
+ * Runs a pure door that decrypts with realm keys in passes, off the event
+ * loop, and answers what the HSM said — for `withHsmAnswers()`.
+ *
+ * @param door - a synchronous function with no effect but its answer
+ * @returns a promise of the answers, by ask
+ */
+async function hsmAnswersFor(door) {
+  log.debug('Entering hsmAnswersFor().');
+  const held = { answers: null };
+  try {
+    await inHsmPasses(door, held);
+  } catch (e) {
+    // The door's own refusal is the caller's to meet again; only the
+    // answers are wanted here.
+    log.debug('Caught in hsmAnswersFor(): ' + ((e && e.message) || e));
+  }
+  log.debug('Leaving hsmAnswersFor(). ' + held.answers.size + ' answer(s).');
+  return held.answers;
+}
+
+/**
+ * Runs a synchronous function with answers fetched off the event loop in
+ * hand: a decryption with a realm key in the HSM that asks one of them is
+ * answered, and any other takes its usual road.
+ *
+ * @param answers - `hsmAnswersFor()`'s
+ * @param fn - the function
+ * @returns what `fn` answers
+ */
+function withHsmAnswers(answers, fn) {
+  log.debug('Entering withHsmAnswers().');
+  const before = hsmKnown;
+  hsmKnown = answers && answers.size ? answers : before;
+  try {
+    const out = fn();
+    log.debug('Leaving withHsmAnswers().');
+    return out;
+  } finally {
+    hsmKnown = before;
+  }
+}
+
+// Runs a synchronous door in passes until it asks the HSM nothing it has no
+// answer to, fetching each answer off the event loop between passes. A
+// door's own refusal (a throw) is its answer, as it would have been.
+async function inHsmPasses(door, held) {
+  log.debug('Entering inHsmPasses().');
+  const answers = new Map();
+  if (held) {
+    held.answers = answers;
+  }
+  for (let round = 0; round < 8; round++) {
+    const pass = { answers: answers, asks: new Map() };
+    let out;
+    let failed = null;
+    hsmPass = pass;
+    try {
+      out = door();
+    } catch (e) {
+      log.debug('Caught in inHsmPasses(): ' + ((e && e.message) || e));
+      failed = e;
+    } finally {
+      hsmPass = null;
+    }
+    if (!pass.asks.size) {
+      if (failed) {
+        log.debug('Leaving inHsmPasses(). Refused, after ' + round +
+                  ' answer(s).');
+        throw failed;
+      }
+      log.debug('Leaving inHsmPasses(). After ' + round + ' answer(s).');
+      return out;
+    }
+    const asked = Array.from(pass.asks.entries());
+    for (let i = 0; i < asked.length; i++) {
+      try {
+        answers.set(asked[i][0], { value: await asked[i][1]() });
+      } catch (e) {
+        log.debug('Caught in inHsmPasses(): ' + ((e && e.message) || e));
+        answers.set(asked[i][0], { error: e });
+      }
+    }
+  }
+  log.debug('Leaving inHsmPasses(). Too many passes.');
+  // error-code: none — a programming error: no door here asks the HSM more
+  // than twice (a key transport or an agreement, once each).
+  throw new Error('crypto: an off-the-loop HSM door asked the token for a ' +
+                  'new answer on eight passes running');
+}
+
+// A deferral for one signature: what C_Sign would have been given, and the
+// placeholder the door was answered with.
+function hsmSignDeferral() {
+  log.debug('Entering hsmSignDeferral().');
+  const held = [];
+  log.debug('Leaving hsmSignDeferral().');
+  return {
+    held: held,
+    hold: function (hsmKey, alg, input, cert) {
+      log.debug('Entering hsmSignDeferral.hold(). ' + alg);
+      // 33 random bytes: base64 without padding, and found nowhere else.
+      const placeholder = nodeCrypto.randomBytes(33);
+      held.push({ hsmKey: hsmKey, alg: alg, input: Buffer.from(input),
+                  placeholder: placeholder, cert: cert || null });
+      log.debug('Leaving hsmSignDeferral.hold().');
+      return placeholder;
+    }
+  };
+}
+
+// The one signature a deferred door held, made with C_SignAsync.
+function hsmDeferredSignature(deferral) {
+  log.debug('Entering hsmDeferredSignature().');
+  if (deferral.held.length !== 1) {
+    log.debug('Leaving hsmDeferredSignature(). ' + deferral.held.length +
+              ' held.');
+    // error-code: none — a programming error: each deferred door signs once.
+    return Promise.reject(new Error('crypto: an off-the-loop HSM signature ' +
+      'held ' + deferral.held.length + ' signatures, not one'));
+  }
+  const one = deferral.held[0];
+  log.debug('Leaving hsmDeferredSignature().');
+  return one.hsmKey.sign(one.alg, one.input).then(function (sig) {
+    return { held: one, signature: Buffer.from(sig) };
+  });
+}
+
+/**
+ * `signJws()`, with an HSM key's signature made off the event loop
+ * (C_SignAsync). Any other key is `signJws()` itself, resolved.
+ *
+ * @param payload - the claims
+ * @param key - the signing key
+ * @param opts - as for `signJws()`
+ * @returns a promise of the compact JWS
+ */
+function signJwsOffLoop(payload, key, opts) {
+  log.debug('Entering signJwsOffLoop().');
+  try {
+    if (isHsmKey(key)) {
+      log.debug('Leaving signJwsOffLoop(). The HSM.');
+      return hsmSignJws(payload, key, opts || {}, true);
+    }
+    const out = signJws(payload, key, opts);
+    log.debug('Leaving signJwsOffLoop(). signJws().');
+    return Promise.resolve(out);
+  } catch (e) {
+    log.debug('Caught in signJwsOffLoop(): ' + ((e && e.message) || e));
+    log.debug('Leaving signJwsOffLoop(). Refused.');
+    return Promise.reject(e);
+  }
+}
+
+/**
+ * `signXml()`, with an HSM key's SignatureValue made off the event loop:
+ * SignedInfo is canonicalised here, C_SignAsync signs it, and the signature
+ * is written into the document. Any other key is `signXml()`, resolved.
+ *
+ * @param xml - the document
+ * @param opts - as for `signXml()`
+ * @returns a promise of the signed document
+ */
+async function signXmlOffLoop(xml, opts) {
+  log.debug('Entering signXmlOffLoop().');
+  const options = opts || {};
+  if (!isHsmKey(options.privateKey || options.privateKeyPem)) {
+    log.debug('Leaving signXmlOffLoop(). signXml().');
+    return signXml(xml, options);
+  }
+  const deferral = hsmSignDeferral();
+  const pending = signXml(xml, Object.assign({}, options,
+                                             { hsmDeferred: deferral }));
+  const made = await hsmDeferredSignature(deferral);
+  const marker = '>' + made.held.placeholder.toString('base64') + '<';
+  const at = pending.indexOf(marker);
+  if (at < 0 || pending.indexOf(marker, at + 1) >= 0) {
+    log.debug('Leaving signXmlOffLoop(). The placeholder is not once.');
+    // error-code: none — a programming error: the engine writes the
+    // SignatureValue it was answered once, unwrapped.
+    throw new Error('crypto: the signed document does not hold its ' +
+                    'SignatureValue placeholder exactly once');
+  }
+  log.debug('Leaving signXmlOffLoop(). ' + made.held.alg + ' in the HSM.');
+  return pending.slice(0, at) + '>' + made.signature.toString('base64') +
+         '<' + pending.slice(at + marker.length);
+}
+
+/**
+ * `signQueryString()`, with an HSM key's signature made off the event loop.
+ * Any other key is `signQueryString()`, resolved.
+ *
+ * @param queryString - the query string to sign
+ * @param privateKeyPem - the RSA private key
+ * @param sigAlg - the signature algorithm URI
+ * @param privateKey - as for `signQueryString()`
+ * @returns a promise of the base64 signature
+ */
+async function signQueryStringOffLoop(queryString, privateKeyPem, sigAlg,
+                                      privateKey) {
+  log.debug('Entering signQueryStringOffLoop().');
+  if (!isHsmKey(privateKey || privateKeyPem)) {
+    log.debug('Leaving signQueryStringOffLoop(). signQueryString().');
+    return signQueryString(queryString, privateKeyPem, sigAlg, privateKey);
+  }
+  // signQueryString()'s refusal first, as it makes it.
+  const unsignable = signaturePolicy.signCause('xml', sigAlg);
+  if (unsignable) {
+    log.debug('Leaving signQueryStringOffLoop(). Not signed here.');
+    throw errorCodes.mark(new Error(unsignable.message), unsignable.code);
+  }
+  const hsmKey = hsmKeyOf(privateKey || privateKeyPem);
+  const sig = await hsmKey.sign(
+    hsmXmlAlg(XML_SIGNATURE_METHODS[sigAlg] || null),
+    Buffer.from(String(queryString), 'utf8'));
+  log.debug('Leaving signQueryStringOffLoop(). In the HSM.');
+  return Buffer.from(sig).toString('base64');
+}
+
+/**
+ * `decryptElement()`, with an HSM key's RSA-OAEP decryption or ECDH
+ * agreement made off the event loop. Any other key is `decryptElement()`,
+ * resolved.
+ *
+ * @param xml - the document holding the encrypted element
+ * @param privateKeyPem - the recipient's key: a PEM, a KeyObject, an HSM key
+ *   or its reference
+ * @param opts - as for `decryptElement()`
+ * @returns a promise of `decryptElement()`'s answer
+ */
+async function decryptElementOffLoop(xml, privateKeyPem, opts) {
+  log.debug('Entering decryptElementOffLoop().');
+  if (!isHsmKey(privateKeyPem)) {
+    log.debug('Leaving decryptElementOffLoop(). decryptElement().');
+    return decryptElement(xml, privateKeyPem, opts);
+  }
+  const out = await inHsmPasses(function () {
+    return decryptElement(xml, privateKeyPem, opts);
+  });
+  log.debug('Leaving decryptElementOffLoop(). The HSM, off the loop.');
+  return out;
+}
+
+/**
+ * `selfSignedRsaCertificate()`, with an HSM key's signature over the
+ * TBSCertificate made off the event loop. Any other key is
+ * `selfSignedRsaCertificate()`, resolved.
+ *
+ * @param opts - as for `selfSignedRsaCertificate()`
+ * @returns a promise of its answer
+ */
+async function selfSignedRsaCertificateOffLoop(opts) {
+  log.debug('Entering selfSignedRsaCertificateOffLoop().');
+  const options = opts || {};
+  if (!isHsmKey(options.rsaPrivateKeyPem)) {
+    log.debug('Leaving selfSignedRsaCertificateOffLoop(). In place.');
+    return selfSignedRsaCertificate(options);
+  }
+  const deferral = hsmSignDeferral();
+  const pending = selfSignedRsaCertificate(Object.assign({}, options,
+    { hsmDeferred: deferral }));
+  const made = await hsmDeferredSignature(deferral);
+  made.held.cert.signature = made.signature.toString('binary');
+  const certPem = forge.pki.certificateToPem(made.held.cert);
+  log.debug('Leaving selfSignedRsaCertificateOffLoop(). In the HSM.');
+  return Object.assign({}, pending, { certPem: certPem,
+                                      certB64: stripPem(certPem) });
+}
+
 // The engine's name for an XML SignatureMethod an HSM key signs: RSA and
 // RSA-PSS over SHA-2, ECDSA over SHA-2. SHA-1, SHA-224 and the rest are
 // refused rather than made in software.
@@ -20474,6 +21259,21 @@ async function generatePkcs11KeyPairAsync(token, tokenUri, spec, label) {
  * @param ref - the reference's members
  * @returns `{ token, key, publicKey }` for the resolver to hand back
  */
+/**
+ * `findPkcs11KeyPair()`, off the event loop (the token's control thread).
+ *
+ * @param token - the token
+ * @param ref - the reference
+ * @returns a promise of `{ token, key, publicKey }`
+ */
+async function findPkcs11KeyPairAsync(token, ref) {
+  log.debug('Entering findPkcs11KeyPairAsync().');
+  const found = await token.keyPairAsync(Buffer.from(String(ref.id), 'hex'),
+                                         { kty: ref.kty, crv: ref.crv });
+  log.debug('Leaving findPkcs11KeyPairAsync().');
+  return { token: token, key: found.key, publicKey: found.publicKey };
+}
+
 function findPkcs11KeyPair(token, ref) {
   log.debug('Entering findPkcs11KeyPair().');
   const found = token.keyPair(Buffer.from(String(ref.id), 'hex'),
@@ -21005,10 +21805,22 @@ module.exports = {
   PKCS11_SIGNING_ALGS: Object.keys(pkcs11Engine.SIGNING),
   setPkcs11KeyResolver: setPkcs11KeyResolver,
   isHsmKey: isHsmKey,
+  signHttpMessageOffLoop: signHttpMessageOffLoop,
+  signJwsOffLoop: signJwsOffLoop,
+  signXmlOffLoop: signXmlOffLoop,
+  signQueryStringOffLoop: signQueryStringOffLoop,
+  decryptElementOffLoop: decryptElementOffLoop,
+  hsmAnswersFor: hsmAnswersFor,
+  withHsmAnswers: withHsmAnswers,
+  selfSignedRsaCertificateOffLoop: selfSignedRsaCertificateOffLoop,
   hsmRefOf: hsmRefOf,
   generatePkcs11KeyPair: generatePkcs11KeyPair,
   generatePkcs11KeyPairAsync: generatePkcs11KeyPairAsync,
   findPkcs11KeyPair: findPkcs11KeyPair,
+  findPkcs11KeyPairAsync: findPkcs11KeyPairAsync,
+  hsmRefsIn: hsmRefsIn,
+  resolveHsmKeysAsync: resolveHsmKeysAsync,
+  forgetHsmKeys: forgetHsmKeys,
   pkcs11Capabilities: pkcs11Capabilities,
   // --- section 18: certificate field checks (#1360) ---
   CERTIFICATE_ROLES: CERTIFICATE_ROLES,
@@ -21020,6 +21832,10 @@ module.exports = {
   certificateFieldProblems: certificateFieldProblems,
   certificateFieldProblem: certificateFieldProblem,
   certificateNameMatches: certificateNameMatches,
+  certificateNameRdns: certificateNameRdns,
+  certificateLookupNames: certificateLookupNames,
+  certificateSelfSigned: certificateSelfSigned,
+  presentedAnchorProblem: presentedAnchorProblem,
   // --- section 17: the rest of the service's operations (#453) ---
   SHA1_PURPOSES: SHA1_PURPOSES,
   sha1Digest: sha1Digest,

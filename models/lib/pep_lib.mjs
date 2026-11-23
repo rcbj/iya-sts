@@ -142,3 +142,94 @@ export function documentFile(name) {
   log.debug("Leaving documentFile().");
   return namesOf(name).module.split('_').join('-') + '.json';
 }
+
+/**
+ * A Rust string literal of plain ASCII text, as the obligation rules are.
+ *
+ * @param text - the text
+ * @returns the literal
+ */
+function rustString(text) {
+  log.debug("Entering rustString().");
+  if (!/^[\x20-\x7e]*$/.test(text) || /["\\]/.test(text)) {
+    log.debug("Leaving rustString(). Not plain.");
+    throw new Error('An obligation rule name is not plain ASCII: ' +
+      JSON.stringify(text));
+  }
+  log.debug("Leaving rustString().");
+  return '"' + text + '"';
+}
+
+/**
+ * THE OBLIGATIONS PROFILE'S REGISTERED TYPES AS THE EDGE PDP READS THEM
+ * (#1205, #1390): `authzen_obligations.rs`, from the member sets of
+ * `models/authzen/authzen_members.tsp` marked `obligation: true` — the same
+ * sets `authzen/authzen_model.ts`'s `obligationTypes()` reads for the
+ * service — so the two cannot be copies that drift. A required member is
+ * what a registered obligation may not be handed without; an array member
+ * collects every assignment of its name.
+ *
+ * @param authzen - what `readAuthzen()` read from the AuthZEN model
+ * @returns the file's text
+ */
+export function renderObligationRules(authzen) {
+  log.debug("Entering renderObligationRules().");
+  const sets = (authzen.members || []).filter(function (set) {
+    return set.obligation === true;
+  });
+  if (!sets.length) {
+    log.debug("Leaving renderObligationRules(). None.");
+    throw new Error('The AuthZEN model marks no member set obligation: ' +
+      'true.');
+  }
+  const list = function (names) {
+    log.debug("Entering list().");
+    log.debug("Leaving list().");
+    return '&[' + names.map(rustString).join(', ') + ']';
+  };
+  const lines = HEADER.slice(0, 3).concat([
+    '// GENERATED from models/authzen/authzen_members.tsp (#1205) by',
+    '// models/lib/pep_lib.mjs: the Obligations Profile\'s registered types,',
+    '// the member sets marked `obligation: true`, in the model\'s order. Do',
+    '// not edit: change the model and run tests/tools/regenerate-pep-model.sh.',
+    '// tests/model_pep.js fails when this differs.', '',
+    '/// One registered type: the properties it may not be handed without,',
+    '/// and those that collect every assignment of their name.',
+    '#[derive(Debug, Clone, Copy, PartialEq, Eq)]',
+    'pub struct ObligationRule {',
+    '    pub name: &\'static str,',
+    '    pub required: &\'static [&\'static str],',
+    '    pub arrays: &\'static [&\'static str],',
+    '}', '',
+    '/// Every registered type, in the model\'s order.',
+    'pub const OBLIGATION_RULES: &[ObligationRule] = &['
+  ]);
+  sets.forEach(function (set) {
+    const required = set.list.filter(function (one) {
+      return one.required;
+    }).map(function (one) {
+      return one.name;
+    });
+    const arrays = set.list.filter(function (one) {
+      return one.types.indexOf('array') >= 0;
+    }).map(function (one) {
+      return one.name;
+    });
+    lines.push('    ObligationRule {');
+    lines.push('        name: ' + rustString(set.id) + ',');
+    lines.push('        required: ' + list(required) + ',');
+    lines.push('        arrays: ' + list(arrays) + ',');
+    lines.push('    },');
+  });
+  lines.push('];', '');
+  lines.push('/// What the metadata advertises while the profile is on: every ' +
+             'registered');
+  lines.push('/// type, then `custom`, which is every other obligation.');
+  lines.push('pub const SUPPORTED_OBLIGATION_TYPES: &[&str] = ' +
+             list(sets.map(function (set) {
+               return set.id;
+             }).concat(['custom'])) + ';');
+  lines.push('');
+  log.debug("Leaving renderObligationRules(). " + sets.length + " type(s).");
+  return lines.join('\n');
+}

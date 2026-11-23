@@ -1462,9 +1462,18 @@ async function childBody() {
                                                events: ['approved'] } }));
   const lostId = ((lostSetup.json || {}).task || {}).id;
   let release = null;
+  // THE POST STARTS LATER THAN notify() RETURNS (#1993): the callback is
+  // signed off the event loop first, so the test waits for the POST to be
+  // in flight before the other process writes, rather than assuming it
+  // already is.
+  let inFlight = null;
+  const posted = new Promise(function (resolve) {
+    inFlight = resolve;
+  });
   fedHttp.deliverJson = function () {
     return new Promise(function (resolve) {
       release = resolve;
+      inFlight();
     });
   };
   const lost = await inRealm(async function () {
@@ -1484,6 +1493,7 @@ async function childBody() {
     stored.callback = callback;
     own.tasks.set(lostId, stored);
     const flying = other.notify(own.tasks.get(lostId));
+    await posted;
     // Another process revokes, writing its own copy of the row.
     const theirs = JSON.parse(JSON.stringify(own.tasks.get(lostId)));
     theirs.approval.revokedAt = Math.floor(Date.now() / 1000);
@@ -1777,12 +1787,12 @@ async function childBody() {
     });
   };
   let fv = formAs('azcarol', { evaluationId: formEval });
-  t.check(fv.refusal && fv.refusal.code === 'STS-AUTHZEN-0146' &&
+  t.check(fv.refusal && fv.refusal.code === 'STS-AUTHZEN-0147' &&
           fv.refusal.status === 404 && !fv.view.request,
           'W3. somebody who is not the denial\'s subject is refused 0146 ' +
           'and shown nothing of it', JSON.stringify(fv));
   fv = formAs('azalice', { evaluationId: 'eval_nosuchdenial' });
-  t.check(fv.refusal && fv.refusal.code === 'STS-AUTHZEN-0145',
+  t.check(fv.refusal && fv.refusal.code === 'STS-AUTHZEN-0146',
           'W4. an evaluation_id this realm did not record is 0145',
           JSON.stringify(fv));
   fv = formAs('azalice', { evaluationId: formEval });
@@ -1837,7 +1847,7 @@ async function childBody() {
   const fvOther = formAs('azcarol', { request: formTask.id });
   t.check(!fv.refusal && fv.view.mode === 'task' &&
           fv.view.task.id === formTask.id && fv.view.task.origin === 'form' &&
-          fvOther.refusal && fvOther.refusal.code === 'STS-AUTHZEN-0146',
+          fvOther.refusal && fvOther.refusal.code === 'STS-AUTHZEN-0147',
           'W11. the ticket shows the subject the request, and nobody else',
           JSON.stringify(fv) + ' / ' + JSON.stringify(fvOther));
   fv = formAs('azalice', {});
@@ -1883,7 +1893,7 @@ async function childBody() {
   sub = submitAs('azalice', { evaluationId: formEval, justification: 'x' });
   fv = formAs('azalice', {});
   r = await request(port, 'GET', SUBMIT + '/' + formTask.id, pepCred);
-  t.check(!sub.ok && sub.code === 'STS-AUTHZEN-0148' &&
+  t.check(!sub.ok && sub.code === 'STS-AUTHZEN-0149' &&
           fv.view.enabled === false &&
           !(((r.json || {}).task || {}).links || {}).ticket,
           'W16. off, the form is refused 0148 and no handle names a ticket',
@@ -1944,7 +1954,7 @@ async function childBody() {
   const otherItems = await request(port, 'GET',
     pathOf(field.endpoint), pep2Cred);
   t.check(r.status === 404 && otherItems.status === 404 &&
-          markedSince(since, 'STS-AUTHZEN-0149') &&
+          markedSince(since, 'STS-AUTHZEN-0150') &&
           !/read-write/.test(otherItems.text),
           'V4. another caller is told nothing of the catalog (0149)',
           brief(r) + ' / ' + brief(otherItems));
@@ -1967,7 +1977,7 @@ async function childBody() {
           ((pageTwo.json || {}).items || [])[0].value === 'read-write' &&
           !pageTwo.json.next_cursor &&
           wrongCursor.status === 400 &&
-          markedSince(since, 'STS-AUTHZEN-0150'),
+          markedSince(since, 'STS-AUTHZEN-0151'),
           'V5. the Catalog Endpoint searches, pages, and refuses a cursor ' +
           'for another search (0150)', brief(r) + ' / ' + brief(pageTwo) +
           ' / ' + brief(wrongCursor));
@@ -1985,7 +1995,7 @@ async function childBody() {
     submission(catDenied, { action: { name: 'share' },
                             requested_access: { entitlement: 'admin' } }));
   t.check(r.status === 400 && unlisted.status === 400 &&
-          markedSince(since, 'STS-AUTHZEN-0151'),
+          markedSince(since, 'STS-AUTHZEN-0152'),
           'V7. a submission without an entitlement, or with one the ' +
           'catalog does not list, is refused (0151)',
           brief(r) + ' / ' + brief(unlisted));
@@ -2043,9 +2053,9 @@ async function childBody() {
   const badSource = await request(port, 'POST', SUBMIT, pepCred,
     submission(actDenied, { client: { source: {
       external_url: 'http://tickets.example.com/T-1' } } }));
-  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0153') &&
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0154') &&
           malformed.status === 400 && badSource.status === 400 &&
-          markedSince(since, 'STS-AUTHZEN-0154'),
+          markedSince(since, 'STS-AUTHZEN-0155'),
           'U2. a chain an mTLS caller\'s certificate does not authorize is ' +
           '0153, and a malformed actor or a non-https external_url 0154',
           brief(r) + ' / ' + brief(malformed) + ' / ' + brief(badSource));
@@ -2090,8 +2100,8 @@ async function childBody() {
   t.check(fromToken.actor && fromToken.actor.verifiedBy === 'token' &&
           fromToken.actor.chain.length === 2 &&
           fromToken.actor.chain[1].id === 'azalice' &&
-          notToken.code === 'STS-AUTHZEN-0153' &&
-          wrongIss.code === 'STS-AUTHZEN-0153',
+          notToken.code === 'STS-AUTHZEN-0154' &&
+          wrongIss.code === 'STS-AUTHZEN-0154',
           'U4. a bearer caller\'s token act chain authorizes the same ' +
           'chain link for link, and no other', JSON.stringify(
             [fromToken, notToken.code, wrongIss.code]));
@@ -2147,14 +2157,14 @@ async function childBody() {
   const withCallback = await request(port, 'POST', SUBMIT, pepCred, bulkOf(
     [itemOf(d1, 'doc-1')], { callback: { endpoint: 'https://x.example' } }));
   const noItems = await request(port, 'POST', SUBMIT, pepCred, bulkOf([]));
-  t.check(withTuple.status === 400 && markedSince(since, 'STS-AUTHZEN-0155') &&
+  t.check(withTuple.status === 400 && markedSince(since, 'STS-AUTHZEN-0156') &&
           withDenial.status === 400 && noDenial.status === 400 &&
           problemOf(noDenial) ===
             'urn:openid:authzen:access-request:error:invalid_denial_binding' &&
-          markedSince(since, 'STS-AUTHZEN-0157') &&
+          markedSince(since, 'STS-AUTHZEN-0158') &&
           withCallback.status === 400 &&
-          markedSince(since, 'STS-AUTHZEN-0159') &&
-          noItems.status === 400 && markedSince(since, 'STS-AUTHZEN-0156'),
+          markedSince(since, 'STS-AUTHZEN-0160') &&
+          noItems.status === 400 && markedSince(since, 'STS-AUTHZEN-0157'),
           'Q2. a top-level tuple (0155), a bundle denial or an item without ' +
           'one (0157), a callback (0159) and no items (0156) are refused',
           [brief(withTuple), brief(noDenial), brief(withCallback)].join(

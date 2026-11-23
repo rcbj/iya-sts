@@ -332,7 +332,7 @@ holds is the table above; what each module is for is that directory's
 | `common/openpgp_keys.ts` | `setDirectory` (a person located with their S/MIME values, the five OpenPGP/mail-encryption attributes written, a person by `mail`), filled by `ldap/ldap_server.js` (#1955 P6) | `common/CLAUDE.md` (`openpgp_keys.ts`) |
 | `common/hardware_tokens.ts` | `registerRetirer(kind, …)` (a credential kind's lost-key retire action), filled by each later #1955 phase's module for the kind it adds; `fido` and `x509` are built in (#1955 P1) | `common/CLAUDE.md` |
 | `common/roles.js` | `setSelectionReader` (the dynamic roles a session chose and is still eligible for; EMPTY IS NOBODY'S CHOICE), filled by `authn/role_selection.ts` at 23c (#1072) | `common/CLAUDE.md` (3dg) |
-| `common/crypto.js` | `setPkcs11KeyResolver` (an HSM signing key's reference found on a token this thread holds), filled by `common/secrets.js` at load, which requires `crypto.js` and so cannot be required back (#1955 P8) | `common/CLAUDE.md` (*Keys in a hardware security module*) |
+| `common/crypto.js` | `setPkcs11KeyResolver` (an HSM signing key's reference found on a token this thread holds, in place or, asked `{ async: true }`, off the event loop), filled by `common/secrets.js` at load, which requires `crypto.js` and so cannot be required back (#1955 P8) | `common/CLAUDE.md` (*Keys in a hardware security module*) |
 
    **`setTruststore()` is the one slot not filled by the module that owns what
    it carries** — `common/protocol_stack.ts` fills it, because the owner is first
@@ -1159,6 +1159,28 @@ version reads it — `tests/version.js` asserts the source each reads, not the
 string it renders. **A version may never be the thing that stops this service
 starting.** `common/CLAUDE.md` argues it; `xacml-pep/CLAUDE.md` carries the
 remote PEP's copy.
+
+## Who merges, and how agents share this repository (2026-11-23)
+
+**One session is THE MERGER, and only it merges into `develop`** (rcbj,
+2026-11-23; the role used to be called the integrator). Every other agent —
+Claude, Grok, Copilot — works on its own branch in its own worktree, pushes,
+opens a pull request into `develop`, and stops; it never runs `gh pr merge`
+and never pushes `develop`. On 2026-11-23 two agents merged at once: two pull
+requests landed before their reviews were acted on, and every develop push
+run was cancelled by the next merge.
+
+* **`develop` has a merge queue** (the `develop: merge queue` ruleset). A
+  merge goes through it, one at a time, and waits for `mirror`,
+  `dependency-windows` and `rust`; `.github/workflows/tests.yml` runs those
+  on `merge_group` and skips `build` there. Nothing pushes to `develop`
+  directly.
+* **Claim a ticket before starting on it**: a `claimed:claude`,
+  `claimed:grok` or `claimed:copilot` label, and a comment naming the branch.
+  A ticket claimed by another agent is not yours; ask rcbj.
+* **A worktree carries an `.owner` file** at its top (agent, branch, date),
+  excluded through `.git/info/exclude`. A worktree whose `.owner` names
+  another agent is not touched, and nor is one a process is working in.
 
 ## Tests
 

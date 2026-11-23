@@ -345,18 +345,24 @@ class PortalConnectedAccounts {
         maxAge: Number(config.value('federation.connectRecentAuthMinutes')) *
                 60 } });
     }
-    const started = this.deps.federationSp().beginConnect(req, {
+    // AWAITED (#1955 P8 follow-up): a request object or client assertion
+    // the connection sends is signed off the event loop where the realm's
+    // keys are in the HSM; the promise goes back to the API's dispatcher.
+    log.debug("Leaving PortalConnectedAccounts.act(). Connecting.");
+    return this.deps.federationSp().beginConnectAsync(req, {
       username: who, relationship: String(body.id),
-      sessionId: caller.sessionId, back: ctx.baseUrlOf(req) + PATH });
-    if (!started.ok) {
-      log.debug("Leaving PortalConnectedAccounts.act(). Not started.");
-      return ctx.refuse(res, 400, started.code || 'STS-FED-0184',
-                        t.text('portalConnectedAccounts.notConnectable'),
-                        { view: this.view(who) });
-    }
-    res.append('Set-Cookie', started.cookie);
-    log.debug("Leaving PortalConnectedAccounts.act(). To the provider.");
-    return ctx.json(res, 200, { ok: true, location: started.location });
+      sessionId: caller.sessionId, back: ctx.baseUrlOf(req) + PATH })
+      .then((started) => {
+        if (!started.ok) {
+          log.debug("PortalConnectedAccounts.act(): not started.");
+          return ctx.refuse(res, 400, started.code || 'STS-FED-0184',
+                            t.text('portalConnectedAccounts.notConnectable'),
+                            { view: this.view(who) });
+        }
+        res.append('Set-Cookie', started.cookie);
+        log.debug("PortalConnectedAccounts.act(): to the provider.");
+        return ctx.json(res, 200, { ok: true, location: started.location });
+      });
   }
 
   /**

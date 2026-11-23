@@ -2260,7 +2260,7 @@ request's ticket (`links.ticket`)**, two `/account-api` operations
 person decides somebody ELSE's request as an approver, and this one is
 where they make and follow their OWN. The query names a denial
 (`evaluation_id`) or a request (`request`), never a person; the library
-answers only the denial's or the request's subject, and the same 0146
+answers only the denial's or the request's subject, and the same 0147
 whether or not the thing exists. Nothing on it names who approves.
 `authzen/CLAUDE.md` has the library's half.
 

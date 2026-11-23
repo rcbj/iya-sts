@@ -1786,5 +1786,21 @@
   "caches.remaining.disowned": {
     "en": "0e9453a606f40a73",
     "text": "已过时：该凭据已被否认"
+  },
+  "caches.store.ssh_user_ca.issued.title": {
+    "en": "d075b5ec478b0ed7",
+    "text": "已签发的 SSH 用户证书"
+  },
+  "caches.store.ssh_user_ca.issued.description": {
+    "en": "75dbc5d0d0bd9054",
+    "text": "此领域的 SSH 用户 CA 签发的每张 OpenSSH 用户证书一行，按序列号：属于谁（urn:uuid）、密钥指纹、主体、有效期以及是否已吊销。从不包含密钥。"
+  },
+  "caches.store.ssh_user_ca.issued.bound": {
+    "en": "36fc38da0e0699e8",
+    "text": "进程持有的行是每个领域 5,000 条的缓存；证书到期时该行离开存储。"
+  },
+  "caches.store.ssh_user_ca.issued.lifetime": {
+    "en": "fdcbaa82a4ac533d",
+    "text": "直到证书到期。"
   }
 }

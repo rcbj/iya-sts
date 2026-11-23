@@ -71,6 +71,14 @@ pub mod pep_control_plane {
     include!("generated/pep_control_plane.rs");
 }
 
+/// The AuthZEN Obligations Profile's registered types (#1205), generated
+/// from the service's own model (`models/authzen/authzen_members.tsp`), so
+/// the edge PDP and the service map an obligation by one table.
+#[rustfmt::skip]
+pub mod authzen_obligations {
+    include!("generated/authzen_obligations.rs");
+}
+
 /// A member that may be absent or `null`, kept as two answers: absent is
 /// `None`, `null` is `Some(None)`. Serde reads an absent member through
 /// `default` and a present one through here. The same as `sts-model-base`'s

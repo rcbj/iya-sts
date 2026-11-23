@@ -646,7 +646,7 @@ const signedMetadataCount = cacheRegistry.register({
       config.value('oauth2.signedMetadataCacheS') + ' s) after signing, ' +
       'per realm; the oldest goes first when full.';
   },
-  // A document past `until`, which `signedMetadata()` would sign again
+  // A document past `until`, which `signedMetadataAsync()` would sign again
   // (#49 P5).
   eject: cacheRegistry.realmMapEjector(realms, signedMetadataCache,
     function (held: Json, key: unknown, now: number): boolean {
@@ -847,6 +847,22 @@ class IssuanceRefused extends Error {
     log.debug("Leaving IssuanceRefused.constructor().");
   }
 }
+
+// THE GRANTS WITH NO BROWSER IN THEM (#1072, rcbj's decision 5), by the
+// label each passes as `opts.grant`: they never carry a dynamic role a
+// session chose — the session they name, where they name one, is the one a
+// person approved on or signed in to an EARLIER client with — and a person
+// the client would require to choose one is refused them (STS-XACML-0332).
+// A refresh token is judged by the grant it descends from (`origin_grant`,
+// its `grant_type` claim), so a device grant's refresh token carries none
+// either. `client_credentials` and the pre-authorized code have no person
+// to choose; they are here for the first half alone.
+const NO_ROLE_SELECTION_GRANTS = [
+  'password', 'token exchange', 'native sso exchange',
+  'urn:ietf:params:oauth:grant-type:jwt-bearer',
+  'urn:ietf:params:oauth:grant-type:saml2-bearer',
+  'device_code', 'ciba', 'client_credentials', 'pre-authorized code'
+];
 
 // ---------------------------------------------------------------------------
 // OpenID Connect Core 1.0 section 5.5 — THE `claims` REQUEST PARAMETER.
@@ -2597,7 +2613,7 @@ class OAuth2Server {
   // Answers a discovery request for the issuer path `raw` with `send`, inside
   // the realm the path names — or passes it on to Express's 404.
   private discoveryForPath(req: Req, res: Res, next: Json, raw: unknown,
-                           send: (req: Req, res: Res) => void): void {
+                           send: (req: Req, res: Res) => any): any {
     const { log, realms, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.discoveryForPath().");
@@ -2612,21 +2628,23 @@ class OAuth2Server {
     // realm after the prefix — `app.js` prepared the one in the prefix only,
     // and a document signed meanwhile carries no x5c or x5u and is cached
     // (`helpers.runInPreparedRealm()`).
+    // RETURNED (#1955 P8 follow-up): the document is signed off the event
+    // loop for an HSM key, so `send` answers a promise.
     const answer = function () {
       req.__asProfile = self.profileFromPath(target.server);
-      send(req, res);
+      return send(req, res);
     };
     if (target.realm === realms.current()) {
-      realms.run(target.realm, answer);
-    } else {
-      self.deps.runInPreparedRealm(target.realm, answer)
-        .catch(function (e: any) {
-          log.debug("Caught in OAuth2Server.discoveryForPath(): " +
-                    ((e && e.message) || e));
-          next(e);
-        });
+      log.debug("Leaving OAuth2Server.discoveryForPath(). In this realm.");
+      return realms.run(target.realm, answer);
     }
     log.debug("Leaving OAuth2Server.discoveryForPath().");
+    return self.deps.runInPreparedRealm(target.realm, answer)
+      .catch(function (e: any) {
+        log.debug("Caught in OAuth2Server.discoveryForPath(): " +
+                  ((e && e.message) || e));
+        next(e);
+      });
   }
 
   // -------------------------------------------------------------------------
@@ -2831,42 +2849,127 @@ class OAuth2Server {
    */
   signPublishedDocument(claims: Json, issuer: string, lifetimeS: number,
                         useCase: string): string {
-    const { stsCrypto, log, STS, nowSec, signingKeyFor,
-            certificateHeaderFor, publishedKidFor, config } = this.deps;
+    const { stsCrypto, log } = this.deps;
     log.debug("Entering OAuth2Server.signPublishedDocument().");
+    const plan = this.publishedDocumentPlan(claims, issuer, lifetimeS,
+                                            useCase);
+    log.debug("Leaving OAuth2Server.signPublishedDocument(). " + plan.alg +
+              ".");
+    return stsCrypto.signJws(plan.payload, plan.key, plan.options);
+  }
+
+  /**
+   * `signPublishedDocument()`, with a realm key in the HSM signing off the
+   * event loop (`stsCrypto.signJwsOffLoop()`, #1955 P8 follow-up). A software
+   * key signs the same bytes, in place, as `signPublishedDocument()` does;
+   * every service caller awaits this one. The two share the plan
+   * (`publishedDocumentPlan()`) and differ only in the signing call.
+   *
+   * @param claims - the document's members
+   * @param issuer - the issuer
+   * @param lifetimeS - how long the signature is good for, in seconds
+   * @param useCase - whose `x5c` or `x5u` setting applies
+   * @returns a promise of the signed JWT
+   */
+  signPublishedDocumentAsync(claims: Json, issuer: string, lifetimeS: number,
+                             useCase: string): Promise<string> {
+    const { stsCrypto, log } = this.deps;
+    log.debug("Entering OAuth2Server.signPublishedDocumentAsync().");
+    let plan: Json;
+    try {
+      plan = this.publishedDocumentPlan(claims, issuer, lifetimeS, useCase);
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.signPublishedDocumentAsync(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving OAuth2Server.signPublishedDocumentAsync(). No " +
+                "signer.");
+      return Promise.reject(e);
+    }
+    log.debug("Leaving OAuth2Server.signPublishedDocumentAsync(). " +
+              plan.alg + ".");
+    return stsCrypto.signJwsOffLoop(plan.payload, plan.key, plan.options);
+  }
+
+  // What a published document is signed as: the algorithm, the key (the use
+  // case's signer-group key in a hybrid-groups realm, #68, else the
+  // per-algorithm key — `signingKeyFor()` decides both), the payload and
+  // the options. RS256 with the realm's own key keeps jsonwebtoken's claim
+  // conveniences (`issuer`, `expiresIn`), as it always did.
+  private publishedDocumentPlan(claims: Json, issuer: string,
+                                lifetimeS: number, useCase: string): Json {
+    const { log, STS, nowSec, signingKeyFor, certificateHeaderFor,
+            publishedKidFor, config } = this.deps;
+    log.debug("Entering OAuth2Server.publishedDocumentPlan().");
     const alg = String(config.value('oauth2.signedMetadataAlgorithm') ||
                        'RS256');
-    // The use case's signer-group key in a hybrid-groups realm (#68), else
-    // the per-algorithm key — `signingKeyFor()` decides both.
     const signer = signingKeyFor(alg, useCase);
     if (alg === 'RS256' && signer.kid === STS.kid) {
-      log.debug("Leaving OAuth2Server.signPublishedDocument(). RS256.");
-      return stsCrypto.signJws(claims, STS.privateKey,
-        { algorithm: 'RS256', issuer: issuer, expiresIn: lifetimeS,
-          keyid: publishedKidFor(STS.kid),
-          header: certificateHeaderFor(useCase, 'RS256', STS.kid) });
+      log.debug("Leaving OAuth2Server.publishedDocumentPlan(). RS256.");
+      return { alg: 'RS256', payload: claims, key: STS.privateKey,
+               options: { algorithm: 'RS256', issuer: issuer,
+                          expiresIn: lifetimeS,
+                          keyid: publishedKidFor(STS.kid),
+                          header: certificateHeaderFor(useCase, 'RS256',
+                                                       STS.kid) } };
     }
     const iat = nowSec();
     const payload = Object.assign({}, claims,
                                   { iss: issuer, iat: iat,
                                     exp: iat + lifetimeS });
-    log.debug("Leaving OAuth2Server.signPublishedDocument(). " + alg + ".");
-    return stsCrypto.signJws(payload, signer.key,
-                             { algorithm: alg,
-                               keyid: publishedKidFor(signer.kid),
-                               header: certificateHeaderFor(useCase, alg,
-                                                           signer.kid) });
+    log.debug("Leaving OAuth2Server.publishedDocumentPlan(). " + alg + ".");
+    return { alg: alg, payload: payload, key: signer.key,
+             options: { algorithm: alg, keyid: publishedKidFor(signer.kid),
+                        header: certificateHeaderFor(useCase, alg,
+                                                     signer.kid) } };
   }
 
   // RFC 8414 section 2.1: signed_metadata is a JWT whose claims are the
   // metadata members, signed by the issuer, and carrying iss and sub. Genuinely
   // signed with the STS key, in `oauth2.signedMetadataAlgorithm`, so it can be
   // verified (the JWKS below).
-  private signedMetadata(meta: Json): string | undefined {
-    const { log, logArtifact, joseKid, config, errorCodes } = this.deps;
+  // ---------------------------------------------------------------------
+  // OFF THE EVENT LOOP (#1955 P8 follow-up): the same cache, the same key,
+  // the same answer to a failure (logged, nothing signed), with the
+  // signature made by `signPublishedDocumentAsync()`. The two discovery
+  // documents are served through this one.
+  // ---------------------------------------------------------------------
+  private async signedMetadataAsync(meta: Json): Promise<string | undefined> {
+    const { log, logArtifact, errorCodes } = this.deps;
     const self = this;
-    log.debug("Entering OAuth2Server.signedMetadata().");
+    log.debug("Entering OAuth2Server.signedMetadataAsync().");
     const claims = Object.assign({}, meta, { sub: meta.issuer });
+    const key = self.signedMetadataKey(claims);
+    const now = Date.now();
+    const held = self.heldSignedMetadata(key, now);
+    if (held) {
+      log.debug("Leaving OAuth2Server.signedMetadataAsync(). Reused.");
+      return held;
+    }
+    logArtifact('RFC 8414 signed_metadata', 'before signing', claims);
+    try {
+      const signed = await self.signPublishedDocumentAsync(claims,
+        meta.issuer, 3600, 'oauth-signed-metadata');
+      logArtifact('RFC 8414 signed_metadata', 'after signing', signed);
+      self.rememberSignedMetadata(key, signed, now, meta.issuer);
+      log.debug("Leaving OAuth2Server.signedMetadataAsync().");
+      return signed;
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.signedMetadataAsync(): " +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-OAUTH-0183') + 'signed_metadata: ' +
+                e.message);
+      log.debug("Leaving OAuth2Server.signedMetadataAsync(). Nothing was " +
+                "signed.");
+      return undefined;
+    }
+  }
+
+  // The cache key. THE ALGORITHM IS PART OF IT, because the claims alone
+  // are not what was signed: a document signed RS256 a moment before the
+  // setting moved to ES256 is the same claims and a different artefact.
+  private signedMetadataKey(claims: Json): string {
+    const { log, joseKid, config } = this.deps;
+    log.debug("Entering OAuth2Server.signedMetadataKey().");
     // THE CERTIFICATE HEADER'S SETTING IS PART OF THE KEY TOO (2026-09-13), for
     // the algorithm's reason below: the same claims with and without an `x5c`
     // are two artefacts, and without it a changed setting would go unseen for
@@ -2877,55 +2980,53 @@ class OAuth2Server {
     // key by one of two names, and a document signed under the internal kid
     // would otherwise go on being served for a minute after the realm switched
     // to the RFC 9278 URI (common/jose_kid.js).
-    const key = String(config.value('oauth2.signedMetadataAlgorithm') ||
-                       'RS256') + ' ' +
-                config.value('oauth2.signedMetadataCertificateHeader') + ' ' +
-                joseKid.formatFor() + ' ' +
-                JSON.stringify(claims);
-    const now = Date.now();
+    log.debug("Leaving OAuth2Server.signedMetadataKey().");
+    return String(config.value('oauth2.signedMetadataAlgorithm') ||
+                  'RS256') + ' ' +
+           config.value('oauth2.signedMetadataCertificateHeader') + ' ' +
+           joseKid.formatFor() + ' ' +
+           JSON.stringify(claims);
+  }
+
+  // A document signed under this key and still within its life, counted.
+  private heldSignedMetadata(key: string, now: number): string | undefined {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.heldSignedMetadata().");
     const held = signedMetadataCache.get(key);
     if (held && held.until > now) {
       signedMetadataCount.hit();
-      // Logged, because a reader of this log comparing two fetches has to be
-      // able to tell a document that was signed again from one that was not —
-      // they are byte-identical and nothing else would say which happened.
-      log.debug("Leaving OAuth2Server.signedMetadata(). It was already " +
+      log.debug("Leaving OAuth2Server.heldSignedMetadata(). It was already " +
                 "signed " + Math.round((now - held.at) / 1000) +
                 "s ago and is reused.");
       return held.signed;
     }
     signedMetadataCount.miss();
-    logArtifact('RFC 8414 signed_metadata', 'before signing', claims);
-    try {
-      const signed = self.signPublishedDocument(claims, meta.issuer, 3600,
-                                           'oauth-signed-metadata');
-      logArtifact('RFC 8414 signed_metadata', 'after signing', signed);
-      // THE ALGORITHM IS PART OF THE KEY, because the claims alone are not what
-      // was signed: a document signed RS256 a moment before the setting moved
-      // to ES256 is the same claims and a different artefact.
-      while (signedMetadataCache.size >= self.maxSignedMetadata()) {
-        // Map iterates in insertion order, so the first key is the oldest.
-        signedMetadataCache.delete(signedMetadataCache.keys().next().value);
-      }
-      signedMetadataCache.set(key, { signed: signed, at: now,
-                                     issuer: meta.issuer,
-                                     until: now + self.signedMetadataTtlMs() });
-      log.debug("Leaving OAuth2Server.signedMetadata().");
-      return signed;
-    } catch (e) {
-      log.error(errorCodes.tag('STS-OAUTH-0183') + 'signed_metadata: ' +
-                e.message);
-      log.debug("Leaving OAuth2Server.signedMetadata(). Nothing was signed.");
-      return undefined;
-    }
+    log.debug("Leaving OAuth2Server.heldSignedMetadata(). None.");
+    return undefined;
   }
 
-  private sendAsMetadata(req: Req, res: Res): void {
+  // A signed document kept, the oldest dropped first.
+  private rememberSignedMetadata(key: string, signed: string, now: number,
+                                 issuer: string): void {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.rememberSignedMetadata().");
+    while (signedMetadataCache.size >= self.maxSignedMetadata()) {
+      signedMetadataCache.delete(signedMetadataCache.keys().next().value);
+    }
+    signedMetadataCache.set(key, { signed: signed, at: now, issuer: issuer,
+                                   until: now + self.signedMetadataTtlMs() });
+    log.debug("Leaving OAuth2Server.rememberSignedMetadata().");
+  }
+
+  // Signed off the event loop for a realm key in the HSM (#1955 P8
+  // follow-up), so the answer is a promise the route returns.
+  private async sendAsMetadata(req: Req, res: Res): Promise<void> {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.sendAsMetadata().");
     const meta = self.asMetadata(req);
-    const signed = self.signedMetadata(meta);
+    const signed = await self.signedMetadataAsync(meta);
     if (signed) meta.signed_metadata = signed;
     self.holdToModel('authorization-server-metadata', meta);
     res.status(200)
@@ -3284,12 +3385,14 @@ class OAuth2Server {
   // registry, an OIDC client ignores members it does not know, and a signed
   // copy of THIS document — the OIDC members included — is the only way to
   // check that what arrived is what the issuer published.
-  private sendOidcMetadata(req: Req, res: Res, issuer?: string): void {
+  private async sendOidcMetadata(req: Req, res: Res,
+                                 issuer?: string): Promise<void> {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.sendOidcMetadata().");
     const meta = self.oidcMetadata(req, issuer);
-    const signed = self.signedMetadata(meta);
+    // Off the event loop for an HSM key (#1955 P8 follow-up).
+    const signed = await self.signedMetadataAsync(meta);
     if (signed) meta.signed_metadata = signed;
     self.holdToModel('openid-provider-metadata', meta);
     res.status(200).type('application/json').set('Cache-Control', 'no-store')
@@ -3836,6 +3939,42 @@ class OAuth2Server {
   // `sessionId` (#1072): the sign-on session the token rests on, whose
   // chosen dynamic roles the roles claim may carry (`roles.js`'s selection
   // reader). A direct grant has none, and gets none.
+  // THE SESSION WHOSE CHOSEN DYNAMIC ROLES A GRANT'S TOKENS MAY CARRY
+  // (#1072): the grant's own session, unless the grant — or, for a
+  // refresh, the grant it descends from — has no browser in it, when ''.
+  // The session id still goes on the tokens for its other uses (`sid`, the
+  // revocation on sign-out); only the roles are not read from it.
+  private selectionSessionOf(opts: Json): string {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.selectionSessionOf().");
+    const origin = String((opts && opts.grant === 'refresh_token'
+      ? opts.origin_grant : opts && opts.grant) || '');
+    const out = NO_ROLE_SELECTION_GRANTS.indexOf(origin) >= 0 ? ''
+      : String((opts && opts.session_id) || '');
+    log.debug("Leaving OAuth2Server.selectionSessionOf(). " +
+              (out ? 'The session.' : 'None.'));
+    return out;
+  }
+
+  // UserInfo's half of `selectionSessionOf()`: the grant the presented
+  // access token descends from, read off the token register by its jti.
+  // `refresh_token` there is a refresh whose origin was never recorded —
+  // a row from before #1072's follow-ups — and is read as a grant with no
+  // browser: SAFE, because it may descend from the device grant or CIBA,
+  // and leaving a chosen role off a UserInfo answer grants nothing.
+  private userinfoSelectionSession(claims: Json): string {
+    const { log, stats } = this.deps;
+    log.debug("Entering OAuth2Server.userinfoSelectionSession().");
+    const descends = String(stats.grantOfJti(claims && claims.jti) || '');
+    const sessionId = String((claims && claims.sid) ||
+                             stats.sessionIdOfJti(claims && claims.jti) || '');
+    const out = descends === 'refresh_token' ? ''
+      : this.selectionSessionOf({ grant: descends, session_id: sessionId });
+    log.debug("Leaving OAuth2Server.userinfoSelectionSession(). " +
+              (out ? 'The session.' : 'None.'));
+    return out;
+  }
+
   private customClaimContext(base: Json, payload: Json, user: Json,
                              grant?: string, sessionId?: string): Json {
     const { log } = this.deps;
@@ -3902,6 +4041,11 @@ class OAuth2Server {
              grantId: String((opts && (opts.grant_id || opts.grant_family ||
                                        opts.set_id)) || ''),
              grantRefresh: !!(opts && opts.grant_family),
+             // WHERE A REFRESH CAME FROM (#1072): the grant its chain began
+             // with (the refresh token's `grant_type`), so UserInfo holds a
+             // refreshed device or CIBA token to its origin's rule.
+             originGrant: opts && opts.grant === 'refresh_token'
+               ? String(opts.origin_grant || '') : '',
              // THE KEY UNDER A BOUND CERTIFICATE (#432 follow-up): the
              // SubjectPublicKeyInfo SHA-256 of the client certificate on the
              // Token Request, which the register keeps beside `x5t` when the
@@ -4236,7 +4380,7 @@ class OAuth2Server {
     const clientClaims = stats.jwtClaims('access_token',
                                          self.customClaimContext(
                                            base, payload, user, opts.grant,
-                                           opts.session_id));
+                                           self.selectionSessionOf(opts)));
     const resourceLayer = opts.grant === 'client_credentials' ? null
       : self.resourceServerClaims(payload.aud, user, granted);
     const combined = resourceLayer
@@ -5154,8 +5298,8 @@ class OAuth2Server {
                                        self.customClaimContext(base, payload,
                                                                user,
                                                                opts.grant,
-                                                               opts.session_id
-                                                               )),
+                                                               self
+                                                 .selectionSessionOf(opts))),
                        opts.scope, 'ID Token'),
       payload);
     // ---------------------------------------------------------------------
@@ -5406,6 +5550,29 @@ class OAuth2Server {
         throw new IssuanceRefused(log, answer, kinds[i]);
       }
     }
+    // A REQUIRED DYNAMIC ROLE, ON A GRANT WITH NO BROWSER IN IT (#1072,
+    // rcbj's decision 5): the person cannot choose it here, so the client
+    // is refused rather than handed a token without it.
+    // The pre-authorized code is not one of decision 5's: its offer was
+    // made on a session (`decided_on_session_id`), and it carries no choice.
+    if (subject.kind === 'user' && subject.name &&
+        NO_ROLE_SELECTION_GRANTS.indexOf(String(opts.grant || '')) >= 0 &&
+        opts.grant !== 'pre-authorized code') {
+      const roleRefusal = require('../authn/role_selection').noBrowserRefusal({
+        username: String(subject.name),
+        application: String(opts.client_id || ''),
+        protocol: 'OAuth 2.0 (' + String(opts.grant) + ')',
+        acr: String(opts.acr || ''),
+        amr: Array.isArray(opts.amr) ? opts.amr : [] });
+      if (roleRefusal) {
+        log.debug("Leaving OAuth2Server.checkIssuance(). A required " +
+                  "dynamic role.");
+        throw new IssuanceRefused(log, { allowed: false,
+                                         why: roleRefusal.why,
+                                         roleSelection: true },
+                                  'role selection');
+      }
+    }
     log.debug("Leaving OAuth2Server.checkIssuance(). Allowed.");
     return null;
   }
@@ -5592,8 +5759,8 @@ class OAuth2Server {
         self.issuanceSubjectOf(opts),
         { clientId: opts.client_id, grant: opts.grant,
           // #1072: the session's chosen dynamic roles count, for this
-          // client; a direct grant has no session and none.
-          sessionId: opts.session_id || '' });
+          // client; a grant with no browser in it carries none.
+          sessionId: self.selectionSessionOf(opts) });
       if (narrowed.emptied) {
         log.debug("Leaving OAuth2Server.tokenSet(). Nothing but gated " +
                   "permissions the subject may not hold was asked for.");
@@ -12371,9 +12538,23 @@ class OAuth2Server {
         'person from the one signed in here, and prompt=none forbids asking ' +
         'them to sign in (OIDC Core section 3.1.2.1).');
     }
+    // A REQUIRED DYNAMIC ROLE THE SESSION CHOSE NOTHING FOR (#1072): single
+    // sign-on carries no new choice (decision 4), so the person signs in
+    // again, where the role step is drawn; prompt=none cannot ask.
+    const roleOwed = !!session && promptList.indexOf('login') < 0 &&
+      typeof authn.roleChoiceOwed === 'function' &&
+      authn.roleChoiceOwed(session, String(q.client_id || ''));
+    if (roleOwed && promptList.indexOf('none') >= 0) {
+      log.debug("Leaving the authorization endpoint. A role choice is owed, " +
+                "and prompt=none.");
+      errorCodes.mark(res, 'STS-XACML-0333');
+      return fail('interaction_required', 'This application needs the ' +
+        'person to choose a role when they sign in, and prompt=none forbids ' +
+        'asking (OIDC Core section 3.1.2.6).');
+    }
     const forcePrompt = promptList.indexOf('login') >= 0 ||
                         promptList.indexOf('select_account') >= 0 ||
-                        hintMismatch;
+                        hintMismatch || roleOwed;
     // -------------------------------------------------------------------------
     // RFC 9470 AND OPENID CONNECT CORE 3.1.2.1: A SESSION IS NOT AN ANSWER TO A
     // REQUEST IT DOES NOT MEET (2026-09-13).
@@ -14105,7 +14286,10 @@ class OAuth2Server {
     const configured = scopeClaims.gate(
       stats.jwtClaims('userinfo', self.customClaimContext(
         base, claims, user, undefined,
-        String(claims.sid || stats.sessionIdOfJti(claims.jti) || ''))),
+        // Not for a token of a grant with no browser in it (#1072), a
+        // refresh judged by where it came from; a refresh whose origin the
+        // register does not hold carries none (`grantOfJti()` argues it).
+        self.userinfoSelectionSession(claims))),
       claims.scope, 'UserInfo response');
     Object.assign(body, configured);
     if (Object.keys(configured).length) {
@@ -14912,6 +15096,15 @@ class OAuth2Server {
         errorCodes.mark(res, 'STS-CORE-0121');
         log.debug("Leaving OAuth2Server.tokenEndpoint().");
         return self.oauthError(res, 400, 'invalid_grant', e.message);
+      }
+      // A REQUIRED DYNAMIC ROLE THIS GRANT CANNOT ASK FOR (#1072).
+      if (e && e.name === 'IssuanceRefused' && e.issuance &&
+          e.issuance.roleSelection) {
+        log.debug("Leaving the token endpoint's refusal wrapper. A " +
+                  "required dynamic role.");
+        errorCodes.mark(res, 'STS-XACML-0332');
+        log.debug("Leaving OAuth2Server.tokenEndpoint().");
+        return self.oauthError(res, 400, 'access_denied', e.message);
       }
       if (e && e.name === 'IssuanceRefused') {
         log.debug("Leaving the token endpoint's refusal wrapper. The " +
@@ -23282,8 +23475,8 @@ class OAuth2Server {
     app.get('/.well-known/oauth-authorization-server/*',
             function (req, res, next) {
       // `[realm/<id>][/<server>]` (#119) — see issuerPathTarget().
-      self.discoveryForPath(req, res, next, req.params[0],
-                            self.sendAsMetadata.bind(self));
+      return self.discoveryForPath(req, res, next, req.params[0],
+                                   self.sendAsMetadata.bind(self));
     });
 
     // WebFinger (#119): at the host root, answering for every realm.
@@ -23291,8 +23484,9 @@ class OAuth2Server {
 
     app.get('/.well-known/openid-configuration', function (req, res) {
       log.debug("Entering the OpenID Connect Discovery endpoint.");
-      self.sendOidcMetadata(req, res);
+      const answered = self.sendOidcMetadata(req, res);
       log.debug("Leaving the OpenID Connect Discovery endpoint.");
+      return answered;
     });
 
     // -------------------------------------------------------------------------
@@ -23319,11 +23513,13 @@ class OAuth2Server {
       log.debug("Entering the OpenID Connect Discovery endpoint (RFC 8414 " +
                 "inserted-path form).");
       // `[realm/<id>][/<server>]` (#119) — see issuerPathTarget().
-      self.discoveryForPath(req, res, next, req.params[0], function (q, r) {
-        self.sendOidcMetadata(q, r);
+      const answered = self.discoveryForPath(req, res, next, req.params[0],
+                                             function (q, r) {
+        return self.sendOidcMetadata(q, r);
       });
       log.debug("Leaving the OpenID Connect Discovery endpoint (RFC 8414 " +
                 "inserted-path form).");
+      return answered;
     });
 
     app.get('/*/.well-known/openid-configuration', function (req, res, next) {
@@ -23343,10 +23539,11 @@ class OAuth2Server {
         return;
       }
       req.__asProfile = self.profileFromPath(target.server);
-      self.sendOidcMetadata(req, res,
-                            baseUrlOf(req) + (path ? '/' + path : ''));
+      const answered = self.sendOidcMetadata(req, res,
+        baseUrlOf(req) + (path ? '/' + path : ''));
       log.debug("Leaving the OpenID Connect Discovery endpoint (issuer-path " +
                 "form). path=" + path);
+      return answered;
     });
 
     app.get('/oauth2/jwks', self.jwksEndpoint.bind(self));
@@ -23760,6 +23957,7 @@ export = {
   // The RFC 8414 `signed_metadata` signer, for the OID4VCI issuer
   // metadata's copy of the same construct. See its header.
   signPublishedDocument: slot.forward('signPublishedDocument'),
+  signPublishedDocumentAsync: slot.forward('signPublishedDocumentAsync'),
   authCodeTtlMs: slot.forward('authCodeTtlMs'),
   registrationOpen: slot.forward('registrationOpen'),
   registrationReachable: slot.forward('registrationReachable')

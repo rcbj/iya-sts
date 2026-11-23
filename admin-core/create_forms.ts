@@ -39,6 +39,7 @@ interface CreateField {
   required: boolean;
   // REQUIRED FOR SOME CHOICES ONLY: the create refuses without it when
   // another field holds one of these values, and is otherwise indifferent.
+  // `*` is any value at all: two fields that go together name each other.
   requiredWhen?: { field: string; values: string[] };
 }
 
@@ -48,8 +49,24 @@ const FORMS: Record<string, CreateField[]> = {
   // `usersAction()`'s `create`: the username is the entry's `uid` and RDN.
   // The attribute grid's own required fields are the realm's attribute
   // policy's (`requiredAttributes` beside this, #1066), drawn by the grid.
+  //
+  // A SERVICE ACCOUNT FROM THE START (#221, #1132's follow-ups): with the
+  // box ticked (`serviceAccount` `true`), `service_accounts.ts`'s check()
+  // refuses a create naming no owner while the account's service-account
+  // policy requires one (STS-SVCACCT-0023; `requireOwner`, on by default,
+  // so `newUserJson()` drops the condition where the realm's default policy
+  // turns it off), and a push destination and the secret's name there go
+  // together (STS-SVCACCT-0026): each is required once the other holds
+  // anything (`*`).
   users: [
-    { name: 'username', required: true }
+    { name: 'username', required: true },
+    { name: 'serviceAccount', required: false },
+    { name: 'owners', required: false,
+      requiredWhen: { field: 'serviceAccount', values: ['true'] } },
+    { name: 'destination', required: false,
+      requiredWhen: { field: 'secretName', values: ['*'] } },
+    { name: 'secretName', required: false,
+      requiredWhen: { field: 'destination', values: ['*'] } }
   ],
   // `createApplication()`: the identifier is the registry key. The name
   // defaults to it. The field grid's attributes are optional.

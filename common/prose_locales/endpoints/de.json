@@ -1287,10 +1287,6 @@
     "en": "33209f967f070175",
     "text": "Aktionen für Hardware-Token"
   },
-  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
-    "en": "f46d01f7581b5379",
-    "text": "Hinterlegte PIV-Schlüssel"
-  },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
     "text": "Ausgehende SCIM-Clients"
@@ -2654,5 +2650,13 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (ein Clientzertifikat wird erbeten, nie verlangt)"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "Hinterlegte PIV-Schlüssel"
+  },
+  "endpoints.route./admin-api/hardware-tokens/ssh-certificates.name": {
+    "en": "3bb1ef22ae2ed554",
+    "text": "Die SSH-Benutzerzertifikate einer Person"
   }
 }
