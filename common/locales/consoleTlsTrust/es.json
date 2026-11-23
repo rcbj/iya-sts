@@ -37,5 +37,5 @@
   "linkApi": "lo mismo por la API de administración",
   "linkSettings": "la configuración de los puertos de escucha TLS",
   "linkPki": "la autoridad de certificación propia de este servicio",
-  "shadowedBy": "Ocultada por un ancla anterior con el mismo asunto ({fingerprint}). Un certificado emitido por esta ancla no se verifica mientras aquella esté instalada. Presentar este certificado sí se verifica."
+  "shadowedBy": "Comparte el asunto con otra ancla ({fingerprint}). Un certificado emitido por cualquiera de las dos puede no verificarse mientras ambas estén instaladas. Presentar este certificado sí se verifica."
 }

@@ -4156,39 +4156,13 @@ function asciiOf(node) {
 // with a string value compared as RFC 5280 section 7.1 asks — case folded,
 // leading and trailing space removed, internal space collapsed — and any
 // other value by its DER. Two names are the same name when these lists are
-// equal; a directoryName constraint is a PREFIX of this list.
+// equal; a directoryName constraint is a PREFIX of this list. The reading is
+// `common/crypto.js`'s `certificateNameRdns()` since #1242, so the client
+// truststore's same-subject question and these path rules read a name one
+// way; it was this function's body until then.
 function rdnsOfName(node) {
   log.debug("Entering rdnsOfName().");
-  if (!(node instanceof asn1js.Sequence)) {
-    log.debug("Leaving rdnsOfName(). Not a Name.");
-    throw new Error('a Name is not a SEQUENCE');
-  }
-  // An EMPTY RDN (a SET with no attribute) is read as no RDN at all: the
-  // ASN.1 says SIZE (1..MAX), and pkijs writes one for an empty name — the
-  // Fulcio-shaped certificates the SPIFFE sigstore tests make, and a TPM
-  // attestation key's — so what it means is not in doubt.
-  const sets = node.valueBlock.value.filter(function (set) {
-    return !(set instanceof asn1js.Set) || set.valueBlock.value.length > 0;
-  });
-  const out = sets.map(function (set) {
-    if (!(set instanceof asn1js.Set)) {
-      throw new Error('a RelativeDistinguishedName is not a SET');
-    }
-    return set.valueBlock.value.map(function (atv) {
-      // asn1js declares a generic ValueBlock; a constructed one has `value`.
-      const block = /** @type {any} */ (atv.valueBlock);
-      const parts = block && block.value;
-      if (!parts || parts.length !== 2 ||
-          !(parts[0] instanceof asn1js.ObjectIdentifier)) {
-        throw new Error('an attribute is not a type and a value');
-      }
-      const value = parts[1];
-      const text = value instanceof asn1js.BaseStringBlock
-        ? String(value.getValue()).trim().replace(/\s+/g, ' ').toLowerCase()
-        : '#' + Buffer.from(value.toBER(false)).toString('hex');
-      return parts[0].getValue() + '=' + text;
-    }).sort().join('+');
-  });
+  const out = stsCrypto.certificateNameRdns(node);
   log.debug("Leaving rdnsOfName(). " + out.length + " RDN(s).");
   return out;
 }

@@ -18711,13 +18711,17 @@ const CODES = [
       'for a certificate that is not an identity.',
     spec: 'none (logged): the door\'s own refusal' },
   { code: 'STS-TLS-0064',
-    summary: 'Two client-truststore anchors share a subject and not a key. ' +
-      'OpenSSL looks an issuer up by subject name, so the later one is ' +
-      'shadowed: a certificate it issued does not verify ' +
-      '(DEPTH_ZERO_SELF_SIGNED_CERT) while the earlier one is installed. ' +
-      'The add is kept and warned (the row\'s shadowedBy names the earlier ' +
-      'fingerprint). Presenting the shadowed certificate itself is ' +
-      'recognised by its fingerprint and verified (#1242).',
+    summary: 'Two client-truststore anchors share a subject, and their ' +
+      'subject key identifiers do not tell them apart. OpenSSL looks an ' +
+      'issuer up by subject name and may check a certificate against ' +
+      'either, so a certificate one of them issued may not verify ' +
+      '(CERT_SIGNATURE_FAILURE) while both are installed; which one it ' +
+      'finds first is not promised. The add is kept and warned, and each ' +
+      'row\'s shadowedBy names the other\'s fingerprint (the lowest, when ' +
+      'several share it). Presenting either self-signed certificate itself ' +
+      'is recognised by its fingerprint and verified, when its own ' +
+      'purpose, key usage, validity and critical extensions allow a client ' +
+      'certificate (#1242).',
     spec: 'the add succeeds with warning; the handshake of the certificate ' +
       'itself verifies' },
   { code: 'STS-VC-0001',

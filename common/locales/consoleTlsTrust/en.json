@@ -37,5 +37,5 @@
   "linkApi": "the same over the management API",
   "linkSettings": "the TLS listeners' settings",
   "linkPki": "this service's own certificate authority",
-  "shadowedBy": "Shadowed by an earlier anchor with this subject ({fingerprint}). A certificate this anchor issued does not verify while that one is installed. Presenting this certificate itself still verifies."
+  "shadowedBy": "Shares a subject with another anchor ({fingerprint}). A certificate either one issued may not verify while both are installed. Presenting this certificate itself still verifies."
 }

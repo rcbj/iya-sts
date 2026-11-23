@@ -37,5 +37,5 @@
   "linkApi": "dasselbe über die Verwaltungs-API",
   "linkSettings": "die Einstellungen der TLS-Listener",
   "linkPki": "die eigene Zertifizierungsstelle dieses Dienstes",
-  "shadowedBy": "Von einem früheren Anker mit demselben Subjekt verdeckt ({fingerprint}). Ein von diesem Anker ausgestelltes Zertifikat wird nicht geprüft, solange jener installiert ist. Dieses Zertifikat selbst wird geprüft."
+  "shadowedBy": "Teilt das Subjekt mit einem anderen Anker ({fingerprint}). Ein von einem der beiden ausgestelltes Zertifikat wird möglicherweise nicht geprüft, solange beide installiert sind. Dieses Zertifikat selbst wird geprüft."
 }

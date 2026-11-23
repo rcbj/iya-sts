@@ -37,5 +37,5 @@
   "linkApi": "la même chose par l’API de gestion",
   "linkSettings": "les paramètres des ports d’écoute TLS",
   "linkPki": "l’autorité de certification de ce service",
-  "shadowedBy": "Masqué par une ancre antérieure au même sujet ({fingerprint}). Un certificat émis par cette ancre ne se vérifie pas tant que celle-là est installée. Présenter ce certificat lui-même se vérifie tout de même."
+  "shadowedBy": "Partage son sujet avec une autre ancre ({fingerprint}). Un certificat émis par l’une ou l’autre peut ne pas se vérifier tant que les deux sont installées. Présenter ce certificat lui-même se vérifie tout de même."
 }
