@@ -591,7 +591,7 @@ class DeviceEnrolment {
                                               'sign-in');
     log.debug("Leaving DeviceEnrolment.postQuantumProblem(). " +
               (refused ? refused.code : 'none'));
-    return refused ? this.refuse(refused.code, refused.why) : null;
+    return refused ? this.refuse(refused.code, String(refused.why)) : null;
   }
 
   // =========================================================================

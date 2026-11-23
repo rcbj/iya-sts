@@ -1342,8 +1342,8 @@ should have held. The ACS's refusal page escapes them as it always did.
 |---|---|---|
 | `index` | `GET /federation` | the `federationPages` catalogs, in every base catalog |
 | `signedIn` | `/federation/link/{handle}`'s outcome where nothing asked to be returned to | the `handoff` catalogs' `federation.signedIn.*` — the same keys `signedInPage()` still draws for the ACS |
-| `refused` | every refusal of the two endpoints: `what`, `why`, the relationship | English, every word (#539's decision 6) |
-| `off`, `noRelationship` | the two 404s | English |
+| `refused` | every refusal of the surface's endpoints: `what`, `why`, the relationship | the `refusals` catalogs' `federation.*` since #2006 (English, #539's decision 6, until then): `refuse()` takes `Sentence`s and the view carries `whatMessage` and `whyMessage`; a partner's or a library's words (`got.why`, an exception's message) are drawn as sent |
+| `off`, `noRelationship` | the two 404s | the `refusals` catalogs (#2006) |
 
 The renderers are `web_federation_views.ts`, the table
 `web_federation_pages.ts` (every row `embedded`) and the runtime

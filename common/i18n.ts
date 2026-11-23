@@ -83,10 +83,12 @@
 // is trusted the way a page's literal markup is; a parameter never is.
 //
 // ---------------------------------------------------------------------------
-// rcbj's decision 6 on #539: ERRORS STAY ENGLISH. Nothing here decides that —
-// a refusal is simply never looked up in a catalog — but it is why the
-// namespaces hold titles, labels, buttons, instructions and success messages
-// and no refusal text.
+// rcbj's decision 6 on #539 was ERRORS STAY ENGLISH; #1326 reversed it for
+// the page that ends a browser flow, and #2006 (rcbj, 2026-11-23) for every
+// static surface's refusals. A refusal's words are the `refusals` namespace,
+// named by `common/sentence.ts` and drawn by the browser
+// (`common/web_said.ts`); what a program reads — an API's `errors`, an
+// `error_description`, a log line — stays English. `common/CLAUDE.md` 3ci.
 //
 // A LIBRARY (rule 3) AND A LEAF: `helpers` (the logger), `error_codes`, the
 // instance slot, `fs` and `path`, and the two `web_` modules below. It

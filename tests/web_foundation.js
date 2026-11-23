@@ -602,8 +602,14 @@ function childMain() {
         return n === 'action' ? '/demo/other' : null;
       }
     }, null);
-    note(one.env.document.body.innerHTML.indexOf('has no API operation') >= 0,
-         'E3. a form no operation mirrors is refused, not guessed');
+    // In the page's language since #2006: this page is drawn in French
+    // (`ui_locales=fr`), and so is the runtime's own refusal, which still
+    // names the control it refused.
+    note(one.env.document.body.innerHTML.indexOf(
+           'aucune opération d’API (/demo/other)') >= 0,
+         'E3. a form no operation mirrors is refused, not guessed, in the ' +
+         'page\'s language',
+         one.env.document.body.innerHTML.slice(0, 400));
     const two = await drive('/realm/acme/demo',
                             { 'data-sts-prefix': '/realm/acme' });
     const body2 = two.env.document.body.innerHTML;

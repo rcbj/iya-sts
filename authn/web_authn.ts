@@ -390,8 +390,10 @@ class AuthnSurface extends WebSurface {
       uiLocales: ui, own: state ? state.preferredLanguage : undefined });
     if (!state) {
       this.view = null;
-      this.drawProblem('This page could not be drawn',
-        'The service sent no state for it.');
+      this.drawProblem(this.refusal('refusals.web.notDrawnTitle', {},
+                                    'This page could not be drawn'),
+        this.refusal('refusals.web.noState', {},
+                     'The service sent no state for it.'));
       return;
     }
     this.lastAnswer = state;
@@ -472,13 +474,16 @@ class AuthnSurface extends WebSurface {
    */
   async consentAct(fields: Json): Promise<void> {
     if (!await this.ensureIndex()) {
-      this.refused('The service\'s API could not be reached.');
+      this.refused(this.refusal('refusals.web.unreachable', {},
+        'The service\'s API could not be reached.'));
       return;
     }
     const op = this.operationFor(CONSENT_PATH, String(fields.action || ''));
     if (!op) {
-      this.refused('This control has no API operation (' + CONSENT_PATH +
-                   '), so the page refuses it rather than guess.');
+      this.refused(this.refusal('refusals.web.noOperation',
+        { control: CONSENT_PATH },
+        'This control has no API operation (' + CONSENT_PATH +
+        '), so the page refuses it rather than guess.'));
       return;
     }
     const answer = await this.send(String(op.path)
@@ -498,15 +503,17 @@ class AuthnSurface extends WebSurface {
    */
   async accountsAct(fields: Json): Promise<void> {
     if (!await this.ensureIndex()) {
-      this.refused('The service\'s API could not be reached.');
+      this.refused(this.refusal('refusals.web.unreachable', {},
+        'The service\'s API could not be reached.'));
       return;
     }
     const action = String(fields.action || '');
     const op = this.operationFor(ACCOUNTS_PATH, action);
     if (!op) {
-      this.refused('This control has no API operation (' + ACCOUNTS_PATH +
-                   ' ' + action + '), so the page refuses it rather than ' +
-                   'guess.');
+      this.refused(this.refusal('refusals.web.noOperation',
+        { control: ACCOUNTS_PATH + ' ' + action },
+        'This control has no API operation (' + ACCOUNTS_PATH +
+        ' ' + action + '), so the page refuses it rather than guess.'));
       return;
     }
     const body = action === 'another' ? {}
@@ -682,14 +689,17 @@ class AuthnSurface extends WebSurface {
     const action = pressed === 'email-code' || pressed === 'email-link'
       ? 'email' : pressed;
     if (!await this.ensureIndex()) {
-      this.refused('The service\'s API could not be reached.');
+      this.refused(this.refusal('refusals.web.unreachable', {},
+        'The service\'s API could not be reached.'));
       return;
     }
     const op = action === 'passkey'
       ? this.operationFor(path, 'passkey') : this.operationFor(path, action);
     if (!op) {
-      this.refused('This control has no API operation (' + path + ' ' +
-                   action + '), so the page refuses it rather than guess.');
+      this.refused(this.refusal('refusals.web.noOperation',
+        { control: path + ' ' + action },
+        'This control has no API operation (' + path + ' ' +
+        action + '), so the page refuses it rather than guess.'));
       return;
     }
     if (action === 'passkey') {
@@ -736,7 +746,7 @@ class AuthnSurface extends WebSurface {
    * where the answer carried none.
    *
    * @param json - the view, or null
-   * @param error - the sentence, English
+   * @param error - the sentence, in the page's language (#2006)
    * @returns nothing
    */
   showView(json: Json, error: string): void {
@@ -744,7 +754,8 @@ class AuthnSurface extends WebSurface {
                            '');
     if (!page || !json) {
       this.view = null;
-      this.drawProblem('Nobody was signed in', error);
+      this.drawProblem(this.refusal('refusals.web.nobodySignedIn', {},
+                                    'Nobody was signed in'), error);
       return;
     }
     this.view = { page: page, query: this.pageQuery(),
@@ -756,7 +767,8 @@ class AuthnSurface extends WebSurface {
   /**
    * Draws the screen again with a refusal on it, from a fresh view.
    *
-   * @param why - the sentence, English
+   * @param why - the sentence, in the page's language where its answer
+   *   named a catalog message (#2006)
    * @returns nothing
    */
   refused(why: string): void {
@@ -776,7 +788,7 @@ class AuthnSurface extends WebSurface {
   async next(answer: Json): Promise<void> {
     const json = answer.json;
     if (!json) {
-      this.refused('The service answered ' + answer.status + '.');
+      this.refused(this.answeredStatus(answer.status));
       return;
     }
     if (json.ok && json.next === 'stay') {
@@ -793,8 +805,11 @@ class AuthnSurface extends WebSurface {
     // server drew it, from the answer.
     if (json.end && this.view) {
       this.view = { page: this.view.page, query: this.view.query,
-                    json: { state: 'end', title: String(json.end.title),
-                            sentence: (json.errors || []).join(' ') } };
+                    json: { state: 'end',
+                            title: json.end.titleRefusal
+                              ? this.said(json.end.titleRefusal)
+                              : String(json.end.title),
+                            sentence: this.said(json) } };
       this.drawView();
       return;
     }
@@ -811,8 +826,7 @@ class AuthnSurface extends WebSurface {
       this.autofill = !!json.passkey.autofill;
       this.signalUnknown(String(json.passkey.unknownCredential || ''));
     }
-    this.refused((json.errors || []).join(' ') ||
-                 'The service answered ' + answer.status + '.');
+    this.refused(this.said(json) || this.answeredStatus(answer.status));
   }
 
   /**
@@ -912,9 +926,9 @@ class AuthnSurface extends WebSurface {
    * a link to the realm's root page (`href="/"`, prefixed with the realm
    * when the page is put). In the page's language where the `authn`
    * catalog is loaded, and in English where it is not — the consent
-   * screen loads none of it, and a refusal's own sentence stays English
-   * either way. The English here is `authn/en.json`'s `stuck.close` and
-   * `stuck.home`.
+   * screen loads none of it. A refusal's own sentence is drawn from the
+   * `refusals` catalogs (#2006). The English here is `authn/en.json`'s
+   * `stuck.close` and `stuck.home`.
    *
    * @param t - the page's translator
    * @returns the markup
@@ -946,8 +960,10 @@ class AuthnSurface extends WebSurface {
     const action = String(fields.action || Object.keys(acts)[0] || '');
     const act = acts[action];
     if (!act) {
-      this.refused('This control has no API operation (' + path + ' ' +
-                   action + '), so the page refuses it rather than guess.');
+      this.refused(this.refusal('refusals.web.noOperation',
+        { control: path + ' ' + action },
+        'This control has no API operation (' + path + ' ' +
+        action + '), so the page refuses it rather than guess.'));
       return;
     }
     const query = this.pageQuery();
@@ -975,7 +991,8 @@ class AuthnSurface extends WebSurface {
           encodeURIComponent(String(query.change)) + '/start-over'
         : '');
     if (!path) {
-      this.refused('This page names no sign-in step to start over from.');
+      this.refused(this.refusal('refusals.web.noStepToRestart', {},
+        'This page names no sign-in step to start over from.'));
       return;
     }
     const answer = await this.send(path, {});

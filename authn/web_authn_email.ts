@@ -28,6 +28,7 @@
 
 import WebAuthnLogin = require('./web_authn_login');
 import WebOutcome = require('../common/web_outcome');
+import WebSaid = require('../common/web_said');
 import WebAuthnMfa = require('./web_authn_mfa');
 
 type Json = any;
@@ -89,17 +90,37 @@ class WebAuthnEmail {
   }
 
   /**
-   * A refusal that ends the page: English, as `endPage()` drew it — through
-   * the one outcome renderer since #580, to the same bytes.
+   * A refusal that ends the page, as `endPage()` drew it — through the one
+   * outcome renderer since #580 — in the page's language where the view
+   * carried its catalog messages (#2006: `titleRefusal`, `refusal`), and in
+   * its English otherwise.
    *
-   * @param v - `{ title, sentence }`
+   * @param v - `{ title, sentence, titleRefusal?, refusal? }`
+   * @param t - the page's translator
    * @returns the markup
    */
-  static end(v: Json): string {
-    return WebOutcome.draw({ heading: String(v.title || ''),
-      why: String(v.sentence || ''), whyTone: 'err',
+  static end(v: Json, t: Json): string {
+    return WebOutcome.draw({ heading: WebAuthnEmail.endTitle(v, t),
+      why: (v.refusal && WebSaid.saidWith(t, v.refusal)) ||
+        String(v.sentence || ''), whyTone: 'err',
       ids: { why: 'email-error' },
-      notes: ['Start again from the application that sent you here.'] });
+      // `notes` are markup, so the sentence — text — is escaped here.
+      notes: [WebAuthnLogin.esc(WebSaid.sentence(t,
+        { key: 'refusals.web.startAgainFromApplication' }) ||
+        'Start again from the application that sent you here.')] });
+  }
+
+  /**
+   * An end page's title, in the page's language where the view carried its
+   * catalog message (#2006).
+   *
+   * @param v - the view
+   * @param t - the page's translator
+   * @returns the title, as text
+   */
+  static endTitle(v: Json, t: Json): string {
+    return (v.titleRefusal && WebSaid.saidWith(t, v.titleRefusal)) ||
+      String(v.title || '');
   }
 
   /**
@@ -207,7 +228,7 @@ class WebAuthnEmail {
     const t = ctx.t;
     const v = view || {};
     if (v.state === 'end') {
-      return WebAuthnEmail.end(v);
+      return WebAuthnEmail.end(v, t);
     }
     if (v.state === 'elsewhere') {
       return '<h1>' + t.html('emailFactor.elsewhere.heading') +
@@ -245,7 +266,8 @@ class WebAuthnEmail {
     const t = ctx.t;
     const v = view || {};
     if (v.state === 'end') {
-      return t.text('emailFactor.shell.title', { title: String(v.title) });
+      return t.text('emailFactor.shell.title',
+                    { title: WebAuthnEmail.endTitle(v, t) });
     }
     const key = v.state === 'elsewhere' ? 'emailFactor.elsewhere.title'
       : (v.state === 'open' ? 'emailFactor.open.title'

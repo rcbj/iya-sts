@@ -20,9 +20,9 @@
 //     section 8) with its limit controls, what the issuance policy narrowed,
 //     the subject information asked for, and what follows;
 //   * what is said after — a decision made (`done`), a request sent to the
-//     person it names (`sent`), and a refusal (`problem`, English, as every
-//     refusal here), each the view a shell carries in `data-sts-state` or an
-//     act answers.
+//     person it names (`sent`), and a refusal (`problem`, drawn in the
+//     page's language from its `headingMessage` and `detailMessage`, #2006),
+//     each the view a shell carries in `data-sts-state` or an act answers.
 //
 // The words are the `gnap` catalogs #539 wrote for these pages; the
 // dimension names and values, the identifiers and the URIs are the
@@ -35,6 +35,7 @@
 // ---------------------------------------------------------------------------
 
 import WebLimitsForm = require('../common/web_limits_form');
+import WebSaid = require('../common/web_said');
 
 type Json = any;
 
@@ -73,7 +74,7 @@ class WebGnapInteractViews {
       case 'sent':
         return WebGnapInteractViews.sent(v, ctx);
       default:
-        return WebGnapInteractViews.problem(v);
+        return WebGnapInteractViews.problem(v, ctx);
     }
   }
 
@@ -101,8 +102,9 @@ class WebGnapInteractViews {
       case 'sent':
         return titled(t.text('gnap.sent.title'));
       default:
-        // A refusal is English (#539's decision 6), its title too.
-        return String(v.heading || 'Something went wrong') +
+        // A refusal's title in the page's language (#2006); its English
+        // where the catalogs lack the key.
+        return WebGnapInteractViews.problemHeading(v, t) +
           ' — GNAP authorization server';
     }
   }
@@ -281,19 +283,55 @@ class WebGnapInteractViews {
   }
 
   /**
-   * A refusal: a link, a code or an answer this service cannot take. In
-   * English, as every refusal here is.
+   * A sentence this page writes itself, in the page's language, and in the
+   * English given where the catalogs lack it (#2006). The key comes first,
+   * as in `WebSurface.refusal()`, so `tests/i18n_catalogs.js` finds it.
    *
-   * @param view - `{ heading, detail }`
+   * @param key - the `refusals` key, a literal
+   * @param params - its parameters
+   * @param english - the English
+   * @param t - the translator
+   * @returns the sentence, as text
+   */
+  static refusal(key: string, params: Json, english: string,
+                 t: Json): string {
+    return WebSaid.sentence(t, { key: key, params: params || {} }) || english;
+  }
+
+  /**
+   * A refusal's heading, as text, in the page's language (#2006).
+   *
+   * @param view - `{ heading, headingMessage }`
+   * @param t - the translator
+   * @returns the heading
+   */
+  static problemHeading(view: Json, t: Json): string {
+    return WebSaid.sentence(t, view.headingMessage) ||
+      String(view.heading ||
+             WebGnapInteractViews.refusal('refusals.gnap.heading.wentWrong',
+                                          {}, 'Something went wrong', t));
+  }
+
+  /**
+   * A refusal: a link, a code or an answer this service cannot take, in the
+   * page's language (#2006): the heading and the detail from their catalog
+   * messages, their English where the catalogs lack them.
+   *
+   * @param view - `{ heading, detail, headingMessage, detailMessage }`
+   * @param ctx - the surface's context: `t`
    * @returns the body
    */
-  static problem(view: Json): string {
+  static problem(view: Json, ctx: Json): string {
     const esc = WebGnapInteractViews.esc;
-    return '<h1>' + esc(view.heading || 'Something went wrong') +
-      '</h1><p class="err">' + esc(view.detail || '') + '</p><div ' +
-      'class="meta"><div>Nothing was approved and nothing was sent to any ' +
-      'application. Start again from the application that sent you ' +
-      'here.</div></div>';
+    const t = ctx && ctx.t;
+    return '<h1>' + esc(WebGnapInteractViews.problemHeading(view, t)) +
+      '</h1><p class="err">' +
+      esc(WebSaid.sentence(t, view.detailMessage) || view.detail || '') +
+      '</p><div class="meta"><div>' +
+      esc(WebGnapInteractViews.refusal('refusals.gnap.nothingApproved', {},
+        'Nothing was approved and nothing was sent to any application. ' +
+        'Start again from the application that sent you here.', t)) +
+      '</div></div>';
   }
 }
 
