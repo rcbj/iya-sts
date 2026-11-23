@@ -139,6 +139,14 @@
     "en": "1d66f74984228996",
     "text": "Inloggningstjänsten och dess andra faktorer, plånboken, SPNEGO- och certifikatinloggningar, samt utloggningen."
   },
+  "listeners.applications.certificate-sign-in.label": {
+    "en": "b64346dfecab1d4d",
+    "text": "Certifikatinloggning"
+  },
+  "listeners.applications.certificate-sign-in.what": {
+    "en": "4eb1f17babcf76e5",
+    "text": "Lyssnaren som en certifikatinloggning lämnas över till: den enda begäran som frågar efter ett smartkort eller certifikat."
+  },
   "listeners.applications.portal.label": {
     "en": "00cf214ba77e7497",
     "text": "Användarportal"

@@ -63,6 +63,10 @@
     "en": "a670f321ddd2f009",
     "text": "以客戶端證書登入"
   },
+  "endpoints.route./authn/certificate/continue.name": {
+    "en": "801f4e0b4934b5df",
+    "text": "在獨立的接聽程式上進行證書登入"
+  },
   "endpoints.route./tls/server-certificate.name": {
     "en": "9458f47a8a347911",
     "text": "伺服器證書（PEM）"

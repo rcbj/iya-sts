@@ -139,6 +139,14 @@
     "en": "1d66f74984228996",
     "text": "Der Anmeldedienst mit seinen zweiten Faktoren, die Wallet, Anmeldungen per SPNEGO und Zertifikat sowie die Abmeldung."
   },
+  "listeners.applications.certificate-sign-in.label": {
+    "en": "b64346dfecab1d4d",
+    "text": "Zertifikatsanmeldung"
+  },
+  "listeners.applications.certificate-sign-in.what": {
+    "en": "4eb1f17babcf76e5",
+    "text": "Der Listener, an den eine Zertifikatsanmeldung übergeben wird: die eine Anfrage, die nach einer Smartcard oder einem Zertifikat fragt."
+  },
   "listeners.applications.portal.label": {
     "en": "00cf214ba77e7497",
     "text": "Benutzerportal"
