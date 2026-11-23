@@ -32,5 +32,5 @@
   "th.whatFailed": "Ano ang nabigo",
   "th.clientSees": "Nakikita ng client",
   "codes.none": "Walang tumugma.",
-  "note.table": "Ang table ay <code>common/error_codes.js</code> at walang control ang page na ito: hindi kailanman nire-renumber o inuulit ang isang code, dahil napupunta ito sa mga alert rule at naka-save na search, at ang kondisyong hindi na umiiral ay pinapanatili ang row nito na may markang retirado. Ang parehong table ay inilalathala bilang <code>docs/v1.1.0/error-codes.md</code>, na binuo mula sa source, at ang listahang ito ay nasa <code>GET /admin-api/error-codes</code> na may parehong mga parameter. Ang paging ay <code>?page=</code> at <code>?per=</code> (hanggang {max} row bawat page)."
+  "note.table": "Ang table ay <code>common/error_codes.js</code> at walang control ang page na ito: hindi kailanman nire-renumber o inuulit ang isang code, dahil napupunta ito sa mga alert rule at naka-save na search, at ang kondisyong hindi na umiiral ay pinapanatili ang row nito na may markang retirado. Ang parehong table ay inilalathala bilang <code>docs/v1.2.0/error-codes.md</code>, na binuo mula sa source, at ang listahang ito ay nasa <code>GET /admin-api/error-codes</code> na may parehong mga parameter. Ang paging ay <code>?page=</code> at <code>?per=</code> (hanggang {max} row bawat page)."
 }

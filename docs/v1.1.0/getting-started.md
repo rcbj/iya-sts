@@ -196,11 +196,8 @@ uid 10001.
 else.** It carries the `node` binary but not npm, corepack or a compiler, and
 of the operating system's tools only the base's and `iproute2` (for `ip addr
 add`, which a realm's SPIFFE listeners on an address of their own need). There
-is no `curl`, `wget` or `jq` in it: a health check is node, as the compose
-file's is — `node /usr/src/sts/common/healthcheck_probe.js`, which verifies
-the certificate against the Root the service publishes on its plain-HTTP
-port 8082 (an image older than 1.1.1 does not have it, which is why the file
-below falls back to an unverified check there). To add a package to an image of your own, build `FROM` this one
+is no `curl`, `wget` or `jq` in it: a health check is `node -e`, as the compose
+file's is. To add a package to an image of your own, build `FROM` this one
 and install it there. A cloud SDK is a build argument instead
 (`STS_CLOUD_SDKS`).
 
@@ -427,7 +424,7 @@ services:
         exec setpriv --reuid=10001 --regid=10001 --clear-groups \
           --inh-caps=-all --bounding-set=-all --no-new-privs node server.js
     healthcheck:
-      test: ["CMD-SHELL", "if [ -f /usr/src/sts/common/healthcheck_probe.js ]; then exec node /usr/src/sts/common/healthcheck_probe.js; fi; node -e \"require('https').get({host:'localhost',port:8081,path:'/healthcheck',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
+      test: ["CMD-SHELL", "node -e \"require('https').get({host:'localhost',port:8081,path:'/healthcheck',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
       interval: 10s
       timeout: 5s
       retries: 6
@@ -462,8 +459,7 @@ docker compose up -d --wait
 * **Signing in.** The console's first account has a generated name and a
   password generated on the first start. Both are written, as `name:password`,
   to `data/bootstrap-admin-password`, which only the service can read; the log
-  names the account and says where. The next start removes that file, so read
-  it before you restart. The password has to be changed at the
+  names the account and says where. The password has to be changed at the
   first sign-in. To choose the password instead, put
   `STS_ADMIN_BOOTSTRAP_PASSWORD=...` in `.env` before the first start; the log
   then names the account, and no file is written.
@@ -769,9 +765,8 @@ Then:
    which you can change later under Directory → Policies.
 3. Enrol a second factor when asked: product mode requires one.
 
-The next start removes the file, once anybody holds a credential, so read it
-before you restart. It is not updated when you change the password, and until
-that start it still holds the generated one.
+The file is written once and never updated, so it holds the generated password
+even after you change it. Delete it once you have signed in.
 
 Four settings change this, and each must be set before the first start:
 

@@ -22,7 +22,7 @@
 // explaining why it is the default. Two copies of a default is one copy that
 // will be wrong — and wrong in the quietest possible way, since the service
 // would then RUN on one value while /admin/config, the OpenAPI document's
-// `default` property and docs/v1.1.0/configuration.md's table all reported the
+// `default` property and docs/v1.2.0/configuration.md's table all reported the
 // other.
 //
 // THE process.exit STUB. Requiring config.js runs requireComplete(), which
@@ -87,14 +87,14 @@ const header = `// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 // an env/ directory mounted over the image's, say — cannot stop a newer image
 // over a setting it does not carry. The start says so instead (STS-CORE-0177
 // for a setting this file lacks, STS-CORE-0178 for one whose value here is
-// not the image's default), and docs/v1.1.0/configuration.md says what to do.
+// not the image's default), and docs/v1.2.0/configuration.md says what to do.
 //
 // THE VALUES HERE ARE THE \`dflt\` COLUMN OF config.js's TABLE, and this file is
 // GENERATED from it — do not hand-edit a value. Changing a default means
 // changing the table, which is the one place that also carries the reasoning
 // for what the default is; a value edited only here would disagree with what
 // /admin/config reports as the default, with the OpenAPI document's \`default\`
-// property, and with docs/v1.1.0/configuration.md's table, all three of which
+// property, and with docs/v1.2.0/configuration.md's table, all three of which
 // read the table.
 //
 // FOUR SETTINGS ARE DELIBERATELY ABSENT: global.https, oid4vp.walletUrl,
@@ -105,7 +105,7 @@ const header = `// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 // this file was written, so they resolve through their neighbour instead and
 // are exempt from the startup refusal for that reason.
 //
-// See common/CLAUDE.md, and docs/v1.1.0/configuration.md's *Every setting*,
+// See common/CLAUDE.md, and docs/v1.2.0/configuration.md's *Every setting*,
 // which lists every setting, its environment variable and its default in one
 // table.
 // ---------------------------------------------------------------------------
@@ -117,7 +117,7 @@ const lines = [];
 let lastGroup = null;
 
 // Order: the table's own order, which is the order /admin/config renders and
-// the order docs/v1.1.0/configuration.md's table is generated in.
+// the order docs/v1.2.0/configuration.md's table is generated in.
 const rows = c.SETTINGS.filter(function (s) { return !s.derived; });
 
 // Group by the appconfig path's first segment, since that is what the file's

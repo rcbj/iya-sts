@@ -153,7 +153,6 @@ Scope: `admin:read`.
 | `role.description` | string |  |  |
 | `role.displayName` | string |  |  |
 | `role.dn` | string |  |  |
-| `role.eligibilityPolicy` | string |  |  |
 | `role.entry` | object |  |  |
 | `role.entry.attributes` | map |  |  |
 | `role.entry.attributes.{key}` | list, or string |  |  |
@@ -164,7 +163,6 @@ Scope: `admin:read`.
 | `role.entry.operational` | list |  |  |
 | `role.entry.operational[]` | string |  |  |
 | `role.entry.origin` | string |  |  |
-| `role.exclusiveGroup` | string |  |  |
 | `role.found` | boolean |  |  |
 | `role.groups` | list |  |  |
 | `role.groups[]` | string |  |  |
@@ -174,7 +172,6 @@ Scope: `admin:read`.
 | `role.maxOwners` | number |  |  |
 | `role.memberTypes` | list |  |  |
 | `role.memberTypes[]` | string |  |  |
-| `role.membershipMode` | one of `static`, `dynamic-selectable` |  |  |
 | `role.name` | string |  |  |
 | `role.native` | boolean |  |  |
 | `role.ownerProtected` | boolean |  |  |
@@ -198,7 +195,6 @@ Scope: `admin:read`.
 | `role.requiredBy` | list |  |  |
 | `role.requiredBy[].application` | string |  |  |
 | `role.requiredBy[].name` | string |  |  |
-| `role.selection` | one of `optional`, `required` |  |  |
 | `role.users` | list |  |  |
 | `role.users[]` | string |  |  |
 | `role.what` | string |  |  |
@@ -213,15 +209,12 @@ Scope: `admin:read`.
 | `roles[].description` | string |  |  |
 | `roles[].displayName` | string |  |  |
 | `roles[].dn` | string |  |  |
-| `roles[].eligibilityPolicy` | string |  |  |
-| `roles[].exclusiveGroup` | string |  |  |
 | `roles[].groups` | list |  |  |
 | `roles[].groups[]` | string |  |  |
 | `roles[].id` | string |  |  |
 | `roles[].localName` | string |  |  |
 | `roles[].memberTypes` | list |  |  |
 | `roles[].memberTypes[]` | string |  |  |
-| `roles[].membershipMode` | one of `static`, `dynamic-selectable` |  |  |
 | `roles[].name` | string |  |  |
 | `roles[].native` | boolean |  |  |
 | `roles[].ownerProtected` | boolean |  |  |
@@ -229,7 +222,6 @@ Scope: `admin:read`.
 | `roles[].owners[]` | string |  |  |
 | `roles[].permissions` | list |  |  |
 | `roles[].permissions[]` | string |  |  |
-| `roles[].selection` | one of `optional`, `required` |  |  |
 | `roles[].users` | list |  |  |
 | `roles[].users[]` | string |  |  |
 | `settings` | object |  |  |
@@ -310,15 +302,12 @@ Scope: `admin:read`.
 | `shownRoles[].description` | string |  |  |
 | `shownRoles[].displayName` | string |  |  |
 | `shownRoles[].dn` | string |  |  |
-| `shownRoles[].eligibilityPolicy` | string |  |  |
-| `shownRoles[].exclusiveGroup` | string |  |  |
 | `shownRoles[].groups` | list |  |  |
 | `shownRoles[].groups[]` | string |  |  |
 | `shownRoles[].id` | string |  |  |
 | `shownRoles[].localName` | string |  |  |
 | `shownRoles[].memberTypes` | list |  |  |
 | `shownRoles[].memberTypes[]` | string |  |  |
-| `shownRoles[].membershipMode` | one of `static`, `dynamic-selectable` |  |  |
 | `shownRoles[].name` | string |  |  |
 | `shownRoles[].native` | boolean |  |  |
 | `shownRoles[].ownerProtected` | boolean |  |  |
@@ -326,7 +315,6 @@ Scope: `admin:read`.
 | `shownRoles[].owners[]` | string |  |  |
 | `shownRoles[].permissions` | list |  |  |
 | `shownRoles[].permissions[]` | string |  |  |
-| `shownRoles[].selection` | one of `optional`, `required` |  |  |
 | `shownRoles[].users` | list |  |  |
 | `shownRoles[].users[]` | string |  |  |
 | `storable` | boolean |  |  |
@@ -350,7 +338,7 @@ Scope: `admin:read`.
 
 Adds one value to the role's `roleConferredBy` (#454): every PERSON who signs in through that client holds the role on the access token the client is issued, beside the roles they hold themselves, and on no other token. It is how the console's client, `sts-admin-console`, gives everybody who signs in to the console ADMIN_CONSOLE. The client must be registered in this realm. A role only applications may hold, and the two console roles, cannot be conferred.
 
-**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -406,7 +394,7 @@ It is NOT the same relation as `appRequiredRole` on an application entry, which 
 
 A BUILT-IN role is refused by name: those six are computed and have no membership to edit.
 
-**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -461,7 +449,7 @@ An owner must name somebody: one that names no person and no group here is refus
 
 **AN OWNER GRANTS NOTHING**: nothing in this service reads `owner` to decide anything; the user portal lists what a person owns.
 
-**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -525,7 +513,7 @@ Adds one value to the role's `rolePermission` (#303). **A scope is a request and
 
 **The native permissions `admin:read` and `admin:write` are refused**: they are authorized by the console roles ADMIN_READ and ADMIN_WRITE alone, whose permissions are fixed. Put an application in one of those with `add-member`.
 
-**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -577,7 +565,7 @@ Writes one entry under `ou=roles` with no members. Adding members is `add-member
 
 The name becomes an LDAP RDN and a value in a token claim, so it is up to 64 characters of letters, digits, and `. _ : @ -` or a space. **It may not be one of the six built-in roles**: those are computed and answered first, so a stored role of the same name could never be reached.
 
-**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -595,12 +583,9 @@ Scope: `admin:write`.
 | `application` | string |  | The ONE application this role belongs to (#310), by its identifier. The role is registered as `<role>@<application>` — two applications may each have a `reader` — and a token or assertion for that application carries it as `<role>`, no other application's at all. Omit it for a realm-wide role, whose name may not contain `@`. |
 | `description` | string |  | What it is for, for the next person. |
 | `displayName` | string |  | A name for people to read (#93). The role's name is still what a token carries; this is its label. Optional. |
-| `exclusiveGroup` | string |  | For a dynamic role (#1072): a name shared by roles of which a sign-in may choose at most one. Omitted, none. |
 | `memberTypes` | list |  | Who may hold it (#93): `user` (people, directly or through a group) and `application` (an application as itself). Empty is both. A member of an excluded kind is refused, already held or added later; the two console roles cannot be restricted. Omitted, both. |
 | `memberTypes[]` | one of `user`, `application` |  |  |
-| `membershipMode` | one of `static`, `dynamic-selectable` |  | How the role is held (#1072): `static`, the default, is membership as roles always had it; `dynamic-selectable` is a role with no members, offered at sign-in to each person its eligibility policy permits and held for that sign-in only if chosen. A console or native role cannot be dynamic. |
 | `role` | string | yes | The role's name. |
-| `selection` | one of `optional`, `required` |  | For a dynamic role (#1072): `optional`, the default, or `required`: a required role a person is eligible for is offered even when the sign-in page's box is unticked, and one must be chosen. |
 
 **200**: The role that was made.
 
@@ -632,7 +617,7 @@ Deletes the entry. **Applications that still REQUIRE it are named in the reply a
 
 Nothing already ISSUED is touched. A token minted while somebody held the role is still valid and still carries it in the roles claim.
 
-**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -681,7 +666,7 @@ Scope: `admin:write`.
 
 Replaces the `description` — and, where given, the `displayName` and `memberTypes` (#93) — and leaves the membership exactly as it was. It is an action of its own rather than a field on `create-role` because creating an existing role is refused: roles are edited in place.
 
-**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -721,94 +706,6 @@ Scope: `admin:write`.
 | `message` | string |  |  |
 | `name` | string |  |  |
 | `ok` | boolean | yes |  |
-
-## GET /admin-api/roles/eligibility
-
-`testRoleEligibility`
-
-**Is this person eligible for this dynamic role?**
-
-An administrator's dry run (#1072). **`role` and `user` are both needed and neither is declared required**: a read with no question in it answers 200 with `answered: false`, as the role preview does. The role's own eligibility policy decided by the PDP for one person, as a sign-in to `application` would ask it, without a sign-in. The answer says whether they are eligible, the code when they are not, the XACML decision and status (a missing attribute names itself there), and, where `xacml.returnPolicyIdList` allows, the policies that applied. It writes nothing but the `roles.eligibility` audit row every eligibility decision leaves; it never shows the policy's text or the person's attributes.
-
-**Mirrors** `GET /admin/roles` on the admin console.
-
-Scope: `admin:read`.
-
-**Parameters**
-
-| Name | In | Type | Required | What it is |
-|---|---|---|---|---|
-| `role` | query | string |  | The dynamic selectable role. |
-| `user` | query | string |  | The person, by username. |
-| `application` | query | string |  | The application a sign-in would be for. A role that belongs to an application is offered only on a sign-in to it. |
-| `acr` | query | string |  | The authentication context class the sign-in would have met, as `urn:sts:xacml:acr`. |
-| `amr` | query | string |  | The sign-in's authentication methods (RFC 8176), separated by spaces, as `urn:sts:xacml:amr`. |
-| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
-| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
-
-**200**: The eligibility decision.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `answered` | boolean |  |  |
-| `applicable` | list |  |  |
-| `applicable[]` | string |  |  |
-| `application` | string, or null |  |  |
-| `asked` | object |  |  |
-| `asked.acr` | string, or null |  |  |
-| `asked.amr` | list |  |  |
-| `asked.amr[]` | string |  |  |
-| `asked.stage` | string |  |  |
-| `code` | string, or null |  |  |
-| `decision` | string, or null |  |  |
-| `eligible` | boolean |  |  |
-| `ok` | boolean |  |  |
-| `policy` | string, or null |  |  |
-| `policyId` | string, or null |  |  |
-| `role` | string |  |  |
-| `status` | any JSON |  | The XACML response's Status: its code and message, and the attribute a MustBePresent designator found missing, where there was one. The XACML response's Status: its code and message, and the attribute a MustBePresent designator found missing, where there was one. |
-| `username` | string |  |  |
-| `why` | string |  |  |
-
-## GET /admin-api/roles/new
-
-`getNewRoleForm`
-
-**What a role may be created with, and which of it is required**
-
-The create's fields in `createFields`, each with `required` — `role`, the name, is the one the create refuses without; `description`, `application`, `displayName` and `memberTypes` are optional — plus the container roles are stored in (empty when this process has no directory to store one in, when `canWrite` is false too) and the applications a role may be for. **It creates nothing**: the create is `POST /admin-api/roles/create-role`.
-
-**Mirrors** `GET /admin/roles/new` on the admin console.
-
-Scope: `admin:read`.
-
-**Parameters**
-
-| Name | In | Type | Required | What it is |
-|---|---|---|---|---|
-| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
-| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
-
-**200**: The fields, which are required, the container and the application choices.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `applicationChoices` | list |  |  |
-| `applicationChoices[].identifier` | string |  |  |
-| `applicationChoices[].name` | string |  |  |
-| `canWrite` | boolean |  |  |
-| `container` | string |  |  |
-| `createFields` | list |  |  |
-| `createFields[]` | object |  | One field of a directory object's create (#1132): the name the create takes it under and whether the create refuses without it. A field is required exactly when the create refuses an empty or absent value; every other field is optional. |
-| `createFields[].name` | string | yes |  |
-| `createFields[].required` | boolean | yes |  |
-| `createFields[].requiredWhen` | object |  | A field required for some choices only: the create refuses without it when `field` holds one of `values`, and is otherwise indifferent. `required` is false for such a field. |
-| `createFields[].requiredWhen.field` | string | yes |  |
-| `createFields[].requiredWhen.values` | list | yes |  |
-| `createFields[].requiredWhen.values[]` | string |  |  |
-| `realm` | object |  |  |
-| `realm.id` | string |  |  |
-| `realm.name` | string |  |  |
 
 ## GET /admin-api/roles/preview
 
@@ -920,7 +817,7 @@ Scope: `admin:read`.
 
 Removes one value from the role's `roleConferredBy` (#454). The client's tokens stop carrying the role at once at `/admin-api`, whose gate asks on every call, and at the next issuance everywhere else. Taking `sts-admin-console` off ADMIN_CONSOLE leaves the console unable to draw itself until it is put back.
 
-**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -970,7 +867,7 @@ Removes one value from the role entry. Matched case-insensitively, for the reaso
 
 **Nothing already ISSUED is touched**, exactly as revoking a delegated permission does not re-judge a grant already made. The next issuance is decided without the role; a token minted a minute ago still carries it.
 
-**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -1021,7 +918,7 @@ Scope: `admin:write`.
 
 Takes one `owner` value off the role and writes at once (#604). `owner` is the DN the role lists; one it does not list is refused. The last owner may go: a role needs none.
 
-**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -1081,7 +978,7 @@ Scope: `admin:write`.
 
 Removes one value from the role's `rolePermission` (#303). The next issuance is decided without it; a token already issued keeps what it carries, except at `/admin-api`, whose gate asks the roles again on every call.
 
-**Mirrors** `POST /admin/roles, POST /admin/roles/new and POST /admin/roles/owners` on the admin console.
+**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -1122,160 +1019,4 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `permission` | string |  |  |
 | `role` | string |  |  |
-
-## POST /admin-api/roles/set-eligibility-policy
-
-`setRoleEligibilityPolicy`
-
-**Set a dynamic role's eligibility policy**
-
-Writes the XACML policy that decides who may be offered a dynamic selectable role at sign-in (#1072), from XACML 3.0 XML (`document`) or ALFA (`alfa`), exactly one. The policy is the role's own: it is stored in ou=policies with `xacmlRole`, decided ALONE by the PDP for one person, never the root, never referenced from it and never sent to a remote PEP. A role keeps one entry name across rewrites. Only Permit makes a person eligible; Deny, NotApplicable, Indeterminate and an obligation this PEP cannot discharge do not. Refused for a static role.
-
-**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
-
-Scope: `admin:write`.
-
-**Parameters**
-
-| Name | In | Type | Required | What it is |
-|---|---|---|---|---|
-| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
-| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
-
-**Request body**
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `alfa` | string |  | The policy as ALFA, compiled to XACML XML before it is stored. |
-| `document` | string |  | The policy as XACML 3.0 XML. |
-| `role` | string | yes | The dynamic role. |
-
-**200**: The policy entry that was written.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `created` | boolean |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `message` | string |  |  |
-| `ok` | boolean | yes |  |
-| `policy` | string |  |  |
-| `role` | string |  |  |
-
-**400**: The operation was refused; `errors` says why and nothing changed.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `created` | boolean |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `message` | string |  |  |
-| `ok` | boolean | yes |  |
-| `policy` | string |  |  |
-| `role` | string |  |  |
-
-## POST /admin-api/roles/set-membership-mode
-
-`setRoleMembershipMode`
-
-**Make a role static or dynamic selectable**
-
-Sets how the role is held (#1072). `dynamic-selectable` makes it a role nobody holds, offered at sign-in to each person its eligibility policy permits; it is refused while the role has members or conferring clients, and for a console or native role. `static` makes it a role held by membership again; the eligibility policy it owns is kept, so switching back restores it. Neither direction adds or removes a member, a group or a permission.
-
-**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
-
-Scope: `admin:write`.
-
-**Parameters**
-
-| Name | In | Type | Required | What it is |
-|---|---|---|---|---|
-| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
-| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
-
-**Request body**
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `mode` | one of `static`, `dynamic-selectable` | yes | `static` or `dynamic-selectable`. |
-| `role` | string | yes | The role. |
-
-**200**: How the role is now held.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `exclusiveGroup` | string |  |  |
-| `membershipMode` | one of `static`, `dynamic-selectable` |  |  |
-| `message` | string |  |  |
-| `ok` | boolean | yes |  |
-| `role` | string |  |  |
-| `selection` | one of `optional`, `required` |  |  |
-
-**400**: The operation was refused; `errors` says why and nothing changed.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `exclusiveGroup` | string |  |  |
-| `membershipMode` | one of `static`, `dynamic-selectable` |  |  |
-| `message` | string |  |  |
-| `ok` | boolean | yes |  |
-| `role` | string |  |  |
-| `selection` | one of `optional`, `required` |  |  |
-
-## POST /admin-api/roles/set-selection
-
-`setRoleSelection`
-
-**Set how a dynamic role is chosen**
-
-Sets a dynamic role's selection (#1072): `optional` or `required`, and its exclusive group, of whose roles a sign-in may choose at most one. A member that is omitted keeps its value; an empty `exclusiveGroup` clears it. Refused for a static role.
-
-**Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
-
-Scope: `admin:write`.
-
-**Parameters**
-
-| Name | In | Type | Required | What it is |
-|---|---|---|---|---|
-| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
-| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
-
-**Request body**
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `exclusiveGroup` | string |  | The exclusive group's name; empty clears it. Omitted, kept. |
-| `role` | string | yes | The role. |
-| `selection` | one of `optional`, `required` |  | `optional` or `required`. Omitted, kept. |
-
-**200**: The role's selection as it now stands.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `exclusiveGroup` | string |  |  |
-| `membershipMode` | one of `static`, `dynamic-selectable` |  |  |
-| `message` | string |  |  |
-| `ok` | boolean | yes |  |
-| `role` | string |  |  |
-| `selection` | one of `optional`, `required` |  |  |
-
-**400**: The operation was refused; `errors` says why and nothing changed.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `exclusiveGroup` | string |  |  |
-| `membershipMode` | one of `static`, `dynamic-selectable` |  |  |
-| `message` | string |  |  |
-| `ok` | boolean | yes |  |
-| `role` | string |  |  |
-| `selection` | one of `optional`, `required` |  |  |
 {% endraw %}

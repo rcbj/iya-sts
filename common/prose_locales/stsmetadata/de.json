@@ -480,12 +480,12 @@
     "text": "full für den Autorisierungsserver, UND STANDARDMÄSSIG AUS — das PROFIL oauth2.fapi=1-advanced (je Vertrauensbereich oder das fapi-Mitglied eines benannten Autorisierungsservers), das Baseline und mehr ist (#139): ein JWS-signiertes Request Object als Wert oder als Verweis (Punkt 1) mit exp und nbf innerhalb von 60 Minuten und aud als der Issuer (Punkte 13, 15, 17); response_type code id_token oder code mit JARM (Punkt 2); das ID Token als detachierte Signatur mit s_hash (5.2.2.1); nur an den Sender gebundene Access Tokens — mTLS oder DPoP, sofern nicht oauth2.fapiRequireMtls — mit veröffentlichten mtls_endpoint_aliases (Punkte 5, 6); tls_client_auth, self_signed_tls_client_auth oder private_key_jwt und kein öffentlicher Client (Punkte 14, 16); PKCE S256 für gepushte Anfragen (Punkt 18, und Punkt 7 von Baseline gelockert, wie der Abschnitt es sagt); PS256 oder ES256 für jede Signatur in beide Richtungen und nie RSA1_5 (8.6), wobei dieser Server standardmäßig PS256 signiert. Konsole, Portal und Debugger entsprechen dem: ein signiertes Request Object, das an PAR gepusht wird, JARM und ein gebundenes Token. NICHT abgedeckt: die Conformance-Suite (#176)."
   },
   "stsmetadata.specs.fapi2-security.coverage": {
-    "en": "f7a75985a1885edb",
-    "text": "full für den Autorisierungsserver, UND STANDARDMÄSSIG AUS — das PROFIL oauth2.fapi=2-security (je Vertrauensbereich oder das fapi-Mitglied eines benannten Autorisierungsservers), ein eigenes Profil (#140): der RFC-9700-Modus an; nur vertrauliche Clients, per mTLS oder private_key_jwt, wobei aud der Assertion der Issuer als Zeichenkette ist (5.3.2.1 Punkte 3, 6, 8); nur an den Sender gebundene Tokens, per mTLS oder DPoP (Punkte 4-5); keine Refresh-Rotation, sofern oauth2.refreshTokenRotation sie nicht erzwingt (Punkt 9); Codes von 60 s (Punkt 11); ein iat oder nbf, das mehr als 60 s vorausliegt, abgelehnt (Punkt 13); nur code, PAR erforderlich und vom Client authentifiziert, PKCE S256, redirect_uri gepusht, request_uris unter 600 s (5.3.2.2); PS256, ES256 oder EdDSA, RSA 2048 und EC 224 Bit (5.4.1). TLS (5.2): die Suites von BCP 195 sind der Standard jedes Listeners, TLS 1.3 wird bevorzugt. DPoP-Nonces bleiben optional, und die Einwilligung folgt den gewöhnlichen Regeln. Das Attacker Model hat keine normativen Anforderungen; docs/v1.1.0/oauth-security.md ordnet jede Angreiferklasse dem zu, was sie aufhält. Konsole, Portal und Debugger entsprechen dem. NICHT abgedeckt: die Conformance-Suite (#176)."
+    "en": "01028f08fd980cb6",
+    "text": "full für den Autorisierungsserver, UND STANDARDMÄSSIG AUS — das PROFIL oauth2.fapi=2-security (je Vertrauensbereich oder das fapi-Mitglied eines benannten Autorisierungsservers), ein eigenes Profil (#140): der RFC-9700-Modus an; nur vertrauliche Clients, per mTLS oder private_key_jwt, wobei aud der Assertion der Issuer als Zeichenkette ist (5.3.2.1 Punkte 3, 6, 8); nur an den Sender gebundene Tokens, per mTLS oder DPoP (Punkte 4-5); keine Refresh-Rotation, sofern oauth2.refreshTokenRotation sie nicht erzwingt (Punkt 9); Codes von 60 s (Punkt 11); ein iat oder nbf, das mehr als 60 s vorausliegt, abgelehnt (Punkt 13); nur code, PAR erforderlich und vom Client authentifiziert, PKCE S256, redirect_uri gepusht, request_uris unter 600 s (5.3.2.2); PS256, ES256 oder EdDSA, RSA 2048 und EC 224 Bit (5.4.1). TLS (5.2): die Suites von BCP 195 sind der Standard jedes Listeners, TLS 1.3 wird bevorzugt. DPoP-Nonces bleiben optional, und die Einwilligung folgt den gewöhnlichen Regeln. Das Attacker Model hat keine normativen Anforderungen; docs/v1.2.0/oauth-security.md ordnet jede Angreiferklasse dem zu, was sie aufhält. Konsole, Portal und Debugger entsprechen dem. NICHT abgedeckt: die Conformance-Suite (#176)."
   },
   "stsmetadata.specs.fapi2-message-signing.coverage": {
-    "en": "35f9077fddbb7a8e",
-    "text": "full für den Autorisierungsserver, UND STANDARDMÄSSIG AUS — das PROFIL oauth2.fapi=2-message-signing, das Security Profile zuzüglich aller drei Komponenten (#141, Entscheidung von rcbj): ein JAR-signiertes Request Object bei PAR erforderlich, mit aud als der Issuer sowie exp und nbf innerhalb von 60 Minuten (5.3); JARM erforderlich, iss innerhalb des JWT (5.4); signierte Introspection-Antworten nach RFC 9701 (5.5). Die Nichtabstreitbarkeit aus Abschnitt 5.2 ist eine Leitlinie, beantwortet in docs/v1.1.0/oauth-security.md. Konsole, Portal und Debugger entsprechen dem. HTTP-Signaturen nach RFC 9421 sind NICHT Teil der endgültigen Spezifikation: sie sind FAPI 2.0 Http Signatures, der nächste Eintrag (#178)."
+    "en": "8aff442a2af8fd53",
+    "text": "full für den Autorisierungsserver, UND STANDARDMÄSSIG AUS — das PROFIL oauth2.fapi=2-message-signing, das Security Profile zuzüglich aller drei Komponenten (#141, Entscheidung von rcbj): ein JAR-signiertes Request Object bei PAR erforderlich, mit aud als der Issuer sowie exp und nbf innerhalb von 60 Minuten (5.3); JARM erforderlich, iss innerhalb des JWT (5.4); signierte Introspection-Antworten nach RFC 9701 (5.5). Die Nichtabstreitbarkeit aus Abschnitt 5.2 ist eine Leitlinie, beantwortet in docs/v1.2.0/oauth-security.md. Konsole, Portal und Debugger entsprechen dem. HTTP-Signaturen nach RFC 9421 sind NICHT Teil der endgültigen Spezifikation: sie sind FAPI 2.0 Http Signatures, der nächste Eintrag (#178)."
   },
   "stsmetadata.specs.fapi2-http-signatures.coverage": {
     "en": "84f23a449916fdc1",
@@ -760,16 +760,16 @@
     "text": "partial: Signierung, relaxed/relaxed, rsa-sha256 mit einem Schlüssel von mindestens 2048 Bit (RFC 8301), in common/crypto.js, auf dem, was der SMTP-Transport sendet, wenn eine Domain konfiguriert ist. Fehlend: die Kanonisierung simple, l= und die Prüfung von Mail, die jemand anderes gesendet hat — dieser Dienst empfängt keine. Für DKIM ist kein Post-Quantum-Algorithmus registriert."
   },
   "stsmetadata.specs.rfc9580.coverage": {
-    "en": "086f96d364365827",
-    "text": "partial: Lesen eines übertragbaren öffentlichen Schlüssels, v6 und (RFC 4880) v4, Prüfen einer Klartextsignatur durch einen seiner Signierschlüssel und Verschlüsseln einer Nachricht an seinen Verschlüsselungsschlüssel, alles über openpgp.js (common/crypto.js Abschnitt 19). Ed25519, Ed448, ECDSA und ECDH auf den NIST-Kurven, X25519, X448 und RSA mit openpgp.minRsaBits werden akzeptiert; DSA, ElGamal und Brainpool werden abgelehnt. Es fehlen: Signieren, Entschlüsseln, ein Schlüsselbund, ein Keyserver."
+    "en": "a2930bdb8ffe747d",
+    "text": "partial: Lesen eines übertragbaren öffentlichen Schlüssels, v6 und (RFC 4880) v4, Prüfen einer Klartextsignatur durch einen seiner Signierschlüssel und Verschlüsseln einer Nachricht an seinen Verschlüsselungsschlüssel, Klassische Algorithmen laufen über openpgp.js. RFC-9980-Komposite werden hier gelesen (siehe rfc9980). Ed25519, Ed448, ECDSA und ECDH auf den NIST-Kurven, X25519, X448 und RSA mit openpgp.minRsaBits werden akzeptiert; DSA, ElGamal und Brainpool werden abgelehnt. Es fehlen: Signieren, Entschlüsseln, ein Schlüsselbund, ein Keyserver."
   },
   "stsmetadata.specs.rfc3156.coverage": {
     "en": "aa799b14a54ace0f",
     "text": "partial: multipart/encrypted mit einem Versionsteil application/pgp-encrypted und der ASCII-armored Nachricht, die echten Header im Inneren geschützt. Es fehlt: multipart/signed — dieser Dienst signiert E-Mails mit DKIM, nicht mit OpenPGP."
   },
   "stsmetadata.specs.rfc8551.coverage": {
-    "en": "a07a1e013186f3d4",
-    "text": "partial: application/pkcs7-mime enveloped-data, ein CMS EnvelopedData mit AES-256-CBC-Inhaltsverschlüsselung und einem Empfänger mit RSAES-OAEP (SHA-256) oder ECDH-Schlüsselvereinbarung, an das userSMIMECertificate der Person. Es fehlen: signed-data, AuthEnvelopedData (AES-GCM), Entschlüsselung."
+    "en": "5c1b77d839bd8cc2",
+    "text": "partial: application/pkcs7-mime enveloped-data, ein CMS EnvelopedData mit AES-256-CBC-Inhaltsverschlüsselung. Ein klassisches Zertifikat verwendet RSAES-OAEP (SHA-256) oder ECDH. Ein ML-KEM-Zertifikat (RFC 9935) verwendet KEMRecipientInfo (RFC 9629): HKDF-SHA-256 und AES-Wrap. Eine Laufzeit, die nicht kapseln kann, sendet die Nachricht nicht unter einem klassischen Algorithmus. Es fehlen: signed-data, AuthEnvelopedData (AES-GCM), Entschlüsselung."
   },
   "stsmetadata.specs.wkd.coverage": {
     "en": "e1c6b9651ff1e58c",
@@ -2280,8 +2280,8 @@
     "text": "NON-SPEC-Oberfläche über ein Verhalten der Spezifikation. Die Historie verwendeter Assertions als JSON: jede Assertion nach RFC 7523 und RFC 7522, die dieser Vertrauensbereich angenommen hat und die noch nicht abgelaufen ist, dazu, wo die Historie gehalten wird (dauerhaft, atomar über Prozesse hinweg), die aktuelle Anzahl gegenüber oauth2.assertionReplayCacheSize, gefiltert nach Text, Format, Verwendung und Zustand und seitenweise mit ?page= und ?per=. Keine Assertion und keine Anmeldedaten in irgendeiner Zeile. NUR LESEN. Spiegelt GET /admin/used-assertions."
   },
   "stsmetadata.endpoints./admin-api/error-codes.what": {
-    "en": "6a8ddafe4157455e",
-    "text": "NON-SPEC. Die zentrale Tabelle jeder Fehlerbedingung, die dieser Dienst hervorbringen kann, STS-<SUBSYSTEM>-<NNNN>, als JSON: jeder Code mit seinem Subsystem, was fehlgeschlagen ist, was dem CLIENT im Vokabular seines eigenen Protokolls gesagt wird, und auf wie vielen Zeilen das gehaltene Audit-Protokoll ihn in diesem Vertrauensbereich trägt — gefiltert nach Subsystem, Text und ?seen=1, seitenweise mit ?page= und ?per=. EIN CODE WIRD NIEMALS AN EINEN CLIENT GESENDET: er steht nur auf der Audit-Zeile und in der Logzeile. NUR LESEN — die Tabelle ist die Quelle. Spiegelt GET /admin/error-codes; dieselbe Tabelle ist docs/v1.1.0/error-codes.md."
+    "en": "d4977def3313bbf1",
+    "text": "NON-SPEC. Die zentrale Tabelle jeder Fehlerbedingung, die dieser Dienst hervorbringen kann, STS-<SUBSYSTEM>-<NNNN>, als JSON: jeder Code mit seinem Subsystem, was fehlgeschlagen ist, was dem CLIENT im Vokabular seines eigenen Protokolls gesagt wird, und auf wie vielen Zeilen das gehaltene Audit-Protokoll ihn in diesem Vertrauensbereich trägt — gefiltert nach Subsystem, Text und ?seen=1, seitenweise mit ?page= und ?per=. EIN CODE WIRD NIEMALS AN EINEN CLIENT GESENDET: er steht nur auf der Audit-Zeile und in der Logzeile. NUR LESEN — die Tabelle ist die Quelle. Spiegelt GET /admin/error-codes; dieselbe Tabelle ist docs/v1.2.0/error-codes.md."
   },
   "stsmetadata.endpoints./admin-api/audit-export.what": {
     "en": "c975b83632fa12f4",
@@ -4198,5 +4198,9 @@
   "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
     "en": "1716521c9c5e119d",
     "text": "NON-SPEC (#1955). Die hinterlegten piv-key-management-Zertifikate einer Person (piv.keyEscrow): Seriennummer, Antragsteller, Gültigkeit und ob jedes widerrufen wurde. Nie ein Schlüssel. Entspricht GET /admin/hardware-tokens."
+  },
+  "stsmetadata.specs.rfc9980.coverage": {
+    "en": "5feb46765c8bc465",
+    "text": "partial: Signaturen ML-DSA-65+Ed25519 und ML-DSA-87+Ed448 sowie Verschlüsselung ML-KEM-768+X25519 und ML-KEM-1024+X448, bei der Registrierung und wenn ein gespeicherter Schlüssel verwendet wird. Ein Komposit zählt als Post-Quanten. openpgp.pqcOnly schränkt nur die Registrierung ein. Beide Hälften einer Signatur prüft common/crypto_impl/openpgp_pqc.js. Es fehlen: SLH-DSA (Algorithmus-IDs 32-34), und dieser Dienst erzeugt keinen RFC-9980-Schlüssel. openpgp.js liest diese Schlüssel nicht."
   }
 }

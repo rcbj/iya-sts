@@ -78,7 +78,7 @@
 // TOKEN this prints on every run (`STS_BAO_PRINT_CREDENTIALS`, on by default
 // and off on the test stacks): read on `secret/sts-admin` and nothing else,
 // for `STS_BAO_OPERATOR_TTL` — the way a person gets the management API secret
-// for the first token on a stack they own (`docs/v1.1.0/management-api.md`).
+// for the first token on a stack they own (`docs/v1.2.0/management-api.md`).
 //
 // ---------------------------------------------------------------------------
 // THE START-UP SECRETS, AND WHY THE SERVICE'S OWN IDENTITY CANNOT READ THEM.
@@ -957,7 +957,7 @@ async function issueOperatorToken(token) {
   }
   say('an OPERATOR TOKEN for the first /admin-api token on this stack — read ' +
       'on secret/' + ADMIN_SECRET_PATH + ' and nothing else, for ' +
-      OPERATOR_TTL + ' (docs/v1.1.0/management-api.md): ' + issued);
+      OPERATOR_TTL + ' (docs/v1.2.0/management-api.md): ' + issued);
   log.debug("Leaving issueOperatorToken().");
 }
 

@@ -38,9 +38,6 @@ be used, and what kinds of data it may protect. The levels are those of
 
 See [Encryption at rest](encryption-at-rest.md) for data keys and the
 key-encryption key, and [PKI](pki.md) for certificates and signing generations.
-To keep the key-encryption key, or a realm's classical signing keys, inside a
-hardware security module, see [Keys in a hardware security
-module](hsm.md).
 
 ## Who may hold a key
 

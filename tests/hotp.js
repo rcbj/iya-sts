@@ -22,8 +22,9 @@
 //      whose counter a stale write took backwards does not reopen it.
 //   6. A person holding an authenticator app AND a token: either code is
 //      accepted, each under its own kind, at the same door.
-//   7. The authentication policy's `hotp` row, and a save that does not
-//      name it (an older client) keeping its value.
+//   7. The authentication policy's `hotp` row is off by default. Saving
+//      it on offers enrolment, and a save that does not name it (an older
+//      client) keeps its current value.
 //
 // Every secret here is RFC 4226's published test key or one generated in
 // the run.
@@ -229,6 +230,11 @@ async function checkPerson(t) {
           'the credential is removed');
 
   t.log.info('--- the enrolment\'s two steps ---');
+  const allowed = authnPolicy.save('default', Object.assign({},
+    authnPolicy.DEFAULTS, { hotpSecondFactor: true }));
+  t.check(allowed.ok && hotp.offered(),
+          'the hotp row, off by default, is on for this enrolment',
+          JSON.stringify((allowed && allowed.errors) || []));
   const who = person('enrol');
   const begun = credentials.beginHotpEnrolment(who,
                                                { base: 'https://localhost' });
@@ -321,11 +327,15 @@ async function checkBoth(t) {
   log.debug("Leaving checkBoth().");
 }
 
-// The policy's `hotp` row (#1955 P4): a save that leaves it out keeps the
-// profile's current value, so a client written before it changes nothing.
+// The policy's `hotp` row (#1955 P4) is off by default. A save that leaves
+// it out keeps the profile's current value, so a client written before it
+// changes nothing.
 function checkPolicy(t) {
   log.debug("Entering checkPolicy().");
   t.log.info('=== 7. the authentication policy\'s hotp row ===');
+  t.check(authnPolicy.read('default').hotpSecondFactor === false &&
+          !hotp.offered(),
+          'the row is off by default, so a new enrolment is refused');
   const before = authnPolicy.read('default');
   const values = {};
   Object.keys(before).forEach(function (key) {
@@ -334,35 +344,41 @@ function checkPolicy(t) {
     }
   });
   try {
-    const off = authnPolicy.save('default', Object.assign({}, values,
-                                 { hotpSecondFactor: false }));
-    t.check(off.ok && authnPolicy.read('default').hotpSecondFactor === false &&
-            !hotp.offered(), 'the row turns HOTP enrolment off',
-            JSON.stringify(off.errors || []));
+    const on = authnPolicy.save('default', Object.assign({}, values,
+                                { hotpSecondFactor: true }));
+    t.check(on.ok && authnPolicy.read('default').hotpSecondFactor === true &&
+            hotp.offered(), 'saving the row on turns HOTP enrolment on',
+            JSON.stringify(on.errors || []));
     const older = Object.assign({}, values);
     delete older.hotpSecondFactor;
     const kept = authnPolicy.save('default', older);
-    t.check(kept.ok && authnPolicy.read('default').hotpSecondFactor === false,
+    t.check(kept.ok && authnPolicy.read('default').hotpSecondFactor === true,
             'A SAVE THAT LEAVES IT OUT (a client written before it) KEEPS ' +
-            'IT AS IT WAS, rather than being refused or turning it back on',
+            'THE CURRENT VALUE, rather than the built-in off or a refusal',
             JSON.stringify(kept.errors || []));
   } finally {
     authnPolicy.reset('default');
   }
-  t.check(hotp.offered(), 'and reset, it is on by default');
+  t.check(!hotp.offered() &&
+          authnPolicy.read('default').hotpSecondFactor === false,
+          'and reset, it is off by default');
   log.debug("Leaving checkPolicy().");
 }
 
 async function run(t) {
   log.debug("Entering run().");
   counters.reset();
-  checkPolicy(t);
-  checkVectors(t);
-  checkVerify(t);
-  checkResync(t);
-  await checkPerson(t);
-  await checkRace(t);
-  await checkBoth(t);
+  try {
+    checkPolicy(t);
+    checkVectors(t);
+    checkVerify(t);
+    checkResync(t);
+    await checkPerson(t);
+    await checkRace(t);
+    await checkBoth(t);
+  } finally {
+    authnPolicy.reset('default');
+  }
   log.debug("Leaving run().");
 }
 

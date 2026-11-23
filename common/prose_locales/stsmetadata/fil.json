@@ -480,12 +480,12 @@
     "text": "full para sa authorization server, AT NAKA-OFF BILANG DEFAULT — ang PROFILE na oauth2.fapi=1-advanced (bawat realm, o ang fapi member ng isang pinangalanang authorization server), na Baseline at higit pa (#139): isang JWS-signed request object ayon sa value o ayon sa reference (item 1) na may exp at nbf sa loob ng 60 minuto at aud na ang issuer (item 13, 15, 17); response_type code id_token, o code na may JARM (item 2); ang ID Token bilang detached signature na may s_hash (5.2.2.1); mga sender-constrained access token lang — mTLS, o DPoP maliban kung oauth2.fapiRequireMtls — na inilalathala ang mtls_endpoint_aliases (item 5, 6); tls_client_auth, self_signed_tls_client_auth o private_key_jwt at walang public client (item 14, 16); PKCE S256 para sa mga ipinush na request (item 18, at niluwagan ang Baseline item 7 gaya ng sinasabi ng section); PS256 o ES256 para sa bawat signature sa magkabilang direksyon at hindi kailanman RSA1_5 (8.6), at PS256 ang default na pag-sign ng server na ito. Sumusunod ang console, portal at debugger: isang signed request object na ipinush sa PAR, JARM, at isang bound token. HINDI saklaw: ang conformance suite (#176)."
   },
   "stsmetadata.specs.fapi2-security.coverage": {
-    "en": "f7a75985a1885edb",
-    "text": "full para sa authorization server, AT NAKA-OFF BILANG DEFAULT — ang PROFILE na oauth2.fapi=2-security (bawat realm, o ang fapi member ng isang pinangalanang authorization server), isang sariling profile (#140): naka-on ang RFC 9700 mode; mga confidential client lang, sa pamamagitan ng mTLS o private_key_jwt, ang aud ng assertion ay ang issuer bilang string (5.3.2.1 item 3, 6, 8); mga sender-constrained token lang, sa pamamagitan ng mTLS o DPoP (item 4-5); walang refresh rotation maliban kung pinipilit ito ng oauth2.refreshTokenRotation (item 9); mga code na 60 s (item 11); tinatanggihan ang iat o nbf na higit sa 60 s ang aga (item 13); code lang, kinakailangan ang PAR at client-authenticated, PKCE S256, ipinush ang redirect_uri, mga request_uri na wala pang 600 s (5.3.2.2); PS256, ES256 o EdDSA, RSA 2048 at EC 224 bit (5.4.1). TLS (5.2): ang mga suite ng BCP 195 ang default ng bawat listener, mas gusto ang TLS 1.3. Nananatiling opsyonal ang mga DPoP nonce, at sumusunod ang consent sa karaniwang mga patakaran. Walang normative requirement ang Attacker Model; iniuugnay ng docs/v1.1.0/oauth-security.md ang bawat attacker class sa pumipigil dito. Sumusunod ang console, portal at debugger. HINDI saklaw: ang conformance suite (#176)."
+    "en": "01028f08fd980cb6",
+    "text": "full para sa authorization server, AT NAKA-OFF BILANG DEFAULT — ang PROFILE na oauth2.fapi=2-security (bawat realm, o ang fapi member ng isang pinangalanang authorization server), isang sariling profile (#140): naka-on ang RFC 9700 mode; mga confidential client lang, sa pamamagitan ng mTLS o private_key_jwt, ang aud ng assertion ay ang issuer bilang string (5.3.2.1 item 3, 6, 8); mga sender-constrained token lang, sa pamamagitan ng mTLS o DPoP (item 4-5); walang refresh rotation maliban kung pinipilit ito ng oauth2.refreshTokenRotation (item 9); mga code na 60 s (item 11); tinatanggihan ang iat o nbf na higit sa 60 s ang aga (item 13); code lang, kinakailangan ang PAR at client-authenticated, PKCE S256, ipinush ang redirect_uri, mga request_uri na wala pang 600 s (5.3.2.2); PS256, ES256 o EdDSA, RSA 2048 at EC 224 bit (5.4.1). TLS (5.2): ang mga suite ng BCP 195 ang default ng bawat listener, mas gusto ang TLS 1.3. Nananatiling opsyonal ang mga DPoP nonce, at sumusunod ang consent sa karaniwang mga patakaran. Walang normative requirement ang Attacker Model; iniuugnay ng docs/v1.2.0/oauth-security.md ang bawat attacker class sa pumipigil dito. Sumusunod ang console, portal at debugger. HINDI saklaw: ang conformance suite (#176)."
   },
   "stsmetadata.specs.fapi2-message-signing.coverage": {
-    "en": "35f9077fddbb7a8e",
-    "text": "full para sa authorization server, AT NAKA-OFF BILANG DEFAULT — ang PROFILE na oauth2.fapi=2-message-signing, ang Security Profile kasama ang lahat ng tatlong component (#141, desisyon ni rcbj): kinakailangan sa PAR ang isang JAR-signed request object, na ang aud ay ang issuer at ang exp at nbf ay nasa loob ng 60 minuto (5.3); kinakailangan ang JARM, iss sa loob ng JWT (5.4); naka-sign ang mga RFC 9701 introspection response (5.5). Gabay ang non-repudiation ng section 5.2, sinasagot sa docs/v1.1.0/oauth-security.md. Sumusunod ang console, portal at debugger. HINDI bahagi ng huling specification ang mga RFC 9421 HTTP signature: ang mga iyon ay FAPI 2.0 Http Signatures, ang susunod na entry (#178)."
+    "en": "8aff442a2af8fd53",
+    "text": "full para sa authorization server, AT NAKA-OFF BILANG DEFAULT — ang PROFILE na oauth2.fapi=2-message-signing, ang Security Profile kasama ang lahat ng tatlong component (#141, desisyon ni rcbj): kinakailangan sa PAR ang isang JAR-signed request object, na ang aud ay ang issuer at ang exp at nbf ay nasa loob ng 60 minuto (5.3); kinakailangan ang JARM, iss sa loob ng JWT (5.4); naka-sign ang mga RFC 9701 introspection response (5.5). Gabay ang non-repudiation ng section 5.2, sinasagot sa docs/v1.2.0/oauth-security.md. Sumusunod ang console, portal at debugger. HINDI bahagi ng huling specification ang mga RFC 9421 HTTP signature: ang mga iyon ay FAPI 2.0 Http Signatures, ang susunod na entry (#178)."
   },
   "stsmetadata.specs.fapi2-http-signatures.coverage": {
     "en": "84f23a449916fdc1",
@@ -760,16 +760,16 @@
     "text": "partial: pag-sign, relaxed/relaxed, rsa-sha256 na may key na hindi bababa sa 2048 bit (RFC 8301), sa common/crypto.js, sa ipinapadala ng SMTP transport kapag may naka-configure na domain. Wala: simple canonicalization, l= at pag-verify ng mail na ipinadala ng iba — walang tinatanggap na mail ang serbisyong ito. Walang nakarehistrong post-quantum algorithm ang DKIM."
   },
   "stsmetadata.specs.rfc9580.coverage": {
-    "en": "086f96d364365827",
-    "text": "partial: pagbasa ng transferable public key, v6 at (RFC 4880) v4, pag-verify ng cleartext signature ng isang signing key nito, at pag-encrypt ng mensahe sa encryption key nito, lahat sa pamamagitan ng openpgp.js (common/crypto.js section 19). Tinatanggap ang Ed25519, Ed448, ECDSA at ECDH sa mga NIST curve, X25519, X448 at RSA na openpgp.minRsaBits; tinatanggihan ang DSA, ElGamal at Brainpool. Kulang: pagpirma, decryption, keyring, keyserver."
+    "en": "a2930bdb8ffe747d",
+    "text": "partial: pagbasa ng transferable public key, v6 at (RFC 4880) v4, pag-verify ng cleartext signature ng isang signing key nito, at pag-encrypt ng mensahe sa encryption key nito, Ang mga classical na algorithm ay dumadaan sa openpgp.js. Ang mga composite ng RFC 9980 ay binabasa rito (tingnan ang rfc9980). Tinatanggap ang Ed25519, Ed448, ECDSA at ECDH sa mga NIST curve, X25519, X448 at RSA na openpgp.minRsaBits; tinatanggihan ang DSA, ElGamal at Brainpool. Kulang: pagpirma, decryption, keyring, keyserver."
   },
   "stsmetadata.specs.rfc3156.coverage": {
     "en": "aa799b14a54ace0f",
     "text": "partial: multipart/encrypted na may application/pgp-encrypted na version part at ang armored na mensahe, ang tunay na mga header ay protektado sa loob. Kulang: multipart/signed — pinipirmahan ng serbisyong ito ang mail gamit ang DKIM, hindi OpenPGP."
   },
   "stsmetadata.specs.rfc8551.coverage": {
-    "en": "a07a1e013186f3d4",
-    "text": "partial: application/pkcs7-mime enveloped-data, isang CMS EnvelopedData na may AES-256-CBC na content encryption at isang RSAES-OAEP (SHA-256) o ECDH key agreement recipient, sa userSMIMECertificate ng tao. Kulang: signed-data, AuthEnvelopedData (AES-GCM), decryption."
+    "en": "5c1b77d839bd8cc2",
+    "text": "partial: application/pkcs7-mime enveloped-data, isang CMS EnvelopedData na may AES-256-CBC na content encryption. Ang classical na sertipiko ay gumagamit ng RSAES-OAEP (SHA-256) o ECDH. Ang sertipiko ng ML-KEM (RFC 9935) ay gumagamit ng KEMRecipientInfo (RFC 9629): HKDF-SHA-256 at AES-Wrap. Ang runtime na hindi makapag-encapsulate ay hindi nagpapadala ng mensahe sa ilalim ng classical na algorithm. Kulang: signed-data, AuthEnvelopedData (AES-GCM), decryption."
   },
   "stsmetadata.specs.wkd.coverage": {
     "en": "e1c6b9651ff1e58c",
@@ -2280,8 +2280,8 @@
     "text": "NON-SPEC na surface sa isang spec behaviour. Ang used-assertion history bilang JSON: bawat RFC 7523 at RFC 7522 assertion na tinanggap ng realm na ito at hindi pa nag-e-expire, kasama kung saan hawak ang history (persistent, atomic sa mga process), ang live count laban sa oauth2.assertionReplayCacheSize, sinasala ayon sa text, format, use at estado at naka-page gamit ang ?page= at ?per=. Walang assertion at walang credential sa anumang row. READ ONLY. Sinasalamin ang GET /admin/used-assertions."
   },
   "stsmetadata.endpoints./admin-api/error-codes.what": {
-    "en": "6a8ddafe4157455e",
-    "text": "NON-SPEC. Ang sentral na table ng bawat failure condition na kayang gawin ng serbisyong ito, STS-<SUBSYSTEM>-<NNNN>, bilang JSON: bawat code kasama ang subsystem nito, kung ano ang nabigo, kung ano ang sinasabi sa CLIENT sa bokabularyo ng sarili nitong protocol, at ilang row ng hawak na audit log ang may dala nito sa realm na ito — sinasala ayon sa subsystem, text at ?seen=1, naka-page gamit ang ?page= at ?per=. HINDI KAILANMAN IPINAPADALA SA CLIENT ANG CODE: nasa audit row at sa log line lang ito. READ ONLY — source ang table. Sinasalamin ang GET /admin/error-codes; ang parehong table ay docs/v1.1.0/error-codes.md."
+    "en": "d4977def3313bbf1",
+    "text": "NON-SPEC. Ang sentral na table ng bawat failure condition na kayang gawin ng serbisyong ito, STS-<SUBSYSTEM>-<NNNN>, bilang JSON: bawat code kasama ang subsystem nito, kung ano ang nabigo, kung ano ang sinasabi sa CLIENT sa bokabularyo ng sarili nitong protocol, at ilang row ng hawak na audit log ang may dala nito sa realm na ito — sinasala ayon sa subsystem, text at ?seen=1, naka-page gamit ang ?page= at ?per=. HINDI KAILANMAN IPINAPADALA SA CLIENT ANG CODE: nasa audit row at sa log line lang ito. READ ONLY — source ang table. Sinasalamin ang GET /admin/error-codes; ang parehong table ay docs/v1.2.0/error-codes.md."
   },
   "stsmetadata.endpoints./admin-api/audit-export.what": {
     "en": "c975b83632fa12f4",
@@ -4198,5 +4198,9 @@
   "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
     "en": "1716521c9c5e119d",
     "text": "NON-SPEC (#1955). Ang mga naka-escrow na piv-key-management certificate ng isang tao (piv.keyEscrow): serial, subject, validity at kung binawi ang bawat isa. Hindi kailanman isang key. Katapat ng GET /admin/hardware-tokens."
+  },
+  "stsmetadata.specs.rfc9980.coverage": {
+    "en": "5feb46765c8bc465",
+    "text": "partial: mga pirma ng ML-DSA-65+Ed25519 at ML-DSA-87+Ed448, at pag-encrypt ng ML-KEM-768+X25519 at ML-KEM-1024+X448, sa pagrehistro at kapag ginamit ang isang nakaimbak na key. Ang composite ay post-quantum. Nililimitahan ng openpgp.pqcOnly ang pagrehistro lamang. Ang parehong hati ng isang pirma ay sine-verify ng common/crypto_impl/openpgp_pqc.js. Kulang: SLH-DSA (mga algorithm id 32-34), at hindi bumubuo ang serbisyong ito ng key na RFC 9980. Hindi binibigyang-kahulugan ng openpgp.js ang mga key na ito."
   }
 }

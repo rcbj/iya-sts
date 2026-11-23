@@ -22,7 +22,9 @@
 //
 // The keys of the seed file are drawn in the run and never written down.
 // What a code from the token does at a sign-in is `tests/oath_tokens.js`'s
-// and `tests/hotp.js`', in process. `local: true`: this repository's
+// and `tests/hotp.js`', in process. The authentication policy's hotp row
+// is off by default; this run turns it on for the assignment and puts the
+// default realm's profile back. `local: true`: this repository's
 // console and management API.
 // ---------------------------------------------------------------------------
 
@@ -164,6 +166,53 @@ function container(serial, key) {
   return { xml: xml, secret: secret };
 }
 
+// The hotp row is off by default. Assignment asks it. The returned record
+// is what puts the default realm's profile back: a reset when nothing was
+// stored, the previous field values when a profile already was.
+async function allowHotp() {
+  log.debug("Entering allowHotp().");
+  const got = await send("GET", "/admin-api/policies");
+  assert.strictEqual(got.status, 200, String(got.raw).slice(0, 300));
+  const authn = got.json && got.json.authn;
+  assert.ok(authn && authn.defaults, "the policies answer had no defaults");
+  const wasStored = !!(authn.profile && authn.profile.stored);
+  const previous = Object.assign({ profile: "default" }, authn.defaults);
+  Object.keys(authn.defaults).forEach(function (key) {
+    if (authn.profile && authn.profile[key] !== undefined) {
+      previous[key] = authn.profile[key];
+    }
+  });
+  if (authn.profile && authn.profile.description !== undefined) {
+    previous.description = authn.profile.description;
+  }
+  const saved = await send("POST", "/admin-api/policies/save-authn-policy",
+    { json: Object.assign({}, previous, { hotpSecondFactor: true }) });
+  const ok = saved.status >= 200 && saved.status < 300 && saved.json &&
+             saved.json.ok !== false;
+  log.debug("Leaving allowHotp().");
+  return {
+    ok: ok, wasStored: wasStored, previous: previous,
+    detail: saved.status + " " + String(saved.raw).slice(0, 300)
+  };
+}
+
+async function restoreHotp(saved) {
+  log.debug("Entering restoreHotp().");
+  let res;
+  if (!saved.wasStored) {
+    res = await send("POST", "/admin-api/policies/reset-authn-policy",
+                     { json: { profile: "default" } });
+  } else {
+    res = await send("POST", "/admin-api/policies/save-authn-policy",
+                     { json: saved.previous });
+  }
+  assert.ok(res.status >= 200 && res.status < 300 && res.json &&
+            res.json.ok !== false,
+            "the authentication policy could not be put back: " +
+            res.status + " " + String(res.raw).slice(0, 300));
+  log.debug("Leaving restoreHotp().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Imported OATH tokens at " + base);
@@ -211,59 +260,82 @@ async function test() {
   const tokenKey = right.json && right.json.imported[0]
     ? right.json.imported[0].key : "";
 
-  log.info("=== c. listing and assignment ===");
-  const listed = await send("GET", OPERATION + "/oath?q=" +
-                            encodeURIComponent(serial));
-  await send("POST", "/admin-api/users/create", { json: {
-    username: person, invent: false,
-    attributes: { cn: "OATH " + person, sn: person } } });
-  const assigned = await send("POST", OPERATION + "/assign-oath",
-    { json: { key: tokenKey, username: person } });
-  const again = await send("POST", OPERATION + "/assign-oath",
-    { json: { key: tokenKey, username: person } });
-  const removeAssigned = await send("POST", OPERATION + "/remove-oath",
-    { json: { key: tokenKey } });
-  const unknown = await send("POST", OPERATION + "/assign-oath",
-    { json: { key: "run-vendor/no-such-" + RUN + "/1", username: person } });
-  const after = await send("GET", OPERATION + "/oath?q=" +
-                           encodeURIComponent(serial));
-  check("the token is listed unassigned, assigned to the person, and " +
-        "refused a second assignment and a removal while assigned; an " +
-        "unknown token is 404", function () {
-    assert.strictEqual(listed.status, 200, listed.raw.slice(0, 300));
-    assert.ok(listed.json.tokens.some(function (r) {
-      return r.key === tokenKey && r.status === "unassigned";
-    }), listed.raw.slice(0, 400));
-    assert.strictEqual(assigned.status, 200, assigned.raw.slice(0, 400));
-    assert.strictEqual(assigned.json.token.holder, person);
-    assert.strictEqual(again.status, 409, again.raw.slice(0, 300));
-    assert.strictEqual(removeAssigned.status, 409,
-                       removeAssigned.raw.slice(0, 300));
-    assert.strictEqual(unknown.status, 404, unknown.raw.slice(0, 300));
-    assert.ok(after.json.tokens.some(function (r) {
-      return r.key === tokenKey && r.status === "assigned" &&
-             r.holder === person;
-    }), after.raw.slice(0, 400));
-  });
-
-  log.info("=== d. lost, retired and removed ===");
-  const lost = await send("POST", OPERATION + "/lost",
-    { json: { key: "run-vendor/" + serial } });
-  const retired = await send("GET", OPERATION + "/oath?status=retired&q=" +
+  let hotpPolicy = null;
+  let hotpRestored = false;
+  try {
+    log.info("=== c. listing and assignment ===");
+    hotpPolicy = await allowHotp();
+    assert.ok(hotpPolicy.ok, "the hotp row could not be turned on: " +
+              hotpPolicy.detail);
+    const listed = await send("GET", OPERATION + "/oath?q=" +
+                              encodeURIComponent(serial));
+    await send("POST", "/admin-api/users/create", { json: {
+      username: person, invent: false,
+      attributes: { cn: "OATH " + person, sn: person } } });
+    const assigned = await send("POST", OPERATION + "/assign-oath",
+      { json: { key: tokenKey, username: person } });
+    const again = await send("POST", OPERATION + "/assign-oath",
+      { json: { key: tokenKey, username: person } });
+    const removeAssigned = await send("POST", OPERATION + "/remove-oath",
+      { json: { key: tokenKey } });
+    const unknown = await send("POST", OPERATION + "/assign-oath",
+      { json: { key: "run-vendor/no-such-" + RUN + "/1", username: person } });
+    const after = await send("GET", OPERATION + "/oath?q=" +
                              encodeURIComponent(serial));
-  const removed = await send("POST", OPERATION + "/remove-oath",
-    { json: { key: tokenKey } });
-  check("reporting its hardware token lost retires it, and the retired " +
-        "row is removed", function () {
-    assert.strictEqual(lost.status, 200, lost.raw.slice(0, 400));
-    assert.ok((lost.json.retired || []).some(function (r) {
-      return r.kind === "hotp" && r.ref === tokenKey;
-    }), lost.raw.slice(0, 400));
-    assert.ok(retired.json.tokens.some(function (r) {
-      return r.key === tokenKey;
-    }), retired.raw.slice(0, 400));
-    assert.strictEqual(removed.status, 200, removed.raw.slice(0, 300));
-  });
+    check("the token is listed unassigned, assigned to the person, and " +
+          "refused a second assignment and a removal while assigned; an " +
+          "unknown token is 404", function () {
+      assert.strictEqual(listed.status, 200, listed.raw.slice(0, 300));
+      assert.ok(listed.json.tokens.some(function (r) {
+        return r.key === tokenKey && r.status === "unassigned";
+      }), listed.raw.slice(0, 400));
+      assert.strictEqual(assigned.status, 200, assigned.raw.slice(0, 400));
+      assert.strictEqual(assigned.json.token.holder, person);
+      assert.strictEqual(again.status, 409, again.raw.slice(0, 300));
+      assert.strictEqual(removeAssigned.status, 409,
+                         removeAssigned.raw.slice(0, 300));
+      assert.strictEqual(unknown.status, 404, unknown.raw.slice(0, 300));
+      assert.ok(after.json.tokens.some(function (r) {
+        return r.key === tokenKey && r.status === "assigned" &&
+               r.holder === person;
+      }), after.raw.slice(0, 400));
+    });
+
+    log.info("=== d. lost, retired and removed ===");
+    const lost = await send("POST", OPERATION + "/lost",
+      { json: { key: "run-vendor/" + serial } });
+    const retired = await send("GET", OPERATION + "/oath?status=retired&q=" +
+                               encodeURIComponent(serial));
+    const removed = await send("POST", OPERATION + "/remove-oath",
+      { json: { key: tokenKey } });
+    check("reporting its hardware token lost retires it, and the retired " +
+          "row is removed", function () {
+      assert.strictEqual(lost.status, 200, lost.raw.slice(0, 400));
+      assert.ok((lost.json.retired || []).some(function (r) {
+        return r.kind === "hotp" && r.ref === tokenKey;
+      }), lost.raw.slice(0, 400));
+      assert.ok(retired.json.tokens.some(function (r) {
+        return r.key === tokenKey;
+      }), retired.raw.slice(0, 400));
+      assert.strictEqual(removed.status, 200, removed.raw.slice(0, 300));
+    });
+    if (hotpPolicy && hotpPolicy.ok) {
+      await restoreHotp(hotpPolicy);
+      hotpRestored = true;
+    }
+  } finally {
+    if (hotpPolicy && hotpPolicy.ok && !hotpRestored) {
+      try {
+        await restoreHotp(hotpPolicy);
+      } catch (e) {
+        log.debug("Caught in test(): " + ((e && e.message) || e));
+        // The original failure is still the one that leaves test(). A
+        // second throw here would hide it.
+        log.error("the authentication policy could not be put back: " +
+                  ((e && e.message) || e));
+      }
+    }
+  }
 
   log.info(checks + " checks passed.");
   log.debug("Leaving test().");

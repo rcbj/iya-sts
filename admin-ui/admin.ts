@@ -2489,7 +2489,7 @@ const SECTIONS = [
       // service can draw, how often this realm's held rows carry each code, is
       // an account of what this service has DONE. A catalogue with no such
       // column would belong in the documentation, which is where the rest of
-      // this table is published (`docs/v1.1.0/error-codes.md`).
+      // this table is published (`docs/v1.2.0/error-codes.md`).
       { path: '/admin/error-codes', label: 'Error codes',
         blurb: 'Every way this service can fail or refuse, by subsystem, ' +
                'with what the client is told instead and how many rows in ' +

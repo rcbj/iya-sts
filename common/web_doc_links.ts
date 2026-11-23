@@ -8,7 +8,7 @@
 // ---------------------------------------------------------------------------
 // A LINK TO THE PUBLIC DOCUMENTATION, ON EVERY CONSOLE AND PORTAL PAGE (#895).
 //
-// The pages are https://rcbj.github.io/iya-sts/v1.1.0/: the site is
+// The pages are https://rcbj.github.io/iya-sts/v1.2.0/: the site is
 // versioned, and a build links to its OWN version's folder, not the
 // landing page or the latest (docs/CLAUDE.md, *The versioned site*; the
 // front door and the footer name the same folder). A link is absolute so
@@ -448,7 +448,7 @@ class WebDocLinks {
    * This version's folder of the published documentation site, with its
    * trailing slash.
    */
-  static readonly ORIGIN = 'https://rcbj.github.io/iya-sts/v1.1.0/';
+  static readonly ORIGIN = 'https://rcbj.github.io/iya-sts/v1.2.0/';
 
   /**
    * Turns a site-relative page into an absolute URL. An absolute URL is

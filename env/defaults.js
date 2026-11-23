@@ -21,14 +21,14 @@
 // an env/ directory mounted over the image's, say — cannot stop a newer image
 // over a setting it does not carry. The start says so instead (STS-CORE-0177
 // for a setting this file lacks, STS-CORE-0178 for one whose value here is
-// not the image's default), and docs/v1.1.0/configuration.md says what to do.
+// not the image's default), and docs/v1.2.0/configuration.md says what to do.
 //
 // THE VALUES HERE ARE THE `dflt` COLUMN OF config.js's TABLE, and this file is
 // GENERATED from it — do not hand-edit a value. Changing a default means
 // changing the table, which is the one place that also carries the reasoning
 // for what the default is; a value edited only here would disagree with what
 // /admin/config reports as the default, with the OpenAPI document's `default`
-// property, and with docs/v1.1.0/configuration.md's table, all three of which
+// property, and with docs/v1.2.0/configuration.md's table, all three of which
 // read the table.
 //
 // FOUR SETTINGS ARE DELIBERATELY ABSENT: global.https, oid4vp.walletUrl,
@@ -39,7 +39,7 @@
 // this file was written, so they resolve through their neighbour instead and
 // are exempt from the startup refusal for that reason.
 //
-// See common/CLAUDE.md, and docs/v1.1.0/configuration.md's *Every setting*,
+// See common/CLAUDE.md, and docs/v1.2.0/configuration.md's *Every setting*,
 // which lists every setting, its environment variable and its default in one
 // table.
 // ---------------------------------------------------------------------------
@@ -673,80 +673,83 @@ var config = {
 
   // --- Signing algorithms ----------------------------------------------
   pki: {
-    acceptedSignatureAlgorithms: "",            // Certificate signatures accepted
-    crlLifetimeMinutes: 60,                     // How long a CRL claims to be fresh
-    httpPort: 8082,                             // Plain-HTTP revocation listener port; restart to apply
-    distributionBaseUrl: "",                    // Base URL published in CRL and OCSP addresses
-    distributionPort: 0,                        // Port published in HTTP CRL and OCSP addresses
-    distributionLdapHost: "",                   // Host published in ldap:// CRL addresses
-    distributionLdapPort: 0,                    // Port published in ldap:// CRL addresses
-    publishCrlToDirectory: true,                // Publish every CRL into the embedded directory
-    autoBuild: true,                            // Build the certificate authority at startup; restart to apply
-    signatureAlgorithm: "",                     // Default CA signature algorithm
-    alternativeKeyAlgorithm: "none",            // CA alternative (post-quantum) key algorithm
-    organisation: "iya-sts",                    // Default organisation name (O=)
-    personSelfService: true,                    // Let a person issue their own signing key pair
-    leafLifetimeDays: 365,                      // Default lifetime of an issued key pair (days)
-    rootLifetimeYears: 0,                       // Root CA lifetime (years, 0 = the profile's)
-    intermediateLifetimeYears: 0,               // Intermediate CA lifetime (years, 0 = the profile's)
-    issuingLifetimeYears: 0,                    // Issuing CA lifetime (years, 0 = the profile's)
-    maxStoredObjects: 200,                      // Certificates and keys the workbench store keeps, per realm
-    personSelfServicePerIdentity: 5,            // Self-issued key pairs one person may ask for per window
-    personSelfServicePerAddress: 5,             // Self-issued key pairs one address may ask for per window
-    personTlsClientCertificateMax: 5,           // TLS client certificates one person may hold
-    personSigningKeyMax: 5,                     // Signing key pairs one person may hold per profile
-    applicationTlsClientCertificateMax: 5,      // TLS client certificates one application may hold
-    messageSigningCertificateMax: 5,            // Message-signing certificates one holder may hold
-    pinnedSigners: false,                       // Sign with a pinned key pair
-    pinnedSignerLeadMinutes: 1440,              // Publish a pinned key this long before it signs (minutes)
-    pinnedSignerExpiryWarningDays: 30,          // Warn this long before a pinned key's certificate expires (days)
-    revocationCheck: "auto",                    // Revocation check on a presented certificate
-    revocationRequireDistributionPoint: "auto", // Refuse a certificate whose issuer names no CRL and no OCSP responder
-    revocationFetchTimeoutMs: 3000,             // CRL fetch timeout (milliseconds)
-    revocationMaxCrlBytes: 1048576,             // Largest CRL fetched (bytes)
-    revocationCrlCacheEntries: 256,             // Foreign CRLs kept in memory
-    revocationCrlMaxAgeS: 3600,                 // Longest a fetched CRL is believed (seconds)
-    revocationFailureRetryS: 60,                // Wait before retrying a CRL that failed (seconds)
-    revocationOcsp: "first",                    // OCSP for a foreign certificate
-    revocationOcspMaxAgeS: 3600,                // Longest an OCSP response is believed (seconds)
-    revocationOcspRequireNonce: false,          // Refuse an OCSP response that does not echo the nonce
-    revocationClockSkewS: 300,                  // Clock skew allowed on CRL and OCSP freshness (seconds)
-    revocationCrlIssuersFile: "",               // Certificates that may sign an indirect CRL
-    revocationLdap: "ldaps",                    // LDAP revocation addresses
-    revocationLdapCaFile: "",                   // CA certificates for ldaps revocation directories
-    revocationHttpsCaFile: "",                  // CA certificates for https CRL and OCSP servers
-    revocationLdapDirectory: "",                // Directory for CRL names relative to their issuer
-    enrollmentMaxCertificatesPerEntry: 20,      // Enrolled certificates one entry may hold
-    paranoid: "auto",                           // Paranoid PKI mode
-    paranoidTlsClient: true,                    // Paranoid: a client certificate at a TLS handshake
-    paranoidTlsClientSelfSigned: true,          // Paranoid: a self-signed TLS client certificate a client registered
-    paranoidOutboundTls: true,                  // Paranoid: the server certificate of an outbound request
-    paranoidJoseSigner: true,                   // Paranoid: a JOSE signer's certificate chain
-    paranoidSamlSigner: true,                   // Paranoid: a SAML signer's certificate
-    paranoidFederationPartner: true,            // Paranoid: a federation partner's signing certificate
-    paranoidWsSecurityToken: true,              // Paranoid: a WS-Security X.509 token
-    paranoidJoseBareKey: true,                  // Paranoid: a bare JWK that carries an x5c
-    paranoidEncryptionRecipient: true,          // Paranoid: an encryption recipient's certificate
-    paranoidClientAttestation: true,            // Paranoid: an attestation-based client authentication chain
-    paranoidWebauthnAttestation: true,          // Paranoid: a WebAuthn attestation chain
-    paranoidDeviceAttestation: true,            // Paranoid: a device attestation chain
-    paranoidSpiffeSvid: true,                   // Paranoid: an X509-SVID presented to the SPIRE Server or Broker API
-    paranoidSpiffeAttestation: true,            // Paranoid: a SPIFFE node attestor's certificate
-    paranoidPkinit: true,                       // Paranoid: a PKINIT client certificate
-    paranoidPivAttestation: true,               // Paranoid: a YubiKey PIV key attestation chain
-    paranoidPivCard: true,                      // Paranoid: an outside PIV or CAC card mapped by card UUID
-    paranoidEnrollmentCredential: true,         // Paranoid: a certificate presented to enroll or renew
-    paranoidVcKeyAttestation: true,             // Paranoid: an OpenID4VCI key attestation chain
-    paranoidVcIssuer: true,                     // Paranoid: a credential issuer's or status-list signer's certificate
-    paranoidCellPeer: true,                     // Paranoid: the other cell at the inter-cell channel
-    paranoidCaImport: true,                     // Paranoid: a CA or key pair an operator imports
-    paranoidAnchorAdmission: true,              // Paranoid: admission to a truststore
-    paranoidRevocationSigner: true,             // Paranoid: an OCSP responder or CRL signer
-    paranoidFidoMds: true,                      // Paranoid: the FIDO Metadata Service BLOB signer
-    paranoidPolicySigner: true,                 // Paranoid: the signer of a policy export
-    policyExportAlgorithm: "RS256",             // Policy export signing algorithm
-    signerTrustAnchorsFile: "",                 // Signer truststore: a PEM file of anchors and intermediates; restart to apply
-    pinnedCertificateWarningDays: 30            // Pinned certificate expiry warning (days)
+    acceptedSignatureAlgorithms: "",                                                                                                       // Certificate signatures accepted
+    crlLifetimeMinutes: 60,                                                                                                                // How long a CRL claims to be fresh
+    httpPort: 8082,                                                                                                                        // Plain-HTTP revocation listener port; restart to apply
+    distributionBaseUrl: "",                                                                                                               // Base URL published in CRL and OCSP addresses
+    distributionPort: 0,                                                                                                                   // Port published in HTTP CRL and OCSP addresses
+    distributionLdapHost: "",                                                                                                              // Host published in ldap:// CRL addresses
+    distributionLdapPort: 0,                                                                                                               // Port published in ldap:// CRL addresses
+    publishCrlToDirectory: true,                                                                                                           // Publish every CRL into the embedded directory
+    autoBuild: true,                                                                                                                       // Build the certificate authority at startup; restart to apply
+    signatureAlgorithm: "",                                                                                                                // Default CA signature algorithm
+    alternativeKeyAlgorithm: "none",                                                                                                       // CA alternative (post-quantum) key algorithm
+    sshUserCaAlgorithms: "ssh-mldsa-65,ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,rsa-sha2-256,rsa-sha2-512", // SSH user CA algorithms
+    sshUserCaPqcOnly: false,                                                                                                               // SSH user certificates are post-quantum only
+    sshUserCaPqcAlongsideClassical: false,                                                                                                 // SSH user certificates carry a post-quantum certificate too
+    organisation: "iya-sts",                                                                                                               // Default organisation name (O=)
+    personSelfService: true,                                                                                                               // Let a person issue their own signing key pair
+    leafLifetimeDays: 365,                                                                                                                 // Default lifetime of an issued key pair (days)
+    rootLifetimeYears: 0,                                                                                                                  // Root CA lifetime (years, 0 = the profile's)
+    intermediateLifetimeYears: 0,                                                                                                          // Intermediate CA lifetime (years, 0 = the profile's)
+    issuingLifetimeYears: 0,                                                                                                               // Issuing CA lifetime (years, 0 = the profile's)
+    maxStoredObjects: 200,                                                                                                                 // Certificates and keys the workbench store keeps, per realm
+    personSelfServicePerIdentity: 5,                                                                                                       // Self-issued key pairs one person may ask for per window
+    personSelfServicePerAddress: 5,                                                                                                        // Self-issued key pairs one address may ask for per window
+    personTlsClientCertificateMax: 5,                                                                                                      // TLS client certificates one person may hold
+    personSigningKeyMax: 5,                                                                                                                // Signing key pairs one person may hold per profile
+    applicationTlsClientCertificateMax: 5,                                                                                                 // TLS client certificates one application may hold
+    messageSigningCertificateMax: 5,                                                                                                       // Message-signing certificates one holder may hold
+    pinnedSigners: false,                                                                                                                  // Sign with a pinned key pair
+    pinnedSignerLeadMinutes: 1440,                                                                                                         // Publish a pinned key this long before it signs (minutes)
+    pinnedSignerExpiryWarningDays: 30,                                                                                                     // Warn this long before a pinned key's certificate expires (days)
+    revocationCheck: "auto",                                                                                                               // Revocation check on a presented certificate
+    revocationRequireDistributionPoint: "auto",                                                                                            // Refuse a certificate whose issuer names no CRL and no OCSP responder
+    revocationFetchTimeoutMs: 3000,                                                                                                        // CRL fetch timeout (milliseconds)
+    revocationMaxCrlBytes: 1048576,                                                                                                        // Largest CRL fetched (bytes)
+    revocationCrlCacheEntries: 256,                                                                                                        // Foreign CRLs kept in memory
+    revocationCrlMaxAgeS: 3600,                                                                                                            // Longest a fetched CRL is believed (seconds)
+    revocationFailureRetryS: 60,                                                                                                           // Wait before retrying a CRL that failed (seconds)
+    revocationOcsp: "first",                                                                                                               // OCSP for a foreign certificate
+    revocationOcspMaxAgeS: 3600,                                                                                                           // Longest an OCSP response is believed (seconds)
+    revocationOcspRequireNonce: false,                                                                                                     // Refuse an OCSP response that does not echo the nonce
+    revocationClockSkewS: 300,                                                                                                             // Clock skew allowed on CRL and OCSP freshness (seconds)
+    revocationCrlIssuersFile: "",                                                                                                          // Certificates that may sign an indirect CRL
+    revocationLdap: "ldaps",                                                                                                               // LDAP revocation addresses
+    revocationLdapCaFile: "",                                                                                                              // CA certificates for ldaps revocation directories
+    revocationHttpsCaFile: "",                                                                                                             // CA certificates for https CRL and OCSP servers
+    revocationLdapDirectory: "",                                                                                                           // Directory for CRL names relative to their issuer
+    enrollmentMaxCertificatesPerEntry: 20,                                                                                                 // Enrolled certificates one entry may hold
+    paranoid: "auto",                                                                                                                      // Paranoid PKI mode
+    paranoidTlsClient: true,                                                                                                               // Paranoid: a client certificate at a TLS handshake
+    paranoidTlsClientSelfSigned: true,                                                                                                     // Paranoid: a self-signed TLS client certificate a client registered
+    paranoidOutboundTls: true,                                                                                                             // Paranoid: the server certificate of an outbound request
+    paranoidJoseSigner: true,                                                                                                              // Paranoid: a JOSE signer's certificate chain
+    paranoidSamlSigner: true,                                                                                                              // Paranoid: a SAML signer's certificate
+    paranoidFederationPartner: true,                                                                                                       // Paranoid: a federation partner's signing certificate
+    paranoidWsSecurityToken: true,                                                                                                         // Paranoid: a WS-Security X.509 token
+    paranoidJoseBareKey: true,                                                                                                             // Paranoid: a bare JWK that carries an x5c
+    paranoidEncryptionRecipient: true,                                                                                                     // Paranoid: an encryption recipient's certificate
+    paranoidClientAttestation: true,                                                                                                       // Paranoid: an attestation-based client authentication chain
+    paranoidWebauthnAttestation: true,                                                                                                     // Paranoid: a WebAuthn attestation chain
+    paranoidDeviceAttestation: true,                                                                                                       // Paranoid: a device attestation chain
+    paranoidSpiffeSvid: true,                                                                                                              // Paranoid: an X509-SVID presented to the SPIRE Server or Broker API
+    paranoidSpiffeAttestation: true,                                                                                                       // Paranoid: a SPIFFE node attestor's certificate
+    paranoidPkinit: true,                                                                                                                  // Paranoid: a PKINIT client certificate
+    paranoidPivAttestation: true,                                                                                                          // Paranoid: a YubiKey PIV key attestation chain
+    paranoidPivCard: true,                                                                                                                 // Paranoid: an outside PIV or CAC card mapped by card UUID
+    paranoidEnrollmentCredential: true,                                                                                                    // Paranoid: a certificate presented to enroll or renew
+    paranoidVcKeyAttestation: true,                                                                                                        // Paranoid: an OpenID4VCI key attestation chain
+    paranoidVcIssuer: true,                                                                                                                // Paranoid: a credential issuer's or status-list signer's certificate
+    paranoidCellPeer: true,                                                                                                                // Paranoid: the other cell at the inter-cell channel
+    paranoidCaImport: true,                                                                                                                // Paranoid: a CA or key pair an operator imports
+    paranoidAnchorAdmission: true,                                                                                                         // Paranoid: admission to a truststore
+    paranoidRevocationSigner: true,                                                                                                        // Paranoid: an OCSP responder or CRL signer
+    paranoidFidoMds: true,                                                                                                                 // Paranoid: the FIDO Metadata Service BLOB signer
+    paranoidPolicySigner: true,                                                                                                            // Paranoid: the signer of a policy export
+    policyExportAlgorithm: "RS256",                                                                                                        // Policy export signing algorithm
+    signerTrustAnchorsFile: "",                                                                                                            // Signer truststore: a PEM file of anchors and intermediates; restart to apply
+    pinnedCertificateWarningDays: 30                                                                                                       // Pinned certificate expiry warning (days)
   },
 
   // --- Key material ----------------------------------------------------
@@ -825,6 +828,7 @@ var config = {
     allowPlaintextImport: false  // Accept plaintext PSKC seed files in product mode
   },
 
+  // --- Devices ---------------------------------------------------------
   piv: {
     attestationAnchors: "",                                                    // PIV attestation roots (PEM)
     requireAttestation: false,                                                 // Require a PIV attestation for the PIV profiles
@@ -838,11 +842,14 @@ var config = {
 
   // --- OpenPGP ---------------------------------------------------------
   openpgp: {
-    wkd: false,              // Publish keys in the Web Key Directory
-    wkdDomains: "",          // Mail domains the Web Key Directory serves
-    challengeLifetimeS: 600, // Registration challenge lifetime (seconds)
-    signatureSkewS: 300,     // Proof signature clock skew (seconds)
-    minRsaBits: 3072         // Smallest RSA OpenPGP key
+    wkd: false,                                                                                                                                                                                                                                                                            // Publish keys in the Web Key Directory
+    wkdDomains: "",                                                                                                                                                                                                                                                                        // Mail domains the Web Key Directory serves
+    challengeLifetimeS: 600,                                                                                                                                                                                                                                                               // Registration challenge lifetime (seconds)
+    signatureSkewS: 300,                                                                                                                                                                                                                                                                   // Proof signature clock skew (seconds)
+    algorithms: "ML-DSA-65+Ed25519,ML-DSA-87+Ed448,ML-KEM-768+X25519,ML-KEM-1024+X448,ed25519,ed448,eddsaLegacy/ed25519Legacy,ecdsa/nistP256,ecdsa/nistP384,ecdsa/nistP521,rsaSign,rsaEncryptSign,x25519,x448,ecdh/curve25519Legacy,ecdh/nistP256,ecdh/nistP384,ecdh/nistP521,rsaEncrypt", // Algorithms accepted
+    pqcOnly: false,                                                                                                                                                                                                                                                                        // Register post-quantum keys only
+    pqcAlongsideClassical: false,                                                                                                                                                                                                                                                          // Post-quantum key alongside a classical one
+    minRsaBits: 3072                                                                                                                                                                                                                                                                       // Smallest RSA OpenPGP key
   },
 
   // --- ACME ------------------------------------------------------------

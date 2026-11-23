@@ -26,6 +26,10 @@
 //      (STS-OATH-0049).
 //   6. REALM ISOLATION: a token imported in one realm can be neither
 //      assigned nor claimed in another.
+//
+// The authentication policy's `hotp` row is off by default. This run
+// turns it on, because assignment and a claim ask `offered()`, and puts
+// the built-in profile back.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -40,6 +44,7 @@ const realms = require('../common/realms');
 const errorCodes = require('../common/error_codes');
 const counters = require('../cluster/cluster_counters');
 const ldap = require('../ldap/ldap_server');
+const authnPolicy = require('../common/authn_policy');
 const fixtures = require('./pskc');
 
 const log = require('bunyan').createLogger({
@@ -274,18 +279,34 @@ async function checkIsolation(t) {
   log.debug("Leaving checkIsolation().");
 }
 
+function allowHotp() {
+  log.debug("Entering allowHotp().");
+  const saved = authnPolicy.save('default', Object.assign({},
+    authnPolicy.DEFAULTS, { hotpSecondFactor: true }));
+  log.debug("Leaving allowHotp().");
+  return saved;
+}
+
 async function run(t) {
   log.debug("Entering run().");
   counters.reset();
-  [ADMIN, ANN, BEN, CAT].forEach(function (name) {
-    ldap.createUser(name, { invent: false, attributes: {} });
-  });
-  await checkImport(t);
-  await checkAssign(t);
-  await checkClaim(t);
-  await checkLost(t);
-  await checkRemove(t);
-  await checkIsolation(t);
+  const allowed = allowHotp();
+  t.check(allowed.ok && authnPolicy.read('default').hotpSecondFactor === true,
+          'the hotp row, off by default, is on for this run',
+          JSON.stringify((allowed && allowed.errors) || []));
+  try {
+    [ADMIN, ANN, BEN, CAT].forEach(function (name) {
+      ldap.createUser(name, { invent: false, attributes: {} });
+    });
+    await checkImport(t);
+    await checkAssign(t);
+    await checkClaim(t);
+    await checkLost(t);
+    await checkRemove(t);
+    await checkIsolation(t);
+  } finally {
+    authnPolicy.reset('default');
+  }
   log.debug("Leaving run().");
 }
 

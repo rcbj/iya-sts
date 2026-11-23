@@ -14,11 +14,13 @@
 //   2. `yubiotp.open()`: a public identity in front of that block, a
 //      ciphertext with no public identity refused, and a composite of
 //      zero refused before any counter is stored.
-//   3. Enrolment's two steps. The programming line is not logged. The
-//      confirmation OTP is spent. The next one signs in as `yubiotp`,
-//      `hardware` false, and the same one again is a replay. A person
-//      who holds only this credential and types anything else is told
-//      the shape. `secondFactor` stays the one-time-code step.
+//   3. Enrolment's two steps. It is refused until `yubiotp.offered` is on
+//      AND the authentication policy allows `yubico-otp` (off by default).
+//      The programming line is not logged. The confirmation OTP is spent.
+//      The next one signs in as `yubiotp`, `hardware` false, and the same
+//      one again is a replay. A person who holds only this credential and
+//      types anything else is told the shape. `secondFactor` stays the
+//      one-time-code step.
 //   4. YK-VAL 2.0 through `ykval.verify()`: off, the status is
 //      OPERATION_NOT_ALLOWED and unsigned. On, a signed OTP is OK, the
 //      same OTP is REPLAYED_OTP, and a bad HMAC is BAD_SIGNATURE and
@@ -155,6 +157,15 @@ async function checkPerson(t) {
           'enrolment is off until yubiotp.offered is on',
           codeOf(refused));
   config.setOverride('yubiotp.offered', true);
+  const still = credentials.beginYubiEnrolment(name);
+  t.check(!still.ok && codeOf(still) === 'STS-YUBIOTP-0007',
+          'and still off until the authentication policy allows ' +
+          'yubico-otp', codeOf(still));
+  const allowed = authnPolicy.save('default', Object.assign({},
+    authnPolicy.DEFAULTS, { yubicoOtpSecondFactor: true }));
+  t.check(allowed.ok && yubiotp.offered(),
+          'with the row on, enrolment is offered',
+          JSON.stringify((allowed && allowed.errors) || []));
   const begun = credentials.beginYubiEnrolment(name);
   const line = String(begun.ykman || '');
   t.check(begun.ok && begun.publicId &&
@@ -241,11 +252,15 @@ async function checkYkval(t, secret) {
   log.debug("Leaving checkYkval().");
 }
 
-// The policy's `yubico-otp` row (#1955 P5): off stops enrolment even when
-// `yubiotp.offered` is on, and a save that leaves the row out keeps it.
+// The policy's `yubico-otp` row (#1955 P5) is off by default. Off stops
+// enrolment even when `yubiotp.offered` is on, and a save that leaves the
+// row out keeps the current value.
 function checkPolicy(t) {
   log.debug("Entering checkPolicy().");
   t.log.info('=== 5. the authentication policy\'s yubico-otp row ===');
+  t.check(authnPolicy.read('default').yubicoOtpSecondFactor === false &&
+          !yubiotp.offered(),
+          'the row is off by default');
   const before = authnPolicy.read('default');
   const values = {};
   Object.keys(before).forEach(function (key) {
@@ -255,30 +270,30 @@ function checkPolicy(t) {
   });
   config.setOverride('yubiotp.offered', true);
   try {
-    const off = authnPolicy.save('default', Object.assign({}, values,
-                                 { yubicoOtpSecondFactor: false }));
-    t.check(off.ok &&
-            authnPolicy.read('default').yubicoOtpSecondFactor === false &&
-            !yubiotp.offered(),
-            'the row turns YubiKey OTP enrolment off even when ' +
-            'yubiotp.offered is on',
-            JSON.stringify(off.errors || []));
+    t.check(!yubiotp.offered(),
+            'yubiotp.offered alone does not enrol while the row is off');
+    const on = authnPolicy.save('default', Object.assign({}, values,
+                                 { yubicoOtpSecondFactor: true }));
+    t.check(on.ok &&
+            authnPolicy.read('default').yubicoOtpSecondFactor === true &&
+            yubiotp.offered(),
+            'with the row on, and yubiotp.offered on, enrolment is offered',
+            JSON.stringify(on.errors || []));
     const older = Object.assign({}, values);
     delete older.yubicoOtpSecondFactor;
     const kept = authnPolicy.save('default', older);
     t.check(kept.ok &&
-            authnPolicy.read('default').yubicoOtpSecondFactor === false,
-            'A SAVE THAT LEAVES IT OUT KEEPS IT AS IT WAS, rather than ' +
-            'being refused or turning it back on',
+            authnPolicy.read('default').yubicoOtpSecondFactor === true,
+            'A SAVE THAT LEAVES IT OUT KEEPS THE CURRENT VALUE, rather ' +
+            'than the built-in off or a refusal',
             JSON.stringify(kept.errors || []));
   } finally {
     authnPolicy.reset('default');
     config.clearOverride('yubiotp.offered');
   }
-  t.check(authnPolicy.read('default').yubicoOtpSecondFactor === true &&
+  t.check(authnPolicy.read('default').yubicoOtpSecondFactor === false &&
           !yubiotp.offered(),
-          'reset, the policy allows it and yubiotp.offered still gates ' +
-          'enrolment');
+          'reset, the row is off and yubiotp.offered still gates enrolment');
   log.debug("Leaving checkPolicy().");
 }
 

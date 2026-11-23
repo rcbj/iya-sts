@@ -553,21 +553,6 @@ Scope: `admin:read`.
 | `(shape 2).factors.backupCodes.used` | number |  |  |
 | `(shape 2).factors.backupCodes.why` | string |  |  |
 | `(shape 2).factors.disabled` | boolean |  |  |
-| `(shape 2).factors.hotp` | boolean |  |  |
-| `(shape 2).factors.hotpDetail` | object |  |  |
-| `(shape 2).factors.hotpDetail.counter` | number |  |  |
-| `(shape 2).factors.hotpDetail.digits` | number |  |  |
-| `(shape 2).factors.hotpDetail.enrolledAt` | number |  |  |
-| `(shape 2).factors.hotpDetail.lastUsedAt` | number |  |  |
-| `(shape 2).factors.hotpDetail.model` | string |  |  |
-| `(shape 2).factors.hotpDetail.sealed` | boolean |  |  |
-| `(shape 2).factors.hotpDetail.serial` | string |  |  |
-| `(shape 2).factors.hotpDetail.source` | string |  |  |
-| `(shape 2).factors.hotpDetail.token` | string |  |  |
-| `(shape 2).factors.hotpDetail.unusable` | boolean |  |  |
-| `(shape 2).factors.hotpDetail.vendor` | string |  |  |
-| `(shape 2).factors.hotpDetail.why` | string |  |  |
-| `(shape 2).factors.hotpUsable` | boolean |  |  |
 | `(shape 2).factors.keys` | list |  |  |
 | `(shape 2).factors.keys[].aaguid` | string, or null |  |  |
 | `(shape 2).factors.keys[].algorithm` | object |  |  |
@@ -577,7 +562,6 @@ Scope: `admin:read`.
 | `(shape 2).factors.keys[].algorithm.name` | string |  |  |
 | `(shape 2).factors.keys[].algorithm.postQuantum` | boolean |  |  |
 | `(shape 2).factors.keys[].algorithm.text` | string |  |  |
-| `(shape 2).factors.keys[].appid` | string, or null |  |  |
 | `(shape 2).factors.keys[].attestation` | object |  |  |
 | `(shape 2).factors.keys[].attestation.aaguid` | string, or null |  |  |
 | `(shape 2).factors.keys[].attestation.algorithms` | object |  |  |
@@ -654,7 +638,6 @@ Scope: `admin:read`.
 | `(shape 2).factors.keys[].attestationAlgorithms.verified` | boolean |  |  |
 | `(shape 2).factors.keys[].backupEligible` | boolean, or null |  |  |
 | `(shape 2).factors.keys[].backupState` | boolean, or null |  |  |
-| `(shape 2).factors.keys[].credProtect` | integer, or null |  |  |
 | `(shape 2).factors.keys[].credentialId` | string |  |  |
 | `(shape 2).factors.keys[].deviceSerial` | string, or null |  |  |
 | `(shape 2).factors.keys[].discoverable` | boolean, or null |  |  |
@@ -701,8 +684,6 @@ Scope: `admin:read`.
 | `(shape 2).factors.policy` | object |  |  |
 | `(shape 2).factors.policy.backupCodesCount` | number |  |  |
 | `(shape 2).factors.policy.backupCodesEnabled` | boolean |  |  |
-| `(shape 2).factors.policy.legacyAppIds` | list |  |  |
-| `(shape 2).factors.policy.legacyAppIds[]` | string |  |  |
 | `(shape 2).factors.policy.maxKeysPerPerson` | number |  |  |
 | `(shape 2).factors.policy.mfaAllowed` | boolean |  |  |
 | `(shape 2).factors.policy.primaryAllowed` | boolean |  |  |
@@ -722,17 +703,6 @@ Scope: `admin:read`.
 | `(shape 2).factors.totpDetail.why` | string |  |  |
 | `(shape 2).factors.totpUsable` | boolean |  |  |
 | `(shape 2).factors.usable` | boolean |  |  |
-| `(shape 2).factors.yubi` | boolean |  |  |
-| `(shape 2).factors.yubiDetail` | object |  |  |
-| `(shape 2).factors.yubiDetail.enrolledAt` | number |  |  |
-| `(shape 2).factors.yubiDetail.lastUsedAt` | number |  |  |
-| `(shape 2).factors.yubiDetail.publicId` | string |  |  |
-| `(shape 2).factors.yubiDetail.sealed` | boolean |  |  |
-| `(shape 2).factors.yubiDetail.serial` | string |  |  |
-| `(shape 2).factors.yubiDetail.source` | string |  |  |
-| `(shape 2).factors.yubiDetail.unusable` | boolean |  |  |
-| `(shape 2).factors.yubiDetail.why` | string |  |  |
-| `(shape 2).factors.yubiUsable` | boolean |  |  |
 | `(shape 2).federationLinks` | list |  |  |
 | `(shape 2).federationLinks[].issuer` | string |  |  |
 | `(shape 2).federationLinks[].link` | string |  |  |
@@ -1103,21 +1073,6 @@ Scope: `admin:read`.
 | `(shape 2).page.mfa.mech.backupCodes.used` | number |  |  |
 | `(shape 2).page.mfa.mech.backupCodes.why` | string |  |  |
 | `(shape 2).page.mfa.mech.disabled` | boolean |  |  |
-| `(shape 2).page.mfa.mech.hotp` | boolean |  |  |
-| `(shape 2).page.mfa.mech.hotpDetail` | object |  |  |
-| `(shape 2).page.mfa.mech.hotpDetail.counter` | number |  | The next counter the token is expected to show. |
-| `(shape 2).page.mfa.mech.hotpDetail.digits` | number |  |  |
-| `(shape 2).page.mfa.mech.hotpDetail.enrolledAt` | number |  |  |
-| `(shape 2).page.mfa.mech.hotpDetail.lastUsedAt` | number |  |  |
-| `(shape 2).page.mfa.mech.hotpDetail.model` | string |  |  |
-| `(shape 2).page.mfa.mech.hotpDetail.sealed` | boolean |  |  |
-| `(shape 2).page.mfa.mech.hotpDetail.serial` | string |  |  |
-| `(shape 2).page.mfa.mech.hotpDetail.source` | string |  | `enrolled` or `pskc-import`. |
-| `(shape 2).page.mfa.mech.hotpDetail.token` | string |  | An imported token's inventory key, or empty. |
-| `(shape 2).page.mfa.mech.hotpDetail.unusable` | boolean |  |  |
-| `(shape 2).page.mfa.mech.hotpDetail.vendor` | string |  |  |
-| `(shape 2).page.mfa.mech.hotpDetail.why` | string |  |  |
-| `(shape 2).page.mfa.mech.hotpUsable` | boolean |  |  |
 | `(shape 2).page.mfa.mech.keys` | list |  |  |
 | `(shape 2).page.mfa.mech.keys[].aaguid` | string, or null |  |  |
 | `(shape 2).page.mfa.mech.keys[].algorithm` | object, or string, or null |  |  |
@@ -1127,7 +1082,6 @@ Scope: `admin:read`.
 | `(shape 2).page.mfa.mech.keys[].algorithm.name` | object |  | Nested deeper than this page draws. |
 | `(shape 2).page.mfa.mech.keys[].algorithm.postQuantum` | object |  | Nested deeper than this page draws. |
 | `(shape 2).page.mfa.mech.keys[].algorithm.text` | object |  | Nested deeper than this page draws. |
-| `(shape 2).page.mfa.mech.keys[].appid` | string |  |  |
 | `(shape 2).page.mfa.mech.keys[].attachment` | string, or null |  |  |
 | `(shape 2).page.mfa.mech.keys[].attestation` | object |  |  |
 | `(shape 2).page.mfa.mech.keys[].attestation.aaguid` | string, or null |  |  |
@@ -1180,7 +1134,6 @@ Scope: `admin:read`.
 | `(shape 2).page.mfa.mech.keys[].backupEligible` | boolean, or null |  |  |
 | `(shape 2).page.mfa.mech.keys[].backupState` | boolean, or null |  |  |
 | `(shape 2).page.mfa.mech.keys[].coseAlg` | number, or null |  |  |
-| `(shape 2).page.mfa.mech.keys[].credProtect` | number, or null |  |  |
 | `(shape 2).page.mfa.mech.keys[].credentialId` | string |  |  |
 | `(shape 2).page.mfa.mech.keys[].discoverable` | boolean, or null |  |  |
 | `(shape 2).page.mfa.mech.keys[].enrolledAt` | number |  |  |
@@ -1189,10 +1142,6 @@ Scope: `admin:read`.
 | `(shape 2).page.mfa.mech.keys[].enrolledBy.sub` | string |  |  |
 | `(shape 2).page.mfa.mech.keys[].enrolledBy.username` | string |  |  |
 | `(shape 2).page.mfa.mech.keys[].group` | string |  |  |
-| `(shape 2).page.mfa.mech.keys[].importedBy` | object |  |  |
-| `(shape 2).page.mfa.mech.keys[].importedBy.at` | number |  |  |
-| `(shape 2).page.mfa.mech.keys[].importedBy.sub` | string |  |  |
-| `(shape 2).page.mfa.mech.keys[].importedBy.username` | string |  |  |
 | `(shape 2).page.mfa.mech.keys[].label` | string |  |  |
 | `(shape 2).page.mfa.mech.keys[].lane` | string |  |  |
 | `(shape 2).page.mfa.mech.keys[].lastUsedAt` | number |  |  |
@@ -1244,7 +1193,6 @@ Scope: `admin:read`.
 | `(shape 2).page.mfa.mech.mfaRequirement.exemptServiceAccount` | boolean |  |  |
 | `(shape 2).page.mfa.mech.mfaRequirement.offered` | boolean |  |  |
 | `(shape 2).page.mfa.mech.mfaRequirement.required` | boolean |  |  |
-| `(shape 2).page.mfa.mech.oneTimeCode` | boolean |  |  |
 | `(shape 2).page.mfa.mech.password` | boolean |  |  |
 | `(shape 2).page.mfa.mech.passwordResetLink` | object |  |  |
 | `(shape 2).page.mfa.mech.passwordResetLink.expired` | boolean |  |  |
@@ -1265,17 +1213,6 @@ Scope: `admin:read`.
 | `(shape 2).page.mfa.mech.totpUsable` | boolean |  |  |
 | `(shape 2).page.mfa.mech.usable` | boolean |  |  |
 | `(shape 2).page.mfa.mech.username` | string |  |  |
-| `(shape 2).page.mfa.mech.yubi` | boolean |  |  |
-| `(shape 2).page.mfa.mech.yubiDetail` | object |  |  |
-| `(shape 2).page.mfa.mech.yubiDetail.enrolledAt` | number |  |  |
-| `(shape 2).page.mfa.mech.yubiDetail.lastUsedAt` | number |  |  |
-| `(shape 2).page.mfa.mech.yubiDetail.publicId` | string |  |  |
-| `(shape 2).page.mfa.mech.yubiDetail.sealed` | boolean |  |  |
-| `(shape 2).page.mfa.mech.yubiDetail.serial` | string |  |  |
-| `(shape 2).page.mfa.mech.yubiDetail.source` | string |  | `enrolled` or `csv-import`. |
-| `(shape 2).page.mfa.mech.yubiDetail.unusable` | boolean |  |  |
-| `(shape 2).page.mfa.mech.yubiDetail.why` | string |  |  |
-| `(shape 2).page.mfa.mech.yubiUsable` | boolean |  |  |
 | `(shape 2).page.mfa.publishedDids` | object |  |  |
 | `(shape 2).page.mfa.publishedDids.custody` | string |  |  |
 | `(shape 2).page.mfa.publishedDids.dids` | list |  |  |
@@ -1439,9 +1376,7 @@ Scope: `admin:read`.
 | `(shape 2).page.mfa.webauthn.attestation` | string |  |  |
 | `(shape 2).page.mfa.webauthn.authenticatorAttachment` | string |  |  |
 | `(shape 2).page.mfa.webauthn.credProps` | boolean |  |  |
-| `(shape 2).page.mfa.webauthn.credProtect` | string |  |  |
 | `(shape 2).page.mfa.webauthn.enabled` | boolean |  |  |
-| `(shape 2).page.mfa.webauthn.enforceCredProtect` | boolean |  |  |
 | `(shape 2).page.mfa.webauthn.hints` | list |  |  |
 | `(shape 2).page.mfa.webauthn.hints[]` | string |  |  |
 | `(shape 2).page.mfa.webauthn.insecureAlgorithms` | boolean |  |  |
@@ -2188,7 +2123,6 @@ Scope: `admin:write`.
 | `ceremony.options` | object |  |  |
 | `ceremony.options.algorithms` | list |  |  |
 | `ceremony.options.algorithms[]` | number |  |  |
-| `ceremony.options.appidExclude` | string |  |  |
 | `ceremony.options.attestation` | string |  |  |
 | `ceremony.options.authenticatorSelection` | object |  |  |
 | `ceremony.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -2196,9 +2130,6 @@ Scope: `admin:write`.
 | `ceremony.options.authenticatorSelection.residentKey` | string |  |  |
 | `ceremony.options.authenticatorSelection.userVerification` | string |  |  |
 | `ceremony.options.credProps` | boolean |  |  |
-| `ceremony.options.credProtect` | object |  |  |
-| `ceremony.options.credProtect.credentialProtectionPolicy` | string |  |  |
-| `ceremony.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `ceremony.options.hints` | list |  |  |
 | `ceremony.options.hints[]` | string |  |  |
 | `ceremony.options.minPinLength` | boolean |  |  |
@@ -2236,7 +2167,6 @@ Scope: `admin:write`.
 | `ceremony.options` | object |  |  |
 | `ceremony.options.algorithms` | list |  |  |
 | `ceremony.options.algorithms[]` | number |  |  |
-| `ceremony.options.appidExclude` | string |  |  |
 | `ceremony.options.attestation` | string |  |  |
 | `ceremony.options.authenticatorSelection` | object |  |  |
 | `ceremony.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -2244,9 +2174,6 @@ Scope: `admin:write`.
 | `ceremony.options.authenticatorSelection.residentKey` | string |  |  |
 | `ceremony.options.authenticatorSelection.userVerification` | string |  |  |
 | `ceremony.options.credProps` | boolean |  |  |
-| `ceremony.options.credProtect` | object |  |  |
-| `ceremony.options.credProtect.credentialProtectionPolicy` | string |  |  |
-| `ceremony.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `ceremony.options.hints` | list |  |  |
 | `ceremony.options.hints[]` | string |  |  |
 | `ceremony.options.minPinLength` | boolean |  |  |
@@ -2307,7 +2234,6 @@ Scope: `admin:write`.
 | `ceremony.allow` | string |  |  |
 | `ceremony.challenge` | string |  |  |
 | `ceremony.options` | object |  |  |
-| `ceremony.options.appid` | string |  |  |
 | `ceremony.options.userVerification` | string |  |  |
 | `ceremony.rpId` | string |  |  |
 | `errors` | list |  |  |
@@ -2325,7 +2251,6 @@ Scope: `admin:write`.
 | `ceremony.allow` | string |  |  |
 | `ceremony.challenge` | string |  |  |
 | `ceremony.options` | object |  |  |
-| `ceremony.options.appid` | string |  |  |
 | `ceremony.options.userVerification` | string |  |  |
 | `ceremony.rpId` | string |  |  |
 | `errors` | list |  |  |
@@ -2533,65 +2458,6 @@ Scope: `admin:write`.
 | `removed` | boolean |  |  |
 | `sessionsEnded` | number |  |  |
 
-## POST /admin-api/users/clear-hotp
-
-`clearUserHotpToken`
-
-**Clear somebody's one-time code token (HOTP) (#1955)**
-
-The way back for somebody who lost the token their HOTP credential is on (a YubiKey's OTP slot, or a token imported from its vendor's PSKC file): the shared secret is on it and this service cannot reach it. It cannot lock anybody out — a one-time code is never a primary credential here — and the sessions its codes signed in end (`sessionsEnded`, #722). An imported token lost with a YubiKey is better reported lost on Directory → Hardware tokens, which retires every credential on it at once. Clearing one nobody holds answers 400.
-
-**Mirrors** `POST /admin/users` on the admin console.
-
-Scope: `admin:write`.
-
-**Parameters**
-
-| Name | In | Type | Required | What it is |
-|---|---|---|---|---|
-| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
-| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
-
-**Request body**
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `evidence` | string |  | How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log. |
-| `user` | string | yes | The person, as /admin-api/users names them. |
-| `username` | string |  | Accepted for `user`. |
-
-**200**: Whose token was cleared, and the sessions its codes signed in, which were ended.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `message` | string |  |  |
-| `ok` | boolean | yes |  |
-| `problems` | list |  |  |
-| `problems[]` | map, or string |  |  |
-| `problems[].{key}` | string, or number, or boolean, or null |  |  |
-| `reason` | string |  |  |
-| `remaining` | number |  |  |
-| `sessionsEnded` | number |  |  |
-| `username` | string |  |  |
-
-**400**: The operation was refused; `errors` says why and nothing changed.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `message` | string |  |  |
-| `ok` | boolean | yes |  |
-| `problems` | list |  |  |
-| `problems[]` | map, or string |  |  |
-| `problems[].{key}` | string, or number, or boolean, or null |  |  |
-| `reason` | string |  |  |
-| `remaining` | number |  |  |
-| `sessionsEnded` | number |  |  |
-| `username` | string |  |  |
-
 ## POST /admin-api/users/clear-key
 
 `clearUserSecurityKey`
@@ -2686,65 +2552,6 @@ Scope: `admin:write`.
 | `username` | string |  | Accepted for `user`. |
 
 **200**: Whose enrolment was cleared. `sessionsEnded` counts the sessions the app's codes signed in, which were ended (#722); every other stays.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `message` | string |  |  |
-| `ok` | boolean | yes |  |
-| `problems` | list |  |  |
-| `problems[]` | map, or string |  |  |
-| `problems[].{key}` | string, or number, or boolean, or null |  |  |
-| `reason` | string |  |  |
-| `remaining` | number |  |  |
-| `sessionsEnded` | number |  |  |
-| `username` | string |  |  |
-
-**400**: The operation was refused; `errors` says why and nothing changed.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `message` | string |  |  |
-| `ok` | boolean | yes |  |
-| `problems` | list |  |  |
-| `problems[]` | map, or string |  |  |
-| `problems[].{key}` | string, or number, or boolean, or null |  |  |
-| `reason` | string |  |  |
-| `remaining` | number |  |  |
-| `sessionsEnded` | number |  |  |
-| `username` | string |  |  |
-
-## POST /admin-api/users/clear-yubi
-
-`clearUserYubiOtp`
-
-**Clear somebody's YubiKey OTP (#1955)**
-
-The way back for somebody who lost the YubiKey their OTP credential is on. The AES key is held here, so clearing removes it from the entry and retires the public identity. It cannot lock anybody out — a YubiKey OTP is never a primary credential here — and the sessions its passwords signed in end (`sessionsEnded`, #722). A token lost with the key is better reported lost on Directory → Hardware tokens, which retires every credential on it at once. Clearing one nobody holds answers 400.
-
-**Mirrors** `POST /admin/users` on the admin console.
-
-Scope: `admin:write`.
-
-**Parameters**
-
-| Name | In | Type | Required | What it is |
-|---|---|---|---|---|
-| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
-| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
-
-**Request body**
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `evidence` | string |  | How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log. |
-| `user` | string | yes | The person, as /admin-api/users names them. |
-| `username` | string |  | Accepted for `user`. |
-
-**200**: Whose credential was cleared, and the sessions its passwords signed in, which were ended.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
@@ -4144,57 +3951,6 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `username` | string |  |  |
 
-## POST /admin-api/users/import-u2f-key
-
-`importUserU2fKey`
-
-**Import a legacy FIDO U2F security key for somebody**
-
-Puts a credential a legacy FIDO U2F relying party registered onto the person's entry, from the four values that service kept: the key handle (the credential id), the P-256 public key as the uncompressed point (65 bytes starting 0x04), the signature counter and the AppID it was registered under. Both byte strings are base64 or base64url. Nothing is verified about where the values came from: the caller vouches for them, and the act is audited (`admin.mfa.key.imported`). Refused unless `webauthn.u2fAppIds` lists the AppID (STS-AUTHN-0561; empty, the default, refuses every import), and for a key handle that is not 1 to 255 bytes (STS-AUTHN-0562), a public key that is not a P-256 point (STS-AUTHN-0563) or a counter outside 0 to 4294967295 (STS-AUTHN-0564). Written through the same writer as every passkey, so the person's passkey policy's registration rules, the duplicate check and `webauthn.maxKeysPerPerson` hold. The key answers a second-factor step only, asserted with the `appid` extension (WebAuthn Level 3 section 10.1.1), because a U2F key cannot verify the person; registrations ask the browser for `appidExclude` (section 10.1.2) so the same key is not registered again.
-
-**Mirrors** `POST /admin/users, POST /admin/users/new, POST /admin/users/edit and POST /admin/users/service-account` on the admin console.
-
-Scope: `admin:write`.
-
-**Parameters**
-
-| Name | In | Type | Required | What it is |
-|---|---|---|---|---|
-| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
-| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
-
-**Request body**
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `appId` | string | yes | The AppID the key was registered under, an https URL `webauthn.u2fAppIds` lists. |
-| `counter` | integer, or string |  | The signature counter the legacy service last recorded, 0 to 4294967295; 0 when left out. |
-| `keyHandle` | string | yes | The U2F key handle, base64 or base64url of 1 to 255 bytes. |
-| `label` | string |  | A name for the key; empty gives it the default. |
-| `publicKey` | string | yes | The P-256 public key as the uncompressed point, base64 or base64url of 65 bytes. |
-| `user` | string | yes | The person, as /admin-api/users names them. |
-| `username` | string |  | Accepted for `user`. |
-
-**200**: The key imported, or why it was not.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `label` | string |  |  |
-| `message` | string |  |  |
-| `ok` | boolean | yes |  |
-
-**400**: The operation was refused; `errors` says why and nothing changed.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `label` | string |  |  |
-| `message` | string |  |  |
-| `ok` | boolean | yes |  |
-
 ## POST /admin-api/users/issue-activation
 
 `issueActivationLink`
@@ -4704,14 +4460,6 @@ Scope: `admin:read`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `container` | string, or null |  |  |
-| `createFields` | list |  |  |
-| `createFields[]` | object |  | One field of a directory object's create (#1132): the name the create takes it under and whether the create refuses without it. A field is required exactly when the create refuses an empty or absent value; every other field is optional. |
-| `createFields[].name` | string | yes |  |
-| `createFields[].required` | boolean | yes |  |
-| `createFields[].requiredWhen` | object |  | A field required for some choices only: the create refuses without it when `field` holds one of `values`, and is otherwise indifferent. `required` is false for such a field. |
-| `createFields[].requiredWhen.field` | string | yes |  |
-| `createFields[].requiredWhen.values` | list | yes |  |
-| `createFields[].requiredWhen.values[]` | string |  |  |
 | `credential` | string |  |  |
 | `credentials` | list |  |  |
 | `credentials[].id` | string |  |  |
@@ -4835,7 +4583,6 @@ Scope: `admin:write`.
 | `ceremony.options` | object |  |  |
 | `ceremony.options.algorithms` | list |  |  |
 | `ceremony.options.algorithms[]` | number |  |  |
-| `ceremony.options.appidExclude` | string |  |  |
 | `ceremony.options.attestation` | string |  |  |
 | `ceremony.options.authenticatorSelection` | object |  |  |
 | `ceremony.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -4843,9 +4590,6 @@ Scope: `admin:write`.
 | `ceremony.options.authenticatorSelection.residentKey` | string |  |  |
 | `ceremony.options.authenticatorSelection.userVerification` | string |  |  |
 | `ceremony.options.credProps` | boolean |  |  |
-| `ceremony.options.credProtect` | object |  |  |
-| `ceremony.options.credProtect.credentialProtectionPolicy` | string |  |  |
-| `ceremony.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `ceremony.options.hints` | list |  |  |
 | `ceremony.options.hints[]` | string |  |  |
 | `ceremony.options.minPinLength` | boolean |  |  |
@@ -4875,7 +4619,6 @@ Scope: `admin:write`.
 | `ceremony.options` | object |  |  |
 | `ceremony.options.algorithms` | list |  |  |
 | `ceremony.options.algorithms[]` | number |  |  |
-| `ceremony.options.appidExclude` | string |  |  |
 | `ceremony.options.attestation` | string |  |  |
 | `ceremony.options.authenticatorSelection` | object |  |  |
 | `ceremony.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -4883,9 +4626,6 @@ Scope: `admin:write`.
 | `ceremony.options.authenticatorSelection.residentKey` | string |  |  |
 | `ceremony.options.authenticatorSelection.userVerification` | string |  |  |
 | `ceremony.options.credProps` | boolean |  |  |
-| `ceremony.options.credProtect` | object |  |  |
-| `ceremony.options.credProtect.credentialProtectionPolicy` | string |  |  |
-| `ceremony.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `ceremony.options.hints` | list |  |  |
 | `ceremony.options.hints[]` | string |  |  |
 | `ceremony.options.minPinLength` | boolean |  |  |

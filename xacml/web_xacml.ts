@@ -79,7 +79,7 @@ class XacmlPage {
   // sentence (`Infinity`): each says what the field does, its values and
   // default, when it takes effect and, where it applies, the precedence.
   // The prose has two other doors, which is the condition admin-ui/CLAUDE.md
-  // sets for a tooltip-only sentence: docs/v1.1.0/remote-pep.md and the
+  // sets for a tooltip-only sentence: docs/v1.2.0/remote-pep.md and the
   // management API's own descriptions.
   // ---------------------------------------------------------------------------
   static tipOf(t: Json, key: string, vars?: Json): string {

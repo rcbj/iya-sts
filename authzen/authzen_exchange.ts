@@ -49,7 +49,7 @@
 //
 // **THE CONVERSION RULES ARE FIXED** (decision 2), like the five fixed
 // AuthZEN members: `FIXED_RULES` below is the whole table, published on
-// `docs/v1.1.0/authzen.md`, and `authzen_catalogue.ts` refuses a row naming any
+// `docs/v1.2.0/authzen.md`, and `authzen_catalogue.ts` refuses a row naming any
 // context member they read (BINDING_CONTEXT). A realm's catalogue may ADD
 // rows — a `context.tenant` — and their attributes reach the exchange
 // question beside the fixed facts.
@@ -191,7 +191,7 @@ const PARTY_REFUSALS = Object.freeze(['intermediary', 'semantics', 'target',
                                       'may-act']);
 
 // THE FIXED CONVERSION RULES (decision 2), as published. Each is a rule of
-// this file, and `docs/v1.1.0/authzen.md`'s table is this one;
+// this file, and `docs/v1.2.0/authzen.md`'s table is this one;
 // `tests/authzen_token_exchange.js` F holds the two together.
 const FIXED_RULES = Object.freeze([
   { member: 'resource.type = audience, action.name = ' +

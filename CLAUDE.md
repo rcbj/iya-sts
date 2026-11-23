@@ -105,7 +105,7 @@ directory's `CLAUDE.md` is the documentation of what is in it.
 | `debugger/` | The embedded identity protocol debugger, on a listener of its own. `debugger/embedded/` is build output, never source. `debugger/CLAUDE.md`. |
 | `rust/` | The Rust conversion (#444); `rust/DESIGN.md` is the design. Only the remote PEP runs on it; the Node service runs none of it. |
 | `postgres/` | The database container's files, never this service's. `postgres/CLAUDE.md`. |
-| `docs/` | The GitHub Pages site: how to USE this service, one folder per release (`v1.1.0/` the latest, `v1.0.0/` frozen). `docs/CLAUDE.md`. |
+| `docs/` | The GitHub Pages site: how to USE this service, one folder per release (`v1.2.0/` the latest, `v1.1.0/` and `v1.0.0/` frozen). `docs/CLAUDE.md`. |
 | `env/` | The appconfig files, each a layer over `defaults.js`. `env/CLAUDE.md`. |
 | `types/`, `tsconfig*.json`, `build-typescript.sh` | **The TypeScript conversion (#50)**: `types/` is declarations only. `tsc` checks every `// @ts-check` file and every `.ts` (`tests/typecheck.js`). `build-typescript.sh` runs inside an image build only: it compiles each `x.ts` to `x.js` beside it, bundles each static surface for a browser with esbuild, and with `--strip` removes the sources and every comment from the shipped `.js` (`tests/tools/strip-comments.js`). The decisions are on issue #50. |
 
@@ -132,7 +132,7 @@ these protocol families:
 - **Federation**: either end of a relationship, in five protocols, and its Shared Signals.
 - **OpenID Federation 1.1**.
 - **OAuth 2.0 / OpenID Connect**: a full authorization server.
-- **Device registration**: a register of devices per realm (`docs/v1.1.0/devices.md`).
+- **Device registration**: a register of devices per realm (`docs/v1.2.0/devices.md`).
 - **RFC 7521/7523 and RFC 7521/7522**: assertions as client credentials and grants.
 - **WebAuthn Level 3, TOTP, recovery codes**, and (off by default) emailed codes and links.
 - **OpenID4VCI 1.0, OpenID4VP 1.0**, W3C DID Core, and a wallet sign-in.
@@ -197,14 +197,14 @@ nothing.
 file is a layer, not the whole configuration**, over `env/defaults.js` and,
 beneath that, each setting's own default in the image — so an older `env/`
 mounted over the image's costs a warning, not the start: `common/CLAUDE.md`
-argues the six levels, `env/CLAUDE.md` lists the files, and `docs/v1.1.0/configuration.md`'s *Every
+argues the six levels, `env/CLAUDE.md` lists the files, and `docs/v1.2.0/configuration.md`'s *Every
 setting* lists every setting.
 
 ## `docker-compose.yml` carries no comments (2026-10-07)
 
 **rcbj removed all of them: 994 of the file's 1234 lines were comments, and the
 file was unreadable.** Keep it that way. Only the two SPDX lines stay. What a
-user needs is in `docs/v1.1.0/docker-compose.md`; the reasoning about a service is in
+user needs is in `docs/v1.2.0/docker-compose.md`; the reasoning about a service is in
 its directory's file (`postgres/`, `openbao/`, `xacml-pep/`, `spiffe/`,
 `tests/tools/compose.sh` for the launchers). A change to the file that needs
 explaining goes into one of those, not into a comment. These rules have no other
@@ -246,7 +246,7 @@ home:
   `docker compose up` on a machine without the image PULLS it from Docker Hub
   and builds only when the pull fails; `--build` builds from the checkout. A
   local build therefore carries the registry's name, and a later pull replaces
-  it without a word — `docs/v1.1.0/docker-compose.md` tells a user to set
+  it without a word — `docs/v1.2.0/docker-compose.md` tells a user to set
   `STS_IMAGE` to a name no registry has. Until then it was `rcbj/sts`, the
   parent project's name, which no registry serves.
 * **`tests/delivered_secrets.js`, `tests/postgres_schema.js` and
@@ -780,7 +780,7 @@ Two rules come out of it:
   QID 150207): JSON, XML other than SVG, and plain text still holding the base
   policy get it without `style-src` and `img-src`. A route's own policy is
   left alone. The other headers the scan asked for are in
-  `docs/v1.1.0/oauth-security.md`, *The other response headers*.
+  `docs/v1.2.0/oauth-security.md`, *The other response headers*.
 
 **THE ONE PAGE THAT MAY BE FRAMED IS THE OP IFRAME (#121, 2026-09-23)**, and
 it narrows the clause rather than dropping it: `app.framedContentSecurityPolicy()`
@@ -907,7 +907,7 @@ had to argue its own case.
 it cannot go stale — but it reports two kinds of drift and this repository's own
 `tests/protocol/sts_metadata.js` fails on both: a route registered and undescribed, and a
 description whose path is not registered (what a rename produces). See
-`docs/v1.1.0/endpoints.md`.
+`docs/v1.2.0/endpoints.md`.
 
 It is a **console page** since 2026-08-24 (it was `/sts-metadata`), so it is
 behind the console gate and is drawn by `admin.js`'s `page()`: this module
@@ -927,7 +927,7 @@ also owes its entry in `models/api/*.tsp`, and a new member of an answer owes a
 line there in the same commit** (#1353, #1390): every answer is validated against
 that model, always, and one that does not match is a 500 (`common/CLAUDE.md` 3dc;
 `tests/openapi_response_models.js`). **Either one also owes
-`tests/tools/regenerate-openapi-pages.sh`** (`docs/v1.1.0/openapi/`, the public
+`tests/tools/regenerate-openapi-pages.sh`** (`docs/v1.2.0/openapi/`, the public
 reference); `tests/openapi_pages.js` fails otherwise.
 
 **So adding a protocol family costs four things**: an entry in `ENDPOINTS`, a
@@ -977,7 +977,7 @@ tokens would be the most misleading thing in the repository.
 ## Every failure has an error code, and no client ever sees one
 
 Every way this service can fail or refuse has a code `STS-<SUBSYSTEM>-<NNNN>` in
-the ONE table in `common/error_codes.js`; `docs/v1.1.0/error-codes.md` is generated from
+the ONE table in `common/error_codes.js`; `docs/v1.2.0/error-codes.md` is generated from
 it. **The code is an operator's name and is RECORDED, NEVER SENT** — it goes on
 the audit row and at the front of a log line, never in a response, and it
 changes no specification's error.
@@ -1221,7 +1221,7 @@ the file the row names.
 | Verify an access token at the OpenID4VCI endpoints or in RFC 8693 token exchange, **in development mode** | `oauth-oidc/CLAUDE.md`, `oid4vc/CLAUDE.md` |
 | Accept an RFC 7523 assertion from an issuer nobody DECLARED | `oauth-oidc/CLAUDE.md`, `common/CLAUDE.md` |
 | Accept an RFC 7522 assertion from an `<Issuer>` nobody DECLARED, or on a certificate that merely chains to the realm's CA | `oauth-oidc/CLAUDE.md`, `common/CLAUDE.md` |
-| ~~Revoke a certificate it issued~~ — reversed 2026-09-11 | `common/CLAUDE.md`, `admin-ui/CLAUDE.md`, `docs/v1.1.0/pki.md` |
+| ~~Revoke a certificate it issued~~ — reversed 2026-09-11 | `common/CLAUDE.md`, `admin-ui/CLAUDE.md`, `docs/v1.2.0/pki.md` |
 | Keep a certificate authority across a restart, **in development mode** | `common/CLAUDE.md` |
 | Enforce `value`/`values` in an OIDC Core 5.5 claims request, or treat `essential` as an instruction | `oauth-oidc/CLAUDE.md` |
 | ~~Require DPoP~~ — reversed 2026-09-15 (#34), five settings off by default (rule 3ao) | `oauth-oidc/CLAUDE.md` |
@@ -1241,7 +1241,7 @@ the file the row names.
 | Run paranoid PKI mode in development, by default: `pki.paranoid=auto` is on in product and off there (#1360) | `common/CLAUDE.md` (3dd) |
 | Require a compliant registered device, **by default in either mode** (#164) | `xacml/CLAUDE.md`, `common/CLAUDE.md` |
 | ~~Decide who may delegate to whom IN THE ACT~~ — reversed 2026-09-23 (#108), in policy since #186 | `common/CLAUDE.md` (3az), `kerberos/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `ws-trust/CLAUDE.md` |
-| ~~Give every trust realm a certificate authority of its own~~ — reversed 2026-09-11 | `common/CLAUDE.md`, `docs/v1.1.0/pki.md` |
+| ~~Give every trust realm a certificate authority of its own~~ — reversed 2026-09-11 | `common/CLAUDE.md`, `docs/v1.2.0/pki.md` |
 | ~~Give a trust realm its own Kerberos KDC~~ — reversed 2026-09-15 (#33) | `kerberos/CLAUDE.md`, `common/CLAUDE.md` |
 | ~~Give a trust realm its own administrator~~ — reversed 2026-09-14 (#32) | `admin-ui/CLAUDE.md`, `mgmt-api/CLAUDE.md`, `ldap/CLAUDE.md` |
 | ~~Persist anything it MINTS~~ — reversed 2026-09-06, in product mode on postgres only | `persistence/CLAUDE.md`, `admin-ui/CLAUDE.md` |
@@ -1272,4 +1272,4 @@ parent's `tests/Dockerfile` may still copy `krb5_kdc.js`, `krb5_service.js`,
 `spnego.js` and what they require, but what it copies is the parent's
 business: a require added here owes it no COPY line, and those three may be
 converted to TypeScript like any other module. `kerberos/CLAUDE.md` says what
-that ended; `docs/v1.1.0/parent-project-migration.md` is the history.
+that ended; `docs/v1.2.0/parent-project-migration.md` is the history.

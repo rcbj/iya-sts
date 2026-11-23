@@ -26,7 +26,7 @@ it is what an operator may replace. `common/CLAUDE.md` (*The image's floor*)
 argues the whole layering and is the one place it is written down; this file
 lists the files. A regenerated `defaults.js` is still owed with every new row:
 `tests/config_defaults_layer.js` fails until the file and the table agree.
-`docs/v1.1.0/configuration.md`'s *Every setting* lists every setting, its environment
+`docs/v1.2.0/configuration.md`'s *Every setting* lists every setting, its environment
 variable and its default.
 
 **`common/config_file.js` makes `CONFIG_FILE` absolute before anything reads
@@ -61,7 +61,7 @@ setting" warning at startup rather than a silent no-op.
 
 What it costs is that the FIRST fetch of the certificate cannot be verified —
 there is no plain listener left and the key does not exist until the process
-starts. `docs/v1.1.0/configuration.md`'s `global.https` section is the user-facing half;
+starts. `docs/v1.2.0/configuration.md`'s `global.https` section is the user-facing half;
 `tls/CLAUDE.md` says what it takes away from the truststore's first add, and
 `tests/tools/trust.js` is what pays for it in a test run.
 

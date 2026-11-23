@@ -1589,7 +1589,7 @@ rcbj asked for:
 
 The settings are drawn, all on Server configuration → Listeners
 (`admin-ui/listeners_admin.ts`), along with the TLS group that moved there
-from this page and, since #472, the Custom listeners group. `docs/v1.1.0/tls.md` has
+from this page and, since #472, the Custom listeners group. `docs/v1.2.0/tls.md` has
 the table.
 
 * **A POLICY PER LISTENER, FROM ONE FUNCTION.** `policyFor(kind, realmId)`
@@ -2065,7 +2065,7 @@ refuses any other realm's path on a realm's listener (STS-TLS-0041), and its
 listener (STS-TLS-0047); `common/request_pool.js` carries the id to a worker
 in a header it strips from the client first. Which application is where, and
 where URLs are built, is `common/CLAUDE.md`'s (*Hosted applications and the
-listeners they are on*); `docs/v1.1.0/listeners.md` is the operator's half.
+listeners they are on*); `docs/v1.2.0/listeners.md` is the operator's half.
 
 ## MONITORING → TLS CONNECTION, AND NO OPEN DOOR (#597, 2026-10-12)
 

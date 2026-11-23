@@ -8,7 +8,7 @@
 //
 // ---------------------------------------------------------------------------
 // THE ONE XML PARSER, AND IT REFUSES A DOCUMENT TYPE DECLARATION (ASVS 5.0.0
-// 1.5.2; docs/v1.1.0/validation.md).
+// 1.5.2; docs/v1.2.0/validation.md).
 //
 // @xmldom/xmldom resolves no external entity, which is what made XML parsing
 // safe here so far. It still READS a `<!DOCTYPE>` and its internal subset, and

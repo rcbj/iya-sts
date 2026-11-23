@@ -256,6 +256,9 @@ class PkiService {
         log.debug("Leaving PkiService.sshUserCaFor(). Unavailable.");
         return;
       }
+      // THE CLASSICAL LINE ONLY. answer.pqcPublicLine is the ML-DSA
+      // sibling and is not concatenated here: OpenSSH's TrustedUserCAKeys
+      // file has no post-quantum algorithm to parse.
       const body = answer.publicLine + '\n';
       res.status(200).type('text/plain')
          .set('Cache-Control', 'no-store')

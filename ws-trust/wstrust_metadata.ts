@@ -862,7 +862,7 @@ class WsTrustMetadata {
    * The IYA-STS algorithm suite's schema: one empty assertion, in the
    * manner of WS-SecurityPolicy 1.2's own (`sp:QNameAssertionType`), for a
    * validator to read beside the published ones. Not served: the suite is
-   * named, and its algorithms listed, in `docs/v1.1.0/ws-trust.md`.
+   * named, and its algorithms listed, in `docs/v1.2.0/ws-trust.md`.
    *
    * @returns the XSD
    */

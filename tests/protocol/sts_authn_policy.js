@@ -495,6 +495,11 @@ async function profileSections() {
              p.emailLinkSecondFactor === false, JSON.stringify(p));
       expect(p.passwordPrimary === true &&
              p.requireSecondFactor === "if-held", JSON.stringify(p));
+      expect(p.hotpSecondFactor === false &&
+             p.yubicoOtpSecondFactor === false,
+             "HOTP and YubiKey OTP are listed and off by default: " +
+             JSON.stringify({ hotp: p.hotpSecondFactor,
+                              yubiotp: p.yubicoOtpSecondFactor }));
     });
   }
   const keys = v.authn.fields.map(function (f) {

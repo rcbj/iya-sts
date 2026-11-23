@@ -168,7 +168,7 @@ RUN STS_IN_IMAGE_BUILD=1 ./build-typescript.sh --strip \
 # rest of `.github` is still excluded and nothing here reads any of it.
 #
 # **AND `docs` AND `docker-compose-run-tests.yml` ON 2026-09-14**, for the same
-# reason again: tests/error_codes.js reads docs/v1.1.0/error-codes.md and
+# reason again: tests/error_codes.js reads docs/v1.2.0/error-codes.md and
 # docs/_config.yml, and tests/stack_network.js and tests/teardown_bounds.js
 # read the test compose file. Excluded from the context, all three failed with
 # ENOENT in the first ./run-tests.sh run that reached them.
@@ -296,7 +296,7 @@ RUN mkdir -p /opt/sts-sdk \
 #   are installed here first, in this stage only: the final stage takes the
 #   built tree and none of the tools. The HSM's own PKCS#11 module
 #   (yubihsm_pkcs11.so, libsofthsm2.so) is the deployment's to add to a
-#   derived image; `docs/v1.1.0/hsm.md` shows one.
+#   derived image; `docs/v1.2.0/hsm.md` shows one.
 ARG STS_CLOUD_SDKS=
 ARG STS_DATABASE_CA_URL=
 RUN if printf '%s\n' ${STS_CLOUD_SDKS} | grep -q '^pkcs11js\(@.*\)\?$'; \
@@ -599,7 +599,7 @@ EXPOSE 8181
 EXPOSE 8444
 # The inter-cell channel (cells.port), bound only when the service is deployed
 # as cells (#98). A private address between cells; never publish it. See
-# docs/v1.1.0/cells.md.
+# docs/v1.2.0/cells.md.
 EXPOSE 8446
 # ---------------------------------------------------------------------------
 # THE SERVICE RUNS AS `sts`, UID AND GID 10001, AND NOT AS ROOT (#254,

@@ -99,7 +99,7 @@ function documentationNumber(t, catalog, register) {
     'a placeholder root would still be said to be one');
   // The latest documentation version only: a frozen release's pages are
   // never regenerated or checked (docs/CLAUDE.md, *The versioned site*).
-  const docs = path.join(ROOT, 'docs', 'v1.1.0');
+  const docs = path.join(ROOT, 'docs', 'v1.2.0');
   const published = [];
   const walk = function (dir) {
     fs.readdirSync(dir, { withFileTypes: true }).forEach(function (entry) {
@@ -388,7 +388,7 @@ function run(t) {
     'pwdHistory is on the person class');
 
   sameText(t, ModelEmit.directoryDocs(first),
-    fs.readFileSync(path.join(ROOT, 'docs', 'v1.1.0',
+    fs.readFileSync(path.join(ROOT, 'docs', 'v1.2.0',
       'data-model-directory.md'), 'utf8'),
     'the directory reading page matches the model');
   const problems = ModelEmit.check(ROOT);

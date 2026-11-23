@@ -57,7 +57,7 @@
 // So the row's `dflt` is the floor beneath every layer. It is not "a constant
 // buried in a module" — the thing the refusal was written against — because
 // it is the same `dflt` /admin/config, GET /admin-api/config, the OpenAPI
-// document and docs/v1.1.0/configuration.md already publish as the default,
+// document and docs/v1.2.0/configuration.md already publish as the default,
 // and a value taken from it is reported with `source: 'default'`, by name,
 // on every one of those surfaces. What the floor costs is reported too:
 //
@@ -394,7 +394,7 @@ try {
       '— the defaults file ' + DEFAULTS_FILE + ' is there and could not be ' +
       'loaded: ' + ((err && err.message) || err) + '\nRemove it to run on ' +
       'this image\'s own defaults, or replace it with the one the image ' +
-      'ships (see docs/v1.1.0/configuration.md, *Upgrading with a ' +
+      'ships (see docs/v1.2.0/configuration.md, *Upgrading with a ' +
       'mounted env/*).\n');
     process.exit(1);
   }
@@ -1092,7 +1092,7 @@ const SETTINGS = [
   // what a caller reaches BEFORE it trusts anything. The certificate is generated at every start (and certified under
   // this service's Root, which a caller does not hold yet either), so the first
   // fetch has to be made without verification (`curl -k`), which is the
-  // ordinary bootstrap for a mock and is stated in docs/v1.1.0/tls.md rather
+  // ordinary bootstrap for a mock and is stated in docs/v1.2.0/tls.md rather
   // than left to be discovered.
   { key: 'global.https', group: 'Global', label: 'HTTPS on the main port',
     env: 'STS_HTTPS', type: 'bool', derived: true,
@@ -3461,7 +3461,8 @@ const SETTINGS = [
                  'origin\'s, the browser fetches the AppID URL for a ' +
                  'TrustedFacets list naming this origin, which the legacy ' +
                  'service must keep serving. An imported key is a second ' +
-                 'factor only: a U2F key cannot verify the person.' },
+                 'factor only: a U2F key cannot verify the person. U2F is ' +
+                 'ECDSA over P-256 and has no post-quantum algorithm.' },
 
   { key: 'webauthn.algorithms', group: 'WebAuthn',
     label: 'Algorithms offered', path: 'webauthn.algorithms',
@@ -7535,14 +7536,82 @@ const SETTINGS = [
                  'service\'s: a proof signed earlier than the challenge ' +
                  'was issued, or later than now, by more than this is ' +
                  'refused (STS-OPENPGP-0010).' },
+  // THE ALGORITHM LIST, IN THE PASSKEY SHAPE (#1955). Post-quantum names
+  // first, then every classical name the allow list already accepted, so
+  // a key registered before this row existed still verifies. Omitting a
+  // name refuses it at verification too. `openpgp.pqcOnly` narrows
+  // registration only. No csvValueNotes: the description names the values,
+  // and a note per name would be a catalog of identifiers.
+  { key: 'openpgp.algorithms', group: 'OpenPGP',
+    label: 'Algorithms accepted',
+    env: 'STS_OPENPGP_ALGORITHMS', type: 'csv',
+    dflt: 'ML-DSA-65+Ed25519,ML-DSA-87+Ed448,' +
+          'ML-KEM-768+X25519,ML-KEM-1024+X448,' +
+          'ed25519,ed448,eddsaLegacy/ed25519Legacy,' +
+          'ecdsa/nistP256,ecdsa/nistP384,ecdsa/nistP521,' +
+          'rsaSign,rsaEncryptSign,x25519,x448,' +
+          'ecdh/curve25519Legacy,ecdh/nistP256,' +
+          'ecdh/nistP384,ecdh/nistP521,rsaEncrypt',
+    runtime: true, ordered: true,
+    csvValues: ['ML-DSA-65+Ed25519', 'ML-DSA-87+Ed448',
+                'ML-KEM-768+X25519', 'ML-KEM-1024+X448',
+                'ed25519', 'ed448', 'eddsaLegacy/ed25519Legacy',
+                'ecdsa/nistP256', 'ecdsa/nistP384', 'ecdsa/nistP521',
+                'rsaSign', 'rsaEncryptSign', 'x25519', 'x448',
+                'ecdh/curve25519Legacy', 'ecdh/nistP256',
+                'ecdh/nistP384', 'ecdh/nistP521', 'rsaEncrypt'],
+    selectAll: {
+      aloneWhileOn: { 'openpgp.pqcOnly': ['ML-DSA-65+Ed25519',
+                                          'ML-DSA-87+Ed448',
+                                          'ML-KEM-768+X25519',
+                                          'ML-KEM-1024+X448'] }
+    },
+    description: 'The OpenPGP algorithms a key may use, in preference ' +
+                 'order. RFC 9980 composites first: ML-DSA-65+Ed25519 and ' +
+                 'ML-DSA-87+Ed448 sign, ML-KEM-768+X25519 and ' +
+                 'ML-KEM-1024+X448 encrypt. Then the classical names: ' +
+                 'ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa on ' +
+                 'nistP256, nistP384 and nistP521, rsaSign and ' +
+                 'rsaEncryptSign, x25519, x448, ecdh on curve25519Legacy ' +
+                 'and the same NIST curves, and rsaEncrypt. A name absent ' +
+                 'from this list is refused at registration and at ' +
+                 'verification (STS-OPENPGP-0004). SLH-DSA is not ' +
+                 'implemented. The default names every one of these.' },
+  { key: 'openpgp.pqcOnly', group: 'OpenPGP',
+    label: 'Register post-quantum keys only',
+    env: 'STS_OPENPGP_PQC_ONLY', type: 'bool', dflt: false, runtime: true,
+    description: 'On, a newly registered key must use a post-quantum ' +
+                 'algorithm that openpgp.algorithms names: ' +
+                 'ML-DSA-65+Ed25519 or ML-DSA-87+Ed448 for the signing ' +
+                 'key, and ML-KEM-768+X25519 or ML-KEM-1024+X448 when it ' +
+                 'has an encryption key. It narrows registration only: a ' +
+                 'classical key already registered still verifies and ' +
+                 'still receives mail. Cannot be on while ' +
+                 'openpgp.pqcAlongsideClassical is (STS-OPENPGP-0027). ' +
+                 'Off by default.' },
+  { key: 'openpgp.pqcAlongsideClassical', group: 'OpenPGP',
+    label: 'Post-quantum key alongside a classical one',
+    env: 'STS_OPENPGP_PQC_ALONGSIDE_CLASSICAL', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'On, a newly registered key must carry both a ' +
+                 'post-quantum algorithm and a separate classical one. A ' +
+                 'composite name such as ML-DSA-65+Ed25519 counts as ' +
+                 'post-quantum only, so the classical half is another ' +
+                 'key, for example an Ed25519 or X25519 subkey beside it. ' +
+                 'A key already registered is left as it is. Cannot be ' +
+                 'on while openpgp.pqcOnly is (STS-OPENPGP-0027). Off by ' +
+                 'default.' },
   { key: 'openpgp.minRsaBits', group: 'OpenPGP',
     label: 'Smallest RSA OpenPGP key',
     env: 'STS_OPENPGP_MIN_RSA_BITS', type: 'int', dflt: 3072, min: 3072,
     max: 16384, runtime: true,
     description: 'The shortest RSA key, primary or subkey, an OpenPGP ' +
                  'registration accepts. Ed25519, Ed448, ECDSA and ECDH on ' +
-                 'P-256, P-384 and P-521, X25519 and X448 are accepted; ' +
-                 'DSA, ElGamal and the Brainpool curves never are ' +
+                 'P-256, P-384 and P-521, X25519 and X448, and the RFC ' +
+                 '9980 composites ML-DSA-65+Ed25519, ML-DSA-87+Ed448, ' +
+                 'ML-KEM-768+X25519 and ML-KEM-1024+X448 are accepted ' +
+                 'when openpgp.algorithms names them. DSA, ElGamal, the ' +
+                 'Brainpool curves and SLH-DSA never are ' +
                  '(STS-OPENPGP-0004).' },
 
   // #1955 P5: a CSV of YubiKey OTP secrets in the clear.
@@ -8324,6 +8393,65 @@ const SETTINGS = [
                  'WARNING: with `none` the authorities are classical only, ' +
                  'and their certificates are forgeable by a ' +
                  'quantum-capable attacker.' },
+  // THE SSH USER CA'S ALGORITHMS (#1955). OpenSSH defines no post-quantum
+  // signature, so the line GET /pki/ssh-user-ca publishes is always the
+  // first classical name in this list (or ssh-ed25519 when the list names
+  // none). ssh-mldsa-65 is this service's own wire name: a raw ML-DSA-65
+  // public key and a raw signature, in the ssh-ed25519 shape. It is a
+  // second authority, stored beside the classical one, and it is not
+  // concatenated onto TrustedUserCAKeys.
+  { key: 'pki.sshUserCaAlgorithms', group: 'PKI',
+    label: 'SSH user CA algorithms',
+    env: 'STS_PKI_SSH_USER_CA_ALGORITHMS', type: 'csv',
+    dflt: 'ssh-mldsa-65,ssh-ed25519,ecdsa-sha2-nistp256,' +
+          'ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,rsa-sha2-256,rsa-sha2-512',
+    runtime: true, ordered: true,
+    csvValues: ['ssh-mldsa-65', 'ssh-ed25519', 'ecdsa-sha2-nistp256',
+                'ecdsa-sha2-nistp384', 'ecdsa-sha2-nistp521',
+                'rsa-sha2-256', 'rsa-sha2-512'],
+    selectAll: {
+      aloneWhileOn: { 'pki.sshUserCaPqcOnly': ['ssh-mldsa-65'] }
+    },
+    description: 'Which algorithms the SSH user certificate authority may ' +
+                 'use, in preference order. ssh-mldsa-65 is ML-DSA-65 ' +
+                 '(FIPS 204) under a wire name this service defines, ' +
+                 'because OpenSSH defines none: the public key and the ' +
+                 'signature are raw, in the shape ssh-ed25519 uses. The ' +
+                 'OpenSSH TrustedUserCAKeys line this service publishes ' +
+                 'stays the first classical algorithm in this list, or ' +
+                 'ssh-ed25519 when the list names only ssh-mldsa-65. A ' +
+                 'peer that does not understand ML-DSA keeps trusting that ' +
+                 'line. ssh-rsa (SHA-1) is not offered. The ML-DSA ' +
+                 'authority is created only when this runtime can generate ' +
+                 'the key; otherwise certificates stay classical ' +
+                 '(STS-PKI-0290 is recorded and the classical authority ' +
+                 'still answers).' },
+  { key: 'pki.sshUserCaPqcOnly', group: 'PKI',
+    label: 'SSH user certificates are post-quantum only',
+    env: 'STS_PKI_SSH_USER_CA_PQC_ONLY', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'When on, a new SSH user certificate is signed by the ' +
+                 'ML-DSA authority, and only when that authority exists. ' +
+                 'The published TrustedUserCAKeys line stays the classical ' +
+                 'key, so an OpenSSH client that already trusts it is not ' +
+                 'handed an algorithm it cannot parse. On a runtime that ' +
+                 'cannot generate ML-DSA the certificate stays classical ' +
+                 'and the request does not fail. Already issued classical ' +
+                 'certificates keep verifying. Cannot be on while ' +
+                 'pki.sshUserCaPqcAlongsideClassical is on (STS-PKI-0296). ' +
+                 'Off by default.' },
+  { key: 'pki.sshUserCaPqcAlongsideClassical', group: 'PKI',
+    label: 'SSH user certificates carry a post-quantum certificate too',
+    env: 'STS_PKI_SSH_USER_CA_PQC_ALONGSIDE_CLASSICAL', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'When on, a new SSH user certificate is issued twice ' +
+                 'when the ML-DSA authority exists: the classical ' +
+                 'certificate, which is the one an OpenSSH client uses, ' +
+                 'and an ML-DSA certificate beside it. Cannot be on while ' +
+                 'pki.sshUserCaPqcOnly is on (STS-PKI-0296). Off by ' +
+                 'default. A composite is not a concept OpenSSH has; the ' +
+                 'classical certificate and the ML-DSA certificate are ' +
+                 'two signatures, not one hybrid signature.' },
   { key: 'pki.organisation', group: 'PKI',
     label: 'Default organisation name (O=)',
     env: 'STS_PKI_ORGANISATION', type: 'string',
@@ -12474,7 +12602,7 @@ const SETTINGS = [
   // section 5.2.2 asks exactly this of a server, and it is the default for
   // every listener rather than a FAPI switch, because a cipher suite is a
   // property of the SOCKET and a profile is a property of a realm. A weaker
-  // list stays settable; docs/v1.1.0/tls.md says what that costs.
+  // list stays settable; docs/v1.2.0/tls.md says what that costs.
   { key: 'tls.ciphers', group: 'TLS', label: 'TLS 1.2 cipher list',
     env: 'STS_TLS_CIPHERS', type: 'string',
     dflt: 'ECDHE-ECDSA-AES128-GCM-SHA256:' +
@@ -15038,7 +15166,7 @@ const SETTINGS = [
   // off the one thing this setting does control.
   //
   // What it cost is worth recording, because it was invisible from every
-  // direction: ldap_server.js's own header, docs/v1.1.0/ldap.md,
+  // direction: ldap_server.js's own header, docs/v1.2.0/ldap.md,
   // docs/mock-sts.md and tests/api_ldap.js all said "on by default", so a
   // directory that stayed empty after somebody signed in read as a broken hook
   // rather than as a setting doing exactly what it was set to.
@@ -15721,7 +15849,7 @@ const SETTINGS = [
   // which (a SAML entityID, a WS-Trust AppliesTo, a Kerberos SPN, this
   // service's own seeded ones) never declare an access type and never get
   // a policy. So this stays an ordinary row — in env/defaults.js, on the
-  // console, in docs/v1.1.0/configuration.md as the value it is — rather
+  // console, in docs/v1.2.0/configuration.md as the value it is — rather
   // than a fifth exemption from the refusal of a row with no value. An operator
   // who raises applications.max raises this beside it when those
   // applications will enforce fine-grained authorization; the refusal
@@ -17547,7 +17675,7 @@ const SETTINGS = [
                  'digest, and a browser this person has never signed in ' +
                  'from is the signal new-device (x2). A browser fingerprint ' +
                  'is personal data: complete the privacy impact assessment ' +
-                 'in docs/v1.1.0/risk-scoring.md, and tell the people who ' +
+                 'in docs/v1.2.0/risk-scoring.md, and tell the people who ' +
                  'sign in, ' +
                  'before turning it on. Per realm, like every setting.' },
 
@@ -21325,7 +21453,7 @@ const SETTINGS = [
                  'MailFrom address of a connected domain in Azure, the ' +
                  'impersonated mailbox (or one of its send-as aliases) for ' +
                  'Gmail — and SPF, DKIM and DMARC for its domain are ' +
-                 'docs/v1.1.0/mail.md\'s subject.' },
+                 'docs/v1.2.0/mail.md\'s subject.' },
   { key: 'mail.fromName', group: 'Mail', label: 'From display name',
     env: 'STS_MAIL_FROM_NAME', type: 'string', dflt: '', runtime: true,
     description: 'The display name beside the From address. Empty means ' +
@@ -21456,7 +21584,7 @@ const SETTINGS = [
                  '8301) or `ed25519-sha256` (RFC 8463). Many receivers still ' +
                  'verify only RSA, so a domain moving to Ed25519 publishes ' +
                  'both and signs twice elsewhere. DKIM has no post-quantum ' +
-                 'algorithm registered yet; docs/v1.1.0/mail.md says so.' },
+                 'algorithm registered yet; docs/v1.2.0/mail.md says so.' },
   { key: 'mail.dkimKeyProvider', group: 'Mail',
     label: 'Where the DKIM private key is read from',
     env: 'STS_MAIL_DKIM_KEY_PROVIDER', type: 'enum',
@@ -21666,7 +21794,7 @@ const SETTINGS = [
                  'import or a provisioning feed wrote, and nobody ever ' +
                  'proved, is not somewhere to send it. **Turning it off is a ' +
                  'weaker setting**, for a directory whose addresses are ' +
-                 'trusted as written; docs/v1.1.0/mail.md carries the ' +
+                 'trusted as written; docs/v1.2.0/mail.md carries the ' +
                  'warning.' },
   // #64: THE RECOVERY CODE A SELF-SERVICE RESET ASKS FOR, beside the
   // username and the address. On by default (rcbj's D4).
@@ -21682,7 +21810,7 @@ const SETTINGS = [
                  'weaker setting**: the form goes back to one field (a ' +
                  'username or the address), and a reset is then as strong ' +
                  'as the mailbox it goes to — which NIST SP 800-63B-4 allows ' +
-                 'for recovery, and which docs/v1.1.0/mail.md warns about. ' +
+                 'for recovery, and which docs/v1.2.0/mail.md warns about. ' +
                  'A person ' +
                  'who holds no recovery codes cannot reset their password ' +
                  'themselves while it is on; an administrator can.' },

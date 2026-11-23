@@ -448,16 +448,16 @@
     "text": "一種公開金鑰權杖，持有者可以像 macaroon 一樣「離線」縮限它，但任何持有根公開金鑰的人都能驗證。其授權邏輯是權杖內攜帶的 Datalog，因此驗證者「一律」在時間與迭代次數限制下執行。"
   },
   "crypto.standards.cms.coverage": {
-    "en": "d33248e25a15b5a7",
-    "text": "partial：具一位簽署者與簽署屬性的 SignedData，依收到的屬性位元組驗證，寫入時依 DER 排序；具 KeyTransRecipientInfo（RSA PKCS#1 v1.5 與 OAEP）及 AES-CBC 內容的 EnvelopedData；含憑證與 CRL 的退化型僅憑證 SignedData；用於 S/MIME 郵件（#1955）時，以 OAEP SHA-256 KeyTransRecipientInfo 或 ECDH KeyAgreeRecipientInfo 寫入的 EnvelopedData。不支援驗證資料或壓縮資料，不支援副署簽章。"
+    "en": "f750e6cf7ac566b2",
+    "text": "partial：具一位簽署者與簽署屬性的 SignedData，依收到的屬性位元組驗證，寫入時依 DER 排序；具 KeyTransRecipientInfo（RSA PKCS#1 v1.5 與 OAEP）及 AES-CBC 內容的 EnvelopedData；含憑證與 CRL 的退化型僅憑證 SignedData；用於 S/MIME 郵件（#1955）時，以 OAEP SHA-256 KeyTransRecipientInfo、ECDH KeyAgreeRecipientInfo，或對 ML-KEM 憑證以 KEMRecipientInfo 寫入的 EnvelopedData。不支援驗證資料或壓縮資料，不支援副署簽章。"
   },
   "crypto.standards.cms.what": {
-    "en": "e09c8508abab483b",
-    "text": "SCEP（scep/scep_cms.ts）讀寫的封套：由申請者簽署並加密給 RA 的請求，以及由 RA 簽署、其中憑證加密給申請者的 CertRep。自 #1955 起，也用於加密郵件的 S/MIME EnvelopedData，為 EC 收件者加入 KeyAgreeRecipientInfo（dhSinglePass-stdDH-sha256kdf，AES-256 金鑰包裝），為 RSA 收件者加入 OAEP SHA-256 KeyTransRecipientInfo。"
+    "en": "05b9f7ff9bec76df",
+    "text": "SCEP（scep/scep_cms.ts）讀寫的封套：由申請者簽署並加密給 RA 的請求，以及由 RA 簽署、其中憑證加密給申請者的 CertRep。自 #1955 起，也用於加密郵件的 S/MIME EnvelopedData，為 EC 收件者加入 KeyAgreeRecipientInfo（dhSinglePass-stdDH-sha256kdf，AES-256 金鑰包裝），為 RSA 收件者加入 OAEP SHA-256 KeyTransRecipientInfo，並為 ML-KEM 憑證加入 KEMRecipientInfo。無法封裝的執行環境不會退回 RSA 或 ECDH。"
   },
   "crypto.standards.openpgp.coverage": {
-    "en": "5d4c9889762ddbd2",
-    "text": "partial：讀取 v4 與 v6 可傳輸公開金鑰、驗證明文簽章、加密 PGP/MIME 郵件，皆透過 openpgp.js 完成；Web 金鑰目錄（Web Key Directory）的進階與直接查詢方式及政策檔案。不支援簽署、解密、Web Key Service 提交與金鑰伺服器。"
+    "en": "d27e08a2f317c75c",
+    "text": "partial：讀取 v4 與 v6 可傳輸公開金鑰、驗證明文簽章、加密 PGP/MIME 郵件，透過 openpgp.js 完成；RFC 9980 複合金鑰在此讀取並核驗兩個部分。Web 金鑰目錄（Web Key Directory）的進階與直接查詢方式及政策檔案。不支援簽署、解密、Web Key Service 提交、金鑰伺服器和 SLH-DSA。"
   },
   "crypto.standards.openpgp.what": {
     "en": "039de4dd3b49b9ab",
@@ -692,12 +692,12 @@
     "text": "無。註冊時的簽章是「本人」的簽章，加密郵件不簽署（DKIM 簽署外層郵件，如同簽署每一封郵件）。"
   },
   "crypto.families.openpgp.verifies": {
-    "en": "c3dbfb38087cb3de",
-    "text": "註冊時的「持有證明」：一個明文簽章（gpg --clearsign），簽署內容正是本服務發給此人的挑戰，由所註冊金鑰中具簽署能力的金鑰在挑戰發出後（openpgp.signatureSkewS）作出，且當時有效；金鑰本身未被撤銷也未過期，並帶有包含該項目地址的有效使用者 ID。支援 RFC 9580 v6 與 RFC 4880 v4 金鑰，由 openpgp.js 讀取。S/MIME 憑證只檢查有效性、金鑰與用途，不檢查憑證鏈：它只用來選擇郵件的加密對象。"
+    "en": "e571039950254fa8",
+    "text": "註冊時的「持有證明」：一個明文簽章（gpg --clearsign），簽署內容正是本服務發給此人的挑戰，由所註冊金鑰中具簽署能力的金鑰在挑戰發出後（openpgp.signatureSkewS）作出，且當時有效；金鑰本身未被撤銷也未過期，並帶有包含該項目地址的有效使用者 ID。支援 RFC 9580 v6 與 RFC 4880 v4 金鑰，由 openpgp.js 讀取。S/MIME 憑證只檢查有效性、金鑰與用途，不檢查憑證鏈：它只用來選擇郵件的加密對象。 RFC 9980 複合金鑰由本服務自己的讀取器讀取並核驗兩個部分；openpgp.js 不解析它們。"
   },
   "crypto.families.openpgp.encrypts": {
-    "en": "1a05c1b540cd5082",
-    "text": "「郵件」，在本人選擇或領域要求時（mail.encryptionRequired）：PGP/MIME（RFC 3156）加密至該金鑰的加密金鑰，由 openpgp.js 選擇方式（v4 金鑰用 SEIPD 搭配 AES，v6 金鑰用 AEAD）；S/MIME（RFC 8551）以 CMS EnvelopedData 形式，內容加密使用 AES-256-CBC，內容金鑰以 RSAES-OAEP（SHA-256）或 ECDH（dhSinglePass-stdDH-sha256kdf，AES-256 金鑰包裝）保護。"
+    "en": "92940be7441a9817",
+    "text": "「郵件」，在本人選擇或領域要求時（mail.encryptionRequired）：PGP/MIME（RFC 3156）加密至該金鑰的加密金鑰，由 openpgp.js 選擇方式（v4 金鑰用 SEIPD 搭配 AES，v6 金鑰用 AEAD）；S/MIME（RFC 8551）以 CMS EnvelopedData 形式，內容加密使用 AES-256-CBC，內容金鑰以 RSAES-OAEP（SHA-256）或 ECDH（dhSinglePass-stdDH-sha256kdf，AES-256 金鑰包裝）保護。 ML-KEM 憑證（RFC 9935）使用 KEMRecipientInfo（RFC 9629）：內容加密保持 AES-256-CBC，無法封裝的執行環境不會退回 RSA 或 ECDH。"
   },
   "crypto.families.openpgp.decrypts": {
     "en": "9cc3e24fe9d0a9d8",
@@ -716,24 +716,24 @@
     "text": "已註冊金鑰，簽署"
   },
   "crypto.families.openpgp.algorithms.0.how": {
-    "en": "91736ec1cb35b5f2",
-    "text": "Ed25519、Ed448、ECDSA P-256/P-384/P-521、長度為 openpgp.minRsaBits（至少 3072）的 RSA"
+    "en": "f27dbb16784e93f8",
+    "text": "ML-DSA-65+Ed25519、ML-DSA-87+Ed448（RFC 9980），然後是 Ed25519、Ed448、ECDSA P-256/P-384/P-521、至少 openpgp.minRsaBits 位元的 RSA（至少 3072）"
   },
   "crypto.families.openpgp.algorithms.1.what": {
     "en": "9f7b65405a49bedd",
     "text": "已註冊金鑰，加密"
   },
   "crypto.families.openpgp.algorithms.1.how": {
-    "en": "e28f57b2d61b83be",
-    "text": "X25519、X448、ECDH Curve25519 及 P-256/P-384/P-521、長度為 openpgp.minRsaBits 的 RSA"
+    "en": "660feb6cfc44d305",
+    "text": "ML-KEM-768+X25519、ML-KEM-1024+X448（RFC 9980），然後是 X25519、X448、Curve25519 以及 P-256/P-384/P-521 上的 ECDH、至少 openpgp.minRsaBits 位元的 RSA"
   },
   "crypto.families.openpgp.algorithms.2.what": {
     "en": "66b873543aebf01b",
     "text": "拒絕"
   },
   "crypto.families.openpgp.algorithms.2.how": {
-    "en": "18369a474bec2b97",
-    "text": "DSA、ElGamal、Brainpool 曲線"
+    "en": "4c8437ead9bd7364",
+    "text": "DSA、ElGamal、Brainpool 曲線、SLH-DSA"
   },
   "crypto.families.openpgp.algorithms.3.what": {
     "en": "429d783fabc235c9",
@@ -748,8 +748,8 @@
     "text": "S/MIME 金鑰傳輸"
   },
   "crypto.families.openpgp.algorithms.4.how": {
-    "en": "acf5bad1301fd2cc",
-    "text": "RSAES-OAEP SHA-256；ECDH stdDH SHA-256 KDF，AES-256 包裝"
+    "en": "bccae46bcdf822fb",
+    "text": "RSAES-OAEP SHA-256；ECDH stdDH SHA-256 KDF，AES-256 封裝；ML-KEM（RFC 9935）作為 KEMRecipientInfo，HKDF-SHA-256 與 AES-Wrap"
   },
   "crypto.families.openpgp.algorithms.5.what": {
     "en": "727e1a6e39e36a93",
@@ -1484,8 +1484,8 @@
     "text": "SHA-1、SHA-256 或 SHA-512，只在 HMAC 內使用，別無他處。"
   },
   "crypto.families.one-time-passwords-totp.whatItDoesNot": {
-    "en": "f38dd0b2f7ce307b",
-    "text": "它從不告訴任何人目前的驗證碼是什麼，也從不在登入畫面為任何人註冊——註冊意味著會看到密鑰，因此只在本人已通過驗證或持有啟用連結的地方進行。時鐘漂移的 TOTP 只會獲得偏差視窗，別無其他。以計數器為基礎的（HOTP）權杖由兩個連續驗證碼重新同步，絕不只憑一個。它從不保留種子檔案的金鑰或密碼，也從不開啟為憑證加密的檔案。"
+    "en": "313115cd82b83d1b",
+    "text": "它從不告訴任何人目前的驗證碼是什麼，也從不在登入畫面為任何人註冊——註冊意味著會看到密鑰，因此只在本人已通過驗證或持有啟用連結的地方進行。時鐘漂移的 TOTP 只會獲得偏差視窗，別無其他。以計數器為基礎的（HOTP）權杖由兩個連續驗證碼重新同步，絕不只憑一個。它從不保留種子檔案的金鑰或密碼，也從不開啟為憑證加密的檔案。 HOTP（RFC 4226）與 PSKC 種子（RFC 6030）沒有後量子 MAC：MAC 為 HMAC-SHA-1、SHA-256 或 SHA-512。"
   },
   "crypto.families.one-time-passwords-totp.algorithms.0.what": {
     "en": "0c410835b8ade404",
@@ -1524,8 +1524,8 @@
     "text": "無。CRC 為 CRC-16，多項式 0x8408。YK-VAL 簽章為 HMAC-SHA1。"
   },
   "crypto.families.yubico-otp.whatItDoesNot": {
-    "en": "a977ea47369edb7c",
-    "text": "它從不呼叫 YubiCloud。它從不檢查時間戳。在 yubiotp.offered 關閉時它從不註冊槽位，在 yubiotp.ykval 關閉時它從不回應 YK-VAL。它從不記錄程式設計行或用戶端的 HMAC 金鑰。"
+    "en": "f93ab78e99cd9d8d",
+    "text": "它從不呼叫 YubiCloud。它從不檢查時間戳。在 yubiotp.offered 關閉時它從不註冊槽位，在 yubiotp.ykval 關閉時它從不回應 YK-VAL。它從不記錄程式設計行或用戶端的 HMAC 金鑰。 它沒有後量子參數：OTP 是對一個 16 位元組區塊的 AES-128-ECB。"
   },
   "crypto.families.yubico-otp.algorithms.0.what": {
     "en": "6c0e6acd35694622",

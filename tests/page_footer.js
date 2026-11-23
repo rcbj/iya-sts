@@ -65,7 +65,7 @@ function childMain() {
   }
 
   const LINKS = [
-    'https://rcbj.github.io/iya-sts/v1.1.0/',
+    'https://rcbj.github.io/iya-sts/v1.2.0/',
     'https://github.com/rcbj/iya-sts/issues',
     'https://github.com/rcbj/iya-sts',
     'https://www.linkedin.com/company/18811689/',

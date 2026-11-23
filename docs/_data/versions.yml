@@ -4,8 +4,8 @@
 # The documentation versions the site publishes, newest first. Each is a
 # folder of docs/ holding that release's pages, with its sidebar in
 # _data/navigation/<nav>.yml. `nav` is not the folder name because Jekyll
-# drops the dots from a data file's name when it makes the key (v1.1.0.yml
-# would be site.data.navigation.v110). The FIRST entry is the latest: the header's
+# drops the dots from a data file's name when it makes the key (v1.2.0.yml
+# would be site.data.navigation.v120). The FIRST entry is the latest: the header's
 # switcher marks it, every other version's pages say a newer one exists, and
 # the landing page (docs/index.md) lists them in this order.
 #
@@ -16,5 +16,6 @@
 #
 # A release snapshot adds a row here and a navigation file; docs/CLAUDE.md,
 # *The versioned site*, is the recipe.
-- { folder: v1.1.0, nav: v1-1-0, label: "1.1.0", note: "latest" }
+- { folder: v1.2.0, nav: v1-2-0, label: "1.2.0", note: "latest" }
+- { folder: v1.1.0, nav: v1-1-0, label: "1.1.0", note: "release", ref: v1.1.0 }
 - { folder: v1.0.0, nav: v1-0-0, label: "1.0.0", note: "release", ref: v1.0.0 }

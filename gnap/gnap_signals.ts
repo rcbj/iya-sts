@@ -22,7 +22,7 @@
 //      `streamCoversSubject()` — the single function every CAEP, RISC and
 //      by-hand delivery already asks — and this file fills it.
 //   3. **Grant and token revocation emit CAEP.** This REVERSES a documented
-//      rule — docs/v1.1.0/caep-events.md said revoking a token emits nothing —
+//      rule — docs/v1.2.0/caep-events.md said revoking a token emits nothing —
 //      for GNAP only, and the reason it is not a contradiction is the shape of
 //      a GNAP grant: it is a DELEGATED SESSION between a client instance and a
 //      resource owner (RFC 9767 section 2.1.13 calls it the grant's current

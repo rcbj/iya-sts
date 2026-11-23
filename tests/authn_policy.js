@@ -103,6 +103,9 @@ function builtIn(t) {
           p.emailLinkPrimary === false && p.emailLinkSecondFactor === false,
           'A2. both email mechanisms are OFF by default (NIST SP 800-63B-4 ' +
           'section 3.1.3.1)');
+  t.check(p.hotpSecondFactor === false && p.yubicoOtpSecondFactor === false,
+          'A2b. a one-time code token (HOTP) and a YubiKey OTP are listed ' +
+          'and OFF by default');
   t.check(p.passwordPrimary === true && p.requireSecondFactor === 'if-held',
           'A3. a password is a first factor and a second is required of ' +
           'those who hold one');

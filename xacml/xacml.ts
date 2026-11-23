@@ -1479,7 +1479,7 @@ class XacmlSurface {
              'token there (the default since 1.1.0), so it was refused. ' +
              'Set xacml.pepAuthentication to either while the realm\'s ' +
              'PEPs move to their assertion key (PEP_ASSERTION_KEY, issued ' +
-             'by issue-pep-credential); docs/v1.1.0/remote-pep.md says how.');
+             'by issue-pep-credential); docs/v1.2.0/remote-pep.md says how.');
     log.debug('Leaving XacmlSurface.warnCertificateRefused().');
   }
 

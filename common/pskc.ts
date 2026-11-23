@@ -414,6 +414,17 @@ class Pskc {
                                      'DECIMAL') : 'DECIMAL';
     const suiteText = Pskc.text(Pskc.kid(params, 'Suite')).toUpperCase();
     const algorithm = suiteText ? SUITES[suiteText] : 'SHA1';
+    // HOTP and PSKC have no post-quantum MAC. A suite that names one is
+    // the same refusal as any other suite this service does not compute,
+    // and says so rather than looking like a format error.
+    if (suiteText && !algorithm &&
+        /ML-DSA|ML-KEM|SLH-DSA|SPHINCS|DILITHIUM|KYBER/.test(suiteText)) {
+      log.debug("Leaving Pskc.packageOf(). Post-quantum suite.");
+      return this.refuse('STS-OATH-0022', 'Key package ' + (index + 1) +
+        ' names ' + suiteText + '. HOTP (RFC 4226) and PSKC (RFC 6030) ' +
+        'have no post-quantum MAC; a token here uses HMAC-SHA-1, -256 ' +
+        'or -512.', at);
+    }
     if (!(digits >= 6 && digits <= 8) || encoding.toUpperCase() !==
         'DECIMAL' || !algorithm) {
       log.debug("Leaving Pskc.packageOf(). Response format.");

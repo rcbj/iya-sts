@@ -49,7 +49,7 @@ that list by walking the running Express router, so it cannot go stale by
 omission, and this repository's own `tests/protocol/sts_metadata.js` fails on drift in
 either direction. A hand-written set of highlights here would be a second,
 unchecked copy of it — wrong within a month, on the page most likely to be read
-first and least likely to be re-read. `docs/v1.1.0/endpoints.md` makes the same
+first and least likely to be re-read. `docs/v1.2.0/endpoints.md` makes the same
 argument for the documentation site. Link to the thing that generates the list.
 
 The same goes for anything else this service already publishes about itself:

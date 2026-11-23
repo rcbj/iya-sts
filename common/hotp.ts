@@ -422,7 +422,7 @@ class Hotp {
     return {
       offered: live.enabled,
       algorithm: 'HMAC-SHA-1 (RFC 4226 section 5); an imported token may ' +
-                 'name SHA-256 or SHA-512',
+                 'name SHA-256 or SHA-512. There is no post-quantum MAC.',
       digits: live.digits,
       window: live.window,
       resyncWindow: live.resyncWindow,

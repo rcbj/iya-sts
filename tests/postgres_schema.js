@@ -850,20 +850,20 @@ function checkTheServerSettingsAgree(t) {
   log.debug("Leaving checkTheServerSettingsAgree().");
 }
 
-// AND THE QUICK START IS PRINTED, WHOLE, IN docs/v1.1.0/getting-started.md
+// AND THE QUICK START IS PRINTED, WHOLE, IN docs/v1.2.0/getting-started.md
 // (#633), for a reader with no checkout. The copy had drifted from nothing
 // until the file gained the settings above, and a reader who pastes the page
 // gets the page, so the first yaml block there is held to the file, its two
 // SPDX lines aside.
 function checkTheQuickStartPageAgrees(t) {
   log.debug("Entering checkTheQuickStartPageAgrees().");
-  const page = fs.readFileSync(path.join(ROOT, 'docs', 'v1.1.0',
+  const page = fs.readFileSync(path.join(ROOT, 'docs', 'v1.2.0',
                                          'getting-started.md'), 'utf8');
   const block = /```yaml\n([\s\S]*?)```/.exec(page);
   const file = fs.readFileSync(OTHER_COMPOSE[0], 'utf8')
     .split('\n').slice(2).join('\n');
   t.check(!!block && block[1] === file,
-          'docs/v1.1.0/getting-started.md prints docker-compose-quick.yml ' +
+          'docs/v1.2.0/getting-started.md prints docker-compose-quick.yml ' +
           'as it is');
   log.debug("Leaving checkTheQuickStartPageAgrees().");
 }

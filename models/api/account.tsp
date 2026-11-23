@@ -4848,7 +4848,8 @@ op `actOnDevices`(`requestBody/content/application~1json/schema`: {
   @js(#{`description`:"The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`)."}) `kind`: string;
   @js(#{`description`:"Its name, where it has one."}) `label`: string;
   @js(#{`description`:"When it was recorded on the token, ISO 8601."}) `addedAt`: string;
-  @js(#{`description`:"Whether the lost-key act retired it."}) `retired`: boolean
+  @js(#{`description`:"Whether the lost-key act retired it."}) `retired`: boolean;
+  @js(#{`description`:"The signature algorithm recorded for it, when the door that wrote it named one (an ML-DSA passkey's COSE algorithm). Absent where the credential has none."}) `algorithm`?: string
 }
 
 @hoisted model HardwareTokenPortalRow {
@@ -5276,7 +5277,7 @@ op `getOpenPgp`(`responses/200/content/application~1json/schema`: OpenPgpPortalV
     `operationId`:"actOnOpenPgp",
     `tags`:#["Devices"],
     `summary`:"Registers, removes or publishes your OpenPGP key, or sets your mail encryption",
-    `description`:"`challenge` issues a registration challenge (one at a time, for `openpgp.challengeLifetimeS`). `register` takes `publicKey` (one armored public key) and `signed` (the challenge signed with `gpg --clearsign`; on a YubiKey OpenPGP card the card signs): the key must be neither revoked nor expired, use an accepted algorithm, carry a valid user id with your entry's address, and have signed exactly the challenge since it was issued. `remove` removes it. `publish` and `withdraw` set whether the Web Key Directory answers it. `mail-encryption` takes `choice` (`none`, `openpgp`, `smime`). `smime` takes `certificate` (a PEM certificate naming your address; empty removes it). It asks for a recent sign-in. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/openpgp`.",
+    `description`:"`challenge` issues a registration challenge (one at a time, for `openpgp.challengeLifetimeS`). `register` takes `publicKey` (one armored public key) and `signed` (the challenge signed with `gpg --clearsign`; on a YubiKey OpenPGP card the card signs): the key must be neither revoked nor expired, use an algorithm `openpgp.algorithms` names (including an RFC 9980 composite), carry a valid user id with your entry's address, and have signed exactly the challenge since it was issued. `openpgp.pqcOnly` narrows a new registration to a post-quantum composite. `remove` removes it. `publish` and `withdraw` set whether the Web Key Directory answers it. `mail-encryption` takes `choice` (`none`, `openpgp`, `smime`). `smime` takes `certificate` (a PEM certificate naming your address; empty removes it). It asks for a recent sign-in. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/openpgp`.",
     `parameters`:#[
 
     ],

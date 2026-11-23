@@ -534,7 +534,7 @@ const MESSAGE_SIGNING_REQUIREMENTS = [
     enforced: 'deployment',
     title: 'Non-repudiation: keys and records kept',
     note: 'Retired signing keys stay published for their grace period and ' +
-          'every issuance is audited; docs/v1.1.0/oauth-security.md says ' +
+          'every issuance is audited; docs/v1.2.0/oauth-security.md says ' +
           'what a deployment keeps and for how long.' },
   // FAPI-CIBA (#142): the profile of CIBA the FAPI profiles bring with them
   // wherever `oauth2.ciba` is on — rcbj's answer, no setting of its own.

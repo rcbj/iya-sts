@@ -1424,8 +1424,8 @@
     "text": "Alte U2F-AppIDs"
   },
   "webauthn.u2fAppIds|description": {
-    "en": "05b1b01773d86d5d",
-    "text": "Die FIDO-U2F-AppIDs — die https-URLs, unter denen eine alte U2F-Relying-Party ihre Sicherheitsschlüssel registriert hat —, deren Anmeldedaten auf die Einträge von Personen importiert und hier zur Anmeldung verwendet werden dürfen, durch Kommas getrennt. **LEER, der Standard, heißt: die Funktion ist aus**: Nichts kann importiert werden, keine Zeremonie trägt die Erweiterung appid oder appidExclude (WebAuthn Level 3 Abschnitte 10.1.1 und 10.1.2), und ein importierter Schlüssel meldet niemanden an. Eine AppID wird nur bei einer RP-ID verwendet, zu der sie gehört: Ihr Host ist die RP-ID, oder das eine ist ein Suffix des anderen. Wo der Host von dem des Ursprungs abweicht, ruft der Browser die AppID-URL nach einer TrustedFacets-Liste ab, die diesen Ursprung nennt; der alte Dienst muss sie weiter bereitstellen. Ein importierter Schlüssel ist nur ein zweiter Faktor: Ein U2F-Schlüssel kann die Person nicht überprüfen."
+    "en": "e17d7febccd7d076",
+    "text": "Die FIDO-U2F-AppIDs — die https-URLs, unter denen eine alte U2F-Relying-Party ihre Sicherheitsschlüssel registriert hat —, deren Anmeldedaten auf die Einträge von Personen importiert und hier zur Anmeldung verwendet werden dürfen, durch Kommas getrennt. **LEER, der Standard, heißt: die Funktion ist aus**: Nichts kann importiert werden, keine Zeremonie trägt die Erweiterung appid oder appidExclude (WebAuthn Level 3 Abschnitte 10.1.1 und 10.1.2), und ein importierter Schlüssel meldet niemanden an. Eine AppID wird nur bei einer RP-ID verwendet, zu der sie gehört: Ihr Host ist die RP-ID, oder das eine ist ein Suffix des anderen. Wo der Host von dem des Ursprungs abweicht, ruft der Browser die AppID-URL nach einer TrustedFacets-Liste ab, die diesen Ursprung nennt; der alte Dienst muss sie weiter bereitstellen. Ein importierter Schlüssel ist nur ein zweiter Faktor: Ein U2F-Schlüssel kann die Person nicht überprüfen. U2F ist ECDSA über P-256 und hat keinen Post-Quanten-Algorithmus."
   },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
@@ -3360,8 +3360,8 @@
     "text": "Kleinster RSA-OpenPGP-Schlüssel"
   },
 "openpgp.minRsaBits|description": {
-    "en": "ad48516e31a7c45b",
-    "text": "Der kürzeste RSA-Schlüssel, Haupt- oder Unterschlüssel, den eine OpenPGP-Registrierung akzeptiert. Ed25519, Ed448, ECDSA und ECDH auf P-256, P-384 und P-521, X25519 und X448 werden akzeptiert; DSA, ElGamal und die Brainpool-Kurven nie (STS-OPENPGP-0004)."
+    "en": "cd16018c848ce538",
+    "text": "Der kürzeste RSA-Schlüssel, Haupt- oder Unterschlüssel, den eine OpenPGP-Registrierung akzeptiert. Ed25519, Ed448, ECDSA und ECDH auf P-256, P-384 und P-521, X25519 und X448 sowie die RFC-9980-Komposite ML-DSA-65+Ed25519, ML-DSA-87+Ed448, ML-KEM-768+X25519 und ML-KEM-1024+X448 werden akzeptiert, wenn openpgp.algorithms sie nennt. DSA, ElGamal, die Brainpool-Kurven und SLH-DSA nie (STS-OPENPGP-0004)."
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
@@ -9212,8 +9212,8 @@
     "text": "Den Browser bei der Anmeldung per Fingerabdruck erkennen"
   },
   "risk.fingerprinting|description": {
-    "en": "452ca90f0592fe8b",
-    "text": "STANDARDMÄSSIG AUS (#62 P6). Ein führt der Anmeldebildschirm ein Skript aus, FingerprintJS (MIT; es sendet nirgends etwas hin), das aus dem, was der Browser preisgibt, eine Kennung berechnet und sie in das Formular setzt; der Dienst behält nur einen geschlüsselten Digest, und ein Browser, von dem aus diese Person sich noch nie angemeldet hat, ist das Signal new-device (x2). Ein Browser-Fingerabdruck ist ein personenbezogenes Datum: Schließen Sie die Datenschutz-Folgenabschätzung in docs/v1.1.0/risk-scoring.md ab und informieren Sie die Personen, die sich anmelden, bevor Sie ihn einschalten. Je Vertrauensbereich, wie jede Einstellung."
+    "en": "c34ba5805bddbb8b",
+    "text": "STANDARDMÄSSIG AUS (#62 P6). Ein führt der Anmeldebildschirm ein Skript aus, FingerprintJS (MIT; es sendet nirgends etwas hin), das aus dem, was der Browser preisgibt, eine Kennung berechnet und sie in das Formular setzt; der Dienst behält nur einen geschlüsselten Digest, und ein Browser, von dem aus diese Person sich noch nie angemeldet hat, ist das Signal new-device (x2). Ein Browser-Fingerabdruck ist ein personenbezogenes Datum: Schließen Sie die Datenschutz-Folgenabschätzung in docs/v1.2.0/risk-scoring.md ab und informieren Sie die Personen, die sich anmelden, bevor Sie ihn einschalten. Je Vertrauensbereich, wie jede Einstellung."
   },
   "risk.breachCheck|label": {
     "en": "8b4443cd88527e75",
@@ -11640,8 +11640,8 @@
     "text": "Absenderadresse"
   },
   "mail.from|description": {
-    "en": "b1da52c40fbad767",
-    "text": "Die Adresse, von der jede Nachricht gesendet wird. Leer bedeutet `no-reply@` und danach die DNS-Domäne des Vertrauensbereichs. Der Anbieter muss berechtigt sein, als diese Adresse zu senden: eine verifizierte Identität in SES, eine MailFrom-Adresse einer verbundenen Domäne in Azure, das nachgeahmte Postfach (oder einer seiner Senden-als-Aliase) bei Gmail — und SPF, DKIM und DMARC für seine Domäne sind das Thema von docs/v1.1.0/mail.md."
+    "en": "a8b259e6c1037325",
+    "text": "Die Adresse, von der jede Nachricht gesendet wird. Leer bedeutet `no-reply@` und danach die DNS-Domäne des Vertrauensbereichs. Der Anbieter muss berechtigt sein, als diese Adresse zu senden: eine verifizierte Identität in SES, eine MailFrom-Adresse einer verbundenen Domäne in Azure, das nachgeahmte Postfach (oder einer seiner Senden-als-Aliase) bei Gmail — und SPF, DKIM und DMARC für seine Domäne sind das Thema von docs/v1.2.0/mail.md."
   },
   "mail.fromName|label": {
     "en": "54fc2703a4957936",
@@ -11776,8 +11776,8 @@
     "text": "DKIM-Algorithmus"
   },
   "mail.dkimAlgorithm|description": {
-    "en": "62ed500aeff2bc8a",
-    "text": "`rsa-sha256` (RFC 6376; ein Schlüssel mit 2048 Bit oder größer, nach RFC 8301) oder `ed25519-sha256` (RFC 8463). Viele Empfänger prüfen noch nur RSA, eine Domäne, die auf Ed25519 wechselt, veröffentlicht also beide und signiert anderswo zweimal. DKIM hat noch keinen registrierten Post-Quantum-Algorithmus; docs/v1.1.0/mail.md sagt das."
+    "en": "0d88e4862621b8df",
+    "text": "`rsa-sha256` (RFC 6376; ein Schlüssel mit 2048 Bit oder größer, nach RFC 8301) oder `ed25519-sha256` (RFC 8463). Viele Empfänger prüfen noch nur RSA, eine Domäne, die auf Ed25519 wechselt, veröffentlicht also beide und signiert anderswo zweimal. DKIM hat noch keinen registrierten Post-Quantum-Algorithmus; docs/v1.2.0/mail.md sagt das."
   },
   "mail.dkimKeyProvider|label": {
     "en": "7e4fc266794b62d9",
@@ -12008,16 +12008,16 @@
     "text": "Selbstbedientes Zurücksetzen braucht eine verifizierte Adresse"
   },
   "mail.resetRequiresVerifiedAddress|description": {
-    "en": "81dfbb5f1c67cc3c",
-    "text": "Einen Link zum selbstbedienten Zurücksetzen nur an eine Adresse senden, die die Person VERIFIZIERT hat (ein Link, dem sie von dort aus gefolgt ist). Standardmäßig an, weil der Link das Konto ist: eine Adresse, die ein Import oder ein Bereitstellungsfeed geschrieben hat und die niemand je nachgewiesen hat, ist kein Ort, wohin man ihn sendet. **Das Ausschalten ist eine schwächere Einstellung**, für ein Verzeichnis, dessen Adressen so vertraut werden, wie sie geschrieben stehen; docs/v1.1.0/mail.md trägt die Warnung."
+    "en": "af24c1ddaf83c884",
+    "text": "Einen Link zum selbstbedienten Zurücksetzen nur an eine Adresse senden, die die Person VERIFIZIERT hat (ein Link, dem sie von dort aus gefolgt ist). Standardmäßig an, weil der Link das Konto ist: eine Adresse, die ein Import oder ein Bereitstellungsfeed geschrieben hat und die niemand je nachgewiesen hat, ist kein Ort, wohin man ihn sendet. **Das Ausschalten ist eine schwächere Einstellung**, für ein Verzeichnis, dessen Adressen so vertraut werden, wie sie geschrieben stehen; docs/v1.2.0/mail.md trägt die Warnung."
   },
   "mail.resetRequiresBackupCode|label": {
     "en": "addd650807ec39b2",
     "text": "Selbstbedientes Zurücksetzen braucht einen Wiederherstellungscode"
   },
   "mail.resetRequiresBackupCode|description": {
-    "en": "2d8885388b97eb61",
-    "text": "Das Formular für das vergessene Passwort fragt nach dem BENUTZERNAMEN, der verifizierten ADRESSE auf dem Konto und einem der WIEDERHERSTELLUNGSCODES der Person und sendet einen Link zum Zurücksetzen nur, wenn alle drei stimmen — der Code ist dann verbraucht. Jede Kombination wird mit demselben Satz beantwortet. **Das Ausschalten ist eine schwächere Einstellung**: das Formular geht auf ein Feld zurück (ein Benutzername oder die Adresse), und ein Zurücksetzen ist dann so stark wie das Postfach, an das es geht — was NIST SP 800-63B-4 für die Wiederherstellung zulässt und wovor docs/v1.1.0/mail.md warnt. Eine Person, die keine Wiederherstellungscodes besitzt, kann ihr Passwort nicht selbst zurücksetzen, solange es an ist; ein Administrator kann es."
+    "en": "f0eccb7bb4055b20",
+    "text": "Das Formular für das vergessene Passwort fragt nach dem BENUTZERNAMEN, der verifizierten ADRESSE auf dem Konto und einem der WIEDERHERSTELLUNGSCODES der Person und sendet einen Link zum Zurücksetzen nur, wenn alle drei stimmen — der Code ist dann verbraucht. Jede Kombination wird mit demselben Satz beantwortet. **Das Ausschalten ist eine schwächere Einstellung**: das Formular geht auf ein Feld zurück (ein Benutzername oder die Adresse), und ein Zurücksetzen ist dann so stark wie das Postfach, an das es geht — was NIST SP 800-63B-4 für die Wiederherstellung zulässt und wovor docs/v1.2.0/mail.md warnt. Eine Person, die keine Wiederherstellungscodes besitzt, kann ihr Passwort nicht selbst zurücksetzen, solange es an ist; ein Administrator kann es."
   },
   "mail.verificationTtlMinutes|label": {
     "en": "49c2a4b66ba8a448",
@@ -13026,5 +13026,53 @@
   "roles.pivKeyRecoveryGroup|description": {
     "en": "801616eea12559a5",
     "text": "Die Verzeichnisgruppe, deren Mitglieder die eingebaute Rolle PIV_KEY_RECOVERY (#1955) innehaben, die die Zugriffskontrollrichtlinie neben Admin-Schreiben verlangt, um den hinterlegten piv-key-management-Schlüssel einer anderen Person wiederherzustellen (piv.keyEscrow). Dieser Schlüssel entschlüsselt die E-Mails der Person, daher hat niemand die Rolle, bis ein Administrator ihn der Gruppe hinzufügt. Leer erlaubt niemandem, den Schlüssel einer anderen Person wiederherzustellen; der Inhaber stellt seinen eigenen im Portal wieder her."
+  },
+  "openpgp.algorithms|label": {
+    "en": "6973a8aeaa30b96b",
+    "text": "Akzeptierte Algorithmen"
+  },
+  "openpgp.algorithms|description": {
+    "en": "7bf4b57c9c6e7d1f",
+    "text": "Die OpenPGP-Algorithmen, die ein Schlüssel verwenden darf, in der Reihenfolge der Bevorzugung. Zuerst die RFC-9980-Komposite: ML-DSA-65+Ed25519 und ML-DSA-87+Ed448 signieren, ML-KEM-768+X25519 und ML-KEM-1024+X448 verschlüsseln. Dann die klassischen Namen: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa auf nistP256, nistP384 und nistP521, rsaSign und rsaEncryptSign, x25519, x448, ecdh auf curve25519Legacy und denselben NIST-Kurven, und rsaEncrypt. Ein Name, der in dieser Liste fehlt, wird bei der Registrierung und bei der Prüfung abgelehnt (STS-OPENPGP-0004). SLH-DSA ist nicht implementiert. Der Standard nennt jeden davon."
+  },
+  "openpgp.pqcOnly|label": {
+    "en": "d3ff53ec011bbf1f",
+    "text": "Nur Post-Quanten-Schlüssel registrieren"
+  },
+  "openpgp.pqcOnly|description": {
+    "en": "a42ec597602f45d5",
+    "text": "Ein lässt einen neu registrierten Schlüssel einen Post-Quanten-Algorithmus verwenden, den openpgp.algorithms nennt: ML-DSA-65+Ed25519 oder ML-DSA-87+Ed448 für den Signierschlüssel, und ML-KEM-768+X25519 oder ML-KEM-1024+X448, wenn er einen Verschlüsselungsschlüssel hat. Es schränkt nur die Registrierung ein: ein bereits registrierter klassischer Schlüssel wird weiter geprüft und empfängt weiter Post. Kann nicht an sein, während openpgp.pqcAlongsideClassical an ist (STS-OPENPGP-0027). Standardmäßig aus."
+  },
+  "openpgp.pqcAlongsideClassical|label": {
+    "en": "57f71c1990eb46d9",
+    "text": "Post-Quanten-Schlüssel neben einem klassischen"
+  },
+  "openpgp.pqcAlongsideClassical|description": {
+    "en": "2b5f6cf2a07130e5",
+    "text": "Ein verlangt von einem neu registrierten Schlüssel sowohl einen Post-Quanten-Algorithmus als auch einen davon getrennten klassischen. Ein Kompositname wie ML-DSA-65+Ed25519 zählt nur als Post-Quanten, die klassische Hälfte ist also ein anderer Schlüssel, zum Beispiel ein Ed25519- oder X25519-Unterschlüssel daneben. Ein bereits registrierter Schlüssel bleibt, wie er ist. Kann nicht an sein, während openpgp.pqcOnly an ist (STS-OPENPGP-0027). Standardmäßig aus."
+  },
+  "pki.sshUserCaAlgorithms|label": {
+    "en": "1fa9bf9eedbabd99",
+    "text": "Algorithmen der SSH-Benutzer-CA"
+  },
+  "pki.sshUserCaAlgorithms|description": {
+    "en": "bdb54445a0279b8d",
+    "text": "Welche Algorithmen die Zertifizierungsstelle für SSH-Benutzerzertifikate verwenden darf, in der Reihenfolge der Bevorzugung. ssh-mldsa-65 ist ML-DSA-65 (FIPS 204) unter einem Leitungsnamen, den dieser Dienst definiert, weil OpenSSH keinen definiert: der öffentliche Schlüssel und die Signatur sind roh, in der Form, die ssh-ed25519 verwendet. Die OpenSSH-Zeile TrustedUserCAKeys, die dieser Dienst veröffentlicht, bleibt der erste klassische Algorithmus dieser Liste, oder ssh-ed25519, wenn die Liste nur ssh-mldsa-65 nennt. Ein Partner, der ML-DSA nicht versteht, vertraut dieser Zeile weiter. ssh-rsa (SHA-1) wird nicht angeboten. Die ML-DSA-Stelle wird nur angelegt, wenn diese Laufzeit den Schlüssel erzeugen kann; sonst bleiben die Zertifikate klassisch (STS-PKI-0290 wird aufgezeichnet und die klassische Stelle antwortet weiter)."
+  },
+  "pki.sshUserCaPqcOnly|label": {
+    "en": "74aae1308361ba58",
+    "text": "SSH-Benutzerzertifikate sind nur Post-Quanten"
+  },
+  "pki.sshUserCaPqcOnly|description": {
+    "en": "39b21e5b95f84da1",
+    "text": "Ein signiert ein neues SSH-Benutzerzertifikat durch die ML-DSA-Stelle, und nur wenn diese Stelle existiert. Die veröffentlichte TrustedUserCAKeys-Zeile bleibt der klassische Schlüssel, damit ein OpenSSH-Client, der ihr schon vertraut, keinen Algorithmus erhält, den er nicht lesen kann. Auf einer Laufzeit, die ML-DSA nicht erzeugen kann, bleibt das Zertifikat klassisch und die Anfrage schlägt nicht fehl. Bereits ausgestellte klassische Zertifikate werden weiter geprüft. Kann nicht an sein, während pki.sshUserCaPqcAlongsideClassical an ist (STS-PKI-0296). Standardmäßig aus."
+  },
+  "pki.sshUserCaPqcAlongsideClassical|label": {
+    "en": "c3201f8841200c32",
+    "text": "SSH-Benutzerzertifikate tragen auch ein Post-Quanten-Zertifikat"
+  },
+  "pki.sshUserCaPqcAlongsideClassical|description": {
+    "en": "b38eab63ec092b6c",
+    "text": "Ein stellt ein neues SSH-Benutzerzertifikat zweimal aus, wenn die ML-DSA-Stelle existiert: das klassische Zertifikat, das ein OpenSSH-Client verwendet, und ein ML-DSA-Zertifikat daneben. Kann nicht an sein, während pki.sshUserCaPqcOnly an ist (STS-PKI-0296). Standardmäßig aus. Ein Komposit ist kein Begriff, den OpenSSH hat; das klassische Zertifikat und das ML-DSA-Zertifikat sind zwei Signaturen, nicht eine Hybridsignatur."
   }
 }

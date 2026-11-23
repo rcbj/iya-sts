@@ -3,7 +3,7 @@
 **The Automatic Certificate Management Environment** (RFC 8555), with RFC 9773
 renewal information, RFC 8738's `ip` and RFC 8823's `email` identifier types,
 draft-ietf-acme-profiles and draft-ietf-acme-device-attest's
-`permanent-identifier` type, added 2026-09-13. `docs/v1.1.0/acme.md` is the user-facing
+`permanent-identifier` type, added 2026-09-13. `docs/v1.2.0/acme.md` is the user-facing
 half; this is why it is built the way it is.
 
 **It is one of three enrollment families** — ACME, EST (`est/`) and SCEP

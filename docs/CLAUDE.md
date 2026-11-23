@@ -6,7 +6,7 @@ The user-facing documentation, published as a GitHub Pages site by
 ## The versioned site (2026-11-17)
 
 **The site is versioned, one folder per release, and the pages being
-written are in `v1.1.0/`.** Every page name below (`error-codes.md`,
+written are in `v1.2.0/`.** Every page name below (`error-codes.md`,
 `openapi/`, `debugger/`, ...) is a path inside that folder. What stays at
 this root is the Jekyll machinery the versions share and nothing else:
 `_config.yml`, `_layouts/`, `_includes/`, `_data/`, `assets/main.scss`,
@@ -20,25 +20,30 @@ and `index.md`, the landing page that lists the versions.
   1.0.0's documentation is not something this repository makes after the
   release. `_data/navigation/v1-0-0.yml` is main's `navigation.yml` from
   the same commit, with only its header comment changed.
+* **`v1.1.0/` IS A FROZEN SNAPSHOT** of this folder at the `v1.1.0` tag
+  (13122f15e, which is main when 1.1.0 shipped). It is not edited,
+  regenerated or checked, for the same reason as `v1.0.0/`.
+  `_data/navigation/v1-1-0.yml` is that tag's sidebar.
 * **EVERY GENERATOR AND EVERY TEST TOUCHES THE LATEST FOLDER ONLY**
   (rcbj, 2026-11-17: deliberately simple, to be made cleverer later).
   `common/error_codes.js --docs`, `tests/tools/regenerate-openapi-pages.sh`,
   `tests/tools/regenerate-model-docs.sh` and `common/certificate_trust.ts`
-  write into `v1.1.0/`, and the tests that read a page read it there. Each
+  write into `v1.2.0/`, and the tests that read a page read it there. Each
   names the folder once, as a literal; there is no version-aware machinery.
 * **The service links to its OWN version's folder**:
   `common/web_doc_links.ts`'s `ORIGIN`, the footer (`common/web_footer.ts`)
   and the front door (`home/home.ts`) name
-  `https://rcbj.github.io/iya-sts/v1.1.0/`.
+  `https://rcbj.github.io/iya-sts/v1.2.0/`.
 * **The sidebar is version-aware.** `_includes/version.html` reads the
   version from the page's first path segment, against
   `_data/versions.yml` (newest first; the first row is the latest).
   `_includes/sidebar.html` draws that version's
   `_data/navigation/<nav>.yml` with every `url` prefixed by the folder, so
   a url in a navigation file is the page's address INSIDE its version
-  (`/configuration.html`), the API reference's `/api/` included. The data file is named `v1-1-0.yml`,
-  not `v1.1.0.yml`, because Jekyll drops the dots from a data file's name
-  when it makes the key. The header carries the switcher: the version
+  (`/configuration.html`), the API reference's `/api/` included. The latest's data file is named `v1-2-0.yml`,
+  not `v1.2.0.yml`, because Jekyll drops the dots from a data file's name
+  when it makes the key. The frozen versions keep `v1-1-0.yml` and
+  `v1-0-0.yml`. The header carries the switcher: the version
   read, and each other one linked to the same page when it has it and to
   its overview when it does not. A page of an older version opens with a
   line naming the latest (`_layouts/default.html`).
@@ -46,7 +51,7 @@ and `index.md`, the landing page that lists the versions.
 * **THE API REFERENCE IS PER VERSION TOO** (rcbj, 2026-11-17). TypeDoc
   is not committed: `pages.yml`'s `jsdoc` job generates one reference per
   row of `_data/versions.yml`, the latest from the commit being deployed
-  and every other from its row's `ref` (a release tag, `v1.0.0`), each
+  and every other from its row's `ref` (a release tag, `v1.1.0`, `v1.0.0`), each
   with THAT tree's own `run-jsdoc.sh`, and the build copies each to
   `/<folder>/api/`. `api/index.html` here is a redirect to the latest
   version's reference, so the address 1.0.0 published still answers.
@@ -60,16 +65,18 @@ and `index.md`, the landing page that lists the versions.
   hand edit; a real top-level page (`index.md`, `api/index.html`) is
   never overwritten.
 
-**Making the next release's snapshot** (when 1.1.0 ships and develop moves
-on): copy `v1.1.0/` to the new release's folder — or, if `v1.1.0/` is
-itself to become the frozen copy, `git mv` the current pages to the new
-folder and leave `v1.1.0/` as it is on main — add its row at the TOP of
-`_data/versions.yml` and its `_data/navigation/<nav>.yml`, and repoint
-every reference to the latest folder: `git grep -n 'docs/v1\.1\.0'` and
-`git grep -n 'iya-sts/v1\.1\.0'` find them all (generators, tests,
-`REUSE.toml`, the prose catalogs, the `CLAUDE.md` files, the README). A
-translated catalog changes only the path; its entry's `en` hash is
-updated to the new English, since the wording did not change.
+**Making the next release's snapshot** (when 1.2.0 ships and develop moves
+on): `git mv` the pages in `v1.2.0/` to the new release's folder and
+restore `v1.2.0/` from the `v1.2.0` tag, which is what this folder did for
+1.1.0. Add the new row at the TOP of `_data/versions.yml` and its
+`_data/navigation/<nav>.yml`, and repoint every reference to the latest
+folder: `git grep -n 'docs/v1\.2\.0'` and `git grep -n 'iya-sts/v1\.2\.0'`
+find them, and so does a path joined as `'docs', 'v1.2.0'` (generators,
+tests, `REUSE.toml`, the prose catalogs, the `CLAUDE.md` files, the
+README). A translated catalog changes only the path; its entry's `en`
+hash is updated to the new English, since the wording did not change.
+`REUSE.toml` keeps the MIT annotation of each frozen debugger chapter as
+well as the latest one.
 
 **The split with `CLAUDE.md` is by AUDIENCE, and it is the thing to get right
 when adding a page.** A `CLAUDE.md` answers "why is this code the way it is" for

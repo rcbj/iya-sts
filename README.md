@@ -59,7 +59,7 @@ One identity layer. Multiple protocols. Multiple trust relationships. Modern app
 iya-sts is built for organizations that don't want to replace their entire identity infrastructure just to build what's next.
 
 # OpenID Connect Certification
-<p align="left"><img src="docs/v1.1.0/oid-l-certification-mark-l-cmyk-150dpi-90mm.jpg" alt="IYA STS — Security Token Service"></p>
+<p align="left"><img src="docs/v1.2.0/oid-l-certification-mark-l-cmyk-150dpi-90mm.jpg" alt="IYA STS — Security Token Service"></p>
 
 **Iya-STS v1.0.0**, from Iya CyberSecurity Solutions, has achieved OpenID Connect Provider (OP) certification through the OpenID Foundation across all seven published OP conformance profiles and all four OpenID Connect logout profiles.
 
@@ -103,13 +103,13 @@ For independent verification, refer to the official OpenID Foundation certificat
 
 ## Architecture
 
-[![iya-sts architecture](docs/v1.1.0/architecture.svg)](docs/v1.1.0/architecture.svg)
+[![iya-sts architecture](docs/v1.2.0/architecture.svg)](docs/v1.2.0/architecture.svg)
 
 One front process owns every listener, and a request dispatcher hands work to
 two pools of worker threads (request and surface); one scheduler runs every
 periodic job. The protocol families and the hosted applications share one
 session model and one set of services over the embedded directory and the key
-material. [`docs/v1.1.0/architecture.md`](docs/v1.1.0/architecture.md) walks through each
+material. [`docs/v1.2.0/architecture.md`](docs/v1.2.0/architecture.md) walks through each
 layer. Each source directory has a `CLAUDE.md` with the maintainer's notes for
 the modules in it.
 
@@ -117,27 +117,27 @@ the modules in it.
 
 | Family | Major specifications | What it is |
 |---|---|---|
-| [OAuth 2.0 / OpenID Connect](docs/v1.1.0/oauth-oidc.md) | RFC 6749, OIDC Core 1.0, RFC 8414, RFC 7636, RFC 8693, RFC 9101, RFC 9126, RFC 9396, RFC 9068, RFC 7662/9701 | A full authorization server and OpenID provider, with discovery, registration, logout and CIBA. |
-| [OAuth security profiles](docs/v1.1.0/oauth-security.md) | RFC 9700, OAuth 2.1, RFC 9449 (DPoP), RFC 8705 (mTLS), RFC 9470, FAPI 1.0 / 2.0, JARM | Switchable compliance modes and sender-constrained tokens. |
-| [Assertion grants](docs/v1.1.0/jwt-assertions.md) | RFC 7521, RFC 7523, RFC 7522 | JWT and SAML assertions as client credentials and as authorization grants. |
-| [SAML 2.0](docs/v1.1.0/saml2-sso.md) | SAML 2.0 Core, Bindings, Profiles, Metadata | Web Browser SSO over Redirect, POST, SimpleSign and Artifact, with Single Logout. |
-| [SAML 1.1](docs/v1.1.0/saml11.md) | SAML 1.1 | Browser/POST and Browser/Artifact profiles and an attribute authority. |
-| [WS-Trust](docs/v1.1.0/ws-trust.md) | WS-Trust 1.0–1.4, WS-Security | A SOAP security token service: issue, renew, validate, cancel. |
-| [WS-Federation](docs/v1.1.0/ws-federation.md) | WS-Federation 1.2 | The passive requestor profile, with federation metadata. |
-| [Federation](docs/v1.1.0/federation.md) | SAML 2.0, SAML 1.1, WS-Fed, OIDC, OAuth 2.0 | Either end of a configured relationship with a foreign identity provider. |
-| [OpenID Federation](docs/v1.1.0/oidfed.md) | OpenID Federation 1.1 | Every realm a federation entity: trust chains, metadata policy, trust marks. |
-| [GNAP](docs/v1.1.0/gnap.md) | RFC 9635, RFC 9767, RFC 9421 | A key-proofed grant negotiation server issuing tokens in five formats. |
-| [Kerberos and SPNEGO](docs/v1.1.0/kerberos.md) | RFC 4120, RFC 4121, RFC 4178, RFC 4559, MS-KKDCP, MS-SFU | A KDC on TCP/UDP 88, a Kerberized service, and SPNEGO sign-in over HTTP. |
-| [LDAP](docs/v1.1.0/ldap.md) | RFC 4511 | The embedded directory on 389 and LDAPS 636 — the store for people, groups and applications. |
-| [SCIM](docs/v1.1.0/scim.md) | RFC 7642, RFC 7643, RFC 7644 | Provisioning into that same directory. |
-| [Authentication](docs/v1.1.0/authentication.md) | WebAuthn Level 3, RFC 6238, RFC 4226 | Passwords, security keys, one-time codes, recovery codes and emailed codes. |
-| [TLS / mutual TLS](docs/v1.1.0/tls.md) | RFC 8446, RFC 5280 | Client certificates on the main port, and certificate sign-in. |
-| [OpenID for Verifiable Credentials](docs/v1.1.0/oid4vci.md) | OpenID4VCI 1.0, OpenID4VP 1.0, SD-JWT VC, W3C DID Core, Token/Bitstring Status List | A credential issuer, a verifier, status lists and wallet sign-in. |
-| [Shared Signals](docs/v1.1.0/shared-signals.md) | OpenID SSF 1.0, CAEP, RISC, RFC 8417, RFC 8935/8936 | A security event transmitter, and a receiver of its own. |
-| [SPIFFE](docs/v1.1.0/spiffe.md) | SPIFFE, SPIRE Server API | Bundle endpoint, Workload API and SPIRE Server API per trust realm. |
-| [XACML](docs/v1.1.0/xacml.md) | XACML 3.0, ALFA | A policy decision point that decides this service's own issuance and access. |
-| [Certificate authority](docs/v1.1.0/pki.md) | RFC 5280, RFC 6960, RFC 8555, RFC 7030, RFC 8894 | A Root, an Intermediate per realm, CRLs and OCSP, and ACME, EST and SCEP enrollment. |
-| [Mail](docs/v1.1.0/mail.md) | SMTP, DKIM | Outbound mail for password reset, verification and security notices. |
+| [OAuth 2.0 / OpenID Connect](docs/v1.2.0/oauth-oidc.md) | RFC 6749, OIDC Core 1.0, RFC 8414, RFC 7636, RFC 8693, RFC 9101, RFC 9126, RFC 9396, RFC 9068, RFC 7662/9701 | A full authorization server and OpenID provider, with discovery, registration, logout and CIBA. |
+| [OAuth security profiles](docs/v1.2.0/oauth-security.md) | RFC 9700, OAuth 2.1, RFC 9449 (DPoP), RFC 8705 (mTLS), RFC 9470, FAPI 1.0 / 2.0, JARM | Switchable compliance modes and sender-constrained tokens. |
+| [Assertion grants](docs/v1.2.0/jwt-assertions.md) | RFC 7521, RFC 7523, RFC 7522 | JWT and SAML assertions as client credentials and as authorization grants. |
+| [SAML 2.0](docs/v1.2.0/saml2-sso.md) | SAML 2.0 Core, Bindings, Profiles, Metadata | Web Browser SSO over Redirect, POST, SimpleSign and Artifact, with Single Logout. |
+| [SAML 1.1](docs/v1.2.0/saml11.md) | SAML 1.1 | Browser/POST and Browser/Artifact profiles and an attribute authority. |
+| [WS-Trust](docs/v1.2.0/ws-trust.md) | WS-Trust 1.0–1.4, WS-Security | A SOAP security token service: issue, renew, validate, cancel. |
+| [WS-Federation](docs/v1.2.0/ws-federation.md) | WS-Federation 1.2 | The passive requestor profile, with federation metadata. |
+| [Federation](docs/v1.2.0/federation.md) | SAML 2.0, SAML 1.1, WS-Fed, OIDC, OAuth 2.0 | Either end of a configured relationship with a foreign identity provider. |
+| [OpenID Federation](docs/v1.2.0/oidfed.md) | OpenID Federation 1.1 | Every realm a federation entity: trust chains, metadata policy, trust marks. |
+| [GNAP](docs/v1.2.0/gnap.md) | RFC 9635, RFC 9767, RFC 9421 | A key-proofed grant negotiation server issuing tokens in five formats. |
+| [Kerberos and SPNEGO](docs/v1.2.0/kerberos.md) | RFC 4120, RFC 4121, RFC 4178, RFC 4559, MS-KKDCP, MS-SFU | A KDC on TCP/UDP 88, a Kerberized service, and SPNEGO sign-in over HTTP. |
+| [LDAP](docs/v1.2.0/ldap.md) | RFC 4511 | The embedded directory on 389 and LDAPS 636 — the store for people, groups and applications. |
+| [SCIM](docs/v1.2.0/scim.md) | RFC 7642, RFC 7643, RFC 7644 | Provisioning into that same directory. |
+| [Authentication](docs/v1.2.0/authentication.md) | WebAuthn Level 3, RFC 6238, RFC 4226 | Passwords, security keys, one-time codes, recovery codes and emailed codes. |
+| [TLS / mutual TLS](docs/v1.2.0/tls.md) | RFC 8446, RFC 5280 | Client certificates on the main port, and certificate sign-in. |
+| [OpenID for Verifiable Credentials](docs/v1.2.0/oid4vci.md) | OpenID4VCI 1.0, OpenID4VP 1.0, SD-JWT VC, W3C DID Core, Token/Bitstring Status List | A credential issuer, a verifier, status lists and wallet sign-in. |
+| [Shared Signals](docs/v1.2.0/shared-signals.md) | OpenID SSF 1.0, CAEP, RISC, RFC 8417, RFC 8935/8936 | A security event transmitter, and a receiver of its own. |
+| [SPIFFE](docs/v1.2.0/spiffe.md) | SPIFFE, SPIRE Server API | Bundle endpoint, Workload API and SPIRE Server API per trust realm. |
+| [XACML](docs/v1.2.0/xacml.md) | XACML 3.0, ALFA | A policy decision point that decides this service's own issuance and access. |
+| [Certificate authority](docs/v1.2.0/pki.md) | RFC 5280, RFC 6960, RFC 8555, RFC 7030, RFC 8894 | A Root, an Intermediate per realm, CRLs and OCSP, and ACME, EST and SCEP enrollment. |
+| [Mail](docs/v1.2.0/mail.md) | SMTP, DKIM | Outbound mail for password reset, verification and security notices. |
 
 `GET /admin/sts-metadata` lists every endpoint from the running router, with the
 coverage of each specification.
@@ -174,7 +174,7 @@ docker run --rm -p 8081:8081 ghcr.io/rcbj/iya-sts:latest
 `M.N.O` is the version the image reports (see *Versioning*), and the image's
 `org.opencontainers.image.revision` label names the commit it was built from.
 The published image is the same as one built here, in development mode by
-default; [`docs/v1.1.0/configuration.md`](docs/v1.1.0/configuration.md) covers product mode.
+default; [`docs/v1.2.0/configuration.md`](docs/v1.2.0/configuration.md) covers product mode.
 
 **The main port is HTTPS**, on a self-signed certificate generated at each
 start. Fetch it once and trust it from then on:
@@ -184,8 +184,8 @@ curl -k https://localhost:8081/tls/server-certificate > /tmp/sts.pem
 curl --cacert /tmp/sts.pem https://localhost:8081/healthcheck
 ```
 
-`STS_HTTPS=false` serves plain HTTP instead. [`docs/v1.1.0/tls.md`](docs/v1.1.0/tls.md) has
-the details, and [`docs/v1.1.0/getting-started.md`](docs/v1.1.0/getting-started.md) walks
+`STS_HTTPS=false` serves plain HTTP instead. [`docs/v1.2.0/tls.md`](docs/v1.2.0/tls.md) has
+the details, and [`docs/v1.2.0/getting-started.md`](docs/v1.2.0/getting-started.md) walks
 through a first sign-in.
 
 ### The ports
@@ -205,7 +205,7 @@ two sockets. Every one is settable.
 | **8181** | tcp | `spiffe.serverPort` / `STS_SPIFFE_SERVER_PORT` | The SPIRE Server API over gRPC, mutual TLS. |
 | *(off)* | tcp | `spiffe.brokerPort` / `STS_SPIFFE_BROKER_PORT` | The SPIFFE Broker API, mutual TLS. `0` by default. |
 | **8444** | tcp | `debugger.port` / `STS_DEBUGGER_PORT` | The embedded protocol debugger, for console administrators. |
-| **8446** | tcp | `cells.port` / `STS_CELL_PORT` | The inter-cell channel, mutual TLS 1.3, bound only when `cells.id` is set ([cells](docs/v1.1.0/cells.md)). A private address between cells, never published. |
+| **8446** | tcp | `cells.port` / `STS_CELL_PORT` | The inter-cell channel, mutual TLS 1.3, bound only when `cells.id` is set ([cells](docs/v1.2.0/cells.md)). A private address between cells, never published. |
 
 And two Unix domain sockets (mount the directory as a volume to reach them):
 
@@ -217,18 +217,18 @@ And two Unix domain sockets (mount the directory as a volume to reach them):
 A socket that fails to bind is reported and is not fatal. `docker-compose.yml`
 publishes 8081, 8082 and the KDC on 88 (TCP and UDP), with the acceptor
 holding `HTTP/localhost`, so `kinit` and a browser's SPNEGO sign-in work from
-the host ([the recipe](docs/v1.1.0/kerberos.md#signing-in-from-a-browser-on-the-base-installation));
+the host ([the recipe](docs/v1.2.0/kerberos.md#signing-in-from-a-browser-on-the-base-installation));
 a `docker run` needs `-p 88:88/tcp -p 88:88/udp`, and a client that can reach
 only 8081 uses `POST /KdcProxy`. The Kerberos-protected test service that was on
-8888 is the development companion's ([docker-compose](docs/v1.1.0/docker-compose.md)).
+8888 is the development companion's ([docker-compose](docs/v1.2.0/docker-compose.md)).
 
 ### Configuration
 
 `CONFIG_FILE` selects an appconfig file from `env/`, every setting also has an
 environment variable, and most can be changed while running from the console
-or `/admin-api`. [`docs/v1.1.0/configuration.md`](docs/v1.1.0/configuration.md) explains how a
+or `/admin-api`. [`docs/v1.2.0/configuration.md`](docs/v1.2.0/configuration.md) explains how a
 value is resolved and lists every setting. Deployment behind a load balancer is
-covered there too, and [`docs/v1.1.0/aws-cluster.md`](docs/v1.1.0/aws-cluster.md) covers the
+covered there too, and [`docs/v1.2.0/aws-cluster.md`](docs/v1.2.0/aws-cluster.md) covers the
 AWS cluster.
 
 ## Versioning

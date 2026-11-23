@@ -1424,8 +1424,8 @@
     "text": "AppID U2F heredados"
   },
   "webauthn.u2fAppIds|description": {
-    "en": "05b1b01773d86d5d",
-    "text": "Los AppID de FIDO U2F — las URL https con las que una parte de confianza U2F heredada registró sus llaves de seguridad — cuyas credenciales pueden importarse en las entradas de las personas y usarse para iniciar sesión aquí, separados por comas. **VACÍO, el valor predeterminado, es la función desactivada**: no se puede importar nada, ninguna ceremonia lleva la extensión appid o appidExclude (WebAuthn Level 3 secciones 10.1.1 y 10.1.2), y una llave importada no inicia sesión. Un AppID solo se usa en un RP ID con el que se relaciona: su host es el RP ID, o uno es sufijo del otro. Donde el host difiere del del origen, el navegador obtiene la URL del AppID en busca de una lista TrustedFacets que nombre este origen, que el servicio heredado debe seguir sirviendo. Una llave importada es solo un segundo factor: una llave U2F no puede verificar a la persona."
+    "en": "e17d7febccd7d076",
+    "text": "Los AppID de FIDO U2F — las URL https con las que una parte de confianza U2F heredada registró sus llaves de seguridad — cuyas credenciales pueden importarse en las entradas de las personas y usarse para iniciar sesión aquí, separados por comas. **VACÍO, el valor predeterminado, es la función desactivada**: no se puede importar nada, ninguna ceremonia lleva la extensión appid o appidExclude (WebAuthn Level 3 secciones 10.1.1 y 10.1.2), y una llave importada no inicia sesión. Un AppID solo se usa en un RP ID con el que se relaciona: su host es el RP ID, o uno es sufijo del otro. Donde el host difiere del del origen, el navegador obtiene la URL del AppID en busca de una lista TrustedFacets que nombre este origen, que el servicio heredado debe seguir sirviendo. Una llave importada es solo un segundo factor: una llave U2F no puede verificar a la persona. U2F es ECDSA sobre P-256 y no tiene algoritmo poscuántico."
   },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
@@ -3360,8 +3360,8 @@
     "text": "Clave OpenPGP RSA más pequeña"
   },
 "openpgp.minRsaBits|description": {
-    "en": "ad48516e31a7c45b",
-    "text": "La clave RSA más corta, principal o subclave, que acepta un registro OpenPGP. Se aceptan Ed25519, Ed448, ECDSA y ECDH sobre P-256, P-384 y P-521, X25519 y X448; DSA, ElGamal y las curvas Brainpool nunca (STS-OPENPGP-0004)."
+    "en": "cd16018c848ce538",
+    "text": "La clave RSA más corta, principal o subclave, que acepta un registro OpenPGP. Se aceptan Ed25519, Ed448, ECDSA y ECDH sobre P-256, P-384 y P-521, X25519 y X448, y los compuestos RFC 9980 ML-DSA-65+Ed25519, ML-DSA-87+Ed448, ML-KEM-768+X25519 y ML-KEM-1024+X448 cuando openpgp.algorithms los nombra. DSA, ElGamal, las curvas Brainpool y SLH-DSA nunca se aceptan (STS-OPENPGP-0004)."
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
@@ -9212,8 +9212,8 @@
     "text": "Tomar la huella del navegador al iniciar sesión"
   },
   "risk.fingerprinting|description": {
-    "en": "452ca90f0592fe8b",
-    "text": "DESACTIVADO POR DEFECTO (#62 P6). Activado, la pantalla de inicio de sesión ejecuta un script, FingerprintJS (MIT; no envía nada a ninguna parte), que calcula un identificador a partir de lo que expone el navegador y lo pone en el formulario; el servicio conserva solo un resumen con clave, y un navegador desde el que esta persona nunca ha iniciado sesión es la señal new-device (x2). Una huella de navegador es un dato personal: complete la evaluación de impacto en la privacidad de docs/v1.1.0/risk-scoring.md, e informe a las personas que inician sesión, antes de activarlo. Por dominio, como todo ajuste."
+    "en": "c34ba5805bddbb8b",
+    "text": "DESACTIVADO POR DEFECTO (#62 P6). Activado, la pantalla de inicio de sesión ejecuta un script, FingerprintJS (MIT; no envía nada a ninguna parte), que calcula un identificador a partir de lo que expone el navegador y lo pone en el formulario; el servicio conserva solo un resumen con clave, y un navegador desde el que esta persona nunca ha iniciado sesión es la señal new-device (x2). Una huella de navegador es un dato personal: complete la evaluación de impacto en la privacidad de docs/v1.2.0/risk-scoring.md, e informe a las personas que inician sesión, antes de activarlo. Por dominio, como todo ajuste."
   },
   "risk.breachCheck|label": {
     "en": "8b4443cd88527e75",
@@ -11640,8 +11640,8 @@
     "text": "Dirección del remitente"
   },
   "mail.from|description": {
-    "en": "b1da52c40fbad767",
-    "text": "La dirección desde la que se envía cada mensaje. Vacío significa `no-reply@` el dominio DNS del dominio. El proveedor debe permitir enviar con ella: una identidad verificada en SES, una dirección MailFrom de un dominio conectado en Azure, el buzón suplantado (o uno de sus alias de envío) para Gmail — y SPF, DKIM y DMARC para su dominio son el tema de docs/v1.1.0/mail.md."
+    "en": "a8b259e6c1037325",
+    "text": "La dirección desde la que se envía cada mensaje. Vacío significa `no-reply@` el dominio DNS del dominio. El proveedor debe permitir enviar con ella: una identidad verificada en SES, una dirección MailFrom de un dominio conectado en Azure, el buzón suplantado (o uno de sus alias de envío) para Gmail — y SPF, DKIM y DMARC para su dominio son el tema de docs/v1.2.0/mail.md."
   },
   "mail.fromName|label": {
     "en": "54fc2703a4957936",
@@ -11776,8 +11776,8 @@
     "text": "Algoritmo DKIM"
   },
   "mail.dkimAlgorithm|description": {
-    "en": "62ed500aeff2bc8a",
-    "text": "`rsa-sha256` (RFC 6376; una clave de 2048 bits o más, según RFC 8301) o `ed25519-sha256` (RFC 8463). Muchos receptores todavía solo verifican RSA, así que un dominio que pasa a Ed25519 publica ambas y firma dos veces en otros sitios. DKIM aún no tiene ningún algoritmo poscuántico registrado; docs/v1.1.0/mail.md lo indica."
+    "en": "0d88e4862621b8df",
+    "text": "`rsa-sha256` (RFC 6376; una clave de 2048 bits o más, según RFC 8301) o `ed25519-sha256` (RFC 8463). Muchos receptores todavía solo verifican RSA, así que un dominio que pasa a Ed25519 publica ambas y firma dos veces en otros sitios. DKIM aún no tiene ningún algoritmo poscuántico registrado; docs/v1.2.0/mail.md lo indica."
   },
   "mail.dkimKeyProvider|label": {
     "en": "7e4fc266794b62d9",
@@ -12008,16 +12008,16 @@
     "text": "El restablecimiento de autoservicio requiere una dirección verificada"
   },
   "mail.resetRequiresVerifiedAddress|description": {
-    "en": "81dfbb5f1c67cc3c",
-    "text": "Envía un enlace de restablecimiento de autoservicio solo a una dirección que la persona haya VERIFICADO (un enlace que siguió desde ella). Activado por defecto, porque el enlace es la cuenta: una dirección que escribió una importación o una fuente de aprovisionamiento, y que nadie demostró nunca, no es un lugar al que enviarlo. **Desactivarlo es un ajuste más débil**, para un directorio cuyas direcciones se consideran fiables tal como están escritas; docs/v1.1.0/mail.md incluye la advertencia."
+    "en": "af24c1ddaf83c884",
+    "text": "Envía un enlace de restablecimiento de autoservicio solo a una dirección que la persona haya VERIFICADO (un enlace que siguió desde ella). Activado por defecto, porque el enlace es la cuenta: una dirección que escribió una importación o una fuente de aprovisionamiento, y que nadie demostró nunca, no es un lugar al que enviarlo. **Desactivarlo es un ajuste más débil**, para un directorio cuyas direcciones se consideran fiables tal como están escritas; docs/v1.2.0/mail.md incluye la advertencia."
   },
   "mail.resetRequiresBackupCode|label": {
     "en": "addd650807ec39b2",
     "text": "El restablecimiento de autoservicio requiere un código de recuperación"
   },
   "mail.resetRequiresBackupCode|description": {
-    "en": "2d8885388b97eb61",
-    "text": "El formulario de contraseña olvidada pide el NOMBRE DE USUARIO, la DIRECCIÓN verificada de la cuenta y uno de los CÓDIGOS DE RECUPERACIÓN de la persona, y envía un enlace de restablecimiento solo cuando los tres son correctos — en ese momento el código se consume. Cada combinación se responde con la misma frase. **Desactivarlo es un ajuste más débil**: el formulario vuelve a tener un solo campo (un nombre de usuario o la dirección), y un restablecimiento es entonces tan fuerte como el buzón al que va — lo que NIST SP 800-63B-4 permite para la recuperación y sobre lo que advierte docs/v1.1.0/mail.md. Una persona que no tiene códigos de recuperación no puede restablecer su contraseña por sí misma mientras esto esté activado; un administrador sí puede."
+    "en": "f0eccb7bb4055b20",
+    "text": "El formulario de contraseña olvidada pide el NOMBRE DE USUARIO, la DIRECCIÓN verificada de la cuenta y uno de los CÓDIGOS DE RECUPERACIÓN de la persona, y envía un enlace de restablecimiento solo cuando los tres son correctos — en ese momento el código se consume. Cada combinación se responde con la misma frase. **Desactivarlo es un ajuste más débil**: el formulario vuelve a tener un solo campo (un nombre de usuario o la dirección), y un restablecimiento es entonces tan fuerte como el buzón al que va — lo que NIST SP 800-63B-4 permite para la recuperación y sobre lo que advierte docs/v1.2.0/mail.md. Una persona que no tiene códigos de recuperación no puede restablecer su contraseña por sí misma mientras esto esté activado; un administrador sí puede."
   },
   "mail.verificationTtlMinutes|label": {
     "en": "49c2a4b66ba8a448",
@@ -13026,5 +13026,53 @@
   "roles.pivKeyRecoveryGroup|description": {
     "en": "801616eea12559a5",
     "text": "El grupo del directorio cuyos miembros tienen el rol integrado PIV_KEY_RECOVERY (#1955), que la política de control de acceso exige, junto con Admin Write, para recuperar la clave piv-key-management en custodia de otra persona (piv.keyEscrow). Esa clave descifra el correo de la persona, por lo que nadie tiene el rol hasta que un administrador lo añade al grupo. Vacío no permite a nadie recuperar la clave de otra persona; el titular recupera la suya en el portal."
+  },
+  "openpgp.algorithms|label": {
+    "en": "6973a8aeaa30b96b",
+    "text": "Algoritmos aceptados"
+  },
+  "openpgp.algorithms|description": {
+    "en": "7bf4b57c9c6e7d1f",
+    "text": "Los algoritmos OpenPGP que una clave puede usar, por orden de preferencia. Primero los compuestos RFC 9980: ML-DSA-65+Ed25519 y ML-DSA-87+Ed448 firman, ML-KEM-768+X25519 y ML-KEM-1024+X448 cifran. Después los nombres clásicos: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa en nistP256, nistP384 y nistP521, rsaSign y rsaEncryptSign, x25519, x448, ecdh en curve25519Legacy y las mismas curvas NIST, y rsaEncrypt. Un nombre ausente de esta lista se rechaza en el registro y en la verificación (STS-OPENPGP-0004). SLH-DSA no está implementado. El valor predeterminado nombra cada uno de ellos."
+  },
+  "openpgp.pqcOnly|label": {
+    "en": "d3ff53ec011bbf1f",
+    "text": "Registrar solo claves poscuánticas"
+  },
+  "openpgp.pqcOnly|description": {
+    "en": "a42ec597602f45d5",
+    "text": "Activado, una clave recién registrada debe usar un algoritmo poscuántico que nombre openpgp.algorithms: ML-DSA-65+Ed25519 o ML-DSA-87+Ed448 para la clave de firma, y ML-KEM-768+X25519 o ML-KEM-1024+X448 cuando tenga una clave de cifrado. Solo restringe el registro: una clave clásica ya registrada sigue verificándose y sigue recibiendo correo. No puede estar activado mientras lo esté openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Desactivado de manera predeterminada."
+  },
+  "openpgp.pqcAlongsideClassical|label": {
+    "en": "57f71c1990eb46d9",
+    "text": "Clave poscuántica junto a una clásica"
+  },
+  "openpgp.pqcAlongsideClassical|description": {
+    "en": "2b5f6cf2a07130e5",
+    "text": "Activado, una clave recién registrada debe llevar a la vez un algoritmo poscuántico y uno clásico distinto. Un nombre compuesto como ML-DSA-65+Ed25519 cuenta solo como poscuántico, así que la mitad clásica es otra clave, por ejemplo una subclave Ed25519 o X25519 junto a ella. Una clave ya registrada se deja como está. No puede estar activado mientras lo esté openpgp.pqcOnly (STS-OPENPGP-0027). Desactivado de manera predeterminada."
+  },
+  "pki.sshUserCaAlgorithms|label": {
+    "en": "1fa9bf9eedbabd99",
+    "text": "Algoritmos de la CA de usuario SSH"
+  },
+  "pki.sshUserCaAlgorithms|description": {
+    "en": "bdb54445a0279b8d",
+    "text": "Qué algoritmos puede usar la autoridad de certificados de usuario SSH, por orden de preferencia. ssh-mldsa-65 es ML-DSA-65 (FIPS 204) bajo un nombre de cable que define este servicio, porque OpenSSH no define ninguno: la clave pública y la firma son crudas, con la forma que usa ssh-ed25519. La línea OpenSSH TrustedUserCAKeys que publica este servicio sigue siendo el primer algoritmo clásico de esta lista, o ssh-ed25519 cuando la lista solo nombra ssh-mldsa-65. Un par que no entiende ML-DSA sigue confiando en esa línea. ssh-rsa (SHA-1) no se ofrece. La autoridad ML-DSA se crea solo cuando este entorno puede generar la clave; si no, los certificados siguen siendo clásicos (se registra STS-PKI-0290 y la autoridad clásica sigue respondiendo)."
+  },
+  "pki.sshUserCaPqcOnly|label": {
+    "en": "74aae1308361ba58",
+    "text": "Los certificados de usuario SSH son solo poscuánticos"
+  },
+  "pki.sshUserCaPqcOnly|description": {
+    "en": "39b21e5b95f84da1",
+    "text": "Activado, un certificado de usuario SSH nuevo lo firma la autoridad ML-DSA, y solo cuando esa autoridad existe. La línea TrustedUserCAKeys publicada sigue siendo la clave clásica, para que un cliente OpenSSH que ya confía en ella no reciba un algoritmo que no puede analizar. En un entorno que no puede generar ML-DSA, el certificado sigue siendo clásico y la solicitud no falla. Los certificados clásicos ya emitidos siguen verificándose. No puede estar activado mientras lo esté pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Desactivado de manera predeterminada."
+  },
+  "pki.sshUserCaPqcAlongsideClassical|label": {
+    "en": "c3201f8841200c32",
+    "text": "Los certificados de usuario SSH llevan también un certificado poscuántico"
+  },
+  "pki.sshUserCaPqcAlongsideClassical|description": {
+    "en": "b38eab63ec092b6c",
+    "text": "Activado, un certificado de usuario SSH nuevo se emite dos veces cuando existe la autoridad ML-DSA: el certificado clásico, que es el que usa un cliente OpenSSH, y un certificado ML-DSA junto a él. No puede estar activado mientras lo esté pki.sshUserCaPqcOnly (STS-PKI-0296). Desactivado de manera predeterminada. Un compuesto no es un concepto que tenga OpenSSH; el certificado clásico y el certificado ML-DSA son dos firmas, no una firma híbrida."
   }
 }

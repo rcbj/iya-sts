@@ -207,7 +207,7 @@ const MICROSOFT_CONSUMERS_TENANT = '9188040d-6c67-4c5b-b112-36a304b66dad';
 // endpoint (Discord), and plain OAuth 2.0 with the address on a second one
 // (GitHub). The endpoint values are each provider's published ones; the
 // feasibility record for every platform the ticket names is
-// `docs/v1.1.0/federation-consumer-providers.md`.
+// `docs/v1.2.0/federation-consumer-providers.md`.
 // ---------------------------------------------------------------------------
 const PROFILES: Profile[] = [
   { id: 'google', label: 'Google', protocol: 'oidc', generic: false,
@@ -909,7 +909,7 @@ const PROFILES: Profile[] = [
           'the person has neither.' },
   // -------------------------------------------------------------------------
   // #746's TIER 2 (2026-11-05): those that publish a way to sign a person in.
-  // `docs/v1.1.0/federation-consumer-providers.md` records the rest and why.
+  // `docs/v1.2.0/federation-consumer-providers.md` records the rest and why.
   // -------------------------------------------------------------------------
   { id: 'codeberg', label: 'Codeberg', protocol: 'oidc', generic: false,
     docs: 'https://forgejo.org/docs/latest/user/oauth2-provider/',

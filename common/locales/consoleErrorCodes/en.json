@@ -32,5 +32,5 @@
   "th.whatFailed": "What failed",
   "th.clientSees": "Client sees",
   "codes.none": "Nothing matches.",
-  "note.table": "The table is <code>common/error_codes.js</code> and this page has no control: a code is never renumbered or reused, because it ends up in alert rules and saved searches, and a condition that stops existing keeps its row marked retired. The same table is published as <code>docs/v1.1.0/error-codes.md</code>, generated from the source, and this list is at <code>GET /admin-api/error-codes</code> with the same parameters. Paging is <code>?page=</code> and <code>?per=</code> (at most {max} rows a page)."
+  "note.table": "The table is <code>common/error_codes.js</code> and this page has no control: a code is never renumbered or reused, because it ends up in alert rules and saved searches, and a condition that stops existing keeps its row marked retired. The same table is published as <code>docs/v1.2.0/error-codes.md</code>, generated from the source, and this list is at <code>GET /admin-api/error-codes</code> with the same parameters. Paging is <code>?page=</code> and <code>?per=</code> (at most {max} rows a page)."
 }

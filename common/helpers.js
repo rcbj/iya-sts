@@ -1321,6 +1321,8 @@ function hsmKeyReport() {
     place(one.publicJwk && one.publicJwk.crv && one.alg === 'EdDSA'
       ? 'EdDSA (' + one.publicJwk.crv + ')' : one.alg, one.privateKey);
   });
+  // The published post-quantum set stays in software even when the token
+  // offers CKM_ML_DSA. An ML-DSA key in the HSM is generated on its own.
   (keys.pqKeys || []).forEach(function (one) {
     inSoftware.push(one.alg);
   });

@@ -15,7 +15,8 @@
 //
 //   { vendor, serial, model, firmware, formFactor,
 //     holder         the entryUUID of the person who holds it,
-//     credentials:   [{ kind, ref, holder, family?, addedAt, evidence }],
+//     credentials:   [{ kind, ref, holder, family?, label?, algorithm?,
+//                       addedAt, evidence }],
 //     evidence:      [{ source, at, format?, aaguid?, keyId?, detail? }],
 //     status:        'active' | 'lost',
 //     lost:          { at, by, via, retired: [...] } | null,
@@ -246,6 +247,9 @@ interface TokenCredential {
   holder: string;
   family?: string;
   label?: string;
+  // The signature algorithm the door named (an ML-DSA passkey's COSE
+  // name). Absent when the door did not name one.
+  algorithm?: string;
   addedAt: string;
   evidence: { source: string; hardware: boolean; smartCard: boolean;
               // A PIV slot's key's policies, from its attestation (#1955 P2):
@@ -451,7 +455,7 @@ class HardwareTokens {
   // -------------------------------------------------------------------------
   // THE ONE WRITER (header). `spec`:
   //   { username, vendor, serial, model?, firmware?, formFactor?,
-  //     credential: { kind, ref, family?, label? },
+  //     credential: { kind, ref, family?, label?, algorithm? },
   //     evidence: { source, format?, aaguid?, keyId?, smartCard?, detail? },
   //     actor?, via? }
   // A lost token registered again starts a new life as active: what the
@@ -551,6 +555,14 @@ class HardwareTokens {
     if (cred.label) {
       entry.label = HardwareTokens.text(cred.label);
     }
+    // Only what the door named. A FIDO key's COSE algorithm is one; a
+    // credential with no signature algorithm is not given one.
+    if (cred.algorithm) {
+      const algorithm = HardwareTokens.text(cred.algorithm);
+      if (algorithm) {
+        entry.algorithm = algorithm;
+      }
+    }
     base.credentials = (base.credentials || []).filter(function (c: Json) {
       return !(c.kind === kind && c.ref === ref);
     }).concat([entry]).slice(-MAX_CREDENTIALS);
@@ -596,7 +608,7 @@ class HardwareTokens {
    * Adds a non-evidence credential to an active token its holder names.
    *
    * @param spec - `key`, `username`, `credential: { kind, ref, family?,
-   *   label? }`, `actor`
+   *   label?, algorithm? }`, `actor`
    * @returns `{ ok, token }`, or a refusal
    */
   attachCredential(spec: Json): Json {
@@ -630,6 +642,12 @@ class HardwareTokens {
     }
     if (cred.label) {
       entry.label = HardwareTokens.text(cred.label);
+    }
+    if (cred.algorithm) {
+      const algorithm = HardwareTokens.text(cred.algorithm);
+      if (algorithm) {
+        entry.algorithm = algorithm;
+      }
     }
     next.credentials = (next.credentials || []).filter(function (c: Json) {
       return !(c.kind === kind && c.ref === ref);
@@ -667,12 +685,18 @@ class HardwareTokens {
       log.debug("Leaving HardwareTokens.noteFidoKey(). No attested serial.");
       return null;
     }
+    let algorithm = '';
+    if (key && (key.algorithm || key.coseAlg)) {
+      const credentials = require('./credentials');
+      algorithm = String(credentials.keyAlgorithm(key).name || '');
+    }
     const out = this.recordAttested({
       username: username, vendor: HardwareTokens.fidoVendor(att),
       serial: String(att.deviceSerial), model: String(att.model || ''),
       formFactor: HardwareTokens.formFactorOf(key),
       credential: { kind: 'fido', ref: String(key.credentialId || ''),
-                    label: String(key.label || '') },
+                    label: String(key.label || ''),
+                    algorithm: algorithm },
       evidence: { source: 'fido-enterprise-attestation',
                   format: String(att.format || ''),
                   aaguid: String(att.aaguid || key.aaguid || ''),
@@ -1325,13 +1349,19 @@ class HardwareTokens {
       credentials: (r.credentials || []).filter(function (c: Json) {
         return !forHolder || !c.holder || c.holder === forHolder;
       }).map(function (c: Json) {
-        return { kind: String(c.kind), ref: String(c.ref),
-                 label: String(c.label || ''),
-                 holder: self.nameOfHolder(String(c.holder || '')),
-                 addedAt: String(c.addedAt || ''),
-                 source: String((c.evidence || {}).source || ''),
-                 smartCard: !!(c.evidence && c.evidence.smartCard),
-                 retired: c.retired ? !!c.retired.ok : false };
+        const one: Json = {
+          kind: String(c.kind), ref: String(c.ref),
+          label: String(c.label || ''),
+          holder: self.nameOfHolder(String(c.holder || '')),
+          addedAt: String(c.addedAt || ''),
+          source: String((c.evidence || {}).source || ''),
+          smartCard: !!(c.evidence && c.evidence.smartCard),
+          retired: c.retired ? !!c.retired.ok : false
+        };
+        if (c.algorithm) {
+          one.algorithm = String(c.algorithm);
+        }
+        return one;
       })
     };
     log.debug("Leaving HardwareTokens.view().");

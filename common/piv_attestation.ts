@@ -30,7 +30,7 @@
 //      AttestationStatementSet is empty — so the type is THIS SERVICE'S
 //      CHOICE, Yubico's own OID for "attestation certificate" under its PIV
 //      arc (developers.yubico.com/PIV/Introduction/Yubico_Attestation_OID),
-//      and `docs/v1.1.0/hardware-tokens.md` says so to a client author. It
+//      and `docs/v1.2.0/hardware-tokens.md` says so to a client author. It
 //      reaches EST, SCEP and ACME alike, because all three read a request
 //      through `cert_enrollment.parseCsr()`, which already lifts the
 //      attribute out (#164 phase 2's TPM statement uses the same bundle);

@@ -480,12 +480,12 @@
     "text": "full：覆盖授权服务器，并且默认关闭——配置文件 oauth2.fapi=1-advanced（按领域设置，或命名授权服务器的 fapi 成员），即 Baseline 再加更多要求（#139）：按值或按引用传递的 JWS 签名请求对象（第 1 项），exp 和 nbf 在 60 分钟内，aud 为颁发者（第 13、15、17 项）；response_type 为 code id_token，或 code 配 JARM（第 2 项）；ID 令牌作为带 s_hash 的分离签名（5.2.2.1）；仅限受发送方约束的访问令牌——mTLS，或 DPoP（除非设置了 oauth2.fapiRequireMtls）——并公布 mtls_endpoint_aliases（第 5、6 项）；tls_client_auth、self_signed_tls_client_auth 或 private_key_jwt，且不允许公共客户端（第 14、16 项）；推送的请求需 PKCE S256（第 18 项，并按该节所述放宽 Baseline 第 7 项）；双向的每个签名都使用 PS256 或 ES256，绝不使用 RSA1_5（8.6），本服务器默认以 PS256 签名。控制台、门户和调试器均符合要求：推送到 PAR 的签名请求对象、JARM 以及绑定令牌。未覆盖：一致性测试套件（#176）。"
   },
   "stsmetadata.specs.fapi2-security.coverage": {
-    "en": "f7a75985a1885edb",
-    "text": "full：覆盖授权服务器，并且默认关闭——配置文件 oauth2.fapi=2-security（按领域设置，或命名授权服务器的 fapi 成员），一个独立的配置文件（#140）：开启 RFC 9700 模式；仅限机密客户端，通过 mTLS 或 private_key_jwt，断言的 aud 为字符串形式的颁发者（5.3.2.1 第 3、6、8 项）；仅限受发送方约束的令牌，通过 mTLS 或 DPoP（第 4-5 项）；除非 oauth2.refreshTokenRotation 强制，否则不轮换刷新令牌（第 9 项）；授权码有效期 60 秒（第 11 项）；iat 或 nbf 超前 60 秒以上会被拒绝（第 13 项）；仅限 code，需要 PAR 并对客户端进行身份验证，PKCE S256，推送 redirect_uri，request_uri 短于 600 秒（5.3.2.2）；PS256、ES256 或 EdDSA，RSA 2048 位和 EC 224 位（5.4.1）。TLS（5.2）：BCP 195 的套件是每个监听器的默认值，优先 TLS 1.3。DPoP nonce 仍为可选，同意遵循普通规则。攻击者模型没有规范性要求；docs/v1.1.0/oauth-security.md 将每类攻击者对应到阻止它的措施。控制台、门户和调试器均符合要求。未覆盖：一致性测试套件（#176）。"
+    "en": "01028f08fd980cb6",
+    "text": "full：覆盖授权服务器，并且默认关闭——配置文件 oauth2.fapi=2-security（按领域设置，或命名授权服务器的 fapi 成员），一个独立的配置文件（#140）：开启 RFC 9700 模式；仅限机密客户端，通过 mTLS 或 private_key_jwt，断言的 aud 为字符串形式的颁发者（5.3.2.1 第 3、6、8 项）；仅限受发送方约束的令牌，通过 mTLS 或 DPoP（第 4-5 项）；除非 oauth2.refreshTokenRotation 强制，否则不轮换刷新令牌（第 9 项）；授权码有效期 60 秒（第 11 项）；iat 或 nbf 超前 60 秒以上会被拒绝（第 13 项）；仅限 code，需要 PAR 并对客户端进行身份验证，PKCE S256，推送 redirect_uri，request_uri 短于 600 秒（5.3.2.2）；PS256、ES256 或 EdDSA，RSA 2048 位和 EC 224 位（5.4.1）。TLS（5.2）：BCP 195 的套件是每个监听器的默认值，优先 TLS 1.3。DPoP nonce 仍为可选，同意遵循普通规则。攻击者模型没有规范性要求；docs/v1.2.0/oauth-security.md 将每类攻击者对应到阻止它的措施。控制台、门户和调试器均符合要求。未覆盖：一致性测试套件（#176）。"
   },
   "stsmetadata.specs.fapi2-message-signing.coverage": {
-    "en": "35f9077fddbb7a8e",
-    "text": "full：覆盖授权服务器，并且默认关闭——配置文件 oauth2.fapi=2-message-signing，即安全配置文件加上全部三个组件（#141，rcbj 的决定）：PAR 上必须提供 JAR 签名的请求对象，aud 为颁发者，exp 和 nbf 在 60 分钟内（5.3）；必须使用 JARM，iss 位于 JWT 内（5.4）；RFC 9701 内省响应需签名（5.5）。第 5.2 节的不可否认性是指导性内容，在 docs/v1.1.0/oauth-security.md 中作答。控制台、门户和调试器均符合要求。RFC 9421 HTTP 签名不属于最终规范：它们是 FAPI 2.0 Http Signatures，即下一条（#178）。"
+    "en": "8aff442a2af8fd53",
+    "text": "full：覆盖授权服务器，并且默认关闭——配置文件 oauth2.fapi=2-message-signing，即安全配置文件加上全部三个组件（#141，rcbj 的决定）：PAR 上必须提供 JAR 签名的请求对象，aud 为颁发者，exp 和 nbf 在 60 分钟内（5.3）；必须使用 JARM，iss 位于 JWT 内（5.4）；RFC 9701 内省响应需签名（5.5）。第 5.2 节的不可否认性是指导性内容，在 docs/v1.2.0/oauth-security.md 中作答。控制台、门户和调试器均符合要求。RFC 9421 HTTP 签名不属于最终规范：它们是 FAPI 2.0 Http Signatures，即下一条（#178）。"
   },
   "stsmetadata.specs.fapi2-http-signatures.coverage": {
     "en": "84f23a449916fdc1",
@@ -760,16 +760,16 @@
     "text": "partial：签名，relaxed/relaxed，使用至少 2048 位密钥的 rsa-sha256（RFC 8301），在 common/crypto.js 中实现，作用于配置了域时 SMTP 传输发送的内容。缺失：simple 规范化、l= 以及对他人所发邮件的验证——本服务不接收任何邮件。DKIM 尚未注册任何后量子算法。"
   },
   "stsmetadata.specs.rfc9580.coverage": {
-    "en": "086f96d364365827",
-    "text": "partial：读取 v6 和（RFC 4880）v4 可传输公钥，验证由其签名密钥作出的明文签名，并将消息加密至其加密密钥，均通过 openpgp.js 完成（common/crypto.js 第 19 节）。接受 Ed25519、Ed448、NIST 曲线上的 ECDSA 和 ECDH、X25519、X448 以及长度为 openpgp.minRsaBits 的 RSA；拒绝 DSA、ElGamal 和 Brainpool。缺少：签名、解密、密钥环、密钥服务器。"
+    "en": "a2930bdb8ffe747d",
+    "text": "partial：读取 v6 和（RFC 4880）v4 可传输公钥，验证由其签名密钥作出的明文签名，并将消息加密至其加密密钥，经典算法通过 openpgp.js 完成。RFC 9980 复合密钥在此读取（见 rfc9980）。接受 Ed25519、Ed448、NIST 曲线上的 ECDSA 和 ECDH、X25519、X448 以及长度为 openpgp.minRsaBits 的 RSA；拒绝 DSA、ElGamal 和 Brainpool。缺少：签名、解密、密钥环、密钥服务器。"
   },
   "stsmetadata.specs.rfc3156.coverage": {
     "en": "aa799b14a54ace0f",
     "text": "partial：multipart/encrypted，包含 application/pgp-encrypted 版本部分和封装后的消息，真实邮件头受保护地置于其中。缺少：multipart/signed——本服务用 DKIM 而非 OpenPGP 为邮件签名。"
   },
   "stsmetadata.specs.rfc8551.coverage": {
-    "en": "a07a1e013186f3d4",
-    "text": "partial：application/pkcs7-mime enveloped-data，即采用 AES-256-CBC 内容加密、以 RSAES-OAEP（SHA-256）或 ECDH 密钥协商为接收者的 CMS EnvelopedData，加密至本人的 userSMIMECertificate。缺少：signed-data、AuthEnvelopedData（AES-GCM）、解密。"
+    "en": "5c1b77d839bd8cc2",
+    "text": "partial：application/pkcs7-mime enveloped-data，即采用 AES-256-CBC 内容加密的 CMS EnvelopedData。经典证书使用 RSAES-OAEP（SHA-256）或 ECDH。ML-KEM 证书（RFC 9935）使用 KEMRecipientInfo（RFC 9629）：HKDF-SHA-256 与 AES-Wrap。无法封装的运行时不会改用经典算法发送该消息。缺少：signed-data、AuthEnvelopedData（AES-GCM）、解密。"
   },
   "stsmetadata.specs.wkd.coverage": {
     "en": "e1c6b9651ff1e58c",
@@ -2280,8 +2280,8 @@
     "text": "基于规范行为的非规范接口。以 JSON 形式提供的已用断言历史：本领域接受过且尚未过期的每个 RFC 7523 和 RFC 7522 断言，以及该历史保存在哪里（持久化，跨进程原子操作）、相对于 oauth2.assertionReplayCacheSize 的实时计数，可按文本、格式、用途和状态过滤，并通过 ?page= 和 ?per= 分页。任何行中都不包含断言或凭据。只读。对应 GET /admin/used-assertions。"
   },
   "stsmetadata.endpoints./admin-api/error-codes.what": {
-    "en": "6a8ddafe4157455e",
-    "text": "非规范。本服务可能产生的每种失败情况的中央表，STS-<SUBSYSTEM>-<NNNN>，以 JSON 形式提供：每个代码及其子系统、什么失败了、以客户端自身协议的词汇告诉客户端什么，以及本领域保存的审计日志中有多少行带有该代码——可按子系统、文本和 ?seen=1 过滤，并通过 ?page= 和 ?per= 分页。代码从不发送给客户端：它只出现在审计记录和日志行中。只读——该表就是源代码。对应 GET /admin/error-codes；同一张表即 docs/v1.1.0/error-codes.md。"
+    "en": "d4977def3313bbf1",
+    "text": "非规范。本服务可能产生的每种失败情况的中央表，STS-<SUBSYSTEM>-<NNNN>，以 JSON 形式提供：每个代码及其子系统、什么失败了、以客户端自身协议的词汇告诉客户端什么，以及本领域保存的审计日志中有多少行带有该代码——可按子系统、文本和 ?seen=1 过滤，并通过 ?page= 和 ?per= 分页。代码从不发送给客户端：它只出现在审计记录和日志行中。只读——该表就是源代码。对应 GET /admin/error-codes；同一张表即 docs/v1.2.0/error-codes.md。"
   },
   "stsmetadata.endpoints./admin-api/audit-export.what": {
     "en": "c975b83632fa12f4",
@@ -4198,5 +4198,9 @@
   "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
     "en": "1716521c9c5e119d",
     "text": "NON-SPEC (#1955)。某人的托管 piv-key-management 证书（piv.keyEscrow）：序列号、主体、有效期以及每个证书是否已被吊销。绝不包含密钥。与 GET /admin/hardware-tokens 对应。"
+  },
+  "stsmetadata.specs.rfc9980.coverage": {
+    "en": "5feb46765c8bc465",
+    "text": "partial：登记时以及使用已存储密钥时的 ML-DSA-65+Ed25519 与 ML-DSA-87+Ed448 签名，以及 ML-KEM-768+X25519 与 ML-KEM-1024+X448 加密。复合算法计为后量子。openpgp.pqcOnly 只收窄登记。签名的两部分由 common/crypto_impl/openpgp_pqc.js 核验。缺少：SLH-DSA（算法标识 32-34），且本服务不生成 RFC 9980 密钥。openpgp.js 不解析这些密钥。"
   }
 }

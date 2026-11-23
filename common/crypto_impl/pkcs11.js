@@ -76,10 +76,14 @@
 // is what reconnects, and an operation that still fails is refused with
 // STS-KEYS-0201 — a refusal, never a crash.
 //
-// POST-QUANTUM KEYS NEVER COME HERE. No PKCS#11 v2.40 module offers ML-DSA,
-// SLH-DSA or ML-KEM, the YubiHSM 2 has none of them, and PKCS#11 3.2's
-// post-quantum mechanisms have no binding here yet; a realm's post-quantum
-// keys stay in software whatever `keys.signingKeyStore` says.
+// POST-QUANTUM SIGNING COMES HERE ONLY WHEN THE MODULE OFFERS IT. PKCS#11
+// 3.2 (OASIS, 3 June 2026) defines CKM_ML_DSA — pure ML-DSA, FIPS 204, no
+// pre-hash — and CKM_ML_DSA_KEY_PAIR_GEN. A token that does not list
+// CKM_ML_DSA with CKF_SIGN is refused (STS-KEYS-0206) and the signature
+// stays in software. SLH-DSA has no mechanism here. The realm's published
+// post-quantum set is still made in software (`helpers.js`'s `pqKeysFor`):
+// an ML-DSA key in the token is one this module generated, not that set.
+// The pre-hash numbers some drafts used (0x23–0x26) are not these.
 // ---------------------------------------------------------------------------
 
 'use strict';
@@ -118,14 +122,16 @@ const CK = Object.freeze({
   CKU_USER: 1,
   CKO_PUBLIC_KEY: 2, CKO_PRIVATE_KEY: 3, CKO_SECRET_KEY: 4,
   CKK_RSA: 0x0, CKK_EC: 0x3, CKK_GENERIC_SECRET: 0x10, CKK_AES: 0x1f,
-  CKK_EC_EDWARDS: 0x40,
+  CKK_EC_EDWARDS: 0x40, CKK_ML_DSA: 0x4a,
   CKA_CLASS: 0x0, CKA_TOKEN: 0x1, CKA_PRIVATE: 0x2, CKA_LABEL: 0x3,
   CKA_VALUE: 0x11, CKA_KEY_TYPE: 0x100, CKA_ID: 0x102, CKA_SENSITIVE: 0x103,
   CKA_ENCRYPT: 0x104, CKA_DECRYPT: 0x105, CKA_WRAP: 0x106, CKA_UNWRAP: 0x107,
   CKA_SIGN: 0x108, CKA_VERIFY: 0x10a, CKA_DERIVE: 0x10c, CKA_MODULUS: 0x120,
   CKA_MODULUS_BITS: 0x121, CKA_PUBLIC_EXPONENT: 0x122, CKA_VALUE_LEN: 0x161,
   CKA_EXTRACTABLE: 0x162, CKA_EC_PARAMS: 0x180, CKA_EC_POINT: 0x181,
-  CKM_RSA_PKCS_KEY_PAIR_GEN: 0x0, CKM_SHA256_RSA_PKCS: 0x40,
+  CKA_PARAMETER_SET: 0x61d, CKA_SEED: 0x637,
+  CKM_RSA_PKCS_KEY_PAIR_GEN: 0x0, CKM_ML_DSA_KEY_PAIR_GEN: 0x1c,
+  CKM_ML_DSA: 0x1d, CKM_SHA256_RSA_PKCS: 0x40,
   CKM_SHA384_RSA_PKCS: 0x41, CKM_SHA512_RSA_PKCS: 0x42,
   CKM_SHA256_RSA_PKCS_PSS: 0x43, CKM_SHA384_RSA_PKCS_PSS: 0x44,
   CKM_SHA512_RSA_PKCS_PSS: 0x45, CKM_SHA256: 0x250, CKM_SHA384: 0x260,
@@ -136,6 +142,7 @@ const CK = Object.freeze({
   CKM_RSA_PKCS_OAEP: 0x9, CKM_ECDH1_DERIVE: 0x1050, CKM_SHA_1: 0x220,
   CKM_SHA224: 0x255, CKG_MGF1_SHA1: 0x1, CKG_MGF1_SHA224: 0x5,
   CKD_NULL: 0x1, CKZ_DATA_SPECIFIED: 0x1,
+  CKP_ML_DSA_44: 0x1, CKP_ML_DSA_65: 0x2, CKP_ML_DSA_87: 0x3,
   // CKM_VENDOR_DEFINED | YUBICO_BASE_VENDOR (0x59554200) | YH_WRAP_KEY (4),
   // yubihsm-shell's pkcs11y.h.
   CKM_YUBICO_AES_CCM_WRAP: 0xd9554204,
@@ -190,7 +197,17 @@ const CURVES = Object.freeze({
 // a digest made here — the raw mechanism is what every module offers, the
 // hashing ones (CKM_ECDSA_SHA256) are not — and its answer is r || s, which is
 // already JOSE's encoding. EdDSA is CKM_EDDSA over the whole message.
+// ML-DSA is CKM_ML_DSA over the whole message (PKCS#11 3.2; the parameter
+// set is CKA_PARAMETER_SET on the key, not a mechanism parameter). The
+// signature is the raw FIPS 204 encoding, which is already JOSE's.
 // ---------------------------------------------------------------------------
+const ML_DSA = Object.freeze({
+  'ML-DSA-44': { set: CK.CKP_ML_DSA_44, publicBytes: 1312 },
+  'ML-DSA-65': { set: CK.CKP_ML_DSA_65, publicBytes: 1952 },
+  'ML-DSA-87': { set: CK.CKP_ML_DSA_87, publicBytes: 2592 }
+});
+// ML-DSA-87's signature is 4627 octets. 1024 was the classical room.
+const SIGN_ROOM = 8192;
 const SIGNING = Object.freeze({
   RS256: { kty: 'RSA', mech: CK.CKM_SHA256_RSA_PKCS },
   RS384: { kty: 'RSA', mech: CK.CKM_SHA384_RSA_PKCS },
@@ -206,7 +223,13 @@ const SIGNING = Object.freeze({
   ES512: { kty: 'EC', mech: CK.CKM_ECDSA, hash: 'sha512', crv: 'P-521' },
   ES256K: { kty: 'EC', mech: CK.CKM_ECDSA, hash: 'sha256',
             crv: 'secp256k1' },
-  EdDSA: { kty: 'OKP', mech: CK.CKM_EDDSA }
+  EdDSA: { kty: 'OKP', mech: CK.CKM_EDDSA },
+  'ML-DSA-44': { kty: 'AKP', mech: CK.CKM_ML_DSA,
+                 parameterSet: CK.CKP_ML_DSA_44 },
+  'ML-DSA-65': { kty: 'AKP', mech: CK.CKM_ML_DSA,
+                 parameterSet: CK.CKP_ML_DSA_65 },
+  'ML-DSA-87': { kty: 'AKP', mech: CK.CKM_ML_DSA,
+                 parameterSet: CK.CKP_ML_DSA_87 }
 });
 
 // OAEP's digest and MGF1 by the digest's name.
@@ -1221,13 +1244,25 @@ class Pkcs11Token {
     } else if (spec.kty === 'EC' && /^P-/.test(String(spec.crv))) {
       priv.push({ type: CK.CKA_DERIVE, value: true });
     }
+    let named = 'RSA';
     if (spec.kty === 'RSA') {
       mech = CK.CKM_RSA_PKCS_KEY_PAIR_GEN;
       pub.push({ type: CK.CKA_MODULUS_BITS, value: Number(spec.bits) || 3072 },
                { type: CK.CKA_PUBLIC_EXPONENT,
                  value: Buffer.from([1, 0, 1]) });
+    } else if (spec.kty === 'AKP') {
+      const row = ML_DSA[spec.alg];
+      named = String(spec.alg || '');
+      if (!row) {
+        throw refusal('STS-KEYS-0207', 'no ML-DSA key can be made in the ' +
+                      'HSM for "' + named + '"');
+      }
+      mech = CK.CKM_ML_DSA_KEY_PAIR_GEN;
+      pub.push({ type: CK.CKA_PARAMETER_SET, value: row.set });
+      priv.push({ type: CK.CKA_PARAMETER_SET, value: row.set });
     } else {
       const curve = CURVES[spec.crv];
+      named = String(spec.crv || '');
       if (!curve) {
         throw refusal('STS-KEYS-0207', 'no key can be made in the HSM on ' +
                       'the curve "' + spec.crv + '"');
@@ -1239,7 +1274,7 @@ class Pkcs11Token {
     }
     if (!this.mechanismFlags().has(mech)) {
       throw refusal('STS-KEYS-0207', describeMechFailure(this) + ' It ' +
-        'cannot generate a ' + (spec.crv || 'RSA') + ' key pair.');
+        'cannot generate a ' + named + ' key pair.');
     }
     log.debug('Leaving Pkcs11Token.keyPairPlan().');
     return { mech: mech, pub: pub, priv: priv };
@@ -1254,7 +1289,13 @@ class Pkcs11Token {
   canGenerate(spec) {
     log.debug('Entering Pkcs11Token.canGenerate().');
     let mech = Number(CK.CKM_RSA_PKCS_KEY_PAIR_GEN);
-    if (spec.kty !== 'RSA') {
+    if (spec.kty === 'AKP') {
+      if (!ML_DSA[spec.alg]) {
+        log.debug('Leaving Pkcs11Token.canGenerate(). No such ML-DSA set.');
+        return false;
+      }
+      mech = CK.CKM_ML_DSA_KEY_PAIR_GEN;
+    } else if (spec.kty !== 'RSA') {
       const curve = CURVES[spec.crv];
       if (!curve) {
         log.debug('Leaving Pkcs11Token.canGenerate(). No such curve here.');
@@ -1304,6 +1345,11 @@ class Pkcs11Token {
 
   publicKeyOf(handle, spec) {
     log.debug('Entering Pkcs11Token.publicKeyOf().');
+    if (spec.kty === 'AKP') {
+      const made = this.mlDsaPublicKey(handle, spec);
+      log.debug('Leaving Pkcs11Token.publicKeyOf(). ML-DSA.');
+      return made;
+    }
     let jwk;
     if (spec.kty === 'RSA') {
       const a = this.attributes(handle, [CK.CKA_MODULUS,
@@ -1351,6 +1397,11 @@ class Pkcs11Token {
   sign(key, alg, data) {
     log.debug('Entering Pkcs11Token.sign(). ' + alg);
     const plan = signingPlan(this.binding, alg, data);
+    const refused = this.mlDsaOfferProblem(plan);
+    if (refused) {
+      log.debug('Leaving Pkcs11Token.sign(). Refused.');
+      throw refused;
+    }
     const self = this;
     log.debug('Leaving Pkcs11Token.sign().');
     return this.run('a signature', function (lib, session) {
@@ -1364,9 +1415,10 @@ class Pkcs11Token {
       }
       lib.C_SignInit(session, plan.mechanism, self.handleOf(key));
       if (typeof lib.C_SignAsync === 'function') {
-        return lib.C_SignAsync(session, plan.input, Buffer.alloc(1024));
+        return lib.C_SignAsync(session, plan.input,
+                               Buffer.alloc(SIGN_ROOM));
       }
-      return lib.C_Sign(session, plan.input, Buffer.alloc(1024));
+      return lib.C_Sign(session, plan.input, Buffer.alloc(SIGN_ROOM));
     }).then(function (sig) {
       return Buffer.from(sig);
     });
@@ -1390,10 +1442,15 @@ class Pkcs11Token {
                     'off (keys.pkcs11SynchronousSign)');
     }
     const plan = signingPlan(this.binding, alg, data);
+    const refused = this.mlDsaOfferProblem(plan);
+    if (refused) {
+      log.debug('Leaving Pkcs11Token.signSync(). Refused.');
+      throw refused;
+    }
     const self = this;
     const sig = this.runSync('a signature', function (lib, session) {
       lib.C_SignInit(session, plan.mechanism, self.handleOf(key));
-      return lib.C_Sign(session, plan.input, Buffer.alloc(1024));
+      return lib.C_Sign(session, plan.input, Buffer.alloc(SIGN_ROOM));
     });
     log.debug('Leaving Pkcs11Token.signSync().');
     return Buffer.from(sig);
@@ -1515,6 +1572,92 @@ class Pkcs11Token {
       return this.run('an ECDH agreement', op);
     }
     return this.runSync('an ECDH agreement', op);
+  }
+
+  // CKM_ML_DSA is refused before C_Sign when the token does not offer it.
+  // A classical mechanism is not asked here: `signingAlgorithms()` already
+  // hides one the token lacks, and a missing SIGNING row is STS-KEYS-0206
+  // from `signingPlan()`.
+  /**
+   * Refuses an ML-DSA signature when the token does not offer CKM_ML_DSA.
+   *
+   * @param plan - `signingPlan()`'s answer
+   * @returns a STS-KEYS-0206 error, or null
+   */
+  mlDsaOfferProblem(plan) {
+    log.debug('Entering Pkcs11Token.mlDsaOfferProblem().');
+    if (!plan || !plan.mechanism ||
+        plan.mechanism.mechanism !== CK.CKM_ML_DSA) {
+      log.debug('Leaving Pkcs11Token.mlDsaOfferProblem().');
+      return null;
+    }
+    if (this.offers(CK.CKM_ML_DSA, CK.CKF_SIGN)) {
+      log.debug('Leaving Pkcs11Token.mlDsaOfferProblem(). Offered.');
+      return null;
+    }
+    log.debug('Leaving Pkcs11Token.mlDsaOfferProblem(). Refused.');
+    return refusal('STS-KEYS-0206', 'the HSM does not offer CKM_ML_DSA, ' +
+      'so an ML-DSA signature stays in software');
+  }
+
+  // CKA_VALUE is the raw public key (FIPS 204). It becomes a
+  // SubjectPublicKeyInfo so the rest of this service can publish it. A
+  // runtime that cannot import ML-DSA still returns the parameter set.
+  /**
+   * The public half of an ML-DSA key in the token.
+   *
+   * @param handle - the public object
+   * @param spec - `{ kty: 'AKP', alg }`
+   * @returns a public-key object whose `parameterSet` is the algorithm
+   */
+  mlDsaPublicKey(handle, spec) {
+    log.debug('Entering Pkcs11Token.mlDsaPublicKey(). ' + spec.alg);
+    const row = ML_DSA[spec.alg];
+    const a = this.attributes(handle, [CK.CKA_VALUE]);
+    const raw = a.get(CK.CKA_VALUE);
+    if (!row || !raw || raw.length !== row.publicBytes) {
+      log.debug('Leaving Pkcs11Token.mlDsaPublicKey(). Refused.');
+      throw refusal('STS-KEYS-0207', 'the HSM did not answer an ' +
+        (spec.alg || 'ML-DSA') + ' public key of ' +
+        (row ? row.publicBytes : '?') + ' octets');
+    }
+    const spki = require('./pqc_x509').encodeSpki(spec.alg, raw);
+    let imported = null;
+    try {
+      imported = nodeCrypto.createPublicKey({ key: Buffer.from(spki),
+                                              format: 'der', type: 'spki' });
+    } catch (e) {
+      // Node before 24 is linked to an OpenSSL with no ML-DSA. The key
+      // stays in the token; the caller still gets the parameter set.
+      log.debug('Caught in Pkcs11Token.mlDsaPublicKey(): ' +
+                ((e && e.message) || e));
+      imported = null;
+    }
+    const details = Object.assign({},
+      (imported && imported.asymmetricKeyDetails) || {},
+      { parameterSet: spec.alg });
+    const out = imported && imported.asymmetricKeyType ? {
+      type: 'public',
+      asymmetricKeyType: imported.asymmetricKeyType,
+      asymmetricKeyDetails: details,
+      export: function (opts) {
+        log.debug('Entering mldsaPublic.export().');
+        const exported = imported.export(opts);
+        log.debug('Leaving mldsaPublic.export().');
+        return exported;
+      }
+    } : {
+      type: 'public',
+      asymmetricKeyType: 'ml-dsa',
+      asymmetricKeyDetails: details,
+      export: function () {
+        log.debug('Entering mldsaPublic.export().');
+        log.debug('Leaving mldsaPublic.export(). The SPKI.');
+        return Buffer.from(spki);
+      }
+    };
+    log.debug('Leaving Pkcs11Token.mlDsaPublicKey().');
+    return out;
   }
 
   /**

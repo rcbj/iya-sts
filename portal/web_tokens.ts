@@ -51,6 +51,7 @@ class TokensPages {
           : (c.kind === 'hotp' || c.kind === 'totp'
             ? t.text('portalTokens.kind.oath') : c.kind))) +
         (c.label ? ' — ' + kit.esc(c.label) : '') +
+        (c.algorithm ? ' (' + kit.esc(c.algorithm) + ')' : '') +
         (c.retired ? ' (' + t.html('portalTokens.retired') + ')' : '');
     }).join('<br>') : '—';
   }

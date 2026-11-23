@@ -520,6 +520,15 @@ async function checkRefusals(t) {
   t.check((await productReader(true).open(pskcLib.parse(FIGURES.fig6),
           { preSharedKey: FIGURE6_KEY })).ok,
           'and an encrypted file opens in product mode');
+  const pq = pskcLib.parse(FIGURES.fig3.replace(
+    '<ResponseFormat Length="8" Encoding="DECIMAL"/>',
+    '<Suite>ML-DSA-65</Suite>' +
+    '<ResponseFormat Length="8" Encoding="DECIMAL"/>'));
+  t.check(pq.ok && pq.keys.length === 0 &&
+          pq.skipped[0].errorCode === 'STS-OATH-0022' &&
+          /no post-quantum MAC/.test(pq.skipped[0].why),
+          'a Suite that names ML-DSA is refused: HOTP and PSKC have no ' +
+          'post-quantum MAC', pq.skipped[0] && pq.skipped[0].why);
   log.debug("Leaving checkRefusals().");
 }
 

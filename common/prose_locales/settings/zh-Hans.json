@@ -1424,8 +1424,8 @@
     "text": "旧版 U2F AppID"
   },
   "webauthn.u2fAppIds|description": {
-    "en": "05b1b01773d86d5d",
-    "text": "FIDO U2F AppID——旧版 U2F 依赖方注册其安全密钥时使用的 https URL——其凭据可以导入到人员条目上并在此用于登录，以逗号分隔。**为空（默认值）即该功能关闭**：不能导入任何内容，任何仪式都不携带 appid 或 appidExclude 扩展（WebAuthn Level 3 第 10.1.1 和 10.1.2 节），导入的密钥也无法登录。AppID 只在与其相关的 RP ID 上使用：其主机就是该 RP ID，或其中一个是另一个的后缀。当主机与源的主机不同时，浏览器会获取 AppID URL，以查找列出此源的 TrustedFacets 列表，旧服务必须继续提供该列表。导入的密钥只能作为第二因素：U2F 密钥无法验证使用者本人。"
+    "en": "e17d7febccd7d076",
+    "text": "FIDO U2F AppID——旧版 U2F 依赖方注册其安全密钥时使用的 https URL——其凭据可以导入到人员条目上并在此用于登录，以逗号分隔。**为空（默认值）即该功能关闭**：不能导入任何内容，任何仪式都不携带 appid 或 appidExclude 扩展（WebAuthn Level 3 第 10.1.1 和 10.1.2 节），导入的密钥也无法登录。AppID 只在与其相关的 RP ID 上使用：其主机就是该 RP ID，或其中一个是另一个的后缀。当主机与源的主机不同时，浏览器会获取 AppID URL，以查找列出此源的 TrustedFacets 列表，旧服务必须继续提供该列表。导入的密钥只能作为第二因素：U2F 密钥无法验证使用者本人。 U2F 是 P-256 上的 ECDSA，没有后量子算法。"
   },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
@@ -3360,8 +3360,8 @@
     "text": "最小 RSA OpenPGP 密钥"
   },
 "openpgp.minRsaBits|description": {
-    "en": "ad48516e31a7c45b",
-    "text": "OpenPGP 注册所接受的最短 RSA 密钥（主密钥或子密钥）。接受 Ed25519、Ed448、P-256、P-384 和 P-521 上的 ECDSA 和 ECDH、X25519 和 X448；DSA、ElGamal 和 Brainpool 曲线一律不接受（STS-OPENPGP-0004）。"
+    "en": "cd16018c848ce538",
+    "text": "OpenPGP 注册所接受的最短 RSA 密钥（主密钥或子密钥）。接受 Ed25519、Ed448、P-256、P-384 和 P-521 上的 ECDSA 和 ECDH、X25519 和 X448，以及 openpgp.algorithms 点名时的 RFC 9980 复合算法 ML-DSA-65+Ed25519、ML-DSA-87+Ed448、ML-KEM-768+X25519 和 ML-KEM-1024+X448。DSA、ElGamal、Brainpool 曲线和 SLH-DSA 一律不接受（STS-OPENPGP-0004）。"
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
@@ -9212,8 +9212,8 @@
     "text": "登录时采集浏览器指纹"
   },
   "risk.fingerprinting|description": {
-    "en": "452ca90f0592fe8b",
-    "text": "默认关闭（#62 P6）。开启时，登录界面运行一个脚本 FingerprintJS（MIT；它不会向任何地方发送任何内容），它根据浏览器公开的信息计算一个标识符并放入表单；服务只保留带密钥的摘要，此人从未用其登录过的浏览器会产生 new-device 信号（x2）。浏览器指纹属于个人数据：在开启之前，请完成 docs/v1.1.0/risk-scoring.md 中的隐私影响评估，并告知登录的用户。与每项设置一样，按领域设置。"
+    "en": "c34ba5805bddbb8b",
+    "text": "默认关闭（#62 P6）。开启时，登录界面运行一个脚本 FingerprintJS（MIT；它不会向任何地方发送任何内容），它根据浏览器公开的信息计算一个标识符并放入表单；服务只保留带密钥的摘要，此人从未用其登录过的浏览器会产生 new-device 信号（x2）。浏览器指纹属于个人数据：在开启之前，请完成 docs/v1.2.0/risk-scoring.md 中的隐私影响评估，并告知登录的用户。与每项设置一样，按领域设置。"
   },
   "risk.breachCheck|label": {
     "en": "8b4443cd88527e75",
@@ -11640,8 +11640,8 @@
     "text": "发件人地址"
   },
   "mail.from|description": {
-    "en": "b1da52c40fbad767",
-    "text": "发送每封消息所用的地址。为空表示领域 DNS 域的 `no-reply@`。提供商必须允许以该地址发送：在 SES 中是已验证的身份，在 Azure 中是已连接域的 MailFrom 地址，对于 Gmail 是被模拟的邮箱（或其“以…身份发送”别名之一）——其域的 SPF、DKIM 和 DMARC 是 docs/v1.1.0/mail.md 的主题。"
+    "en": "a8b259e6c1037325",
+    "text": "发送每封消息所用的地址。为空表示领域 DNS 域的 `no-reply@`。提供商必须允许以该地址发送：在 SES 中是已验证的身份，在 Azure 中是已连接域的 MailFrom 地址，对于 Gmail 是被模拟的邮箱（或其“以…身份发送”别名之一）——其域的 SPF、DKIM 和 DMARC 是 docs/v1.2.0/mail.md 的主题。"
   },
   "mail.fromName|label": {
     "en": "54fc2703a4957936",
@@ -11776,8 +11776,8 @@
     "text": "DKIM 算法"
   },
   "mail.dkimAlgorithm|description": {
-    "en": "62ed500aeff2bc8a",
-    "text": "`rsa-sha256`（RFC 6376；按照 RFC 8301，密钥为 2048 位或更大）或 `ed25519-sha256`（RFC 8463）。许多接收方仍然只验证 RSA，因此迁移到 Ed25519 的域会同时发布两者，并在其他地方签名两次。DKIM 尚未注册任何后量子算法；docs/v1.1.0/mail.md 对此有说明。"
+    "en": "0d88e4862621b8df",
+    "text": "`rsa-sha256`（RFC 6376；按照 RFC 8301，密钥为 2048 位或更大）或 `ed25519-sha256`（RFC 8463）。许多接收方仍然只验证 RSA，因此迁移到 Ed25519 的域会同时发布两者，并在其他地方签名两次。DKIM 尚未注册任何后量子算法；docs/v1.2.0/mail.md 对此有说明。"
   },
   "mail.dkimKeyProvider|label": {
     "en": "7e4fc266794b62d9",
@@ -12008,16 +12008,16 @@
     "text": "自助重置需要已验证的地址"
   },
   "mail.resetRequiresVerifiedAddress|description": {
-    "en": "81dfbb5f1c67cc3c",
-    "text": "只将自助重置链接邮寄到该人员已验证的地址（他们从该地址点击过链接）。默认打开，因为该链接就等同于账户：由导入或配置源写入、从未有人证明过的地址，不是可以发送它的地方。**关闭它是一项较弱的设置**，适用于其地址按写入内容即受信任的目录；docs/v1.1.0/mail.md 载有相关警告。"
+    "en": "af24c1ddaf83c884",
+    "text": "只将自助重置链接邮寄到该人员已验证的地址（他们从该地址点击过链接）。默认打开，因为该链接就等同于账户：由导入或配置源写入、从未有人证明过的地址，不是可以发送它的地方。**关闭它是一项较弱的设置**，适用于其地址按写入内容即受信任的目录；docs/v1.2.0/mail.md 载有相关警告。"
   },
   "mail.resetRequiresBackupCode|label": {
     "en": "addd650807ec39b2",
     "text": "自助重置需要恢复码"
   },
   "mail.resetRequiresBackupCode|description": {
-    "en": "2d8885388b97eb61",
-    "text": "忘记密码表单要求提供用户名、账户上已验证的地址以及该人员的一个恢复码，只有三者全部正确时才邮寄重置链接——届时该恢复码即被消耗。每种组合都以同一句话作答。**关闭它是一项较弱的设置**：表单会回到单个字段（用户名或地址），此时重置的强度与其发送到的邮箱相同——NIST SP 800-63B-4 允许将其用于恢复，docs/v1.1.0/mail.md 对此有警告。在此项打开时，不持有恢复码的人员无法自行重置密码；管理员可以。"
+    "en": "f0eccb7bb4055b20",
+    "text": "忘记密码表单要求提供用户名、账户上已验证的地址以及该人员的一个恢复码，只有三者全部正确时才邮寄重置链接——届时该恢复码即被消耗。每种组合都以同一句话作答。**关闭它是一项较弱的设置**：表单会回到单个字段（用户名或地址），此时重置的强度与其发送到的邮箱相同——NIST SP 800-63B-4 允许将其用于恢复，docs/v1.2.0/mail.md 对此有警告。在此项打开时，不持有恢复码的人员无法自行重置密码；管理员可以。"
   },
   "mail.verificationTtlMinutes|label": {
     "en": "49c2a4b66ba8a448",
@@ -13026,5 +13026,53 @@
   "roles.pivKeyRecoveryGroup|description": {
     "en": "801616eea12559a5",
     "text": "其成员持有内置 PIV_KEY_RECOVERY 角色（#1955）的目录组；访问控制策略要求在 Admin Write 之外还具备该角色，才能恢复他人的托管 piv-key-management 密钥（piv.keyEscrow）。该密钥可以解密此人的邮件，因此在管理员将人员加入该组之前，没有人持有该角色。为空时，任何人都不能恢复他人的密钥；持有人可在门户上恢复自己的密钥。"
+  },
+  "openpgp.algorithms|label": {
+    "en": "6973a8aeaa30b96b",
+    "text": "接受的算法"
+  },
+  "openpgp.algorithms|description": {
+    "en": "7bf4b57c9c6e7d1f",
+    "text": "密钥可以使用的 OpenPGP 算法，按优先顺序。先是 RFC 9980 复合算法：ML-DSA-65+Ed25519 与 ML-DSA-87+Ed448 用于签名，ML-KEM-768+X25519 与 ML-KEM-1024+X448 用于加密。然后是经典名称：ed25519、ed448、eddsaLegacy/ed25519Legacy，nistP256、nistP384 和 nistP521 上的 ecdsa，rsaSign 与 rsaEncryptSign，x25519、x448，curve25519Legacy 及相同 NIST 曲线上的 ecdh，以及 rsaEncrypt。不在此列表中的名称在登记和验证时被拒绝（STS-OPENPGP-0004）。未实现 SLH-DSA。默认值列出上述每一个。"
+  },
+  "openpgp.pqcOnly|label": {
+    "en": "d3ff53ec011bbf1f",
+    "text": "仅登记后量子密钥"
+  },
+  "openpgp.pqcOnly|description": {
+    "en": "a42ec597602f45d5",
+    "text": "开启后，新登记的密钥必须使用 openpgp.algorithms 点名的后量子算法：签名密钥为 ML-DSA-65+Ed25519 或 ML-DSA-87+Ed448，若有加密密钥则为 ML-KEM-768+X25519 或 ML-KEM-1024+X448。它只收窄登记：已经登记的经典密钥仍可验证，仍可接收邮件。不能与 openpgp.pqcAlongsideClassical 同时开启（STS-OPENPGP-0027）。默认关闭。"
+  },
+  "openpgp.pqcAlongsideClassical|label": {
+    "en": "57f71c1990eb46d9",
+    "text": "后量子密钥与经典密钥并存"
+  },
+  "openpgp.pqcAlongsideClassical|description": {
+    "en": "2b5f6cf2a07130e5",
+    "text": "开启后，新登记的密钥必须同时带有后量子算法和另一个经典算法。ML-DSA-65+Ed25519 这样的复合名称只算后量子，因此经典的一半是另一把密钥，例如旁边的 Ed25519 或 X25519 子密钥。已经登记的密钥保持原样。不能与 openpgp.pqcOnly 同时开启（STS-OPENPGP-0027）。默认关闭。"
+  },
+  "pki.sshUserCaAlgorithms|label": {
+    "en": "1fa9bf9eedbabd99",
+    "text": "SSH 用户 CA 算法"
+  },
+  "pki.sshUserCaAlgorithms|description": {
+    "en": "bdb54445a0279b8d",
+    "text": "SSH 用户证书机构可以使用的算法，按优先顺序。ssh-mldsa-65 是本服务定义的线路名称下的 ML-DSA-65（FIPS 204），因为 OpenSSH 没有定义：公钥和签名是原始字节，形状与 ssh-ed25519 相同。本服务发布的 OpenSSH TrustedUserCAKeys 行仍是此列表中的第一个经典算法，若列表只点名 ssh-mldsa-65 则为 ssh-ed25519。不理解 ML-DSA 的对端继续信任那一行。不提供 ssh-rsa（SHA-1）。只有本运行时能够生成该密钥时才创建 ML-DSA 机构；否则证书保持经典（记录 STS-PKI-0290，经典机构仍然应答）。"
+  },
+  "pki.sshUserCaPqcOnly|label": {
+    "en": "74aae1308361ba58",
+    "text": "SSH 用户证书仅使用后量子算法"
+  },
+  "pki.sshUserCaPqcOnly|description": {
+    "en": "39b21e5b95f84da1",
+    "text": "开启后，新的 SSH 用户证书由 ML-DSA 机构签名，并且仅当该机构存在时。发布的 TrustedUserCAKeys 行仍是经典密钥，因此已经信任它的 OpenSSH 客户端不会收到它无法解析的算法。在不能生成 ML-DSA 的运行时上，证书保持经典，请求不会失败。已经签发的经典证书继续验证。不能与 pki.sshUserCaPqcAlongsideClassical 同时开启（STS-PKI-0296）。默认关闭。"
+  },
+  "pki.sshUserCaPqcAlongsideClassical|label": {
+    "en": "c3201f8841200c32",
+    "text": "SSH 用户证书同时带有后量子证书"
+  },
+  "pki.sshUserCaPqcAlongsideClassical|description": {
+    "en": "b38eab63ec092b6c",
+    "text": "开启后，当 ML-DSA 机构存在时，新的 SSH 用户证书签发两次：经典证书，即 OpenSSH 客户端使用的那一份，以及旁边的一份 ML-DSA 证书。不能与 pki.sshUserCaPqcOnly 同时开启（STS-PKI-0296）。默认关闭。复合签名不是 OpenSSH 的概念；经典证书和 ML-DSA 证书是两个签名，不是一个混合签名。"
   }
 }

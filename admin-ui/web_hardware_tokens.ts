@@ -64,6 +64,7 @@ class HardwareTokensPage {
     return list.length ? list.map(function (c: Json): string {
       return '<code>' + esc(c.kind) + '</code> ' +
         esc(c.label || String(c.ref).slice(0, 24)) +
+        (c.algorithm ? ' <small>' + esc(c.algorithm) + '</small>' : '') +
         (c.holder && c.holder !== r.holder
           ? ' <small>(' + esc(c.holder) + ')</small>' : '') +
         (c.smartCard ? ' <small>' +

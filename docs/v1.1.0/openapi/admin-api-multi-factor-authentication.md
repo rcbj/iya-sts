@@ -275,65 +275,6 @@ Scope: `admin:write`.
 | `removed` | boolean |  |  |
 | `sessionsEnded` | number |  |  |
 
-## POST /admin-api/mfa/clear-hotp
-
-`clearHotpToken`
-
-**Clear somebody's one-time code token (HOTP) (#1955)**
-
-The way back for somebody who lost the token their HOTP credential is on (a YubiKey's OTP slot, or a token imported from its vendor's PSKC file): the shared secret is on it and this service cannot reach it. It cannot lock anybody out — a one-time code is never a primary credential here — and the sessions its codes signed in end (`sessionsEnded`, #722). An imported token lost with a YubiKey is better reported lost on Directory → Hardware tokens, which retires every credential on it at once. Clearing one nobody holds answers 400.
-
-**Mirrors** `POST /admin/users` on the admin console.
-
-Scope: `admin:write`.
-
-**Parameters**
-
-| Name | In | Type | Required | What it is |
-|---|---|---|---|---|
-| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
-| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
-
-**Request body**
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `evidence` | string |  | How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log. |
-| `user` | string |  | Accepted for `username`. |
-| `username` | string | yes | The name they sign in as. |
-
-**200**: Whose token was cleared, and the sessions its codes signed in, which were ended.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `message` | string |  |  |
-| `ok` | boolean | yes |  |
-| `problems` | list |  |  |
-| `problems[]` | map, or string |  |  |
-| `problems[].{key}` | string, or number, or boolean, or null |  |  |
-| `reason` | string |  |  |
-| `remaining` | number |  |  |
-| `sessionsEnded` | number |  |  |
-| `username` | string |  |  |
-
-**400**: The operation was refused; `errors` says why and nothing changed.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `message` | string |  |  |
-| `ok` | boolean | yes |  |
-| `problems` | list |  |  |
-| `problems[]` | map, or string |  |  |
-| `problems[].{key}` | string, or number, or boolean, or null |  |  |
-| `reason` | string |  |  |
-| `remaining` | number |  |  |
-| `sessionsEnded` | number |  |  |
-| `username` | string |  |  |
-
 ## POST /admin-api/mfa/clear-key
 
 `clearSecurityKey`
@@ -428,65 +369,6 @@ Scope: `admin:write`.
 | `username` | string | yes | The name they sign in as. |
 
 **200**: Whose enrolment was cleared. `sessionsEnded` counts the sessions the app's codes signed in, which were ended (#722); every other stays.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `message` | string |  |  |
-| `ok` | boolean | yes |  |
-| `problems` | list |  |  |
-| `problems[]` | map, or string |  |  |
-| `problems[].{key}` | string, or number, or boolean, or null |  |  |
-| `reason` | string |  |  |
-| `remaining` | number |  |  |
-| `sessionsEnded` | number |  |  |
-| `username` | string |  |  |
-
-**400**: The operation was refused; `errors` says why and nothing changed.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `message` | string |  |  |
-| `ok` | boolean | yes |  |
-| `problems` | list |  |  |
-| `problems[]` | map, or string |  |  |
-| `problems[].{key}` | string, or number, or boolean, or null |  |  |
-| `reason` | string |  |  |
-| `remaining` | number |  |  |
-| `sessionsEnded` | number |  |  |
-| `username` | string |  |  |
-
-## POST /admin-api/mfa/clear-yubi
-
-`clearYubiOtp`
-
-**Clear somebody's YubiKey OTP (#1955)**
-
-The way back for somebody who lost the YubiKey their OTP credential is on. The AES key is held here, so clearing removes it from the entry and retires the public identity. It cannot lock anybody out — a YubiKey OTP is never a primary credential here — and the sessions its passwords signed in end (`sessionsEnded`, #722). A token lost with the key is better reported lost on Directory → Hardware tokens, which retires every credential on it at once. Clearing one nobody holds answers 400.
-
-**Mirrors** `POST /admin/users` on the admin console.
-
-Scope: `admin:write`.
-
-**Parameters**
-
-| Name | In | Type | Required | What it is |
-|---|---|---|---|---|
-| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
-| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
-
-**Request body**
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `evidence` | string |  | How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log. |
-| `user` | string |  | Accepted for `username`. |
-| `username` | string | yes | The name they sign in as. |
-
-**200**: Whose credential was cleared, and the sessions its passwords signed in, which were ended.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|

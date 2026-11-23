@@ -520,7 +520,7 @@ function theDecision(t) {
 // says — true for a staff subject, false otherwise.
 function thePublishedExample(t) {
   log.debug("Entering thePublishedExample().");
-  t.log.info('=== X. docs/v1.1.0/authzen.md\'s worked example ===');
+  t.log.info('=== X. docs/v1.2.0/authzen.md\'s worked example ===');
   const fs = require('fs');
   const text = fs.readFileSync(require('path').join(__dirname, '..', 'docs',
                                                      'v1.1.0', 'authzen.md'),

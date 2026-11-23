@@ -116,7 +116,7 @@ searches send neither property.
 ## The mapping, in one table
 
 **The public statement of the conversion, and the guidelines for a realm's
-conversion rules and the policies that read them, is `docs/v1.1.0/authzen.md`**
+conversion rules and the policies that read them, is `docs/v1.2.0/authzen.md`**
 (#1182). This file is why the code is the way it is; that page is what a
 policy author relies on, and `tests/authzen_map.js` X holds its worked
 example (the ALFA policy and the request) to the code.
@@ -447,7 +447,7 @@ it may perform an RFC 8693 exchange (rcbj, 2026-10-30, decision 1).
 Direction B — this authorization server consulting an external PDP — is
 *Asking an external PDP* below (#1200). The
 binding's draft and the Token Issuance Profile it builds on are on the
-ticket; `docs/v1.1.0/authzen.md` is the public statement, with the fixed-rule
+ticket; `docs/v1.2.0/authzen.md` is the public statement, with the fixed-rule
 table (`authzen_exchange.ts`'s `FIXED_RULES`, which
 `tests/authzen_token_exchange.js` F3 holds to that page).
 
@@ -737,7 +737,7 @@ or the two drift with both suites green.
   `0046` included (`xacml-pep/CLAUDE.md` has the status mapping). Until the
   edge's next poll an application just switched on is still decided there
   from the root: the same convergence as the caller list, stated in
-  `docs/v1.1.0/remote-pep.md`. An embedded FGA PDP in the edge remains future work;
+  `docs/v1.2.0/remote-pep.md`. An embedded FGA PDP in the edge remains future work;
   forwarding rules it out no more than it did.
 
 ### The forward on the PEP's token (#1827's follow-up)

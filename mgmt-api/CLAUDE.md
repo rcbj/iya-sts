@@ -2695,7 +2695,7 @@ on the BODY, so the OpenAPI document says `admin:security` only for
 description names the rest. `/me` answers `security`. `sts-api-client` and
 `sts-admin-console` declare it; **an entry seeded before #645 is not
 migrated** (no migrations), and needs a delegated permission grant of
-`urn:sts:admin-api:admin:security` — `docs/v1.1.0/security-administrator.md` says
+`urn:sts:admin-api:admin:security` — `docs/v1.2.0/security-administrator.md` says
 so. The harness's token asks for it (`tests/tools/admin-api-token.js`).
 `admin-ui/CLAUDE.md` 8a-ii has the role.
 

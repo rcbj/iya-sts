@@ -25,8 +25,10 @@
 //      NO_SUCH_CLIENT.
 //
 // The three settings are turned on only in a realm this run creates, and
-// put back. The keys are drawn here and never written down. What the
-// policy row does to enrolment is tests/yubiotp.js, in process.
+// put back. The yubico-otp row is off by default; this run turns it on in
+// that realm before the assignment. The keys are drawn here and never
+// written down. What the policy row does to enrolment is tests/yubiotp.js,
+// in process.
 // `local: true`: this repository's management API and YK-VAL endpoint.
 // ---------------------------------------------------------------------------
 
@@ -342,6 +344,25 @@ async function setFlags(on) {
   log.debug("Leaving setFlags().");
 }
 
+// The row is off by default, so the three settings alone do not assign.
+// This realm's own profile is what changes; the default realm is left alone.
+async function allowYubiOtp() {
+  log.debug("Entering allowYubiOtp().");
+  const got = await send("GET", realmPath("/admin-api/policies"));
+  assert.strictEqual(got.status, 200, String(got.raw).slice(0, 300));
+  const defaults = got.json && got.json.authn && got.json.authn.defaults;
+  assert.ok(defaults, "the policies answer had no defaults");
+  const saved = await send("POST",
+    realmPath("/admin-api/policies/save-authn-policy"), { json:
+      Object.assign({ profile: "default" }, defaults,
+                    { yubicoOtpSecondFactor: true }) });
+  assert.ok(saved.status >= 200 && saved.status < 300 && saved.json &&
+            saved.json.ok !== false,
+            "the yubico-otp row could not be turned on: " + saved.status +
+            " " + String(saved.raw).slice(0, 300));
+  log.debug("Leaving allowYubiOtp().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("YubiKey OTP and YK-VAL at " + base + "/realm/" + REALM);
@@ -403,6 +424,7 @@ async function test() {
     log.info("=== c. import and assignment ===");
     await setFlags(true);
     armed = true;
+    await allowYubiOtp();
     const csv = "serial,public id,private id,aes key\n" +
       [secret.serial, secret.publicId, secret.p, secret.k].join(",");
     const imported = await send("POST",

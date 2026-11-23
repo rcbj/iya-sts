@@ -802,7 +802,7 @@ so must `admin-ui/admin.ts`.
    push, `code`, `private_key_jwt`, DPoP — and, with the ordinary consent
    rules, their seeded global consent counts again.
    `tests/fapi2_units.js` and `tests/protocol/sts_fapi2.js` hold it; the
-   Attacker Model's mapping is in `docs/v1.1.0/oauth-security.md`.
+   Attacker Model's mapping is in `docs/v1.2.0/oauth-security.md`.
 
    **FAPI 2.0 MESSAGE SIGNING (#141, 2026-09-22) IS THE FOURTH VALUE,
    `2-message-signing`: the Security Profile PLUS ALL THREE COMPONENTS** —
@@ -815,7 +815,7 @@ so must `admin-ui/admin.ts`.
    JARM required (`STS-OAUTH-0591`, and discovery lists JARM's modes alone);
    and RFC 9701's signed introspection, which every JWT introspection response
    here already was. Section 5.2's non-repudiation is guidance, answered in
-   `docs/v1.1.0/oauth-security.md` (keep the retired keys and the audit log). **THE
+   `docs/v1.2.0/oauth-security.md` (keep the retired keys and the audit log). **THE
    FINAL SPECIFICATION HAS NO RFC 9421 SECTIONS**, though the #45 review was
    written against a draft that did; rcbj split HTTP signatures on the resource
    servers out to #178. The surfaces ask for JARM under this profile as under
@@ -4729,7 +4729,7 @@ every action, the API gated by two scopes tied to the client, a DELETE
 revoking the grant's tokens, consent records staying the source of "the
 person agreed", a console page and `/admin-api`, on in every mode;
 FAPI-CIBA FOLLOWS `oauth2.fapi` with no setting of its own; lodging intent
-DOCUMENTED as RAR through PAR (`docs/v1.1.0/oauth-oidc.md`); the conformance suite
+DOCUMENTED as RAR through PAR (`docs/v1.2.0/oauth-oidc.md`); the conformance suite
 a job — which is #176's, where it lives.
 
 * **`grant_management.ts` is the register and every rule** (its header
@@ -5879,7 +5879,7 @@ Left for their own tickets:
 
 **A REVOKED GRANT IS A `session-revoked` ABOUT THE GRANT.** The design is in
 `oauth_grant_signals.ts`'s header and the receiver's view is in
-`docs/v1.1.0/caep-events.md`. What reaches outside that file:
+`docs/v1.2.0/caep-events.md`. What reaches outside that file:
 
 * **The grant is named when a token is issued, not when it is revoked.**
   `issuanceContext()` states `grantId` and `grantRefresh` into `signJwt()`'s
@@ -6102,7 +6102,7 @@ other client are untouched, and the API explorer's unbound token still works.
   refusing it would leave such a realm with no console. **The console does
   not conform to the profile there**: the two requirement rows
   (`no-public-clients`, `confidential-only`) say so, and so do
-  `docs/v1.1.0/oauth-security.md` and `docs/v1.1.0/spec-departures.md`. This qualifies 3av's
+  `docs/v1.2.0/oauth-security.md` and `docs/v1.2.0/spec-departures.md`. This qualifies 3av's
   *the hosted surfaces conforming*: the portal still does.
 
 **THE PORTAL JOINED BOTH LISTS ON #568 (2026-10-12)**: rcbj's decision made
@@ -6414,7 +6414,7 @@ token". Tests: `tests/kerberos_tokens.js` X and
 
 ## ASVS 5.0.0 IN THIS FAMILY (#1453-#1565, 2026-11-09)
 
-`docs/v1.1.0/product-security.md` is the user's account and `docs/v1.1.0/oauth-oidc.md` the
+`docs/v1.2.0/product-security.md` is the user's account and `docs/v1.2.0/oauth-oidc.md` the
 behaviour; this is why each is shaped as it is. Every product-only rule is a
 `common/mode.js` predicate, never `isProduct()`.
 

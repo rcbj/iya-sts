@@ -432,7 +432,7 @@ evaluated gets an error status and a body of the form
 | 400 | the request is not valid: a missing member, a value that breaks the rules below, an undeclared property, or several applications in scope and none named |
 | 401 | the caller did not authenticate; `WWW-Authenticate: Bearer realm="<issuer>"` when tokens are accepted |
 | 403 | the caller may not ask (no `AUTHZEN_PEPS`, or the access policy refuses it), its token lacks `authzen:evaluate`, or it is not scoped to the application named |
-| 415 | the request's `Content-Type` is not `application/json` (a `charset` parameter is fine), or it has none: section 10.1 requires it. The evaluation, the batch, the three searches and an access request's submission answer this once the caller is admitted (the submission as `application/problem+json`), and so do the remote PEP's evaluation and batch |
+| 415 | the request's `Content-Type` is not `application/json` (a `charset` parameter is fine), or it has none: section 10.1 requires it. The evaluation, the batch and the three searches answer this once the caller is admitted |
 | 500 | the policy could not be evaluated (for example the root policy does not load, or the application enforces fine-grained authorization and its policy is disabled or missing) — never reported as `false` |
 | 501 | AuthZEN, or XACML, is turned off in the realm, or the realm has no `sts-authzen-api` application |
 
@@ -686,8 +686,6 @@ is refused.
 | `resource.type = audience, action.name = issue:<type>:token_exchange` | a GATE tuple. The first one for a target is the subject gate; one naming another subject for the same target and type is the requesting party gate; a third subject is refused |
 | `resource.type = audience, action.name = issue:<type>:<grant>` | any other grant, or a token type not registered: decided false (this PDP decides the token-exchange gate only) |
 | `resource.type = protected_resource` | a SCOPE tuple: action.name is the scope, verbatim; decided only beside a token-exchange gate in the same batch, and only for the exchange subject (or, for txn_token, the requesting party) |
-| `resource.type = a declared authorization_details type` | an AUTHORIZATION-DETAIL tuple, one cell: decided only beside a token-exchange gate in the same batch, and only for the exchange subject. A type this realm has not declared, and audience or protected_resource, is not this tuple |
-| `action.name of an authorization-detail tuple` | the cell's action, or action:datatype split on the last colon; the reserved name authorization_detail means the cell names neither. privileges and identifier are not read |
 | `<type> of the gate action` | the token type short name: access_token, refresh_token, id_token, jwt, saml1, saml2, id_jag, txn_token; sent as urn:sts:xacml:authzen:token-type |
 | `subject (subject gate)` | the exchange subject: the access-subject of the exchange question, a person by name or urn:uuid subject, an application by identifier or client_id (urn:sts:client:<id> is <id>) |
 | `subject (requesting party gate)` | the actor: the intermediary-subject of the exchange question; with no requesting party gate, the subject itself (the gates coincide) |
@@ -699,12 +697,8 @@ is refused.
 | `context.subject_token_type, context.actor_token_type` | verbatim, as urn:sts:xacml:authzen:subject-token-type and ...:actor-token-type |
 | `context.subject_token.scope` | what a scope tuple may not widen (exchange stage), and the set granted_scope narrows when the request names no scope |
 | `context.subject_token.exp` | the ceiling on token_lifetime; none left is a false subject gate |
-| `context.subject_token.authorization_details` | the bound a detail cell of an enforcing type must be covered by; absent, or a subject token not issued here, and the cell is false. Never copied into the answer |
-| `context.subject_token.iss` | whether the subject token was issued here, which is what makes its authorization_details a bound; compared with this realm's issuer and not re-verified |
 | `context.client_id` | the client whose declared scopes a scope tuple is held to, and whose access-token lifetime bounds token_lifetime |
 | `context.cnf, .acr, .amr, .auth_time, .jti` | read for their type only; no rule decides on them |
-| `context.issuance.audience` | on the subject gate only, and only when every value is that gate's resource.id, which does not narrow one target so it is left out; any other value is not sent, and an empty array withdraws the target |
-| `context.issuance.claims` | on the subject gate only, and only a claim the subject token already carries, narrowed; a reserved name, a new claim or a wider value is not sent |
 | `exchange_semantics` | not sent: the policy chooses by its precedence, as for a local exchange that named none |
 | `urn:sts:xacml:protocol` | OAuth 2.0, the act's protocol, so one policy decides both; the trusted urn:sts:xacml:authzen:caller tells this one apart |
 
@@ -725,23 +719,11 @@ It only ever narrows what the authorization server would otherwise issue:
 * `granted_scope`: only when the request names no scope. It is the subject
   token's scope (`context.subject_token.scope`), narrowed by the same three
   checks as a scope tuple. Without a subject token scope it is left out, and
-  the authorization server uses its own defaults;
-* `audience`: only this gate's own resource id. One gate has one target, so
-  a list of that id does not narrow and is left out. Any other value would
-  broaden the target and is not sent. An empty array withdraws the target,
-  and the subject gate is `false`;
-* `claims`: a claim the subject token already carries, and only a narrower
-  value (a string array that is a proper subset, or a smaller non-negative
-  number). A value equal to the subject token's does not narrow and is left
-  out. A reserved name (`iss`, `iat`, `jti`, `sub`, `aud`, `exp`, `nbf`,
-  `scope`, `client_id`, `cnf`, `act`, `authorization_details`, `may_act`),
-  a claim the subject token does not carry, or a wider value is not sent.
+  the authorization server uses its own defaults.
 
-The answer never sets `sub`, `aud`, `act` or `may_act`. The binding reserves
-them: a PDP that could write `act` could invent a delegation history. It
-also never returns a rewritten `authorization_details` array; each cell is
-its own tuple, and the authorization server reassembles the ones that were
-permitted. `context.issuance` is sent whatever
+The answer never sets `sub`, `aud`, `act`, `may_act` or any other claim. The
+binding reserves them: a PDP that could write `act` could invent a
+delegation history. `context.issuance` is sent whatever
 `authzen.returnReasons` says; with that setting on, each item also carries
 `xacml_decision`, `reason_admin` and, for a gate, `exchange_semantics` (the
 delegation or impersonation the policy chose).
@@ -757,16 +739,12 @@ exchange gate only.
 * **ID-JAG.** The gates name the resource authorization server that will
   redeem the grant (level 1), and are decided by whether the identity
   provider's client may delegate to it. Scope tuples may name the resources
-  behind it (level 2); they are decided as any scope tuple. An
-  authorization-detail tuple is a level-2 cell of the subject's access,
-  decided as any detail tuple.
+  behind it (level 2); they are decided as any scope tuple.
 * **Txn-Token.** The requesting party is a workload. The authorization server
   sends scope tuples for the workload as well as for the subject, and the
   workload's are decided as the workload's own (its declared scopes and
   roles). Outside a Txn-Token, a scope tuple for the requesting party is
-  `false`: scope is the subject's authority. A detail tuple for the
-  requesting party is `false` in either token type: the party's exception
-  is scopes on a Txn-Token only.
+  `false`: scope is the subject's authority.
 
 ### A worked example
 
@@ -835,52 +813,10 @@ authorization server cannot disagree. If a rule must apply only to exchanges
 asked over AuthZEN, test `urn:sts:xacml:authzen:caller` in the issuance
 policy's exchange rules.
 
-The binding's gates and scopes are decided by the issuance policy even when
-the caller's application enforces [fine-grained authorization](fga.md). A
-local token exchange asks that application's policy only about RFC 9396
-authorization details, and an authorization-detail tuple does the same: one
-cell, covered by `context.subject_token.authorization_details` when the
-type's application enforces it and the subject token was issued here
-(`context.subject_token.iss`), then that application's policy. A type that
-does not enforce is granted as asked. A cell the policy cannot decide is an
-error, not `false`. The answer does not carry the cell back.
-
-## Asking an external PDP
-
-Direction B is this authorization server asking a PDP you configure, before
-it issues an OAuth access token for an RFC 8693 exchange. It is off until
-`authzen.externalPdp` is on. The local issuance policy still decides first,
-and a refusal it enforces is not sent to the PDP. What comes back may only
-narrow the scope and the access-token lifetime. A wider scope, a longer
-life, and any other issuance member are ignored.
-
-The address is `authzen.externalPdpUrl`, an absolute `https` URL with no
-userinfo, query or fragment. A request cannot name it. Plain `http` is
-refused even when `federation.outboundAllowHttp` is on, because the body
-carries token claims and the call carries a client certificate. Mutual TLS
-is the only mode: this service presents the PEM files
-`authzen.externalPdpClientCertFile` and `authzen.externalPdpClientKeyFile`,
-and the PDP admits that certificate as an `AUTHZEN_PEPS` caller. The key's
-bytes are not a configuration value. `GET /admin-api/config` returns the
-path. In product each file must sit inside a directory `security.fileRoots`
-lists. A relative path is this process's current directory.
-`authzen.externalPdpCaFile`, when set, replaces the default roots used to
-verify the PDP.
-
-The batch is the one in the worked example above: the subject gate, the
-requesting-party gate when the two parties differ, and one scope tuple per
-scope, with `evaluations_semantic` `execute_all`. An exchange with no
-audience is still asked, with a resource id of an empty string. A PDP that
-requires a non-empty id then refuses the token.
-
-No answer means no token, in every mode: an unusable address, a certificate
-or key that cannot be read, `federation.outbound` off, a timeout, a non-2xx,
-or a body that is not the batch's decision. A `decision` of `false` on a
-subject or requesting-party gate refuses the whole exchange. The client is
-told neither which gate nor the code. A `false` scope drops that scope. An
-empty `granted_scope` grants nothing. `token_lifetime` is a ceiling on the
-access token only. A Kerberos `requested_token_type` is outside the binding
-and is not sent.
+The binding is decided by the issuance policy even when the caller's
+application enforces [fine-grained authorization](fga.md). A local token
+exchange asks that application's policy only about RFC 9396 authorization
+details, and the binding carries none.
 
 ## Access requests and approvals
 
@@ -1117,12 +1053,6 @@ live source; this table is a copy.
 | `authzen.accessRequestEmergencyS` | `STS_AUTHZEN_ACCESS_REQUEST_EMERGENCY_S` | `3600` | The longest emergency access holds |
 | `authzen.accessRequestRetryAfterS` | `STS_AUTHZEN_ACCESS_REQUEST_RETRY_AFTER_S` | `30` | `Retry-After` on a pending task |
 | `authzen.accessRequestMaxPending` | `STS_AUTHZEN_ACCESS_REQUEST_MAX_PENDING` | `10000` | Pending requests a realm holds before a submission is refused 503 |
-| `authzen.externalPdp` | `STS_AUTHZEN_EXTERNAL_PDP` | `false` | Ask an external PDP before issuing an OAuth access token for a token exchange (see *Asking an external PDP*) |
-| `authzen.externalPdpUrl` | `STS_AUTHZEN_EXTERNAL_PDP_URL` | *(empty)* | The external PDP's `POST /access/v1/evaluations`, absolute https, no userinfo, query or fragment |
-| `authzen.externalPdpTimeoutMs` | `STS_AUTHZEN_EXTERNAL_PDP_TIMEOUT_MS` | `5000` | How long to wait for the external PDP, in milliseconds |
-| `authzen.externalPdpClientCertFile` | `STS_AUTHZEN_EXTERNAL_PDP_CLIENT_CERT_FILE` | *(empty)* | The PEM file presented to the external PDP |
-| `authzen.externalPdpClientKeyFile` | `STS_AUTHZEN_EXTERNAL_PDP_CLIENT_KEY_FILE` | *(empty)* | The PEM file of that certificate's private key. The configuration value is the path |
-| `authzen.externalPdpCaFile` | `STS_AUTHZEN_EXTERNAL_PDP_CA_FILE` | *(empty)* | An optional PEM file of CA certificates used instead of the default roots |
 | `roles.authzenPepGroup` | `STS_ROLES_AUTHZEN_PEP_GROUP` | `authzen-peps` | The group whose members hold `AUTHZEN_PEPS` |
 
 ## In the running service
@@ -1148,8 +1078,9 @@ None of these is advertised in the metadata:
 * Of the Access Request and Approval Profile: binding a denial by
   `evaluation_id` alone, `approval.state`, machine-readable forms, and the
   BULK, ACTOR and CATALOG companions.
-* Direction B, this authorization server asking an external PDP, is built
-  (see *Asking an external PDP*). The edge PDP does not answer the binding.
+* Of the OAuth token exchange binding: this service's own authorization
+  server asking an external AuthZEN PDP (direction B), authorization-detail
+  tuples, and the `claims` and `audience` shaping keys.
 * The [edge PDP](remote-pep.md#an-authzen-edge-pdp) answers evaluations and
   batches only: no searches, access requests, Obligations Profile, token
   exchange binding or `signed_metadata`.

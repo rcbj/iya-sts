@@ -473,7 +473,8 @@ class YubiOtp {
     return {
       offered: this.offered(),
       ykval: this.ykvalEnabled(),
-      algorithm: 'AES-128-ECB of one 16-byte block, no padding',
+      algorithm: 'AES-128-ECB of one 16-byte block, no padding. There is ' +
+                 'no post-quantum parameter.',
       alphabet: 'modhex (cbdefghijklnrtuv)',
       crc: 'CRC-16, polynomial 0x8408, initialised to 0xffff; residual ' +
            '0xf0b8',

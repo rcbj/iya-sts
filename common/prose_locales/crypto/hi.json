@@ -448,16 +448,16 @@
     "text": "ऐसा सार्वजनिक-कुंजी टोकन जिसे धारक ऑफ़लाइन क्षीण कर सकता है, मैकरून की तरह, पर मूल सार्वजनिक कुंजी रखने वाला कोई भी उसका सत्यापन कर सकता है। उसका प्राधिकरण तर्क टोकन के भीतर का Datalog है, इसलिए सत्यापनकर्ता हमेशा समय और पुनरावृत्ति की सीमाओं के साथ चलता है।"
   },
   "crypto.standards.cms.coverage": {
-    "en": "d33248e25a15b5a7",
-    "text": "partial: एक हस्ताक्षरकर्ता और हस्ताक्षरित attributes के साथ SignedData, attribute bytes पर जैसे प्राप्त हुए वैसे सत्यापित और DER-क्रमबद्ध लिखे गए; KeyTransRecipientInfo (RSA PKCS#1 v1.5 और OAEP) और AES-CBC सामग्री के साथ EnvelopedData; प्रमाणपत्रों और CRL के साथ degenerate certs-only SignedData; S/MIME मेल (#1955) के लिए OAEP SHA-256 KeyTransRecipientInfo या ECDH KeyAgreeRecipientInfo के साथ लिखा गया EnvelopedData। कोई authenticated या compressed data नहीं, कोई countersignature नहीं।"
+    "en": "f750e6cf7ac566b2",
+    "text": "partial: एक हस्ताक्षरकर्ता और हस्ताक्षरित attributes के साथ SignedData, attribute bytes पर जैसे प्राप्त हुए वैसे सत्यापित और DER-क्रमबद्ध लिखे गए; KeyTransRecipientInfo (RSA PKCS#1 v1.5 और OAEP) और AES-CBC सामग्री के साथ EnvelopedData; प्रमाणपत्रों और CRL के साथ degenerate certs-only SignedData; S/MIME मेल (#1955) के लिए OAEP SHA-256 KeyTransRecipientInfo, ECDH KeyAgreeRecipientInfo, या ML-KEM प्रमाणपत्र के लिए KEMRecipientInfo के साथ लिखा गया EnvelopedData। कोई authenticated या compressed data नहीं, कोई countersignature नहीं।"
   },
   "crypto.standards.cms.what": {
-    "en": "e09c8508abab483b",
-    "text": "वह लिफ़ाफ़ा जिसे SCEP (scep/scep_cms.ts) पढ़ता और लिखता है: अनुरोधकर्ता द्वारा हस्ताक्षरित और RA के लिए एन्क्रिप्ट किया गया अनुरोध, और RA द्वारा हस्ताक्षरित एक CertRep जिसका प्रमाणपत्र अनुरोधकर्ता के लिए एन्क्रिप्ट होता है। #1955 से वह S/MIME EnvelopedData भी जिसमें मेल एन्क्रिप्ट होती है, जो EC प्राप्तकर्ता के लिए KeyAgreeRecipientInfo (dhSinglePass-stdDH-sha256kdf, AES-256 key wrap) और RSA प्राप्तकर्ता के लिए OAEP SHA-256 KeyTransRecipientInfo जोड़ता है।"
+    "en": "05b9f7ff9bec76df",
+    "text": "वह लिफ़ाफ़ा जिसे SCEP (scep/scep_cms.ts) पढ़ता और लिखता है: अनुरोधकर्ता द्वारा हस्ताक्षरित और RA के लिए एन्क्रिप्ट किया गया अनुरोध, और RA द्वारा हस्ताक्षरित एक CertRep जिसका प्रमाणपत्र अनुरोधकर्ता के लिए एन्क्रिप्ट होता है। #1955 से वह S/MIME EnvelopedData भी जिसमें मेल एन्क्रिप्ट होती है, जो EC प्राप्तकर्ता के लिए KeyAgreeRecipientInfo (dhSinglePass-stdDH-sha256kdf, AES-256 key wrap) और RSA प्राप्तकर्ता के लिए OAEP SHA-256 KeyTransRecipientInfo जोड़ता है, तथा ML-KEM प्रमाणपत्र के लिए KEMRecipientInfo भी जोड़ता है। जो रनटाइम संपुटित नहीं कर सकता वह RSA या ECDH पर नहीं लौटता।"
   },
   "crypto.standards.openpgp.coverage": {
-    "en": "5d4c9889762ddbd2",
-    "text": "partial: v4 और v6 हस्तांतरणीय सार्वजनिक कुंजियाँ पढ़ना, cleartext हस्ताक्षर सत्यापित करना और PGP/MIME संदेश एन्क्रिप्ट करना, सब openpgp.js के ज़रिए; Web Key Directory की advanced और direct खोज विधियाँ और नीति फ़ाइल। कोई हस्ताक्षर नहीं, कोई डिक्रिप्शन नहीं, कोई Web Key Service सबमिशन नहीं, कोई keyserver नहीं।"
+    "en": "d27e08a2f317c75c",
+    "text": "partial: v4 और v6 हस्तांतरणीय सार्वजनिक कुंजियाँ पढ़ना, cleartext हस्ताक्षर सत्यापित करना और PGP/MIME संदेश एन्क्रिप्ट करना, openpgp.js के ज़रिए; RFC 9980 की मिश्रित कुंजी यहाँ पढ़ी जाती है और दोनों आधे जाँचे जाते हैं।  Web Key Directory की advanced और direct खोज विधियाँ और नीति फ़ाइल। कोई हस्ताक्षर नहीं, कोई डिक्रिप्शन नहीं, कोई Web Key Service सबमिशन नहीं, कोई keyserver नहीं, और कोई SLH-DSA नहीं।"
   },
   "crypto.standards.openpgp.what": {
     "en": "039de4dd3b49b9ab",
@@ -692,12 +692,12 @@
     "text": "कुछ नहीं। पंजीकरण व्यक्ति का अपना हस्ताक्षर है, और एन्क्रिप्टेड संदेश पर हस्ताक्षर नहीं होता (DKIM बाहरी संदेश पर हस्ताक्षर करता है, जैसे वह हर संदेश पर करता है)।"
   },
   "crypto.families.openpgp.verifies": {
-    "en": "c3dbfb38087cb3de",
-    "text": "पंजीकरण के समय कब्ज़े का प्रमाण: एक cleartext हस्ताक्षर (gpg --clearsign) ठीक उसी चुनौती पर जो इस सेवा ने व्यक्ति को जारी की, पंजीकृत की जा रही कुंजी की किसी हस्ताक्षर-सक्षम कुंजी द्वारा, चुनौती जारी होने के बाद किया गया (openpgp.signatureSkewS) और उस समय मान्य; कुंजी स्वयं न तो निरस्त हो और न समाप्त, और उसमें प्रविष्टि का पता रखने वाली एक मान्य उपयोगकर्ता ID हो। RFC 9580 v6 और RFC 4880 v4 कुंजियाँ, openpgp.js द्वारा पढ़ी जाती हैं। S/MIME प्रमाणपत्र की वैधता, कुंजी और उपयोग जाँचे जाते हैं, शृंखला नहीं: वह केवल यह चुनता है कि संदेश किसके लिए एन्क्रिप्ट हो।"
+    "en": "e571039950254fa8",
+    "text": "पंजीकरण के समय कब्ज़े का प्रमाण: एक cleartext हस्ताक्षर (gpg --clearsign) ठीक उसी चुनौती पर जो इस सेवा ने व्यक्ति को जारी की, पंजीकृत की जा रही कुंजी की किसी हस्ताक्षर-सक्षम कुंजी द्वारा, चुनौती जारी होने के बाद किया गया (openpgp.signatureSkewS) और उस समय मान्य; कुंजी स्वयं न तो निरस्त हो और न समाप्त, और उसमें प्रविष्टि का पता रखने वाली एक मान्य उपयोगकर्ता ID हो। RFC 9580 v6 और RFC 4880 v4 कुंजियाँ, openpgp.js द्वारा पढ़ी जाती हैं। S/MIME प्रमाणपत्र की वैधता, कुंजी और उपयोग जाँचे जाते हैं, शृंखला नहीं: वह केवल यह चुनता है कि संदेश किसके लिए एन्क्रिप्ट हो। RFC 9980 की मिश्रित कुंजियाँ इस सेवा का अपना पाठक पढ़ता है, जो दोनों आधे जाँचता है; openpgp.js उन्हें नहीं पढ़ता।"
   },
   "crypto.families.openpgp.encrypts": {
-    "en": "1a05c1b540cd5082",
-    "text": "मेल, जहाँ व्यक्ति ने इसे चुना हो या realm इसकी माँग करे (mail.encryptionRequired): PGP/MIME (RFC 3156) कुंजी की एन्क्रिप्शन कुंजी के लिए, जैसा openpgp.js चुने (v4 कुंजी के लिए AES के साथ SEIPD, v6 के लिए AEAD); S/MIME (RFC 8551) एक CMS EnvelopedData के रूप में, AES-256-CBC सामग्री एन्क्रिप्शन, सामग्री कुंजी SHA-256 के साथ RSAES-OAEP या ECDH (dhSinglePass-stdDH-sha256kdf, AES-256 key wrap) के अंतर्गत।"
+    "en": "92940be7441a9817",
+    "text": "मेल, जहाँ व्यक्ति ने इसे चुना हो या realm इसकी माँग करे (mail.encryptionRequired): PGP/MIME (RFC 3156) कुंजी की एन्क्रिप्शन कुंजी के लिए, जैसा openpgp.js चुने (v4 कुंजी के लिए AES के साथ SEIPD, v6 के लिए AEAD); S/MIME (RFC 8551) एक CMS EnvelopedData के रूप में, AES-256-CBC सामग्री एन्क्रिप्शन, सामग्री कुंजी SHA-256 के साथ RSAES-OAEP या ECDH (dhSinglePass-stdDH-sha256kdf, AES-256 key wrap) के अंतर्गत। ML-KEM प्रमाणपत्र (RFC 9935) एक KEMRecipientInfo (RFC 9629) है: सामग्री सिफर AES-256-CBC रहता है, और जो रनटाइम संपुटित नहीं कर सकता वह RSA या ECDH पर नहीं लौटता।"
   },
   "crypto.families.openpgp.decrypts": {
     "en": "9cc3e24fe9d0a9d8",
@@ -716,24 +716,24 @@
     "text": "पंजीकृत कुंजी, हस्ताक्षर"
   },
   "crypto.families.openpgp.algorithms.0.how": {
-    "en": "91736ec1cb35b5f2",
-    "text": "Ed25519, Ed448, ECDSA P-256/P-384/P-521, openpgp.minRsaBits (कम से कम 3072) का RSA"
+    "en": "f27dbb16784e93f8",
+    "text": "ML-DSA-65+Ed25519, ML-DSA-87+Ed448 (RFC 9980), फिर Ed25519, Ed448, ECDSA P-256/P-384/P-521, कम से कम openpgp.minRsaBits का RSA (कम से कम 3072)"
   },
   "crypto.families.openpgp.algorithms.1.what": {
     "en": "9f7b65405a49bedd",
     "text": "पंजीकृत कुंजी, एन्क्रिप्शन"
   },
   "crypto.families.openpgp.algorithms.1.how": {
-    "en": "e28f57b2d61b83be",
-    "text": "X25519, X448, ECDH Curve25519 और P-256/P-384/P-521, openpgp.minRsaBits का RSA"
+    "en": "660feb6cfc44d305",
+    "text": "ML-KEM-768+X25519, ML-KEM-1024+X448 (RFC 9980), फिर X25519, X448, ECDH Curve25519 और P-256/P-384/P-521, कम से कम openpgp.minRsaBits का RSA"
   },
   "crypto.families.openpgp.algorithms.2.what": {
     "en": "66b873543aebf01b",
     "text": "अस्वीकृत"
   },
   "crypto.families.openpgp.algorithms.2.how": {
-    "en": "18369a474bec2b97",
-    "text": "DSA, ElGamal, Brainpool वक्र"
+    "en": "4c8437ead9bd7364",
+    "text": "DSA, ElGamal, Brainpool वक्र, SLH-DSA"
   },
   "crypto.families.openpgp.algorithms.3.what": {
     "en": "429d783fabc235c9",
@@ -748,8 +748,8 @@
     "text": "S/MIME कुंजी परिवहन"
   },
   "crypto.families.openpgp.algorithms.4.how": {
-    "en": "acf5bad1301fd2cc",
-    "text": "RSAES-OAEP SHA-256; ECDH stdDH SHA-256 KDF, AES-256 wrap"
+    "en": "bccae46bcdf822fb",
+    "text": "RSAES-OAEP SHA-256; ECDH stdDH SHA-256 KDF, AES-256 wrap; ML-KEM (RFC 9935) KEMRecipientInfo के रूप में, HKDF-SHA-256 और AES-Wrap"
   },
   "crypto.families.openpgp.algorithms.5.what": {
     "en": "727e1a6e39e36a93",
@@ -1484,8 +1484,8 @@
     "text": "SHA-1, SHA-256 या SHA-512, HMAC के भीतर और कहीं नहीं।"
   },
   "crypto.families.one-time-passwords-totp.whatItDoesNot": {
-    "en": "f38dd0b2f7ce307b",
-    "text": "यह किसी को कभी नहीं बताता कि वर्तमान कोड क्या है, और किसी को साइन-इन स्क्रीन पर कभी नामांकित नहीं करता — नामांकन का अर्थ है सीक्रेट दिखाया जाना, इसलिए यह वहीं होता है जहाँ व्यक्ति पहले से प्रमाणित है या सक्रियण लिंक रखता है। विचलित TOTP घड़ी को विचलन विंडो दी जाती है और कुछ नहीं। काउंटर-आधारित (HOTP) टोकन को लगातार दो कोड से फिर से सिंक किया जाता है, कभी एक से नहीं। यह सीड फ़ाइल की कुंजी या पासवर्ड कभी नहीं रखता, और किसी प्रमाणपत्र के लिए एन्क्रिप्ट की गई फ़ाइल कभी नहीं खोलता।"
+    "en": "313115cd82b83d1b",
+    "text": "यह किसी को कभी नहीं बताता कि वर्तमान कोड क्या है, और किसी को साइन-इन स्क्रीन पर कभी नामांकित नहीं करता — नामांकन का अर्थ है सीक्रेट दिखाया जाना, इसलिए यह वहीं होता है जहाँ व्यक्ति पहले से प्रमाणित है या सक्रियण लिंक रखता है। विचलित TOTP घड़ी को विचलन विंडो दी जाती है और कुछ नहीं। काउंटर-आधारित (HOTP) टोकन को लगातार दो कोड से फिर से सिंक किया जाता है, कभी एक से नहीं। यह सीड फ़ाइल की कुंजी या पासवर्ड कभी नहीं रखता, और किसी प्रमाणपत्र के लिए एन्क्रिप्ट की गई फ़ाइल कभी नहीं खोलता। HOTP (RFC 4226) और PSKC बीज (RFC 6030) का कोई पोस्ट-क्वांटम MAC नहीं है: MAC HMAC-SHA-1, SHA-256 या SHA-512 है।"
   },
   "crypto.families.one-time-passwords-totp.algorithms.0.what": {
     "en": "0c410835b8ade404",
@@ -1524,8 +1524,8 @@
     "text": "कुछ नहीं। CRC, CRC-16 है, बहुपद 0x8408। YK-VAL हस्ताक्षर HMAC-SHA1 है।"
   },
   "crypto.families.yubico-otp.whatItDoesNot": {
-    "en": "a977ea47369edb7c",
-    "text": "यह कभी YubiCloud को नहीं बुलाता। यह कभी टाइमस्टैम्प नहीं जाँचता। yubiotp.offered बंद होने पर यह कभी स्लॉट नामांकित नहीं करता, और yubiotp.ykval बंद होने पर यह कभी YK-VAL का उत्तर नहीं देता। यह कभी प्रोग्रामिंग पंक्ति या क्लाइंट की HMAC कुंजी लॉग नहीं करता।"
+    "en": "f93ab78e99cd9d8d",
+    "text": "यह कभी YubiCloud को नहीं बुलाता। यह कभी टाइमस्टैम्प नहीं जाँचता। yubiotp.offered बंद होने पर यह कभी स्लॉट नामांकित नहीं करता, और yubiotp.ykval बंद होने पर यह कभी YK-VAL का उत्तर नहीं देता। यह कभी प्रोग्रामिंग पंक्ति या क्लाइंट की HMAC कुंजी लॉग नहीं करता। इसका कोई पोस्ट-क्वांटम पैरामीटर नहीं है: OTP एक 16-बाइट ब्लॉक का AES-128-ECB है।"
   },
   "crypto.families.yubico-otp.algorithms.0.what": {
     "en": "6c0e6acd35694622",

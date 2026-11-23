@@ -83,7 +83,7 @@ const log = bunyan.createLogger({ name: 'service',
 
 // The eight listeners, in the order the offsets are handed out. The NAME is the
 // environment variable this service reads for it —
-// docs/v1.1.0/configuration.md's settings table is the authority for these
+// docs/v1.2.0/configuration.md's settings table is the authority for these
 // spellings, and a misspelt one is SILENT: it is ignored and the listener takes
 // its default port, which is the shared one.
 //
