@@ -608,18 +608,11 @@ program
                                            "needs no browser)"))
   .parse(process.argv);
 
-test().then(function () {
-  process.exit(0);
-}, function (e) {
-  log.error(e.stack || e.message);
-  process.exit(1);
-});
 
 // ---------------------------------------------------------------------------
 // THE #1955 REVIEW (PR #1996), APPENDED: A DISABLED ACCOUNT'S OTP. The job
-// above is untouched; this section runs beside it in a realm of its own
-// (its settings are that realm's, so the two cannot see each other's), and
-// the process waits for it before it exits:
+// runs this section after its own, in a realm of its own (its settings are
+// that realm's), before its one exit:
 //   e. an OTP of a person whose account is then disabled is BAD_OTP,
 //      signed, with no error code (rule 3at); enabled again, the next OTP
 //      is OK.
@@ -710,18 +703,12 @@ async function disabledTest() {
   log.debug("Leaving disabledTest().");
 }
 
-// THE PROCESS WAITS FOR THIS SECTION: the job above ends with
-// process.exit(), which would cut it short, so its exit is held until the
-// section settles, and a failure here turns a success into exit code 1.
-const disabledDone = disabledTest().then(function () {
-  return 0;
+// ONE EXIT, after both: the job's own sections, then the review's.
+test().then(function () {
+  return disabledTest();
+}).then(function () {
+  process.exit(0);
 }, function (e) {
-  log.error("FAILED in the #1955 review section: " + (e.stack || e.message));
-  return 1;
+  log.error(e.stack || e.message);
+  process.exit(1);
 });
-const exitAfterReview = process.exit.bind(process);
-process.exit = function (code) {
-  disabledDone.then(function (mine) {
-    exitAfterReview(Number(code) || mine);
-  });
-};
