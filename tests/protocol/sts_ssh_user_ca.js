@@ -508,7 +508,17 @@ async function test() {
       assert.strictEqual(cert.keyId, "sts:" + issued.json.serialHex);
       assert.deepStrictEqual(cert.principals, [OWNER]);
       assert.strictEqual(cert.critical.length, 0);
-      assert.strictEqual(cert.extensions.length, 0);
+      // ssh-keygen's default extensions (pki.sshUserCertificateExtensions,
+      // the #1955 review), each with empty data, in lexical order.
+      const ext = sshReader(cert.extensions);
+      const names = [];
+      while (!ext.done()) {
+        names.push(ext.text());
+        assert.strictEqual(ext.string().length, 0);
+      }
+      assert.deepStrictEqual(names, ["permit-X11-forwarding",
+        "permit-agent-forwarding", "permit-port-forwarding", "permit-pty",
+        "permit-user-rc"]);
       assert.strictEqual(cert.reserved.length, 0);
       assert.strictEqual(cert.validAfter,
                          BigInt(issued.json.validAfter));
