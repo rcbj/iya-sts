@@ -15077,23 +15077,37 @@ async function sshUserCaForAsync(scopeId) {
       ? { ok: true, ca: row.sshUserCa } : null;
   };
   try {
-    const answer = await oneBuildInTheCluster(id, 'sshUserCa', existing,
-      async function () {
-        const key = await generateSshCaKey(sshClassicalCaAlgorithm());
-        const row = Object.assign({}, rawRowFor(id) || {}, {
-          sshUserCa: {
-            algorithm: key.algorithm,
-            privateKeyPem: key.privatePem,
-            publicBlobB64: key.publicBlob.toString('base64'),
-            publicLine: key.publicLine,
-            fingerprint: key.fingerprint,
-            createdAt: new Date().toISOString()
-          }
-        });
-        saveRow(id, row);
-        return { ok: true, ca: row.sshUserCa };
-      }, { claim: SSH_USER_CA_USE_CASE + ':' + id,
-           label: 'the realm\'s SSH user CA' });
+    // THE AUTHORITY THIS PROCESS ALREADY HOLDS IS THE ANSWER, and a build
+    // waits behind any other build of it here (`ensureRoot()`'s shape).
+    // `oneBuildInTheCluster()` consults `existing` only when it coordinates
+    // with other nodes; with nothing to coordinate (memory mode) it runs the
+    // build at once, so every call made a NEW CA key and saved it over the
+    // last: a certificate was signed by one key and /pki/ssh-user-ca then
+    // published another (sts_ssh_user_ca.js, run 45143091785).
+    const build = async function () {
+      log.debug("Entering build(). sshUserCa");
+      const key = await generateSshCaKey(sshClassicalCaAlgorithm());
+      const row = Object.assign({}, rawRowFor(id) || {}, {
+        sshUserCa: {
+          algorithm: key.algorithm,
+          privateKeyPem: key.privatePem,
+          publicBlobB64: key.publicBlob.toString('base64'),
+          publicLine: key.publicLine,
+          fingerprint: key.fingerprint,
+          createdAt: new Date().toISOString()
+        }
+      });
+      saveRow(id, row);
+      log.debug("Leaving build(). sshUserCa");
+      return { ok: true, ca: row.sshUserCa };
+    };
+    const answer = await oneBuildAtATime(SSH_USER_CA_USE_CASE + ':' + id,
+      function () {
+        return existing() ||
+          oneBuildInTheCluster(id, 'sshUserCa', existing, build,
+                               { claim: SSH_USER_CA_USE_CASE + ':' + id,
+                                 label: 'the realm\'s SSH user CA' });
+      });
     if (answer && answer.ok) {
       // The sibling is best-effort. A runtime that cannot generate ML-DSA
       // keeps the classical authority and does not fail the realm.
@@ -15765,23 +15779,32 @@ async function ensureSshUserCaPqc(scopeId) {
       ? { ok: true, ca: row.sshUserCaPqc } : null;
   };
   try {
-    const answer = await oneBuildInTheCluster(id, 'sshUserCaPqc', existing,
-      async function () {
-        const key = await generateSshCaKey('ssh-mldsa-65');
-        const row = Object.assign({}, rawRowFor(id) || {}, {
-          sshUserCaPqc: {
-            algorithm: key.algorithm,
-            privateSeedB64: key.privateSeed.toString('base64'),
-            publicBlobB64: key.publicBlob.toString('base64'),
-            publicLine: key.publicLine,
-            fingerprint: key.fingerprint,
-            createdAt: new Date().toISOString()
-          }
-        });
-        saveRow(id, row);
-        return { ok: true, ca: row.sshUserCaPqc };
-      }, { claim: SSH_USER_CA_USE_CASE + '-pqc:' + id,
-           label: 'the realm\'s post-quantum SSH user CA' });
+    // HELD ALREADY IS THE ANSWER, for `sshUserCaForAsync()`'s reason: with
+    // nothing to coordinate the cluster build runs at once, every time.
+    const build = async function () {
+      log.debug("Entering build(). sshUserCaPqc");
+      const key = await generateSshCaKey('ssh-mldsa-65');
+      const row = Object.assign({}, rawRowFor(id) || {}, {
+        sshUserCaPqc: {
+          algorithm: key.algorithm,
+          privateSeedB64: key.privateSeed.toString('base64'),
+          publicBlobB64: key.publicBlob.toString('base64'),
+          publicLine: key.publicLine,
+          fingerprint: key.fingerprint,
+          createdAt: new Date().toISOString()
+        }
+      });
+      saveRow(id, row);
+      log.debug("Leaving build(). sshUserCaPqc");
+      return { ok: true, ca: row.sshUserCaPqc };
+    };
+    const answer = await oneBuildAtATime(SSH_USER_CA_USE_CASE + '-pqc:' + id,
+      function () {
+        return existing() ||
+          oneBuildInTheCluster(id, 'sshUserCaPqc', existing, build,
+            { claim: SSH_USER_CA_USE_CASE + '-pqc:' + id,
+              label: 'the realm\'s post-quantum SSH user CA' });
+      });
     log.debug("Leaving ensureSshUserCaPqc(). " +
               (answer && answer.ok ? 'Ready.' : 'Absent.'));
     return answer;
