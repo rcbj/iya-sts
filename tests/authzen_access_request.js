@@ -35,6 +35,8 @@
 //      approved with its result; a re-evaluation carrying the approval
 //      true, another tuple out_of_scope with a fresh denial, another
 //      caller approval_unverifiable; a revocation and approval_expired.
+//      The portal lists and revokes an approval the approver gave, mails
+//      the requester, and draws Revoke only on that card (#1203).
 //   C. CANCELLATION, and a finished task 409.
 //   X. AN ADMINISTRATOR'S DENIAL through the console's door, as one the
 //      advice did not name, holding ADMIN_WRITE.
@@ -219,6 +221,9 @@ async function childBody() {
   const alfa = require(ROOT + '/xacml/xacml_alfa');
   const requests = require(ROOT + '/authzen/authzen_access_request');
   const authzenAdmin = require(ROOT + '/authzen/authzen_admin');
+  const mail = require(ROOT + '/common/mail');
+  const ModelZod = require(ROOT + '/common/model_zod');
+  const accessPages = require(ROOT + '/portal/web_access_requests');
   const testCa = require('./protocol/outbound_test_ca');
   const outsideCa = require('./tools/pep-credential.js');
 
@@ -631,6 +636,143 @@ async function childBody() {
     log.debug("Leaving freshApp().");
     return got.json;
   };
+
+  // -------------------------------------------------------------------------
+  // A12. THE PORTAL REVOKES AN APPROVAL THE PERSON GAVE (#1203)
+  // -------------------------------------------------------------------------
+  r = await request(port, 'POST', SUBMIT, pepCred,
+                    submission(await fresh()));
+  const portalTask = ((r.json || {}).task || {});
+  const approved = inRealm(function () {
+    return requests.decide(portalTask.id, 'approve',
+                           { username: 'azbob', door: 'portal' });
+  });
+  const portalListed = inRealm(function () {
+    const ids = function (rows) {
+      log.debug("Entering ids().");
+      log.debug("Leaving ids().");
+      return rows.map(function (row) {
+        return row.id;
+      });
+    };
+    return {
+      bob: ids(requests.grantedBy('azbob')),
+      carol: ids(requests.grantedBy('azcarol')),
+      alice: ids(requests.grantedBy('azalice')),
+      waiting: ids(requests.awaiting('azbob'))
+    };
+  });
+  t.check(approved.ok && portalListed.bob.indexOf(portalTask.id) >= 0 &&
+          portalListed.carol.indexOf(portalTask.id) < 0 &&
+          portalListed.alice.indexOf(portalTask.id) < 0 &&
+          portalListed.waiting.indexOf(portalTask.id) < 0,
+          'A12. the portal lists a live approval for the person who gave it',
+          JSON.stringify(portalListed));
+  since = marks.length;
+  const carolRefused = inRealm(function () {
+    return requests.decide(portalTask.id, 'revoke',
+                           { username: 'azcarol', door: 'portal' });
+  });
+  t.check(!carolRefused.ok && markedSince(since, 'STS-AUTHZEN-0088'),
+          'A13. somebody the policy does not let decide cannot revoke',
+          JSON.stringify(carolRefused));
+  inRealm(function () {
+    ldap.locateEntry('azpep').stored.attributes.mail =
+      ['azpep@example.com'];
+  });
+  const revoked = inRealm(function () {
+    return requests.decide(portalTask.id, 'revoke',
+                           { username: 'azbob', door: 'portal' });
+  });
+  const auditHit = inRealm(function () {
+    return audit.list().filter(function (row) {
+      return row.action === 'authzen.access-request.revoked' &&
+        String(row.summary || '').indexOf('via the portal') >= 0 &&
+        String(row.summary || '').indexOf(portalTask.id) >= 0;
+    }).length;
+  });
+  r = await request(port, 'POST', EVAL, pepCred, evaluation({
+    context: { application: 'todo-app',
+               approval: { id: approved.task.approval.id } } }));
+  const gone = inRealm(function () {
+    return requests.grantedBy('azbob').map(function (row) {
+      return row.id;
+    });
+  });
+  const mailed = inRealm(function () {
+    return mail.list({ username: 'azpep' }).filter(function (row) {
+      return row.template === 'authzen-access-revoked';
+    }).length;
+  });
+  t.check(revoked.ok && revoked.task.status === 'approved' &&
+          revoked.task.approval && revoked.task.approval.revoked === true &&
+          auditHit >= 1 && gone.indexOf(portalTask.id) < 0 && mailed >= 1 &&
+          r.json && r.json.decision === false &&
+          r.json.context.reason === 'approval_expired',
+          'A14. the approver revokes through the portal, the requester is ' +
+          'mailed, and a re-evaluation is approval_expired',
+          JSON.stringify(revoked) + ' / ' + brief(r) + ' mail ' + mailed);
+  const sample = {
+    id: 'tsk_portalrevoke01', application: 'todo-app', requester: 'azpep',
+    subject: { type: 'user', id: 'azalice' },
+    action: { name: 'read' },
+    resource: { type: 'document', id: 'doc-1' },
+    expiresAt: 1, approval: { approvedUntil: 2 }
+  };
+  const fakeT = {
+    html: function (key, params) {
+      log.debug("Entering html().");
+      log.debug("Leaving html().");
+      return key + (params && params.when ? ':' + params.when : '');
+    },
+    date: function (ms) {
+      log.debug("Entering date().");
+      log.debug("Leaving date().");
+      return String(ms);
+    }
+  };
+  const pendingHtml = accessPages.card(sample, fakeT, 'pending');
+  const grantedHtml = accessPages.card(sample, fakeT, 'granted');
+  t.check(pendingHtml.indexOf('access-request-approve-') >= 0 &&
+          pendingHtml.indexOf('access-request-deny-') >= 0 &&
+          pendingHtml.indexOf('access-request-revoke-') < 0 &&
+          grantedHtml.indexOf('access-request-revoke-') >= 0 &&
+          grantedHtml.indexOf('access-request-approve-') < 0 &&
+          grantedHtml.indexOf('portalAccessRequests.until') >= 0,
+          'A15. the portal draws Revoke only for an approval the person ' +
+          'gave', pendingHtml + ' / ' + grantedHtml);
+  const parsed = ModelZod.body('account', 'decideAccessRequest').safeParse({
+    request: 'tsk_portalrevoke01', action: 'revoke' });
+  t.check(parsed.success === true,
+          'A16. the account operation accepts revoke',
+          JSON.stringify(parsed.error || null));
+  const beforeApp = inRealm(function () {
+    return mail.list().filter(function (row) {
+      return row.template === 'authzen-access-revoked';
+    }).length;
+  });
+  r = await request(port, 'POST', SUBMIT, appCred,
+                    submission(await freshApp()));
+  const appTask = ((r.json || {}).task || {});
+  const appRevoked = inRealm(function () {
+    const done = requests.decide(appTask.id, 'approve',
+                                 { username: 'azbob', door: 'portal' });
+    if (!done.ok) {
+      return done;
+    }
+    return requests.decide(appTask.id, 'revoke',
+                           { username: 'azbob', door: 'portal' });
+  });
+  const afterApp = inRealm(function () {
+    return mail.list().filter(function (row) {
+      return row.template === 'authzen-access-revoked';
+    }).length;
+  });
+  t.check(appRevoked.ok && appRevoked.task.approval.revoked === true &&
+          afterApp === beforeApp,
+          'A17. an application requester is not mailed',
+          JSON.stringify(appRevoked) + ' mail ' + beforeApp + '->' +
+          afterApp);
 
   // -------------------------------------------------------------------------
   // C. CANCELLATION

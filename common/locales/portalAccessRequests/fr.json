@@ -11,5 +11,9 @@
   "waits": "Elle attend jusqu’au {when}.",
   "approve": "Approuver",
   "deny": "Refuser",
-  "done": "{status, select, approved {La demande d’accès est approuvée. L’application peut redemander maintenant.} denied {La demande d’accès est refusée.} other {La demande d’accès est {status}.}}"
+  "done": "{status, select, approved {La demande d’accès est approuvée. L’application peut redemander maintenant.} denied {La demande d’accès est refusée.} other {La demande d’accès est {status}.}}",
+  "yours": "Les approbations que vous avez données et qui sont encore en vigueur. En révoquer une signifie qu’une évaluation ultérieure qui la présente n’est pas approuvée.",
+  "until": "Cette approbation dure jusqu’au {when}.",
+  "revoke": "Révoquer",
+  "revoked": "L’approbation est révoquée. Une évaluation ultérieure qui la présente n’est pas approuvée."
 }

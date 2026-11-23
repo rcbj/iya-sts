@@ -11,5 +11,9 @@
   "waits": "Den väntar till {when}.",
   "approve": "Godkänn",
   "deny": "Neka",
-  "done": "{status, select, approved {Åtkomstbegäran är godkänd. Programmet kan fråga igen nu.} denied {Åtkomstbegäran är nekad.} other {Åtkomstbegäran är {status}.}}"
+  "done": "{status, select, approved {Åtkomstbegäran är godkänd. Programmet kan fråga igen nu.} denied {Åtkomstbegäran är nekad.} other {Åtkomstbegäran är {status}.}}",
+  "yours": "Godkännanden du gav som fortfarande gäller. Att återkalla ett betyder att en senare utvärdering som bär det inte godkänns.",
+  "until": "Detta godkännande gäller till {when}.",
+  "revoke": "Återkalla",
+  "revoked": "Godkännandet är återkallat. En senare utvärdering som bär det godkänns inte."
 }

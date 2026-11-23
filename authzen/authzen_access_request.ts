@@ -32,7 +32,11 @@
 //   3. **APPROVERS ACT IN THE PORTAL AND THE CONSOLE**: `decide()` is the
 //      one door both reach (`portal/portal_access_requests.ts` through
 //      `/account-api`, `authzen/authzen_admin.ts` through `/admin-api`), and
-//      approvers are mailed through the mail channel.
+//      approvers are mailed through the mail channel. A revocation from
+//      either door (#1203) mails the requester the same way, at the address
+//      on their own entry and with no link. The portal lists only the live
+//      approvals that person gave; the policy question stays
+//      `approve-access-request`.
 //   4. **CALLBACK IS IN THE FIRST BUILD**, to a URL registered for the
 //      requester only when that requester is an application
 //      (`appAuthzenCallbackUri`, written by an administrator) and never one
@@ -2080,6 +2084,8 @@ class AccessRequests {
                             'by ' + approver.username + ' via the ' +
                             approver.door + '; a re-evaluation carrying it ' +
                             'is not approved from now on.' });
+      // The revocation stands even when the requester cannot be mailed.
+      self.mailRequester(task, approver);
     }
     log.debug("Leaving AccessRequests.decide(). " + task.status);
     return { ok: true, changed: true, task: self.viewOf(task) };
@@ -2197,6 +2203,33 @@ class AccessRequests {
       return self.viewOf(row);
     });
     log.debug("Leaving AccessRequests.awaiting(). " + out.length);
+    return out;
+  }
+
+  /**
+   * The live approvals this person gave and may still revoke (#1203).
+   * The approver recorded on the approval, exactly — an emergency
+   * approval's approver is the door, so it is not listed here — and the
+   * same policy question as an approval. One past `approvedUntil` is
+   * included: `decide()` still revokes it.
+   *
+   * @param username - the signed-in person
+   * @returns the views
+   */
+  grantedBy(username: string): Json[] {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.grantedBy().");
+    const who = String(username || '');
+    const out = self.list(Number.MAX_SAFE_INTEGER).filter(function (row) {
+      const approval = row.approval;
+      return row.status === 'approved' && approval && !approval.revokedAt &&
+        approval.approver === who &&
+        self.mayDecide(row, { username: who, door: 'portal' }).allowed;
+    }).slice(0, 100).map(function (row: Json) {
+      return self.viewOf(row);
+    });
+    log.debug("Leaving AccessRequests.grantedBy(). " + out.length);
     return out;
   }
 
@@ -2329,6 +2362,78 @@ class AccessRequests {
     }
     log.debug("Leaving AccessRequests.mailApprovers(). " + queued);
     return queued;
+  }
+
+  /**
+   * The username the mail channel addresses a requester by. The task
+   * records the caller's DN, and the channel keys a person by their
+   * directory name. An application has no person entry, so it is not
+   * mailed.
+   *
+   * @param task - the row
+   * @returns the username, or '' when there is nobody to mail
+   */
+  private requesterMailName(task: Json): string {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.requesterMailName().");
+    const raw = String(task.requester || '').trim();
+    if (!raw || task.requesterKind === 'application') {
+      log.debug("Leaving AccessRequests.requesterMailName(). Nobody.");
+      return '';
+    }
+    let name = '';
+    try {
+      const hooks = this.deps.loadAdmin().directoryHooks();
+      const entry = hooks && hooks.locate ? hooks.locate(raw) : null;
+      if (entry && entry.person && entry.name) {
+        name = String(entry.name);
+      }
+    } catch (e) {
+      // A directory that cannot be asked leaves the notice unsent. The
+      // revocation already stands.
+      log.debug("Caught in AccessRequests.requesterMailName(): " +
+                ((e && e.message) || e));
+      name = '';
+    }
+    log.debug("Leaving AccessRequests.requesterMailName(). " +
+              (name ? 'A person.' : 'Nobody.'));
+    return name;
+  }
+
+  /**
+   * Mails the requester that an approval of their request was revoked.
+   * Never throws: the revocation is already saved. A requester the channel
+   * cannot address — an application, a person with no `mail` — is skipped.
+   *
+   * @param task - the row, already revoked
+   * @param approver - who revoked it
+   * @returns nothing
+   */
+  mailRequester(task: Json, approver: Approver): void {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AccessRequests.mailRequester(). " + task.id);
+    try {
+      const approval = task.approval || {};
+      this.deps.loadMailUses().authzenAccessRevoked(
+        this.requesterMailName(task), {
+          approver: approver.username || approver.door,
+          subject: String((task.subject || {}).id || ''),
+          action: String((task.action || {}).name || ''),
+          resource: String((task.resource || {}).type || '') + ' ' +
+                    String((task.resource || {}).id || ''),
+          application: task.application,
+          dedupKey: 'authzen-access-revoked:' + task.id + ':' +
+                    String(approval.revokedAt || '')
+        });
+    } catch (e) {
+      // The revocation stands. The code is the mail's failure, logged.
+      log.debug("Caught in AccessRequests.mailRequester(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-AUTHZEN-0138') + 'authzen: the ' +
+               'requester of ' + task.id + ' could not be mailed: ' +
+               ((e && e.message) || e));
+    }
+    log.debug("Leaving AccessRequests.mailRequester().");
   }
 
   // -------------------------------------------------------------------------
@@ -2687,6 +2792,7 @@ export = {
   viewOf: slot.forward('viewOf'),
   list: slot.forward('list'),
   awaiting: slot.forward('awaiting'),
+  grantedBy: slot.forward('grantedBy'),
   eligible: slot.forward('eligible'),
   approversOf: slot.forward('approversOf'),
   metadata: slot.forward('metadata'),

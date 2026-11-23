@@ -380,6 +380,31 @@ const BUILT_IN: TemplateSpec[] = [
           '{{justification}}</p><p>The policy allows emergency access to ' +
           'this. <a href="{{link}}">Review it</a>, and revoke it if it was ' +
           'not warranted.</p>' },
+  // THE REQUESTER, WHEN AN APPROVAL THEY WERE GIVEN IS REVOKED (#1203).
+  // No link: the portal page is the approver's, and a link without
+  // global.publicBaseUrl is refused.
+  { id: 'authzen-access-revoked', category: 'notification',
+    title: 'An approval of an access request you submitted was revoked',
+    values: ['username', 'approver', 'subject', 'action', 'resource',
+             'application'],
+    links: [],
+    subject: '{{service}}: an approval of an access request you ' +
+             'submitted was revoked',
+    text: 'An approval of an access request you submitted, ' +
+          '{{username}}, was revoked by {{approver}}.\n\n{{subject}} ' +
+          'asked to {{action}} {{resource}} in the application ' +
+          '{{application}}. That approval no longer stands. A later ' +
+          'evaluation that carries it is not approved. Submit a new ' +
+          'access request if the access is still needed.\n',
+    html: '<p>An approval of an access request you submitted, ' +
+          '<strong>{{username}}</strong>, was revoked by ' +
+          '<strong>{{approver}}</strong>.</p>' +
+          '<p><strong>{{subject}}</strong> asked to ' +
+          '<strong>{{action}}</strong> <strong>{{resource}}</strong> ' +
+          'in the application <strong>{{application}}</strong>. That ' +
+          'approval no longer stands. A later evaluation that carries ' +
+          'it is not approved. Submit a new access request if the ' +
+          'access is still needed.</p>' },
   { id: 'pki-pin-status', category: 'security',
     title: 'A certificate this realm relies on changed state',
     values: ['changes'],

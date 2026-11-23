@@ -993,6 +993,10 @@ needs a Permit: with `xacml.enforceAccess` off nobody can approve.
 Approvers decide in the user portal, under **Access requests**
 (`/portal/access-requests`), and administrators also on the console's AuthZEN
 tab. Approvers are mailed through the mail channel when a request arrives.
+An approver revokes an approval they gave on that same portal page. The
+requester is mailed that the approval no longer stands, at the address on
+their own directory entry, when the channel can address them. A later
+evaluation that carries the approval is not approved.
 
 ### Re-evaluating with an approval
 
@@ -1083,7 +1087,8 @@ the attribute catalogue, and the members of the `AUTHZEN_PEPS` group with
 their application scope and registered callback URLs, and the realm's
 access requests. From there an administrator adds, replaces or removes a
 catalogue row, sets a caller's scope or callback URLs, and approves, denies,
-revokes or cancels an access request.
+revokes or cancels an access request. The portal's Access requests page
+also revokes an approval that person gave.
 
 The same operations are on the management API:
 

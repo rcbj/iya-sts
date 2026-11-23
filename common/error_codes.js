@@ -26482,6 +26482,10 @@ const CODES = [
       'backoff 60 to 86400), or a token was not attempts=N or ' +
       'backoff=S, or one of them was repeated (#1202).',
     spec: 'the console\'s refusal' },
+  { code: 'STS-AUTHZEN-0138',
+    summary: 'The requester of a revoked AuthZEN access approval could ' +
+      'not be mailed; the revocation stands (#1203).',
+    spec: 'none — logged' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +

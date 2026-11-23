@@ -5675,8 +5675,8 @@ op `answerSignInRequest`(@js(#{
   #{
     `operationId`:"getAccessRequests",
     `tags`:#["Access requests"],
-    `summary`:"The AuthZEN access requests waiting for you to decide",
-    `description`:"The pending access requests (#1180) whose denying policy named you an approver — its approver role, its approver group, or the application's owners — and that the access-control policy lets you decide: each with who it is about, what it asks to do to what, through which PEP and application, and until when it waits. `enabled` is false where the realm has the profile off.\n\nThe door of the portal's `GET /portal/access-requests`.",
+    `summary`:"The AuthZEN access requests waiting for you, and the approvals you can revoke",
+    `description`:"The pending access requests (#1180) whose denying policy named you an approver — its approver role, its approver group, or the application's owners — and that the access-control policy lets you decide: each with who it is about, what it asks to do to what, through which PEP and application, and until when it waits. `granted` is the live approvals you gave that you may still revoke (#1203). `enabled` is false where the realm has the profile off.\n\nThe door of the portal's `GET /portal/access-requests`.",
     `parameters`:#[
 
     ],
@@ -5726,8 +5726,8 @@ op `getAccessRequests`(`responses/200/content/application~1json/schema`: WithEna
   #{
     `operationId`:"decideAccessRequest",
     `tags`:#["Access requests"],
-    `summary`:"Approves or denies an AuthZEN access request",
-    `description`:"Decides one request as you, after the access-control policy (action approve-access-request on resource authzen-access-request) said you may: an approval is handed to the PEP to carry on its next evaluation, which the realm's policy decides afresh; a denial ends the request. Refused for a request you may not decide, your own included where the policy forbids self-approval, and for one no longer pending.\n\nThe door of the portal's `POST /portal/access-requests`.",
+    `summary`:"Approves, denies or revokes an AuthZEN access request",
+    `description`:"Decides one request as you, after the access-control policy (action approve-access-request on resource authzen-access-request) said you may. An approval is handed to the PEP to carry on its next evaluation, which the realm's policy decides afresh. A denial ends the request. A revocation withdraws an approval you may decide: the task stays approved, a later evaluation that carries it is not approved, and the requester is mailed when the channel can address them (#1203). Refused when you may not decide, your own request included where the policy forbids self-approval, when a request is no longer pending, and when there is no live approval to revoke.\n\nThe door of the portal's `POST /portal/access-requests`.",
     `parameters`:#[
 
     ],
@@ -5765,7 +5765,7 @@ op `decideAccessRequest`(`requestBody/content/application~1json/schema`: {
       `pattern`:"^[A-Za-z0-9_-]+$",
       `description`:"The access request, from the list."
     }) `request`: string;
-    @js(#{`description`:"approve or deny."}) `action`: "approve" | "deny"
+    @js(#{`description`:"approve, deny or revoke."}) `action`: "approve" | "deny" | "revoke"
   },
   `responses/200/content/application~1json/schema`: WithOkMessageGo,
   `responses/400/content/application~1json/schema`: {

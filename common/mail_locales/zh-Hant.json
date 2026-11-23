@@ -75,6 +75,11 @@
       "text": "一項將您（{{username}}）列為核准者之一的請求已被立即授予緊急存取權限，未經核准者核准：{{subject}} 可以在短時間內透過 {{requester}} 在應用程式 {{application}} 中對 {{resource}} 執行 {{action}}。\n\n提供的理由：{{justification}}\n\n政策允許對此進行緊急存取。請審查，如不合理請撤銷：\n\n{{link}}\n",
       "html": "<p>一項將您（<strong>{{username}}</strong>）列為核准者之一的請求已被立即授予緊急存取權限，未經核准者核准：<strong>{{subject}}</strong> 可以在短時間內透過 {{requester}} 在應用程式 <strong>{{application}}</strong> 中對 <strong>{{resource}}</strong> 執行 <strong>{{action}}</strong>。</p><p>提供的理由：{{justification}}</p><p>政策允許對此進行緊急存取。請<a href=\"{{link}}\">審查</a>，如不合理請撤銷。</p>"
     },
+    "authzen-access-revoked": {
+      "subject": "{{service}}：您提交的存取請求的一項核准已被撤銷",
+      "text": "您提交的一項存取請求的核准，{{username}}，已由 {{approver}} 撤銷。\n\n{{subject}} 請求在應用程式 {{application}} 中 {{action}} {{resource}}。該核准不再有效。之後攜帶它的評估不會被核准。如果仍需要該存取，請提交新的存取請求。\n",
+      "html": "<p>您提交的一項存取請求的核准，<strong>{{username}}</strong>，已由 <strong>{{approver}}</strong> 撤銷。</p><p><strong>{{subject}}</strong> 請求在應用程式 <strong>{{application}}</strong> 中 <strong>{{action}}</strong> <strong>{{resource}}</strong>。該核准不再有效。之後攜帶它的評估不會被核准。如果仍需要該存取，請提交新的存取請求。</p>"
+    },
     "pki-pin-status": {
       "subject": "{{service}}：本領域所依賴的某張憑證狀態已變更",
       "text": "針對本領域所依賴憑證的每日稽核發現下列變更：\n\n{{changes}}\n\n管理主控台的 PKI 信任頁面會顯示每一項。您收到此郵件，是因為您在此領域中擁有 Admin Write 權限。\n",
