@@ -865,6 +865,24 @@ model WsTrustRelyingParty {
   @fromAttr(#{attr: "wstrustResponseRecipientXPath"})
   `responseRecipientXPath`?: string;
 
+  @fromAttr(#{attr: "wstrustSignRequest"})
+  `signRequest`?: string;
+
+  @fromAttr(#{attr: "wstrustSignRequestElements"})
+  `signRequestElements`?: string[];
+
+  @fromAttr(#{attr: "wstrustSignResponse"})
+  `signResponse`?: string;
+
+  @fromAttr(#{attr: "wstrustSignResponseElements"})
+  `signResponseElements`?: string[];
+
+  @fromAttr(#{attr: "wstrustResponseProtectionOrder"})
+  `responseProtectionOrder`?: string;
+
+  @fromAttr(#{attr: "wstrustEncryptSignature"})
+  `encryptSignature`?: string;
+
   @fromAttr(#{attr: "wstrustDecryptionCertificate"})
   `decryptionCertificate`?: string;
 

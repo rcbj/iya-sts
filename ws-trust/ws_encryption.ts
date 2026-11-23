@@ -19,6 +19,7 @@ import DomainMap = require('../common/domain_map');
 import CertificateTrust = require('../common/certificate_trust');
 import xmldom = require('../common/xml_parser');
 import WsDecryptionKey = require('./ws_decryption_key');
+import WebWsProtection = require('./web_ws_protection');
 
 const { DOMParser, XMLSerializer } = xmldom;
 const log = helpers.log;
@@ -35,34 +36,10 @@ const FRAGMENT = 'urn:iya-sts:ws-encryption:fragment';
 const HOLDER = 'iyaWsEncryptionHolder';
 
 // THE ONLY PREFIXES AN EXPRESSION MAY USE (#1668, rcbj on #1908,
-// 2026-11-18). XPath 1.0 resolves a prefix from the expression's context,
-// never from the document: an expression is the service's, and the
-// request is the requester's. Until then a prefix was read from the
-// element's own declarations first, so a request that bound `wst:` to a
-// namespace of its own could offer a decoy the map then matched. An
-// unprefixed name matches the null namespace only, as XPath 1.0 says.
-const PREFIXES = {
-  soap: 'http://schemas.xmlsoap.org/soap/envelope/',
-  soap11: 'http://schemas.xmlsoap.org/soap/envelope/',
-  soap12: 'http://www.w3.org/2003/05/soap-envelope',
-  wsse: 'http://docs.oasis-open.org/wss/2004/01/' +
-    'oasis-200401-wss-wssecurity-secext-1.0.xsd',
-  wsse11: 'http://docs.oasis-open.org/wss/' +
-    'oasis-wss-wssecurity-secext-1.1.xsd',
-  wsu: 'http://docs.oasis-open.org/wss/2004/01/' +
-    'oasis-200401-wss-wssecurity-utility-1.0.xsd',
-  wst: 'http://docs.oasis-open.org/ws-sx/ws-trust/200512',
-  wst14: 'http://docs.oasis-open.org/ws-sx/ws-trust/200802',
-  wst2005: 'http://schemas.xmlsoap.org/ws/2005/02/trust',
-  wst2004: 'http://schemas.xmlsoap.org/ws/2004/04/trust',
-  wsa: 'http://www.w3.org/2005/08/addressing',
-  wsa2004: 'http://schemas.xmlsoap.org/ws/2004/08/addressing',
-  saml: 'urn:oasis:names:tc:SAML:2.0:assertion',
-  saml11: 'urn:oasis:names:tc:SAML:1.0:assertion',
-  ds: DS,
-  xenc: XENC,
-  wsp: 'http://schemas.xmlsoap.org/ws/2004/09/policy'
-};
+// 2026-11-18): `web_ws_protection.ts`'s, since #1917, so the console's
+// XPath builder writes with the same table this evaluates with. Why a
+// prefix is the service's and never the request's is argued there.
+const PREFIXES = WebWsProtection.PREFIXES;
 
 // The requests whose signature was accepted (handleRst()), for the
 // recipient expression: a certificate it selects must be one that signature
@@ -324,16 +301,22 @@ export = class WsEncryption {
    * @param xml - the clear response
    * @param requestDoc - the request, where the recipient is read
    * @param appId - the AppliesTo's application, or ''
+   * @param also - optional; expressions added to a non-empty map for this
+   *   response alone (the signature, under sp:EncryptSignature)
    * @returns `{ ok, xml }` or the fault
    */
-  static protectResponse(xml, requestDoc, appId): any {
+  static protectResponse(xml, requestDoc, appId, also?: string[]): any {
     log.debug("Entering WsEncryption.protectResponse().");
     const id = String(appId || '');
     if (!WsEncryption.on(id, 'wstrust.encryptResponse')) {
       log.debug("Leaving WsEncryption.protectResponse(). Off.");
       return { ok: true, xml: xml };
     }
-    const paths = WsEncryption.stringsOf(id, 'responseElements');
+    const named = WsEncryption.stringsOf(id, 'responseElements');
+    // `also` is what the caller adds to the map for this response alone:
+    // the response's ds:Signature, where it is encrypted too (#1917,
+    // sp:EncryptSignature). It never stands in for an empty map.
+    const paths = named.length ? named.concat(also || []) : named;
     if (!paths.length) {
       log.debug("Leaving WsEncryption.protectResponse(). No expressions.");
       return WsEncryption.fail('STS-WSTRUST-0077', 'RequestFailed',
@@ -418,7 +401,7 @@ export = class WsEncryption {
     return { ok: true };
   }
 
-  private static fail(code, trustFault, reason): any {
+  static fail(code, trustFault, reason): any {
     log.debug("Entering WsEncryption.fail().");
     log.debug("Leaving WsEncryption.fail().");
     return { ok: false, code: code, trustFault: trustFault,
@@ -432,7 +415,7 @@ export = class WsEncryption {
     return value;
   }
 
-  private static applicationId(doc): string {
+  static applicationId(doc): string {
     log.debug("Entering WsEncryption.applicationId().");
     const applies = helpers.firstByLocal(doc, 'AppliesTo');
     const address = applies
@@ -981,7 +964,7 @@ export = class WsEncryption {
   // accepted signature's key reference names, or an element inside a part
   // that signature references by id. One anywhere else is a certificate a
   // party on the path could have put there.
-  private static coveredBySignature(doc, node): boolean {
+  static coveredBySignature(doc, node): boolean {
     log.debug("Entering WsEncryption.coveredBySignature().");
     if (!SIGNED.has(doc)) {
       log.debug("Leaving WsEncryption.coveredBySignature(). Unsigned.");
@@ -1273,7 +1256,7 @@ export = class WsEncryption {
 
   // The answer's wsse:Security header, made the first header the first
   // time it is wanted.
-  private static answerSecurity(doc): any {
+  static answerSecurity(doc): any {
     log.debug("Entering WsEncryption.answerSecurity().");
     const envelope = doc.documentElement;
     const soapNs = envelope.namespaceURI;
@@ -1380,7 +1363,8 @@ export = class WsEncryption {
   /**
    * The XPath subset: `/`, `//`, `*`, a name, `prefix:local`, `|`, and
    * predicates `local-name()`, `namespace-uri()` and `@attr` joined by
-   * `and`. Anything else is STS-WSTRUST-0079.
+   * `and`, any of them inside one `not(…)` (#1917: every header block but
+   * wsse:Security). Anything else is STS-WSTRUST-0079.
    *
    * @param doc - the document
    * @param expr - the expression
@@ -1513,6 +1497,18 @@ export = class WsEncryption {
 
   private static onePredicate(term): any {
     log.debug("Entering WsEncryption.onePredicate().");
+    // NOT(…) OVER THE SAME PREDICATES (#1917), so a preset can name every
+    // header block but the security header. It does not nest: the subset
+    // stays one level of negation over terms that each test one element.
+    const negated = /^not\(([\s\S]*)\)$/.exec(term);
+    if (negated) {
+      const inner = WsEncryption.predicatesOf(negated[1].trim());
+      if (inner.some(function (one) { return one.kind === 'not'; })) {
+        throw new Error('a not() inside a not() is not in the subset');
+      }
+      log.debug("Leaving WsEncryption.onePredicate(). not().");
+      return { kind: 'not', terms: inner };
+    }
     let matched = /^local-name\(\)\s*=\s*'([^']*)'$/.exec(term);
     if (matched) {
       log.debug("Leaving WsEncryption.onePredicate(). local-name.");
@@ -1542,6 +1538,9 @@ export = class WsEncryption {
     const parts = [];
     let start = 0;
     let depth = 0;
+    // A not(…)'s own `and` is its own (#1917): split outside parentheses
+    // as well as outside brackets.
+    let parens = 0;
     let quote = false;
     for (let i = 0; i < text.length; i++) {
       const ch = text.charAt(i);
@@ -1554,7 +1553,15 @@ export = class WsEncryption {
         if (depth < 0) {
           throw new Error('a bracket is not opened');
         }
-      } else if (!quote && depth === 0 && text.startsWith(sep, i)) {
+      } else if (!quote && ch === '(') {
+        parens += 1;
+      } else if (!quote && ch === ')') {
+        parens -= 1;
+        if (parens < 0) {
+          throw new Error('a parenthesis is not opened');
+        }
+      } else if (!quote && depth === 0 && parens === 0 &&
+                 text.startsWith(sep, i)) {
         parts.push(text.slice(start, i));
         i += sep.length - 1;
         start = i + 1;
@@ -1629,6 +1636,11 @@ export = class WsEncryption {
 
   // Once per element a predicate considers.
   private static predicateMatches(node, pred): boolean {
+    if (pred.kind === 'not') {
+      return !pred.terms.every(function (one) {
+        return WsEncryption.predicateMatches(node, one);
+      });
+    }
     if (pred.kind === 'local-name') {
       return node.localName === pred.value;
     }

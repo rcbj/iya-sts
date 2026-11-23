@@ -183,6 +183,7 @@ import WsTrustMex = require('./wstrust_mex');
 // XML Encryption of a request and a response (#1668). A library: it
 // registers nothing and does not require this module.
 import WsEncryption = require('./ws_encryption');
+import WsIntegrity = require('./ws_integrity');
 // The names a leaf gives its holder, defined once (#1827).
 import SubjectUrn = require('../common/subject_urn');
 
@@ -733,21 +734,40 @@ class WsTrust {
     return String(kept || '').trim();
   }
 
-  // A success envelope, encrypted where the application's response
-  // switch is on (#1668). envelope() has already held the clear text to
-  // the model. What is sent is the encrypted document, and a fault is
-  // not this function's to send: the caller returns it in the clear.
+  // A success envelope, signed and encrypted where the application's
+  // response switches are on (#1668 encrypts, #1917 signs, in the order
+  // WsIntegrity.protect() keeps). envelope() has already held the clear
+  // text to the model. What is sent is the protected document, and a
+  // fault is not this function's to send: the caller returns it in the
+  // clear. A realm whose keys are in the HSM signs off the event loop, so
+  // the answer is then a Promise of the same shape.
   private sealedBody(clear, doc, audience, version, trustNs): any {
     const { log } = this.deps;
     log.debug("Entering WsTrust.sealedBody().");
-    const sealed = WsEncryption.protectResponse(clear, doc,
+    const answer = (sealed: any): any => {
+      if (!sealed.ok) {
+        return { fault: this.encryptionFault(version, sealed, trustNs) };
+      }
+      return { xml: sealed.xml };
+    };
+    const sealing = WsIntegrity.protect(clear, doc,
       this.appliesToApplication(audience));
-    if (!sealed.ok) {
-      log.debug("Leaving WsTrust.sealedBody(). Not sealed.");
-      return { fault: this.encryptionFault(version, sealed, trustNs) };
+    if (WsTrust.isPending(sealing)) {
+      log.debug("Leaving WsTrust.sealedBody(). Off the event loop.");
+      return sealing.then(answer);
     }
-    log.debug("Leaving WsTrust.sealedBody().");
-    return { xml: sealed.xml };
+    log.debug("Leaving WsTrust.sealedBody(). " + !!sealing.ok);
+    return answer(sealing);
+  }
+
+  // Whether an answer is a Promise rather than the value itself.
+  private static isPending(value: any): boolean {
+    return !!value && typeof value.then === 'function';
+  }
+
+  // A sealed body's value now, or when it resolves (#1917).
+  private static whenSealed(held: any, next: (h: any) => any): any {
+    return WsTrust.isPending(held) ? held.then(next) : next(held);
   }
 
   // Every encryption refusal, as one SOAP Fault. The code that happened
@@ -755,7 +775,9 @@ class WsTrust {
   private encryptionFault(version, fault, trustNs): any {
     const { log } = this.deps;
     log.debug("Entering WsTrust.encryptionFault().");
-    log.info('wstrust: encryption refused the exchange — ' +
+    // #1917: a signature the message protection requires, or could not
+    // make, is refused through here too.
+    log.info('wstrust: message protection refused the exchange — ' +
              String(fault.reason || '') + '.');
     const code = fault.code === 'STS-WSTRUST-0075' ? 'STS-WSTRUST-0075'
       : fault.code === 'STS-WSTRUST-0076' ? 'STS-WSTRUST-0076'
@@ -765,6 +787,9 @@ class WsTrust {
       : fault.code === 'STS-WSTRUST-0081' ? 'STS-WSTRUST-0081'
       : fault.code === 'STS-WSTRUST-0082' ? 'STS-WSTRUST-0082'
       : fault.code === 'STS-WSTRUST-0083' ? 'STS-WSTRUST-0083'
+      : fault.code === 'STS-WSTRUST-0084' ? 'STS-WSTRUST-0084'
+      : fault.code === 'STS-WSTRUST-0085' ? 'STS-WSTRUST-0085'
+      : fault.code === 'STS-WSTRUST-0086' ? 'STS-WSTRUST-0086'
       : 'STS-WSTRUST-0077';
     log.debug("Leaving WsTrust.encryptionFault().");
     return { status: 500, version: version, errorCode: code,
@@ -4337,6 +4362,16 @@ class WsTrust {
       log.debug("Leaving WsTrust.handleRst(). The request would not open.");
       return this.encryptionFault(earlyVersion, opened, openedNs);
     }
+    // WHAT THE APPLICATION REQUIRES SIGNED (#1917), held to the signature
+    // accepted above, on the opened request — its AppliesTo names the
+    // application only now, and a signature made before the encryption
+    // references the elements as they are once opened.
+    const signedFor = WsIntegrity.holdRequest(doc,
+      !!options.connection.acceptedSignature);
+    if (!signedFor.ok) {
+      log.debug("Leaving WsTrust.handleRst(). Not signed as required.");
+      return this.encryptionFault(earlyVersion, signedFor, earlyNs);
+    }
     const version = this.detectSoapVersion(doc, contentType);
     const requestType = textByLocal(doc, 'RequestType');
     // Operation from the LAST path segment of RequestType, so any WS-Trust
@@ -4508,17 +4543,15 @@ class WsTrust {
           code: '<wst:Code>' + code + '</wst:Code>',
           reason: '<wst:Reason>' + xmlEscape(reason) + '</wst:Reason>' }) +
           '</wst:Status>' });
-      const held = this.sealedBody(this.envelope(version,
+      log.debug("Leaving WsTrust.handleRst(). Validate answers with " +
+                "wst:Status, once sealed.");
+      return WsTrust.whenSealed(this.sealedBody(this.envelope(version,
         WsTrust.answerAction('validate', trustNs), rstr), doc, audience,
-        version, trustNs);
-      if (held.fault) {
-        log.debug("Leaving WsTrust.handleRst(). Validate was not sealed.");
-        return held.fault;
-      }
-      log.debug("Leaving WsTrust.handleRst(). Validate answered with " +
-                "wst:Status.");
-      return { status: 200, version: version, errorCode: invalidCode,
-               body: held.xml };
+        version, trustNs), (held: any): any => {
+        return held.fault ? held.fault
+          : { status: 200, version: version, errorCode: invalidCode,
+              body: held.xml };
+      });
     }
 
     if (op === 'cancel' && trustNs === WST_2004_04_NS) {
@@ -4535,16 +4568,14 @@ class WsTrust {
     if (op === 'cancel') {
       const rstr = this.response(trustNs, {
         requestedTokenCancelled: '<wst:RequestedTokenCancelled/>' });
-      const held = this.sealedBody(this.envelope(version,
+      log.debug("Leaving WsTrust.handleRst(). Cancel answers with " +
+                "wst:RequestedTokenCancelled, once sealed.");
+      return WsTrust.whenSealed(this.sealedBody(this.envelope(version,
         WsTrust.answerAction('cancel', trustNs), rstr), doc, audience,
-        version, trustNs);
-      if (held.fault) {
-        log.debug("Leaving WsTrust.handleRst(). Cancel was not sealed.");
-        return held.fault;
-      }
-      log.debug("Leaving WsTrust.handleRst(). Cancel answered with " +
-                "wst:RequestedTokenCancelled.");
-      return { status: 200, version: version, body: held.xml };
+        version, trustNs), (held: any): any => {
+        return held.fault ? held.fault
+          : { status: 200, version: version, body: held.xml };
+      });
     }
 
     // -------------------------------------------------------------------------
@@ -4841,12 +4872,10 @@ class WsTrust {
   // relying party's sighting, the delegation act and the session.
   // ---------------------------------------------------------------------------
   private finishIssue(issuing: any, tok: any): any {
-    const {
-      applications, delegation, log, xmlEscape, iso, delegationPolicy
-    } = this.deps;
+    const { log, xmlEscape, iso } = this.deps;
     log.debug("Entering WsTrust.finishIssue().");
-    const { doc, version, trustNs, audience, subject, auth,
-            delegationDecision, lifetimeMin, keyTypeIssued, op } = issuing;
+    const { doc, version, trustNs, audience, auth, lifetimeMin,
+            keyTypeIssued, op } = issuing;
 
     const appliesToOut = audience
       ? '<wsp:AppliesTo xmlns:wsp="' + WSP_NS + '" xmlns:wsa="' + WSA_NS +
@@ -4947,15 +4976,37 @@ class WsTrust {
         '</wst:RequestSecurityTokenResponseCollection>');
     const action = WsTrust.answerAction(op === 'renew' ? 'renew' : 'issue',
                                         trustNs);
-    const held = this.sealedBody(this.envelope(version, action, inner),
-                                 doc, audience, version, trustNs);
+    const sealing = this.sealedBody(this.envelope(version, action, inner),
+                                    doc, audience, version, trustNs);
+    // A RESPONSE SIGNED IN THE HSM (#1917) is sealed off the event loop, so
+    // what follows the seal runs when it resolves, as an HSM token's issue
+    // already does (handleRst()); every other seal is in place.
+    if (WsTrust.isPending(sealing)) {
+      log.debug("Leaving WsTrust.finishIssue(). Sealed off the event loop.");
+      return sealing.then((held: any): any => {
+        return this.issueSealed(issuing, tok, signIn, held);
+      });
+    }
+    log.debug("Leaving WsTrust.finishIssue(). Sealed.");
+    return this.issueSealed(issuing, tok, signIn, sealing);
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT FOLLOWS A SEALED ISSUE (#1917: moved out of finishIssue() unchanged,
+  // so a response signed off the event loop reaches it as one sealed in place
+  // does): the sighting and the delegation act, which follow a response that
+  // will be sent. A seal that failed issued nothing.
+  // ---------------------------------------------------------------------------
+  private issueSealed(issuing: any, tok: any, signIn: any, held: any): any {
+    const { applications, delegation, log, delegationPolicy } = this.deps;
+    log.debug("Entering WsTrust.issueSealed().");
+    const { version, trustNs, audience, subject, auth,
+            delegationDecision, op } = issuing;
     if (held.fault) {
-      log.debug("Leaving WsTrust.finishIssue(). The response was not " +
+      log.debug("Leaving WsTrust.issueSealed(). The response was not " +
                 "sealed.");
       return held.fault;
     }
-    // The sighting and the delegation act follow a response that will be
-    // sent. A seal that failed issued nothing.
 
     // THE RELYING PARTY. AppliesTo is WS-Trust's name for the service a token
     // is being issued FOR, and this is where one is about to be. It is optional
@@ -5126,7 +5177,7 @@ class WsTrust {
       : (WsTrust.preOasis(trustNs)
         ? 'Issue answered with an RSTR (a pre-OASIS version).'
         : 'Issue answered with an RSTR Collection.');
-    log.debug("Leaving WsTrust.finishIssue(). " + leaving);
+    log.debug("Leaving WsTrust.issueSealed(). " + leaving);
     return { status: 200, version: version, signIn: signIn,
              body: held.xml };
   }

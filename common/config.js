@@ -12454,6 +12454,63 @@ const SETTINGS = [
                  'may name this algorithm only while response encryption ' +
                  'is on.' },
 
+  // WS-SECURITY MESSAGE INTEGRITY (#1917, with #1918's response signing).
+  // Both switches default off, so a request and a response stay as they
+  // were until an operator turns one on. Which elements must be signed are
+  // the application's own maps; the two response rows below only order
+  // what both switches together do.
+  { key: 'wstrust.signRequest', group: 'WS-Trust',
+    label: 'Require a request signed',
+    env: 'STS_WSTRUST_SIGN_REQUEST', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether a RequestSecurityToken whose AppliesTo names no ' +
+                 'application of its own must carry a WS-Security message ' +
+                 'signature. An application\'s wstrustSignRequest ' +
+                 'overrides this for a request whose AppliesTo names it, ' +
+                 'and its wstrustSignRequestElements names what else the ' +
+                 'signature must cover beside the SOAP Body. On, a request ' +
+                 'with no accepted signature, or one whose signature does ' +
+                 'not cover a named element, is a wsse:FailedCheck. ' +
+                 'Development believes a signature, as it always has.' },
+  { key: 'wstrust.signResponse', group: 'WS-Trust',
+    label: 'Sign a response',
+    env: 'STS_WSTRUST_SIGN_RESPONSE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether a RequestSecurityTokenResponse carries a ' +
+                 'wsu:Timestamp and a WS-Security message signature over ' +
+                 'it and the SOAP Body, made with this realm\'s XML ' +
+                 'signing key and naming its certificate in a ' +
+                 'BinarySecurityToken. An application\'s ' +
+                 'wstrustSignResponse overrides this, and its ' +
+                 'wstrustSignResponseElements names what the signature ' +
+                 'covers in place of the Body. A fault is sent unsigned. ' +
+                 'The WSDL\'s binding carries sp:IncludeTimestamp while ' +
+                 'this is on. On, and the signature cannot be made, the ' +
+                 'request is a fault in both modes.' },
+  { key: 'wstrust.responseProtectionOrder', group: 'WS-Trust',
+    label: 'Response protection order',
+    env: 'STS_WSTRUST_RESPONSE_PROTECTION_ORDER', type: 'enum',
+    enumValues: ['sign-then-encrypt', 'encrypt-then-sign'],
+    dflt: 'sign-then-encrypt', runtime: true,
+    description: 'The order a WS-Trust response is signed and encrypted ' +
+                 'in when both are on. `sign-then-encrypt` signs the ' +
+                 'plaintext and is WS-SecurityPolicy\'s default; ' +
+                 '`encrypt-then-sign` signs the ciphertext, and the WSDL\'s ' +
+                 'binding then carries sp:EncryptBeforeSigning. The ' +
+                 'wsse:Security header is written in the order a receiver ' +
+                 'processes it. An application\'s ' +
+                 'wstrustResponseProtectionOrder overrides this.' },
+  { key: 'wstrust.encryptSignature', group: 'WS-Trust',
+    label: 'Encrypt a response\'s signature',
+    env: 'STS_WSTRUST_ENCRYPT_SIGNATURE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether the ds:Signature of a WS-Trust response is ' +
+                 'encrypted too (WS-SecurityPolicy\'s sp:EncryptSignature), ' +
+                 'to the response\'s recipient. Read only while the ' +
+                 'response is signed and then encrypted. The WSDL\'s ' +
+                 'binding carries sp:EncryptSignature while it is on. An ' +
+                 'application\'s wstrustEncryptSignature overrides this.' },
+
   // WHO MAY START A SIGN-IN (#426, #710), the WS-Federation pair. A
   // wsignin1.0 at /wsfed is the relying party's (WS-Federation 1.2 section
   // 13.2.1); /wsfed/initiate/{rp} is this identity provider's, posting to the
