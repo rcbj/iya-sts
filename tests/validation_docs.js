@@ -43,7 +43,7 @@ function run(t) {
   t.check(page.indexOf('](openapi/)') >= 0,
           'the page points at the per-operation reference');
   const nav = fs.readFileSync(path.join(ROOT,
-                                        'docs/_data/navigation/v1-1-0.yml'),
+                                        'docs/_data/navigation/v1-2-0.yml'),
                               'utf8');
   t.check(nav.indexOf('/validation.html') >= 0, 'and is in the sidebar');
   log.debug("Leaving run().");

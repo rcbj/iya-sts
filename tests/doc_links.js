@@ -31,7 +31,7 @@ const ROOT = path.join(__dirname, '..');
 // *The versioned site*).
 const DOCS = path.join(ROOT, 'docs', 'v1.2.0');
 const NAVIGATION = path.join(ROOT, 'docs', '_data', 'navigation',
-                             'v1-1-0.yml');
+                             'v1-2-0.yml');
 const ORIGIN = 'https://rcbj.github.io/iya-sts/v1.2.0/';
 
 const SKIP_IDS = { 'logout-signout': true, 'logout-details': true };

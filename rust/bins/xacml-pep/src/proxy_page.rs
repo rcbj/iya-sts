@@ -36,7 +36,7 @@
 //! SHA-256 of its one `<style>` element and nothing else, which is
 //! narrower than `'self'` and needs no second request through a proxy whose
 //! every other path is the application's. **In English**: the PEP holds no
-//! message catalogs (`docs/v1.1.0/remote-pep.md`, *Several accounts*).
+//! message catalogs (`docs/v1.2.0/remote-pep.md`, *Several accounts*).
 //!
 //! **THE ACCOUNT CHOOSER USES THIS SHELL** (`document_shell()`), not a second
 //! document. It is not an error page — no warning box, no diagnostics, no
