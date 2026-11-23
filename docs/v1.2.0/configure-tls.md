@@ -238,14 +238,27 @@ with. A runtime anchor is written to the directory (`ou=trustAnchors`), so it
 survives a restart wherever the directory is persisted. There is no bulk
 clear: remove the rows you mean.
 
-Two anchors with the same subject and different keys are both kept. When
-OpenSSL cannot tell them apart as issuers — the later one has no authority
-key identifier, or one that names the earlier anchor — the add's `warning`
-names `STS-TLS-0064` and the earlier fingerprint, and the later row's
-`shadowedBy` is that fingerprint. Presenting the later certificate itself
-still verifies. A certificate it issued does not, while the earlier one is
-installed. An authority key identifier that names a different subject key
-identifier is not a collision.
+Two anchors with the same subject and different keys are both kept. OpenSSL
+looks an issuer up by subject name and may check a certificate against either
+of them; which one it finds first is not promised, and can change at a
+restart. When their subject key identifiers do not tell them apart (either
+has none, or both have the same one), the add's `warning` names both
+fingerprints, the service log carries `STS-TLS-0064`, and each row's
+`shadowedBy` is the other's fingerprint (the lowest, when several anchors
+share the subject). Every anchor a listener verifies against is compared,
+including a listener's own trust anchors file and this service's Root.
+
+Presenting either certificate itself still verifies when it is self-signed and
+its own extended key usage (`clientAuth`, when it has the extension), key
+usage, validity and critical extensions allow a client certificate. A
+certificate one of them issued may fail with `CERT_SIGNATURE_FAILURE` while
+both are installed. Two anchors whose subject key identifiers differ are a key
+rollover: no warning, and both verify.
+
+An anchor that is not self-signed, such as an Intermediate installed without
+its Root, or another authority's end-entity certificate installed alone, is
+not verified when its holder presents it. Install the authority that issued
+it.
 
 ### At startup
 

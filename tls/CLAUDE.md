@@ -1369,14 +1369,47 @@ service, and an anchor left out trusts less rather than more. `common/CLAUDE.md`
 (3dd) argues the mode.
 
 **TWO ANCHORS WITH ONE SUBJECT (#1242).** OpenSSL looks an issuer up by subject
-name, and uses the authority key identifier only when the certificate being
-verified carries one. A later anchor whose subject is already held, and which
-that lookup cannot tell from the earlier one, is kept: the add warns
-(`STS-TLS-0064`, the row's `shadowedBy` names the earlier fingerprint) and
-presenting that certificate itself verifies, because the handshake matches it
-by fingerprint. A certificate it issued does not, while the earlier anchor is
-installed. A later anchor whose authority key identifier names a different
-subject key identifier is a key rollover: no warning, and both verify.
+name, compared canonically, and narrows by the authority key identifier only
+when the certificate being verified carries one; it does not try the next
+same-name anchor when the signature fails. Which one it finds first is NOT
+promised (it follows the order of `ca`, which a restart rebuilds from the
+file, the directory and the Root in an order the store need not keep), so
+nothing here says "earlier" or "later". Two anchors share a subject when their
+canonical names are equal and their subject key identifiers do not tell them
+apart (either has none, or both the same); the add keeps both and warns with
+both fingerprints, the log line carries `STS-TLS-0064` (the warning does not:
+it names the caller's subject, so it is not fixed help text), and EACH row's
+`shadowedBy` names the other (the lowest fingerprint, when several share it).
+The candidates are every anchor a listener verifies against: the rows, each
+listener's own `trustAnchorsFile` and the service Root. The names and key ids
+are read by `common/crypto.js`'s `certificateLookupNames()`, whose name
+reading (`certificateNameRdns()`) `pki.js`'s `rdnsOfName()` asks too; this
+file parses no ASN.1.
+
+**THE HANDSHAKE PROMOTES ONLY A SELF-SIGNED ANCHOR, AND RE-ASKS WHAT OPENSSL
+MAY NOT HAVE REPORTED** (`recogniseInstalledAnchor()`). A refused client certificate is taken as
+verified only when it IS an anchor of that listener by fingerprint, is
+self-signed (names equal, signature verified under its own key), another
+anchor of that listener has its subject with a different fingerprint, OpenSSL's
+error is `DEPTH_ZERO_SELF_SIGNED_CERT`, `CERT_SIGNATURE_FAILURE` or
+`SELF_SIGNED_CERT_IN_CHAIN`, and `crypto.js`'s `presentedAnchorProblem()` finds
+nothing: node reports ONE error of the chain, so the sslclient purpose
+(extendedKeyUsage naming `clientAuth` when present, keyUsage holding
+digitalSignature or keyAgreement when present), the validity and unhandled
+critical extensions are asked again. **`UNABLE_TO_VERIFY_LEAF_SIGNATURE` was in
+that list until the review of #1994 and must not come back**: it is what an
+Intermediate installed alone, or an outside authority's end entity installed
+alone, gets, and promoting it made any such anchor an identity for whoever held
+its key — certificate sign-in, `/xacml/pep/*`, RFC 8705. "Self-signed" is not
+node's `checkIssued(self)`, which refuses a self-signed end entity whose
+keyUsage lacks keyCertSign; `certificateSelfSigned()` says why.
+
+**`peerChainOf()` makes a leaf its own issuer only when it is a self-signed
+anchor.** Any other anchor presented as a leaf walks like any leaf, so the path
+rules, `holdPeer`, revocation and the curve check see its real issuer. A
+certificate a shadowed anchor issued stays refused while both are installed;
+two anchors whose subject key identifiers differ are a rollover: no warning,
+and both verify. `tests/tls_same_subject_anchors.js` holds all of it.
 
 ## THE PROTOCOL POLICY, AND THE BIND ADDRESS
 

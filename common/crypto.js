@@ -18980,9 +18980,12 @@ function pkinitKdf(kdfOid, z, otherInfo, etype) {
 // so the size and the curve are asked here outright. What `rsaKeyProblem()`
 // still answers (the exponent, ROCA) it answers in every mode.
 //
-// **A DN IS NOT COMPARED HERE.** `common/certificate_subject.js` holds the one
-// comparison and it requires this module, so `certificateNameMatches()` is
-// about the subjectAltName forms RFC 9525 names and the door compares a DN.
+// **A DN STRING IS NOT COMPARED HERE.** `common/certificate_subject.js` holds
+// the one comparison of an RFC 4514 string and it requires this module, so
+// `certificateNameMatches()` is about the subjectAltName forms RFC 9525 names
+// and the door compares a DN. An ENCODED Name is read here, as RFC 5280
+// section 7.1 compares it (`certificateNameRdns()`, #1242): `pki.js`'s path
+// rules and the client truststore's issuer-lookup question share it.
 //
 // **PARSED SYNCHRONOUSLY, WITH pkijs ONLY FOR THE EXTENSIONS.** The vendored
 // `describeCertificate()` is asynchronous because of its key import and its
@@ -19371,6 +19374,214 @@ function certificateNameMatches(cert, expected) {
   });
   log.debug("Leaving certificateNameMatches(). " + matched);
   return members.length > 0 && matched;
+}
+
+// ---------------------------------------------------------------------------
+// A CERTIFICATE'S NAMES AND KEY IDENTIFIERS AS AN ISSUER LOOKUP READS THEM
+// (#1242, moved here from `tls/tls_server.js` and `pki.js`).
+//
+// OpenSSL finds the issuer of a certificate by its issuer NAME, compared as
+// a canonical encoding (case, leading, trailing and repeated spaces, and the
+// string type do not count), and narrows the candidates by the authority key
+// identifier only when the certificate being verified carries one. The
+// client truststore asks exactly that question of its anchors, and
+// `pki.js`'s path rules ask the name half of it, so both read it here.
+// `certificateNameRdns()` is `pki.js`'s `rdnsOfName()` as it was, moved
+// verbatim; `pki.js` now asks this one.
+// ---------------------------------------------------------------------------
+
+/**
+ * A Name as a list of RDNs, each the sorted `oid=value` of its attributes,
+ * with a string value compared as RFC 5280 section 7.1 asks (case folded,
+ * leading and trailing space removed, internal space collapsed, whatever its
+ * string type) and any other value by its DER. Two names are the same name
+ * when these lists are equal; a directoryName constraint is a PREFIX of it.
+ *
+ * @param node - the Name, as asn1js decoded it
+ * @returns the RDNs
+ * @throws Error when it is not a Name
+ */
+function certificateNameRdns(node) {
+  log.debug("Entering certificateNameRdns().");
+  if (!(node instanceof asn1js.Sequence)) {
+    log.debug("Leaving certificateNameRdns(). Not a Name.");
+    // error-code: none — a reader; the caller refuses what does not decode
+    throw new Error('a Name is not a SEQUENCE');
+  }
+  // An EMPTY RDN (a SET with no attribute) is read as no RDN at all: the
+  // ASN.1 says SIZE (1..MAX), and pkijs writes one for an empty name — the
+  // Fulcio-shaped certificates the SPIFFE sigstore tests make, and a TPM
+  // attestation key's — so what it means is not in doubt.
+  const sets = node.valueBlock.value.filter(function (set) {
+    return !(set instanceof asn1js.Set) || set.valueBlock.value.length > 0;
+  });
+  const out = sets.map(function (set) {
+    if (!(set instanceof asn1js.Set)) {
+      // error-code: none — a reader; the caller refuses what does not decode
+      throw new Error('a RelativeDistinguishedName is not a SET');
+    }
+    return set.valueBlock.value.map(function (atv) {
+      // asn1js declares a generic ValueBlock; a constructed one has `value`.
+      const block = /** @type {any} */ (atv.valueBlock);
+      const parts = block && block.value;
+      if (!parts || parts.length !== 2 ||
+          !(parts[0] instanceof asn1js.ObjectIdentifier)) {
+        // error-code: none — a reader; the caller refuses what does not
+        // decode
+        throw new Error('an attribute is not a type and a value');
+      }
+      const value = parts[1];
+      const text = value instanceof asn1js.BaseStringBlock
+        ? String(value.getValue()).trim().replace(/\s+/g, ' ').toLowerCase()
+        : '#' + Buffer.from(value.toBER(false)).toString('hex');
+      return parts[0].getValue() + '=' + text;
+    }).sort().join('+');
+  });
+  log.debug("Leaving certificateNameRdns(). " + out.length + " RDN(s).");
+  return out;
+}
+
+// One Name of a pkijs certificate as it was ENCODED: pkijs re-encodes an
+// empty subject as a SEQUENCE holding an empty SET, which is not what was
+// signed. `pki.js`'s `nameBytesOf()` has the same reason.
+function certificateEncodedName(name) {
+  log.debug("Entering certificateEncodedName().");
+  const kept = name && name.valueBeforeDecode;
+  const bytes = kept && kept.byteLength ? new Uint8Array(kept)
+    : new Uint8Array(name.toSchema().toBER(false));
+  const parsed = asn1js.fromBER(bytes);
+  if (parsed.offset === -1 || parsed.offset !== bytes.byteLength) {
+    log.debug("Leaving certificateEncodedName(). Not one DER value.");
+    // error-code: none — a reader; the caller refuses what does not decode
+    throw new Error('a Name is not one DER value');
+  }
+  log.debug("Leaving certificateEncodedName().");
+  return parsed.result;
+}
+
+/**
+ * Reads what an issuer lookup compares: the subject and issuer as canonical
+ * RDN lists, the subjectKeyIdentifier, and the keyIdentifier of the
+ * authorityKeyIdentifier, each as lower-case hex or '' where absent.
+ *
+ * @param cert - PEM text, DER bytes or a parsed certificate
+ * @returns `{ subject, issuer, subjectKeyIdentifier, authorityKeyIdentifier,
+ *   selfIssued }`; `selfIssued` is the RFC 5280 section 3.3 sense, the two
+ *   names equal, and says nothing about the signature
+ * @throws Error when the input is not a certificate
+ */
+function certificateLookupNames(cert) {
+  log.debug("Entering certificateLookupNames().");
+  const parsed = parseCertificate(cert);
+  const pkijs = require('pkijs');
+  const pk = pkijs.Certificate.fromBER(new Uint8Array(parsed.raw));
+  const out = {
+    subject: certificateNameRdns(certificateEncodedName(pk.subject)),
+    issuer: certificateNameRdns(certificateEncodedName(pk.issuer)),
+    subjectKeyIdentifier: '',
+    authorityKeyIdentifier: '',
+    selfIssued: false
+  };
+  out.selfIssued = out.subject.join(',') === out.issuer.join(',');
+  (pk.extensions || []).forEach(function (ext) {
+    if (ext.extnID === '2.5.29.14') {
+      const node = certificateExtensionNode(ext);
+      const view = node && node.valueBlock && node.valueBlock.valueHexView;
+      out.subjectKeyIdentifier = node instanceof asn1js.OctetString && view
+        ? Buffer.from(view).toString('hex') : '';
+    } else if (ext.extnID === '2.5.29.35') {
+      const node = certificateExtensionNode(ext);
+      const id = node instanceof asn1js.Sequence
+        ? node.valueBlock.value.filter(function (field) {
+          return field.idBlock.tagClass === 3 &&
+                 field.idBlock.tagNumber === 0;
+        })[0] : null;
+      out.authorityKeyIdentifier = id
+        ? Buffer.from(/** @type {any} */ (id.valueBlock).valueHexView ||
+                      []).toString('hex') : '';
+    }
+  });
+  log.debug("Leaving certificateLookupNames().");
+  return out;
+}
+
+/**
+ * Whether a certificate is self-issued (its two names equal, as RFC 5280
+ * section 7.1 compares them) and its signature verifies under its own key.
+ *
+ * Not node's `checkIssued(self)`: that is OpenSSL's `X509_check_issued()`,
+ * which also refuses an issuer whose keyUsage lacks keyCertSign, so a
+ * self-signed client certificate with `keyUsage = digitalSignature` — the
+ * usual shape — answers false there while OpenSSL's chain builder still
+ * takes it as its own issuer.
+ *
+ * @param cert - PEM text, DER bytes or a parsed certificate
+ * @returns true when both hold; false for anything that cannot be read
+ */
+function certificateSelfSigned(cert) {
+  log.debug("Entering certificateSelfSigned().");
+  let signed = false;
+  try {
+    const parsed = parseCertificate(cert);
+    signed = certificateLookupNames(parsed).selfIssued &&
+             parsed.verify(parsed.publicKey) === true;
+  } catch (e) {
+    log.debug("Caught in certificateSelfSigned(): " +
+              ((e && e.message) || e));
+    // A key or a name node cannot read is not a self-signature anybody here
+    // could rely on.
+    signed = false;
+  }
+  log.debug("Leaving certificateSelfSigned(). " + signed);
+  return signed;
+}
+
+/**
+ * Whether a certificate presented by a TLS peer, and matched to an installed
+ * trust anchor by its fingerprint, may be taken as verified although OpenSSL
+ * refused it (#1242). node reports ONE error of a chain OpenSSL continued
+ * through, so another — the purpose, the key usage, a critical extension
+ * nobody reads, the validity — is asked again here rather than trusted to
+ * be the one reported.
+ *
+ * @param cert - PEM text, DER bytes or a parsed certificate
+ * @param purpose - `{ keyUsage, eku, now }`: the keyUsage bits any one of
+ *   which permits the use (RFC 5280 section 4.2.1.3; absent permits all),
+ *   and the extendedKeyUsage OID that must be named when the extension is
+ *   present. anyExtendedKeyUsage does not stand in for it, as it does not in
+ *   OpenSSL's purpose checks.
+ * @returns '' when it may, or the sentence saying why not
+ */
+function presentedAnchorProblem(cert, purpose) {
+  log.debug("Entering presentedAnchorProblem().");
+  const want = purpose || {};
+  let problem = '';
+  try {
+    const parsed = parseCertificate(cert);
+    if (!certificateSelfSigned(parsed)) {
+      problem = 'it is not self-issued with a signature its own key ' +
+                'verifies';
+    } else {
+      const facts = certificateFacts(parsed);
+      const found = certificateFieldProblems(parsed, {
+        role: 'leaf', mayBeCa: true, keyUsage: want.keyUsage || [],
+        eku: null, now: want.now
+      });
+      if (found.length) {
+        problem = found[0].why;
+      } else if (want.eku && facts.eku &&
+                 facts.eku.indexOf(want.eku) === -1) {
+        problem = 'its extendedKeyUsage does not name ' + want.eku;
+      }
+    }
+  } catch (e) {
+    log.debug("Caught in presentedAnchorProblem(): " +
+              ((e && e.message) || e));
+    // A certificate this cannot read is not one to vouch for.
+    problem = 'it could not be read (' + ((e && e.message) || e) + ')';
+  }
+  log.debug("Leaving presentedAnchorProblem(). " + (problem || 'ok'));
+  return problem;
 }
 
 // ===========================================================================
@@ -21621,6 +21832,10 @@ module.exports = {
   certificateFieldProblems: certificateFieldProblems,
   certificateFieldProblem: certificateFieldProblem,
   certificateNameMatches: certificateNameMatches,
+  certificateNameRdns: certificateNameRdns,
+  certificateLookupNames: certificateLookupNames,
+  certificateSelfSigned: certificateSelfSigned,
+  presentedAnchorProblem: presentedAnchorProblem,
   // --- section 17: the rest of the service's operations (#453) ---
   SHA1_PURPOSES: SHA1_PURPOSES,
   sha1Digest: sha1Digest,
