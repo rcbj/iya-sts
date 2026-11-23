@@ -1065,7 +1065,7 @@ namespace IyaSts.Api.Common;
 
 @hoisted model WithDescriptionObjectId { @js(#{`description`:"The `id` of a row in `workbench.objects`."}) `objectId`: string }
 
-@hoisted model WithOkErrorsErrorEtc4 { `ok`?: boolean; `errors`?: (string)[]; `error`?: string; `error_description`?: string }
+@hoisted model WithOkErrorsErrorEtc4 { `ok`?: boolean; `errors`?: (string)[]; `messages`?: RefusalMessages; `error`?: string; `error_description`?: string }
 
 @hoisted model WithActiveWaitingConcurrencyEtc4 { `active`?: integer; `waiting`?: integer; `concurrency`?: numeric; `backlog`?: numeric }
 
@@ -1169,7 +1169,7 @@ namespace IyaSts.Api.Common;
 
 @hoisted model WithOkNextErrorsEtc5 { `ok`?: boolean; `next`?: "refused"; `errors`?: (string)[]; `messages`?: RefusalMessages; `error`?: string; `error_description`?: string }
 
-@hoisted model WithOkErrorsErrorEtc52 { `ok`?: boolean; `errors`?: (string)[]; `error`?: string; `error_description`?: string; `message`?: string }
+@hoisted model WithOkErrorsErrorEtc52 { `ok`?: boolean; `errors`?: (string)[]; `messages`?: RefusalMessages; `error`?: string; `error_description`?: string; `message`?: string }
 
 @hoisted model WithDescriptionIdApTrueEtc4 { @js(#{`description`:"The relationship."}) `id`: string; @js(#{`$apTrue`:true}) `subject`: Record<unknown> }
 

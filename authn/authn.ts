@@ -12535,9 +12535,8 @@ class Authn {
         : postLogin.noteSkipped(step.username, due);
       if (!skipped.ok) {
         errorCodes.mark(res, 'STS-AUTHN-0474');
-        this.stepRefused(res, 'The time allowed for this has passed, so ' +
-          'it cannot be skipped any more. Register the passkey to finish ' +
-          'signing in.');
+        this.stepRefused(res,
+          Sentence.say('refusals.authn.postLoginNotSkippable'));
         log.debug("Leaving Authn.postLoginAct(). Required.");
         return;
       }
@@ -12582,12 +12581,12 @@ class Authn {
         ? credentials.beginKeyUpgrade(String(step.username),
                                       String(key.credentialId),
                                       { mode: 'replace' })
-        : errorCodes.mark({ ok: false, errors: ['There is no classical ' +
-            'passkey to upgrade any more.'] }, 'STS-AUTHN-0451');
+        : errorCodes.mark({ ok: false, errors: [Sentence.say(
+            'refusals.authn.noClassicalPasskeyLeft')] }, 'STS-AUTHN-0451');
       if (!begun.ok) {
         errorCodes.mark(res, errorCodes.codeOf(begun) || 'STS-AUTHN-0450');
-        this.stepRefused(res, String((begun.errors || [])[0] ||
-                                     'The passkey could not be upgraded.'));
+        this.stepRefused(res, (begun.errors || [])[0] ||
+          Sentence.say('refusals.authn.passkeyNotUpgradable'));
         log.debug("Leaving Authn.postLoginAct(). The upgrade was refused.");
         return;
       }
@@ -12686,8 +12685,9 @@ class Authn {
                      code === 'STS-AUTHN-0381' ||
                      // A required post-login activity (#1096).
                      code === 'STS-AUTHN-0473') && said.refusedWhy
-      ? String(said.refusedWhy)
-      : 'Authentication failed for ' + username + '.';
+      ? (Sentence.is(said.refusedWhy) ? said.refusedWhy
+                                        : String(said.refusedWhy))
+      : Sentence.say('refusals.authn.failedFor', { username: username });
     log.info('authn: the session for "' + username + '" was refused at the ' +
              'end of the sign-in screen (' + code + '); drawing the screen ' +
              'again.');
@@ -13922,6 +13922,32 @@ class Authn {
   // step: a wrong code, a ceremony that did not verify, a rate limit. The
   // sentence is English (#539) and carries no code.
   /**
+   * A refusal's answer: `{ ok: false, next: 'refused', errors }`, and the
+   * sentences' catalog messages beside them where any is a `Sentence`
+   * (#2006), which the page draws in its own language.
+   *
+   * @param list - the sentences, `Sentence`s or English text
+   * @returns the answer
+   */
+  refusalBody(list: unknown[]): any {
+    const { log } = this.deps;
+    log.debug("Entering Authn.refusalBody().");
+    const items = (Array.isArray(list) ? list : []).filter(function (one) {
+      return one !== undefined && one !== null && one !== '';
+    });
+    const body: any = { ok: false, next: 'refused',
+                        errors: items.map(function (one) {
+                          return String(one);
+                        }) };
+    const messages = Sentence.messagesOf(items);
+    if (messages) {
+      body.messages = messages;
+    }
+    log.debug("Leaving Authn.refusalBody().");
+    return body;
+  }
+
+  /**
    * Refuses an act at a second-factor step; the page draws it.
    *
    * @param res - the response
@@ -13933,12 +13959,7 @@ class Authn {
               status?: number): void {
     const { log } = this.deps;
     log.debug("Entering Authn.stepRefused(). " + (status || 400));
-    const body: any = { ok: false, next: 'refused', errors: [String(why)] };
-    const messages = Sentence.messagesOf([why]);
-    if (messages) {
-      body.messages = messages;
-    }
-    this.answerJson(res, status || 400, body);
+    this.answerJson(res, status || 400, this.refusalBody([why]));
     log.debug("Leaving Authn.stepRefused().");
   }
 
@@ -14114,9 +14135,8 @@ class Authn {
     const step = this.mfaStepFor(mfaId, 'any');
     if (!step) {
       errorCodes.mark(res, 'STS-AUTHN-0331');
-      this.answerJson(res, 400, { ok: false, next: 'refused', errors: [
-        'This sign-in step has already ended. Start the request again ' +
-        'from the application that sent you here.'] });
+      this.answerJson(res, 400, this.refusalBody([
+        Sentence.say('refusals.authn.stepEnded')]));
       log.debug("Leaving Authn.mfaStartOver(). No step.");
       return;
     }
@@ -14144,9 +14164,8 @@ class Authn {
     if (!step || step.expires < Date.now()) {
       pendingPasswordChange.delete(String(changeId || ''));
       errorCodes.mark(res, 'STS-AUTHN-0331');
-      this.answerJson(res, 400, { ok: false, next: 'refused', errors: [
-        'This sign-in step has already ended. Start the request again ' +
-        'from the application that sent you here.'] });
+      this.answerJson(res, 400, this.refusalBody([
+        Sentence.say('refusals.authn.stepEnded')]));
       log.debug("Leaving Authn.passwordChangeStartOver(). No step.");
       return;
     }
@@ -14194,7 +14213,7 @@ class Authn {
    * @param status - the HTTP status, 400 where left out
    * @returns nothing
    */
-  refuseAtScreen(res: any, record: any, error: string,
+  refuseAtScreen(res: any, record: any, error: string | Sentence,
                  status?: number): void {
     const { log } = this.deps;
     log.debug("Entering Authn.refuseAtScreen().");
@@ -14737,7 +14756,7 @@ class Authn {
       log.debug("Leaving Authn.certificateSignIn(). Not taken here.");
       errorCodes.mark(res, 'STS-AUTHN-0467');
       return this.screenRefused(res, record,
-        'Signing in with a certificate is not offered for this sign-in.');
+               Sentence.say('refusals.authn.certificateNotOffered'));
     }
     const door = this.deps.certificateDoor();
     const holder = door ? await door.screenCertificateHolder(req)
@@ -14787,8 +14806,8 @@ class Authn {
     if (second.refused) {
       log.debug("Leaving Authn.certificateSignIn(). Refused.");
       errorCodes.mark(res, second.errorCode || 'STS-AUTHN-0009');
-      return this.screenRefused(res, record,
-        second.onRisk ? 'Authentication failed.' : String(second.refused));
+      return this.screenRefused(res, record, second.onRisk
+               ? Sentence.say('refusals.authn.failed') : second.refused);
     }
     if (second.handled) {
       holder.recordVerification();
@@ -15599,12 +15618,12 @@ class Authn {
     if (!res.headersSent && typeof res.status === 'function') {
       errorCodes.mark(res, code);
       res.set('Retry-After', '5');
+      const said = Sentence.say('refusals.authn.accountsUnread');
       this.answerJson(res, 503, {
         ok: false, error: 'unavailable',
         error_description: 'This browser\'s accounts could not be read. ' +
                            'Try again.',
-        errors: ['This browser\'s accounts could not be read just now. ' +
-                 'Try again in a moment.'] });
+        errors: [String(said)], messages: Sentence.messagesOf([said]) });
     } else {
       errorCodes.mark(res, code);
     }
@@ -15656,8 +15675,7 @@ class Authn {
     const { log, errorCodes } = this.deps;
     log.debug("Entering Authn.accountsRefused(). " + code);
     errorCodes.mark(res, code);
-    this.answerJson(res, status, { ok: false, next: 'refused',
-                                   errors: [String(why)] });
+    this.answerJson(res, status, this.refusalBody([why]));
     log.debug("Leaving Authn.accountsRefused().");
   }
 
@@ -15736,8 +15754,7 @@ class Authn {
                'account picker carried an account set cookie that opens ' +
                'no set — another selection rotated it — and was refused.');
       this.accountsRefused(res, 409, 'STS-AUTHN-0348',
-        'The accounts in this browser changed in another tab. Choose ' +
-        'again.');
+        Sentence.say('refusals.authn.accountsChanged'));
       log.debug("Leaving Authn.accountsAct(). A stale set cookie.");
       return;
     }
@@ -15753,8 +15770,7 @@ class Authn {
       const live = row ? this.liveAccountCount(row, null) : 0;
       if (live >= AccountSets.maxAccounts()) {
         this.accountsRefused(res, 409, 'STS-AUTHN-0340',
-          'This browser is already signed in to ' + live + ' accounts, the ' +
-          'most it may hold. Sign out of one of them first.');
+          Sentence.say('refusals.authn.accountsFull', { count: live }));
         log.debug("Leaving Authn.accountsAct(). Full.");
         return;
       }
@@ -15765,15 +15781,14 @@ class Authn {
     if (body.action === 'forget') {
       if (liveSid) {
         this.accountsRefused(res, 409, 'STS-AUTHN-0347',
-          'That account is still signed in. Sign it out first; only a ' +
-          'signed-out account can be forgotten.');
+          Sentence.say('refusals.authn.accountStillSignedIn'));
         log.debug("Leaving Authn.accountsAct(). Live.");
         return;
       }
       const entry = row && row.remembered ? row.remembered[key] : null;
       if (!row || !AccountSets.forget(row, key)) {
         this.accountsRefused(res, 409, 'STS-AUTHN-0345',
-          'That account is not one this browser remembers.');
+          Sentence.say('refusals.authn.accountNotRemembered'));
         log.debug("Leaving Authn.accountsAct(). Not remembered.");
         return;
       }
@@ -15802,8 +15817,7 @@ class Authn {
       }
       stats.recordAccountChoice('selectFailed');
       this.accountsRefused(res, 409, 'STS-AUTHN-0345',
-        'That account is no longer signed in here. Choose it again to sign ' +
-        'in, or choose another.');
+        Sentence.say('refusals.authn.accountNoLongerSignedIn'));
       log.debug("Leaving Authn.accountsAct(). Not live.");
       return;
     }
@@ -15815,8 +15829,7 @@ class Authn {
     if (!session) {
       stats.recordAccountChoice('selectFailed');
       this.accountsRefused(res, 409, 'STS-AUTHN-0345',
-        'That account\'s session has just ended. Choose it again to sign ' +
-        'in, or choose another.');
+        Sentence.say('refusals.authn.accountSessionEnded'));
       log.debug("Leaving Authn.accountsAct(). Ended meanwhile.");
       return;
     }
@@ -15984,7 +15997,7 @@ class Authn {
       errorCodes.mark(res, 'STS-AUTHN-0201');
       log.debug("Leaving Authn.finishPasswordSignIn(). Disabled.");
       return this.screenRefused(res, record,
-        'Authentication failed for ' + username + '.');
+        Sentence.say('refusals.authn.failedFor', { username: username }));
     }
 
     // THE ROLE GATE, AND IT IS ASKED BEFORE THE SECOND FACTOR RATHER THAN AFTER
@@ -16079,7 +16092,7 @@ class Authn {
       errorCodes.mark(res, 'STS-RISK-0016');
       log.debug("Leaving Authn.finishPasswordSignIn(). Refused on risk.");
       return this.screenRefused(res, record,
-        'Authentication failed for ' + username + '.');
+        Sentence.say('refusals.authn.failedFor', { username: username }));
     }
     if (!roleAnswer.allowed && roleAnswer.risk && !roleAnswer.risk.observed) {
       riskFactor = roleAnswer.risk.factor;
@@ -16169,7 +16182,7 @@ class Authn {
       log.debug("Leaving Authn.finishPasswordSignIn(). No factor to step " +
                 "up with.");
       return this.screenRefused(res, record,
-        'Authentication failed for ' + username + '.');
+        Sentence.say('refusals.authn.failedFor', { username: username }));
     }
     const riskChoice = riskFactor === 'security-key' ? 'webauthn'
       : (riskFactor ? (enrolled.secondFactor ||
@@ -16192,8 +16205,7 @@ class Authn {
       errorCodes.mark(res, 'STS-AUTHN-0204');
       log.debug("Leaving Authn.finishPasswordSignIn(). No key to present.");
       return this.screenRefused(res, record,
-        'This request needs a passkey, and this account holds none. Add ' +
-        'one at /portal/keys and sign in again.');
+               Sentence.say('refusals.authn.passkeyNeededNoneHeld'));
     }
     let factor = passwordless || record.forceKey ||
                  riskFactor === 'security-key'
@@ -16288,11 +16300,9 @@ class Authn {
       errorCodes.mark(res, 'STS-AUTHN-0171');
       log.debug("Leaving Authn.finishPasswordSignIn(). Passwordless under a " +
                 "requirement.");
-      return this.screenRefused(res, record,
-        'A second factor is required ' + (requirement.byUser
-          ? 'for this account' : 'in this realm') + ', and a security key on ' +
-        'its own is one factor. Sign in with your password; you will be ' +
-        'asked for your second factor, or to set one up.');
+      return this.screenRefused(res, record, requirement.byUser
+               ? Sentence.say('refusals.authn.keyAloneAccountNeedsTwo')
+               : Sentence.say('refusals.authn.keyAloneRealmNeedsTwo'));
     }
     if (requirement.required && !factor && !skippedSecondFactor) {
       // Only the ones the application allows (#475).
@@ -16307,8 +16317,7 @@ class Authn {
         log.debug("Leaving Authn.finishPasswordSignIn(). Nothing the " +
                   "application allows can be enrolled.");
         return this.screenRefused(res, record,
-          'A second factor is required, and none that this application ' +
-          'accepts can be set up here. Ask an administrator.');
+                 Sentence.say('refusals.authn.secondFactorNoneForApplication'));
       }
       if (!offered.totp && !offered.webauthn) {
         log.warn(errorCodes.tag('STS-AUTHN-0172') +
@@ -16322,9 +16331,7 @@ class Authn {
         log.debug("Leaving Authn.finishPasswordSignIn(). Nothing can be " +
                   "enrolled.");
         return this.screenRefused(res, record,
-          'A second factor is required for this account and none can be set ' +
-          'up here: authenticator apps and security keys are both switched ' +
-          'off in this realm. Ask an administrator.');
+                 Sentence.say('refusals.authn.secondFactorNoneInRealm'));
       }
       pending.delete(record.id);
       const setupId = randomId(24);
@@ -17510,9 +17517,8 @@ class Authn {
     } catch (e) {
       log.debug("Caught in Authn.postLoginUpgradeAct(): " +
                 ((e && e.message) || e));
-      answer = errorCodes.mark({ ok: false, errors: ['The passkey could ' +
-        'not be checked. Your passkey is unchanged; try again.'] },
-                               'STS-AUTHN-0027');
+      answer = errorCodes.mark({ ok: false, errors: [Sentence.say(
+        'refusals.authn.passkeyUncheckedUnchanged')] }, 'STS-AUTHN-0027');
     }
     if (!answer.ok) {
       if (!credentials.pendingKeyUpgradeFor(name)) {
@@ -18061,7 +18067,7 @@ class Authn {
     const { log, credentials, webauthnPolicy, errorCodes,
       webauthnVerifier } = this.deps;
     log.debug("Entering Authn.passkeySignIn().");
-    const SAID = 'That passkey could not sign you in.';
+    const SAID = Sentence.say('refusals.authn.passkeyCouldNotSignIn');
     // The application's passkey policy until the account is known (#535).
     this.deps.passkeyPolicy.select('', record.application);
     const offered = this.passkeyOffered(record);
@@ -18087,8 +18093,8 @@ class Authn {
                 ((e && e.message) || e));
       log.debug("Leaving Authn.passkeySignIn(). Not JSON.");
       return this.passkeyRefused(res, base, record, 'STS-AUTHN-0021',
-        'the posted credential was not JSON',
-        'The browser returned something this server could not read.');
+               'the posted credential was not JSON',
+               Sentence.say('refusals.authn.browserAnswerUnreadable'));
     }
     // THE CEREMONY IN HAND (#943), for its row: what was posted, and below
     // whose it is, which key, and what it signed with.
@@ -18102,20 +18108,18 @@ class Authn {
       // blocked it posts no credential, and is told why.
       log.debug("Leaving Authn.passkeySignIn(). No ceremony ran.");
       return this.passkeyRefused(res, base, record, 'STS-AUTHN-0022',
-        credential.error ? 'the browser refused: ' + credential.error
-                         : 'the browser ran no ceremony',
-        credential.error
-          ? 'Your browser did not use a passkey (' + credential.error + ').'
-          : 'Your browser did not run the ceremony. Signing in with a ' +
-            'passkey needs JavaScript — a passkey is used by the browser and ' +
-            'no form can do it. Allow scripts for this page, or type your ' +
-            'username.');
+               credential.error ? 'the browser refused: ' + credential.error
+                 : 'the browser ran no ceremony',
+               credential.error
+                 ? Sentence.say('refusals.authn.browserNoPasskey',
+                                { error: String(credential.error) })
+                 : Sentence.say('refusals.authn.browserNoCeremonySignIn'));
     }
     if (!challenge) {
       log.debug("Leaving Authn.passkeySignIn(). No challenge was armed.");
       return this.passkeyRefused(res, base, record, 'STS-AUTHN-0019',
-        'the screen armed no challenge, or it was spent',
-        'That passkey request has expired. Try again.');
+               'the screen armed no challenge, or it was spent',
+               Sentence.say('refusals.authn.passkeyRequestExpired'));
     }
     const rpRefusal = this.rpIdProblem(base);
     if (rpRefusal) {
@@ -18146,10 +18150,8 @@ class Authn {
       if (legacy) {
         log.debug("Leaving Authn.passkeySignIn(). A key from before #474.");
         return this.passkeyRefused(res, base, record, 'STS-AUTHN-0304',
-          'a key registered before #474 under the username',
-          'This passkey was registered before passkeys could sign in ' +
-          'without a username. Type your username to use it, or register ' +
-          'it again at /portal/keys.');
+                 'a key registered before #474 under the username',
+                 Sentence.say('refusals.authn.passkeyBeforeUsernameless'));
       }
       log.debug("Leaving Authn.passkeySignIn(). The handle names nobody.");
       return this.passkeyRefused(res, base, record, 'STS-AUTHN-0302',
@@ -18169,12 +18171,10 @@ class Authn {
     if (!handled.ok) {
       log.debug("Leaving Authn.passkeySignIn(). Section 7.2 step 6.");
       return this.passkeyRefused(res, base, record,
-        errorCodes.codeOf(handled) || 'STS-AUTHN-0303', handled.why,
-        errorCodes.codeOf(handled) === 'STS-AUTHN-0304'
-          ? 'This passkey was registered before passkeys could sign in ' +
-            'without a username. Type your username to use it, or ' +
-            'register it again at /portal/keys.'
-          : SAID);
+               errorCodes.codeOf(handled) || 'STS-AUTHN-0303', handled.why,
+               errorCodes.codeOf(handled) === 'STS-AUTHN-0304'
+                 ? Sentence.say('refusals.authn.passkeyBeforeUsernameless')
+                 : SAID);
     }
     let verdict;
     try {
@@ -18310,9 +18310,9 @@ class Authn {
         'assertion-did-not-verify');
       log.debug("Leaving Authn.finishWebauthn(). Refused: " +
                 failed.join('; '));
-      return this.stepRefused(res, 'The second factor did not verify; ' +
-                              'this check failed: ' + failed.join('; ') +
-                              '.');
+      return this.stepRefused(res,
+               Sentence.say('refusals.authn.secondFactorCheckFailed',
+                            { checks: failed.join('; ') }));
     }
 
     pendingMfa.delete(String(body.mfa_id));
@@ -18934,8 +18934,7 @@ class Authn {
                 "asked for.");
       errorCodes.mark(res, 'STS-AUTHN-0333');
       return this.screenRefused(res, record,
-        'This application signs in with a passkey and no username. Use ' +
-        'Sign in with a passkey.');
+               Sentence.say('refusals.authn.usernamelessOnly'));
     }
     // A LOCKED RECORD'S NAME IS THE RECORD'S (#109): see
     // beginAuthentication(). Whatever was typed is not read.
@@ -18948,8 +18947,7 @@ class Authn {
                 "entered, so the form is shown again.");
       errorCodes.mark(res, 'STS-AUTHN-0006');
       return this.screenRefused(res, record,
-        'Enter a username. It does not have to exist — it is the identity ' +
-        'the issued tokens will describe.');
+               Sentence.say('refusals.authn.enterUsername'));
     }
     // A POST-QUANTUM PASSKEY'S NAME IS NOT A SIGN-IN NAME (#643, rcbj): a
     // credential manager lists a person's post-quantum passkey as
@@ -18966,9 +18964,7 @@ class Authn {
       log.debug("Leaving Authn.screenAct(). A passkey lane's name.");
       errorCodes.mark(res, 'STS-AUTHN-0354');
       return this.screenRefused(res, record,
-        'That is the name your password manager shows for a post-quantum ' +
-        'passkey, not a username. Type your username without the part ' +
-        'after the "+".');
+               Sentence.say('refusals.authn.passkeyNameNotUsername'));
     }
     // A PERSON HOMED IN ANOTHER CELL (#98 D9), before anything is verified,
     // counted or spent here: see restartAtHome(). A name nobody knows is
@@ -19040,9 +19036,7 @@ class Authn {
                 "linking sign-in.");
       errorCodes.mark(res, 'STS-AUTHN-0212');
       return this.screenRefused(res, record,
-        'Linking an account signs in with its password — and its second ' +
-        'factor, where it has one — so a security key on its own is not ' +
-        'offered here.');
+               Sentence.say('refusals.authn.linkNeedsPassword'));
     }
 
     // ---------------------------------------------------------------------
@@ -19088,9 +19082,7 @@ class Authn {
                 "is shown again.");
       errorCodes.mark(res, 'STS-AUTHN-0007');
       return this.screenRefused(res, record,
-        'This request asked for a second factor, so a passkey on its own ' +
-        'cannot answer it — one factor is one factor. Sign in with a ' +
-        'password and the passkey together.');
+               Sentence.say('refusals.authn.passkeyAloneNotTwo'));
     }
 
     // ---------------------------------------------------------------------
@@ -19119,9 +19111,7 @@ class Authn {
                 "sign in with, and product mode enrols none here.");
       errorCodes.mark(res, 'STS-AUTHN-0206');
       return this.screenRefused(res, record,
-        'There is no passkey registered for signing in to this account. ' +
-        'Sign in with your password, then add a passkey at ' +
-        '/portal/keys.');
+               Sentence.say('refusals.authn.noPasskeyRegistered'));
     }
 
     // ---------------------------------------------------------------------
@@ -19160,8 +19150,7 @@ class Authn {
       this.noteRefusedAuthentication(record, username, 'password',
         'STS-AUTHN-0255', 'password-not-a-first-factor');
       return this.screenRefused(res, record,
-        'This realm does not accept a password as a first factor. Use one ' +
-        'of the other ways of signing in below.');
+               Sentence.say('refusals.authn.passwordNotFirstFactor'));
     }
 
     // Set when the password just verified is known from a breach (#62 P6).
@@ -19237,7 +19226,7 @@ class Authn {
           errorCodes.codeOf(credential) || 'STS-AUTHN-0054',
           String(credential.reason || 'refused'));
         return this.screenRefused(res, record,
-          'Authentication failed for ' + username + '.');
+        Sentence.say('refusals.authn.failedFor', { username: username }));
       }
       // A SUCCESSFUL SIGN-IN FORGETS THE COUNTERS, so somebody who mistyped
       // their password four times is not one attempt from a lockout the
@@ -19349,14 +19338,13 @@ class Authn {
     const base = baseUrlOf(req);
     const chosen = String(body.new_password || '');
     const again = String(body.confirm_password || '');
-    let problem = '';
+    let problem: Sentence = null;
     if (!chosen) {
-      problem = 'Enter a new password.';
+      problem = Sentence.say('refusals.authn.enterNewPassword');
     } else if (chosen !== again) {
-      problem = 'The two passwords are not the same.';
+      problem = Sentence.say('refusals.authn.passwordsDiffer');
     } else if (chosen === credentials.RESERVED_REFUSAL) {
-      problem = 'That password is reserved and is refused at every ' +
-                'sign-in, so it cannot be yours.';
+      problem = Sentence.say('refusals.authn.passwordReserved');
     }
     if (problem) {
       errorCodes.mark(res, 'STS-AUTHN-0146');
@@ -19379,9 +19367,9 @@ class Authn {
       errorCodes.mark(res, errorCodes.codeOf(written) || 'STS-AUTHN-0146');
       log.debug('Leaving Authn.passwordChangeAct(). The store refused ' +
                 'it.');
-      return this.passwordChangeRefused(res,
-        (written.errors || []).join(' ') ||
-        'The new password was not accepted.');
+      return this.passwordChangeRefused(res, (written.errors || []).length
+               ? written.errors
+               : [Sentence.say('refusals.authn.newPasswordNotAccepted')]);
     }
     if (!credentials.setPasswordResetRequired(step.username, false)) {
       // The password IS changed. Carrying on would leave pwdReset on the
@@ -19425,11 +19413,15 @@ class Authn {
    * @param why - the sentence
    * @returns nothing
    */
-  passwordChangeRefused(res: AnyAuthnAnswering, why: string): void {
+  passwordChangeRefused(res: AnyAuthnAnswering,
+                        why: string | Sentence | unknown[]): void {
     const { log } = this.deps;
     log.debug('Entering Authn.passwordChangeRefused().');
-    this.answerJson(res, 400, { ok: false, next: 'refused',
-                                errors: [String(why)] });
+    // A list is the password policy's, every sentence of it (#2006): its
+    // English joined in `errors` as one sentence was, each one's message
+    // beside it.
+    this.answerJson(res, 400, Array.isArray(why)
+      ? this.refusalBody(why) : this.refusalBody([why]));
     log.debug('Leaving Authn.passwordChangeRefused().');
   }
 
@@ -19461,8 +19453,8 @@ class Authn {
     const step = this.mfaStepFor(mfaId);
     if (!step) {
       errorCodes.mark(res, 'STS-AUTHN-0019');
-      this.stepRefused(res, 'This second-factor step has expired. Start the ' +
-        'request again from the application that sent you here.');
+      this.stepRefused(res,
+        Sentence.say('refusals.authn.stepExpired'));
       log.debug("Leaving Authn.codeStepOf(). The step had expired.");
       return null;
     }
@@ -19545,8 +19537,8 @@ class Authn {
                 'one-time code for "' + step.username + '" threw: ' +
                 (e && e.stack ? e.stack : e));
       errorCodes.mark(res, 'STS-AUTHN-0182');
-      this.stepRefused(res, 'That code could not be checked. Try the next ' +
-                            'one.');
+      this.stepRefused(res,
+        Sentence.say('refusals.authn.codeUncheckedTryNext'));
       log.debug('Leaving Authn.mfaTotpAct(). It threw.');
       return;
     }
@@ -19607,7 +19599,8 @@ class Authn {
                 'recovery code for "' + step.username + '" threw: ' +
                 (e && e.stack ? e.stack : e));
       errorCodes.mark(res, 'STS-AUTHN-0043');
-      this.stepRefused(res, 'That code could not be checked. Try again.');
+      this.stepRefused(res,
+        Sentence.say('refusals.authn.codeUncheckedTryAgain'));
       log.debug('Leaving Authn.mfaBackupCodeAct(). It threw.');
       return;
     }
@@ -19665,7 +19658,8 @@ class Authn {
                '" was refused (' + credential.reason + ').');
       errorCodes.mark(res, errorCodes.codeOf(credential) ||
                            'STS-AUTHN-0196');
-      this.stepRefused(res, 'That password is not right.');
+      this.stepRefused(res,
+        Sentence.say('refusals.authn.passwordWrong'));
       log.debug('Leaving Authn.mfaPasswordAct(). Refused.');
       return;
     }
@@ -19741,8 +19735,8 @@ class Authn {
                                           'classical' &&
                                           !postLoginRetryAllowed))) {
       errorCodes.mark(res, 'STS-AUTHN-0420');
-      this.stepRefused(res, 'This step registers a post-quantum passkey ' +
-                            'only; a classical one cannot be made here.');
+      this.stepRefused(res,
+        Sentence.say('refusals.authn.postQuantumOnlyStep'));
       log.debug('Leaving Authn.mfaWebauthnOptions(). Not on a post-login ' +
                 'step.');
       return;
@@ -19863,7 +19857,8 @@ class Authn {
     }
     if (facts.choices.length) {
       errorCodes.mark(res, 'STS-AUTHN-0329');
-      this.stepRefused(res, 'Choose one of your passkeys first.');
+      this.stepRefused(res,
+        Sentence.say('refusals.authn.choosePasskeyFirst'));
       log.debug('Leaving Authn.mfaWebauthnOptions(). Not chosen.');
       return;
     }
@@ -19938,9 +19933,8 @@ class Authn {
         credentials.mechanismsFor(step.username).mfaRequired) {
       pendingMfa.delete(setupId);
       errorCodes.mark(res, 'STS-AUTHN-0175');
-      this.stepRefused(res, 'A second factor is already set up for this ' +
-        'account. Start the request again from the application that sent ' +
-        'you here and sign in with it.');
+      this.stepRefused(res,
+        Sentence.say('refusals.authn.secondFactorAlreadySetUp'));
       log.debug('Leaving Authn.mfaSetupAct(). They hold one now.');
       return;
     }
@@ -19950,8 +19944,8 @@ class Authn {
     if (action === 'skip') {
       if (!step.optional) {
         errorCodes.mark(res, 'STS-AUTHN-0270');
-        this.stepRefused(res, 'A second factor is required for this ' +
-                              'account; it cannot be ignored.');
+        this.stepRefused(res,
+          Sentence.say('refusals.authn.secondFactorNotOptional'));
         log.debug('Leaving Authn.mfaSetupAct(). Ignore on a required step.');
         return;
       }
@@ -19988,8 +19982,8 @@ class Authn {
     if (action === 'webauthn') {
       if (!offered.webauthn) {
         errorCodes.mark(res, 'STS-AUTHN-0175');
-        this.stepRefused(res, 'Security keys cannot be set up in this ' +
-                              'realm.');
+        this.stepRefused(res,
+          Sentence.say('refusals.authn.securityKeysOff'));
         log.debug('Leaving Authn.mfaSetupAct(). Keys are off.');
         return;
       }
@@ -20009,8 +20003,8 @@ class Authn {
     if (action === 'totp') {
       if (!offered.totp) {
         errorCodes.mark(res, 'STS-AUTHN-0175');
-        this.stepRefused(res, 'Authenticator apps cannot be set up in this ' +
-                              'realm.');
+        this.stepRefused(res,
+          Sentence.say('refusals.authn.authenticatorAppsOff'));
         log.debug('Leaving Authn.mfaSetupAct(). TOTP is off.');
         return;
       }
@@ -20019,7 +20013,7 @@ class Authn {
       if (!begun.ok || !credentials.pendingTotpFor(step.username)) {
         errorCodes.mark(res, errorCodes.codeOf(begun) || 'STS-AUTHN-0176');
         this.stepRefused(res, ((begun.errors || [])[0]) ||
-                              'The authenticator app could not be set up.');
+          Sentence.say('refusals.authn.authenticatorAppNotSetUp'));
         log.debug('Leaving Authn.mfaSetupAct(). Not started.');
         return;
       }
@@ -20042,7 +20036,8 @@ class Authn {
     // confirm
     if (step.factor !== 'enrol-totp') {
       errorCodes.mark(res, 'STS-AUTHN-0174');
-      this.stepRefused(res, 'Choose a second factor to set up first.');
+      this.stepRefused(res,
+        Sentence.say('refusals.authn.chooseSecondFactorFirst'));
       log.debug('Leaving Authn.mfaSetupAct(). Nothing to confirm.');
       return;
     }
@@ -20064,11 +20059,11 @@ class Authn {
       if (!credentials.pendingTotpFor(step.username)) {
         step.factor = 'enrol';
         pendingMfa.set(setupId, step);
-        this.stepRefused(res, 'That set-up expired before it was ' +
-                              'confirmed. Start it again.');
+        this.stepRefused(res,
+          Sentence.say('refusals.authn.setUpExpired'));
       } else {
         this.stepRefused(res, (confirmed.errors ||
-                               ['That code is not right.'])[0]);
+          [Sentence.say('refusals.authn.codeWrong')])[0]);
       }
       log.debug('Leaving Authn.mfaSetupAct(). Not confirmed.');
       return;
@@ -20161,8 +20156,8 @@ class Authn {
       log.debug("Leaving Authn.mfaWebauthnAct(). The posted credential was " +
                 "not JSON.");
       errorCodes.mark(res, 'STS-AUTHN-0021');
-      return this.stepRefused(res, 'The browser returned something this ' +
-                                   'server could not read.');
+      return this.stepRefused(res,
+               Sentence.say('refusals.authn.browserAnswerUnreadable'));
     }
     // What was posted, for the ceremony's row (#943): its transports,
     // attachment and the browser's error name, nothing else.
@@ -20174,9 +20169,8 @@ class Authn {
       // be checked".
       log.debug("Leaving Authn.mfaWebauthnAct(). No ceremony ran.");
       errorCodes.mark(res, 'STS-AUTHN-0022');
-      return this.stepRefused(res, 'Your browser did not run the ceremony. ' +
-        'This step needs JavaScript — a passkey is used by the browser and ' +
-        'no form can do it. Allow scripts for this page and try again.');
+      return this.stepRefused(res,
+               Sentence.say('refusals.authn.browserNoCeremonyStep'));
     }
     if (credential.error) {
       // The browser refused the ceremony. Its error is deliberately ambiguous
@@ -20209,9 +20203,9 @@ class Authn {
           return undefined;
         }
       }
-      return this.stepRefused(res, credential.error +
-        ' (WebAuthn reports one error for ' +
-        'several situations, so this does not say which.)');
+      return this.stepRefused(res,
+               Sentence.say('refusals.authn.webauthnError',
+                            { error: String(credential.error) }));
     }
 
     // THE RP ID MUST FIT, IN PRODUCT MODE, BEFORE ANYTHING IS VERIFIED. See
@@ -20262,9 +20256,8 @@ class Authn {
                     "off.");
           errorCodes.mark(res, 'STS-AUTHN-0044');
           this.noteStepCeremony(req, body, step, 'STS-AUTHN-0044');
-          return this.stepRefused(res, 'Passkeys are switched off in this ' +
-            'realm (webauthn.enabled), so a new one cannot be registered ' +
-            'here. A passkey already registered goes on working.');
+          return this.stepRefused(res,
+                   Sentence.say('refusals.authn.passkeysOffNoRegistration'));
         }
         verdict = webauthnVerifier.verifyRegistration({
           attestationObject: credential.response.attestationObject,
@@ -20550,8 +20543,9 @@ class Authn {
       errorCodes.mark(res, errorCodes.codeOf(e) || 'STS-AUTHN-0027');
       this.noteStepCeremony(req, body, step,
                             errorCodes.codeOf(e) || 'STS-AUTHN-0027');
-      return this.stepRefused(res, 'The second factor could not be ' +
-                                   'checked: ' + e.message);
+      return this.stepRefused(res,
+               Sentence.say('refusals.authn.secondFactorUnchecked',
+                            { detail: String(e.message) }));
     }
 
     if (toRegister) {
