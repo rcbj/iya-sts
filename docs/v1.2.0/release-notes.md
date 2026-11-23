@@ -6,6 +6,25 @@ title: Release notes
 
 ## 1.2.0
 
+### New: WS-Trust message integrity, and signed answers
+
+A WS-Trust application can require its requests signed and name what the
+signature must cover (`wstrustSignRequest`, `wstrustSignRequestElements`),
+and can have its answers signed with the realm's XML signing key over a
+`wsu:Timestamp` and the Body or the elements it names
+(`wstrustSignResponse`, `wstrustSignResponseElements`). With encryption
+also on, `wstrustResponseProtectionOrder` chooses sign-then-encrypt or
+encrypt-then-sign, and `wstrustEncryptSignature` encrypts the signature
+too. Each has a realm setting beside it (`wstrust.signRequest`,
+`wstrust.signResponse`, `wstrust.responseProtectionOrder`,
+`wstrust.encryptSignature`), all off by default. The WSDL's binding carries
+`sp:IncludeTimestamp` while the realm signs its answers. On the
+application's WS-Trust tab, **Body** and **Header** checkboxes write the
+common expressions into the four encryption and signing maps, and an
+**XPath builder** writes one for an element clicked in a sample message.
+The XPath subset gains `not(…)`. New refusals: `STS-WSTRUST-0084`,
+`0085` and `0086`. See [Message integrity](ws-trust.md#message-integrity).
+
 ### New: dynamic selectable roles
 
 A role can be **dynamic selectable**: nobody is a member of it, and a person

@@ -1,9 +1,13 @@
 # ws-trust/
 
 WS-Trust 1.0 through 1.4, at `/sts` (with the signing certificate at
-`/sts/cert`, and its metadata, #958, below). Seven files: `wstrust.ts`, the
+`/sts/cert`, and its metadata, #958, below). Nine files: `wstrust.ts`, the
 endpoint; `ws_encryption.ts`, XML Encryption of a request and a response
 (#1668), a library `wstrust.ts` requires — it registers nothing;
+`ws_integrity.ts`, a request held to its signing map and a response signed
+(#1917, *MESSAGE INTEGRITY, PER APPLICATION*, below), a library too;
+`web_ws_protection.ts`, the console's presets and the XPath prefixes, read
+by the console's bundle and by the two libraries;
 `ws_decryption_key.ts`, an application's own decryption key pair (#1668,
 *AN APPLICATION'S OWN DECRYPTION KEY PAIR*, below), a library too;
 `wstrust_metadata.ts`, the WSDL at `GET /sts/metadata`;
@@ -1157,9 +1161,86 @@ certificate set by hand beside a key it does not match decrypts nothing.
 `tests/wstrust_decryption_key.js` holds all of it in process;
 `tests/protocol/sts_wstrust_decryption_key.js` over the wire.
 
-**NOT YET**: the answer is never signed (a follow-up ticket of rcbj's), so
-no output policy offers signing and the binding has no
-`sp:IncludeTimestamp`.
+## MESSAGE INTEGRITY, PER APPLICATION (#1917, WITH #1918)
+
+rcbj's decision of 2026-11-23: #1918's response signing is done inside
+#1917, because the ticket's response checkboxes have nothing to drive
+without it. `ws_integrity.ts` (`WsIntegrity`, static, `ws_encryption.ts`'s
+shape) holds both halves; the design is on #1917.
+
+**THE CHECKBOXES STORE NOTHING** (rcbj on #1917: "everything comes down to
+the XPath maps"). `web_ws_protection.ts` holds the Body and Header presets
+for the four maps, and `PREFIXES` (moved there from `ws_encryption.ts`, so
+the console's builder and the evaluator read one table). A box is ticked
+exactly when its expressions are in the map. Encrypting the Body is its
+CONTENT (`soap:Body/*`, `sp:EncryptedParts/sp:Body`), since an
+EncryptedData in place of `soap:Body` is no SOAP message; signing it is the
+element. The Header preset is every block but `wsse:Security`, which holds
+the signature and the keys. That needed `not(…)` in the subset: one level,
+over the existing predicates, and `splitOutside()` now splits outside
+parentheses too, so a `not()`'s own `and` stays its own.
+
+**THE REQUEST** (`holdRequest()`, in `handleRst()` right after
+`openRequest()`): with `wstrustSignRequest` (`wstrust.signRequest`) on, a
+request whose signature was not accepted (`connection.acceptedSignature`)
+is `STS-WSTRUST-0084`, and each element of `wstrustSignRequestElements` (the
+Body when empty) must be covered by that signature
+(`WsEncryption.coveredBySignature()`, now public), else `0085`; both
+`wsse:FailedCheck`. It runs on the OPENED request because the AppliesTo may
+be inside the ciphertext, and a signature made first references the
+plaintext. Development believes the signature and still holds the map to
+its references.
+
+**THE RESPONSE** (`protect()`, which `sealedBody()` calls in place of
+`protectResponse()`): with `wstrustSignResponse` (`wstrust.signResponse`)
+on, `signResponse()` lays a `wsu:Timestamp` (five minutes, WSS4J's
+default) and a `#X509v3` BinarySecurityToken of `STS.xmlSigner`'s
+certificate into the answer's security header, gives each part of
+`wstrustSignResponseElements` (the Body when empty) a `wsu:Id` unless it
+carries an id already — **a SAML assertion's own enveloped signature covers
+its attributes, so an id added there would break it** — and has
+`crypto.signWsSecurityMessage()` sign the Timestamp and the parts, the
+signature right after the token. The algorithm is
+`documentSettings.signatureOptions()`'s, the one SAML signs with. An
+expression that matches nothing, one selecting `wsse:Security` itself, no
+certificate (a post-quantum XML signer has no certificate profile) or a
+signer that throws is `0086`, `wst:RequestFailed`, in the clear, and the
+token is not sent. Faults are never signed.
+
+**THE ORDER** (`wstrustResponseProtectionOrder`):
+* `sign-then-encrypt`, the default: sign, then `protectResponse()`, whose
+  `announce()` puts each EncryptedKey at the top of the header, so the
+  header reads keys, Timestamp, token, signature, and a receiver decrypts
+  and then verifies. `wstrustEncryptSignature` adds `SIGNATURE_PATH` to a
+  non-empty response map for this answer only (`protectResponse()`'s
+  `also`), and the signature becomes an EncryptedData in the header.
+* `encrypt-then-sign`: encrypt, then sign with the Timestamp and the token
+  put FIRST, ahead of the keys, so a receiver verifies and then decrypts.
+
+**THE SIGNER IS NODE'S OPENSSL, NOT THE VENDORED ENGINE'S FORGE**
+(`crypto.js`'s *SIGNING A WS-SECURITY MESSAGE*, ASVS 5.0.0 11.2.1, #1615):
+RSA, RSA-PSS, ECDSA (r||s) and EdDSA. **A REALM WHOSE KEYS ARE IN THE HSM
+SIGNS OFF THE EVENT LOOP** (rcbj, 2026-11-23: an HSM never blocks the
+loop): `signWsSecurityMessageOffLoop()`, so `protect()` and `sealedBody()`
+may answer a Promise, and `finishIssue()` was split at the seal into
+`issueSealed()` so the sighting and the delegation act run when it
+resolves; Validate and Cancel go through `whenSealed()`.
+
+**THE WSDL** (`liveFlags()`'s `signsResponses`, `encryptsBeforeSigning`,
+`encryptsSignature`, the realm's settings, since the WSDL is one document per
+realm): `sp:IncludeTimestamp` in the binding while answers are signed, with
+`sp:EncryptBeforeSigning` or `sp:EncryptSignature` after it, and
+`ResponseProtection` on every output offering the optional `sp:SignedParts`
+the input offers. An application that overrides a realm setting is
+configured on its client out of band, as its maps always were.
+
+`tests/wstrust_message_integrity.js` holds all of it in process, each
+signed answer verified with `crypto.verifyWsSecuritySignature()` against
+the token it carries, after opening every EncryptedData with the key its
+EncryptedKey's ReferenceList names. **`crypto.decryptElement()` pairs the
+first EncryptedData with the first EncryptedKey**, which is wrong for a
+header with two, so the test opens each pair from a copy holding it alone.
+Not yet run: a WSS4J round trip of a signed answer (#1918 asked for one).
 
 ## A SECOND-FACTOR PERSON'S USERNAMETOKEN (2026-09-22, #101)
 

@@ -802,6 +802,64 @@ Requests for the application are then opened with the realm's key again.
 Removing is not revocation: a certificate issued here stays valid until it
 expires, and is on no revocation list.
 
+## Require a signed request
+
+To refuse a request for an application unless it carries a WS-Security
+signature, turn on `wstrustSignRequest`. With no map, the signature must
+cover the Body, which every accepted signature does. To require the headers
+signed too, add the Header preset to `wstrustSignRequestElements`, or tick
+**Integrity → Request → Header** on the application's WS-Trust tab and press
+**Save**:
+
+```bash
+api applications/set '{"application":"https://wsrp.example/","attribute":"wstrustSignRequest","value":"true"}'
+api applications/add '{"application":"https://wsrp.example/","attribute":"wstrustSignRequestElements","value":"/soap11:Envelope/soap11:Header/*[not(local-name()='"'"'Security'"'"' and namespace-uri()='"'"'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd'"'"')] | /soap12:Envelope/soap12:Header/*[not(local-name()='"'"'Security'"'"' and namespace-uri()='"'"'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd'"'"')]"}'
+```
+
+A request with no accepted signature is `wsse:FailedCheck`
+(`STS-WSTRUST-0084`). A header block the signature does not reference is
+`wsse:FailedCheck` (`STS-WSTRUST-0085`). So is an expression that matches
+nothing: a request that carries no header blocks fails the Header preset.
+What the signature is and whose it is are unchanged
+(*A signed request as the requester's credential*).
+
+## A signed response
+
+To have an application's answers signed, turn on `wstrustSignResponse`:
+
+```bash
+api applications/set '{"application":"https://wsrp.example/","attribute":"wstrustSignResponse","value":"true"}'
+```
+
+Each answer then carries a `wsu:Timestamp`, a `BinarySecurityToken` holding
+the realm's XML signing certificate (the one its SAML assertions are
+signed with, for `saml.signatureAlgorithm`), and a
+`ds:Signature` over the Timestamp and the Body. A client verifies it with
+that certificate, which it should already trust as the realm's signer. To
+sign the headers as well, add the Header preset to
+`wstrustSignResponseElements` (**Integrity → Response → Header**); the map
+then names what is signed beside the Timestamp, so keep the Body preset in it
+too.
+
+With response encryption also on, the answer is signed and then encrypted.
+Set `wstrustResponseProtectionOrder` to `encrypt-then-sign` for the other
+order, or `wstrustEncryptSignature` to `true` to encrypt the signature as
+well. An expression that matches nothing is `wst:RequestFailed`
+(`STS-WSTRUST-0086`) and the token is not sent.
+
+The WSDL is one document per realm. Turning on the realm's
+`wstrust.signResponse` puts `sp:IncludeTimestamp` into its binding, so a
+WS-SecurityPolicy client expects every answer signed; an application that
+signs while the realm does not is configured on the client by hand.
+
+## Build an expression from a sample message
+
+The application's WS-Trust tab has an **XPath builder**. Paste a message the
+client sends, or one this service answered, press **Show elements**, and
+click an element. The builder writes an absolute expression in the subset
+this service evaluates, with its prefixes, and highlights what the expression
+matches. Choose the field and press **Add to field**, then **Save**.
+
 ## Related
 
 * [WS-Trust](ws-trust.md): the behaviour, the faults and every setting.

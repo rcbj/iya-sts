@@ -225,10 +225,16 @@ Apache CXF 4.0.5 logs "Failed to build the policy
 unchanged. A CXF client that registers an `AlgorithmSuiteLoader` for the
 namespace, the way CXF reads its own GCM suites, uses the `IyaSuite` ports.
 
-There is no `sp:IncludeTimestamp`. WS-SecurityPolicy 1.3 section 6.2 makes
-it apply to every message under the binding, including the answer, and
-requires that Timestamp to be signed. This service does not sign its
-answers. The request's Timestamp is still required, by `sp:SignedParts`.
+`sp:IncludeTimestamp` is in the binding only while the realm signs its
+answers (`wstrust.signResponse`). WS-SecurityPolicy 1.3 section 6.2 makes it
+apply to every message under the binding, including the answer, and requires
+that Timestamp to be signed, which a signed answer's is. While answers are
+signed, `wstrust.responseProtectionOrder` of `encrypt-then-sign` adds
+`sp:EncryptBeforeSigning`, and `wstrust.encryptSignature` adds
+`sp:EncryptSignature`. The request's Timestamp is required either way, by
+`sp:SignedParts`. The WSDL is one document per realm, so an application
+that overrides one of these settings tells its clients out of band. See
+[Message integrity](#message-integrity).
 
 **What a message may protect beyond that.** Every binding operation's
 `wsdl:input` names `RequestProtection`, or `RequestProtectionIyaSuite` on
@@ -948,6 +954,64 @@ To encrypt the issued SAML 2.0 assertion, set `wstrustEncryptResponse` to
 
 Callers that looked for `EncryptedAssertion` find `EncryptedData`.
 
+### Message integrity
+
+An application may require its requests signed, and may have its answers
+signed. Both are off until it turns them on, and both are XPath maps in the
+subset [XML Encryption](#xml-encryption) uses, with the same prefixes.
+
+**A signed request.** With `wstrustSignRequest` on (the realm's
+`wstrust.signRequest`), a request for the application must carry a
+WS-Security signature this service accepted
+([A signed request](#a-signed-request)); without one the fault is
+`wsse:FailedCheck` (`STS-WSTRUST-0084`). Every element
+`wstrustSignRequestElements` selects must be one that signature references,
+or inside one. An expression that matches nothing, or an element it does
+not cover, is `wsse:FailedCheck` (`STS-WSTRUST-0085`). An empty map is the
+SOAP Body, which a signature always covers. Development believes a
+signature, as it always has, and still holds the map to what it references.
+
+**A signed answer.** With `wstrustSignResponse` on (`wstrust.signResponse`),
+an answer to Issue, Renew, Validate or Cancel carries, in its
+`wsse:Security` header, a `wsu:Timestamp` that expires five minutes after
+it was created, a `BinarySecurityToken` holding the realm's XML signing
+certificate, and a `ds:Signature` made with that key. The signature
+references the Timestamp and each element `wstrustSignResponseElements`
+selects (the Body when the map is empty) by `wsu:Id` under exclusive
+canonicalization, and its `KeyInfo` is a `SecurityTokenReference` to the
+token. A fault is never signed. An expression that matches nothing, or one
+that selects the `wsse:Security` header itself, is `wst:RequestFailed`
+(`STS-WSTRUST-0086`), and the token is not sent. The algorithm is
+`saml.signatureAlgorithm`'s. A post-quantum XML signer has no certificate to
+reference, so an answer it would sign is `STS-WSTRUST-0086` too.
+
+**Signed and encrypted.** With both on, `wstrustResponseProtectionOrder`
+(`wstrust.responseProtectionOrder`) decides the order:
+
+* `sign-then-encrypt`, the default and WS-SecurityPolicy's: the signature's
+  digests are of the plaintext. The header holds the encrypted keys first,
+  then the Timestamp, the token and the signature, so a receiver decrypts
+  and then verifies. `wstrustEncryptSignature` (`wstrust.encryptSignature`)
+  encrypts the `ds:Signature` too.
+* `encrypt-then-sign`: the digests are of the ciphertext. The Timestamp,
+  the token and the signature come first, ahead of the keys, so a receiver
+  verifies and then decrypts.
+
+**The presets.** The console's *Body* and *Header* checkboxes on an
+application's WS-Trust tab write these expressions into the maps and take
+them out again. They store nothing of their own: a box is ticked exactly when
+its expressions are in the map.
+
+| Preset | Encryption maps | Signing maps |
+|---|---|---|
+| Body | `/soap11:Envelope/soap11:Body/* \| /soap12:Envelope/soap12:Body/*` (the Body's content, as `sp:EncryptedParts/sp:Body` means it) | `/soap11:Envelope/soap11:Body \| /soap12:Envelope/soap12:Body` |
+| Header | every header block but `wsse:Security`: `/soap11:Envelope/soap11:Header/*[not(local-name()='Security' and namespace-uri()='…secext-1.0.xsd')]`, and the SOAP 1.2 twin | the same |
+
+The XPath subset includes `not(…)` over its other predicates, which is what
+the Header preset needs. A `not()` inside a `not()` is `STS-WSTRUST-0079`.
+The console's *XPath builder* writes an expression for an element you click
+in a sample message, with these prefixes.
+
 ### Not implemented
 
 A signed request's certificate is found by thumbprint, issuer and serial or
@@ -955,7 +1019,6 @@ Subject Key Identifier only among the certificates this realm issued; a
 stored one is sent in a `BinarySecurityToken`. Those references authenticate
 the requester. They are not an encryption recipient: a response is encrypted
 only to a certificate element, as [XML Encryption](#xml-encryption) says.
-Only a signature over the request is read: a signed response is not offered.
 `wst:UseKey` and `wst:ProofEncryption` are not implemented, because the
 tokens issued here are bearer tokens. `Validate` reports whether a token is
 **present**, not whether it verifies, except for a Kerberos token, which it
@@ -1032,12 +1095,16 @@ The lifetime clamp, the authentication context, the JWT's `jti` and `kid`, and
 | `wstrust.encryptResponse` | `STS_WSTRUST_ENCRYPT_RESPONSE` | `false` | yes | Whether a response has `wstrustEncryptResponseElements` replaced by `xenc:EncryptedData`. An application's `wstrustEncryptResponse` overrides it. On, and the encryption cannot be completed, the request is a fault in both modes and the clear response is not sent. |
 | `wstrust.encryptionAlgorithm` | `STS_WSTRUST_ENCRYPTION_ALGORITHM` | `aes256-gcm` | yes | The block cipher those elements use. `aes128-gcm` is also available; `aes256-cbc` and `aes128-cbc` only where broken algorithms are allowed. An application's `wstrustEncryptionAlgorithm` overrides it. |
 | `wstrust.keyTransportAlgorithm` | `STS_WSTRUST_KEY_TRANSPORT_ALGORITHM` | `rsa-oaep-mgf1p` | yes | How the content key is wrapped to an RSA recipient. `rsa-oaep` is also available; `rsa-1_5` only where broken algorithms are allowed, and product mode ignores it. An EC recipient uses ECDH-ES. An application's `wstrustKeyTransportAlgorithm` overrides it. |
+| `wstrust.signRequest` | `STS_WSTRUST_SIGN_REQUEST` | `false` | yes | Whether a request must carry an accepted WS-Security signature, covering what the application's `wstrustSignRequestElements` names. An application's `wstrustSignRequest` overrides it (see [Message integrity](#message-integrity)). |
+| `wstrust.signResponse` | `STS_WSTRUST_SIGN_RESPONSE` | `false` | yes | Whether an answer carries a signed `wsu:Timestamp` and a signature over it and the Body, or what `wstrustSignResponseElements` names. An application's `wstrustSignResponse` overrides it. |
+| `wstrust.responseProtectionOrder` | `STS_WSTRUST_RESPONSE_PROTECTION_ORDER` | `sign-then-encrypt` | yes | The order of signing and encryption when both are on; `encrypt-then-sign` is the other. An application's `wstrustResponseProtectionOrder` overrides it. |
+| `wstrust.encryptSignature` | `STS_WSTRUST_ENCRYPT_SIGNATURE` | `false` | yes | Whether a signed-then-encrypted answer's `ds:Signature` is encrypted too. An application's `wstrustEncryptSignature` overrides it. |
 
 A SAML token is shaped by the shared `saml.*` settings and the SAML 2.0
 assertion settings — see the
 [SAML 2.0 configuration](saml2-sso.md#configuration) and
 [the assertion settings](saml2-sso.md#the-assertion-settings-every-application-inherits).
-XML Encryption of the WS-Trust message uses the four settings above and the
+XML Encryption of the WS-Trust message uses the encryption settings above and the
 application's own attributes, not `saml2.encryptionAlgorithm` or
 `saml2.keyTransportAlgorithm`. This table is a copy; the live source is
 `/admin/wstrust` and `GET /admin-api/config`. See
