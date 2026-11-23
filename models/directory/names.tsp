@@ -375,12 +375,12 @@ namespace IyaSts.Directory;
   // appAuthzenApplication. Written by an administrator only, through
   // authzen/authzen_admin.ts; an `sts*` name is refused by every other door.
   "stsAuthzenApplication",
-  // THE PERSON'S CALLBACK URLS (#1180), KEPT SO A STORED VALUE CAN BE READ.
-  // A submission no longer honours them, and set-callbacks refuses a person
-  // or a service account (#1202): a callback is registered only on an
-  // application, as appAuthzenCallbackUri, with a per-URL retry override in
-  // appAuthzenCallbackConfig. The OID stays. An administrator's other doors
-  // still refuse an `sts*` name.
+  // THE PERSON'S CALLBACK URLS (#1180): the access request callback URLs
+  // registered for a person or a service account, as an application's are
+  // appAuthzenCallbackUri. Honoured, and written by set-callbacks, as in
+  // 1.1.0 (restored by the review of #1202); a per-URL retry override is an
+  // application's only. Written by an administrator only, through
+  // authzen/authzen_admin.ts; an `sts*` name is refused by every other door.
   "stsAuthzenCallbackUri",
 
   // THE CLIENT TRUSTSTORE'S DURABLE HALF (2026-09-12): one entry per anchor

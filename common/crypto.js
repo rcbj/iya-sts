@@ -19968,8 +19968,21 @@ async function openpgpReadKey(input, options) {
   const encryption = d.encryption
     ? openpgpAlgorithmProblem(d.encryption, 'encrypt', opts.minRsaBits,
                              opts.accept) : '';
+  // EVERY KEY OF IT THAT WOULD SIGN OR BE ENCRYPTED TO, not only the two the
+  // engine prefers now: a cleartext may be signed by any valid signing
+  // subkey, and the preferred encryption subkey changes as subkeys expire.
+  // A weak one beside a strong one would otherwise be used later unjudged.
+  let others = '';
+  [].concat(d.signingKeys || []).forEach(function (one) {
+    others = others || openpgpAlgorithmProblem(one, 'sign', opts.minRsaBits,
+                                               opts.accept);
+  });
+  [].concat(d.encryptionKeys || []).forEach(function (one) {
+    others = others || openpgpAlgorithmProblem(one, 'encrypt',
+                                               opts.minRsaBits, opts.accept);
+  });
   const lane = openpgpRegistrationProblem(d, opts);
-  const problem = primary || signing || encryption || lane;
+  const problem = primary || signing || encryption || others || lane;
   if (problem) {
     log.debug("Leaving openpgpReadKey(). Weak or unusable.");
     return openpgpRefusal('STS-OPENPGP-0004', problem, { description: d });
@@ -20029,6 +20042,10 @@ async function openpgpVerifyChallenge(signedText, key, options) {
     : await openpgpEngine.verifyCleartext(text, key, at);
   if (!verified.ok) {
     log.debug("Leaving openpgpVerifyChallenge(). " + verified.reason);
+    if (verified.reason === 'several') {
+      return openpgpRefusal('STS-OPENPGP-0029', 'the challenge must be ' +
+        'signed once, by one key: ' + verified.why);
+    }
     if (verified.reason === 'unchecked') {
       return openpgpRefusal('STS-OPENPGP-0026',
         'the post-quantum half of the signature could not be checked on ' +

@@ -143,6 +143,10 @@ const BUILT = {
     via: { call: 'this.recordAudit', arg: 0 } },
   'common/yubiotp_store.ts|action': {
     via: { call: 'this.recordAudit', arg: 0 } },
+  // #1955 P6: the OpenPGP keys' local recordAudit(), every caller a
+  // literal; register()'s refusal closure calls it as `self.`.
+  'common/openpgp_keys.ts|action': {
+    via: { call: ['this.recordAudit', 'self.recordAudit'], arg: 0 } },
   // recordHttp(): httpActionFor()'s five answers.
   'common/audit.js|action': {
     values: ['api.change', 'api.read', 'admin.change', 'admin.view',

@@ -8,7 +8,16 @@
 //! POST /access/v1/evaluation                 one evaluation (section 6)
 //! POST /access/v1/evaluations                a batch (section 7)
 //! GET  /.well-known/authzen-configuration    the metadata (section 9)
+//! POST /access/v1/search/{subject,resource,action}
+//!                                            501: the service's Search APIs
+//! POST /access/v1/access-requests and the
+//!   task, schema and cancel paths            501: the service's profile
 //! ```
+//!
+//! A token-exchange binding tuple is 501 on the evaluation endpoints, as
+//! an item error inside a batch. `signed_metadata` is omitted. Obligations
+//! are handed when the PEP declared every type and the realm's profile is
+//! on. `context.approval` is recognized and not used.
 //!
 //! **THE SERVICE'S CONTRACT, NOT A SECOND ONE.** A request is read and
 //! mapped by `authzen_map.rs` against the catalogue pulled from the
@@ -56,6 +65,7 @@ use sts_xacml::pdp::{AttributeResolver, EvaluationOptions};
 use sts_xacml::request::{Response, Status};
 
 use crate::audit::{self, Record};
+use crate::authzen_catalogue::BINDING_CONTEXT;
 use crate::authzen_map::{self, Trusted};
 use crate::enforce::Enforcer;
 use crate::listener::Transport;
@@ -67,6 +77,35 @@ use crate::sync::{Callers, Catalogue};
 pub const EVALUATION_PATH: &str = "/access/v1/evaluation";
 pub const EVALUATIONS_PATH: &str = "/access/v1/evaluations";
 pub const METADATA_PATH: &str = "/.well-known/authzen-configuration";
+
+/// The Search APIs (#1175). The edge does not hold the directory or the
+/// catalogues, so each POST is 501 and the metadata does not name them.
+pub const SEARCH_SUBJECT_PATH: &str = "/access/v1/search/subject";
+pub const SEARCH_RESOURCE_PATH: &str = "/access/v1/search/resource";
+pub const SEARCH_ACTION_PATH: &str = "/access/v1/search/action";
+
+/// The Access Request and Approval Profile (#1180). The edge does not hold
+/// the approval store. These paths are 501; a POST to the item path
+/// without `/cancel` stays 404, as does every method not listed.
+pub const ACCESS_REQUESTS_PATH: &str = "/access/v1/access-requests";
+// The path scan (`tests/model_pep.js`) reads a `*_PATH` literal only when
+// it sits on the same line as `=`. The dispatch parses the item and cancel
+// tails, so those two constants are for the scan. rustfmt would wrap them.
+#[rustfmt::skip]
+pub const ACCESS_REQUEST_SCHEMA_PATH: &str = "/access/v1/access-requests/schema";
+#[allow(dead_code)]
+pub const ACCESS_REQUEST_PATH: &str = "/access/v1/access-requests/{id}";
+#[allow(dead_code)]
+#[rustfmt::skip]
+pub const ACCESS_REQUEST_CANCEL_PATH: &str = "/access/v1/access-requests/{id}/cancel";
+
+const SEARCH_MESSAGE: &str = "The Search APIs are answered by the service, \
+    which holds the directory and the resource and action catalogues. This \
+    edge PDP does not.";
+
+const ACCESS_REQUEST_MESSAGE: &str = "The Access Request and Approval \
+    Profile is answered by the service, which holds the approval store. \
+    This edge PDP does not.";
 
 /// The three batch semantics (section 7.1.2), the first the default.
 pub const SEMANTICS: [&str; 3] = [
@@ -170,6 +209,172 @@ pub fn endpoint_name(path: &str) -> &'static str {
     } else {
         "evaluation"
     }
+}
+
+/// The tail after `/access/v1/access-requests/`, when there is one. The
+/// prefix is a variable so a path scan does not read it as `{name}`.
+fn access_requests_tail(path: &str) -> Option<&str> {
+    let prefix = "/access/v1/access-requests/";
+    let tail = path.strip_prefix(prefix)?;
+    if tail.is_empty() {
+        return None;
+    }
+    Some(tail)
+}
+
+fn access_request_item(path: &str) -> bool {
+    match access_requests_tail(path) {
+        Some(tail) => tail != "schema" && !tail.contains('/'),
+        None => false,
+    }
+}
+
+fn access_request_cancel(path: &str) -> bool {
+    let Some(tail) = access_requests_tail(path) else {
+        return false;
+    };
+    let Some(id) = tail.strip_suffix("/cancel") else {
+        return false;
+    };
+    !id.is_empty() && !id.contains('/')
+}
+
+fn search_path(path: &str) -> bool {
+    path == SEARCH_SUBJECT_PATH
+        || path == SEARCH_RESOURCE_PATH
+        || path == SEARCH_ACTION_PATH
+}
+
+/// Which service-only path this method hits, if it hits one. `None` for
+/// HEAD and for every method the profile does not answer, so those stay
+/// the generic 404.
+fn refusal_of(
+    method: &str,
+    path: &str,
+) -> Option<(&'static str, &'static str)> {
+    if method == "POST" && search_path(path) {
+        return Some(("STS-XPEP-0138", SEARCH_MESSAGE));
+    }
+    let access_request = (method == "POST" && path == ACCESS_REQUESTS_PATH)
+        || (method == "GET" && path == ACCESS_REQUEST_SCHEMA_PATH)
+        || (method == "GET" && access_request_item(path))
+        || ((method == "POST" || method == "DELETE")
+            && access_request_cancel(path));
+    if access_request {
+        return Some(("STS-XPEP-0139", ACCESS_REQUEST_MESSAGE));
+    }
+    None
+}
+
+/// A 501 for a Search or Access Request path, after the caller has already
+/// checked that the edge PDP is on. The body is the evaluation error
+/// object. The code is logged here and never sent.
+pub fn refused_here(method: &str, path: &str) -> Option<Reply> {
+    let (code, message) = refusal_of(method, path)?;
+    Some(Reply::error(501, code, message))
+}
+
+/// HEAD of a path that some other method answers 501. Those HEADs are not
+/// rewritten to GET, so a monitor is not told the edge answers them.
+pub fn head_is_absent(path: &str) -> bool {
+    ["GET", "POST", "DELETE"]
+        .iter()
+        .any(|method| refusal_of(method, path).is_some())
+}
+
+fn entity_str<'a>(body: &'a Value, entity: &str, member: &str) -> &'a str {
+    body.get(entity)
+        .and_then(Value::as_object)
+        .and_then(|object| object.get(member))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+}
+
+/// `issue:<token type>:<grant>`, each segment `[a-z][a-z0-9_]{0,20}`. Any
+/// grant, including one this edge has never heard of: it does not hold the
+/// grant registry, and a gate is still the service's.
+fn is_gate_action(name: &str) -> bool {
+    let mut parts = name.split(':');
+    if parts.next() != Some("issue") {
+        return false;
+    }
+    let Some(grant) = parts.next() else {
+        return false;
+    };
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if parts.next().is_some() {
+        return false;
+    }
+    gate_segment(grant) && gate_segment(kind)
+}
+
+fn gate_segment(text: &str) -> bool {
+    let mut chars = text.chars();
+    if !matches!(chars.next(), Some(c) if c.is_ascii_lowercase()) {
+        return false;
+    }
+    let mut rest = 0usize;
+    for c in chars {
+        if !(c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_') {
+            return false;
+        }
+        rest += 1;
+        if rest > 20 {
+            return false;
+        }
+    }
+    true
+}
+
+/// An audience resource whose action is a gate.
+pub(crate) fn is_gate(body: &Value) -> bool {
+    entity_str(body, "resource", "type") == "audience"
+        && is_gate_action(entity_str(body, "action", "name"))
+}
+
+fn has_binding_context(body: &Value) -> bool {
+    let Some(context) = body.get("context").and_then(Value::as_object) else {
+        return false;
+    };
+    BINDING_CONTEXT
+        .iter()
+        .any(|name| context.contains_key(*name))
+}
+
+/// Why this body is a token-exchange tuple, if it is. Order: a gate, then
+/// a binding context member, then a scope beside a gate, then any other
+/// non-audience resource type beside a gate. A lone scope or detail, and
+/// an audience whose action is not a gate, are ordinary evaluations.
+fn binding_why(body: &Value, beside_gate: bool) -> Option<&'static str> {
+    if is_gate(body) {
+        return Some("a gate");
+    }
+    if has_binding_context(body) {
+        return Some("a context member");
+    }
+    if !beside_gate {
+        return None;
+    }
+    let resource_type = entity_str(body, "resource", "type");
+    if resource_type == "protected_resource" {
+        return Some("a scope");
+    }
+    if !resource_type.is_empty() && resource_type != "audience" {
+        return Some("a detail");
+    }
+    None
+}
+
+fn binding_message(body: &Value, beside_gate: bool) -> Option<String> {
+    let why = binding_why(body, beside_gate)?;
+    Some(format!(
+        "The OAuth token-exchange binding is answered by the service, \
+         which holds delegation and the directory. This edge PDP does not \
+         answer its tuples ({}).",
+        why
+    ))
 }
 
 /// WHO IS ASKING, by the one door: a certificate presented on the HTTPS
@@ -606,8 +811,12 @@ impl Pep {
     }
 
     /// The metadata (section 9), naming only what answers: the single
-    /// endpoint, and the batch one while the realm has it on. No search
-    /// endpoint, no `capabilities`, no `signed_metadata` — as the service.
+    /// endpoint, the batch one while the realm has it on, and
+    /// `supported_obligations` while the realm's obligations profile is on.
+    /// No search endpoint, no access-request endpoint, no `capabilities`,
+    /// no `jwks_uri`, no `signed_metadata` — this edge holds no realm
+    /// signing key, and republishing the service's JWT would name the
+    /// wrong issuer.
     pub(crate) fn authzen_metadata(
         &self,
         transport: &Transport,
@@ -640,12 +849,19 @@ impl Pep {
             "policy_decision_point": base,
             "access_evaluation_endpoint": format!("{}{}", base, EVALUATION_PATH)
         });
-        if catalogue.settings.batch_enabled {
-            if let Some(map) = out.as_object_mut() {
+        if let Some(map) = out.as_object_mut() {
+            if catalogue.settings.batch_enabled {
                 map.insert(
                     "access_evaluations_endpoint".into(),
                     json!(format!("{}{}", base, EVALUATIONS_PATH)),
                 );
+            }
+            if catalogue.settings.obligations_profile {
+                let types = authzen_map::SUPPORTED_OBLIGATION_TYPES
+                    .iter()
+                    .map(|name| Value::String((*name).to_string()))
+                    .collect();
+                map.insert("supported_obligations".into(), Value::Array(types));
             }
         }
         Reply {
@@ -736,21 +952,18 @@ impl Pep {
                 ),
             );
         };
+        let parsed = body_of(&bytes);
         let item = self
             .evaluate_one(
-                &body_of(&bytes),
+                &parsed,
                 &caller,
                 &catalogue,
                 id,
                 EVALUATION_PATH,
+                is_gate(&parsed),
             )
             .await;
-        match item.error {
-            Some((status, message)) => {
-                Reply::error(status, item.code, &message)
-            }
-            None => Reply::decision(answer_of(item.decision, item.context)),
-        }
+        reply_of(item)
     }
 
     /// One batch (section 7): its bounds, its semantic, each item decided in
@@ -840,14 +1053,16 @@ impl Pep {
         if items.is_empty() {
             let single = merged(given, &json!({})).unwrap_or(Value::Null);
             let one = self
-                .evaluate_one(&single, caller, catalogue, id, EVALUATIONS_PATH)
+                .evaluate_one(
+                    &single,
+                    caller,
+                    catalogue,
+                    id,
+                    EVALUATIONS_PATH,
+                    is_gate(&single),
+                )
                 .await;
-            return match one.error {
-                Some((status, message)) => {
-                    Reply::error(status, one.code, &message)
-                }
-                None => Reply::decision(answer_of(one.decision, one.context)),
-            };
+            return reply_of(one);
         }
         // THE BATCH ID ON EVERY RECORD: the caller's, or one made here, so
         // the lines of one batch are found together (decision 9).
@@ -865,9 +1080,16 @@ impl Pep {
         } else {
             id.to_string()
         };
+        // A gate anywhere in the batch makes every item stand beside one,
+        // classified on the merged item, as the service classifies.
+        let prepared: Vec<Option<Value>> =
+            items.iter().map(|item| merged(given, item)).collect();
+        let beside_gate = prepared
+            .iter()
+            .any(|item| item.as_ref().is_some_and(is_gate));
         let mut out = Vec::new();
-        for (i, item) in items.iter().enumerate() {
-            let one = match merged(given, item) {
+        for (i, request) in prepared.into_iter().enumerate() {
+            let one = match request {
                 None => ItemResult::failed(
                     400,
                     "STS-AUTHZEN-0001",
@@ -880,6 +1102,7 @@ impl Pep {
                         catalogue,
                         &format!("{}#{}", batch_id, i),
                         EVALUATIONS_PATH,
+                        beside_gate,
                     )
                     .await
                 }
@@ -916,7 +1139,21 @@ impl Pep {
         catalogue: &Catalogue,
         batch_id: &str,
         endpoint: &str,
+        beside_gate: bool,
     ) -> ItemResult {
+        // BEFORE THE READ (#1181, #1205). A binding tuple is the service's:
+        // this edge holds neither delegation nor the directory. Logged
+        // here, and the single-response path does not log it again.
+        // `may_act` with no catalogue row is still 0004 when this is not a
+        // binding tuple — the shared table's V30.
+        if let Some(message) = binding_message(body, beside_gate) {
+            tracing::info!(
+                "{}xacml-pep: authzen: {}",
+                tag("STS-XPEP-0140"),
+                message
+            );
+            return ItemResult::failed(501, "STS-XPEP-0140", message);
+        }
         let evaluation = match authzen_map::read(body, &catalogue.rows) {
             Ok(evaluation) => evaluation,
             Err(refusal) => {
@@ -1043,23 +1280,40 @@ impl Pep {
         };
         let enforcement = Enforcer::new(Bias::DenyBiased)
             .enforce(answer.decision, &answer.obligations);
-        let outcome =
-            authzen_map::outcome(&answer, &enforcement, policies.root_refused);
+        // The profile off, or no declaration, hands nothing: a realm that
+        // turned obligations off must not be wider at the edge.
+        let declared = if catalogue.settings.obligations_profile {
+            evaluation.supported_obligations.as_deref()
+        } else {
+            None
+        };
+        let outcome = authzen_map::outcome(
+            &answer,
+            &enforcement,
+            policies.root_refused,
+            declared,
+        );
         self.sync
             .count_authzen((!outcome.fault).then_some(outcome.decision));
         // THE RECORD: who asked, about which application, the two types and
         // the action, the request id, the decision — never a property value,
         // an id the caller sent, or a credential (decision 9 on #563).
+        // A presented approval is not a refusal of the decision: the
+        // service still decides, and so does this edge, without using it.
         let code = if outcome.fault {
             "STS-AUTHZEN-0028"
+        } else if !outcome.obligation_problems.is_empty() {
+            "STS-AUTHZEN-0041"
         } else if !outcome.undischargeable.is_empty() {
             "STS-AUTHZEN-0029"
+        } else if evaluation.approval_present {
+            "STS-AUTHZEN-0084"
         } else {
             ""
         };
         let line = format!(
             "xacml-pep: authzen: {} decided {} for a {} to {} a {}, caller \
-             \"{}\", application \"{}\"{}{}{}.",
+             \"{}\", application \"{}\"{}{}{}{}{}{}.",
             endpoint,
             if outcome.fault {
                 "nothing (a fault)".to_string()
@@ -1091,6 +1345,30 @@ impl Pep {
                     "; refused for the obligation {}",
                     outcome.undischargeable.join(", ")
                 )
+            },
+            if outcome.obligations.is_empty() {
+                String::new()
+            } else {
+                let types = outcome
+                    .obligations
+                    .iter()
+                    .filter_map(|one| one.get("type").and_then(Value::as_str))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("; handed {}", types)
+            },
+            if outcome.obligation_problems.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "; obligation problems: {}",
+                    outcome.obligation_problems.join("; ")
+                )
+            },
+            if evaluation.approval_present {
+                "; an approval was presented and not used"
+            } else {
+                ""
             }
         );
         // THE RECORD FOR THE SERVICE carries what the line carries and
@@ -1141,16 +1419,47 @@ impl Pep {
         } else {
             tracing::info!("{}{}", tag(code), line);
         }
+        let mut context = if catalogue.settings.return_reasons {
+            Some(authzen_map::reasons(&outcome))
+        } else {
+            None
+        };
+        // Obligations travel even when reasons are off. When both are
+        // present they share the one context object.
+        if !outcome.obligations.is_empty() {
+            let mut map = context
+                .as_ref()
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            map.insert(
+                "obligations".into(),
+                Value::Array(outcome.obligations.clone()),
+            );
+            context = Some(Value::Object(map));
+        }
         ItemResult {
             status: 200,
             decision: outcome.decision,
-            context: catalogue
-                .settings
-                .return_reasons
-                .then(|| authzen_map::reasons(&outcome)),
+            context,
             error: None,
             code: "",
         }
+    }
+}
+
+/// A single evaluation's reply. A binding 501 was already logged in
+/// `evaluate_one`; every other error is logged here.
+fn reply_of(item: ItemResult) -> Reply {
+    match item.error {
+        Some((status, message)) if item.code == "STS-XPEP-0140" => Reply {
+            status,
+            body: json!({ "error": { "status": status,
+                                     "message": message } }),
+            pretty: true,
+        },
+        Some((status, message)) => Reply::error(status, item.code, &message),
+        None => Reply::decision(answer_of(item.decision, item.context)),
     }
 }
 
@@ -1476,7 +1785,7 @@ mod tests {
         };
         let enforced = Enforcer::new(Bias::DenyBiased)
             .enforce(answer.decision, &answer.obligations);
-        let decided = outcome(&answer, &enforced, false);
+        let decided = outcome(&answer, &enforced, false, None);
         for body in [
             answer_of(decided.decision, None),
             answer_of(decided.decision, Some(reasons(&decided))),
@@ -1794,6 +2103,7 @@ mod tests {
                 &catalogue,
                 "r-1",
                 EVALUATION_PATH,
+                false,
             )
             .await;
         assert!(forwarded.error.is_none() && forwarded.decision);
@@ -1805,6 +2115,7 @@ mod tests {
                 &catalogue,
                 "r-2",
                 EVALUATION_PATH,
+                false,
             )
             .await;
         assert!(here.error.is_none() && !here.decision);
@@ -1844,6 +2155,156 @@ mod tests {
         );
         let sent = serde_json::to_string(one).unwrap();
         assert!(!sent.contains("alice") && !sent.contains("d1"));
+    }
+
+    fn edge_pep() -> crate::service::Pep {
+        let mut options = Options::from_env("0.0.0");
+        options.pdp_url = "http://127.0.0.1:9".into();
+        options.audit_enabled = true;
+        let client = PdpClient::new(&options).unwrap();
+        let sync = std::sync::Arc::new(crate::sync::Sync::new(
+            client.clone(),
+            options.clone(),
+        ));
+        crate::service::Pep::new(
+            options.clone(),
+            sts_core::version::load(std::path::Path::new(".")),
+            sync,
+            crate::pip::RemotePip::new(client, false),
+            std::sync::Arc::new(crate::listener::HttpsListener::new(
+                "", "", 0, 5000, None,
+            )),
+        )
+    }
+
+    /// A binding tuple is 501 before it is read or forwarded. A lone scope,
+    /// and an audience whose action is not a gate, stay ordinary. An
+    /// approval is decided, and recorded as presented and not used.
+    #[tokio::test]
+    async fn a_binding_tuple_is_refused_before_it_is_read() {
+        let pep = edge_pep();
+        let audit = pep.audit.clone();
+        let catalogue = Catalogue::default();
+        let caller = Caller {
+            name: "edge-caller".into(),
+            applications: vec!["todo-app".into()],
+        };
+        let person = || json!({ "type": "user", "id": "alice" });
+        let gate = json!({
+            "subject": person(),
+            "action": { "name": "issue:access_token:token_exchange" },
+            "resource": { "type": "audience", "id": "https://api.example" },
+            "context": { "application": "todo-app", "may_act": { "sub": "g" } }
+        });
+        let one = pep
+            .evaluate_one(
+                &gate,
+                &caller,
+                &catalogue,
+                "b-1",
+                EVALUATION_PATH,
+                true,
+            )
+            .await;
+        assert_eq!(one.code, "STS-XPEP-0140");
+        assert_eq!(one.error.as_ref().unwrap().0, 501);
+        assert!(one.error.unwrap().1.contains("(a gate)"));
+        assert_eq!(audit.overview()["queued"], 0);
+        let act = json!({ "context": { "act": { "sub": "gateway" } } });
+        let one = pep
+            .evaluate_one(&act, &caller, &catalogue, "", EVALUATION_PATH, false)
+            .await;
+        assert_eq!(one.code, "STS-XPEP-0140");
+        assert!(one.error.unwrap().1.contains("(a context member)"));
+        let scope = json!({
+            "subject": person(),
+            "action": { "name": "read" },
+            "resource": { "type": "protected_resource", "id": "documents.read" }
+        });
+        let beside = pep
+            .evaluate_one(
+                &scope,
+                &caller,
+                &catalogue,
+                "",
+                EVALUATION_PATH,
+                true,
+            )
+            .await;
+        assert!(beside.error.unwrap().1.contains("(a scope)"));
+        let alone = pep
+            .evaluate_one(
+                &scope,
+                &caller,
+                &catalogue,
+                "",
+                EVALUATION_PATH,
+                false,
+            )
+            .await;
+        assert_ne!(alone.code, "STS-XPEP-0140");
+        assert!(alone.error.is_none());
+        let audience = json!({
+            "subject": person(),
+            "action": { "name": "read" },
+            "resource": { "type": "audience", "id": "https://api.example" }
+        });
+        let ordinary = pep
+            .evaluate_one(
+                &audience,
+                &caller,
+                &catalogue,
+                "",
+                EVALUATION_PATH,
+                true,
+            )
+            .await;
+        assert_ne!(ordinary.code, "STS-XPEP-0140");
+        let detail = json!({
+            "subject": person(),
+            "action": { "name": "read" },
+            "resource": { "type": "document", "id": "d1" }
+        });
+        let detail = pep
+            .evaluate_one(
+                &detail,
+                &caller,
+                &catalogue,
+                "",
+                EVALUATION_PATH,
+                true,
+            )
+            .await;
+        assert!(detail.error.unwrap().1.contains("(a detail)"));
+        let other_grant = json!({
+            "subject": person(),
+            "action": { "name": "issue:access_token:other_grant" },
+            "resource": { "type": "audience", "id": "https://api.example" }
+        });
+        assert!(is_gate(&other_grant));
+        assert!(!is_gate(&json!({
+            "action": { "name": "issue:access-token:token_exchange" },
+            "resource": { "type": "audience", "id": "https://api.example" }
+        })));
+        let approval = json!({
+            "subject": person(),
+            "action": { "name": "read" },
+            "resource": { "type": "document", "id": "d1" },
+            "context": { "approval": { "id": "t1", "state": "signed" } }
+        });
+        let decided = pep
+            .evaluate_one(
+                &approval,
+                &caller,
+                &catalogue,
+                "b-2",
+                EVALUATION_PATH,
+                false,
+            )
+            .await;
+        assert!(decided.error.is_none() && !decided.decision);
+        let queued = audit.queued_for_test();
+        assert_eq!(queued.last().unwrap().code, "STS-AUTHZEN-0084");
     }
 
     #[test]

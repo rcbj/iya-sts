@@ -493,8 +493,12 @@ table (`authzen_exchange.ts`'s `FIXED_RULES`, which
 * **`context.issuance` only narrows**, on the subject gate only:
   `token_lifetime` (the subject token's remaining life, and the realm's
   access-token lifetime for the client), `granted_scope` for a request
-  naming no scope, and (#1201) `audience` and `claims`. `audience` never
-  leaves on one target: every element equal to this gate's resource id
+  naming no scope, and nothing else is BUILT: #1201 asks for `audience`
+  and `claims` that only narrow and defines no rule that produces one, so
+  the review of #1201 (2026-11-23) corrected the documents rather than
+  invent one. `shape()` still holds both keys, were one ever built:
+  `audience` never leaves on one target: every element equal to this
+  gate's resource id
   does not narrow it and is omitted, anything else is logged
   (`STS-AUTHZEN-0132`) and dropped, and an empty array withdraws the
   target (`0134`, the gate false). `claims` keeps a proper subset of a
@@ -868,30 +872,53 @@ header argues each. What a maintainer needs quickly:
   names is the subject or the requester; the FIRST rule now excludes that
   resource, or a role it required would bypass the self-approval rule.
   `mayDecide()` needs a real Permit: the gate's allow-when-nothing-decides is
-  right for a console and wrong for an approval.
+  right for a console and wrong for an approval. **A revocation is asked
+  as `revoke-access-request`** (the review of #1203, `mayRevoke()`), which
+  the fourth rule's target lists beside `approve-access-request`, so the
+  built-in document answers the two alike. A repository policy whose text
+  never names the new action predates it and is asked
+  `approve-access-request` instead — rcbj's backwards-compatibility rule:
+  an existing deployment's own policy decides a revocation as it did.
 * **Eligibility is computed, the decision is not**: `eligible()` (role,
   group, application owners) is routing — who is mailed, whose
   `/portal/access-requests` lists it — and a fact the rule reads.
-* **The callback** goes only to a URL in an application's
-  `appAuthzenCallbackUri` (the tab's `set-callbacks`). A person or a service
-  account is refused (`0136`); `stsAuthzenCallbackUri` stays readable and a
-  submission does not honour it. Delivery is
+* **The callback** goes only to a URL registered for the caller (the tab's
+  `set-callbacks`): an application's `appAuthzenCallbackUri`, or a
+  person's or service account's `stsAuthzenCallbackUri`. #1202 had stopped
+  honouring the second and refused to write it (`0136`, now retired); no
+  decision of rcbj's said so — decision 4 on #1180 is "a callback URL
+  registered for the requester" — and a 1.1.0 deployment with person
+  callbacks would have broken on upgrade, so the review restored it. A
+  per-URL override is an application's only (`0137` for a person). Delivery is
   `federation_http.deliverJson()` under the SENDABLE attribute
   `authzenCallbackEndpoint`, with a 300-second JWT as the Bearer. A network
   error, a timeout or an HTTP 5xx is tried again by this file's
   `authzen.access-requests` job, up to `authzen.callbackAttempts` (the
-  first included), waiting `authzen.callbackBackoffS`. One URL may set
+  first included), the first wait `authzen.callbackBackoffS` and each
+  later one doubled, up to a day (`waitAfter()`). One URL may set
   either in `appAuthzenCallbackConfig` (`url attempts=N backoff=S`, stored
   only when at least one override is set). A 4xx or an outbound-policy
   refusal is not tried again (`0137` is the set-callbacks refusal for a
   bad override). Each failed try is `0091`. When the delivery will not
   succeed, `callbackDelivery.state` is `failed` and the give-up is `0135`.
-  The task's own status is not written `failed`: `finish()` runs exactly
-  once from pending, `bodyOf` and `verify` require `approved`, and `failed`
-  is itself a callback event. The status endpoint stays the record
-  (`federation/CLAUDE.md`, the twentieth row). The attempts are on
-  `viewOf().callbackDelivery` (the console row and the portal), not on the
-  public Task Handle.
+  A delivery's outcome never writes the task's status. The status
+  endpoint stays the record (`federation/CLAUDE.md`, the twentieth row).
+  Each attempt (time, status, reason, `code`) is on
+  `viewOf().callbackDelivery.attempts`, drawn per attempt on the console
+  row, and on the portal; not on the public Task Handle. **A write after
+  the POST re-reads the row** (`currentOf()`) and writes only the delivery
+  record onto it, so a revocation made while the POST was in flight is
+  not lost (rcbj's rule, no lost revocations), and a row the sweep removed
+  is not brought back.
+* **`failed` is a workflow step that cannot complete** (#1202, the
+  review): `approve()` writes the approval's index row and then the task;
+  either refused moves the task to `failed` (`0142`) instead of an
+  `approved` no re-evaluation could find. The job fails a pending task
+  whose advice named approvers that resolve, CERTAINLY, to nobody but the
+  subject (`0143`): `approverWalk()` is certain only when the directory was
+  readable and every role named is a configured static one, since a
+  computed or dynamic role's holders cannot be listed. Advice that named no
+  approver is never "nobody": an administrator decides it.
 * **The store is cell-tier** (`authzen.accessRequests`,
   `authzen.accessRequestIndex`, `authzen.accessRequestDenials`), and
   `/access/v1` is placed `local`: under cells a PEP must poll the cell it
@@ -899,7 +926,15 @@ header argues each. What a maintainer needs quickly:
 * **Expiry**: read-time (a pending task past `expiresAt` is finished as
   expired by `task()`) and the `authzen.access-requests` cluster job, realm
   scope, every minute, which also removes rows past `keepUntil` (a day after
-  finishing, or the approval's end).
+  finishing, or the approval's end) — EXCEPT a row whose callback is still
+  being tried, kept up to `horizonS()` past `keepUntil` (every wait and
+  flight the bound allows); one that must go with its delivery open gets
+  the final `0135` row first (`giveUp()`).
+* **The denial store is capped at the insert**
+  (`authzen.accessRequestMaxDenials`, default 100000, per realm): full,
+  `recordDenial()` records nothing and the token form still works; the full
+  store is logged and audited once as `0144` (state changes, never per
+  denial).
 * **A DELETED SUBJECT'S TASKS END WITH THEM (2026-11-16, #1612's rule: a
   person deleted and made again under the same name inherits nothing).** A
   task names its subject as the PEP sent it — a username, often — and
@@ -917,18 +952,26 @@ header argues each. What a maintainer needs quickly:
   every task already: the backfill, within a minute of the upgrade and never
   on the delete path; a delete inside that minute misses such a task.
 * **The portal lists and revokes the approvals that person gave** (#1203),
-  through the same `decide()` door and the same `approve-access-request`
-  question. `grantedBy()` is the list: status `approved`, a live approval
-  whose `approver` is that username, and `mayDecide()` on the portal door.
+  through the same `decide()` door, and ONLY those: a revocation on the
+  portal door of an approval somebody else gave is refused (`0141`), since
+  the policy question alone would let any permitted approver revoke
+  another's. `grantedBy()` is the list: status `approved`, a live approval
+  whose `approver` is that username, and `mayRevoke()` on the portal door.
+  **Neither portal list reads the store** (no full scans): `grantedBy()`
+  reads the APPROVER INDEX (`approver:<SHA-256 of the lower-cased
+  username>` in `authzen.accessRequestIndex`), and `awaiting()` the
+  PENDING INDEX (`pending:tasks`), whose length
+  `authzen.accessRequestMaxPending` bounds — eligibility is computed at
+  the read, so a per-approver list could not be exact. `save()` writes
+  both; two processes can lose each other's id, and the sweep, which walks
+  every task already, puts it back within a minute.
   The requester is mailed (`authzen-access-revoked`) when the channel can
   address their own entry; a failure to mail is `0138` and the revocation
   stands. An emergency approval, whose approver is the door rather than a
   person, stays on the console.
-* Not built: `form_url`, `display`, BULK, ACTOR, CATALOG, and a
-  `failed` transition of the task's own status. A delivery that will
-  not succeed is `callbackDelivery.state` `failed` (#1202), which is
-  not that transition. `tests/authzen_access_request.js` holds it in
-  process and `tests/protocol/sts_authzen.js` section 9 over HTTP.
+* Not built: `form_url`, `display`, BULK, ACTOR, CATALOG.
+  `tests/authzen_access_request.js` holds it in process and
+  `tests/protocol/sts_authzen.js` section 9 over HTTP.
 
 ## THE REQUEST SHAPES ARE THE MODEL'S (#1579, 2026-11-10)
 
@@ -1027,10 +1070,14 @@ audience that would broaden (logged and dropped), 0133 a claim that
 would broaden, is reserved, or is not on the subject token (logged and
 dropped), 0134 an empty audience withdrawing the target; 0135–0137 the
 callback retry (#1202): 0135 the delivery will not be tried again (the
-task status is unchanged), 0136 a callback registered for somebody who is
-not an application, 0137 a per-URL `attempts` or `backoff` that is not an
-integer in range; 0138 the requester of a revoked approval could not be
+task status is unchanged), 0136 retired (a callback for somebody who is
+not an application, refused until the review of #1202), 0137 a per-URL
+`attempts` or `backoff` that is not an integer in range or is set for a
+person; 0138 the requester of a revoked approval could not be
 mailed, and the revocation stands (#1203); 0139 a requestable denial
 could not be recorded, and the binding_token is still issued; 0140 an
 approval's state could not be signed, and the approval stands by id
-(#1204).
+(#1204); 0141 a portal revocation of an approval somebody else gave
+(#1203), 0142 an approval that could not be stored and 0143 approvers who
+resolve to nobody, each a task moved to `failed` (#1202), 0144 the denial
+store full (#1204).

@@ -1635,7 +1635,8 @@ const CODES = [
     summary: 'A request worker reported that its change-log pull waited on ' +
       'its own flush past workers.readBarrierTimeoutMs (STS-STORE-0176), ' +
       'so the front process retired it — nothing more routed to it, then ' +
-      'drained — and forks a replacement into its slot when it exits. A ' +
+      'drained, waiting for its own flush to settle — and forks a ' +
+      'replacement into its slot when it exits. A ' +
       'pool that is stopping or has given up keeps the worker, and the ' +
       'line says why.',
     spec: '' },
@@ -1644,6 +1645,13 @@ const CODES = [
       'wedged (STS-WORKER-0055) did not finish draining within 8000 ms and ' +
       'was ended; its replacement follows as for any worker that exits.',
     spec: '' },
+  { code: 'STS-WORKER-0057',
+    summary: 'A request worker was ended, or exited, with its own flush ' +
+      'still out past ten times workers.readBarrierTimeoutMs after it ' +
+      'began (5 minutes by default): the flush was given up on, and the ' +
+      'writes in it may not have reached the store. A flush that settles ' +
+      'before then is waited for.',
+    spec: 'Log line' },
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',
     spec: '' },
@@ -2240,10 +2248,17 @@ const CODES = [
       'process\'s own flush of that entry past workers.readBarrierTimeoutMs ' +
       'and the flush had not settled. The pull fails before its position ' +
       'moves, so the row is read again and never dropped; a request worker ' +
-      'asks the front process to replace it (STS-WORKER-0055). Reported ' +
-      'once a flush; a read barrier\'s STS-STORE-0039 line names the wait ' +
-      'while it lasts.',
+      'asks the front process to replace it only once the flush is stuck ' +
+      '(STS-STORE-0177). Reported once a flush; a read barrier\'s ' +
+      'STS-STORE-0039 line names the wait while it lasts.',
     spec: '' },
+  { code: 'STS-STORE-0177',
+    summary: 'A request worker\'s own flush has been out four times ' +
+      'workers.readBarrierTimeoutMs (2 minutes by default), so the worker ' +
+      'asks the front process to replace it (STS-WORKER-0055). Its drain ' +
+      'waits for that flush to settle until ten times the bound after it ' +
+      'began, so a flush that is only slow keeps its writes.',
+    spec: 'Log line' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +
@@ -5506,6 +5521,18 @@ const CODES = [
       'certificate to the ML-DSA authority; the other issues a classical ' +
       'certificate and an ML-DSA certificate. They cannot both be on.',
     spec: 'The console and the management API refuse the write' },
+  { code: 'STS-PKI-0297',
+    summary: 'An SSH user certificate was asked for while ' +
+      'pki.sshUserCaPqcOnly is on, and the realm has no ML-DSA SSH user CA: ' +
+      'this runtime cannot generate ML-DSA, ssh-mldsa-65 is not in ' +
+      'pki.sshUserCaAlgorithms, or the authority could not be made. No ' +
+      'classical certificate is issued in its place.',
+    spec: 'The account API refuses the request with HTTP 503' },
+  { code: 'STS-PKI-0298',
+    summary: 'A public SSH user CA request named an algorithm other than ' +
+      'ssh-mldsa-65, or asked for the ML-DSA authority of a realm that has ' +
+      'none.',
+    spec: 'GET /pki/ssh-user-ca/{scope} answers 400 or 404' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -18709,6 +18736,16 @@ const CODES = [
       'at every door that asks it; each door refuses it under its own code ' +
       'for a certificate that is not an identity.',
     spec: 'none (logged): the door\'s own refusal' },
+  { code: 'STS-TLS-0064',
+    summary: 'Two client-truststore anchors share a subject and not a key. ' +
+      'OpenSSL looks an issuer up by subject name, so the later one is ' +
+      'shadowed: a certificate it issued does not verify ' +
+      '(DEPTH_ZERO_SELF_SIGNED_CERT) while the earlier one is installed. ' +
+      'The add is kept and warned (the row\'s shadowedBy names the earlier ' +
+      'fingerprint). Presenting the shadowed certificate itself is ' +
+      'recognised by its fingerprint and verified (#1242).',
+    spec: 'the add succeeds with warning; the handshake of the certificate ' +
+      'itself verifies' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +
@@ -23649,6 +23686,21 @@ const CODES = [
       '3.5). The message was not sent under a classical algorithm ' +
       'instead.',
     spec: 'the mail send; STS-MAIL-0243 carries the sentence' },
+  { code: 'STS-OPENPGP-0029',
+    summary: 'The proof of possession offered with an OpenPGP key carries ' +
+      'more than one signature. A proof is signed once, by one key, so ' +
+      'that the signer and the creation time judged are the signature ' +
+      'that verified.',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0030',
+    summary: 'A person\'s mail address changed and the OpenPGP key whose ' +
+      'user ids name only the former address could not be retired from ' +
+      'their entry, or an S/MIME choice whose certificate does not name ' +
+      'the new address could not be put back to none. Mail is still not ' +
+      'encrypted to either for the new address: a key or certificate is ' +
+      'used only for an address it names.',
+    spec: 'none (a log line; the directory write that changed the address ' +
+      'is unaffected)' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile was named with something ' +
@@ -25911,6 +25963,40 @@ const CODES = [
       'admitted everybody. A tuning with a trust source, or without the ' +
       'requirement, serves again.',
     spec: 'none — an error in the PEP\'s log; the listener serves nothing' },
+  { code: 'STS-XPEP-0138',
+    summary: 'A caller asked this edge PDP for one of the AuthZEN Search ' +
+      'APIs (POST /access/v1/search/subject, resource or action). Those ' +
+      'are answered by the service, which holds the directory and the ' +
+      'resource and action catalogues. This edge answers 501, before ' +
+      'admission and without reading the body, and does not advertise ' +
+      'the paths. The code is logged and not sent. A turned-off edge, or ' +
+      'one that has not pulled, answers that condition first ' +
+      '(STS-XPEP-0044, STS-XPEP-0043, STS-AUTHZEN-0013, ' +
+      'STS-AUTHZEN-0014). HEAD stays 404.',
+    spec: 'AuthZEN Authorization API 1.0 section 8; HTTP 501' },
+  { code: 'STS-XPEP-0139',
+    summary: 'A caller asked this edge PDP for the Access Request and ' +
+      'Approval Profile (POST /access/v1/access-requests, GET of its ' +
+      'schema or of a task, POST or DELETE of a task\'s cancel). The ' +
+      'service holds the approval store. This edge answers 501 with the ' +
+      'evaluation error object, not problem+json, before admission and ' +
+      'without reading the body, and does not advertise the paths. A ' +
+      'POST to the task path without /cancel stays 404. The code is ' +
+      'logged and not sent. context.approval on an evaluation is not ' +
+      'this refusal: it is recognized and not used (STS-AUTHZEN-0084).',
+    spec: 'AuthZEN Access Request and Approval Profile; HTTP 501' },
+  { code: 'STS-XPEP-0140',
+    summary: 'An access evaluation was one of the OAuth token-exchange ' +
+      'binding\'s tuples: a gate (resource type audience and an action ' +
+      'issue:<type>:<grant>), a context member the binding reads, or, ' +
+      'beside a gate in the same batch, a scope or any other ' +
+      'non-audience resource type. The service holds delegation and the ' +
+      'directory. This edge answers 501 for that item — the whole ' +
+      'response when the request was one evaluation, and context.error ' +
+      'on a batch item — and does not forward it. The code is logged ' +
+      'and not sent. A lone scope or detail, and an audience whose ' +
+      'action is not a gate, stay ordinary evaluations.',
+    spec: 'AuthZEN OAuth token-exchange binding; HTTP 501' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },
@@ -26436,7 +26522,9 @@ const CODES = [
     summary: 'An RFC 8693 token exchange was not issued because the ' +
       'external AuthZEN PDP refused a subject or requesting-party gate. ' +
       'Which gate is not told to the client (#1200).',
-    spec: 'HTTP 400 invalid_request' },
+    spec: 'HTTP 400 invalid_target when the exchange named the audience ' +
+      'or resource the gate refused, invalid_grant otherwise (RFC 8693 ' +
+      'section 2.2.2); invalid_request until the review of #1200' },
   { code: 'STS-AUTHZEN-0126',
     summary: 'An RFC 8693 token exchange was not issued because the ' +
       'external AuthZEN PDP answered 2xx with a body that is not the ' +
@@ -26497,19 +26585,19 @@ const CODES = [
       'endpoint remains the record (#1202).',
     spec: 'none — logged and audited' },
   { code: 'STS-AUTHZEN-0136',
-    summary: 'An access request callback was refused because the caller is ' +
-      'not an application. set-callbacks writes appAuthzenCallbackUri ' +
-      'only on an application, and a submission that names a callback ' +
-      'from a person or a service account is refused. A value already ' +
-      'stored as stsAuthzenCallbackUri is left in place and is not ' +
-      'honoured (#1202).',
-    spec: 'HTTP 400 on a submission; the console\'s refusal on ' +
-      'set-callbacks' },
+    summary: 'An access request callback was refused because the caller ' +
+      'was not an application (#1202). Retired by the review of #1202 ' +
+      '(2026-11-23): a person\'s or service account\'s ' +
+      'stsAuthzenCallbackUri is written and honoured again, as in 1.1.0, ' +
+      'under rcbj\'s decision 4 on #1180.',
+    spec: '', retired: true },
   { code: 'STS-AUTHZEN-0137',
     summary: 'An access request callback override was refused: attempts ' +
       'or backoff was not an integer in range (attempts 1 to 20, ' +
       'backoff 60 to 86400), or a token was not attempts=N or ' +
-      'backoff=S, or one of them was repeated (#1202).',
+      'backoff=S, or one of them was repeated, or it was set for a ' +
+      'person or a service account, whose callbacks take the realm\'s ' +
+      'settings (#1202).',
     spec: 'the console\'s refusal' },
   { code: 'STS-AUTHZEN-0138',
     summary: 'The requester of a revoked AuthZEN access approval could ' +
@@ -26524,6 +26612,30 @@ const CODES = [
     summary: 'An AuthZEN approval\'s state could not be signed. The ' +
       'approval stands by id, and the task result omits state (#1204).',
     spec: 'none — logged; the approval is still looked up by id' },
+  { code: 'STS-AUTHZEN-0141',
+    summary: 'A person was refused the revocation of an AuthZEN access ' +
+      'approval on the portal because somebody else gave it: the portal ' +
+      'revokes only an approval the signed-in person gave (#1203).',
+    spec: 'HTTP 400 on POST /account-api/access-requests' },
+  { code: 'STS-AUTHZEN-0142',
+    summary: 'An AuthZEN access request\'s approval could not be stored, ' +
+      'so the task moved to failed rather than to approved (#1202). The ' +
+      'failed callback is sent where it was asked for.',
+    spec: 'the approver\'s refusal; the task status failed' },
+  { code: 'STS-AUTHZEN-0143',
+    summary: 'A pending AuthZEN access request moved to failed because ' +
+      'the approvers its advice names (configured static roles, groups, ' +
+      'the application\'s owners) resolve to nobody but its subject ' +
+      '(#1202). A computed or dynamic role, or a directory that cannot be ' +
+      'read, is never taken for nobody. Noticed by the ' +
+      'authzen.access-requests job.',
+    spec: 'the task status failed' },
+  { code: 'STS-AUTHZEN-0144',
+    summary: 'The requestable denial store of a realm is full ' +
+      '(authzen.accessRequestMaxDenials), so a new denial is not recorded ' +
+      'by evaluation_id; it is still requestable by its binding_token ' +
+      '(#1204). Logged when the store fills, not per denial.',
+    spec: 'none — logged and audited once' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +

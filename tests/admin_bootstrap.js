@@ -232,11 +232,13 @@ function childMain() {
     // ======================================================================
     // 10. THE PASSWORD FILE DOES NOT SURVIVE A LATER START.
     //
-    // The first start writes it. The same process leaves it, because another
-    // realm in that start may still need the only copy. A later start — a
-    // credential already held, and this process did not write the file —
-    // removes it. A path that is a directory cannot be unlinked
-    // (STS-AUTHN-0567) and the start continues.
+    // The first start writes it, one file per realm (#1969). The same
+    // process leaves it. A later start — a credential already held, and this
+    // process did not write the file — removes it once the password in it no
+    // longer opens its account, and leaves it while it still does, so a node
+    // starting beside the one that wrote it does not delete the only copy. A
+    // path that is a directory cannot be unlinked (STS-AUTHN-0567) and the
+    // start continues.
     // ======================================================================
     if (process.env.AB_PART === 'file-kept' ||
         process.env.AB_PART === 'file-removed') {
@@ -304,6 +306,31 @@ function childMain() {
              '10c. the same start does not remove a file it just wrote',
              JSON.stringify({ ran: second.ran, why: second.why,
                               exists: fs.existsSync(file) }));
+        // ONE FILE PER REALM (#1969): a trust realm's password goes beside
+        // the default realm's rather than over it.
+        const fileRealm = realms.create({ id: 'abfile', name: 'abfile' });
+        const realmFile = realms.run(fileRealm.realm, function () {
+          return credentials.writeBootstrapPassword('realm-admin',
+                                                    'realm-secret');
+        });
+        let defaultText = '';
+        let realmText = '';
+        try {
+          defaultText = fs.readFileSync(file, 'utf8');
+          realmText = fs.readFileSync(realmFile, 'utf8');
+        } catch (e) {
+          // The assertion reports what was read; '' when a file is absent.
+          defaultText = defaultText || '';
+        }
+        note(realmFile === file + '-abfile' &&
+             defaultText.indexOf('admin:') === 0 &&
+             realmText === 'realm-admin:realm-secret\n',
+             '10g. a trust realm\'s password is written to a file of its own ' +
+             'and leaves the default realm\'s',
+             JSON.stringify({ realmFile: realmFile,
+                              defaultKept: defaultText.indexOf('admin:') === 0,
+                              realmText: realmText === 'realm-admin:' +
+                                         'realm-secret\n' }));
         require('fs').writeFileSync(OUT, JSON.stringify(findings));
         process.exit(0);
       }
@@ -344,11 +371,27 @@ function childMain() {
                             exists: fs.existsSync(file),
                             loggedSecret: printed.indexOf('leftover-secret') !==
                                           -1 }));
+      // THE FILE STAYS WHILE ITS PASSWORD STILL OPENS THE ACCOUNT (#1969).
+      // It is what a node that won the claim just after another node
+      // bootstrapped finds on a data directory they share: the file that node
+      // has only just written, which nobody has read yet.
+      fs.writeFileSync(file, 'someone-ab:A-long-enough-probe-passphrase-77\n',
+                       { mode: 0o600 });
+      const kept = inDefault(function () {
+        return credentials.bootstrap({ username: 'admin' });
+      });
+      note(kept.ran === false && fs.existsSync(file),
+           '10f. a later start leaves a file whose password still opens its ' +
+           'account',
+           JSON.stringify({ ran: kept.ran, why: kept.why,
+                            exists: fs.existsSync(file) }));
       try {
         fs.unlinkSync(file);
       } catch (e) {
-        // The start above already removed it. The directory below is what
-        // the next start cannot unlink.
+        // 10f failed and the file is gone already. The directory below is
+        // what the next start cannot unlink.
+        log.debug('Caught removing the 10f file: ' +
+                  ((e && e.message) || e));
       }
       // A directory, so unlink fails for every user, including root.
       fs.mkdirSync(file);

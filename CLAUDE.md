@@ -1132,10 +1132,9 @@ and fails until the row is there.
 
 ## Versioning: M.N.O.<build>, fixed when an artifact is BUILT
 
-**`VERSION` at the repo root holds the release, `M.N.O` — `1.1.1` since
-2026-11-20, when 1.1.0 shipped (rcbj: develop's work is for 1.1.1, about two
-weeks out; it was `1.1.0` from 2026-11-13 and `1.0.0` from 2026-11-04,
-#1298)** — and
+**`VERSION` at the repo root holds the release, `M.N.O` — `1.2.0` since
+PR #1966 on 2026-11-21 (it was `1.1.1` from 2026-11-20, when 1.1.0 shipped,
+`1.1.0` from 2026-11-13 and `1.0.0` from 2026-11-04, #1298)** — and
 `package.json` carries the same string. **A release that needs an upgrade
 script is never a patch release** (rcbj, 2026-11-13: a user must not have to
 run a script to go from 1.0.0 to 1.0.1). So the change that first adds a

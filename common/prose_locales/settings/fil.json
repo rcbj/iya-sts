@@ -232,8 +232,8 @@
     "text": "I-log ang nabuong bootstrap password"
   },
   "admin.logBootstrapPassword|description": {
-    "en": "856dddf1ed8c2407",
-    "text": "Sa product mode lang. Kapag naka-off, ang default, isinusulat ang password na nabuo para sa unang administrator sa file na bootstrap-admin-password sa persistence.dataDir, na ang serbisyong ito lang ang makakabasa, at sinasabi ng log kung saan. Kapag naka-on, isinusulat ito sa service log. BABALA: kapag naka-on, hindi natutugunan ang requirement 16.2.5 ng ASVS 5.0.0, dahil umaabot sa log ang credential. Ang susunod na pagsisimula ay nagbubura ng file na iyon kapag may humahawak na ng kredensyal."
+    "en": "8591cfda7dde139a",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, isinusulat ang password na nabuo para sa unang administrator sa file na bootstrap-admin-password sa persistence.dataDir, na ang serbisyong ito lang ang makakabasa, at sinasabi ng log kung saan. Kapag naka-on, isinusulat ito sa service log. BABALA: kapag naka-on, hindi natutugunan ang requirement 16.2.5 ng ASVS 5.0.0, dahil umaabot sa log ang credential. Nagdaragdag ang file ng isang trust realm ng gitling at ng realm id sa pangalang iyon. Ang susunod na pagsisimula ay nagbubura ng isang file kapag hindi na nabubuksan ng password na nasa loob nito ang account nito."
   },
   "oauth2.allowConfidentialWithoutPkce|label": {
     "en": "c33a0a31a1d623b1",
@@ -424,8 +424,8 @@
     "text": "Payagan ang default na pangalan ng administrator sa product"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "7375f4bf636f5366",
-    "text": "Sa product mode lang. Kapag naka-off, ang default, ang bootstrap administrator na pinangalanang admin, root, sa o administrator, o walang pangalan, ay binibigyan ng hindi mahulaang nabuong pangalan, na isinusulat kasama ng password nito sa file na bootstrap-admin-password sa persistence.dataDir sa unang pagsisimula (tingnan ang admin.logBootstrapPassword). Kapag naka-on, ginagamit ang naka-configure na pangalan. BABALA: ipinagbabawal ng requirement 6.3.2 ng ASVS 5.0.0 ang default na pangalan ng account, kaya iwanang naka-off ito sa labas ng test stack. Ang susunod na pagsisimula ay nagbubura ng file na iyon kapag may humahawak na ng kredensyal."
+    "en": "7007ae597c41e813",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, ang bootstrap administrator na pinangalanang admin, root, sa o administrator, o walang pangalan, ay binibigyan ng hindi mahulaang nabuong pangalan, na isinusulat kasama ng password nito sa file na bootstrap-admin-password sa persistence.dataDir sa unang pagsisimula (tingnan ang admin.logBootstrapPassword). Kapag naka-on, ginagamit ang naka-configure na pangalan. BABALA: ipinagbabawal ng requirement 6.3.2 ng ASVS 5.0.0 ang default na pangalan ng account, kaya iwanang naka-off ito sa labas ng test stack. Nagdaragdag ang file ng isang trust realm ng gitling at ng realm id sa pangalang iyon. Ang susunod na pagsisimula ay nagbubura ng isang file kapag hindi na nabubuksan ng password na nasa loob nito ang account nito."
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "Account ng bootstrap administrator"
   },
   "admin.bootstrapUsername|description": {
-    "en": "8b69eb9d4cb0b130",
-    "text": "Ang username ng bootstrap administrator (2026-09-13), sa DEFAULT na realm at, mula 2026-09-14, sa bawat trust realm, kung saan ang realm na iyon lang ang pinangangasiwaan nito: ginagawa sa startup kung wala pa, miyembro ng parehong console role, pinipilit na palitan ang password nito sa unang sign-in, at hindi mabubura o mapapalitan ng pangalan. Hangga't hindi pa ito unang nagsa-sign in sa /admin, puwedeng gamitin ng bawat naka-sign in na tao ang console (admin.openWhenEmpty). Sa development, kahit anong password ay nagsa-sign in dito, gaya ng sa lahat. SA PRODUCT MODE, ito rin ang binibigyan ng ginawang password kapag nag-start ang serbisyong ito at WALANG sinuman sa realm ang may hawak na credential; ang pangalan at ang password na iyon ay isinusulat nang isang beses sa file na bootstrap-admin-password sa persistence.dataDir, na mababasa lang ng serbisyong ito (sinasabi ng log kung saan, at dala lang mismo ng log ang mga ito kapag naka-on ang admin.logBootstrapPassword), at iyon lang ang daan papasok sa bagong product deployment. Hindi kailanman isinusulat ang ginawang password kung saan may may hawak nang credential, kaya hindi nito mao-overwrite ang isang password. Nalalapat lang ang sapilitang pagpapalit sa account na GINAWA ng hakbang na ito — ang kasalukuyang account na may ganitong pangalan ay nagpapanatili ng password nito at binibigyan lang ng dalawang role. Ang susunod na pagsisimula ay nagbubura ng file na iyon kapag may humahawak na ng kredensyal."
+    "en": "938e9e0c7b3b97fa",
+    "text": "Ang username ng bootstrap administrator (2026-09-13), sa DEFAULT na realm at, mula 2026-09-14, sa bawat trust realm, kung saan ang realm na iyon lang ang pinangangasiwaan nito: ginagawa sa startup kung wala pa, miyembro ng parehong console role, pinipilit na palitan ang password nito sa unang sign-in, at hindi mabubura o mapapalitan ng pangalan. Hangga't hindi pa ito unang nagsa-sign in sa /admin, puwedeng gamitin ng bawat naka-sign in na tao ang console (admin.openWhenEmpty). Sa development, kahit anong password ay nagsa-sign in dito, gaya ng sa lahat. SA PRODUCT MODE, ito rin ang binibigyan ng ginawang password kapag nag-start ang serbisyong ito at WALANG sinuman sa realm ang may hawak na credential; ang pangalan at ang password na iyon ay isinusulat nang isang beses sa file na bootstrap-admin-password sa persistence.dataDir, na mababasa lang ng serbisyong ito (sinasabi ng log kung saan, at dala lang mismo ng log ang mga ito kapag naka-on ang admin.logBootstrapPassword), at iyon lang ang daan papasok sa bagong product deployment. Hindi kailanman isinusulat ang ginawang password kung saan may may hawak nang credential, kaya hindi nito mao-overwrite ang isang password. Nalalapat lang ang sapilitang pagpapalit sa account na GINAWA ng hakbang na ito — ang kasalukuyang account na may ganitong pangalan ay nagpapanatili ng password nito at binibigyan lang ng dalawang role. Nagdaragdag ang file ng isang trust realm ng gitling at ng realm id sa pangalang iyon. Ang susunod na pagsisimula ay nagbubura ng isang file kapag hindi na nabubuksan ng password na nasa loob nito ang account nito."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -3307,61 +3307,149 @@
     "en": "e0341e4e47f3b2f8",
     "text": "Ano ang nagpapahintulot sa PKINIT sign-in na mag-claim ng key na nakatali sa hardware (ang pkinit-hardware indicator at amr hwk). `inference`, ang default at ang gawi bago ang #1955: isang smart-card logon certificate na ang key ay hindi ginawa ng serbisyong ito, o naitalang ebidensya ng attestation. `evidence`: tanging key na sakop ng attestation ng isang hardware token. Ang certificate sign-in sa TLS ay nakakakuha ng hwk, at sc para sa key na nasa smart card, mula lamang sa ebidensya sa alinmang kaso."
   },
-"pskc.allowPlaintextImport|label": {
+  "pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
     "text": "Tanggapin ang mga plaintext PSKC seed file sa product mode"
   },
-"pskc.allowPlaintextImport|description": {
+  "pskc.allowPlaintextImport|description": {
     "en": "7efe34e872e4772e",
     "text": "Kung maaaring mag-import ang isang administrator ng PSKC seed file (RFC 6030) na HINDI naka-encrypt ang mga token secret, sa product mode. Naka-off bilang default: ang ganitong file ay naging listahan ng gumaganang mga ikalawang factor sa bawat disk at mailbox na dinaanan nito, at kaya itong i-encrypt ng vendor sa ilalim ng pre-shared key o password (mga section 6.1 at 6.2). Tumatanggap nito ang development mode anuman ang mangyari."
   },
-"yubiotp.allowPlaintextImport|label": {
-    "en": "b1c1ac235f98cc47",
-    "text": "Tanggapin ang mga plaintext YubiKey OTP CSV file sa product mode"
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "Mga PIV attestation root (PEM)"
   },
-"yubiotp.allowPlaintextImport|description": {
-    "en": "f409449d46d5831a",
-    "text": "Kung maaaring mag-import ang isang administrator, sa product mode, ng CSV ng mga YubiKey OTP secret (serial, public id, private id, AES key). Naka-off bilang default: ang file ay listahan ng gumaganang mga ikalawang factor. Tumatanggap ang development mode ng isa anuman ang mangyari. Sini-seal ang mga secret kapag tinanggap ang file, at hindi itinatabi ang file."
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "Ang mga root na dapat pagkadenahan ng isang YubiKey PIV key attestation, bilang PEM bundle. Kapag walang laman, ginagamit ang dalawang inilalathala ng Yubico (Yubico PIV Root CA Serial 263751, at Yubico Attestation Root 1 para sa firmware 5.7.4 pataas), kasama sa common/pki_piv_anchors.json at naka-pin doon sa SHA-256, kasama ang mga PIV intermediate ng Yubico. Pinapalitan ng isang sertipiko rito ang mga kasamang root."
   },
-"openpgp.wkd|label": {
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "Hingin ang PIV attestation para sa mga PIV profile"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "Kapag naka-on, tinatanggihan ang kahilingan para sa piv-auth, piv-sign, piv-key-management o piv-card-auth na sertipiko maliban kung may dala itong YubiKey PIV attestation na nave-verify (STS-PIV-0010). Ang naka-escrow na piv-key-management key mula sa EST /serverkeygen ang eksepsiyon: ang serbisyong ito ang bumuo nito. Kapag naka-off, ang default, inilalabas ang ganitong kahilingan na walang attestation nang walang hardware evidence; ang kahilingang may dalang attestation na hindi nave-verify ay tinatanggihan alinman ang kaso."
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "Pinakamahinang PIN policy na maaaring taglayin ng na-attest na PIV key"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "Kung ano man lang dapat ang PIN policy ng attestation. `once`: ang PIN nang isang beses bawat session (binibilang ang match-once ng isang Bio key); `always`: ang PIN bago ang bawat paggamit (binibilang ang match-always). Walang hinihinging PIN policy ang `any`, ang default. Tinatanggihan ang key na mas mahina ang attestation (STS-PIV-0011)."
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "Pinakamahinang touch policy na maaaring taglayin ng na-attest na PIV key"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "Kung ano man lang dapat ang touch policy ng attestation. `cached`: isang pindot, tinatandaan nang 15 segundo; `always`: isang pindot sa bawat paggamit. Walang hinihingi ang `any`, ang default. Tinatanggihan ang key na mas mahina ang attestation (STS-PIV-0012)."
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "Payagang mag-sign in ang piv-card-auth na sertipiko"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "1852da24c3fbfade",
+    "text": "Gumagana ang piv-card-auth key (slot 9e) nang walang PIN, para sa pisikal na pagpasok, kaya tinatanggihan ang sertipiko nito sa TLS sign-in at sa PKINIT (STS-PIV-0013) maliban kung naka-on ito."
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "I-escrow ang mga piv-key-management key"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "Kapag naka-on, iniingatan ng EST /serverkeygen para sa piv-key-management profile ang nabuong private key, selyado sa ilalim ng key-encryption key, para mabawi ito ng may hawak (sa portal, pagkatapos ng bagong sign-in) o ng administrator na may role sa pagbawi ng PIV key, at ma-decrypt ang lumang mail kapag nawala ang card. Tinatanggihan kung walang hawak na key-encryption key (STS-PIV-0020). Hindi kailanman hardware evidence ang naka-escrow na key. Kapag naka-off, ang default, tinatanggihan ng /serverkeygen ang piv-key-management profile (STS-PIV-0021), kaya ang 9d key ay binubuo sa card at hindi iniingatan saanman."
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "Mga panlabas na PIV o CAC issuing CA na itinutugma ayon sa card UUID (PEM)"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "Ang mga issuing CA na ang mga PIV o CAC card certificate ay nagsa-sign in ng isang tao ayon sa FIPS 201 card UUID: ang client certificate na direktang inilabas ng isa sa mga ito, na nagsasaad ng policy sa piv.externalPolicyOids at may dalang eksaktong isang urn:uuid subjectAltName, ay itinutugma sa iisang taong ang stsPivCardUuid ay may hawak ng UUID na iyon. Hindi kailanman ayon sa pangalan nito, at walang entry na nililikha. Dapat ding nasa isang client truststore ang CA, kung hindi ay tatanggihan muna ito ng handshake. Kapag walang laman, ang default, walang itinutugma."
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "Mga PIV Authentication policy na dapat isaad ng panlabas na card"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "Ang mga certificate policy na dapat isaad ng sertipiko ng panlabas na card ang isa para maitugma ayon sa card UUID nito: bilang default ang id-fpki-common-authentication (ang PIV Authentication ng Federal PKI Common Policy) at id-fpki-certpcy-pivi-hardware (PIV-I). Idagdag dito ang sariling hardware policy ng isang CAC issuer."
+  },
+  "openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",
     "text": "Ilathala ang mga key sa Web Key Directory"
   },
-"openpgp.wkd|description": {
+  "openpgp.wkd|description": {
     "en": "7822103f89ac59b3",
     "text": "Sagutin ang Web Key Directory (draft-koch-openpgp-webkey-service) para sa mga mail domain ng realm na ito: /.well-known/openpgpkey/<domain>/hu/<hash> (ang advanced method, sa openpgpkey.<domain>) at /.well-known/openpgpkey/hu/<hash> (ang direct method), at ang policy file ng bawat isa. Ang key lang ng taong pumayag sa portal ang sinasagot. Naka-off bilang default."
   },
-"openpgp.wkdDomains|label": {
+  "openpgp.wkdDomains|label": {
     "en": "d1c4b728593ff000",
     "text": "Mga mail domain na sineserbisyuhan ng Web Key Directory"
   },
-"openpgp.wkdDomains|description": {
+  "openpgp.wkdDomains|description": {
     "en": "ad64f7216191123c",
     "text": "Ang mga mail domain na sinasagot ng Web Key Directory ng realm na ito, pinaghihiwalay ng kuwit. Kapag walang laman, ang default, ito ang sariling DNS domain ng realm. Ang request na walang realm sa path nito ay sinasagot ng realm na nagseserbisyo sa domain nito, ang default realm muna."
   },
-"openpgp.challengeLifetimeS|label": {
+  "openpgp.challengeLifetimeS|label": {
     "en": "dbf558cf0b4b8f90",
     "text": "Tagal ng challenge sa pagrehistro (segundo)"
   },
-"openpgp.challengeLifetimeS|description": {
+  "openpgp.challengeLifetimeS|description": {
     "en": "e9130c8e82368cc6",
     "text": "Gaano katagal valid ang challenge na pinipirmahan ng isang tao gamit ang gpg --clearsign para magrehistro ng OpenPGP key. Isang beses lang itong ginagamit, at isa lang ang hawak ng tao sa bawat pagkakataon."
   },
-"openpgp.signatureSkewS|label": {
+  "openpgp.signatureSkewS|label": {
     "en": "d927cf1f04bd9d51",
     "text": "Clock skew ng proof signature (segundo)"
   },
-"openpgp.signatureSkewS|description": {
+  "openpgp.signatureSkewS|description": {
     "en": "2772763d3d363b6d",
     "text": "Gaano kalayo ang orasan ng pumipirmang computer mula sa orasan ng serbisyong ito: ang proof na pinirmahan nang mas maaga kaysa sa pag-issue ng challenge, o mas huli kaysa ngayon, nang lampas dito ay tinatanggihan (STS-OPENPGP-0010)."
   },
-"openpgp.minRsaBits|label": {
+  "openpgp.algorithms|label": {
+    "en": "6973a8aeaa30b96b",
+    "text": "Mga algorithm na tinatanggap"
+  },
+  "openpgp.algorithms|description": {
+    "en": "7bf4b57c9c6e7d1f",
+    "text": "Ang mga algorithm ng OpenPGP na maaaring gamitin ng isang key, ayon sa pagkakasunud-sunod ng preferensiya. Una ang mga composite ng RFC 9980: lumalagda ang ML-DSA-65+Ed25519 at ML-DSA-87+Ed448, nag-e-encrypt ang ML-KEM-768+X25519 at ML-KEM-1024+X448. Pagkatapos ang mga classical na pangalan: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa sa nistP256, nistP384 at nistP521, rsaSign at rsaEncryptSign, x25519, x448, ecdh sa curve25519Legacy at sa parehong mga NIST curve, at rsaEncrypt. Tinatanggihan sa pagrehistro at sa pag-verify ang pangalang wala sa listahang ito (STS-OPENPGP-0004). Hindi ipinatupad ang SLH-DSA. Pinangalanan ng default ang bawat isa sa mga ito."
+  },
+  "openpgp.pqcOnly|label": {
+    "en": "d3ff53ec011bbf1f",
+    "text": "Magrehistro lamang ng post-quantum na key"
+  },
+  "openpgp.pqcOnly|description": {
+    "en": "a42ec597602f45d5",
+    "text": "Kapag naka-on, ang bagong rehistrong key ay dapat gumamit ng post-quantum na algorithm na pinangalanan ng openpgp.algorithms: ML-DSA-65+Ed25519 o ML-DSA-87+Ed448 para sa signing key, at ML-KEM-768+X25519 o ML-KEM-1024+X448 kapag may encryption key. Pagrehistro lamang ang nililimitahan: ang classical na key na rehistrado na ay patuloy na bini-verify at tumatanggap pa rin ng mail. Hindi maaaring naka-on habang naka-on ang openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Naka-off bilang default."
+  },
+  "openpgp.pqcAlongsideClassical|label": {
+    "en": "57f71c1990eb46d9",
+    "text": "Post-quantum na key kasabay ng classical"
+  },
+  "openpgp.pqcAlongsideClassical|description": {
+    "en": "2b5f6cf2a07130e5",
+    "text": "Kapag naka-on, ang bagong rehistrong key ay dapat magdala ng post-quantum na algorithm at ng hiwalay na classical na algorithm. Ang composite na pangalan gaya ng ML-DSA-65+Ed25519 ay post-quantum lamang, kaya ang classical na hati ay ibang key, halimbawa isang Ed25519 o X25519 na subkey sa tabi nito. Ang key na rehistrado na ay hinahayaan. Hindi maaaring naka-on habang naka-on ang openpgp.pqcOnly (STS-OPENPGP-0027). Naka-off bilang default."
+  },
+  "openpgp.minRsaBits|label": {
     "en": "f3dc9f85de143630",
     "text": "Pinakamaliit na RSA OpenPGP key"
   },
-"openpgp.minRsaBits|description": {
+  "openpgp.minRsaBits|description": {
     "en": "cd16018c848ce538",
     "text": "Ang pinakamaikling RSA key, primary man o subkey, na tinatanggap ng pagrehistro ng OpenPGP. Tinatanggap ang Ed25519, Ed448, ECDSA at ECDH sa P-256, P-384 at P-521, X25519 at X448, at ang mga composite ng RFC 9980 na ML-DSA-65+Ed25519, ML-DSA-87+Ed448, ML-KEM-768+X25519 at ML-KEM-1024+X448 kapag pinangalanan sila ng openpgp.algorithms. Hindi kailanman tinatanggap ang DSA, ElGamal, ang mga Brainpool curve at SLH-DSA (STS-OPENPGP-0004)."
+  },
+  "yubiotp.allowPlaintextImport|label": {
+    "en": "b1c1ac235f98cc47",
+    "text": "Tanggapin ang mga plaintext YubiKey OTP CSV file sa product mode"
+  },
+  "yubiotp.allowPlaintextImport|description": {
+    "en": "f409449d46d5831a",
+    "text": "Kung maaaring mag-import ang isang administrator, sa product mode, ng CSV ng mga YubiKey OTP secret (serial, public id, private id, AES key). Naka-off bilang default: ang file ay listahan ng gumaganang mga ikalawang factor. Tumatanggap ang development mode ng isa anuman ang mangyari. Sini-seal ang mga secret kapag tinanggap ang file, at hindi itinatabi ang file."
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
@@ -3931,6 +4019,30 @@
     "en": "a28c6bc9859fc3aa",
     "text": "Ang post-quantum key na dala ng certificate authority na binubuo ng serbisyong ito SA TABI ng classical key nito, sa mga non-critical na subjectAltPublicKeyInfo, altSignatureAlgorithm at altSignatureValue extension ng ITU-T X.509 (2019) clause 9.8 — isang hybrid certificate. **NAKA-OFF (`none`) BILANG DEFAULT** (rcbj, 2026-09-26): masyadong malaki o masyadong hindi pamilyar ang hybrid certificate para sa ilang produkto — tinatanggihan ng libest ang anumang enroll response na lampas 4 KB, na lampas ang bawat hybrid leaf — kaya ang default ay ang orihinal na hierarchy, bawat use case at bawat pirma ay may sariling classical key pair. Magtakda ng value at bawat authority na binuo pagkatapos ay pumipirma nang dalawang beses sa bawat certificate na iniisyu nito: classical sa mga ordinaryong field, na binabasa ng bawat validator, at gamit ang key na ito sa preTBSCertificate, na binabasa ng hybrid-aware na validator. Isa ang serbisyong ito sa mga iyon: ang certificate na iniisyu ng authority na may hawak na alternatibong key ay DAPAT may valid na alternatibong pirma para mag-verify dito (STS-PKI-0201, STS-PKI-0202), kaya hindi kailanman makakalusot ang classical na pirma lang. ML-DSA-87 (FIPS 204, category 5) ang inirerekomendang value, dahil mas matagal nabubuhay ang authority kaysa sa mga key na sine-certify nito. Binabasa ang value sa SUSUNOD na build ng isang tier; pinapanatili ng hierarchy ang ginamit sa pagbuo nito. Iniaalok ang SLH-DSA (FIPS 205) para sa hash-based na anchor at nagkakahalaga ito ng ilang SEGUNDO bawat pirma, ibig sabihin bawat certificate na iniisyu. BABALA: kapag `none`, classical lang ang mga authority, at mapepeke ang kanilang mga certificate ng attacker na may kakayahang quantum."
   },
+  "pki.sshUserCaAlgorithms|label": {
+    "en": "1fa9bf9eedbabd99",
+    "text": "Mga algorithm ng SSH user CA"
+  },
+  "pki.sshUserCaAlgorithms|description": {
+    "en": "5c4c22c2ab500fd4",
+    "text": "Kung aling mga algorithm ang maaaring gamitin ng awtoridad ng sertipiko ng mga user ng SSH, ayon sa pagkakasunod ng kagustuhan. Ang ssh-mldsa-65 ay ML-DSA-65 (FIPS 204) sa ilalim ng pangalang pang-wire na itinakda ng serbisyong ito, dahil walang itinakda ang OpenSSH: hilaw ang public key at ang lagda, sa hugis na ginagamit ng ssh-ed25519. Ang linyang OpenSSH TrustedUserCAKeys na inilalathala ng serbisyong ito ay nananatiling unang klasikong algorithm sa listahang ito, o ssh-ed25519 kapag ssh-mldsa-65 lang ang nasa listahan. Patuloy na nagtitiwala sa linyang iyon ang kabilang panig na hindi nakauunawa ng ML-DSA. Inilalathala ang key ng awtoridad na ML-DSA sa GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65; hindi pa kayang i-verify ng karaniwang OpenSSH ang isang sertipikong ML-DSA. Hindi inaalok ang ssh-rsa (SHA-1). Ginagawa lang ang awtoridad na ML-DSA kapag kayang bumuo ng key ng runtime na ito; kung hindi, nananatiling klasiko ang mga sertipiko (itinatala ang STS-PKI-0290 at sumasagot pa rin ang klasikong awtoridad), maliban kung naka-on ang pki.sshUserCaPqcOnly."
+  },
+  "pki.sshUserCaPqcOnly|label": {
+    "en": "74aae1308361ba58",
+    "text": "Ang mga SSH user certificate ay post-quantum lamang"
+  },
+  "pki.sshUserCaPqcOnly|description": {
+    "en": "dcbf21b3230dcf07",
+    "text": "Kapag naka-on, ang bagong sertipiko ng user ng SSH ay nilalagdaan ng awtoridad na ML-DSA at wala nang iba. Hindi pa kayang i-verify ng karaniwang OpenSSH ang isang sertipikong ML-DSA, kaya ang SSH server lang na ginawa para i-verify ang ssh-mldsa-65, na nagtitiwala sa key sa GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65, ang tumatanggap sa mga sertipikong ito. Nananatiling klasikong key ang default na linya sa path na iyon. Kapag walang awtoridad na ML-DSA ang realm (hindi kayang bumuo ng ML-DSA ang runtime na ito, o wala ang ssh-mldsa-65 sa pki.sshUserCaAlgorithms), tinatanggihan ang kahilingan (STS-PKI-0297) sa halip na sagutin ng klasikong sertipiko. Patuloy na nave-verify ang mga klasikong sertipikong naibigay na. Hindi maaaring naka-on habang naka-on ang pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Naka-off bilang default."
+  },
+  "pki.sshUserCaPqcAlongsideClassical|label": {
+    "en": "c3201f8841200c32",
+    "text": "May post-quantum na certificate din ang mga SSH user certificate"
+  },
+  "pki.sshUserCaPqcAlongsideClassical|description": {
+    "en": "b38eab63ec092b6c",
+    "text": "Kapag naka-on, ang bagong SSH user certificate ay inilalabas nang dalawang beses kapag umiiral ang awtoridad na ML-DSA: ang classical na certificate, na siyang ginagamit ng OpenSSH client, at isang ML-DSA na certificate sa tabi nito. Hindi maaaring naka-on habang naka-on ang pki.sshUserCaPqcOnly (STS-PKI-0296). Naka-off bilang default. Hindi konsepto ng OpenSSH ang composite; ang classical na certificate at ang ML-DSA na certificate ay dalawang lagda, hindi isang hybrid na lagda."
+  },
   "pki.organisation|label": {
     "en": "163fd96758a3b8b3",
     "text": "Default na pangalan ng organisasyon (O=)"
@@ -4322,6 +4434,22 @@
   "pki.paranoidPkinit|description": {
     "en": "4cd0d308a974fcbd",
     "text": "Use case `pkinit`: ang client certificate sa isang RFC 4556 AS-REQ. Buo na ang pagsusuri (path papunta sa mga identity CA ng realm, validity na may krb5.clockSkew, id-pkinit-KPClientAuth o ang Microsoft smart-card EKU, revocation); ginagawa ito ng paranoid na isang tawag sa door, kaya iisang code ito gaya ng bawat ibang use case. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "Paranoid: isang YubiKey PIV key attestation chain"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "Use case na `piv-attestation` (#1955): ang attestation na sertipiko ng slot at ang f9 attestation na sertipiko ng isang PIV enrolment. Sinusuri ng paranoid ang validity window sa kasalukuyan, ang path patungo sa piv.attestationAnchors at ang revocation kung saan may pinangalanang listahan ang chain. Kapag naka-off, ang use case na ito lamang ang nagpapatakbo ng path check nang walang field check, habang hindi ginagalaw ang bawat ibang row at ang master; kapag naka-off sa product mode, nilo-log ito nang isang beses (STS-PKI-0239) at iginuguhit nang pula sa /admin/pki/trust."
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "Paranoid: isang panlabas na PIV o CAC card na itinutugma ayon sa card UUID"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "Use case na `piv-card` (#1955): isang client certificate mula sa issuing CA sa piv.externalIssuers, itinutugma ayon sa card UUID nito. Sinusuri ng paranoid ang keyUsage digitalSignature at ang validity window ng leaf bukod sa one-hop issuer check. Kapag naka-off, ang use case na ito lamang ang nagpapatakbo ng issuer check lamang, habang hindi ginagalaw ang bawat ibang row at ang master; kapag naka-off sa product mode, nilo-log ito nang isang beses (STS-PKI-0239) at iginuguhit nang pula sa /admin/pki/trust."
   },
   "pki.paranoidEnrollmentCredential|label": {
     "en": "ce5c0d1996e12403",
@@ -8387,6 +8515,14 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "Ang pinakamaraming access request na hawak ng isang realm bilang pending; lampas dito, tinatanggihan ang pagsumite nang may 503 hanggang may mapagpasyahan o mag-expire."
   },
+  "authzen.accessRequestMaxDenials|label": {
+    "en": "09e695949f0cc1cc",
+    "text": "Mga hinihiling na pagtanggi na itinatala ng isang realm"
+  },
+  "authzen.accessRequestMaxDenials|description": {
+    "en": "698617c5a3485120",
+    "text": "Ang pinakamaraming hinihiling na pagtanggi na itinatala ng isang realm ayon sa evaluation_id (#1204). Lampas dito, hindi naitatala ang bagong pagtanggi, at maaari pa rin itong hilingin gamit ang binding_token nito; inaalis ng job ng mga kahilingan sa access ang isang tala isang araw matapos ang window nito."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"
@@ -8400,8 +8536,8 @@
     "text": "Access request callback backoff (seconds)"
   },
   "authzen.callbackBackoffS|description": {
-    "en": "27141a0f28d94b83",
-    "text": "How long to wait after a failed access request callback before the next attempt (#1202). The authzen.access-requests job runs every 60 seconds, so a shorter wait could not be honoured. An application's appAuthzenCallbackConfig may set a longer wait for one URL."
+    "en": "43f2cb7740fc7efe",
+    "text": "Gaano katagal maghihintay matapos ang unang nabigong callback ng isang kahilingan sa access bago ang susunod na pagsubok (#1202). Ang bawat kasunod na paghihintay ay doble ng nauna, hanggang isang araw. Tumatakbo ang job na authzen.access-requests bawat 60 segundo, kaya hindi masusunod ang mas maikling paghihintay. Maaaring magtakda ang appAuthzenCallbackConfig ng isang application ng mas mahabang paghihintay para sa isang URL."
   },
   "authzen.externalPdp|label": {
     "en": "8a0af08389fe6cda",
@@ -9718,6 +9854,14 @@
   "roles.xacmlUserGroup|description": {
     "en": "d19a9234253beccc",
     "text": "Ang grupo sa directory na ang mga miyembro ay may hawak ng built-in na role na XACML_USER, na siyang hinihingi ng tatlong mismong XACML endpoint — GET /xacml, POST /xacml/pdp at GET /xacml/policies. Ang tumatawag na nagpapakita ng client certificate na BINERIPIKA ng serbisyong ito ay isang kaya nitong pangalanan; ang pagiging miyembro ng grupong ito ang nagpapasya kung papapasukin ito, at magkahiwalay ang dalawa sa parehong dahilan ng roles.remotePepGroup sa itaas: nagpapatunay ng pagkakakilanlan ang certificate at nagbibigay ng pahintulot ang grupo. IKALAWANG GRUPO ITO AT HINDI ANG PAREHO: naaabot ng REMOTE_PEPS ang tatlong /xacml/pep endpoint, na namimigay ng mga dokumentong ginagamit ng serbisyong ito sa pagpapatupad ng sarili nitong access control, at ang iisang grupong nagbibigay ng pareho ay tahimik na magpapapasok sa mga iyon sa tumatawag na pinapasok lamang sa XACML surface mismo. Ang pagtatakda nito sa walang laman na string ay nangangahulugang WALANG may hawak ng role, na nagsasara sa tatlong endpoint na iyon sa bawat tumatawag; iyon ang paraan ng pag-alis sa XACML surface nang hindi pinapatay ang xacml.enabled at nawawala kasama nito ang mga embedded na issuance at access PEP."
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "Grupong nagbibigay ng role na PIV_KEY_RECOVERY"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "Ang directory group na ang mga miyembro ay may hawak ng built-in na role na PIV_KEY_RECOVERY (#1955), na hinihingi ng access-control policy, bukod sa Admin Write, para mabawi ang naka-escrow na piv-key-management key ng ibang tao (piv.keyEscrow). Dine-decrypt ng key na iyon ang mail ng tao, kaya walang may hawak ng role hanggang idagdag sila ng administrator sa grupo. Kapag walang laman, walang makakabawi ng key ng ibang tao; binabawi ng may hawak ang sarili niya sa portal."
   },
   "roles.authzenPepGroup|label": {
     "en": "8dacfdf5504e732a",
@@ -12954,141 +13098,5 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Para lang sa listener ng Protocol debugger: http.http2MaxConcurrentStreams. Ang -1, ang default, ay sumusunod sa http.http2MaxConcurrentStreams; ang anumang iba ay nagpapasya para sa listener na ito lang. Ilang request ang puwedeng sabay-sabay na bukas sa isang HTTP/2 connection (SETTINGS_MAX_CONCURRENT_STREAMS); tinatanggihan ang stream na lampas dito hanggang may matapos. Ang 100, ang default, ang pinakamaliit na halagang inirerekomenda ng RFC 9113; walang limit ang sa node mismo, kaya madadala ng iisang connection ang trabaho ng libu-libo. Nililimitahan nito ang trabaho sa isang connection gaya ng paglimita ng http.maxConnections sa mga connection. Sinusunod agad ng bagong connection ang pagbabago, at pinapadalhan ng bagong halaga ang bukas na."
-  },
-  "piv.attestationAnchors|label": {
-    "en": "ebc10f6a7dcbbf58",
-    "text": "Mga PIV attestation root (PEM)"
-  },
-  "piv.attestationAnchors|description": {
-    "en": "487e76edeb4446b9",
-    "text": "Ang mga root na dapat pagkadenahan ng isang YubiKey PIV key attestation, bilang PEM bundle. Kapag walang laman, ginagamit ang dalawang inilalathala ng Yubico (Yubico PIV Root CA Serial 263751, at Yubico Attestation Root 1 para sa firmware 5.7.4 pataas), kasama sa common/pki_piv_anchors.json at naka-pin doon sa SHA-256, kasama ang mga PIV intermediate ng Yubico. Pinapalitan ng isang sertipiko rito ang mga kasamang root."
-  },
-  "piv.requireAttestation|label": {
-    "en": "4e11b0db111faccf",
-    "text": "Hingin ang PIV attestation para sa mga PIV profile"
-  },
-  "piv.requireAttestation|description": {
-    "en": "ef38975436c5ac4f",
-    "text": "Kapag naka-on, tinatanggihan ang kahilingan para sa piv-auth, piv-sign, piv-key-management o piv-card-auth na sertipiko maliban kung may dala itong YubiKey PIV attestation na nave-verify (STS-PIV-0010). Ang naka-escrow na piv-key-management key mula sa EST /serverkeygen ang eksepsiyon: ang serbisyong ito ang bumuo nito. Kapag naka-off, ang default, inilalabas ang ganitong kahilingan na walang attestation nang walang hardware evidence; ang kahilingang may dalang attestation na hindi nave-verify ay tinatanggihan alinman ang kaso."
-  },
-  "piv.pinPolicy|label": {
-    "en": "0f683a0cb1db1988",
-    "text": "Pinakamahinang PIN policy na maaaring taglayin ng na-attest na PIV key"
-  },
-  "piv.pinPolicy|description": {
-    "en": "c3f9fcec406b9806",
-    "text": "Kung ano man lang dapat ang PIN policy ng attestation. `once`: ang PIN nang isang beses bawat session (binibilang ang match-once ng isang Bio key); `always`: ang PIN bago ang bawat paggamit (binibilang ang match-always). Walang hinihinging PIN policy ang `any`, ang default. Tinatanggihan ang key na mas mahina ang attestation (STS-PIV-0011)."
-  },
-  "piv.touchPolicy|label": {
-    "en": "a88f111c7b13657f",
-    "text": "Pinakamahinang touch policy na maaaring taglayin ng na-attest na PIV key"
-  },
-  "piv.touchPolicy|description": {
-    "en": "d78f0d5df0256787",
-    "text": "Kung ano man lang dapat ang touch policy ng attestation. `cached`: isang pindot, tinatandaan nang 15 segundo; `always`: isang pindot sa bawat paggamit. Walang hinihingi ang `any`, ang default. Tinatanggihan ang key na mas mahina ang attestation (STS-PIV-0012)."
-  },
-  "piv.cardAuthSignIn|label": {
-    "en": "61b2226403ad5c61",
-    "text": "Payagang mag-sign in ang piv-card-auth na sertipiko"
-  },
-  "piv.cardAuthSignIn|description": {
-    "en": "1852da24c3fbfade",
-    "text": "Gumagana ang piv-card-auth key (slot 9e) nang walang PIN, para sa pisikal na pagpasok, kaya tinatanggihan ang sertipiko nito sa TLS sign-in at sa PKINIT (STS-PIV-0013) maliban kung naka-on ito."
-  },
-  "piv.keyEscrow|label": {
-    "en": "f2efc85c3d2bac38",
-    "text": "I-escrow ang mga piv-key-management key"
-  },
-  "piv.keyEscrow|description": {
-    "en": "cf9618144b67dff3",
-    "text": "Kapag naka-on, iniingatan ng EST /serverkeygen para sa piv-key-management profile ang nabuong private key, selyado sa ilalim ng key-encryption key, para mabawi ito ng may hawak (sa portal, pagkatapos ng bagong sign-in) o ng administrator na may role sa pagbawi ng PIV key, at ma-decrypt ang lumang mail kapag nawala ang card. Tinatanggihan kung walang hawak na key-encryption key (STS-PIV-0020). Hindi kailanman hardware evidence ang naka-escrow na key. Kapag naka-off, ang default, tinatanggihan ng /serverkeygen ang piv-key-management profile (STS-PIV-0021), kaya ang 9d key ay binubuo sa card at hindi iniingatan saanman."
-  },
-  "piv.externalIssuers|label": {
-    "en": "e96143ab9556db35",
-    "text": "Mga panlabas na PIV o CAC issuing CA na itinutugma ayon sa card UUID (PEM)"
-  },
-  "piv.externalIssuers|description": {
-    "en": "0fb91dba2cb957d3",
-    "text": "Ang mga issuing CA na ang mga PIV o CAC card certificate ay nagsa-sign in ng isang tao ayon sa FIPS 201 card UUID: ang client certificate na direktang inilabas ng isa sa mga ito, na nagsasaad ng policy sa piv.externalPolicyOids at may dalang eksaktong isang urn:uuid subjectAltName, ay itinutugma sa iisang taong ang stsPivCardUuid ay may hawak ng UUID na iyon. Hindi kailanman ayon sa pangalan nito, at walang entry na nililikha. Dapat ding nasa isang client truststore ang CA, kung hindi ay tatanggihan muna ito ng handshake. Kapag walang laman, ang default, walang itinutugma."
-  },
-  "piv.externalPolicyOids|label": {
-    "en": "930c5800dfa36905",
-    "text": "Mga PIV Authentication policy na dapat isaad ng panlabas na card"
-  },
-  "piv.externalPolicyOids|description": {
-    "en": "2398931e8d58f5c4",
-    "text": "Ang mga certificate policy na dapat isaad ng sertipiko ng panlabas na card ang isa para maitugma ayon sa card UUID nito: bilang default ang id-fpki-common-authentication (ang PIV Authentication ng Federal PKI Common Policy) at id-fpki-certpcy-pivi-hardware (PIV-I). Idagdag dito ang sariling hardware policy ng isang CAC issuer."
-  },
-  "pki.paranoidPivAttestation|label": {
-    "en": "e645d02c49d2f9bf",
-    "text": "Paranoid: isang YubiKey PIV key attestation chain"
-  },
-  "pki.paranoidPivAttestation|description": {
-    "en": "fdb7c0eb631758ea",
-    "text": "Use case na `piv-attestation` (#1955): ang attestation na sertipiko ng slot at ang f9 attestation na sertipiko ng isang PIV enrolment. Sinusuri ng paranoid ang validity window sa kasalukuyan, ang path patungo sa piv.attestationAnchors at ang revocation kung saan may pinangalanang listahan ang chain. Kapag naka-off, ang use case na ito lamang ang nagpapatakbo ng path check nang walang field check, habang hindi ginagalaw ang bawat ibang row at ang master; kapag naka-off sa product mode, nilo-log ito nang isang beses (STS-PKI-0239) at iginuguhit nang pula sa /admin/pki/trust."
-  },
-  "pki.paranoidPivCard|label": {
-    "en": "4078a93e7117d6f9",
-    "text": "Paranoid: isang panlabas na PIV o CAC card na itinutugma ayon sa card UUID"
-  },
-  "pki.paranoidPivCard|description": {
-    "en": "d4d5fb070575e1c6",
-    "text": "Use case na `piv-card` (#1955): isang client certificate mula sa issuing CA sa piv.externalIssuers, itinutugma ayon sa card UUID nito. Sinusuri ng paranoid ang keyUsage digitalSignature at ang validity window ng leaf bukod sa one-hop issuer check. Kapag naka-off, ang use case na ito lamang ang nagpapatakbo ng issuer check lamang, habang hindi ginagalaw ang bawat ibang row at ang master; kapag naka-off sa product mode, nilo-log ito nang isang beses (STS-PKI-0239) at iginuguhit nang pula sa /admin/pki/trust."
-  },
-  "roles.pivKeyRecoveryGroup|label": {
-    "en": "2f231e1e99785dc6",
-    "text": "Grupong nagbibigay ng role na PIV_KEY_RECOVERY"
-  },
-  "roles.pivKeyRecoveryGroup|description": {
-    "en": "801616eea12559a5",
-    "text": "Ang directory group na ang mga miyembro ay may hawak ng built-in na role na PIV_KEY_RECOVERY (#1955), na hinihingi ng access-control policy, bukod sa Admin Write, para mabawi ang naka-escrow na piv-key-management key ng ibang tao (piv.keyEscrow). Dine-decrypt ng key na iyon ang mail ng tao, kaya walang may hawak ng role hanggang idagdag sila ng administrator sa grupo. Kapag walang laman, walang makakabawi ng key ng ibang tao; binabawi ng may hawak ang sarili niya sa portal."
-  },
-  "openpgp.algorithms|label": {
-    "en": "6973a8aeaa30b96b",
-    "text": "Mga algorithm na tinatanggap"
-  },
-  "openpgp.algorithms|description": {
-    "en": "7bf4b57c9c6e7d1f",
-    "text": "Ang mga algorithm ng OpenPGP na maaaring gamitin ng isang key, ayon sa pagkakasunud-sunod ng preferensiya. Una ang mga composite ng RFC 9980: lumalagda ang ML-DSA-65+Ed25519 at ML-DSA-87+Ed448, nag-e-encrypt ang ML-KEM-768+X25519 at ML-KEM-1024+X448. Pagkatapos ang mga classical na pangalan: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa sa nistP256, nistP384 at nistP521, rsaSign at rsaEncryptSign, x25519, x448, ecdh sa curve25519Legacy at sa parehong mga NIST curve, at rsaEncrypt. Tinatanggihan sa pagrehistro at sa pag-verify ang pangalang wala sa listahang ito (STS-OPENPGP-0004). Hindi ipinatupad ang SLH-DSA. Pinangalanan ng default ang bawat isa sa mga ito."
-  },
-  "openpgp.pqcOnly|label": {
-    "en": "d3ff53ec011bbf1f",
-    "text": "Magrehistro lamang ng post-quantum na key"
-  },
-  "openpgp.pqcOnly|description": {
-    "en": "a42ec597602f45d5",
-    "text": "Kapag naka-on, ang bagong rehistrong key ay dapat gumamit ng post-quantum na algorithm na pinangalanan ng openpgp.algorithms: ML-DSA-65+Ed25519 o ML-DSA-87+Ed448 para sa signing key, at ML-KEM-768+X25519 o ML-KEM-1024+X448 kapag may encryption key. Pagrehistro lamang ang nililimitahan: ang classical na key na rehistrado na ay patuloy na bini-verify at tumatanggap pa rin ng mail. Hindi maaaring naka-on habang naka-on ang openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Naka-off bilang default."
-  },
-  "openpgp.pqcAlongsideClassical|label": {
-    "en": "57f71c1990eb46d9",
-    "text": "Post-quantum na key kasabay ng classical"
-  },
-  "openpgp.pqcAlongsideClassical|description": {
-    "en": "2b5f6cf2a07130e5",
-    "text": "Kapag naka-on, ang bagong rehistrong key ay dapat magdala ng post-quantum na algorithm at ng hiwalay na classical na algorithm. Ang composite na pangalan gaya ng ML-DSA-65+Ed25519 ay post-quantum lamang, kaya ang classical na hati ay ibang key, halimbawa isang Ed25519 o X25519 na subkey sa tabi nito. Ang key na rehistrado na ay hinahayaan. Hindi maaaring naka-on habang naka-on ang openpgp.pqcOnly (STS-OPENPGP-0027). Naka-off bilang default."
-  },
-  "pki.sshUserCaAlgorithms|label": {
-    "en": "1fa9bf9eedbabd99",
-    "text": "Mga algorithm ng SSH user CA"
-  },
-  "pki.sshUserCaAlgorithms|description": {
-    "en": "bdb54445a0279b8d",
-    "text": "Kung aling mga algorithm ang maaaring gamitin ng SSH user certificate authority, ayon sa preferensiya. Ang ssh-mldsa-65 ay ML-DSA-65 (FIPS 204) sa ilalim ng wire name na binibigyang-kahulugan ng serbisyong ito, dahil walang binibigyang-kahulugan ang OpenSSH: hilaw ang public key at ang lagda, sa hugis na ginagamit ng ssh-ed25519. Ang linyang OpenSSH TrustedUserCAKeys na inilalathala ng serbisyong ito ay nananatiling unang classical na algorithm sa listahang ito, o ssh-ed25519 kapag ssh-mldsa-65 lamang ang pinangalanan. Ang kapwa na hindi nakakaunawa ng ML-DSA ay patuloy na nagtitiwala sa linyang iyon. Hindi iniaalok ang ssh-rsa (SHA-1). Nilikha ang awtoridad na ML-DSA lamang kapag kaya ng runtime na ito na bumuo ng key; kung hindi, classical pa rin ang mga certificate (itinatala ang STS-PKI-0290 at sumasagot pa rin ang classical na awtoridad)."
-  },
-  "pki.sshUserCaPqcOnly|label": {
-    "en": "74aae1308361ba58",
-    "text": "Ang mga SSH user certificate ay post-quantum lamang"
-  },
-  "pki.sshUserCaPqcOnly|description": {
-    "en": "39b21e5b95f84da1",
-    "text": "Kapag naka-on, ang bagong SSH user certificate ay pinipirmahan ng awtoridad na ML-DSA, at kapag umiiral lamang ang awtoridad na iyon. Ang inilathalang linyang TrustedUserCAKeys ay nananatiling classical na key, kaya ang OpenSSH client na nagtitiwala na rito ay hindi binibigyan ng algorithm na hindi nito ma-parse. Sa runtime na hindi makabuo ng ML-DSA, classical pa rin ang certificate at hindi nabibigo ang kahilingan. Patuloy na bini-verify ang mga classical na certificate na naibigay na. Hindi maaaring naka-on habang naka-on ang pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Naka-off bilang default."
-  },
-  "pki.sshUserCaPqcAlongsideClassical|label": {
-    "en": "c3201f8841200c32",
-    "text": "May post-quantum na certificate din ang mga SSH user certificate"
-  },
-  "pki.sshUserCaPqcAlongsideClassical|description": {
-    "en": "b38eab63ec092b6c",
-    "text": "Kapag naka-on, ang bagong SSH user certificate ay inilalabas nang dalawang beses kapag umiiral ang awtoridad na ML-DSA: ang classical na certificate, na siyang ginagamit ng OpenSSH client, at isang ML-DSA na certificate sa tabi nito. Hindi maaaring naka-on habang naka-on ang pki.sshUserCaPqcOnly (STS-PKI-0296). Naka-off bilang default. Hindi konsepto ng OpenSSH ang composite; ang classical na certificate at ang ML-DSA na certificate ay dalawang lagda, hindi isang hybrid na lagda."
   }
 }

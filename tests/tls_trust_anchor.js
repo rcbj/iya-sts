@@ -89,6 +89,10 @@ function handshake(certPem, keyPem, anchorPem) {
         host: '127.0.0.1',
         port: server.address().port,
         ca: [anchorPem],
+        // NO NAME CHECK, DELIBERATELY (#1954's review): the question is
+        // whether the anchor alone terminates the chain, the leaf names the
+        // service's hostnames rather than the 127.0.0.1 this dials, and a
+        // name failure would hide the chain failure this file asserts on.
         checkServerIdentity: function () {
           log.debug("Entering checkServerIdentity().");
           log.debug("Leaving checkServerIdentity().");

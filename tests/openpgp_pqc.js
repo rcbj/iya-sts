@@ -14,7 +14,10 @@
 // Where ML-DSA cannot be verified (node before 24, OpenSSL before 3.5) the
 // key is refused as unchecked rather than stored. Where it verifies, the
 // same key is accepted and both signature halves have to match. ML-KEM
-// encapsulation is not attempted here.
+// encapsulation is not attempted against the vectors. Keys made here at run
+// time (section 9) test what a third party can append: an unbound subkey,
+// a revocation, a direct-key signature that does not verify, and a second
+// signature on a proof.
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
@@ -223,10 +226,267 @@ function checkPolicy(t) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// SYNTHETIC RFC 9980 KEYS, made here at run time (no secret is in the
+// repository), so that what a third party can APPEND to a published key —
+// a subkey with no binding, a revocation, a direct-key signature it could
+// not have made — can be tested against signatures that really verify.
+// ---------------------------------------------------------------------------
+
+// A new-format packet (RFC 9580 section 4.2.1).
+function packet(tag, body) {
+  log.debug("Entering packet(). " + tag);
+  const n = body.length;
+  let len;
+  if (n < 192) {
+    len = Buffer.from([n]);
+  } else if (n < 8384) {
+    len = Buffer.from([((n - 192) >> 8) + 192, (n - 192) & 0xff]);
+  } else {
+    len = Buffer.alloc(5);
+    len[0] = 0xff;
+    len.writeUInt32BE(n, 1);
+  }
+  log.debug("Leaving packet().");
+  return Buffer.concat([Buffer.from([0xc0 | tag]), len, body]);
+}
+
+function u32(n) {
+  log.debug("Entering u32().");
+  const b = Buffer.alloc(4);
+  b.writeUInt32BE(n >>> 0, 0);
+  log.debug("Leaving u32().");
+  return b;
+}
+
+// A v6 key packet body: version, creation, algorithm, material length.
+function keyBody(created, algorithm, material) {
+  log.debug("Entering keyBody().");
+  log.debug("Leaving keyBody().");
+  return Buffer.concat([Buffer.from([6]), u32(created),
+                        Buffer.from([algorithm]), u32(material.length),
+                        material]);
+}
+
+// The primary: ML-DSA-65+Ed25519 (algorithm 30), its two secret halves
+// kept by the test.
+function compositePrimary(created) {
+  log.debug("Entering compositePrimary().");
+  const ed25519 = require('@noble/curves/ed25519').ed25519;
+  const pqc = require('../common/crypto_impl/pqc');
+  const edPriv = require('crypto').randomBytes(32);
+  const edPub = Buffer.from(ed25519.getPublicKey(edPriv));
+  const ml = pqc.generateAkpKeyPair('ML-DSA-65');
+  const body = keyBody(created, 30,
+                       Buffer.concat([edPub, Buffer.from(ml.pub)]));
+  log.debug("Leaving compositePrimary().");
+  return { body: body, edPriv: edPriv, mlPriv: ml.priv, created: created };
+}
+
+// An encryption subkey: ML-KEM-768+X25519 (algorithm 35), public halves.
+function compositeSubkey(created) {
+  log.debug("Entering compositeSubkey().");
+  const x25519 = require('@noble/curves/ed25519').x25519;
+  const pqc = require('../common/crypto_impl/pqc');
+  const xPub = Buffer.from(x25519.getPublicKey(
+    require('crypto').randomBytes(32)));
+  const kem = pqc.kemAlg('ML-KEM-768').keygen();
+  log.debug("Leaving compositeSubkey().");
+  return keyBody(created, 35, Buffer.concat([xPub,
+                                             Buffer.from(kem.publicKey)]));
+}
+
+// A hashed subpacket.
+function sub(type, data) {
+  log.debug("Entering sub(). " + type);
+  log.debug("Leaving sub().");
+  return Buffer.concat([Buffer.from([data.length + 1, type]), data]);
+}
+
+// A v6 composite signature of `type` by the primary over `subject`, with
+// the given creation time, key flags and expiry; `bogus` writes random
+// signature halves instead of signing.
+function signature(leaf, primary, type, subject, opts) {
+  log.debug("Entering signature(). " + type);
+  const o = opts || {};
+  const ed25519 = require('@noble/curves/ed25519').ed25519;
+  const pqc = require('../common/crypto_impl/pqc');
+  const parts = [sub(2, u32(o.created || primary.created + 10))];
+  if (o.flags !== undefined) {
+    parts.push(sub(27, Buffer.from([o.flags])));
+  }
+  if (o.expires) {
+    parts.push(sub(9, u32(o.expires)));
+  }
+  const hashed = Buffer.concat(parts);
+  const signatureData = Buffer.concat([Buffer.from([6, type, 30, 10]),
+                                       u32(hashed.length), hashed]);
+  const salt = require('crypto').randomBytes(32);
+  const over = leaf.toSign(type, primary.body, subject, 6);
+  const digest = leaf.dataDigest({ version: 6, hashAlg: 10, salt: salt,
+                                   signatureData: signatureData }, over);
+  const params = o.bogus ? require('crypto').randomBytes(64 + 3309)
+    : Buffer.concat([Buffer.from(ed25519.sign(digest, primary.edPriv)),
+                     Buffer.from(pqc.signWithPriv('ML-DSA-65', digest,
+                                                  primary.mlPriv))]);
+  const body = Buffer.concat([signatureData, u32(0), digest.subarray(0, 2),
+                              Buffer.from([salt.length]), salt, params]);
+  log.debug("Leaving signature().");
+  return packet(2, body);
+}
+
+// The PKESK recipient fingerprint of an armored message `encryptTo()` wrote.
+function recipientOf(leaf, armored) {
+  log.debug("Entering recipientOf().");
+  const pkesk = leaf.readPackets(leaf.dearmor(armored)).filter(function (p) {
+    return p.tag === 1;
+  })[0];
+  log.debug("Leaving recipientOf().");
+  return pkesk ? pkesk.body.subarray(3, 3 + pkesk.body[1] - 1)
+    .toString('hex') : '';
+}
+
+function checkAppended(t, leaf) {
+  log.debug("Entering checkAppended().");
+  t.log.info('=== 9. what a third party can append ===');
+  const now = Math.floor(Date.now() / 1000);
+  const at = new Date();
+  const primary = compositePrimary(now - 1000);
+  const uid = Buffer.from('PQ test <pq-' + now + '@example.org>');
+  const cert = signature(leaf, primary, 0x13, uid,
+                         { created: now - 990, flags: 0x03 });
+  const bound = compositeSubkey(now - 980);
+  const binding = signature(leaf, primary, 0x18, bound,
+                            { created: now - 970, flags: 0x0c });
+  const head = Buffer.concat([packet(6, primary.body), packet(13, uid),
+                              cert]);
+  const base = leaf.readPublicKey(Buffer.concat([head, packet(14, bound),
+                                                 binding]), at);
+  if (!base.ok) {
+    t.check(base.reason === 'unchecked',
+            '9. (a synthetic key reads, or ML-DSA is unchecked here)',
+            base.reason + ' ' + base.why);
+    log.debug("Leaving checkAppended(). Unchecked here.");
+    return;
+  }
+  const boundFp = leaf.fingerprintOf(bound);
+  t.equal(base.description.encryption &&
+          base.description.encryption.fingerprint, boundFp,
+          '9a. a synthetic key reads, its bound subkey chosen');
+
+  // An unbound subkey placed AHEAD of the bound one.
+  const stranger = compositeSubkey(now - 500);
+  const appended = leaf.readPublicKey(Buffer.concat([head,
+    packet(14, stranger), packet(14, bound), binding]), at);
+  t.check(appended.ok && appended.description.encryption &&
+          appended.description.encryption.fingerprint === boundFp,
+          '9b. an appended subkey with no binding is not chosen',
+          JSON.stringify(appended.description &&
+                         appended.description.encryption));
+  t.equal((leaf.encryptionSubkeyOf(appended.key) || {}).fingerprint, boundFp,
+          '9c. encryptTo() selects the bound subkey, not the first one of ' +
+          'an encryption algorithm');
+  let to = '';
+  try {
+    to = recipientOf(leaf, leaf.encryptTo(Buffer.from('hi'), appended.key));
+  } catch (e) {
+    log.debug("Caught in checkAppended(): " + ((e && e.message) || e));
+    to = 'threw: ' + ((e && e.message) || e);
+  }
+  t.equal(to, boundFp, '9d. the message is encrypted to the bound subkey');
+
+  // A binding that names no encryption use.
+  const signOnly = leaf.readPublicKey(Buffer.concat([head,
+    packet(14, bound), signature(leaf, primary, 0x18, bound,
+                                 { created: now - 970, flags: 0x02 })]), at);
+  t.equal(signOnly.description.encryption, null,
+          '9e. a subkey whose binding flags name no encryption use is not ' +
+          'encrypted to');
+
+  // A subkey revocation the primary made.
+  const revoked = leaf.readPublicKey(Buffer.concat([head, packet(14, bound),
+    binding, signature(leaf, primary, 0x28, bound, { created: now - 100 })]),
+    at);
+  t.check(revoked.description.encryption === null &&
+          revoked.description.subkeys[0].revoked === true,
+          '9f. a revoked subkey is not encrypted to',
+          JSON.stringify(revoked.description.subkeys));
+  let threw = false;
+  try {
+    leaf.encryptTo(Buffer.from('hi'), revoked.key);
+  } catch (e) {
+    log.debug("Caught in checkAppended(): " + ((e && e.message) || e));
+    threw = true;
+  }
+  t.check(threw, '9g. encryptTo() refuses a key whose subkey was revoked');
+  const forged = leaf.readPublicKey(Buffer.concat([head, packet(14, bound),
+    binding, signature(leaf, primary, 0x28, bound,
+                       { created: now - 100, bogus: true })]), at);
+  t.equal(forged.description.encryption &&
+          forged.description.encryption.fingerprint, boundFp,
+          '9h. a subkey revocation that does not verify revokes nothing');
+
+  // A direct-key signature with an expiry already past.
+  const bogusDirect = signature(leaf, primary, 0x1f, null,
+                                { created: now - 50, expires: 60,
+                                  bogus: true });
+  const notExpired = leaf.readPublicKey(Buffer.concat([packet(6,
+    primary.body), bogusDirect, packet(13, uid), cert, packet(14, bound),
+    binding]), at);
+  t.check(notExpired.ok && notExpired.description.expired === false &&
+          notExpired.description.expiresAt === '',
+          '9i. an expiry in a direct-key signature that does not verify is ' +
+          'not read', JSON.stringify([notExpired.ok,
+            notExpired.description.expiresAt]));
+  const realDirect = signature(leaf, primary, 0x1f, null,
+                               { created: now - 50, expires: 60,
+                                 flags: 0x03 });
+  const expired = leaf.readPublicKey(Buffer.concat([packet(6, primary.body),
+    realDirect, packet(13, uid), cert]), at);
+  t.check(expired.description.expired === true,
+          '9j. the same expiry in one that verifies is read',
+          expired.description.expiresAt);
+
+  // A certification revocation (0x30), newer than the certification.
+  const uidRevoked = leaf.readPublicKey(Buffer.concat([head,
+    signature(leaf, primary, 0x30, uid, { created: now - 10 })]), at);
+  t.check(!uidRevoked.ok && uidRevoked.description.users[0].valid === false,
+          '9k. a user id whose certification was revoked is not valid',
+          JSON.stringify(uidRevoked.description.users));
+
+  // A primary whose self-signature withholds the sign flag.
+  const certifyOnly = leaf.readPublicKey(Buffer.concat([packet(6,
+    primary.body), packet(13, uid),
+    signature(leaf, primary, 0x13, uid, { created: now - 990,
+                                         flags: 0x01 })]), at);
+  t.equal(certifyOnly.description.signing, null,
+          '9l. a primary key whose flags omit signing has no signing key');
+
+  // Two signatures on one cleartext proof.
+  const text = 'proof ' + now;
+  const one = signature(leaf, primary, 0x01, text, { created: now - 5 });
+  const armor = function (sigs) {
+    return '-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\n' + text +
+      '\n-----BEGIN PGP SIGNATURE-----\n\n' +
+      Buffer.concat(sigs).toString('base64') +
+      '\n-----END PGP SIGNATURE-----\n';
+  };
+  const single = leaf.verifyCleartext(armor([one]), base.key);
+  t.check(single.ok && single.text === text,
+          '9m. a cleartext with one signature verifies',
+          JSON.stringify([single.reason, single.why]));
+  const double = leaf.verifyCleartext(armor([one, one]), base.key);
+  t.check(!double.ok && double.reason === 'several',
+          '9n. a cleartext carrying two signatures is refused',
+          JSON.stringify([double.reason, double.why]));
+  log.debug("Leaving checkAppended().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const leaf = require('../common/crypto_impl/openpgp_pqc');
   checkReader(t, leaf);
+  checkAppended(t, leaf);
   await checkPolicy(t);
   log.debug("Leaving run().");
 }

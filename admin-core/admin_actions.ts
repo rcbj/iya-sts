@@ -12176,6 +12176,7 @@ class AdminActions {
                         after.anchors.filter(function (one) {
         return addedPrints.indexOf(one.fingerprint256) >= 0;
       }).every(function (one) { return one.persisted === true; });
+      const note = [result.warning, result.error].filter(Boolean).join(' ');
       log.debug("Leaving AdminActions.truststoreAction().");
       return { ok: true, added: added.length,
                duplicates: result.duplicates || 0,
@@ -12188,8 +12189,9 @@ class AdminActions {
                persisted: persisted,
                // A partial add — the truststore filled part-way — is still a
                // success for what went in, and the reason the rest did not is
-               // carried rather than dropped.
-               warning: result.error || '',
+               // carried rather than dropped. A same-subject collision is a
+               // warning on the add, not an error (#1242).
+               warning: note,
                message: added.length + ' anchor(s) added' +
                  (result.duplicates ? ', ' + result.duplicates +
                   ' already held' :
@@ -12204,7 +12206,7 @@ class AdminActions {
                    : 'NOT PERSISTED — a runtime anchor is gone at the next ' +
                      'start; tls.trustAnchorsFile is the door for one that ' +
                      'must survive a restart.') +
-                 (result.error ? ' ' + result.error : '') };
+                 (note ? ' ' + note : '') };
     }
 
     // remove

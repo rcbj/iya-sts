@@ -142,6 +142,8 @@ namespace IyaSts.Pep.Service {
   @js(#{`minimum`:1,`maximum`:1000}) `maxEvaluations`: int64;
   @js(#{`minimum`:1024,`maximum`:5242880}) `maxBodyBytes`: int64;
   `returnReasons`: boolean;
+  @js(#{`description`:"The realm's authzen.obligationsProfile, as pulled. The default, and an absent member, is on."})
+  `obligationsProfile`: boolean;
 }
 
 @component model `Catalogue` {

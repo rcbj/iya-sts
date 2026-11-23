@@ -602,6 +602,26 @@ async function inParallel(items, limit, fn) {
   }
 }
 
+// The answers `namesForSubjectsAsync()` gave from its synchronous fallback
+// after the asynchronous door threw (#1952): right as far as they go, but
+// given while the store was failing, so a caller that keeps answers
+// (`admin_stats.js`'s memo, #790) must not keep these.
+const FALLBACK_NAME_ANSWERS = new WeakSet();
+
+/**
+ * Whether a Map `namesForSubjectsAsync()` answered came from its fallback
+ * after the asynchronous door threw.
+ *
+ * @param answer - the Map
+ * @returns true when it is a fallback answer
+ */
+function namesFellBack(answer) {
+  log.debug("Entering namesFellBack().");
+  log.debug("Leaving namesFellBack().");
+  return !!answer && typeof answer === 'object' &&
+    FALLBACK_NAME_ANSWERS.has(answer);
+}
+
 /**
  * `namesForSubjects()`, asking the directory asynchronously where it can.
  *
@@ -648,8 +668,10 @@ async function namesForSubjectsAsync(subjects) {
               'helpers: the subject resolver threw looking up ' +
               uuids.length + ' subjects asynchronously, so they are asked ' +
               'synchronously: ' + ((e && e.message) || e));
+    const fallback = namesForSubjects(subjects);
+    FALLBACK_NAME_ANSWERS.add(fallback);
     log.debug("Leaving namesForSubjectsAsync(). Asked synchronously.");
-    return namesForSubjects(subjects);
+    return fallback;
   }
 }
 
@@ -10306,6 +10328,7 @@ module.exports = {
   warmPeopleAsync: warmPeopleAsync,
   namesForSubjects: namesForSubjects,
   namesForSubjectsAsync: namesForSubjectsAsync,
+  namesFellBack: namesFellBack,
   subjectsForNamesAsync: subjectsForNamesAsync,
   LEGACY_SUBJECT_PREFIX: LEGACY_SUBJECT_PREFIX,
   hasScope: hasScope,

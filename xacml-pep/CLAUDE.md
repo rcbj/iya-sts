@@ -975,8 +975,8 @@ not applying.
   wherever it was decided; splitting keeps the semantic, the order and each
   item's own error here, in one place, and needs the PEP admitted to the
   single endpoint only. The cost is a round trip per forwarded item, in
-  order. **There is no Search API here** (*What it cannot do*), so there is
-  nothing of a search to forward.
+  order. **There is no Search API here** (*What it cannot do*): a search is
+  501 and nothing of it is forwarded.
 * **WHAT IS SENT.** The caller's request for that evaluation
   (`forwarded_body()`), with `context.application` SET to the resolved
   application whether or not the caller sent it — the service scopes the
@@ -1098,13 +1098,27 @@ before the first pull, one not on the local list 403 (`-0037`). No
   on the entry and the TLS client certificates the realm issued it, so one
   enrolled over ACME, EST or SCEP and not stored is not admitted here. Each
   is narrower, never wider.
-* **WHAT LANDED BESIDE IT (#1175, #1177, #1178).** The edge PDP was written
-  against the evaluation and batch APIs only: it serves no Search API, hands
-  no Obligations Profile obligation (a Permit carrying one answers `false`,
-  the service's answer to a PEP that declared none, and
-  `context.supported_obligations` is an undeclared member here), and sends
-  no `signed_metadata`, holding none of the realm's signing keys. Each is a
-  follow-up, not a regression: the fail-closed answer is the same.
+* **SEARCH, SIGNED METADATA, ACCESS REQUESTS AND THE BINDING ARE THE
+  SERVICE'S (#1205).** `POST /access/v1/search/{subject,resource,action}` is
+  501 (`STS-XPEP-0138`) before admission. The Access Request paths — the
+  collection, the schema, a task, and cancel — are 501 (`STS-XPEP-0139`)
+  the same way, with the evaluation error object; a method the profile does
+  not define stays 404, and so does HEAD of any of them. A token-exchange
+  tuple is 501 (`STS-XPEP-0140`) on the evaluation, as that item inside a
+  batch, and is not forwarded. `signed_metadata` is omitted: this edge holds
+  no realm signing key, and republishing the service's JWT would name the
+  wrong issuer. None of those are advertised.
+* **OBLIGATIONS ARE HANDED WHEN DECLARED (#1177, #1205).** While the pulled
+  `authzen.obligationsProfile` is on (the default; an absent member is on),
+  a Permit whose obligations all convert and were all named in
+  `context.supported_obligations` is `true`, and they travel in
+  `context.obligations`. The log obligation is still discharged here and
+  not handed. Without the declaration, or with the profile off, a Permit
+  that carries any other obligation stays `false`. The metadata lists
+  `supported_obligations` only while the profile is on.
+  `context.approval` is reserved, stripped before the catalogue walk, and
+  not written as a trusted fact: a presented one is decided without, and
+  recorded `STS-AUTHZEN-0084`.
 * **FINE-GRAINED AUTHORIZATION IS NOT DECIDED HERE** (#564): it is
   forwarded (above), so it costs a round trip and depends on the service
   being up, and a switch of enforcement reaches here on the next poll.
@@ -1139,7 +1153,10 @@ origin the HTTPS request arrived at — section 9.2.3 has a PEP refuse a
 document whose identifier is not the base it built the URL from, and the
 endpoints are served at this container's root, so an identifier with a path
 is refused at start (`STS-XPEP-0045`). It names the batch endpoint only
-while the realm has it on, and nothing unimplemented, as the service's does.
+while the realm has it on, and `supported_obligations` only while the
+realm's obligations profile is on. It names no search endpoint, no
+access-request endpoint, no `capabilities`, no `jwks_uri` and no
+`signed_metadata`.
 
 **The origin is the `Host` header, else the request's authority** (#1830):
 an HTTP/2 client sends `:authority` and no `Host`, and hyper puts it in the
@@ -1153,7 +1170,10 @@ for `/`, `/healthcheck`, `/crl/<name>` and this metadata: same status and
 headers, `Content-Length` the GET's. **Not for `/protected`**, whose GET is a
 decision — the PIP asked at the PDP, the enforcement counted and reported on
 the heartbeat — which a monitor's or a link checker's HEAD does not mean to
-ask for; it stays the generic 404 (`STS-XPEP-0009`), as before.
+ask for; it stays the generic 404 (`STS-XPEP-0009`), as before. **Not for
+the Search and Access Request paths either** (#1205): a GET of one of them
+is 501, and rewriting HEAD to GET would tell a monitor the edge answers a
+profile it does not hold. Those HEADs stay the generic 404.
 
 ## THE REVERSE PROXY (#1760)
 
@@ -2067,7 +2087,7 @@ published APIs use:
 | Source | Document (`xacml-pep/openapi/`) | Rust module (`sts-model-pep`) | What |
 |---|---|---|---|
 | `pep_service.tsp` | `pep-service.json` | `pep_service` | `GET /`, `/healthcheck`, `/protected`, `POST /notify` (with the service's nudge as its body), `GET /crl/{name}` |
-| `pep_authzen.tsp` | `pep-authzen.json` | `pep_authzen` | the edge PDP's evaluation, evaluations and metadata |
+| `pep_authzen.tsp` | `pep-authzen.json` | `pep_authzen` | the edge PDP's evaluation, evaluations, metadata, and the Search and Access Request paths it answers 501 |
 | `pep_proxy.tsp` | `pep-proxy.json` | `pep_proxy` | the proxy's own paths: `/.iya-pep/*` and the start page; what EVERY route answers whatever its configuration is in the document's description and `Refusal` |
 | `pep_control_plane.tsp` | `pep-control-plane.json` | `pep_control_plane` | what the SERVICE serves the PEP: `/xacml/pep/*` and `POST /xacml/pip` |
 

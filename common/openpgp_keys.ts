@@ -38,6 +38,13 @@
 //      `encryptionFor()` at queue time; `common/mail_transports.ts` builds
 //      the encrypted message at send time.
 //
+//   4. **A KEY BELONGS TO THE ADDRESSES ITS USER IDS NAME.** Registration
+//      records them (`stsOpenPgpKeyInfo.addresses`); mail is encrypted to
+//      the key, and the Web Key Directory answers it, only for an address
+//      one of them names (`keyNames()`). When the entry's `mail` changes
+//      to an address the key does not name, `addressChanged()` — called by
+//      `ldap/ldap_server.js` after the write — retires the key.
+//
 // **NOTHING HERE IS RECORDED AS HARDWARE-BOUND.** The server cannot see an
 // OpenPGP card: a signature made on a YubiKey and one made by a key in a
 // file are the same bytes, and no OpenPGP card attestation is carried by
@@ -141,12 +148,20 @@ const CHALLENGE_TITLE = 'iya-sts OpenPGP key registration';
 // register's.
 const PUBLISHED_MAX = 5000;
 
+// The challenges a process holds per realm (a cache over the store, which
+// holds one per person registering).
+const CHALLENGES_MAX = 5000;
+
 // ---------------------------------------------------------------------------
 // THE CHALLENGES, per realm at the declaration (header). `expiresAt` in
-// milliseconds, so the minted store drops a spent one by itself.
+// milliseconds, so the minted store drops a spent one by itself. On demand,
+// as the publication register is, so what a process holds is bounded: one
+// challenge per person is a store as large as the directory, and is read
+// by its holder's key.
 // ---------------------------------------------------------------------------
 const challenges = realms.map({
   persist: 'openpgp.challenges',
+  onDemand: { maxEntries: CHALLENGES_MAX },
   tombstone: true,
   expiresAt: realms.expiryField('expiresAt', 1)
 });
@@ -175,9 +190,11 @@ cacheRegistry.register({
   persisted: true,
   settings: ['openpgp.challengeLifetimeS'],
   maxEntries: function (): number {
-    return 0;
+    return CHALLENGES_MAX;
   },
-  bound: 'One per person (keyed by entryUUID), each for ' +
+  bound: 'Enforced: the challenges a process holds are a cache of 5,000 per ' +
+    'realm, the oldest dropped and read from the store again when next ' +
+    'asked; the store holds one per person (keyed by entryUUID), each for ' +
     'openpgp.challengeLifetimeS.',
   lifetime: function (): string {
     return String(config.value('openpgp.challengeLifetimeS')) +
@@ -207,8 +224,9 @@ cacheRegistry.register({
   maxEntries: function (): number {
     return PUBLISHED_MAX;
   },
-  bound: 'The rows a process holds are a cache of 5,000 per realm; the ' +
-    'register holds one row per person who opted in.',
+  bound: 'Enforced: the rows a process holds are a cache of 5,000 per ' +
+    'realm, the oldest dropped and read from the store again when next ' +
+    'asked; the register holds one row per person who opted in.',
   lifetime: function (): string {
     return 'Until the person stops publishing or removes the key.';
   },
@@ -455,7 +473,8 @@ class OpenPgpKeys {
         enabled: !!this.setting('openpgp.wkd'),
         optedIn: !!info.wkd,
         published: !!(p.key && info.wkd && this.setting('openpgp.wkd') &&
-                      split.domain && domains.indexOf(split.domain) >= 0),
+                      split.domain && domains.indexOf(split.domain) >= 0 &&
+                      OpenPgpKeys.keyNames(info, p.mail)),
         domainServed: !!split.domain && domains.indexOf(split.domain) >= 0,
         hash: split.local ? this.deps.crypto.wkdHash(split.local) : '',
         url: split.local && split.domain
@@ -465,7 +484,8 @@ class OpenPgpKeys {
       },
       mailEncryption: {
         choice: p.mailEncryption,
-        openpgpUsable: !!(p.key && info.encryption && !this.expired(info)),
+        openpgpUsable: !!(p.key && info.encryption && !this.expired(info) &&
+                          OpenPgpKeys.keyNames(info, p.mail)),
         smimeUsable: !!(smime && smime.ok),
         smimeCertificate: smime && smime.ok
           ? { subject: String(smime.subject), serial: String(smime.serial) }
@@ -484,6 +504,46 @@ class OpenPgpKeys {
     const at = Date.parse(String((info && info.expiresAt) || ''));
     log.debug("Leaving OpenPgpKeys.expired().");
     return at > 0 && at <= this.deps.now();
+  }
+
+  /**
+   * The addresses a stored key is bound to: the addresses of its valid user
+   * ids, as registration recorded them (`addresses`), or, for a key stored
+   * before that member existed, read back from the user ids it kept.
+   *
+   * @param info - the stored key information
+   * @returns lower-case addresses
+   */
+  static keyAddresses(info: Json): string[] {
+    helpers.log.debug("Entering OpenPgpKeys.keyAddresses().");
+    const listed = info && Array.isArray(info.addresses)
+      ? info.addresses : [].concat((info && info.userIds) || [])
+        .map(function (text: unknown): string {
+          const t = String(text || '').trim();
+          const bracketed = (t.match(/<([^<>\s]+@[^<>\s]+)>/) || [])[1];
+          return bracketed || (/^[^\s<>]+@[^\s<>]+$/.test(t) ? t : '');
+        });
+    const out = listed.map(function (a: unknown): string {
+      return String(a || '').trim().toLowerCase();
+    }).filter(Boolean);
+    helpers.log.debug("Leaving OpenPgpKeys.keyAddresses(). " + out.length);
+    return out;
+  }
+
+  /**
+   * Whether a stored key names an address in one of its valid user ids.
+   *
+   * @param info - the stored key information
+   * @param address - the address
+   * @returns true when it does
+   */
+  static keyNames(info: Json, address: string): boolean {
+    helpers.log.debug("Entering OpenPgpKeys.keyNames().");
+    const wanted = String(address || '').trim().toLowerCase();
+    const out = !!wanted &&
+      OpenPgpKeys.keyAddresses(info).indexOf(wanted) >= 0;
+    helpers.log.debug("Leaving OpenPgpKeys.keyNames(). " + out);
+    return out;
   }
 
   // -------------------------------------------------------------------------
@@ -648,6 +708,16 @@ class OpenPgpKeys {
       encryptionFingerprint: d.encryption ? d.encryption.fingerprint : '',
       userIds: matching.map(function (u: Json) {
         return String(u.text);
+      }),
+      // Every address a valid user id of the key names: what the key may be
+      // used for (`keyNames()`), so mail and the Web Key Directory never
+      // use it for an address it does not belong to.
+      addresses: key.description.users.filter(function (u: Json) {
+        return u.valid && u.email;
+      }).map(function (u: Json) {
+        return String(u.email).trim().toLowerCase();
+      }).filter(function (a: string, i: number, all: string[]) {
+        return all.indexOf(a) === i;
       }),
       created: d.created, expiresAt: d.expiresAt,
       registeredAt: new Date(at).toISOString(), registeredBy: actor,
@@ -820,7 +890,8 @@ class OpenPgpKeys {
         MAIL_ENCRYPTION.join(', ') + '.');
     }
     if (wanted === 'openpgp' && !(p.key && p.info && p.info.encryption &&
-                                  !this.expired(p.info))) {
+                                  !this.expired(p.info) &&
+                                  OpenPgpKeys.keyNames(p.info, p.mail))) {
       log.debug("Leaving OpenPgpKeys.setMailEncryption(). No OpenPGP key.");
       return this.refuse('STS-OPENPGP-0016', p.key
         ? 'The registered OpenPGP key has no encryption key valid now, so ' +
@@ -1060,7 +1131,7 @@ class OpenPgpKeys {
     const answers = !!p && !!p.key && !!(p.info && p.info.wkd) &&
       split.domain === domain && c.wkdHash(split.local) === hash &&
       (!row || String(row.fingerprint) === p.fingerprint) &&
-      !this.expired(p.info);
+      !this.expired(p.info) && OpenPgpKeys.keyNames(p.info, p.mail);
     if (!answers) {
       log.debug("Leaving OpenPgpKeys.lookup(). Nothing published.");
       return null;
@@ -1075,15 +1146,23 @@ class OpenPgpKeys {
   // WHAT THE MAIL CHANNEL ASKS (header point 3).
   // -------------------------------------------------------------------------
   /**
-   * How mail to a person of the ambient realm is to be encrypted.
+   * How mail to a person of the ambient realm is to be encrypted, when it
+   * goes to `address` (their `mail` when that is omitted).
+   *
+   * A KEY IS USED ONLY FOR AN ADDRESS IT NAMES: an OpenPGP key one of whose
+   * valid user ids names the address, an S/MIME certificate naming it.
+   * Otherwise the answer is `unbound`, and `common/mail.ts` decides what
+   * that means for the message (header point 9 there).
    *
    * @param username - the person
+   * @param address - the address the message goes to, or '' for `mail`
    * @returns `{ kind: 'none' }`, `{ kind: 'openpgp', armoredKey,
    *   fingerprint }`, `{ kind: 'smime', certificate (base64 DER), serial }`,
-   *   or `{ kind: 'unavailable', chosen, why }` for a choice that cannot be
-   *   honoured now
+   *   `{ kind: 'unavailable', chosen, why }` for a choice that cannot be
+   *   honoured now, or `{ kind: 'unbound', chosen, why }` when the key or
+   *   certificate does not name the address
    */
-  encryptionFor(username: string): Json {
+  encryptionFor(username: string, address?: string): Json {
     const { log, now } = this.deps;
     log.debug("Entering OpenPgpKeys.encryptionFor().");
     const p = this.person(username);
@@ -1091,7 +1170,14 @@ class OpenPgpKeys {
       log.debug("Leaving OpenPgpKeys.encryptionFor(). None.");
       return { kind: 'none' };
     }
+    const target = String(address || p.mail || '').trim().toLowerCase();
     if (p.mailEncryption === 'openpgp') {
+      if (p.key && !OpenPgpKeys.keyNames(p.info, target)) {
+        log.debug("Leaving OpenPgpKeys.encryptionFor(). Not this address.");
+        return { kind: 'unbound', chosen: 'openpgp',
+                 why: 'no valid user id of the registered OpenPGP key ' +
+                   'names ' + (target || 'the address') };
+      }
       if (!p.key || !(p.info && p.info.encryption) || this.expired(p.info)) {
         log.debug("Leaving OpenPgpKeys.encryptionFor(). OpenPGP unusable.");
         return { kind: 'unavailable', chosen: 'openpgp',
@@ -1110,9 +1196,104 @@ class OpenPgpKeys {
       return { kind: 'unavailable', chosen: 'smime',
                why: String(smime.error) };
     }
+    if ([].concat(smime.emails || []).map(function (e: unknown): string {
+      return String(e || '').trim().toLowerCase();
+    }).indexOf(target) < 0) {
+      log.debug("Leaving OpenPgpKeys.encryptionFor(). S/MIME elsewhere.");
+      return { kind: 'unbound', chosen: 'smime',
+               why: 'the S/MIME certificate does not name ' +
+                 (target || 'the address') };
+    }
     log.debug("Leaving OpenPgpKeys.encryptionFor(). S/MIME.");
     return { kind: 'smime', certificate: smime.der.toString('base64'),
              serial: String(smime.serial) };
+  }
+
+  // -------------------------------------------------------------------------
+  // AN ADDRESS THAT CHANGED (header point 4). A key is registered for the
+  // entry's `mail` and used only for an address it names; when `mail`
+  // changes to one it does not name, the key is RETIRED — off the entry and
+  // out of the Web Key Directory, with an audit row saying why — rather
+  // than left for the next reader to skip. Registration would refuse it
+  // for the new address, so keeping it would keep a key nobody could
+  // register now. A key that names the new address too stays, and its
+  // publication moves to the new address. An S/MIME choice whose
+  // certificate does not name the new address is put back to `none`; the
+  // certificate itself is the directory's attribute and is left alone.
+  // -------------------------------------------------------------------------
+  /**
+   * Retires what a person's `mail` change leaves bound to the former
+   * address. Called by the directory after the write, in the person's
+   * realm.
+   *
+   * @param username - the person
+   * @param former - the address the entry had
+   * @param address - the address it has now ('' when removed)
+   * @returns `{ ok, retired, moved, smimeReset }`
+   */
+  async addressChanged(username: string, former: string,
+                       address: string): Promise<Json> {
+    const { log, errorCodes: codes, now } = this.deps;
+    log.debug("Entering OpenPgpKeys.addressChanged().");
+    const out: Json = { ok: true, retired: '', moved: false,
+                        smimeReset: false };
+    const p = this.person(username);
+    if (!p) {
+      log.debug("Leaving OpenPgpKeys.addressChanged(). Nobody.");
+      return out;
+    }
+    const next = String(address || '').trim();
+    const via = 'a directory change';
+    if (p.key && OpenPgpKeys.keyNames(p.info, next)) {
+      await this.republish(p.username, this.holderOf(p.username), next,
+                           !!(p.info && p.info.wkd), p.fingerprint);
+      out.moved = true;
+    } else if (p.key || p.fingerprint) {
+      const removed: Json = await this.removeKey(p.username, {
+        actor: '', via: via,
+        reason: 'the entry\'s mail changed from ' + String(former || '') +
+          ' to ' + (next || 'nothing') + ', which no valid user id of the ' +
+          'key names' });
+      if (removed.ok) {
+        out.retired = String(removed.fingerprint || '');
+      } else {
+        // The key is still on the entry, and still unused for the new
+        // address: `encryptionFor()` and the Web Key Directory ask
+        // `keyNames()` at every use. The publication row goes anyway.
+        await this.unpublish(this.holderOf(p.username));
+        log.error(codes.tag('STS-OPENPGP-0030') + 'openpgp: the mail of ' +
+                  p.username + ' changed and its OpenPGP key ' +
+                  p.fingerprint + ' could not be retired: ' +
+                  String(removed.error || ''));
+        out.ok = false;
+      }
+    }
+    if (p.mailEncryption === 'smime') {
+      const smime = this.deps.crypto.smimeRecipientCertificate(p.smime,
+        new Date(now()));
+      const names = smime && smime.ok ? [].concat(smime.emails || [])
+        .map(function (e: unknown): string {
+          return String(e || '').trim().toLowerCase();
+        }) : [];
+      if (names.indexOf(next.toLowerCase()) < 0) {
+        if (this.write(p, ATTRIBUTES.mailEncryption, ['none'])) {
+          out.smimeReset = true;
+          this.recordAudit('openpgp.mail-encryption', '', p.username,
+            'mail to ' + p.username + ' is now not encrypted: the address ' +
+            'changed to ' + (next || 'nothing') + ', which the S/MIME ' +
+            'certificate does not name',
+            { choice: 'none', was: 'smime', via: via });
+        } else {
+          log.error(codes.tag('STS-OPENPGP-0030') + 'openpgp: the mail of ' +
+                    p.username + ' changed and the S/MIME choice could not ' +
+                    'be put back to none.');
+          out.ok = false;
+        }
+      }
+    }
+    log.debug("Leaving OpenPgpKeys.addressChanged(). " +
+              (out.retired ? 'Retired.' : (out.moved ? 'Moved.' : 'Kept.')));
+    return out;
   }
 
   // -------------------------------------------------------------------------
@@ -1400,6 +1581,7 @@ export = {
   setMailEncryption: slot.forward('setMailEncryption'),
   setSmimeCertificate: slot.forward('setSmimeCertificate'),
   encryptionFor: slot.forward('encryptionFor'),
+  addressChanged: slot.forward('addressChanged'),
   wkdDomains: slot.forward('wkdDomains'),
   lookup: slot.forward('lookup'),
   retireLost: slot.forward('retireLost'),

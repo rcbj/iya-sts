@@ -612,7 +612,12 @@ async function anUnconfiguredRealmRefusesNobody() {
     //
     // ELEVEN SINCE #563 (2026-10-29): AUTHZEN_PEPS, held through
     // `roles.authzenPepGroup` as XACML_USER is through its group.
-    assert.strictEqual(register.body.builtIn.length, 11,
+    //
+    // TWELVE SINCE #1955 P2 (2026-11-22): PIV_KEY_RECOVERY, held through
+    // `roles.pivKeyRecoveryGroup` the same way, which the access-control
+    // policy asks for beside Admin Write before an escrowed
+    // piv-key-management key is recovered (`common/roles.js`).
+    assert.strictEqual(register.body.builtIn.length, 12,
       "the built-in roles are computed rather than stored, so an empty " +
       "container has them; this realm reports " +
       register.body.builtIn.length + " (" +

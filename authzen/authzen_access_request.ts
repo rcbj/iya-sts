@@ -35,21 +35,25 @@
 //      approvers are mailed through the mail channel. A revocation from
 //      either door (#1203) mails the requester the same way, at the address
 //      on their own entry and with no link. The portal lists only the live
-//      approvals that person gave; the policy question stays
-//      `approve-access-request`.
+//      approvals that person gave, and revokes only those: a revocation on
+//      the portal's door by anybody but the approval's own approver is
+//      refused (`STS-AUTHZEN-0141`). A revocation is asked as its own
+//      action, `revoke-access-request`; a repository policy that never
+//      names that action is asked `approve-access-request` instead, so a
+//      deployment's own policy decides a revocation as it always did.
 //   4. **CALLBACK IS IN THE FIRST BUILD**, to a URL registered for the
-//      requester only when that requester is an application
-//      (`appAuthzenCallbackUri`, written by an administrator) and never one
-//      taken from the request alone, under the outbound policy every other
-//      delivery takes (`federation_http.deliverJson()`): https verified, no
-//      redirect, the internal-address refusal, the kill switch.
-//      `federation/CLAUDE.md` carries its row among the URLs this service
-//      dials. A person's or service account's `stsAuthzenCallbackUri` is
-//      left readable and is not honoured (#1202). A failed delivery is
-//      retried by this file's own scheduler job, up to a bound snapshotted
-//      onto the task; the task's status is not moved to `failed` — the
-//      delivery record is, because `failed` is itself a callback event and
-//      `finish()` runs exactly once from `pending`.
+//      requester (rcbj's decision 4: an application's
+//      `appAuthzenCallbackUri`, or a person's or service account's
+//      `stsAuthzenCallbackUri`, each written by an administrator) and never
+//      one taken from the request alone, under the outbound policy every
+//      other delivery takes (`federation_http.deliverJson()`): https
+//      verified, no redirect, the internal-address refusal, the kill
+//      switch. `federation/CLAUDE.md` carries its row among the URLs this
+//      service dials. A failed delivery is retried by this file's own
+//      scheduler job, up to a bound snapshotted onto the task, the wait
+//      doubling from the backoff up to a day. A finished task is kept past
+//      its retention while its delivery is still being tried, never past
+//      the bound's last attempt.
 //
 // ---------------------------------------------------------------------------
 // THE INVARIANT THAT GOVERNS EVERYTHING BELOW: AN APPROVAL NEVER TURNS A
@@ -106,7 +110,10 @@
 //
 // THE TASK is a row of the per-realm store `authzen.accessRequests`:
 // `pending`, then exactly once one of `approved`, `denied`, `expired`,
-// `cancelled`, `failed` — every transition one audit row. Expiry is the
+// `cancelled`, `failed` — every transition one audit row. `failed` (#1202)
+// is a workflow step that cannot complete: an approval that could not be
+// stored (`STS-AUTHZEN-0142`), or approvers the advice named who resolve,
+// certainly, to nobody (`STS-AUTHZEN-0143`, noticed by the job). Expiry is the
 // scheduler job `authzen.access-requests` (rcbj's rule on periodic work):
 // a pending task past its `expires_at` is moved to `expired` (and its
 // callback sent), a finished one is removed a day after it finished, or
@@ -154,6 +161,11 @@ const SCHEMA_PATH = REQUESTS_PATH + '/schema';
 // The access-control question (`common/access_gate.ts`).
 const GATE_RESOURCE = 'authzen-access-request';
 const GATE_ACTION = 'approve-access-request';
+// A revocation's own action (#1203). The built-in document permits it
+// wherever it permits an approval; a repository policy that never names it
+// is asked GATE_ACTION instead, so an existing policy decides a revocation
+// as it did before the action existed.
+const GATE_REVOKE_ACTION = 'revoke-access-request';
 
 // The lifecycle, the first status the only one that is not terminal, and
 // the CALLBACK companion's event names, which are the terminal statuses:
@@ -187,9 +199,26 @@ const MAX_CALLBACKS = 8;
 const JOB = 'authzen.access-requests';
 const JOB_EVERY_MS = 60000;
 
+// The longest wait between two callback attempts: the backoff doubles
+// from the configured one up to this (#1202).
+const BACKOFF_CAP_S = 86400;
+
+// The longest an attempt is held in flight, and the least.
+const INFLIGHT_MIN_S = 120;
+
+// The index row of every pending task (`awaiting()`), and the prefix of a
+// row per approver (`grantedBy()`): each a list of task ids, so a portal
+// page reads its own rows rather than the store.
+const PENDING_KEY = 'pending:tasks';
+const APPROVER_PREFIX = 'approver:';
+
 // A callback POST that is already running, keyed by realm and task id. A
 // Promise cannot be stored on the row. `resetForTests()` clears it.
 const flights = new Map<string, Promise<boolean>>();
+
+// The realms whose denial store was last seen full, so the full store is
+// logged when it fills and when it has room again, not per denial (#1204).
+const denialsFull = new Set<string>();
 
 // ---------------------------------------------------------------------------
 // THE STORES, per realm at their declaration and persisted, so a task
@@ -225,6 +254,7 @@ const denials = realms.map({
 
 // The parts of a `realms.map()` store this module uses.
 interface Store {
+  readonly size?: number;
   get(key: string): any;
   set(key: string, value: any): unknown;
   delete(key: string): boolean;
@@ -282,6 +312,7 @@ interface AccessRequestDeps {
   loadMailUses(): any;
   loadFedHttp(): any;
   loadScheduler(): any;
+  loadAccessPep(): any;
 }
 
 /**
@@ -365,7 +396,8 @@ class AccessRequests {
       loadAdmin: lazy('loadAdmin', './authzen_admin'),
       loadMailUses: lazy('loadMailUses', '../common/mail_uses'),
       loadFedHttp: lazy('loadFedHttp', '../federation/federation_http'),
-      loadScheduler: lazy('loadScheduler', '../cluster/scheduler')
+      loadScheduler: lazy('loadScheduler', '../cluster/scheduler'),
+      loadAccessPep: lazy('loadAccessPep', '../xacml/xacml_access_pep')
     };
   }
 
@@ -905,7 +937,109 @@ class AccessRequests {
               task.status);
     tasks.set(task.id, task);
     this.noteSubject(task);
+    this.notePending(task);
+    this.noteApprover(task);
     log.debug("Leaving AccessRequests.save().");
+  }
+
+  // -------------------------------------------------------------------------
+  // THE PENDING AND APPROVER INDEXES (#1203): what a portal page lists is
+  // read through them, so its cost is the person's own rows (an approver's
+  // approvals) or the pending tasks (bounded by
+  // `authzen.accessRequestMaxPending`), never every task the realm keeps.
+  // Each row is a list of task ids in `index`, written by `save()` (one
+  // get, and a set only when it changes). Two writers in two processes can
+  // lose one another's id; the sweep job walks every task already and puts
+  // a missing one back, so a list is at most a minute behind the store.
+  // -------------------------------------------------------------------------
+  // Adds a task id to an index row, kept until at least `until`.
+  private noteUnder(key: string, id: string, until: number): void {
+    const { log, index } = this.deps;
+    log.debug("Entering AccessRequests.noteUnder().");
+    const row = index.get(key);
+    const ids: string[] = row && Array.isArray(row.tasks)
+      ? row.tasks.slice(0) : [];
+    const was = row ? Number(row.until) || 0 : 0;
+    const keep = Math.max(was, Number(until) || 0);
+    if (row && ids.indexOf(id) >= 0 && was >= keep) {
+      log.debug("Leaving AccessRequests.noteUnder(). Already noted.");
+      return;
+    }
+    if (ids.indexOf(id) < 0) {
+      ids.push(id);
+    }
+    index.set(key, { tasks: ids, until: keep });
+    log.debug("Leaving AccessRequests.noteUnder().");
+  }
+
+  // Takes a task id out of an index row, and the row out when it empties.
+  private unnoteUnder(key: string, id: string): void {
+    const { log, index } = this.deps;
+    log.debug("Entering AccessRequests.unnoteUnder().");
+    const row = index.get(key);
+    if (!row || !Array.isArray(row.tasks) || row.tasks.indexOf(id) < 0) {
+      log.debug("Leaving AccessRequests.unnoteUnder(). Not noted.");
+      return;
+    }
+    const ids = row.tasks.filter(function (one: string) {
+      return one !== id;
+    });
+    if (!ids.length) {
+      index.delete(key);
+    } else {
+      index.set(key, { tasks: ids, until: row.until });
+    }
+    log.debug("Leaving AccessRequests.unnoteUnder().");
+  }
+
+  // The ids an index row lists.
+  private idsUnder(key: string): string[] {
+    const { log, index } = this.deps;
+    log.debug("Entering AccessRequests.idsUnder().");
+    const row = index.get(key);
+    const out: string[] = row && Array.isArray(row.tasks)
+      ? row.tasks.map(String) : [];
+    log.debug("Leaving AccessRequests.idsUnder(). " + out.length);
+    return out;
+  }
+
+  // A pending task is listed; a finished one is taken off.
+  private notePending(task: Json): void {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.notePending().");
+    if (!task || !task.id) {
+      log.debug("Leaving AccessRequests.notePending(). No id.");
+      return;
+    }
+    if (task.status === 'pending') {
+      this.noteUnder(PENDING_KEY, String(task.id),
+                     Number(task.expiresAt) + RETENTION_S);
+    } else {
+      this.unnoteUnder(PENDING_KEY, String(task.id));
+    }
+    log.debug("Leaving AccessRequests.notePending().");
+  }
+
+  // The index key of one approver's approvals.
+  private static approverKey(username: string): string {
+    log.debug("Entering AccessRequests.approverKey().");
+    log.debug("Leaving AccessRequests.approverKey().");
+    return APPROVER_PREFIX + stsCrypto.credentialDigest(
+      String(username == null ? '' : username).trim().toLowerCase());
+  }
+
+  // An approval is listed under the person who gave it.
+  private noteApprover(task: Json): void {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.noteApprover().");
+    const approval = task && task.approval;
+    if (!approval || !approval.approver || !task.id) {
+      log.debug("Leaving AccessRequests.noteApprover(). No approver.");
+      return;
+    }
+    this.noteUnder(AccessRequests.approverKey(String(approval.approver)),
+                   String(task.id), Number(task.keepUntil) || 0);
+    log.debug("Leaving AccessRequests.noteApprover().");
   }
 
   // -------------------------------------------------------------------------
@@ -1174,7 +1308,22 @@ class AccessRequests {
     task.finishedAt = now;
     task.keepUntil = Math.max(now + RETENTION_S,
       task.approval ? Number(task.approval.approvedUntil) : 0);
-    self.save(task);
+    if (status === 'failed') {
+      // `failed` is the status of a step that could not be written, so a
+      // store that will not take this write either still gets the audit
+      // row and the callback below: those are the record then.
+      try {
+        self.save(task);
+      } catch (e) {
+        log.debug("Caught in AccessRequests.finish(): " +
+                  ((e && e.message) || e));
+        log.error(self.deps.errorCodes.tag('STS-AUTHZEN-0142') +
+                  'authzen: the failed access request ' + task.id +
+                  ' could not be stored either: ' + ((e && e.message) || e));
+      }
+    } else {
+      self.save(task);
+    }
     // The idempotency key lives as long as the task, the profile's SHOULD.
     if (task.idempotency) {
       self.deps.index.set(task.idempotency.key,
@@ -1198,11 +1347,46 @@ class AccessRequests {
   // Writes the denial record. A failure leaves the token issued: the
   // by-value form still verifies, and an evaluation_id of this denial is
   // then unknown (0073).
+  //
+  // A SIZE CAP, AT THE INSERT (#1204): `authzen.accessRequestMaxDenials`
+  // rows per realm. A full store records nothing new, and the denial is
+  // still requestable by its binding_token; an evaluation_id-only
+  // submission of it is then unknown (0073). The full store is logged when
+  // it fills and when it has room again, never once per denial.
   private recordDenial(record: Json): void {
-    const { log, errorCodes, denials } = this.deps;
+    const { log, errorCodes, denials, audit } = this.deps;
     log.debug("Entering AccessRequests.recordDenial().");
+    const id = String(record.evaluationId);
+    const cap = this.seconds('authzen.accessRequestMaxDenials');
+    const realms = this.deps.realms;
+    const realm = String((realms && typeof realms.currentId === 'function'
+      ? realms.currentId() : '') || '');
+    const held = typeof denials.size === 'number' ? denials.size : 0;
+    if (cap > 0 && held >= cap && !denials.get(id)) {
+      if (!denialsFull.has(realm)) {
+        denialsFull.add(realm);
+        log.warn(errorCodes.tag('STS-AUTHZEN-0144') + 'authzen: this ' +
+                 'realm holds ' + held + ' requestable denials ' +
+                 '(authzen.accessRequestMaxDenials), so new ones are not ' +
+                 'recorded; each is still requestable by its ' +
+                 'binding_token.');
+        audit.audit({ action: 'authzen.access-request.denials-full',
+                      actor: 'the access request service',
+                      protocol: 'AuthZEN', errorCode: 'STS-AUTHZEN-0144',
+                      detail: 'The requestable denial store is full (' +
+                              held + ' of ' + cap + '). A new denial is ' +
+                              'requestable by its binding_token only ' +
+                              'until the job removes old ones.' });
+      }
+      log.debug("Leaving AccessRequests.recordDenial(). Full.");
+      return;
+    }
+    if (denialsFull.delete(realm)) {
+      log.info('authzen: the requestable denial store has room again; ' +
+               'denials are recorded by evaluation_id once more.');
+    }
     try {
-      denials.set(String(record.evaluationId), record);
+      denials.set(id, record);
     } catch (e) {
       log.debug("Caught in AccessRequests.recordDenial(): " +
                 ((e && e.message) || e));
@@ -1868,9 +2052,11 @@ class AccessRequests {
   }
 
   /**
-   * The callback URLs registered for a caller. Only an application's
-   * `appAuthzenCallbackUri`. A person's stored `stsAuthzenCallbackUri` is
-   * not a registration a submission may name.
+   * The callback URLs registered for a caller: an application's
+   * `appAuthzenCallbackUri`, or a person's or service account's
+   * `stsAuthzenCallbackUri` (rcbj's decision 4 on #1180: a URL registered
+   * for the requester; honoured again since the review of #1202, so a
+   * 1.1.0 registration keeps working).
    *
    * @param caller - the caller, `{ kind, name, identifier }`
    * @returns the URLs
@@ -1879,8 +2065,8 @@ class AccessRequests {
     const { log } = this.deps;
     log.debug("Entering AccessRequests.registeredCallbacks().");
     const looked = this.callbackCaller(caller);
-    const out = looked && looked.kind === 'application' &&
-                Array.isArray(looked.callbacks) ? looked.callbacks : [];
+    const out = looked && Array.isArray(looked.callbacks)
+      ? looked.callbacks : [];
     log.debug("Leaving AccessRequests.registeredCallbacks(). " + out.length);
     return out;
   }
@@ -1907,18 +2093,14 @@ class AccessRequests {
       return { problem: shape.message };
     }
     const looked = self.callbackCaller(caller);
-    if (!looked || looked.kind !== 'application') {
-      log.debug("Leaving AccessRequests.callbackOf(). Not an application.");
-      return { problem: 'A callback is registered only for an application.',
-               code: 'STS-AUTHZEN-0136' };
-    }
     const asked: Json = given;
     const endpoint = String(asked.endpoint);
-    const urls = Array.isArray(looked.callbacks) ? looked.callbacks : [];
+    const urls = looked && Array.isArray(looked.callbacks)
+      ? looked.callbacks : [];
     if (!/^https:\/\//i.test(endpoint) || urls.indexOf(endpoint) < 0) {
       log.debug("Leaving AccessRequests.callbackOf(). Not registered.");
       return { problem: 'callback.endpoint must be an https URL an ' +
-                        'administrator registered for this application; ' +
+                        'administrator registered for this caller; ' +
                         'this service never dials one taken from a ' +
                         'request alone.' };
     }
@@ -1933,7 +2115,8 @@ class AccessRequests {
     const state = asked.state === undefined ? undefined
       : String(asked.state).slice(0, MAX_TEXT);
     const policy = self.policyFor(endpoint,
-      Array.isArray(looked.callbackConfigs) ? looked.callbackConfigs : []);
+      looked && Array.isArray(looked.callbackConfigs)
+        ? looked.callbackConfigs : []);
     log.debug("Leaving AccessRequests.callbackOf().");
     return { value: { endpoint: endpoint, state: state,
                       attempts: policy.attempts, backoffS: policy.backoffS,
@@ -1957,20 +2140,24 @@ class AccessRequests {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering AccessRequests.notify(). " + task.id);
-    const callback = task.callback;
+    // THE ROW AS IT IS NOW, never one a caller captured earlier (#1202):
+    // the sweep walks rows it read before this, and another process may
+    // have written since. Only the delivery record is written here.
+    const row = self.currentOf(task) || task;
+    const callback = row.callback;
     if (!callback || !Array.isArray(callback.events) ||
-        callback.events.indexOf(task.status) < 0) {
+        callback.events.indexOf(row.status) < 0) {
       log.debug("Leaving AccessRequests.notify(). Not asked for.");
       return Promise.resolve(false);
     }
-    const key = self.flightKey(task);
+    const key = self.flightKey(row);
     const flying = flights.get(key);
     if (flying) {
       log.debug("Leaving AccessRequests.notify(). Already sending.");
       return flying;
     }
-    self.ensurePolicy(task);
-    const delivery = self.ensureDelivery(task);
+    self.ensurePolicy(row);
+    const delivery = self.ensureDelivery(row);
     if (delivery.state === 'delivered' || delivery.state === 'failed') {
       log.debug("Leaving AccessRequests.notify(). Already " +
                 delivery.state + ".");
@@ -1982,13 +2169,13 @@ class AccessRequests {
       log.debug("Leaving AccessRequests.notify(). Not due.");
       return Promise.resolve(false);
     }
-    const hold = Math.max(Number(delivery.backoffS) || 60, 120);
+    const hold = Math.max(Number(delivery.backoffS) || 60, INFLIGHT_MIN_S);
     delivery.inflightUntil = now + hold;
     delivery.nextAt = now + hold;
     delivery.state = 'pending';
-    delivery.bound = task.callback.attempts;
-    delivery.backoffS = task.callback.backoffS;
-    self.save(task);
+    delivery.bound = row.callback.attempts;
+    delivery.backoffS = row.callback.backoffS;
+    self.save(row);
     let settle: (value: boolean) => void = function () {
       return undefined;
     };
@@ -2001,8 +2188,8 @@ class AccessRequests {
         flights.delete(key);
       }
     };
-    self.sendCallback(task).then(function (result: Json) {
-      const sent = self.settleDelivery(task, result);
+    self.sendCallback(row).then(function (result: Json) {
+      const sent = self.settleDelivery(row, result);
       clear();
       settle(sent);
       return sent;
@@ -2011,7 +2198,7 @@ class AccessRequests {
       // attempt, the same as a network error with no policy kind.
       log.debug("Caught in AccessRequests.notify(): " +
                 ((e && e.message) || e));
-      const sent = self.settleDelivery(task, {
+      const sent = self.settleDelivery(row, {
         ok: false, status: 0, kind: '',
         why: String((e && e.message) || e)
       });
@@ -2021,6 +2208,69 @@ class AccessRequests {
     });
     log.debug("Leaving AccessRequests.notify(). Sending.");
     return promise;
+  }
+
+  // The stored row of a task, re-read by id: what a write after an await
+  // must start from (rcbj's rule: no lost revocations). The callback
+  // policy the caller holds is kept when the stored row has none yet.
+  // Null when the row is gone.
+  private currentOf(task: Json): Json | null {
+    const { log, tasks } = this.deps;
+    log.debug("Entering AccessRequests.currentOf().");
+    const row = task && task.id ? tasks.get(String(task.id)) : null;
+    if (row && row !== task && !row.callback && task.callback) {
+      row.callback = task.callback;
+    }
+    log.debug("Leaving AccessRequests.currentOf(). " + !!row);
+    return row || null;
+  }
+
+  // The wait after the nth failed attempt (n from 1): the backoff, doubled
+  // for each attempt before it, never over a day (#1202).
+  private waitAfter(backoffS: number, n: number): number {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.waitAfter().");
+    const base = this.clampBackoff(backoffS);
+    let wait = base;
+    for (let i = 1; i < n && wait < BACKOFF_CAP_S; i += 1) {
+      wait *= 2;
+    }
+    log.debug("Leaving AccessRequests.waitAfter().");
+    return Math.min(wait, BACKOFF_CAP_S);
+  }
+
+  // The longest a delivery can still be tried after a task finished: each
+  // wait of the bound, each attempt's flight, and a run of the job.
+  private horizonS(row: Json): number {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.horizonS().");
+    const callback = (row && row.callback) || {};
+    const bound = this.clampAttempts(Number(callback.attempts) ||
+      this.seconds('authzen.callbackAttempts'));
+    const backoff = this.clampBackoff(Number(callback.backoffS) ||
+      this.seconds('authzen.callbackBackoffS'));
+    let total = JOB_EVERY_MS / 1000;
+    for (let n = 1; n <= bound; n += 1) {
+      total += Math.max(this.waitAfter(backoff, n), INFLIGHT_MIN_S) +
+               JOB_EVERY_MS / 1000;
+    }
+    log.debug("Leaving AccessRequests.horizonS(). " + total);
+    return total;
+  }
+
+  // Whether a finished task's callback is still to be delivered: it asked
+  // for this event, and its delivery is neither delivered nor failed.
+  private deliveryOutstanding(row: Json): boolean {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.deliveryOutstanding().");
+    const callback = row && row.callback;
+    const delivery = row && row.callbackDelivery;
+    const out = !!callback && Array.isArray(callback.events) &&
+      callback.events.indexOf(row.status) >= 0 &&
+      !(delivery && (delivery.state === 'delivered' ||
+                     delivery.state === 'failed'));
+    log.debug("Leaving AccessRequests.deliveryOutstanding(). " + out);
+    return out;
   }
 
   // Signs the notification and posts it. A signing failure is an attempt
@@ -2087,19 +2337,38 @@ class AccessRequests {
   }
 
   // Records one attempt and either schedules the next, gives up, or marks
-  // the delivery delivered. The task status is not written.
+  // the delivery delivered. The task status is not written. THE ROW IS
+  // RE-READ FIRST (#1202): the POST was awaited, so the task this was
+  // handed may be older than the store — a revocation written meanwhile
+  // would be lost by saving it whole. Only `callbackDelivery` is written
+  // onto the row as it is now, and a row the sweep has removed is not
+  // brought back.
   private settleDelivery(task: Json, result: Json): boolean {
     const self = this;
     const { log, audit, errorCodes } = this.deps;
     log.debug("Entering AccessRequests.settleDelivery().");
-    const delivery = self.ensureDelivery(task);
+    const current = self.currentOf(task);
+    const row = current || task;
+    if (!row.callback) {
+      row.callback = task.callback;
+    }
+    const delivery = self.ensureDelivery(row);
+    const store = function (): void {
+      log.debug("Entering store().");
+      if (current) {
+        self.save(current);
+      }
+      log.debug("Leaving store().");
+    };
     const ok = !!(result && result.ok);
     const status = Number(result && result.status) || 0;
     const kind = String((result && result.kind) || '');
     const why = String((result && (result.why || result.status)) ||
                        (ok ? '' : 'no answer')).slice(0, 300);
     const now = self.nowS();
-    delivery.attempts.push({ at: now, status: status, ok: ok, why: why });
+    const attempt: Json = { at: now, status: status, ok: ok, why: why,
+                            code: '' };
+    delivery.attempts.push(attempt);
     const bound = Number(delivery.bound) || 1;
     if (delivery.attempts.length > bound) {
       delivery.attempts = delivery.attempts.slice(delivery.attempts.length -
@@ -2109,7 +2378,7 @@ class AccessRequests {
       delivery.state = 'delivered';
       delivery.nextAt = 0;
       delivery.inflightUntil = 0;
-      self.save(task);
+      store();
       audit.audit({ action: 'authzen.access-request.callback',
                     actor: 'the access request service', protocol: 'AuthZEN',
                     detail: 'The ' + task.status + ' callback for ' +
@@ -2119,6 +2388,7 @@ class AccessRequests {
     }
     const retry = self.deliveryRetryable(status, kind) &&
                   delivery.attempts.length < bound;
+    attempt.code = retry ? 'STS-AUTHZEN-0091' : 'STS-AUTHZEN-0135';
     audit.audit({ action: 'authzen.access-request.callback',
                   actor: 'the access request service', protocol: 'AuthZEN',
                   errorCode: 'STS-AUTHZEN-0091',
@@ -2129,29 +2399,40 @@ class AccessRequests {
              why);
     if (retry) {
       delivery.state = 'pending';
-      delivery.nextAt = now + Number(delivery.backoffS);
+      delivery.nextAt = now + self.waitAfter(Number(delivery.backoffS),
+                                             delivery.attempts.length);
       delivery.inflightUntil = 0;
-      self.save(task);
+      store();
       log.debug("Leaving AccessRequests.settleDelivery(). Again at " +
                 delivery.nextAt + ".");
       return false;
     }
+    self.giveUp(row, task.status, bound, 'will not be tried again');
+    store();
+    log.debug("Leaving AccessRequests.settleDelivery(). Given up.");
+    return false;
+  }
+
+  // Marks a delivery failed, with the final STS-AUTHZEN-0135 audit row.
+  // The caller stores the row.
+  private giveUp(row: Json, event: string, bound: number,
+                 why: string): void {
+    const { log, audit, errorCodes } = this.deps;
+    log.debug("Entering AccessRequests.giveUp().");
+    const delivery = this.ensureDelivery(row);
     delivery.state = 'failed';
     delivery.nextAt = 0;
     delivery.inflightUntil = 0;
-    self.save(task);
     audit.audit({ action: 'authzen.access-request.callback',
                   actor: 'the access request service', protocol: 'AuthZEN',
                   errorCode: 'STS-AUTHZEN-0135',
-                  detail: 'The ' + task.status + ' callback for ' + task.id +
-                          ' will not be tried again (' +
-                          delivery.attempts.length + ' of ' + bound +
-                          '). The task status is unchanged.' });
+                  detail: 'The ' + event + ' callback for ' + row.id +
+                          ' ' + why + ' (' + delivery.attempts.length +
+                          ' of ' + bound + '). The task status is ' +
+                          'unchanged.' });
     log.warn(errorCodes.tag('STS-AUTHZEN-0135') + 'authzen: the callback ' +
-             'for the access request ' + task.id + ' will not be tried ' +
-             'again.');
-    log.debug("Leaving AccessRequests.settleDelivery(). Given up.");
-    return false;
+             'for the access request ' + row.id + ' ' + why + '.');
+    log.debug("Leaving AccessRequests.giveUp().");
   }
 
   // -------------------------------------------------------------------------
@@ -2374,13 +2655,18 @@ class AccessRequests {
    *
    * @param task - the row
    * @param approver - who, and through which door
+   * @param action - the gate's action: `approve-access-request` (an
+   *   approval or a denial, the default) or `revoke-access-request`
    * @returns the gate's answer
    */
-  mayDecide(task: Json, approver: Approver): Json {
+  mayDecide(task: Json, approver: Approver, action?: string): Json {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering AccessRequests.mayDecide().");
     const gate = self.deps.loadGate();
+    const asked = action === GATE_REVOKE_ACTION
+      ? (gate.ACTION.REVOKE_ACCESS_REQUEST || GATE_REVOKE_ACTION)
+      : (gate.ACTION.APPROVE_ACCESS_REQUEST || GATE_ACTION);
     const identity = self.approverIdentity(approver.username);
     // A hot path inside one decision: no Entering/Leaving pair.
     const lower = function (value: unknown): string {
@@ -2388,7 +2674,7 @@ class AccessRequests {
     };
     const answer = gate.check({
       resource: gate.RESOURCE.AUTHZEN_ACCESS_REQUEST || GATE_RESOURCE,
-      action: gate.ACTION.APPROVE_ACCESS_REQUEST || GATE_ACTION,
+      action: asked,
       subject: { name: approver.username, kind: 'user',
                  authenticated: true, roles: approver.roles || [] },
       context: { door: approver.door },
@@ -2547,7 +2833,8 @@ class AccessRequests {
   }
 
   // Marks a task approved: the approval, its lifetime and its index row.
-  private approve(task: Json, approver: Approver, why: string): void {
+  // False when it could not be stored, and the task is then `failed`.
+  private approve(task: Json, approver: Approver, why: string): boolean {
     const self = this;
     const { log, helpers } = this.deps;
     log.debug("Entering AccessRequests.approve(). " + task.id);
@@ -2581,12 +2868,100 @@ class AccessRequests {
         approval.state = state;
       }
     }
-    task.approval = approval;
-    task.decidedBy = approval.approver;
-    self.finish(task, 'approved', { actor: approval.approver, why: why });
-    self.remember('approval', approval.id, task.id, {},
-                  Number(task.keepUntil));
-    log.debug("Leaving AccessRequests.approve().");
+    // THE APPROVAL IS STORED BEFORE THE TASK SAYS APPROVED (#1202): its
+    // index row first, kept as long as the task will be, then the task. A
+    // store that refuses either is a step that cannot complete — the task
+    // is `failed`, never an `approved` whose approval no re-evaluation can
+    // find.
+    const keepUntil = Math.max(now + RETENTION_S,
+                               Number(approval.approvedUntil));
+    const was = { approval: task.approval, decidedBy: task.decidedBy };
+    let stored = false;
+    try {
+      self.remember('approval', approval.id, task.id, {}, keepUntil);
+      task.approval = approval;
+      task.decidedBy = approval.approver;
+      self.finish(task, 'approved', { actor: approval.approver, why: why });
+      stored = true;
+    } catch (e) {
+      log.debug("Caught in AccessRequests.approve(): " +
+                ((e && e.message) || e));
+      self.unstore(task, approval, was, String((e && e.message) || e));
+    }
+    log.debug("Leaving AccessRequests.approve(). " + stored);
+    return stored;
+  }
+
+  // An approval that could not be stored: the task back to pending as it
+  // was, its index row dropped, and the task moved to `failed`.
+  private unstore(task: Json, approval: Json, was: Json,
+                  why: string): void {
+    const self = this;
+    const { log, index } = this.deps;
+    log.debug("Entering AccessRequests.unstore(). " + task.id);
+    try {
+      index.delete('approval:' + stsCrypto.credentialDigest(approval.id));
+    } catch (e) {
+      // The row may never have been written. A stray one names a task
+      // that is not approved, so verify() refuses it.
+      log.debug("Caught in AccessRequests.unstore(): " +
+                ((e && e.message) || e));
+    }
+    task.status = 'pending';
+    delete task.finishedAt;
+    task.approval = was.approval;
+    task.decidedBy = was.decidedBy;
+    self.finish(task, 'failed', {
+      actor: 'the access request service', code: 'STS-AUTHZEN-0142',
+      why: 'the approval by ' + String(approval.approver) + ' could not be ' +
+           'stored (' + why.slice(0, 200) + ')' });
+    log.debug("Leaving AccessRequests.unstore().");
+  }
+
+  /**
+   * Whether this person may revoke this approval. The policy is asked
+   * `revoke-access-request` (#1203). A repository policy that never names
+   * that action predates it, and is asked `approve-access-request`
+   * instead, the question every revocation was until then — so a
+   * deployment's own policy decides as it always did.
+   *
+   * @param task - the row
+   * @param approver - who, and through which door
+   * @returns the gate's answer
+   */
+  mayRevoke(task: Json, approver: Approver): Json {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.mayRevoke().");
+    const answer = self.mayDecide(task, approver, GATE_REVOKE_ACTION);
+    if (answer.allowed || self.policyNamesRevoke()) {
+      log.debug("Leaving AccessRequests.mayRevoke(). " + answer.allowed);
+      return answer;
+    }
+    log.debug("Leaving AccessRequests.mayRevoke(). The policy predates " +
+              "the action.");
+    return self.mayDecide(task, approver, GATE_ACTION);
+  }
+
+  // Whether the access-control policy in force names the revoke action:
+  // the built-in document does; a repository entry does when its text
+  // carries it. One that cannot be read is taken to name it, which asks
+  // the revoke question alone — the narrower answer.
+  private policyNamesRevoke(): boolean {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.policyNamesRevoke().");
+    let names = true;
+    try {
+      const loaded = this.deps.loadAccessPep().accessPolicy();
+      names = !loaded || !loaded.policy || !!loaded.builtIn ||
+        JSON.stringify(loaded.policy).indexOf(GATE_REVOKE_ACTION) >= 0;
+    } catch (e) {
+      log.debug("Caught in AccessRequests.policyNamesRevoke(): " +
+                ((e && e.message) || e));
+      names = true;
+    }
+    log.debug("Leaving AccessRequests.policyNamesRevoke(). " + names);
+    return names;
   }
 
   /**
@@ -2624,7 +2999,8 @@ class AccessRequests {
                        ? 'live approval' : 'pending access request') +
                      ' with that id in this realm.');
     }
-    const answer = self.mayDecide(task, approver);
+    const answer = decision === 'revoke'
+      ? self.mayRevoke(task, approver) : self.mayDecide(task, approver);
     if (!answer.allowed) {
       audit.audit({ action: 'authzen.access-request.approver-refused',
                     actor: approver.username, protocol: 'AuthZEN',
@@ -2636,12 +3012,35 @@ class AccessRequests {
       log.debug("Leaving AccessRequests.decide(). The policy refused.");
       return refused('STS-AUTHZEN-0088', 'The access-control policy does ' +
                      'not let you decide this request (action ' +
-                     GATE_ACTION + ' on ' + GATE_RESOURCE + '). ' +
+                     (decision === 'revoke' ? GATE_REVOKE_ACTION
+                                            : GATE_ACTION) +
+                     ' on ' + GATE_RESOURCE + '). ' +
                      String(answer.why || ''));
     }
+    // ON THE PORTAL'S DOOR A PERSON REVOKES ONLY AN APPROVAL THEY GAVE
+    // (#1203), asked after the policy so a refusal it makes is still its
+    // own: the page lists only those, and the policy question alone would
+    // let any permitted approver revoke another's. The console's door is
+    // an administrator's, and keeps the policy's answer.
+    if (decision === 'revoke' && approver.door === 'portal' &&
+        String(task.approval.approver || '') !== approver.username) {
+      audit.audit({ action: 'authzen.access-request.approver-refused',
+                    actor: approver.username, protocol: 'AuthZEN',
+                    errorCode: 'STS-AUTHZEN-0141',
+                    detail: approver.username + ' was refused the ' +
+                            'revocation of ' + task.id + ' on the portal: ' +
+                            'the approval is not one they gave.' });
+      log.debug("Leaving AccessRequests.decide(). Not their approval.");
+      return refused('STS-AUTHZEN-0141', 'You can revoke only an approval ' +
+                     'you gave.');
+    }
     if (decision === 'approve') {
-      self.approve(task, approver, 'approved by ' + approver.username +
-                   ' via the ' + approver.door);
+      if (!self.approve(task, approver, 'approved by ' + approver.username +
+                        ' via the ' + approver.door)) {
+        log.debug("Leaving AccessRequests.decide(). Not stored.");
+        return refused('STS-AUTHZEN-0142', 'The approval could not be ' +
+                       'stored, so the access request has failed.');
+      }
     } else if (decision === 'deny') {
       task.decidedBy = approver.username;
       self.finish(task, 'denied', { actor: approver.username,
@@ -2722,8 +3121,13 @@ class AccessRequests {
         nextAt: Number(task.callbackDelivery.nextAt) || 0,
         attempts: (task.callbackDelivery.attempts || []).map(
           function (one: Json) {
+            // `code` (#1202): '' for a delivery, the error code otherwise.
+            // An attempt recorded before it existed shows the code its
+            // outcome had.
             return { at: Number(one.at) || 0, status: Number(one.status) || 0,
-                     ok: !!one.ok, why: String(one.why || '') };
+                     ok: !!one.ok, why: String(one.why || ''),
+                     code: String(one.code || (one.ok ? ''
+                                                      : 'STS-AUTHZEN-0091')) };
           })
       } : null
     };
@@ -2768,10 +3172,14 @@ class AccessRequests {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering AccessRequests.awaiting().");
-    const out = self.list(Number.MAX_SAFE_INTEGER).filter(function (row) {
-      return row.status === 'pending' && self.eligible(username, row) &&
-        self.mayDecide(row, { username: username, door: 'portal' }).allowed;
-    }).slice(0, 100).map(function (row: Json) {
+    // THE PENDING INDEX, NOT THE STORE (#1203): the pending tasks only,
+    // whose number `authzen.accessRequestMaxPending` bounds, newest first.
+    const out = self.rowsOf(self.idsUnder(PENDING_KEY)).filter(
+      function (row: Json) {
+        return row.status === 'pending' && self.eligible(username, row) &&
+          self.mayDecide(row, { username: username,
+                                door: 'portal' }).allowed;
+      }).slice(0, 100).map(function (row: Json) {
       return self.viewOf(row);
     });
     log.debug("Leaving AccessRequests.awaiting(). " + out.length);
@@ -2782,8 +3190,9 @@ class AccessRequests {
    * The live approvals this person gave and may still revoke (#1203).
    * The approver recorded on the approval, exactly — an emergency
    * approval's approver is the door, so it is not listed here — and the
-   * same policy question as an approval. One past `approvedUntil` is
-   * included: `decide()` still revokes it.
+   * revocation's policy question. One past `approvedUntil` is included:
+   * `decide()` still revokes it. Read through the approver's own index
+   * row, so the cost is that person's approvals and nobody else's.
    *
    * @param username - the signed-in person
    * @returns the views
@@ -2793,15 +3202,36 @@ class AccessRequests {
     const { log } = this.deps;
     log.debug("Entering AccessRequests.grantedBy().");
     const who = String(username || '');
-    const out = self.list(Number.MAX_SAFE_INTEGER).filter(function (row) {
+    const ids = who ? self.idsUnder(AccessRequests.approverKey(who)) : [];
+    const out = self.rowsOf(ids).filter(function (row: Json) {
       const approval = row.approval;
       return row.status === 'approved' && approval && !approval.revokedAt &&
         approval.approver === who &&
-        self.mayDecide(row, { username: who, door: 'portal' }).allowed;
+        self.mayRevoke(row, { username: who, door: 'portal' }).allowed;
     }).slice(0, 100).map(function (row: Json) {
       return self.viewOf(row);
     });
     log.debug("Leaving AccessRequests.grantedBy(). " + out.length);
+    return out;
+  }
+
+  // The tasks an index row lists, newest first, each read with its
+  // deadline applied; an id whose task is gone is skipped.
+  private rowsOf(ids: string[]): Json[] {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.rowsOf(). " + ids.length);
+    const out: Json[] = [];
+    ids.forEach(function (id: string) {
+      const row = self.task(id);
+      if (row && row.id) {
+        out.push(row);
+      }
+    });
+    out.sort(function (a: Json, b: Json) {
+      return Number(b.createdAt) - Number(a.createdAt);
+    });
+    log.debug("Leaving AccessRequests.rowsOf(). " + out.length);
     return out;
   }
 
@@ -2835,15 +3265,32 @@ class AccessRequests {
   approversOf(task: Json): string[] {
     const { log } = this.deps;
     log.debug("Entering AccessRequests.approversOf().");
+    const out = this.approverWalk(task).names;
+    log.debug("Leaving AccessRequests.approversOf(). " + out.length);
+    return out;
+  }
+
+  // The walk `approversOf()` answers, and whether it is CERTAIN (#1202):
+  // the directory was readable, nothing threw, and every role the advice
+  // named is a configured static role, whose holders are all listed. A
+  // computed built-in role, a dynamic selectable role or an unknown one
+  // has holders nobody can list, so the walk is not certain then.
+  private approverWalk(task: Json): { names: string[]; certain: boolean } {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.approverWalk().");
     const terms: Json = task.terms || {};
     const out: string[] = [];
+    let certain = true;
     let hooks: Json = null;
     try {
       hooks = this.deps.loadAdmin().directoryHooks();
     } catch (e) {
-      log.debug("Caught in AccessRequests.approversOf(): " +
+      log.debug("Caught in AccessRequests.approverWalk(): " +
                 ((e && e.message) || e));
       hooks = null;
+    }
+    if (!hooks) {
+      certain = false;
     }
     // Hot paths of one walk: no Entering/Leaving pair.
     const addName = function (name: unknown): void {
@@ -2866,6 +3313,9 @@ class AccessRequests {
       const roles = this.deps.loadRoles();
       (terms.roles || []).forEach(function (name: string) {
         const row = roles.read(name);
+        if (!row || row.membershipMode === 'dynamic-selectable') {
+          certain = false;
+        }
         if (row) {
           (row.users || []).forEach(addName);
           (row.groups || []).forEach(function (group: string) {
@@ -2884,14 +3334,20 @@ class AccessRequests {
         });
       }
     } catch (e) {
-      log.debug("Caught in AccessRequests.approversOf(): " +
+      log.debug("Caught in AccessRequests.approverWalk(): " +
                 ((e && e.message) || e));
+      certain = false;
     }
     const subject = String((task.subject || {}).id || '').toLowerCase();
-    log.debug("Leaving AccessRequests.approversOf(). " + out.length);
-    return out.filter(function (one: string) {
+    const names = out.filter(function (one: string) {
       return one.toLowerCase() !== subject;
     });
+    // NAMED NOBODY IS NOT NOBODY: advice that named no approver at all is
+    // decided by an administrator, so it is never "certainly nobody".
+    const named = (terms.roles || []).length + (terms.groups || []).length +
+                  (terms.owners ? 1 : 0);
+    log.debug("Leaving AccessRequests.approverWalk(). " + names.length);
+    return { names: names, certain: certain && named > 0 };
   }
 
   /**
@@ -3039,9 +3495,12 @@ class AccessRequests {
       ? approval.state : '';
     const stateClaims = stateToken ? self.verifyApprovalState(stateToken)
                                    : null;
-    if (stateToken && (!stateClaims || String(stateClaims.id || '') !== id ||
-        !AccessRequests.sameTuple(stateClaims, given,
-          stateClaims.binding_context_members || []))) {
+    // A STATE THAT VERIFIES BUT NAMES ANOTHER TUPLE IS NOT A FORGERY
+    // (#1204): a PEP echoing a real approval for another resource is
+    // out_of_scope, next_action request — what it would be answered had it
+    // sent the id alone. The tuple is held below, against the row.
+    if (stateToken && (!stateClaims ||
+                       String(stateClaims.id || '') !== id)) {
       log.debug("Leaving AccessRequests.verify(). The state does not " +
                 "verify.");
       return { ok: false, reason: 'approval_unverifiable' };
@@ -3169,6 +3628,9 @@ class AccessRequests {
     let removed = 0;
     let retried = 0;
     let dropped = 0;
+    let failed = 0;
+    let held = 0;
+    const pendingIds: string[] = [];
     try {
       const rows: Json[] = [];
       tasks.forEach(function (row: Json) {
@@ -3183,21 +3645,60 @@ class AccessRequests {
           continue;
         }
         // THE SUBJECT INDEX'S BACKFILL (2026-11-16): a task written before
-        // it existed is noted here; a noted one costs a get.
+        // it existed is noted here; a noted one costs a get. The approver
+        // and pending indexes are repaired the same way (#1203).
         self.noteSubject(row);
+        self.noteApprover(row);
+        if (row.status === 'pending') {
+          pendingIds.push(String(row.id));
+        }
         if (row.status === 'pending' && Number(row.expiresAt) <= now) {
           if (self.finish(row, 'expired', {
                 actor: 'the access request service',
                 why: 'it reached its expires_at' })) {
             expired += 1;
           }
-        } else if (row.status !== 'pending' &&
-                   Number(row.keepUntil) <= now) {
+        } else if (row.status === 'pending') {
+          // A STEP THAT CANNOT COMPLETE (#1202): the advice named
+          // approvers, and they resolve, certainly, to nobody.
+          const walk = self.approverWalk(row);
+          if (walk.certain && !walk.names.length &&
+              self.finish(row, 'failed', {
+                actor: 'the access request service',
+                code: 'STS-AUTHZEN-0143',
+                why: 'the approvers its advice names resolve to nobody ' +
+                     'who may decide it' })) {
+            failed += 1;
+          }
+        } else if (Number(row.keepUntil) <= now &&
+                   self.deliveryOutstanding(row) &&
+                   now < Number(row.keepUntil) + self.horizonS(row)) {
+          // KEPT WHILE ITS CALLBACK IS STILL BEING TRIED (#1202), never
+          // past the bound's last attempt.
+          held += 1;
+          if (self.callbackDue(row, now)) {
+            self.notify(row);
+            retried += 1;
+          }
+        } else if (Number(row.keepUntil) <= now) {
+          if (self.deliveryOutstanding(row)) {
+            // The horizon passed with the delivery still open: the final
+            // row is written before the task goes.
+            const bound = Number((row.callbackDelivery || {}).bound) ||
+              Number((row.callback || {}).attempts) || 1;
+            self.giveUp(row, String(row.status), bound,
+                        'was not delivered before the task was removed');
+          }
           tasks.delete(row.id);
           self.unnoteSubject(row);
+          self.unnoteUnder(PENDING_KEY, String(row.id));
           if (row.approval) {
             index.delete('approval:' +
                          stsCrypto.credentialDigest(row.approval.id));
+            if (row.approval.approver) {
+              self.unnoteUnder(AccessRequests.approverKey(
+                String(row.approval.approver)), String(row.id));
+            }
           }
           if (row.idempotency) {
             index.delete(row.idempotency.key);
@@ -3207,6 +3708,29 @@ class AccessRequests {
           self.notify(row);
           retried += 1;
         }
+      }
+      // THE PENDING LIST, repaired: every task still pending, whether this
+      // walk found it or a submission since listed it.
+      const listed = self.idsUnder(PENDING_KEY).filter(function (id: string) {
+        const one = tasks.get(id);
+        return !!one && one.status === 'pending';
+      });
+      const repaired = rows.filter(function (one: Json) {
+        return one && one.status === 'pending' &&
+               pendingIds.indexOf(String(one.id)) >= 0;
+      }).map(function (one: Json) {
+        return String(one.id);
+      });
+      listed.forEach(function (id: string) {
+        if (repaired.indexOf(id) < 0) {
+          repaired.push(id);
+        }
+      });
+      if (repaired.length) {
+        index.set(PENDING_KEY, { tasks: repaired,
+                                 until: now + RETENTION_S * 30 });
+      } else if (index.get(PENDING_KEY)) {
+        index.delete(PENDING_KEY);
       }
       const stale: string[] = [];
       index.forEach(function (row: Json, key: string) {
@@ -3237,8 +3761,15 @@ class AccessRequests {
       parts.push(expired + ' access request(s) expired, ' + removed +
                  ' removed.');
     }
+    if (failed) {
+      parts.push(failed + ' access request(s) failed.');
+    }
     if (retried) {
       parts.push(retried + ' callback(s) retried.');
+    }
+    if (held) {
+      parts.push(held + ' finished access request(s) kept for a callback ' +
+                 'still being tried.');
     }
     if (dropped) {
       parts.push(dropped + ' denial record(s) removed.');
@@ -3272,8 +3803,11 @@ class AccessRequests {
                 'is later, removes a requestable denial a day after its ' +
                 'window, and retries a callback delivery that failed ' +
                 'with a network error or an HTTP 5xx, up to the attempt ' +
-                'bound (#1202). A read applies the deadline itself, so ' +
-                'this is the record and the clean-up, never what decides.',
+                'bound, each wait twice the last (#1202). A finished one ' +
+                'is kept while its callback is still being tried, and a ' +
+                'pending one whose approvers resolve to nobody is moved to ' +
+                'failed. A read applies the deadline itself, so this is ' +
+                'the record and the clean-up, never what decides.',
       owner: 'authzen/authzen_access_request.ts',
       kind: 'cluster', scope: 'realm',
       everyMs: function (): number {

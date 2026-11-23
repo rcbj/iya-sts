@@ -107,10 +107,18 @@
 // THE ENCRYPTION ITSELF happens at the attempt, in the transport's
 // composer (`mail_transports.ts`), because `send()` is synchronous and
 // openpgp.js is not; a key that no longer reads then is a dead letter
-// (STS-MAIL-0243). The outer Subject is replaced by a neutral one per
-// category (an encrypted message's Subject is not encrypted) and the real
-// one travels inside, as a protected header. Nothing new is signed: DKIM
-// already signs the outer message.
+// (STS-MAIL-0243). **A key or certificate is used only for an address it
+// names** (`openpgp_keys.ts` `encryptionFor()`): to the entry's `mail`, one
+// that does not name it is a choice that cannot be honoured (STS-MAIL-0241);
+// to another address — the notice to a former address, the link to a
+// pending one — it is not used, and that message goes unencrypted even
+// where `mail.encryptionRequired` names its template, because a message
+// encrypted to a key that address does not hold cannot be read there, and
+// refusing it would leave an address change impossible to finish. The
+// outer Subject is replaced by a neutral one per category (an encrypted
+// message's Subject is not encrypted) and the real one travels inside, as a
+// protected header. Nothing new is signed: DKIM already signs the outer
+// message.
 // ===========================================================================
 
 import os = require('os');
@@ -1533,10 +1541,14 @@ class Mail {
    *
    * @param spec - the template
    * @param username - the person; '' for a group or nobody
+   * @param address - the address the message goes to; '' for `mail`
+   * @param elsewhere - true when that address is not the entry's `mail`
+   *   (a former address, a pending recovery address or sign-in name)
    * @returns `{ kind: 'none' | 'openpgp' | 'smime', ... }`, or `{ refused:
    *   true, code, why }`
    */
-  encryptionPlan(spec: Json, username: string): Json {
+  encryptionPlan(spec: Json, username: string, address?: string,
+                 elsewhere?: boolean): Json {
     const { log } = this.deps;
     log.debug("Entering Mail.encryptionPlan(). " + spec.id);
     const required = [].concat(this.setting('mail.encryptionRequired') || [])
@@ -1545,8 +1557,30 @@ class Mail {
       }).indexOf(String(spec.id)) >= 0;
     let plan: Json = { kind: 'none' };
     if (username && this.deps.openpgpKeys) {
-      plan = this.deps.openpgpKeys().encryptionFor(username) ||
+      plan = this.deps.openpgpKeys().encryptionFor(username,
+                                                   String(address || '')) ||
         { kind: 'none' };
+    }
+    // A KEY IS USED ONLY FOR AN ADDRESS IT NAMES (header point 9). To an
+    // address that is not the entry's `mail` — the notice to the former
+    // address, a verification link to a pending one — a key that does not
+    // name it is not used, and the message goes UNENCRYPTED, even where
+    // mail.encryptionRequired names the template: encrypting it to that
+    // key would hand the address a message it cannot read, and refusing it
+    // would make an address change impossible to complete or to be told
+    // of. Those templates carry a notice or a one-time link meant for that
+    // address alone. To the entry's own `mail`, a key that does not name
+    // it is a choice that cannot be honoured, refused like any other
+    // (STS-MAIL-0241), never sent in the clear against the choice.
+    if (plan.kind === 'unbound') {
+      if (elsewhere) {
+        log.info('mail: ' + spec.id + ' to ' + username + '\'s ' +
+                 'non-primary address is not encrypted: ' +
+                 String(plan.why || 'the key does not name it') + '.');
+        log.debug("Leaving Mail.encryptionPlan(). Another address.");
+        return { kind: 'none', unbound: true };
+      }
+      plan = { kind: 'unavailable', chosen: plan.chosen, why: plan.why };
     }
     if (plan.kind === 'unavailable') {
       log.debug("Leaving Mail.encryptionPlan(). The choice cannot be kept.");
@@ -1616,7 +1650,11 @@ class Mail {
     }
     // ENCRYPTION (header point 9), decided here, before the dedup window and
     // the ceilings count the message.
-    const encryption = this.encryptionPlan(spec, group ? '' : username);
+    const elsewhere = !!(found && former && String(former).trim()
+      .toLowerCase() !== String(found.address || '').trim().toLowerCase());
+    const encryption = this.encryptionPlan(spec, group ? '' : username,
+                                           String(who.address || ''),
+                                           elsewhere);
     if (encryption.refused) {
       log.debug("Leaving Mail.queueOne(). Encryption.");
       return { refused: this.refuse(req, username, encryption.code,

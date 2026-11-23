@@ -100,8 +100,8 @@
     "text": "partial：存取評估 API（第 6 節），由 XACML 引擎依據領域根原則、透過每個領域的屬性目錄作出決定，支援 X-Request-ID 與第 11.3 節的挑戰；存取批次評估 API（第 7 節）及其三種語意；PDP 中繼資料（第 9 節）的兩種形式，包括 signed_metadata；供宣告類型之 PEP 使用的 Obligations Profile 草案；以及針對本服務自有的人員、應用程式、API、委派關係與原則動作的三個搜尋 API（第 8 節），分頁且不具傳遞性。尚缺：搜尋中逐結果的 obligations，以及仍為草案的 OAuth 設定檔。"
   },
   "stsmetadata.specs.authzen-arap.coverage": {
-    "en": "e785acbe5ead52ad",
-    "text": "partial：可請求的拒絕（context.access_request、evaluation_id、evaluated_at、reason），即領域原則以 access-request advice 標記的 Deny，依值繫結，使用本領域簽署的 binding_token（內嵌宣告）；帶 Idempotency-Key 的提交，201 或 202 以及 Task Handle；帶 Retry-After 的工作狀態端點；透過 POST 或 DELETE 取消；六種狀態；reevaluate 完成模式，approval.id 在可信狀態中解析，核准作為可信事實到達原則；next_action 及五種 reason；每種 problem 類型；中繼資料成員、jwks_uri 與能力。尚缺：以參照方式繫結的 evaluation_id、approval.state、雜湊繫結形式、機器可讀形式（form_url、request_schema_url）、display，以及 BULK、ACTOR 與 CATALOG 配套規範。"
+    "en": "6be544a62f94329b",
+    "text": "partial：可申請的拒絕（context.access_request、evaluation_id、evaluated_at、reason），即領域政策以 access-request 建議標記的 Deny，透過本領域簽署的 binding_token 依值綁定（內嵌宣告與 binding_hash），並透過拒絕記錄依參照綁定；帶 Idempotency-Key 的提交、201 或 202 及 Task Handle；帶 Retry-After 的任務狀態端點；以 POST 或 DELETE 取消；六種狀態；reevaluate 完成模式、在受信任狀態中解析的 approval.id、簽發並驗證的 approval.state（仍須查找），以及以受信任事實送達政策的核准；next_action 與五種原因；每種問題類型；中繼資料成員、jwks_uri 與能力；可申請拒絕上的 request_schema_url，即同源的提交選用補充內容的 JSON Schema。缺少：託管表單（form_url）與 display，以及 BULK、ACTOR 與 CATALOG 配套規範。"
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
     "en": "ca5109eae0e95b17",
@@ -715,6 +715,14 @@
     "en": "59b1734815ece664",
     "text": "partial：PKCS#10 要求的 id-aa-attestation 屬性（最多一個，恰好一個 AttestationBundle，僅限 certificate 及其他選項），透過 EST、SCEP 與 ACME 提供。驗證兩種聲明類型：TCG 的 tcg-attest-tpm-certify（採用修訂版 20 附錄 A.2.3 的語法），用於裝置設定檔（#257）；以及適用於每個設定檔的 YubiKey PIV 證明（#1955），位於 1.3.6.1.4.1.41482.3.2 之下，以插槽憑證為 stmt、f9 憑證放在 certs 中——這是本服務選定的類型，因為草案未定義任何類型。不讀取 CRMF 延伸（此處沒有 CMP），其他聲明類型只記錄、不驗證。新鮮度（第 6.2 節）透過 EST 上的 draft-ietf-lamps-attestation-freshness 實現，僅適用於 TPM 聲明：PIV 證明不攜帶 nonce。"
   },
+  "stsmetadata.specs.yubico-piv-attestation.coverage": {
+    "en": "244659759ede3102",
+    "text": "partial：插槽證明憑證透過 f9 證明憑證驗證至 Yubico 的 PIV 根憑證（Serial 263751，以及適用於韌體 5.7.4 及更新版本、帶有其 PIV 中繼憑證的 Attestation Root 1，皆隨附並釘選）或某個領域自己的根憑證；其金鑰與要求中的金鑰比對；讀取韌體、序號、PIN 與觸碰原則以及外型規格延伸，並將這些原則與領域的原則比對。卡片本身從不受管理：不寫入 PIN、PUK 或插槽。"
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "322d92ba9eb36fde",
+    "text": "minimal：四個金鑰插槽作為憑證設定檔（PIV Authentication 9a、Digital Signature 9c、Key Management 9d、Card Authentication 9e，後者預設不為任何人登入），以及在宣告 PIV Authentication 原則時，依其 urn:uuid subjectAltName 中的卡片 UUID 對應的外部 PIV 或 CAC 卡片（預設關閉）。不支援 FASC-N、CHUID、卡片管理或生物辨識。"
+  },
   "stsmetadata.specs.lamps-attestation-freshness.coverage": {
     "en": "555e31da7393d476",
     "text": "partial：透過 HTTPS 的 EST（第 5.1 節）——以 GET 及以 application/est-attestation-freshness+json 的 POST 存取 /nonce，len 在 8..64 範圍內受理（提高至 16 個八位元組）、到期、無需證明時回傳空 nonce、400 與 503、需經驗證，並以 cookie 與主體繫結至 CSR。nonce 即 TPM2_Certify 的 qualifyingData，作為 TPMS_ATTEST 的 extraData 檢查並只能使用一次。未實作：未定義任何 reqTypeInfo 類型（503），以及本服務不支援的 CMP（第 4 節）、透過 CoAP 的 EST（5.2）與 CMC（6）。"
@@ -762,6 +770,10 @@
   "stsmetadata.specs.rfc9580.coverage": {
     "en": "a2930bdb8ffe747d",
     "text": "partial：讀取 v6 與（RFC 4880）v4 可傳輸公開金鑰，驗證由其簽署金鑰作出的明文簽章，並將訊息加密至其加密金鑰，經典演算法透過 openpgp.js 完成。RFC 9980 複合金鑰在此讀取（見 rfc9980）。接受 Ed25519、Ed448、NIST 曲線上的 ECDSA 與 ECDH、X25519、X448 以及長度為 openpgp.minRsaBits 的 RSA；拒絕 DSA、ElGamal 與 Brainpool。缺少：簽署、解密、金鑰環、金鑰伺服器。"
+  },
+  "stsmetadata.specs.rfc9980.coverage": {
+    "en": "5feb46765c8bc465",
+    "text": "partial：登記時以及使用已儲存金鑰時的 ML-DSA-65+Ed25519 與 ML-DSA-87+Ed448 簽章，以及 ML-KEM-768+X25519 與 ML-KEM-1024+X448 加密。複合演算法計為後量子。openpgp.pqcOnly 只收窄登記。簽章的兩個部分由 common/crypto_impl/openpgp_pqc.js 核驗。缺少：SLH-DSA（演算法識別碼 32-34），且本服務不產生 RFC 9980 金鑰。openpgp.js 不解析這些金鑰。"
   },
   "stsmetadata.specs.rfc3156.coverage": {
     "en": "aa799b14a54ace0f",
@@ -878,6 +890,10 @@
   "stsmetadata.endpoints./access/v1/access-requests.what": {
     "en": "15c0d860d27c7cbe",
     "text": "提交一個被拒絕的評估的主體、資源、動作與內容，並附上其收到的拒絕（其 binding_token 與 expires_at，原樣回傳）；得到 202 與 Task Handle，或在立即作出決定時（原則允許的緊急存取）得到 201 及結果。只有被領域原則以 advice urn:sts:xacml:advice:access-request 標記的 Deny 才可請求。與評估相同的呼叫端入口與 AUTHZEN_PEPS；依呼叫端遵守 Idempotency-Key；回呼僅發往為該呼叫端註冊的 URL。每次拒絕都是 problem+json。"
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/schema.what": {
+    "en": "ec6a3b36123f646a",
+    "text": "GET 提交可加入的補充內容的 JSON Schema（draft 2020-12）：context.business_justification，以及 requested_access.requested_until 和 emergency，後者須附理由。公開，與 access_request_endpoint 同源；可申請拒絕的 request_schema_url 指向它。不託管任何表單，因此任何拒絕都不帶 form_url。API 或該設定檔關閉時回應 501。在任務狀態路徑之前註冊，否則後者會把「schema」當作 id。"
   },
   "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
     "en": "264083b977756230",
@@ -1074,6 +1090,14 @@
   "stsmetadata.endpoints./pki/revocation.what": {
     "en": "6e82cd30ac736775",
     "text": "非規格端點，但仍刻意放在這裡：將用戶端指向這些端點的人需要知道這些位址「是」什麼，而用 `openssl x509 -text` 從憑證中讀出它們並不是好的第一步。每個授權單位一列，含其主體、已撤銷的憑證數量，以及兩種協定（http、ldap）的 CRL，旁邊是其 OCSP 與 caIssuers 位址。其中「沒有」序號——已撤銷清單就是 CRL，旁邊再放一份 JSON 複本就成了同一問題的第二個答案：會過時的那個，也是沒有人簽署的那個。它明白地說明本服務「發布」撤銷資訊，但無法讓任何人去查詢它，這對每個憑證授權單位都成立，也正是用戶端作者會將其堆疊指向這裡的原因。不設閘門，因為其中的一切早已包含在本服務發出的每張憑證中。"
+  },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "c8819f794e61f398",
+    "text": "NON-SPEC（#1955 P3）：領域範圍的 OpenSSH 使用者 CA 金鑰，以 authorized-key 行發布，供 SSH 伺服器信任。無門控且 `no-store`；對應的 CA 私密金鑰從不離開本服務。"
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "ed928008015e78a8",
+    "text": "NON-SPEC（#1955 P3）：領域範圍的 OpenSSH KRL，在呼叫方撤銷憑證或回報硬體權杖遺失時更新。無門控且 `no-store`；必須設定 SSH 伺服器去查詢它，因為本服務無法讓信賴方這樣做。"
   },
   "stsmetadata.endpoints./admin-api/xacml.what": {
     "en": "2efd1b442d450758",
@@ -2220,12 +2244,16 @@
     "text": "NON-SPEC (#1955 P4)。管理員從供應商 PSKC 種子檔案匯入的 HOTP 與 TOTP 權杖，包括未指派、已指派或已停用者，可分頁並依序號或人員搜尋。絕不包含密鑰。對應 GET /admin/hardware-tokens（其 OATH 分頁）。"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-"en": "0d649147af0cbe04",
-"text": "NON-SPEC (#1955)。lost，帶 { key }：將權杖標記為遺失，移除其上的每個密碼金鑰，以 keyCompromise 為由撤銷其上的每張憑證，為每一項傳送 CAEP credential-change，並結束由它們登入的工作階段。enrol-piv，帶 { username, profile, csr, attestationCertificate?, attestationIssuer? }：透過 EST 簽發 CA 為此人簽發 PIV 插槽憑證，驗證其 YubiKey PIV 證明並記錄該 YubiKey。recover-key，帶 { username, serial }：此人的託管 piv-key-management 金鑰，存取控制原則僅允許 PIV_KEY_RECOVERY 執行。即主控台在該頁面上的三項動作。"
+    "en": "0d649147af0cbe04",
+    "text": "NON-SPEC (#1955)。lost，帶 { key }：將權杖標記為遺失，移除其上的每個密碼金鑰，以 keyCompromise 為由撤銷其上的每張憑證，為每一項傳送 CAEP credential-change，並結束由它們登入的工作階段。enrol-piv，帶 { username, profile, csr, attestationCertificate?, attestationIssuer? }：透過 EST 簽發 CA 為此人簽發 PIV 插槽憑證，驗證其 YubiKey PIV 證明並記錄該 YubiKey。recover-key，帶 { username, serial }：此人的託管 piv-key-management 金鑰，存取控制原則僅允許 PIV_KEY_RECOVERY 執行。即主控台在該頁面上的三項動作。"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
     "en": "b55c0cdd477d183e",
-"text": "回報硬體權杖遺失並停用其憑證、簽發 PIV 插槽憑證，或移交託管金鑰"
+    "text": "回報硬體權杖遺失並停用其憑證、簽發 PIV 插槽憑證，或移交託管金鑰"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
+    "en": "1716521c9c5e119d",
+    "text": "NON-SPEC (#1955)。某人的託管 piv-key-management 憑證（piv.keyEscrow）：序號、主體、有效期間以及每張憑證是否已被撤銷。絕不包含金鑰。與 GET /admin/hardware-tokens 對應。"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -3131,19 +3159,19 @@
     "en": "9547cda6898c37a6",
     "text": "在登入後要求一個後量子密碼金鑰，然後建立其暫扣的單一登入工作階段"
   },
-"stsmetadata.endpoints./wsapi/2.0/verify.what": {
+  "stsmetadata.endpoints./wsapi/2.0/verify.what": {
     "en": "ff0550a4318594c6",
     "text": "YUBICO 驗證協定 2.0（#1955 P5）。id、otp、nonce 和 h 的 GET 或 POST。預設關閉：路由回應 OPERATION_NOT_ALLOWED 且不簽章。開啟後，在包括開發模式在內的每種模式下核對用戶端 id 與 HMAC-SHA1；nonce 保留五分鐘；相符的 OTP 被消耗。Cache-Control: no-store。不向 YubiCloud 傳送任何內容。"
   },
-"stsmetadata.endpoints./wsapi/2.0/verify.effect": {
+  "stsmetadata.endpoints./wsapi/2.0/verify.effect": {
     "en": "bb2bc4011c8240ac",
     "text": "為簽署了要求的用戶端核對 YubiKey OTP，或在 yubiotp.ykval 關閉時回應 OPERATION_NOT_ALLOWED"
   },
-"stsmetadata.endpoints./authn/roles.what": {
+  "stsmetadata.endpoints./authn/roles.what": {
     "en": "88814e89f81f8d86",
     "text": "可動態選擇的角色（#1072）。完成所有驗證因素後，對於其領域定義了動態角色的應用程式（除非 roles.dynamicSelection 或應用程式的 appDynamicRoleSelection 將其關閉），登入會被暫停，同時為此人判定每個動態角色自身的 XACML 資格政策；只有 Permit 才會提供角色。如果此人勾選了「為此次登入選擇角色」，或者提供了必選角色，此頁面會列出可選的角色；「繼續」（/authn-api/mfa/{id}/roles）會將選擇與該步驟的提供內容以及政策再次核對，然後啟動工作階段，並將選擇記錄在工作階段記錄中，絕不寫入目錄。之後該應用程式的權杖會攜帶所選角色，每次簽發時都會再次依其政策判定。需要由被暫停的登入產生的 ?mfa= 識別碼；直接造訪會回傳 400。"
   },
-"stsmetadata.endpoints./authn/roles.effect": {
+  "stsmetadata.endpoints./authn/roles.effect": {
     "en": "fc2116e31d3ead37",
     "text": "詢問此次登入要使用哪些可動態選擇的角色，然後以該選擇啟動被暫停的工作階段"
   },
@@ -4186,21 +4214,5 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "一個參數"
-  },
-  "stsmetadata.specs.yubico-piv-attestation.coverage": {
-    "en": "244659759ede3102",
-    "text": "partial：插槽證明憑證透過 f9 證明憑證驗證至 Yubico 的 PIV 根憑證（Serial 263751，以及適用於韌體 5.7.4 及更新版本、帶有其 PIV 中繼憑證的 Attestation Root 1，皆隨附並釘選）或某個領域自己的根憑證；其金鑰與要求中的金鑰比對；讀取韌體、序號、PIN 與觸碰原則以及外型規格延伸，並將這些原則與領域的原則比對。卡片本身從不受管理：不寫入 PIN、PUK 或插槽。"
-  },
-  "stsmetadata.specs.fips201.coverage": {
-    "en": "322d92ba9eb36fde",
-    "text": "minimal：四個金鑰插槽作為憑證設定檔（PIV Authentication 9a、Digital Signature 9c、Key Management 9d、Card Authentication 9e，後者預設不為任何人登入），以及在宣告 PIV Authentication 原則時，依其 urn:uuid subjectAltName 中的卡片 UUID 對應的外部 PIV 或 CAC 卡片（預設關閉）。不支援 FASC-N、CHUID、卡片管理或生物辨識。"
-  },
-  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
-    "en": "1716521c9c5e119d",
-    "text": "NON-SPEC (#1955)。某人的託管 piv-key-management 憑證（piv.keyEscrow）：序號、主體、有效期間以及每張憑證是否已被撤銷。絕不包含金鑰。與 GET /admin/hardware-tokens 對應。"
-  },
-  "stsmetadata.specs.rfc9980.coverage": {
-    "en": "5feb46765c8bc465",
-    "text": "partial：登記時以及使用已儲存金鑰時的 ML-DSA-65+Ed25519 與 ML-DSA-87+Ed448 簽章，以及 ML-KEM-768+X25519 與 ML-KEM-1024+X448 加密。複合演算法計為後量子。openpgp.pqcOnly 只收窄登記。簽章的兩個部分由 common/crypto_impl/openpgp_pqc.js 核驗。缺少：SLH-DSA（演算法識別碼 32-34），且本服務不產生 RFC 9980 金鑰。openpgp.js 不解析這些金鑰。"
   }
 }

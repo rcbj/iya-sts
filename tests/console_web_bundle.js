@@ -826,10 +826,15 @@ function childMain() {
         const value = (/\bvalue="([^"]*)"/i.exec(tag) || [])[1];
         const typed = type === 'text' || type === 'email' ||
                       type === 'url' || type === 'tel';
+        // `checked` AS AN ATTRIBUTE, not a word inside one: a yes/no pair
+        // (#1132) carries its field's description in `title`, and the
+        // passkey policy's `allowUsernameless` says "checked" there, which
+        // read both radios as chosen.
+        const bare = tag.replace(/"[^"]*"/g, '""');
         if (name && name !== 'action' && type !== 'submit' &&
             type !== 'file' &&
             ((type !== 'checkbox' && type !== 'radio') ||
-             /\bchecked\b/i.test(tag) || (filled && type === 'checkbox'))) {
+             /\bchecked\b/i.test(bare) || (filled && type === 'checkbox'))) {
           add(name, filled && typed && !value ? 'filled'
             : value === undefined ? (type === 'checkbox' ? 'on' : '')
                                   : value.replace(/&amp;/g, '&')

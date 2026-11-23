@@ -95,6 +95,10 @@
     "en": "4b0c4feb0af59f04",
     "text": "एक अभिगम अनुरोध जमा करें"
   },
+  "endpoints.route./access/v1/access-requests/schema.name": {
+    "en": "e39be1976aa651db",
+    "text": "एक्सेस अनुरोध का सबमिशन स्कीमा"
+  },
   "endpoints.route./access/v1/access-requests/:id.name": {
     "en": "c8bcbb33d07cfb8f",
     "text": "एक अभिगम अनुरोध की कार्य स्थिति"
@@ -290,6 +294,14 @@
   "endpoints.route./pki/revocation.name": {
     "en": "f399711ce1261bf4",
     "text": "प्रत्येक CRL और OCSP उत्तरदाता जिसे यह सेवा प्रकाशित करती है"
+  },
+  "endpoints.route./pki/ssh-user-ca/:scope.name": {
+    "en": "a3f367e6aa3bd539",
+    "text": "क्षेत्र की OpenSSH उपयोगकर्ता CA की सार्वजनिक कुंजी"
+  },
+  "endpoints.route./pki/ssh-user-krl/:scope.name": {
+    "en": "a6ecaa76d097f280",
+    "text": "क्षेत्र की OpenSSH उपयोगकर्ता कुंजी निरसन सूची"
   },
   "endpoints.route./admin-api/xacml.name": {
     "en": "d3b1d402a612012c",
@@ -1264,8 +1276,12 @@
     "text": "आयात किए गए OATH टोकन"
   },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-"en": "33209f967f070175",
-"text": "हार्डवेयर टोकन क्रियाएँ"
+    "en": "33209f967f070175",
+    "text": "हार्डवेयर टोकन क्रियाएँ"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "एस्क्रो की गई PIV कुंजियाँ"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
@@ -1911,11 +1927,11 @@
     "en": "69876d051e66729c",
     "text": "लॉगिन-पश्चात गतिविधि चरण"
   },
-"endpoints.route./wsapi/2.0/verify.name": {
+  "endpoints.route./wsapi/2.0/verify.name": {
     "en": "0734c12f6e3eb870",
     "text": "YK-VAL 2.0 सत्यापन"
   },
-"endpoints.route./authn/roles.name": {
+  "endpoints.route./authn/roles.name": {
     "en": "d10487ebcbc8b238",
     "text": "गतिशील भूमिका चरण"
   },
@@ -2630,9 +2646,5 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (क्लाइंट प्रमाणपत्र माँगा जाता है, कभी आवश्यक नहीं)"
-  },
-  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
-    "en": "f46d01f7581b5379",
-    "text": "एस्क्रो की गई PIV कुंजियाँ"
   }
 }

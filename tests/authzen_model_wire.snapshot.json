@@ -3786,7 +3786,7 @@
     "type": "about:blank",
     "title": "Bad request",
     "status": 400,
-    "detail": "callback.endpoint must be an https URL an administrator registered for this application; this service never dials one taken from a request alone."
+    "detail": "callback.endpoint must be an https URL an administrator registered for this caller; this service never dials one taken from a request alone."
    }
   },
   {
@@ -3809,7 +3809,7 @@
     "type": "about:blank",
     "title": "Bad request",
     "status": 400,
-    "detail": "A callback is registered only for an application."
+    "detail": "callback.events must be an array of event names."
    }
   },
   {
@@ -4100,7 +4100,7 @@
     "context": {
      "evaluation_id": "<eval>",
      "evaluated_at": "<time>",
-     "reason": "approval_unverifiable",
+     "reason": "out_of_scope",
      "access_request": {
       "expires_at": "<time>",
       "endpoint": "https://<port>/realm/azwire/access/v1/access-requests",
@@ -4156,7 +4156,7 @@
        }
       }
      },
-     "next_action": "none"
+     "next_action": "request"
     }
    }
   },
@@ -8681,7 +8681,7 @@
     "type": "about:blank",
     "title": "Bad request",
     "status": 400,
-    "detail": "callback.endpoint must be an https URL an administrator registered for this application; this service never dials one taken from a request alone."
+    "detail": "callback.endpoint must be an https URL an administrator registered for this caller; this service never dials one taken from a request alone."
    }
   },
   {
@@ -8705,7 +8705,7 @@
     "type": "about:blank",
     "title": "Bad request",
     "status": 400,
-    "detail": "A callback is registered only for an application."
+    "detail": "callback.events must be an array of event names."
    }
   },
   {
@@ -9005,7 +9005,7 @@
     "context": {
      "evaluation_id": "<eval>",
      "evaluated_at": "<time>",
-     "reason": "approval_unverifiable",
+     "reason": "out_of_scope",
      "access_request": {
       "expires_at": "<time>",
       "endpoint": "https://<port>/realm/azwirep/access/v1/access-requests",
@@ -9061,7 +9061,7 @@
        }
       }
      },
-     "next_action": "none"
+     "next_action": "request"
     }
    }
   },

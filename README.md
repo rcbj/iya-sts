@@ -130,13 +130,18 @@ the modules in it.
 | [Kerberos and SPNEGO](docs/v1.2.0/kerberos.md) | RFC 4120, RFC 4121, RFC 4178, RFC 4559, MS-KKDCP, MS-SFU | A KDC on TCP/UDP 88, a Kerberized service, and SPNEGO sign-in over HTTP. |
 | [LDAP](docs/v1.2.0/ldap.md) | RFC 4511 | The embedded directory on 389 and LDAPS 636 — the store for people, groups and applications. |
 | [SCIM](docs/v1.2.0/scim.md) | RFC 7642, RFC 7643, RFC 7644 | Provisioning into that same directory. |
-| [Authentication](docs/v1.2.0/authentication.md) | WebAuthn Level 3, RFC 6238, RFC 4226 | Passwords, security keys, one-time codes, recovery codes and emailed codes. |
+| [Authentication](docs/v1.2.0/authentication.md) | WebAuthn Level 3, CTAP 2.1, FIDO U2F, RFC 6238 | Passwords, passkeys (including credProtect and imported U2F keys), recovery codes and emailed codes. |
+| [One-time code tokens](docs/v1.2.0/one-time-code-tokens.md) | RFC 4226 (HOTP), RFC 6030 (PSKC) | A counter-based second factor from a YubiKey HOTP slot or a vendor seed file. |
+| [YubiKey OTP](docs/v1.2.0/yubiotp.md) | Yubico OTP, YK-VAL 2.0 | Local validation of a YubiKey OTP, and an optional YK-VAL 2.0 server. Nothing is sent to YubiCloud. |
+| [Hardware tokens](docs/v1.2.0/hardware-tokens.md) | NIST SP 800-73-4, FIPS 201-3, YubiKey PIV attestation, WebAuthn enterprise attestation | A register of physical keys, PIV certificates from attested keys, and lost-token retirement. |
+| [OpenPGP keys and encrypted mail](docs/v1.2.0/openpgp.md) | RFC 9580, RFC 4880, RFC 9980, RFC 3156, RFC 8551, RFC 9629, RFC 9935, OpenPGP Web Key Directory | A person's OpenPGP key, publication in the Web Key Directory, and mail encrypted to that key or to an S/MIME certificate, classical or post-quantum. |
 | [TLS / mutual TLS](docs/v1.2.0/tls.md) | RFC 8446, RFC 5280 | Client certificates on the main port, and certificate sign-in. |
 | [OpenID for Verifiable Credentials](docs/v1.2.0/oid4vci.md) | OpenID4VCI 1.0, OpenID4VP 1.0, SD-JWT VC, W3C DID Core, Token/Bitstring Status List | A credential issuer, a verifier, status lists and wallet sign-in. |
 | [Shared Signals](docs/v1.2.0/shared-signals.md) | OpenID SSF 1.0, CAEP, RISC, RFC 8417, RFC 8935/8936 | A security event transmitter, and a receiver of its own. |
 | [SPIFFE](docs/v1.2.0/spiffe.md) | SPIFFE, SPIRE Server API | Bundle endpoint, Workload API and SPIRE Server API per trust realm. |
 | [XACML](docs/v1.2.0/xacml.md) | XACML 3.0, ALFA | A policy decision point that decides this service's own issuance and access. |
-| [Certificate authority](docs/v1.2.0/pki.md) | RFC 5280, RFC 6960, RFC 8555, RFC 7030, RFC 8894 | A Root, an Intermediate per realm, CRLs and OCSP, and ACME, EST and SCEP enrollment. |
+| [Certificate authority](docs/v1.2.0/pki.md) | RFC 5280, RFC 6960, RFC 8555, RFC 7030, RFC 8894, OpenSSH PROTOCOL.certkeys and PROTOCOL.krl | A Root, an Intermediate per realm, CRLs and OCSP, ACME, EST and SCEP enrollment, and an OpenSSH user CA per realm. |
+| [Keys in a hardware security module](docs/v1.2.0/hsm.md) | PKCS #11 3.x, RFC 7512 | The key-encryption key, and a realm's classical signing keys, inside a PKCS #11 module. |
 | [Mail](docs/v1.2.0/mail.md) | SMTP, DKIM | Outbound mail for password reset, verification and security notices. |
 
 `GET /admin/sts-metadata` lists every endpoint from the running router, with the

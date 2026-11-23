@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5974** of them, in **57** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5987** of them, in **57** subsystems.
 
 ## Where a code appears
 
@@ -52,13 +52,13 @@ is an ordinary outcome.
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 21
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 112
-* [Worker pools (`STS-WORKER`)](#sts-worker) — 56
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 115
+* [Worker pools (`STS-WORKER`)](#sts-worker) — 57
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 116
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 201
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 283
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 285
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
@@ -77,7 +77,7 @@ is an ordinary outcome.
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 35
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 63
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 64
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 174
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
@@ -89,11 +89,11 @@ is an ordinary outcome.
 * [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 35
 * [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 30
 * [PIV key attestation (`STS-PIV`)](#sts-piv) — 26
-* [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 28
+* [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 30
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 252
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 117
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 140
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 121
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 301
@@ -338,8 +338,9 @@ Raised from: common/request_pool.js, common/request_worker.ts, common/service_st
 | `STS-WORKER-0052` | A request worker revoked something a refresh token rests on (a session, a token, a refresh family, a grant or an account) after the answer's headers had gone, so the front process could not file it for the refresh grant's wait before the client saw the answer (the review of #879). The revocation stands; a refresh routed to a worker that has not applied it may be answered until the workers converge. Logged at the first and every hundredth. | Nothing: the request is answered as it was |
 | `STS-WORKER-0053` | A dispatched request or operation was refused because its request worker had not caught up with the writes answered before it within workers.readBarrierTimeoutMs; answering from what that worker held could have been wrong. The worker's STS-STORE-0039 line says where its change pull's time went. | HTTP 503 (Retry-After: 5), plain text; an LDAP operation LDAP_UNAVAILABLE, a Kerberos message KDC_ERR_SVC_UNAVAILABLE |
 | `STS-WORKER-0054` | A request the front process answers itself was refused because that process had not caught up with the change log within workers.readBarrierTimeoutMs; answering from its own copy could have been wrong. | HTTP 503 (Retry-After: 5), plain text |
-| `STS-WORKER-0055` | A request worker reported that its change-log pull waited on its own flush past workers.readBarrierTimeoutMs (STS-STORE-0176), so the front process retired it — nothing more routed to it, then drained — and forks a replacement into its slot when it exits. A pool that is stopping or has given up keeps the worker, and the line says why. | — |
+| `STS-WORKER-0055` | A request worker reported that its change-log pull waited on its own flush past workers.readBarrierTimeoutMs (STS-STORE-0176), so the front process retired it — nothing more routed to it, then drained, waiting for its own flush to settle — and forks a replacement into its slot when it exits. A pool that is stopping or has given up keeps the worker, and the line says why. | — |
 | `STS-WORKER-0056` | A request worker retired because its change-log pull was wedged (STS-WORKER-0055) did not finish draining within 8000 ms and was ended; its replacement follows as for any worker that exits. | — |
+| `STS-WORKER-0057` | A request worker was ended, or exited, with its own flush still out past ten times workers.readBarrierTimeoutMs after it began (5 minutes by default): the flush was given up on, and the writes in it may not have reached the store. A flush that settles before then is waited for. | Log line |
 
 ## STS-STORE
 
@@ -463,7 +464,8 @@ Raised from: persistence/.
 | `STS-STORE-0173` | A background build of an index the store was owed (#876, #882) — CREATE INDEX CONCURRENTLY on PostgreSQL, an in-place ALTER on MariaDB — failed. The service goes on without the index, by a slower plan; the next start tries again, or the owner runs the upgrade script. | none — the store opens without it |
 | `STS-STORE-0174` | A realm another process changed could not be applied in this one: the realm registry refused the replicated update. This process keeps the realm as it was until a later change applies, and does not write its copy back over the store. | none — logged; the request that wrote it was already answered |
 | `STS-STORE-0175` | A minted row another process wrote could not be merged into the copy this process holds (the store's merge threw), so the arriving row replaced the held copy, as it did before such rows were merged. | none — logged |
-| `STS-STORE-0176` | A change-log apply of a directory entry waited for this process's own flush of that entry past workers.readBarrierTimeoutMs and the flush had not settled. The pull fails before its position moves, so the row is read again and never dropped; a request worker asks the front process to replace it (STS-WORKER-0055). Reported once a flush; a read barrier's STS-STORE-0039 line names the wait while it lasts. | — |
+| `STS-STORE-0176` | A change-log apply of a directory entry waited for this process's own flush of that entry past workers.readBarrierTimeoutMs and the flush had not settled. The pull fails before its position moves, so the row is read again and never dropped; a request worker asks the front process to replace it only once the flush is stuck (STS-STORE-0177). Reported once a flush; a read barrier's STS-STORE-0039 line names the wait while it lasts. | — |
+| `STS-STORE-0177` | A request worker's own flush has been out four times workers.readBarrierTimeoutMs (2 minutes by default), so the worker asks the front process to replace it (STS-WORKER-0055). Its drain waits for that flush to settle until ten times the bound after it began, so a flush that is only slow keeps its writes. | Log line |
 
 ## STS-CLUSTER
 
@@ -1139,6 +1141,8 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0294` | An SSH user certificate request (#1955 P3) had no UID, named a principal the access policy refused, or its hardware evidence could not be verified or recorded. | The account API refuses the request |
 | `STS-PKI-0295` | A person requested SSH user certificates (#1955 P3) too often and the shared rate limiter refused it. | The account API refuses the request with HTTP 429 |
 | `STS-PKI-0296` | A write turned on pki.sshUserCaPqcOnly and pki.sshUserCaPqcAlongsideClassical together. One narrows a new certificate to the ML-DSA authority; the other issues a classical certificate and an ML-DSA certificate. They cannot both be on. | The console and the management API refuse the write |
+| `STS-PKI-0297` | An SSH user certificate was asked for while pki.sshUserCaPqcOnly is on, and the realm has no ML-DSA SSH user CA: this runtime cannot generate ML-DSA, ssh-mldsa-65 is not in pki.sshUserCaAlgorithms, or the authority could not be made. No classical certificate is issued in its place. | The account API refuses the request with HTTP 503 |
+| `STS-PKI-0298` | A public SSH user CA request named an algorithm other than ssh-mldsa-65, or asked for the ML-DSA authority of a realm that has none. | GET /pki/ssh-user-ca/{scope} answers 400 or 404 |
 
 ## STS-ENROLL
 
@@ -4061,6 +4065,7 @@ Raised from: tls/.
 | `STS-TLS-0061` | A TLS listener already held its bound of connections that failed at the TLS layer, so another was closed at once rather than held for its alert to be read, and the TCP reset could discard the alert (tls/alert_close.ts, 2026-11-13). | none (logged): the connection closes with its alert sent |
 | `STS-TLS-0062` | A server-side TLS socket has no raw socket under it (TLSSocket._parent), so a connection that fails at the TLS layer is closed at once and its alert can be lost to the TCP reset (tls/alert_close.ts, 2026-11-13). | none (logged once) |
 | `STS-TLS-0063` | A certificate this realm issued names its holder as a service account (urn:sts:sa:<name>, #1827), and in its realm that entry is not a service account, or there is none. The TLS client gate (tls_client_certificates.js identityOf()) refuses it as an identity at every door that asks it; each door refuses it under its own code for a certificate that is not an identity. | none (logged): the door's own refusal |
+| `STS-TLS-0064` | Two client-truststore anchors share a subject and not a key. OpenSSL looks an issuer up by subject name, so the later one is shadowed: a certificate it issued does not verify (DEPTH_ZERO_SELF_SIGNED_CERT) while the earlier one is installed. The add is kept and warned (the row's shadowedBy names the earlier fingerprint). Presenting the shadowed certificate itself is recognised by its fingerprint and verified (#1242). | the add succeeds with warning; the handshake of the certificate itself verifies |
 
 ## STS-VC
 
@@ -5145,6 +5150,8 @@ Raised from: common/openpgp_keys.ts, common/crypto.js (section 19), portal/accou
 | `STS-OPENPGP-0026` | A post-quantum OpenPGP key (RFC 9980), or a proof signed with one, could not have its ML-DSA half checked on this runtime, so the key was not stored and the proof was not accepted. The EdDSA half alone is not enough. | HTTP 400 (the page with the sentence) |
 | `STS-OPENPGP-0027` | A write turned on openpgp.pqcOnly and openpgp.pqcAlongsideClassical together. Post-quantum only accepts a post-quantum key; alongside requires a post-quantum key and a separate classical one. The write was refused. | HTTP 400 (the settings write) |
 | `STS-OPENPGP-0028` | An S/MIME message to an ML-KEM certificate could not be built: this runtime cannot encapsulate (ML-KEM needs OpenSSL 3.5). The message was not sent under a classical algorithm instead. | the mail send; STS-MAIL-0243 carries the sentence |
+| `STS-OPENPGP-0029` | The proof of possession offered with an OpenPGP key carries more than one signature. A proof is signed once, by one key, so that the signer and the creation time judged are the signature that verified. | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0030` | A person's mail address changed and the OpenPGP key whose user ids name only the former address could not be retired from their entry, or an S/MIME choice whose certificate does not name the new address could not be put back to none. Mail is still not encrypted to either for the new address: a key or certificate is used only for an address it names. | none (a log line; the directory write that changed the address is unaffected) |
 
 ## STS-SVCACCT
 
@@ -5605,6 +5612,9 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0135` | PEP_TLS_CERT is set, or PEP_TLS_KEY is set beside PEP_ASSERTION_KEY, and the remote PEP no longer presents a client certificate to the service: it authenticates every call with a DPoP-bound access token from its assertion key (PEP_ASSERTION_KEY, certified by issue-pep-credential). The variable is ignored for that; PEP_TLS_KEY alone is still read as the fallback assertion key (STS-XPEP-0127). Logged once at start. | none — a warning in the PEP's log |
 | `STS-XPEP-0136` | The remote PEP has a CRL directory (PEP_CRL_DIR, or crl/ beside PEP_TLS_CERT) and PEP_CRL_HTTP is not set, so the CRL-only plain-HTTP listener on PEP_PORT is not bound: it served the CRLs of the client certificate the PEP no longer presents (phase 4 of #1827's follow-up). PEP_CRL_HTTP=true binds it. Logged once at start. | none — a notice in the PEP's log |
 | `STS-XPEP-0137` | A remote PEP HTTPS listener requires a client certificate (requireClientCertificate) and has no authority to verify one against: no readable trustAnchorsFile, and trustIssuedClientCertificates off or PEP_AUTHZEN_CLIENT_CA not set (a reverse-proxy listener has only the anchors file). The listener is refused, fail-closed: a listener the service defined is not bound and is reported failed (reason other); one of the environment's keeps its socket and closes every connection unanswered, reported failed, with the sentence as GET /'s https.problem. Until 2026-11-16 the API listener asked nobody and admitted everybody. A tuning with a trust source, or without the requirement, serves again. | none — an error in the PEP's log; the listener serves nothing |
+| `STS-XPEP-0138` | A caller asked this edge PDP for one of the AuthZEN Search APIs (POST /access/v1/search/subject, resource or action). Those are answered by the service, which holds the directory and the resource and action catalogues. This edge answers 501, before admission and without reading the body, and does not advertise the paths. The code is logged and not sent. A turned-off edge, or one that has not pulled, answers that condition first (STS-XPEP-0044, STS-XPEP-0043, STS-AUTHZEN-0013, STS-AUTHZEN-0014). HEAD stays 404. | AuthZEN Authorization API 1.0 section 8; HTTP 501 |
+| `STS-XPEP-0139` | A caller asked this edge PDP for the Access Request and Approval Profile (POST /access/v1/access-requests, GET of its schema or of a task, POST or DELETE of a task's cancel). The service holds the approval store. This edge answers 501 with the evaluation error object, not problem+json, before admission and without reading the body, and does not advertise the paths. A POST to the task path without /cancel stays 404. The code is logged and not sent. context.approval on an evaluation is not this refusal: it is recognized and not used (STS-AUTHZEN-0084). | AuthZEN Access Request and Approval Profile; HTTP 501 |
+| `STS-XPEP-0140` | An access evaluation was one of the OAuth token-exchange binding's tuples: a gate (resource type audience and an action issue:<type>:<grant>), a context member the binding reads, or, beside a gate in the same batch, a scope or any other non-audience resource type. The service holds delegation and the directory. This edge answers 501 for that item — the whole response when the request was one evaluation, and context.error on a batch item — and does not forward it. The code is logged and not sent. A lone scope or detail, and an audience whose action is not a gate, stay ordinary evaluations. | AuthZEN OAuth token-exchange binding; HTTP 501 |
 
 ## STS-AUTHZEN
 
@@ -5715,7 +5725,7 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0122` | An AuthZEN access request submission did not carry Content-Type: application/json, which AuthZEN 1.0 section 10.1 requires; refused before its body was read (#936). | HTTP 415 Unsupported Media Type (RFC 9110 section 15.5.16), application/problem+json (RFC 9457) |
 | `STS-AUTHZEN-0123` | An RFC 8693 token exchange was not issued because authzen.externalPdpUrl is empty, will not parse, is not absolute https, or carries a userinfo, query or fragment. The external AuthZEN PDP was not dialled (#1200). | HTTP 503 temporarily_unavailable (the client is not told the code or the address) |
 | `STS-AUTHZEN-0124` | An RFC 8693 token exchange was not issued because the external AuthZEN PDP gave no answer: federation.outbound is off, the PDP was unreachable or timed out, the dial threw, or the PDP answered a non-2xx. The local decision is not issued in its place (#1200). | HTTP 503 temporarily_unavailable |
-| `STS-AUTHZEN-0125` | An RFC 8693 token exchange was not issued because the external AuthZEN PDP refused a subject or requesting-party gate. Which gate is not told to the client (#1200). | HTTP 400 invalid_request |
+| `STS-AUTHZEN-0125` | An RFC 8693 token exchange was not issued because the external AuthZEN PDP refused a subject or requesting-party gate. Which gate is not told to the client (#1200). | HTTP 400 invalid_target when the exchange named the audience or resource the gate refused, invalid_grant otherwise (RFC 8693 section 2.2.2); invalid_request until the review of #1200 |
 | `STS-AUTHZEN-0126` | An RFC 8693 token exchange was not issued because the external AuthZEN PDP answered 2xx with a body that is not the batch's decision: not JSON, a missing or differently sized evaluations array, an item that is not an object, a decision that is not a boolean, or an item carrying context.error (#1200). | HTTP 503 temporarily_unavailable |
 | `STS-AUTHZEN-0127` | An RFC 8693 token exchange was not issued because the client certificate or key for the external AuthZEN PDP is empty, unreadable, outside security.fileRoots, or not a PEM, or a named CA file is. The PDP was not dialled (#1200). | HTTP 503 temporarily_unavailable |
 | `STS-AUTHZEN-0128` | An AuthZEN authorization-detail tuple named somebody other than the exchange subject. The binding adds requesting-party tuples for scopes on a Txn-Token only, so a cell for the party is the same refusal; answered false (#1201). | decision: false |
@@ -5726,11 +5736,15 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0133` | An AuthZEN token-exchange subject gate was given an issuance claim that is reserved, is not on the subject token, or is wider than the subject token's value. It is not sent (#1201). | none — logged; the envelope is sent without that claim |
 | `STS-AUTHZEN-0134` | An AuthZEN token-exchange subject gate was given an empty issuance audience, which withdraws that gate's target; answered false (#1201). | decision: false |
 | `STS-AUTHZEN-0135` | An AuthZEN access request's callback will not be delivered again: the attempt bound is spent, or the failure cannot succeed (an HTTP status below 500, or a URL the outbound policy refuses). The task's own status is unchanged. The task status endpoint remains the record (#1202). | none — logged and audited |
-| `STS-AUTHZEN-0136` | An access request callback was refused because the caller is not an application. set-callbacks writes appAuthzenCallbackUri only on an application, and a submission that names a callback from a person or a service account is refused. A value already stored as stsAuthzenCallbackUri is left in place and is not honoured (#1202). | HTTP 400 on a submission; the console's refusal on set-callbacks |
-| `STS-AUTHZEN-0137` | An access request callback override was refused: attempts or backoff was not an integer in range (attempts 1 to 20, backoff 60 to 86400), or a token was not attempts=N or backoff=S, or one of them was repeated (#1202). | the console's refusal |
+| `STS-AUTHZEN-0136` *(retired)* | An access request callback was refused because the caller was not an application (#1202). Retired by the review of #1202 (2026-11-23): a person's or service account's stsAuthzenCallbackUri is written and honoured again, as in 1.1.0, under rcbj's decision 4 on #1180. | — |
+| `STS-AUTHZEN-0137` | An access request callback override was refused: attempts or backoff was not an integer in range (attempts 1 to 20, backoff 60 to 86400), or a token was not attempts=N or backoff=S, or one of them was repeated, or it was set for a person or a service account, whose callbacks take the realm's settings (#1202). | the console's refusal |
 | `STS-AUTHZEN-0138` | The requester of a revoked AuthZEN access approval could not be mailed; the revocation stands (#1203). | none — logged |
 | `STS-AUTHZEN-0139` | A requestable AuthZEN denial could not be recorded. The binding_token is still issued; an evaluation_id-only submission of that denial cannot be resolved (#1204). | none — logged; the denial is still requestable by its token |
 | `STS-AUTHZEN-0140` | An AuthZEN approval's state could not be signed. The approval stands by id, and the task result omits state (#1204). | none — logged; the approval is still looked up by id |
+| `STS-AUTHZEN-0141` | A person was refused the revocation of an AuthZEN access approval on the portal because somebody else gave it: the portal revokes only an approval the signed-in person gave (#1203). | HTTP 400 on POST /account-api/access-requests |
+| `STS-AUTHZEN-0142` | An AuthZEN access request's approval could not be stored, so the task moved to failed rather than to approved (#1202). The failed callback is sent where it was asked for. | the approver's refusal; the task status failed |
+| `STS-AUTHZEN-0143` | A pending AuthZEN access request moved to failed because the approvers its advice names (configured static roles, groups, the application's owners) resolve to nobody but its subject (#1202). A computed or dynamic role, or a directory that cannot be read, is never taken for nobody. Noticed by the authzen.access-requests job. | the task status failed |
+| `STS-AUTHZEN-0144` | The requestable denial store of a realm is full (authzen.accessRequestMaxDenials), so a new denial is not recorded by evaluation_id; it is still requestable by its binding_token (#1204). Logged when the store fills, not per denial. | none — logged and audited once |
 
 ## STS-FGA
 

@@ -95,6 +95,10 @@
     "en": "4b0c4feb0af59f04",
     "text": "Enviar una solicitud de acceso"
   },
+  "endpoints.route./access/v1/access-requests/schema.name": {
+    "en": "e39be1976aa651db",
+    "text": "El esquema de envío de una solicitud de acceso"
+  },
   "endpoints.route./access/v1/access-requests/:id.name": {
     "en": "c8bcbb33d07cfb8f",
     "text": "Estado de la tarea de una solicitud de acceso"
@@ -290,6 +294,14 @@
   "endpoints.route./pki/revocation.name": {
     "en": "f399711ce1261bf4",
     "text": "Cada CRL y respondedor OCSP que publica este servicio"
+  },
+  "endpoints.route./pki/ssh-user-ca/:scope.name": {
+    "en": "a3f367e6aa3bd539",
+    "text": "La clave pública de la CA de usuarios OpenSSH del dominio"
+  },
+  "endpoints.route./pki/ssh-user-krl/:scope.name": {
+    "en": "a6ecaa76d097f280",
+    "text": "La lista de revocación de claves de usuarios OpenSSH del dominio"
   },
   "endpoints.route./admin-api/xacml.name": {
     "en": "d3b1d402a612012c",
@@ -1264,8 +1276,12 @@
     "text": "Tokens OATH importados"
   },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-"en": "33209f967f070175",
-"text": "Acciones sobre tokens de hardware"
+    "en": "33209f967f070175",
+    "text": "Acciones sobre tokens de hardware"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "Claves PIV en custodia"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
@@ -1911,11 +1927,11 @@
     "en": "69876d051e66729c",
     "text": "Paso de actividad posterior al inicio de sesión"
   },
-"endpoints.route./wsapi/2.0/verify.name": {
+  "endpoints.route./wsapi/2.0/verify.name": {
     "en": "0734c12f6e3eb870",
     "text": "Verificación YK-VAL 2.0"
   },
-"endpoints.route./authn/roles.name": {
+  "endpoints.route./authn/roles.name": {
     "en": "d10487ebcbc8b238",
     "text": "Paso de roles dinámicos"
   },
@@ -2630,9 +2646,5 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (se pide un certificado de cliente, nunca se exige)"
-  },
-  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
-    "en": "f46d01f7581b5379",
-    "text": "Claves PIV en custodia"
   }
 }

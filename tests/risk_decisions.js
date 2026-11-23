@@ -219,6 +219,8 @@ function childMain() {
          'passkey-register-attestation-algorithm,' +
          // #940's profile-algorithm rule, at registration only.
          'passkey-register-profile-algorithm,' +
+         // #1955 P7's credProtect rule, at registration only.
+         'passkey-register-cred-protect,' +
          'passkey-register-allowed,' +
          'passkey-use-backup-eligible,passkey-use-pin-length,' +
          'passkey-use-attestation-unchecked,' +
@@ -872,9 +874,9 @@ function childMain() {
          // #536, #718's two post-quantum passkey rules, the five
          // Kerberos-trust exchange rules of #430 Phase 3, #724's three
          // recovery rules, #941's two attestation-algorithm rules,
-         // #940's profile-algorithm rule, #740's device-bound rule and
-         // #503's signal step-up rule.
-         unprotectedPolicy.policy.rules.length === 95,
+         // #940's profile-algorithm rule, #1955 P7's credProtect rule,
+         // #740's device-bound rule and #503's signal step-up rule.
+         unprotectedPolicy.policy.rules.length === 96,
          'I5. neverLockOut none puts the console under the three rules, ' +
          'and HIGH refuses it', plain.decision);
 

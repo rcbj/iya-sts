@@ -54,6 +54,7 @@
 
 const { log, setJwtRecorder, userFor, nameForSubject, subjectForName,
         namesForSubjects, namesForSubjectsAsync, subjectsForNamesAsync,
+        namesFellBack,
         LEGACY_SUBJECT_PREFIX } = require('./helpers');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and the error-code table and nothing else here, so it cannot join a
@@ -2947,8 +2948,17 @@ function withSubjectsResolved(fn) {
 // here up to SUBJECT_NAMES_KEPT_MS late — the staleness an unfiltered Users
 // page already accepts (`USERS_POPULATION_STALE_MS`). One made by this
 // process moves the generation (`renameIdentity()`, `forgetIdentity()`) and
-// the next walk asks everything. A subject that named nobody is remembered
-// as naming nobody: an `entryUUID` is never given to a second entry.
+// the next walk asks everything.
+//
+// **ONLY A NAME IS KEPT (#1952).** A subject that named nobody was
+// remembered as naming nobody, on the argument that an `entryUUID` is never
+// given to a second entry. But '' is also the answer for an entry this
+// process cannot see YET — made on another node a moment ago — and for every
+// subject of a walk whose asynchronous door threw, whose fallback answers
+// were given while the store was failing. Kept, either drew the person as a
+// bare `urn:uuid:` for two minutes. So '' is never kept, and nothing from a
+// fallback walk is: those subjects are asked again by the next walk, which
+// costs the tokens of deleted people one question a walk.
 // ---------------------------------------------------------------------------
 // How long a memo's answers are used from the walk that asked them all.
 const SUBJECT_NAMES_KEPT_MS = 120000;
@@ -3036,15 +3046,26 @@ async function resolveSubjectsAsync(list, memo) {
       ask.push(subject);
     }
   });
+  // What the memo keeps: names, never '' and never a fallback's (#1952).
+  const keep = new Map();
+  out.forEach(function (name, key) {
+    if (name) {
+      keep.set(key, name);
+    }
+  });
   if (ask.length) {
     const named = await namesForSubjectsAsync(ask);
+    const fellBack = namesFellBack(named);
     named.forEach(function (name, key) {
       out.set(key, name);
+      if (name && !fellBack) {
+        keep.set(key, name);
+      }
     });
   }
-  // This walk's subjects and nothing else; the clock restarts only when
-  // every one of them was asked.
-  memo.names = out;
+  // This walk's named subjects and nothing else; the clock restarts only
+  // when every one of them was asked.
+  memo.names = keep;
   memo.generation = generation;
   if (!current) {
     memo.at = nowMs;

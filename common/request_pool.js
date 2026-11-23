@@ -9286,6 +9286,21 @@ function failSchedulerRunsOf(entry, code, reason) {
 // ms — it is ended (STS-WORKER-0056). A one-shot timer within one
 // retirement.
 //
+// **BUT NOT WHILE ITS OWN FLUSH IS OUT** (#1934's follow-up). The worker
+// asks only once that flush has been out four bounds of
+// `workers.readBarrierTimeoutMs` (`persistence.js`, `ownFlushWedged()`),
+// and its ask carries `flushing: { since, giveUpAt }`. Ending it 8 s later
+// ended a statement that may only have been slow, and with it the worker's
+// unflushed writes — a revocation among them, which rcbj's rule says is
+// never lost. So the kill waits until RETIRE_DRAIN_MS past `giveUpAt` (ten
+// bounds after the flush began, 5 minutes by default): the worker's own
+// drain waits for the flush to land or fail first (`request_worker.ts`,
+// `releaseThenExit()`), and exits itself as soon as it has, which clears
+// this timer. Ended past that, it is STS-WORKER-0057 and not 0056: the
+// flush was given up on, and the writes in it may not have reached the
+// store. STS-WORKER-0021 at `reap()` still counts the answered requests it
+// held, as for any worker that dies.
+//
 // NOT when the pool is stopping or has given up, or for a worker already
 // retiring: `replacementFor()` decides as it does for a death, and a worker
 // it would not replace is left serving, wedged, with the line saying why.
@@ -9324,12 +9339,34 @@ function receiveReplaceWorker(entry, message) {
     return;
   }
   entry.retiring = true;
+  const flushing = ask.flushing || null;
+  const giveUpAt = flushing ? Number(flushing.giveUpAt) : NaN;
+  const waitMs = giveUpAt > 0
+    ? Math.max(RETIRE_DRAIN_MS, giveUpAt + RETIRE_DRAIN_MS - Date.now())
+    : RETIRE_DRAIN_MS;
+  if (giveUpAt > 0) {
+    log.info('request_pool: retired ' + pool + ' worker ' + entry.pid +
+             ' has its own flush out since ' +
+             new Date(Number(flushing.since) || giveUpAt).toISOString() +
+             '; its drain waits for it to settle, and it is ended only if ' +
+             'it has not exited ' + waitMs + ' ms from now.');
+  }
   const timer = setTimeout(function () {
     if (entry.child.exitCode === null && entry.child.signalCode === null) {
-      log.warn(errorCodes.tag('STS-WORKER-0056') +
-               'request_pool: retired ' + pool + ' worker ' + entry.pid +
-               ' did not finish draining within ' + RETIRE_DRAIN_MS +
-               ' ms and was ended; its replacement follows.');
+      if (giveUpAt > 0) {
+        log.error(errorCodes.tag('STS-WORKER-0057') +
+                  'request_pool: retired ' + pool + ' worker ' + entry.pid +
+                  ' still had not exited ' + waitMs + ' ms after it asked, ' +
+                  'its own flush given up on at ' +
+                  new Date(giveUpAt).toISOString() + ', and was ended; ' +
+                  'the writes in that flush may not have reached the ' +
+                  'store. Its replacement follows.');
+      } else {
+        log.warn(errorCodes.tag('STS-WORKER-0056') +
+                 'request_pool: retired ' + pool + ' worker ' + entry.pid +
+                 ' did not finish draining within ' + RETIRE_DRAIN_MS +
+                 ' ms and was ended; its replacement follows.');
+      }
       try {
         entry.child.kill();
       } catch (e) {
@@ -9337,7 +9374,7 @@ function receiveReplaceWorker(entry, message) {
                   ((e && e.message) || e));
       }
     }
-  }, RETIRE_DRAIN_MS);
+  }, waitMs);
   if (timer && typeof timer.unref === 'function') {
     timer.unref();
   }
