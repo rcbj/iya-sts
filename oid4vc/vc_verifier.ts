@@ -522,6 +522,13 @@ const OID4VC_QUERY = validation.z.looseObject({
  * every presentation format.
  */
 class VcVerifier {
+  // A SELF-ATTESTATION SIGNED AHEAD (#1955 P8 follow-up): where the realm's
+  // keys are in the HSM, `buildVpRequestAsync()` signs the
+  // verifier_attestation JWT off the event loop before the synchronous build
+  // and holds it here for that one call, so `verifierAttestation()` answers
+  // it instead of signing with C_Sign. Null otherwise.
+  private heldAttestation: { jwt: string; sub: string } | null = null;
+
   /**
    * A presented claim as text, or ''. What a presentation says is the
    * presenter's until its signature is checked, and a verdict shows it either
@@ -1917,6 +1924,10 @@ class VcVerifier {
       log.debug("Leaving VcVerifier.verifierAttestation(). Configured.");
       return { jwt: configured, sub: claims.sub };
     }
+    if (this.heldAttestation) {
+      log.debug("Leaving VcVerifier.verifierAttestation(). Signed ahead.");
+      return this.heldAttestation;
+    }
     // SELF-ATTESTED: this realm vouches for its own key. A wallet that does
     // not already trust this realm has no reason to believe it, which the
     // setting's description says; it is what makes the prefix testable.
@@ -1930,6 +1941,30 @@ class VcVerifier {
                           exp: now + 3600, cnf: { jwk: ours } }, null,
                         { header: { typ: 'verifier-attestation+jwt' } });
     log.debug("Leaving VcVerifier.verifierAttestation(). Self-attested.");
+    return { jwt: jwt, sub: sub };
+  }
+
+  // `verifierAttestation()`'s self-attestation signed off the event loop
+  // (#1955 P8 follow-up): the configured one, or a refusal, is the
+  // synchronous door's own answer.
+  private async verifierAttestationAsync(req: any):
+    Promise<{ jwt: string; sub: string }> {
+    const { log, config, nowSec, baseUrlOf } = this.deps;
+    log.debug("Entering VcVerifier.verifierAttestationAsync().");
+    if (String(config.value('oid4vp.verifierAttestation') || '').trim()) {
+      log.debug("Leaving VcVerifier.verifierAttestationAsync(). " +
+                "Configured.");
+      return this.verifierAttestation(req);
+    }
+    const ours = this.requestSigningJwk();
+    const sub = String(this.vpClientId());
+    const now = nowSec();
+    // certificate-header: none — as in verifierAttestation().
+    const jwt = await helpers.signJwtOffLoop({ iss: baseUrlOf(req), sub: sub,
+                                               iat: now, exp: now + 3600,
+                                               cnf: { jwk: ours } }, null,
+      { header: { typ: 'verifier-attestation+jwt' } });
+    log.debug("Leaving VcVerifier.verifierAttestationAsync().");
     return { jwt: jwt, sub: sub };
   }
 
@@ -2457,6 +2492,23 @@ class VcVerifier {
       kidDid: signed.kidDid || undefined,
       keyNamedElsewhere: !!signed.kidDid
     };
+    // A REALM KEY IN THE HSM (#1955 P8 follow-up) defers a classical
+    // signature too, where the caller can wait (`deferred`): the async door
+    // signs it with `helpers.signJwtOffLoop()`, the same header and key.
+    if (!stsCrypto.isPqJwsAlg(algorithm) && deferred && helpers.keysInHsm()) {
+      deferred.push({ payload: payload, apply: apply, offLoop: true,
+                      options: x509
+                        ? { algorithm: algorithm, keyNamedElsewhere: true,
+                            header: Object.assign(
+                              { typ: 'oauth-authz-req+jwt' },
+                              signed.header) }
+                        : Object.assign(
+                          { certificateHeader: 'vp-request-object' },
+                          options) });
+      log.debug("Leaving VcVerifier.signRequestObject(). Deferred " +
+                algorithm + " to the HSM.");
+      return '';
+    }
     if (!stsCrypto.isPqJwsAlg(algorithm)) {
       // `options` above names the same use case; the x509 prefixes carry
       // their own x5c (signX509Request()).
@@ -2496,8 +2548,23 @@ class VcVerifier {
     const { log, logArtifact, vpTransactions } = this.deps;
     log.debug("Entering VcVerifier.buildVpRequestAsync().");
     const deferred: any[] = [];
-    const record = this.buildVpRequest(req,
-      Object.assign({}, opts, { deferred: deferred }));
+    // THE SELF-ATTESTATION, SIGNED AHEAD where the realm's keys are in the
+    // HSM and the request will carry one (#1955 P8 follow-up): it is in the
+    // Request Object's header, so it is signed before the build.
+    const asked = opts.clientIdPrefix ||
+      (opts.signIn ? this.signInClientIdPrefix() : '');
+    const attest = helpers.keysInHsm() &&
+      (!!opts.byReference || !!opts.signIn) &&
+      this.clientIdPrefixFor(asked) === 'verifier_attestation'
+      ? await this.verifierAttestationAsync(req) : null;
+    let record;
+    this.heldAttestation = attest;
+    try {
+      record = this.buildVpRequest(req,
+        Object.assign({}, opts, { deferred: deferred }));
+    } finally {
+      this.heldAttestation = null;
+    }
     if (!deferred.length) {
       log.debug("Leaving VcVerifier.buildVpRequestAsync(). Classical.");
       return record;
@@ -2505,8 +2572,12 @@ class VcVerifier {
     const sign = this.deps.signJwtAsync || helpers.signJwtAsync;
     try {
       for (let i = 0; i < deferred.length; i++) {
-        deferred[i].apply(await sign(deferred[i].payload, REQUEST_OBJECT_KIND,
-                                     deferred[i].options));
+        // A classical one deferred for the HSM (#1955 P8 follow-up) is
+        // `signJwtOffLoop()`'s; a post-quantum one stays on libuv.
+        const signer = deferred[i].offLoop ? helpers.signJwtOffLoop : sign;
+        deferred[i].apply(await signer(deferred[i].payload,
+                                       REQUEST_OBJECT_KIND,
+                                       deferred[i].options));
       }
     } catch (e) {
       // NO TRANSACTION WITHOUT ITS SIGNED REQUEST: the record was stored by

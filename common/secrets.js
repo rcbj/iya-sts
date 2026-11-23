@@ -2101,8 +2101,47 @@ async function openSigningToken() {
   const token = await openHsmToken(parsePkcs11Uri(text, true));
   log.info('secrets: the signing keys\' PKCS#11 token is open: ' +
            token.describe() + '.');
+  if (frontThread()) {
+    threadPoolCheck();
+  }
   log.debug('Leaving openSigningToken().');
   return token;
+}
+
+// ---------------------------------------------------------------------------
+// THE HSM'S CALLS AND LIBUV'S THREAD POOL (#1955 P8 follow-up, 2026-11-23).
+// Every signature, decryption and agreement with a realm key in the HSM is
+// an asynchronous pkcs11js call, which runs on LIBUV'S THREAD POOL — one pool
+// per PROCESS, shared by the front thread and every request worker, and by
+// scrypt (password hashing), post-quantum signing (`pq_native.js`), node's
+// asynchronous crypto, file and DNS work. A call holds its pool thread for as
+// long as the token takes, and a session for as long as the call: so at most
+// `keys.pkcs11Sessions` of them run per thread, and
+// `keys.pkcs11Sessions` × (1 + workers.requestCount + workers.surfaceCount)
+// per process. Where that reaches `UV_THREADPOOL_SIZE` (node's default 4,
+// the compose stack's 32) a slow token — a YubiHSM 2's RSA signature is
+// hundreds of milliseconds — can hold every pool thread, and a sign-in's
+// scrypt waits behind it. Nothing blocks the event loop either way; this is
+// a warning at start (STS-KEYS-0210), in the front process only, with the
+// size that leaves room.
+// ---------------------------------------------------------------------------
+function threadPoolCheck() {
+  log.debug('Entering threadPoolCheck().');
+  const threads = 1 + (Number(config.value('workers.requestCount')) || 0) +
+                  (Number(config.value('workers.surfaceCount')) || 0);
+  const sessions = Number(config.value('keys.pkcs11Sessions')) || 4;
+  const pool = Number(process.env.UV_THREADPOOL_SIZE) || 4;
+  const busy = sessions * threads;
+  if (busy >= pool) {
+    log.warn(errorCodes.tag('STS-KEYS-0210') + 'secrets: up to ' + busy +
+             ' PKCS#11 calls (keys.pkcs11Sessions ' + sessions + ' x ' +
+             threads + ' threads) can run at once on libuv\'s thread ' +
+             'pool, which has ' + pool + ' threads (UV_THREADPOOL_SIZE); ' +
+             'a slow token could hold all of them while password hashing ' +
+             'and post-quantum signing wait. Set UV_THREADPOOL_SIZE to at ' +
+             'least ' + (busy + 8) + ', or lower keys.pkcs11Sessions.');
+  }
+  log.debug('Leaving threadPoolCheck(). ' + busy + ' of ' + pool + '.');
 }
 
 /**
@@ -2132,7 +2171,7 @@ function heldSigningToken() {
 
 // THE RESOLVER `crypto.js` ASKS for a signing key's reference: the token the
 // reference names, held by this thread, and the key on it by CKA_ID.
-crypto.setPkcs11KeyResolver(function (ref) {
+crypto.setPkcs11KeyResolver(function (ref, how) {
   log.debug('Entering the PKCS#11 key resolver.');
   const uri = parsePkcs11Uri(String(ref.token || ''), true);
   const token = pkcs11Tokens.get(tokenKeyOf(uri));
@@ -2143,7 +2182,10 @@ crypto.setPkcs11KeyResolver(function (ref) {
       'it (and the keystore persist) in every process.'), 'STS-KEYS-0206');
   }
   log.debug('Leaving the PKCS#11 key resolver.');
-  return crypto.findPkcs11KeyPair(token, ref);
+  // Off the event loop where the caller can wait (#1955 P8 follow-up,
+  // `crypto.resolveHsmKeysAsync()`).
+  return how && how.async ? crypto.findPkcs11KeyPairAsync(token, ref)
+                          : crypto.findPkcs11KeyPair(token, ref);
 });
 
 /**
@@ -3994,9 +4036,12 @@ PROBES.pkcs11 = {
         if (uri.id) {
           template.push({ type: 0x102, value: uri.id });
         }
-        const found = token.find(template);
+        // Off the event loop (#1955 P8 follow-up): the search and the
+        // attribute reads are the token's control thread's.
+        const found = await token.findAsync(template);
         const facts = found.length === 1
-          ? token.attributes(found[0], [0x100, 0x161, 0x162, 0x103])
+          ? await token.attributesAsync(found[0],
+                                        [0x100, 0x161, 0x162, 0x103])
           : new Map();
         const flag = function (t) {
           return facts.has(t) ? facts.get(t)[0] !== 0 : null;

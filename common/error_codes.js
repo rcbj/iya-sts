@@ -3982,10 +3982,36 @@ const CODES = [
       '(#1955).',
     spec: '' },
   { code: 'STS-KEYS-0209',
-    summary: 'A signature with a key in the HSM was asked of a synchronous ' +
-      'door, or of a module with no asynchronous C_Sign, while ' +
-      'keys.pkcs11SynchronousSign is off. The event loop is not held for ' +
-      'the token; turn the setting on to sign that way (#1955).',
+    summary: 'A blocking PKCS#11 call with a realm key in the HSM (C_Sign, ' +
+      'C_Decrypt or C_DeriveKey) was asked while ' +
+      'keys.pkcs11SynchronousSign is off: by a module with no ' +
+      'asynchronous call for it, or by a synchronous door no service ' +
+      'caller uses with a realm key. Every service door signs and ' +
+      'decrypts off the event loop; turn the setting on to allow the ' +
+      'blocking call (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0210',
+    summary: 'A warning at start: the PKCS#11 calls this process can run at ' +
+      'once with realm keys in the HSM (keys.pkcs11Sessions times its ' +
+      'threads) reach libuv\'s thread pool size (UV_THREADPOOL_SIZE), ' +
+      'which they share with password hashing and post-quantum signing. ' +
+      'Nothing blocks the event loop; a slow token could hold every pool ' +
+      'thread. The line names the size that leaves room (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0211',
+    summary: 'The thread that makes a PKCS#11 token\'s non-cryptographic ' +
+      'calls off the event loop (opening and logging in a session, finding ' +
+      'a key, reading its attributes, beginning an operation, the key ' +
+      'wrap\'s session object, initialising the module again) failed or ' +
+      'exited. The calls waiting on it are refused and the next one starts ' +
+      'a new thread (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0212',
+    summary: 'A blocking PKCS#11 call was refused because the module is ' +
+      'being initialised again after the device was lost, or must be and ' +
+      'asynchronous calls of this thread still hold sessions on it: the ' +
+      'module is initialised again off the event loop once they drain, and ' +
+      'the next call is made on it (#1955).',
     spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
@@ -29798,6 +29824,13 @@ const CODES = [
   { code: 'STS-LOGOUT-0015',
     summary: 'Ending another session was refused because the sign-in was not recent enough.',
     spec: 'HTTP 403' },
+  { code: 'STS-LOGOUT-0016',
+    summary: 'A sign-out with the realm\'s keys in the HSM could not sign, ' +
+      'off the event loop, the SAML 2.0 LogoutRequests or a federation ' +
+      'partner\'s sign-out of one of its sessions, so none is offered for ' +
+      'that session (or the partner is not told); the sign-out itself goes ' +
+      'on (#1955).',
+    spec: '' },
   { code: 'STS-LAUNCH-0001',
     summary: 'A /launch/{app} link named no application this realm has ' +
       '(#713).',

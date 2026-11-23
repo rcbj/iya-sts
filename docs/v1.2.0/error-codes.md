@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5984** of them, in **57** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5988** of them, in **57** subsystems.
 
 ## Where a code appears
 
@@ -57,7 +57,7 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 198
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 201
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 285
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
@@ -100,7 +100,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 97
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
-* [Sign-out (`STS-LOGOUT`)](#sts-logout) — 15
+* [Sign-out (`STS-LOGOUT`)](#sts-logout) — 16
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 191
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 29
@@ -845,7 +845,10 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0206` | A realm whose signing keys are in the HSM was asked for something only a key in this process can do — the private key itself, a decryption, or an algorithm the HSM does not sign — and refused it rather than making a software key (#1955). | — |
 | `STS-KEYS-0207` | A signing key could not be made in, or read back from, the hardware security module: the module offers no key-pair generation for that algorithm or curve, or answered no public key (#1955). | — |
 | `STS-KEYS-0208` | A realm key in the HSM was asked to decrypt (RSA-OAEP) or to agree (ECDH) and the module refused it: the key was made without CKA_DECRYPT or CKA_DERIVE, by a build before the HSM keys could decrypt. Rotating the realm's signing keys makes keys that can (#1955). | — |
-| `STS-KEYS-0209` | A signature with a key in the HSM was asked of a synchronous door, or of a module with no asynchronous C_Sign, while keys.pkcs11SynchronousSign is off. The event loop is not held for the token; turn the setting on to sign that way (#1955). | — |
+| `STS-KEYS-0209` | A blocking PKCS#11 call with a realm key in the HSM (C_Sign, C_Decrypt or C_DeriveKey) was asked while keys.pkcs11SynchronousSign is off: by a module with no asynchronous call for it, or by a synchronous door no service caller uses with a realm key. Every service door signs and decrypts off the event loop; turn the setting on to allow the blocking call (#1955). | — |
+| `STS-KEYS-0210` | A warning at start: the PKCS#11 calls this process can run at once with realm keys in the HSM (keys.pkcs11Sessions times its threads) reach libuv's thread pool size (UV_THREADPOOL_SIZE), which they share with password hashing and post-quantum signing. Nothing blocks the event loop; a slow token could hold every pool thread. The line names the size that leaves room (#1955). | — |
+| `STS-KEYS-0211` | The thread that makes a PKCS#11 token's non-cryptographic calls off the event loop (opening and logging in a session, finding a key, reading its attributes, beginning an operation, the key wrap's session object, initialising the module again) failed or exited. The calls waiting on it are refused and the next one starts a new thread (#1955). | — |
+| `STS-KEYS-0212` | A blocking PKCS#11 call was refused because the module is being initialised again after the device was lost, or must be and asynchronous calls of this thread still hold sessions on it: the module is initialised again off the event loop once they drain, and the next call is made on it (#1955). | — |
 
 ## STS-PKI
 
@@ -6471,6 +6474,7 @@ Raised from: logout/.
 | `STS-LOGOUT-0013` | The sign-out's account step (#561) was asked for in a trust realm with authn.multipleAccounts off, where a browser holds one session and there is no account to choose. | HTTP 400 from /authn-api/logout/accounts |
 | `STS-LOGOUT-0014` | POST /logout in its JSON form came from a page of another site (#1442). | HTTP 403 |
 | `STS-LOGOUT-0015` | Ending another session was refused because the sign-in was not recent enough. | HTTP 403 |
+| `STS-LOGOUT-0016` | A sign-out with the realm's keys in the HSM could not sign, off the event loop, the SAML 2.0 LogoutRequests or a federation partner's sign-out of one of its sessions, so none is offered for that session (or the partner is not told); the sign-out itself goes on (#1955). | — |
 
 ## STS-LAUNCH
 

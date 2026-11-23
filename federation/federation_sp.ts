@@ -3167,8 +3167,46 @@ class FederationSp {
   // Answers `{ ok, location, binding }` or `{ ok: false, code, why }`.
   // ---------------------------------------------------------------------------
   beginConnect(req, spec) {
-    const { federation, randomId, baseUrlOf, log } = this.deps;
+    const { baseUrlOf, log } = this.deps;
     log.debug("Entering FederationSp.beginConnect(). " + spec.relationship);
+    const draft = this.connectDraft(req, spec);
+    if (!draft.ok) {
+      log.debug("Leaving FederationSp.beginConnect(). Not connectable.");
+      return draft;
+    }
+    const location = this.authorizationRequestUrl(baseUrlOf(req),
+      draft.record, this.heldContext(draft.handle));
+    log.debug("Leaving FederationSp.beginConnect(). To the provider.");
+    return this.connectAnswer(draft.record, draft.binding, location);
+  }
+
+  /**
+   * `beginConnect()`, with a Request Object signed off the event loop where
+   * the realm's key is in the HSM (#1955 P8 follow-up); a software key signs
+   * the same claims, in place. The portal's connect awaits this one.
+   *
+   * @param req - the request
+   * @param spec - as `beginConnect()`'s
+   * @returns a promise of `beginConnect()`'s answer
+   */
+  async beginConnectAsync(req, spec) {
+    const { baseUrlOf, log } = this.deps;
+    log.debug("Entering FederationSp.beginConnectAsync(). " +
+              spec.relationship);
+    const draft = this.connectDraft(req, spec);
+    if (!draft.ok) {
+      log.debug("Leaving FederationSp.beginConnectAsync(). Not connectable.");
+      return draft;
+    }
+    const location = await this.authorizationRequestUrlAsync(baseUrlOf(req),
+      draft.record, this.heldContext(draft.handle));
+    log.debug("Leaving FederationSp.beginConnectAsync(). To the provider.");
+    return this.connectAnswer(draft.record, draft.binding, location);
+  }
+
+  private connectDraft(req, spec) {
+    const { federation, randomId, log } = this.deps;
+    log.debug("Entering FederationSp.connectDraft(). " + spec.relationship);
     const record = federation.get(String(spec.relationship || ''));
     if (!record || record.fedRole !== 'service-provider' ||
         !federation.signsIn(record) || !federation.isUsable(record) ||
@@ -3181,7 +3219,7 @@ class FederationSp {
         consumerProviders.adapts(record, 'atproto-oauth') ||
         String(record.fedTrustAnchor || '').trim() ||
         FapiClient.profileOf(record)) {
-      log.debug("Leaving FederationSp.beginConnect(). Not connectable.");
+      log.debug("Leaving FederationSp.connectDraft(). Not connectable.");
       return { ok: false, code: 'STS-FED-0184',
                why: 'That provider cannot be connected here now.' };
     }
@@ -3197,9 +3235,14 @@ class FederationSp {
                  bindingHash: this.bindingHashOf(binding),
                  back: String(spec.back || '') }
     });
-    const location = this.authorizationRequestUrl(baseUrlOf(req), record,
-                                                  this.heldContext(handle));
-    log.debug("Leaving FederationSp.beginConnect(). To the provider.");
+    log.debug("Leaving FederationSp.connectDraft().");
+    return { ok: true, record: record, binding: binding, handle: handle };
+  }
+
+  // The answer of a connect, once its address is made.
+  private connectAnswer(record, binding, location) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.connectAnswer().");
     // A PROVIDER THAT ANSWERS BY FORM POST (#565: Apple) posts across sites,
     // and a browser sends no SameSite=Lax cookie with that POST, so the
     // binding is SameSite=None there — which a browser takes only with
@@ -3207,6 +3250,7 @@ class FederationSp {
     // and fails closed (STS-FED-0111).
     const crossSite = String(record.fedResponseMode || '') === 'form_post' &&
       !!this.deps.config.value('global.https');
+    log.debug("Leaving FederationSp.connectAnswer().");
     return { ok: true, location: location, binding: binding,
              cookie: LINK_COOKIE + '=' + binding + '; Path=/; HttpOnly; ' +
                      'SameSite=' + (crossSite ? 'None' : 'Lax') +
@@ -4799,10 +4843,55 @@ class FederationSp {
   // the Redirect binding is DEFLATEd into a URL, and a signed assertion of a
   // few kilobytes does not reliably fit in one.
   // ---------------------------------------------------------------------------
-  private authnRequestXml(base, record, fresh?: boolean) {
+  // The SAML 2.0 AuthnRequest of the login endpoint, once it is built: on
+  // the POST binding as a form, on the Redirect binding DEFLATEd.
+  private sendSaml2AuthnRequest(res, record, contextRecord, built): void {
+    const { federation, log } = this.deps;
+    log.debug("Entering FederationSp.sendSaml2AuthnRequest().");
+    contextRecord.requestId = built.id;
+    const handle = this.putContext(contextRecord);
+    if (String(record.fedBinding || 'HTTP-Redirect') === 'HTTP-POST') {
+      res.type('html').set('Cache-Control', 'no-store').send(
+        this.postBindingPage(record.fedSsoUrl,
+                        { SAMLRequest: Buffer.from(built.xml, 'utf8')
+                                             .toString('base64'),
+                          RelayState: handle },
+                        record, contextRecord.application));
+      log.debug("Leaving FederationSp.sendSaml2AuthnRequest(). HTTP POST.");
+      return;
+    }
+    // HTTP Redirect: DEFLATE with no zlib header (saml-bindings section
+    // 3.4.4.1), then base64, then URL-encode. The request is NOT signed on
+    // this binding even when fedSignRequest is on, and that is stated rather
+    // than silently dropped: the Redirect binding signs the QUERY STRING with
+    // a `Signature` parameter rather than carrying an enveloped ds:Signature,
+    // which is a different construction — a partner wanting a signed request
+    // should be sent one on the POST binding.
+    if (federation.boolOf(record.fedSignRequest, false)) {
+      log.warn('federation: ' + record.fedId + ' asks for a signed ' +
+               'AuthnRequest and uses the HTTP Redirect binding, whose ' +
+               'signature is over the QUERY STRING rather than enveloped ' +
+               'in the XML. This service does not build that construction, ' +
+               'so the request goes UNSIGNED. Use HTTP-POST for a signed ' +
+               'request.');
+    }
+    const deflated = zlib.deflateRawSync(Buffer.from(built.xml, 'utf8'))
+                         .toString('base64');
+    const joiner = String(record.fedSsoUrl).indexOf('?') === -1 ? '?' : '&';
+    const url = record.fedSsoUrl + joiner + 'SAMLRequest=' +
+      encodeURIComponent(deflated) +
+      '&RelayState=' + encodeURIComponent(handle);
+    res.redirect(302, url);
+    log.debug("Leaving FederationSp.sendSaml2AuthnRequest(). HTTP " +
+              "Redirect.");
+  }
+
+  // `unsignedOnly` (#1955 P8 follow-up): the request before its signature,
+  // for `authnRequestXmlAsync()`, which signs it off the event loop.
+  private authnRequestXml(base, record, fresh?: boolean,
+                          unsignedOnly?: boolean) {
     const {
-      federation, documentSettings, stsCrypto, log, logArtifact, STS,
-      xmlEscape, iso
+      federation, stsCrypto, log, logArtifact, xmlEscape, iso
     } = this.deps;
     log.debug("Entering FederationSp.authnRequestXml().");
     const id = '_' + stsCrypto.randomBytes(16).toString('hex');
@@ -4819,7 +4908,7 @@ class FederationSp {
         '</saml:Issuer><samlp:NameIDPolicy ' +
         'AllowCreate="true"/></samlp:AuthnRequest>';
     logArtifact('federated SAML 2.0 AuthnRequest', 'before signing', xml);
-    if (!federation.boolOf(record.fedSignRequest, false)) {
+    if (unsignedOnly || !federation.boolOf(record.fedSignRequest, false)) {
       log.debug("Leaving FederationSp.authnRequestXml(). Unsigned. id=" + id);
       return { id: id, xml: xml };
     }
@@ -4829,8 +4918,41 @@ class FederationSp {
     // several identity providers refuse without saying why.
     // The configured algorithms since 2026-09-12 — see
     // saml/document_settings.ts.
+    const signed = stsCrypto.signXml(xml, this.authnRequestSignature(id));
+    logArtifact('federated SAML 2.0 AuthnRequest', 'after signing', signed);
+    log.debug("Leaving FederationSp.authnRequestXml(). Signed. id=" + id);
+    return { id: id, xml: signed };
+  }
+
+  // `authnRequestXml()`, signed off the event loop where the realm's XML key
+  // is in the HSM (`stsCrypto.signXmlOffLoop()`, #1955 P8 follow-up): the
+  // same request, and a software key signs it in place.
+  private async authnRequestXmlAsync(base, record, fresh?: boolean) {
+    const { federation, stsCrypto, log, logArtifact } = this.deps;
+    log.debug("Entering FederationSp.authnRequestXmlAsync().");
+    const unsigned = this.authnRequestXml(base, record, fresh, true);
+    if (!federation.boolOf(record.fedSignRequest, false)) {
+      log.debug("Leaving FederationSp.authnRequestXmlAsync(). Unsigned.");
+      return unsigned;
+    }
+    const signed = await stsCrypto.signXmlOffLoop(unsigned.xml,
+      this.authnRequestSignature(unsigned.id));
+    logArtifact('federated SAML 2.0 AuthnRequest', 'after signing', signed);
+    log.debug("Leaving FederationSp.authnRequestXmlAsync(). Signed. id=" +
+              unsigned.id);
+    return { id: unsigned.id, xml: signed };
+  }
+
+  // What an AuthnRequest's signature is made with. AFTER the Issuer, which
+  // is where the schema puts a signature on a request and where a partner
+  // will look for it. The configured algorithms since 2026-09-12 — see
+  // saml/document_settings.ts.
+  private authnRequestSignature(id: string): any {
+    const { documentSettings, stsCrypto, log, STS } = this.deps;
+    log.debug("Entering FederationSp.authnRequestSignature().");
     const how = documentSettings.signatureOptions();
-    const signed = stsCrypto.signXml(xml, {
+    log.debug("Leaving FederationSp.authnRequestSignature().");
+    return {
       // The XML signing key (#42, D2): `STS.xml`, not the JOSE key — and
       // `STS.xmlSigner`, the one for the configured algorithm (#68).
       privateKeyPem: STS.xmlSigner.privateKeyPem,
@@ -4843,10 +4965,7 @@ class FederationSp {
       placement: stsCrypto.PLACEMENT.AFTER_ISSUER,
       refUri: '#' + id,
       what: 'federated SAML 2.0 AuthnRequest'
-    });
-    logArtifact('federated SAML 2.0 AuthnRequest', 'after signing', signed);
-    log.debug("Leaving FederationSp.authnRequestXml(). Signed. id=" + id);
-    return { id: id, xml: signed };
+    };
   }
 
   // The HTTP POST binding as a REAL FORM WITH A REAL BUTTON. See the note above
@@ -4910,6 +5029,28 @@ class FederationSp {
   // that is the point: the one thing worse than not sending PKCE is a flag that
   // stops.
   // ---------------------------------------------------------------------------
+  // `authorizationRequestUrl()` with its Request Object signed off the
+  // event loop where the realm's key is in the HSM (#1955 P8 follow-up).
+  private async authorizationRequestUrlAsync(base, record, context) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.authorizationRequestUrlAsync().");
+    if (consumerProviders.adapts(record, 'steam-openid2')) {
+      log.debug("Leaving FederationSp.authorizationRequestUrlAsync(). " +
+                "OpenID 2.0.");
+      return this.steamRequestUrl(base, record, context);
+    }
+    if (consumerProviders.adapts(record, 'discourse-connect')) {
+      log.debug("Leaving FederationSp.authorizationRequestUrlAsync(). " +
+                "Discourse.");
+      return this.discourseRequestUrl(base, record, context);
+    }
+    const params = await this.authorizationParamsAsync(base, record,
+                                                       context);
+    const joiner = String(record.fedSsoUrl).indexOf('?') === -1 ? '?' : '&';
+    log.debug("Leaving FederationSp.authorizationRequestUrlAsync().");
+    return String(record.fedSsoUrl) + joiner + params.toString();
+  }
+
   private authorizationRequestUrl(base, record, context) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.authorizationRequestUrl().");
@@ -4955,7 +5096,8 @@ class FederationSp {
     // typed as possibly missing and refused the same way a throw is.
     let built: URLSearchParams | null = null;
     try {
-      built = this.authorizationParams(base, record, stored);
+      // Its Request Object off the event loop (#1955 P8 follow-up).
+      built = await this.authorizationParamsAsync(base, record, stored);
     } catch (e) {
       log.debug("Caught in FederationSp.fapiParRedirect(): " +
                 ((e && e.message) || e));
@@ -4983,19 +5125,21 @@ class FederationSp {
     // request object again, and the suite refused both as replays: an
     // assertion's jti is single-use (RFC 7523 section 3), and the suite
     // holds a request object's jti to the same (ValidateRequestObjectJti).
-    const signedPush = (): any => {
+    // SIGNED OFF THE EVENT LOOP where the realm's key is in the HSM
+    // (#1955 P8 follow-up): the async twins sign a software key in place.
+    const signedPush = async (): Promise<any> => {
       const one: any = Object.assign({}, form);
       if (FapiClient.usesJarm(profile)) {
         // Signed from the parameters as they are now, before `request`
         // exists, so the object does not contain itself.
-        one.request = FapiClient.requestObject(record, params);
+        one.request = await FapiClient.requestObjectAsync(record, params);
       }
-      one.client_assertion = FapiClient.clientAssertion(record);
+      one.client_assertion = await FapiClient.clientAssertionAsync(record);
       return one;
     };
     let firstPush: any = null;
     try {
-      firstPush = signedPush();
+      firstPush = await signedPush();
     } catch (e) {
       log.debug("Caught in FederationSp.fapiParRedirect(): " +
                 ((e && e.message) || e));
@@ -5007,11 +5151,11 @@ class FederationSp {
     const parUrl = String(record.fedParUrl || '');
     const key = stored && stored.fapiKey;
     let pushes = 0;
-    const send = (nonce) => {
+    const send = async (nonce) => {
       let body = firstPush;
       if (pushes > 0) {
         try {
-          body = signedPush();
+          body = await signedPush();
         } catch (e) {
           log.debug("Caught in FederationSp.fapiParRedirect(): " +
                     ((e && e.message) || e));
@@ -5147,26 +5291,37 @@ class FederationSp {
         why: 'the private_key_jwt could not be signed: ' +
              String((e && e.message) || e) };
     };
-    let assertion = '';
-    try {
-      assertion = FapiClient.clientAssertion(record);
-    } catch (e) {
+    // Off the event loop where the realm's key is in the HSM (#1955 P8
+    // follow-up); a software key signs in place, as before.
+    return FapiClient.clientAssertionAsync(record).then((assertion) => {
+      return this.fapiTokenRequestSigned(record, form, key, nonce,
+                                         clientCertificate, assertion,
+                                         notSigned);
+    }, (e) => {
       log.debug("Caught in FederationSp.fapiTokenRequestWith(): " +
                 ((e && e.message) || e));
       log.debug("Leaving FederationSp.fapiTokenRequestWith(). Not signed.");
-      return Promise.resolve(notSigned(e));
-    }
+      return notSigned(e);
+    });
+  }
+
+  // `fapiTokenRequestWith()` once its first assertion is signed.
+  private fapiTokenRequestSigned(record, form, key, nonce, clientCertificate,
+                                 assertion, notSigned): Promise<any> {
+    const { fedHttp, log } = this.deps;
+    log.debug("Entering FederationSp.fapiTokenRequestSigned().");
+    const profile = FapiClient.profileOf(record);
     form.client_id = String(record.fedClientId || '');
     form.client_assertion_type = FapiClient.CLIENT_ASSERTION_TYPE;
     form.client_assertion = assertion;
     if (!FapiClient.usesDpop(profile)) {
-      log.debug("Leaving FederationSp.fapiTokenRequestWith().");
+      log.debug("Leaving FederationSp.fapiTokenRequestSigned().");
       return fedHttp.fetchJson(record, 'fedTokenUrl',
         { method: 'POST', form: form,
           clientCertificate: clientCertificate || undefined });
     }
     if (!key || !key.pem) {
-      log.debug("Leaving FederationSp.fapiTokenRequestWith(). No key.");
+      log.debug("Leaving FederationSp.fapiTokenRequestSigned(). No key.");
       return Promise.resolve({ ok: false, status: 0, json: null, text: '',
         url: String(record.fedTokenUrl || ''), headers: {},
         errorCode: 'STS-FED-0247',
@@ -5174,23 +5329,24 @@ class FederationSp {
     }
     const url = String(record.fedTokenUrl || '');
     let attempts = 0;
-    log.debug("Leaving FederationSp.fapiTokenRequestWith().");
-    return FapiClient.withNonce((n) => {
+    log.debug("Leaving FederationSp.fapiTokenRequestSigned().");
+    return FapiClient.withNonce(async (n) => {
       let proof = '';
       if (attempts > 0) {
         try {
-          form.client_assertion = FapiClient.clientAssertion(record);
+          form.client_assertion =
+            await FapiClient.clientAssertionAsync(record);
         } catch (e) {
-          log.debug("Caught in FederationSp.fapiTokenRequestWith(): " +
+          log.debug("Caught in FederationSp.fapiTokenRequestSigned(): " +
                     ((e && e.message) || e));
-          return Promise.resolve(notSigned(e));
+          return notSigned(e);
         }
       }
       attempts += 1;
       try {
         proof = FapiClient.proof(key, 'POST', url, String(n || ''));
       } catch (e) {
-        log.debug("Caught in FederationSp.fapiTokenRequestWith(): " +
+        log.debug("Caught in FederationSp.fapiTokenRequestSigned(): " +
                   ((e && e.message) || e));
         return Promise.resolve({ ok: false, status: 0, json: null, text: '',
           url: url, headers: {}, errorCode: 'STS-FED-0247',
@@ -5842,7 +5998,11 @@ class FederationSp {
 
   // The authorization request's parameters, for the query or — for an OP
   // discovered through a federation (#134) — for a signed request object.
-  private authorizationParams(base, record, context) {
+  // `pending` (#1955 P8 follow-up): `authorizationParamsAsync()`'s list, to
+  // which a Request Object's signature is DEFERRED — a placeholder stands
+  // where the JWT goes, and that door signs it off the event loop over the
+  // parameters as they were here. Absent, it is signed here, as always.
+  private authorizationParams(base, record, context, pending?: any[]) {
     const { federation, log } = this.deps;
     log.debug("Entering FederationSp.authorizationParams().");
     // A FAPI PROFILE (#931) forces the response type, the mode and `openid`
@@ -5911,12 +6071,17 @@ class FederationSp {
     const by = String(record.fedRequestObject || '');
     if (!profile && record.fedProtocol === 'oidc' && (by === 'request' ||
         by === 'request_uri') && !String(record.fedTrustAnchor || '').trim()) {
-      const jwt = this.requestObjectJwt(record, params);
+      const jwt = pending
+        ? this.deferRequestObject(pending, 'own', record, params)
+        : this.requestObjectJwt(record, params);
       if (by === 'request') {
         params.set('request', jwt);
       } else {
         const handle = this.putContext({ kind: 'request-object',
                                          id: record.fedId, jwt: jwt });
+        if (pending) {
+          pending[pending.length - 1].handle = handle;
+        }
         params.set('request_uri', base + federation.PATHS.requestObject +
                    '/' + encodeURIComponent(record.fedId) + '/' + handle);
       }
@@ -5925,7 +6090,9 @@ class FederationSp {
       // 1-advanced signs here (#931). Message signing signs inside the
       // push, so that JWT never rides on the browser URL. The parameters
       // stay on the query as well (OpenID Connect Core 1.0 section 6.1).
-      params.set('request', FapiClient.requestObject(record, params));
+      params.set('request', pending
+        ? this.deferRequestObject(pending, 'fapi', record, params)
+        : FapiClient.requestObject(record, params));
     }
     // THE TIKTOK ADAPTER (#565): its authorization endpoint calls the client
     // id `client_key`, and reads nothing else.
@@ -6085,46 +6252,16 @@ class FederationSp {
     this.bindFlowToBrowser(res, contextRecord);
 
     if (record.fedProtocol === 'saml2') {
-      const built = this.authnRequestXml(base, record,
-                                         !!contextRecord.reauthAskedAt);
-      contextRecord.requestId = built.id;
-      const handle = this.putContext(contextRecord);
-      if (String(record.fedBinding || 'HTTP-Redirect') === 'HTTP-POST') {
-        res.type('html').set('Cache-Control', 'no-store').send(
-          this.postBindingPage(record.fedSsoUrl,
-                          { SAMLRequest: Buffer.from(built.xml, 'utf8')
-                                               .toString('base64'),
-                            RelayState: handle },
-                          record, contextRecord.application));
-        log.debug("Leaving the federation login endpoint. SAML 2.0 over HTTP " +
-                  'POST.');
-        return;
-      }
-      // HTTP Redirect: DEFLATE with no zlib header (saml-bindings section
-      // 3.4.4.1), then base64, then URL-encode. The request is NOT signed on
-      // this binding even when fedSignRequest is on, and that is stated rather
-      // than silently dropped: the Redirect binding signs the QUERY STRING with
-      // a `Signature` parameter rather than carrying an enveloped ds:Signature,
-      // which is a different construction — a partner wanting a signed request
-      // should be sent one on the POST binding.
-      if (federation.boolOf(record.fedSignRequest, false)) {
-        log.warn('federation: ' + record.fedId + ' asks for a signed ' +
-                 'AuthnRequest and uses the HTTP Redirect binding, whose ' +
-                 'signature is over the QUERY STRING rather than enveloped ' +
-                 'in the XML. This service does not build that construction, ' +
-                 'so the request goes UNSIGNED. Use HTTP-POST for a signed ' +
-                 'request.');
-      }
-      const deflated = zlib.deflateRawSync(Buffer.from(built.xml, 'utf8'))
-                           .toString('base64');
-      const joiner = String(record.fedSsoUrl).indexOf('?') === -1 ? '?' : '&';
-      const url = record.fedSsoUrl + joiner + 'SAMLRequest=' +
-        encodeURIComponent(deflated) +
-        '&RelayState=' + encodeURIComponent(handle);
-      res.redirect(302, url);
-      log.debug("Leaving the federation login endpoint. SAML 2.0 over HTTP " +
-                'Redirect.');
-      return;
+      // SIGNED OFF THE EVENT LOOP where the realm's XML key is in the HSM
+      // (#1955 P8 follow-up); the rest follows the request, and the promise
+      // is returned to the route.
+      log.debug("Leaving the federation login endpoint. A SAML 2.0 " +
+                "AuthnRequest.");
+      return this.authnRequestXmlAsync(base, record,
+                                       !!contextRecord.reauthAskedAt)
+        .then((built) => {
+          this.sendSaml2AuthnRequest(res, record, contextRecord, built);
+        });
     }
 
     if (record.fedProtocol === 'saml11') {
@@ -6209,9 +6346,11 @@ class FederationSp {
                              'not be trusted', String(got.why));
         }
         const handle = this.putContext(contextRecord);
-        const params = this.authorizationParams(base, got.record,
-                                                this.heldContext(handle));
-        return rp.authorizationRequestUrl(got.record, params)
+        return this.authorizationParamsAsync(base, got.record,
+                                             this.heldContext(handle))
+          .then(function (params) {
+            return rp.authorizationRequestUrl(got.record, params);
+          })
           .then(function (url) {
             res.redirect(302, url);
             log.debug("Leaving the federation login endpoint. A signed " +
@@ -6305,8 +6444,10 @@ class FederationSp {
         }
         let url = '';
         try {
-          url = this.authorizationRequestUrl(base, shaped,
-                                              this.heldContext(handle));
+          // Its Request Object off the event loop (#1955 P8 follow-up).
+          url = await this.authorizationRequestUrlAsync(base, shaped,
+                                                        this.heldContext(
+                                                          handle));
         } catch (e) {
           log.debug("Caught in the federation login endpoint: " +
                     ((e && e.message) || e));
@@ -6351,23 +6492,25 @@ class FederationSp {
     }
     const handle = this.putContext(contextRecord);
     const stored = this.heldContext(handle);
-    let url = '';
-    try {
-      url = this.authorizationRequestUrl(base, record, stored);
-    } catch (e) {
-      log.debug("Caught in the federation login endpoint: " +
-                ((e && e.message) || e));
-      const code = FapiClient.profileOf(record) ? 'STS-FED-0245'
-                                                : 'STS-FED-0214';
-      errorCodes.mark(res, code);
-      return this.refuse(res, record, 500, FapiClient.profileOf(record)
-        ? 'The FAPI request could not be signed'
-        : 'The Request Object could not be signed',
-        String((e && e.message) || e));
-    }
-    res.redirect(302, url);
+    // ITS REQUEST OBJECT IS SIGNED OFF THE EVENT LOOP where the realm's key
+    // is in the HSM (#1955 P8 follow-up), so the redirect follows a promise,
+    // returned to the route; a software key signs in place, as before.
     log.debug("Leaving the federation login endpoint. " + record.fedProtocol +
               ' authorization request.');
+    return this.authorizationRequestUrlAsync(base, record, stored)
+      .then((url) => {
+        res.redirect(302, url);
+      }, (e) => {
+        log.debug("Caught in the federation login endpoint: " +
+                  ((e && e.message) || e));
+        const code = FapiClient.profileOf(record) ? 'STS-FED-0245'
+                                                  : 'STS-FED-0214';
+        errorCodes.mark(res, code);
+        return this.refuse(res, record, 500, FapiClient.profileOf(record)
+          ? 'The FAPI request could not be signed'
+          : 'The Request Object could not be signed',
+          String((e && e.message) || e));
+      });
   }
 
   // ---------------------------------------------------------------------------
@@ -6896,10 +7039,82 @@ class FederationSp {
   // only by reference over https. Throws when the realm holds no key for
   // the algorithm; the login endpoint refuses (STS-FED-0214).
   // ---------------------------------------------------------------------------
-  private requestObjectJwt(record, params): string {
+  /**
+   * `authorizationParams()`, its Request Object signed off the event loop
+   * where the realm's key is in the HSM (#1955 P8 follow-up); a software key
+   * signs the same claims, in place.
+   *
+   * @param base - this service's base URL
+   * @param record - the relationship
+   * @param context - the flow's context
+   * @returns a promise of the parameters
+   */
+  private async authorizationParamsAsync(base, record, context) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.authorizationParamsAsync().");
+    const pending: any[] = [];
+    const params = this.authorizationParams(base, record, context, pending);
+    for (let i = 0; i < pending.length; i++) {
+      const one = pending[i];
+      const jwt = one.kind === 'fapi'
+        ? await FapiClient.requestObjectAsync(one.record, one.snapshot)
+        : await this.requestObjectJwtAsync(one.record, one.snapshot);
+      if (one.handle) {
+        this.rewriteRequestObject(one.handle, jwt);
+      } else if (params.get('request') === one.placeholder) {
+        params.set('request', jwt);
+      }
+    }
+    log.debug("Leaving FederationSp.authorizationParamsAsync(). " +
+              pending.length + " signed.");
+    return params;
+  }
+
+  // A Request Object's signature deferred: the parameters it signs, as they
+  // are now, and the placeholder that stands for it until it is made.
+  private deferRequestObject(pending: any[], kind: string, record,
+                             params): string {
     const { log, randomId } = this.deps;
-    log.debug("Entering FederationSp.requestObjectJwt().");
+    log.debug("Entering FederationSp.deferRequestObject(). " + kind);
+    const placeholder = 'pending-request-object-' + randomId(16);
+    pending.push({ kind: kind, record: record, placeholder: placeholder,
+                   snapshot: new URLSearchParams(params), handle: '' });
+    log.debug("Leaving FederationSp.deferRequestObject().");
+    return placeholder;
+  }
+
+  // The request_uri's held object, its JWT now made.
+  private rewriteRequestObject(handle: string, jwt: string): void {
+    const { log, stsCrypto } = this.deps;
+    log.debug("Entering FederationSp.rewriteRequestObject().");
+    const key = stsCrypto.credentialDigest(String(handle));
+    const held = contexts.get(key);
+    if (held) {
+      contexts.set(key, Object.assign({}, held, { jwt: jwt }));
+    }
+    log.debug("Leaving FederationSp.rewriteRequestObject().");
+  }
+
+  // `requestObjectJwt()` off the event loop (#1955 P8 follow-up).
+  private requestObjectJwtAsync(record, params): Promise<string> {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.requestObjectJwtAsync().");
     const alg = String(record.fedRequestObjectSigningAlg || 'RS256');
+    if (alg === 'none') {
+      log.debug("Leaving FederationSp.requestObjectJwtAsync(). Unsigned.");
+      return Promise.resolve(this.requestObjectJwt(record, params));
+    }
+    const claims = this.requestObjectClaims(record, params);
+    log.debug("Leaving FederationSp.requestObjectJwtAsync(). " + alg);
+    // certificate-header: none — as in requestObjectJwt().
+    return helpers.signJwtAsOffLoop(claims, alg, null,
+                                    { header: { typ: 'oauth-authz-req+jwt' } });
+  }
+
+  // A Request Object's claims: every parameter, and its own five.
+  private requestObjectClaims(record, params): any {
+    const { log, randomId } = this.deps;
+    log.debug("Entering FederationSp.requestObjectClaims().");
     const claims: any = {};
     params.forEach(function (value, name) {
       claims[name] = value;
@@ -6911,6 +7126,15 @@ class FederationSp {
     claims.nbf = now;
     claims.exp = now + 300;
     claims.jti = randomId(16);
+    log.debug("Leaving FederationSp.requestObjectClaims().");
+    return claims;
+  }
+
+  private requestObjectJwt(record, params): string {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.requestObjectJwt().");
+    const alg = String(record.fedRequestObjectSigningAlg || 'RS256');
+    const claims = this.requestObjectClaims(record, params);
     if (alg === 'none') {
       log.debug("Leaving FederationSp.requestObjectJwt(). Unsigned.");
       return Buffer.from(JSON.stringify({ alg: 'none', typ:
@@ -10403,6 +10627,7 @@ export = {
   // The portal's connect (#565), reached by `portal/portal_connected_accounts`
   // at request time.
   beginConnect: slot.forward('beginConnect'),
+  beginConnectAsync: slot.forward('beginConnectAsync'),
   // A peer cell's part of a provider's notification (#727): the inter-cell
   // operation's handler, and a test's way to call it.
   notificationForPeer: slot.forward('notificationForPeer'),
