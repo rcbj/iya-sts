@@ -522,7 +522,10 @@ class VcSignin {
   // Verifier's outcome is a transaction-store row, which keeps a sentence's
   // English and, beside it, its `{ key, params }`. Said again from the key,
   // a parameter that was a sentence said again too; null for no message.
-  static revived(message: any): Sentence | null {
+  // A KEY THIS BUILD'S ENGLISH CATALOG LACKS — the row written by another
+  // build, read after a rollback — is said in the English the store kept
+  // (`english`), never as its name (`Sentence.say()`'s fallback).
+  static revived(message: any, english?: string): Sentence | null {
     helpers.log.debug("Entering VcSignin.revived().");
     if (!message || typeof message !== 'object' ||
         typeof message.key !== 'string' ||
@@ -540,7 +543,7 @@ class VcSignin {
         : (typeof value === 'number' ? value : String(value));
     });
     helpers.log.debug("Leaving VcSignin.revived().");
-    return Sentence.say(message.key, params);
+    return Sentence.say(message.key, params, english);
   }
 
   // The way back to the screen the person came from, for a refusal's view:
@@ -1340,7 +1343,8 @@ class VcSignin {
                             String(outcome.reason || ''), false);
       }
       errorCodes.mark(res, outcome.errorCode || 'STS-VC-0061');
-      this.refuse(res, 403, VcSignin.revived(outcome.reasonMessage) ||
+      this.refuse(res, 403, VcSignin.revived(outcome.reasonMessage,
+                                             String(outcome.reason || '')) ||
                   outcome.reason ||
                   Sentence.say('refusals.wallet.nobodySignedIn'),
         this.refusedView(

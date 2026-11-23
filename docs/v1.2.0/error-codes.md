@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6016** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6017** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -82,7 +82,7 @@ is an ordinary outcome.
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
 * [Mail (`STS-MAIL`)](#sts-mail) — 44
-* [Languages and locales (`STS-I18N`)](#sts-i18n) — 15
+* [Languages and locales (`STS-I18N`)](#sts-i18n) — 16
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
 * [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 13
@@ -4543,6 +4543,7 @@ Raised from: common/i18n.ts, common/locale_policy.ts, common/page_locale.ts, aut
 | `STS-I18N-0013` | An application (appLocalePolicy) or a group (stsLocalePolicy) names a locale policy that this realm does not hold — written past the console, or the policy deleted by hand. The reference selects nothing and `default` applies where nothing else names a profile: the locale policy decides only a fallback language, so it does not fail closed (#1238). | none — a warning in the log |
 | `STS-I18N-0014` | A named locale policy was not deleted: an application (appLocalePolicy) or a group (stsLocalePolicy) of this realm still names it (#1238). | HTTP 400 (management API) |
 | `STS-I18N-0015` | POST /authn/language came from a page of another site (#1442). | HTTP 403 |
+| `STS-I18N-0016` | A refusal named a `refusals` catalog key the English catalog does not have — a sentence a store kept under another build, or a rollback — so the English it was given, or a general sentence, was sent instead of the key, with no catalog message beside it (#2006). | none — a warning in the log |
 
 ## STS-GNAP
 

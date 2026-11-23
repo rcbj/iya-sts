@@ -2432,6 +2432,24 @@ function removalBoundMs() {
  * @returns null when it is not being removed, else `{ since, sinceIso,
  *   inProgress, interrupted, finishesBy, refusing, why, finish }`
  */
+// THE WORDS OF A RETIRING REALM'S REFUSAL, once (#2006): the catalog
+// sentence, `retiringState()`'s `why` being its English. `sentence` is
+// required here and not at load: `helpers.js` requires this file, and
+// `sentence` requires `helpers.js`.
+function retiringSentence(id, state) {
+  log.debug("Entering retiringSentence().");
+  const Sentence = require('./sentence');
+  const out = !state
+    ? Sentence.say('refusals.account.realmRetiring', { realm: id })
+    : (state.inProgress
+      ? Sentence.say('refusals.account.realmRetiringSince',
+                     { realm: id, since: state.sinceIso })
+      : Sentence.say('refusals.account.realmRetiringInterrupted',
+                     { realm: id, since: state.sinceIso }));
+  log.debug("Leaving retiringSentence().");
+  return out;
+}
+
 function retiringState(realmOrId) {
   log.debug("Entering retiringState().");
   const id = realmOrId === undefined || realmOrId === null
@@ -2459,14 +2477,9 @@ function retiringState(realmOrId) {
               'credential, certificate and SVID in this realm ' +
               '(STS-CORE-0121); sign-out, revocation, introspection, ' +
               'UserInfo, metadata and the SSF poll endpoint still answer',
-    why: inProgress
-      ? 'The trust realm "' + id + '" is being removed (the removal ' +
-        'began at ' + sinceIso + '), so nothing new is signed in or ' +
-        'issued in it.'
-      : 'The trust realm "' + id + '" was being removed from ' + sinceIso +
-        ', and that removal was interrupted before it finished — the ' +
-        'process doing it stopped. Nothing new is signed in or issued in ' +
-        'it until an administrator finishes the removal.',
+    // One copy of the words (#2006): the catalog sentence's English.
+    why: String(retiringSentence(id, { inProgress: inProgress,
+                                       sinceIso: sinceIso })),
     finish: inProgress
       ? 'Wait: the removal finishes by itself by ' +
         new Date(finishesBy).toISOString() + '.'
@@ -2519,18 +2532,9 @@ function retiringRefusal(realmOrId) {
     : (typeof realmOrId === 'object' ? String(realmOrId.id || '')
                                      : String(realmOrId));
   const state = retiringState(id);
-  // A CATALOG SENTENCE (#2006), the same words as `retiringState()`'s
-  // `why`, so a sign-in page draws it in its language. Required here and
-  // not at load: `helpers.js` requires this file, and `sentence` requires
-  // `helpers.js`.
-  const Sentence = require('./sentence');
-  const why = !state
-    ? Sentence.say('refusals.account.realmRetiring', { realm: id })
-    : (state.inProgress
-      ? Sentence.say('refusals.account.realmRetiringSince',
-                     { realm: id, since: state.sinceIso })
-      : Sentence.say('refusals.account.realmRetiringInterrupted',
-                     { realm: id, since: state.sinceIso }));
+  // A CATALOG SENTENCE (#2006), so a sign-in page draws it in its
+  // language: `retiringSentence()`, `retiringState()`'s words too.
+  const why = retiringSentence(id, state);
   log.debug("Leaving retiringRefusal(). Refused.");
   // `why` IS THE ENGLISH, as it always was: three issuers hand it to a
   // protocol's own error answer; `said` is the sentence the sign-in screen

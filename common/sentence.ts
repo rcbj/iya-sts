@@ -49,6 +49,7 @@
 
 import helpers = require('./helpers');
 import i18n = require('./i18n');
+import errorCodes = require('./error_codes');
 
 const { log } = helpers;
 
@@ -128,11 +129,27 @@ class Sentence extends String {
    *
    * @param key - the catalog key, a literal (`refusals.authn.failedFor`)
    * @param params - the parameters, by name
+   * @param fallback - the English to send where the English catalog has no
+   *   such key: a sentence read back from a store (`VcSignin.revived()`)
    * @returns the sentence
    */
-  static say(key: string, params?: Record<string, SentenceParam>): Sentence {
+  static say(key: string, params?: Record<string, SentenceParam>,
+             fallback?: string): Sentence {
     log.debug("Entering Sentence.say().");
     const given = params || {};
+    // A KEY THE ENGLISH CATALOG DOES NOT HAVE is never sent as its name
+    // (the merger's review of #2006): a sentence a store kept under another
+    // build, read back after a rollback or during a rolling deploy, says the
+    // English it was given — or a general sentence — and carries no key, so
+    // no page looks one up either.
+    if (!i18n.translator([i18n.SOURCE]).has(key)) {
+      log.warn(errorCodes.tag('STS-I18N-0016') + 'sentence: the English ' +
+               'catalog has no ' + key + '; its fallback is sent instead.');
+      const out = new Sentence('', {}, String(fallback ||
+        Sentence.englishOf('refusals.web.refusedGeneral', {})));
+      log.debug("Leaving Sentence.say(). No such key.");
+      return out;
+    }
     const out = new Sentence(key, given, Sentence.englishOf(key, given));
     log.debug("Leaving Sentence.say().");
     return out;
@@ -187,6 +204,32 @@ class Sentence extends String {
   }
 
   /**
+   * The sentence in a page's language, for a page the SERVER draws (the
+   * signed-out document): its parameters that are sentences said in it
+   * too, and its English where the translator lacks its key.
+   *
+   * @param t - the page's translator (`PageLocale.forPage()`)
+   * @returns the sentence, as text
+   */
+  textIn(t: any): string {
+    log.debug("Entering Sentence.textIn(). " + this.key);
+    if (!this.key || !t || typeof t.has !== 'function' || !t.has(this.key)) {
+      log.debug("Leaving Sentence.textIn(). English.");
+      return this.text;
+    }
+    const params: Record<string, string | number> = {};
+    Object.keys(this.params).forEach((name) => {
+      const value = this.params[name];
+      params[name] = value instanceof Sentence ? value.textIn(t)
+        : (typeof value === 'number' ? value : String(value == null
+          ? '' : value));
+    });
+    const out = t.text(this.key, params);
+    log.debug("Leaving Sentence.textIn().");
+    return out;
+  }
+
+  /**
    * The sentence as an answer carries it: its key and its parameters, a
    * parameter that is a sentence carried the same way.
    *
@@ -223,13 +266,13 @@ class Sentence extends String {
     log.debug("Entering Sentence.messagesOf().");
     const items = Array.isArray(list) ? list : [];
     if (!items.some(function (s) {
-      return s instanceof Sentence;
+      return s instanceof Sentence && !!s.key;
     })) {
       log.debug("Leaving Sentence.messagesOf(). Text only.");
       return undefined;
     }
     const out = items.map(function (s) {
-      return s instanceof Sentence ? s.message() : null;
+      return s instanceof Sentence && s.key ? s.message() : null;
     });
     log.debug("Leaving Sentence.messagesOf(). " + out.length + ".");
     return out;
@@ -245,7 +288,8 @@ class Sentence extends String {
    */
   static stored(value: unknown): SentenceMessage | null {
     log.debug("Entering Sentence.stored().");
-    const out = value instanceof Sentence ? value.message() : null;
+    const out = value instanceof Sentence && value.key ? value.message()
+      : null;
     log.debug("Leaving Sentence.stored().");
     return out;
   }

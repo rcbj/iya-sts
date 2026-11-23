@@ -1073,13 +1073,8 @@ class VcVerifier {
       if (allowed.indexOf(asked) < 0) {
         log.debug("Leaving VcVerifier.vpWalletFor(). An unregistered wallet " +
                   "URL was refused.");
-        return { error: 'The wallet URL "' + asked + '" is neither ' +
-                        'oid4vp.walletUrl nor one listed in ' +
-                        'oid4vp.allowedWalletUrls, and this realm does not ' +
-                        'send a presentation request to an address the ' +
-                        'request named. Add it to that setting, or leave the ' +
-                        'wallet ' +
-                        'parameter off.' };
+        return { error: Sentence.say('refusals.wallet.walletUrlNotListed',
+                                     { url: asked }) };
       }
     }
     // NO WEB WALLET UNLESS ONE IS CONFIGURED OR NAMED (2026-10-12): the
@@ -5319,10 +5314,16 @@ class VcVerifier {
       log.debug("Leaving VcVerifier.withdrawSignIn(). Nothing to withdraw.");
       return false;
     }
+    // The store keeps the English; the message beside it (#2006) is what
+    // `VcSignin.revived()` says again in the page's language. `why` is the
+    // caller's own fragment, placed as data.
+    const withdrawn = why
+      ? Sentence.say('refusals.wallet.signInWithdrawnBecause',
+                     { why: String(why) })
+      : Sentence.say('refusals.wallet.signInWithdrawn');
     record.signIn.outcome = {
       ok: false, errorCode: 'STS-VC-0070', username: '', subject: '',
-      reason: 'This sign-in was ended before this browser collected it: ' +
-              String(why || 'a sign-out') + '. Nobody was signed in.' };
+      reason: String(withdrawn), reasonMessage: Sentence.stored(withdrawn) };
     vpTransactions.set(String(record.state), record);
     log.debug("Leaving VcVerifier.withdrawSignIn(). Withdrawn.");
     return true;

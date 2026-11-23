@@ -4809,14 +4809,14 @@ class Logout {
     const dot = text.lastIndexOf('.');
     if (dot <= 0) {
       log.debug("Leaving Logout.openResult(). Not a sealed result.");
-      return { why: 'That is not a sign-out result.' };
+      return { why: Sentence.say('refusals.logout.resultNotOne') };
     }
     const packed = text.slice(0, dot);
     const expected = crypto.hmac('sha256', clusterSecrets.get(RESULT_SECRET),
                                  RESULT_LABEL + '.' + packed, 'base64url');
     if (!crypto.constantTimeEquals(text.slice(dot + 1), expected)) {
       log.debug("Leaving Logout.openResult(). The MAC.");
-      return { why: 'That sign-out result was not made by this service.' };
+      return { why: Sentence.say('refusals.logout.resultNotOurs') };
     }
     let payload: Loose = null;
     try {
@@ -4829,16 +4829,15 @@ class Logout {
     }
     if (!payload || !payload.result) {
       log.debug("Leaving Logout.openResult(). Unreadable.");
-      return { why: 'That sign-out result could not be read.' };
+      return { why: Sentence.say('refusals.logout.resultUnreadable') };
     }
     if (String(payload.realm) !== String(realms.currentId() || '')) {
       log.debug("Leaving Logout.openResult(). Another realm.");
-      return { why: 'That sign-out result was made in another trust realm.' };
+      return { why: Sentence.say('refusals.logout.resultOtherRealm') };
     }
     if (!(Number(payload.exp) > Date.now())) {
       log.debug("Leaving Logout.openResult(). Expired.");
-      return { why: 'That sign-out result has expired. What is still live ' +
-                    'is at /logout.' };
+      return { why: Sentence.say('refusals.logout.resultExpired') };
     }
     log.debug("Leaving Logout.openResult().");
     return { result: payload.result };
@@ -4855,7 +4854,10 @@ class Logout {
          this.page(t, realms.currentPrefix() + LOGOUT_PATH,
               t.text('logout.title'),
               '<h1>' + t.html('logout.heading') + '</h1><div ' +
-                   'class="err">' + xmlEscape(why) +
+                   'class="err">' +
+                   // In the page's language (#2006): the document is drawn
+                   // here, so the server says the sentence in `t`.
+                   xmlEscape(Sentence.is(why) ? why.textIn(t) : String(why)) +
                    '</div><p class="sub"><a href="' +
                    xmlEscape(LOGOUT_PATH) +
                    '">' + t.html('logout.startAgain') + '</a>' +
@@ -5124,11 +5126,12 @@ class Logout {
       }
       if (this.reauthenticationOwed(subject, body)) {
         errorCodes.mark(res, 'STS-LOGOUT-0015');
+        const again = Sentence.say('refusals.logout.signInAgainFirst');
         res.status(403).type('application/json').set('Cache-Control',
                                                      'no-store')
            .send(JSON.stringify({ error: 'reauthentication_required',
-             errors: ['Sign in again at /authn/login, then come back to end ' +
-                      'your other sessions.'] }, null, 2));
+             errors: [String(again)],
+             messages: Sentence.messagesOf([again]) }, null, 2));
         log.debug("Leaving the logout action endpoint. Sign in again.");
         return;
       }
@@ -5194,18 +5197,19 @@ class Logout {
         site === 'same-origin';
       if (!sameSite && (!origin || own.indexOf(origin) < 0)) {
         this.refusedDocument(res, 403, 'STS-LOGOUT-0009',
-          'This page is posted by the sign-out page of this service: the ' +
-          'request carried ' + (origin && origin !== 'null'
-            ? 'another origin' : 'no origin of this service') + '.');
+          Sentence.say(origin && origin !== 'null'
+            ? 'refusals.logout.postedOtherOrigin'
+            : 'refusals.logout.postedNoOrigin'));
         log.debug("Leaving the signed-out document. Not this origin.");
         return;
       }
       const posted = validation.checkParsed(parseBody(req) || {}, 'body',
                                             SIGNED_OUT_FORM);
       const opened = posted.ok ? this.openResult(posted.value.result)
-                               : { why: 'There is no sign-out result here.' };
+                               : { why: Sentence.say(
+                                   'refusals.logout.resultNone') };
       if (!opened.result) {
-        this.refusedDocument(res, 400, 'STS-LOGOUT-0008', String(opened.why));
+        this.refusedDocument(res, 400, 'STS-LOGOUT-0008', opened.why);
         log.debug("Leaving the signed-out document. " + opened.why);
         return;
       }

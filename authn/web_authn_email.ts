@@ -104,9 +104,10 @@ class WebAuthnEmail {
       why: (v.refusal && WebSaid.saidWith(t, v.refusal)) ||
         String(v.sentence || ''), whyTone: 'err',
       ids: { why: 'email-error' },
-      notes: [WebSaid.sentence(t,
+      // `notes` are markup, so the sentence — text — is escaped here.
+      notes: [WebAuthnLogin.esc(WebSaid.sentence(t,
         { key: 'refusals.web.startAgainFromApplication' }) ||
-        'Start again from the application that sent you here.'] });
+        'Start again from the application that sent you here.')] });
   }
 
   /**

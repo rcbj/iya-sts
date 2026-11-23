@@ -1909,8 +1909,11 @@ class AuthnApi {
               ((e && (e.stack || e.message)) || e));
     if (!res.headersSent) {
       errorCodes.mark(res, email ? 'STS-AUTHN-0267' : 'STS-AUTHN-0328');
-      authn.answerJson(res, 500, { ok: false,
-        errors: ['Something went wrong; this sign-in could not continue.'] });
+      // In the page's language (#2006): the merger's review found the
+      // last English sentence of the sign-in's own.
+      const said = Sentence.say('refusals.authn.apiFailed');
+      authn.answerJson(res, 500, { ok: false, errors: [String(said)],
+                                   messages: Sentence.messagesOf([said]) });
     }
     log.debug("Leaving AuthnApi.failed().");
   }

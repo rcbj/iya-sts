@@ -344,7 +344,7 @@ class EmailFactor {
                ((sent && sent.error) || 'the mail channel refused it'));
       log.debug("Leaving EmailFactor.arm(). Not sent.");
       return { ok: false, code: 'STS-AUTHN-0259',
-               why: 'The message could not be sent just now.' };
+               why: Sentence.say('refusals.authn.emailNotSent') };
     }
     log.debug("Leaving EmailFactor.arm(). Sent.");
     return { ok: true };

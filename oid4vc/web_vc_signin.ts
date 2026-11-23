@@ -439,15 +439,17 @@ class WalletFlow {
    */
   async operation(id: string): Promise<Json> {
     if (!await this.surface.ensureIndex()) {
-      this.surface.refused('The service\'s API could not be reached.');
+      this.surface.refused(this.surface.refusal('refusals.web.unreachable',
+        {}, 'The service\'s API could not be reached.'));
       return null;
     }
     const rows = (this.surface.indexRows || []).filter(function (op: Json) {
       return op.operationId === id;
     });
     if (!rows.length) {
-      this.surface.refused('This page has no API operation (' + id +
-                           '), so it refuses rather than guess.');
+      this.surface.refused(this.surface.refusal('refusals.web.noOperation',
+        { control: id }, 'This page has no API operation (' + id +
+        '), so it refuses rather than guess.'));
       return null;
     }
     return rows[0];

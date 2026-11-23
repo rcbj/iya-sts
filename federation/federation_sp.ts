@@ -7486,7 +7486,8 @@ class FederationSp {
             ? Sentence.say('refusals.federation.webFingerNoIssuer',
                            { host: String(target.host) })
             : Sentence.say('refusals.federation.webFingerNoAnswer',
-                           { host: String(target.host), why: String(answer.why) }));
+                           { host: String(target.host),
+                             why: String(answer.why) }));
       }
       const issuer = String(link.href);
       const peer = String(record.fedPeer || '').trim();

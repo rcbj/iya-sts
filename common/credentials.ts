@@ -4016,11 +4016,8 @@ class Credentials {
       log.debug("Leaving Credentials.addKey(). An import under an " +
                 "enforced credProtect.");
       return coded('STS-AUTHN-0580', { ok: false, reason: 'cred-protect',
-               errors: ['This person\'s passkey policy enforces CTAP 2.1 ' +
-                        'credential protection (credProtect level ' +
-                        credRule.level + '), and an imported U2F key ' +
-                        'cannot prove its level. Register a security key ' +
-                        'instead.'] });
+               errors: [Sentence.say('refusals.passkey.importCredProtect',
+                 { level: credRule.level })] });
     }
     if (given.credProtect !== undefined) {
       facts.credProtect = given.credProtect;
@@ -4055,9 +4052,7 @@ class Credentials {
                'write; nothing was written.');
       log.debug("Leaving Credentials.addKey(). The upgraded key is gone.");
       return coded('STS-AUTHN-0457', { ok: false, reason: 'upgrade',
-               errors: ['The passkey you were upgrading was removed or ' +
-                        'upgraded by another request since you used it, ' +
-                        'so nothing was changed.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeGone')] });
     }
     if (upgrading) {
       facts.upgrade = { mode: upgrade.mode,
@@ -4112,9 +4107,7 @@ class Credentials {
                'already enrolled. Refused as a duplicate.');
       log.debug("Leaving Credentials.addKey(). Already enrolled.");
       return coded('STS-AUTHN-0095', { ok: false, reason: 'duplicate',
-               errors: ['That authenticator is already enrolled. Use a ' +
-                        'DIFFERENT one — a backup on the same device is lost ' +
-                        'with the original.'] });
+               errors: [Sentence.say('refusals.passkey.alreadyEnrolled')] });
     }
     const cap = webauthnPolicy.settings().maxKeysPerPerson;
     // AN UPGRADE IN PLACE (#939) ADDS NO KEY: the one it replaces is not
@@ -4479,9 +4472,7 @@ class Credentials {
                  ' was REFUSED: its credential id is being registered, or ' +
                  'was just registered, by another request or node.');
         return coded('STS-AUTHN-0193', { ok: false, reason: 'duplicate',
-          errors: ['That authenticator has just been registered by another ' +
-                   'request. It is enrolled once; look for it on your key ' +
-                   'list.'] });
+          errors: [Sentence.say('refusals.passkey.justRegistered')] });
       }
       if (!claimed.ok) {
         log.error(errorCodes.tag('STS-AUTHN-0194') + 'credentials: whether ' +
@@ -4490,8 +4481,7 @@ class Credentials {
                   (claimed.why || claimed.reason) + '), so it was not ' +
                   'enrolled.');
         return coded('STS-AUTHN-0194', { ok: false, reason: 'store',
-          errors: ['The security key could not be registered just now. Try ' +
-                   'again.'] });
+          errors: [Sentence.say('refusals.passkey.notRegisteredNow')] });
       }
       const stored = this.addKey(username, credential, opts);
       if (!stored.ok) {
