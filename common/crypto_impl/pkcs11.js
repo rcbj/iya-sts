@@ -16,10 +16,13 @@
 //   * a realm's classical SIGNING KEYS held in the HSM (`generateKeyPair()`,
 //     `publicKeyOf()`, `sign()` / `signSync()`), for
 //     `keys.signingKeyStore=pkcs11` (`common/helpers.js`, `common/crypto.js`).
-//     `sign()` uses `C_SignAsync`. `signSync()`, and a module with no
-//     asynchronous sign, call blocking `C_Sign` only while
-//     `keys.pkcs11SynchronousSign` is on; otherwise they refuse
-//     (STS-KEYS-0209).
+//     `sign()` uses `C_SignAsync`, and `decryptOaep()` / `deriveEcdh()`
+//     asked asynchronously `C_DecryptAsync` / `C_DeriveKeyAsync`. A blocking
+//     call — `signSync()`, a synchronous decryption or agreement, or a
+//     module with no asynchronous call — is made only while
+//     `keys.pkcs11SynchronousSign` is on; otherwise it refuses
+//     (STS-KEYS-0209). Every door in `crypto.js` has the asynchronous road
+//     (the P8 follow-up, 2026-11-23).
 //
 // IT IS AN ENGINE, AND `common/crypto.js` IS THE DOOR. Nothing outside
 // `crypto.js` requires this file; `crypto.js` hands out a `Pkcs11Token` and
@@ -259,9 +262,13 @@ function codeFor(err) {
          UNSUPPORTED.has(ckr) ? 'STS-KEYS-0207' : 'STS-KEYS-0201';
 }
 
-// Whether a blocking C_Sign is allowed. Off by default
-// (keys.pkcs11SynchronousSign): a synchronous door refuses rather than
-// holding the event loop for the token. Read lazily. This file is required
+// Whether a blocking call with a realm's key in the token — C_Sign, and
+// since the P8 follow-up (2026-11-23) C_Decrypt and C_DeriveKey too — is
+// allowed. Off by default (keys.pkcs11SynchronousSign): every door has an
+// asynchronous road (`crypto.js`'s `…OffLoop()` doors), so a blocking call
+// is refused (STS-KEYS-0209) rather than made, which is what a door left on
+// the synchronous road, or a module with no asynchronous call, gets. On, it
+// is the opt-in to waiting on the token on the event loop. Read lazily. This file is required
 // by crypto.js, which has already required config.js, so the require hits
 // the cache; a load that is not ready is treated as off.
 function synchronousSignAllowed() {
@@ -1484,7 +1491,21 @@ class Pkcs11Token {
                    sourceData: label && label.length ? Buffer.from(label)
                                                      : undefined } };
     const input = Buffer.from(data);
+    // A BLOCKING C_Decrypt — asked synchronously, or by a module with no
+    // C_DecryptAsync — only while keys.pkcs11SynchronousSign is on
+    // (#1955 P8 follow-up); otherwise STS-KEYS-0209, before C_DecryptInit.
+    if (!async && !synchronousSignAllowed()) {
+      log.debug('Leaving Pkcs11Token.decryptOaep(). Refused.');
+      throw refusal('STS-KEYS-0209', 'a blocking PKCS#11 decryption is off ' +
+                    '(keys.pkcs11SynchronousSign); use the asynchronous door');
+    }
     const op = function (lib, session) {
+      if (typeof lib.C_DecryptAsync !== 'function' &&
+          !synchronousSignAllowed()) {
+        throw refusal('STS-KEYS-0209', 'a blocking PKCS#11 decryption is ' +
+                      'off (keys.pkcs11SynchronousSign), and this module ' +
+                      'has no asynchronous C_Decrypt');
+      }
       lib.C_DecryptInit(session, mechanism, self.handleOf(key));
       return async ? decryptAsync(lib, session, input, input.length)
                    : lib.C_Decrypt(session, input, Buffer.alloc(input.length));
@@ -1556,8 +1577,22 @@ class Pkcs11Token {
         lib.C_DestroyObject(session, obj);
       }
     };
+    // A blocking C_DeriveKey only while keys.pkcs11SynchronousSign is on,
+    // as for decryptOaep().
+    if (!async && !synchronousSignAllowed()) {
+      log.debug('Leaving Pkcs11Token.deriveEcdh(). Refused.');
+      throw refusal('STS-KEYS-0209', 'a blocking PKCS#11 key agreement is ' +
+                    'off (keys.pkcs11SynchronousSign); use the asynchronous ' +
+                    'door');
+    }
     const op = function (lib, session) {
       const handle = self.handleOf(key);
+      if (typeof lib.C_DeriveKeyAsync !== 'function' &&
+          !synchronousSignAllowed()) {
+        throw refusal('STS-KEYS-0209', 'a blocking PKCS#11 key agreement ' +
+                      'is off (keys.pkcs11SynchronousSign), and this module ' +
+                      'has no asynchronous C_DeriveKey');
+      }
       if (async && typeof lib.C_DeriveKeyAsync === 'function') {
         return lib.C_DeriveKeyAsync(session, mechanism, handle, template)
           .then(function (obj) {

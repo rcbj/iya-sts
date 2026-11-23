@@ -357,6 +357,8 @@ interface WsFederationDeps {
   gate: typeof gate;
   buildSamlAssertion: typeof saml2.buildSamlAssertion;
   buildSaml11Assertion: typeof saml11.buildSaml11Assertion;
+  buildSamlAssertionAsync: typeof saml2.buildSamlAssertionAsync;
+  buildSaml11AssertionAsync: typeof saml11.buildSaml11AssertionAsync;
   sessionOf: typeof authn.sessionOf;
   endSession: typeof authn.endSession;
   beginAuthentication: typeof authn.beginAuthentication;
@@ -420,6 +422,8 @@ class WsFederation {
       gate: gate,
       buildSamlAssertion: saml2.buildSamlAssertion,
       buildSaml11Assertion: saml11.buildSaml11Assertion,
+      buildSamlAssertionAsync: saml2.buildSamlAssertionAsync,
+      buildSaml11AssertionAsync: saml11.buildSaml11AssertionAsync,
       sessionOf: authn.sessionOf,
       endSession: authn.endSession,
       beginAuthentication: authn.beginAuthentication,
@@ -1779,8 +1783,8 @@ class WsFederation {
   private issueSignInResponse(req, res, params, session, realm, wreply,
                              tokenType,
                              entry?: { path: string; riskStepUp: boolean }) {
-    const { applications, buildSaml11Assertion, buildSamlAssertion, config,
-            errorCodes, gate, log, noteSessionChanged } = this.deps;
+    const { applications, buildSaml11AssertionAsync, buildSamlAssertionAsync,
+            config, errorCodes, gate, log } = this.deps;
     log.debug("Entering WsFederation.issueSignInResponse(). tokenType=" +
               tokenType);
     const returnPath = (entry && entry.path) || PASSIVE_PATH;
@@ -1992,9 +1996,14 @@ class WsFederation {
     const lifetimeMin =
       Number(applications.settingFor(realm || '', 'wsfed.assertionLifetimeMin',
                                      config)) || 60;
-    let assertion;
+    // SIGNED OFF THE EVENT LOOP where the realm's XML key is in the HSM
+    // (#1955 P8 follow-up): the builders' async twins, which sign a software
+    // key in place exactly as the synchronous ones do. Everything from here
+    // on waits for the assertion, so the rest of the response is its
+    // continuation, returned for the express guard.
+    let built;
     if (tokenType === SAML2_TOKEN_TYPE) {
-      assertion = buildSamlAssertion(user.username, realm, lifetimeMin, {
+      built = buildSamlAssertionAsync(user.username, realm, lifetimeMin, {
         // The asked EAP class when the session earned it (#737). '' keeps
         // methods.saml2, so a request that did not name the class is the
         // assertion this profile has always issued, byte for byte.
@@ -2039,7 +2048,7 @@ class WsFederation {
         })
       });
     } else {
-      assertion = buildSaml11Assertion({
+      built = buildSaml11AssertionAsync({
         subject: user.username,
         audience: realm,
         lifetimeMin: lifetimeMin,
@@ -2055,6 +2064,20 @@ class WsFederation {
         issuer: issuer
       });
     }
+    log.debug("Leaving WsFederation.issueSignInResponse(). The assertion " +
+              "is being signed.");
+    return built.then((assertion) => {
+      this.sendSignInResponseFor(res, params, session, realm, wreply,
+                                 tokenType, lifetimeMin, user, assertion);
+    });
+  }
+
+  // The rest of `issueSignInResponse()` once its assertion is signed: the
+  // RSTR, the session's record of the relying party, and the page.
+  private sendSignInResponseFor(res, params, session, realm, wreply,
+                                tokenType, lifetimeMin, user, assertion) {
+    const { log, noteSessionChanged } = this.deps;
+    log.debug("Entering WsFederation.sendSignInResponseFor().");
     const trustVersion = String(params.trust ||
                                 '') === '1.3' ? '1.3' : '2005/02';
     const wresult = this.buildRstr(tokenType, assertion, realm, lifetimeMin,
@@ -2079,7 +2102,8 @@ class WsFederation {
                             this.signInResponsePage(wreply, wresult,
                                                     params.wctx, realm,
                                                     tokenType, t), t);
-    log.debug("Leaving WsFederation.issueSignInResponse(). " + user.username +
+    log.debug("Leaving WsFederation.sendSignInResponseFor(). " +
+              user.username +
               " signed in to " + realm + ".");
   }
 
@@ -2366,9 +2390,12 @@ class WsFederation {
                            this.descriptionPage(baseUrlOf(req)));
     }
     if (wa === WA_SIGN_IN) {
-      this.signIn(req, res, params);
+      // RETURNED (#1955 P8 follow-up): a sign-in response's assertion is
+      // signed off the event loop, so this may be a promise, and the
+      // express guard answers a rejection (`common/fault_boundary.ts`).
+      const answered = this.signIn(req, res, params);
       log.debug("Leaving the passive requestor endpoint. wsignin1.0.");
-      return;
+      return answered;
     }
     if (wa === WA_SIGN_OUT) {
       this.signOut(req, res, params, false);
