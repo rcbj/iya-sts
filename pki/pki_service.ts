@@ -545,6 +545,29 @@ class PkiService {
     const { log, app, errorCodes } = this.deps;
     log.debug("Entering PkiService.revocationOnly().");
     const path = String(req.url || '').split('?')[0];
+    // THE SSH USER CA'S KEY AND ITS KRL ARE NEVER SERVED HERE (the #1955
+    // review). Unlike a CRL or an OCSP response, neither is signed by
+    // anything a reader already trusts: the TrustedUserCAKeys line IS the
+    // trust anchor, and the KRL is not signed at all. Over plain HTTP a
+    // network attacker substitutes their own CA key, or a KRL that revokes
+    // nothing. Both are on the main port, over TLS, only.
+    if (/^\/pki\/ssh-/.test(path)) {
+      errorCodes.mark(res, 'STS-SSHCA-0001');
+      res.statusCode = 404;
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('Content-Security-Policy', "default-src 'none'; " +
+                    "frame-ancestors 'none'; base-uri 'none'; " +
+                    "object-src 'none'");
+      res.end('The SSH user CA\'s public key and its KRL are served over ' +
+              'HTTPS on this service\'s main port only: neither is signed ' +
+              'by anything you already trust, so plain HTTP would let ' +
+              'anybody on the path replace them.\n');
+      log.debug("Leaving PkiService.revocationOnly(). An SSH document.");
+      return;
+    }
     // `/healthcheck` too (2026-09-21): the load balancer's HTTP health
     // check on this port (deploy/aws/environment/nlb.tf) — the same route
     // `common/app.js` answers on the main port.

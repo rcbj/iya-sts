@@ -57,5 +57,16 @@
 "escrowSerial": "Certificate serial",
 "escrowSubject": "Subject",
 "escrowExpires": "Expires",
-"escrowRecover": "Recover key"
+"escrowRecover": "Recover key",
+  "sshTab": "SSH certificates",
+  "sshWhat": "The OpenSSH user certificates this realm issued to the person, until each expires. Revoking one puts it on the realm's KRL (GET /pki/ssh-user-krl), which the servers that trust this CA read.",
+  "sshSearch": "Search the Tokens tab for a person to list their SSH certificates here.",
+  "sshNone": "No SSH certificate of {who} is live.",
+  "sshSerial": "Serial",
+  "sshKey": "Key",
+  "sshPrincipals": "Principals",
+  "sshExpires": "Expires",
+  "sshHardware": "hardware-bound",
+  "sshRevoked": "revoked",
+  "sshRevoke": "Revoke"
 }

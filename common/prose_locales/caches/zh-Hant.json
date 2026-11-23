@@ -1786,5 +1786,21 @@
   "caches.remaining.disowned": {
     "en": "0e9453a606f40a73",
     "text": "已失效：該認證資料已被否認"
+  },
+  "caches.store.ssh_user_ca.issued.title": {
+    "en": "d075b5ec478b0ed7",
+    "text": "已簽發的 SSH 使用者憑證"
+  },
+  "caches.store.ssh_user_ca.issued.description": {
+    "en": "75dbc5d0d0bd9054",
+    "text": "此領域的 SSH 使用者 CA 簽發的每張 OpenSSH 使用者憑證一列，依序號：屬於誰（urn:uuid）、金鑰指紋、主體、有效期以及是否已撤銷。從不包含金鑰。"
+  },
+  "caches.store.ssh_user_ca.issued.bound": {
+    "en": "36fc38da0e0699e8",
+    "text": "程序持有的列是每個領域 5,000 筆的快取；憑證到期時該列離開儲存區。"
+  },
+  "caches.store.ssh_user_ca.issued.lifetime": {
+    "en": "fdcbaa82a4ac533d",
+    "text": "直到憑證到期。"
   }
 }

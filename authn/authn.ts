@@ -6313,7 +6313,7 @@ class Authn {
       authenticated: detail.authenticated !== false,
       authority: authority,
       evidence: detail.key ? String(detail.key) : '',
-      context: this.eventContext(detail),
+      context: this.eventContext(detail, username),
       registeredDevice: this.registeredDeviceFor(detail, username)
     };
   }
@@ -6464,6 +6464,9 @@ class Authn {
   //     WebAuthn one with that id's fingerprint (`eventContext()` keeps the
   //     fingerprint, never the id) — as the first factor (a passkey) or as a
   //     step after a password, at a sign-in or a re-authentication;
+  //   * `certificate` with `certificateId` (since the #1955 review): an
+  //     event a client certificate with that `fingerprint256` completed —
+  //     a lost PIV card's sessions;
   //   * `totp`: an event the authenticator app's code completed;
   //   * `backup-code`: an event a recovery code completed;
   //   * `email`: an event the emailed code or link completed AS A SECOND
@@ -6494,10 +6497,15 @@ class Authn {
     const kind = String((factor && factor.kind) || '');
     const events = session && Array.isArray(session.events)
       ? session.events : [];
+    // A CERTIFICATE (the #1955 review: a lost PIV card's) by the
+    // `fingerprint256` its sign-in door recorded as the credential id.
     const print = kind === 'webauthn'
       ? stsCrypto.credentialFingerprint(String(factor.credentialId || ''))
-      : '';
-    if (!kind || (kind === 'webauthn' && !print)) {
+      : (kind === 'certificate' && factor.certificateId
+        ? stsCrypto.credentialFingerprint(String(factor.certificateId))
+        : '');
+    if (!kind || ((kind === 'webauthn' || kind === 'certificate') &&
+                  !print)) {
       log.debug("Leaving Authn.sessionNamesFactor(). No factor named.");
       return false;
     }
@@ -6505,8 +6513,8 @@ class Authn {
       const given = (event && event.context && event.context.credential) ||
                     {};
       const was = String(given.kind || '');
-      if (kind === 'webauthn') {
-        return was === 'webauthn' && String(given.fingerprint || '') === print;
+      if (kind === 'webauthn' || kind === 'certificate') {
+        return was === kind && String(given.fingerprint || '') === print;
       }
       if (kind === 'email') {
         return was.indexOf('email-') === 0 &&
@@ -6534,7 +6542,7 @@ class Authn {
   // kept as a fingerprint only (`stsCrypto.credentialFingerprint()`); the
   // AAGUID is a model number, not an identifier, and is kept as it is.
   // ---------------------------------------------------------------------------
-  private eventContext(detail) {
+  private eventContext(detail, username?) {
     const { log, audit, stsCrypto, clientHello } = this.deps;
     log.debug("Entering Authn.eventContext().");
     const req = detail.request || audit.currentRequest();
@@ -6593,7 +6601,7 @@ class Authn {
     // proved. A passkey by its credential id, a certificate by its serial.
     // Nothing for a credential no active token lists, or a register that
     // cannot be asked.
-    const token = Authn.hardwareTokenOf(given);
+    const token = Authn.hardwareTokenOf(given, username);
     if (token) {
       credential.hardwareToken = token;
     }
@@ -6631,9 +6639,11 @@ class Authn {
    * credential.
    *
    * @param given - the credential detail a door passed
+   * @param username - the person signing in: a certificate earns only its
+   *   holder anything (the #1955 review)
    * @returns `{ key, vendor, model, source, smartCard }`, or null
    */
-  static hardwareTokenOf(given: any): any {
+  static hardwareTokenOf(given: any, username?: string): any {
     helpers.log.debug("Entering Authn.hardwareTokenOf().");
     const kind = String((given && given.kind) || '');
     const ref = kind === 'webauthn' ? String(given.id || '')
@@ -6645,8 +6655,12 @@ class Authn {
     let out: any = null;
     try {
       const tokens = require('../common/hardware_tokens');
-      const ev = tokens.evidenceFor(kind === 'webauthn' ? 'fido' : 'x509',
-                                    ref);
+      // A certificate by its thumbprint (the door's `id`, Node's
+      // `fingerprint256`) and its serial, for its holder only.
+      const ev = kind === 'webauthn' ? tokens.evidenceFor('fido', ref)
+        : tokens.certificateEvidence({ serial: ref,
+            thumbprint: String(given.id || ''),
+            username: String(username || '') });
       const view = ev && ev.hardware ? tokens.byKey(ev.token) : null;
       out = view ? { key: String(view.key), vendor: String(view.vendor),
                      model: String(view.model), source: String(ev.source),
@@ -6674,6 +6688,31 @@ class Authn {
     }
     helpers.log.debug("Leaving Authn.hardwareTokenOf(). " +
                       (out ? out.key : 'none'));
+    return out;
+  }
+
+  // The RFC 8176 key value a WebAuthn assertion earns (#1955 X3): the
+  // hardware token register's answer, `hwk` where it cannot be asked, the
+  // behaviour before #1955.
+  /**
+   * The amr value of a passkey's assertion, `hwk` or `swk`.
+   *
+   * @param username - the person
+   * @param credentialId - the credential that answered
+   * @returns `hwk` or `swk`
+   */
+  static fidoKeyAmr(username: any, credentialId: any): string {
+    helpers.log.debug("Entering Authn.fidoKeyAmr().");
+    let out = 'hwk';
+    try {
+      out = String(require('../common/hardware_tokens').fidoAmr(
+        String(username || ''), String(credentialId || '')) || 'hwk');
+    } catch (e) {
+      helpers.log.debug("Caught in Authn.fidoKeyAmr(): " +
+                        ((e && e.message) || e));
+      out = 'hwk';
+    }
+    helpers.log.debug("Leaving Authn.fidoKeyAmr(). " + out);
     return out;
   }
 
@@ -6870,10 +6909,14 @@ class Authn {
     // choice. A sign-in whose role step did not run changes nothing here;
     // what it still carries is asked of each policy at every issuance.
     if (extra.rolesDone === true && extra.application) {
-      const forApp = String(extra.application);
+      // By the registry identifier the step recorded its rows under, and a
+      // row an older build recorded under the protocol's name with it.
+      const eligibility = require('../xacml/role_eligibility');
+      const forApp = eligibility.applicationOf(String(extra.application));
       session.selectedRoles = (Array.isArray(session.selectedRoles)
         ? session.selectedRoles : []).filter(function (one: any) {
-        return one && String(one.application || '') !== forApp;
+        return one && eligibility.applicationOf(
+          String(one.application || '')) !== forApp;
       }).concat((Array.isArray(extra.selectedRoles) ? extra.selectedRoles
                                                      : [])
         .map(function (one: any) {
@@ -7453,7 +7496,7 @@ class Authn {
       realm: realms.currentId(), subject: subject,
       username: String(username), sessionId: '',
       door: String(via || ''), clientId: String(d.application || ''),
-      context: this.eventContext(d),
+      context: this.eventContext(d, username),
       // THE REGISTERED DEVICE, recognised NOW (#164 phase 5) — before the
       // session and its event exist, because the risk engine scores it; the
       // event asks again for the same request and gets this same answer.
@@ -8744,12 +8787,22 @@ class Authn {
     // request or application, or the session the step itself starts
     // (`rolesDone`).
     // -------------------------------------------------------------------------
-    const roleOffer = extra.authenticated === false || extra.key ||
-      extra.rolesDone === true || !extra.request || !username ||
-      !extra.application
-      ? null
-      : this.roleOfferFor(String(username), String(extra.application),
-                          amr, String(acr || ''));
+    const roleAsked = !(extra.authenticated === false || extra.key ||
+      extra.rolesDone === true || !extra.request || !username);
+    const roleOffer = roleAsked && extra.application
+      ? this.roleOfferFor(String(username), String(extra.application),
+                          amr, String(acr || ''))
+      : null;
+    // A DOOR THAT NAMES NO APPLICATION AND CANNOT DRAW THE STEP — the
+    // certificate's `/tls/sign-in`, which has none to name — is asked
+    // about the realm-wide required roles (#1072's follow-ups): a required
+    // realm-wide role is asked of every sign-in, and this one cannot ask.
+    const roleRequiredHere = !!(roleOffer && roleOffer.required) ||
+      (roleAsked && !extra.application && extra.postLoginHold !== true &&
+       require('../xacml/role_eligibility').requiredFor({
+         username: String(username),
+         amr: Array.isArray(amr) ? amr.map(String) : [],
+         acr: String(acr || '') }).required);
     if (roleOffer && extra.postLoginHold === true) {
       extra.roleSelection = { offer: roleOffer, amr: (amr || []).slice(),
                               acr: String(acr || ''), via: String(via || '') };
@@ -8763,7 +8816,7 @@ class Authn {
       log.debug("Leaving Authn.startSessionHere(). Held for the role step.");
       return null;
     }
-    if (roleOffer && roleOffer.required) {
+    if (roleRequiredHere) {
       log.info(errorCodes.tag('STS-XACML-0329') + 'authn: a session for "' +
                username + '" was REFUSED at the ' + (via || 'sign-in') +
                ' door: a required dynamic role cannot be chosen there.');
@@ -12168,12 +12221,12 @@ class Authn {
   // `roles.dynamicSelection`, with the application's `appDynamicRoleSelection`
   // overriding it (rcbj's decision 2). Hot path: asked by the sign-in screen
   // and every held sign-in, so no Entering/Leaving pair would drown the log.
+  // By the application's registry identifier, whatever the protocol called
+  // it (`role_eligibility.ts`'s `selectionOn()`, #1072's follow-ups).
   private roleSelectionOn(application: string): boolean {
-    const { applications, config } = this.deps;
     try {
       return !!application &&
-        applications.settingFor(String(application),
-                                'roles.dynamicSelection', config) === true;
+        require('../xacml/role_eligibility').selectionOn(String(application));
     } catch (e) {
       this.deps.log.debug("Caught in Authn.roleSelectionOn(): " +
                           ((e && e.message) || e));
@@ -12196,6 +12249,43 @@ class Authn {
       require('../common/roles').dynamicRoles().length > 0;
     log.debug("Leaving Authn.roleBoxOffered(). " + on);
     return on;
+  }
+
+  /**
+   * Whether single sign-on into an application must send the person to
+   * sign in again first (#1072's follow-ups): the application would require
+   * a dynamic role of them and the session chose nothing for it — a
+   * sign-in for another application, or at a door that names none. A
+   * browser flow treats it as its force-login; a passive one refuses
+   * (`authn/role_selection.ts`'s `owedFor()`).
+   *
+   * @param session - the sign-on session
+   * @param application - the application, in its protocol's own name
+   * @returns true when a role choice is owed
+   */
+  roleChoiceOwed(session: any, application: string): boolean {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Authn.roleChoiceOwed().");
+    let owed = false;
+    try {
+      owed = !!session && !!String(application || '') &&
+        require('./role_selection').owedFor(session, String(application));
+    } catch (e) {
+      // A decision that cannot be made is not a sign-on to refuse: the
+      // issuance reads what the session holds, and holds no role for it.
+      log.error(errorCodes.tag('STS-XACML-0318') + 'authn: whether a role ' +
+                'choice is owed for "' + String(application) + '" could ' +
+                'not be decided: ' + ((e && e.message) || e));
+      owed = false;
+    }
+    if (owed) {
+      log.info(errorCodes.tag('STS-XACML-0333') + 'authn: the session of "' +
+               String(((session || {}).user || {}).username || '') + '" ' +
+               'chose no dynamic role for "' + String(application) + '", ' +
+               'which requires one; the person signs in again to choose.');
+    }
+    log.debug("Leaving Authn.roleChoiceOwed(). " + owed);
+    return owed;
   }
 
   // What this person may be offered at a sign-in to `application`, now:
@@ -13744,7 +13834,10 @@ class Authn {
       const digits = Math.max((detail && detail.digits) || 0,
                               (token && token.digits) || 0) || 6;
       view.totp = { digits: digits,
-                    period: (detail && detail.period) || 30 };
+                    period: (detail && detail.period) || 30,
+                    // An HOTP token is held, so the page offers its
+                    // two-code resynchronisation (the #1955 review).
+                    hotp: !!token };
     } else if (page === 'password') {
       view.amr = this.firstAmrOf(step).concat(['pwd']);
     } else if (page === 'backup-code') {
@@ -18141,8 +18234,11 @@ class Authn {
     pending.delete(record.id);
     // `hwk` the key and `user` the authenticator's verification of the
     // person (RFC 8176), and acr `mfa`, because those are two factors.
-    const started = this.startSession(res, owner, ['hwk', 'user'], 'mfa',
-                                      record.protocol, said);
+    // `swk` instead where the realm earns `hwk` only from evidence and the
+    // key's attestation is not trusted (#1955 X3, `fidoAmr()`).
+    const started = this.startSession(res, owner,
+      [Authn.fidoKeyAmr(owner, known.credentialId), 'user'], 'mfa',
+      record.protocol, said);
     if (this.refusedSession(res, base, record, owner, started, said)) {
       log.debug("Leaving Authn.passkeySignIn(). The session was refused.");
       return;
@@ -18203,11 +18299,14 @@ class Authn {
     // "mfa" because it is phishing-resistant would be the fake this profile
     // refuses everywhere else — a relying party that asked for two factors
     // would be told it got them.
-    // `hwk` once: a step after a proof (#475) may already carry it.
-    const amr = step.passwordless ? ['hwk'] :
+    // `hwk` once: a step after a proof (#475) may already carry it. `swk`
+    // in its place where the realm earns `hwk` only from evidence and this
+    // key's attestation is not trusted (#1955 X3, `fidoAmr()`).
+    const keyAmr = Authn.fidoKeyAmr(step.username, verdict.credentialId);
+    const amr = step.passwordless ? [keyAmr] :
                 this.firstAmrOf(step).filter(function (one) {
-                  return one !== 'hwk';
-                }).concat(['hwk']);
+                  return one !== 'hwk' && one !== 'swk';
+                }).concat([keyAmr]);
     const acr = step.passwordless ? '1' : 'mfa';
     // A POST-QUANTUM PASSKEY REGISTERED AT A POST-LOGIN STEP (#1096): the
     // activity is done, and the session the step held starts as the door
@@ -19399,8 +19498,18 @@ class Authn {
     }
     let verdict: any = null;
     try {
-      verdict = await credentials.verifyTotpAsync(step.username,
-                                                  String(body.code || ''));
+      // TWO CODES ARE A RESYNCHRONISATION (the #1955 review), RFC 4226
+      // section 7.4: an HOTP token pressed past the look-ahead window is
+      // found again from two consecutive codes over the resync window, both
+      // spent, behind the same code budget as one code. Offered here as
+      // well as on the portal, because somebody whose only second factor is
+      // that token cannot reach the portal to resynchronise it.
+      verdict = body && body.code2
+        ? await credentials.resyncHotpAsync(step.username,
+                                            String(body.code || ''),
+                                            String(body.code2 || ''))
+        : await credentials.verifyTotpAsync(step.username,
+                                            String(body.code || ''));
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0182') + 'authn: checking a ' +
                 'one-time code for "' + step.username + '" threw: ' +
@@ -21342,6 +21451,7 @@ export = {
   // sign-in screen draws its box.
   rolesAct: slot.forward('rolesAct'),
   roleBoxOffered: slot.forward('roleBoxOffered'),
+  roleChoiceOwed: slot.forward('roleChoiceOwed'),
   screenProblem: slot.forward('screenProblem'),
   screenAct: slot.forward('screenAct'),
   // Whether a sign-in must be a passkey with no username (#608).

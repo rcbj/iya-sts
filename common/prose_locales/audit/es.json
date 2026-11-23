@@ -591,10 +591,6 @@
     "en": "92433c797106d523",
     "text": "Se quitó un cliente YK-VAL"
   },
-  "audit.actions.piv-escrow.recover.label": {
-    "en": "0cad829ec7cafc72",
-    "text": "Se recuperó una clave PIV de gestión de claves en custodia"
-  },
   "audit.actions.openpgp.challenge.label": {
     "en": "454a22b5bcd9d6a2",
     "text": "Se emitió un desafío de registro de clave OpenPGP"
@@ -1138,6 +1134,14 @@
   "audit.actions.authzen.access-request.callback.label": {
     "en": "432e877d55af1913",
     "text": "Se envió, o falló, el callback de una solicitud de acceso AuthZEN"
+  },
+  "audit.actions.authzen.access-request.failed.label": {
+    "en": "ff702bec26fec0b2",
+    "text": "Una solicitud de acceso de AuthZEN falló"
+  },
+  "audit.actions.authzen.access-request.denials-full.label": {
+    "en": "d4a30614c3be855a",
+    "text": "El almacén de denegaciones solicitables de AuthZEN estaba lleno"
   },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
@@ -2466,5 +2470,13 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "Se quitó la configuración de proxy inverso de un clúster de PEP remotos"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "Se recuperó una clave PIV de gestión de claves en custodia"
+  },
+  "audit.actions.ykval.verify.label": {
+    "en": "75090a0d0937732e",
+    "text": "Un cliente YK-VAL preguntó si un OTP de YubiKey es válido"
   }
 }

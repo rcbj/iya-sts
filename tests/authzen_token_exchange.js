@@ -46,7 +46,9 @@
 //      gate leaves it an ordinary evaluation (0101 when it carries a
 //      binding member). An enforcing type is covered by the subject
 //      token's authorization_details and issued here before the
-//      fine-grained decider is asked (0129 otherwise); a deny is 0130
+//      fine-grained decider is asked (0129 otherwise) — "issued here"
+//      read, with oauth2.issuer unpinned, from the request's base as the
+//      token endpoint names itself (D13); a deny is 0130
 //      and a fault is HTTP 500 (0046) with the STS-FGA code on the row.
 //      `declaredTypes()` throwing while planning logs 0131 and
 //      recognizes nothing. The bound, the decider and `shape()` are
@@ -176,13 +178,13 @@ function surfaceOf(recorded, counted) {
 
 // One request, answered item by item as POST /access/v1/evaluations does:
 // the defaults merged, the whole planned, each evaluated in order.
-function ask(surface, defaults, items, rows) {
+function ask(surface, defaults, items, rows, req) {
   log.debug("Entering ask().");
   const az = require('../authzen/authzen');
   const bodies = (items && items.length ? items : [{}]).map(function (one) {
     return az.AuthzenSurface.merged(defaults || {}, one);
   });
-  const plan = surface.planOf(bodies);
+  const plan = surface.planOf(bodies, req);
   const out = bodies.map(function (body, i) {
     return surface.evaluateOne(body, { name: 'az-pep' }, rows || [],
                                'az#' + i, 'test', plan, i);
@@ -1062,6 +1064,51 @@ function theDetails(t) {
               'code stays on the audit row, and the fault is not counted',
               JSON.stringify({ item: faulted[2], row: lastRow(),
                                counted: counted.n }));
+    });
+    // D13 (#1201's review): a default deployment pins no oauth2.issuer and
+    // has no oauth-oidc listener of its own. The issuer is then the one
+    // the token endpoint names itself by for the request's base, so a
+    // subject token it issued is "issued here", and the cell is decided.
+    config.clearOverride('oauth2.issuer');
+    inMode('product', function () {
+      const listeners = require('../common/listener_map');
+      const helpers = require('../common/helpers');
+      const req = {
+        protocol: 'https', headers: {}, socket: {},
+        stsListener: listeners.MAIN,
+        get: function (name) {
+          log.debug("Entering get().");
+          log.debug("Leaving get().");
+          return String(name).toLowerCase() === 'host'
+            ? 'az-main.example:8443' : undefined;
+        }
+      };
+      const own = helpers.baseUrlOf(req, 'oauth-oidc');
+      const covered = [{ type: 'account_access', locations: ['acct-1'],
+                         actions: ['read'], datatypes: ['contacts'] }];
+      let calls = 0;
+      fga.setDecider(function () {
+        log.debug("Entering decider().");
+        calls += 1;
+        log.debug("Leaving decider().");
+        return { outcome: 'permit', code: '', why: '' };
+      });
+      const asked = detailOf({ type: 'user', id: 'az-alice' },
+                             'read:contacts', 'account_access', 'acct-1',
+                             { aud: 'az-front', iss: own,
+                               authorization_details: covered });
+      const withBase = ask(surface, asked.defaults, asked.items, [], req);
+      const withoutBase = ask(surface, asked.defaults, asked.items);
+      t.check(/^https:\/\/az-main\.example:8443/.test(own) &&
+              withBase[2].decision === true && calls === 1 &&
+              withoutBase[2].decision === false &&
+              withoutBase[2].code === 'STS-AUTHZEN-0129',
+              'D13. with oauth2.issuer unpinned and no oauth-oidc listener, ' +
+              'a subject token the main listener\'s token endpoint issued ' +
+              'is issued here; with no request to read a base from it is ' +
+              'not', JSON.stringify({ own: own, withBase: withBase[2],
+                                       withoutBase: withoutBase[2],
+                                       calls: calls }));
     });
   } finally {
     fga.setDecider(before);

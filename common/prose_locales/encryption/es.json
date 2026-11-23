@@ -244,8 +244,8 @@
     "text": "Y LA CLAVE NO DEBE VIVIR EN EL DISCO QUE PROTEGE. Un archivo de clave en el mismo volumen sin cifrar que el almacén entrega ambas mitades a quien se lleve el volumen; eso está bien para una pila de desarrollo y es por qué el proveedor `file` es el predeterminado, y no es un despliegue. keys.kekProvider selecciona en su lugar un almacén de secretos."
   },
   "encryption.notes.signingKeys": {
-    "en": "d0eeec647d97c442",
-    "text": "DÓNDE FIRMA ESTE DOMINIO (#1955). Con keys.signingKeyStore pkcs11, las claves de firma clásicas que figuran como en el HSM se crearon en el token que nombra keys.signingKeyToken y nunca salen de él: cada firma es una llamada PKCS#11. Las claves poscuánticas se crean siempre en software, porque ningún módulo PKCS#11 aquí ofrece ML-DSA ni SLH-DSA, y lo mismo ocurre con cualquier curva que el módulo no cree. El ajuste se aplica a los conjuntos de claves creados o rotados después de que cambie. Una firma síncrona se hace solo mientras keys.pkcs11SynchronousSign está encendido; si no, esa puerta rechaza (STS-KEYS-0209) y las puertas asíncronas siguen firmando."
+    "en": "42b4a12838250b88",
+    "text": "DÓNDE FIRMA ESTE DOMINIO (#1955). Con keys.signingKeyStore pkcs11, las claves de firma clásicas indicadas como en el HSM se crearon en el token que nombra keys.signingKeyToken y nunca salen de él: cada firma y cada descifrado con ellas es una llamada PKCS#11, hecha fuera del bucle de eventos (C_SignAsync, C_DecryptAsync, C_DeriveKeyAsync). Una llamada bloqueante solo se hace mientras keys.pkcs11SynchronousSign está activado, para un módulo sin llamada asíncrona; si no, se rechaza (STS-KEYS-0209). Las claves poscuánticas se crean siempre en software, porque ningún módulo PKCS#11 de aquí ofrece ML-DSA ni SLH-DSA, y también cualquier curva que el módulo no cree. La configuración se aplica a los conjuntos de claves creados o rotados después de cambiarla."
   },
   "encryption.notes.accountingNote": {
     "en": "4e3af979f8ed8bd7",

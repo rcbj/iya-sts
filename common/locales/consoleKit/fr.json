@@ -97,6 +97,7 @@
   "create.requiredFields": "Obligatoire : {list}. Chacun est entouré de rouge et marqué * ; tous les autres champs sont facultatifs.",
   "create.nothingRequired": "Rien n’est obligatoire sur ce formulaire.",
   "create.requiredWhen": " &middot; obligatoire quand {field} vaut {values}",
+  "create.requiredWhenFilled": " &middot; obligatoire quand {field} est renseigné",
   "create.yes": "oui",
   "create.no": "non"
 }

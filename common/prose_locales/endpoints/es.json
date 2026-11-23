@@ -1279,10 +1279,6 @@
     "en": "33209f967f070175",
     "text": "Acciones sobre tokens de hardware"
   },
-  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
-    "en": "f46d01f7581b5379",
-    "text": "Claves PIV en custodia"
-  },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
     "text": "Clientes SCIM salientes"
@@ -2646,5 +2642,13 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (se pide un certificado de cliente, nunca se exige)"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "Claves PIV en custodia"
+  },
+  "endpoints.route./admin-api/hardware-tokens/ssh-certificates.name": {
+    "en": "3bb1ef22ae2ed554",
+    "text": "Los certificados de usuario SSH de una persona"
   }
 }

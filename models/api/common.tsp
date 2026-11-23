@@ -102,7 +102,8 @@ namespace IyaSts.Api.Common;
           `at`:#{`type`:"number"},
           `status`:#{`type`:"number"},
           `ok`:#{`type`:"boolean"},
-          `why`:#{`type`:"string"}
+          `why`:#{`type`:"string"},
+          `code`:#{`type`:"string", `description`:"Empty for a delivery. STS-AUTHZEN-0091 for a failed attempt the job tries again, STS-AUTHZEN-0135 for the last one."}
         }
       }
     }
@@ -643,11 +644,13 @@ namespace IyaSts.Api.Common;
 
 @hoisted model WithMatchedFrom {`matched`?: integer; `from`?: integer}
 
-@hoisted model WithDigitsPeriod {`digits`?: numeric; `period`?: numeric}
+@hoisted model WithDigitsPeriod {`digits`?: numeric; `period`?: numeric; @js(#{`description`:"An HOTP token is held, so the page offers the two-code resynchronisation (RFC 4226 section 7.4)."}) `hotp`?: boolean}
 
 @hoisted model WithTotpWebauthn {`totp`?: boolean; `webauthn`?: boolean}
 
 @hoisted model WithMaxLengthCode {@js(#{`maxLength`:32}) `code`?: string}
+
+@hoisted model WithMaxLengthCodeCode2 {@js(#{`maxLength`:32}) `code`?: string; @js(#{`maxLength`:32,`description`:"The code the HOTP token showed next. With it, `code` and `code2` resynchronise the token (RFC 4226 section 7.4) and finish the step."}) `code2`?: string}
 
 @hoisted model WithValueDeclared {`value`?: string; `declared`?: boolean}
 
@@ -1571,7 +1574,7 @@ namespace IyaSts.Api.Common;
 
 @hoisted model WithUserDescriptionByLdapEtc13 { `user`?: string; @js(#{`description`:"By directory attribute."}) `byLdap`?: Record<{ `ldap`?: string; `claim`?: string; @js(#{ `x-free-form`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path.", `description`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path." }) `value`?: unknown; `source`?: string; `ldpTerm`?: NullableString; `claimId`?: string; `values`?: (Shape5)[] }>; `entryFound`?: boolean }
 
-@hoisted model WithStateKeyJtiEtc29 { `state`?: string; `key`?: string; `jti`?: string; `kind`?: string; `typ`?: string; `revocable`?: boolean; `sub`?: string; `iss`?: string; `username`?: string; `client_id`?: StringOrString; `audience`?: string; `scope`?: StringOrString; `jkt`?: string; `x5t`?: string; `x5tSpki`?: string; `iat`?: numeric; `nbf`?: numeric; `exp`?: numeric; `sessionId`?: string; `sessionAuthenticated`?: boolean; `setId`?: string; `grant`?: string; `grantId`?: string; `grantRefresh`?: boolean; `issuedAt`?: numeric; `revoked`?: boolean; `revokedAt`?: numeric; `revokedVia`?: string; `length`?: numeric }
+@hoisted model WithStateKeyJtiEtc29 { `state`?: string; `key`?: string; `jti`?: string; `kind`?: string; `typ`?: string; `revocable`?: boolean; `sub`?: string; `iss`?: string; `username`?: string; `client_id`?: StringOrString; `audience`?: string; `scope`?: StringOrString; `jkt`?: string; `x5t`?: string; `x5tSpki`?: string; `iat`?: numeric; `nbf`?: numeric; `exp`?: numeric; `sessionId`?: string; `sessionAuthenticated`?: boolean; `setId`?: string; `grant`?: string; `grantId`?: string; `grantRefresh`?: boolean; `originGrant`?: string; `issuedAt`?: numeric; `revoked`?: boolean; `revokedAt`?: numeric; `revokedVia`?: string; `length`?: numeric }
 
 @hoisted model WithDescriptionTotalDescriptionEtc12 { @js(#{ `description`:"How many there are in all, which is what to page through rather than the length of this array." }) `total`?: integer; @js(#{ `description`:"The page these rows are from, CLAMPED — `?page=999` on a two-page list reports 2, which is the page in the reply." }) `page`?: integer; @js(#{`description`:"How many pages the match has."}) `pages`?: integer; @js(#{`description`:"Rows per page, clamped to the cap."}) `perPage`?: integer; @js(#{`description`:"1-based and inclusive; 0 when nothing matched."}) `firstRow`?: integer; @js(#{`description`:"1-based and inclusive."}) `lastRow`?: integer }
 
@@ -2382,7 +2385,7 @@ model XacmlPepListenerTuningFields {
   }) @component model `CreateFormField` {
     `name`: string;
     `required`: boolean;
-    @js(#{`description`:"A field required for some choices only: the create refuses without it when `field` holds one of `values`, and is otherwise indifferent. `required` is false for such a field."}) `requiredWhen`?: {
+    @js(#{`description`:"A field required for some choices only: the create refuses without it when `field` holds one of `values` — `*` meaning any value at all, so two fields that go together each name the other — and is otherwise indifferent. `required` is false for such a field."}) `requiredWhen`?: {
       `field`: string;
       `values`: (string)[]
     }

@@ -3464,7 +3464,11 @@ class ConsoleRuntime extends SpaClient {
     const doc = this.env.document;
     const forms = doc && doc.querySelectorAll
       ? doc.querySelectorAll('form') : [];
-    const sentence = 'A name is required.';
+    // In the reader's language (#539), from the console's catalog; the
+    // English is the save's own sentence, for a translator not loaded yet.
+    const t = this.t;
+    const sentence = t && t.has('consoleRuntime.policyName.required')
+      ? t.text('consoleRuntime.policyName.required') : 'A name is required.';
     for (let i = 0; i < forms.length; i++) {
       const form = forms[i];
       if (!form.elements || !form.elements.namedItem ||
@@ -3508,6 +3512,13 @@ class ConsoleRuntime extends SpaClient {
     // option, which is what the page drew, rather than treating "nothing
     // chosen" as a choice that requires nothing.
     const choiceOf = function (controller: Json): string {
+      // A SINGLE CHECKBOX holds its value only while it is ticked (#1132's
+      // follow-ups: New user's service-account box); unticked it holds
+      // nothing, as a form posts it.
+      if (controller && String(controller.type || '').toLowerCase() ===
+          'checkbox') {
+        return controller.checked ? String(controller.value || 'on') : '';
+      }
       const value = controller ? String(controller.value || '') : '';
       const options = controller && controller.options;
       if (!options || !options.length) {
@@ -3559,7 +3570,10 @@ class ConsoleRuntime extends SpaClient {
             Array.prototype.every.call(controls, function (control) {
               return String(control.type || '').toLowerCase() === 'checkbox';
             });
-          const required = values.indexOf(value) >= 0 && !checkboxesOnly;
+          // `*` is any value at all: two fields that go together.
+          const met = values.indexOf('*') >= 0 ? value.trim() !== ''
+                                               : values.indexOf(value) >= 0;
+          const required = met && !checkboxesOnly;
           if (required) {
             cell.classList.add('fg-required');
           } else {
@@ -3611,9 +3625,13 @@ class ConsoleRuntime extends SpaClient {
         const name = String(cells[j].getAttribute(
           'data-required-when-field') || '');
         const controller = form.elements.namedItem(name);
-        if (controller && controllers.indexOf(controller) < 0) {
+        if (controller && controllers.indexOf(controller) < 0 &&
+            typeof controller.addEventListener === 'function') {
           controllers.push(controller);
           controller.addEventListener('change', refresh);
+          // A text box that another names with `*` moves the mark as it
+          // is typed in, not only when it loses focus.
+          controller.addEventListener('input', refresh);
         }
       }
       refresh();

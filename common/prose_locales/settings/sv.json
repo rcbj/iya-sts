@@ -2200,12 +2200,12 @@
     "text": "tokenet öppnas en gång, vid start, i varje process"
   },
   "keys.pkcs11SynchronousSign|label": {
-    "en": "c8e3fedf4601518d",
-    "text": "Tillåt synkron PKCS#11-signering"
+    "en": "66785a52cf616805",
+    "text": "Tillåt blockerande PKCS#11-anrop"
   },
   "keys.pkcs11SynchronousSign|description": {
-    "en": "1cb742f146d4c7c1",
-    "text": "Av, standard: en signatur med en nyckel i HSM:en görs bara genom bindningens asynkrona `C_Sign`. De synkrona dörrarna (en JWS, en XML-signatur, en SAML-assertion) nekar en HSM-nyckel (`STS-KEYS-0209`) i stället för att vänta på token på händelseloopen. På anropar de dörrarna `C_Sign` och händelseloopen väntar. En modul utan asynkron signering kan signera bara medan detta är på. Dekryptering ändras inte. Ställbar per sfär."
+    "en": "328ad6368a172a36",
+    "text": "Av, standard: inget som görs med en av sfärens nycklar i HSM:en väntar på händelseloopen. Varje dörr (en JWS eller åtkomsttoken, en XML-signatur, ett SAML-intyg, ett WS-Federation-svar, en WS-Trust-token, en XML- eller JWE-dekryptering, en nyckeluppsättnings certifikat) använder bindningens asynkrona `C_SignAsync`, `C_DecryptAsync` och `C_DeriveKeyAsync`. Ett blockerande anrop vägras (`STS-KEYS-0209`): det är vad en modul utan asynkront anrop får. På, det uttryckliga medgivandet till blockerande anrop: en sådan modul anropar `C_Sign`, `C_Decrypt` eller `C_DeriveKey` och händelseloopen väntar på token. Kan ställas in per sfär."
   },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
@@ -3304,62 +3304,62 @@
     "text": "Vad som ger anspråk på maskinvarunyckel"
   },
   "hardwareTokens.hardwareClaims|description": {
-    "en": "e0341e4e47f3b2f8",
-    "text": "Vad som låter en PKINIT-inloggning göra anspråk på en maskinvarubunden nyckel (indikatorn pkinit-hardware och amr hwk). `inference`, standardvärdet och beteendet före #1955: ett certifikat för smartkortsinloggning vars nyckel den här tjänsten inte genererade, eller registrerat attesteringsbevis. `evidence`: endast en nyckel som en maskinvarutokens attestering täcker. En certifikatinloggning över TLS får hwk, och sc för en nyckel på ett smart kort, endast utifrån bevis i båda fallen."
+    "en": "82f545cd2dea952b",
+    "text": "Vad som låter en PKINIT-inloggning göra anspråk på en hårdvarubunden nyckel (indikatorn pkinit-hardware och amr hwk). `inference`, standard och beteendet före #1955: ett certifikat för smartkortsinloggning vars nyckel denna tjänst inte genererade, eller registrerade attesteringsbevis. `evidence`: endast en nyckel som en hårdvarutokens attestering täcker, och en passkey får hwk endast när dess attestering verifierats och är betrodd (annars swk). En certifikatinloggning över TLS får hwk, och sc för en nyckel på ett smartkort, endast från bevis i båda fallen, och endast för certifikatets innehavare."
   },
-"pskc.allowPlaintextImport|label": {
+  "pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
     "text": "Godta PSKC-fröfiler i klartext i produktläget"
   },
-"pskc.allowPlaintextImport|description": {
+  "pskc.allowPlaintextImport|description": {
     "en": "7efe34e872e4772e",
     "text": "Om en administratör i produktläget får importera en PSKC-fröfil (RFC 6030) vars tokenhemligheter INTE är krypterade. Av som standard: en sådan fil har varit en lista över fungerande andra faktorer på varje disk och i varje brevlåda den har passerat, och en leverantör kan kryptera den under en förutdelad nyckel eller ett lösenord (avsnitt 6.1 och 6.2). Utvecklingsläget godtar en oavsett."
   },
-"yubiotp.allowPlaintextImport|label": {
+  "yubiotp.allowPlaintextImport|label": {
     "en": "b1c1ac235f98cc47",
     "text": "Godta CSV-filer med YubiKey-OTP i klartext i produktläget"
   },
-"yubiotp.allowPlaintextImport|description": {
+  "yubiotp.allowPlaintextImport|description": {
     "en": "f409449d46d5831a",
     "text": "Om en administratör i produktläget får importera en CSV med YubiKey-OTP-hemligheter (serienummer, publik identitet, privat identitet, AES-nyckel). Av som standard: filen är en lista över fungerande andra faktorer. Utvecklingsläget godtar en oavsett. Hemligheterna förseglas när filen godtas, och filen behålls inte."
   },
-"openpgp.wkd|label": {
+  "openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",
     "text": "Publicera nycklar i Web Key Directory"
   },
-"openpgp.wkd|description": {
+  "openpgp.wkd|description": {
     "en": "7822103f89ac59b3",
     "text": "Besvara Web Key Directory (draft-koch-openpgp-webkey-service) för den här sfärens e-postdomäner: /.well-known/openpgpkey/<domain>/hu/<hash> (den avancerade metoden, på openpgpkey.<domain>) och /.well-known/openpgpkey/hu/<hash> (den direkta metoden), och respektive policyfil. Bara nyckeln för en person som har valt att delta på portalen besvaras. Avstängt som standard."
   },
-"openpgp.wkdDomains|label": {
+  "openpgp.wkdDomains|label": {
     "en": "d1c4b728593ff000",
     "text": "E-postdomäner som Web Key Directory betjänar"
   },
-"openpgp.wkdDomains|description": {
+  "openpgp.wkdDomains|description": {
     "en": "ad64f7216191123c",
     "text": "E-postdomänerna som den här sfärens Web Key Directory svarar för, kommaseparerade. Tomt, standardvärdet, betyder sfärens egen DNS-domän. En begäran utan sfär i sökvägen besvaras av den sfär som betjänar dess domän, standardsfären först."
   },
-"openpgp.challengeLifetimeS|label": {
+  "openpgp.challengeLifetimeS|label": {
     "en": "dbf558cf0b4b8f90",
     "text": "Registreringsutmaningens livslängd (sekunder)"
   },
-"openpgp.challengeLifetimeS|description": {
+  "openpgp.challengeLifetimeS|description": {
     "en": "e9130c8e82368cc6",
     "text": "Hur länge den utmaning som en person signerar med gpg --clearsign för att registrera en OpenPGP-nyckel är giltig. Den förbrukas en gång, och en person har en åt gången."
   },
-"openpgp.signatureSkewS|label": {
+  "openpgp.signatureSkewS|label": {
     "en": "d927cf1f04bd9d51",
     "text": "Tillåten klockavvikelse för bevissignaturen (sekunder)"
   },
-"openpgp.signatureSkewS|description": {
+  "openpgp.signatureSkewS|description": {
     "en": "2772763d3d363b6d",
     "text": "Hur mycket den signerande datorns klocka får avvika från tjänstens: ett bevis signerat tidigare än utmaningen utfärdades, eller senare än nu, med mer än så avvisas (STS-OPENPGP-0010)."
   },
-"openpgp.minRsaBits|label": {
+  "openpgp.minRsaBits|label": {
     "en": "f3dc9f85de143630",
     "text": "Minsta RSA-nyckel för OpenPGP"
   },
-"openpgp.minRsaBits|description": {
+  "openpgp.minRsaBits|description": {
     "en": "cd16018c848ce538",
     "text": "Den kortaste RSA-nyckel, primärnyckel eller undernyckel, som en OpenPGP-registrering accepterar. Ed25519, Ed448, ECDSA och ECDH på P-256, P-384 och P-521, X25519 och X448, samt RFC 9980-kompositerna ML-DSA-65+Ed25519, ML-DSA-87+Ed448, ML-KEM-768+X25519 och ML-KEM-1024+X448 accepteras när openpgp.algorithms nämner dem. DSA, ElGamal, Brainpool-kurvorna och SLH-DSA accepteras aldrig (STS-OPENPGP-0004)."
   },
@@ -8387,6 +8387,14 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "Det högsta antalet åtkomstbegäranden en sfär rymmer som väntande; efter det avvisas en inskickning med 503 tills några avgjorts eller gått ut."
   },
+  "authzen.accessRequestMaxDenials|label": {
+    "en": "09e695949f0cc1cc",
+    "text": "Begärbara avslag som en sfär registrerar"
+  },
+  "authzen.accessRequestMaxDenials|description": {
+    "en": "698617c5a3485120",
+    "text": "Det högsta antalet begärbara avslag som en sfär registrerar per evaluation_id (#1204). Därutöver registreras inte ett nytt avslag, och det kan fortfarande begäras med sitt binding_token; jobbet för åtkomstbegäranden tar bort en post en dag efter dess fönster."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"
@@ -8400,8 +8408,8 @@
     "text": "Access request callback backoff (seconds)"
   },
   "authzen.callbackBackoffS|description": {
-    "en": "27141a0f28d94b83",
-    "text": "How long to wait after a failed access request callback before the next attempt (#1202). The authzen.access-requests job runs every 60 seconds, so a shorter wait could not be honoured. An application's appAuthzenCallbackConfig may set a longer wait for one URL."
+    "en": "43f2cb7740fc7efe",
+    "text": "Hur länge det väntas efter det första misslyckade återanropet för en åtkomstbegäran innan nästa försök (#1202). Varje senare väntetid är dubbelt så lång som den föregående, upp till ett dygn. Jobbet authzen.access-requests körs var 60:e sekund, så en kortare väntetid kunde inte hållas. En applikations appAuthzenCallbackConfig kan ange en längre väntetid för en URL."
   },
   "authzen.externalPdp|label": {
     "en": "8a0af08389fe6cda",
@@ -12992,8 +13000,8 @@
     "text": "Låt ett piv-card-auth-certifikat logga in"
   },
   "piv.cardAuthSignIn|description": {
-    "en": "1852da24c3fbfade",
-    "text": "En piv-card-auth-nyckel (plats 9e) fungerar utan PIN-kod, för fysisk åtkomst, så dess certifikat avvisas vid TLS-inloggningen och vid PKINIT (STS-PIV-0013) om inte detta är på."
+    "en": "e9e37c8e6becb7ee",
+    "text": "En piv-card-auth-nyckel (plats 9e) fungerar utan PIN-kod, för fysisk åtkomst, så dess certifikat avvisas vid TLS-inloggningen och vid PKINIT (STS-PIV-0013) om inte detta är på. En nyckel på plats 9e certifieras endast under piv-card-auth (STS-PIV-0037) och får aldrig hwk eller sc."
   },
   "piv.keyEscrow|label": {
     "en": "f2efc85c3d2bac38",
@@ -13090,5 +13098,37 @@
   "pki.sshUserCaPqcAlongsideClassical|description": {
     "en": "b38eab63ec092b6c",
     "text": "På innebär att ett nytt SSH-användarcertifikat utfärdas två gånger när ML-DSA-auktoriteten finns: det klassiska certifikatet, som en OpenSSH-klient använder, och ett ML-DSA-certifikat bredvid. Kan inte vara på samtidigt som pki.sshUserCaPqcOnly (STS-PKI-0296). Av som standard. En komposit är inget begrepp OpenSSH har; det klassiska certifikatet och ML-DSA-certifikatet är två signaturer, inte en hybridsignatur."
+  },
+  "pki.sshSoftwareLifetimeSeconds|label": {
+    "en": "e65480d5e0de0ff6",
+    "text": "Längsta SSH-användarcertifikat utan hårdvarubevis (s)"
+  },
+  "pki.sshSoftwareLifetimeSeconds|description": {
+    "en": "45980657cb573f83",
+    "text": "Den längsta livslängd, i sekunder, som ett SSH-användarcertifikat får utfärdas med för en nyckel som inget verifierat hårdvarubevis täcker: en vanlig nyckel, eller en sk-säkerhetsnyckel som skickats utan betrodd attestering. Begäran får be om mindre. Fem minuter som standard."
+  },
+  "pki.sshHardwareLifetimeSeconds|label": {
+    "en": "58130ddb50b2cf1b",
+    "text": "Längsta SSH-användarcertifikat med hårdvarubevis (s)"
+  },
+  "pki.sshHardwareLifetimeSeconds|description": {
+    "en": "93fab84d44ca2078",
+    "text": "Den längsta livslängd, i sekunder, som ett SSH-användarcertifikat får utfärdas med för en nyckel som ett verifierat hårdvarubevis täcker: en sk-säkerhetsnyckel vars attestering verifierats och är betrodd, eller en nyckel som ett attesterat PIV-certifikat certifierar. Begäran får be om mindre. En timme som standard, vilket också är det högsta."
+  },
+  "pki.sshUserCertificateExtensions|label": {
+    "en": "7bd63846ccd81f4e",
+    "text": "Tillägg som ett SSH-användarcertifikat bär"
+  },
+  "pki.sshUserCertificateExtensions|description": {
+    "en": "66d53e3e95faddca",
+    "text": "De OpenSSH-certifikattillägg (PROTOCOL.certkeys) som ett nytt SSH-användarcertifikat bär, kommaseparerade. Standard är ssh-keygens egen uppsättning; ett certifikat utan tillägg låter innehavaren logga in utan terminal, vidarebefordran eller rc-fil. no-touch-required kan läggas till. Ett namn som OpenSSH inte definierar tas bort."
+  },
+  "pki.sshGroupPrincipals|label": {
+    "en": "92bc72613cff7a8d",
+    "text": "Grupper vars namn får vara SSH-principaler"
+  },
+  "pki.sshGroupPrincipals|description": {
+    "en": "401372878bd26042",
+    "text": "De katalog­grupper vars common name en medlem får begära som principal i ett SSH-certifikat, kommaseparerade, var och en fortfarande avgjord av åtkomstpolicyn (resurs ssh-user-ca, åtgärd issue-ssh-principal). Tomt, standardvärdet, betyder ingen: ett certifikat namnger bara personens uid, eftersom en grupp inte ger något bara genom att vara en grupp. En grupp vars namn är en persons uid eller ett systemkonto som root avvisas oavsett detta."
   }
 }

@@ -407,6 +407,15 @@ const SUBSYSTEMS = [
           'the four PIV slot profiles, the escrow of piv-key-management ' +
           'keys, and the mapping of an outside PIV or CAC card by its card ' +
           'UUID.' },
+  { id: 'SSHCA', label: 'OpenSSH user certificates',
+    where: 'common/ssh_user_ca.ts, common/ssh_issued.ts, common/pki.js, ' +
+           'pki/pki_service.ts, account-api/ssh_user_ca.ts, ' +
+           'mgmt-api/hardware_tokens_api.ts',
+    what: 'The realm\'s OpenSSH user certificate authority (#1955 P3): ' +
+          'which principals a person may ask for, the security-key ' +
+          'attestation that earns the longer lifetime, the register of ' +
+          'issued certificates, and where the CA key and the KRL are ' +
+          'served.' },
   { id: 'OPENPGP', label: 'OpenPGP keys and mail encryption',
     where: 'common/openpgp_keys.ts, common/crypto.js (section 19), ' +
            'portal/account_openpgp.ts, mgmt-api/openpgp_api.ts',
@@ -3982,10 +3991,36 @@ const CODES = [
       '(#1955).',
     spec: '' },
   { code: 'STS-KEYS-0209',
-    summary: 'A signature with a key in the HSM was asked of a synchronous ' +
-      'door, or of a module with no asynchronous C_Sign, while ' +
-      'keys.pkcs11SynchronousSign is off. The event loop is not held for ' +
-      'the token; turn the setting on to sign that way (#1955).',
+    summary: 'A blocking PKCS#11 call with a realm key in the HSM (C_Sign, ' +
+      'C_Decrypt or C_DeriveKey) was asked while ' +
+      'keys.pkcs11SynchronousSign is off: by a module with no ' +
+      'asynchronous call for it, or by a synchronous door no service ' +
+      'caller uses with a realm key. Every service door signs and ' +
+      'decrypts off the event loop; turn the setting on to allow the ' +
+      'blocking call (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0210',
+    summary: 'A warning at start: the PKCS#11 calls this process can run at ' +
+      'once with realm keys in the HSM (keys.pkcs11Sessions times its ' +
+      'threads) reach libuv\'s thread pool size (UV_THREADPOOL_SIZE), ' +
+      'which they share with password hashing and post-quantum signing. ' +
+      'Nothing blocks the event loop; a slow token could hold every pool ' +
+      'thread. The line names the size that leaves room (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0211',
+    summary: 'The thread that makes a PKCS#11 token\'s non-cryptographic ' +
+      'calls off the event loop (opening and logging in a session, finding ' +
+      'a key, reading its attributes, beginning an operation, the key ' +
+      'wrap\'s session object, initialising the module again) failed or ' +
+      'exited. The calls waiting on it are refused and the next one starts ' +
+      'a new thread (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0212',
+    summary: 'A blocking PKCS#11 call was refused because the module is ' +
+      'being initialised again after the device was lost, or must be and ' +
+      'asynchronous calls of this thread still hold sessions on it: the ' +
+      'module is initialised again off the event loop once they drain, and ' +
+      'the next call is made on it (#1955).',
     spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
@@ -8572,6 +8607,12 @@ const CODES = [
     summary: 'The bootstrap password file could not be removed on a start ' +
       'that found a credential already held. The plaintext is left on disk.',
     spec: 'Log line; the service still starts, and the file is left' },
+  { code: 'STS-AUTHN-0580',
+    summary: 'A legacy U2F key was not imported: the person\'s passkey ' +
+      'policy enforces a CTAP 2.1 credProtect level, which an imported key ' +
+      'ran no ceremony to report and cannot prove (#1955).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -23266,6 +23307,11 @@ const CODES = [
     summary: 'An Account API act on a one-time code token was refused: ' +
       'unknown, or too many attempts in the code budget (#1955).',
     spec: 'HTTP 400' },
+  { code: 'STS-OATH-0051',
+    summary: 'A claim of an imported HOTP token was refused: the code it ' +
+      'presented was already spent by another request, so it proves ' +
+      'nothing about who holds the token (#1955).',
+    spec: 'HTTP 400 (the portal or the Account API)' },
   // ===== YUBIOTP ===========================================================
   { code: 'STS-YUBIOTP-0001',
     summary: 'A YubiKey OTP was not 32 to 48 even modhex characters, or ' +
@@ -23393,6 +23439,15 @@ const CODES = [
     summary: 'An operator asked to clear a YubiKey OTP for a person who ' +
       'holds none (#1955 P5).',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-YUBIOTP-0031',
+    summary: 'A YK-VAL nonce could not be proved unused: the cluster claim ' +
+      'it is spent under had no store to ask, so the request was not ' +
+      'checked (#1955).',
+    spec: 'YK-VAL 2.0 BACKEND_ERROR' },
+  { code: 'STS-YUBIOTP-0032',
+    summary: 'A YK-VAL verify named a YubiKey OTP of a disabled account; ' +
+      'it is answered as a bad OTP and nothing is spent (#1955).',
+    spec: 'YK-VAL 2.0 BAD_OTP' },
   // ===== PIV ===============================================================
   { code: 'STS-PIV-0001',
     summary: 'A shipped PIV attestation certificate ' +
@@ -23524,6 +23579,42 @@ const CODES = [
       'another entry of the realm, which would make the card name two ' +
       'people; nothing was written (#1955, D8).',
     spec: 'HTTP 400 (the directory write); LDAP constraintViolation' },
+  { code: 'STS-PIV-0036',
+    summary: 'A PIV attestation\'s subject names no slot, and the profile ' +
+      'asked is a PIV slot profile or one that signs in (tls-client, ' +
+      'tls-server-client, smartcard-logon), for which the slot is the ' +
+      'point of the check (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-PIV-0037',
+    summary: 'A PIV attestation of slot 9e, the Card Authentication key that ' +
+      'works without a PIN, was offered for a profile other than ' +
+      'piv-card-auth (#1955).',
+    spec: 'HTTP 400' },
+  // ===== SSHCA =============================================================
+  { code: 'STS-SSHCA-0001',
+    summary: 'The SSH user CA\'s public key or its KRL was asked for on the ' +
+      'plain-HTTP revocation listener, where neither is served: the CA key ' +
+      'is a trust anchor and the KRL is unsigned, so plain HTTP would let ' +
+      'anybody on the path replace them (#1955).',
+    spec: 'HTTP 404, text/plain' },
+  { code: 'STS-SSHCA-0002',
+    summary: 'An SSH certificate principal named a group whose name is a ' +
+      'person\'s uid in the realm, or a system account such as root, which ' +
+      'a server would sign the member in as (#1955).',
+    spec: 'HTTP 403' },
+  { code: 'STS-SSHCA-0003',
+    summary: 'An SSH security-key attestation was sent without the ' +
+      'challenge ssh-keygen was given, which the attestation signed, so ' +
+      'it could not be verified (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-SSHCA-0004',
+    summary: 'An administrator\'s SSH certificate act named nobody of the ' +
+      'realm\'s directory (#1955).',
+    spec: 'HTTP 404' },
+  { code: 'STS-SSHCA-0005',
+    summary: 'A person\'s SSH user certificates could not be read or ' +
+      'revoked: the register threw (#1955).',
+    spec: 'HTTP 500 or 503' },
   // ===== OPENPGP ===========================================================
   { code: 'STS-OPENPGP-0001',
     summary: 'An OpenPGP public key offered for registration did not ' +
@@ -25141,6 +25232,24 @@ const CODES = [
       'object or null. Nothing of it is recorded; the refusal names the ' +
       'member.',
     spec: 'none — 400 invalid_request on POST /xacml/pep/heartbeat' },
+  { code: 'STS-XACML-0332',
+    summary: 'A flow that cannot draw the role step — the password grant, ' +
+      'a token exchange, the RFC 7523 or RFC 7522 grant, the device grant, ' +
+      'CIBA, WS-Trust, a Kerberos ticket or an LDAP bind — was refused ' +
+      'because the application (or the realm, where it names none) would ' +
+      'require the person to choose a dynamic role (#1072, rcbj\'s ' +
+      'decision 5).',
+    spec: 'access_denied at the token endpoint (RFC 6749 section 5.2); ' +
+      'wst:RequestFailed; KDC_ERR_POLICY (RFC 4120 section 7.5.9); LDAP ' +
+      'unwillingToPerform (RFC 4511 section 4.1.9)' },
+  { code: 'STS-XACML-0333',
+    summary: 'Single sign-on into an application that requires a dynamic ' +
+      'role was not answered from the session, which chose none for it (a ' +
+      'sign-in for another application, or at a door that names none): the ' +
+      'person was sent to sign in again and choose, or, where the request ' +
+      'forbids asking (prompt=none, IsPassive), it was refused (#1072).',
+    spec: 'interaction_required (OIDC Core section 3.1.2.6) with ' +
+      'prompt=none; NoPassive with IsPassive' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -25965,15 +26074,23 @@ const CODES = [
     spec: 'AuthZEN Access Request and Approval Profile; HTTP 501' },
   { code: 'STS-XPEP-0140',
     summary: 'An access evaluation was one of the OAuth token-exchange ' +
-      'binding\'s tuples: a gate (resource type audience and an action ' +
-      'issue:<type>:<grant>), a context member the binding reads, or, ' +
-      'beside a gate in the same batch, a scope or any other ' +
-      'non-audience resource type. The service holds delegation and the ' +
-      'directory. This edge answers 501 for that item — the whole ' +
+      'binding\'s tuples while the realm\'s authzen.tokenExchange is on ' +
+      '(as the pulled catalogue says; a catalogue that does not say is ' +
+      'read as on): a gate (resource type audience and an action ' +
+      'issue:<token type>:<grant>, whatever the grant), a scope tuple ' +
+      '(resource type protected_resource), lone or not, or a resource ' +
+      'type the realm declares as an authorization_details type in a ' +
+      'request that also carries a token-exchange gate ' +
+      '(issue:<registered token type>:token_exchange). The service ' +
+      'answers those by the binding\'s fixed rules, which need delegation ' +
+      'and the directory. This edge answers 501 for that item — the whole ' +
       'response when the request was one evaluation, and context.error ' +
-      'on a batch item — and does not forward it. The code is logged ' +
-      'and not sent. A lone scope or detail, and an audience whose ' +
-      'action is not a gate, stay ordinary evaluations.',
+      'on a batch item — does not forward it, and records it to the ' +
+      'service\'s audit log (authzen.remote.decision). The code is logged ' +
+      'and not sent. While the binding is off every such tuple is an ' +
+      'ordinary evaluation, as at the service; either way a context ' +
+      'member the binding reads, on a tuple that is not the binding\'s, ' +
+      'is 400 STS-AUTHZEN-0101.',
     spec: 'AuthZEN OAuth token-exchange binding; HTTP 501' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
@@ -26299,7 +26416,10 @@ const CODES = [
     summary: 'An AuthZEN evaluation presented a context.approval this ' +
       'realm cannot resolve, one issued to another caller, or an ' +
       'approval.state whose signature or approval id does not verify; ' +
-      'it was not used and the evaluation was decided as not approved.',
+      'it was not used and the evaluation was decided as not approved. ' +
+      'A remote PEP\'s edge PDP, which holds no approval store, records ' +
+      'it for every approval presented to it, and answers the same ' +
+      'context (#1205).',
     spec: 'context.reason approval_unverifiable, next_action none' },
   { code: 'STS-AUTHZEN-0085',
     summary: 'An AuthZEN evaluation presented a context.approval that was ' +
@@ -26368,7 +26488,9 @@ const CODES = [
     summary: 'An AuthZEN request that is not one of the token-exchange ' +
       'binding\'s gate or scope tuples, or that arrived while ' +
       'authzen.tokenExchange is off, carried a context member only ' +
-      'the binding\'s fixed rules read (#1181).',
+      'the binding\'s fixed rules read (#1181). A remote PEP\'s edge PDP ' +
+      'refuses the same requests the same way, from the switch its ' +
+      'pulled catalogue carries (#1205).',
     spec: 'HTTP 400, an error message (a batch item\'s context.error)' },
   { code: 'STS-AUTHZEN-0102',
     summary: 'An AuthZEN token-exchange binding tuple named a subject.type ' +
@@ -26500,7 +26622,9 @@ const CODES = [
     summary: 'An RFC 8693 token exchange was not issued because the ' +
       'external AuthZEN PDP refused a subject or requesting-party gate. ' +
       'Which gate is not told to the client (#1200).',
-    spec: 'HTTP 400 invalid_request' },
+    spec: 'HTTP 400 invalid_target when the exchange named the audience ' +
+      'or resource the gate refused, invalid_grant otherwise (RFC 8693 ' +
+      'section 2.2.2); invalid_request until the review of #1200' },
   { code: 'STS-AUTHZEN-0126',
     summary: 'An RFC 8693 token exchange was not issued because the ' +
       'external AuthZEN PDP answered 2xx with a body that is not the ' +
@@ -26561,19 +26685,19 @@ const CODES = [
       'endpoint remains the record (#1202).',
     spec: 'none — logged and audited' },
   { code: 'STS-AUTHZEN-0136',
-    summary: 'An access request callback was refused because the caller is ' +
-      'not an application. set-callbacks writes appAuthzenCallbackUri ' +
-      'only on an application, and a submission that names a callback ' +
-      'from a person or a service account is refused. A value already ' +
-      'stored as stsAuthzenCallbackUri is left in place and is not ' +
-      'honoured (#1202).',
-    spec: 'HTTP 400 on a submission; the console\'s refusal on ' +
-      'set-callbacks' },
+    summary: 'An access request callback was refused because the caller ' +
+      'was not an application (#1202). Retired by the review of #1202 ' +
+      '(2026-11-23): a person\'s or service account\'s ' +
+      'stsAuthzenCallbackUri is written and honoured again, as in 1.1.0, ' +
+      'under rcbj\'s decision 4 on #1180.',
+    spec: '', retired: true },
   { code: 'STS-AUTHZEN-0137',
     summary: 'An access request callback override was refused: attempts ' +
       'or backoff was not an integer in range (attempts 1 to 20, ' +
       'backoff 60 to 86400), or a token was not attempts=N or ' +
-      'backoff=S, or one of them was repeated (#1202).',
+      'backoff=S, or one of them was repeated, or it was set for a ' +
+      'person or a service account, whose callbacks take the realm\'s ' +
+      'settings (#1202).',
     spec: 'the console\'s refusal' },
   { code: 'STS-AUTHZEN-0138',
     summary: 'The requester of a revoked AuthZEN access approval could ' +
@@ -26588,6 +26712,39 @@ const CODES = [
     summary: 'An AuthZEN approval\'s state could not be signed. The ' +
       'approval stands by id, and the task result omits state (#1204).',
     spec: 'none — logged; the approval is still looked up by id' },
+  { code: 'STS-AUTHZEN-0141',
+    summary: 'A person was refused the revocation of an AuthZEN access ' +
+      'approval on the portal because somebody else gave it: the portal ' +
+      'revokes only an approval the signed-in person gave (#1203).',
+    spec: 'HTTP 400 on POST /account-api/access-requests' },
+  { code: 'STS-AUTHZEN-0142',
+    summary: 'An AuthZEN access request\'s approval could not be stored, ' +
+      'so the task moved to failed rather than to approved (#1202). The ' +
+      'failed callback is sent where it was asked for.',
+    spec: 'the approver\'s refusal; the task status failed' },
+  { code: 'STS-AUTHZEN-0143',
+    summary: 'A pending AuthZEN access request moved to failed because ' +
+      'the approvers its advice names (configured static roles, groups, ' +
+      'the application\'s owners) resolve to nobody but its subject ' +
+      '(#1202). A computed or dynamic role, or a directory that cannot be ' +
+      'read, is never taken for nobody. Noticed by the ' +
+      'authzen.access-requests job.',
+    spec: 'the task status failed' },
+  { code: 'STS-AUTHZEN-0144',
+    summary: 'The requestable denial store of a realm is full ' +
+      '(authzen.accessRequestMaxDenials), so a new denial is not recorded ' +
+      'by evaluation_id; it is still requestable by its binding_token ' +
+      '(#1204). Logged when the store fills, not per denial.',
+    spec: 'none — logged and audited once' },
+  { code: 'STS-AUTHZEN-0145',
+    summary: 'The authorization-detail types could not be read while the ' +
+      'AuthZEN catalogue a remote PEP pulls was built, so it carries ' +
+      'tokenExchangeDetailTypes as null (#1205). An edge PDP reads that ' +
+      'closed: while the token-exchange binding is on, every resource ' +
+      'type other than audience and protected_resource beside a ' +
+      'token-exchange gate is a detail tuple it answers 501 ' +
+      '(STS-XPEP-0140). The next pull that can read them sends the list.',
+    spec: 'none — logged; the catalogue is still sent' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +
@@ -29754,6 +29911,13 @@ const CODES = [
   { code: 'STS-LOGOUT-0015',
     summary: 'Ending another session was refused because the sign-in was not recent enough.',
     spec: 'HTTP 403' },
+  { code: 'STS-LOGOUT-0016',
+    summary: 'A sign-out with the realm\'s keys in the HSM could not sign, ' +
+      'off the event loop, the SAML 2.0 LogoutRequests or a federation ' +
+      'partner\'s sign-out of one of its sessions, so none is offered for ' +
+      'that session (or the partner is not told); the sign-out itself goes ' +
+      'on (#1955).',
+    spec: '' },
   { code: 'STS-LAUNCH-0001',
     summary: 'A /launch/{app} link named no application this realm has ' +
       '(#713).',

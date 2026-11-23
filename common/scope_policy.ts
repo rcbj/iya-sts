@@ -185,6 +185,16 @@ const VC_API_SCOPES = Object.freeze(['vc-api:issue', 'vc-api:verify']);
  */
 const ACCOUNT_SCOPE = 'account:manage';
 
+// THE SSH COMMAND LINE'S (the #1955 review): `/account-api`'s SSH
+// certificate operations take it instead of `account:manage`, so a client
+// on the device grant that only fetches certificates holds nothing else of
+// the person's account. Protected like `account:manage`, and declared the
+// same way (a delegated permission grant on `sts-account-api`).
+/**
+ * The account API's SSH certificate scope, protected like the rest.
+ */
+const SSH_CERTIFICATE_SCOPE = 'ssh:certificate';
+
 // THE MDM FEED'S (#164 phase 3): the one scope `/admin-api`'s device
 // compliance operation takes instead of `admin:write`, so a posture feed
 // holds nothing else. Protected like the rest — a client must declare it, in
@@ -370,7 +380,7 @@ class ScopePolicy {
     [String(config.value('scim.scopeRead') || 'scim:read'),
      String(config.value('scim.scopeWrite') || 'scim:write'),
      DEVICE_COMPLIANCE_SCOPE, PEP_AUDIT_SCOPE, PEP_SCOPE, ACCOUNT_SCOPE,
-     AUTHZEN_SCOPE, UMA_PROTECTION_SCOPE]
+     SSH_CERTIFICATE_SCOPE, AUTHZEN_SCOPE, UMA_PROTECTION_SCOPE]
       .concat(ssfScopes.published(), GRANT_MANAGEMENT_SCOPES, VC_API_SCOPES,
               OWNER_SCOPES)
       .forEach(function (one) {
@@ -922,6 +932,7 @@ export = {
   UMA_PROTECTION_SCOPE: UMA_PROTECTION_SCOPE,
   OWNER_SCOPES: OWNER_SCOPES,
   DEVICE_COMPLIANCE_SCOPE: DEVICE_COMPLIANCE_SCOPE,
+  SSH_CERTIFICATE_SCOPE: SSH_CERTIFICATE_SCOPE,
   PEP_AUDIT_SCOPE: PEP_AUDIT_SCOPE,
   PEP_SCOPE: PEP_SCOPE,
   PROTECTED_CODE: PROTECTED_CODE,

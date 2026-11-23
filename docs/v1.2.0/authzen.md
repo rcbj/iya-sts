@@ -703,8 +703,6 @@ is refused.
 | `context.subject_token.iss` | whether the subject token was issued here, which is what makes its authorization_details a bound; compared with this realm's issuer and not re-verified |
 | `context.client_id` | the client whose declared scopes a scope tuple is held to, and whose access-token lifetime bounds token_lifetime |
 | `context.cnf, .acr, .amr, .auth_time, .jti` | read for their type only; no rule decides on them |
-| `context.issuance.audience` | on the subject gate only, and only when every value is that gate's resource.id, which does not narrow one target so it is left out; any other value is not sent, and an empty array withdraws the target |
-| `context.issuance.claims` | on the subject gate only, and only a claim the subject token already carries, narrowed; a reserved name, a new claim or a wider value is not sent |
 | `exchange_semantics` | not sent: the policy chooses by its precedence, as for a local exchange that named none |
 | `urn:sts:xacml:protocol` | OAuth 2.0, the act's protocol, so one policy decides both; the trusted urn:sts:xacml:authzen:caller tells this one apart |
 
@@ -725,17 +723,20 @@ It only ever narrows what the authorization server would otherwise issue:
 * `granted_scope`: only when the request names no scope. It is the subject
   token's scope (`context.subject_token.scope`), narrowed by the same three
   checks as a scope tuple. Without a subject token scope it is left out, and
-  the authorization server uses its own defaults;
-* `audience`: only this gate's own resource id. One gate has one target, so
-  a list of that id does not narrow and is left out. Any other value would
-  broaden the target and is not sent. An empty array withdraws the target,
-  and the subject gate is `false`;
-* `claims`: a claim the subject token already carries, and only a narrower
-  value (a string array that is a proper subset, or a smaller non-negative
-  number). A value equal to the subject token's does not narrow and is left
-  out. A reserved name (`iss`, `iat`, `jti`, `sub`, `aud`, `exp`, `nbf`,
-  `scope`, `client_id`, `cnf`, `act`, `authorization_details`, `may_act`),
-  a claim the subject token does not carry, or a wider value is not sent.
+  the authorization server uses its own defaults.
+
+**Nothing else is sent.** The Token Issuance Profile also defines
+`audience` and `claims` keys, and this PDP never writes either: no fixed
+rule of the binding produces one (#1201 asks that they only narrow, and
+the binding's tuples carry nothing a narrower audience or claim set could
+be read from). The answer passes through a last no-broadening check that
+would hold either key if one were ever built: an `audience` only of the
+gate's own resource id is left out, any other is dropped, and an empty one
+withdraws the target; a `claims` member is kept only where it narrows a
+claim the subject token carries, and never for a reserved name (`iss`,
+`iat`, `jti`, `sub`, `aud`, `exp`, `nbf`, `scope`, `client_id`, `cnf`,
+`act`, `authorization_details`, `may_act`). `STS-AUTHZEN-0132` to `0134`
+are that check's codes.
 
 The answer never sets `sub`, `aud`, `act` or `may_act`. The binding reserves
 them: a PDP that could write `act` could invent a delegation history. It
@@ -870,17 +871,29 @@ verify the PDP.
 The batch is the one in the worked example above: the subject gate, the
 requesting-party gate when the two parties differ, and one scope tuple per
 scope, with `evaluations_semantic` `execute_all`. An exchange with no
-audience is still asked, with a resource id of an empty string. A PDP that
-requires a non-empty id then refuses the token.
+`audience` and no `resource` is asked about this authorization server
+itself: the gate's resource id is its issuer identifier. (Until the review
+of #1200 it was an empty string, which a PDP, this service's own included,
+answers as an item error, so such an exchange always failed.)
 
 No answer means no token, in every mode: an unusable address, a certificate
 or key that cannot be read, `federation.outbound` off, a timeout, a non-2xx,
 or a body that is not the batch's decision. A `decision` of `false` on a
-subject or requesting-party gate refuses the whole exchange. The client is
-told neither which gate nor the code. A `false` scope drops that scope. An
-empty `granted_scope` grants nothing. `token_lifetime` is a ceiling on the
-access token only. A Kerberos `requested_token_type` is outside the binding
-and is not sent.
+subject or requesting-party gate refuses the whole exchange with HTTP 400:
+`invalid_target` (RFC 8693 section 2.2.2) when the exchange named the
+audience or resource the gate was about, and `invalid_grant` when it named
+none, so the refusal is of the subject token itself. The client is told
+neither which gate nor the code. A `false` scope drops that scope. An
+empty `granted_scope` grants nothing. A Kerberos `requested_token_type` is
+outside the binding and is not sent.
+
+`token_lifetime` is a ceiling on the access token, and **an exchange the
+PDP capped carries no refresh token**, whatever
+`oauth2.tokenExchangeRefreshToken` and `requested_token_type` say. A
+refresh token would mint access tokens of the full lifetime later, where
+the PDP is not asked again; the client exchanges again instead. An answer
+with no `token_lifetime` leaves the refresh token to the setting, as
+before.
 
 ## Access requests and approvals
 
@@ -1005,11 +1018,20 @@ are template parameters (`permitAccessRequestApproval`,
 rule of your own is a further Deny rule over the same facts. An approval
 needs a Permit: with `xacml.enforceAccess` off nobody can approve.
 
+**A revocation is its own action, `revoke-access-request`**, with the same
+facts. The built-in document permits it wherever it permits an approval,
+so nothing changes unless your policy says otherwise. A repository policy
+that never names `revoke-access-request` (one written before the action
+existed) is asked `approve-access-request` for a revocation instead, as
+every revocation was until then.
+
 Approvers decide in the user portal, under **Access requests**
 (`/portal/access-requests`), and administrators also on the console's AuthZEN
 tab. Approvers are mailed through the mail channel when a request arrives.
-An approver revokes an approval they gave on that same portal page. The
-requester is mailed that the approval no longer stands, at the address on
+An approver revokes an approval they gave on that same portal page, and
+only one they gave: the portal refuses a revocation of anybody else's
+approval (`STS-AUTHZEN-0141`); an administrator revokes any on the console.
+The requester is mailed that the approval no longer stands, at the address on
 their own directory entry, when the channel can address them. A later
 evaluation that carries the approval is not approved.
 
@@ -1051,7 +1073,7 @@ A re-evaluation that presented an approval says what to do next:
 | (a permit) | — | `context.approval` carries the id and `approved_until` |
 | `approval_unverifiable` | `none` | unknown id, or another caller |
 | `approval_expired` | `request` | revoked or past `approved_until` |
-| `out_of_scope` | `request` | another tuple or application |
+| `out_of_scope` | `request` | another tuple or application, whether the approval was named by its id or by a `state` that verifies |
 | `policy_denied` | `none` | verified, and the policy denied anyway |
 
 `request` comes with a fresh `context.access_request`.
@@ -1067,12 +1089,12 @@ justification, it is refused.
 ### Callbacks
 
 A submission may carry `callback` (`endpoint`, `state`, `events`). The
-endpoint must be one of the URLs an administrator registered for the calling
-application, on `appAuthzenCallbackUri` (set on the AuthZEN tab, or with
-`set-callbacks`). A person or a service account cannot register a callback.
-A value already stored in `stsAuthzenCallbackUri` is left in place and is
-not honoured. A direct LDAP write of that attribute is the same: the
-submission ignores it.
+endpoint must be one of the URLs an administrator registered for the
+caller (set on the AuthZEN tab, or with `set-callbacks`): an application's
+`appAuthzenCallbackUri`, or a person's or service account's
+`stsAuthzenCallbackUri`. Both are honoured, as in 1.1.0. A per-URL retry
+override (below) is an application's only; `set-callbacks` refuses one for
+a person or a service account (`STS-AUTHZEN-0137`).
 
 When the task finishes with a requested event the service POSTs
 `{ "state", "task" }` to the URL, with `Authorization: Bearer <JWT>` signed
@@ -1082,17 +1104,52 @@ under the outbound policy (https verified, no redirect, internal addresses
 refused in product mode).
 
 A network error, a timeout or an HTTP 5xx is tried again, up to
-`authzen.callbackAttempts` (the first send included), waiting
-`authzen.callbackBackoffS` between tries. The `authzen.access-requests` job
-sends the later tries. An HTTP 4xx, or a URL the outbound policy refuses,
-is not tried again. One URL may override either number in
-`appAuthzenCallbackConfig`, a line `https://host/path attempts=N backoff=S`
-whose URL is also an `appAuthzenCallbackUri` value. A bare URL uses the
-realm settings. The attempts are on the console's task row and on
-`callbackDelivery` in the management API and the portal. The task's own
-status is unchanged: the status endpoint stays the record the PEP enforces
-from. When the delivery will not succeed, that record's state is `failed`
-and the give-up is audited.
+`authzen.callbackAttempts` (the first send included). The first wait is
+`authzen.callbackBackoffS`, and **each wait after it doubles**, up to a
+day: with the defaults (60 seconds, 5 attempts) the tries are about 1, 2, 4
+and 8 minutes apart. (Until the review of #1202 every wait was the same.)
+The `authzen.access-requests` job sends the later tries. An HTTP 4xx, or a
+URL the outbound policy refuses, is not tried again. One URL may override
+either number in `appAuthzenCallbackConfig`, a line
+`https://host/path attempts=N backoff=S` whose URL is also an
+`appAuthzenCallbackUri` value. A bare URL uses the realm settings.
+
+Every attempt is on the console's task row — its time, its HTTP status, the
+reason and its code (`STS-AUTHZEN-0091` for a try the job repeats,
+`STS-AUTHZEN-0135` for the last) — and on `callbackDelivery.attempts` in
+the management API and the portal. A delivery's own outcome never changes
+the task's status: the status endpoint stays the record the PEP enforces
+from. When the delivery will not succeed, `callbackDelivery.state` is
+`failed` and the give-up is audited. **A finished task is kept past its
+day of retention while its callback is still being tried**, and never past
+the last attempt the bound allows; a task that must go with its delivery
+still open gets the final `STS-AUTHZEN-0135` audit row first.
+
+### When a request fails
+
+A task's status is `failed`, rather than `expired`, when a step of the
+workflow cannot complete (#1202). Each is one audit row
+(`authzen.access-request.failed`) and sends the `failed` callback where one
+was asked for:
+
+* **The approval could not be stored** (`STS-AUTHZEN-0142`): the approver
+  is refused, and no approval exists that a re-evaluation could find.
+* **The approvers resolve to nobody** (`STS-AUTHZEN-0143`): the advice named
+  approvers — a configured role, a group, the application's owners — and
+  none of them is a person other than the request's subject. The
+  `authzen.access-requests` job notices it within a minute. A computed
+  built-in role, a dynamic selectable role, or a directory that could not
+  be read is never taken for nobody, and advice that named no approver at
+  all leaves the request to an administrator.
+
+### The requestable denial store
+
+A requestable denial is recorded by `evaluation_id` so a submission may name
+it without the token. A realm records at most
+`authzen.accessRequestMaxDenials` (default 100000). Past that, a new denial
+is not recorded and is still requestable by its `binding_token`; the store
+is logged and audited once when it fills (`STS-AUTHZEN-0144`), and the job
+removes each record a day after its window.
 
 ## The console and the management API
 
@@ -1159,8 +1216,9 @@ live source; this table is a copy.
 | `authzen.accessRequestEmergencyS` | `STS_AUTHZEN_ACCESS_REQUEST_EMERGENCY_S` | `3600` | The longest emergency access holds |
 | `authzen.accessRequestRetryAfterS` | `STS_AUTHZEN_ACCESS_REQUEST_RETRY_AFTER_S` | `30` | `Retry-After` on a pending task |
 | `authzen.accessRequestMaxPending` | `STS_AUTHZEN_ACCESS_REQUEST_MAX_PENDING` | `10000` | Pending requests a realm holds before a submission is refused 503 |
+| `authzen.accessRequestMaxDenials` | `STS_AUTHZEN_ACCESS_REQUEST_MAX_DENIALS` | `100000` | Requestable denials a realm records by `evaluation_id`; past it a new one is requestable by its `binding_token` only |
 | `authzen.callbackAttempts` | `STS_AUTHZEN_CALLBACK_ATTEMPTS` | `5` | How many times a finished access request's callback is sent, the first included. `1` is one attempt. An application's `appAuthzenCallbackConfig` may set another bound for one URL |
-| `authzen.callbackBackoffS` | `STS_AUTHZEN_CALLBACK_BACKOFF_S` | `60` | Seconds to wait after a failed callback before the next attempt. The job runs every 60 seconds, so a shorter wait is not offered. An application's `appAuthzenCallbackConfig` may set a longer wait for one URL |
+| `authzen.callbackBackoffS` | `STS_AUTHZEN_CALLBACK_BACKOFF_S` | `60` | Seconds to wait after the first failed callback; each later wait doubles, up to a day. The job runs every 60 seconds, so a shorter wait is not offered. An application's `appAuthzenCallbackConfig` may set a longer wait for one URL |
 | `authzen.externalPdp` | `STS_AUTHZEN_EXTERNAL_PDP` | `false` | Ask an external PDP before issuing an OAuth access token for a token exchange (see *Asking an external PDP*) |
 | `authzen.externalPdpUrl` | `STS_AUTHZEN_EXTERNAL_PDP_URL` | *(empty)* | The external PDP's `POST /access/v1/evaluations`, absolute https, no userinfo, query or fragment |
 | `authzen.externalPdpTimeoutMs` | `STS_AUTHZEN_EXTERNAL_PDP_TIMEOUT_MS` | `5000` | How long to wait for the external PDP, in milliseconds |

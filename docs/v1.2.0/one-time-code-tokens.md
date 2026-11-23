@@ -60,6 +60,17 @@ the counter is never accepted.
 **A token pressed too often falls out of that window.** On the card,
 *Codes not accepted?* takes **two consecutive codes**. The service searches
 up to `hotp.resyncWindow` presses ahead for the pair, and moves past both.
+**The sign-in step offers the same thing**, under *My token is out of step*
+on the one-time code page, so a person whose only second factor is the
+token is not locked out of the portal where the card is. The two codes
+resynchronise the token and finish the sign-in, behind the same attempt
+budget as one code (`POST /authn-api/mfa/{id}/totp` with `code` and
+`code2`).
+
+**A claim must spend the code it presents.** A claim whose code another
+request already spent is refused (`STS-OATH-0051`), and two assignments of
+one token at once install it on one person only: the inventory row is taken
+by compare-and-set before the secret is installed.
 
 **A code is accepted once, across the whole cluster.** The counter is
 advanced by a compare-and-set in the store, so two nodes, or two workers

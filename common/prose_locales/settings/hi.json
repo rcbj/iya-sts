@@ -2200,12 +2200,12 @@
     "text": "टोकन एक बार खोला जाता है, प्रारंभ पर, हर प्रक्रिया में"
   },
   "keys.pkcs11SynchronousSign|label": {
-    "en": "c8e3fedf4601518d",
-    "text": "समकालिक PKCS#11 हस्ताक्षर की अनुमति दें"
+    "en": "66785a52cf616805",
+    "text": "अवरोधक PKCS#11 कॉल की अनुमति दें"
   },
   "keys.pkcs11SynchronousSign|description": {
-    "en": "1cb742f146d4c7c1",
-    "text": "बंद, डिफ़ॉल्ट: HSM में एक कुंजी से हस्ताक्षर केवल बाइंडिंग के अतुल्यकालिक `C_Sign` से बनता है। समकालिक द्वार (एक JWS, एक XML हस्ताक्षर, एक SAML अभिकथन) इवेंट लूप पर टोकन की प्रतीक्षा करने के बजाय HSM कुंजी को अस्वीकार करते हैं (`STS-KEYS-0209`)। चालू होने पर वे द्वार `C_Sign` बुलाते हैं और इवेंट लूप प्रतीक्षा करता है। बिना अतुल्यकालिक हस्ताक्षर वाला मॉड्यूल केवल तभी हस्ताक्षर कर सकता है जब यह चालू हो। विकूटन नहीं बदलता। प्रत्येक क्षेत्र के लिए सेट किया जा सकता है।"
+    "en": "328ad6368a172a36",
+    "text": "बंद, डिफ़ॉल्ट: HSM में रियल्म की कुंजी से किया गया कोई भी काम इवेंट लूप पर प्रतीक्षा नहीं करता। हर द्वार (एक JWS या एक्सेस टोकन, एक XML हस्ताक्षर, एक SAML अभिकथन, एक WS-Federation उत्तर, एक WS-Trust टोकन, एक XML या JWE डिक्रिप्शन, किसी कुंजी सेट के प्रमाणपत्र) बाइंडिंग के असिंक्रोनस `C_SignAsync`, `C_DecryptAsync` और `C_DeriveKeyAsync` का उपयोग करता है। एक अवरोधक कॉल अस्वीकार की जाती है (`STS-KEYS-0209`): यही उस मॉड्यूल को मिलता है जिसमें कोई असिंक्रोनस कॉल नहीं है। चालू, अवरोधक कॉल के लिए स्पष्ट सहमति: ऐसा मॉड्यूल `C_Sign`, `C_Decrypt` या `C_DeriveKey` को कॉल करता है और इवेंट लूप टोकन की प्रतीक्षा करता है। प्रति रियल्म सेट किया जा सकता है।"
   },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
@@ -3304,62 +3304,62 @@
     "text": "हार्डवेयर-कुंजी दावा किससे मिलता है"
   },
   "hardwareTokens.hardwareClaims|description": {
-    "en": "e0341e4e47f3b2f8",
-    "text": "किससे PKINIT साइन-इन हार्डवेयर से बंधी कुंजी का दावा कर सकता है (pkinit-hardware संकेतक और amr hwk)। `inference`, डिफ़ॉल्ट और #1955 से पहले का व्यवहार: ऐसा स्मार्ट-कार्ड लॉगऑन प्रमाणपत्र जिसकी कुंजी इस सेवा ने नहीं बनाई, या दर्ज सत्यापन साक्ष्य। `evidence`: केवल ऐसी कुंजी जिसे किसी हार्डवेयर टोकन का सत्यापन कवर करता है। TLS पर प्रमाणपत्र साइन-इन को hwk, और स्मार्ट कार्ड पर कुंजी के लिए sc, दोनों ही स्थितियों में केवल साक्ष्य से मिलता है।"
+    "en": "82f545cd2dea952b",
+    "text": "क्या चीज़ किसी PKINIT साइन-इन को हार्डवेयर-बद्ध कुंजी का दावा करने देती है (pkinit-hardware संकेतक और amr hwk)। `inference`, डिफ़ॉल्ट और #1955 से पहले का व्यवहार: ऐसा स्मार्ट-कार्ड लॉगऑन प्रमाणपत्र जिसकी कुंजी इस सेवा ने नहीं बनाई, या दर्ज अटेस्टेशन प्रमाण। `evidence`: केवल वह कुंजी जिसे किसी हार्डवेयर टोकन का अटेस्टेशन कवर करता है, और पासकी को hwk तभी मिलता है जब उसका अटेस्टेशन सत्यापित और भरोसेमंद हो (अन्यथा swk)। TLS पर प्रमाणपत्र साइन-इन दोनों स्थितियों में hwk, और स्मार्ट कार्ड पर कुंजी के लिए sc, केवल प्रमाण से पाता है, और केवल प्रमाणपत्र के धारक के लिए।"
   },
-"pskc.allowPlaintextImport|label": {
+  "pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
     "text": "उत्पाद मोड में सादे पाठ वाली PSKC सीड फ़ाइलें स्वीकार करें"
   },
-"pskc.allowPlaintextImport|description": {
+  "pskc.allowPlaintextImport|description": {
     "en": "7efe34e872e4772e",
     "text": "क्या कोई व्यवस्थापक उत्पाद मोड में ऐसी PSKC सीड फ़ाइल (RFC 6030) आयात कर सकता है जिसके टोकन सीक्रेट एन्क्रिप्ट नहीं हैं। डिफ़ॉल्ट रूप से बंद: ऐसी फ़ाइल हर उस डिस्क और मेलबॉक्स पर, जहाँ से वह गुज़री, काम करने वाले दूसरे कारकों की सूची रही है, और विक्रेता उसे पूर्व-साझा कुंजी या पासवर्ड के अंतर्गत एन्क्रिप्ट कर सकता है (अनुभाग 6.1 और 6.2)। विकास मोड इसे हर हाल में स्वीकार करता है।"
   },
-"yubiotp.allowPlaintextImport|label": {
+  "yubiotp.allowPlaintextImport|label": {
     "en": "b1c1ac235f98cc47",
     "text": "उत्पाद मोड में सादे पाठ वाली YubiKey OTP CSV फ़ाइलें स्वीकार करें"
   },
-"yubiotp.allowPlaintextImport|description": {
+  "yubiotp.allowPlaintextImport|description": {
     "en": "f409449d46d5831a",
     "text": "क्या कोई व्यवस्थापक उत्पाद मोड में YubiKey OTP सीक्रेट की CSV (सीरियल, सार्वजनिक पहचान, निजी पहचान, AES कुंजी) आयात कर सकता है। डिफ़ॉल्ट रूप से बंद: फ़ाइल काम करने वाले दूसरे कारकों की सूची है। विकास मोड एक को हर हाल में स्वीकार करता है। फ़ाइल स्वीकार होने पर सीक्रेट सील हो जाते हैं, और फ़ाइल नहीं रखी जाती।"
   },
-"openpgp.wkd|label": {
+  "openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",
     "text": "Web Key Directory में कुंजियाँ प्रकाशित करें"
   },
-"openpgp.wkd|description": {
+  "openpgp.wkd|description": {
     "en": "7822103f89ac59b3",
     "text": "इस realm की मेल डोमेन के लिए Web Key Directory (draft-koch-openpgp-webkey-service) का उत्तर दें: /.well-known/openpgpkey/<domain>/hu/<hash> (advanced विधि, openpgpkey.<domain> पर) और /.well-known/openpgpkey/hu/<hash> (direct विधि), और प्रत्येक की नीति फ़ाइल। केवल उस व्यक्ति की कुंजी का उत्तर दिया जाता है जिसने पोर्टल पर इसे चुना है। डिफ़ॉल्ट रूप से बंद।"
   },
-"openpgp.wkdDomains|label": {
+  "openpgp.wkdDomains|label": {
     "en": "d1c4b728593ff000",
     "text": "Web Key Directory द्वारा सेवित मेल डोमेन"
   },
-"openpgp.wkdDomains|description": {
+  "openpgp.wkdDomains|description": {
     "en": "ad64f7216191123c",
     "text": "वे मेल डोमेन जिनके लिए इस realm की Web Key Directory उत्तर देती है, अल्पविराम से अलग। खाली, यानी डिफ़ॉल्ट, realm की अपनी DNS डोमेन है। जिस अनुरोध के पथ में कोई realm नहीं है, उसका उत्तर वह realm देता है जो उसकी डोमेन की सेवा करता है, पहले डिफ़ॉल्ट realm।"
   },
-"openpgp.challengeLifetimeS|label": {
+  "openpgp.challengeLifetimeS|label": {
     "en": "dbf558cf0b4b8f90",
     "text": "पंजीकरण चुनौती की अवधि (सेकंड)"
   },
-"openpgp.challengeLifetimeS|description": {
+  "openpgp.challengeLifetimeS|description": {
     "en": "e9130c8e82368cc6",
     "text": "OpenPGP कुंजी पंजीकृत करने के लिए व्यक्ति gpg --clearsign से जिस चुनौती पर हस्ताक्षर करता है, वह कितनी देर मान्य रहती है। वह एक बार उपयोग होती है, और किसी व्यक्ति के पास एक समय में एक ही होती है।"
   },
-"openpgp.signatureSkewS|label": {
+  "openpgp.signatureSkewS|label": {
     "en": "d927cf1f04bd9d51",
     "text": "प्रमाण हस्ताक्षर में घड़ी का अंतर (सेकंड)"
   },
-"openpgp.signatureSkewS|description": {
+  "openpgp.signatureSkewS|description": {
     "en": "2772763d3d363b6d",
     "text": "हस्ताक्षर करने वाले कंप्यूटर की घड़ी इस सेवा की घड़ी से कितनी अलग हो सकती है: जो प्रमाण चुनौती जारी होने से पहले, या अभी के बाद, इससे अधिक अंतर पर हस्ताक्षरित हो, वह अस्वीकार किया जाता है (STS-OPENPGP-0010)।"
   },
-"openpgp.minRsaBits|label": {
+  "openpgp.minRsaBits|label": {
     "en": "f3dc9f85de143630",
     "text": "सबसे छोटी RSA OpenPGP कुंजी"
   },
-"openpgp.minRsaBits|description": {
+  "openpgp.minRsaBits|description": {
     "en": "cd16018c848ce538",
     "text": "सबसे छोटी RSA कुंजी, प्राथमिक या उपकुंजी, जिसे OpenPGP पंजीकरण स्वीकार करता है। Ed25519, Ed448, P-256, P-384 और P-521 पर ECDSA और ECDH, X25519 और X448, तथा RFC 9980 के मिश्रित ML-DSA-65+Ed25519, ML-DSA-87+Ed448, ML-KEM-768+X25519 और ML-KEM-1024+X448 तब स्वीकार किए जाते हैं जब openpgp.algorithms उन्हें नाम दे। DSA, ElGamal, Brainpool वक्र और SLH-DSA कभी नहीं (STS-OPENPGP-0004)।"
   },
@@ -8387,6 +8387,14 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "एक विश्वास क्षेत्र अधिकतम कितने पहुँच अनुरोध लंबित रखता है; इसके पार प्रस्तुति 503 से अस्वीकार होती है जब तक कुछ का निर्णय न हो जाए या वे समाप्त न हों।"
   },
+  "authzen.accessRequestMaxDenials|label": {
+    "en": "09e695949f0cc1cc",
+    "text": "एक रेल्म द्वारा दर्ज अनुरोध-योग्य अस्वीकृतियाँ"
+  },
+  "authzen.accessRequestMaxDenials|description": {
+    "en": "698617c5a3485120",
+    "text": "एक रेल्म evaluation_id के अनुसार अधिकतम कितनी अनुरोध-योग्य अस्वीकृतियाँ दर्ज करता है (#1204)। इसके बाद नई अस्वीकृति दर्ज नहीं होती, और वह अपने binding_token से अब भी अनुरोध-योग्य रहती है; एक्सेस अनुरोध जॉब किसी रिकॉर्ड को उसकी अवधि के एक दिन बाद हटा देता है।"
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"
@@ -8400,8 +8408,8 @@
     "text": "Access request callback backoff (seconds)"
   },
   "authzen.callbackBackoffS|description": {
-    "en": "27141a0f28d94b83",
-    "text": "How long to wait after a failed access request callback before the next attempt (#1202). The authzen.access-requests job runs every 60 seconds, so a shorter wait could not be honoured. An application's appAuthzenCallbackConfig may set a longer wait for one URL."
+    "en": "43f2cb7740fc7efe",
+    "text": "किसी एक्सेस अनुरोध के कॉलबैक की पहली विफलता के बाद अगले प्रयास से पहले कितनी देर प्रतीक्षा करनी है (#1202)। हर बाद की प्रतीक्षा पिछली से दोगुनी होती है, अधिकतम एक दिन तक। authzen.access-requests जॉब हर 60 सेकंड में चलता है, इसलिए छोटी प्रतीक्षा का पालन नहीं हो सकता। किसी एप्लिकेशन का appAuthzenCallbackConfig एक URL के लिए लंबी प्रतीक्षा तय कर सकता है।"
   },
   "authzen.externalPdp|label": {
     "en": "8a0af08389fe6cda",
@@ -12992,8 +13000,8 @@
     "text": "piv-card-auth प्रमाणपत्र को साइन इन करने दें"
   },
   "piv.cardAuthSignIn|description": {
-    "en": "1852da24c3fbfade",
-    "text": "piv-card-auth (स्लॉट 9e) कुंजी भौतिक प्रवेश के लिए बिना PIN के काम करती है, इसलिए जब तक यह चालू न हो, उसका प्रमाणपत्र TLS साइन-इन और PKINIT पर अस्वीकार किया जाता है (STS-PIV-0013)।"
+    "en": "e9e37c8e6becb7ee",
+    "text": "piv-card-auth (स्लॉट 9e) कुंजी PIN के बिना काम करती है, भौतिक प्रवेश के लिए, इसलिए जब तक यह चालू न हो उसका प्रमाणपत्र TLS साइन-इन और PKINIT पर अस्वीकार होता है (STS-PIV-0013)। स्लॉट 9e की कुंजी केवल piv-card-auth के अंतर्गत प्रमाणित होती है (STS-PIV-0037), और उसे कभी hwk या sc नहीं मिलता।"
   },
   "piv.keyEscrow|label": {
     "en": "f2efc85c3d2bac38",
@@ -13090,5 +13098,37 @@
   "pki.sshUserCaPqcAlongsideClassical|description": {
     "en": "b38eab63ec092b6c",
     "text": "चालू होने पर, जब ML-DSA प्राधिकरण मौजूद हो तो नया SSH उपयोगकर्ता प्रमाणपत्र दो बार जारी होता है: पारंपरिक प्रमाणपत्र, जिसे OpenSSH क्लाइंट उपयोग करता है, और उसके पास एक ML-DSA प्रमाणपत्र। pki.sshUserCaPqcOnly के चालू रहते यह चालू नहीं हो सकता (STS-PKI-0296)। डिफ़ॉल्ट रूप से बंद। मिश्रित हस्ताक्षर OpenSSH की अवधारणा नहीं है; पारंपरिक प्रमाणपत्र और ML-DSA प्रमाणपत्र दो हस्ताक्षर हैं, एक संकर हस्ताक्षर नहीं।"
+  },
+  "pki.sshSoftwareLifetimeSeconds|label": {
+    "en": "e65480d5e0de0ff6",
+    "text": "हार्डवेयर प्रमाण के बिना सबसे लंबा SSH उपयोगकर्ता प्रमाणपत्र (से.)"
+  },
+  "pki.sshSoftwareLifetimeSeconds|description": {
+    "en": "45980657cb573f83",
+    "text": "सेकंड में वह सबसे लंबी अवधि जिसके साथ किसी ऐसी कुंजी के लिए SSH उपयोगकर्ता प्रमाणपत्र जारी किया जा सकता है जिसे कोई सत्यापित हार्डवेयर प्रमाण कवर नहीं करता: एक साधारण कुंजी, या भरोसेमंद अटेस्टेशन के बिना भेजी गई sk- सुरक्षा कुंजी। अनुरोध कम माँग सकता है। डिफ़ॉल्ट रूप से पाँच मिनट।"
+  },
+  "pki.sshHardwareLifetimeSeconds|label": {
+    "en": "58130ddb50b2cf1b",
+    "text": "हार्डवेयर प्रमाण के साथ सबसे लंबा SSH उपयोगकर्ता प्रमाणपत्र (से.)"
+  },
+  "pki.sshHardwareLifetimeSeconds|description": {
+    "en": "93fab84d44ca2078",
+    "text": "सेकंड में वह सबसे लंबी अवधि जिसके साथ किसी ऐसी कुंजी के लिए SSH उपयोगकर्ता प्रमाणपत्र जारी किया जा सकता है जिसे सत्यापित हार्डवेयर प्रमाण कवर करता है: ऐसी sk- सुरक्षा कुंजी जिसका अटेस्टेशन सत्यापित और भरोसेमंद है, या ऐसी कुंजी जिसे एक अटेस्टेड PIV प्रमाणपत्र प्रमाणित करता है। अनुरोध कम माँग सकता है। डिफ़ॉल्ट रूप से एक घंटा, जो अधिकतम भी है।"
+  },
+  "pki.sshUserCertificateExtensions|label": {
+    "en": "7bd63846ccd81f4e",
+    "text": "SSH उपयोगकर्ता प्रमाणपत्र में शामिल एक्सटेंशन"
+  },
+  "pki.sshUserCertificateExtensions|description": {
+    "en": "66d53e3e95faddca",
+    "text": "नए SSH उपयोगकर्ता प्रमाणपत्र में शामिल OpenSSH प्रमाणपत्र एक्सटेंशन (PROTOCOL.certkeys), अल्पविराम से अलग। डिफ़ॉल्ट ssh-keygen का अपना सेट है; बिना किसी एक्सटेंशन वाला प्रमाणपत्र अपने धारक को टर्मिनल, फ़ॉरवर्डिंग या rc फ़ाइल के बिना साइन इन कराता है। no-touch-required जोड़ा जा सकता है। जिस नाम को OpenSSH परिभाषित नहीं करता उसे हटा दिया जाता है।"
+  },
+  "pki.sshGroupPrincipals|label": {
+    "en": "92bc72613cff7a8d",
+    "text": "वे समूह जिनके नाम SSH प्रिंसिपल हो सकते हैं"
+  },
+  "pki.sshGroupPrincipals|description": {
+    "en": "401372878bd26042",
+    "text": "वे निर्देशिका समूह जिनका सामान्य नाम कोई सदस्य SSH प्रमाणपत्र के प्रिंसिपल के रूप में माँग सकता है, अल्पविराम से अलग, प्रत्येक पर निर्णय फिर भी एक्सेस-कंट्रोल नीति करती है (संसाधन ssh-user-ca, क्रिया issue-ssh-principal)। खाली, जो डिफ़ॉल्ट है, का अर्थ है कोई नहीं: प्रमाणपत्र केवल व्यक्ति का uid बताता है, क्योंकि समूह होने भर से कोई समूह कुछ नहीं देता। ऐसा समूह जिसका नाम किसी व्यक्ति का uid या root जैसा सिस्टम खाता हो, हर हाल में अस्वीकार होता है।"
   }
 }

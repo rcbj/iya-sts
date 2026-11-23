@@ -97,7 +97,7 @@
   },
   "endpoints.route./access/v1/access-requests/schema.name": {
     "en": "e39be1976aa651db",
-    "text": "مخطط تقديم طلب الوصول"
+    "text": "مخطط إرسال طلب الوصول"
   },
   "endpoints.route./access/v1/access-requests/:id.name": {
     "en": "c8bcbb33d07cfb8f",
@@ -1278,10 +1278,6 @@
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
     "en": "33209f967f070175",
     "text": "إجراءات الرموز العتادية"
-  },
-  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
-    "en": "f46d01f7581b5379",
-    "text": "مفاتيح PIV المودَعة"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
@@ -2646,5 +2642,13 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (شهادة عميل تُطلب ولا تُشترط أبدًا)"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "مفاتيح PIV المودَعة"
+  },
+  "endpoints.route./admin-api/hardware-tokens/ssh-certificates.name": {
+    "en": "3bb1ef22ae2ed554",
+    "text": "شهادات مستخدم SSH لشخص"
   }
 }

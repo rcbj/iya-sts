@@ -291,7 +291,8 @@ interface PepProxyDeps {
   loadGate(): { check(question: any): any;
                 ISSUANCE: Record<string, string> };
   // `saml/saml2_sso.ts`, for the Response the saml mode builds.
-  loadSaml2Sso(): { pepProxyResponse(opts: any): any };
+  loadSaml2Sso(): { pepProxyResponse(opts: any): any;
+                   pepProxyResponseAsync(opts: any): Promise<any> };
 }
 
 // The members a document may carry, and a route; anything else is refused.
@@ -2265,10 +2266,12 @@ class PepProxy {
       return String((Array.isArray(raw) ? raw[0] : raw) || '').trim();
     };
     const acsUrl = values('samlAssertionConsumerService');
-    const built = this.deps.loadSaml2Sso().pepProxyResponse({
+    // Signed off the event loop where the realm's XML key is in the HSM
+    // (#1955 P8 follow-up): `pepProxyResponseAsync()`, the same Response.
+    const built = (await this.deps.loadSaml2Sso().pepProxyResponseAsync({
       session: this.sessionFor(subject),
       spEntityId: values('samlEntityId'), acsUrl: acsUrl
-    }) || {};
+    })) || {};
     if (!built.ok) {
       log.debug("Leaving PepProxy.identity(). No Response.");
       return built.policy

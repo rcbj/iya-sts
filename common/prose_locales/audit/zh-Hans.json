@@ -591,10 +591,6 @@
     "en": "92433c797106d523",
     "text": "已移除 YK-VAL 客户端"
   },
-  "audit.actions.piv-escrow.recover.label": {
-    "en": "0cad829ec7cafc72",
-    "text": "已恢复一个托管的 PIV 密钥管理密钥"
-  },
   "audit.actions.openpgp.challenge.label": {
     "en": "454a22b5bcd9d6a2",
     "text": "已发出 OpenPGP 密钥注册质询"
@@ -1138,6 +1134,14 @@
   "audit.actions.authzen.access-request.callback.label": {
     "en": "432e877d55af1913",
     "text": "已发送 AuthZEN 访问请求的回调，或回调失败"
+  },
+  "audit.actions.authzen.access-request.failed.label": {
+    "en": "ff702bec26fec0b2",
+    "text": "一个 AuthZEN 访问请求失败"
+  },
+  "audit.actions.authzen.access-request.denials-full.label": {
+    "en": "d4a30614c3be855a",
+    "text": "AuthZEN 可申请拒绝存储已满"
   },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
@@ -2466,5 +2470,13 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "已移除远程 PEP 集群的反向代理配置"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "已恢复一个托管的 PIV 密钥管理密钥"
+  },
+  "audit.actions.ykval.verify.label": {
+    "en": "75090a0d0937732e",
+    "text": "一个 YK-VAL 客户端询问了某个 YubiKey OTP 是否有效"
   }
 }

@@ -154,9 +154,44 @@ class WebAuthnMfa {
       '0'.repeat(digits) + '">' +
       '<div class="row"><button type="submit" id="totp-submit" name="action" ' +
       'value="totp">' + t.html('authn.totp.signIn') + '</button></div>' +
-      '</form>' + WebAuthnMfa.startOver(t) + '<div class="meta"><div>' +
+      '</form>' + WebAuthnMfa.resync(v, t, digits) +
+      WebAuthnMfa.startOver(t) + '<div class="meta"><div>' +
       t.html('authn.totp.meta', { period: period }) + '</div>' +
       WebAuthnMfa.links(v, t, 'authn.totp.backup') + '</div>';
+  }
+
+  // AN HOTP TOKEN OUT OF STEP (the #1955 review): two consecutive codes
+  // resynchronise it (RFC 4226 section 7.4) and sign in, for somebody whose
+  // only second factor is the token and who cannot reach the portal. Folded
+  // away in a `<details>`, drawn only where the person holds one.
+  /**
+   * The two-code resynchronisation form of `/authn/totp`, or ''.
+   *
+   * @param v - the view
+   * @param t - the translator
+   * @param digits - the code length
+   * @returns the markup
+   */
+  static resync(v: Json, t: Json, digits: number): string {
+    if (!(v.totp && v.totp.hotp)) {
+      return '';
+    }
+    const field = function (id: string, label: string): string {
+      return '<label for="' + id + '">' + t.html(label) + '</label>' +
+        '<input type="text" class="code" id="' + id + '" name="' + id +
+        '" autocomplete="off" inputmode="numeric" pattern="[0-9]*" ' +
+        'maxlength="' + digits + '" placeholder="' + '0'.repeat(digits) +
+        '">';
+    };
+    return '<details class="resync"><summary>' +
+      t.html('authn.totp.resyncSummary') + '</summary><p>' +
+      t.html('authn.totp.resyncHelp') + '</p>' +
+      '<form method="post" action="/authn/totp">' +
+      field('resync1', 'authn.totp.resyncFirst') +
+      field('resync2', 'authn.totp.resyncSecond') +
+      '<div class="row"><button type="submit" id="totp-resync" ' +
+      'name="action" value="resync">' + t.html('authn.totp.resyncButton') +
+      '</button></div></form></details>';
   }
 
   /**

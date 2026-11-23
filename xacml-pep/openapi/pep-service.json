@@ -613,7 +613,39 @@
           },
           "obligationsProfile": {
             "type": "boolean",
-            "description": "The realm's authzen.obligationsProfile, as pulled. The default, and an absent member, is on."
+            "description": "The realm's authzen.obligationsProfile, as pulled. Before a pull, and when the catalogue did not send it, off."
+          },
+          "tokenExchange": {
+            "type": "boolean",
+            "description": "The realm's authzen.tokenExchange, as pulled. Before a pull, and when the catalogue did not send it, on: the binding's tuples are answered 501."
+          },
+          "tokenExchangeDetailTypes": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The declared authorization_details types, as pulled; null before a pull, when the catalogue did not send them, or when the service could not read them."
+          },
+          "tokenExchangeTokenTypes": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The registered token types, as pulled; null before a pull or when the catalogue did not send them."
           }
         },
         "additionalProperties": false,
@@ -624,7 +656,10 @@
           "maxEvaluations",
           "maxBodyBytes",
           "returnReasons",
-          "obligationsProfile"
+          "obligationsProfile",
+          "tokenExchange",
+          "tokenExchangeDetailTypes",
+          "tokenExchangeTokenTypes"
         ]
       },
       "Catalogue": {

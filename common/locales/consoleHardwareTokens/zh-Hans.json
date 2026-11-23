@@ -57,5 +57,16 @@
 "escrowSerial": "证书序列号",
 "escrowSubject": "主体",
 "escrowExpires": "到期",
-"escrowRecover": "恢复密钥"
+"escrowRecover": "恢复密钥",
+  "sshTab": "SSH 证书",
+  "sshWhat": "此领域为该人员签发的 OpenSSH 用户证书，直到各自过期。吊销一个证书会将其列入领域的 KRL（GET /pki/ssh-user-krl），信任此 CA 的服务器会读取它。",
+  "sshSearch": "在“令牌”选项卡中搜索一个人员，即可在此列出其 SSH 证书。",
+  "sshNone": "{who} 没有有效的 SSH 证书。",
+  "sshSerial": "序列号",
+  "sshKey": "密钥",
+  "sshPrincipals": "主体",
+  "sshExpires": "到期",
+  "sshHardware": "绑定硬件",
+  "sshRevoked": "已吊销",
+  "sshRevoke": "吊销"
 }

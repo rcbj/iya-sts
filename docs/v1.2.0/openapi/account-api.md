@@ -109,6 +109,7 @@ Scope: `account:manage`.
 | `granted[].callbackDelivery` | object |  |  |
 | `granted[].callbackDelivery.attempts` | list |  |  |
 | `granted[].callbackDelivery.attempts[].at` | number |  |  |
+| `granted[].callbackDelivery.attempts[].code` | string |  | Empty for a delivery. STS-AUTHZEN-0091 for a failed attempt the job tries again, STS-AUTHZEN-0135 for the last one. |
 | `granted[].callbackDelivery.attempts[].ok` | boolean |  |  |
 | `granted[].callbackDelivery.attempts[].status` | number |  |  |
 | `granted[].callbackDelivery.attempts[].why` | string |  |  |
@@ -149,6 +150,7 @@ Scope: `account:manage`.
 | `rows[].callbackDelivery` | object |  |  |
 | `rows[].callbackDelivery.attempts` | list |  |  |
 | `rows[].callbackDelivery.attempts[].at` | number |  |  |
+| `rows[].callbackDelivery.attempts[].code` | string |  | Empty for a delivery. STS-AUTHZEN-0091 for a failed attempt the job tries again, STS-AUTHZEN-0135 for the last one. |
 | `rows[].callbackDelivery.attempts[].ok` | boolean |  |  |
 | `rows[].callbackDelivery.attempts[].status` | number |  |  |
 | `rows[].callbackDelivery.attempts[].why` | string |  |  |
@@ -208,7 +210,7 @@ Scope: `account:manage`.
 
 **Approves, denies or revokes an AuthZEN access request**
 
-Decides one request as you, after the access-control policy (action approve-access-request on resource authzen-access-request) said you may. An approval is handed to the PEP to carry on its next evaluation, which the realm's policy decides afresh. A denial ends the request. A revocation withdraws an approval you may decide: the task stays approved, a later evaluation that carries it is not approved, and the requester is mailed when the channel can address them (#1203). Refused when you may not decide, your own request included where the policy forbids self-approval, when a request is no longer pending, and when there is no live approval to revoke.
+Decides one request as you, after the access-control policy said you may (action approve-access-request on resource authzen-access-request for an approval or a denial, revoke-access-request for a revocation). An approval is handed to the PEP to carry on its next evaluation, which the realm's policy decides afresh. A denial ends the request. A revocation withdraws an approval you gave: the task stays approved, a later evaluation that carries it is not approved, and the requester is mailed when the channel can address them (#1203). Refused when you may not decide, your own request included where the policy forbids self-approval, when a request is no longer pending, when there is no live approval to revoke, and when the approval is one somebody else gave.
 
 The door of the portal's `POST /portal/access-requests`.
 
@@ -264,6 +266,7 @@ Scope: `account:manage`.
 | `view.granted[].callbackDelivery` | object |  |  |
 | `view.granted[].callbackDelivery.attempts` | list |  |  |
 | `view.granted[].callbackDelivery.attempts[].at` | number |  |  |
+| `view.granted[].callbackDelivery.attempts[].code` | string |  | Empty for a delivery. STS-AUTHZEN-0091 for a failed attempt the job tries again, STS-AUTHZEN-0135 for the last one. |
 | `view.granted[].callbackDelivery.attempts[].ok` | boolean |  |  |
 | `view.granted[].callbackDelivery.attempts[].status` | number |  |  |
 | `view.granted[].callbackDelivery.attempts[].why` | string |  |  |
@@ -304,6 +307,7 @@ Scope: `account:manage`.
 | `view.rows[].callbackDelivery` | object |  |  |
 | `view.rows[].callbackDelivery.attempts` | list |  |  |
 | `view.rows[].callbackDelivery.attempts[].at` | number |  |  |
+| `view.rows[].callbackDelivery.attempts[].code` | string |  | Empty for a delivery. STS-AUTHZEN-0091 for a failed attempt the job tries again, STS-AUTHZEN-0135 for the last one. |
 | `view.rows[].callbackDelivery.attempts[].ok` | boolean |  |  |
 | `view.rows[].callbackDelivery.attempts[].status` | number |  |  |
 | `view.rows[].callbackDelivery.attempts[].why` | string |  |  |
@@ -10145,15 +10149,82 @@ Scope: `account:manage`.
 | `view.tokenEndpoint` | string |  |  |
 | `view.username` | string |  |  |
 
+## GET /account-api/ssh/certificates
+
+`listSshCertificates`
+
+**Lists the caller's SSH user certificates**
+
+The OpenSSH user certificates issued to the caller's token subject that have not expired, newest first, revoked ones included and marked, and the two lifetimes this realm issues (`lifetimes`). Never a key.
+
+Scope: `account:manage`, `ssh:certificate`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
+**200**: The certificates.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `certificates` | list | yes |  |
+| `certificates[].authority` | string | yes | `classical`, or `ssh-mldsa-65` for a certificate the ML-DSA authority signed. |
+| `certificates[].hardwareBound` | boolean | yes | Whether verified hardware evidence covered the key. |
+| `certificates[].issuedAt` | string | yes |  |
+| `certificates[].keyFingerprint` | string | yes | The certified key's SHA256 fingerprint, as `ssh-keygen -l` prints it. |
+| `certificates[].keyType` | string | yes | The certified key's OpenSSH type, `ssh-ed25519` or `sk-ssh-ed25519@openssh.com` for example. |
+| `certificates[].notAfter` | string | yes |  |
+| `certificates[].principals` | list | yes |  |
+| `certificates[].principals[]` | string |  |  |
+| `certificates[].revoked` | boolean | yes |  |
+| `certificates[].revokedAt` | string | yes | When it was revoked; empty for one that was not. |
+| `certificates[].serialHex` | string | yes | The serial, lower-case hex: what `revokeSshCertificate` names. |
+| `lifetimes` | object | yes | The longest lifetimes, in seconds, without and with hardware evidence (pki.sshSoftwareLifetimeSeconds, pki.sshHardwareLifetimeSeconds). |
+| `lifetimes.hardwareSeconds` | integer | yes |  |
+| `lifetimes.softwareSeconds` | integer | yes |  |
+
+**401**: No valid DPoP-bound account access token.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**403**: The token carries neither `account:manage` nor `ssh:certificate`, or the access policy refused the person.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**503**: The certificates could not be read.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
 ## POST /account-api/ssh/certificates
 
 `issueSshCertificate`
 
 **Issues an SSH user certificate**
 
-Certifies one authorized public key for principals belonging to the caller, with a separate authorization decision for every principal. Security-key evidence is verified before it can produce a hardware-bound certificate. The caller may revoke only certificates issued to their own token subject.
+Certifies one authorized public key for principals belonging to the caller — their uid, and the groups of theirs the realm offers as principals (pki.sshGroupPrincipals, none by default) — with a separate authorization decision for every principal. A security key's attestation is verified, with the challenge ssh-keygen was given, by the WebAuthn attestation verifier before it can produce a hardware-bound certificate; an `sk-` key without one is issued the shorter lifetime. The certificate carries the realm's extensions (pki.sshUserCertificateExtensions). The caller may revoke only certificates issued to their own token subject.
 
-Scope: `account:manage`.
+Scope: `account:manage`, `ssh:certificate`.
 
 **Parameters**
 
@@ -10166,9 +10237,10 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `attestation` | string |  | Base64 OpenSSH security-key attestation evidence, required for `sk-*` keys. |
-| `lifetimeS` | integer |  | Certificate lifetime in seconds. Defaults to 300; maximum 300 for ordinary keys and 3600 with verified hardware evidence. |
-| `principals` | list | yes | The requested principals. Each must be the caller's username or one of their group common names. |
+| `attestation` | string |  | Base64 of the OpenSSH security-key attestation file (`ssh-keygen -O write-attestation=`), for an `sk-*` key; without it the key is issued the shorter lifetime. |
+| `attestationChallenge` | string |  | Base64 of the challenge ssh-keygen was given (`-O challenge=`), which the attestation signed; required with `attestation`. |
+| `lifetimeS` | integer |  | Certificate lifetime in seconds. Defaults to pki.sshSoftwareLifetimeSeconds (300); at most that for ordinary keys, and pki.sshHardwareLifetimeSeconds (3600) with verified hardware evidence. |
+| `principals` | list | yes | The requested principals. Each must be the caller's uid or a group of theirs that pki.sshGroupPrincipals names; a group named like a person's uid or a system account is refused. |
 | `principals[]` | string |  |  |
 | `publicKey` | string | yes | One OpenSSH public key line; certificate keys and authorized-key options are not accepted. |
 
@@ -10179,6 +10251,8 @@ Scope: `account:manage`.
 | `certificate` | string | yes |  |
 | `hardwareBound` | boolean | yes |  |
 | `ok` | boolean | yes |  |
+| `pqcCertificate` | string |  | The ML-DSA certificate issued beside the classical one (pki.sshUserCaPqcAlongsideClassical), in authorized-key format under ssh-mldsa-65; absent when none was. |
+| `pqcSerialHex` | string |  | Its serial, lower-case hex; revoked by `revokeSshCertificate` like the classical one's. |
 | `serialHex` | string | yes |  |
 | `validAfter` | integer | yes |  |
 | `validBefore` | integer | yes |  |
@@ -10241,7 +10315,7 @@ Scope: `account:manage`.
 
 Revokes a certificate issued to the caller's token subject and updates the realm's OpenSSH KRL. A certificate belonging to another subject is not disclosed.
 
-Scope: `account:manage`.
+Scope: `account:manage`, `ssh:certificate`.
 
 **Parameters**
 

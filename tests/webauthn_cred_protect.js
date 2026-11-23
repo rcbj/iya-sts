@@ -212,14 +212,30 @@ function writer(t) {
     enforceCredProtect: true }));
   const name = 'cp-' + require('crypto').randomBytes(3).toString('hex');
   ldap.createUser(name, { invent: false });
-  const key = function (id, level) {
+  // A trusted attestation: while the level is enforced it must be proven
+  // (the #1955 review), and only a trusted attestation vouches for it.
+  const key = function (id, level, untrusted) {
     log.debug('Entering writer() key().');
     log.debug('Leaving writer() key().');
     return credentials.addKey(name, { credentialId: id,
       publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'AA', y: 'AA' },
-      algorithm: 'ES256', coseAlg: -7, credProtect: level });
+      algorithm: 'ES256', coseAlg: -7, credProtect: level,
+      attestation: untrusted ? undefined
+        : { verified: true, trusted: true, format: 'packed',
+            type: 'basic', anchor: 'configured', checkedAt: Date.now() } });
   };
   const low = key('cp-low', 1);
+  const unproven = key('cp-unproven', 3, true);
+  t.check(unproven.ok === false && errorCodes.codeOf(unproven) ===
+          'STS-AUTHN-0559',
+          'C6a. A LEVEL WITH NO TRUSTED ATTESTATION BEHIND IT IS NO PROOF: ' +
+          'it counts as level 1 while the level is enforced',
+          JSON.stringify(unproven));
+  const imported = credentials.addKey(name, { credentialId: 'cp-u2f',
+    publicKeyJwk: { kty: 'EC', crv: 'P-256', x: 'AA', y: 'AA' },
+    algorithm: 'ES256', coseAlg: -7, appid: 'https://u2f.example' });
+  t.equal(errorCodes.codeOf(imported), 'STS-AUTHN-0580',
+          'C6b. an imported U2F key is refused while the level is enforced');
   const ok = key('cp-ok', 3);
   const held = credentials.keysOf(name);
   const written = held.filter(function (one) {

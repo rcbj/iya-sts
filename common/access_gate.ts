@@ -240,10 +240,17 @@ const ACTION = {
   // which is why it is a word of its own rather than `read` with a note. A
   // realm's override narrows or widens it through `reportSharedActions`.
   RUN: 'run',
-  // DECIDING AN AUTHZEN ACCESS REQUEST (#1180): approving it, denying it,
-  // or revoking its approval, one question for all three — who may decide
-  // a request is who may decide it either way.
+  // DECIDING AN AUTHZEN ACCESS REQUEST (#1180): approving it or denying
+  // it, one question for both — who may decide a request is who may decide
+  // it either way.
   APPROVE_ACCESS_REQUEST: 'approve-access-request',
+  // REVOKING AN APPROVAL ONE GAVE (#1203): its own question since the
+  // review of #1203, so a policy can let a person approve and not revoke,
+  // or the reverse. The built-in document's fourth rule permits it
+  // wherever it permits an approval, and a repository policy that never
+  // names it is asked APPROVE_ACCESS_REQUEST instead
+  // (`authzen_access_request.ts`'s `mayRevoke()`).
+  REVOKE_ACCESS_REQUEST: 'revoke-access-request',
   // RECOVERING AN ESCROWED KEY (#1955 P2): neither a read of a page nor a
   // change to one — it hands a person's decryption key to someone else.
   RECOVER_KEY: 'recover-key',
@@ -290,6 +297,9 @@ interface AccessRequest {
   accessRequestObject?: AccessRequestObject | null;
   // The one SSH certificate principal being considered (#1955 P3).
   sshPrincipal?: string;
+  // And whether it is the person's uid or a group's name (the #1955
+  // review).
+  sshPrincipalKind?: string;
   context?: Record<string, unknown>;
   [key: string]: unknown;
 }

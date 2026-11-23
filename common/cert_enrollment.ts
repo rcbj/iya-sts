@@ -3041,7 +3041,8 @@ class CertEnrollment {
     // still the person's key).
     if (piv.facts && kind === 'person') {
       pivAttestation.recordToken({ username: resolved.entry.id,
-        serialHex: record.serialHex, family: family,
+        serialHex: record.serialHex, thumbprint: record.thumbprint,
+        family: family,
         profile: record.profile, facts: piv.facts,
         actor: asked.principal ? String(asked.principal.id) : '',
         via: record.via });

@@ -106,6 +106,10 @@ const STEP_ACTS: Json = {
   '/authn/totp': {
     totp: { op: 'totp', body: function (f: Json): Json {
       return { code: f.code };
+    } },
+    // An HOTP token's two-code resynchronisation (the #1955 review).
+    resync: { op: 'totp', body: function (f: Json): Json {
+      return { code: f.resync1, code2: f.resync2 };
     } } },
   '/authn/backup-code': {
     'backup-code': { op: 'backup-code', body: function (f: Json): Json {

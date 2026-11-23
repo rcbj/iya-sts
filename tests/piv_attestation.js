@@ -177,6 +177,37 @@ async function checkVerify(t, dev) {
   t.check((await verifyOf(good)).ok, '3h. and an always touch policy meets ' +
           'it');
   config.clearOverride('piv.touchPolicy');
+  // THE #1955 REVIEW: the slot, and where the FIPS mark is read from.
+  const cardAuth = await pkivia.slotKey(dev, { slot: '9e' });
+  for (const profile of ['tls-client', 'piv-auth', 'digital-signature']) {
+    t.equal(code(await verifyOf(cardAuth, profile)), 'STS-PIV-0037',
+            '3i. a slot 9e (no PIN) attestation is refused for ' + profile);
+  }
+  t.equal(code(await verifyOf(cardAuth, 'smartcard-logon')), 'STS-PIV-0037',
+          '3j. a slot 9e attestation buys no smart-card logon certificate');
+  t.check((await verifyOf(cardAuth, 'piv-card-auth')).ok,
+          '3k. and is accepted for piv-card-auth, the one profile it fits');
+  const noSlot = await pkivia.slotKey(dev, { slot: 'zz' });
+  t.equal(code(await verifyOf(noSlot, 'piv-auth')), 'STS-PIV-0036',
+          '3l. an attestation naming no slot is refused for a PIV profile');
+  t.equal(code(await verifyOf(noSlot, 'tls-client')), 'STS-PIV-0036',
+          '3m. and for a profile that signs in');
+  const fipsDev = await pkivia.device({ name: 'Elsewhere', fips: true });
+  const forged = await piv.verify({
+    statement: piv.statementFromPem(good.slotPem,
+                                    fipsDev.f9Pem + '\n' + good.f9Pem),
+    publicKeyPem: good.publicPem, profile: 'piv-auth' });
+  t.check(forged.ok && forged.facts.fips === false,
+          '3n. A FIPS-MARKED CERTIFICATE SENT FIRST IS NOT READ: the mark ' +
+          'comes from the certificate that signed the slot\'s',
+          JSON.stringify(forged.errors || forged.facts));
+  const fipsKey = await pkivia.slotKey(fipsDev, {});
+  config.setOverride('piv.attestationAnchors', fipsDev.rootPem);
+  const real = await verifyOf(fipsKey);
+  config.setOverride('piv.attestationAnchors', dev.rootPem);
+  t.check(real.ok && real.facts.fips === true,
+          '3o. and a FIPS key\'s own f9 still marks it',
+          JSON.stringify(real.errors || real.facts));
   log.debug("Leaving checkVerify().");
 }
 
@@ -199,8 +230,20 @@ async function checkIssuance(t, dev) {
     return null;
   }
   const serialHex = issued.record.serialHex;
-  t.equal(tokens.certificateAmr(serialHex).join(','), 'hwk,sc',
+  const thumbprint = issued.record.thumbprint;
+  const asAlice = { serial: serialHex, thumbprint: thumbprint,
+                    username: ALICE };
+  t.equal(tokens.certificateAmr(asAlice).join(','), 'hwk,sc',
           '4b. the YubiKey is recorded and the certificate earns hwk and sc');
+  // THE #1955 REVIEW: by the certificate, for its holder.
+  t.equal(tokens.certificateAmr({ serial: serialHex, thumbprint:
+    '00'.repeat(32), username: ALICE }).join(','), 'swk',
+          '4b-ii. ANOTHER CERTIFICATE WITH THE SAME SERIAL earns nothing ' +
+          '(an outside CA may issue any serial)');
+  t.equal(tokens.certificateAmr({ serial: serialHex, thumbprint: thumbprint,
+                                  username: BOB }).join(','), 'swk',
+          '4b-iii. and the certificate earns nothing for anybody but its ' +
+          'holder');
   const token = tokens.byKey('yubico/' + made.serial);
   t.check(token && token.holder === ALICE && token.firmware === '5.4.3' &&
           token.evidenceSources.indexOf('piv-attestation') >= 0,
@@ -279,7 +322,7 @@ async function checkIssuance(t, dev) {
   t.check(piv.signInRefusal(serialHex) === null,
           '4j. a piv-auth certificate signs in');
   // X4: what the attestation said, recorded and handed to policy.
-  const ev = tokens.evidenceFor('x509', serialHex);
+  const ev = tokens.certificateEvidence(asAlice);
   t.check(ev.pinPolicy === 'once' && ev.touchPolicy === 'always' &&
           ev.firmware === '5.4.3' && ev.formFactor === 'usb-c' &&
           ev.fips === false,
@@ -287,7 +330,8 @@ async function checkIssuance(t, dev) {
           'token its firmware and form factor', JSON.stringify(ev));
   const Authn = require('../authn/authn').Authn;
   const snap = Authn.hardwareTokenOf({ kind: 'certificate',
-                                       serial: serialHex });
+                                       id: thumbprint, serial: serialHex },
+                                     ALICE);
   const gate = require('../common/issuance_gate');
   const event = { authenticated: true, amr: ['hwk', 'sc'], acr: '1',
                   authority: { kind: 'local' },

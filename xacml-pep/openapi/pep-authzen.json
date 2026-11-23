@@ -173,7 +173,7 @@
           }
         },
         "additionalProperties": true,
-        "description": "application names the application asked about, one of the caller's; required when the caller is scoped to more than one (400 STS-AUTHZEN-0027), refused when not one of them (403 STS-AUTHZEN-0025). supported_obligations and approval are reserved and are not catalogue properties: a bad shape is 400 STS-AUTHZEN-0003. An approval is recognized and not used (STS-AUTHZEN-0084). Every other member is a catalogue property, as in Properties."
+        "description": "application names the application asked about, one of the caller's; required when the caller is scoped to more than one (400 STS-AUTHZEN-0027), refused when not one of them (403 STS-AUTHZEN-0025). supported_obligations and approval are reserved and are not catalogue properties: a bad shape is 400 STS-AUTHZEN-0003. An approval is recognized and not used (STS-AUTHZEN-0084); the answer's context then says reason approval_unverifiable and next_action none. Every other member is a catalogue property, as in Properties."
       },
       "EvaluationRequest": {
         "type": "object",
@@ -369,6 +369,20 @@
             },
             "description": "Handed when the PEP declared every type and the realm's obligations profile is on. A Permit is then true."
           },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "approval_unverifiable"
+            ],
+            "description": "When the request presented context.approval: approval_unverifiable, since this edge verifies no approval (STS-AUTHZEN-0084), as the service answers an approval it cannot verify."
+          },
+          "next_action": {
+            "type": "string",
+            "enum": [
+              "none"
+            ],
+            "description": "With reason: none, since this edge serves no access-request endpoint."
+          },
           "error": {
             "$ref": "#/components/schemas/ErrorDetail"
           }
@@ -443,7 +457,7 @@
       "post": {
         "operationId": "postEvaluation",
         "summary": "Access evaluation (AuthZEN 1.0 section 6)",
-        "description": "Decided here against the pulled root policy, deny-biased, the PIP consulted when subject.type is one of the realm's resolveSubjectTypes; or, for an application that enforces fine-grained authorization, forwarded to the service's POST /access/v1/evaluation with context.application set, and its answer passed through. A token-exchange binding tuple is 501 (STS-XPEP-0140) before it is read or forwarded. Content-Type must be application/json after admission (415 STS-AUTHZEN-0117).",
+        "description": "Decided here against the pulled root policy, deny-biased, the PIP consulted when subject.type is one of the realm's resolveSubjectTypes; or, for an application that enforces fine-grained authorization, forwarded to the service's POST /access/v1/evaluation with context.application set, and its answer passed through. While the realm's authzen.tokenExchange is on, a token-exchange binding tuple (every gate and scope tuple, and a declared detail type beside a token-exchange gate) is 501 (STS-XPEP-0140) before it is read or forwarded; off, it is an ordinary evaluation. Either way a context member the binding reads, on a tuple that is not the binding's, is 400 STS-AUTHZEN-0101. Content-Type must be application/json after admission (415 STS-AUTHZEN-0117).",
         "security": [
           {
             "mutualTLS": []
@@ -483,7 +497,7 @@
             }
           },
           "400": {
-            "description": "The request's shape or the catalogue refused it (STS-AUTHZEN-0001 to 0008), it names no application among several (0027), or the service answered 400 to a forward (STS-XPEP-0057).",
+            "description": "The request's shape or the catalogue refused it (STS-AUTHZEN-0001 to 0008), a context member the token-exchange binding reads on a tuple that is not the binding's (0101), it names no application among several (0027), or the service answered 400 to a forward (STS-XPEP-0057).",
             "content": {
               "application/json": {
                 "schema": {

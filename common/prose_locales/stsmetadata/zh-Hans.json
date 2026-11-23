@@ -101,7 +101,7 @@
   },
   "stsmetadata.specs.authzen-arap.coverage": {
     "en": "6be544a62f94329b",
-    "text": "partial：可请求的拒绝（context.access_request、evaluation_id、evaluated_at、reason），即领域策略以 access-request advice 标记的 Deny，按值绑定，使用本领域签署的 binding_token（内联声明和 binding_hash），并可从拒绝记录按引用绑定；带 Idempotency-Key 的提交，201 或 202 以及 Task Handle；带 Retry-After 的任务状态端点；通过 POST 或 DELETE 取消；六种状态；reevaluate 完成模式，approval.id 在可信状态中解析，approval.state 被签发并验证且仍须查找，批准作为可信事实到达策略；next_action 及五种 reason；每种 problem 类型；元数据成员、jwks_uri 和能力；可请求的拒绝上的 request_schema_url，即提交可选扩充内容的同源 JSON Schema。缺失：托管表单（form_url）和 display，以及 BULK、ACTOR 和 CATALOG 配套规范。"
+    "text": "partial：可申请的拒绝（context.access_request、evaluation_id、evaluated_at、reason），即领域策略用 access-request 建议标记的 Deny，通过本领域签名的 binding_token 按值绑定（内联声明和 binding_hash），并通过拒绝记录按引用绑定；带 Idempotency-Key 的提交、201 或 202 以及 Task Handle；带 Retry-After 的任务状态端点；通过 POST 或 DELETE 取消；六种状态；reevaluate 完成模式、在可信状态中解析的 approval.id、签发并验证的 approval.state（仍需查找），以及以可信事实到达策略的批准；next_action 和五种原因；每种问题类型；元数据成员、jwks_uri 和能力；可申请拒绝上的 request_schema_url，即同源的提交可选补充内容的 JSON Schema。缺少：托管表单（form_url）和 display，以及 BULK、ACTOR 和 CATALOG 配套规范。"
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
     "en": "ca5109eae0e95b17",
@@ -715,14 +715,6 @@
     "en": "59b1734815ece664",
     "text": "partial：PKCS#10 请求的 id-aa-attestation 属性（最多一个，恰好一个 AttestationBundle，仅限 certificate 及其他选项），通过 EST、SCEP 和 ACME 提供。验证两种声明类型：TCG 的 tcg-attest-tpm-certify（采用修订版 20 附录 A.2.3 的语法），用于设备配置文件（#257）；以及适用于每个配置文件的 YubiKey PIV 证明（#1955），位于 1.3.6.1.4.1.41482.3.2 之下，以插槽证书为 stmt、f9 证书放在 certs 中——这是本服务选定的类型，因为草案未定义任何类型。不读取 CRMF 扩展（此处没有 CMP），其他声明类型只记录、不验证。新鲜度（第 6.2 节）通过 EST 上的 draft-ietf-lamps-attestation-freshness 实现，仅适用于 TPM 声明：PIV 证明不携带 nonce。"
   },
-  "stsmetadata.specs.yubico-piv-attestation.coverage": {
-    "en": "244659759ede3102",
-    "text": "partial：插槽证明证书通过 f9 证明证书验证至 Yubico 的 PIV 根证书（Serial 263751，以及适用于固件 5.7.4 及更高版本、带有其 PIV 中间证书的 Attestation Root 1，均随附并固定）或某个领域自己的根证书；其密钥与请求中的密钥比对；读取固件、序列号、PIN 和触摸策略以及外形规格扩展，并将这些策略与领域的策略比对。卡本身从不受管理：不写入 PIN、PUK 或插槽。"
-  },
-  "stsmetadata.specs.fips201.coverage": {
-    "en": "322d92ba9eb36fde",
-    "text": "minimal：四个密钥插槽作为证书配置文件（PIV Authentication 9a、Digital Signature 9c、Key Management 9d、Card Authentication 9e，后者默认不为任何人登录），以及在声明 PIV Authentication 策略时，按其 urn:uuid subjectAltName 中的卡 UUID 映射的外部 PIV 或 CAC 卡（默认关闭）。不支持 FASC-N、CHUID、卡管理或生物特征识别。"
-  },
   "stsmetadata.specs.lamps-attestation-freshness.coverage": {
     "en": "555e31da7393d476",
     "text": "partial：基于 HTTPS 的 EST（第 5.1 节）——通过 GET 以及使用 application/est-attestation-freshness+json 的 POST 访问 /nonce，len 在 8..64 范围内生效（提升至 16 个八位组），过期，在无需证明时返回空 nonce，400 和 503，需经身份验证，并通过 cookie 和主体绑定到 CSR。该 nonce 即 TPM2_Certify 的 qualifyingData，作为 TPMS_ATTEST 的 extraData 进行检查，并且只能使用一次。缺失：未定义任何 reqTypeInfo 类型（503），以及本服务不支持的 CMP（第 4 节）、基于 CoAP 的 EST（5.2）和 CMC（6）。"
@@ -770,10 +762,6 @@
   "stsmetadata.specs.rfc9580.coverage": {
     "en": "a2930bdb8ffe747d",
     "text": "partial：读取 v6 和（RFC 4880）v4 可传输公钥，验证由其签名密钥作出的明文签名，并将消息加密至其加密密钥，经典算法通过 openpgp.js 完成。RFC 9980 复合密钥在此读取（见 rfc9980）。接受 Ed25519、Ed448、NIST 曲线上的 ECDSA 和 ECDH、X25519、X448 以及长度为 openpgp.minRsaBits 的 RSA；拒绝 DSA、ElGamal 和 Brainpool。缺少：签名、解密、密钥环、密钥服务器。"
-  },
-  "stsmetadata.specs.rfc9980.coverage": {
-    "en": "5feb46765c8bc465",
-    "text": "partial：登记时以及使用已存储密钥时的 ML-DSA-65+Ed25519 与 ML-DSA-87+Ed448 签名，以及 ML-KEM-768+X25519 与 ML-KEM-1024+X448 加密。复合算法计为后量子。openpgp.pqcOnly 只收窄登记。签名的两部分由 common/crypto_impl/openpgp_pqc.js 核验。缺少：SLH-DSA（算法标识 32-34），且本服务不生成 RFC 9980 密钥。openpgp.js 不解析这些密钥。"
   },
   "stsmetadata.specs.rfc3156.coverage": {
     "en": "aa799b14a54ace0f",
@@ -893,7 +881,7 @@
   },
   "stsmetadata.endpoints./access/v1/access-requests/schema.what": {
     "en": "ec6a3b36123f646a",
-    "text": "GET 提交可添加的扩充内容的 JSON Schema（草案 2020-12）：context.business_justification，以及 requested_access.requested_until 和 emergency，后者要求提供理由。公开，与 access_request_endpoint 同源；可请求的拒绝的 request_schema_url 指向它。不托管表单，因此任何拒绝都不带 form_url。API 或配置文件关闭时返回 501。注册在任务状态路径之前，否则该路径会把 \"schema\" 读作 id。"
+    "text": "GET 提交可添加的补充内容的 JSON Schema（draft 2020-12）：context.business_justification，以及 requested_access.requested_until 和 emergency，后者要求提供理由。公开，与 access_request_endpoint 同源；可申请拒绝的 request_schema_url 指向它。不托管任何表单，因此任何拒绝都不带 form_url。API 或该配置文件关闭时返回 501。在任务状态路径之前注册，否则后者会把“schema”当作 id。"
   },
   "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
     "en": "264083b977756230",
@@ -1090,14 +1078,6 @@
   "stsmetadata.endpoints./pki/revocation.what": {
     "en": "6e82cd30ac736775",
     "text": "非规范，但仍刻意放在这里：把客户端指向这些端点的人需要知道这些地址是什么，而用 `openssl x509 -text` 从证书中读出它们是一个糟糕的起点。每个颁发机构一行，包括其主题、已吊销的证书数量，以及两种方案（http、ldap）的 CRL 和旁边的 OCSP 与 caIssuers 地址。其中没有序列号——已吊销内容的列表就是 CRL，在旁边放一份 JSON 副本将是对同一问题的第二个答案：一个会过时、且没有人签名的答案。它明确说明本服务发布吊销信息，但无法强制任何人去查询，这对每个证书颁发机构都成立，也是客户端开发者会把自己的软件栈指向这里的原因。不设关卡，因为其中的一切本来就在本服务分发的每张证书里。"
-  },
-  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
-    "en": "c8819f794e61f398",
-    "text": "NON-SPEC（#1955 P3）：领域范围的 OpenSSH 用户 CA 密钥，以 authorized-key 行发布，供 SSH 服务器信任。无门控且 `no-store`；对应的 CA 私钥从不离开本服务。"
-  },
-  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
-    "en": "ed928008015e78a8",
-    "text": "NON-SPEC（#1955 P3）：领域范围的 OpenSSH KRL，在调用方吊销证书或报告硬件令牌丢失时更新。无门控且 `no-store`；必须配置 SSH 服务器去查询它，因为本服务无法让依赖方这样做。"
   },
   "stsmetadata.endpoints./admin-api/xacml.what": {
     "en": "2efd1b442d450758",
@@ -2048,8 +2028,8 @@
     "text": "非规范。以 JSON 说明添加密钥推送目标可以使用什么：创建的每个字段，以及缺少它时创建是否会被拒绝——标识符和提供方始终必填，有些仅对某些提供方必填（requiredWhen）：除 file 外均需写入凭据，aws 需区域，azure 和 vault 需端点，file 需目录。它不添加任何内容：创建是 POST /admin-api/secret-destinations/add-destination。对应 GET /admin/secret-destinations/new。"
   },
   "stsmetadata.endpoints./admin-api/policies/new.what": {
-    "en": "8b0523b4a594c8c1",
-    "text": "非规范。可以创建命名策略的类型，以及对于所请求的类型，其保存的每个字段以及缺少它时保存是否会被拒绝——名称始终必填，因为没有名称的保存会被拒绝；以及省略时不会保留其值的每个字段。它不保存任何内容：命名策略是该类型在本领域尚未使用的名称下的保存操作。对应 GET /admin/policies/new。"
+    "en": "76e1013ae3d82e5b",
+    "text": "非规范。可以创建命名策略的类型，以及对于所请求的类型，其保存的每个字段以及缺少它时保存是否会被拒绝——名称始终必填，因为没有名称的保存会更改默认策略；以及保存时不接受空值的每个字段。它不保存任何内容：命名策略是该类型在本领域尚未使用的名称下的保存操作。对应 GET /admin/policies/new。"
   },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",
@@ -2244,16 +2224,12 @@
     "text": "NON-SPEC (#1955 P4)。管理员从供应商 PSKC 种子文件导入的 HOTP 和 TOTP 令牌，包括未分配、已分配或已停用的，可分页并按序列号或人员搜索。绝不包含密钥。对应 GET /admin/hardware-tokens（其 OATH 标签页）。"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "0d649147af0cbe04",
-    "text": "NON-SPEC (#1955)。lost，带 { key }：将令牌标记为丢失，删除其上的每个通行密钥，以 keyCompromise 为由吊销其上的每个证书，为每一项发送 CAEP credential-change，并结束由它们登录的会话。enrol-piv，带 { username, profile, csr, attestationCertificate?, attestationIssuer? }：通过 EST 签发 CA 为此人签发 PIV 插槽证书，验证其 YubiKey PIV 证明并记录该 YubiKey。recover-key，带 { username, serial }：此人的托管 piv-key-management 密钥，访问控制策略仅允许 PIV_KEY_RECOVERY 执行。即控制台在该页面上的三项操作。"
+    "en": "cdbf34a1fbdf290e",
+    "text": "NON-SPEC（#1955）。lost，带 { key }：令牌被标记为丢失，其上的每个通行密钥被移除，其上的每张证书因 keyCompromise 被吊销，为每项发送 CAEP credential-change，并结束它们登录的会话。enrol-piv，带 { username, profile, csr, attestationCertificate?, attestationIssuer? }：通过 EST 签发 CA 为此人签发 PIV 槽证书，验证其 YubiKey PIV 证明并记录该 YubiKey。recover-key，带 { username, serial }：此人托管的 piv-key-management 密钥，访问控制策略只允许 PIV_KEY_RECOVERY 在近期登录后取得。revoke-ssh，带 { username, serial }：吊销此人的 SSH 用户证书并将其列入领域的 KRL。该页面上控制台的四个操作。"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "b55c0cdd477d183e",
-    "text": "报告硬件令牌丢失并停用其凭据、签发 PIV 插槽证书，或移交托管密钥"
-  },
-  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
-    "en": "1716521c9c5e119d",
-    "text": "NON-SPEC (#1955)。某人的托管 piv-key-management 证书（piv.keyEscrow）：序列号、主体、有效期以及每个证书是否已被吊销。绝不包含密钥。与 GET /admin/hardware-tokens 对应。"
+    "en": "f5b724d2c79b5f74",
+    "text": "报告硬件令牌丢失并撤销其凭据、签发 PIV 槽证书、交出托管密钥，或吊销某人的 SSH 证书"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -4214,5 +4190,33 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "一个参数"
+  },
+  "stsmetadata.specs.yubico-piv-attestation.coverage": {
+    "en": "244659759ede3102",
+    "text": "partial：插槽证明证书通过 f9 证明证书验证至 Yubico 的 PIV 根证书（Serial 263751，以及适用于固件 5.7.4 及更高版本、带有其 PIV 中间证书的 Attestation Root 1，均随附并固定）或某个领域自己的根证书；其密钥与请求中的密钥比对；读取固件、序列号、PIN 和触摸策略以及外形规格扩展，并将这些策略与领域的策略比对。卡本身从不受管理：不写入 PIN、PUK 或插槽。"
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "322d92ba9eb36fde",
+    "text": "minimal：四个密钥插槽作为证书配置文件（PIV Authentication 9a、Digital Signature 9c、Key Management 9d、Card Authentication 9e，后者默认不为任何人登录），以及在声明 PIV Authentication 策略时，按其 urn:uuid subjectAltName 中的卡 UUID 映射的外部 PIV 或 CAC 卡（默认关闭）。不支持 FASC-N、CHUID、卡管理或生物特征识别。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
+    "en": "1716521c9c5e119d",
+    "text": "NON-SPEC (#1955)。某人的托管 piv-key-management 证书（piv.keyEscrow）：序列号、主体、有效期以及每个证书是否已被吊销。绝不包含密钥。与 GET /admin/hardware-tokens 对应。"
+  },
+  "stsmetadata.specs.rfc9980.coverage": {
+    "en": "5feb46765c8bc465",
+    "text": "partial：登记时以及使用已存储密钥时的 ML-DSA-65+Ed25519 与 ML-DSA-87+Ed448 签名，以及 ML-KEM-768+X25519 与 ML-KEM-1024+X448 加密。复合算法计为后量子。openpgp.pqcOnly 只收窄登记。签名的两部分由 common/crypto_impl/openpgp_pqc.js 核验。缺少：SLH-DSA（算法标识 32-34），且本服务不生成 RFC 9980 密钥。openpgp.js 不解析这些密钥。"
+  },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "c6a8759e4a5e40c9",
+    "text": "NON-SPEC（#1955 P3）：领域范围的 OpenSSH 用户 CA 密钥，以 authorized-key 行发布，供 SSH 服务器信任。带 `?algorithm=ssh-mldsa-65` 时改为返回该领域的 ML-DSA 颁发机构，标准 OpenSSH 目前尚无法验证它。无门控且 `no-store`，仅在主端口提供：明文 HTTP 吊销监听器拒绝它，因为该密钥是信任锚。对应的 CA 私钥从不离开本服务。"
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "2e4cdead67408937",
+    "text": "NON-SPEC（#1955 P3）：领域范围的 OpenSSH KRL，在调用者吊销证书或报告硬件令牌丢失时更新。无门控且 `no-store`，仅在主端口提供：KRL 未签名，因此明文 HTTP 吊销监听器拒绝它。SSH 服务器必须配置为查阅它，因为本服务无法让依赖方这样做。"
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/ssh-certificates.what": {
+    "en": "84ce6fea3694d4c0",
+    "text": "NON-SPEC（#1955 审查）。签发给某人且尚未到期的 OpenSSH 用户证书，已吊销的有标记：序列号、密钥类型与指纹、主体、有效期以及是否有硬件证据覆盖该密钥。从不包含密钥。对应 GET /admin/hardware-tokens（其 SSH 证书选项卡）。"
   }
 }

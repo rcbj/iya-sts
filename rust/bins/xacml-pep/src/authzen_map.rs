@@ -64,36 +64,15 @@ const OBLIGATION_PREFIX: &str = "urn:sts:xacml:authzen:obligation:";
 /// never handed.
 const DISCHARGED_OBLIGATION: &str = "urn:sts:xacml:obligation:log";
 
-/// The Obligations Profile's registered types, in the model's order, then
-/// `custom` (#1177). What the metadata advertises while the profile is on.
-pub const SUPPORTED_OBLIGATION_TYPES: [&str; 4] =
-    ["step-up", "notification", "session_termination", "custom"];
+/// The Obligations Profile's registered types, then `custom` (#1177):
+/// what the metadata advertises while the profile is on. GENERATED from
+/// the service's model with the rules below (`sts-model-pep`, #1205).
+pub use sts_model_pep::authzen_obligations::SUPPORTED_OBLIGATION_TYPES;
 
-/// A registered type: the properties it may not be handed without, and
-/// those that collect every assignment of their name.
-struct ObligationRule {
-    name: &'static str,
-    required: &'static [&'static str],
-    arrays: &'static [&'static str],
-}
-
-const OBLIGATION_RULES: [ObligationRule; 3] = [
-    ObligationRule {
-        name: "step-up",
-        required: &["acr_value"],
-        arrays: &["amr_values"],
-    },
-    ObligationRule {
-        name: "notification",
-        required: &["to", "body"],
-        arrays: &["to"],
-    },
-    ObligationRule {
-        name: "session_termination",
-        required: &["subject"],
-        arrays: &[],
-    },
-];
+/// Each registered type's required and array properties, generated from
+/// `models/authzen/authzen_members.tsp` (#1390: the model is the source),
+/// never copied here.
+use sts_model_pep::authzen_obligations::OBLIGATION_RULES;
 
 /// A request that cannot be evaluated.
 #[derive(Debug, Clone, PartialEq)]
@@ -1008,6 +987,86 @@ pub(crate) mod tests {
                 .collect(),
             advice: Vec::new(),
             policy_identifiers: Vec::new(),
+        }
+    }
+
+    /// The shared table's `obligations` cases (#1205): the Obligations
+    /// Profile's outcome — the profile switch, the PEP's declaration, the
+    /// decision, the types handed and the problems — as the service's
+    /// `AuthzenMap.outcome()` answers it (`tests/authzen_map.js` S4).
+    #[test]
+    fn agrees_with_the_shared_obligation_cases() {
+        let table = shared_cases();
+        let cases = table["obligations"].as_array().unwrap();
+        assert!(cases.len() >= 8);
+        for case in cases {
+            let said = &case["answer"];
+            let decision = match said["decision"].as_str().unwrap() {
+                "Permit" => Decision::Permit,
+                "Deny" => Decision::Deny,
+                other => panic!("{}: no decision {}", case["what"], other),
+            };
+            let obligations = said["obligations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|one| ResolvedObligation {
+                    id: one["id"].as_str().unwrap().to_string(),
+                    assignments: one["assignments"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|a| {
+                            assigned(
+                                a["attributeId"].as_str().unwrap(),
+                                a["value"].as_str().unwrap(),
+                            )
+                        })
+                        .collect(),
+                })
+                .collect();
+            let response = Response {
+                decision,
+                status: Status::ok(),
+                obligations,
+                advice: Vec::new(),
+                policy_identifiers: Vec::new(),
+            };
+            let enforced = Enforcer::new(Bias::DenyBiased)
+                .enforce(response.decision, &response.obligations);
+            let supported: Option<Vec<String>> =
+                serde_json::from_value(case["supported"].clone()).unwrap();
+            let declared = if case["profile"].as_bool().unwrap() {
+                supported.as_deref()
+            } else {
+                None
+            };
+            let got = outcome(&response, &enforced, false, declared);
+            let expect = &case["expect"];
+            assert_eq!(
+                got.decision,
+                expect["decision"].as_bool().unwrap(),
+                "{}",
+                case["what"]
+            );
+            let handed: Vec<&str> = got
+                .obligations
+                .iter()
+                .filter_map(|one| one["type"].as_str())
+                .collect();
+            let want: Vec<&str> = expect["handed"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(Value::as_str)
+                .collect();
+            assert_eq!(handed, want, "{}", case["what"]);
+            assert_eq!(
+                got.obligation_problems.len() as u64,
+                expect["problems"].as_u64().unwrap(),
+                "{}",
+                case["what"]
+            );
         }
     }
 

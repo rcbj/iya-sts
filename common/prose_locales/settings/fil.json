@@ -2200,12 +2200,12 @@
     "text": "isang beses binubuksan ang token, sa pag-start, sa bawat process"
   },
   "keys.pkcs11SynchronousSign|label": {
-    "en": "c8e3fedf4601518d",
-    "text": "Payagan ang kasabay na pagpirma ng PKCS#11"
+    "en": "66785a52cf616805",
+    "text": "Payagan ang mga humaharang na tawag sa PKCS#11"
   },
   "keys.pkcs11SynchronousSign|description": {
-    "en": "1cb742f146d4c7c1",
-    "text": "Naka-off, ang default: ang isang lagda na may susi sa HSM ay ginagawa lamang sa pamamagitan ng asynchronous na `C_Sign` ng binding. Ang magkakasabay na pinto (isang JWS, isang XML na lagda, isang SAML assertion) ay tumatanggi sa isang HSM na susi (`STS-KEYS-0209`) sa halip na maghintay sa token sa event loop. Naka-on, tinatawag ng mga pintong iyon ang `C_Sign` at naghihintay ang event loop. Ang isang module na walang asynchronous na pagpirma ay makakapirma lamang habang ito ay naka-on. Hindi nababago ang decryption. Naitatakda bawat realm."
+    "en": "328ad6368a172a36",
+    "text": "Naka-off, ang default: walang anumang ginagawa gamit ang susi ng realm sa HSM ang naghihintay sa event loop. Bawat pinto (isang JWS o access token, isang XML signature, isang SAML assertion, isang tugon ng WS-Federation, isang token ng WS-Trust, isang XML o JWE decryption, ang mga sertipiko ng isang key set) ay gumagamit ng asynchronous na `C_SignAsync`, `C_DecryptAsync` at `C_DeriveKeyAsync` ng binding. Tinatanggihan ang isang humaharang na tawag (`STS-KEYS-0209`): iyon ang natatanggap ng module na walang asynchronous na tawag. Naka-on, ang tahasang pagpayag sa mga humaharang na tawag: tumatawag ang ganoong module ng `C_Sign`, `C_Decrypt` o `C_DeriveKey` at naghihintay ang event loop sa token. Maitatakda bawat realm."
   },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
@@ -3304,62 +3304,62 @@
     "text": "Ano ang nagbibigay ng claim na hardware key"
   },
   "hardwareTokens.hardwareClaims|description": {
-    "en": "e0341e4e47f3b2f8",
-    "text": "Ano ang nagpapahintulot sa PKINIT sign-in na mag-claim ng key na nakatali sa hardware (ang pkinit-hardware indicator at amr hwk). `inference`, ang default at ang gawi bago ang #1955: isang smart-card logon certificate na ang key ay hindi ginawa ng serbisyong ito, o naitalang ebidensya ng attestation. `evidence`: tanging key na sakop ng attestation ng isang hardware token. Ang certificate sign-in sa TLS ay nakakakuha ng hwk, at sc para sa key na nasa smart card, mula lamang sa ebidensya sa alinmang kaso."
+    "en": "82f545cd2dea952b",
+    "text": "Kung ano ang nagpapahintulot sa isang PKINIT sign-in na mag-angkin ng key na nakatali sa hardware (ang indicator na pkinit-hardware at amr hwk). `inference`, ang default at ang pag-uugali bago ang #1955: isang smart-card logon certificate na ang key ay hindi ginawa ng serbisyong ito, o naitalang ebidensiya ng attestation. `evidence`: tanging key na saklaw ng attestation ng isang hardware token, at nakakakuha ng hwk ang isang passkey lamang kapag napatunayan at pinagkakatiwalaan ang attestation nito (swk kung hindi). Ang certificate sign-in sa TLS ay nakakakuha ng hwk, at sc para sa key sa smart card, mula lamang sa ebidensiya sa alinmang kaso, at para lamang sa may-hawak ng certificate."
   },
-"pskc.allowPlaintextImport|label": {
+  "pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
     "text": "Tanggapin ang mga plaintext PSKC seed file sa product mode"
   },
-"pskc.allowPlaintextImport|description": {
+  "pskc.allowPlaintextImport|description": {
     "en": "7efe34e872e4772e",
     "text": "Kung maaaring mag-import ang isang administrator ng PSKC seed file (RFC 6030) na HINDI naka-encrypt ang mga token secret, sa product mode. Naka-off bilang default: ang ganitong file ay naging listahan ng gumaganang mga ikalawang factor sa bawat disk at mailbox na dinaanan nito, at kaya itong i-encrypt ng vendor sa ilalim ng pre-shared key o password (mga section 6.1 at 6.2). Tumatanggap nito ang development mode anuman ang mangyari."
   },
-"yubiotp.allowPlaintextImport|label": {
+  "yubiotp.allowPlaintextImport|label": {
     "en": "b1c1ac235f98cc47",
     "text": "Tanggapin ang mga plaintext YubiKey OTP CSV file sa product mode"
   },
-"yubiotp.allowPlaintextImport|description": {
+  "yubiotp.allowPlaintextImport|description": {
     "en": "f409449d46d5831a",
     "text": "Kung maaaring mag-import ang isang administrator, sa product mode, ng CSV ng mga YubiKey OTP secret (serial, public id, private id, AES key). Naka-off bilang default: ang file ay listahan ng gumaganang mga ikalawang factor. Tumatanggap ang development mode ng isa anuman ang mangyari. Sini-seal ang mga secret kapag tinanggap ang file, at hindi itinatabi ang file."
   },
-"openpgp.wkd|label": {
+  "openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",
     "text": "Ilathala ang mga key sa Web Key Directory"
   },
-"openpgp.wkd|description": {
+  "openpgp.wkd|description": {
     "en": "7822103f89ac59b3",
     "text": "Sagutin ang Web Key Directory (draft-koch-openpgp-webkey-service) para sa mga mail domain ng realm na ito: /.well-known/openpgpkey/<domain>/hu/<hash> (ang advanced method, sa openpgpkey.<domain>) at /.well-known/openpgpkey/hu/<hash> (ang direct method), at ang policy file ng bawat isa. Ang key lang ng taong pumayag sa portal ang sinasagot. Naka-off bilang default."
   },
-"openpgp.wkdDomains|label": {
+  "openpgp.wkdDomains|label": {
     "en": "d1c4b728593ff000",
     "text": "Mga mail domain na sineserbisyuhan ng Web Key Directory"
   },
-"openpgp.wkdDomains|description": {
+  "openpgp.wkdDomains|description": {
     "en": "ad64f7216191123c",
     "text": "Ang mga mail domain na sinasagot ng Web Key Directory ng realm na ito, pinaghihiwalay ng kuwit. Kapag walang laman, ang default, ito ang sariling DNS domain ng realm. Ang request na walang realm sa path nito ay sinasagot ng realm na nagseserbisyo sa domain nito, ang default realm muna."
   },
-"openpgp.challengeLifetimeS|label": {
+  "openpgp.challengeLifetimeS|label": {
     "en": "dbf558cf0b4b8f90",
     "text": "Tagal ng challenge sa pagrehistro (segundo)"
   },
-"openpgp.challengeLifetimeS|description": {
+  "openpgp.challengeLifetimeS|description": {
     "en": "e9130c8e82368cc6",
     "text": "Gaano katagal valid ang challenge na pinipirmahan ng isang tao gamit ang gpg --clearsign para magrehistro ng OpenPGP key. Isang beses lang itong ginagamit, at isa lang ang hawak ng tao sa bawat pagkakataon."
   },
-"openpgp.signatureSkewS|label": {
+  "openpgp.signatureSkewS|label": {
     "en": "d927cf1f04bd9d51",
     "text": "Clock skew ng proof signature (segundo)"
   },
-"openpgp.signatureSkewS|description": {
+  "openpgp.signatureSkewS|description": {
     "en": "2772763d3d363b6d",
     "text": "Gaano kalayo ang orasan ng pumipirmang computer mula sa orasan ng serbisyong ito: ang proof na pinirmahan nang mas maaga kaysa sa pag-issue ng challenge, o mas huli kaysa ngayon, nang lampas dito ay tinatanggihan (STS-OPENPGP-0010)."
   },
-"openpgp.minRsaBits|label": {
+  "openpgp.minRsaBits|label": {
     "en": "f3dc9f85de143630",
     "text": "Pinakamaliit na RSA OpenPGP key"
   },
-"openpgp.minRsaBits|description": {
+  "openpgp.minRsaBits|description": {
     "en": "cd16018c848ce538",
     "text": "Ang pinakamaikling RSA key, primary man o subkey, na tinatanggap ng pagrehistro ng OpenPGP. Tinatanggap ang Ed25519, Ed448, ECDSA at ECDH sa P-256, P-384 at P-521, X25519 at X448, at ang mga composite ng RFC 9980 na ML-DSA-65+Ed25519, ML-DSA-87+Ed448, ML-KEM-768+X25519 at ML-KEM-1024+X448 kapag pinangalanan sila ng openpgp.algorithms. Hindi kailanman tinatanggap ang DSA, ElGamal, ang mga Brainpool curve at SLH-DSA (STS-OPENPGP-0004)."
   },
@@ -8387,6 +8387,14 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "Ang pinakamaraming access request na hawak ng isang realm bilang pending; lampas dito, tinatanggihan ang pagsumite nang may 503 hanggang may mapagpasyahan o mag-expire."
   },
+  "authzen.accessRequestMaxDenials|label": {
+    "en": "09e695949f0cc1cc",
+    "text": "Mga hinihiling na pagtanggi na itinatala ng isang realm"
+  },
+  "authzen.accessRequestMaxDenials|description": {
+    "en": "698617c5a3485120",
+    "text": "Ang pinakamaraming hinihiling na pagtanggi na itinatala ng isang realm ayon sa evaluation_id (#1204). Lampas dito, hindi naitatala ang bagong pagtanggi, at maaari pa rin itong hilingin gamit ang binding_token nito; inaalis ng job ng mga kahilingan sa access ang isang tala isang araw matapos ang window nito."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"
@@ -8400,8 +8408,8 @@
     "text": "Access request callback backoff (seconds)"
   },
   "authzen.callbackBackoffS|description": {
-    "en": "27141a0f28d94b83",
-    "text": "How long to wait after a failed access request callback before the next attempt (#1202). The authzen.access-requests job runs every 60 seconds, so a shorter wait could not be honoured. An application's appAuthzenCallbackConfig may set a longer wait for one URL."
+    "en": "43f2cb7740fc7efe",
+    "text": "Gaano katagal maghihintay matapos ang unang nabigong callback ng isang kahilingan sa access bago ang susunod na pagsubok (#1202). Ang bawat kasunod na paghihintay ay doble ng nauna, hanggang isang araw. Tumatakbo ang job na authzen.access-requests bawat 60 segundo, kaya hindi masusunod ang mas maikling paghihintay. Maaaring magtakda ang appAuthzenCallbackConfig ng isang application ng mas mahabang paghihintay para sa isang URL."
   },
   "authzen.externalPdp|label": {
     "en": "8a0af08389fe6cda",
@@ -12992,8 +13000,8 @@
     "text": "Payagang mag-sign in ang piv-card-auth na sertipiko"
   },
   "piv.cardAuthSignIn|description": {
-    "en": "1852da24c3fbfade",
-    "text": "Gumagana ang piv-card-auth key (slot 9e) nang walang PIN, para sa pisikal na pagpasok, kaya tinatanggihan ang sertipiko nito sa TLS sign-in at sa PKINIT (STS-PIV-0013) maliban kung naka-on ito."
+    "en": "e9e37c8e6becb7ee",
+    "text": "Gumagana ang isang piv-card-auth (slot 9e) key nang walang PIN, para sa pisikal na pagpasok, kaya tinatanggihan ang certificate nito sa TLS sign-in at sa PKINIT (STS-PIV-0013) maliban kung naka-on ito. Ang key sa slot 9e ay sinesertipika lamang sa ilalim ng piv-card-auth (STS-PIV-0037), at hindi kailanman nakakakuha ng hwk o sc."
   },
   "piv.keyEscrow|label": {
     "en": "f2efc85c3d2bac38",
@@ -13090,5 +13098,37 @@
   "pki.sshUserCaPqcAlongsideClassical|description": {
     "en": "b38eab63ec092b6c",
     "text": "Kapag naka-on, ang bagong SSH user certificate ay inilalabas nang dalawang beses kapag umiiral ang awtoridad na ML-DSA: ang classical na certificate, na siyang ginagamit ng OpenSSH client, at isang ML-DSA na certificate sa tabi nito. Hindi maaaring naka-on habang naka-on ang pki.sshUserCaPqcOnly (STS-PKI-0296). Naka-off bilang default. Hindi konsepto ng OpenSSH ang composite; ang classical na certificate at ang ML-DSA na certificate ay dalawang lagda, hindi isang hybrid na lagda."
+  },
+  "pki.sshSoftwareLifetimeSeconds|label": {
+    "en": "e65480d5e0de0ff6",
+    "text": "Pinakamahabang SSH user certificate nang walang ebidensiya ng hardware (s)"
+  },
+  "pki.sshSoftwareLifetimeSeconds|description": {
+    "en": "45980657cb573f83",
+    "text": "Ang pinakamahabang tagal, sa segundo, na maaaring iisyu ang isang SSH user certificate para sa key na walang napatunayang ebidensiya ng hardware: isang karaniwang key, o isang sk- security key na ipinadala nang walang pinagkakatiwalaang attestation. Maaaring humingi ng mas maikli ang kahilingan. Limang minuto bilang default."
+  },
+  "pki.sshHardwareLifetimeSeconds|label": {
+    "en": "58130ddb50b2cf1b",
+    "text": "Pinakamahabang SSH user certificate na may ebidensiya ng hardware (s)"
+  },
+  "pki.sshHardwareLifetimeSeconds|description": {
+    "en": "93fab84d44ca2078",
+    "text": "Ang pinakamahabang tagal, sa segundo, na maaaring iisyu ang isang SSH user certificate para sa key na may napatunayang ebidensiya ng hardware: isang sk- security key na napatunayan at pinagkakatiwalaan ang attestation, o isang key na sinertipika ng isang attested na PIV certificate. Maaaring humingi ng mas maikli ang kahilingan. Isang oras bilang default, na siya ring pinakamataas."
+  },
+  "pki.sshUserCertificateExtensions|label": {
+    "en": "7bd63846ccd81f4e",
+    "text": "Mga extension na dala ng isang SSH user certificate"
+  },
+  "pki.sshUserCertificateExtensions|description": {
+    "en": "66d53e3e95faddca",
+    "text": "Ang mga OpenSSH certificate extension (PROTOCOL.certkeys) na dala ng isang bagong SSH user certificate, pinaghihiwalay ng kuwit. Ang default ay ang sariling set ng ssh-keygen; ang certificate na walang anuman ay nagpapa-sign in sa may-hawak nang walang terminal, forwarding o rc file. Maaaring idagdag ang no-touch-required. Itinatapon ang pangalang hindi tinutukoy ng OpenSSH."
+  },
+  "pki.sshGroupPrincipals|label": {
+    "en": "92bc72613cff7a8d",
+    "text": "Mga grupong maaaring maging SSH principal ang pangalan"
+  },
+  "pki.sshGroupPrincipals|description": {
+    "en": "401372878bd26042",
+    "text": "Ang mga grupo sa directory na ang common name ay maaaring hingin ng isang miyembro bilang principal ng SSH certificate, pinaghihiwalay ng kuwit, bawat isa ay pinagpapasyahan pa rin ng access-control policy (resource ssh-user-ca, action issue-ssh-principal). Ang walang laman, ang default, ay wala: ang certificate ay nagpapangalan lamang sa uid ng tao, dahil walang ibinibigay ang isang grupo dahil lamang grupo ito. Ang grupong ang pangalan ay uid ng isang tao, o isang system account gaya ng root, ay tinatanggihan anuman ang sabihin nito."
   }
 }

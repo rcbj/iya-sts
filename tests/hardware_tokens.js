@@ -358,6 +358,82 @@ function checkIsolation(t, writerKey) {
   log.debug("Leaving checkIsolation().");
 }
 
+// 8. THE #1955 REVIEW: a certificate by its thumbprint and for its holder,
+// the token's holder kept, a credential's holder able to report it lost,
+// the passkey's hwk from evidence, and attested-hardware asked again.
+async function checkReview(t) {
+  log.debug("Entering checkReview().");
+  t.log.info('=== 8. the review ===');
+  const thumb = 'ab'.repeat(32);
+  const serial = 'r-' + RUN;
+  const made = tokens.recordAttested({ username: ALICE, vendor: 'yubico',
+    serial: serial,
+    credential: { kind: 'x509', ref: 'sha256:' + thumb, serial: 'c0ffee',
+                  thumbprint: thumb },
+    evidence: { source: 'piv-attestation', smartCard: true, slot: '9a' } });
+  t.check(made.ok && made.token.credentials[0].ref === 'sha256:' + thumb,
+          '8a. a certificate is filed by its SHA-256 thumbprint',
+          JSON.stringify(made));
+  t.equal(tokens.certificateAmr({ thumbprint: thumb.toUpperCase()
+    .match(/../g).join(':'), serial: 'c0ffee', username: ALICE }).join(','),
+          'hwk,sc', '8b. its holder presenting it earns hwk and sc, the ' +
+          'thumbprint in fingerprint256 form');
+  t.equal(tokens.certificateAmr({ thumbprint: thumb, serial: 'c0ffee',
+                                  username: BOB }).join(','), 'swk',
+          '8c. anybody else presenting it earns swk');
+  t.equal(tokens.certificateAmr({ thumbprint: 'cd'.repeat(32),
+                                  serial: 'c0ffee', username: ALICE })
+    .join(','), 'swk', '8d. another certificate with its serial earns swk');
+  tokens.recordAttested({ username: ALICE, vendor: 'yubico', serial: serial,
+    credential: { kind: 'x509', ref: 'sha256:' + 'ef'.repeat(32),
+                  serial: '9e9e', thumbprint: 'ef'.repeat(32) },
+    evidence: { source: 'piv-attestation', smartCard: true, slot: '9e' } });
+  t.equal(tokens.certificateAmr({ thumbprint: 'ef'.repeat(32),
+                                  serial: '9e9e', username: ALICE })
+    .join(','), 'swk', '8e. a slot 9e key (no PIN) is no evidence at all');
+  const bobs = tokens.recordAttested({ username: BOB, vendor: 'yubico',
+    serial: serial, credential: { kind: 'fido', ref: 'bob-cred-' + RUN },
+    evidence: { source: 'fido-enterprise-attestation' } });
+  t.check(bobs.ok && bobs.token.holder === ALICE,
+          '8f. A SECOND PERSON\'S CREDENTIAL DOES NOT TAKE THE TOKEN: its ' +
+          'holder is still who registered it first', JSON.stringify(bobs));
+  const Cls = tokens.HardwareTokens;
+  const own = new Cls(Object.assign(Cls.defaultDeps(), {
+    loadEnrollment: function () {
+      return { revokeEnrolled: function () {
+        return Promise.resolve({ ok: true });
+      } };
+    }
+  }));
+  const byBob = await own.markLost({ key: 'yubico/' + serial, actor: BOB,
+                                     via: 'portal', onlyHolder: BOB });
+  t.check(byBob.ok && (byBob.notRetired || []).every(function (r) {
+    return r.errorCode === 'STS-HWTOKEN-0010';
+  }), '8g. a person holding a credential on the token may report it lost, ' +
+          'and only their own credentials are retired',
+          JSON.stringify(byBob.errors || byBob.notRetired));
+  // hwk for a passkey under `evidence`.
+  t.equal(tokens.fidoAmr(ALICE, 'no-such-key'), 'hwk',
+          '8h. under inference, the default, a passkey earns hwk as before');
+  config.setOverride('hardwareTokens.hardwareClaims', 'evidence');
+  t.equal(tokens.fidoAmr(ALICE, 'no-such-key'), 'swk',
+          '8i. under evidence a key with no trusted attestation earns swk');
+  const trusted = await attestedKey('');
+  credentials.addKey(ALICE, trusted);
+  t.equal(tokens.fidoAmr(ALICE, trusted.credentialId), 'hwk',
+          '8j. and one whose attestation is verified and trusted earns hwk');
+  config.clearOverride('hardwareTokens.hardwareClaims');
+  credentials.removeKey(ALICE, trusted.credentialId);
+  // attested-hardware asked again of the register.
+  const lostEvent = { authenticated: true, amr: ['hwk'],
+    context: { credential: { kind: 'webauthn',
+                             hardwareToken: { key: 'yubico/' + serial } } } };
+  t.check(mechanisms.ofEvent(lostEvent).indexOf('attested-hardware') < 0,
+          '8k. A SIGN-IN ON A TOKEN REPORTED LOST SINCE no longer meets ' +
+          'attested-hardware');
+  log.debug("Leaving checkReview().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   try {
@@ -370,6 +446,7 @@ async function run(t) {
     checkClaims(t, writerKey);
     await checkPolicyFacts(t);
     checkIsolation(t, writerKey);
+    await checkReview(t);
   } finally {
     OVERRIDDEN.forEach(function (k) {
       config.clearOverride(k);

@@ -97,7 +97,7 @@
   },
   "endpoints.route./access/v1/access-requests/schema.name": {
     "en": "e39be1976aa651db",
-    "text": "पहुँच अनुरोध की प्रस्तुति स्कीमा"
+    "text": "एक्सेस अनुरोध का सबमिशन स्कीमा"
   },
   "endpoints.route./access/v1/access-requests/:id.name": {
     "en": "c8bcbb33d07cfb8f",
@@ -1278,10 +1278,6 @@
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
     "en": "33209f967f070175",
     "text": "हार्डवेयर टोकन क्रियाएँ"
-  },
-  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
-    "en": "f46d01f7581b5379",
-    "text": "एस्क्रो की गई PIV कुंजियाँ"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
@@ -2646,5 +2642,13 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (क्लाइंट प्रमाणपत्र माँगा जाता है, कभी आवश्यक नहीं)"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "एस्क्रो की गई PIV कुंजियाँ"
+  },
+  "endpoints.route./admin-api/hardware-tokens/ssh-certificates.name": {
+    "en": "3bb1ef22ae2ed554",
+    "text": "किसी व्यक्ति के SSH उपयोगकर्ता प्रमाणपत्र"
   }
 }

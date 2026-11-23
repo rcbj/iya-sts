@@ -36,8 +36,8 @@
     "text": "Pag-expire ng AuthZEN access request"
   },
   "sched.jobs.authzen.access-requests.describe": {
-    "en": "fae6b34a12fb0695",
-    "text": "Inililipat sa expired ang bawat pending na AuthZEN access request (#1180) na lampas na sa expires_at nito — isinusulat ang audit row nito at ipinapadala ang callback nito — inaalis ang tapos na isa isang araw matapos itong matapos, o kapag naubos na ang approval nito kung mas huli iyon, inaalis ang requestable na denial isang araw matapos ang window nito, at sinusubukang muli ang callback delivery na nabigo dahil sa network error o HTTP 5xx, hanggang sa attempt bound (#1202). Ang pagbasa mismo ang nagpapatupad ng deadline, kaya ito ang record at ang clean-up, hindi kailanman ang nagpapasya."
+    "en": "19cf8cda48af4f1e",
+    "text": "Inililipat sa expired ang bawat nakabinbing kahilingan sa access ng AuthZEN (#1180) na lampas na sa expires_at nito — isinusulat ang audit row nito at ipinapadala ang callback nito —, inaalis ang isang tapos na isang araw matapos itong matapos, o kapag naubos ang pag-apruba nito kung mas huli iyon, inaalis ang isang pagtangging maaaring hilingin isang araw matapos ang window nito, at inuulit ang paghahatid ng callback na nabigo dahil sa network error o HTTP 5xx, hanggang sa hangganan ng mga pagsubok, ang bawat paghihintay ay doble ng nauna (#1202). Pinananatili ang isang tapos habang sinusubukan pa ang callback nito, at inililipat sa failed ang isang nakabinbin na ang mga tagapag-apruba ay walang sinuman. Ang isang pagbasa mismo ang naglalapat ng deadline, kaya ito ang tala at ang paglilinis, hindi kailanman ang nagpapasya."
   },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",

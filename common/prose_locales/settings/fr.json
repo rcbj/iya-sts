@@ -2200,12 +2200,12 @@
     "text": "le jeton est ouvert une fois, au démarrage, dans chaque processus"
   },
   "keys.pkcs11SynchronousSign|label": {
-    "en": "c8e3fedf4601518d",
-    "text": "Autoriser la signature PKCS#11 synchrone"
+    "en": "66785a52cf616805",
+    "text": "Autoriser les appels PKCS#11 bloquants"
   },
   "keys.pkcs11SynchronousSign|description": {
-    "en": "1cb742f146d4c7c1",
-    "text": "Désactivé, la valeur par défaut : une signature avec une clé dans le HSM n’est faite que par le `C_Sign` asynchrone de la liaison. Les portes synchrones (un JWS, une signature XML, une assertion SAML) refusent une clé HSM (`STS-KEYS-0209`) plutôt que d’attendre le jeton sur la boucle d’événements. Activé, ces portes appellent `C_Sign` et la boucle d’événements attend. Un module sans signature asynchrone ne peut signer que tant que ceci est activé. Le déchiffrement ne change pas. Réglable par domaine."
+    "en": "328ad6368a172a36",
+    "text": "Désactivé, la valeur par défaut : rien de ce qui est fait avec une clé du domaine dans le HSM n'attend sur la boucle d'événements. Chaque porte (un JWS ou jeton d'accès, une signature XML, une assertion SAML, une réponse WS-Federation, un jeton WS-Trust, un déchiffrement XML ou JWE, les certificats d'un jeu de clés) utilise les appels asynchrones `C_SignAsync`, `C_DecryptAsync` et `C_DeriveKeyAsync` de la liaison. Un appel bloquant est refusé (`STS-KEYS-0209`) : c'est ce que reçoit un module sans appel asynchrone. Activé, l'accord explicite aux appels bloquants : un tel module appelle `C_Sign`, `C_Decrypt` ou `C_DeriveKey` et la boucle d'événements attend le jeton. Réglable par domaine."
   },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",
@@ -3304,62 +3304,62 @@
     "text": "Ce qui donne droit à une revendication de clé matérielle"
   },
   "hardwareTokens.hardwareClaims|description": {
-    "en": "e0341e4e47f3b2f8",
-    "text": "Ce qui permet à une connexion PKINIT de revendiquer une clé liée au matériel (l'indicateur pkinit-hardware et amr hwk). `inference`, la valeur par défaut et le comportement d'avant #1955 : un certificat d'ouverture de session par carte à puce dont ce service n'a pas généré la clé, ou une preuve d'attestation enregistrée. `evidence` : seulement une clé couverte par l'attestation d'un jeton matériel. Une connexion par certificat sur TLS n'obtient hwk, et sc pour une clé sur une carte à puce, qu'à partir d'une preuve, dans les deux cas."
+    "en": "82f545cd2dea952b",
+    "text": "Ce qui permet à une connexion PKINIT de revendiquer une clé liée au matériel (l’indicateur pkinit-hardware et l’amr hwk). `inference`, la valeur par défaut et le comportement avant #1955 : un certificat de connexion par carte à puce dont ce service n’a pas généré la clé, ou une preuve d’attestation enregistrée. `evidence` : seulement une clé couverte par l’attestation d’un jeton matériel, et une clé d’accès n’obtient hwk que si son attestation a été vérifiée et est de confiance (swk sinon). Une connexion par certificat sur TLS obtient hwk, et sc pour une clé sur une carte à puce, uniquement à partir de preuves dans les deux cas, et seulement pour le titulaire du certificat."
   },
-"pskc.allowPlaintextImport|label": {
+  "pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
     "text": "Accepter les fichiers de semences PSKC en clair en mode produit"
   },
-"pskc.allowPlaintextImport|description": {
+  "pskc.allowPlaintextImport|description": {
     "en": "7efe34e872e4772e",
     "text": "Si un administrateur peut importer, en mode produit, un fichier de semences PSKC (RFC 6030) dont les secrets de jetons NE sont PAS chiffrés. Désactivé par défaut : un tel fichier a été une liste de deuxièmes facteurs fonctionnels sur chaque disque et chaque boîte aux lettres qu’il a traversés, et un fournisseur peut le chiffrer sous une clé prépartagée ou un mot de passe (sections 6.1 et 6.2). Le mode développement en accepte un dans tous les cas."
   },
-"yubiotp.allowPlaintextImport|label": {
+  "yubiotp.allowPlaintextImport|label": {
     "en": "b1c1ac235f98cc47",
     "text": "Accepter les fichiers CSV d’OTP YubiKey en clair en mode produit"
   },
-"yubiotp.allowPlaintextImport|description": {
+  "yubiotp.allowPlaintextImport|description": {
     "en": "f409449d46d5831a",
     "text": "Si un administrateur peut importer, en mode produit, un CSV de secrets d’OTP YubiKey (numéro de série, identité publique, identité privée, clé AES). Désactivé par défaut : le fichier est une liste de deuxièmes facteurs fonctionnels. Le mode développement en accepte un dans tous les cas. Les secrets sont scellés lorsque le fichier est accepté, et le fichier n’est pas conservé."
   },
-"openpgp.wkd|label": {
+  "openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",
     "text": "Publier les clés dans le Web Key Directory"
   },
-"openpgp.wkd|description": {
+  "openpgp.wkd|description": {
     "en": "7822103f89ac59b3",
     "text": "Répondre au Web Key Directory (draft-koch-openpgp-webkey-service) pour les domaines de messagerie de ce domaine de confiance : /.well-known/openpgpkey/<domain>/hu/<hash> (la méthode avancée, sur openpgpkey.<domain>) et /.well-known/openpgpkey/hu/<hash> (la méthode directe), ainsi que le fichier de politique de chacune. Seule la clé d'une personne ayant accepté la publication sur le portail est renvoyée. Désactivé par défaut."
   },
-"openpgp.wkdDomains|label": {
+  "openpgp.wkdDomains|label": {
     "en": "d1c4b728593ff000",
     "text": "Domaines de messagerie servis par le Web Key Directory"
   },
-"openpgp.wkdDomains|description": {
+  "openpgp.wkdDomains|description": {
     "en": "ad64f7216191123c",
     "text": "Les domaines de messagerie pour lesquels le Web Key Directory de ce domaine de confiance répond, séparés par des virgules. Vide, la valeur par défaut, désigne le propre domaine DNS du domaine de confiance. Une requête dont le chemin ne comporte aucun domaine de confiance reçoit la réponse du domaine de confiance qui sert son domaine DNS, le domaine par défaut en premier."
   },
-"openpgp.challengeLifetimeS|label": {
+  "openpgp.challengeLifetimeS|label": {
     "en": "dbf558cf0b4b8f90",
     "text": "Durée de validité du défi d'enregistrement (secondes)"
   },
-"openpgp.challengeLifetimeS|description": {
+  "openpgp.challengeLifetimeS|description": {
     "en": "e9130c8e82368cc6",
     "text": "Durée pendant laquelle reste valable le défi qu'une personne signe avec gpg --clearsign pour enregistrer une clé OpenPGP. Il n'est consommé qu'une fois, et une personne n'en a qu'un à la fois."
   },
-"openpgp.signatureSkewS|label": {
+  "openpgp.signatureSkewS|label": {
     "en": "d927cf1f04bd9d51",
     "text": "Décalage d'horloge admis pour la signature de preuve (secondes)"
   },
-"openpgp.signatureSkewS|description": {
+  "openpgp.signatureSkewS|description": {
     "en": "2772763d3d363b6d",
     "text": "L'écart admis entre l'horloge de l'ordinateur signataire et celle de ce service : une preuve signée avant l'émission du défi, ou après l'instant présent, de plus que cette valeur est refusée (STS-OPENPGP-0010)."
   },
-"openpgp.minRsaBits|label": {
+  "openpgp.minRsaBits|label": {
     "en": "f3dc9f85de143630",
     "text": "Plus petite clé OpenPGP RSA"
   },
-"openpgp.minRsaBits|description": {
+  "openpgp.minRsaBits|description": {
     "en": "cd16018c848ce538",
     "text": "La clé RSA la plus courte, principale ou sous-clé, qu'un enregistrement OpenPGP accepte. Ed25519, Ed448, ECDSA et ECDH sur P-256, P-384 et P-521, X25519 et X448, ainsi que les composites RFC 9980 ML-DSA-65+Ed25519, ML-DSA-87+Ed448, ML-KEM-768+X25519 et ML-KEM-1024+X448 sont acceptés lorsque openpgp.algorithms les nomme. DSA, ElGamal, les courbes Brainpool et SLH-DSA ne le sont jamais (STS-OPENPGP-0004)."
   },
@@ -8387,6 +8387,14 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "Le nombre maximal de demandes d’accès qu’un domaine conserve en attente ; au-delà, une soumission est refusée avec 503 jusqu’à ce que certaines soient décidées ou expirent."
   },
+  "authzen.accessRequestMaxDenials|label": {
+    "en": "09e695949f0cc1cc",
+    "text": "Refus susceptibles de demande enregistrés par un domaine"
+  },
+  "authzen.accessRequestMaxDenials|description": {
+    "en": "698617c5a3485120",
+    "text": "Le nombre maximal de refus susceptibles de demande qu’un domaine enregistre par evaluation_id (#1204). Au-delà, un nouveau refus n’est pas enregistré et reste demandable par son binding_token ; la tâche des demandes d’accès supprime un enregistrement un jour après sa fenêtre."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"
@@ -8400,8 +8408,8 @@
     "text": "Access request callback backoff (seconds)"
   },
   "authzen.callbackBackoffS|description": {
-    "en": "27141a0f28d94b83",
-    "text": "How long to wait after a failed access request callback before the next attempt (#1202). The authzen.access-requests job runs every 60 seconds, so a shorter wait could not be honoured. An application's appAuthzenCallbackConfig may set a longer wait for one URL."
+    "en": "43f2cb7740fc7efe",
+    "text": "Délai d’attente après le premier échec d’un rappel de demande d’accès avant la tentative suivante (#1202). Chaque attente suivante est le double de la précédente, jusqu’à un jour. La tâche authzen.access-requests s’exécute toutes les 60 secondes, si bien qu’une attente plus courte ne pourrait pas être respectée. Le appAuthzenCallbackConfig d’une application peut fixer une attente plus longue pour une URL."
   },
   "authzen.externalPdp|label": {
     "en": "8a0af08389fe6cda",
@@ -12992,8 +13000,8 @@
     "text": "Permettre à un certificat piv-card-auth de se connecter"
   },
   "piv.cardAuthSignIn|description": {
-    "en": "1852da24c3fbfade",
-    "text": "Une clé piv-card-auth (emplacement 9e) fonctionne sans PIN, pour l’accès physique ; son certificat est donc refusé à la connexion TLS et à PKINIT (STS-PIV-0013), sauf si ce réglage est activé."
+    "en": "e9e37c8e6becb7ee",
+    "text": "Une clé piv-card-auth (emplacement 9e) fonctionne sans PIN, pour l’accès physique ; son certificat est donc refusé à la connexion TLS et à PKINIT (STS-PIV-0013), sauf si ce réglage est activé. Une clé de l’emplacement 9e n’est certifiée que sous piv-card-auth (STS-PIV-0037) et n’obtient jamais hwk ni sc."
   },
   "piv.keyEscrow|label": {
     "en": "f2efc85c3d2bac38",
@@ -13090,5 +13098,37 @@
   "pki.sshUserCaPqcAlongsideClassical|description": {
     "en": "b38eab63ec092b6c",
     "text": "Activé, un nouveau certificat utilisateur SSH est émis deux fois lorsque l’autorité ML-DSA existe : le certificat classique, celui qu’utilise un client OpenSSH, et un certificat ML-DSA à côté. Ne peut pas être activé en même temps que pki.sshUserCaPqcOnly (STS-PKI-0296). Désactivé par défaut. Un composite n’est pas une notion qu’OpenSSH a ; le certificat classique et le certificat ML-DSA sont deux signatures, pas une signature hybride."
+  },
+  "pki.sshSoftwareLifetimeSeconds|label": {
+    "en": "e65480d5e0de0ff6",
+    "text": "Certificat utilisateur SSH le plus long sans preuve matérielle (s)"
+  },
+  "pki.sshSoftwareLifetimeSeconds|description": {
+    "en": "45980657cb573f83",
+    "text": "La durée de vie la plus longue, en secondes, avec laquelle un certificat utilisateur SSH peut être émis pour une clé qu’aucune preuve matérielle vérifiée ne couvre : une clé ordinaire, ou une clé de sécurité sk- envoyée sans attestation de confiance. La demande peut demander moins. Cinq minutes par défaut."
+  },
+  "pki.sshHardwareLifetimeSeconds|label": {
+    "en": "58130ddb50b2cf1b",
+    "text": "Certificat utilisateur SSH le plus long avec preuve matérielle (s)"
+  },
+  "pki.sshHardwareLifetimeSeconds|description": {
+    "en": "93fab84d44ca2078",
+    "text": "La durée de vie la plus longue, en secondes, avec laquelle un certificat utilisateur SSH peut être émis pour une clé qu’une preuve matérielle vérifiée couvre : une clé de sécurité sk- dont l’attestation est vérifiée et de confiance, ou une clé qu’un certificat PIV attesté certifie. La demande peut demander moins. Une heure par défaut, qui est aussi le maximum."
+  },
+  "pki.sshUserCertificateExtensions|label": {
+    "en": "7bd63846ccd81f4e",
+    "text": "Extensions d’un certificat utilisateur SSH"
+  },
+  "pki.sshUserCertificateExtensions|description": {
+    "en": "66d53e3e95faddca",
+    "text": "Les extensions de certificat OpenSSH (PROTOCOL.certkeys) qu’un nouveau certificat utilisateur SSH porte, séparées par des virgules. Par défaut, le jeu de ssh-keygen ; un certificat sans extension permet à son titulaire de se connecter sans terminal, redirection ni fichier rc. no-touch-required peut être ajouté. Un nom qu’OpenSSH ne définit pas est ignoré."
+  },
+  "pki.sshGroupPrincipals|label": {
+    "en": "92bc72613cff7a8d",
+    "text": "Groupes dont les noms peuvent être des principaux SSH"
+  },
+  "pki.sshGroupPrincipals|description": {
+    "en": "401372878bd26042",
+    "text": "Les groupes de l’annuaire dont un membre peut demander le nom commun comme principal d’un certificat SSH, séparés par des virgules, chacun toujours décidé par la politique de contrôle d’accès (ressource ssh-user-ca, action issue-ssh-principal). Vide, la valeur par défaut, signifie aucun : un certificat ne nomme que l’uid de la personne, car un groupe n’accorde rien du seul fait d’être un groupe. Un groupe dont le nom est l’uid d’une personne ou un compte système comme root est refusé quoi qu’il en soit."
   }
 }
