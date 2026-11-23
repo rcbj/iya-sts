@@ -2519,14 +2519,24 @@ function retiringRefusal(realmOrId) {
     : (typeof realmOrId === 'object' ? String(realmOrId.id || '')
                                      : String(realmOrId));
   const state = retiringState(id);
+  // A CATALOG SENTENCE (#2006), the same words as `retiringState()`'s
+  // `why`, so a sign-in page draws it in its language. Required here and
+  // not at load: `helpers.js` requires this file, and `sentence` requires
+  // `helpers.js`.
+  const Sentence = require('./sentence');
+  const why = !state
+    ? Sentence.say('refusals.account.realmRetiring', { realm: id })
+    : (state.inProgress
+      ? Sentence.say('refusals.account.realmRetiringSince',
+                     { realm: id, since: state.sinceIso })
+      : Sentence.say('refusals.account.realmRetiringInterrupted',
+                     { realm: id, since: state.sinceIso }));
   log.debug("Leaving retiringRefusal(). Refused.");
   return errorCodes.mark({
     realm: id,
     since: state ? state.since : 0,
     interrupted: !!(state && state.interrupted),
-    why: state ? state.why
-               : 'The trust realm "' + id + '" is being removed, so ' +
-                 'nothing new is signed in or issued in it.'
+    why: why
   }, 'STS-CORE-0121');
 }
 

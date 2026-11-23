@@ -7590,7 +7590,7 @@ class Authn {
   // post-quantum is the question's to say. Null for anything but a
   // WebAuthn credential, or where the policy allows it.
   private passkeySignInRefusal(username: string, credential: any):
-      { code: string; why: string; reason: string } | null {
+      { code: string; why: string | Sentence; reason: string } | null {
     const { log, passkeyPolicy, credentials } = this.deps;
     log.debug("Entering Authn.passkeySignInRefusal().");
     if (!credential || String(credential.kind || '') !== 'webauthn') {
@@ -7762,7 +7762,7 @@ class Authn {
   // #530. Never throws: a signal that cannot be sent leaves the refusal as
   // it is.
   private notePasskeyStanding(username: string, credential: any,
-                              refusal: { code: string; why: string;
+                              refusal: { code: string; why: string | Sentence;
                                          reason: string }): void {
     const { log, credentials, accountSignals } = this.deps;
     log.debug("Entering Authn.notePasskeyStanding(). " + refusal.reason);
@@ -7813,7 +7813,7 @@ class Authn {
   // evaluation. Null where the policy allows it.
   // ---------------------------------------------------------------------------
   private recoveryRefusalAtSession(username: string, credential: any):
-      { code: string; why: string; reason: string } | null {
+      { code: string; why: string | Sentence; reason: string } | null {
     const { log, passkeyPolicy, credentials } = this.deps;
     log.debug("Entering Authn.recoveryRefusalAtSession().");
     // A key REGISTERED in the act is not a passkey that signed them in
@@ -7970,7 +7970,7 @@ class Authn {
   // metadata is a store lookup; never rejects.
   private async attestationAtSignIn(username: string, key: any,
       application?: string):
-      Promise<{ code: string; why: string } | null> {
+      Promise<{ code: string; why: string | Sentence } | null> {
     // `audit` and `stsCrypto` from the deps too (#912), so a recording
     // audit dependency sees the refusal rows this writes.
     const { log, passkeyPolicy, webauthnAttestation, credentials,
@@ -8027,15 +8027,17 @@ class Authn {
                       'service\'s rules and cannot sign you in.' });
       }
       log.debug("Leaving Authn.attestationAtSignIn(). Refused.");
-      return { code: code, why: why };
+      // The policy's own sentence where it is one, so the screen draws it
+      // in its language (#2006); the text above is for the log and rows.
+      return { code: code,
+               why: Sentence.is(verdict.why) ? verdict.why : why };
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0317') + 'authn: holding a ' +
                 'passkey of "' + username + '" to the attestation rules ' +
                 'threw: ' + ((e && e.stack) || e));
       log.debug("Leaving Authn.attestationAtSignIn(). Threw.");
       return { code: 'STS-AUTHN-0317',
-               why: 'This passkey could not be checked against this ' +
-                    'realm\'s rules. Try again.' };
+               why: Sentence.say('refusals.authn.passkeyRulesUnchecked') };
     }
   }
 
@@ -8495,8 +8497,8 @@ class Authn {
     if (multiAccount && !reauthenticating) {
       const held = this.liveAccountCount(accountSet, defaultFound);
       if (held >= AccountSets.maxAccounts()) {
-        const why = 'This browser is already signed in to ' + held +
-          ' accounts, the most it may hold. Sign out of one of them first.';
+        const why = Sentence.say('refusals.authn.accountsFull',
+                                 { count: held });
         log.info(errorCodes.tag('STS-AUTHN-0340') + 'authn: a session for "' +
                  username + '" was REFUSED at the ' + (via || 'sign-in') +
                  ' door: its browser\'s account set is full (' + held +
@@ -8810,8 +8812,7 @@ class Authn {
       extra.roleSelection = { offer: roleOffer, amr: (amr || []).slice(),
                               acr: String(acr || ''), via: String(via || '') };
       extra.refusedWith = 'STS-XACML-0330';
-      extra.refusedWhy = 'You have to choose your roles after signing in. ' +
-        'Start the request again from the application that sent you here.';
+      extra.refusedWhy = Sentence.say('refusals.authn.rolesAfterSignIn');
       log.info('authn: the session for "' + username + '" is HELD at the ' +
                (via || 'sign-in') + ' door: ' + roleOffer.offered.length +
                ' dynamic role(s) may be chosen' +
@@ -8832,9 +8833,7 @@ class Authn {
                  'cannot be chosen there',
         detail: { application: String(extra.application || '') } });
       extra.refusedWith = 'STS-XACML-0329';
-      extra.refusedWhy = 'This application needs you to choose a role when ' +
-        'you sign in, which cannot be done this way. Sign in at this ' +
-        'service\'s sign-in screen.';
+      extra.refusedWhy = Sentence.say('refusals.authn.roleNotChoosableHere');
       log.debug("Leaving Authn.startSessionHere(). A required dynamic role " +
                 "this door cannot ask for.");
       return null;
@@ -8877,8 +8876,7 @@ class Authn {
       // What `refusedSession()` answers if no step can be drawn after all
       // (no pending sign-in to hold it on): the hold's own refusal.
       extra.refusedWith = 'STS-AUTHN-0473';
-      extra.refusedWhy = 'You have to complete a step after signing in. ' +
-        'Start the request again from the application that sent you here.';
+      extra.refusedWhy = Sentence.say('refusals.authn.postLoginStepHeld');
       log.info('authn: the session for "' + username + '" is HELD at the ' +
                (via || 'sign-in') + ' door for a post-login activity (' +
                postLoginDue.activity + ', ' +
@@ -8888,10 +8886,7 @@ class Authn {
       return null;
     }
     if (postLoginDue && postLoginDue.required) {
-      const why = 'Before you can sign in this way you have to register a ' +
-        'post-quantum passkey, and the time allowed for it has passed. ' +
-        'Sign in at this service\'s sign-in screen, where you will be ' +
-        'asked to register it.';
+      const why = Sentence.say('refusals.authn.postLoginOverdueHere');
       log.info(errorCodes.tag('STS-AUTHN-0473') + 'authn: a session for "' +
                username + '" was REFUSED at the ' + (via || 'sign-in') +
                ' door: a required post-login activity (' +
@@ -12046,9 +12041,11 @@ class Authn {
     log.info('authn: ' + what + ' was offered for "' + step.username + '" ' +
              'where the sign-in demands a security key; refused.');
     log.debug("Leaving Authn.keyDemandProblem(). Refused.");
+    // A catalog sentence (#2006): `what` is one of two phrases, chosen in
+    // the catalog rather than passed in as English.
     return { code: 'STS-AUTHN-0204',
-             why: 'This sign-in demands a passkey, and ' + what + ' does not ' +
-                  'answer that. Use your passkey on the previous screen.' };
+             why: Sentence.say('refusals.authn.keyDemanded', {
+               what: what === 'a recovery code' ? 'recovery' : 'code' }) };
   }
 
   // A SESSION REFUSED AT THE END OF A SCREEN'S CEREMONY (2026-09-17; every
@@ -13204,24 +13201,21 @@ class Authn {
     const step = this.mfaStepFor(mfaId);
     if (!step) {
       log.debug("Leaving Authn.finishWithWallet(). No step.");
-      return { refused: 'expired', why: 'This second-factor step has ' +
-               'expired. Start the request again from the application.' };
+      return { refused: 'expired',
+               why: Sentence.say('refusals.authn.walletStepExpired') };
     }
     const first = this.firstAmrOf(step);
     if (first.indexOf('pop') >= 0) {
       log.debug("Leaving Authn.finishWithWallet(). A wallet twice.");
-      return { refused: 'same-factor', why: 'The first factor of this ' +
-               'sign-in was already a wallet, and one key proved twice is ' +
-               'one factor. Use your authenticator app, your passkey or your ' +
-               'password.' };
+      return { refused: 'same-factor',
+               why: Sentence.say('refusals.authn.walletTwice') };
     }
     const stepSub = String((userFor(step.username) || {}).sub || '');
     if (outcome.username !== step.username ||
         (stepSub && outcome.subject && stepSub !== outcome.subject)) {
       log.debug("Leaving Authn.finishWithWallet(). A different person.");
-      return { refused: 'other-person', why: 'The credential your wallet ' +
-               'presented was issued to somebody other than the person whose ' +
-               'password was entered, so neither is signed in.' };
+      return { refused: 'other-person',
+               why: Sentence.say('refusals.authn.walletOtherPerson') };
     }
     pendingMfa.delete(String(mfaId));
     const amr = first.concat((outcome.amr || ['pop']).filter(function (one) {
@@ -13251,8 +13245,8 @@ class Authn {
       });
     if (!session) {
       log.debug("Leaving Authn.finishWithWallet(). The policy refused.");
-      return { refused: 'policy', why: 'The issuance policy refused this ' +
-               'session.' };
+      return { refused: 'policy',
+               why: Sentence.say('refusals.authn.policyRefusedSession') };
     }
     this.returnToCaller(res, step.authn, null, null);
     log.debug("Leaving Authn.finishWithWallet(). Signed in.");
@@ -13342,7 +13336,7 @@ class Authn {
     if (!record) {
       log.debug("Leaving Authn.beginSecondFactorAfterFederation(). No " +
                 "pending record.");
-      return { handled: false, refused: 'Authentication failed.',
+      return { handled: false, refused: Sentence.say('refusals.authn.failed'),
                errorCode: 'STS-RISK-0018' };
     }
     log.debug("Leaving Authn.beginSecondFactorAfterFederation().");
@@ -13396,7 +13390,8 @@ class Authn {
                                   policy: riskAnswer.policy });
           log.debug("Leaving Authn.beginSecondFactorAfterWallet(). Refused " +
                     "on risk.");
-          return { handled: false, refused: 'Authentication failed.',
+          return { handled: false,
+                   refused: Sentence.say('refusals.authn.failed'),
                    onRisk: true, errorCode: code };
         }
         riskFactor = riskAnswer.risk.factor;
@@ -13414,7 +13409,7 @@ class Authn {
                               policy: '' });
       log.debug("Leaving Authn.beginSecondFactorAfterWallet(). After a " +
                 "partner, nothing held answers the step-up.");
-      return { handled: false, refused: 'Authentication failed.',
+      return { handled: false, refused: Sentence.say('refusals.authn.failed'),
                onRisk: true, errorCode: 'STS-RISK-0018' };
     }
     const needed = !!riskFactor ||
@@ -13519,8 +13514,8 @@ class Authn {
                'policy does not accept a password as one; refused.');
       log.debug("Leaving Authn.beginSecondFactorAfterWallet(). Nothing to " +
                 "ask for.");
-      return { handled: false, refused: 'A second factor is needed and none ' +
-               'that this realm accepts is available for this account.',
+      return { handled: false, refused: Sentence.say(
+                 'refusals.authn.secondFactorNoneAvailable'),
                errorCode: 'STS-AUTHN-0256' };
     }
     const mfaId = randomId(24);
@@ -13651,8 +13646,8 @@ class Authn {
   stepProblem(page: string, mfaId: string): any {
     const { log, credentials } = this.deps;
     log.debug("Entering Authn.stepProblem(). " + page);
-    const restart = ' Start the request again from the application that ' +
-                    'sent you here.';
+    // Each refusal is a catalog sentence (#2006), the restart advice part
+    // of its English.
     if (page === 'setup') {
       const setup = pendingMfa.get(mfaId);
       if (!setup || setup.expires < Date.now() ||
@@ -13662,8 +13657,7 @@ class Authn {
         }
         log.debug("Leaving Authn.stepProblem(). No set-up step.");
         return { problem: { code: 'STS-AUTHN-0173',
-          why: 'This second-factor set-up has expired or does not exist.' +
-               restart } };
+          why: Sentence.say('refusals.authn.setUpGone') } };
       }
       log.debug("Leaving Authn.stepProblem(). The set-up step.");
       return { step: setup };
@@ -13673,8 +13667,7 @@ class Authn {
       if (!step || step.factor !== 'roles' || !step.roles) {
         log.debug("Leaving Authn.stepProblem(). No role step.");
         return { problem: { code: 'STS-AUTHN-0019',
-          why: 'This step after signing in has expired or does not ' +
-               'exist.' + restart } };
+          why: Sentence.say('refusals.authn.afterStepGone') } };
       }
       log.debug("Leaving Authn.stepProblem(). The role step.");
       return { step: step };
@@ -13683,8 +13676,7 @@ class Authn {
       if (!step || step.factor !== 'post-login' || !step.postLogin) {
         log.debug("Leaving Authn.stepProblem(). No post-login step.");
         return { problem: { code: 'STS-AUTHN-0019',
-          why: 'This step after signing in has expired or does not ' +
-               'exist.' + restart } };
+          why: Sentence.say('refusals.authn.afterStepGone') } };
       }
       log.debug("Leaving Authn.stepProblem(). The post-login step.");
       return { step: step };
@@ -13693,8 +13685,7 @@ class Authn {
       if (!step || this.firstAmrOf(step).indexOf('pwd') >= 0) {
         log.debug("Leaving Authn.stepProblem(). No password step.");
         return { problem: { code: 'STS-AUTHN-0019',
-          why: 'There is no sign-in waiting for a password as its second ' +
-               'factor.' + restart } };
+          why: Sentence.say('refusals.authn.noPasswordStep') } };
       }
       log.debug("Leaving Authn.stepProblem(). The password step.");
       return { step: step };
@@ -13702,7 +13693,7 @@ class Authn {
     if (!step) {
       log.debug("Leaving Authn.stepProblem(). The step had expired.");
       return { problem: { code: 'STS-AUTHN-0019',
-        why: 'This second-factor step has expired.' + restart } };
+        why: Sentence.say('refusals.authn.stepExpired') } };
     }
     if (page === 'totp') {
       const demanded = this.keyDemandProblem(step, 'a one-time code');
@@ -13717,8 +13708,7 @@ class Authn {
                  'Refused.');
         log.debug("Leaving Authn.stepProblem(). Nothing is enrolled.");
         return { problem: { code: 'STS-AUTHN-0076',
-          why: 'No authenticator app is enrolled for that account, so ' +
-               'there is no code to ask for.' } };
+          why: Sentence.say('refusals.authn.noAuthenticatorApp') } };
       }
     } else if (page === 'backup-code') {
       const held = credentials.mechanismsFor(step.username).backupCodes;
@@ -13730,13 +13720,9 @@ class Authn {
         log.debug("Leaving Authn.stepProblem(). Nothing left to present.");
         return { problem: (held && held.total)
           ? { code: 'STS-AUTHN-0088',
-              why: 'Every recovery code on that account has been used. A ' +
-                   'set is issued once and is never topped up, so an ' +
-                   'administrator has to clear it before a new one can be ' +
-                   'issued.' }
+              why: Sentence.say('refusals.authn.recoveryCodesSpent') }
           : { code: 'STS-AUTHN-0087',
-              why: 'No recovery codes have been issued for that account, ' +
-                   'so there is nothing to ask for.' } };
+              why: Sentence.say('refusals.authn.noRecoveryCodes') } };
       }
     } else if (page === 'webauthn') {
       // THE KEYS OF THE STEP'S ROLE (#534): a passwordless step is drawn for
@@ -13756,8 +13742,7 @@ class Authn {
       if (step.upgradeId && !(upgrade && upgrade.id === step.upgradeId)) {
         log.debug("Leaving Authn.stepProblem(). The upgrade is gone.");
         return { problem: { code: 'STS-AUTHN-0454',
-          why: 'This passkey upgrade has expired. Start over to sign in ' +
-               'again; you will be asked again.' } };
+          why: Sentence.say('refusals.authn.upgradeExpired') } };
       }
       if (held < 1 && !(step.atSignIn && step.factor === 'webauthn')) {
         log.info('authn: a security-key screen was asked for "' +
@@ -13765,8 +13750,7 @@ class Authn {
                  'factor. Refused.');
         log.debug("Leaving Authn.stepProblem(). No key is enrolled.");
         return { problem: { code: 'STS-AUTHN-0025',
-          why: 'No passkey is registered as a second factor for that ' +
-               'account.' } };
+          why: Sentence.say('refusals.authn.noSecondFactorPasskey') } };
       }
     }
     log.debug("Leaving Authn.stepProblem(). Drawn for " + step.username +
@@ -14761,12 +14745,12 @@ class Authn {
     const door = this.deps.certificateDoor();
     const holder = door ? await door.screenCertificateHolder(req)
       : { ok: false, code: 'STS-AUTHN-0463',
-          why: 'Signing in with a certificate is not available here.' };
+          why: Sentence.say('refusals.authn.certificateUnavailable') };
     if (!holder.ok) {
       log.debug("Leaving Authn.certificateSignIn(). The certificate was " +
                 "refused.");
       errorCodes.mark(res, holder.code || 'STS-AUTHN-0463');
-      return this.screenRefused(res, record, String(holder.why));
+      return this.screenRefused(res, record, holder.why);
     }
     const username = String(holder.username);
     // A PERSON HOMED IN ANOTHER CELL (#98 D9), as the password door does,
@@ -16738,7 +16722,9 @@ class Authn {
                              demand: string) {
     const { log, errorCodes } = this.deps;
     log.debug('Entering Authn.narrowSecondFactor(). ' + factor);
-    const answer = { factor: factor, thenEnrol: false, refused: '', why: '' };
+    const answer: { factor: string; thenEnrol: boolean; refused: string;
+                    why: string | Sentence } = {
+      factor: factor, thenEnrol: false, refused: '', why: '' };
     if (mfaLib.allowsStepFactor(allowed, factor)) {
       log.debug('Leaving Authn.narrowSecondFactor(). Allowed as it is.');
       return answer;
@@ -16757,9 +16743,7 @@ class Authn {
                'allows only ' + allowed.join(', ') + ', none of which they ' +
                'hold to answer it; refused.');
       answer.refused = 'STS-AUTHN-0307';
-      answer.why = 'This sign-in needs a second factor that this ' +
-        'application does not accept, or one you have not set up. Ask an ' +
-        'administrator.';
+      answer.why = Sentence.say('refusals.authn.secondFactorDemandUnmet');
       log.debug('Leaving Authn.narrowSecondFactor(). A demand it cannot ' +
                 'meet.');
       return answer;
@@ -16776,9 +16760,7 @@ class Authn {
                allowed.join(', ') + '), and none of those can be set up at ' +
                'sign-in; refused.');
       answer.refused = 'STS-AUTHN-0306';
-      answer.why = 'This application accepts a second factor you have not ' +
-        'set up, and none that it accepts can be set up here. Ask an ' +
-        'administrator.';
+      answer.why = Sentence.say('refusals.authn.secondFactorNoneToEnrol');
       log.debug('Leaving Authn.narrowSecondFactor(). Nothing to enrol.');
       return answer;
     }
@@ -16855,9 +16837,7 @@ class Authn {
     if (!offered.totp && !offered.webauthn) {
       // The realm switched both off since the step was minted.
       log.debug('Leaving Authn.enrolAfterProof(). Nothing to enrol now.');
-      const why = 'This application accepts a second factor you have not ' +
-        'set up, and none that it accepts can be set up here. Ask an ' +
-        'administrator.';
+      const why = Sentence.say('refusals.authn.secondFactorNoneToEnrol');
       errorCodes.mark(res, 'STS-AUTHN-0306');
       if (this.answersJson(res)) {
         this.stepRefused(res, why, 400);
@@ -17674,7 +17654,7 @@ class Authn {
    * @param base - the base URL
    * @returns the problem, or '' when there is none
    */
-  rpIdProblem(base) {
+  rpIdProblem(base): '' | Sentence {
     const { log, mode, webauthnPolicy } = this.deps;
     log.debug("Entering Authn.rpIdProblem().");
     const wanted = webauthnPolicy.settings().rpId;
@@ -17697,12 +17677,8 @@ class Authn {
       return '';
     }
     log.debug("Leaving Authn.rpIdProblem().");
-    return 'webauthn.rpId is "' + wanted + '", which is neither the host ' +
-           'this request reached ("' + host + '") nor a registrable domain ' +
-           'suffix of it, and in product mode a security-key ceremony is not ' +
-           'run against an address the configuration did not name. Reach ' +
-           'this service at a host under ' +
-           '"' + wanted + '", or set global.publicBaseUrl to one.';
+    return Sentence.say('refusals.authn.rpIdMismatch',
+                        { rpId: String(wanted), host: String(host) });
   }
 
   // ---------------------------------------------------------------------------
