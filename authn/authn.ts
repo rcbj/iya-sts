@@ -14332,8 +14332,8 @@ class Authn {
       username, { amr: ['otp'], acr: '1' }, assessed, { first: 'email' });
     if (second.refused) {
       log.debug("Leaving Authn.finishEmailFirstFactor(). Refused.");
-      return { refused: true, why: second.onRisk ? 'Authentication failed.'
-                                                 : second.refused,
+      return { refused: true, why: second.onRisk
+                 ? Sentence.say('refusals.authn.failed') : second.refused,
                errorCode: second.errorCode || 'STS-AUTHN-0009' };
     }
     if (second.handled) {

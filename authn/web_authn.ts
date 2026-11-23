@@ -805,7 +805,10 @@ class AuthnSurface extends WebSurface {
     // server drew it, from the answer.
     if (json.end && this.view) {
       this.view = { page: this.view.page, query: this.view.query,
-                    json: { state: 'end', title: String(json.end.title),
+                    json: { state: 'end',
+                            title: json.end.titleRefusal
+                              ? this.said(json.end.titleRefusal)
+                              : String(json.end.title),
                             sentence: this.said(json) } };
       this.drawView();
       return;

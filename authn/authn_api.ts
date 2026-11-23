@@ -1094,7 +1094,10 @@ class AuthnApi {
       authn.answerJson(res, seen.status, Object.assign({
         ok: seen.status === 200, view: seen.view, csrf: csrf,
         uiLocales: seen.uiLocales },
-        seen.status === 200 ? {} : { errors: [String(seen.view.sentence)] },
+        // The end view's sentence with its catalog message (#2006).
+        seen.status === 200 ? {} : Object.assign(
+          { errors: [String(seen.view.sentence)] },
+          seen.view.refusal ? { messages: seen.view.refusal.messages } : {}),
         seen.preferredLanguage ? { preferredLanguage: seen.preferredLanguage }
                                : {}));
       log.debug("Leaving AuthnApi.mfaStep(). " + page);
