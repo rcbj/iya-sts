@@ -1139,6 +1139,14 @@
     "en": "432e877d55af1913",
     "text": "أُرسل رد نداء طلب وصول AuthZEN أو أخفق"
   },
+  "audit.actions.authzen.access-request.failed.label": {
+    "en": "ff702bec26fec0b2",
+    "text": "فشل طلب وصول AuthZEN"
+  },
+  "audit.actions.authzen.access-request.denials-full.label": {
+    "en": "d4a30614c3be855a",
+    "text": "كان مخزن حالات الرفض القابلة للطلب في AuthZEN ممتلئًا"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "رفض PEP الإصدار أن تسكّ هذه الخدمة شيئًا"

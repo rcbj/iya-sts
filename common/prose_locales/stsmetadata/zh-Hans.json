@@ -101,7 +101,7 @@
   },
   "stsmetadata.specs.authzen-arap.coverage": {
     "en": "6be544a62f94329b",
-    "text": "partial：可请求的拒绝（context.access_request、evaluation_id、evaluated_at、reason），即领域策略以 access-request advice 标记的 Deny，按值绑定，使用本领域签署的 binding_token（内联声明和 binding_hash），并可从拒绝记录按引用绑定；带 Idempotency-Key 的提交，201 或 202 以及 Task Handle；带 Retry-After 的任务状态端点；通过 POST 或 DELETE 取消；六种状态；reevaluate 完成模式，approval.id 在可信状态中解析，approval.state 被签发并验证且仍须查找，批准作为可信事实到达策略；next_action 及五种 reason；每种 problem 类型；元数据成员、jwks_uri 和能力；可请求的拒绝上的 request_schema_url，即提交可选扩充内容的同源 JSON Schema。缺失：托管表单（form_url）和 display，以及 BULK、ACTOR 和 CATALOG 配套规范。"
+    "text": "partial：可申请的拒绝（context.access_request、evaluation_id、evaluated_at、reason），即领域策略用 access-request 建议标记的 Deny，通过本领域签名的 binding_token 按值绑定（内联声明和 binding_hash），并通过拒绝记录按引用绑定；带 Idempotency-Key 的提交、201 或 202 以及 Task Handle；带 Retry-After 的任务状态端点；通过 POST 或 DELETE 取消；六种状态；reevaluate 完成模式、在可信状态中解析的 approval.id、签发并验证的 approval.state（仍需查找），以及以可信事实到达策略的批准；next_action 和五种原因；每种问题类型；元数据成员、jwks_uri 和能力；可申请拒绝上的 request_schema_url，即同源的提交可选补充内容的 JSON Schema。缺少：托管表单（form_url）和 display，以及 BULK、ACTOR 和 CATALOG 配套规范。"
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
     "en": "ca5109eae0e95b17",
@@ -893,7 +893,7 @@
   },
   "stsmetadata.endpoints./access/v1/access-requests/schema.what": {
     "en": "ec6a3b36123f646a",
-    "text": "GET 提交可添加的扩充内容的 JSON Schema（草案 2020-12）：context.business_justification，以及 requested_access.requested_until 和 emergency，后者要求提供理由。公开，与 access_request_endpoint 同源；可请求的拒绝的 request_schema_url 指向它。不托管表单，因此任何拒绝都不带 form_url。API 或配置文件关闭时返回 501。注册在任务状态路径之前，否则该路径会把 \"schema\" 读作 id。"
+    "text": "GET 提交可添加的补充内容的 JSON Schema（draft 2020-12）：context.business_justification，以及 requested_access.requested_until 和 emergency，后者要求提供理由。公开，与 access_request_endpoint 同源；可申请拒绝的 request_schema_url 指向它。不托管任何表单，因此任何拒绝都不带 form_url。API 或该配置文件关闭时返回 501。在任务状态路径之前注册，否则后者会把“schema”当作 id。"
   },
   "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
     "en": "264083b977756230",

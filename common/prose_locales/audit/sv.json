@@ -1139,6 +1139,14 @@
     "en": "432e877d55af1913",
     "text": "Callbacken för en AuthZEN-åtkomstbegäran skickades eller misslyckades"
   },
+  "audit.actions.authzen.access-request.failed.label": {
+    "en": "ff702bec26fec0b2",
+    "text": "En AuthZEN-åtkomstbegäran misslyckades"
+  },
+  "audit.actions.authzen.access-request.denials-full.label": {
+    "en": "d4a30614c3be855a",
+    "text": "AuthZEN-lagret för avslag som kan begäras var fullt"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "Utfärdande-PEP:en vägrade låta den här tjänsten prägla något"

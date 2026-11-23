@@ -115,6 +115,9 @@ interface BatchItem {
   kind: string;
   scope: string;
   audience: string;
+  // Whether the exchange named this audience or resource, rather than the
+  // authorization server standing in for none (#1200's review).
+  named: boolean;
 }
 
 /**
@@ -388,8 +391,11 @@ class AuthzenExternalPdp {
 
   /**
    * The batch, and the parallel list the answer is read against. A party
-   * the caller passes that is the subject is not sent. An empty audience
-   * list is one gate whose resource id is empty.
+   * the caller passes that is the subject is not sent. An exchange that
+   * names no audience or resource is asked about `defaultTarget`, this
+   * authorization server's issuer (#1200's review): a gate whose resource
+   * id was empty was an item error at a PDP, this service's own included,
+   * so such an exchange failed closed.
    *
    * @param input - the exchange
    * @returns `{ body, items }`
@@ -402,11 +408,13 @@ class AuthzenExternalPdp {
       ? AuthzenExternalPdp.partyOf(given.party, 'user') : null;
     const sendParty = !!party && (party.type !== subject.type ||
                                   party.id !== subject.id);
-    const audiences = Array.isArray(given.audiences) && given.audiences.length
+    const named = Array.isArray(given.audiences) &&
+      given.audiences.length > 0;
+    const audiences = named
       ? given.audiences.map(function (one: Json) {
         return String(one);
       })
-      : [''];
+      : [String(given.defaultTarget || '')];
     const scopes = (Array.isArray(given.scopes) ? given.scopes : [])
       .map(function (one: Json) {
         return String(one);
@@ -427,7 +435,8 @@ class AuthzenExternalPdp {
           item.resource = { type: exchange.GATE_RESOURCE, id: audience };
         }
         evaluations.push(item);
-        items.push({ kind: kind, scope: '', audience: audience });
+        items.push({ kind: kind, scope: '', audience: audience,
+                     named: named });
         log.debug("Leaving gate().");
       };
       gate(subject, 'subject');
@@ -440,7 +449,8 @@ class AuthzenExternalPdp {
           action: { name: scope },
           resource: { type: exchange.SCOPE_RESOURCE, id: audience }
         });
-        items.push({ kind: 'scope', scope: scope, audience: audience });
+        items.push({ kind: 'scope', scope: scope, audience: audience,
+                     named: named });
       });
     });
     const body: Json = {
@@ -624,6 +634,7 @@ class AuthzenExternalPdp {
       return AuthzenExternalPdp.fault('STS-AUTHZEN-0126');
     }
     let refused = false;
+    let refusedTarget = false;
     const dropped = new Set<string>();
     const grants: string[][] = [];
     let lifetime: number | null = null;
@@ -653,6 +664,9 @@ class AuthzenExternalPdp {
       }
       if (item.decision === false) {
         refused = true;
+        if (items[i].named) {
+          refusedTarget = true;
+        }
       }
       if (items[i].kind !== 'subject') {
         continue;
@@ -676,7 +690,8 @@ class AuthzenExternalPdp {
     if (refused) {
       logger.info('authzen: the external PDP refused a token exchange.');
       logger.debug("Leaving AuthzenExternalPdp.answerOf(). Refused.");
-      return AuthzenExternalPdp.fault('STS-AUTHZEN-0125');
+      return AuthzenExternalPdp.fault('STS-AUTHZEN-0125',
+        refusedTarget ? 'invalid_target' : 'invalid_grant');
     }
     const sent: string[] = [];
     items.forEach(function (one: BatchItem) {
@@ -732,12 +747,17 @@ class AuthzenExternalPdp {
 
   /**
    * A result that issues nothing. The sentence carries neither the code,
-   * the gate, nor the PDP's address.
+   * the gate, nor the PDP's address. A refusal is RFC 8693 section 2.2.2's
+   * error for what was refused (#1200's review): `invalid_target` when a
+   * gate for an audience or resource the exchange named was false,
+   * `invalid_grant` when the gate refused the subject token itself, for
+   * an exchange that named no target.
    *
    * @param code - the recorded code
+   * @param error - the OAuth error of a refusal; `invalid_grant` by default
    * @returns the result
    */
-  static fault(code: string): Json {
+  static fault(code: string, error?: string): Json {
     log.debug("Entering AuthzenExternalPdp.fault().");
     const refused = code === 'STS-AUTHZEN-0125';
     log.debug("Leaving AuthzenExternalPdp.fault(). " + code);
@@ -745,7 +765,9 @@ class AuthzenExternalPdp {
       ok: false,
       code: code,
       status: refused ? 400 : 503,
-      error: refused ? 'invalid_request' : 'temporarily_unavailable',
+      error: refused ? (error === 'invalid_target' ? 'invalid_target'
+                                                   : 'invalid_grant')
+                     : 'temporarily_unavailable',
       description: refused ? CLIENT_SENTENCE_REFUSED : CLIENT_SENTENCE_FAULT,
       scope: null,
       lifetimeCapS: null

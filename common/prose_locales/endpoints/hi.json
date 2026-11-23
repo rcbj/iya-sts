@@ -97,7 +97,7 @@
   },
   "endpoints.route./access/v1/access-requests/schema.name": {
     "en": "e39be1976aa651db",
-    "text": "पहुँच अनुरोध की प्रस्तुति स्कीमा"
+    "text": "एक्सेस अनुरोध का सबमिशन स्कीमा"
   },
   "endpoints.route./access/v1/access-requests/:id.name": {
     "en": "c8bcbb33d07cfb8f",

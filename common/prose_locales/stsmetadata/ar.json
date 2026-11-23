@@ -101,7 +101,7 @@
   },
   "stsmetadata.specs.authzen-arap.coverage": {
     "en": "6be544a62f94329b",
-    "text": "partial: الرفض القابل للطلب (context.access_request وevaluation_id وevaluated_at وreason) حيث تعلّم سياسة نطاق الثقة قرار Deny بنصح طلب الوصول، مربوطاً بالقيمة برمز binding_token يوقّعه نطاق الثقة هذا (المطالبات المضمَّنة وbinding_hash) وبالمرجع من سجل الرفض؛ والتقديم مع Idempotency-Key والاستجابة 201 أو 202 ومقبض Task Handle؛ ونقطة نهاية حالة المهمة مع Retry-After؛ والإلغاء بـ POST أو DELETE؛ والحالات الست؛ ووضع الإكمال reevaluate، مع حل approval.id في حالة موثوقة، وإصدار approval.state والتحقق منه مع بقاء البحث مطلوباً، ووصول الاعتماد إلى السياسة بوصفها وقائع موثوقة؛ وnext_action والأسباب الخمسة؛ وكل نوع مشكلة؛ وعضو البيانات الوصفية وjwks_uri وcapability؛ وrequest_schema_url في الرفض القابل للطلب، وهو JSON Schema من الأصل نفسه للإضافات الاختيارية للتقديم. الناقص: نموذج مستضاف (form_url) وdisplay، ومرافقات BULK وACTOR وCATALOG."
+    "text": "partial: الرفض القابل للطلب (context.access_request وevaluation_id وevaluated_at وreason) حيث تضع سياسة النطاق علامة على Deny باستخدام نصيحة access-request، مربوطًا بالقيمة عبر binding_token يوقعه هذا النطاق (مطالبات مضمنة وbinding_hash) وبالمرجع من سجل الرفض؛ والطلب مع Idempotency-Key و201 أو 202 وTask Handle؛ ونقطة نهاية حالة المهمة مع Retry-After؛ والإلغاء عبر POST أو DELETE؛ والحالات الست؛ ووضع الإكمال reevaluate، وapproval.id المحلول في حالة موثوقة، وapproval.state الصادر والمتحقق منه مع بقاء البحث مطلوبًا، ووصول الموافقة إلى السياسة كحقائق موثوقة؛ وnext_action والأسباب الخمسة؛ وكل نوع مشكلة؛ وعضو البيانات الوصفية وjwks_uri والقدرة؛ وrequest_schema_url على الرفض القابل للطلب، أي مخطط JSON Schema من الأصل نفسه لإضافات الطلب الاختيارية. الناقص: نموذج مستضاف (form_url) وdisplay، والمرافقات BULK وACTOR وCATALOG."
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
     "en": "ca5109eae0e95b17",
@@ -893,7 +893,7 @@
   },
   "stsmetadata.endpoints./access/v1/access-requests/schema.what": {
     "en": "ec6a3b36123f646a",
-    "text": "GET مخطط JSON Schema (المسودة 2020-12) للإضافات التي يجوز للتقديم أن يضيفها: context.business_justification، وrequested_access.requested_until وemergency، والأخير يتطلب المبرر. عام، وعلى الأصل نفسه الذي عليه access_request_endpoint؛ ويسمّيه request_schema_url في الرفض القابل للطلب. لا يُستضاف أي نموذج، فلا يحمل أي رفض form_url. يجيب 501 ما دامت الواجهة أو الملف التعريفي معطّلين. مسجَّل قبل مسار حالة المهمة، الذي كان سيقرأ \"schema\" بوصفه معرّفاً لولا ذلك."
+    "text": "GET لمخطط JSON Schema (draft 2020-12) للإضافات التي يجوز أن يضيفها الطلب: context.business_justification، وrequested_access.requested_until وemergency، والأخير يتطلب المبرر. عام، من الأصل نفسه لـ access_request_endpoint؛ ويشير إليه request_schema_url في الرفض القابل للطلب. لا يُستضاف أي نموذج، لذا لا يحمل أي رفض form_url. يجيب 501 ما دامت الواجهة أو الملف التعريفي معطلين. يُسجَّل قبل مسار حالة المهمة، الذي كان سيقرأ \"schema\" معرّفًا لولا ذلك."
   },
   "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
     "en": "264083b977756230",

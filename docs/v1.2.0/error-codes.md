@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5980** of them, in **57** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5983** of them, in **57** subsystems.
 
 ## Where a code appears
 
@@ -93,7 +93,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 252
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 140
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 117
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 121
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 301
@@ -5722,7 +5722,7 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0122` | An AuthZEN access request submission did not carry Content-Type: application/json, which AuthZEN 1.0 section 10.1 requires; refused before its body was read (#936). | HTTP 415 Unsupported Media Type (RFC 9110 section 15.5.16), application/problem+json (RFC 9457) |
 | `STS-AUTHZEN-0123` | An RFC 8693 token exchange was not issued because authzen.externalPdpUrl is empty, will not parse, is not absolute https, or carries a userinfo, query or fragment. The external AuthZEN PDP was not dialled (#1200). | HTTP 503 temporarily_unavailable (the client is not told the code or the address) |
 | `STS-AUTHZEN-0124` | An RFC 8693 token exchange was not issued because the external AuthZEN PDP gave no answer: federation.outbound is off, the PDP was unreachable or timed out, the dial threw, or the PDP answered a non-2xx. The local decision is not issued in its place (#1200). | HTTP 503 temporarily_unavailable |
-| `STS-AUTHZEN-0125` | An RFC 8693 token exchange was not issued because the external AuthZEN PDP refused a subject or requesting-party gate. Which gate is not told to the client (#1200). | HTTP 400 invalid_request |
+| `STS-AUTHZEN-0125` | An RFC 8693 token exchange was not issued because the external AuthZEN PDP refused a subject or requesting-party gate. Which gate is not told to the client (#1200). | HTTP 400 invalid_target when the exchange named the audience or resource the gate refused, invalid_grant otherwise (RFC 8693 section 2.2.2); invalid_request until the review of #1200 |
 | `STS-AUTHZEN-0126` | An RFC 8693 token exchange was not issued because the external AuthZEN PDP answered 2xx with a body that is not the batch's decision: not JSON, a missing or differently sized evaluations array, an item that is not an object, a decision that is not a boolean, or an item carrying context.error (#1200). | HTTP 503 temporarily_unavailable |
 | `STS-AUTHZEN-0127` | An RFC 8693 token exchange was not issued because the client certificate or key for the external AuthZEN PDP is empty, unreadable, outside security.fileRoots, or not a PEM, or a named CA file is. The PDP was not dialled (#1200). | HTTP 503 temporarily_unavailable |
 | `STS-AUTHZEN-0128` | An AuthZEN authorization-detail tuple named somebody other than the exchange subject. The binding adds requesting-party tuples for scopes on a Txn-Token only, so a cell for the party is the same refusal; answered false (#1201). | decision: false |
@@ -5733,11 +5733,15 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0133` | An AuthZEN token-exchange subject gate was given an issuance claim that is reserved, is not on the subject token, or is wider than the subject token's value. It is not sent (#1201). | none — logged; the envelope is sent without that claim |
 | `STS-AUTHZEN-0134` | An AuthZEN token-exchange subject gate was given an empty issuance audience, which withdraws that gate's target; answered false (#1201). | decision: false |
 | `STS-AUTHZEN-0135` | An AuthZEN access request's callback will not be delivered again: the attempt bound is spent, or the failure cannot succeed (an HTTP status below 500, or a URL the outbound policy refuses). The task's own status is unchanged. The task status endpoint remains the record (#1202). | none — logged and audited |
-| `STS-AUTHZEN-0136` | An access request callback was refused because the caller is not an application. set-callbacks writes appAuthzenCallbackUri only on an application, and a submission that names a callback from a person or a service account is refused. A value already stored as stsAuthzenCallbackUri is left in place and is not honoured (#1202). | HTTP 400 on a submission; the console's refusal on set-callbacks |
-| `STS-AUTHZEN-0137` | An access request callback override was refused: attempts or backoff was not an integer in range (attempts 1 to 20, backoff 60 to 86400), or a token was not attempts=N or backoff=S, or one of them was repeated (#1202). | the console's refusal |
+| `STS-AUTHZEN-0136` *(retired)* | An access request callback was refused because the caller was not an application (#1202). Retired by the review of #1202 (2026-11-23): a person's or service account's stsAuthzenCallbackUri is written and honoured again, as in 1.1.0, under rcbj's decision 4 on #1180. | — |
+| `STS-AUTHZEN-0137` | An access request callback override was refused: attempts or backoff was not an integer in range (attempts 1 to 20, backoff 60 to 86400), or a token was not attempts=N or backoff=S, or one of them was repeated, or it was set for a person or a service account, whose callbacks take the realm's settings (#1202). | the console's refusal |
 | `STS-AUTHZEN-0138` | The requester of a revoked AuthZEN access approval could not be mailed; the revocation stands (#1203). | none — logged |
 | `STS-AUTHZEN-0139` | A requestable AuthZEN denial could not be recorded. The binding_token is still issued; an evaluation_id-only submission of that denial cannot be resolved (#1204). | none — logged; the denial is still requestable by its token |
 | `STS-AUTHZEN-0140` | An AuthZEN approval's state could not be signed. The approval stands by id, and the task result omits state (#1204). | none — logged; the approval is still looked up by id |
+| `STS-AUTHZEN-0141` | A person was refused the revocation of an AuthZEN access approval on the portal because somebody else gave it: the portal revokes only an approval the signed-in person gave (#1203). | HTTP 400 on POST /account-api/access-requests |
+| `STS-AUTHZEN-0142` | An AuthZEN access request's approval could not be stored, so the task moved to failed rather than to approved (#1202). The failed callback is sent where it was asked for. | the approver's refusal; the task status failed |
+| `STS-AUTHZEN-0143` | A pending AuthZEN access request moved to failed because the approvers its advice names (configured static roles, groups, the application's owners) resolve to nobody but its subject (#1202). A computed or dynamic role, or a directory that cannot be read, is never taken for nobody. Noticed by the authzen.access-requests job. | the task status failed |
+| `STS-AUTHZEN-0144` | The requestable denial store of a realm is full (authzen.accessRequestMaxDenials), so a new denial is not recorded by evaluation_id; it is still requestable by its binding_token (#1204). Logged when the store fills, not per denial. | none — logged and audited once |
 
 ## STS-FGA
 

@@ -1139,6 +1139,14 @@
     "en": "432e877d55af1913",
     "text": "Der Callback einer AuthZEN-Zugriffsanfrage wurde gesendet oder ist fehlgeschlagen"
   },
+  "audit.actions.authzen.access-request.failed.label": {
+    "en": "ff702bec26fec0b2",
+    "text": "Eine AuthZEN-Zugriffsanfrage ist fehlgeschlagen"
+  },
+  "audit.actions.authzen.access-request.denials-full.label": {
+    "en": "d4a30614c3be855a",
+    "text": "Der Speicher anfragbarer AuthZEN-Ablehnungen war voll"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "Der Ausstellungs-PEP hat es abgelehnt, diesen Dienst etwas prägen zu lassen"

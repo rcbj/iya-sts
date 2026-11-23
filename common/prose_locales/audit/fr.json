@@ -1139,6 +1139,14 @@
     "en": "432e877d55af1913",
     "text": "Le rappel (callback) d’une demande d’accès AuthZEN a été envoyé ou a échoué"
   },
+  "audit.actions.authzen.access-request.failed.label": {
+    "en": "ff702bec26fec0b2",
+    "text": "Une demande d'accès AuthZEN a échoué"
+  },
+  "audit.actions.authzen.access-request.denials-full.label": {
+    "en": "d4a30614c3be855a",
+    "text": "Le magasin des refus AuthZEN pouvant faire l'objet d'une demande était plein"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "Le PEP d’émission a refusé de laisser ce service émettre quelque chose"

@@ -1614,6 +1614,7 @@ Scope: `admin:read`.
 | `accessRequests.rows[].callbackDelivery` | object |  |  |
 | `accessRequests.rows[].callbackDelivery.attempts` | list |  |  |
 | `accessRequests.rows[].callbackDelivery.attempts[].at` | number |  |  |
+| `accessRequests.rows[].callbackDelivery.attempts[].code` | string |  | Empty for a delivery. STS-AUTHZEN-0091 for a failed attempt the job tries again, STS-AUTHZEN-0135 for the last one. |
 | `accessRequests.rows[].callbackDelivery.attempts[].ok` | boolean |  |  |
 | `accessRequests.rows[].callbackDelivery.attempts[].status` | number |  |  |
 | `accessRequests.rows[].callbackDelivery.attempts[].why` | string |  |  |
@@ -1821,6 +1822,7 @@ Scope: `admin:write`.
 | `task.callbackDelivery` | object |  |  |
 | `task.callbackDelivery.attempts` | list |  |  |
 | `task.callbackDelivery.attempts[].at` | number |  |  |
+| `task.callbackDelivery.attempts[].code` | string |  | Empty for a delivery. STS-AUTHZEN-0091 for a failed attempt the job tries again, STS-AUTHZEN-0135 for the last one. |
 | `task.callbackDelivery.attempts[].ok` | boolean |  |  |
 | `task.callbackDelivery.attempts[].status` | number |  |  |
 | `task.callbackDelivery.attempts[].why` | string |  |  |
@@ -1871,6 +1873,7 @@ Scope: `admin:write`.
 | `task.callbackDelivery` | object |  |  |
 | `task.callbackDelivery.attempts` | list |  |  |
 | `task.callbackDelivery.attempts[].at` | number |  |  |
+| `task.callbackDelivery.attempts[].code` | string |  | Empty for a delivery. STS-AUTHZEN-0091 for a failed attempt the job tries again, STS-AUTHZEN-0135 for the last one. |
 | `task.callbackDelivery.attempts[].ok` | boolean |  |  |
 | `task.callbackDelivery.attempts[].status` | number |  |  |
 | `task.callbackDelivery.attempts[].why` | string |  |  |
@@ -1946,6 +1949,7 @@ Scope: `admin:write`.
 | `task.callbackDelivery` | object |  |  |
 | `task.callbackDelivery.attempts` | list |  |  |
 | `task.callbackDelivery.attempts[].at` | number |  |  |
+| `task.callbackDelivery.attempts[].code` | string |  | Empty for a delivery. STS-AUTHZEN-0091 for a failed attempt the job tries again, STS-AUTHZEN-0135 for the last one. |
 | `task.callbackDelivery.attempts[].ok` | boolean |  |  |
 | `task.callbackDelivery.attempts[].status` | number |  |  |
 | `task.callbackDelivery.attempts[].why` | string |  |  |
@@ -1996,6 +2000,7 @@ Scope: `admin:write`.
 | `task.callbackDelivery` | object |  |  |
 | `task.callbackDelivery.attempts` | list |  |  |
 | `task.callbackDelivery.attempts[].at` | number |  |  |
+| `task.callbackDelivery.attempts[].code` | string |  | Empty for a delivery. STS-AUTHZEN-0091 for a failed attempt the job tries again, STS-AUTHZEN-0135 for the last one. |
 | `task.callbackDelivery.attempts[].ok` | boolean |  |  |
 | `task.callbackDelivery.attempts[].status` | number |  |  |
 | `task.callbackDelivery.attempts[].why` | string |  |  |
@@ -2071,6 +2076,7 @@ Scope: `admin:write`.
 | `task.callbackDelivery` | object |  |  |
 | `task.callbackDelivery.attempts` | list |  |  |
 | `task.callbackDelivery.attempts[].at` | number |  |  |
+| `task.callbackDelivery.attempts[].code` | string |  | Empty for a delivery. STS-AUTHZEN-0091 for a failed attempt the job tries again, STS-AUTHZEN-0135 for the last one. |
 | `task.callbackDelivery.attempts[].ok` | boolean |  |  |
 | `task.callbackDelivery.attempts[].status` | number |  |  |
 | `task.callbackDelivery.attempts[].why` | string |  |  |
@@ -2121,6 +2127,7 @@ Scope: `admin:write`.
 | `task.callbackDelivery` | object |  |  |
 | `task.callbackDelivery.attempts` | list |  |  |
 | `task.callbackDelivery.attempts[].at` | number |  |  |
+| `task.callbackDelivery.attempts[].code` | string |  | Empty for a delivery. STS-AUTHZEN-0091 for a failed attempt the job tries again, STS-AUTHZEN-0135 for the last one. |
 | `task.callbackDelivery.attempts[].ok` | boolean |  |  |
 | `task.callbackDelivery.attempts[].status` | number |  |  |
 | `task.callbackDelivery.attempts[].why` | string |  |  |
@@ -2264,6 +2271,7 @@ Scope: `admin:write`.
 | `task.callbackDelivery` | object |  |  |
 | `task.callbackDelivery.attempts` | list |  |  |
 | `task.callbackDelivery.attempts[].at` | number |  |  |
+| `task.callbackDelivery.attempts[].code` | string |  | Empty for a delivery. STS-AUTHZEN-0091 for a failed attempt the job tries again, STS-AUTHZEN-0135 for the last one. |
 | `task.callbackDelivery.attempts[].ok` | boolean |  |  |
 | `task.callbackDelivery.attempts[].status` | number |  |  |
 | `task.callbackDelivery.attempts[].why` | string |  |  |
@@ -2314,6 +2322,7 @@ Scope: `admin:write`.
 | `task.callbackDelivery` | object |  |  |
 | `task.callbackDelivery.attempts` | list |  |  |
 | `task.callbackDelivery.attempts[].at` | number |  |  |
+| `task.callbackDelivery.attempts[].code` | string |  | Empty for a delivery. STS-AUTHZEN-0091 for a failed attempt the job tries again, STS-AUTHZEN-0135 for the last one. |
 | `task.callbackDelivery.attempts[].ok` | boolean |  |  |
 | `task.callbackDelivery.attempts[].status` | number |  |  |
 | `task.callbackDelivery.attempts[].why` | string |  |  |
@@ -2416,7 +2425,7 @@ Scope: `admin:write`.
 
 **Set the access request callback URLs of an AuthZEN caller**
 
-Replaces the callback URLs registered for an application (#1180, #1202): appAuthzenCallbackUri, and appAuthzenCallbackConfig where a URL overrides authzen.callbackAttempts or authzen.callbackBackoffS. A person or a service account is refused. An access request's callback.endpoint must match a URL exactly; this service never dials a callback URL taken from a request alone. https only, at most eight. One per line, or a URL followed by attempts=N and backoff=S. Empty clears them. Audited.
+Replaces the callback URLs registered for a caller (#1180, #1202): an application's appAuthzenCallbackUri, and appAuthzenCallbackConfig where a URL overrides authzen.callbackAttempts or authzen.callbackBackoffS; a person's or service account's stsAuthzenCallbackUri, which takes no override. An access request's callback.endpoint must match a URL exactly; this service never dials a callback URL taken from a request alone. https only, at most eight. One per line, or a URL followed by attempts=N and backoff=S. Empty clears them. Audited.
 
 **Mirrors** `POST /admin/xacml#xacml-tab-authzen` on the admin console.
 

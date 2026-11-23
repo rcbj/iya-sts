@@ -26496,7 +26496,9 @@ const CODES = [
     summary: 'An RFC 8693 token exchange was not issued because the ' +
       'external AuthZEN PDP refused a subject or requesting-party gate. ' +
       'Which gate is not told to the client (#1200).',
-    spec: 'HTTP 400 invalid_request' },
+    spec: 'HTTP 400 invalid_target when the exchange named the audience ' +
+      'or resource the gate refused, invalid_grant otherwise (RFC 8693 ' +
+      'section 2.2.2); invalid_request until the review of #1200' },
   { code: 'STS-AUTHZEN-0126',
     summary: 'An RFC 8693 token exchange was not issued because the ' +
       'external AuthZEN PDP answered 2xx with a body that is not the ' +
@@ -26557,19 +26559,19 @@ const CODES = [
       'endpoint remains the record (#1202).',
     spec: 'none — logged and audited' },
   { code: 'STS-AUTHZEN-0136',
-    summary: 'An access request callback was refused because the caller is ' +
-      'not an application. set-callbacks writes appAuthzenCallbackUri ' +
-      'only on an application, and a submission that names a callback ' +
-      'from a person or a service account is refused. A value already ' +
-      'stored as stsAuthzenCallbackUri is left in place and is not ' +
-      'honoured (#1202).',
-    spec: 'HTTP 400 on a submission; the console\'s refusal on ' +
-      'set-callbacks' },
+    summary: 'An access request callback was refused because the caller ' +
+      'was not an application (#1202). Retired by the review of #1202 ' +
+      '(2026-11-23): a person\'s or service account\'s ' +
+      'stsAuthzenCallbackUri is written and honoured again, as in 1.1.0, ' +
+      'under rcbj\'s decision 4 on #1180.',
+    spec: '', retired: true },
   { code: 'STS-AUTHZEN-0137',
     summary: 'An access request callback override was refused: attempts ' +
       'or backoff was not an integer in range (attempts 1 to 20, ' +
       'backoff 60 to 86400), or a token was not attempts=N or ' +
-      'backoff=S, or one of them was repeated (#1202).',
+      'backoff=S, or one of them was repeated, or it was set for a ' +
+      'person or a service account, whose callbacks take the realm\'s ' +
+      'settings (#1202).',
     spec: 'the console\'s refusal' },
   { code: 'STS-AUTHZEN-0138',
     summary: 'The requester of a revoked AuthZEN access approval could ' +
@@ -26584,6 +26586,30 @@ const CODES = [
     summary: 'An AuthZEN approval\'s state could not be signed. The ' +
       'approval stands by id, and the task result omits state (#1204).',
     spec: 'none — logged; the approval is still looked up by id' },
+  { code: 'STS-AUTHZEN-0141',
+    summary: 'A person was refused the revocation of an AuthZEN access ' +
+      'approval on the portal because somebody else gave it: the portal ' +
+      'revokes only an approval the signed-in person gave (#1203).',
+    spec: 'HTTP 400 on POST /account-api/access-requests' },
+  { code: 'STS-AUTHZEN-0142',
+    summary: 'An AuthZEN access request\'s approval could not be stored, ' +
+      'so the task moved to failed rather than to approved (#1202). The ' +
+      'failed callback is sent where it was asked for.',
+    spec: 'the approver\'s refusal; the task status failed' },
+  { code: 'STS-AUTHZEN-0143',
+    summary: 'A pending AuthZEN access request moved to failed because ' +
+      'the approvers its advice names (configured static roles, groups, ' +
+      'the application\'s owners) resolve to nobody but its subject ' +
+      '(#1202). A computed or dynamic role, or a directory that cannot be ' +
+      'read, is never taken for nobody. Noticed by the ' +
+      'authzen.access-requests job.',
+    spec: 'the task status failed' },
+  { code: 'STS-AUTHZEN-0144',
+    summary: 'The requestable denial store of a realm is full ' +
+      '(authzen.accessRequestMaxDenials), so a new denial is not recorded ' +
+      'by evaluation_id; it is still requestable by its binding_token ' +
+      '(#1204). Logged when the store fills, not per denial.',
+    spec: 'none — logged and audited once' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +

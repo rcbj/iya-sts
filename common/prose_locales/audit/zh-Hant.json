@@ -1139,6 +1139,14 @@
     "en": "432e877d55af1913",
     "text": "已傳送 AuthZEN 存取請求的回呼，或回呼失敗"
   },
+  "audit.actions.authzen.access-request.failed.label": {
+    "en": "ff702bec26fec0b2",
+    "text": "一個 AuthZEN 存取請求失敗"
+  },
+  "audit.actions.authzen.access-request.denials-full.label": {
+    "en": "d4a30614c3be855a",
+    "text": "AuthZEN 可申請拒絕儲存區已滿"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "簽發 PEP 拒絕讓本服務產生某項內容"

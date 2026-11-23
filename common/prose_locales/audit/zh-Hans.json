@@ -1139,6 +1139,14 @@
     "en": "432e877d55af1913",
     "text": "已发送 AuthZEN 访问请求的回调，或回调失败"
   },
+  "audit.actions.authzen.access-request.failed.label": {
+    "en": "ff702bec26fec0b2",
+    "text": "一个 AuthZEN 访问请求失败"
+  },
+  "audit.actions.authzen.access-request.denials-full.label": {
+    "en": "d4a30614c3be855a",
+    "text": "AuthZEN 可申请拒绝存储已满"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "签发 PEP 拒绝让本服务铸造某项内容"

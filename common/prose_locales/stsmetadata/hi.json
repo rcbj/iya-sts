@@ -101,7 +101,7 @@
   },
   "stsmetadata.specs.authzen-arap.coverage": {
     "en": "6be544a62f94329b",
-    "text": "partial: माँगे जा सकने वाला अस्वीकार (context.access_request, evaluation_id, evaluated_at, reason) जहाँ क्षेत्र की नीति Deny को access-request advice से चिह्नित करती है, मान द्वारा बंधा, binding_token से जिसे यह क्षेत्र हस्ताक्षरित करता है (इनलाइन दावे और binding_hash), और अस्वीकार अभिलेख से संदर्भ द्वारा; Idempotency-Key के साथ प्रस्तुति, 201 या 202 और एक Task Handle; Retry-After के साथ कार्य-स्थिति एंडपॉइंट; POST या DELETE द्वारा रद्दीकरण; छह स्थितियाँ; reevaluate समापन मोड, approval.id विश्वसनीय अवस्था में हल होता है, approval.state जारी और सत्यापित होता है जबकि खोज अब भी आवश्यक है, और अनुमोदन नीति तक विश्वसनीय तथ्यों के रूप में पहुँचता है; next_action और पाँच कारण; प्रत्येक problem type; मेटाडेटा सदस्य, jwks_uri और capability; माँगे जा सकने वाले अस्वीकार पर request_schema_url, प्रस्तुति के वैकल्पिक संवर्धनों का उसी मूल का JSON Schema। नहीं है: होस्ट किया प्रपत्र (form_url) और display, तथा BULK, ACTOR और CATALOG साथी।"
+    "text": "partial: अनुरोध-योग्य अस्वीकृति (context.access_request, evaluation_id, evaluated_at, reason) जहाँ रेल्म की नीति किसी Deny को access-request सलाह से चिह्नित करती है, इस रेल्म द्वारा हस्ताक्षरित binding_token से मान द्वारा बंधी (इनलाइन claims और binding_hash) और अस्वीकृति रिकॉर्ड से संदर्भ द्वारा; Idempotency-Key, 201 या 202 और एक Task Handle के साथ सबमिशन; Retry-After के साथ कार्य-स्थिति endpoint; POST या DELETE से रद्दीकरण; छह स्थितियाँ; reevaluate पूर्णता मोड, विश्वसनीय स्थिति में हल हुआ approval.id, जारी और सत्यापित approval.state जिसमें lookup अब भी आवश्यक है, और विश्वसनीय तथ्यों के रूप में नीति तक पहुँचती स्वीकृति; next_action और पाँच कारण; हर समस्या प्रकार; मेटाडेटा सदस्य, jwks_uri और क्षमता; अनुरोध-योग्य अस्वीकृति पर request_schema_url, सबमिशन के वैकल्पिक अंशों का समान-origin JSON Schema। अनुपस्थित: होस्ट किया गया फ़ॉर्म (form_url) और display, तथा BULK, ACTOR और CATALOG सहयोगी।"
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
     "en": "ca5109eae0e95b17",
@@ -893,7 +893,7 @@
   },
   "stsmetadata.endpoints./access/v1/access-requests/schema.what": {
     "en": "ec6a3b36123f646a",
-    "text": "उन संवर्धनों का JSON Schema (ड्राफ़्ट 2020-12) GET करता है जिन्हें कोई प्रस्तुति जोड़ सकती है: context.business_justification, तथा requested_access.requested_until और emergency, जिनमें अंतिम के लिए औचित्य आवश्यक है। सार्वजनिक, access_request_endpoint वाला ही मूल; माँगे जा सकने वाले अस्वीकार का request_schema_url इसका नाम देता है। कोई प्रपत्र होस्ट नहीं किया जाता, इसलिए किसी अस्वीकार में form_url नहीं होता। API या प्रोफ़ाइल बंद रहने तक 501 उत्तर देता है। कार्य-स्थिति पथ से पहले पंजीकृत, जो अन्यथा \"schema\" को id के रूप में पढ़ता।"
+    "text": "उन अतिरिक्त अंशों का JSON Schema (draft 2020-12) GET करता है जिन्हें एक सबमिशन जोड़ सकता है: context.business_justification, तथा requested_access.requested_until और emergency, जिनमें अंतिम के लिए औचित्य आवश्यक है। सार्वजनिक, access_request_endpoint के समान origin; अनुरोध-योग्य अस्वीकृति का request_schema_url इसी को इंगित करता है। कोई फ़ॉर्म होस्ट नहीं किया जाता, इसलिए किसी अस्वीकृति में form_url नहीं होता। API या प्रोफ़ाइल बंद रहने पर 501 देता है। कार्य-स्थिति पथ से पहले पंजीकृत, अन्यथा वह \"schema\" को id मान लेता।"
   },
   "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
     "en": "264083b977756230",

@@ -1139,6 +1139,14 @@
     "en": "432e877d55af1913",
     "text": "Se envió, o falló, el callback de una solicitud de acceso AuthZEN"
   },
+  "audit.actions.authzen.access-request.failed.label": {
+    "en": "ff702bec26fec0b2",
+    "text": "Una solicitud de acceso de AuthZEN falló"
+  },
+  "audit.actions.authzen.access-request.denials-full.label": {
+    "en": "d4a30614c3be855a",
+    "text": "El almacén de denegaciones solicitables de AuthZEN estaba lleno"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "El PEP de emisión no permitió que este servicio acuñara algo"

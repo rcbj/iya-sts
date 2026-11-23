@@ -3307,61 +3307,149 @@
     "en": "e0341e4e47f3b2f8",
     "text": "什麼能讓 PKINIT 登入聲明硬體繫結的金鑰（pkinit-hardware 指示符與 amr hwk）。`inference`：預設值，也是 #1955 之前的行為——本服務未產生其金鑰的智慧卡登入憑證，或已記錄的證明證據。`evidence`：僅限硬體權杖的證明所涵蓋的金鑰。透過 TLS 的憑證登入只有在有證據時才取得 hwk，以及智慧卡上金鑰的 sc，兩種情況皆然。"
   },
-"pskc.allowPlaintextImport|label": {
+  "pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
     "text": "在產品模式下接受明文 PSKC 種子檔案"
   },
-"pskc.allowPlaintextImport|description": {
+  "pskc.allowPlaintextImport|description": {
     "en": "7efe34e872e4772e",
     "text": "在產品模式下，管理員是否可以匯入權杖密鑰未加密的 PSKC 種子檔案（RFC 6030）。預設關閉：這樣的檔案在它經過的每個磁碟與信箱中都是一份可用第二因素的清單，而供應商可以用預先共用金鑰或密碼將其加密（第 6.1 與 6.2 節）。開發模式無論如何都會接受。"
   },
-"yubiotp.allowPlaintextImport|label": {
-    "en": "b1c1ac235f98cc47",
-    "text": "在產品模式下接受明文 YubiKey OTP CSV 檔案"
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "PIV 證明根憑證（PEM）"
   },
-"yubiotp.allowPlaintextImport|description": {
-    "en": "f409449d46d5831a",
-    "text": "管理員在產品模式下是否可以匯入 YubiKey OTP 密鑰的 CSV（序號、公開身分、私有身分、AES 金鑰）。預設關閉：該檔案是一份可用第二因素的清單。開發模式無論如何都會接受。檔案被接受時密鑰即被密封，檔案不予保留。"
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "YubiKey PIV 金鑰證明必須鏈結到的根憑證，以 PEM 套件形式提供。空白時使用 Yubico 發布的兩個根憑證（Yubico PIV Root CA Serial 263751，以及適用於韌體 5.7.4 及更新版本的 Yubico Attestation Root 1），它們隨附於 common/pki_piv_anchors.json 並在其中以 SHA-256 釘選，同時附帶 Yubico 的 PIV 中繼憑證。此處填入的憑證會取代隨附的根憑證。"
   },
-"openpgp.wkd|label": {
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "要求 PIV 設定檔提供 PIV 證明"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "開啟時，piv-auth、piv-sign、piv-key-management 或 piv-card-auth 憑證的要求若未攜帶可驗證的 YubiKey PIV 證明即會被拒絕（STS-PIV-0010）。來自 EST /serverkeygen 的託管 piv-key-management 金鑰是例外：它由本服務產生。關閉（預設值）時，此類未帶證明的要求會在沒有硬體證據的情況下簽發；攜帶無法驗證之證明的要求在兩種情況下都會被拒絕。"
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "經證明的 PIV 金鑰可具有的最弱 PIN 原則"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "證明中的 PIN 原則至少必須達到的程度。`once`：每個工作階段輸入一次 PIN（Bio 金鑰的 match-once 也算）；`always`：每次使用前都輸入 PIN（match-always 也算）。`any`（預設值）不要求任何 PIN 原則。證明較弱的金鑰會被拒絕（STS-PIV-0011）。"
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "經證明的 PIV 金鑰可具有的最弱觸碰原則"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "證明中的觸碰原則至少必須達到的程度。`cached`：一次觸碰，記住 15 秒；`always`：每次使用都需觸碰。`any`（預設值）不作要求。證明較弱的金鑰會被拒絕（STS-PIV-0012）。"
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "允許 piv-card-auth 憑證登入"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "1852da24c3fbfade",
+    "text": "piv-card-auth（插槽 9e）金鑰無需 PIN 即可使用，用於實體門禁，因此除非開啟此項，否則其憑證在 TLS 登入與 PKINIT 時會被拒絕（STS-PIV-0013）。"
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "託管 piv-key-management 金鑰"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "開啟時，針對 piv-key-management 設定檔的 EST /serverkeygen 會保留所產生的私密金鑰，並以金鑰加密金鑰密封，讓持有人（在入口網站上，重新登入後）或擁有 PIV 金鑰復原角色的管理員在卡片遺失後復原它並解密舊郵件。若未持有金鑰加密金鑰則拒絕（STS-PIV-0020）。託管金鑰絕不是硬體證據。關閉（預設值）時，/serverkeygen 會拒絕 piv-key-management 設定檔（STS-PIV-0021），因此 9d 金鑰在卡片上產生，且不保存在其他任何地方。"
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "依卡片 UUID 對應的外部 PIV 或 CAC 簽發 CA（PEM）"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "其 PIV 或 CAC 卡片憑證可依 FIPS 201 卡片 UUID 為某人登入的簽發 CA：由其中一個 CA 直接簽發、宣告 piv.externalPolicyOids 中某項原則、且恰好攜帶一個 urn:uuid subjectAltName 的用戶端憑證，會對應到其 stsPivCardUuid 保存該 UUID 的唯一一個人。絕不依其名稱對應，也不會建立任何項目。該 CA 也必須位於某個用戶端信任存放區中，否則交握會先拒絕它。空白（預設值）時不對應任何內容。"
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "外部卡片必須宣告的 PIV Authentication 原則"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "外部卡片的憑證必須宣告其中之一才能依其卡片 UUID 對應的憑證原則：預設為 id-fpki-common-authentication（Federal PKI Common Policy 的 PIV Authentication）與 id-fpki-certpcy-pivi-hardware（PIV-I）。請在此加入 CAC 簽發者自己的硬體原則。"
+  },
+  "openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",
     "text": "在 Web 金鑰目錄中發布金鑰"
   },
-"openpgp.wkd|description": {
+  "openpgp.wkd|description": {
     "en": "7822103f89ac59b3",
     "text": "為此領域的郵件網域回應 Web 金鑰目錄（draft-koch-openpgp-webkey-service）：/.well-known/openpgpkey/<domain>/hu/<hash>（進階方式，位於 openpgpkey.<domain>）與 /.well-known/openpgpkey/hu/<hash>（直接方式），以及各自的政策檔案。只回應在入口網站上選擇發布者的金鑰。預設關閉。"
   },
-"openpgp.wkdDomains|label": {
+  "openpgp.wkdDomains|label": {
     "en": "d1c4b728593ff000",
     "text": "Web 金鑰目錄服務的郵件網域"
   },
-"openpgp.wkdDomains|description": {
+  "openpgp.wkdDomains|description": {
     "en": "ad64f7216191123c",
     "text": "此領域的 Web 金鑰目錄所回應的郵件網域，以逗號分隔。留空（預設）表示領域自身的 DNS 網域。路徑中不含領域的請求，由服務其網域的領域回應，預設領域優先。"
   },
-"openpgp.challengeLifetimeS|label": {
+  "openpgp.challengeLifetimeS|label": {
     "en": "dbf558cf0b4b8f90",
     "text": "註冊挑戰有效期（秒）"
   },
-"openpgp.challengeLifetimeS|description": {
+  "openpgp.challengeLifetimeS|description": {
     "en": "e9130c8e82368cc6",
     "text": "個人為註冊 OpenPGP 金鑰而以 gpg --clearsign 簽署的挑戰維持有效的時間。挑戰只能使用一次，每人同一時間只有一個。"
   },
-"openpgp.signatureSkewS|label": {
+  "openpgp.signatureSkewS|label": {
     "en": "d927cf1f04bd9d51",
     "text": "證明簽章時鐘偏差（秒）"
   },
-"openpgp.signatureSkewS|description": {
+  "openpgp.signatureSkewS|description": {
     "en": "2772763d3d363b6d",
     "text": "簽署電腦的時鐘與本服務時鐘可相差多少：證明的簽署時間早於挑戰發出時間或晚於現在，且超過此值者，將被拒絕（STS-OPENPGP-0010）。"
   },
-"openpgp.minRsaBits|label": {
+  "openpgp.algorithms|label": {
+    "en": "6973a8aeaa30b96b",
+    "text": "接受的演算法"
+  },
+  "openpgp.algorithms|description": {
+    "en": "7bf4b57c9c6e7d1f",
+    "text": "金鑰可以使用的 OpenPGP 演算法，依優先順序。先是 RFC 9980 複合演算法：ML-DSA-65+Ed25519 與 ML-DSA-87+Ed448 用於簽章，ML-KEM-768+X25519 與 ML-KEM-1024+X448 用於加密。然後是經典名稱：ed25519、ed448、eddsaLegacy/ed25519Legacy，nistP256、nistP384 與 nistP521 上的 ecdsa，rsaSign 與 rsaEncryptSign，x25519、x448，curve25519Legacy 及相同 NIST 曲線上的 ecdh，以及 rsaEncrypt。不在此清單中的名稱在登記和驗證時被拒絕（STS-OPENPGP-0004）。未實作 SLH-DSA。預設值列出上述每一個。"
+  },
+  "openpgp.pqcOnly|label": {
+    "en": "d3ff53ec011bbf1f",
+    "text": "僅登記後量子金鑰"
+  },
+  "openpgp.pqcOnly|description": {
+    "en": "a42ec597602f45d5",
+    "text": "開啟後，新登記的金鑰必須使用 openpgp.algorithms 點名的後量子演算法：簽章金鑰為 ML-DSA-65+Ed25519 或 ML-DSA-87+Ed448，若有加密金鑰則為 ML-KEM-768+X25519 或 ML-KEM-1024+X448。它只收窄登記：已經登記的經典金鑰仍可驗證，仍可接收郵件。不能與 openpgp.pqcAlongsideClassical 同時開啟（STS-OPENPGP-0027）。預設關閉。"
+  },
+  "openpgp.pqcAlongsideClassical|label": {
+    "en": "57f71c1990eb46d9",
+    "text": "後量子金鑰與經典金鑰並存"
+  },
+  "openpgp.pqcAlongsideClassical|description": {
+    "en": "2b5f6cf2a07130e5",
+    "text": "開啟後，新登記的金鑰必須同時帶有後量子演算法和另一個經典演算法。ML-DSA-65+Ed25519 這樣的複合名稱只算後量子，因此經典的一半是另一把金鑰，例如旁邊的 Ed25519 或 X25519 子金鑰。已經登記的金鑰保持原樣。不能與 openpgp.pqcOnly 同時開啟（STS-OPENPGP-0027）。預設關閉。"
+  },
+  "openpgp.minRsaBits|label": {
     "en": "f3dc9f85de143630",
     "text": "最小 RSA OpenPGP 金鑰"
   },
-"openpgp.minRsaBits|description": {
+  "openpgp.minRsaBits|description": {
     "en": "cd16018c848ce538",
     "text": "OpenPGP 註冊所接受的最短 RSA 金鑰（主金鑰或子金鑰）。接受 Ed25519、Ed448、P-256、P-384 與 P-521 上的 ECDSA 與 ECDH、X25519 與 X448，以及 openpgp.algorithms 點名時的 RFC 9980 複合演算法 ML-DSA-65+Ed25519、ML-DSA-87+Ed448、ML-KEM-768+X25519 和 ML-KEM-1024+X448。DSA、ElGamal、Brainpool 曲線和 SLH-DSA 一律不接受（STS-OPENPGP-0004）。"
+  },
+  "yubiotp.allowPlaintextImport|label": {
+    "en": "b1c1ac235f98cc47",
+    "text": "在產品模式下接受明文 YubiKey OTP CSV 檔案"
+  },
+  "yubiotp.allowPlaintextImport|description": {
+    "en": "f409449d46d5831a",
+    "text": "管理員在產品模式下是否可以匯入 YubiKey OTP 密鑰的 CSV（序號、公開身分、私有身分、AES 金鑰）。預設關閉：該檔案是一份可用第二因素的清單。開發模式無論如何都會接受。檔案被接受時密鑰即被密封，檔案不予保留。"
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
@@ -3931,6 +4019,30 @@
     "en": "a28c6bc9859fc3aa",
     "text": "此服務建置的憑證授權單位在其傳統金鑰「之外」攜帶的後量子金鑰，位於 ITU-T X.509 (2019) clause 9.8 的非關鍵 subjectAltPublicKeyInfo、altSignatureAlgorithm 與 altSignatureValue 擴充中——即混合憑證。**預設為關閉（`none`）**（rcbj，2026-09-26）：混合憑證對許多產品而言太大或太陌生——libest 會拒絕任何超過 4 KB 的註冊回應，而每張混合葉憑證都超過——因此預設是原始階層，每種使用案例與每個簽章都使用自己的傳統金鑰組。設定一個值後，之後建置的每個授權單位會對其簽發的每張憑證簽署兩次：以傳統方式簽署一般欄位，供每個驗證器讀取；並以此金鑰簽署 preTBSCertificate，供支援混合憑證的驗證器讀取。此服務就是其中之一：由持有替代金鑰的授權單位簽發的憑證，MUST 攜帶有效的替代簽章才能在此通過驗證（STS-PKI-0201、STS-PKI-0202），因此單憑傳統簽章絕不能繞過它。建議值為 ML-DSA-87（FIPS 204，類別 5），因為授權單位的存續時間比它所認證的金鑰更長。此值在某層級「下一次」建置時讀取；既有階層保留其建置時的設定。SLH-DSA（FIPS 205）供以雜湊為基礎的信任錨使用，每個簽章——也就是每張簽發的憑證——要花上數「秒」。警告：設為 `none` 時，授權單位僅為傳統式，其憑證可被具備量子能力的攻擊者偽造。"
   },
+  "pki.sshUserCaAlgorithms|label": {
+    "en": "1fa9bf9eedbabd99",
+    "text": "SSH 使用者 CA 演算法"
+  },
+  "pki.sshUserCaAlgorithms|description": {
+    "en": "5c4c22c2ab500fd4",
+    "text": "SSH 使用者憑證授權單位可使用的演算法，依偏好順序排列。ssh-mldsa-65 是 ML-DSA-65（FIPS 204），使用本服務定義的傳輸名稱，因為 OpenSSH 沒有定義：公開金鑰與簽章都是原始格式，形式與 ssh-ed25519 相同。本服務發布的 OpenSSH TrustedUserCAKeys 行始終是此清單中的第一個傳統演算法；若清單只列出 ssh-mldsa-65，則為 ssh-ed25519。不理解 ML-DSA 的對端會繼續信任該行。ML-DSA 授權單位的金鑰發布在 GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65；標準 OpenSSH 目前還無法驗證 ML-DSA 憑證。不提供 ssh-rsa（SHA-1）。只有在此執行環境能產生該金鑰時才會建立 ML-DSA 授權單位；否則憑證維持傳統演算法（記錄 STS-PKI-0290，傳統授權單位仍會回應），除非 pki.sshUserCaPqcOnly 已開啟。"
+  },
+  "pki.sshUserCaPqcOnly|label": {
+    "en": "74aae1308361ba58",
+    "text": "SSH 使用者憑證僅使用後量子演算法"
+  },
+  "pki.sshUserCaPqcOnly|description": {
+    "en": "dcbf21b3230dcf07",
+    "text": "開啟後，新的 SSH 使用者憑證只由 ML-DSA 授權單位簽署，不使用其他任何單位。標準 OpenSSH 目前還無法驗證 ML-DSA 憑證，因此只有能驗證 ssh-mldsa-65 並信任 GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65 上金鑰的 SSH 伺服器才會接受這些憑證。該路徑上的預設行仍是傳統金鑰。如果領域沒有 ML-DSA 授權單位（此執行環境無法產生 ML-DSA，或 ssh-mldsa-65 不在 pki.sshUserCaAlgorithms 中），請求會被拒絕（STS-PKI-0297），而不是回傳一張傳統憑證。已簽發的傳統憑證仍可驗證。不能與 pki.sshUserCaPqcAlongsideClassical 同時開啟（STS-PKI-0296）。預設關閉。"
+  },
+  "pki.sshUserCaPqcAlongsideClassical|label": {
+    "en": "c3201f8841200c32",
+    "text": "SSH 使用者憑證同時帶有後量子憑證"
+  },
+  "pki.sshUserCaPqcAlongsideClassical|description": {
+    "en": "b38eab63ec092b6c",
+    "text": "開啟後，當 ML-DSA 機構存在時，新的 SSH 使用者憑證簽發兩次：經典憑證，即 OpenSSH 用戶端使用的那一份，以及旁邊的一份 ML-DSA 憑證。不能與 pki.sshUserCaPqcOnly 同時開啟（STS-PKI-0296）。預設關閉。複合簽章不是 OpenSSH 的概念；經典憑證和 ML-DSA 憑證是兩個簽章，不是一個混合簽章。"
+  },
   "pki.organisation|label": {
     "en": "163fd96758a3b8b3",
     "text": "預設組織名稱（O=）"
@@ -4322,6 +4434,22 @@
   "pki.paranoidPkinit|description": {
     "en": "4cd0d308a974fcbd",
     "text": "使用情境 `pkinit`：RFC 4556 AS-REQ 中的用戶端憑證。檢查先前已完整（通往領域身分 CA 的路徑、含 krb5.clockSkew 的有效期、id-pkinit-KPClientAuth 或 Microsoft 智慧卡 EKU、撤銷）；偏執模式使其成為對該門的一次呼叫，因此與其他每個使用情境是同一份程式碼。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "偏執：YubiKey PIV 金鑰證明鏈"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "使用情境 `piv-attestation`（#1955）：PIV 註冊的插槽證明憑證與 f9 證明憑證。偏執模式檢查目前時刻的有效期間、到 piv.attestationAnchors 的路徑，以及在憑證鏈指明清單時的撤銷狀態。關閉時，只有此使用情境僅執行路徑檢查而不執行欄位檢查，其他每一列與主開關皆不受影響；在產品模式下關閉時，會記錄一次日誌（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "偏執：依卡片 UUID 對應的外部 PIV 或 CAC 卡片"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "使用情境 `piv-card`（#1955）：來自 piv.externalIssuers 中簽發 CA、依其卡片 UUID 對應的用戶端憑證。偏執模式在一跳簽發者檢查之外，還檢查 keyUsage digitalSignature 與葉憑證的有效期間。關閉時，只有此使用情境僅執行簽發者檢查，其他每一列與主開關皆不受影響；在產品模式下關閉時，會記錄一次日誌（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
   },
   "pki.paranoidEnrollmentCredential|label": {
     "en": "ce5c0d1996e12403",
@@ -8387,6 +8515,14 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "一個領域最多可同時持有的待處理存取請求數；超過後，提交會以 503 被拒絕，直到其中一些被決定或過期。"
   },
+  "authzen.accessRequestMaxDenials|label": {
+    "en": "09e695949f0cc1cc",
+    "text": "一個領域記錄的可申請拒絕"
+  },
+  "authzen.accessRequestMaxDenials|description": {
+    "en": "698617c5a3485120",
+    "text": "一個領域依 evaluation_id 記錄的可申請拒絕的最大數量（#1204）。超過後，新的拒絕不會被記錄，但仍可憑其 binding_token 申請；存取請求作業會在記錄的時間窗口結束一天後將其刪除。"
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"
@@ -8400,8 +8536,8 @@
     "text": "Access request callback backoff (seconds)"
   },
   "authzen.callbackBackoffS|description": {
-    "en": "27141a0f28d94b83",
-    "text": "How long to wait after a failed access request callback before the next attempt (#1202). The authzen.access-requests job runs every 60 seconds, so a shorter wait could not be honoured. An application's appAuthzenCallbackConfig may set a longer wait for one URL."
+    "en": "43f2cb7740fc7efe",
+    "text": "存取請求回呼首次失敗後，到下一次嘗試前等待的時間（#1202）。之後每次等待都是前一次的兩倍，最長一天。authzen.access-requests 作業每 60 秒執行一次，因此更短的等待無法兌現。應用程式的 appAuthzenCallbackConfig 可以為某個 URL 設定更長的等待。"
   },
   "authzen.externalPdp|label": {
     "en": "8a0af08389fe6cda",
@@ -9718,6 +9854,14 @@
   "roles.xacmlUserGroup|description": {
     "en": "d19a9234253beccc",
     "text": "其成員擁有內建 XACML_USER 角色的目錄群組，這是三個 XACML 端點本身所要求的角色——GET /xacml、POST /xacml/pdp 與 GET /xacml/policies。出示經本服務驗證之用戶端憑證的呼叫方，是本服務能夠指明身分的一方；而該群組的成員資格才使其成為本服務允許進入的一方，兩者分開的理由與上方 roles.remotePepGroup 相同：憑證證明身分，群組授予權限。這是第二個群組，而非同一個：REMOTE_PEPS 可存取三個 /xacml/pep 端點，它們分發本服務用以執行自身存取控制的文件，若由一個群組同時授予兩者，那麼允許呼叫方存取XACML 介面本身就會悄悄地允許其存取那些端點。設為空字串表示沒有人擁有該角色，這會對每個呼叫方關閉這三個端點；這是在不關閉 xacml.enabled、從而不連帶失去內嵌簽發與存取 PEP 的情況下移除 XACML 介面的方法。"
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "授予 PIV_KEY_RECOVERY 角色的群組"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "其成員持有內建 PIV_KEY_RECOVERY 角色（#1955）的目錄群組；存取控制原則要求在 Admin Write 之外還具備該角色，才能復原他人的託管 piv-key-management 金鑰（piv.keyEscrow）。該金鑰可以解密此人的郵件，因此在管理員將人員加入該群組之前，沒有人持有該角色。空白時，任何人都不能復原他人的金鑰；持有人可在入口網站上復原自己的金鑰。"
   },
   "roles.authzenPepGroup|label": {
     "en": "8dacfdf5504e732a",
@@ -12954,141 +13098,5 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "僅適用於協定偵錯工具監聽器：http.http2MaxConcurrentStreams。預設值 -1 依循 http.http2MaxConcurrentStreams；其他任何值只對此監聽器生效。一條 HTTP/2 連線可同時開啟的請求數（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的串流會被拒絕，直到有串流結束。預設值 100 是 RFC 9113 建議的最小值；node 自己的值沒有上限，這會讓一條連線承載成千上萬條連線的工作量。它限制一條連線上的工作量，正如 http.maxConnections 限制連線數。新連線會立即依循變更，已開啟的連線會收到新值。"
-  },
-  "piv.attestationAnchors|label": {
-    "en": "ebc10f6a7dcbbf58",
-    "text": "PIV 證明根憑證（PEM）"
-  },
-  "piv.attestationAnchors|description": {
-    "en": "487e76edeb4446b9",
-    "text": "YubiKey PIV 金鑰證明必須鏈結到的根憑證，以 PEM 套件形式提供。空白時使用 Yubico 發布的兩個根憑證（Yubico PIV Root CA Serial 263751，以及適用於韌體 5.7.4 及更新版本的 Yubico Attestation Root 1），它們隨附於 common/pki_piv_anchors.json 並在其中以 SHA-256 釘選，同時附帶 Yubico 的 PIV 中繼憑證。此處填入的憑證會取代隨附的根憑證。"
-  },
-  "piv.requireAttestation|label": {
-    "en": "4e11b0db111faccf",
-    "text": "要求 PIV 設定檔提供 PIV 證明"
-  },
-  "piv.requireAttestation|description": {
-    "en": "ef38975436c5ac4f",
-    "text": "開啟時，piv-auth、piv-sign、piv-key-management 或 piv-card-auth 憑證的要求若未攜帶可驗證的 YubiKey PIV 證明即會被拒絕（STS-PIV-0010）。來自 EST /serverkeygen 的託管 piv-key-management 金鑰是例外：它由本服務產生。關閉（預設值）時，此類未帶證明的要求會在沒有硬體證據的情況下簽發；攜帶無法驗證之證明的要求在兩種情況下都會被拒絕。"
-  },
-  "piv.pinPolicy|label": {
-    "en": "0f683a0cb1db1988",
-    "text": "經證明的 PIV 金鑰可具有的最弱 PIN 原則"
-  },
-  "piv.pinPolicy|description": {
-    "en": "c3f9fcec406b9806",
-    "text": "證明中的 PIN 原則至少必須達到的程度。`once`：每個工作階段輸入一次 PIN（Bio 金鑰的 match-once 也算）；`always`：每次使用前都輸入 PIN（match-always 也算）。`any`（預設值）不要求任何 PIN 原則。證明較弱的金鑰會被拒絕（STS-PIV-0011）。"
-  },
-  "piv.touchPolicy|label": {
-    "en": "a88f111c7b13657f",
-    "text": "經證明的 PIV 金鑰可具有的最弱觸碰原則"
-  },
-  "piv.touchPolicy|description": {
-    "en": "d78f0d5df0256787",
-    "text": "證明中的觸碰原則至少必須達到的程度。`cached`：一次觸碰，記住 15 秒；`always`：每次使用都需觸碰。`any`（預設值）不作要求。證明較弱的金鑰會被拒絕（STS-PIV-0012）。"
-  },
-  "piv.cardAuthSignIn|label": {
-    "en": "61b2226403ad5c61",
-    "text": "允許 piv-card-auth 憑證登入"
-  },
-  "piv.cardAuthSignIn|description": {
-    "en": "1852da24c3fbfade",
-    "text": "piv-card-auth（插槽 9e）金鑰無需 PIN 即可使用，用於實體門禁，因此除非開啟此項，否則其憑證在 TLS 登入與 PKINIT 時會被拒絕（STS-PIV-0013）。"
-  },
-  "piv.keyEscrow|label": {
-    "en": "f2efc85c3d2bac38",
-    "text": "託管 piv-key-management 金鑰"
-  },
-  "piv.keyEscrow|description": {
-    "en": "cf9618144b67dff3",
-    "text": "開啟時，針對 piv-key-management 設定檔的 EST /serverkeygen 會保留所產生的私密金鑰，並以金鑰加密金鑰密封，讓持有人（在入口網站上，重新登入後）或擁有 PIV 金鑰復原角色的管理員在卡片遺失後復原它並解密舊郵件。若未持有金鑰加密金鑰則拒絕（STS-PIV-0020）。託管金鑰絕不是硬體證據。關閉（預設值）時，/serverkeygen 會拒絕 piv-key-management 設定檔（STS-PIV-0021），因此 9d 金鑰在卡片上產生，且不保存在其他任何地方。"
-  },
-  "piv.externalIssuers|label": {
-    "en": "e96143ab9556db35",
-    "text": "依卡片 UUID 對應的外部 PIV 或 CAC 簽發 CA（PEM）"
-  },
-  "piv.externalIssuers|description": {
-    "en": "0fb91dba2cb957d3",
-    "text": "其 PIV 或 CAC 卡片憑證可依 FIPS 201 卡片 UUID 為某人登入的簽發 CA：由其中一個 CA 直接簽發、宣告 piv.externalPolicyOids 中某項原則、且恰好攜帶一個 urn:uuid subjectAltName 的用戶端憑證，會對應到其 stsPivCardUuid 保存該 UUID 的唯一一個人。絕不依其名稱對應，也不會建立任何項目。該 CA 也必須位於某個用戶端信任存放區中，否則交握會先拒絕它。空白（預設值）時不對應任何內容。"
-  },
-  "piv.externalPolicyOids|label": {
-    "en": "930c5800dfa36905",
-    "text": "外部卡片必須宣告的 PIV Authentication 原則"
-  },
-  "piv.externalPolicyOids|description": {
-    "en": "2398931e8d58f5c4",
-    "text": "外部卡片的憑證必須宣告其中之一才能依其卡片 UUID 對應的憑證原則：預設為 id-fpki-common-authentication（Federal PKI Common Policy 的 PIV Authentication）與 id-fpki-certpcy-pivi-hardware（PIV-I）。請在此加入 CAC 簽發者自己的硬體原則。"
-  },
-  "pki.paranoidPivAttestation|label": {
-    "en": "e645d02c49d2f9bf",
-    "text": "偏執：YubiKey PIV 金鑰證明鏈"
-  },
-  "pki.paranoidPivAttestation|description": {
-    "en": "fdb7c0eb631758ea",
-    "text": "使用情境 `piv-attestation`（#1955）：PIV 註冊的插槽證明憑證與 f9 證明憑證。偏執模式檢查目前時刻的有效期間、到 piv.attestationAnchors 的路徑，以及在憑證鏈指明清單時的撤銷狀態。關閉時，只有此使用情境僅執行路徑檢查而不執行欄位檢查，其他每一列與主開關皆不受影響；在產品模式下關閉時，會記錄一次日誌（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
-  },
-  "pki.paranoidPivCard|label": {
-    "en": "4078a93e7117d6f9",
-    "text": "偏執：依卡片 UUID 對應的外部 PIV 或 CAC 卡片"
-  },
-  "pki.paranoidPivCard|description": {
-    "en": "d4d5fb070575e1c6",
-    "text": "使用情境 `piv-card`（#1955）：來自 piv.externalIssuers 中簽發 CA、依其卡片 UUID 對應的用戶端憑證。偏執模式在一跳簽發者檢查之外，還檢查 keyUsage digitalSignature 與葉憑證的有效期間。關閉時，只有此使用情境僅執行簽發者檢查，其他每一列與主開關皆不受影響；在產品模式下關閉時，會記錄一次日誌（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
-  },
-  "roles.pivKeyRecoveryGroup|label": {
-    "en": "2f231e1e99785dc6",
-    "text": "授予 PIV_KEY_RECOVERY 角色的群組"
-  },
-  "roles.pivKeyRecoveryGroup|description": {
-    "en": "801616eea12559a5",
-    "text": "其成員持有內建 PIV_KEY_RECOVERY 角色（#1955）的目錄群組；存取控制原則要求在 Admin Write 之外還具備該角色，才能復原他人的託管 piv-key-management 金鑰（piv.keyEscrow）。該金鑰可以解密此人的郵件，因此在管理員將人員加入該群組之前，沒有人持有該角色。空白時，任何人都不能復原他人的金鑰；持有人可在入口網站上復原自己的金鑰。"
-  },
-  "openpgp.algorithms|label": {
-    "en": "6973a8aeaa30b96b",
-    "text": "接受的演算法"
-  },
-  "openpgp.algorithms|description": {
-    "en": "7bf4b57c9c6e7d1f",
-    "text": "金鑰可以使用的 OpenPGP 演算法，依優先順序。先是 RFC 9980 複合演算法：ML-DSA-65+Ed25519 與 ML-DSA-87+Ed448 用於簽章，ML-KEM-768+X25519 與 ML-KEM-1024+X448 用於加密。然後是經典名稱：ed25519、ed448、eddsaLegacy/ed25519Legacy，nistP256、nistP384 與 nistP521 上的 ecdsa，rsaSign 與 rsaEncryptSign，x25519、x448，curve25519Legacy 及相同 NIST 曲線上的 ecdh，以及 rsaEncrypt。不在此清單中的名稱在登記和驗證時被拒絕（STS-OPENPGP-0004）。未實作 SLH-DSA。預設值列出上述每一個。"
-  },
-  "openpgp.pqcOnly|label": {
-    "en": "d3ff53ec011bbf1f",
-    "text": "僅登記後量子金鑰"
-  },
-  "openpgp.pqcOnly|description": {
-    "en": "a42ec597602f45d5",
-    "text": "開啟後，新登記的金鑰必須使用 openpgp.algorithms 點名的後量子演算法：簽章金鑰為 ML-DSA-65+Ed25519 或 ML-DSA-87+Ed448，若有加密金鑰則為 ML-KEM-768+X25519 或 ML-KEM-1024+X448。它只收窄登記：已經登記的經典金鑰仍可驗證，仍可接收郵件。不能與 openpgp.pqcAlongsideClassical 同時開啟（STS-OPENPGP-0027）。預設關閉。"
-  },
-  "openpgp.pqcAlongsideClassical|label": {
-    "en": "57f71c1990eb46d9",
-    "text": "後量子金鑰與經典金鑰並存"
-  },
-  "openpgp.pqcAlongsideClassical|description": {
-    "en": "2b5f6cf2a07130e5",
-    "text": "開啟後，新登記的金鑰必須同時帶有後量子演算法和另一個經典演算法。ML-DSA-65+Ed25519 這樣的複合名稱只算後量子，因此經典的一半是另一把金鑰，例如旁邊的 Ed25519 或 X25519 子金鑰。已經登記的金鑰保持原樣。不能與 openpgp.pqcOnly 同時開啟（STS-OPENPGP-0027）。預設關閉。"
-  },
-  "pki.sshUserCaAlgorithms|label": {
-    "en": "1fa9bf9eedbabd99",
-    "text": "SSH 使用者 CA 演算法"
-  },
-  "pki.sshUserCaAlgorithms|description": {
-    "en": "5c4c22c2ab500fd4",
-    "text": "SSH 使用者憑證授權單位可使用的演算法，依偏好順序排列。ssh-mldsa-65 是 ML-DSA-65（FIPS 204），使用本服務定義的傳輸名稱，因為 OpenSSH 沒有定義：公開金鑰與簽章都是原始格式，形式與 ssh-ed25519 相同。本服務發布的 OpenSSH TrustedUserCAKeys 行始終是此清單中的第一個傳統演算法；若清單只列出 ssh-mldsa-65，則為 ssh-ed25519。不理解 ML-DSA 的對端會繼續信任該行。ML-DSA 授權單位的金鑰發布在 GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65；標準 OpenSSH 目前還無法驗證 ML-DSA 憑證。不提供 ssh-rsa（SHA-1）。只有在此執行環境能產生該金鑰時才會建立 ML-DSA 授權單位；否則憑證維持傳統演算法（記錄 STS-PKI-0290，傳統授權單位仍會回應），除非 pki.sshUserCaPqcOnly 已開啟。"
-  },
-  "pki.sshUserCaPqcOnly|label": {
-    "en": "74aae1308361ba58",
-    "text": "SSH 使用者憑證僅使用後量子演算法"
-  },
-  "pki.sshUserCaPqcOnly|description": {
-    "en": "dcbf21b3230dcf07",
-    "text": "開啟後，新的 SSH 使用者憑證只由 ML-DSA 授權單位簽署，不使用其他任何單位。標準 OpenSSH 目前還無法驗證 ML-DSA 憑證，因此只有能驗證 ssh-mldsa-65 並信任 GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65 上金鑰的 SSH 伺服器才會接受這些憑證。該路徑上的預設行仍是傳統金鑰。如果領域沒有 ML-DSA 授權單位（此執行環境無法產生 ML-DSA，或 ssh-mldsa-65 不在 pki.sshUserCaAlgorithms 中），請求會被拒絕（STS-PKI-0297），而不是回傳一張傳統憑證。已簽發的傳統憑證仍可驗證。不能與 pki.sshUserCaPqcAlongsideClassical 同時開啟（STS-PKI-0296）。預設關閉。"
-  },
-  "pki.sshUserCaPqcAlongsideClassical|label": {
-    "en": "c3201f8841200c32",
-    "text": "SSH 使用者憑證同時帶有後量子憑證"
-  },
-  "pki.sshUserCaPqcAlongsideClassical|description": {
-    "en": "b38eab63ec092b6c",
-    "text": "開啟後，當 ML-DSA 機構存在時，新的 SSH 使用者憑證簽發兩次：經典憑證，即 OpenSSH 用戶端使用的那一份，以及旁邊的一份 ML-DSA 憑證。不能與 pki.sshUserCaPqcOnly 同時開啟（STS-PKI-0296）。預設關閉。複合簽章不是 OpenSSH 的概念；經典憑證和 ML-DSA 憑證是兩個簽章，不是一個混合簽章。"
   }
 }

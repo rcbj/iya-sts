@@ -97,7 +97,7 @@
   },
   "endpoints.route./access/v1/access-requests/schema.name": {
     "en": "e39be1976aa651db",
-    "text": "مخطط تقديم طلب الوصول"
+    "text": "مخطط إرسال طلب الوصول"
   },
   "endpoints.route./access/v1/access-requests/:id.name": {
     "en": "c8bcbb33d07cfb8f",

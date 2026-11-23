@@ -16362,6 +16362,15 @@ const SETTINGS = [
     description: 'The most access requests one realm holds pending; past ' +
                  'it a submission is refused 503 until some are decided or ' +
                  'expire.' },
+  { key: 'authzen.accessRequestMaxDenials', group: 'AuthZEN',
+    label: 'Requestable denials a realm records',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_MAX_DENIALS', type: 'int',
+    dflt: 100000, min: 1, max: 10000000, runtime: true,
+    description: 'The most requestable denials one realm records by ' +
+                 'evaluation_id (#1204). Past it a new denial is not ' +
+                 'recorded, and is still requestable by its ' +
+                 'binding_token; the access request job removes a record ' +
+                 'a day after its window.' },
   { key: 'authzen.callbackAttempts', group: 'AuthZEN',
     label: 'Access request callback attempts',
     env: 'STS_AUTHZEN_CALLBACK_ATTEMPTS', type: 'int',
@@ -16378,8 +16387,9 @@ const SETTINGS = [
     label: 'Access request callback backoff (seconds)',
     env: 'STS_AUTHZEN_CALLBACK_BACKOFF_S', type: 'int',
     dflt: 60, min: 60, max: 86400, runtime: true,
-    description: 'How long to wait after a failed access request ' +
-                 'callback before the next attempt (#1202). The ' +
+    description: 'How long to wait after the first failed access ' +
+                 'request callback before the next attempt (#1202). Each ' +
+                 'later wait is twice the one before it, up to a day. The ' +
                  'authzen.access-requests job runs every 60 seconds, so ' +
                  'a shorter wait could not be honoured. An ' +
                  'application\'s appAuthzenCallbackConfig may set a ' +

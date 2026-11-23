@@ -97,7 +97,7 @@
   },
   "endpoints.route./access/v1/access-requests/schema.name": {
     "en": "e39be1976aa651db",
-    "text": "Ang submission schema ng isang access request"
+    "text": "Ang schema ng pagsusumite ng isang kahilingan sa access"
   },
   "endpoints.route./access/v1/access-requests/:id.name": {
     "en": "c8bcbb33d07cfb8f",
