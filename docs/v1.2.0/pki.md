@@ -1222,7 +1222,9 @@ Protocols → PKI trust has four tabs:
   `self-signed`, `thumbprint-only` (only a thumbprint is held) or `unreadable`.
   It reads the certificates on applications and federation relationships, the
   `x5c` of their JWK sets, the settings that hold certificates or trust anchors,
-  the realm's federated SPIFFE bundles and GNAP clients' keys. The default
+  the realm's federated SPIFFE bundles, GNAP clients' keys and the
+  TLS-terminating proxies trusted to forward a client certificate
+  (`tls.trustedProxyCertificates`, listed as `thumbprint-only`). The default
   realm's tab also lists the cloud providers' certificates the image ships and
   the client-certificate truststore, which are the same for every realm. The daily `pki.pins.audit` job writes it, and
   **Recheck now** (`POST /admin-api/pki/trust/recheck`) does so on demand. The job logs what changed (`STS-PKI-0263`,

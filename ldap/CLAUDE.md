@@ -4585,8 +4585,13 @@ its SubjectPublicKeyInfo's SHA-256. This file owns:
   `directory_codec.js` derives one key per stored value, lower-cased, and one
   `upn:<lower-cased>` per `userPrincipalName`, so the `upn` method is the
   same probe; the `email` method is `peopleByMail()`. A windowed process asks
-  the store, the resident entries are walked, as `pivCardHolders()` does. No
-  schema moves. Recording a binding is a write, so it is keyed; a
+  the store's index alone (a person is always windowed); a process with no
+  window reads only the in-memory HOLDERS of `stsCertificateBinding` or
+  `userPrincipalName` through `eachHolderOfAny()`, never every entry — the
+  uniqueness check runs on every write carrying a binding, and run
+  45236493306's walk guards (`tests/no_full_directory_walk_in_jobs.js`,
+  `..._in_requests.js`) found it reaching `eachEntryInRealm()` from
+  `putEntry()`, so from the CRL and federation jobs. No schema moves. Recording a binding is a write, so it is keyed; a
   `userPrincipalName` stored before #2012 is keyed by
   `persistence/granting_index_backfill.js`'s second walk, which re-keys every
   entry naming one of `directory_codec.BACKFILL_ATTRIBUTES` once

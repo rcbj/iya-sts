@@ -13666,9 +13666,14 @@ function pivCardHolders(uuid) {
 //
 // A windowed process asks the store's `certificatebinding` index alone (a
 // key the codec derives, so no schema moves; a person is always windowed,
-// #349); only a process with no window walks its entries. People only — a binding signs
-// a person in. At most three are answered: the caller asks whether there is
-// exactly one.
+// #349). A process with no window holds its directory as a Map in memory and
+// reads only the HOLDERS of the attribute asked about (`eachHolderOfAny()`,
+// the barrier `tests/no_full_directory_walk_in_jobs.js` names), never every
+// entry: this is asked on every write that carries a binding (the
+// uniqueness check of `certificateBindingRefusal()`), so a scheduler job
+// writing a CRL or a federation entry must not reach a walk (run
+// 45236493306). People only — a binding signs a person in. At most three are
+// answered: the caller asks whether there is exactly one.
 // ---------------------------------------------------------------------------
 /**
  * The people of the ambient realm a certificate sign-in binding names, each
@@ -13730,7 +13735,12 @@ function certificateBindingHolders(kind, value) {
               ', asked.');
     return indexed;
   }
-  eachEntryInRealm(function (entry) {
+  // NO WINDOW: the in-memory holders of the one attribute the value lives
+  // in, `peopleByMail()`'s fallback asked of the holders rather than of
+  // every entry.
+  eachHolderOfAny([kind === 'upn' ? 'userprincipalname'
+                                  : 'stscertificatebinding'],
+  function (entry) {
     if (holds(entry)) {
       add(entry);
     }
