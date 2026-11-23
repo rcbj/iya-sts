@@ -44,6 +44,8 @@
 // argues it both ways round), built at 23c after the eligibility module.
 // ===========================================================================
 import helpers = require('../common/helpers');
+// The role step's refusals as catalog sentences (#2006).
+import Sentence = require('../common/sentence');
 import InstanceSlot = require('../common/instance_slot');
 
 const { log } = helpers;
@@ -150,7 +152,8 @@ class RoleSelection {
   validateChoice(question: {
     username: string; application: string; offered: any[]; chosen: string[];
     acr?: string; amr?: string[];
-  }): { ok: boolean; rows?: SelectionRow[]; code?: string; why?: string } {
+  }): { ok: boolean; rows?: SelectionRow[]; code?: string;
+         why?: Sentence } {
     const { log, errorCodes, now } = this.deps;
     const asked = question || ({} as any);
     const offered = Array.isArray(asked.offered) ? asked.offered : [];
@@ -170,7 +173,7 @@ class RoleSelection {
     if (stranger.length) {
       log.debug("Leaving RoleSelection.validateChoice(). Not offered.");
       return errorCodes.mark({ ok: false, code: 'STS-XACML-0325',
-        why: 'A role was chosen that this sign-in did not offer.' },
+        why: Sentence.say('refusals.authn.roleNotOffered') },
         'STS-XACML-0325');
     }
     const groups: Record<string, number> = {};
@@ -188,7 +191,7 @@ class RoleSelection {
     if (clash) {
       log.debug("Leaving RoleSelection.validateChoice(). Exclusive.");
       return errorCodes.mark({ ok: false, code: 'STS-XACML-0326',
-        why: 'At most one of these roles may be chosen together.' },
+        why: Sentence.say('refusals.authn.roleExclusive') },
         'STS-XACML-0326');
     }
     const required = offered.filter(function (row: any) {
@@ -199,7 +202,7 @@ class RoleSelection {
     })) {
       log.debug("Leaving RoleSelection.validateChoice(). Required left out.");
       return errorCodes.mark({ ok: false, code: 'STS-XACML-0327',
-        why: 'This sign-in needs at least one of its required roles.' },
+        why: Sentence.say('refusals.authn.roleRequiredLeftOut') },
         'STS-XACML-0327');
     }
     // NOW, NOT WHEN THE PAGE WAS DRAWN: the policy is asked again for each
@@ -214,7 +217,7 @@ class RoleSelection {
     if (lapsed.length) {
       log.debug("Leaving RoleSelection.validateChoice(). No longer eligible.");
       return errorCodes.mark({ ok: false, code: 'STS-XACML-0328',
-        why: 'A role chosen is no longer available. Choose again.' },
+        why: Sentence.say('refusals.authn.roleLapsed') },
         'STS-XACML-0328');
     }
     const at = now();

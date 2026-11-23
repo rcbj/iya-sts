@@ -173,6 +173,8 @@
 
 import ModelTables = require('./model_tables');
 import helpers = require('./helpers');
+// A refusal's sentence as a catalog message (#2006).
+import Sentence = require('./sentence');
 import mode = require('./mode');
 // The one random-value section (#65): every generated password's characters.
 import stsCrypto = require('./crypto');
@@ -1238,6 +1240,38 @@ class PasswordPolicy {
     return out;
   }
 
+  /**
+   * The refusal of a password that breaks a profile's rules, as a catalog
+   * sentence (#2006): the same words `credentials.passwordProblem()` built
+   * from `problemsWith()`'s phrases, each rule a choice in the catalog so
+   * the page draws it in its own language.
+   *
+   * @param password - the password
+   * @param profile - the profile; the default one when absent
+   * @returns the sentence, or null where it breaks no rule
+   */
+  refusalFor(password: unknown, profile?: PasswordProfile | null):
+      Sentence | null {
+    const { log } = this.deps;
+    log.debug("Entering PasswordPolicy.refusalFor().");
+    const rules = profile || this.read(DEFAULT_PROFILE);
+    const text = String(password === undefined || password === null ? '' :
+                        password);
+    const length = Array.from(text).length;
+    const short = length < rules.minLength;
+    const word = this.contextWordIn(text);
+    if (!short && !word) {
+      log.debug("Leaving PasswordPolicy.refusalFor(). None.");
+      return null;
+    }
+    const out = Sentence.say('refusals.password.policy', {
+      short: short ? 'yes' : 'no', min: rules.minLength, length: length,
+      both: short && word ? 'yes' : 'no', hasWord: word ? 'yes' : 'no',
+      word: String(word || ''), profile: String(rules.name) });
+    log.debug("Leaving PasswordPolicy.refusalFor().");
+    return out;
+  }
+
   // The rules as a person reads them, for the forms that ask for a password.
   /**
    * Describes a profile's rules as a person reads them, for the forms that ask
@@ -1480,6 +1514,7 @@ export = {
   save: slot.forward('save'),
   reset: slot.forward('reset'),
   problemsWith: slot.forward('problemsWith'),
+  refusalFor: slot.forward('refusalFor'),
   describe: slot.forward('describe'),
   generate: slot.forward('generate'),
   hashSpec: slot.forward('hashSpec'),

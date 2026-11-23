@@ -113,6 +113,8 @@
 // ===========================================================================
 
 import helpers = require('./helpers');
+// A refusal a person reads, as a catalog sentence (#2006).
+import Sentence = require('./sentence');
 import config = require('./config');
 import crypto = require('./crypto');
 import realms = require('./realms');
@@ -151,7 +153,8 @@ interface TotpSettings {
 // `error_codes.js`'s Symbol, which is not part of this shape.
 type VerifyResult =
   | { ok: true; counter: number; drift: number }
-  | { ok: false; reason: string; detail: string; counter?: number };
+    | { ok: false; reason: string; detail: string | Sentence;
+      counter?: number };
 
 interface OtpauthSpec {
   issuer?: string;
@@ -586,7 +589,9 @@ class Totp {
     if (!/^[0-9]+$/.test(code) || code.length !== digits) {
       log.debug('Leaving Totp.verify(). Not ' + digits + ' digits.');
       return errorCodes.mark({ ok: false, reason: 'shape',
-               detail: 'A code is ' + digits + ' digits.' }, 'STS-AUTHN-0103');
+               detail: Sentence.say('refusals.factor.codeDigits',
+                                    { digits: digits }) },
+                             'STS-AUTHN-0103');
     }
     let secret: Buffer;
     try {
@@ -596,7 +601,7 @@ class Totp {
                 'totp: the stored secret could not be decoded: ' + e.message);
       log.debug('Leaving Totp.verify(). The stored secret is unusable.');
       return errorCodes.mark({ ok: false, reason: 'store',
-               detail: 'The stored shared secret could not be read.' },
+               detail: Sentence.say('refusals.factor.secretUnreadable') },
                              'STS-AUTHN-0104');
     }
     const centre = this.counterAt(now, period);
@@ -622,7 +627,7 @@ class Totp {
       log.debug('Leaving Totp.verify(). No step in the window produced ' +
                 'that code.');
       return errorCodes.mark({ ok: false, reason: 'mismatch',
-               detail: 'That code is not right, or it has expired.' },
+               detail: Sentence.say('refusals.factor.totpMismatch') },
                              'STS-AUTHN-0105');
     }
     // RFC 6238 SECTION 5.2: ONCE. The counter this service last accepted is on
@@ -642,8 +647,7 @@ class Totp {
       log.debug('Leaving Totp.verify(). Already spent.');
       return errorCodes.mark({ ok: false, reason: 'replay',
                counter: matched.counter,
-               detail: 'That code has already been used. Wait for your ' +
-                       'authenticator to show the next one.' },
+               detail: Sentence.say('refusals.factor.totpReplay') },
                              'STS-AUTHN-0106');
     }
     log.debug('Leaving Totp.verify(). Accepted at step ' + matched.counter +

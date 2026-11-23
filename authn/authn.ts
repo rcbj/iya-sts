@@ -12466,7 +12466,7 @@ class Authn {
         pendingMfa.set(String(stepId), step);
       }
       errorCodes.mark(res, String(checked.code));
-      this.stepRefused(res, String(checked.why));
+      this.stepRefused(res, checked.why);
       log.debug("Leaving Authn.rolesAct(). Refused: " + checked.code);
       return;
     }
@@ -17513,8 +17513,8 @@ class Authn {
         pendingMfa.set(String(mfaId), step);
       }
       errorCodes.mark(res, errorCodes.codeOf(answer) || 'STS-AUTHN-0458');
-      this.stepRefused(res, String((answer.errors || [])[0] ||
-                                   'The passkey was not upgraded.'));
+      this.stepRefused(res, (answer.errors || [])[0] ||
+        Sentence.say('refusals.authn.passkeyNotUpgraded'));
       log.debug("Leaving Authn.postLoginUpgradeAct(). Refused.");
       return;
     }

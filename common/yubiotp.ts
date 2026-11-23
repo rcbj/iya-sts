@@ -37,6 +37,8 @@
 // ===========================================================================
 
 import helpers = require('./helpers');
+// A refusal a person reads, as a catalog sentence (#2006).
+import Sentence = require('./sentence');
 import config = require('./config');
 import crypto = require('./crypto');
 import errorCodes = require('./error_codes');
@@ -84,7 +86,7 @@ interface YubiFields {
 
 type YubiVerdict =
   | { ok: true; fields: YubiFields }
-  | { ok: false; reason: string; detail: string };
+    | { ok: false; reason: string; detail: string | Sentence };
 
 /**
  * Yubico OTP as a second factor: the shape of an OTP, its decryption, a
@@ -134,7 +136,8 @@ class YubiOtp {
     };
   }
 
-  private refuse(code: string, reason: string, detail: string): YubiVerdict {
+    private refuse(code: string, reason: string,
+                 detail: string | Sentence): YubiVerdict {
     const { log, errorCodes: codes } = this.deps;
     log.debug("Entering YubiOtp.refuse(). " + code);
     log.debug("Leaving YubiOtp.refuse().");
@@ -261,39 +264,37 @@ class YubiOtp {
     if (!parsed || !parsed.publicId) {
       log.debug("Leaving YubiOtp.open(). Shape.");
       return this.refuse('STS-YUBIOTP-0001', 'shape',
-        'That is not a YubiKey OTP. Touch the key and enter the whole ' +
-        'string it types.');
+        Sentence.say('refusals.factor.yubiShape'));
     }
     const wantPublic = String((secret && secret.publicId) || '');
     if (wantPublic && parsed.publicId !== wantPublic) {
       log.debug("Leaving YubiOtp.open(). Another public id.");
       return this.refuse('STS-YUBIOTP-0003', 'mismatch',
-        'That OTP was not made by the YubiKey enrolled here.');
+        Sentence.say('refusals.factor.yubiOtherKey'));
     }
     const opened = c.yubiotpDecrypt(secret && secret.k, parsed.cipher);
     if (!opened || !opened.ok || !opened.fields) {
-      log.debug("Leaving YubiOtp.open(). Will not decrypt.");
+            log.debug("Leaving YubiOtp.open(). Will not decrypt.");
       return this.refuse('STS-YUBIOTP-0003', 'mismatch',
-        'That OTP does not decrypt under the key enrolled here.');
+        Sentence.say('refusals.factor.yubiNotDecrypted'));
     }
     const fields = opened.fields;
     if (!fields.crcOk) {
-      log.debug("Leaving YubiOtp.open(). CRC.");
+            log.debug("Leaving YubiOtp.open(). CRC.");
       return this.refuse('STS-YUBIOTP-0003', 'mismatch',
-        'That OTP does not decrypt under the key enrolled here.');
+        Sentence.say('refusals.factor.yubiNotDecrypted'));
     }
     const wantPrivate = String((secret && secret.p) || '').toLowerCase();
     if (!wantPrivate || !c.constantTimeEquals(fields.privateId, wantPrivate)) {
-      log.debug("Leaving YubiOtp.open(). Private id.");
+            log.debug("Leaving YubiOtp.open(). Private id.");
       return this.refuse('STS-YUBIOTP-0003', 'mismatch',
-        'That OTP does not decrypt under the key enrolled here.');
+        Sentence.say('refusals.factor.yubiNotDecrypted'));
     }
     const composite = this.composite(fields.use, fields.session);
     if (composite === 0) {
       log.debug("Leaving YubiOtp.open(). Composite zero.");
       return this.refuse('STS-YUBIOTP-0025', 'shape',
-        'That OTP carries a zero counter, which this service does not ' +
-        'accept. Touch the key again.');
+        Sentence.say('refusals.factor.yubiZeroCounter'));
     }
     log.debug("Leaving YubiOtp.open(). Use " + fields.use + ', session ' +
               fields.session + '.');
