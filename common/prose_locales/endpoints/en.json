@@ -118,6 +118,7 @@
   "endpoints.route./.well-known/openpgpkey/policy.name": "Web Key Directory policy (direct method)",
   "endpoints.route./.well-known/hoba/register.name": "Register a HOBA public key",
   "endpoints.route./tls/sign-in.name": "Sign in with a client certificate",
+  "endpoints.route./authn/certificate/continue.name": "Certificate sign-in on its own listener",
   "endpoints.route./tls/server-certificate.name": "The server certificate (PEM)",
   "endpoints.route./.name": "The front page",
   "endpoints.route./home.js.name": "The front page's script",

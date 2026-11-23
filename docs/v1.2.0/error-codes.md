@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6016** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6028** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -77,7 +77,7 @@ is an ordinary outcome.
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 35
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 64
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 76
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 174
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
@@ -4068,6 +4068,18 @@ Raised from: tls/.
 | `STS-TLS-0062` | A server-side TLS socket has no raw socket under it (TLSSocket._parent), so a connection that fails at the TLS layer is closed at once and its alert can be lost to the TCP reset (tls/alert_close.ts, 2026-11-13). | none (logged once) |
 | `STS-TLS-0063` | A certificate this realm issued names its holder as a service account (urn:sts:sa:<name>, #1827), and in its realm that entry is not a service account, or there is none. The TLS client gate (tls_client_certificates.js identityOf()) refuses it as an identity at every door that asks it; each door refuses it under its own code for a certificate that is not an identity. | none (logged): the door's own refusal |
 | `STS-TLS-0064` | Two client-truststore anchors share a subject, and their subject key identifiers do not tell them apart. OpenSSL looks an issuer up by subject name and may check a certificate against either, so a certificate one of them issued may not verify (CERT_SIGNATURE_FAILURE) while both are installed; which one it finds first is not promised. The add is kept and warned, and each row's shadowedBy names the other's fingerprint (the lowest, when several share it). Presenting either self-signed certificate itself is recognised by its fingerprint and verified, when its own purpose, key usage, validity and critical extensions allow a client certificate (#1242). | the add succeeds with warning; the handshake of the certificate itself verifies |
+| `STS-TLS-0065` | certSignIn.profiles is not a JSON array of well-formed certificate sign-in profiles (an id, the issuers' SubjectPublicKeyInfo SHA-256s, keyUsage names, extendedKeyUsage and policy OIDs, known binding methods, a name method only with lowAffinity true). A write is refused; a stored value that is not one is not used, and no certificate is covered by a profile (#2012). | HTTP 400 (the setting write); none (logged) when read |
+| `STS-TLS-0066` | A client certificate a certificate sign-in profile covers is outside it: its keyUsage, its extendedKeyUsage, or the certificate policies RFC 5280 policy processing carries through its path are not the profile's, so it names nobody (#2012). | the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468) |
+| `STS-TLS-0067` | A client certificate's bindings name more than one account: one method found several people, two methods found different people, or the certificate is stored on one person and carries a PIV card UUID another holds; it names nobody (#2012). | the outside-certificate refusal (STS-TLS-0055, STS-AUTHN-0469) |
+| `STS-TLS-0068` | A client certificate a certificate sign-in profile covers is bound to nobody: none of the profile's binding methods found an account (#2012). | the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468) |
+| `STS-TLS-0069` | A value written to stsCertificateBinding is not a certificate sign-in binding in the grammar certificate_binding.ts canonicalises (certificate-sha256:, issuer-serial:, issuer-ski:, spki-sha256:, issuer-subject: or subject:); nothing was written (#2012). | HTTP 400 (the directory write); LDAP constraintViolation |
+| `STS-TLS-0070` | A certificate sign-in binding written to stsCertificateBinding is already held by another entry of the realm, which would make one certificate name two people; nothing was written (#2012). | HTTP 400 (the directory write); LDAP constraintViolation |
+| `STS-TLS-0071` | A certificate sign-in was refused because the realm requires a verified revocation status (certSignIn.requireRevocation) and the status was unknown or not consulted (#2012). | HTTP 200 (GET /tls/sign-in, session.refusedOnRevocation); the sign-in screen's STS-AUTHN-0464 |
+| `STS-TLS-0072` | A request carried an RFC 9440 Client-Cert or Client-Cert-Chain header from a sender that is not a trusted TLS-terminating proxy (tls.trustedProxyCertificates and tls.trustedProxyAddresses), so both were removed before anything read them (#2012). | none (recorded): the request goes on without them |
+| `STS-TLS-0073` | A trusted TLS-terminating proxy forwarded a Client-Cert that is not an RFC 9440 byte sequence of one certificate, or whose chain does not verify to the client truststore, so the request presents no client certificate (#2012). | none (logged): the request goes on with no certificate |
+| `STS-TLS-0074` | A certificate sign-in handoff (/authn/certificate/continue) named no live handoff: unknown, used, expired, or certSignIn.handoff is off (#2012). | HTTP 400 |
+| `STS-TLS-0075` | A certificate sign-in handoff arrived without the sign-on session cookie of the browser that started it, so the certificate was not bound to that sign-in: the listener does not share the main port's host name and is not under authn.cookieDomain, or another browser opened the link (#2012). | HTTP 403 |
+| `STS-TLS-0076` | Only one of tls.trustedProxyCertificates and tls.trustedProxyAddresses is set, so no forwarded client certificate is read: a TLS-terminating proxy is trusted by both its certificate and its address (#2012). | none (logged) |
 
 ## STS-VC
 

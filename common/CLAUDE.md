@@ -12337,6 +12337,80 @@ deleted with `users/delete`. Three things now:
 **A re-homing is not a delete**: `cell_rehome.ts` passes `moved`, and nothing is
 revoked. `tests/deleted_certificates.js` holds all of it.
 
+## 3dh. CERTIFICATE SIGN-IN PROFILES, RFC 9440 AND THE HANDOFF (#2012, 2026-11-23)
+
+Measured against a PIV sign-in requirements document (FIPS 201-3 section
+6.2.3.1's PKI-AUTH over client-authenticated TLS); rcbj's three decisions on
+#2012 are below. Every piece is OFF or EMPTY by default, and then the service
+is exactly what it was. The headers of the three files argue them in full.
+
+* **`certificate_binding.ts` — A PROFILE PER ISSUER, `certSignIn.profiles`.**
+  A JSON array per realm. A profile COVERS a client certificate when one of
+  its `issuers` (the SHA-256 of a CA's SubjectPublicKeyInfo, so a renewed CA
+  certificate under the same key is the same issuer) is in the VALIDATED
+  path above the leaf — OpenSSL's, which `revocation_status.fromSocket()`
+  hands down as `input.chain`. A covered leaf is held to the profile's
+  `keyUsage` (all), `extendedKeyUsage` (one of) and `policies`, the last
+  through `pki.pathPolicyOutcome()` — RFC 5280 section 6.1 with the profile's
+  policies as initial-policy-set and initial-explicit-policy — so a policy
+  MAPPED to `id-fpki-common-authentication` through a bridge counts, and the
+  one-hop `piv.externalIssuers` mapping is no longer the only way to accept a
+  Federal PKI card. SYNCHRONOUS ON PURPOSE: the doors that read an identity
+  (`checkSocket()`, SCIM, XACML, WS-Trust) are synchronous, and the path's
+  signatures were already verified by whoever validated it.
+* **THE METHODS, AND rcbj's DECISION 1 (2026-11-23).** High affinity:
+  `certificate-sha256` (#1061's `userCertificate`, or a stored value),
+  `issuer-serial`, `issuer-ski`, `spki-sha256`, `card-uuid`; the default is
+  `certificate-sha256` and `issuer-serial`. Low affinity — `upn` (SAN UPN to
+  `userPrincipalName`), `email` (SAN rfc822Name to `mail`), `issuer-subject`,
+  `subject` — **only on a profile with `"lowAffinity": true`**; the write rule
+  refuses a name method without it (STS-TLS-0065), so a failed high-affinity
+  match cannot fall back to a name: there is none to fall back to. This
+  reverses #1061's "never by its name" for that opted-in case alone.
+* **EVERY ENABLED METHOD IS ASKED, AND THEY MUST AGREE.** One naming two
+  people, or two naming different people, is `STORED_TWICE`; none is
+  `NOT_STORED`; outside the profile is `NOT_STORED` with STS-TLS-0066 in the
+  log. Those two errors were kept rather than new ones added because every
+  door already refuses both under its own codes (`tls/tls_server.js`, the
+  screen, SCIM, WS-Trust, XACML, SSF) and "names more than one account" /
+  "names nobody" is each one condition. A covered certificate never reaches
+  the older two mappings. **With no profile covering it**, #1061 and #1955 D8
+  answer as before, with one change: a certificate stored on one person whose
+  card UUID another holds is now `STORED_TWICE` (STS-TLS-0067), where it
+  signed in the first.
+* **`stsCertificateBinding`**, a person attribute (OID 950), holds the stored
+  values in the grammar `bindingValueOf()` canonicalises; `ldap/CLAUDE.md`
+  has the write guard and the `certificatebinding` index.
+* **`certSignIn.requireRevocation`, rcbj's decision 3.** `auto` (the default)
+  requires a verified status — verdict `good` — in product
+  (`mode.refusesUnknownRevocationStatus()`) and leaves development to
+  `pki.revocationCheck`; `on` requires it everywhere. Asked in
+  `tls_server.certificateRefusal()`, so `/tls/sign-in`, the screen and the
+  handoff all take it, and reported as a revocation refusal (`STS-TLS-0071` on
+  `/tls/sign-in`, the screen's STS-AUTHN-0464). Sign-ins only: RFC 8705 and the
+  other doors keep the revocation policy as it was.
+* **`forwarded_client_certificate.ts` — RFC 9440, rcbj's decision 2.** Believed
+  only from a proxy named by BOTH `tls.trustedProxyCertificates` (the SHA-256
+  of the client certificate it connects with, which must have verified) AND
+  `tls.trustedProxyAddresses`; one without the other trusts nobody
+  (STS-TLS-0076). The forwarded chain is verified HERE to the client
+  truststore (`pki.verifyPathToAnchors()`), and the request's `req.socket` is
+  replaced, for that request, by a Proxy over the real socket whose
+  `authorized`, `getPeerCertificate()` and `getPeerX509Certificate()` answer
+  the forwarded certificate — or none: a request from the proxy never
+  presents the proxy's own certificate to a door. Every door reads a client
+  certificate through the socket, so none changed. It runs in `app.js` in the
+  front process before dispatch, so a worker gets the forwarded certificate
+  through `request_pool.js`'s `peerOf()` and never the headers; from any other
+  sender both headers are deleted and recorded (STS-TLS-0072, at most once a
+  minute). `oauth2_bcp.js`'s `no-certificate-header` note says the same.
+* **THE HANDOFF** (`certSignIn.handoff`, rcbj: an option, off by default) is
+  `tls/CLAUDE.md`'s, with the `certificate-sign-in` hosted application.
+* **WHAT HAS NO TEST**: a real handshake through a profile, the handoff over
+  two real listeners, and a real TLS-terminating proxy. `tests/certificate_binding.js`
+  holds the logic in process over certificates made at run time; nothing has
+  been tried with a physical YubiKey.
+
 ## 3ag. `cert_enrollment.ts`: ACME, EST AND SCEP ISSUE THROUGH ONE CORE (2026-09-13)
 
 Asked for as *implement ACME, EST and SCEP, tied to the embedded CA, isolated

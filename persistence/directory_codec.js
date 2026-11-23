@@ -135,6 +135,13 @@ const GRANTING_ATTRIBUTES = Object.freeze(['rolemembergroup', 'owner',
   'appowner', 'stsserviceaccountowner', 'appdelegationsubjectgroup',
   'fedsubjectgroup']);
 
+// THE ATTRIBUTES WHOSE ENTRIES `granting_index_backfill.js` RE-KEYS (#2012):
+// the granting ones (#1311) and the two the `certificatebinding` key is
+// derived from, so a `userPrincipalName` stored before #2012 is found by a
+// low-affinity `upn` binding without waiting for its entry's next write.
+const BACKFILL_ATTRIBUTES = Object.freeze(GRANTING_ATTRIBUTES.concat([
+  'userprincipalname', 'stscertificatebinding']));
+
 // A value written as a DN: an attribute type and `=` at the front. The
 // directory's own `DN_SHAPED`.
 const DN_SHAPED = /^[A-Za-z][A-Za-z0-9-]*=/;
@@ -657,6 +664,7 @@ module.exports = {
   LABEL: LABEL,
   VALUE_INDEXED: VALUE_INDEXED,
   GRANTING_ATTRIBUTES: GRANTING_ATTRIBUTES,
+  BACKFILL_ATTRIBUTES: BACKFILL_ATTRIBUTES,
   grantingKeysOf: grantingKeysOf,
   grantingGroupKeysOf: grantingGroupKeysOf,
   CLASS_INDEXED: CLASS_INDEXED,

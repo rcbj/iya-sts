@@ -2085,6 +2085,14 @@ postgres driver writes and reads every entry through it.
 
 `granting_index_backfill.js` argues it; this is what a maintainer looks for.
 
+* **AND A SECOND WALK SINCE #2012.** The candidates are the rows naming one of
+  `directory_codec.BACKFILL_ATTRIBUTES` — the six granting attributes and
+  `userPrincipalName` / `stsCertificateBinding`, which the `certificatebinding`
+  key is derived from — and each candidate's whole `valueKeys` is recomputed,
+  so one walk keys both. A store that finished #1311's walk runs again under
+  the new mark and cursor (`$index-complete-2$`, `$cursor-2$`, same handle);
+  the old two rows are left. Same job id, same budget.
+
 * **A CLUSTER SCHEDULER JOB, `persistence.granting-key-backfill`, NOT A STEP
   OF THE START.** The session index's backfill (#350) is a start step because
   a window cannot answer a session walk without it, and a throw there is

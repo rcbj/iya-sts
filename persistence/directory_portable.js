@@ -1614,7 +1614,7 @@ function create(deps) {
     readPage: function (cursor, limit) {
       log.debug("Entering grantingOps.readPage().");
       const granting = JSON.stringify(
-        require('./directory_codec').GRANTING_ATTRIBUTES);
+        require('./directory_codec').BACKFILL_ATTRIBUTES);
       const pick = 'SELECT realm, dn_key, CASE WHEN JSON_OVERLAPS(' +
         'attr_names, ?) THEN attrs END AS attrs, CASE WHEN JSON_OVERLAPS(' +
         'attr_names, ?) THEN value_keys END AS value_keys FROM ' +
