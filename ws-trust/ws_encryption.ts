@@ -19,6 +19,7 @@ import DomainMap = require('../common/domain_map');
 import CertificateTrust = require('../common/certificate_trust');
 import xmldom = require('../common/xml_parser');
 import WsDecryptionKey = require('./ws_decryption_key');
+import WebWsProtection = require('./web_ws_protection');
 
 const { DOMParser, XMLSerializer } = xmldom;
 const log = helpers.log;
@@ -35,39 +36,28 @@ const FRAGMENT = 'urn:iya-sts:ws-encryption:fragment';
 const HOLDER = 'iyaWsEncryptionHolder';
 
 // THE ONLY PREFIXES AN EXPRESSION MAY USE (#1668, rcbj on #1908,
-// 2026-11-18). XPath 1.0 resolves a prefix from the expression's context,
-// never from the document: an expression is the service's, and the
-// request is the requester's. Until then a prefix was read from the
-// element's own declarations first, so a request that bound `wst:` to a
-// namespace of its own could offer a decoy the map then matched. An
-// unprefixed name matches the null namespace only, as XPath 1.0 says.
-const PREFIXES = {
-  soap: 'http://schemas.xmlsoap.org/soap/envelope/',
-  soap11: 'http://schemas.xmlsoap.org/soap/envelope/',
-  soap12: 'http://www.w3.org/2003/05/soap-envelope',
-  wsse: 'http://docs.oasis-open.org/wss/2004/01/' +
-    'oasis-200401-wss-wssecurity-secext-1.0.xsd',
-  wsse11: 'http://docs.oasis-open.org/wss/' +
-    'oasis-wss-wssecurity-secext-1.1.xsd',
-  wsu: 'http://docs.oasis-open.org/wss/2004/01/' +
-    'oasis-200401-wss-wssecurity-utility-1.0.xsd',
-  wst: 'http://docs.oasis-open.org/ws-sx/ws-trust/200512',
-  wst14: 'http://docs.oasis-open.org/ws-sx/ws-trust/200802',
-  wst2005: 'http://schemas.xmlsoap.org/ws/2005/02/trust',
-  wst2004: 'http://schemas.xmlsoap.org/ws/2004/04/trust',
-  wsa: 'http://www.w3.org/2005/08/addressing',
-  wsa2004: 'http://schemas.xmlsoap.org/ws/2004/08/addressing',
-  saml: 'urn:oasis:names:tc:SAML:2.0:assertion',
-  saml11: 'urn:oasis:names:tc:SAML:1.0:assertion',
-  ds: DS,
-  xenc: XENC,
-  wsp: 'http://schemas.xmlsoap.org/ws/2004/09/policy'
-};
+// 2026-11-18): `web_ws_protection.ts`'s, since #1917, so the console's
+// XPath builder writes with the same table this evaluates with. Why a
+// prefix is the service's and never the request's is argued there.
+const PREFIXES = WebWsProtection.PREFIXES;
 
-// The requests whose signature was accepted (handleRst()), for the
-// recipient expression: a certificate it selects must be one that signature
-// covers (recipientOf()).
-const SIGNED = new WeakSet();
+// WHAT THE ACCEPTED SIGNATURE COVERS, per request (handleRst() marks it,
+// markSigned()), for the recipient expression (recipientOf()) and for the
+// request signing map (`ws_integrity.ts`). Worked out ONCE per request.
+//
+// RESOLVED TO NODES BEFORE ANYTHING IS OPENED (#2007's review, the merger,
+// 2026-11-23). A signature verified over the message as it arrived
+// (encrypt-then-sign) references the CIPHERTEXT, whose ids are gone once
+// decryptOne() puts the plaintext in its place. Matching ids against the
+// opened document let an on-path party add an EncryptedHeader, encrypted
+// to the realm's certificate, that opened to a header carrying the id of a
+// referenced EncryptedData: unreferenced as it arrived, so the signature
+// still verified, and "signed" once opened. So a reading over the arrival
+// is a set of NODES, and a restored element is covered only where the
+// ciphertext it replaced (`_stsFrom`) was one of them. A reading over the
+// opened copy (sign-then-encrypt) is by id, against the same plaintext it
+// verified, where such an injection is a repeated id the reader refused.
+const SIGNED = new WeakMap();
 
 const NOT_AN_ELEMENT = {
   thumbprint: true, ski: true, 'issuer-serial': true,
@@ -161,17 +151,79 @@ export = class WsEncryption {
   }
 
   /**
-   * Records that a request's WS-Security signature was accepted, so a
-   * certificate the recipient expression selects may be one it covers.
+   * Records that a request's WS-Security signature was accepted, and what
+   * it covers, before the request is opened: a certificate the recipient
+   * expression selects, and an element of the request signing map, must
+   * be one it covers (coveredBySignature()).
    *
-   * @param doc - the request
+   * @param doc - the request, not yet opened
+   * @param overOpened - the signature verified over the opened copy
+   *   (sign-then-encrypt), so its ids are the plaintext's
    */
-  static markSigned(doc): void {
+  static markSigned(doc, overOpened?: boolean): void {
     log.debug("Entering WsEncryption.markSigned().");
-    if (doc) {
-      SIGNED.add(doc);
+    if (!doc) {
+      log.debug("Leaving WsEncryption.markSigned(). No request.");
+      return;
     }
-    log.debug("Leaving WsEncryption.markSigned().");
+    if (overOpened) {
+      // Read by id once the request is opened, on first use.
+      SIGNED.set(doc, { byId: true, ids: null, own: '' });
+      log.debug("Leaving WsEncryption.markSigned(). Over the opened copy.");
+      return;
+    }
+    const read = WsEncryption.signatureIds(doc);
+    const nodes = new Set();
+    let ownNode = null;
+    if (read) {
+      const all = doc.getElementsByTagNameNS('*', '*');
+      for (let i = 0; i < all.length; i++) {
+        const id = WsEncryption.idOf(all[i]);
+        if (id && read.ids.has(id)) {
+          nodes.add(all[i]);
+        }
+        if (id && read.own && id === read.own) {
+          ownNode = all[i];
+        }
+      }
+    }
+    SIGNED.set(doc, { byId: false, nodes: nodes, ownNode: ownNode });
+    log.debug("Leaving WsEncryption.markSigned(). " + nodes.size +
+              " node(s).");
+  }
+
+  // The ids the request's signature references, and its own token's.
+  private static signatureIds(doc): any {
+    log.debug("Entering WsEncryption.signatureIds().");
+    let reading: any = null;
+    try {
+      reading = stsCrypto.readWsSecuritySignature(
+        new XMLSerializer().serializeToString(doc));
+    } catch (e) {
+      log.debug("Caught in WsEncryption.signatureIds(): " +
+                ((e && e.message) || e));
+      // Unreadable is covering nothing.
+      reading = null;
+    }
+    if (!reading || !reading.ok) {
+      log.debug("Leaving WsEncryption.signatureIds(). No reading.");
+      return null;
+    }
+    const ids = new Set((reading.references || []).map(function (one) {
+      return String(one).replace(/^#/, '');
+    }));
+    const own = reading.keyReference && reading.keyReference.kind === 'token'
+      ? String(reading.keyReference.id || '').replace(/^#/, '') : '';
+    log.debug("Leaving WsEncryption.signatureIds(). " + ids.size);
+    return { ids: ids, own: own };
+  }
+
+  // Once per ancestor a coverage walk visits.
+  private static idOf(node): string {
+    return String((node.getAttributeNS &&
+                   node.getAttributeNS(PREFIXES.wsu, 'Id')) ||
+                  (node.getAttribute && (node.getAttribute('Id') ||
+                   node.getAttribute('ID'))) || '');
   }
 
   // Every element restored from ciphertext must be one the map selects, or
@@ -324,16 +376,22 @@ export = class WsEncryption {
    * @param xml - the clear response
    * @param requestDoc - the request, where the recipient is read
    * @param appId - the AppliesTo's application, or ''
+   * @param also - optional; expressions added to a non-empty map for this
+   *   response alone (the signature, under sp:EncryptSignature)
    * @returns `{ ok, xml }` or the fault
    */
-  static protectResponse(xml, requestDoc, appId): any {
+  static protectResponse(xml, requestDoc, appId, also?: string[]): any {
     log.debug("Entering WsEncryption.protectResponse().");
     const id = String(appId || '');
     if (!WsEncryption.on(id, 'wstrust.encryptResponse')) {
       log.debug("Leaving WsEncryption.protectResponse(). Off.");
       return { ok: true, xml: xml };
     }
-    const paths = WsEncryption.stringsOf(id, 'responseElements');
+    const named = WsEncryption.stringsOf(id, 'responseElements');
+    // `also` is what the caller adds to the map for this response alone:
+    // the response's ds:Signature, where it is encrypted too (#1917,
+    // sp:EncryptSignature). It never stands in for an empty map.
+    const paths = named.length ? named.concat(also || []) : named;
     if (!paths.length) {
       log.debug("Leaving WsEncryption.protectResponse(). No expressions.");
       return WsEncryption.fail('STS-WSTRUST-0077', 'RequestFailed',
@@ -418,7 +476,7 @@ export = class WsEncryption {
     return { ok: true };
   }
 
-  private static fail(code, trustFault, reason): any {
+  static fail(code, trustFault, reason): any {
     log.debug("Entering WsEncryption.fail().");
     log.debug("Leaving WsEncryption.fail().");
     return { ok: false, code: code, trustFault: trustFault,
@@ -432,7 +490,7 @@ export = class WsEncryption {
     return value;
   }
 
-  private static applicationId(doc): string {
+  static applicationId(doc): string {
     log.debug("Entering WsEncryption.applicationId().");
     const applies = helpers.firstByLocal(doc, 'AppliesTo');
     const address = applies
@@ -715,6 +773,9 @@ export = class WsEncryption {
       const imported = doc.importNode(kids[i], true);
       if (imported.nodeType === 1) {
         imported._stsRestored = true;
+        // What it replaced, for coverage by a signature over the arrival
+        // (markSigned()): the EncryptedHeader and the EncryptedData.
+        imported._stsFrom = target === node ? [node] : [target, node];
       }
       context.insertBefore(imported, target);
     }
@@ -981,36 +1042,32 @@ export = class WsEncryption {
   // accepted signature's key reference names, or an element inside a part
   // that signature references by id. One anywhere else is a certificate a
   // party on the path could have put there.
-  private static coveredBySignature(doc, node): boolean {
+  static coveredBySignature(doc, node): boolean {
     log.debug("Entering WsEncryption.coveredBySignature().");
-    if (!SIGNED.has(doc)) {
+    const covering = SIGNED.get(doc);
+    if (!covering) {
       log.debug("Leaving WsEncryption.coveredBySignature(). Unsigned.");
       return false;
     }
-    let reading: any = null;
-    try {
-      reading = stsCrypto.readWsSecuritySignature(
-        new XMLSerializer().serializeToString(doc));
-    } catch (e) {
-      log.debug("Caught in WsEncryption.coveredBySignature(): " +
-                ((e && e.message) || e));
-      // Unreadable is not covered.
-      reading = null;
+    if (covering.byId && !covering.ids) {
+      const read = WsEncryption.signatureIds(doc);
+      covering.ids = read ? read.ids : new Set();
+      covering.own = read ? read.own : '';
     }
-    if (!reading || !reading.ok) {
-      log.debug("Leaving WsEncryption.coveredBySignature(). No reading.");
-      return false;
-    }
-    const ids = (reading.references || []).map(function (one) {
-      return String(one).replace(/^#/, '');
-    });
-    const own = reading.keyReference && reading.keyReference.kind === 'token'
-      ? String(reading.keyReference.id || '').replace(/^#/, '') : '';
     let cur = node;
     while (cur && cur.nodeType === 1) {
-      const id = String(cur.getAttributeNS(PREFIXES.wsu, 'Id') ||
-                        cur.getAttribute('Id') || '');
-      if (id && (ids.indexOf(id) >= 0 || (cur === node && id === own))) {
+      if (covering.byId) {
+        const id = WsEncryption.idOf(cur);
+        if (id && (covering.ids.has(id) ||
+                   (cur === node && id === covering.own))) {
+          log.debug("Leaving WsEncryption.coveredBySignature(). Covered.");
+          return true;
+        }
+      } else if (covering.nodes.has(cur) ||
+                 (cur === node && cur === covering.ownNode) ||
+                 (cur._stsFrom && cur._stsFrom.some(function (one) {
+                   return covering.nodes.has(one);
+                 }))) {
         log.debug("Leaving WsEncryption.coveredBySignature(). Covered.");
         return true;
       }
@@ -1273,7 +1330,7 @@ export = class WsEncryption {
 
   // The answer's wsse:Security header, made the first header the first
   // time it is wanted.
-  private static answerSecurity(doc): any {
+  static answerSecurity(doc): any {
     log.debug("Entering WsEncryption.answerSecurity().");
     const envelope = doc.documentElement;
     const soapNs = envelope.namespaceURI;
@@ -1380,7 +1437,8 @@ export = class WsEncryption {
   /**
    * The XPath subset: `/`, `//`, `*`, a name, `prefix:local`, `|`, and
    * predicates `local-name()`, `namespace-uri()` and `@attr` joined by
-   * `and`. Anything else is STS-WSTRUST-0079.
+   * `and`, any of them inside one `not(…)` (#1917: every header block but
+   * wsse:Security). Anything else is STS-WSTRUST-0079.
    *
    * @param doc - the document
    * @param expr - the expression
@@ -1513,6 +1571,18 @@ export = class WsEncryption {
 
   private static onePredicate(term): any {
     log.debug("Entering WsEncryption.onePredicate().");
+    // NOT(…) OVER THE SAME PREDICATES (#1917), so a preset can name every
+    // header block but the security header. It does not nest: the subset
+    // stays one level of negation over terms that each test one element.
+    const negated = /^not\(([\s\S]*)\)$/.exec(term);
+    if (negated) {
+      const inner = WsEncryption.predicatesOf(negated[1].trim());
+      if (inner.some(function (one) { return one.kind === 'not'; })) {
+        throw new Error('a not() inside a not() is not in the subset');
+      }
+      log.debug("Leaving WsEncryption.onePredicate(). not().");
+      return { kind: 'not', terms: inner };
+    }
     let matched = /^local-name\(\)\s*=\s*'([^']*)'$/.exec(term);
     if (matched) {
       log.debug("Leaving WsEncryption.onePredicate(). local-name.");
@@ -1542,6 +1612,9 @@ export = class WsEncryption {
     const parts = [];
     let start = 0;
     let depth = 0;
+    // A not(…)'s own `and` is its own (#1917): split outside parentheses
+    // as well as outside brackets.
+    let parens = 0;
     let quote = false;
     for (let i = 0; i < text.length; i++) {
       const ch = text.charAt(i);
@@ -1554,7 +1627,15 @@ export = class WsEncryption {
         if (depth < 0) {
           throw new Error('a bracket is not opened');
         }
-      } else if (!quote && depth === 0 && text.startsWith(sep, i)) {
+      } else if (!quote && ch === '(') {
+        parens += 1;
+      } else if (!quote && ch === ')') {
+        parens -= 1;
+        if (parens < 0) {
+          throw new Error('a parenthesis is not opened');
+        }
+      } else if (!quote && depth === 0 && parens === 0 &&
+                 text.startsWith(sep, i)) {
         parts.push(text.slice(start, i));
         i += sep.length - 1;
         start = i + 1;
@@ -1629,6 +1710,11 @@ export = class WsEncryption {
 
   // Once per element a predicate considers.
   private static predicateMatches(node, pred): boolean {
+    if (pred.kind === 'not') {
+      return !pred.terms.every(function (one) {
+        return WsEncryption.predicateMatches(node, one);
+      });
+    }
     if (pred.kind === 'local-name') {
       return node.localName === pred.value;
     }
@@ -1665,12 +1751,9 @@ export = class WsEncryption {
 
   private static inOrder(nodes): any[] {
     log.debug("Entering WsEncryption.inOrder().");
-    const unique = [];
-    nodes.forEach(function (node) {
-      if (unique.indexOf(node) < 0) {
-        unique.push(node);
-      }
-    });
+    // A Set, not indexOf(): a broad map selects many nodes (#2007's
+    // review).
+    const unique: any[] = Array.from(new Set(nodes));
     unique.sort(function (a, b) {
       if (a === b) {
         return 0;

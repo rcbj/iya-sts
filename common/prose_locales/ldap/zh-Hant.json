@@ -1327,6 +1327,30 @@
     "en": "0462e40dda10b491",
     "text": "選取 WS-Trust 回應加密所用憑證元素的 XPath 運算式：一個 ds:X509Certificate，或 ValueType 以 #X509v3 結尾的 BinarySecurityToken。子集與元素對應相同。設定之後若什麼都不選中，或選中的元素不是這兩種之一，就沒有接收方，並且不會嘗試下一個來源。選中的憑證元素其文字不是憑證時，是一次已完成加密的故障，並且不會嘗試下一個來源。未設定時，接收方是請求的 WS-Security 簽章所點名的第一個簽章者憑證元素——該簽章的參照所指向的 BinarySecurityToken，或該簽章 KeyInfo 中的 ds:X509Certificate。指紋、Subject Key Identifier 或簽發者與序號不是憑證元素。"
   },
+  "applications.schema.attributes.wstrustSignRequest.what": {
+    "en": "c6e7e2b383b3c121",
+    "text": "TRUE 或 FALSE：要求 AppliesTo 為此應用程式的請求攜帶 WS-Security 訊息簽章，覆蓋 wstrust.signRequest。開啟時，沒有被接受簽章的請求為 FailedCheck，且 wstrustSignRequestElements 選取的每個元素都必須被該簽章涵蓋。開發模式一如既往地相信簽章，但仍會將對應與該簽章所參照的內容進行核對。"
+  },
+  "applications.schema.attributes.wstrustSignRequestElements.what": {
+    "en": "e532921147503182",
+    "text": "WS-TRUST 請求中必須被簽章的元素，每個一條 XPath 1.0 運算式，採用 wstrustEncryptRequestElements 的子集。每個運算式必須至少選取一個元素，且它選取的每個元素都必須是請求中被接受的 WS-Security 簽章所參照的元素，或位於此類元素之內；否則該請求為 FailedCheck。為空時為 SOAP Body，簽章總是涵蓋它。僅在 wstrustSignRequest（或 wstrust.signRequest）開啟時讀取。"
+  },
+  "applications.schema.attributes.wstrustSignResponse.what": {
+    "en": "c3c370b774dafc63",
+    "text": "TRUE 或 FALSE：以 WS-Security 訊息簽章為此應用程式的 WS-Trust 回應簽章，覆蓋 wstrust.signResponse。回應在其 wsse:Security 標頭中攜帶 wsu:Timestamp 與 ds:Signature，以此領域的 XML 簽章金鑰產生，並透過 BinarySecurityToken 參照其憑證；簽章涵蓋 Timestamp 以及 wstrustSignResponseElements 的元素。故障以未簽章形式傳送。開啟時，若無法產生簽章，該請求在兩種模式下都是故障。"
+  },
+  "applications.schema.attributes.wstrustSignResponseElements.what": {
+    "en": "ede8d6da5ff09808",
+    "text": "WS-TRUST 回應中其簽章在 wsu:Timestamp 之外所涵蓋的元素，每個一條 XPath 1.0 運算式，採用 wstrustEncryptResponseElements 的子集。為空時為 SOAP Body。沒有 wsu:Id 的元素會被賦予一個。不比對任何內容的運算式，或選取 wsse:Security 標頭本身的運算式，為故障。"
+  },
+  "applications.schema.attributes.wstrustResponseProtectionOrder.what": {
+    "en": "ea20b5eba3587695",
+    "text": "兩者都開啟時，此應用程式的 WS-Trust 回應簽章與加密的順序，覆蓋 wstrust.responseProtectionOrder：sign-then-encrypt（簽章的摘要針對明文，為 WS-SecurityPolicy 的預設）或 encrypt-then-sign（摘要針對密文）。wsse:Security 標頭依接收方處理它的順序寫入。"
+  },
+  "applications.schema.attributes.wstrustEncryptSignature.what": {
+    "en": "05bb26087cc96574",
+    "text": "TRUE 或 FALSE：同時加密此應用程式的 WS-Trust 回應的 ds:Signature（WS-SecurityPolicy 的 sp:EncryptSignature），覆蓋 wstrust.encryptSignature。僅在回應既簽章又加密且先簽章時讀取；簽章加密給回應的接收方。"
+  },
   "applications.schema.attributes.wstrustDecryptionCertificate.what": {
     "en": "b00a63a9bafc49ad",
     "text": "發給此應用程式的 WS-TRUST 請求所加密到的憑證，PEM。設定後，發給此應用程式的請求以其私密金鑰而非領域的私密金鑰解密，而加密到領域金鑰的發給它的請求是 FailedCheck。公開：應用程式頁面和 GET /admin-api/applications 會提供它。"

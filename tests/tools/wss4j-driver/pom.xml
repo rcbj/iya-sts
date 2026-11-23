@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+  SPDX-License-Identifier: BUSL-1.1
+
+  THE WSS4J DRIVER'S DEPENDENCIES (#1917, #1918), for build.sh and the
+  `wss4j-java` stage of tests/Dockerfile — keycloak-uma-driver's
+  arrangement. Maven RESOLVES them and nothing else: build.sh copies the
+  runtime jars out, holds every one to the sha256 in jars.sha256 (and the
+  directory to exactly that list), and compiles the one source file with
+  javac.
+
+  wss4j-ws-security-dom 4.0.3 is Apache WSS4J's DOM WS-Security engine
+  (Apache-2.0), at its latest release: the stack Apache CXF secures SOAP
+  with, and the independent peer a WS-Trust answer this service signs and
+  encrypts is held to. Its pom pins Apache Santuario and the rest, and
+  nothing here overrides them.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>net.iyasec.sts.tests</groupId>
+  <artifactId>wss4j-driver</artifactId>
+  <version>1</version>
+  <packaging>pom</packaging>
+  <dependencies>
+    <dependency>
+      <groupId>org.apache.wss4j</groupId>
+      <artifactId>wss4j-ws-security-dom</artifactId>
+      <version>4.0.3</version>
+    </dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.8.1</version>
+      </plugin>
+    </plugins>
+  </build>
+</project>

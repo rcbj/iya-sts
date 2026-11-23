@@ -5983,6 +5983,38 @@
     "en": "ffc141f1ac37ec59",
     "text": "Hur engångsinnehållsnyckeln i ett WS-Trust-svar omsluts till mottagarens RSA-publika nyckel. `rsa-oaep` är XML Encryption 1.1:s RSA-OAEP med SHA-256 och MGF1-SHA-256; `rsa-oaep-mgf1p` är OAEP över SHA-1. En mottagare vars certifikat är EC krypteras till med ECDH-ES-nyckelöverenskommelse vad det här än säger. En applikations wstrustKeyTransportAlgorithm åsidosätter detta. `rsa-1_5` är RSAES-PKCS1-v1_5 och är brutet, och det erbjuds eftersom en driftsatt begärare kanske inte godtar något annat. VARNING: rsa-1_5 är endast utvecklingsläge — i produktläge ignoreras det där det läses, på den här inställningen och på en applikations wstrustKeyTransportAlgorithm (rsa-oaep-mgf1p används, loggas en gång, STS-CORE-0106), och att ställa in det avvisas (STS-CORE-0103, STS-REG-0193). Ett wst:EncryptWith-element får namnge den här algoritmen endast medan svarskryptering är på."
   },
+  "wstrust.signRequest|label": {
+    "en": "ee6db27fb290a51c",
+    "text": "Kräv en signerad begäran"
+  },
+  "wstrust.signRequest|description": {
+    "en": "3155eaca9d1a8680",
+    "text": "Om ett RequestSecurityToken vars AppliesTo inte namnger någon egen applikation måste bära en WS-Security-meddelandesignatur. En applikations wstrustSignRequest åsidosätter detta för en begäran vars AppliesTo namnger den, och dess wstrustSignRequestElements namnger vad signaturen dessutom måste täcka utöver SOAP Body. På är en begäran utan godtagen signatur, eller en vars signatur inte täcker ett namngivet element, ett wsse:FailedCheck. Utvecklingsläget tror på en signatur, som det alltid har gjort."
+  },
+  "wstrust.signResponse|label": {
+    "en": "9eb9dbebd82abfea",
+    "text": "Signera ett svar"
+  },
+  "wstrust.signResponse|description": {
+    "en": "3a78c4fc80cc38a7",
+    "text": "Om ett RequestSecurityTokenResponse bär en wsu:Timestamp och en WS-Security-meddelandesignatur över den och SOAP Body, gjord med den här sfärens XML-signeringsnyckel och som namnger dess certifikat i ett BinarySecurityToken. En applikations wstrustSignResponse åsidosätter detta, och dess wstrustSignResponseElements namnger vad signaturen täcker i stället för Body. Ett fel skickas osignerat. WSDL:ens bindning bär sp:IncludeTimestamp medan detta är på. På, och signaturen inte kan göras, är begäran ett fel i båda lägena."
+  },
+  "wstrust.responseProtectionOrder|label": {
+    "en": "55a63069d07b808c",
+    "text": "Ordning för svarsskydd"
+  },
+  "wstrust.responseProtectionOrder|description": {
+    "en": "0c8e29e5ac06276d",
+    "text": "Den ordning i vilken ett WS-Trust-svar signeras och krypteras när båda är på. `sign-then-encrypt` signerar klartexten och är standard i WS-SecurityPolicy; `encrypt-then-sign` signerar chiffertexten, och WSDL:ens bindning bär då sp:EncryptBeforeSigning. wsse:Security-huvudet skrivs i den ordning en mottagare behandlar det. En applikations wstrustResponseProtectionOrder åsidosätter detta."
+  },
+  "wstrust.encryptSignature|label": {
+    "en": "98953d7bb9c3dc42",
+    "text": "Kryptera ett svars signatur"
+  },
+  "wstrust.encryptSignature|description": {
+    "en": "32f9389b65f0eb67",
+    "text": "Om ds:Signature i ett WS-Trust-svar också krypteras (WS-SecurityPolicys sp:EncryptSignature), till svarets mottagare. Läses bara medan svaret signeras och sedan krypteras. WSDL:ens bindning bär sp:EncryptSignature medan detta är på. En applikations wstrustEncryptSignature åsidosätter detta."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Inloggning initierad av identitetsleverantören"
