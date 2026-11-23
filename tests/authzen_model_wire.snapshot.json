@@ -505,6 +505,7 @@
      "access_request": {
       "expires_at": "<time>",
       "endpoint": "https://<port>/realm/azwire/access/v1/access-requests",
+      "request_schema_url": "https://<port>/realm/azwire/access/v1/access-requests/schema",
       "binding_token": {
        "jwt": {
         "header": {
@@ -533,6 +534,7 @@
          },
          "context": {},
          "binding_context_members": [],
+         "binding_hash": "<random>",
          "caller": "uid=azpep,ou=users,dc=azwire,dc=example,dc=com",
          "application": "todo-app",
          "terms": {
@@ -1059,6 +1061,7 @@
      "access_request": {
       "expires_at": "<time>",
       "endpoint": "https://<port>/realm/azwire/access/v1/access-requests",
+      "request_schema_url": "https://<port>/realm/azwire/access/v1/access-requests/schema",
       "binding_token": {
        "jwt": {
         "header": {
@@ -1087,6 +1090,7 @@
          },
          "context": {},
          "binding_context_members": [],
+         "binding_hash": "<random>",
          "caller": "uid=azpep,ou=users,dc=azwire,dc=example,dc=com",
          "application": "todo-app",
          "terms": {
@@ -3236,6 +3240,7 @@
      "access_request": {
       "expires_at": "<time>",
       "endpoint": "https://<port>/realm/azwire/access/v1/access-requests",
+      "request_schema_url": "https://<port>/realm/azwire/access/v1/access-requests/schema",
       "binding_token": {
        "jwt": {
         "header": {
@@ -3264,6 +3269,7 @@
          },
          "context": {},
          "binding_context_members": [],
+         "binding_hash": "<random>",
          "caller": "uid=azpep,ou=users,dc=azwire,dc=example,dc=com",
          "application": "todo-app",
          "terms": {
@@ -3493,7 +3499,7 @@
     "type": "urn:openid:authzen:access-request:error:invalid_denial_binding",
     "title": "The request cannot be bound to the denial",
     "status": 400,
-    "detail": "denial.binding_token is required here: this PDP binds a denial by value and keeps no record of evaluations to resolve an evaluation_id against."
+    "detail": "denial.evaluation_id names no requestable denial this realm issued for this endpoint."
    }
   },
   {
@@ -3562,7 +3568,7 @@
     "type": "urn:openid:authzen:access-request:error:invalid_denial_binding",
     "title": "The request cannot be bound to the denial",
     "status": 400,
-    "detail": "The request does not match the denial it names: resource differs from the denied resource."
+    "detail": "The request does not match the denial it names: binding_hash does not match the denied tuple."
    }
   },
   {
@@ -3705,6 +3711,7 @@
      "access_request": {
       "expires_at": "<time>",
       "endpoint": "https://<port>/realm/azwire/access/v1/access-requests",
+      "request_schema_url": "https://<port>/realm/azwire/access/v1/access-requests/schema",
       "binding_token": {
        "jwt": {
         "header": {
@@ -3733,6 +3740,7 @@
          },
          "context": {},
          "binding_context_members": [],
+         "binding_hash": "<random>",
          "caller": "cn=azapp,ou=applications,dc=azwire,dc=example,dc=com",
          "application": "todo-app",
          "terms": {
@@ -4003,7 +4011,44 @@
      "approval": {
       "id": "<apr>",
       "approved_at": "<time>",
-      "approved_until": "<time>"
+      "approved_until": "<time>",
+      "state": {
+       "jwt": {
+        "header": {
+         "alg": "RS256",
+         "typ": "JWT",
+         "kid": "<kid>"
+        },
+        "claims": {
+         "aud": "https://<port>/realm/azwire",
+         "typ": "authzen-access-request-approval",
+         "id": "<apr>",
+         "task_id": "<arq>",
+         "subject": {
+          "type": "user",
+          "id": "azalice"
+         },
+         "resource": {
+          "type": "document",
+          "id": "doc-2"
+         },
+         "action": {
+          "name": "read"
+         },
+         "context": {},
+         "binding_context_members": [],
+         "approved_at": "<time>",
+         "approved_until": "<time>",
+         "approver": "azbob",
+         "caller": "cn=azapp,ou=applications,dc=azwire,dc=example,dc=com",
+         "application": "todo-app",
+         "iat": "<epoch>",
+         "exp": "<epoch>",
+         "iss": "https://<port>/realm/azwire"
+        },
+        "signed": true
+       }
+      }
      }
     }
    }
@@ -4036,7 +4081,7 @@
   },
   {
    "mode": "development",
-   "step": "re-evaluation, out of scope",
+   "step": "re-evaluation, state for another resource",
    "method": "POST",
    "path": "/realm/azwire/access/v1/evaluation",
    "status": 200,
@@ -4055,10 +4100,11 @@
     "context": {
      "evaluation_id": "<eval>",
      "evaluated_at": "<time>",
-     "reason": "out_of_scope",
+     "reason": "approval_unverifiable",
      "access_request": {
       "expires_at": "<time>",
       "endpoint": "https://<port>/realm/azwire/access/v1/access-requests",
+      "request_schema_url": "https://<port>/realm/azwire/access/v1/access-requests/schema",
       "binding_token": {
        "jwt": {
         "header": {
@@ -4087,6 +4133,7 @@
          },
          "context": {},
          "binding_context_members": [],
+         "binding_hash": "<random>",
          "caller": "cn=azapp,ou=applications,dc=azwire,dc=example,dc=com",
          "application": "todo-app",
          "terms": {
@@ -4109,7 +4156,7 @@
        }
       }
      },
-     "next_action": "request"
+     "next_action": "none"
     }
    }
   },
@@ -4138,6 +4185,7 @@
      "access_request": {
       "expires_at": "<time>",
       "endpoint": "https://<port>/realm/azwire/access/v1/access-requests",
+      "request_schema_url": "https://<port>/realm/azwire/access/v1/access-requests/schema",
       "binding_token": {
        "jwt": {
         "header": {
@@ -4166,6 +4214,7 @@
          },
          "context": {},
          "binding_context_members": [],
+         "binding_hash": "<random>",
          "caller": "cn=azapp,ou=applications,dc=azwire,dc=example,dc=com",
          "application": "todo-app",
          "terms": {
@@ -4240,6 +4289,7 @@
      "access_request": {
       "expires_at": "<time>",
       "endpoint": "https://<port>/realm/azwire/access/v1/access-requests",
+      "request_schema_url": "https://<port>/realm/azwire/access/v1/access-requests/schema",
       "binding_token": {
        "jwt": {
         "header": {
@@ -4268,6 +4318,7 @@
          },
          "context": {},
          "binding_context_members": [],
+         "binding_hash": "<random>",
          "caller": "uid=azpep,ou=users,dc=azwire,dc=example,dc=com",
          "application": "todo-app",
          "terms": {
@@ -4402,6 +4453,7 @@
      "access_request": {
       "expires_at": "<time>",
       "endpoint": "https://<port>/realm/azwire/access/v1/access-requests",
+      "request_schema_url": "https://<port>/realm/azwire/access/v1/access-requests/schema",
       "binding_token": {
        "jwt": {
         "header": {
@@ -4430,6 +4482,7 @@
          },
          "context": {},
          "binding_context_members": [],
+         "binding_hash": "<random>",
          "caller": "uid=azpep,ou=users,dc=azwire,dc=example,dc=com",
          "application": "todo-app",
          "terms": {
@@ -4484,7 +4537,45 @@
      "approval": {
       "id": "<apr>",
       "approved_at": "<time>",
-      "approved_until": "<time>"
+      "approved_until": "<time>",
+      "state": {
+       "jwt": {
+        "header": {
+         "alg": "RS256",
+         "typ": "JWT",
+         "kid": "<kid>",
+         "x5u": "https://<port>/pki/chain/azwire/<digest>.pem"
+        },
+        "claims": {
+         "aud": "https://<port>/realm/azwire",
+         "typ": "authzen-access-request-approval",
+         "id": "<apr>",
+         "task_id": "<arq>",
+         "subject": {
+          "type": "user",
+          "id": "azalice"
+         },
+         "resource": {
+          "type": "document",
+          "id": "doc-2"
+         },
+         "action": {
+          "name": "read"
+         },
+         "context": {},
+         "binding_context_members": [],
+         "approved_at": "<time>",
+         "approved_until": "<time>",
+         "approver": "emergency",
+         "caller": "uid=azpep,ou=users,dc=azwire,dc=example,dc=com",
+         "application": "todo-app",
+         "iat": "<epoch>",
+         "exp": "<epoch>",
+         "iss": "https://<port>/realm/azwire"
+        },
+        "signed": true
+       }
+      }
      }
     }
    }
@@ -5188,6 +5279,7 @@
      "access_request": {
       "expires_at": "<time>",
       "endpoint": "https://<port>/realm/azwirep/access/v1/access-requests",
+      "request_schema_url": "https://<port>/realm/azwirep/access/v1/access-requests/schema",
       "binding_token": {
        "jwt": {
         "header": {
@@ -5216,6 +5308,7 @@
          },
          "context": {},
          "binding_context_members": [],
+         "binding_hash": "<random>",
          "caller": "uid=azpep,ou=users,dc=azwirep,dc=example,dc=com",
          "application": "todo-app",
          "terms": {
@@ -5764,6 +5857,7 @@
      "access_request": {
       "expires_at": "<time>",
       "endpoint": "https://<port>/realm/azwirep/access/v1/access-requests",
+      "request_schema_url": "https://<port>/realm/azwirep/access/v1/access-requests/schema",
       "binding_token": {
        "jwt": {
         "header": {
@@ -5792,6 +5886,7 @@
          },
          "context": {},
          "binding_context_members": [],
+         "binding_hash": "<random>",
          "caller": "uid=azpep,ou=users,dc=azwirep,dc=example,dc=com",
          "application": "todo-app",
          "terms": {
@@ -8021,6 +8116,7 @@
      "access_request": {
       "expires_at": "<time>",
       "endpoint": "https://<port>/realm/azwirep/access/v1/access-requests",
+      "request_schema_url": "https://<port>/realm/azwirep/access/v1/access-requests/schema",
       "binding_token": {
        "jwt": {
         "header": {
@@ -8049,6 +8145,7 @@
          },
          "context": {},
          "binding_context_members": [],
+         "binding_hash": "<random>",
          "caller": "uid=azpep,ou=users,dc=azwirep,dc=example,dc=com",
          "application": "todo-app",
          "terms": {
@@ -8287,7 +8384,7 @@
     "type": "urn:openid:authzen:access-request:error:invalid_denial_binding",
     "title": "The request cannot be bound to the denial",
     "status": 400,
-    "detail": "denial.binding_token is required here: this PDP binds a denial by value and keeps no record of evaluations to resolve an evaluation_id against."
+    "detail": "denial.evaluation_id names no requestable denial this realm issued for this endpoint."
    }
   },
   {
@@ -8359,7 +8456,7 @@
     "type": "urn:openid:authzen:access-request:error:invalid_denial_binding",
     "title": "The request cannot be bound to the denial",
     "status": 400,
-    "detail": "The request does not match the denial it names: resource differs from the denied resource."
+    "detail": "The request does not match the denial it names: binding_hash does not match the denied tuple."
    }
   },
   {
@@ -8508,6 +8605,7 @@
      "access_request": {
       "expires_at": "<time>",
       "endpoint": "https://<port>/realm/azwirep/access/v1/access-requests",
+      "request_schema_url": "https://<port>/realm/azwirep/access/v1/access-requests/schema",
       "binding_token": {
        "jwt": {
         "header": {
@@ -8536,6 +8634,7 @@
          },
          "context": {},
          "binding_context_members": [],
+         "binding_hash": "<random>",
          "caller": "cn=azapp,ou=applications,dc=azwirep,dc=example,dc=com",
          "application": "todo-app",
          "terms": {
@@ -8815,7 +8914,44 @@
      "approval": {
       "id": "<apr>",
       "approved_at": "<time>",
-      "approved_until": "<time>"
+      "approved_until": "<time>",
+      "state": {
+       "jwt": {
+        "header": {
+         "alg": "RS256",
+         "typ": "JWT",
+         "kid": "<kid>"
+        },
+        "claims": {
+         "aud": "https://<port>/realm/azwirep",
+         "typ": "authzen-access-request-approval",
+         "id": "<apr>",
+         "task_id": "<arq>",
+         "subject": {
+          "type": "user",
+          "id": "azalice"
+         },
+         "resource": {
+          "type": "document",
+          "id": "doc-2"
+         },
+         "action": {
+          "name": "read"
+         },
+         "context": {},
+         "binding_context_members": [],
+         "approved_at": "<time>",
+         "approved_until": "<time>",
+         "approver": "azbob",
+         "caller": "cn=azapp,ou=applications,dc=azwirep,dc=example,dc=com",
+         "application": "todo-app",
+         "iat": "<epoch>",
+         "exp": "<epoch>",
+         "iss": "https://<port>/realm/azwirep"
+        },
+        "signed": true
+       }
+      }
      }
     }
    }
@@ -8849,7 +8985,7 @@
   },
   {
    "mode": "product",
-   "step": "re-evaluation, out of scope",
+   "step": "re-evaluation, state for another resource",
    "method": "POST",
    "path": "/realm/azwirep/access/v1/evaluation",
    "status": 200,
@@ -8869,10 +9005,11 @@
     "context": {
      "evaluation_id": "<eval>",
      "evaluated_at": "<time>",
-     "reason": "out_of_scope",
+     "reason": "approval_unverifiable",
      "access_request": {
       "expires_at": "<time>",
       "endpoint": "https://<port>/realm/azwirep/access/v1/access-requests",
+      "request_schema_url": "https://<port>/realm/azwirep/access/v1/access-requests/schema",
       "binding_token": {
        "jwt": {
         "header": {
@@ -8901,6 +9038,7 @@
          },
          "context": {},
          "binding_context_members": [],
+         "binding_hash": "<random>",
          "caller": "cn=azapp,ou=applications,dc=azwirep,dc=example,dc=com",
          "application": "todo-app",
          "terms": {
@@ -8923,7 +9061,7 @@
        }
       }
      },
-     "next_action": "request"
+     "next_action": "none"
     }
    }
   },
@@ -8953,6 +9091,7 @@
      "access_request": {
       "expires_at": "<time>",
       "endpoint": "https://<port>/realm/azwirep/access/v1/access-requests",
+      "request_schema_url": "https://<port>/realm/azwirep/access/v1/access-requests/schema",
       "binding_token": {
        "jwt": {
         "header": {
@@ -8981,6 +9120,7 @@
          },
          "context": {},
          "binding_context_members": [],
+         "binding_hash": "<random>",
          "caller": "cn=azapp,ou=applications,dc=azwirep,dc=example,dc=com",
          "application": "todo-app",
          "terms": {
@@ -9057,6 +9197,7 @@
      "access_request": {
       "expires_at": "<time>",
       "endpoint": "https://<port>/realm/azwirep/access/v1/access-requests",
+      "request_schema_url": "https://<port>/realm/azwirep/access/v1/access-requests/schema",
       "binding_token": {
        "jwt": {
         "header": {
@@ -9085,6 +9226,7 @@
          },
          "context": {},
          "binding_context_members": [],
+         "binding_hash": "<random>",
          "caller": "uid=azpep,ou=users,dc=azwirep,dc=example,dc=com",
          "application": "todo-app",
          "terms": {
@@ -9223,6 +9365,7 @@
      "access_request": {
       "expires_at": "<time>",
       "endpoint": "https://<port>/realm/azwirep/access/v1/access-requests",
+      "request_schema_url": "https://<port>/realm/azwirep/access/v1/access-requests/schema",
       "binding_token": {
        "jwt": {
         "header": {
@@ -9251,6 +9394,7 @@
          },
          "context": {},
          "binding_context_members": [],
+         "binding_hash": "<random>",
          "caller": "uid=azpep,ou=users,dc=azwirep,dc=example,dc=com",
          "application": "todo-app",
          "terms": {
@@ -9306,7 +9450,45 @@
      "approval": {
       "id": "<apr>",
       "approved_at": "<time>",
-      "approved_until": "<time>"
+      "approved_until": "<time>",
+      "state": {
+       "jwt": {
+        "header": {
+         "alg": "RS256",
+         "typ": "JWT",
+         "kid": "<kid>",
+         "x5u": "https://<port>/pki/chain/azwirep/<digest>.pem"
+        },
+        "claims": {
+         "aud": "https://<port>/realm/azwirep",
+         "typ": "authzen-access-request-approval",
+         "id": "<apr>",
+         "task_id": "<arq>",
+         "subject": {
+          "type": "user",
+          "id": "azalice"
+         },
+         "resource": {
+          "type": "document",
+          "id": "doc-2"
+         },
+         "action": {
+          "name": "read"
+         },
+         "context": {},
+         "binding_context_members": [],
+         "approved_at": "<time>",
+         "approved_until": "<time>",
+         "approver": "emergency",
+         "caller": "uid=azpep,ou=users,dc=azwirep,dc=example,dc=com",
+         "application": "todo-app",
+         "iat": "<epoch>",
+         "exp": "<epoch>",
+         "iss": "https://<port>/realm/azwirep"
+        },
+        "signed": true
+       }
+      }
      }
     }
    }

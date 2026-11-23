@@ -17,9 +17,12 @@
 // holds:
 //
 //   R. THE REQUESTABLE DENIAL: a read is false with context.access_request
-//      (expires_at, endpoint, a binding_token that verifies as the realm's)
-//      and evaluation_id; a delete, denied without the advice, is a plain
-//      false; the metadata names the endpoint, jwks_uri and the capability.
+//      (expires_at, endpoint, request_schema_url, a binding_token that
+//      verifies as the realm's, its inline tuple and binding_hash) and
+//      evaluation_id, and no form_url; the schema is public JSON Schema
+//      of the optional augmentations; a delete, denied without the
+//      advice, is a plain false; the metadata names the endpoint,
+//      jwks_uri and the capability.
 //   S. THE SUBMISSION: a body not sent as application/json is 415
 //      problem+json (STS-AUTHZEN-0122, #936) and makes no task, one sent
 //      with a charset is read; no denial (not_requestable), a changed tuple and
@@ -34,9 +37,17 @@
 //      group), an approver approving through the portal's door; the task
 //      approved with its result; a re-evaluation carrying the approval
 //      true, another tuple out_of_scope with a fresh denial, another
-//      caller approval_unverifiable; a revocation and approval_expired.
+//      caller approval_unverifiable; approval.state verifies, and a
+//      tampered state or a forged id carrying that state does not; a
+//      revocation and approval_expired.
 //      The portal lists and revokes an approval the approver gave, mails
 //      the requester, and draws Revoke only on that card (#1203).
+//   H. THE DENIAL BY REFERENCE (#1204): an evaluation_id with expires_at
+//      echoed, and no binding_token, is 202; an id this realm did not issue
+//      is 0073; a real id with expires_at omitted or changed, or not the
+//      token's, is 0074 and is not consumed; another caller is 0074; a
+//      token whose binding_hash was changed does not submit, and one that
+//      carries only the hash does.
 //   C. CANCELLATION, and a finished task 409.
 //   X. AN ADMINISTRATOR'S DENIAL through the console's door, as one the
 //      advice did not name, holding ADMIN_WRITE.
@@ -49,8 +60,8 @@
 //      and their pending request cancelled, so a person made again under
 //      the name inherits neither; a task from before the subject index is
 //      noted by the sweep job's backfill.
-//   O. OFF: authzen.accessRequests off answers 501 and no denial is
-//      requestable.
+//   O. OFF: authzen.accessRequests off answers 501, the schema too, and
+//      no denial is requestable.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -220,6 +231,7 @@ async function childBody() {
   const xml = require(ROOT + '/xacml/xacml_xml');
   const alfa = require(ROOT + '/xacml/xacml_alfa');
   const requests = require(ROOT + '/authzen/authzen_access_request');
+  const oauth2 = require(ROOT + '/oauth-oidc/oauth2');
   const authzenAdmin = require(ROOT + '/authzen/authzen_admin');
   const mail = require(ROOT + '/common/mail');
   const ModelZod = require(ROOT + '/common/model_zod');
@@ -392,12 +404,16 @@ async function childBody() {
     log.debug("Caught in childBody(): " + ((e && e.message) || e));
     claims = null;
   }
+  const hashed = claims ? requests.bindingHash(claims.subject,
+    claims.resource, claims.action, claims.context || {}) : '';
   t.check(!!claims && claims.iss === own &&
           urls.holds(claims.aud, ar.endpoint) &&
           claims.resource && claims.resource.id === 'doc-1' &&
-          claims.denial_expires_at === ar.expires_at,
+          claims.denial_expires_at === ar.expires_at &&
+          claims.binding_hash === hashed,
           'R2. the binding_token is the realm\'s JWS over the denied tuple, ' +
-          'audienced to the access request endpoint', JSON.stringify(claims));
+          'audienced to the access request endpoint, with binding_hash',
+          JSON.stringify(claims));
   r = await request(port, 'POST', EVAL, pepCred,
                     evaluation({ action: { name: 'delete' } }));
   t.check(r.status === 200 && r.json && r.json.decision === false &&
@@ -414,6 +430,43 @@ async function childBody() {
           /\/oauth2\/jwks$/.test(String(doc.jwks_uri || '')),
           'R4. the metadata names access_request_endpoint, jwks_uri and the ' +
           'capability', brief(r));
+  const schemaUrl = own + '/access/v1/access-requests/schema';
+  t.check(ar.request_schema_url === schemaUrl && !ar.form_url,
+          'R5. a requestable denial names request_schema_url on the ' +
+          'access request endpoint\'s origin, and hosts no form',
+          JSON.stringify({ url: ar.request_schema_url, form: ar.form_url }));
+  r = await request(port, 'GET',
+                    PREFIX + '/access/v1/access-requests/schema', null);
+  const schema = r.json || {};
+  const props = schema.properties || {};
+  const schemaAsked = (props.requested_access || {}).properties || {};
+  const schemaCtx = (props.context || {}).properties || {};
+  const rule = (schema.allOf || [])[0] || {};
+  const emergency = ((((rule.if || {}).properties || {}).requested_access ||
+                      {}).properties || {}).emergency || {};
+  const thenCtx = (((rule.then || {}).properties || {}).context || {});
+  t.check(r.status === 200 &&
+          String(r.headers['cache-control'] || '') === 'no-store' &&
+          /application\/json/.test(String(r.headers['content-type'] || '')) &&
+          schema.$schema === 'https://json-schema.org/draft/2020-12/schema' &&
+          schema.$id === schemaUrl &&
+          schema.additionalProperties !== false &&
+          !schema.required && !(props.context || {}).required &&
+          !(props.requested_access || {}).required &&
+          schemaCtx.business_justification &&
+          schemaCtx.business_justification.maxLength === 1024 &&
+          schemaAsked.requested_until && schemaAsked.requested_until.format ===
+            'date-time' &&
+          schemaAsked.emergency && schemaAsked.emergency.type === 'boolean' &&
+          emergency.const === true &&
+          Array.isArray(thenCtx.required) &&
+          thenCtx.required.indexOf('business_justification') >= 0 &&
+          Array.isArray((rule.then || {}).required) &&
+          (rule.then || {}).required.indexOf('context') >= 0 &&
+          !/form_url/.test(JSON.stringify(schema)),
+          'R6. the schema is public JSON Schema of the optional ' +
+          'augmentations, and emergency requires a justification',
+          brief(r));
 
   // -------------------------------------------------------------------------
   // S. THE SUBMISSION
@@ -589,13 +642,24 @@ async function childBody() {
           'root policy, which read the trusted approval-id', brief(r));
   r = await request(port, 'POST', EVAL, pepCred, evaluation({
     resource: { type: 'document', id: 'doc-9' },
-    context: { application: 'todo-app', approval: approval } }));
+    context: { application: 'todo-app', approval: {
+      id: approval.id, approved_until: approval.approved_until } } }));
   t.check(r.status === 200 && r.json && r.json.decision === false &&
           r.json.context.reason === 'out_of_scope' &&
           r.json.context.next_action === 'request' &&
           r.json.context.access_request,
-          'A8. another resource is out_of_scope, next_action request with ' +
-          'a fresh access_request', brief(r));
+          'A8. another resource, the approval named by id, is ' +
+          'out_of_scope, next_action request with a fresh access_request',
+          brief(r));
+  r = await request(port, 'POST', EVAL, pepCred, evaluation({
+    resource: { type: 'document', id: 'doc-9' },
+    context: { application: 'todo-app', approval: approval } }));
+  t.check(r.status === 200 && r.json && r.json.decision === false &&
+          r.json.context.reason === 'approval_unverifiable' &&
+          r.json.context.next_action === 'none',
+          'A8b. echoing approval.state against another resource is ' +
+          'approval_unverifiable: the state names the approved tuple',
+          brief(r));
   r = await request(port, 'POST', EVAL, pep2Cred, evaluation({
     context: { application: 'todo-app', approval: approval } }));
   t.check(r.status === 200 && r.json && r.json.decision === false &&
@@ -610,6 +674,35 @@ async function childBody() {
   t.check(r.status === 200 && r.json && r.json.decision === false &&
           r.json.context.reason === 'approval_unverifiable',
           'A10. a forged approval id is never believed', brief(r));
+  let stateClaims = null;
+  try {
+    stateClaims = inRealm(function () {
+      return helpers.verifyOwnJws(String(approval.state || ''),
+                                  { ignoreExpiration: true });
+    });
+  } catch (e) {
+    log.debug("Caught in childBody(): " + ((e && e.message) || e));
+    stateClaims = null;
+  }
+  t.check(!!stateClaims &&
+          stateClaims.typ === 'authzen-access-request-approval' &&
+          stateClaims.id === approval.id,
+          'A6b. the approved task\'s result carries approval.state, this ' +
+          'realm\'s JWS of that approval', JSON.stringify(stateClaims));
+  r = await request(port, 'POST', EVAL, pepCred, evaluation({
+    context: { application: 'todo-app', approval: {
+      id: approval.id, state: String(approval.state || '') + 'x' } } }));
+  t.check(r.status === 200 && r.json && r.json.decision === false &&
+          r.json.context.reason === 'approval_unverifiable',
+          'A6c. a tampered approval.state is approval_unverifiable even ' +
+          'though the row is live', brief(r));
+  r = await request(port, 'POST', EVAL, pepCred, evaluation({
+    context: { application: 'todo-app', approval: {
+      id: 'apr_forged', state: approval.state } } }));
+  t.check(r.status === 200 && r.json && r.json.decision === false &&
+          r.json.context.reason === 'approval_unverifiable',
+          'A6d. a forged id carrying a real approval.state is ' +
+          'approval_unverifiable', brief(r));
   decided = inRealm(function () {
     return authzenAdmin.act({ action: 'revoke-access-request',
                               request: task.id },
@@ -636,6 +729,121 @@ async function childBody() {
     log.debug("Leaving freshApp().");
     return got.json;
   };
+
+  // A submission that replaces the denial, so an evaluation_id-only body
+  // does not also send the token.
+  const byId = async function (one, denial, cred) {
+    log.debug("Entering byId().");
+    const got = await request(port, 'POST', SUBMIT, cred || pepCred,
+                              submission(one, { denial: denial }));
+    log.debug("Leaving byId().");
+    return got;
+  };
+  // Re-signs a denial with its inline tuple removed, so binding_hash is
+  // the binding. `mutate` changes the claims first.
+  const resign = function (token, mutate) {
+    log.debug("Entering resign().");
+    const signed = inRealm(function () {
+      const held = helpers.verifyOwnJws(String(token || ''));
+      const exp = Number(held.exp) || 0;
+      const copy = Object.assign({}, held);
+      ['subject', 'resource', 'action', 'context', 'iss', 'iat', 'exp']
+        .forEach(function (name) {
+          delete copy[name];
+        });
+      if (mutate) {
+        mutate(copy);
+      }
+      const now = Math.floor(Date.now() / 1000);
+      return oauth2.signPublishedDocument(copy, own,
+        Math.max(1, exp - now), 'oauth-signed-metadata');
+    });
+    log.debug("Leaving resign().");
+    return signed;
+  };
+
+  // -------------------------------------------------------------------------
+  // H. THE DENIAL BY REFERENCE, AND THE HASHED BINDING (#1204)
+  // -------------------------------------------------------------------------
+  const ref = await fresh();
+  const refAr = ref.context.access_request;
+  since = marks.length;
+  r = await byId(ref, { evaluation_id: ref.context.evaluation_id,
+                        expires_at: refAr.expires_at });
+  t.check(r.status === 202 && r.json && r.json.task &&
+          /^arq_/.test(r.json.task.id),
+          'H1. an evaluation_id with expires_at echoed, and no ' +
+          'binding_token, is 202', brief(r));
+  since = marks.length;
+  r = await byId(ref, { evaluation_id: 'eval_never',
+                        expires_at: refAr.expires_at });
+  t.check(r.status === 400 &&
+          /invalid_denial_binding$/.test(problemOf(r)) &&
+          markedSince(since, 'STS-AUTHZEN-0073'),
+          'H2. an evaluation_id this realm did not issue is ' +
+          'invalid_denial_binding (STS-AUTHZEN-0073)', brief(r));
+  const echo = await fresh();
+  const echoAr = echo.context.access_request;
+  since = marks.length;
+  r = await byId(echo, { evaluation_id: echo.context.evaluation_id });
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0074'),
+          'H3. a real evaluation_id with expires_at omitted is ' +
+          'invalid_denial_binding and is not consumed', brief(r));
+  since = marks.length;
+  r = await byId(echo, { evaluation_id: echo.context.evaluation_id,
+                         expires_at: '2099-01-01T00:00:00Z' });
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0074'),
+          'H4. a real evaluation_id with expires_at changed is ' +
+          'invalid_denial_binding and is not consumed', brief(r));
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(echo));
+  t.check(r.status === 202 && r.json && r.json.task,
+          'H5. that denial\'s binding_token still submits', brief(r));
+  const otherId = await fresh();
+  const otherAr = otherId.context.access_request;
+  since = marks.length;
+  r = await byId(otherId, { binding_token: otherAr.binding_token,
+                            expires_at: otherAr.expires_at,
+                            evaluation_id: 'eval_other' });
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0074'),
+          'H6. an evaluation_id that is not the binding_token\'s is ' +
+          'invalid_denial_binding and is not consumed', brief(r));
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(otherId));
+  t.check(r.status === 202,
+          'H7. the matching submission of that denial is still 202',
+          brief(r));
+  const whose = await fresh();
+  const whoseAr = whose.context.access_request;
+  since = marks.length;
+  r = await byId(whose, { evaluation_id: whose.context.evaluation_id,
+                          expires_at: whoseAr.expires_at }, pep2Cred);
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0074'),
+          'H8. another caller submitting the evaluation_id is ' +
+          'invalid_denial_binding', brief(r));
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(whose));
+  t.check(r.status === 202,
+          'H9. the caller the denial was issued to still submits it',
+          brief(r));
+  const hashedDenial = await fresh();
+  const hashedAr = hashedDenial.context.access_request;
+  since = marks.length;
+  const badHash = resign(hashedAr.binding_token, function (copy) {
+    copy.binding_hash = 'not-the-hash';
+  });
+  r = await byId(hashedDenial, {
+    binding_token: badHash,
+    expires_at: hashedAr.expires_at,
+    evaluation_id: hashedDenial.context.evaluation_id });
+  t.check(r.status === 400 && markedSince(since, 'STS-AUTHZEN-0074'),
+          'H10. a binding_hash that does not match is ' +
+          'invalid_denial_binding and is not consumed', brief(r));
+  const hashOnly = resign(hashedAr.binding_token);
+  r = await byId(hashedDenial, {
+    binding_token: hashOnly,
+    expires_at: hashedAr.expires_at,
+    evaluation_id: hashedDenial.context.evaluation_id });
+  t.check(r.status === 202 && r.json && r.json.task,
+          'H11. a token that carries binding_hash and no inline tuple ' +
+          'submits', brief(r));
 
   // -------------------------------------------------------------------------
   // A12. THE PORTAL REVOKES AN APPROVAL THE PERSON GAVE (#1203)
@@ -1117,6 +1325,8 @@ async function childBody() {
   });
   since = marks.length;
   r = await request(port, 'POST', SUBMIT, pepCred, {});
+  const offSchema = await request(port, 'GET',
+    PREFIX + '/access/v1/access-requests/schema', null);
   const offDenial = await request(port, 'POST', EVAL, pepCred, evaluation());
   inRealm(function () {
     config.setOverride('authzen.accessRequests', true);
@@ -1126,6 +1336,10 @@ async function childBody() {
           !(offDenial.json.context && offDenial.json.context.access_request),
           'O1. off, the endpoint answers 501 and no denial is requestable',
           brief(r) + ' / ' + brief(offDenial));
+  t.check(offSchema.status === 501 &&
+          markedSince(since, 'STS-AUTHZEN-0070') &&
+          /problem\+json/.test(String(offSchema.headers['content-type'] || '')),
+          'O2. off, the submission schema answers 501', brief(offSchema));
 
   await new Promise(function (ok) {
     listener.close(ok);

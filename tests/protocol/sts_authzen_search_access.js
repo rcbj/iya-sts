@@ -26,9 +26,11 @@
 //      approval used for another tuple (0086), and revoked (0085), each
 //      answered as a plain denial.
 //
-// (d), with the reason: 0073's other case — a denial with no binding_token
-// — is refused by the request model's denial member first (WIRE: answered
-// not_requestable under the model's code).
+// (d), with the reason: a denial with neither binding_token nor
+// evaluation_id is the model's not_requestable (STS-AUTHZEN-0072), before
+// 0073. An evaluation_id this realm issued, with expires_at echoed, is a
+// submission (#1204). This job's 0073 is a binding_token this realm did
+// not issue.
 //
 // OWNED HERE (local: true): the AuthZEN API is ours. Posts an outside test
 // Root to the client truststore and removes it.
