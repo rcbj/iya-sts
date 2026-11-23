@@ -1327,6 +1327,30 @@
     "en": "0462e40dda10b491",
     "text": "ETT XPATH-UTTRYCK SOM VÄLJER DET CERTIFIKATELEMENT SOM ETT WS-TRUST-SVAR KRYPTERAS TILL: ett ds:X509Certificate eller en BinarySecurityToken vars ValueType slutar på #X509v3. Samma delmängd som elementkartorna. När det är satt och inte väljer något, eller väljer ett element som inte är ett av de två, finns ingen mottagare och nästa källa prövas inte. Ett valt certifikatelement vars text inte är ett certifikat är ett fel för slutförd kryptering, och nästa källa prövas inte. När det inte är satt är mottagaren det första signeringscertifikatelement som begärans WS-Security-signatur namnger — den BinarySecurityToken som den signaturens referens pekar på, eller ett ds:X509Certificate i den signaturens KeyInfo. Ett tumavtryck, en Subject Key Identifier eller en utfärdare och ett serienummer är inte ett certifikatelement."
   },
+  "applications.schema.attributes.wstrustSignRequest.what": {
+    "en": "c6e7e2b383b3c121",
+    "text": "TRUE eller FALSE: kräv att en begäran vars AppliesTo är den här applikationen bär en WS-Security-meddelandesignatur, vilket åsidosätter wstrust.signRequest. På är en begäran utan godtagen signatur ett FailedCheck, och varje element som wstrustSignRequestElements väljer måste täckas av den signaturen. Utvecklingsläget tror på en signatur, som det alltid har gjort, och prövar ändå kartan mot det som signaturen refererar."
+  },
+  "applications.schema.attributes.wstrustSignRequestElements.what": {
+    "en": "e532921147503182",
+    "text": "ELEMENTEN I EN WS-TRUST-BEGÄRAN SOM MÅSTE VARA SIGNERADE, ett XPath 1.0-uttryck vardera, i delmängden från wstrustEncryptRequestElements. Varje uttryck måste välja minst ett element, och varje element det väljer måste vara ett som begärans godtagna WS-Security-signatur refererar, eller ligga inuti ett sådant; annars är begäran ett FailedCheck. Tom: SOAP Body, som en signatur alltid täcker. Läses bara medan wstrustSignRequest (eller wstrust.signRequest) är på."
+  },
+  "applications.schema.attributes.wstrustSignResponse.what": {
+    "en": "c3c370b774dafc63",
+    "text": "TRUE eller FALSE: signera ett WS-Trust-svar för den här applikationen med en WS-Security-meddelandesignatur, och åsidosätt wstrust.signResponse. Svaret bär en wsu:Timestamp och en ds:Signature i sitt wsse:Security-huvud, gjord med den här sfärens XML-signeringsnyckel och med hänvisning till dess certifikat genom ett BinarySecurityToken; signaturen täcker Timestamp och elementen i wstrustSignResponseElements. Ett fel skickas osignerat. På, och signaturen inte kan göras, är begäran ett fel i båda lägena."
+  },
+  "applications.schema.attributes.wstrustSignResponseElements.what": {
+    "en": "ede8d6da5ff09808",
+    "text": "ELEMENTEN I ETT WS-TRUST-SVAR SOM DESS SIGNATUR TÄCKER utöver wsu:Timestamp, ett XPath 1.0-uttryck vardera, i delmängden från wstrustEncryptResponseElements. Tom: SOAP Body. Ett element utan wsu:Id får ett. Ett uttryck som inte matchar något, eller ett som väljer själva wsse:Security-huvudet, är ett fel."
+  },
+  "applications.schema.attributes.wstrustResponseProtectionOrder.what": {
+    "en": "ea20b5eba3587695",
+    "text": "Den ordning i vilken ett WS-Trust-svar för den här applikationen signeras och krypteras när båda är på, vilket åsidosätter wstrust.responseProtectionOrder: sign-then-encrypt (signaturens sammandrag är av klartexten, standard i WS-SecurityPolicy) eller encrypt-then-sign (de är av chiffertexten). wsse:Security-huvudet skrivs i den ordning en mottagare behandlar det."
+  },
+  "applications.schema.attributes.wstrustEncryptSignature.what": {
+    "en": "05bb26087cc96574",
+    "text": "TRUE eller FALSE: kryptera även ds:Signature i ett WS-Trust-svar för den här applikationen (WS-SecurityPolicys sp:EncryptSignature), vilket åsidosätter wstrust.encryptSignature. Läses bara medan svaret både signeras och krypteras, signerat först; signaturen krypteras till svarets mottagare."
+  },
   "applications.schema.attributes.wstrustDecryptionCertificate.what": {
     "en": "b00a63a9bafc49ad",
     "text": "CERTIFIKATET SOM EN WS-TRUST-BEGÄRAN FÖR DET HÄR PROGRAMMET KRYPTERAS TILL, PEM. Så länge det är satt dekrypteras en begäran för programmet med dess privata nyckel och inte sfärens, och en begäran för det som krypterats till sfärens nyckel är en FailedCheck. Offentligt: programsidan och GET /admin-api/applications lämnar ut det."

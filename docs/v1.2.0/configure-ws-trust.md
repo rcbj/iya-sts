@@ -802,6 +802,96 @@ Requests for the application are then opened with the realm's key again.
 Removing is not revocation: a certificate issued here stays valid until it
 expires, and is on no revocation list.
 
+## Require a signed request
+
+To refuse a request for an application unless it carries a WS-Security
+signature, turn on `wstrustSignRequest`. With no map, the signature must
+cover the Body, which every accepted signature does. To require the headers
+signed too, add the Header preset to `wstrustSignRequestElements`, or tick
+its **Header** box under *Message protection in the console*, below, and
+press **Save**:
+
+```bash
+api applications/set '{"application":"https://wsrp.example/","attribute":"wstrustSignRequest","value":"true"}'
+api applications/add '{"application":"https://wsrp.example/","attribute":"wstrustSignRequestElements","value":"/soap11:Envelope/soap11:Header/*[not(local-name()='"'"'Security'"'"' and namespace-uri()='"'"'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd'"'"')] | /soap12:Envelope/soap12:Header/*[not(local-name()='"'"'Security'"'"' and namespace-uri()='"'"'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd'"'"')]"}'
+```
+
+A request with no accepted signature is `wsse:FailedCheck`
+(`STS-WSTRUST-0084`). A header block the signature does not reference is
+`wsse:FailedCheck` (`STS-WSTRUST-0085`). So is an expression that matches
+nothing: a request that carries no header blocks fails the Header preset.
+What the signature is and whose it is are unchanged
+(*A signed request as the requester's credential*).
+
+## A signed response
+
+To have an application's answers signed, turn on `wstrustSignResponse`:
+
+```bash
+api applications/set '{"application":"https://wsrp.example/","attribute":"wstrustSignResponse","value":"true"}'
+```
+
+Each answer then carries a `wsu:Timestamp`, a `BinarySecurityToken` holding
+the realm's XML signing certificate (the one its SAML assertions are
+signed with, for `saml.signatureAlgorithm`), and a
+`ds:Signature` over the Timestamp and the Body. A client verifies it with
+that certificate, which it should already trust as the realm's signer. To
+sign the headers as well, add the Header preset to
+`wstrustSignResponseElements` (its **Header** box); the map
+then names what is signed beside the Timestamp, so keep the Body preset in it
+too.
+
+With response encryption also on, the answer is signed and then encrypted.
+Set `wstrustResponseProtectionOrder` to `encrypt-then-sign` for the other
+order, or `wstrustEncryptSignature` to `true` to encrypt the signature as
+well. An expression that matches nothing is `wst:RequestFailed`
+(`STS-WSTRUST-0086`) and the token is not sent.
+
+The WSDL is one document per realm. Turning on the realm's
+`wstrust.signResponse` puts `sp:IncludeTimestamp` into its binding, so a
+WS-SecurityPolicy client expects every answer signed; an application that
+signs while the realm does not is configured on the client by hand.
+
+## Message protection in the console
+
+On the application's page, **Configuration → WS-Trust** has a **Message
+protection** table above the fields. It has a **Body** box and a **Header**
+box for each of the four XPath maps: encryption of the request and of the
+response (`wstrustEncryptRequestElements`, `wstrustEncryptResponseElements`)
+and signing of the request and of the response
+(`wstrustSignRequestElements`, `wstrustSignResponseElements`). Ticking a box
+adds a fixed set of expressions to that map, and unticking it takes out only
+those expressions. Every other expression stays. **Save** stores the map.
+
+The boxes store nothing of their own. A box is ticked whenever its map holds
+all of its expressions, including expressions typed by hand or set through
+the Management API:
+
+| Box | Encryption map | Signing map |
+|---|---|---|
+| Body | `/soap11:Envelope/soap11:Body/* \| /soap12:Envelope/soap12:Body/*` (the Body's content) | `/soap11:Envelope/soap11:Body \| /soap12:Envelope/soap12:Body` |
+| Header | every header block but `wsse:Security`, in SOAP 1.1 and 1.2 | the same |
+
+A map is read only while its switch is on. The switch is the attribute shown
+in the table's last column, or the realm's setting when that attribute is
+empty.
+
+Under the form, the **XPath builder** writes an expression for you:
+
+1. Paste a sample SOAP message into its box. A sample Issue request is there
+   to start with.
+2. Click **Show the elements**, then click an element name. The builder
+   writes an absolute expression for that element, using this service's
+   prefixes (`soap11`, `soap12`, `wst`, `wsse`, `wsu`, `wsa`, `saml`, …)
+   and not the sample's own. It marks every element of the sample the
+   expression matches. An element in a namespace this service has no prefix
+   for is written as `*[local-name()='…' and namespace-uri()='…']`.
+3. Choose a field and click **Add to field**. A map gets the expression as
+   a new value. `wstrustResponseRecipientXPath` holds one expression, so the
+   builder replaces it. Then click **Save** on the form.
+
+The sample is parsed in your browser and never sent.
+
 ## Related
 
 * [WS-Trust](ws-trust.md): the behaviour, the faults and every setting.

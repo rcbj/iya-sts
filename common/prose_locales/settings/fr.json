@@ -6143,6 +6143,38 @@
     "en": "ffc141f1ac37ec59",
     "text": "Comment la clé de contenu à usage unique d’une réponse WS-Trust est enveloppée vers la clé publique RSA du destinataire. `rsa-oaep` est le RSA-OAEP de XML Encryption 1.1 avec SHA-256 et MGF1-SHA-256 ; `rsa-oaep-mgf1p` est OAEP sur SHA-1. Un destinataire dont le certificat est EC est chiffré par accord de clé ECDH-ES quoi que dise ce réglage. Le wstrustKeyTransportAlgorithm d’une application l’emporte. `rsa-1_5` est RSAES-PKCS1-v1_5 et il est cassé, et il est proposé parce qu’un demandeur déployé peut n’en accepter aucun autre. AVERTISSEMENT : rsa-1_5 est réservé au mode développement — en mode produit il est ignoré là où il est lu, sur ce réglage et sur le wstrustKeyTransportAlgorithm d’une application (rsa-oaep-mgf1p est utilisé, journalisé une fois, STS-CORE-0106), et le définir est refusé (STS-CORE-0103, STS-REG-0193). Un élément wst:EncryptWith peut nommer cet algorithme seulement tant que le chiffrement de la réponse est activé."
   },
+  "wstrust.signRequest|label": {
+    "en": "ee6db27fb290a51c",
+    "text": "Exiger une requête signée"
+  },
+  "wstrust.signRequest|description": {
+    "en": "3155eaca9d1a8680",
+    "text": "Indique si un RequestSecurityToken dont l’AppliesTo ne nomme aucune application propre doit porter une signature de message WS-Security. Le wstrustSignRequest d’une application remplace ce réglage pour une requête dont l’AppliesTo la nomme, et son wstrustSignRequestElements nomme ce que la signature doit couvrir en plus du SOAP Body. Activé, une requête sans signature acceptée, ou dont la signature ne couvre pas un élément nommé, est un wsse:FailedCheck. Le mode développement croit une signature, comme il l’a toujours fait."
+  },
+  "wstrust.signResponse|label": {
+    "en": "9eb9dbebd82abfea",
+    "text": "Signer une réponse"
+  },
+  "wstrust.signResponse|description": {
+    "en": "3a78c4fc80cc38a7",
+    "text": "Indique si un RequestSecurityTokenResponse porte un wsu:Timestamp et une signature de message WS-Security sur celui-ci et le SOAP Body, faite avec la clé de signature XML de ce domaine et nommant son certificat dans un BinarySecurityToken. Le wstrustSignResponse d’une application l’emporte, et son wstrustSignResponseElements nomme ce que la signature couvre à la place du Body. Une faute est envoyée sans signature. La liaison du WSDL porte sp:IncludeTimestamp tant que ce réglage est activé. Activé, et si la signature ne peut pas être faite, la requête est une faute dans les deux modes."
+  },
+  "wstrust.responseProtectionOrder|label": {
+    "en": "55a63069d07b808c",
+    "text": "Ordre de protection de la réponse"
+  },
+  "wstrust.responseProtectionOrder|description": {
+    "en": "0c8e29e5ac06276d",
+    "text": "L’ordre dans lequel une réponse WS-Trust est signée et chiffrée lorsque les deux sont activés. `sign-then-encrypt` signe le texte en clair et est la valeur par défaut de WS-SecurityPolicy ; `encrypt-then-sign` signe le texte chiffré, et la liaison du WSDL porte alors sp:EncryptBeforeSigning. L’en-tête wsse:Security est écrit dans l’ordre où un destinataire le traite. Le wstrustResponseProtectionOrder d’une application l’emporte."
+  },
+  "wstrust.encryptSignature|label": {
+    "en": "98953d7bb9c3dc42",
+    "text": "Chiffrer la signature d’une réponse"
+  },
+  "wstrust.encryptSignature|description": {
+    "en": "32f9389b65f0eb67",
+    "text": "Indique si la ds:Signature d’une réponse WS-Trust est chiffrée elle aussi (sp:EncryptSignature de WS-SecurityPolicy), pour le destinataire de la réponse. Lu uniquement tant que la réponse est signée puis chiffrée. La liaison du WSDL porte sp:EncryptSignature tant que ce réglage est activé. Le wstrustEncryptSignature d’une application l’emporte."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Connexion initiée par le fournisseur d’identité"

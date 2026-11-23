@@ -6143,6 +6143,38 @@
     "en": "ffc141f1ac37ec59",
     "text": "WS-Trust 响应的一次性内容密钥如何封装到接收方的 RSA 公钥。`rsa-oaep` 是 XML Encryption 1.1 的 RSA-OAEP，使用 SHA-256 与 MGF1-SHA-256；`rsa-oaep-mgf1p` 是基于 SHA-1 的 OAEP。证书为 EC 的接收方无论此项如何设置，都通过 ECDH-ES 密钥协商加密。应用的 wstrustKeyTransportAlgorithm 覆盖此项。`rsa-1_5` 是 RSAES-PKCS1-v1_5，已经破损，之所以提供是因为已部署的请求方可能不接受其他算法。警告：rsa-1_5 仅用于开发模式——在产品模式中，读取此项以及应用的 wstrustKeyTransportAlgorithm 时会忽略它（改用 rsa-oaep-mgf1p，记录一次，STS-CORE-0106），并且拒绝设置它（STS-CORE-0103、STS-REG-0193）。wst:EncryptWith 元素仅在响应加密开启时可以点名此算法。"
   },
+  "wstrust.signRequest|label": {
+    "en": "ee6db27fb290a51c",
+    "text": "要求请求已签名"
+  },
+  "wstrust.signRequest|description": {
+    "en": "3155eaca9d1a8680",
+    "text": "AppliesTo 未点名自身应用的 RequestSecurityToken 是否必须携带 WS-Security 消息签名。对于 AppliesTo 点名某应用的请求，该应用的 wstrustSignRequest 覆盖此设置，其 wstrustSignRequestElements 点名签名除 SOAP Body 之外还必须覆盖的内容。开启时，没有被接受签名的请求，或其签名未覆盖某个被点名元素的请求，为 wsse:FailedCheck。开发模式一如既往地相信签名。"
+  },
+  "wstrust.signResponse|label": {
+    "en": "9eb9dbebd82abfea",
+    "text": "为响应签名"
+  },
+  "wstrust.signResponse|description": {
+    "en": "3a78c4fc80cc38a7",
+    "text": "RequestSecurityTokenResponse 是否携带 wsu:Timestamp 以及覆盖它和 SOAP Body 的 WS-Security 消息签名，该签名使用此领域的 XML 签名密钥生成，并在 BinarySecurityToken 中指明其证书。应用的 wstrustSignResponse 覆盖此项，其 wstrustSignResponseElements 点名签名代替 Body 所覆盖的内容。故障以未签名形式发送。此项开启时，WSDL 的绑定携带 sp:IncludeTimestamp。开启时，若无法生成签名，该请求在两种模式下都是故障。"
+  },
+  "wstrust.responseProtectionOrder|label": {
+    "en": "55a63069d07b808c",
+    "text": "响应保护顺序"
+  },
+  "wstrust.responseProtectionOrder|description": {
+    "en": "0c8e29e5ac06276d",
+    "text": "两者都开启时，WS-Trust 响应签名与加密的顺序。`sign-then-encrypt` 对明文签名，是 WS-SecurityPolicy 的默认；`encrypt-then-sign` 对密文签名，此时 WSDL 的绑定携带 sp:EncryptBeforeSigning。wsse:Security 头按接收方处理它的顺序写入。应用的 wstrustResponseProtectionOrder 覆盖此项。"
+  },
+  "wstrust.encryptSignature|label": {
+    "en": "98953d7bb9c3dc42",
+    "text": "加密响应的签名"
+  },
+  "wstrust.encryptSignature|description": {
+    "en": "32f9389b65f0eb67",
+    "text": "WS-Trust 响应的 ds:Signature 是否也被加密（WS-SecurityPolicy 的 sp:EncryptSignature），加密给响应的接收方。仅在响应先签名后加密时读取。此项开启时，WSDL 的绑定携带 sp:EncryptSignature。应用的 wstrustEncryptSignature 覆盖此项。"
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "身份提供方发起的登录"

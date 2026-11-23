@@ -1380,6 +1380,43 @@ const XML_ACCEPTED_TRANSFORMS = Object.freeze([
   'http://www.w3.org/TR/2001/REC-xml-c14n-20010315#WithComments'
 ]);
 
+// THE SIGNATURE, SERIALIZED ALONE, WITH THE NAMESPACES IN SCOPE WHERE IT
+// STOOD (#1917's WSS4J round trip, 2026-11-23). Each WS-Security verifier
+// hands the engine the ds:Signature by itself, and serialized alone it lost
+// the declarations its ancestors made — the Envelope's soap and the security
+// header's wsse and wsu. Apache WSS4J, by default, writes an
+// InclusiveNamespaces PrefixList on SignedInfo's CanonicalizationMethod
+// naming exactly those, and exclusive c14n renders a listed prefix that is
+// IN SCOPE, so SignedInfo's octets here differed from the signer's and
+// every default WSS4J or CXF signature was refused as one that does not
+// verify (STS-KEYS-0012). The copy carries every declaration in scope; the
+// exclusive canonicalization renders only the listed and the visibly used,
+// so it canonicalizes as the signature did in place.
+function withInScopeNamespaces(element) {
+  log.debug("Entering withInScopeNamespaces().");
+  const copy = element.cloneNode(true);
+  const declared = {};
+  for (let cur = element; cur && cur.nodeType === 1; cur = cur.parentNode) {
+    const attrs = cur.attributes || [];
+    for (let i = 0; i < attrs.length; i++) {
+      const name = String(attrs[i].name || attrs[i].nodeName || '');
+      if ((name === 'xmlns' || name.indexOf('xmlns:') === 0) &&
+          !Object.prototype.hasOwnProperty.call(declared, name)) {
+        declared[name] = String(attrs[i].value || '');
+      }
+    }
+  }
+  Object.keys(declared).forEach(function (name) {
+    if (!copy.hasAttribute(name)) {
+      copy.setAttributeNS('http://www.w3.org/2000/xmlns/', name,
+                          declared[name]);
+    }
+  });
+  log.debug("Leaving withInScopeNamespaces(). " +
+            Object.keys(declared).length);
+  return copy;
+}
+
 // The id of an element, in every spelling this document could give one —
 // `wsu:Id` first, which is the WS-Security spelling.
 function wsuIdOf(element) {
@@ -1754,7 +1791,7 @@ function verifyWsSecuritySignature(xml, opts) {
   // refused otherwise), so each Reference resolves to the element the
   // reading checked by position.
   const signatureXml = withoutCertificateText(
-    serializer.serializeToString(sigEl));
+    serializer.serializeToString(withInScopeNamespaces(sigEl)));
   let result;
   try {
     result = xmldsig.verifyXml(signatureXml, {
@@ -1856,8 +1893,9 @@ function verifyWsSecurityHmac(xml, opts) {
   const key = Buffer.from(options.key);
   let result;
   try {
+    // In scope as it stood, for verifyWsSecuritySignature()'s reason.
     result = xmldsig.verifyXml(new xmldom.XMLSerializer()
-      .serializeToString(sigEl), {
+      .serializeToString(withInScopeNamespaces(sigEl)), {
       referencedXml: String(xml),
       allowedTransforms: XML_ACCEPTED_TRANSFORMS,
       verifier: function (octets, signatureBytes) {
@@ -1895,6 +1933,236 @@ function verifyWsSecurityHmac(xml, opts) {
   log.debug("Leaving verifyWsSecurityHmac(). Verified.");
   return Object.assign({}, reading, { ok: true, signatureValid: true,
                                       referencesValid: true });
+}
+
+// ===========================================================================
+// SIGNING A WS-SECURITY MESSAGE (#1917, with #1918): the sender's half of
+// what `readWsSecuritySignature()` reads. A ds:Signature in the security
+// header, one Reference per part by its wsu:Id, exclusive canonicalization
+// for SignedInfo and for every Reference (Basic Security Profile R5404 and
+// R5412), and a KeyInfo that is a SecurityTokenReference to the
+// BinarySecurityToken carrying the signer's certificate (X.509 Token Profile
+// 1.1 section 3.3.2) — the shape WSS4J, WCF and Metro check.
+//
+// **IT SIGNS WITH NODE'S OPENSSL, NOT WITH THE VENDORED ENGINE'S FORGE**
+// (ASVS 5.0.0 11.2.1, #1615): RSA PKCS#1 v1.5, RSASSA-PSS (the salt the
+// digest's length, RFC 9231 section 2.3.10), ECDSA as XML Signature 1.1's
+// raw r||s, and EdDSA; a key in the HSM through C_Sign, or C_SignAsync off
+// the event loop. The post-quantum methods are refused: they have no
+// certificate profile, so there is no BinarySecurityToken to reference.
+//
+// The caller lays the header out (`ws-trust/ws_integrity.ts`): the parts
+// carry their ids and the token is in the header already. This function
+// adds the signature where it is told, and nothing else.
+// ===========================================================================
+
+// The DigestMethod each signature method's hash is written with.
+const WSS_DIGEST_URIS = Object.freeze({
+  sha1: 'http://www.w3.org/2000/09/xmldsig#sha1',
+  sha224: 'http://www.w3.org/2001/04/xmldsig-more#sha224',
+  sha256: 'http://www.w3.org/2001/04/xmlenc#sha256',
+  sha384: 'http://www.w3.org/2001/04/xmldsig-more#sha384',
+  sha512: 'http://www.w3.org/2001/04/xmlenc#sha512',
+  'sha3-224': 'http://www.w3.org/2007/05/xmldsig-more#sha3-224',
+  'sha3-256': 'http://www.w3.org/2007/05/xmldsig-more#sha3-256',
+  'sha3-384': 'http://www.w3.org/2007/05/xmldsig-more#sha3-384',
+  'sha3-512': 'http://www.w3.org/2007/05/xmldsig-more#sha3-512'
+});
+
+const X509V3_VALUE_TYPE = 'http://docs.oasis-open.org/wss/2004/01/' +
+  'oasis-200401-wss-x509-token-profile-1.0#X509v3';
+
+// The document laid out for signing, and SignedInfo's canonical octets.
+// `finish(signature)` writes the SignatureValue and answers the document.
+function prepareWsSecurityMessageSignature(xml, opts) {
+  log.debug("Entering prepareWsSecurityMessageSignature().");
+  const options = opts || {};
+  const sigAlg = String(options.sigAlg || xmldsig.SIG_ALG_RSA_SHA256);
+  // THE XML SIGN CHOKEPOINT (#1368), as signXml() holds it.
+  const unsignable = signaturePolicy.signCause('xml', sigAlg);
+  if (unsignable) {
+    log.debug("Leaving prepareWsSecurityMessageSignature(). Not signed " +
+              "here.");
+    throw errorCodes.mark(new Error(unsignable.message), unsignable.code);
+  }
+  const method = XML_SIGNATURE_METHODS[sigAlg];
+  if (!method || ['rsa', 'rsa-pss', 'ecdsa', 'eddsa']
+    .indexOf(String(method.family)) < 0) {
+    log.debug("Leaving prepareWsSecurityMessageSignature(). The method.");
+    // error-code: none — the caller records its own (STS-WSTRUST-0086).
+    throw new Error('a WS-Security message is signed with RSA, RSA-PSS, ' +
+                    'ECDSA or EdDSA, whose keys carry an X.509 ' +
+                    'certificate to reference; ' +
+                    ((method && method.label) || sigAlg) + ' is not one');
+  }
+  const digestUri = WSS_DIGEST_URIS[String(method.hash || 'sha256')];
+  if (!digestUri) {
+    log.debug("Leaving prepareWsSecurityMessageSignature(). The digest.");
+    // error-code: none — the caller records its own (STS-WSTRUST-0086).
+    throw new Error('no DigestMethod for ' + String(method.hash));
+  }
+  const nodeHash = String(method.hash || 'sha256');
+  const doc = new xmldom.DOMParser().parseFromString(String(xml),
+                                                       'text/xml');
+  const envelope = doc.documentElement;
+  const header = envelope ? directChildByLocal(envelope, 'Header') : null;
+  const security = header
+    ? directChildByLocal(header, 'Security', WSSE_NS) : null;
+  if (!security) {
+    log.debug("Leaving prepareWsSecurityMessageSignature(). No header.");
+    // error-code: none — the caller lays the header out first.
+    throw new Error('the message has no wsse:Security header to hold the ' +
+                    'signature');
+  }
+  if (duplicateIdsOf(doc).length) {
+    log.debug("Leaving prepareWsSecurityMessageSignature(). Repeated ids.");
+    // error-code: none — the caller records its own (STS-WSTRUST-0086).
+    throw new Error('an id is carried by more than one element');
+  }
+  const byId = {};
+  const all = doc.getElementsByTagName('*');
+  for (let i = 0; i < all.length; i++) {
+    const id = wsuIdOf(all[i]);
+    if (id) {
+      byId[id] = all[i];
+    }
+  }
+  const ids = [].concat(options.ids || []).map(String);
+  const references = ids.map(function (id) {
+    const target = byId[id];
+    if (!target) {
+      // error-code: none — the caller records its own (STS-WSTRUST-0086).
+      throw new Error('no element carries the id "' + id + '"');
+    }
+    const digest = nodeCrypto.createHash(nodeHash)
+      .update(Buffer.from(xmldsig.canonicalize(target), 'utf8'))
+      .digest('base64');
+    return '<ds:Reference URI="#' + id + '"><ds:Transforms>' +
+      '<ds:Transform Algorithm="' + EXC_C14N + '"/></ds:Transforms>' +
+      '<ds:DigestMethod Algorithm="' + digestUri + '"/>' +
+      '<ds:DigestValue>' + digest + '</ds:DigestValue></ds:Reference>';
+  }).join('');
+  if (!byId[String(options.tokenId || '')]) {
+    log.debug("Leaving prepareWsSecurityMessageSignature(). No token.");
+    // error-code: none — the caller lays the token out first.
+    throw new Error('no BinarySecurityToken carries the id "' +
+                    String(options.tokenId || '') + '"');
+  }
+  const signedInfo = '<ds:SignedInfo xmlns:ds="' + xmldsig.DS_NS + '">' +
+    '<ds:CanonicalizationMethod Algorithm="' + EXC_C14N + '"/>' +
+    '<ds:SignatureMethod Algorithm="' + sigAlg + '"/>' + references +
+    '</ds:SignedInfo>';
+  const placeholder = 'IYA-WSS-SIGNATURE-VALUE';
+  const signature = '<ds:Signature xmlns:ds="' + xmldsig.DS_NS + '"' +
+    (options.signatureId ? ' Id="' + String(options.signatureId) + '"'
+                         : '') + '>' +
+    signedInfo + '<ds:SignatureValue>' + placeholder +
+    '</ds:SignatureValue><ds:KeyInfo><wsse:SecurityTokenReference ' +
+    'xmlns:wsse="' + WSSE_NS + '"><wsse:Reference URI="#' +
+    String(options.tokenId) + '" ValueType="' + X509V3_VALUE_TYPE + '"/>' +
+    '</wsse:SecurityTokenReference></ds:KeyInfo></ds:Signature>';
+  const sigNode = doc.importNode(new xmldom.DOMParser()
+    .parseFromString(signature, 'text/xml').documentElement, true);
+  // Right after the header child `after` names (the token, so a receiver
+  // reading the header top-down meets the token before the signature that
+  // uses it), else last.
+  const after = options.after ? byId[String(options.after)] : null;
+  if (after && after.parentNode === security) {
+    security.insertBefore(sigNode, after.nextSibling);
+  } else {
+    security.appendChild(sigNode);
+  }
+  // SignedInfo as it now stands in the document: exclusive c14n renders
+  // only the prefixes it uses, so its place does not change its octets.
+  const placed = directChildByLocal(sigNode, 'SignedInfo');
+  const octets = Buffer.from(xmldsig.canonicalize(placed), 'utf8');
+  log.debug("Leaving prepareWsSecurityMessageSignature(). " + ids.length +
+            " reference(s).");
+  return {
+    method: method,
+    octets: octets,
+    finish: function (value) {
+      const valueEl = directChildByLocal(sigNode, 'SignatureValue');
+      valueEl.textContent = Buffer.from(value).toString('base64');
+      return new xmldom.XMLSerializer().serializeToString(doc);
+    }
+  };
+}
+
+// A SignatureValue over SignedInfo's octets with a software key.
+function wsSecuritySignatureValue(method, key, octets) {
+  log.debug("Entering wsSecuritySignatureValue(). " + method.family);
+  let out;
+  if (method.family === 'rsa') {
+    out = nodeCrypto.sign(method.hash, octets, {
+      key: key, padding: nodeCrypto.constants.RSA_PKCS1_PADDING });
+  } else if (method.family === 'rsa-pss') {
+    out = nodeCrypto.sign(method.hash, octets, {
+      key: key, padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING,
+      saltLength: nodeCrypto.createHash(method.hash).digest().length });
+  } else if (method.family === 'ecdsa') {
+    out = nodeCrypto.sign(method.hash, octets,
+                          { key: key, dsaEncoding: 'ieee-p1363' });
+  } else {
+    out = nodeCrypto.sign(null, octets, key);
+  }
+  log.debug("Leaving wsSecuritySignatureValue().");
+  return out;
+}
+
+/**
+ * Signs a SOAP envelope with a WS-Security message signature: a
+ * ds:Signature in its wsse:Security header, a Reference per id, exclusive
+ * canonicalization, and a SecurityTokenReference to the
+ * BinarySecurityToken the caller has put in that header.
+ *
+ * @param xml - the envelope, its wsse:Security header and token laid out
+ * @param opts - `privateKey` or `privateKeyPem`, `sigAlg` (a URI),
+ *   `ids` (the wsu:Id of each part to sign), `tokenId` (the
+ *   BinarySecurityToken's), `after` (the id of a header child to insert
+ *   the signature after, else it goes last) and `signatureId`
+ * @returns the signed envelope
+ */
+function signWsSecurityMessage(xml, opts) {
+  log.debug("Entering signWsSecurityMessage().");
+  const options = opts || {};
+  const prepared = prepareWsSecurityMessageSignature(xml, options);
+  const keyRef = options.privateKey || options.privateKeyPem;
+  let value;
+  if (isHsmKey(keyRef)) {
+    value = hsmKeyOf(keyRef).signSync(hsmXmlAlg(prepared.method),
+                                      prepared.octets);
+  } else {
+    const key = options.privateKey && typeof options.privateKey === 'object'
+      ? options.privateKey
+      : nodeCrypto.createPrivateKey(String(options.privateKeyPem || ''));
+    value = wsSecuritySignatureValue(prepared.method, key, prepared.octets);
+  }
+  log.debug("Leaving signWsSecurityMessage().");
+  return prepared.finish(value);
+}
+
+/**
+ * `signWsSecurityMessage()`, with a key in the HSM signing off the event
+ * loop (C_SignAsync). Any other key is `signWsSecurityMessage()`, resolved.
+ *
+ * @param xml - as for `signWsSecurityMessage()`
+ * @param opts - as for `signWsSecurityMessage()`
+ * @returns a promise of the signed envelope
+ */
+async function signWsSecurityMessageOffLoop(xml, opts) {
+  log.debug("Entering signWsSecurityMessageOffLoop().");
+  const options = opts || {};
+  const keyRef = options.privateKey || options.privateKeyPem;
+  if (!isHsmKey(keyRef)) {
+    log.debug("Leaving signWsSecurityMessageOffLoop(). In place.");
+    return signWsSecurityMessage(xml, options);
+  }
+  const prepared = prepareWsSecurityMessageSignature(xml, options);
+  const value = await hsmKeyOf(keyRef).sign(hsmXmlAlg(prepared.method),
+                                            prepared.octets);
+  log.debug("Leaving signWsSecurityMessageOffLoop(). In the HSM.");
+  return prepared.finish(value);
 }
 
 // ---------------------------------------------------------------------------
@@ -22026,6 +22294,8 @@ module.exports = {
   readWsSecuritySignature: readWsSecuritySignature,
   verifyWsSecuritySignature: verifyWsSecuritySignature,
   verifyWsSecurityHmac: verifyWsSecurityHmac,
+  signWsSecurityMessage: signWsSecurityMessage,
+  signWsSecurityMessageOffLoop: signWsSecurityMessageOffLoop,
   signQueryString: signQueryString,
   verifyQueryString: verifyQueryString,
   idOf: idOf,

@@ -6143,6 +6143,38 @@
     "en": "ffc141f1ac37ec59",
     "text": "WS-Trust प्रतिक्रिया की एकबारगी सामग्री कुंजी प्राप्तकर्ता की RSA सार्वजनिक कुंजी में कैसे लपेटी जाती है। `rsa-oaep` XML Encryption 1.1 का RSA-OAEP है, SHA-256 और MGF1-SHA-256 के साथ; `rsa-oaep-mgf1p` SHA-1 पर OAEP है। जिस प्राप्तकर्ता का प्रमाणपत्र EC है उसे ECDH-ES कुंजी समझौते से एन्क्रिप्ट किया जाता है, यह कुछ भी कहे। किसी अनुप्रयोग का wstrustKeyTransportAlgorithm इसे ओवरराइड करता है। `rsa-1_5` RSAES-PKCS1-v1_5 है और टूटा हुआ है, और इसे इसलिए दिया जाता है क्योंकि तैनात अनुरोधकर्ता और कुछ स्वीकार न करे। चेतावनी: rsa-1_5 केवल विकास मोड है — उत्पाद मोड में जहाँ पढ़ा जाता है वहाँ अनदेखा होता है, इस सेटिंग पर और किसी अनुप्रयोग के wstrustKeyTransportAlgorithm पर (rsa-oaep-mgf1p उपयोग होता है, एक बार लॉग, STS-CORE-0106), और इसे सेट करना अस्वीकार है (STS-CORE-0103, STS-REG-0193)। तत्व wst:EncryptWith इस एल्गोरिदम का नाम केवल तभी ले सकता है जब प्रतिक्रिया एन्क्रिप्शन चालू हो।"
   },
+  "wstrust.signRequest|label": {
+    "en": "ee6db27fb290a51c",
+    "text": "हस्ताक्षरित अनुरोध आवश्यक करें"
+  },
+  "wstrust.signRequest|description": {
+    "en": "3155eaca9d1a8680",
+    "text": "क्या ऐसा RequestSecurityToken, जिसका AppliesTo किसी अपने अनुप्रयोग का नाम नहीं लेता, WS-Security संदेश हस्ताक्षर लेकर आना चाहिए। जिस अनुरोध का AppliesTo किसी अनुप्रयोग का नाम लेता है, उसके लिए उस अनुप्रयोग का wstrustSignRequest इसे ओवरराइड करता है, और उसका wstrustSignRequestElements बताता है कि हस्ताक्षर को SOAP Body के अलावा और क्या आच्छादित करना चाहिए। चालू होने पर, बिना स्वीकृत हस्ताक्षर वाला अनुरोध, या ऐसा अनुरोध जिसका हस्ताक्षर किसी नामित तत्व को आच्छादित नहीं करता, wsse:FailedCheck है। विकास मोड हस्ताक्षर पर विश्वास करता है, जैसा वह हमेशा करता आया है।"
+  },
+  "wstrust.signResponse|label": {
+    "en": "9eb9dbebd82abfea",
+    "text": "प्रतिक्रिया पर हस्ताक्षर करें"
+  },
+  "wstrust.signResponse|description": {
+    "en": "3a78c4fc80cc38a7",
+    "text": "क्या RequestSecurityTokenResponse एक wsu:Timestamp और उस पर तथा SOAP Body पर WS-Security संदेश हस्ताक्षर रखता है, जो इस विश्वास क्षेत्र की XML हस्ताक्षर कुंजी से बना है और एक BinarySecurityToken में उसके प्रमाणपत्र का नाम देता है। किसी अनुप्रयोग का wstrustSignResponse इसे ओवरराइड करता है, और उसका wstrustSignResponseElements बताता है कि हस्ताक्षर Body के स्थान पर क्या आच्छादित करता है। दोष बिना हस्ताक्षर के भेजा जाता है। जब तक यह चालू है, WSDL का बाइंडिंग sp:IncludeTimestamp रखता है। चालू होने पर, और हस्ताक्षर न बन सके, तो अनुरोध दोनों मोड में दोष है।"
+  },
+  "wstrust.responseProtectionOrder|label": {
+    "en": "55a63069d07b808c",
+    "text": "प्रतिक्रिया सुरक्षा क्रम"
+  },
+  "wstrust.responseProtectionOrder|description": {
+    "en": "0c8e29e5ac06276d",
+    "text": "वह क्रम जिसमें WS-Trust प्रतिक्रिया पर हस्ताक्षर और एन्क्रिप्शन होता है जब दोनों चालू हों। `sign-then-encrypt` साफ़ पाठ पर हस्ताक्षर करता है और WS-SecurityPolicy का डिफ़ॉल्ट है; `encrypt-then-sign` सिफरटेक्स्ट पर हस्ताक्षर करता है, और तब WSDL का बाइंडिंग sp:EncryptBeforeSigning रखता है। wsse:Security हेडर उसी क्रम में लिखा जाता है जिसमें प्राप्तकर्ता उसे संसाधित करता है। किसी अनुप्रयोग का wstrustResponseProtectionOrder इसे ओवरराइड करता है।"
+  },
+  "wstrust.encryptSignature|label": {
+    "en": "98953d7bb9c3dc42",
+    "text": "प्रतिक्रिया का हस्ताक्षर एन्क्रिप्ट करें"
+  },
+  "wstrust.encryptSignature|description": {
+    "en": "32f9389b65f0eb67",
+    "text": "क्या WS-Trust प्रतिक्रिया का ds:Signature भी एन्क्रिप्ट किया जाता है (WS-SecurityPolicy का sp:EncryptSignature), प्रतिक्रिया के प्राप्तकर्ता के लिए। केवल तभी पढ़ा जाता है जब प्रतिक्रिया पर हस्ताक्षर हो और फिर उसे एन्क्रिप्ट किया जाए। जब तक यह चालू है, WSDL का बाइंडिंग sp:EncryptSignature रखता है। किसी अनुप्रयोग का wstrustEncryptSignature इसे ओवरराइड करता है।"
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "पहचान-प्रदाता-प्रारंभित साइन-इन"

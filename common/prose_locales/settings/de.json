@@ -6143,6 +6143,38 @@
     "en": "ffc141f1ac37ec59",
     "text": "Wie der einmalige Inhaltsschlüssel einer WS-Trust-Antwort auf den öffentlichen RSA-Schlüssel des Empfängers gewickelt wird. `rsa-oaep` ist RSA-OAEP aus XML Encryption 1.1 mit SHA-256 und MGF1-SHA-256; `rsa-oaep-mgf1p` ist OAEP über SHA-1. Ein Empfänger, dessen Zertifikat EC ist, wird per ECDH-ES-Schlüsselvereinbarung verschlüsselt, was immer dies sagt. Das wstrustKeyTransportAlgorithm einer Anwendung setzt dies außer Kraft. `rsa-1_5` ist RSAES-PKCS1-v1_5 und ist gebrochen, und es wird angeboten, weil ein eingesetzter Anfragender nichts anderes annehmen kann. WARNUNG: rsa-1_5 gilt nur im Entwicklungsmodus — im Produktmodus wird es dort ignoriert, wo es gelesen wird, bei dieser Einstellung und beim wstrustKeyTransportAlgorithm einer Anwendung (verwendet wird rsa-oaep-mgf1p, einmal protokolliert, STS-CORE-0106), und das Setzen wird abgelehnt (STS-CORE-0103, STS-REG-0193). Ein Element wst:EncryptWith darf diesen Algorithmus nur nennen, solange die Antwortverschlüsselung eingeschaltet ist."
   },
+  "wstrust.signRequest|label": {
+    "en": "ee6db27fb290a51c",
+    "text": "Eine signierte Anfrage verlangen"
+  },
+  "wstrust.signRequest|description": {
+    "en": "3155eaca9d1a8680",
+    "text": "Ob ein RequestSecurityToken, dessen AppliesTo keine eigene Anwendung nennt, eine WS-Security-Nachrichtensignatur tragen muss. Das wstrustSignRequest einer Anwendung ersetzt dies für eine Anfrage, deren AppliesTo sie nennt, und ihr wstrustSignRequestElements nennt, was die Signatur neben dem SOAP Body sonst noch abdecken muss. An, ist eine Anfrage ohne akzeptierte Signatur oder eine, deren Signatur ein genanntes Element nicht abdeckt, ein wsse:FailedCheck. Der Entwicklungsmodus glaubt einer Signatur, wie er es immer getan hat."
+  },
+  "wstrust.signResponse|label": {
+    "en": "9eb9dbebd82abfea",
+    "text": "Eine Antwort signieren"
+  },
+  "wstrust.signResponse|description": {
+    "en": "3a78c4fc80cc38a7",
+    "text": "Ob ein RequestSecurityTokenResponse einen wsu:Timestamp und eine WS-Security-Nachrichtensignatur über diesen und den SOAP Body trägt, erstellt mit dem XML-Signaturschlüssel dieses Vertrauensbereichs und mit Nennung seines Zertifikats in einem BinarySecurityToken. Das wstrustSignResponse einer Anwendung setzt dies außer Kraft, und ihr wstrustSignResponseElements nennt, was die Signatur anstelle des Body abdeckt. Ein Fehler wird unsigniert gesendet. Die Bindung der WSDL trägt sp:IncludeTimestamp, solange dies eingeschaltet ist. Eingeschaltet, und die Signatur lässt sich nicht erstellen, ist die Anfrage in beiden Modi ein Fehler."
+  },
+  "wstrust.responseProtectionOrder|label": {
+    "en": "55a63069d07b808c",
+    "text": "Reihenfolge des Antwortschutzes"
+  },
+  "wstrust.responseProtectionOrder|description": {
+    "en": "0c8e29e5ac06276d",
+    "text": "Die Reihenfolge, in der eine WS-Trust-Antwort signiert und verschlüsselt wird, wenn beides eingeschaltet ist. `sign-then-encrypt` signiert den Klartext und ist der Standard von WS-SecurityPolicy; `encrypt-then-sign` signiert den Geheimtext, und die Bindung der WSDL trägt dann sp:EncryptBeforeSigning. Der wsse:Security-Header wird in der Reihenfolge geschrieben, in der ein Empfänger ihn verarbeitet. Das wstrustResponseProtectionOrder einer Anwendung setzt dies außer Kraft."
+  },
+  "wstrust.encryptSignature|label": {
+    "en": "98953d7bb9c3dc42",
+    "text": "Die Signatur einer Antwort verschlüsseln"
+  },
+  "wstrust.encryptSignature|description": {
+    "en": "32f9389b65f0eb67",
+    "text": "Ob die ds:Signature einer WS-Trust-Antwort ebenfalls verschlüsselt wird (sp:EncryptSignature von WS-SecurityPolicy), für den Empfänger der Antwort. Wird nur gelesen, solange die Antwort signiert und dann verschlüsselt wird. Die Bindung der WSDL trägt sp:EncryptSignature, solange dies eingeschaltet ist. Das wstrustEncryptSignature einer Anwendung setzt dies außer Kraft."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Vom Identitätsanbieter initiierte Anmeldung"

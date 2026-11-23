@@ -74,6 +74,7 @@ import WebWebAuthn = require('../common/web_webauthn');
 import WebMessages = require('../common/web_messages');
 import WebAccounts = require('../common/web_accounts');
 import WebFooter = require('../common/web_footer');
+import WebWsTrustProtection = require('./web_wstrust_protection');
 
 type Json = any;
 
@@ -1431,6 +1432,13 @@ class ConsoleRuntime extends SpaClient {
     this.wireChoicePanels();
     this.wireConditionalRequirements();
     this.wirePolicyNames();
+    // THE WS-TRUST MESSAGE PROTECTION BOXES AND XPATH BUILDER (#1917), on an
+    // application's WS-Trust sub-tab: a change they make to the form is a
+    // change typed, for the unsaved-changes question (#561).
+    const self = this;
+    WebWsTrustProtection.wire(this.env, this.t, function () {
+      self.dirty = true;
+    });
     this.loadPageScripts();
     this.revealActiveNav();
   }

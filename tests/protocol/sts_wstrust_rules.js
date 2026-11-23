@@ -30,6 +30,13 @@
 //      on a signed one selects the signer's own token, the AppliesTo's
 //      application choosing the cipher and the answer announcing its
 //      EncryptedKey (#747, #1668).
+//   I. message integrity per application (#1917, #1918): a request
+//      required signed (STS-WSTRUST-0084 without one), a request Apache
+//      WSS4J signed — its InclusiveNamespaces PrefixList included — held to
+//      the Header and Body presets, and the answer signed, verified by
+//      WSS4J against `/sts/cert`, alone, sign-then-encrypt and
+//      encrypt-then-sign; the realm's WSDL carrying sp:IncludeTimestamp
+//      while the realm signs. WSS4J is tests/tools/wss4j-driver.
 //   R. `reserved_password_refusal.js`'s WS-Trust half: `invalid` refused in
 //      both modes with a wrong password's answer, and the LDAP half: an LDAPS
 //      simple bind with `invalid` is 49 in both modes, STS-LDAP-0001 in
@@ -57,6 +64,7 @@
 const assert = require("assert");
 const ldapjs = require("ldapjs");
 const nodeCrypto = require("crypto");
+const childProcess = require("child_process");
 // xmldsig.js reaches for the bare DOM globals a node process lacks
 // (sts_wstrust_signed_requests.js's note).
 const xmldom = require("@xmldom/xmldom");
@@ -467,6 +475,249 @@ async function faults(P, D) {
       tokenType: W.SAML11 }, "STS-WSTRUST-0006", "ExpiredData");
   await K.unset(P, "oauth2.clockSkewS");
   log.debug("Leaving faults().");
+}
+
+// ------------------------------------------------------------------- I
+// MESSAGE INTEGRITY, OVER THE WIRE (#1917, #1918), with Apache WSS4J as the
+// independent peer: tests/tools/wss4j-driver, in the tests image, one JSON
+// request on stdin and one answer on stdout's last line.
+const WSA = "http://www.w3.org/2005/08/addressing";
+const SIGN_BODY = "/soap11:Envelope/soap11:Body | /soap12:Envelope/soap12:Body";
+const NOT_SECURITY = "[not(local-name()='Security' and namespace-uri()='" +
+  WSSE + "')]";
+const SIGN_HEADER = "/soap11:Envelope/soap11:Header/*" + NOT_SECURITY +
+  " | /soap12:Envelope/soap12:Header/*" + NOT_SECURITY;
+const ENCRYPT_BODY = "/soap11:Envelope/soap11:Body/* | " +
+  "/soap12:Envelope/soap12:Body/*";
+
+function wss4j(command, request) {
+  log.debug("Entering wss4j(). " + command);
+  log.debug("Leaving wss4j().");
+  return new Promise(function (resolve) {
+    const child = childProcess.execFile("wss4j-driver", [command],
+      { timeout: 120000, maxBuffer: 64 * 1024 * 1024 },
+      function (error, stdout, stderr) {
+        let out = null;
+        try {
+          out = JSON.parse(String(stdout || "").trim().split("\n").pop());
+        } catch (e) {
+          log.debug("Caught in wss4j(): " + ((e && e.message) || e));
+          // No answer: the child's own failure says why.
+          out = { ok: false, message: String((error && error.message) ||
+                  stderr || "no answer").slice(0, 600) };
+        }
+        resolve(out);
+      });
+    child.stdin.end(JSON.stringify(request));
+  });
+}
+
+// What WSS4J's signature result references, by local name.
+function signedBy(got, local) {
+  log.debug("Entering signedBy(). " + local);
+  const sig = (got.actions || []).filter(function (one) {
+    return one.action === "signature";
+  })[0];
+  log.debug("Leaving signedBy().");
+  return !!sig && sig.refs.some(function (ref) {
+    return ref.name.slice(-(local.length + 1)) === "}" + local;
+  });
+}
+
+function orderOf(got) {
+  log.debug("Entering orderOf().");
+  log.debug("Leaving orderOf().");
+  return (got.actions || []).map(function (one) {
+    return one.action;
+  }).filter(function (one) {
+    return one === "signature" || one === "encryption";
+  }).join(",");
+}
+
+// An RST for `appliesTo` with a wsa:Action header and no security header:
+// WSS4J writes that.
+function bareRst(appliesTo) {
+  log.debug("Entering bareRst().");
+  log.debug("Leaving bareRst().");
+  return '<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope">' +
+    '<s:Header><wsa:Action xmlns:wsa="' + WSA + '">' + W.WST +
+    '/RST/Issue</wsa:Action></s:Header><s:Body>' +
+    '<wst:RequestSecurityToken xmlns:wst="' + W.WST + '" Context="urn:uuid:' +
+    nodeCrypto.randomUUID() + '"><wst:RequestType>' + W.WST +
+    '/Issue</wst:RequestType><wsp:AppliesTo xmlns:wsp="http://schemas.' +
+    'xmlsoap.org/ws/2004/09/policy"><wsa:EndpointReference xmlns:wsa="' +
+    WSA + '"><wsa:Address>' + appliesTo + '</wsa:Address>' +
+    '</wsa:EndpointReference></wsp:AppliesTo></wst:RequestSecurityToken>' +
+    '</s:Body></s:Envelope>';
+}
+
+// A self-signed recipient for response encryption, made here.
+function recipient() {
+  log.debug("Entering recipient().");
+  const pair = nodeCrypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const forge = xmldsig.forge;
+  const cert = forge.pki.createCertificate();
+  cert.publicKey = forge.pki.publicKeyFromPem(pair.publicKey.export(
+    { type: "spki", format: "pem" }));
+  cert.serialNumber = "01";
+  cert.validity.notBefore = new Date(Date.now() - 60000);
+  cert.validity.notAfter = new Date(Date.now() + 86400000);
+  cert.setSubject([{ name: "commonName", value: "wr-recipient" }]);
+  cert.setIssuer([{ name: "commonName", value: "wr-recipient" }]);
+  const keyPem = pair.privateKey.export({ type: "pkcs8", format: "pem" });
+  cert.sign(forge.pki.privateKeyFromPem(keyPem), forge.md.sha256.create());
+  log.debug("Leaving recipient().");
+  return { certPem: forge.pki.certificateToPem(cert), keyPem: keyPem };
+}
+
+async function integrity(P, D) {
+  log.debug("Entering integrity().");
+  log.info("=== I. message integrity, with Apache WSS4J (#1917) ===");
+  const probe = await wss4j("verify", { xml: "<a/>", trustPems: [] });
+  K.check("I0. the WSS4J driver answers", function () {
+    assert.ok(probe && !/ENOENT|no answer/.test(String(probe.message || "")),
+              JSON.stringify(probe));
+  });
+  const set = function (id, attribute, value) {
+    return api(id, "/applications/set", { application: "wf-back",
+      attribute: attribute, value: value });
+  };
+  const add = function (id, attribute, value) {
+    return api(id, "/applications/add", { application: "wf-back",
+      attribute: attribute, value: value });
+  };
+  const remove = function (id, attribute, value) {
+    return api(id, "/applications/remove", { application: "wf-back",
+      attribute: attribute, value: value });
+  };
+  const post = function (id, raw) {
+    return K.send(K.rb(id) + "/sts", { method: "POST", raw: raw,
+      headers: { "Content-Type": "application/soap+xml" } });
+  };
+  // The request half, in the product realm.
+  const holder = openIssued(await api(P, "/users/issue-signing-certificate",
+    { user: "wf-alice", keyAlg: "rsa-2048", password: FILE_PASSWORD }));
+  const key8 = nodeCrypto.createPrivateKey(holder.keyPem)
+    .export({ type: "pkcs8", format: "pem" });
+  await set(P, "wstrustSignRequest", "true");
+  const unsigned = await K.coded(P, "STS-WSTRUST-0084", function () {
+    return W.post(P, { security: UT("wf-alice", PASSWORD), appliesTo: BACK });
+  });
+  K.check("I1. product: a request for an application that requires one " +
+          "signed, unsigned, is wsse:FailedCheck (STS-WSTRUST-0084)",
+          function () {
+            const r = unsigned.answer;
+            assert.strictEqual(r.status, 500, r.text.slice(0, 300));
+            assert.ok(/FailedCheck/.test(r.text), r.text.slice(0, 400));
+            assert.ok(unsigned.rose >= 1, "no new STS-WSTRUST-0084 row");
+          });
+  const signed = await post(P, signedRst(holder, BACK));
+  K.check("I2. product: the same request signed is answered", function () {
+    assert.strictEqual(signed.status, 200, signed.text.slice(0, 400));
+  });
+  await add(P, "wstrustSignRequestElements", SIGN_BODY);
+  await add(P, "wstrustSignRequestElements", SIGN_HEADER);
+  for (const inclusive of [true, false]) {
+    const made = await wss4j("sign", { xml: bareRst(BACK),
+      certPem: holder.certPem, keyPem: key8, inclusivePrefixes: inclusive,
+      parts: [{ local: "Action", ns: WSA }] });
+    const r = made.ok ? await post(P, String(made.xml))
+                      : { status: 0, text: JSON.stringify(made) };
+    K.check("I3. product: a request WSS4J signed over the Body, the " +
+            "Timestamp and wsa:Action" + (inclusive ? ", with its " +
+            "InclusiveNamespaces PrefixList," : ",") + " passes the " +
+            "Header and Body presets", function () {
+              assert.strictEqual(r.status, 200, r.text.slice(0, 500));
+            });
+  }
+  const headerless = await K.coded(P, "STS-WSTRUST-0085", function () {
+    return post(P, signedRst(holder, BACK).replace("<s:Header>",
+      '<s:Header><wsa:Action xmlns:wsa="' + WSA + '">' + W.WST +
+      "/RST/Issue</wsa:Action>"));
+  });
+  K.check("I4. product: a wsa:Action the signature does not cover is " +
+          "wsse:FailedCheck (STS-WSTRUST-0085)", function () {
+    const r = headerless.answer;
+    assert.strictEqual(r.status, 500, r.text.slice(0, 300));
+    assert.ok(/FailedCheck/.test(r.text) && headerless.rose >= 1,
+              r.text.slice(0, 400));
+  });
+  await set(P, "wstrustSignRequest", "");
+  await remove(P, "wstrustSignRequestElements", SIGN_BODY);
+  await remove(P, "wstrustSignRequestElements", SIGN_HEADER);
+
+  // The response half: WSS4J trusts the certificate the realm publishes.
+  for (const [id, m] of [[D, "development"], [P, "product"]]) {
+    const cert = await K.send(K.rb(id) + "/sts/cert", {});
+    const trust = (/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/
+      .exec(cert.text) || [""])[0];
+    await set(id, "wstrustSignResponse", "true");
+    const asked = await W.post(id, { security: UT("wf-alice", PASSWORD),
+                                     appliesTo: BACK });
+    const got = await wss4j("verify", { xml: asked.text,
+                                        trustPems: [trust] });
+    K.check("I5. " + m + ": WSS4J verifies the signed answer over its " +
+            "Body and Timestamp against /sts/cert", function () {
+              assert.strictEqual(asked.status, 200, asked.text.slice(0, 300));
+              assert.ok(trust, "no certificate at /sts/cert");
+              assert.ok(got.ok && signedBy(got, "Body") &&
+                        signedBy(got, "Timestamp"),
+                        JSON.stringify(got).slice(0, 800));
+            });
+    const altered = await wss4j("verify", { xml: asked.text.replace(
+      /(<saml:Issuer>)/, "$1x"), trustPems: [trust] });
+    K.check("I5. " + m + ": and refuses it once the Body is altered",
+            function () {
+              assert.ok(altered.ok === false, JSON.stringify(altered)
+                .slice(0, 400));
+            });
+    if (id === D) {
+      const to = recipient();
+      await set(D, "wstrustEncryptResponse", "true");
+      await add(D, "wstrustEncryptResponseElements", ENCRYPT_BODY);
+      await set(D, "wstrustEncryptionCertificate", to.certPem);
+      for (const [order, expect] of [["sign-then-encrypt",
+                                      "encryption,signature"],
+                                     ["encrypt-then-sign",
+                                      "signature,encryption"]]) {
+        await set(D, "wstrustResponseProtectionOrder", order);
+        const r = await W.post(D, { security: UT("wf-alice", PASSWORD),
+                                    appliesTo: BACK });
+        const both = await wss4j("verify", { xml: r.text,
+          trustPems: [trust], recipientKeyPem: to.keyPem,
+          recipientCertPem: to.certPem });
+        K.check("I6. development, " + order + ": WSS4J processes the " +
+                "header in that order, decrypts the Body and verifies",
+                function () {
+                  assert.strictEqual(r.status, 200, r.text.slice(0, 300));
+                  assert.ok(both.ok && orderOf(both) === expect &&
+                            signedBy(both, "Body"),
+                            JSON.stringify(both).slice(0, 800));
+                });
+      }
+      await set(D, "wstrustResponseProtectionOrder", "");
+      await set(D, "wstrustEncryptionCertificate", "");
+      await remove(D, "wstrustEncryptResponseElements", ENCRYPT_BODY);
+      await set(D, "wstrustEncryptResponse", "");
+    }
+    await set(id, "wstrustSignResponse", "");
+  }
+
+  // The realm's WSDL follows the realm's setting.
+  await K.set(D, "wstrust.signResponse", "true");
+  const wsdl = await K.send(K.rb(D) + "/sts/metadata", {});
+  await K.unset(D, "wstrust.signResponse");
+  const plain = await K.send(K.rb(D) + "/sts/metadata", {});
+  K.check("I7. the realm's WSDL carries sp:IncludeTimestamp and offers " +
+          "sp:SignedElements on its outputs while the realm signs, and " +
+          "neither otherwise", function () {
+            assert.ok(/sp:IncludeTimestamp/.test(wsdl.text) &&
+                      /sp:SignedElements/.test(wsdl.text),
+                      wsdl.text.slice(0, 300));
+            assert.ok(!/sp:IncludeTimestamp/.test(plain.text) &&
+                      !/sp:SignedElements/.test(plain.text));
+          });
+  log.debug("Leaving integrity().");
 }
 
 // ----------------------------------------------------------------- R (LDAP)
@@ -937,6 +1188,7 @@ async function test() {
   await fixtures(P);
   await fixtures(D);
   await faults(P, D);
+  await integrity(P, D);
   await reserved(P, D);
   for (const [id, product] of [[D, false], [P, true]]) {
     await jwtShape(id, product);
