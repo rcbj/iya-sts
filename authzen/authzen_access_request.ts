@@ -2439,22 +2439,7 @@ class AccessRequests {
     log.debug("Entering AccessRequests.approvalState(). " + task.id);
     const now = self.nowS();
     const until = Number(approval.approvedUntil);
-    const claims: Json = {
-      aud: task.base,
-      typ: 'authzen-access-request-approval',
-      id: approval.id,
-      task_id: task.id,
-      subject: task.subject,
-      resource: task.resource,
-      action: task.action,
-      context: task.context || {},
-      binding_context_members: task.contextMembers || [],
-      approved_at: instant(Number(approval.approvedAt) * 1000),
-      approved_until: instant(until * 1000),
-      approver: approval.approver,
-      caller: task.requester,
-      application: task.application
-    };
+    const claims: Json = self.approvalClaims(task, approval);
     let token = '';
     try {
       token = String(self.deps.loadOauth2().signPublishedDocument(
@@ -2472,6 +2457,65 @@ class AccessRequests {
     }
     log.debug("Leaving AccessRequests.approvalState(). " + !!token);
     return token;
+  }
+
+  // The claims `approval.state` signs.
+  private approvalClaims(task: Json, approval: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.approvalClaims(). " + task.id);
+    log.debug("Leaving AccessRequests.approvalClaims().");
+    return {
+      aud: task.base,
+      typ: 'authzen-access-request-approval',
+      id: approval.id,
+      task_id: task.id,
+      subject: task.subject,
+      resource: task.resource,
+      action: task.action,
+      context: task.context || {},
+      binding_context_members: task.contextMembers || [],
+      approved_at: instant(Number(approval.approvedAt) * 1000),
+      approved_until: instant(Number(approval.approvedUntil) * 1000),
+      approver: approval.approver,
+      caller: task.requester,
+      application: task.application
+    };
+  }
+
+  /**
+   * Signs `approval.state` off the event loop, for a realm whose keys are in
+   * the HSM (#1955 P8 follow-up), and writes it onto the approval once it is
+   * made — unless the approval was revoked or replaced meanwhile. A failure
+   * is `approvalState()`'s: logged, and the approval stands by id.
+   *
+   * @param task - the row
+   * @param approval - the approval just stored on it
+   * @returns a promise settled once the state is written or given up
+   */
+  private approvalStateLater(task: Json, approval: Json): Promise<void> {
+    const self = this;
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AccessRequests.approvalStateLater(). " + task.id);
+    const until = Number(approval.approvedUntil);
+    const lifetime = Math.max(1, until - self.nowS());
+    log.debug("Leaving AccessRequests.approvalStateLater().");
+    return Promise.resolve().then(function () {
+      return self.deps.loadOauth2().signPublishedDocumentAsync(
+        self.approvalClaims(task, approval), task.base, lifetime,
+        'oauth-signed-metadata');
+    }).then(function (signed: any) {
+      const token = String(signed || '');
+      if (token && task.approval === approval && !approval.revokedAt) {
+        approval.state = token;
+        self.save(task);
+      }
+    }, function (e: any) {
+      log.debug("Caught in AccessRequests.approvalStateLater(): " +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-AUTHZEN-0140') + 'authzen: an ' +
+                'approval\'s state could not be signed, so the approval ' +
+                'stands by id: ' + ((e && e.message) || e));
+    });
   }
 
   /**
@@ -2524,9 +2568,18 @@ class AccessRequests {
                              approvedUntil: Math.min.apply(null, limits),
                              approver: approver.username || approver.door,
                              door: approver.door, revokedAt: 0 };
-    const state = self.approvalState(task, approval);
-    if (state) {
-      approval.state = state;
+    // WITH THE REALM'S KEYS IN THE HSM the state is signed off the event
+    // loop (#1955 P8 follow-up) and written onto the approval when it is
+    // made; until then the approval stands by id, as it does when a state
+    // cannot be signed at all. `decide()` stays synchronous for its three
+    // doors (the portal, the console, `/admin-api`).
+    if (helpers.keysInHsm()) {
+      self.approvalStateLater(task, approval);
+    } else {
+      const state = self.approvalState(task, approval);
+      if (state) {
+        approval.state = state;
+      }
     }
     task.approval = approval;
     task.decidedBy = approval.approver;

@@ -193,10 +193,24 @@ than waited for. On, such a module calls `C_Sign`, `C_Decrypt` or
 SoftHSM2 and Yubico's module both offer the asynchronous calls through
 `pkcs11js`.
 
-Four short calls stay synchronous: opening and logging in a session (once
-per session, and again after an outage), finding a key's handle (once per
-key, and after an outage), and the `C_SignInit` / `C_DecryptInit` that
-starts each operation. None of them performs the cryptographic operation.
+The calls `pkcs11js` has no asynchronous form for are not made on the event
+loop either. Opening and logging in a session, finding a key's handle after
+an outage, reading a new key's public half, the `C_SignInit` /
+`C_DecryptInit` / `C_EncryptInit` that starts each operation, the session
+object of an `aes-key-wrap-pad` wrap, and initialising the module again
+after a lost device are made by a **control thread**: one small thread per
+loaded module, in each process and request worker that uses it, started at
+its first call and idle otherwise. PKCS#11 sessions belong to the process,
+so the session that thread opens is the one the asynchronous call then runs
+on. If that thread fails, the calls waiting on it are refused with
+`STS-KEYS-0211` and the next call starts a new one.
+
+What still runs on the event loop is the start (the first session, the slot
+and the mechanism list are read before the service listens), a key's first
+use in a process (its handle and public key are found once), and the
+blocking calls `keys.pkcs11SynchronousSign` opts in to. A blocking call uses
+an idle session or one extra session the token keeps for blocking calls, so
+a token never has more than `keys.pkcs11Sessions` + 1 sessions open.
 
 **Latency.** These figures are from SoftHSM2 on a laptop with two cores:
 
@@ -211,7 +225,9 @@ starts each operation. None of them performs the cryptographic operation.
 | XML RSA-OAEP decryption, synchronous (setting on) | about 0.2 ms |
 | XML RSA-OAEP decryption, 50 at a time without blocking | about 0.25 ms each |
 
-While those ran off the event loop, its longest gap was 17 ms: the canonicalization and the bookkeeping of 200 operations started together, not the token.
+While those ran off the event loop, its longest gap was 17 ms: the
+canonicalization and the bookkeeping of 200 operations started together, not
+the token.
 
 A YubiHSM 2 is much slower: Yubico's published figures are tens of
 milliseconds for ECDSA P-256 and hundreds for RSA-2048. Off the event loop
@@ -223,9 +239,11 @@ volume of tokens with a YubiHSM 2 should sign them with an EC key
 ## Sessions, workers and outages
 
 * Each process and request worker opens its own sessions, at most
-  `keys.pkcs11Sessions` (4) for each token. One session runs one operation at a
-  time. A YubiHSM 2 has 16 sessions in total across every process on every
-  node, so keep sessions × processes × nodes below 16.
+  `keys.pkcs11Sessions` (4) for each token, plus one for blocking calls if
+  one is made. Sessions are opened when an operation needs one, not at start.
+  One session runs one operation at a time. A YubiHSM 2 has 16 sessions in
+  total across every process on every node, so keep sessions × processes ×
+  nodes below 16.
 * **libuv's thread pool.** An asynchronous PKCS#11 call runs on libuv's
   thread pool, which a process shares between its front thread, its request
   workers, password hashing (scrypt) and post-quantum signing. A call holds
@@ -241,6 +259,12 @@ volume of tokens with a YubiHSM 2 should sign them with an EC key
   more. No timer is involved. An operation that still fails is refused with
   `STS-KEYS-0201`, and the service keeps running. If a data key cannot be
   unwrapped at start, the start stops.
+* When the module itself must be initialised again (a device error, or the
+  module saying it is not initialised), it is done once for every token on
+  that module, after the operations using its sessions finish. Operations
+  that arrive meanwhile wait for it. A blocking call that meets this is
+  refused with `STS-KEYS-0212`, and the module is initialised again without
+  blocking.
 * The other codes: `STS-KEYS-0202` (the module or token cannot be used),
   `STS-KEYS-0203` (the key), `STS-KEYS-0204` (no mechanism), `STS-KEYS-0205`
   (the URI or PIN), `STS-KEYS-0206` (a key in the HSM was asked to do
@@ -249,7 +273,9 @@ volume of tokens with a YubiHSM 2 should sign them with an EC key
   `STS-KEYS-0208` (a key made before the HSM keys could decrypt),
   `STS-KEYS-0209` (a blocking call, by a module with no asynchronous call,
   while `keys.pkcs11SynchronousSign` is off), `STS-KEYS-0210` (libuv's
-  thread pool is smaller than the PKCS#11 calls that can run at once). See
+  thread pool is smaller than the PKCS#11 calls that can run at once),
+  `STS-KEYS-0211` (the control thread failed), `STS-KEYS-0212` (a blocking
+  call while the module is initialised again). See
   [Error codes](error-codes.md).
 
 ## SoftHSM2

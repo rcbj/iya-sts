@@ -1449,12 +1449,13 @@ class AuthnApi {
     // is signed off the event loop first where the realm's keys are in the
     // HSM. The promise goes back to the express guard.
     log.debug("Leaving AuthnApi.logoutAccountsAct(). Signing out.");
-    return AuthnApi.logout().signOutAccountsActAsync(req, res, body).then((done) => {
-      if (done.code) {
-        errorCodes.mark(res, done.code);
-      }
-      authn.answerJson(res, done.status, done.json);
-    });
+    return AuthnApi.logout().signOutAccountsActAsync(req, res, body)
+      .then((done) => {
+        if (done.code) {
+          errorCodes.mark(res, done.code);
+        }
+        authn.answerJson(res, done.status, done.json);
+      });
   }
 
   /**

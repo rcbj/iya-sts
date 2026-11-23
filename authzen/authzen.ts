@@ -584,6 +584,12 @@ class AuthzenSurface {
       out.context = Object.assign(out.context || {},
                                   { obligations: outcome.obligations });
     }
+    // The context as it stands before a requestable denial's members, kept
+    // for a deferred denial whose token cannot be signed (#1955 P8
+    // follow-up): `settleDenials()` answers it as the synchronous door
+    // answers a denial that came back null.
+    const beforeDenial = out.context ? Object.assign({}, out.context)
+                                     : undefined;
     // The profile's Decision Context members (#1180): a requestable
     // denial's, and a re-evaluation's next step or approval.
     if (denial) {
@@ -599,7 +605,9 @@ class AuthzenSurface {
     if (denial && deferral && deferral.length &&
         deferral[deferral.length - 1].denial === denial) {
       deferral[deferral.length - 1].result = out;
-      deferral[deferral.length - 1].verdict = !!verdict;
+      deferral[deferral.length - 1].before = beforeDenial;
+      deferral[deferral.length - 1].verdict = verdict || null;
+      deferral[deferral.length - 1].decision = outcome.decision;
     }
     log.debug("Leaving AuthzenSurface.evaluateOne(). " + outcome.decision);
     return out;
@@ -630,23 +638,25 @@ class AuthzenSurface {
     log.debug("Entering AuthzenSurface.settleDenials().");
     const unsigned = await this.deps.accessRequests
       .signDeferredDenials(deferral);
+    // REBUILT, not edited: the context the item had before the denial's
+    // members, and a re-evaluation's answer asked again with no denial —
+    // exactly what `evaluateOne()` makes when `requestableDenial()` answers
+    // null, so a member that shares a name with a denial's (a reason) is
+    // never lost.
+    const ar = this.deps.accessRequests;
     deferral.forEach(function (one: any) {
       if (unsigned.indexOf(String(one.denial.evaluation_id)) < 0 ||
-          !one.result || !one.result.context) {
+          !one.result) {
         return;
       }
-      const context = one.result.context;
-      delete context.evaluation_id;
-      delete context.evaluated_at;
-      delete context.access_request;
+      let context = one.before ? Object.assign({}, one.before) : undefined;
       if (one.verdict) {
-        if (context.next_action === 'request') {
-          context.next_action = 'none';
-        }
-      } else {
-        delete context.reason;
+        context = Object.assign(context || {},
+          ar.reevaluation(one.verdict, one.decision, null));
       }
-      if (!Object.keys(context).length) {
+      if (context && Object.keys(context).length) {
+        one.result.context = context;
+      } else {
         delete one.result.context;
       }
     });

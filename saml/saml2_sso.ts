@@ -2395,19 +2395,24 @@ class Saml2Sso {
     return {
       xml: xml, id: id, signs: signs,
       unsigned: function () {
+        log.debug("Entering Saml2Sso.responseDraft.unsigned().");
         log.debug("Saml2Sso.responseDraft(): unsigned, saml2.signResponse " +
                   "is off.");
+        log.debug("Leaving Saml2Sso.responseDraft.unsigned().");
         return { xml: SamlModel.hold('saml2.Response', xml,
                                      'SAML 2.0 Response'),
                  id: id, signed: false };
       },
       signedAs: function (signed) {
+        log.debug("Entering Saml2Sso.responseDraft.signedAs().");
         logArtifact('SAML 2.0 Response', 'after signing', signed);
+        log.debug("Leaving Saml2Sso.responseDraft.signedAs().");
         return { xml: SamlModel.hold('saml2.Response', signed,
                                      'SAML 2.0 Response'),
                  id: id, signed: true };
       },
       failed: function (e) {
+        log.debug("Entering Saml2Sso.responseDraft.failed().");
         // Reported and returned unsigned rather than thrown, exactly as
         // buildSamlAssertion() does: an unsigned response that a service
         // provider rejects is a diagnosable failure, and an exception here
@@ -2416,6 +2421,7 @@ class Saml2Sso {
                                                     'could not be signed, ' +
                                                     'sending it unsigned: ' +
                                                       e.message);
+        log.debug("Leaving Saml2Sso.responseDraft.failed().");
         return { xml: SamlModel.hold('saml2.Response', xml,
                                      'SAML 2.0 Response'),
                  id: id, signed: false };
@@ -4527,15 +4533,21 @@ class Saml2Sso {
     const namedEl = firstByLocal(query, 'NameID');
     const named = namedEl ? String(namedEl.textContent || '').trim() : '';
     log.debug("Leaving Saml2Sso.attributeQuery(). Finding the session.");
+    // The answer is made AFTER the placement's own failure is handled, so a
+    // failure answering (a signature) is not reported as sessions that
+    // could not be read: it reaches the route's guard, as it does in
+    // single-cell mode (#1955 P8 follow-up).
     return samlCells.sessionHolder(req, 'saml2', spEntityId, named)
       .then(function (holder: string) {
         if (cellPlacement.relayToCell(req, res, holder,
                                       'a SAML 2.0 attribute query')) {
-          return undefined;
+          return false;
         }
-        return self.answerAttributeQuery(req, res, query, spEntityId,
-                                         answer);
-      }).catch(function (e) {
+        return true;
+      }).then(function (here: boolean) {
+        return here ? self.answerAttributeQuery(req, res, query, spEntityId,
+                                                answer) : undefined;
+      }, function (e) {
         log.error(errorCodes.tag('STS-AUTHN-0338') +
                   'saml2: an AttributeQuery could not be placed because ' +
                   'the sessions could not be read: ' +
@@ -5617,18 +5629,24 @@ class Saml2Sso {
     return {
       xml: xml, id: id, signs: signs,
       unsigned: function () {
+        log.debug("Entering Saml2Sso.logoutRequestDraft.unsigned().");
+        log.debug("Leaving Saml2Sso.logoutRequestDraft.unsigned().");
         return SamlModel.hold('saml2.LogoutRequest', xml,
                               'SAML 2.0 LogoutRequest');
       },
       signedAs: function (signed) {
+        log.debug("Entering Saml2Sso.logoutRequestDraft.signedAs().");
+        log.debug("Leaving Saml2Sso.logoutRequestDraft.signedAs().");
         return SamlModel.hold('saml2.LogoutRequest', signed,
                               'SAML 2.0 LogoutRequest');
       },
       failed: function (e) {
+        log.debug("Entering Saml2Sso.logoutRequestDraft.failed().");
         log.error(errorCodes.tag('STS-SAML-0013') + 'the LogoutRequest ' +
                                                     'could not be signed, ' +
                                                     'sending it unsigned: ' +
                                                     e.message);
+        log.debug("Leaving Saml2Sso.logoutRequestDraft.failed().");
         return SamlModel.hold('saml2.LogoutRequest', xml,
                               'SAML 2.0 LogoutRequest');
       }
@@ -6559,15 +6577,19 @@ class Saml2Sso {
     return {
       xml: xml, id: id,
       signedAs: function (signed) {
+        log.debug("Entering Saml2Sso.metadataDraft.signedAs().");
         logArtifact('SAML IdP metadata', 'after signing', signed);
+        log.debug("Leaving Saml2Sso.metadataDraft.signedAs().");
         return SamlModel.hold('md.EntityDescriptor', signed,
                               'SAML identity provider metadata');
       },
       failed: function (e) {
+        log.debug("Entering Saml2Sso.metadataDraft.failed().");
         log.error(errorCodes.tag('STS-SAML-0014') + 'the SAML 2.0 metadata ' +
                                                     'could not be signed, ' +
                                                     'serving it unsigned: ' +
                                                       e.message);
+        log.debug("Leaving Saml2Sso.metadataDraft.failed().");
         return SamlModel.hold('md.EntityDescriptor', xml,
                               'SAML identity provider metadata');
       }

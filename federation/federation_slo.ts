@@ -2326,6 +2326,8 @@ class FederationSlo {
       const handle = fedSp.putContext({ kind: 'slo-request', id: record.fedId,
                                         requestId: id, username: username });
       const answer = function (target) {
+        log.debug("Entering FederationSlo.partnerLogoutFor.answer().");
+        log.debug("Leaving FederationSlo.partnerLogoutFor.answer().");
         return { ok: true, target: Object.assign({
           relationship: record.fedId, label: label, protocol: 'SAML 2.0',
           what: 'a signed LogoutRequest to ' + destination }, target) };

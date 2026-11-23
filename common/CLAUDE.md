@@ -8070,7 +8070,18 @@ SLH-DSA has no mechanism here. `docs/v1.2.0/hsm.md` is the operator half.
   `STS-KEYS-0201`. **A key is held as the template that finds it**, not its
   handle: SoftHSM2 answered CKR_OBJECT_HANDLE_INVALID after its last session
   closed (the login went with it), so the handle is found again whenever the
-  token's `generation` moved. No timer anywhere.
+  token's `generation` moved. No timer anywhere. **A re-initialisation is the
+  MODULE's, not the token's** (the P8 follow-up): C_Finalize ends every
+  session of every token on it, so it is made once for all of them
+  (`reinitializeEntry()`), after the operations of this thread holding its
+  sessions drain, with the module's `epoch` moved so a session from before
+  is forgotten — never closed (its handle may name a new session) nor lent
+  again — and `open` never reset while sessions are lent.
+  CKR_CRYPTOKI_NOT_INITIALIZED skips C_Finalize: another thread did it, and
+  finalizing again would end the sessions that thread just opened. A
+  thread's count cannot see another thread's calls, which is the one gap: a
+  device that really went away can cost an operation in flight on another
+  thread its retry.
 * **A SIGNING KEY IN THE HSM TRAVELS WHERE A PEM TRAVELS.** Its "PEM" is a
   reference, `pkcs11-key:v1:<b64url {token, id, kty, crv, bits}>` — what
   `export()` answers and what `keystore.js` seals — and `privateKeyFrom()`
@@ -8150,12 +8161,24 @@ SLH-DSA has no mechanism here. `docs/v1.2.0/hsm.md` is the operator half.
   — a synchronous door, or a module with no asynchronous call — refuses
   `STS-KEYS-0209`; no service door takes that road with a realm key. The
   doors are listed in the PR of the follow-up and in `docs/v1.2.0/hsm.md`.
-  What stays synchronous is short and not cryptographic: C_OpenSession and
-  C_Login once per pooled session, C_FindObjects once per key (and after an
-  outage), and each operation's C_SignInit / C_DecryptInit. Key GENERATION
-  is asynchronous through `prepareKeySet()` and a rotation; the synchronous
-  `makeStsKeys()` road still generates in place, for a set nobody prepared
-  (`app.js` prepares the request's realm first).
+  **AND THE CALLS PKCS11JS HAS NO ASYNCHRONOUS FORM FOR ARE A THREAD'S**
+  (`crypto_impl/pkcs11_thread.js`, one per loaded module per thread that
+  loaded it): C_OpenSession and C_Login, C_FindObjects*, C_GetAttributeValue,
+  every C_*Init, the `k1` wrap's session object, C_Finalize / C_Initialize.
+  PKCS#11 sessions and handles are the process's, so the session it opens is
+  the one C_SignAsync runs on here. Prewarming was the alternative and was
+  refused: the refresh after an outage is still made on some turn of the
+  loop, and eager sessions could exhaust a YubiHSM 2's sixteen at start. A
+  test's fake has no file to load in a thread and is called in place.
+  `tests/pkcs11_signing.js` K20 records every call the serving thread's
+  binding gets on SoftHSM2 and holds the list to the `…Async` ones. What
+  stays on the loop is the start (`connect()`), a key's first resolution in
+  a thread (`keyPair()`: the resolver is synchronous by design), and the
+  blocking opt-in, which takes an idle session or the token's one blocking
+  session — never one past `maxSessions` + 1. Key GENERATION is asynchronous
+  through `prepareKeySet()` and a rotation; the synchronous `makeStsKeys()`
+  road still generates in place, for a set nobody prepared (`app.js`
+  prepares the request's realm first).
 * **LIBUV'S THREAD POOL.** The asynchronous pkcs11js calls run on libuv's
   pool — one per process, shared by the front thread and every request
   worker, and by scrypt and post-quantum signing (`pq_native.js`). A call

@@ -3983,6 +3983,21 @@ const CODES = [
       'Nothing blocks the event loop; a slow token could hold every pool ' +
       'thread. The line names the size that leaves room (#1955).',
     spec: '' },
+  { code: 'STS-KEYS-0211',
+    summary: 'The thread that makes a PKCS#11 token\'s non-cryptographic ' +
+      'calls off the event loop (opening and logging in a session, finding ' +
+      'a key, reading its attributes, beginning an operation, the key ' +
+      'wrap\'s session object, initialising the module again) failed or ' +
+      'exited. The calls waiting on it are refused and the next one starts ' +
+      'a new thread (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0212',
+    summary: 'A blocking PKCS#11 call was refused because the module is ' +
+      'being initialised again after the device was lost, or must be and ' +
+      'asynchronous calls of this thread still hold sessions on it: the ' +
+      'module is initialised again off the event loop once they drain, and ' +
+      'the next call is made on it (#1955).',
+    spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -29675,6 +29690,13 @@ const CODES = [
   { code: 'STS-LOGOUT-0015',
     summary: 'Ending another session was refused because the sign-in was not recent enough.',
     spec: 'HTTP 403' },
+  { code: 'STS-LOGOUT-0016',
+    summary: 'A sign-out with the realm\'s keys in the HSM could not sign, ' +
+      'off the event loop, the SAML 2.0 LogoutRequests or a federation ' +
+      'partner\'s sign-out of one of its sessions, so none is offered for ' +
+      'that session (or the partner is not told); the sign-out itself goes ' +
+      'on (#1955).',
+    spec: '' },
   { code: 'STS-LAUNCH-0001',
     summary: 'A /launch/{app} link named no application this realm has ' +
       '(#713).',

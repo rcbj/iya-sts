@@ -480,8 +480,15 @@ class HttpSignatures {
         const later = self.signResponse(res, args, message, verified,
                                         state.wrote);
         if (later) {
-          later.then(function () {
+          // Ended whatever the signature came to: a response is always
+          // sent, signed or not. Until then `writableEnded` is false.
+          const end = function (): void {
             originalEnd.apply(res, args);
+          };
+          later.then(end, function (e: any) {
+            log.debug("Caught in HttpSignatures.armResponse(): " +
+                      ((e && e.message) || e));
+            end();
           });
           return res;
         }
@@ -550,7 +557,17 @@ class HttpSignatures {
                   "loop.");
         return stsCrypto.signHttpMessageOffLoop(message, signOptions)
           .then(function (signed: Json) {
-            HttpSignatures.setSignature(res, signed, alg);
+            try {
+              HttpSignatures.setSignature(res, signed, alg);
+            } catch (e) {
+              // The headers were sent while it signed: unsigned, as below.
+              log.debug("Caught in HttpSignatures.signResponse(): " +
+                        ((e && e.message) || e));
+              log.warn(errorCodes.tag('STS-OAUTH-0942') + 'FAPI 2.0 HTTP ' +
+                       'Signatures: a resource response could not be ' +
+                       'signed, and is sent unsigned: ' +
+                       ((e && e.message) || e));
+            }
           }, function (e: any) {
             log.debug("Caught in HttpSignatures.signResponse(): " +
                       ((e && e.message) || e));

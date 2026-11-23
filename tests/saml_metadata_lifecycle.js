@@ -1104,8 +1104,9 @@ async function run(t) {
       const res = kit.fakeRes();
       const params = {};
       params[param] = name;
-      await handler(kit.fakeReq('GET', path + '/' + encodeURIComponent(name), {},
-                          '', '', { params: params }), res);
+      await handler(kit.fakeReq('GET',
+                                path + '/' + encodeURIComponent(name), {},
+                                '', '', { params: params }), res);
       log.debug("Leaving scopedGet().");
       return res;
     };
@@ -1114,8 +1115,9 @@ async function run(t) {
       const res = kit.fakeRes();
       const params = {};
       params[param] = name;
-      await handler(kit.fakeReq('POST', path + '/' + encodeURIComponent(name), {},
-                          '', '<x/>', { params: params }), res);
+      await handler(kit.fakeReq('POST',
+                                path + '/' + encodeURIComponent(name), {},
+                                '', '<x/>', { params: params }), res);
       log.debug("Leaving scopedPost().");
       return res;
     };
@@ -1165,7 +1167,8 @@ async function run(t) {
         t.check(is404(asOauth, 'STS-SAML-0082'),
                 'an application that is NOT a SAML 2.0 service provider ' +
                 'is 404 as well', asOauth.statusCode + ' ' + codeOf(asOauth));
-        const mine = await scopedGet(meta2, '/saml2/metadata', registered2, 'sp');
+        const mine = await scopedGet(meta2, '/saml2/metadata', registered2,
+                                     'sp');
         t.check(mine.statusCode === 200 && /EntityDescriptor/.test(mine.body),
                 'a REGISTERED service provider\'s document is 200',
                 mine.statusCode + ' ' + mine.body.slice(0, 160));
@@ -1187,8 +1190,8 @@ async function run(t) {
                 /EntityDescriptor/.test(byRp.body),
                 'a REGISTERED relying party\'s document is 200',
                 byRp.statusCode + ' ' + byRp.body.slice(0, 160));
-        const saml2As11 = await scopedGet(meta11, '/saml11/metadata', registered2,
-                                    'rp');
+        const saml2As11 = await scopedGet(meta11, '/saml11/metadata',
+                                          registered2, 'rp');
         t.check(is404(saml2As11, 'STS-SAML-0083'),
                 'a SAML 2.0 service provider is not a SAML 1.1 relying ' +
                 'party', saml2As11.statusCode + ' ' + codeOf(saml2As11));

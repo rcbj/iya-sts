@@ -4033,9 +4033,12 @@ PROBES.pkcs11 = {
         if (uri.id) {
           template.push({ type: 0x102, value: uri.id });
         }
-        const found = token.find(template);
+        // Off the event loop (#1955 P8 follow-up): the search and the
+        // attribute reads are the token's control thread's.
+        const found = await token.findAsync(template);
         const facts = found.length === 1
-          ? token.attributes(found[0], [0x100, 0x161, 0x162, 0x103])
+          ? await token.attributesAsync(found[0],
+                                        [0x100, 0x161, 0x162, 0x103])
           : new Map();
         const flag = function (t) {
           return facts.has(t) ? facts.get(t)[0] !== 0 : null;

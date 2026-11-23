@@ -186,8 +186,8 @@ async function run(t) {
     log.debug("Entering getSso().");
     const res = kit.fakeRes();
     const raw = 'SAMLRequest=' + encodeURIComponent(deflate(xml));
-    await sso(kit.fakeReq('GET', '/saml2/sso', { SAMLRequest: deflate(xml) }, raw),
-        res);
+    await sso(kit.fakeReq('GET', '/saml2/sso',
+                          { SAMLRequest: deflate(xml) }, raw), res);
     log.debug("Leaving getSso().");
     return res;
   };

@@ -50,6 +50,14 @@
 //      so a timer scheduled before each operation fires before it resolves;
 //      against SoftHSM2 the binding's blocking calls are made to throw.
 //   H. (SoftHSM2) the latency, in place and off the loop.
+//   K20. (SoftHSM2) no blocking PKCS#11 call of ANY kind is made on the
+//      thread that serves — sessions, logins, searches, attribute reads and
+//      each operation's Init are the control thread's.
+//   L. a software key's output is byte-identical through the off-the-loop
+//      twins: a JWS, an XML signature, a Redirect-binding signature, an XML
+//      decryption.
+//   M. two tokens on one module meeting an outage at once recover with one
+//      re-initialisation, after their operations drain, and both sign.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -145,6 +153,11 @@ function childMain() {
     process.env.SOFTHSM2_CONF = conf;
     childProcess.execFileSync('softhsm2-util', ['--init-token', '--free',
       '--label', 'signing', '--so-pin', '5678', '--pin', '4321'],
+      { stdio: 'ignore', env: process.env });
+    // M's second token on the same module, made before the module is
+    // initialised so its slot list holds it.
+    childProcess.execFileSync('softhsm2-util', ['--init-token', '--free',
+      '--label', 'second', '--so-pin', '5678', '--pin', '4321'],
       { stdio: 'ignore', env: process.env });
     fs.writeFileSync(pinFile, '4321');
     binding = require(process.env.PS_PKCS11JS);
@@ -402,6 +415,37 @@ function childMain() {
       });
     } else {
       binding.slowAsyncOnly(25);
+    }
+    // NO BLOCKING CALL OF ANY KIND ON THIS THREAD (#1955 P8 follow-up): on
+    // SoftHSM2 every other call of the binding this thread loaded is
+    // recorded while K runs — C_OpenSession, C_Login, C_FindObjects*,
+    // C_GetAttributeValue, every C_*Init, the key wrap's objects, C_Finalize
+    // — after the token is made to open its sessions and find its keys again
+    // (its idle sessions dropped, its generation moved). They are the control
+    // thread's (`pkcs11_thread.js`), on its own copy of the binding, so this
+    // thread may make the asynchronous calls and nothing else.
+    const syncMade = [];
+    const recorded = {};
+    if (WHICH === 'softhsm') {
+      const proto = Object.getPrototypeOf(realLib);
+      Object.getOwnPropertyNames(proto).concat(Object.keys(realLib))
+        .forEach(function (name) {
+          if (!/^C_/.test(name) || /Async$/.test(name) ||
+              Object.prototype.hasOwnProperty.call(recorded, name) ||
+              Object.prototype.hasOwnProperty.call(unpatched, name) ||
+              typeof realLib[name] !== 'function') {
+            return;
+          }
+          recorded[name] = Object.prototype.hasOwnProperty.call(realLib, name)
+            ? realLib[name] : null;
+          const through = realLib[name];
+          realLib[name] = function () {
+            syncMade.push(name);
+            return through.apply(realLib, arguments);
+          };
+        });
+      heldToken.dropIdle();
+      heldToken.generation++;
     }
     async function offTheLoop(fn) {
       let fired = false;
@@ -710,9 +754,23 @@ function childMain() {
       Object.keys(unpatched).forEach(function (name) {
         realLib[name] = unpatched[name];
       });
+      Object.keys(recorded).forEach(function (name) {
+        if (recorded[name]) {
+          realLib[name] = recorded[name];
+        } else {
+          delete realLib[name];
+        }
+      });
       note(blockingMade.length === 0,
            'K15. no door called a blocking C_Sign, C_Decrypt or C_DeriveKey ' +
            'with the setting off', JSON.stringify(blockingMade));
+      note(syncMade.length === 0 && heldToken.entry.control.started >= 1,
+           'K20. nor any other blocking PKCS#11 call on this thread — the ' +
+           'sessions were opened and logged in, the keys found again, each ' +
+           'operation begun and the key-set certificates\' public keys read ' +
+           'by the control thread', JSON.stringify(syncMade.slice(0, 40)) +
+           ' (' + syncMade.length + ' call(s)); control threads started: ' +
+           heldToken.entry.control.started);
     } else {
       const made = binding.slowAsyncOnly(0);
       note(made.length === 0,
@@ -993,6 +1051,146 @@ function childMain() {
            'J6a. and the agreement falls back to C_DeriveKey only while the ' +
            'setting is on', Buffer.isBuffer(derivedOn) ? derivedOn.length
                                                      : derivedOn);
+    }
+
+    // ------------------------------------------------------------ L
+    // A SOFTWARE KEY'S OUTPUT IS BYTE-IDENTICAL through the off-the-loop
+    // twins (#1955 P8 follow-up): the twin IS the synchronous door, called
+    // and resolved. RS256 and RSA-SHA256 (PKCS#1 v1.5) are deterministic, so
+    // the same input signs to the same bytes.
+    config.setOverride('keys.pkcs11SynchronousSign', false);
+    const softPair = nodeCrypto.generateKeyPairSync('rsa',
+      { modulusLength: 2048 });
+    const softPem = softPair.privateKey.export({ type: 'pkcs8',
+                                                 format: 'pem' });
+    const jwsOpts = { algorithm: 'RS256', keyid: 'soft', noTimestamp: true };
+    const softSync = stsCrypto.signJws({ sub: 'l1', n: 1 }, softPem,
+                                       jwsOpts);
+    const softTwin = await stsCrypto.signJwsOffLoop({ sub: 'l1', n: 1 },
+                                                    softPem, jwsOpts);
+    note(typeof softSync === 'string' && softSync === softTwin,
+         'L1. a software RS256 JWS is the same bytes through ' +
+         'signJwsOffLoop() as through signJws()',
+         String(softSync).slice(-24) + ' / ' + String(softTwin).slice(-24));
+    const softCert = stsCrypto.selfSignedRsaCertificate({
+      bits: 2048, rsaPrivateKeyPem: softPem, commonName: 'l2',
+      serialPrefix: 'l2', years: 1 });
+    const lDoc = '<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:' +
+      '2.0:metadata" ID="_l2" entityID="https://l2.test"/>';
+    const xmlOpts = { privateKeyPem: softPem, certPem: softCert.certPem,
+                      placement: stsCrypto.PLACEMENT.FIRST, refUri: '#_l2' };
+    const xmlSyncL = stsCrypto.signXml(lDoc, xmlOpts);
+    const xmlTwinL = await stsCrypto.signXmlOffLoop(lDoc, xmlOpts);
+    note(typeof xmlSyncL === 'string' && xmlSyncL === xmlTwinL,
+         'L2. a software key\'s XML signature is the same bytes through ' +
+         'signXmlOffLoop() as through signXml()',
+         String(xmlSyncL).length + ' / ' + String(xmlTwinL).length);
+    const lQs = 'SAMLRequest=l3&SigAlg=' + encodeURIComponent(
+      'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256');
+    const qsSync = stsCrypto.signQueryString(lQs, softPem,
+      'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256');
+    const qsTwin = await stsCrypto.signQueryStringOffLoop(lQs, softPem,
+      'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256');
+    note(qsSync === qsTwin && !!qsSync,
+         'L3. a software key\'s Redirect-binding signature is the same ' +
+         'bytes off the loop');
+    const lSealed = stsCrypto.encryptElement(plainXml, softCert.certPem,
+                                             { keyTransport: 'rsa-oaep' });
+    const decSyncL = stsCrypto.decryptElement(lSealed, softPem);
+    const decTwinL = await stsCrypto.decryptElementOffLoop(lSealed, softPem);
+    note(decSyncL && decSyncL.ok && decTwinL && decTwinL.ok &&
+         decSyncL.xml === decTwinL.xml && decSyncL.xml === plainXml,
+         'L4. a software key\'s XML decryption answers the same through ' +
+         'decryptElementOffLoop()', (decTwinL && decTwinL.why) || '');
+    config.setOverride('keys.pkcs11SynchronousSign', true);
+
+    // ------------------------------------------------------------ M
+    // TWO TOKENS ON ONE MODULE RECOVER TOGETHER (#1955 P8 follow-up): an
+    // outage met on both at once initialises the shared module again ONCE,
+    // after the operations holding its sessions drain; every session from
+    // before is forgotten, none is lent again, and both tokens sign after
+    // it. The fake loses its device; SoftHSM2 is told it did (the recovery
+    // itself, C_Finalize and C_Initialize, is real).
+    {
+      const pkcs11M = require(ROOT + '/common/crypto_impl/pkcs11');
+      let bindingM = binding;
+      let modulePathM = String(process.env.STS_KEYS_PKCS11_MODULE);
+      let first;
+      if (WHICH === 'softhsm') {
+        first = heldToken;
+      } else {
+        modulePathM = '/fake/libfake-pkcs11-pair.so';
+        bindingM = require(ROOT + '/tests/tools/fake-pkcs11.js')
+          .fakeBinding({ modulePath: modulePathM,
+                         tokens: [{ label: 'one', pin: '4321' },
+                                  { label: 'second', pin: '4321' }] });
+        first = pkcs11M.openToken(bindingM, { modulePath: modulePathM,
+          tokenLabel: 'one', pin: '4321', maxSessions: 3 });
+      }
+      const second = pkcs11M.openToken(bindingM, { modulePath: modulePathM,
+        tokenLabel: 'second', pin: '4321', maxSessions: 3 });
+      let m = 'not run';
+      try {
+        const keyA = await first.generateKeyPairAsync(
+          { kty: 'EC', crv: 'P-256' }, 'm-a', nodeCrypto.randomBytes(8));
+        const keyB = await second.generateKeyPairAsync(
+          { kty: 'EC', crv: 'P-256' }, 'm-b', nodeCrypto.randomBytes(8));
+        const epoch0 = first.entry.epoch;
+        const sameEntry = first.entry === second.entry;
+        const signs = function (n) {
+          const out = [];
+          for (let i = 0; i < n; i++) {
+            out.push(first.sign(keyA.key, 'ES256', Buffer.from('a' + i)));
+            out.push(second.sign(keyB.key, 'ES256', Buffer.from('b' + i)));
+          }
+          return out;
+        };
+        const before = signs(3);
+        let recovered;
+        if (WHICH === 'softhsm') {
+          // Both tokens meet a lost device while their signatures are in
+          // flight.
+          recovered = Promise.all([first.recover({ code: 0x30,
+                                                   message: 'test' }),
+                                   second.recover({ code: 0x30,
+                                                    message: 'test' })]);
+        } else {
+          bindingM.loseDevice();
+          recovered = Promise.resolve();
+        }
+        const settled = await Promise.allSettled(before.concat([recovered]));
+        const after = await Promise.allSettled(signs(2));
+        const failed = settled.concat(after).filter(function (r) {
+          return r.status !== 'fulfilled';
+        }).map(function (r) {
+          return String((r.reason && r.reason.message) || r.reason);
+        });
+        const verifies = await first.sign(keyA.key, 'ES256',
+                                          Buffer.from('m-check'));
+        const ok = nodeCrypto.verify('sha256', Buffer.from('m-check'),
+          { key: keyA.publicKey, dsaEncoding: 'ieee-p1363' }, verifies);
+        m = JSON.stringify({ sameEntry: sameEntry,
+          epochMoved: first.entry.epoch - epoch0,
+          failed: failed, verifies: ok,
+          lent: [first.lent, second.lent],
+          inflight: first.entry.inflight,
+          open: [first.open, second.open],
+          recovering: !!first.entry.recovering });
+        const parsed = JSON.parse(m);
+        m = sameEntry && parsed.epochMoved === 1 && !failed.length && ok &&
+            parsed.inflight === 0 && !parsed.recovering &&
+            first.lent === 0 && second.lent === 0 &&
+            first.open >= 1 && first.open <= first.maxSessions + 1 &&
+            second.open >= 1 && second.open <= second.maxSessions + 1
+          ? 'recovered ' + m : 'wrong ' + m;
+      } catch (e) {
+        m = String((e && e.stack) || e).slice(0, 600);
+      }
+      note(/^recovered/.test(m),
+           'M1. two tokens on one module meeting an outage at once recover ' +
+           'with ONE re-initialisation, after their operations drain, and ' +
+           'both sign after it', m);
+      second.close();
     }
   })().catch(function (e) {
     note(false, 'the child ran to the end', e && e.stack);

@@ -129,6 +129,7 @@ interface SoftwareStatementDeps {
   log: typeof helpers.log;
   STS: typeof helpers.STS;
   signJwtAs: typeof helpers.signJwtAs;
+  signJwtAsOffLoop: typeof helpers.signJwtAsOffLoop;
   nowSec: typeof helpers.nowSec;
   randomId: typeof helpers.randomId;
   assertionGrant: typeof assertionGrant;
@@ -210,6 +211,7 @@ class SoftwareStatement {
       log: helpers.log,
       STS: helpers.STS,
       signJwtAs: helpers.signJwtAs,
+      signJwtAsOffLoop: helpers.signJwtAsOffLoop,
       nowSec: helpers.nowSec,
       randomId: helpers.randomId,
       assertionGrant: assertionGrant,
@@ -921,7 +923,7 @@ class SoftwareStatement {
    * @returns a promise of `issue()`'s answer
    */
   async issueAsync(opts: Json): Promise<Json> {
-    const { log } = this.deps;
+    const { log, signJwtAsOffLoop } = this.deps;
     log.debug("Entering SoftwareStatement.issueAsync().");
     const planned = this.draft(opts);
     if (!planned.ok || !planned.claims) {
@@ -932,8 +934,8 @@ class SoftwareStatement {
     let statement;
     try {
       // certificate-header: none — as in issue().
-      statement = await helpers.signJwtAsOffLoop(claims, 'RS256', null,
-                                                 { header: { typ: TYPE } });
+      statement = await signJwtAsOffLoop(claims, 'RS256', null,
+                                         { header: { typ: TYPE } });
     } catch (e) {
       log.debug("Caught in SoftwareStatement.issueAsync(): " +
                 ((e && e.message) || e));
