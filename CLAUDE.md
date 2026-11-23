@@ -1160,6 +1160,28 @@ string it renders. **A version may never be the thing that stops this service
 starting.** `common/CLAUDE.md` argues it; `xacml-pep/CLAUDE.md` carries the
 remote PEP's copy.
 
+## Who merges, and how agents share this repository (2026-11-23)
+
+**One session is THE MERGER, and only it merges into `develop`** (rcbj,
+2026-11-23; the role used to be called the integrator). Every other agent —
+Claude, Grok, Copilot — works on its own branch in its own worktree, pushes,
+opens a pull request into `develop`, and stops; it never runs `gh pr merge`
+and never pushes `develop`. On 2026-11-23 two agents merged at once: two pull
+requests landed before their reviews were acted on, and every develop push
+run was cancelled by the next merge.
+
+* **`develop` has a merge queue** (the `develop: merge queue` ruleset). A
+  merge goes through it, one at a time, and waits for `mirror`,
+  `dependency-windows` and `rust`; `.github/workflows/tests.yml` runs those
+  on `merge_group` and skips `build` there. Nothing pushes to `develop`
+  directly.
+* **Claim a ticket before starting on it**: a `claimed:claude`,
+  `claimed:grok` or `claimed:copilot` label, and a comment naming the branch.
+  A ticket claimed by another agent is not yours; ask rcbj.
+* **A worktree carries an `.owner` file** at its top (agent, branch, date),
+  excluded through `.git/info/exclude`. A worktree whose `.owner` names
+  another agent is not touched, and nor is one a process is working in.
+
 ## Tests
 
 **The protocol suite is WRITTEN in the parent project and a COPY of it RUNS here.**
