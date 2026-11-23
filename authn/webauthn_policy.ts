@@ -77,6 +77,9 @@
 
 import config = require('../common/config');
 import helpers = require('../common/helpers');
+// The policy's refusals as catalog sentences (#2006), so the sign-in pages
+// and the portal draw them in their own language.
+import Sentence = require('../common/sentence');
 import InstanceSlot = require('../common/instance_slot');
 import webauthn = require('./webauthn');
 // The error codes. A LEAF that requires nothing, so it cannot close a cycle
@@ -783,16 +786,13 @@ class WebauthnPolicy {
     const results = (posted && posted.clientExtensionResults) || {};
     const uv = typeof requireUv === 'boolean' ? requireUv
                                               : this.requireUserVerification();
-    let refusal: { code: string; why: string } | null = null;
+    let refusal: { code: string; why: string | Sentence } | null = null;
     if (appid && passwordless) {
       refusal = { code: 'STS-AUTHN-0565',
-        why: 'That security key was imported from a U2F service and ' +
-             'cannot verify who you are, so it cannot sign you in on its ' +
-             'own. Use it after your password.' };
+        why: Sentence.say('refusals.passkey.u2fNotAlone') };
     } else if (appid && !this.legacyAppIdPermitted(appid, rpId)) {
       refusal = { code: 'STS-AUTHN-0565',
-        why: 'That security key was imported from a U2F service this ' +
-             'realm no longer accepts (webauthn.u2fAppIds).' };
+        why: Sentence.say('refusals.passkey.u2fNotAccepted') };
     }
     log.debug('Leaving WebauthnPolicy.assertionExpectations(). ' +
               (refusal ? 'Refused.' : (appid ? 'A U2F key.' : 'Plain.')));
@@ -1028,42 +1028,32 @@ class WebauthnPolicy {
       // a client rule this refusal stops (`common/passkey_clients.ts`).
       return errorCodes.mark({ ok: false,
                reason: 'registrationMode pq-only',
-               why: 'The passkey policy offers post-quantum (ML-DSA) ' +
-                    'passkeys only here (registrationMode is pq-only), so ' +
-                    'a classical one cannot be made instead. Use a device ' +
-                    'or a security key that can make an ML-DSA passkey.' },
+               why: Sentence.say('refusals.passkey.retryPqOnlyProfile') },
                'STS-AUTHN-0420');
     }
     if (this.requestsPostQuantumOnly()) {
       log.debug('Leaving WebauthnPolicy.classicalRetryRefusal(). PQC only.');
       return errorCodes.mark({ ok: false,
                reason: 'webauthn.pqcOnly',
-               why: 'This realm requests post-quantum (ML-DSA) passkeys ' +
-                    'only (webauthn.pqcOnly), so a classical one cannot be ' +
-                    'made instead. Use a device or a security key that can ' +
-                    'make an ML-DSA passkey.' }, 'STS-AUTHN-0420');
+               why: Sentence.say('refusals.passkey.retryPqcOnly') },
+               'STS-AUTHN-0420');
     }
     if (this.requiresPostQuantumAt('registration')) {
       log.debug('Leaving WebauthnPolicy.classicalRetryRefusal(). Required ' +
                 'at registration.');
       return errorCodes.mark({ ok: false,
                reason: 'postQuantumRequired registration-and-sign-in',
-               why: 'The passkey policy requires a post-quantum (ML-DSA) ' +
-                    'passkey at registration (postQuantumRequired is ' +
-                    'registration-and-sign-in), so a classical one cannot ' +
-                    'be made instead. Use a device or a security key that ' +
-                    'can make an ML-DSA passkey.' }, 'STS-AUTHN-0420');
+               why: Sentence.say(
+                 'refusals.passkey.retryRequiredRegistration') },
+               'STS-AUTHN-0420');
     }
     if (at === 'sign-in' && this.requiresPostQuantumAt('sign-in')) {
       log.debug('Leaving WebauthnPolicy.classicalRetryRefusal(). Required ' +
                 'at sign-in.');
       return errorCodes.mark({ ok: false,
                reason: 'postQuantumRequired sign-in',
-               why: 'The passkey policy requires a post-quantum (ML-DSA) ' +
-                    'passkey to sign in here (postQuantumRequired), so a ' +
-                    'classical one made now would not sign you in. Use a ' +
-                    'device or a security key that can make an ML-DSA ' +
-                    'passkey.' }, 'STS-AUTHN-0420');
+               why: Sentence.say('refusals.passkey.retryRequiredSignIn') },
+               'STS-AUTHN-0420');
     }
     log.debug('Leaving WebauthnPolicy.classicalRetryRefusal(). Allowed.');
     return { ok: true };
@@ -1195,21 +1185,20 @@ class WebauthnPolicy {
     if (!this.settings().enabled) {
       log.debug('Leaving WebauthnPolicy.upgradeRefusal(). WebAuthn is off.');
       return errorCodes.mark({ ok: false,
-               why: 'Passkeys are switched off in this realm ' +
-                    '(webauthn.enabled), so none can be upgraded.' },
+               why: Sentence.say('refusals.passkey.upgradeOff') },
                'STS-AUTHN-0450');
     }
     if (!this.upgradeAlgorithms().length) {
       log.debug('Leaving WebauthnPolicy.upgradeRefusal(). No ML-DSA.');
       return errorCodes.mark({ ok: false,
-               why: 'This service can verify no ML-DSA algorithm, so a ' +
-                    'passkey cannot be upgraded to one.' }, 'STS-AUTHN-0450');
+               why: Sentence.say('refusals.passkey.upgradeNoMlDsa') },
+               'STS-AUTHN-0450');
     }
     if (this.alongsideClassical() && !this.laneRefusal('pqc').ok) {
       log.debug('Leaving WebauthnPolicy.upgradeRefusal(). The ' +
                 'post-quantum lane is refused.');
       return errorCodes.mark({ ok: false,
-               why: String(this.laneRefusal('pqc').why || '') },
+               why: this.laneRefusal('pqc').why || '' },
                'STS-AUTHN-0450');
     }
     log.debug('Leaving WebauthnPolicy.upgradeRefusal(). Offered.');
@@ -1832,8 +1821,8 @@ class WebauthnPolicy {
     if (LANES.indexOf(wanted) < 0) {
       log.debug('Leaving WebauthnPolicy.laneRefusal(). Not a lane.');
       return errorCodes.mark({ ok: false,
-               why: 'A passkey is created in the "classical" lane or the ' +
-                    '"pqc" lane. "' + wanted + '" is neither.' },
+               why: Sentence.say('refusals.passkey.notALane',
+                                 { lane: wanted }) },
                'STS-AUTHN-0350');
     }
     // A CLASSICAL-ONLY POPULATION (#940) is refused the post-quantum lane
@@ -1842,28 +1831,22 @@ class WebauthnPolicy {
       log.debug('Leaving WebauthnPolicy.laneRefusal(). The profile is ' +
                 'classical only.');
       return errorCodes.mark({ ok: false,
-               why: 'The passkey policy offers classical passkeys only here ' +
-                    '(registrationMode is classical-only), so a ' +
-                    'post-quantum one cannot be created. A post-quantum ' +
-                    'passkey already registered goes on working.' },
+               why: Sentence.say('refusals.passkey.laneClassicalOnly') },
                'STS-AUTHN-0433');
     }
     if (wanted === 'pqc' && !this.alongsideClassical()) {
       log.debug('Leaving WebauthnPolicy.laneRefusal(). The post-quantum ' +
                 'lane is not offered here.');
       return errorCodes.mark({ ok: false,
-               why: 'A post-quantum passkey beside a classical one is not ' +
-                    'offered in this realm (webauthn.pqcAlongsideClassical' +
-                    (this.pqcOnly() ? ', and webauthn.pqcOnly is on' : '') +
-                    '). A post-quantum passkey already registered goes on ' +
-                    'working.' }, 'STS-AUTHN-0351');
+               why: Sentence.say('refusals.passkey.laneNotAlongside', {
+                 pqcOnly: this.pqcOnly() ? 'yes' : 'no' }) },
+               'STS-AUTHN-0351');
     }
     if (wanted === 'pqc' && !this.algorithmsOffered('pqc').length) {
       log.debug('Leaving WebauthnPolicy.laneRefusal(). No ML-DSA can be ' +
                 'offered.');
       return errorCodes.mark({ ok: false,
-               why: 'This service can verify no ML-DSA algorithm, so a ' +
-                    'post-quantum passkey cannot be created.' },
+               why: Sentence.say('refusals.passkey.laneNoMlDsa') },
                'STS-AUTHN-0352');
     }
     log.debug('Leaving WebauthnPolicy.laneRefusal(). Allowed.');
@@ -2031,19 +2014,15 @@ class WebauthnPolicy {
       log.debug('Leaving WebauthnPolicy.useAllowed(). A passkey may not be ' +
                 'a first factor here.');
       return errorCodes.mark({ ok: false,
-               why: 'A passkey cannot sign anybody in on its own in this ' +
-                    'realm (webauthn.primaryAllowed). Sign in with a ' +
-                    'password, and your passkey is asked for next where the ' +
-                    'realm allows it.' }, 'STS-AUTHN-0045');
+               why: Sentence.say('refusals.passkey.notPrimary') },
+               'STS-AUTHN-0045');
     }
     if (String(use) === 'mfa' && !live.mfaAllowed) {
       log.debug('Leaving WebauthnPolicy.useAllowed(). A passkey may not be ' +
                 'a second factor here.');
       return errorCodes.mark({ ok: false,
-               why: 'A passkey cannot be a second factor in this realm ' +
-                    '(webauthn.mfaAllowed). An authenticator app is the ' +
-                    'other one, where the authentication policy allows ' +
-                    'it.' }, 'STS-AUTHN-0046');
+               why: Sentence.say('refusals.passkey.notSecondFactor') },
+               'STS-AUTHN-0046');
     }
     // THE AUTHENTICATION POLICY'S TWO ROWS (#64), asked after this module's
     // own settings and with the same contract. The mechanism names stay the
@@ -2060,11 +2039,9 @@ class WebauthnPolicy {
                 'policy does not accept it.');
       return errorCodes.mark({ ok: false,
                why: String(use) === 'primary'
-                 ? 'This realm\'s authentication policy does not accept a ' +
-                   'passkey as a first factor. Sign in with what it does ' +
-                   'accept.'
-                 : 'This realm\'s authentication policy does not accept a ' +
-                   'passkey as a second factor.' }, policyRow.code);
+                 ? Sentence.say('refusals.policy.passkeyNotFirstFactor')
+                 : Sentence.say('refusals.policy.passkeyNotSecondFactor') },
+               policyRow.code);
     }
     log.debug('Leaving WebauthnPolicy.useAllowed(). Allowed.');
     return { ok: true };
@@ -2088,20 +2065,15 @@ class WebauthnPolicy {
       log.debug('Leaving WebauthnPolicy.enrolmentAllowed(). WebAuthn is not ' +
                 'offered here.');
       return errorCodes.mark({ ok: false,
-               why: 'Passkeys are switched off in this realm ' +
-                    '(webauthn.enabled). A passkey already registered goes ' +
-                    'on being listed; no new one can be registered.' },
+               why: Sentence.say('refusals.passkey.enrolmentOff') },
                'STS-AUTHN-0044');
     }
     if (!this.useAllowed('primary').ok && !this.useAllowed('mfa').ok) {
       log.debug('Leaving WebauthnPolicy.enrolmentAllowed(). No use of a key ' +
                 'is accepted here.');
       return errorCodes.mark({ ok: false,
-               why: 'This realm accepts a passkey neither as a way to sign ' +
-                    'in on its own nor as a second factor ' +
-                    '(webauthn.primaryAllowed, webauthn.mfaAllowed and the ' +
-                    'authentication policy), so a new one could never be ' +
-                    'used.' }, 'STS-AUTHN-0531');
+               why: Sentence.say('refusals.passkey.enrolmentUseless') },
+               'STS-AUTHN-0531');
     }
     log.debug('Leaving WebauthnPolicy.enrolmentAllowed(). Allowed.');
     return { ok: true };
@@ -2353,14 +2325,11 @@ class WebauthnPolicy {
     log.debug("Entering WebauthnPolicy.usernamelessOffered().");
     const live = this.settings();
     const why = !live.enabled
-      ? 'Passkeys are switched off in this realm (webauthn.enabled).'
+      ? Sentence.say('refusals.passkey.off')
       : (!live.primaryAllowed
-        ? 'A passkey may not sign anybody in on its own in this realm ' +
-          '(webauthn.primaryAllowed).'
+        ? Sentence.say('refusals.passkey.usernamelessNotPrimary')
         : (!live.usernameless
-          ? 'Signing in with a passkey and no username is switched off in ' +
-            'this realm (the passkey policy\'s allowUsernameless, on ' +
-            'Directory → Policies).'
+          ? Sentence.say('refusals.passkey.usernamelessOff')
           : ''));
     log.debug("Leaving WebauthnPolicy.usernamelessOffered(). " +
               (why ? 'No.' : 'Yes.'));

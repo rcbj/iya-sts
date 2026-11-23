@@ -92,6 +92,8 @@
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
+// A refusal a person reads, as a catalog sentence (#2006).
+import Sentence = require('./sentence');
 import config = require('./config');
 import crypto = require('./crypto');
 import mode = require('./mode');
@@ -2369,15 +2371,11 @@ class Credentials {
       return '';
     }
     const profile = passwordPolicy.profileFor(username, application);
-    const problems = passwordPolicy.problemsWith(password, profile);
-    if (!problems.length) {
-      log.debug("Leaving Credentials.passwordProblem().");
-      return '';
-    }
+    // The policy's own sentence (#2006): `problemsWith()`'s phrases, as a
+    // catalog message the page draws in its language.
+    const said = passwordPolicy.refusalFor(password, profile);
     log.debug("Leaving Credentials.passwordProblem().");
-    return 'That password does not meet this realm\'s password policy, which ' +
-           'asks for ' + problems.join(', ') + '. The rules are on ' +
-           '/admin/policies (profile "' + profile.name + '").';
+    return said || '';
   }
 
   // The rules as a person reads them, and whether they are being enforced — for
@@ -2529,10 +2527,8 @@ class Credentials {
     log.debug('Entering Credentials.preparePassword(). username=' + name);
     if (!password) {
       log.debug('Leaving Credentials.preparePassword(). No password.');
-      return coded('STS-AUTHN-0055', { ok: false, errors: ['Give a password. ' +
-                                   'To take one away, remove ' +
-                                   'the ' + PASSWORD_ATTRIBUTE + ' attribute ' +
-                                   'from the entry.'] });
+      return coded('STS-AUTHN-0055', { ok: false, errors: [Sentence.say(
+        'refusals.password.missing', { attribute: PASSWORD_ATTRIBUTE })] });
     }
     // A ROTATING SERVICE ACCOUNT'S PASSWORD IS SET BY ITS ROTATION ONLY
     // (#221), at every door that sets a password — the console, the API, an
@@ -2547,11 +2543,8 @@ class Credentials {
                 'account.');
       return coded('STS-SVCACCT-0013', { ok: false,
         reason: 'service-account-rotates',
-        errors: [name + ' is a service account whose password rotates ' +
-                 'through its push destination, so it cannot be set by ' +
-                 'hand: the destination is where its consumers read it. ' +
-                 'Use Rotate now on its page, or POST /admin-api/users/' +
-                 'rotate-password.'] });
+        errors: [Sentence.say('refusals.password.rotates',
+                              { account: name })] });
     }
     // THE PERSON'S PROFILE (#1236): the one their groups name, or the
     // application's where the door knows one (`opts.application`, the
@@ -2587,9 +2580,7 @@ class Credentials {
                  'has appeared in a data breach.');
         log.debug('Leaving Credentials.preparePassword(). Breached.');
         return coded('STS-AUTHN-0222', { ok: false, reason: 'breached',
-          errors: ['That password has appeared in a data breach, so ' +
-                   'people trying stolen passwords will try it. Choose a ' +
-                   'different one.'] });
+          errors: [Sentence.say('refusals.password.breached')] });
       }
     }
     const current = options.current !== undefined
@@ -2612,12 +2603,9 @@ class Credentials {
                ' before it.');
       log.debug('Leaving Credentials.preparePassword(). Reused.');
       return coded('STS-AUTHN-0057', { ok: false, reason: 'password-history',
-               errors: ['That password has been used for this account ' +
-                        'recently. This realm\'s password policy refuses the ' +
-                        'current password and ' +
-                        'the ' + profile.history + ' before it ' +
-                        '(profile "' + profile.name + '"). Choose one you ' +
-                        'have not used here.'] });
+               errors: [Sentence.say('refusals.password.reused', {
+                 history: profile.history, profile: String(profile.name) })]
+             });
     }
     // THE HISTORY TO LEAVE: the value being replaced goes on the front, the
     // oldest fall off the back. The CURRENT value is only remembered when it is
@@ -4536,8 +4524,8 @@ class Credentials {
     if (!credentialId || !s.challenge) {
       log.debug("Leaving Credentials.spendAssertion(). Nothing to spend.");
       return Promise.resolve(coded('STS-AUTHN-0182', { ok: false,
-        reason: 'store', detail: 'The assertion names no credential or ' +
-                                 'challenge, so it cannot be spent.' }));
+        reason: 'store',
+        detail: Sentence.say('refusals.passkey.assertionNothingToSpend') }));
     }
     log.debug("Leaving Credentials.spendAssertion(). Claiming the challenge.");
     return claims.claim({
@@ -4551,14 +4539,14 @@ class Credentials {
                    'been answered, by another node or a request racing this ' +
                    'one.');
           return coded('STS-AUTHN-0181', { ok: false, reason: 'replay',
-            detail: 'this sign-in step has already been answered' });
+            detail: Sentence.say('refusals.passkey.assertionAnswered') });
         }
         log.error(errorCodes.tag('STS-AUTHN-0182') + 'credentials: a ' +
                   'security-key assertion for ' + name + ' could not be ' +
                   'proved unspent (' + (claimed.why || claimed.reason) +
                   '), so it was refused.');
         return coded('STS-AUTHN-0182', { ok: false, reason: 'store',
-          detail: 'the assertion could not be checked just now' });
+          detail: Sentence.say('refusals.passkey.assertionUnchecked') });
       }
       return counters.advance({
         scope: WEBAUTHN_COUNTER_SCOPE, key: credentialId, value: signCount,
@@ -4578,16 +4566,15 @@ class Credentials {
                                answer.highest);
             return coded('STS-AUTHN-0035', { ok: false, reason: 'counter',
               highest: answer.highest,
-              detail: 'the signature counter did not increase (now ' +
-                      signCount + ', highest seen ' + answer.highest +
-                      ') — the key may have been cloned' });
+              detail: Sentence.say('refusals.passkey.counterBehind', {
+                now: signCount, highest: String(answer.highest) }) });
           }
           log.error(errorCodes.tag('STS-AUTHN-0182') + 'credentials: the ' +
                     'signature counter for ' + name + ' could not be ' +
                     'advanced (' + (answer.why || answer.reason) + '), so ' +
                     'the assertion was refused.');
           return coded('STS-AUTHN-0182', { ok: false, reason: 'store',
-            detail: 'the signature counter could not be checked just now' });
+            detail: Sentence.say('refusals.passkey.counterUnchecked') });
         }
         const recorded = this.noteKeyUsed(name, credentialId, signCount,
                                           s.flags);
@@ -6066,20 +6053,18 @@ class Credentials {
     const options = opts || {};
     if (!directory || typeof directory.writeTotp !== 'function') {
       log.debug("Leaving Credentials.beginTotpEnrolment().");
-      return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
-                                   'store is installed, so an authenticator ' +
-                                   'app cannot be enrolled.'] });
+      return coded('STS-AUTHN-0059', { ok: false, errors: [Sentence.say(
+        'refusals.factor.totpNoStore')] });
     }
     if (!totp.offered()) {
       log.debug("Leaving Credentials.beginTotpEnrolment().");
-      return coded('STS-AUTHN-0074', { ok: false, errors: ['Authenticator ' +
-                                   'apps are turned off on this service ' +
-                                   '(the authentication policy).'] });
+      return coded('STS-AUTHN-0074', { ok: false, errors: [Sentence.say(
+        'refusals.factor.totpOff')] });
     }
     if (!name) {
       log.debug("Leaving Credentials.beginTotpEnrolment().");
-      return coded('STS-AUTHN-0058', { ok: false, errors: ['There is no name ' +
-                                   'to enrol an authenticator for.'] });
+      return coded('STS-AUTHN-0058', { ok: false, errors: [Sentence.say(
+        'refusals.factor.totpNoName')] });
     }
     // A NAME NO PERSON CAN HAVE IS REFUSED BEFORE THE PENDING RECORD (run
     // 21's fuzz stage): it is the record's key, and PostgreSQL cannot store
@@ -6087,9 +6072,8 @@ class Credentials {
     if (/[\u0000-\u001f\u007f]/.test(name)) {
       log.debug("Leaving Credentials.beginTotpEnrolment(). A name no " +
                 "person holds.");
-      return coded('STS-AUTHN-0557', { ok: false, errors: ['The name ' +
-                                   'holds a control character, so no ' +
-                                   'person has it. Nothing was started.'] });
+      return coded('STS-AUTHN-0557', { ok: false, errors: [Sentence.say(
+        'refusals.factor.nameControlCharacter')] });
     }
     // `entryExists()` AND NOT `hasEntry()` (2026-09-18). That one answers
     // false always — it is the bootstrap's, so the bootstrap always attempts
@@ -6100,11 +6084,8 @@ class Credentials {
       log.info('credentials: product mode, so an authenticator was NOT ' +
                'enrolled for "' + name + '" — there is no entry for them.');
       log.debug("Leaving Credentials.beginTotpEnrolment().");
-      return coded('STS-AUTHN-0024', { ok: false, errors: ['There is nobody ' +
-          'called "' + name + '" ' +
-                                   'in this realm\'s directory. In product ' +
-                                   'mode every referenced object must exist ' +
-                                   'first.'] });
+      return coded('STS-AUTHN-0024', { ok: false, errors: [Sentence.say(
+        'refusals.account.nobodyCalled', { name: name })] });
     }
     const live = totp.settings();
     const secret = totp.generateSecret();
@@ -6195,8 +6176,7 @@ class Credentials {
     if (!held) {
       log.debug('Leaving Credentials.confirmTotpEnrolment(). Nothing pending.');
       return coded('STS-AUTHN-0075', { ok: false, reason: 'expired',
-               errors: ['That enrolment has expired. Start again and scan ' +
-                        'the new code.'] });
+               errors: [Sentence.say('refusals.factor.totpEnrolExpired')] });
     }
     const verdict = totp.verify(held, code);
     // Narrowed by the tag: `totp.verify()` answers `ok` as a boolean always.
@@ -6281,8 +6261,8 @@ class Credentials {
     if (!record) {
       log.debug('Leaving Credentials.totpPrepare(). Nothing enrolled.');
       return { done: coded('STS-AUTHN-0076', { ok: false, reason: 'none',
-               detail: 'No authenticator app is enrolled for ' + name +
-                       '.' }) };
+               detail: Sentence.say('refusals.factor.totpNoneFor',
+                                    { name: name }) }) };
     }
     if (record.unusable) {
       log.error(errorCodes.tag('STS-AUTHN-0077') +
@@ -6294,10 +6274,7 @@ class Credentials {
       log.debug('Leaving Credentials.totpPrepare(). The enrolment is ' +
                 'unusable.');
       return { done: coded('STS-AUTHN-0077', { ok: false, reason: 'unusable',
-               detail: 'Your authenticator enrolment cannot be read by this ' +
-                       'service, so it cannot be checked. An administrator ' +
-                       'has to clear it on your row under /admin/users and ' +
-                       'you can enrol again.' }) };
+               detail: Sentence.say('refusals.factor.totpUnreadable') }) };
     }
     const verdict = totp.verify(record, code, options);
     // Narrowed by the tag, as in confirmTotpEnrolment().
@@ -6455,16 +6432,14 @@ class Credentials {
         this.noteTotpReplay(name);
         return coded('STS-AUTHN-0106', { ok: false, reason: 'replay',
           counter: ready.verdict.counter,
-          detail: 'That code has already been used. Wait for your ' +
-                  'authenticator to show the next one.' });
+          detail: Sentence.say('refusals.factor.totpReplay') });
       }
       log.error(errorCodes.tag('STS-AUTHN-0182') +
                 'credentials: a code for ' + name + ' verified and could not ' +
                 'be proved unspent (' + (answer.why || answer.reason) + '), ' +
                 'so it was refused.');
       return coded('STS-AUTHN-0182', { ok: false, reason: 'store',
-        detail: 'That code could not be checked just now. Try the next one ' +
-                'in a moment.' });
+        detail: Sentence.say('refusals.factor.codeUncheckedNext') });
     });
   }
 
@@ -6986,7 +6961,8 @@ class Credentials {
     if (!record) {
       log.debug("Leaving Credentials.hotpPrepare(). None.");
       return { done: coded('STS-OATH-0007', { ok: false, reason: 'none',
-        detail: 'No one-time code token is enrolled for ' + name + '.' }) };
+        detail: Sentence.say('refusals.factor.hotpNoneFor', { name: name }) })
+      };
     }
     if (record.unusable) {
       log.error(errorCodes.tag('STS-OATH-0002') + 'credentials: ' + name +
@@ -6995,9 +6971,7 @@ class Credentials {
                 'factor.');
       log.debug("Leaving Credentials.hotpPrepare(). Unusable.");
       return { done: coded('STS-OATH-0002', { ok: false, reason: 'unusable',
-        detail: 'Your one-time code token cannot be read by this service, ' +
-                'so it cannot be checked. An administrator has to clear it.' })
-      };
+        detail: Sentence.say('refusals.factor.hotpUnreadable') }) };
     }
     const verdict = this.hotpLib().verify(record, code, options);
     if (!verdict.ok) {
@@ -7050,8 +7024,7 @@ class Credentials {
       this.noteTotpReplay(name);
       log.debug("Leaving Credentials.hotpSpend(). Replay.");
       return coded('STS-OATH-0005', { ok: false, reason: 'replay',
-        detail: 'That code has already been used. Press your token again ' +
-                'for a new one.' });
+        detail: Sentence.say('refusals.factor.hotpReplay') });
     }
     if (!answer.ok) {
       log.error(errorCodes.tag('STS-OATH-0006') + 'credentials: an HOTP ' +
@@ -7060,8 +7033,7 @@ class Credentials {
                 'refused.');
       log.debug("Leaving Credentials.hotpSpend(). Store.");
       return coded('STS-OATH-0006', { ok: false, reason: 'store',
-        detail: 'That code could not be checked just now. Try the next one ' +
-                'in a moment.' });
+        detail: Sentence.say('refusals.factor.codeUncheckedNext') });
     }
     const next = Object.assign({}, record, { counter: verdict.next,
                                              lastUsedAt: Date.now() });
@@ -7124,10 +7096,9 @@ class Credentials {
       log.debug("Leaving Credentials.resyncHotpAsync(). None.");
       return coded(record ? 'STS-OATH-0002' : 'STS-OATH-0007',
         { ok: false, reason: record ? 'unusable' : 'none',
-          detail: record ? 'Your one-time code token cannot be read by ' +
-                           'this service.'
-                         : 'No one-time code token is enrolled for ' + name +
-                           '.' });
+          detail: record
+            ? Sentence.say('refusals.factor.hotpUnreadableShort')
+            : Sentence.say('refusals.factor.hotpNoneFor', { name: name }) });
     }
     const verdict = this.hotpLib().resync(record, first, second);
     if (!verdict.ok) {
@@ -7172,8 +7143,7 @@ class Credentials {
     if (yubiHeld && !this.totpStatusOf(name) && !this.hotpStatusOf(name)) {
       log.debug("Leaving Credentials.verifyTotpAsync(). YubiKey shape.");
       return coded('STS-YUBIOTP-0001', { ok: false, reason: 'shape',
-        detail: 'That is not a YubiKey OTP. Touch the key and enter the ' +
-                'whole string it types.' });
+        detail: Sentence.say('refusals.factor.yubiShape') });
     }
     const token = this.hotpStatusOf(name);
     if (!token) {
@@ -7506,8 +7476,7 @@ class Credentials {
                Number(answer.highest || 0) + '.');
       log.debug("Leaving Credentials.yubiAdvance(). Replay.");
       return coded('STS-YUBIOTP-0004', { ok: false, reason: 'replay',
-        detail: 'That one-time password has already been used. Touch the ' +
-                'key again.' });
+        detail: Sentence.say('refusals.factor.yubiReplay') });
     }
     if (!answer.ok) {
       log.error(errorCodes.tag('STS-YUBIOTP-0005') + 'credentials: a ' +
@@ -7515,8 +7484,7 @@ class Credentials {
                 'proved unspent (' + (answer.why || answer.reason) + ').');
       log.debug("Leaving Credentials.yubiAdvance(). Store.");
       return coded('STS-YUBIOTP-0005', { ok: false, reason: 'store',
-        detail: 'That one-time password could not be checked just now. ' +
-                'Touch the key again in a moment.' });
+        detail: Sentence.say('refusals.factor.yubiUnchecked') });
     }
     log.debug("Leaving Credentials.yubiAdvance(). Spent.");
     return { ok: true };
@@ -7697,7 +7665,7 @@ class Credentials {
     if (!record) {
       log.debug("Leaving Credentials.verifyYubiOtpAsync(). None.");
       return coded('STS-YUBIOTP-0006', { ok: false, reason: 'none',
-        detail: 'No YubiKey OTP is enrolled for ' + name + '.' });
+        detail: Sentence.say('refusals.factor.yubiNoneFor', { name: name }) });
     }
     if (record.unusable) {
       log.error(errorCodes.tag('STS-YUBIOTP-0002') + 'credentials: ' + name +
@@ -7705,8 +7673,7 @@ class Credentials {
                 record.why + ').');
       log.debug("Leaving Credentials.verifyYubiOtpAsync(). Unusable.");
       return coded('STS-YUBIOTP-0002', { ok: false, reason: 'unusable',
-        detail: 'Your YubiKey OTP cannot be read by this service, so it ' +
-                'cannot be checked. An administrator has to clear it.' });
+        detail: Sentence.say('refusals.factor.yubiUnreadable') });
     }
     const opened = this.yubiLib().open(
       { k: record.k, p: record.p, publicId: record.publicId }, otp);
@@ -9791,8 +9758,8 @@ class Credentials {
       log.debug('backupPrepare(): none issued.');
       log.debug("Leaving Credentials.backupPrepare().");
       return { done: coded('STS-AUTHN-0087', { ok: false, reason: 'none',
-                       detail: 'No recovery codes have been issued for ' +
-                               name + '.' }) };
+                       detail: Sentence.say('refusals.factor.backupNoneFor',
+                                            { name: name }) }) };
     }
     if (held.unusable) {
       log.error(errorCodes.tag('STS-AUTHN-0089') +
@@ -9802,10 +9769,8 @@ class Credentials {
                 'through.');
       log.debug("Leaving Credentials.backupPrepare().");
       return { done: coded('STS-AUTHN-0089', { ok: false, reason: 'unusable',
-                       detail: 'Your recovery codes cannot be read by this ' +
-                               'service, so they cannot be checked. An ' +
-                               'administrator has to clear them on your row ' +
-                               'under /admin/users.' }) };
+                       detail: Sentence.say(
+                         'refusals.factor.backupUnreadable') }) };
     }
     // THE SHAPE FIRST, and it matters far more than it did. A password typed
     // into this box used to cost ten constant-time string comparisons; it would
@@ -9815,9 +9780,7 @@ class Credentials {
       log.debug('backupPrepare(): not the shape of a code.');
       log.debug("Leaving Credentials.backupPrepare().");
       return { done: coded('STS-AUTHN-0090', { ok: false, reason: 'shape',
-                       detail: 'A recovery code is letters and digits only — ' +
-                               'the ones this service printed for you, in ' +
-                               'groups. Dashes and spaces are ignored.' }) };
+                       detail: Sentence.say('refusals.factor.backupShape') }) };
     }
     log.debug("Leaving Credentials.backupPrepare().");
     return { held: held };
@@ -9843,14 +9806,13 @@ class Credentials {
                'already spent.');
       log.debug("Leaving Credentials.backupFinish().");
       return coded('STS-AUTHN-0091', { ok: false, reason: 'spent',
-               detail: 'That recovery code has already been used. Each one ' +
-                       'works once — use the next unused code on your list.' });
+               detail: Sentence.say('refusals.factor.backupSpent') });
     }
     if (matchedIndex < 0) {
       log.info('credentials: a recovery code for ' + name + ' did not match.');
       log.debug("Leaving Credentials.backupFinish().");
       return coded('STS-AUTHN-0092', { ok: false, reason: 'mismatch',
-               detail: 'That is not one of your recovery codes.' });
+               detail: Sentence.say('refusals.factor.backupMismatch') });
     }
     // THE HASHES ARE CARRIED VERBATIM. A spend rewrites the array to mark one
     // entry used and must not re-hash anything: the codes are not here to hash,
@@ -9874,9 +9836,7 @@ class Credentials {
                 'code that cannot be spent is a code that works for ever.');
       log.debug("Leaving Credentials.backupFinish().");
       return coded('STS-AUTHN-0093', { ok: false, reason: 'store',
-               detail: 'That code is right and this service could not record ' +
-                       'that it has been used, so it was not accepted. Try ' +
-                       'another one, and tell an administrator.' });
+               detail: Sentence.say('refusals.factor.backupUnrecorded') });
     }
     log.info('credentials: ' + name + ' signed in with a recovery code. ' +
              written.remaining + ' of ' + written.total + ' remain.');
@@ -10200,9 +10160,7 @@ class Credentials {
               return null;
             }).then(() => {
               return coded('STS-AUTHN-0091', { ok: false, reason: 'spent',
-                detail: 'That recovery code has already been used. Each ' +
-                        'one works once — use the next unused code on your ' +
-                        'list.' });
+                detail: Sentence.say('refusals.factor.backupSpent') });
             });
         }
         if (!claimed.ok) {
@@ -10211,8 +10169,7 @@ class Credentials {
                     'proved unspent (' + (claimed.why || claimed.reason) +
                     '), so it was refused.');
           return coded('STS-AUTHN-0182', { ok: false, reason: 'store',
-            detail: 'That code could not be checked just now. Try again in a ' +
-                    'moment.' });
+            detail: Sentence.say('refusals.factor.codeUncheckedAgain') });
         }
         return this.claimedButUnmarked(name, held.codes, realm.id,
                                        found.matchedIndex)
@@ -12069,16 +12026,16 @@ class Credentials {
     if (!key) {
       log.debug("Leaving Credentials.keyUpgradeRefusal(). Not theirs.");
       return coded('STS-AUTHN-0451', { ok: false, reason: 'upgrade',
-               errors: ['No passkey of that id is registered for ' +
-                        String(username || '') + '.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeNotTheirs',
+                 { name: String(username || '') })] });
     }
     if (Credentials.keyAlgorithm(key).postQuantum) {
       log.debug("Leaving Credentials.keyUpgradeRefusal(). Already " +
                 "post-quantum.");
       return coded('STS-AUTHN-0452', { ok: false, reason: 'upgrade',
-               errors: ['That passkey is already post-quantum (' +
-                        Credentials.keyAlgorithm(key).name + '); there is ' +
-                        'nothing to upgrade.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeAlreadyPq',
+                 { algorithm: String(Credentials.keyAlgorithm(key).name) })]
+             });
     }
     const held = this.keysOf(username);
     if (key.upgradedTo && held.some(function (one) {
@@ -12087,9 +12044,7 @@ class Credentials {
       log.debug("Leaving Credentials.keyUpgradeRefusal(). Upgraded " +
                 "already.");
       return coded('STS-AUTHN-0453', { ok: false, reason: 'upgrade',
-               errors: ['That passkey was already upgraded: its ' +
-                        'post-quantum passkey is beside it. Remove that one ' +
-                        'first to upgrade again.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeDone')] });
     }
     const enrolment = webauthnPolicy.enrolmentAllowed();
     if (!enrolment.ok) {
@@ -12102,9 +12057,8 @@ class Credentials {
         held.length >= webauthnPolicy.settings().maxKeysPerPerson) {
       log.debug("Leaving Credentials.keyUpgradeRefusal(). At the cap.");
       return coded('STS-AUTHN-0067', { ok: false, reason: 'upgrade',
-               errors: ['You already hold ' + held.length + ' passkey(s), ' +
-                        'the most this realm allows, and the upgrade adds ' +
-                        'one beside this passkey. Remove one first.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeAtCap',
+                 { count: held.length })] });
     }
     log.debug("Leaving Credentials.keyUpgradeRefusal(). Allowed.");
     return { ok: true };
@@ -12165,8 +12119,8 @@ class Credentials {
     const directory = this.directory;
     if (!directory || typeof directory.replaceWebauthn !== 'function') {
       log.debug("Leaving Credentials.beginKeyUpgrade(). No store.");
-      return coded('STS-AUTHN-0059', { ok: false, errors: ['No credential ' +
-                   'store is installed, so no passkey can be upgraded.'] });
+      return coded('STS-AUTHN-0059', { ok: false, errors: [Sentence.say(
+                   'refusals.passkey.upgradeNoStore')] });
     }
     const key = this.keysOf(name).filter(function (one) {
       return String(one.credentialId) === String(credentialId || '');
@@ -12248,18 +12202,15 @@ class Credentials {
       log.debug("Leaving Credentials.upgradeInHand(). None in progress.");
       return { held: null, refused: coded('STS-AUTHN-0454',
         { ok: false, reason: 'expired',
-          errors: ['That passkey upgrade is not the one in progress, or it ' +
-                   'has expired. Your passkey is unchanged; start again.'] }) };
+          errors: [Sentence.say('refusals.passkey.upgradeNotInProgress')] }) };
     }
     if (held.upgrade.phase !== phase) {
       log.debug("Leaving Credentials.upgradeInHand(). Out of order.");
       return { held: null, refused: coded('STS-AUTHN-0456',
         { ok: false, reason: 'mismatch',
           errors: [phase === 'proof'
-            ? 'This passkey has already been used for this upgrade; create ' +
-              'the post-quantum passkey now.'
-            : 'Use your passkey first, to show it is yours, before the ' +
-              'post-quantum passkey is created.'] }) };
+            ? Sentence.say('refusals.passkey.upgradeProofDone')
+            : Sentence.say('refusals.passkey.upgradeProofFirst')] }) };
     }
     log.debug("Leaving Credentials.upgradeInHand().");
     return { held: held, refused: null };
@@ -12527,17 +12478,15 @@ class Credentials {
                 ((e && e.message) || e));
       log.debug("Leaving Credentials.checkKeyUpgrade(). It threw.");
       return coded('STS-AUTHN-0027', { ok: false, reason: 'invalid',
-               errors: ['The registration could not be checked: ' +
-                        ((e && e.message) || e) + '. Your passkey is ' +
-                        'unchanged.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeUnchecked',
+                 { detail: String((e && e.message) || e) })] });
     }
     if (!verdict.ok) {
       log.debug("Leaving Credentials.checkKeyUpgrade(). It did not verify.");
       return coded(webauthnPolicy.failureCodeFor(verdict),
                    { ok: false, reason: 'invalid',
-               errors: ['The post-quantum passkey did not verify — ' +
-                        (verdict.failed || []).join('; ') + '. Your ' +
-                        'passkey is unchanged.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeNotVerified',
+                 { checks: (verdict.failed || []).join('; ') })] });
     }
     // THE EXCLUSION, as an enrolment checks it, and the classical
     // credential itself: an authenticator answering with the key being
@@ -12546,8 +12495,7 @@ class Credentials {
         String(verdict.credentialId) === String(held.upgrade.credentialId)) {
       log.debug("Leaving Credentials.checkKeyUpgrade(). Already enrolled.");
       return coded('STS-AUTHN-0095', { ok: false, reason: 'duplicate',
-               errors: ['That authenticator is already enrolled. Your ' +
-                        'passkey is unchanged.'] });
+               errors: [Sentence.say('refusals.passkey.upgradeDuplicate')] });
     }
     log.debug("Leaving Credentials.checkKeyUpgrade(). Verifying the " +
               "attestation, then writing through the claim.");

@@ -19,6 +19,7 @@
 
 import WebAuthnLogin = require('./web_authn_login');
 import WebAuthnMfa = require('./web_authn_mfa');
+import WebSaid = require('../common/web_said');
 
 type Json = any;
 
@@ -37,7 +38,10 @@ class WebAuthnPassword {
     const t = ctx.t;
     const v = view || {};
     const esc = WebAuthnLogin.esc;
-    const error = [String(v.notice || ''), String((ctx && ctx.error) || '')]
+    // The notice in the page's language where the view carried its catalog
+    // message (#2006, `noticeRefusal`).
+    const error = [(v.noticeRefusal && WebSaid.saidWith(t, v.noticeRefusal)) ||
+                   String(v.notice || ''), String((ctx && ctx.error) || '')]
       .filter(Boolean).join(' ');
     return '<h1>' + t.html('authn.passwordChange.heading') + '</h1>' +
       '<p class="sub">' + t.html('authn.passwordChange.sub',

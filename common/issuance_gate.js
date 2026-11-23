@@ -293,8 +293,10 @@ function check(request) {
     log.debug('Leaving check(). The account is disabled.');
     return errorCodes.mark({
       allowed: false, decision: 'Deny', disabled: true,
-      why: 'The account "' + subject.name + '" is disabled, so nothing is ' +
-           'issued on its behalf.',
+      // A catalog sentence (#2006); required lazily, this file being a
+      // leaf.
+      why: require('./sentence').say('refusals.account.disabledNoIssue',
+                                     { account: String(subject.name) }),
       roles: [], required: [], policy: null
     }, 'STS-AUTHN-0201');
   }
@@ -1519,7 +1521,9 @@ function noDecision(answer) {
   }
   log.debug("Leaving noDecision(). Refused.");
   return errorCodes.mark({ allowed: false, decision: 'Indeterminate',
-    why: 'No issuance decision could be made.' }, 'STS-XACML-0183');
+    // A catalog sentence (#2006); required lazily, this file being a leaf.
+    why: require('./sentence').say('refusals.policy.noIssuanceDecision') },
+    'STS-XACML-0183');
 }
 
 function allow(why) {

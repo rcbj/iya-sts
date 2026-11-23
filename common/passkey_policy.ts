@@ -372,6 +372,7 @@
 
 import ModelTables = require('./model_tables');
 import helpers = require('./helpers');
+import Sentence = require('./sentence');
 import realms = require('./realms');
 import errorCodes = require('./error_codes');
 import InstanceSlot = require('./instance_slot');
@@ -1642,7 +1643,7 @@ class PasskeyPolicy {
    */
   backupEligibleRefusal(backupEligible: unknown, at: string,
                         profile?: PasskeyProfile | null):
-      { code: string; why: string; reason: string } | null {
+      { code: string; why: string | Sentence; reason: string } | null {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.backupEligibleRefusal().");
     // A flag never read is not a fact: nothing is asked about it.
@@ -2007,7 +2008,7 @@ class PasskeyPolicy {
   postQuantumRefusal(key: { algorithm?: unknown; name?: unknown;
                             lane?: unknown } | null | undefined,
                      at: string, profile?: PasskeyProfile | null):
-      { code: string; why: string; reason: string } | null {
+      { code: string; why: string | Sentence; reason: string } | null {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.postQuantumRefusal().");
     const k = key || {};
@@ -2285,7 +2286,7 @@ class PasskeyPolicy {
    */
   recoveryRefusal(facts: Record<string, any>,
                   profile?: PasskeyProfile | null):
-      { code: string; why: string; reason: string } | null {
+      { code: string; why: string | Sentence; reason: string } | null {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.recoveryRefusal().");
     const given = facts || {};
@@ -2327,7 +2328,7 @@ class PasskeyPolicy {
    */
   enterpriseSerialRefusal(username: string, serial: unknown,
                           profile?: PasskeyProfile | null):
-      { code: string; why: string; reason: string } | null {
+      { code: string; why: string | Sentence; reason: string } | null {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.enterpriseSerialRefusal().");
     const out = this.refusalFor('registration',
@@ -2529,7 +2530,7 @@ class PasskeyPolicy {
    */
   pinLengthRefusal(reported: unknown, at: string,
                    profile?: PasskeyProfile | null):
-      { code: string; why: string; reason: string } | null {
+      { code: string; why: string | Sentence; reason: string } | null {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.pinLengthRefusal().");
     const out = this.refusalFor(at, { minPinLength: reported }, profile);
@@ -2793,7 +2794,7 @@ class PasskeyPolicy {
    */
   refusalFor(at: string, facts: Record<string, any>,
              profile?: PasskeyProfile | null):
-      { code: string; why: string; reason: string } | null {
+      { code: string; why: string | Sentence; reason: string } | null {
     const { log, gate } = this.deps;
     log.debug("Entering PasskeyPolicy.refusalFor().");
     const rules = profile || this.read();
@@ -2820,121 +2821,78 @@ class PasskeyPolicy {
   // the built-in rules do not give — a realm's own rule — gets a sentence
   // naming the issuance policy.
   private sentenceFor(reason: string, at: string, asked: Record<string, any>,
-                      facts: Record<string, any>): string {
+                      facts: Record<string, any>): string | Sentence {
     const { log } = this.deps;
     log.debug("Entering PasskeyPolicy.sentenceFor(). " + reason);
     const registering = at === 'registration';
     const policy = asked.policy || {};
-    let why: string;
+    // A CATALOG SENTENCE (#2006), so the sign-in screen and the portal draw
+    // it in the page's language; `at` chooses the closing advice, and a
+    // value the door did not have is a `known`/`state` choice rather than
+    // an English fragment passed in.
+    const stage = registering ? 'registration' : 'sign-in';
+    let why: string | Sentence;
     if (reason === 'backup-eligible') {
-      why = 'That passkey can be synced or backed up (its authenticator ' +
-            'set the backup-eligible flag), and this realm accepts only ' +
-            'device-bound passkeys (the passkey ' +
-            'policy\'s backupEligibility is disallow). ' +
-            (registering
-              ? 'Use a security key, or a passkey kept on this device only.'
-              : 'Sign in another way, and register a device-bound key.');
+      why = Sentence.say('refusals.passkey.backupEligible', { at: stage });
     } else if (reason === 'pin-length') {
       const value = asked.minPinLength;
-      why = (value === null || value === undefined
-        ? 'That passkey did not report its minimum PIN length, and this ' +
-          'realm requires a PIN of at least ' + policy.minPinLength +
-          ' characters (the passkey policy\'s enforcePinLength). A ' +
-          'security key reports it only to services it was configured to ' +
-          'tell. '
-        : 'That passkey accepts a PIN of ' + value + ' characters, and ' +
-          'this realm requires at least ' + policy.minPinLength +
-          ' (the passkey policy\'s minPinLength). ') +
-        (registering
-          ? 'Use a key configured with a longer minimum PIN.'
-          : 'Sign in another way, and register a key whose minimum PIN ' +
-            'is long enough.');
+      why = value === null || value === undefined
+        ? Sentence.say('refusals.passkey.pinLengthUnreported', {
+            at: stage, min: String(policy.minPinLength) })
+        : Sentence.say('refusals.passkey.pinLengthShort', {
+            at: stage, value: String(value),
+            min: String(policy.minPinLength) });
     } else if (reason === 'cred-protect') {
       // #1955 P7: CTAP 2.1 section 12.1, at registration only.
-      why = 'That passkey protects its credential at level ' +
-            String(asked.credProtect || 1) +
-            (asked.credProtectUnattested === true
-              ? ' (its attestation is not trusted, so the level it ' +
-                'reported is not proof, and counts as level 1)'
-              : (asked.credProtectReported === false
-                ? ' (it reported no credential protection, which is ' +
-                  'level 1)' : '')) +
-            ', and this realm requires level ' +
-            String(policy.credProtectLevel || '') + ' (the passkey ' +
-            'policy\'s credProtect, enforced). Use a security key that ' +
-            'supports CTAP 2.1 credential protection.';
+      why = Sentence.say('refusals.passkey.credProtect', {
+        level: String(asked.credProtect || 1),
+        note: asked.credProtectUnattested === true ? 'unattested'
+          : (asked.credProtectReported === false ? 'unreported' : 'none'),
+        required: String(policy.credProtectLevel || '') });
     } else if (reason === 'serial-missing') {
-      why = 'That security key\'s attestation names no device ' +
-            'serial this service can read, and this realm binds ' +
-            'security keys to the serials issued to each person ' +
-            '(the passkey policy\'s enterpriseSerialAttribute). ' +
-            'Use a key from your organisation, registered where ' +
-            'enterprise attestation is enabled.';
+      why = Sentence.say('refusals.passkey.serialMissing');
     } else if (reason === 'post-quantum') {
-      why = 'That passkey signs with ' +
-            (String(asked.algorithm || '') || 'a classical algorithm') +
-            ', and this realm requires a post-quantum passkey, one that ' +
-            'signs with ML-DSA (the passkey policy\'s postQuantumRequired ' +
-            'is ' + String(policy.postQuantumRequired || '') + '). ' +
-            (registering
-              ? 'Use an authenticator that can make an ML-DSA passkey.'
-              : 'Sign in another way, and register a post-quantum passkey.');
+      why = Sentence.say('refusals.passkey.postQuantum', {
+        at: stage, algorithm: String(asked.algorithm || ''),
+        known: String(asked.algorithm || '') ? 'yes' : 'no',
+        setting: String(policy.postQuantumRequired || '') });
     } else if (reason === 'attestation-algorithm') {
       const a = asked.attestationAlgorithm || {};
       const signed = [].concat(a.statements || [], a.certificates || [])
         .filter(Boolean).slice(0, 8).join(', ');
-      why = (registering ? 'That passkey\'s attestation ' :
-                           'This passkey was registered with an ' +
-                           'attestation that ') +
-            (!a.verified || !a.trusted
-              ? (registering ? 'is not one this service verified and ' +
-                               'trusts'
-                             : 'this service did not verify and trust')
-              : (!(a.certificates || []).length
-                ? 'carries no certificate'
-                : 'is signed with ' +
-                  (signed || 'algorithms never recorded'))) +
-            ', and this realm requires one signed with ' +
-            ((policy.attestationAlgorithms || []).join(', ') || 'nothing') +
-            ' (the passkey policy\'s attestationAlgorithms). ' +
-            (registering
-              ? 'Use an authenticator whose attestation is signed that way.'
-              : 'Sign in another way, and register a passkey whose ' +
-                'attestation is.');
+      const required = (policy.attestationAlgorithms || []).join(', ');
+      why = Sentence.say('refusals.passkey.attestationAlgorithm', {
+        at: stage,
+        state: !a.verified || !a.trusted ? 'untrusted'
+          : (!(a.certificates || []).length ? 'nocert'
+            : (signed ? 'signed' : 'unrecorded')),
+        signed: signed, required: required,
+        anyRequired: required ? 'yes' : 'no' });
     } else if (reason === 'profile-algorithm') {
       // #940: the population's own list, by the profile's name, so the
       // person and the operator read which profile said no.
-      why = 'That passkey signs with ' +
-            (String(asked.algorithm || '') || 'an algorithm never recorded') +
-            ', which is not one the passkey policy offers here (profile ' +
-            String(asked.profile || DEFAULT_PROFILE) + ': ' +
-            ((policy.registrationAlgorithms || []).join(', ') || 'nothing') +
-            ', registrationMode ' + String(policy.registrationMode || '') +
-            '). Use an authenticator that can make one of those.';
+      const offered = (policy.registrationAlgorithms || []).join(', ');
+      why = Sentence.say('refusals.passkey.profileAlgorithm', {
+        algorithm: String(asked.algorithm || ''),
+        known: String(asked.algorithm || '') ? 'yes' : 'no',
+        profile: String(asked.profile || DEFAULT_PROFILE),
+        offered: offered, anyOffered: offered ? 'yes' : 'no',
+        mode: String(policy.registrationMode || '') });
     } else if (reason === 'serial-not-held') {
-      why = 'That security key (serial ' +
-            String(asked.serial || '').slice(0, 64) + ') is not ' +
-            'one issued to you: its serial is not on your directory entry ' +
-            '(' + policy.enterpriseSerialAttribute + '). Use the key your ' +
-            'organisation issued you.';
+      why = Sentence.say('refusals.passkey.serialNotHeld', {
+        serial: String(asked.serial || '').slice(0, 64),
+        attribute: String(policy.enterpriseSerialAttribute) });
     } else if (reason === 'recovery-self-service') {
-      why = 'This account is protected by a passkey, and this realm lets ' +
-            'it be recovered only by whoever manages it (the passkey ' +
-            'policy\'s recoveryAssurance is operator-only). Sign in with ' +
-            'your passkey, or ask an administrator for a reset or ' +
-            'activation link.';
+      why = Sentence.say('refusals.passkey.recoverySelfService');
     } else if (reason === 'recovery-enrol-first') {
-      why = 'This account was recovered without its passkey, and this ' +
-            'realm lets it reach no application until a passkey has signed ' +
-            'you in (the passkey policy\'s recoveryAssurance). Register a ' +
-            'new passkey, then sign in with it.';
+      why = Sentence.say('refusals.passkey.recoveryEnrolFirst');
     } else {
+      // An attestation rule's own sentence stays as the attestation module
+      // wrote it (text); the issuance policy's catch-all is a sentence.
       const sentences = (facts.attestationSentences || {}) as
         Record<string, string>;
       why = sentences[reason] ||
-        'This realm\'s issuance policy ' + (registering
-          ? 'does not let that passkey be registered here.'
-          : 'no longer lets that passkey sign you in. Sign in another way.');
+        Sentence.say('refusals.passkey.issuancePolicy', { at: stage });
     }
     log.debug("Leaving PasskeyPolicy.sentenceFor().");
     return why;

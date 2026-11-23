@@ -110,7 +110,9 @@ foundation (`common/CLAUDE.md` 3cl), and the sign-in screen is the largest:
   (`step` and the address of the page that draws it, by its own GET),
   `password-change`, `home-cell` (#98's restart: the start's method, address
   and fields, sent by the runtime exactly as the re-post page sent them), or
-  `refused` with the English sentence and no error code. One copy of the
+  `refused` with the English sentence, its catalog message beside it
+  (`messages`, #2006: the page draws it in its own language), and no
+  error code. One copy of the
   logic answers both kinds of door: `answersJson(res)` (`res.locals.authnApi`,
   set by the API) is asked at the one line where a page was sent, and a door
   that is still a FORM (the wallet's, until #574) gets a 303 instead — its
@@ -194,7 +196,8 @@ that page; nothing draws a page that loads it now, and it is gone.
 
 **A page with nowhere to go** gets a way off (`AuthnSurface.put()`). The
 problem page — a sign-in this service no longer has, or any other refusal
-that drew no view — shows the language chooser and the English sentence
+that drew no view — shows the language chooser and the sentence (in the
+page's language where its answer named a catalog message, #2006)
 and nothing else, and the same is true of any screen whose body draws
 neither a link nor a button (the chooser redraws the page, so it is not
 one). That page tells the person to close the browser tab or window and
@@ -327,7 +330,9 @@ Every page in that table also carries **Start over** (`start-over`, below).
   set-up step's "Set up a passkey"), a recovery-code page with no unspent
   code, a password page after a password. **The emailed factor's pages
   answer the shell whatever their query**, and the view draws what is
-  wrong as the end page `endPage()` drew (state `end`, English).
+  wrong as the end page `endPage()` drew (state `end`: its title and
+  sentence in English, and as catalog messages, `titleRefusal` and
+  `refusal`, which the page draws in its own language, #2006).
 * **THE ID IS A BEARER CAPABILITY**, as `?mfa=` always was: every act is
   bound as the screen's are (JSON, an Origin of this service, the
   `X-CSRF-Token` of the `sts_session` cookie), the id is never logged, and
@@ -3155,7 +3160,8 @@ next refusal, the next screen act and Start over); `screenView()` answers
 `postQuantumRequired` as `postQuantumHelp()`'s `{ register }` and
 the step's facts carry `postQuantumHelp` beside `postQuantumRefused`.
 `WebAuthnLogin.postQuantumPanel()` draws it on the screen and the step page,
-translated, under the English sentence. `register` is `/portal/keys` where
+translated, under the sentence (translated too since #2006). `register`
+is `/portal/keys` where
 passkeys may be registered here. (#939's upgrade link went with the
 portal's Upgrade button, #1100: the post-login activity upgrades a classical
 passkey at a sign-in.) The usernameless
