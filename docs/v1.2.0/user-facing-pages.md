@@ -19,8 +19,9 @@ language ([Languages and regions](languages.md)):
   page that submits itself has nothing to redraw.
 - **Planned (phase N)**: not yet translated. Issue #539 is converting the
   pages in phases.
-- **English**: deliberately not translated. Error and refusal text is always
-  English, everywhere.
+- **English**: deliberately not translated. A refusal on these pages is in
+  the page's language (#2006); the admin console's and the portal's refusals
+  are still English.
 
 ## Signing in
 
@@ -41,7 +42,7 @@ started the sign-in.
 | Emailed code | `/authn/email-code` | Types the code that was mailed | Yes |
 | Emailed sign-in link | `/authn/email-link`, `/authn/email-link/open` | Waits for the link, then opens it | Yes |
 | Wallet sign-in | `/authn/wallet`, `/authn/wallet/wait` | Presents a credential from a wallet, on this device or by QR code | Yes |
-| Kerberos sign-in | `/authn/spnego` | Nothing to type: the browser presents a ticket. A page is seen only when there is no ticket, or once signed in. | Yes (a refused ticket is English) |
+| Kerberos sign-in | `/authn/spnego` | Nothing to type: the browser presents a ticket. A page is seen only when there is no ticket, or once signed in. | Yes |
 | Moving to the home cell | (inside a sign-in) | Is sent on to the region that holds the account | Yes, no chooser |
 | Language chooser | `/authn/language` | Every page above posts here when another language is chosen | n/a (it only redirects) |
 
@@ -106,7 +107,7 @@ portal needs JavaScript; with scripts blocked it says so and shows nothing.
 Refresh and Sign out, and on the pages drawn for nobody (activation, a
 password reset, address verification). The Overview has a **Language and
 region** card: it sets the person's own `preferredLanguage`, or removes it
-to follow the browser. Error text stays English.
+to follow the browser. Error text stays English for now.
 
 The Overview's **Profile photo** card shows the person's photo and lets them
 choose a new one: a JPEG or PNG file of at most 5 MB whose shorter side is at
