@@ -1430,6 +1430,7 @@ class ConsoleRuntime extends SpaClient {
     this.wireCheckAll();
     this.wireChoicePanels();
     this.wireConditionalRequirements();
+    this.wirePolicyNames();
     this.loadPageScripts();
     this.revealActiveNav();
   }
@@ -3444,6 +3445,50 @@ class ConsoleRuntime extends SpaClient {
         ConsoleRuntime.realmLinks(
         WebShell.accountItems(this.accounts, this.subject, this.t),
         this.prefix));
+    }
+  }
+
+  // A NEW POLICY'S NAME (#1132 notes). The box is `required`, so the
+  // browser blocks the submit before ConsoleRuntime.onSubmit and the
+  // bubble would otherwise be the browser's own fill-in prompt. The
+  // sentence the save returns is what the bubble says. Only a form that
+  // posts `newProfile` (the create); a stored editor posts a hidden
+  // profile and is left alone. Blank after trim is empty, so a pattern
+  // mismatch keeps the pattern's own message.
+  /**
+   * Sets the new-policy name box's validity to "A name is required."
+   *
+   * @returns nothing
+   */
+  wirePolicyNames(): void {
+    const doc = this.env.document;
+    const forms = doc && doc.querySelectorAll
+      ? doc.querySelectorAll('form') : [];
+    const sentence = 'A name is required.';
+    for (let i = 0; i < forms.length; i++) {
+      const form = forms[i];
+      if (!form.elements || !form.elements.namedItem ||
+          !form.elements.namedItem('newProfile')) {
+        continue;
+      }
+      const inputs = form.querySelectorAll
+        ? form.querySelectorAll('input') : [];
+      for (let j = 0; j < inputs.length; j++) {
+        const input = inputs[j];
+        const field = String(input.name || '');
+        const type = String(input.type || '').toLowerCase();
+        if ((field !== 'profile' && field !== 'name') ||
+            type === 'hidden') {
+          continue;
+        }
+        const sync = function (): void {
+          const value = String(input.value || '').trim();
+          input.setCustomValidity(value === '' ? sentence : '');
+        };
+        input.addEventListener('input', sync);
+        input.addEventListener('invalid', sync);
+        sync();
+      }
     }
   }
 

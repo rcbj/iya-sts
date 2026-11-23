@@ -819,10 +819,11 @@ profile of every kind. The authentication policy's named profiles use
 #### Creating a named policy — `/admin/policies/new`
 
 A kind's **New policy** sub-tab takes you to `/admin/policies/new?kind=<kind>`,
-the kind's create form. **The name is always required**, because a save with
-no name changes the *default* policy instead. It is outlined in red and marked
-*required*, as on `/admin/users/new`, and so is each of the kind's fields that
-the save refuses without; the note above the form names them. A field whose
+the kind's create form. **The name is always required.** A save that omits
+the name is refused; send `default` to edit the default profile. It is
+outlined in red and marked *required*, as on `/admin/users/new`, and so is
+each of the kind's fields that the save refuses without; the note above the
+form names them. A field whose
 value is kept when it is left out (a password policy's hash costs, some of the
 passkey policy's) is optional, and so are the precedence (100 when empty) and
 the description. A checkbox is never marked: unticked means *no*. A refused

@@ -30,7 +30,8 @@
 //      the name and every field the save refuses without, while a field the
 //      save keeps the value in force for (`hashAlgorithm`) is optional — and
 //      the save agrees: refused without a required field, saved without the
-//      optional one.
+//      optional one, and refused with no name at all ("A name is required.")
+//      without writing the default.
 //   E. The drawn pages: a required field is outlined, starred and says
 //      "required" (`fg-required`), an optional one is not, and the HTML
 //      `required` attribute is on exactly the required fields.
@@ -307,11 +308,61 @@ async function namedPolicy(t) {
   t.check(!!refused && refused.ok === false,
           'D4. and is refused without a required one',
           JSON.stringify(refused));
+  const beforeDefault = passwordPolicy.read('default');
   const unnamed = await Promise.resolve(adminActions.policiesAction({
     action: 'save-password-policy', newProfile: '1', profile: '   '
   }, CTX));
-  t.check(!!unnamed && unnamed.ok === false,
-          'D5. a named policy create without a name is refused');
+  const omitted = await Promise.resolve(adminActions.policiesAction({
+    action: 'save-password-policy', minLength: 21
+  }, CTX));
+  const spaces = await Promise.resolve(adminActions.policiesAction({
+    action: 'save-password-policy', profile: '   ', minLength: 22
+  }, CTX));
+  const nulled = await Promise.resolve(adminActions.policiesAction({
+    action: 'save-password-policy', profile: null, minLength: 30
+  }, CTX));
+  const afterBlank = passwordPolicy.read('default');
+  const saysName = function (answer) {
+    return !!answer && answer.ok === false &&
+      (answer.errors || []).indexOf('A name is required.') >= 0;
+  };
+  t.check(saysName(unnamed) && saysName(omitted) && saysName(spaces) &&
+          saysName(nulled) &&
+          afterBlank.minLength === beforeDefault.minLength &&
+          afterBlank.stored === beforeDefault.stored,
+          'D5. a save with no name is refused and the default is unchanged',
+          JSON.stringify({ unnamed: unnamed && unnamed.errors,
+                           omitted: omitted && omitted.errors,
+                           spaces: spaces && spaces.errors,
+                           nulled: nulled && nulled.errors,
+                           before: beforeDefault.minLength,
+                           after: afterBlank.minLength,
+                           stored: afterBlank.stored }));
+  const trimmed = await Promise.resolve(adminActions.policiesAction(
+    Object.assign({}, passwordPolicy.DEFAULTS, {
+      action: 'save-password-policy', profile: ' default ' }), CTX));
+  const wrote = passwordPolicy.read('default');
+  t.check(!!(trimmed && trimmed.ok) && wrote.name === 'default' &&
+          wrote.stored === true,
+          'D5b. a name that trims to default still saves the default',
+          JSON.stringify(trimmed && trimmed.errors));
+  const blankAuthn = await Promise.resolve(adminActions.policiesAction({
+    action: 'save-named-authn-policy', name: '   '
+  }, CTX));
+  const missingAuthn = await Promise.resolve(adminActions.policiesAction({
+    action: 'save-named-authn-policy'
+  }, CTX));
+  t.check(saysName(blankAuthn) && saysName(missingAuthn),
+          'D5c. a named authentication policy with no name is refused',
+          JSON.stringify({ blank: blankAuthn && blankAuthn.errors,
+                           missing: missingAuthn && missingAuthn.errors }));
+  const malformed = await Promise.resolve(adminActions.policiesAction({
+    action: 'save-named-authn-policy', name: 'Not A Name'
+  }, CTX));
+  t.check(!!malformed && malformed.ok === false &&
+          (malformed.errors || []).indexOf('A name is required.') < 0,
+          'D5d. a present malformed name is the kind\'s own refusal',
+          JSON.stringify(malformed && malformed.errors));
   const authnFields = {
     newProfile: '1', name: 'typed-authn', description: 'typed description',
     precedence: '17', mechanisms: ['', 'password'],
@@ -342,6 +393,54 @@ async function namedPolicy(t) {
           'D6. a refused authentication-policy create keeps its fields and ' +
           'shows the refusal');
   log.debug("Leaving namedPolicy().");
+}
+
+function policyNameBubble(t) {
+  log.debug("Entering policyNameBubble().");
+  const hits = { text: [], hidden: [], stored: [] };
+  const text = {
+    name: 'profile', type: 'text', value: '   ',
+    setCustomValidity: function (message) { hits.text.push(message); },
+    addEventListener: function (event, handler) { this[event] = handler; }
+  };
+  const hidden = {
+    name: 'profile', type: 'hidden', value: '',
+    setCustomValidity: function (message) { hits.hidden.push(message); },
+    addEventListener: function () { hits.hidden.push('listened'); }
+  };
+  const createForm = {
+    elements: { namedItem: function (name) {
+      return name === 'newProfile' ? { value: '1' } : null;
+    } },
+    querySelectorAll: function () { return [hidden, text]; }
+  };
+  const storedInput = {
+    name: 'profile', type: 'hidden', value: 'default',
+    setCustomValidity: function (message) { hits.stored.push(message); },
+    addEventListener: function () { hits.stored.push('listened'); }
+  };
+  const storedForm = {
+    elements: { namedItem: function () { return null; } },
+    querySelectorAll: function () { return [storedInput]; }
+  };
+  const runtime = new ConsoleRuntime({
+    location: { pathname: '/admin/policies/new' },
+    document: { querySelectorAll: function () {
+      return [createForm, storedForm];
+    } }
+  });
+  runtime.wirePolicyNames();
+  text.value = ' contractors ';
+  text.input();
+  const cleared = hits.text[hits.text.length - 1];
+  text.value = '  ';
+  text.invalid();
+  t.check(hits.text[0] === 'A name is required.' && cleared === '' &&
+          hits.text[hits.text.length - 1] === 'A name is required.' &&
+          hits.hidden.length === 0 && hits.stored.length === 0,
+          'D7. a blank new-policy name says a name is required, and a ' +
+          'stored profile does not');
+  log.debug("Leaving policyNameBubble().");
 }
 
 function drawn(t) {
@@ -383,6 +482,7 @@ async function run(t) {
       await requiredWhen(t);
       answersCarryTheTable(t);
       await namedPolicy(t);
+      policyNameBubble(t);
       drawn(t);
     });
   } finally {

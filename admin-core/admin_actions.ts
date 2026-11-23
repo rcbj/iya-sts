@@ -10170,17 +10170,29 @@ class AdminActions {
     const fill = serverProse.fill;
     const MESSAGES = policyKinds.MESSAGES;
     const submitted: Record<string, any> = Object.assign({}, body);
-    const creatingNamedProfile = submitted.newProfile === true ||
-      String(submitted.newProfile || '') === '1';
-    if (found.verb === 'save' && creatingNamedProfile &&
-        !String(submitted.profile || '').trim()) {
-      log.debug("Leaving AdminActions.policiesAction(). New profile has no " +
-                "name.");
-      return this.refused('STS-ADMIN-0549', {
-        ok: false, errors: ['Give the new ' + noun + ' a name.'] });
+    // A SAVE WITH NO NAME OVERWROTE cn=default (the #1132 notes).
+    // `newProfile` is console-only, so the management API never saw the
+    // check that used to require it, and a save that omitted the name
+    // wrote the default. The name itself is what is required: missing,
+    // null or blank after trim is refused before anything is read or
+    // written. An explicit `default`, including surrounding spaces, still
+    // writes the default. A reset that omits the name still resets the
+    // default. A present malformed name is the kind's own refusal.
+    const namedAuthnSave = action === 'save-named-authn-policy';
+    if (found.verb === 'save' || namedAuthnSave) {
+      const raw = namedAuthnSave ? submitted.name : submitted.profile;
+      const named = (raw === undefined || raw === null) ? ''
+        : String(raw).trim();
+      if (named === '') {
+        log.debug("Leaving AdminActions.policiesAction(). A name is " +
+                  "required.");
+        return this.refused('STS-ADMIN-0549', {
+          ok: false, errors: ['A name is required.'] });
+      }
     }
-    const profileName = String(submitted.profile ||
-                                module.DEFAULT_PROFILE).trim();
+    const profileName = found.verb === 'save'
+      ? String(submitted.profile).trim()
+      : String(submitted.profile || module.DEFAULT_PROFILE).trim();
     // The profile the act is about (#535: a named passkey profile too).
     const before = module.read(profileName || module.DEFAULT_PROFILE);
     const valuesOf = function (profile) {

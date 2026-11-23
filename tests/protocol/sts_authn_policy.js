@@ -412,6 +412,9 @@ function fullProfile(v, changes) {
   v.authn.fields.forEach(function (f) {
     out[f.key] = f.value;
   });
+  if (out.profile === undefined) {
+    out.profile = "default";
+  }
   log.debug("Leaving fullProfile().");
   return Object.assign(out, changes || {});
 }

@@ -330,7 +330,8 @@ function kinds(t) {
             'F2. the actions are every kind\'s, the password policy\'s by ' +
             'the names they always had', view.actions.join(','));
     const saved = adminActions.policiesAction(Object.assign(
-      { action: 'save-authn-policy' }, withDefaults()), { via: 'api' });
+      { action: 'save-authn-policy' }, withDefaults(),
+      { profile: 'default' }), { via: 'api' });
     t.check(saved.ok && saved.kind === 'authn' &&
             saved.profile.from === 'realm',
             'F3. save-authn-policy is handed to the authentication policy',
@@ -381,7 +382,8 @@ function kinds(t) {
               'F4. a kind registered later is on the page, in the JSON and ' +
               'in the actions with no other edit');
       const done = adminActions.policiesAction(
-        { action: 'save-widget-policy', widgets: '7' }, { via: 'api' });
+        { action: 'save-widget-policy', profile: 'default', widgets: '7' },
+        { via: 'api' });
       t.check(done.ok && store.w === 7,
               'F5. and its save is dispatched to its own module',
               JSON.stringify(done));

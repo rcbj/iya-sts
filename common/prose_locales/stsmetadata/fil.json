@@ -2024,8 +2024,8 @@
     "text": "HINDI SPEC. Kung ano ang maaaring ipangdagdag ng secret destination, bilang JSON: bawat field ng paglikha at kung tatanggihan ito kapag wala — ang identifier at ang provider palagi, at ilan para sa ilang provider lamang (requiredWhen): ang write credential para sa lahat maliban sa file, ang region para sa aws, ang endpoint para sa azure at vault, ang directory para sa file. WALA ITONG IDINARAGDAG: ang paglikha ay POST /admin-api/secret-destinations/add-destination. Katumbas ng GET /admin/secret-destinations/new."
   },
   "stsmetadata.endpoints./admin-api/policies/new.what": {
-    "en": "2c58d79f3a71506e",
-    "text": "HINDI SPEC. Ang mga uri na maaaring gawing pinangalanang patakaran at, para sa hinihinging uri, bawat field ng pag-save nito at kung tatanggihan ang pag-save kapag wala ito — palagi ang pangalan, dahil binabago ng pag-save na walang pangalan ang default na patakaran, at bawat field na hindi pinananatili ang halaga kapag inalis. WALA ITONG SINI-SAVE: ang pinangalanang patakaran ay ang pag-save ng uri sa ilalim ng pangalang wala pa sa realm. Katumbas ng GET /admin/policies/new."
+    "en": "8b0523b4a594c8c1",
+    "text": "HINDI SPEC. Ang mga uri na maaaring gawing pinangalanang patakaran at, para sa hinihinging uri, bawat field ng pag-save nito at kung tatanggihan ang pag-save kapag wala ito — palagi ang pangalan, dahil tinatanggihan ang pag-save na walang pangalan, at bawat field na hindi pinananatili ang halaga kapag inalis. WALA ITONG SINI-SAVE: ang pinangalanang patakaran ay ang pag-save ng uri sa ilalim ng pangalang wala pa sa realm. Katumbas ng GET /admin/policies/new."
   },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",

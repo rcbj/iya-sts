@@ -1226,6 +1226,12 @@ create page, and each calls out its required fields the way New user does.
   the floating banner, and a create lands on what it made. A policy's form
   posts to `/admin/policies` as it always did; its refusal keeps the draft
   under `state.policyDrafts`, and a save lands on the kind's Named policies.
+* **THE NEW-POLICY NAME BOX SAYS "A name is required."**
+  `ConsoleRuntime.wirePolicyNames()` sets that custom validity on the text
+  input named `profile` or `name` in a form that posts `newProfile`. The
+  box stays `required`. A required empty field never reaches the submit
+  handler, so the bubble is the custom validity. The same sentence is what
+  the save returns.
 
 ### Two forms post `action=create` and only one carries it as a button
 

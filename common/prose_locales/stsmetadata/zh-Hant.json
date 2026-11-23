@@ -2024,8 +2024,8 @@
     "text": "非規範。以 JSON 說明新增密鑰推送目標可以使用什麼：建立的每個欄位，以及缺少它時建立是否會被拒絕——識別碼和提供者一律必填，有些僅對某些提供者必填（requiredWhen）：除 file 外均需寫入憑證，aws 需區域，azure 和 vault 需端點，file 需目錄。它不新增任何內容：建立是 POST /admin-api/secret-destinations/add-destination。對應 GET /admin/secret-destinations/new。"
   },
   "stsmetadata.endpoints./admin-api/policies/new.what": {
-    "en": "2c58d79f3a71506e",
-    "text": "非規範。可以建立具名原則的類型，以及對於所請求的類型，其儲存的每個欄位以及缺少它時儲存是否會被拒絕——名稱一律必填，因為沒有名稱的儲存會變更預設原則；以及省略時不會保留其值的每個欄位。它不儲存任何內容：具名原則是該類型在本領域尚未使用的名稱下的儲存操作。對應 GET /admin/policies/new。"
+    "en": "8b0523b4a594c8c1",
+    "text": "非規範。可以建立具名原則的類型，以及對於所請求的類型，其儲存的每個欄位以及缺少它時儲存是否會被拒絕——名稱一律必填，因為沒有名稱的儲存會被拒絕；以及省略時不會保留其值的每個欄位。它不儲存任何內容：具名原則是該類型在本領域尚未使用的名稱下的儲存操作。對應 GET /admin/policies/new。"
   },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",

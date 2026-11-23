@@ -11051,8 +11051,8 @@ class AdminViews {
   // the realm does not hold yet, so its fields are the kind's own table
   // (each module's FIELDS, its `optional` rows the ones a save keeps the
   // value in force for), behind the name — refused when empty or not a
-  // policy name, where a save with no name at all edits the DEFAULT policy,
-  // which is why the page insists on one — and the precedence, which
+  // policy name, where a save with no name at all is refused, which is
+  // why the page insists on one — and the precedence, which
   // defaults to 100. Two kinds are their own: the authentication policy's
   // named create takes `name`, its mechanisms optional (none allows every
   // one), and the attribute policy's console form sends its list even when
