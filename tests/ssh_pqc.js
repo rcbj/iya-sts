@@ -10,8 +10,10 @@
 //
 // OpenSSH defines no ML-DSA certificate. The published TrustedUserCAKeys
 // line stays the first classical algorithm. ssh-mldsa-65 is this service's
-// own wire name, and a runtime that cannot generate ML-DSA still makes the
-// classical authority.
+// own wire name, published beside that line with ?algorithm=ssh-mldsa-65,
+// and a runtime that cannot generate ML-DSA still makes the classical
+// authority. pki.sshUserCaPqcOnly refuses (STS-PKI-0297) when the realm has
+// no ML-DSA authority, rather than issue a classical certificate.
 // ---------------------------------------------------------------------------
 
 const log = require('bunyan').createLogger({ name: 'ssh_pqc',
@@ -66,6 +68,127 @@ function run(t) {
           '12. a KRL can name the classical authority and the sibling');
   t.equal(read.authorities[1].caBlob.toString('utf8'), 'pq-ca',
           '13. the sibling section carries the ML-DSA authority blob');
+  return pqcOnlyRefuses(t, pki, config).then(function () {
+    return publication(t);
+  }).then(function () {
+    return generation(t, pki, crypto);
+  });
+}
+
+// 16-19. pki.sshUserCaPqcOnly with no ML-DSA authority REFUSES
+// (STS-PKI-0297) instead of handing out a classical certificate. The
+// authority is made absent the one way every runtime shares: ssh-mldsa-65
+// taken off the algorithm list. With the switch off the same request is
+// issued classically.
+async function pqcOnlyRefuses(t, pki, config) {
+  log.debug("Entering pqcOnlyRefuses().");
+  const codes = require('../common/error_codes');
+  const subject = await pki.generateSshCaKey('ssh-ed25519');
+  const spec = { subjectBlob: subject.publicBlob, principals: ['alice'],
+                 ownerSubject: 'urn:uuid:alice', lifetimeS: 300 };
+  const list = config.setOverride('pki.sshUserCaAlgorithms', 'ssh-ed25519');
+  t.equal(list.ok, true, '16. a classical-only algorithm list is a legal ' +
+          'write');
+  const only = config.setOverride('pki.sshUserCaPqcOnly', true);
+  t.equal(only.ok, true, '17. pqcOnly is a legal write beside it');
+  try {
+    const refused = await pki.issueSshUserCertificateAsync('', spec);
+    t.equal(refused.ok, false,
+            '18. pqcOnly with no ML-DSA authority issues nothing');
+    t.equal(codes.codeOf(refused), 'STS-PKI-0297',
+            '18a. that refusal is STS-PKI-0297', JSON.stringify(refused));
+  } finally {
+    config.clearOverride('pki.sshUserCaPqcOnly');
+  }
+  try {
+    const issued = await pki.issueSshUserCertificateAsync('', spec);
+    t.check(issued.ok === true && String(issued.line)
+      .indexOf('ssh-ed25519-cert-v01@openssh.com ') === 0,
+            '19. with the switch off the certificate is classical',
+            JSON.stringify(issued).slice(0, 160));
+  } finally {
+    config.clearOverride('pki.sshUserCaAlgorithms');
+  }
+  log.debug("Leaving pqcOnlyRefuses().");
+}
+
+// A response the PKI service writes into, as far as these routes use it.
+function fakeResponse() {
+  log.debug("Entering fakeResponse().");
+  const res = { statusCode: 0, body: '', headers: {} };
+  res.status = function (n) {
+    res.statusCode = n;
+    return res;
+  };
+  res.type = function () {
+    return res;
+  };
+  res.set = function (name, value) {
+    res.headers[String(name).toLowerCase()] = value;
+    return res;
+  };
+  res.send = function (body) {
+    res.body = String(body);
+    return res;
+  };
+  res.locals = {};
+  log.debug("Leaving fakeResponse().");
+  return res;
+}
+
+// 20-23. The ML-DSA authority is PUBLISHED beside the classical one, at the
+// same path with ?algorithm=ssh-mldsa-65, never concatenated onto it.
+async function publication(t) {
+  log.debug("Entering publication().");
+  const PkiService = require('../pki/pki_service').PkiService;
+  const codes = require('../common/error_codes');
+  let pqcLine = 'ssh-mldsa-65 AAAApq';
+  const stub = {
+    SERVICE_SCOPE: '*service', PROCESS_SCOPE: '*process',
+    sshUserCaPublicKeyAsync: async function () {
+      return { ok: true, publicLine: 'ssh-ed25519 AAAAclassical',
+               fingerprint: 'SHA256:c', pqcPublicLine: pqcLine,
+               pqcFingerprint: pqcLine ? 'SHA256:p' : '' };
+    }
+  };
+  const service = new PkiService(Object.assign(PkiService.defaultDeps(), {
+    pki: stub,
+    realms: { get: function () {
+      return { id: 'acme' };
+    } },
+    revocation: { scopeFromSegment: function (s) {
+      return s;
+    } }
+  }));
+  const plain = fakeResponse();
+  await service.sshUserCaFor(plain, 'acme', '');
+  t.equal(plain.body, 'ssh-ed25519 AAAAclassical\n',
+          '20. without the parameter the line is the classical one alone');
+  const pq = fakeResponse();
+  await service.sshUserCaFor(pq, 'acme', 'ssh-mldsa-65');
+  t.check(pq.statusCode === 200 && pq.body === 'ssh-mldsa-65 AAAApq\n' &&
+          pq.headers['cache-control'] === 'no-store',
+          '21. algorithm=ssh-mldsa-65 answers the ML-DSA line, no-store',
+          pq.statusCode + ' ' + pq.body);
+  const other = fakeResponse();
+  await service.sshUserCaFor(other, 'acme', 'ssh-rsa');
+  t.check(other.statusCode === 400 &&
+          codes.codeOf(other) === 'STS-PKI-0298',
+          '22. another algorithm is refused 400 (STS-PKI-0298)',
+          other.statusCode + ' ' + codes.codeOf(other));
+  pqcLine = '';
+  const none = fakeResponse();
+  await service.sshUserCaFor(none, 'acme', 'ssh-mldsa-65');
+  t.check(none.statusCode === 404 &&
+          codes.codeOf(none) === 'STS-PKI-0298',
+          '23. a realm with no ML-DSA authority answers 404 (STS-PKI-0298)',
+          none.statusCode + ' ' + codes.codeOf(none));
+  log.debug("Leaving publication().");
+}
+
+// 14-15. Generation, as the runtime allows it.
+function generation(t, pki, crypto) {
+  log.debug("Entering generation().");
   if (!crypto.mlDsaAvailable()) {
     let message = '';
     return pki.generateSshCaKey('ssh-mldsa-65').then(function () {
@@ -80,18 +203,19 @@ function run(t) {
       t.check(key.publicLine.indexOf('ssh-ed25519 ') === 0,
               '15. the classical authority still generates',
               key.publicLine.slice(0, 24));
-      log.debug("Leaving run().");
+      log.debug("Leaving generation().");
     });
   }
-  log.debug("Leaving run(). ML-DSA is available; generation is not " +
-            "asserted here.");
+  log.debug("Leaving generation(). ML-DSA is available; generation is " +
+            "not asserted here.");
   return Promise.resolve();
 }
 
 module.exports = {
   name: 'ssh_pqc',
-  describe: 'SSH user CA: the published line stays classical, and ' +
-            'ML-DSA is a sibling authority',
+  describe: 'SSH user CA: the published line stays classical, ML-DSA is ' +
+            'a sibling authority published beside it, and pqcOnly refuses ' +
+            'without it',
   run: run
 };
 

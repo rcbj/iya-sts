@@ -13072,16 +13072,16 @@
     "text": "SSH 使用者 CA 演算法"
   },
   "pki.sshUserCaAlgorithms|description": {
-    "en": "bdb54445a0279b8d",
-    "text": "SSH 使用者憑證機構可以使用的演算法，依優先順序。ssh-mldsa-65 是本服務定義的線路名稱下的 ML-DSA-65（FIPS 204），因為 OpenSSH 沒有定義：公開金鑰和簽章是原始位元組，形狀與 ssh-ed25519 相同。本服務發布的 OpenSSH TrustedUserCAKeys 行仍是此清單中的第一個經典演算法，若清單只點名 ssh-mldsa-65 則為 ssh-ed25519。不理解 ML-DSA 的對端繼續信任那一行。不提供 ssh-rsa（SHA-1）。只有本執行環境能夠產生該金鑰時才建立 ML-DSA 機構；否則憑證保持經典（記錄 STS-PKI-0290，經典機構仍然回應）。"
+    "en": "5c4c22c2ab500fd4",
+    "text": "SSH 使用者憑證授權單位可使用的演算法，依偏好順序排列。ssh-mldsa-65 是 ML-DSA-65（FIPS 204），使用本服務定義的傳輸名稱，因為 OpenSSH 沒有定義：公開金鑰與簽章都是原始格式，形式與 ssh-ed25519 相同。本服務發布的 OpenSSH TrustedUserCAKeys 行始終是此清單中的第一個傳統演算法；若清單只列出 ssh-mldsa-65，則為 ssh-ed25519。不理解 ML-DSA 的對端會繼續信任該行。ML-DSA 授權單位的金鑰發布在 GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65；標準 OpenSSH 目前還無法驗證 ML-DSA 憑證。不提供 ssh-rsa（SHA-1）。只有在此執行環境能產生該金鑰時才會建立 ML-DSA 授權單位；否則憑證維持傳統演算法（記錄 STS-PKI-0290，傳統授權單位仍會回應），除非 pki.sshUserCaPqcOnly 已開啟。"
   },
   "pki.sshUserCaPqcOnly|label": {
     "en": "74aae1308361ba58",
     "text": "SSH 使用者憑證僅使用後量子演算法"
   },
   "pki.sshUserCaPqcOnly|description": {
-    "en": "39b21e5b95f84da1",
-    "text": "開啟後，新的 SSH 使用者憑證由 ML-DSA 機構簽章，並且僅當該機構存在時。發布的 TrustedUserCAKeys 行仍是經典金鑰，因此已經信任它的 OpenSSH 用戶端不會收到它無法解析的演算法。在不能產生 ML-DSA 的執行環境上，憑證保持經典，請求不會失敗。已經簽發的經典憑證繼續驗證。不能與 pki.sshUserCaPqcAlongsideClassical 同時開啟（STS-PKI-0296）。預設關閉。"
+    "en": "dcbf21b3230dcf07",
+    "text": "開啟後，新的 SSH 使用者憑證只由 ML-DSA 授權單位簽署，不使用其他任何單位。標準 OpenSSH 目前還無法驗證 ML-DSA 憑證，因此只有能驗證 ssh-mldsa-65 並信任 GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65 上金鑰的 SSH 伺服器才會接受這些憑證。該路徑上的預設行仍是傳統金鑰。如果領域沒有 ML-DSA 授權單位（此執行環境無法產生 ML-DSA，或 ssh-mldsa-65 不在 pki.sshUserCaAlgorithms 中），請求會被拒絕（STS-PKI-0297），而不是回傳一張傳統憑證。已簽發的傳統憑證仍可驗證。不能與 pki.sshUserCaPqcAlongsideClassical 同時開啟（STS-PKI-0296）。預設關閉。"
   },
   "pki.sshUserCaPqcAlongsideClassical|label": {
     "en": "c3201f8841200c32",
