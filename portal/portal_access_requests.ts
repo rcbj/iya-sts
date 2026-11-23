@@ -12,7 +12,9 @@
 // in its approver group, or owning the application — approve or deny it
 // here, beside the other approvals a person makes in the portal (a CIBA
 // sign-in, a GNAP grant, on `/portal/ciba`). The same page revokes an
-// approval that person gave (#1203), through the same `decide()` door.
+// approval that person gave (#1203), through the same `decide()` door,
+// which on this door refuses a revocation of anybody else's approval
+// (`STS-AUTHZEN-0141`) and asks the policy `revoke-access-request`.
 // A page of its own rather than
 // a section of that one: those are requests about the PERSON, answered as
 // their resource owner; this is a request about somebody else, answered as

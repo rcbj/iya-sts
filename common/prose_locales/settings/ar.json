@@ -3307,61 +3307,149 @@
     "en": "e0341e4e47f3b2f8",
     "text": "ما الذي يسمح لتسجيل دخول PKINIT بادعاء مفتاح مرتبط بالعتاد (المؤشر pkinit-hardware و amr hwk). `inference`، القيمة الافتراضية والسلوك قبل #1955: شهادة تسجيل دخول بالبطاقة الذكية لم تولّد هذه الخدمة مفتاحها، أو دليل شهادة مسجّل. `evidence`: فقط مفتاح تغطيه شهادة رمز مادي. تسجيل الدخول بالشهادة عبر TLS يحصل على hwk، و sc لمفتاح على بطاقة ذكية، من الدليل فقط في الحالتين."
   },
-"pskc.allowPlaintextImport|label": {
+  "pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
     "text": "قبول ملفات بذور PSKC بنص صريح في وضع المنتج"
   },
-"pskc.allowPlaintextImport|description": {
+  "pskc.allowPlaintextImport|description": {
     "en": "7efe34e872e4772e",
     "text": "ما إذا كان يجوز للمسؤول في وضع المنتج استيراد ملف بذور PSKC (RFC 6030) أسرار رموزه غير مشفّرة. معطّل افتراضيًا: فمثل هذا الملف كان قائمة بعوامل ثانية صالحة على كل قرص وصندوق بريد مرّ به، ويمكن للمورّد تشفيره تحت مفتاح مشترك مسبقًا أو كلمة مرور (القسمان 6.1 و6.2). ويقبل وضع التطوير مثل هذا الملف على أي حال."
   },
-"yubiotp.allowPlaintextImport|label": {
-    "en": "b1c1ac235f98cc47",
-    "text": "قبول ملفات CSV لـ OTP الخاص بـ YubiKey بنص صريح في وضع المنتج"
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "جذور إثبات PIV ‏(PEM)"
   },
-"yubiotp.allowPlaintextImport|description": {
-    "en": "f409449d46d5831a",
-    "text": "ما إذا كان يجوز للمسؤول في وضع المنتج استيراد ملف CSV لأسرار OTP لـ YubiKey (الرقم التسلسلي، الهوية العامة، الهوية الخاصة، مفتاح AES). معطّل افتراضيًا: الملف قائمة بعوامل ثانية صالحة. يقبل وضع التطوير ملفًا على أي حال. تُختم الأسرار عند قبول الملف، ولا يُحتفظ بالملف."
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "الجذور التي يجب أن تتسلسل إليها شهادة إثبات مفتاح PIV في YubiKey، على هيئة حزمة PEM. القيمة الفارغة تستخدم الجذرين اللذين تنشرهما Yubico ‏(Yubico PIV Root CA Serial 263751، وYubico Attestation Root 1 للبرنامج الثابت 5.7.4 وما بعده)، المرفقين في common/pki_piv_anchors.json والمثبّتين هناك ببصمة SHA-256، مع شهادات PIV الوسيطة من Yubico. أي شهادة هنا تحل محل الجذور المرفقة."
   },
-"openpgp.wkd|label": {
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "اشتراط إثبات PIV لملفات تعريف PIV"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "عند التشغيل، يُرفض طلب شهادة piv-auth أو piv-sign أو piv-key-management أو piv-card-auth ما لم يحمل إثبات PIV من YubiKey يمكن التحقق منه (STS-PIV-0010). المفتاح المودَع من نوع piv-key-management الصادر عن EST /serverkeygen هو الاستثناء: فقد أنشأته هذه الخدمة. عند الإيقاف، وهو الافتراضي، يُصدَر مثل هذا الطلب دون إثبات بلا دليل عتادي؛ أما الطلب الذي يحمل إثباتًا لا يمكن التحقق منه فيُرفض في الحالتين."
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "أضعف سياسة PIN يجوز أن تكون لمفتاح PIV مُثبَت"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "ما يجب أن تكون عليه سياسة PIN في الإثبات على الأقل. `once`: رمز PIN مرة واحدة في كل جلسة (يُحتسب match-once لمفتاح Bio)؛ `always`: رمز PIN قبل كل استخدام (يُحتسب match-always). القيمة `any`، وهي الافتراضية، لا تشترط أي سياسة PIN. يُرفض المفتاح الذي يكون إثباته أضعف (STS-PIV-0011)."
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "أضعف سياسة لمس يجوز أن تكون لمفتاح PIV مُثبَت"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "ما يجب أن تكون عليه سياسة اللمس في الإثبات على الأقل. `cached`: لمسة تُتذكَّر لمدة 15 ثانية؛ `always`: لمسة لكل استخدام. القيمة `any`، وهي الافتراضية، لا تشترط شيئًا. يُرفض المفتاح الذي يكون إثباته أضعف (STS-PIV-0012)."
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "السماح لشهادة piv-card-auth بتسجيل الدخول"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "1852da24c3fbfade",
+    "text": "يعمل مفتاح piv-card-auth ‏(الفتحة 9e) دون رمز PIN، للدخول المادي، لذا تُرفض شهادته عند تسجيل الدخول عبر TLS وعند PKINIT ‏(STS-PIV-0013) ما لم يكن هذا الإعداد مشغّلًا."
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "إيداع مفاتيح piv-key-management"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "عند التشغيل، يحتفظ EST /serverkeygen لملف التعريف piv-key-management بالمفتاح الخاص الذي أنشأه، مختومًا تحت مفتاح تشفير المفاتيح، كي يتمكن حامله (على البوابة، بعد تسجيل دخول جديد) أو مسؤول يحمل دور استرداد مفاتيح PIV من استرداده وفك تشفير البريد القديم بعد فقدان بطاقة. يُرفض حيث لا يوجد مفتاح تشفير مفاتيح (STS-PIV-0020). المفتاح المودَع ليس دليلًا عتاديًا أبدًا. عند الإيقاف، وهو الافتراضي، يرفض /serverkeygen ملف التعريف piv-key-management ‏(STS-PIV-0021)، فيُنشأ مفتاح 9d على البطاقة ولا يُحتفظ به في أي مكان آخر."
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "جهات إصدار PIV أو CAC خارجية تُطابَق بمعرّف UUID للبطاقة (PEM)"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "جهات الإصدار التي تُدخِل شهاداتُ بطاقات PIV أو CAC الصادرة عنها شخصًا بمعرّف UUID للبطاقة وفق FIPS 201: شهادة العميل التي أصدرتها إحداها مباشرة، وتؤكد سياسة من piv.externalPolicyOids، وتحمل subjectAltName واحدًا بالضبط من نوع urn:uuid، تُطابَق مع الشخص الوحيد الذي يحمل stsPivCardUuid لديه ذلك المعرّف. لا تُطابَق باسمها أبدًا، ولا يُنشأ أي إدخال. يجب أن تكون جهة الإصدار أيضًا في مخزن ثقة للعملاء، وإلا رفضتها المصافحة أولًا. القيمة الفارغة، وهي الافتراضية، لا تطابق شيئًا."
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "سياسات PIV Authentication التي يجب أن تؤكدها البطاقة الخارجية"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "سياسات الشهادات التي يجب أن تؤكد شهادة البطاقة الخارجية إحداها كي تُطابَق بمعرّف UUID للبطاقة: افتراضيًا id-fpki-common-authentication ‏(PIV Authentication في Federal PKI Common Policy) وid-fpki-certpcy-pivi-hardware ‏(PIV-I). أضف هنا سياسات العتاد الخاصة بجهة إصدار CAC."
+  },
+  "openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",
     "text": "نشر المفاتيح في دليل مفاتيح الويب (Web Key Directory)"
   },
-"openpgp.wkd|description": {
+  "openpgp.wkd|description": {
     "en": "7822103f89ac59b3",
     "text": "الإجابة عن دليل مفاتيح الويب (draft-koch-openpgp-webkey-service) لنطاقات البريد في هذا النطاق: /.well-known/openpgpkey/<domain>/hu/<hash> (الطريقة المتقدمة، على openpgpkey.<domain>) و/.well-known/openpgpkey/hu/<hash> (الطريقة المباشرة)، وملف السياسة لكل منهما. لا يُجاب إلا عن مفتاح الشخص الذي وافق على النشر في البوابة. متوقف افتراضيًا."
   },
-"openpgp.wkdDomains|label": {
+  "openpgp.wkdDomains|label": {
     "en": "d1c4b728593ff000",
     "text": "نطاقات البريد التي يخدمها دليل مفاتيح الويب"
   },
-"openpgp.wkdDomains|description": {
+  "openpgp.wkdDomains|description": {
     "en": "ad64f7216191123c",
     "text": "نطاقات البريد التي يجيب عنها دليل مفاتيح الويب في هذا النطاق، مفصولة بفواصل. القيمة الفارغة، وهي الافتراضية، تعني نطاق DNS الخاص بالنطاق نفسه. الطلب الذي لا يحمل نطاقًا في مساره يجيب عنه النطاق الذي يخدم نطاقه، والنطاق الافتراضي أولًا."
   },
-"openpgp.challengeLifetimeS|label": {
+  "openpgp.challengeLifetimeS|label": {
     "en": "dbf558cf0b4b8f90",
     "text": "مدة صلاحية تحدي التسجيل (بالثواني)"
   },
-"openpgp.challengeLifetimeS|description": {
+  "openpgp.challengeLifetimeS|description": {
     "en": "e9130c8e82368cc6",
     "text": "المدة التي يظل فيها صالحًا التحدي الذي يوقّعه الشخص باستخدام gpg --clearsign لتسجيل مفتاح OpenPGP. يُستهلك مرة واحدة، ولا يكون لدى الشخص إلا تحدٍّ واحد في كل مرة."
   },
-"openpgp.signatureSkewS|label": {
+  "openpgp.signatureSkewS|label": {
     "en": "d927cf1f04bd9d51",
     "text": "انحراف الساعة المسموح لتوقيع الإثبات (بالثواني)"
   },
-"openpgp.signatureSkewS|description": {
+  "openpgp.signatureSkewS|description": {
     "en": "2772763d3d363b6d",
     "text": "مقدار ما يجوز أن تبتعد به ساعة الحاسوب الموقِّع عن ساعة هذه الخدمة: الإثبات الموقَّع قبل إصدار التحدي، أو بعد الآن، بأكثر من هذا المقدار يُرفض (STS-OPENPGP-0010)."
   },
-"openpgp.minRsaBits|label": {
+  "openpgp.algorithms|label": {
+    "en": "6973a8aeaa30b96b",
+    "text": "الخوارزميات المقبولة"
+  },
+  "openpgp.algorithms|description": {
+    "en": "7bf4b57c9c6e7d1f",
+    "text": "خوارزميات OpenPGP التي يجوز لمفتاح استخدامها، بترتيب التفضيل. مركّبات RFC 9980 أولًا: يوقّع ML-DSA-65+Ed25519 وML-DSA-87+Ed448، ويشفّر ML-KEM-768+X25519 وML-KEM-1024+X448. ثم الأسماء التقليدية: ed25519 وed448 وeddsaLegacy/ed25519Legacy، وecdsa على nistP256 وnistP384 وnistP521، وrsaSign وrsaEncryptSign، وx25519 وx448، وecdh على curve25519Legacy وعلى منحنيات NIST نفسها، وrsaEncrypt. يُرفض الاسم الغائب عن هذه القائمة عند التسجيل وعند التحقق (STS-OPENPGP-0004). SLH-DSA غير مُنفَّذ. وتسمّي القيمة الافتراضية كل واحد من هذه."
+  },
+  "openpgp.pqcOnly|label": {
+    "en": "d3ff53ec011bbf1f",
+    "text": "تسجيل المفاتيح ما بعد الكم فقط"
+  },
+  "openpgp.pqcOnly|description": {
+    "en": "a42ec597602f45d5",
+    "text": "عند التشغيل، يجب أن يستخدم المفتاح المسجَّل حديثًا خوارزمية ما بعد الكم يسمّيها openpgp.algorithms: ML-DSA-65+Ed25519 أو ML-DSA-87+Ed448 لمفتاح التوقيع، وML-KEM-768+X25519 أو ML-KEM-1024+X448 عندما يكون له مفتاح تشفير. يضيّق التسجيل فقط: المفتاح التقليدي المسجَّل من قبل يظل يُتحقق منه ويتلقى البريد. لا يمكن تشغيله مع openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). متوقف افتراضيًا."
+  },
+  "openpgp.pqcAlongsideClassical|label": {
+    "en": "57f71c1990eb46d9",
+    "text": "مفتاح ما بعد الكم إلى جانب مفتاح تقليدي"
+  },
+  "openpgp.pqcAlongsideClassical|description": {
+    "en": "2b5f6cf2a07130e5",
+    "text": "عند التشغيل، يجب أن يحمل المفتاح المسجَّل حديثًا خوارزمية ما بعد الكم وخوارزمية تقليدية منفصلة. الاسم المركّب مثل ML-DSA-65+Ed25519 يُحسب ما بعد الكم فقط، لذا فإن النصف التقليدي مفتاح آخر، مثل مفتاح فرعي Ed25519 أو X25519 إلى جانبه. المفتاح المسجَّل من قبل يُترك كما هو. لا يمكن تشغيله مع openpgp.pqcOnly (STS-OPENPGP-0027). متوقف افتراضيًا."
+  },
+  "openpgp.minRsaBits|label": {
     "en": "f3dc9f85de143630",
     "text": "أصغر مفتاح RSA مقبول لـ OpenPGP"
   },
-"openpgp.minRsaBits|description": {
+  "openpgp.minRsaBits|description": {
     "en": "cd16018c848ce538",
     "text": "أقصر مفتاح RSA، أساسيًا كان أو فرعيًا، يقبله تسجيل OpenPGP. تُقبل Ed25519 وEd448 وECDSA وECDH على P-256 وP-384 وP-521، وX25519 وX448، ومركّبات RFC 9980‏ ML-DSA-65+Ed25519 وML-DSA-87+Ed448 وML-KEM-768+X25519 وML-KEM-1024+X448 عندما يسمّيها openpgp.algorithms. ولا تُقبل أبدًا DSA وElGamal ومنحنيات Brainpool وSLH-DSA (STS-OPENPGP-0004)."
+  },
+  "yubiotp.allowPlaintextImport|label": {
+    "en": "b1c1ac235f98cc47",
+    "text": "قبول ملفات CSV لـ OTP الخاص بـ YubiKey بنص صريح في وضع المنتج"
+  },
+  "yubiotp.allowPlaintextImport|description": {
+    "en": "f409449d46d5831a",
+    "text": "ما إذا كان يجوز للمسؤول في وضع المنتج استيراد ملف CSV لأسرار OTP لـ YubiKey (الرقم التسلسلي، الهوية العامة، الهوية الخاصة، مفتاح AES). معطّل افتراضيًا: الملف قائمة بعوامل ثانية صالحة. يقبل وضع التطوير ملفًا على أي حال. تُختم الأسرار عند قبول الملف، ولا يُحتفظ بالملف."
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
@@ -3931,6 +4019,30 @@
     "en": "a28c6bc9859fc3aa",
     "text": "مفتاح ما بعد الكم الذي تحمله سلطة شهادات تبنيها هذه الخدمة إلى جانب مفتاحها التقليدي، في الامتدادات غير الحرجة subjectAltPublicKeyInfo وaltSignatureAlgorithm وaltSignatureValue من ITU-T X.509 (2019) clause 9.8 — شهادة هجينة. **متوقف (`none`) افتراضيًا** (rcbj, 2026-09-26): الشهادة الهجينة أكبر من اللازم أو أغرب مما تتحمله منتجات عديدة — يرفض libest أي استجابة تسجيل تتجاوز 4 KB، وكل ورقة هجينة كذلك — لذا فالافتراضي هو التسلسل الهرمي الأصلي، وكل حالة استخدام وكل توقيع بزوج مفاتيحه التقليدي. عيّن قيمة فتوقّع كل سلطة تُبنى بعد ذلك كل شهادة تصدرها مرتين: تقليديًا في الحقول العادية، التي يقرأها كل متحقّق، وبهذا المفتاح على preTBSCertificate، الذي يقرأه متحقّق يدرك الهجين. هذه الخدمة واحدة من هؤلاء: شهادة تصدرها سلطة تحمل مفتاحًا بديلًا يجب أن تحمل توقيعًا بديلًا صالحًا لتُتحقق هنا (STS-PKI-0201، STS-PKI-0202)، لذا فالتوقيع التقليدي وحده ليس سبيلًا لتجاوز ذلك أبدًا. ML-DSA-87 (FIPS 204، الفئة 5) هي القيمة الموصى بها، لأن السلطة تعمّر أكثر من المفاتيح التي تصدّقها. تُقرأ القيمة عند البناء التالي لطبقة؛ ويحتفظ التسلسل الهرمي بما بُني به. يُعرض SLH-DSA (FIPS 205) لمرساة قائمة على التلبيد ويكلّف ثوانٍ لكل توقيع، أي لكل شهادة تُصدر. تحذير: مع `none` تكون السلطات تقليدية فقط، وشهاداتها قابلة للتزوير من مهاجم قادر على الحوسبة الكمية."
   },
+  "pki.sshUserCaAlgorithms|label": {
+    "en": "1fa9bf9eedbabd99",
+    "text": "خوارزميات مرجع تصديق مستخدم SSH"
+  },
+  "pki.sshUserCaAlgorithms|description": {
+    "en": "bdb54445a0279b8d",
+    "text": "الخوارزميات التي يجوز لمرجع تصديق شهادات مستخدم SSH استخدامها، بترتيب التفضيل. ssh-mldsa-65 هو ML-DSA-65 (FIPS 204) تحت اسم سلك يعرّفه هذا الخدمة، لأن OpenSSH لا يعرّف أي اسم: المفتاح العام والتوقيع خامان، بالشكل الذي يستخدمه ssh-ed25519. يبقى سطر OpenSSH TrustedUserCAKeys الذي ينشره هذا الخدمة أول خوارزمية تقليدية في هذه القائمة، أو ssh-ed25519 عندما لا تسمّي القائمة إلا ssh-mldsa-65. ويستمر النظير الذي لا يفهم ML-DSA في الثقة بذلك السطر. لا يُعرض ssh-rsa (SHA-1). لا يُنشأ مرجع ML-DSA إلا عندما تستطيع بيئة التشغيل هذه توليد المفتاح؛ وإلا تبقى الشهادات تقليدية (يُسجَّل STS-PKI-0290 ويظل المرجع التقليدي يجيب)."
+  },
+  "pki.sshUserCaPqcOnly|label": {
+    "en": "74aae1308361ba58",
+    "text": "شهادات مستخدم SSH ما بعد الكم فقط"
+  },
+  "pki.sshUserCaPqcOnly|description": {
+    "en": "39b21e5b95f84da1",
+    "text": "عند التشغيل، توقّع شهادة مستخدم SSH الجديدة مرجع ML-DSA، وفقط عندما يوجد ذلك المرجع. يبقى سطر TrustedUserCAKeys المنشور المفتاح التقليدي، حتى لا يُسلَّم عميل OpenSSH الذي يثق به من قبل خوارزمية لا يستطيع تحليلها. في بيئة تشغيل لا تستطيع توليد ML-DSA تبقى الشهادة تقليدية ولا يفشل الطلب. وتستمر الشهادات التقليدية الصادرة من قبل في التحقق. لا يمكن تشغيله مع pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). متوقف افتراضيًا."
+  },
+  "pki.sshUserCaPqcAlongsideClassical|label": {
+    "en": "c3201f8841200c32",
+    "text": "تحمل شهادات مستخدم SSH شهادة ما بعد الكم أيضًا"
+  },
+  "pki.sshUserCaPqcAlongsideClassical|description": {
+    "en": "b38eab63ec092b6c",
+    "text": "عند التشغيل، تُصدر شهادة مستخدم SSH الجديدة مرتين عندما يوجد مرجع ML-DSA: الشهادة التقليدية، وهي التي يستخدمها عميل OpenSSH، وشهادة ML-DSA إلى جانبها. لا يمكن تشغيله مع pki.sshUserCaPqcOnly (STS-PKI-0296). متوقف افتراضيًا. المركّب ليس مفهومًا لدى OpenSSH؛ الشهادة التقليدية وشهادة ML-DSA توقيعان، لا توقيع هجين واحد."
+  },
   "pki.organisation|label": {
     "en": "163fd96758a3b8b3",
     "text": "اسم المؤسسة الافتراضي (O=)"
@@ -4322,6 +4434,22 @@
   "pki.paranoidPkinit|description": {
     "en": "4cd0d308a974fcbd",
     "text": "حالة الاستخدام `pkinit`: شهادة العميل في AS-REQ وفق RFC 4556. كان الفحص كاملًا أصلًا (مسار إلى سلطات الهوية في نطاق الثقة، والصلاحية مع krb5.clockSkew، وid-pkinit-KPClientAuth أو EKU البطاقة الذكية من Microsoft، والإبطال)؛ ويجعله الوضع المتشدد استدعاءً واحدًا للباب، فيكون الرمز نفسه ككل حالة استخدام أخرى. عند الإيقاف، تتصرف حالة الاستخدام هذه وحدها كما كانت قبل #1360، بينما تبقى كل الصفوف الأخرى والإعداد الرئيسي بلا مساس؛ وإيقافه في وضع المنتج يُسجَّل مرة واحدة (STS-PKI-0239) ويُرسم بالأحمر في /admin/pki/trust."
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "المتشدد: سلسلة إثبات مفتاح PIV في YubiKey"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "حالة الاستخدام `piv-attestation` ‏(#1955): شهادة إثبات الفتحة وشهادة إثبات f9 في تسجيل PIV. يفحص الوضع المتشدد نافذة الصلاحية في اللحظة الحالية، والمسار إلى piv.attestationAnchors، والإلغاء حيث تسمّي السلسلة قائمة. عند الإيقاف، تُجري حالة الاستخدام هذه وحدها فحص المسار دون فحوص الحقول، بينما يبقى كل صف آخر والإعداد الرئيس دون تغيير؛ وعند إيقافه في وضع المنتج يُسجَّل ذلك مرة واحدة (STS-PKI-0239) ويُعرض باللون الأحمر على /admin/pki/trust."
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "المتشدد: بطاقة PIV أو CAC خارجية تُطابَق بمعرّف UUID للبطاقة"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "حالة الاستخدام `piv-card` ‏(#1955): شهادة عميل من جهة إصدار في piv.externalIssuers، تُطابَق بمعرّف UUID لبطاقتها. يفحص الوضع المتشدد keyUsage digitalSignature ونافذة صلاحية الشهادة الطرفية إلى جانب فحص جهة الإصدار بقفزة واحدة. عند الإيقاف، تُجري حالة الاستخدام هذه وحدها فحص جهة الإصدار فقط، بينما يبقى كل صف آخر والإعداد الرئيس دون تغيير؛ وعند إيقافه في وضع المنتج يُسجَّل ذلك مرة واحدة (STS-PKI-0239) ويُعرض باللون الأحمر على /admin/pki/trust."
   },
   "pki.paranoidEnrollmentCredential|label": {
     "en": "ce5c0d1996e12403",
@@ -8387,6 +8515,14 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "أكثر طلبات الوصول التي يحملها نطاق ثقة واحد معلّقة؛ وبعده يُرفض التقديم بـ 503 حتى يُبتّ في بعضها أو تنتهي صلاحيته."
   },
+  "authzen.accessRequestMaxDenials|label": {
+    "en": "09e695949f0cc1cc",
+    "text": "حالات الرفض القابلة للطلب التي يسجلها النطاق"
+  },
+  "authzen.accessRequestMaxDenials|description": {
+    "en": "698617c5a3485120",
+    "text": "أقصى عدد من حالات الرفض القابلة للطلب التي يسجلها نطاق واحد حسب evaluation_id (#1204). بعده لا يُسجَّل رفض جديد، ويبقى قابلًا للطلب بواسطة binding_token الخاص به؛ وتحذف مهمة طلبات الوصول السجل بعد يوم من نافذته."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"
@@ -8400,8 +8536,8 @@
     "text": "Access request callback backoff (seconds)"
   },
   "authzen.callbackBackoffS|description": {
-    "en": "27141a0f28d94b83",
-    "text": "How long to wait after a failed access request callback before the next attempt (#1202). The authzen.access-requests job runs every 60 seconds, so a shorter wait could not be honoured. An application's appAuthzenCallbackConfig may set a longer wait for one URL."
+    "en": "43f2cb7740fc7efe",
+    "text": "مدة الانتظار بعد أول فشل في رد الاتصال لطلب وصول قبل المحاولة التالية (#1202). كل انتظار لاحق ضعف الذي قبله، حتى يوم واحد. تعمل مهمة authzen.access-requests كل 60 ثانية، لذا لا يمكن احترام انتظار أقصر. يمكن لـ appAuthzenCallbackConfig الخاص بتطبيق أن يحدد انتظارًا أطول لعنوان URL واحد."
   },
   "authzen.externalPdp|label": {
     "en": "8a0af08389fe6cda",
@@ -9718,6 +9854,14 @@
   "roles.xacmlUserGroup|description": {
     "en": "d19a9234253beccc",
     "text": "مجموعة الدليل التي يحمل أعضاؤها دور XACML_USER المدمج، وهو ما تشترطه نقاط نهاية XACML الثلاث بالمعنى الدقيق — GET /xacml وPOST /xacml/pdp وGET /xacml/policies. المستدعي الذي يقدّم شهادة عميل تحقّقت هذه الخدمة منها هو طرف تستطيع تسميته؛ وعضوية هذه المجموعة هي ما يجعله طرفًا تسمح له بالدخول، والاثنان منفصلان للسبب الذي ينطبق على roles.remotePepGroup أعلاه: الشهادة تثبت هوية والمجموعة تمنح إذنًا. إنها مجموعة ثانية وليست المجموعة نفسها: يبلغ REMOTE_PEPS نقاط النهاية الثلاث في /xacml/pep، وهي التي توزّع المستندات التي تنفّذ بها هذه الخدمة وصولها الخاص، ومجموعة واحدة تمنح الاثنين معًا تجعل إدخال مستدعٍ إلى سطح XACML بالمعنى الدقيق يدخله إلى تلك بصمت. تعيينه إلى السلسلة الفارغة يعني أن لا أحد يحمل الدور، فيُغلق نقاط النهاية الثلاث تلك أمام كل مستدعٍ؛ وتلك هي طريقة سحب سطح XACML من دون إيقاف xacml.enabled وفقدان PEP الإصدار والوصول المضمّنين معه."
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "المجموعة التي تمنح الدور PIV_KEY_RECOVERY"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "مجموعة الدليل التي يحمل أعضاؤها الدور المدمج PIV_KEY_RECOVERY ‏(#1955)، الذي تشترطه سياسة التحكم في الوصول، إلى جانب كتابة المسؤول، لاسترداد مفتاح piv-key-management المودَع لشخص آخر (piv.keyEscrow). يفك ذلك المفتاح تشفير بريد الشخص، لذا لا يحمل أحد هذا الدور حتى يضيفه مسؤول إلى المجموعة. القيمة الفارغة لا تسمح لأحد باسترداد مفتاح شخص آخر؛ ويسترد الحامل مفتاحه على البوابة."
   },
   "roles.authzenPepGroup|label": {
     "en": "8dacfdf5504e732a",
@@ -12954,141 +13098,5 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "لمستمع مصحّح البروتوكول وحده: http.http2MaxConcurrentStreams. القيمة -1، وهي الافتراضية، تتبع http.http2MaxConcurrentStreams؛ وأي قيمة أخرى تقرر لهذا المستمع فقط. عدد الطلبات التي يجوز لاتصال HTTP/2 واحد أن يُبقيها مفتوحة في آن واحد (SETTINGS_MAX_CONCURRENT_STREAMS)؛ ويُرفض أي تدفّق يتجاوز ذلك حتى ينتهي أحدها. القيمة 100، وهي الافتراضية، هي أصغر قيمة يوصي بها RFC 9113؛ أما قيمة node نفسها فغير محدودة، مما يسمح لاتصال واحد بحمل عمل الآلاف. يحدّ العمل على اتصال كما يحدّ http.maxConnections الاتصالات. يتبع الاتصال الجديد التغيير فورًا، ويُرسَل إلى الاتصال المفتوح القيمة الجديدة."
-  },
-  "piv.attestationAnchors|label": {
-    "en": "ebc10f6a7dcbbf58",
-    "text": "جذور إثبات PIV ‏(PEM)"
-  },
-  "piv.attestationAnchors|description": {
-    "en": "487e76edeb4446b9",
-    "text": "الجذور التي يجب أن تتسلسل إليها شهادة إثبات مفتاح PIV في YubiKey، على هيئة حزمة PEM. القيمة الفارغة تستخدم الجذرين اللذين تنشرهما Yubico ‏(Yubico PIV Root CA Serial 263751، وYubico Attestation Root 1 للبرنامج الثابت 5.7.4 وما بعده)، المرفقين في common/pki_piv_anchors.json والمثبّتين هناك ببصمة SHA-256، مع شهادات PIV الوسيطة من Yubico. أي شهادة هنا تحل محل الجذور المرفقة."
-  },
-  "piv.requireAttestation|label": {
-    "en": "4e11b0db111faccf",
-    "text": "اشتراط إثبات PIV لملفات تعريف PIV"
-  },
-  "piv.requireAttestation|description": {
-    "en": "ef38975436c5ac4f",
-    "text": "عند التشغيل، يُرفض طلب شهادة piv-auth أو piv-sign أو piv-key-management أو piv-card-auth ما لم يحمل إثبات PIV من YubiKey يمكن التحقق منه (STS-PIV-0010). المفتاح المودَع من نوع piv-key-management الصادر عن EST /serverkeygen هو الاستثناء: فقد أنشأته هذه الخدمة. عند الإيقاف، وهو الافتراضي، يُصدَر مثل هذا الطلب دون إثبات بلا دليل عتادي؛ أما الطلب الذي يحمل إثباتًا لا يمكن التحقق منه فيُرفض في الحالتين."
-  },
-  "piv.pinPolicy|label": {
-    "en": "0f683a0cb1db1988",
-    "text": "أضعف سياسة PIN يجوز أن تكون لمفتاح PIV مُثبَت"
-  },
-  "piv.pinPolicy|description": {
-    "en": "c3f9fcec406b9806",
-    "text": "ما يجب أن تكون عليه سياسة PIN في الإثبات على الأقل. `once`: رمز PIN مرة واحدة في كل جلسة (يُحتسب match-once لمفتاح Bio)؛ `always`: رمز PIN قبل كل استخدام (يُحتسب match-always). القيمة `any`، وهي الافتراضية، لا تشترط أي سياسة PIN. يُرفض المفتاح الذي يكون إثباته أضعف (STS-PIV-0011)."
-  },
-  "piv.touchPolicy|label": {
-    "en": "a88f111c7b13657f",
-    "text": "أضعف سياسة لمس يجوز أن تكون لمفتاح PIV مُثبَت"
-  },
-  "piv.touchPolicy|description": {
-    "en": "d78f0d5df0256787",
-    "text": "ما يجب أن تكون عليه سياسة اللمس في الإثبات على الأقل. `cached`: لمسة تُتذكَّر لمدة 15 ثانية؛ `always`: لمسة لكل استخدام. القيمة `any`، وهي الافتراضية، لا تشترط شيئًا. يُرفض المفتاح الذي يكون إثباته أضعف (STS-PIV-0012)."
-  },
-  "piv.cardAuthSignIn|label": {
-    "en": "61b2226403ad5c61",
-    "text": "السماح لشهادة piv-card-auth بتسجيل الدخول"
-  },
-  "piv.cardAuthSignIn|description": {
-    "en": "1852da24c3fbfade",
-    "text": "يعمل مفتاح piv-card-auth ‏(الفتحة 9e) دون رمز PIN، للدخول المادي، لذا تُرفض شهادته عند تسجيل الدخول عبر TLS وعند PKINIT ‏(STS-PIV-0013) ما لم يكن هذا الإعداد مشغّلًا."
-  },
-  "piv.keyEscrow|label": {
-    "en": "f2efc85c3d2bac38",
-    "text": "إيداع مفاتيح piv-key-management"
-  },
-  "piv.keyEscrow|description": {
-    "en": "cf9618144b67dff3",
-    "text": "عند التشغيل، يحتفظ EST /serverkeygen لملف التعريف piv-key-management بالمفتاح الخاص الذي أنشأه، مختومًا تحت مفتاح تشفير المفاتيح، كي يتمكن حامله (على البوابة، بعد تسجيل دخول جديد) أو مسؤول يحمل دور استرداد مفاتيح PIV من استرداده وفك تشفير البريد القديم بعد فقدان بطاقة. يُرفض حيث لا يوجد مفتاح تشفير مفاتيح (STS-PIV-0020). المفتاح المودَع ليس دليلًا عتاديًا أبدًا. عند الإيقاف، وهو الافتراضي، يرفض /serverkeygen ملف التعريف piv-key-management ‏(STS-PIV-0021)، فيُنشأ مفتاح 9d على البطاقة ولا يُحتفظ به في أي مكان آخر."
-  },
-  "piv.externalIssuers|label": {
-    "en": "e96143ab9556db35",
-    "text": "جهات إصدار PIV أو CAC خارجية تُطابَق بمعرّف UUID للبطاقة (PEM)"
-  },
-  "piv.externalIssuers|description": {
-    "en": "0fb91dba2cb957d3",
-    "text": "جهات الإصدار التي تُدخِل شهاداتُ بطاقات PIV أو CAC الصادرة عنها شخصًا بمعرّف UUID للبطاقة وفق FIPS 201: شهادة العميل التي أصدرتها إحداها مباشرة، وتؤكد سياسة من piv.externalPolicyOids، وتحمل subjectAltName واحدًا بالضبط من نوع urn:uuid، تُطابَق مع الشخص الوحيد الذي يحمل stsPivCardUuid لديه ذلك المعرّف. لا تُطابَق باسمها أبدًا، ولا يُنشأ أي إدخال. يجب أن تكون جهة الإصدار أيضًا في مخزن ثقة للعملاء، وإلا رفضتها المصافحة أولًا. القيمة الفارغة، وهي الافتراضية، لا تطابق شيئًا."
-  },
-  "piv.externalPolicyOids|label": {
-    "en": "930c5800dfa36905",
-    "text": "سياسات PIV Authentication التي يجب أن تؤكدها البطاقة الخارجية"
-  },
-  "piv.externalPolicyOids|description": {
-    "en": "2398931e8d58f5c4",
-    "text": "سياسات الشهادات التي يجب أن تؤكد شهادة البطاقة الخارجية إحداها كي تُطابَق بمعرّف UUID للبطاقة: افتراضيًا id-fpki-common-authentication ‏(PIV Authentication في Federal PKI Common Policy) وid-fpki-certpcy-pivi-hardware ‏(PIV-I). أضف هنا سياسات العتاد الخاصة بجهة إصدار CAC."
-  },
-  "pki.paranoidPivAttestation|label": {
-    "en": "e645d02c49d2f9bf",
-    "text": "المتشدد: سلسلة إثبات مفتاح PIV في YubiKey"
-  },
-  "pki.paranoidPivAttestation|description": {
-    "en": "fdb7c0eb631758ea",
-    "text": "حالة الاستخدام `piv-attestation` ‏(#1955): شهادة إثبات الفتحة وشهادة إثبات f9 في تسجيل PIV. يفحص الوضع المتشدد نافذة الصلاحية في اللحظة الحالية، والمسار إلى piv.attestationAnchors، والإلغاء حيث تسمّي السلسلة قائمة. عند الإيقاف، تُجري حالة الاستخدام هذه وحدها فحص المسار دون فحوص الحقول، بينما يبقى كل صف آخر والإعداد الرئيس دون تغيير؛ وعند إيقافه في وضع المنتج يُسجَّل ذلك مرة واحدة (STS-PKI-0239) ويُعرض باللون الأحمر على /admin/pki/trust."
-  },
-  "pki.paranoidPivCard|label": {
-    "en": "4078a93e7117d6f9",
-    "text": "المتشدد: بطاقة PIV أو CAC خارجية تُطابَق بمعرّف UUID للبطاقة"
-  },
-  "pki.paranoidPivCard|description": {
-    "en": "d4d5fb070575e1c6",
-    "text": "حالة الاستخدام `piv-card` ‏(#1955): شهادة عميل من جهة إصدار في piv.externalIssuers، تُطابَق بمعرّف UUID لبطاقتها. يفحص الوضع المتشدد keyUsage digitalSignature ونافذة صلاحية الشهادة الطرفية إلى جانب فحص جهة الإصدار بقفزة واحدة. عند الإيقاف، تُجري حالة الاستخدام هذه وحدها فحص جهة الإصدار فقط، بينما يبقى كل صف آخر والإعداد الرئيس دون تغيير؛ وعند إيقافه في وضع المنتج يُسجَّل ذلك مرة واحدة (STS-PKI-0239) ويُعرض باللون الأحمر على /admin/pki/trust."
-  },
-  "roles.pivKeyRecoveryGroup|label": {
-    "en": "2f231e1e99785dc6",
-    "text": "المجموعة التي تمنح الدور PIV_KEY_RECOVERY"
-  },
-  "roles.pivKeyRecoveryGroup|description": {
-    "en": "801616eea12559a5",
-    "text": "مجموعة الدليل التي يحمل أعضاؤها الدور المدمج PIV_KEY_RECOVERY ‏(#1955)، الذي تشترطه سياسة التحكم في الوصول، إلى جانب كتابة المسؤول، لاسترداد مفتاح piv-key-management المودَع لشخص آخر (piv.keyEscrow). يفك ذلك المفتاح تشفير بريد الشخص، لذا لا يحمل أحد هذا الدور حتى يضيفه مسؤول إلى المجموعة. القيمة الفارغة لا تسمح لأحد باسترداد مفتاح شخص آخر؛ ويسترد الحامل مفتاحه على البوابة."
-  },
-  "openpgp.algorithms|label": {
-    "en": "6973a8aeaa30b96b",
-    "text": "الخوارزميات المقبولة"
-  },
-  "openpgp.algorithms|description": {
-    "en": "7bf4b57c9c6e7d1f",
-    "text": "خوارزميات OpenPGP التي يجوز لمفتاح استخدامها، بترتيب التفضيل. مركّبات RFC 9980 أولًا: يوقّع ML-DSA-65+Ed25519 وML-DSA-87+Ed448، ويشفّر ML-KEM-768+X25519 وML-KEM-1024+X448. ثم الأسماء التقليدية: ed25519 وed448 وeddsaLegacy/ed25519Legacy، وecdsa على nistP256 وnistP384 وnistP521، وrsaSign وrsaEncryptSign، وx25519 وx448، وecdh على curve25519Legacy وعلى منحنيات NIST نفسها، وrsaEncrypt. يُرفض الاسم الغائب عن هذه القائمة عند التسجيل وعند التحقق (STS-OPENPGP-0004). SLH-DSA غير مُنفَّذ. وتسمّي القيمة الافتراضية كل واحد من هذه."
-  },
-  "openpgp.pqcOnly|label": {
-    "en": "d3ff53ec011bbf1f",
-    "text": "تسجيل المفاتيح ما بعد الكم فقط"
-  },
-  "openpgp.pqcOnly|description": {
-    "en": "a42ec597602f45d5",
-    "text": "عند التشغيل، يجب أن يستخدم المفتاح المسجَّل حديثًا خوارزمية ما بعد الكم يسمّيها openpgp.algorithms: ML-DSA-65+Ed25519 أو ML-DSA-87+Ed448 لمفتاح التوقيع، وML-KEM-768+X25519 أو ML-KEM-1024+X448 عندما يكون له مفتاح تشفير. يضيّق التسجيل فقط: المفتاح التقليدي المسجَّل من قبل يظل يُتحقق منه ويتلقى البريد. لا يمكن تشغيله مع openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). متوقف افتراضيًا."
-  },
-  "openpgp.pqcAlongsideClassical|label": {
-    "en": "57f71c1990eb46d9",
-    "text": "مفتاح ما بعد الكم إلى جانب مفتاح تقليدي"
-  },
-  "openpgp.pqcAlongsideClassical|description": {
-    "en": "2b5f6cf2a07130e5",
-    "text": "عند التشغيل، يجب أن يحمل المفتاح المسجَّل حديثًا خوارزمية ما بعد الكم وخوارزمية تقليدية منفصلة. الاسم المركّب مثل ML-DSA-65+Ed25519 يُحسب ما بعد الكم فقط، لذا فإن النصف التقليدي مفتاح آخر، مثل مفتاح فرعي Ed25519 أو X25519 إلى جانبه. المفتاح المسجَّل من قبل يُترك كما هو. لا يمكن تشغيله مع openpgp.pqcOnly (STS-OPENPGP-0027). متوقف افتراضيًا."
-  },
-  "pki.sshUserCaAlgorithms|label": {
-    "en": "1fa9bf9eedbabd99",
-    "text": "خوارزميات مرجع تصديق مستخدم SSH"
-  },
-  "pki.sshUserCaAlgorithms|description": {
-    "en": "bdb54445a0279b8d",
-    "text": "الخوارزميات التي يجوز لمرجع تصديق شهادات مستخدم SSH استخدامها، بترتيب التفضيل. ssh-mldsa-65 هو ML-DSA-65 (FIPS 204) تحت اسم سلك يعرّفه هذا الخدمة، لأن OpenSSH لا يعرّف أي اسم: المفتاح العام والتوقيع خامان، بالشكل الذي يستخدمه ssh-ed25519. يبقى سطر OpenSSH TrustedUserCAKeys الذي ينشره هذا الخدمة أول خوارزمية تقليدية في هذه القائمة، أو ssh-ed25519 عندما لا تسمّي القائمة إلا ssh-mldsa-65. ويستمر النظير الذي لا يفهم ML-DSA في الثقة بذلك السطر. لا يُعرض ssh-rsa (SHA-1). لا يُنشأ مرجع ML-DSA إلا عندما تستطيع بيئة التشغيل هذه توليد المفتاح؛ وإلا تبقى الشهادات تقليدية (يُسجَّل STS-PKI-0290 ويظل المرجع التقليدي يجيب)."
-  },
-  "pki.sshUserCaPqcOnly|label": {
-    "en": "74aae1308361ba58",
-    "text": "شهادات مستخدم SSH ما بعد الكم فقط"
-  },
-  "pki.sshUserCaPqcOnly|description": {
-    "en": "39b21e5b95f84da1",
-    "text": "عند التشغيل، توقّع شهادة مستخدم SSH الجديدة مرجع ML-DSA، وفقط عندما يوجد ذلك المرجع. يبقى سطر TrustedUserCAKeys المنشور المفتاح التقليدي، حتى لا يُسلَّم عميل OpenSSH الذي يثق به من قبل خوارزمية لا يستطيع تحليلها. في بيئة تشغيل لا تستطيع توليد ML-DSA تبقى الشهادة تقليدية ولا يفشل الطلب. وتستمر الشهادات التقليدية الصادرة من قبل في التحقق. لا يمكن تشغيله مع pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). متوقف افتراضيًا."
-  },
-  "pki.sshUserCaPqcAlongsideClassical|label": {
-    "en": "c3201f8841200c32",
-    "text": "تحمل شهادات مستخدم SSH شهادة ما بعد الكم أيضًا"
-  },
-  "pki.sshUserCaPqcAlongsideClassical|description": {
-    "en": "b38eab63ec092b6c",
-    "text": "عند التشغيل، تُصدر شهادة مستخدم SSH الجديدة مرتين عندما يوجد مرجع ML-DSA: الشهادة التقليدية، وهي التي يستخدمها عميل OpenSSH، وشهادة ML-DSA إلى جانبها. لا يمكن تشغيله مع pki.sshUserCaPqcOnly (STS-PKI-0296). متوقف افتراضيًا. المركّب ليس مفهومًا لدى OpenSSH؛ الشهادة التقليدية وشهادة ML-DSA توقيعان، لا توقيع هجين واحد."
   }
 }

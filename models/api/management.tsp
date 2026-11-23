@@ -45374,7 +45374,7 @@ op `setAuthzenScope`(@js(#{`examples`:#[#{`caller`:"todo-pep",`applications`:#["
   #{
     `operationId`:"setAuthzenCallbacks",
     `summary`:"Set the access request callback URLs of an AuthZEN caller",
-    `description`:"Replaces the callback URLs registered for an application (#1180, #1202): appAuthzenCallbackUri, and appAuthzenCallbackConfig where a URL overrides authzen.callbackAttempts or authzen.callbackBackoffS. A person or a service account is refused. An access request's callback.endpoint must match a URL exactly; this service never dials a callback URL taken from a request alone. https only, at most eight. One per line, or a URL followed by attempts=N and backoff=S. Empty clears them. Audited.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-authzen` on the admin console.",
+    `description`:"Replaces the callback URLs registered for a caller (#1180, #1202): an application's appAuthzenCallbackUri, and appAuthzenCallbackConfig where a URL overrides authzen.callbackAttempts or authzen.callbackBackoffS; a person's or service account's stsAuthzenCallbackUri, which takes no override. An access request's callback.endpoint must match a URL exactly; this service never dials a callback URL taken from a request alone. https only, at most eight. One per line, or a URL followed by attempts=N and backoff=S. Empty clears them. Audited.\n\n**Mirrors** `POST /admin/xacml#xacml-tab-authzen` on the admin console.",
     `tags`:#["XACML"],
     `responses`:#{
       `200`:#{

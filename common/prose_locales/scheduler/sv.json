@@ -36,8 +36,8 @@
     "text": "Utgång av AuthZEN-åtkomstbegäranden"
   },
   "sched.jobs.authzen.access-requests.describe": {
-    "en": "f219a842a3345525",
-    "text": "Flyttar varje väntande AuthZEN-åtkomstbegäran (#1180) som passerat sin expires_at till expired — skriver dess granskningsrad och skickar dess callback — tar bort en avslutad en dag efter att den avslutades, eller när dess godkännande löpt ut om det är senare, och försöker igen med en callback-leverans som misslyckades med ett nätverksfel eller ett HTTP 5xx, upp till försöksgränsen (#1202). En läsning tillämpar själv tidsgränsen, så det här är registret och städningen, aldrig det som avgör."
+    "en": "19cf8cda48af4f1e",
+    "text": "Flyttar varje väntande AuthZEN-åtkomstbegäran (#1180) förbi sitt expires_at till expired – skriver dess granskningsrad och skickar dess återanrop –, tar bort en avslutad en dag efter att den avslutades, eller när dess godkännande löpte ut om det är senare, tar bort en begärbar nekan en dag efter dess fönster, och försöker igen med en återanropsleverans som misslyckades med ett nätverksfel eller HTTP 5xx, upp till försöksgränsen, varje väntetid dubbelt så lång som den förra (#1202). En avslutad behålls medan dess återanrop fortfarande försöks, och en väntande vars godkännare inte är någon flyttas till failed. En läsning tillämpar själv tidsgränsen, så detta är posten och städningen, aldrig det som avgör."
   },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",

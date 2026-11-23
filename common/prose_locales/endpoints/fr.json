@@ -95,6 +95,10 @@
     "en": "4b0c4feb0af59f04",
     "text": "Soumettre une demande d’accès"
   },
+  "endpoints.route./access/v1/access-requests/schema.name": {
+    "en": "e39be1976aa651db",
+    "text": "Le schéma de soumission d’une demande d’accès"
+  },
   "endpoints.route./access/v1/access-requests/:id.name": {
     "en": "c8bcbb33d07cfb8f",
     "text": "État de la tâche d’une demande d’accès"
@@ -1264,8 +1268,12 @@
     "text": "Jetons OATH importés"
   },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-"en": "33209f967f070175",
-"text": "Actions sur les jetons matériels"
+    "en": "33209f967f070175",
+    "text": "Actions sur les jetons matériels"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "Clés PIV séquestrées"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
@@ -1911,11 +1919,11 @@
     "en": "69876d051e66729c",
     "text": "Étape d’activité après connexion"
   },
-"endpoints.route./wsapi/2.0/verify.name": {
+  "endpoints.route./wsapi/2.0/verify.name": {
     "en": "0734c12f6e3eb870",
     "text": "Vérification YK-VAL 2.0"
   },
-"endpoints.route./authn/roles.name": {
+  "endpoints.route./authn/roles.name": {
     "en": "d10487ebcbc8b238",
     "text": "Étape des rôles dynamiques"
   },
@@ -2630,9 +2638,5 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (un certificat client demandé, jamais exigé)"
-  },
-  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
-    "en": "f46d01f7581b5379",
-    "text": "Clés PIV séquestrées"
   }
 }
