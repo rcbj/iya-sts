@@ -2219,7 +2219,9 @@ functions `GET /tls/sign-in` runs:
   verdict, then those two functions, answering the holder (with
   `recordVerification()`, the #127 identity verification `GET /tls/sign-in`
   records once its session starts) or a refusal with its STS-AUTHN-0463..0466
-  code and an English sentence for the screen.
+  code and a sentence for the screen — a `refusals.authn.certificate*`
+  catalog sentence (#2006), English to every text reader, which the screen
+  draws in its own language (the PIV card-auth refusal is still text).
 * **TWO DIFFERENCES, BOTH FORCED.** The realm is the PENDING SIGN-IN'S, not
   the certificate's — the protocol that sent the person decided it — so
   `tls_client_certificates.checkSocket()` refuses a certificate from another
