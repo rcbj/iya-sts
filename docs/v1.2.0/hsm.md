@@ -203,15 +203,15 @@ starts each operation. None of them performs the cryptographic operation.
 | Operation | Time each |
 |---|---|
 | RS256 (RSA 2048) signature, synchronous (setting on) | about 0.7–0.95 ms (0.47 ms in software) |
-| RS256 signature, 200 at a time without blocking the event loop | P8A_RS_ASYNC |
+| RS256 signature, 200 at a time without blocking the event loop | about 0.32 ms each |
 | ES256 signature, synchronous (setting on) | about 0.05–0.07 ms |
 | ES256, 200 at a time without blocking the event loop | about 0.05 ms each |
 | SAML assertion signature (RSA), synchronous (setting on) | about 1.2 ms |
-| SAML assertion signature (RSA), 50 at a time without blocking | P8A_XML_ASYNC |
+| SAML assertion signature (RSA), 50 at a time without blocking | about 0.52 ms each |
 | XML RSA-OAEP decryption, synchronous (setting on) | about 0.2 ms |
-| XML RSA-OAEP decryption, 50 at a time without blocking | P8A_DEC_ASYNC |
+| XML RSA-OAEP decryption, 50 at a time without blocking | about 0.25 ms each |
 
-While those ran off the event loop, its longest gap was P8A_LAG.
+While those ran off the event loop, its longest gap was 17 ms: the canonicalization and the bookkeeping of 200 operations started together, not the token.
 
 A YubiHSM 2 is much slower: Yubico's published figures are tens of
 milliseconds for ECDSA P-256 and hundreds for RSA-2048. Off the event loop

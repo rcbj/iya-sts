@@ -8612,12 +8612,23 @@ class AdminActions {
     // The reply carries the statement, which is not a secret.
     if (action === 'issue-software-statement') {
       const ctx = context || {};
-      const result = softwareStatement.issue({
+      const asked = {
         identifier: identifier,
         metadata: body.metadata,
         lifetimeSeconds: body.lifetimeSeconds,
         base: ctx.base || ''
-      });
+      };
+      // Signed off the event loop where the realm's keys are in the HSM
+      // (#1955 P8 follow-up); the dispatchers take the promise. A software
+      // realm answers in place, as it always did.
+      if (helpers.keysInHsm()) {
+        log.debug("Leaving AdminActions.applicationsAction(). " +
+                  "issue-software-statement, off the event loop.");
+        return softwareStatement.issueAsync(asked).then((result) => {
+          return this.refusedBy('STS-ADMIN-0649', result);
+        });
+      }
+      const result = softwareStatement.issue(asked);
       log.debug("Leaving AdminActions.applicationsAction(). " +
                 "issue-software-statement " +
                 (result.ok ? 'ok' : 'refused') + ".");

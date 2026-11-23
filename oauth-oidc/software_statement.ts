@@ -887,15 +887,86 @@ class SoftwareStatement {
    *   ... }` carrying its code
    */
   issue(opts: Json): Json {
-    const { errorCodes, applications, validation, log, signJwtAs, nowSec,
+    const { log, signJwtAs } = this.deps;
+    log.debug("Entering SoftwareStatement.issue().");
+    const planned = this.draft(opts);
+    if (!planned.ok || !planned.claims) {
+      log.debug("Leaving SoftwareStatement.issue(). Refused.");
+      return planned;
+    }
+    const { identifier, claims, options } = planned;
+    let statement;
+    try {
+      // certificate-header: none — a software statement is verified only by
+      // this service, against its own key, so a certificate naming that key
+      // tells no verifier anything it needs.
+      statement = signJwtAs(claims, 'RS256', null,
+                            { header: { typ: TYPE } });
+    } catch (e) {
+      log.debug("Caught in SoftwareStatement.issue(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving SoftwareStatement.issue(). Signing failed.");
+      return this.signingFailed(identifier, e);
+    }
+    log.debug("Leaving SoftwareStatement.issue().");
+    return this.finish(identifier, claims, statement, options);
+  }
+
+  /**
+   * `issue()`, with a realm key in the HSM signing off the event loop
+   * (`helpers.signJwtAsOffLoop()`, #1955 P8 follow-up); a software key signs
+   * the same bytes, in place. The console's action awaits this one.
+   *
+   * @param opts - as `issue()`'s
+   * @returns a promise of `issue()`'s answer
+   */
+  async issueAsync(opts: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering SoftwareStatement.issueAsync().");
+    const planned = this.draft(opts);
+    if (!planned.ok || !planned.claims) {
+      log.debug("Leaving SoftwareStatement.issueAsync(). Refused.");
+      return planned;
+    }
+    const { identifier, claims, options } = planned;
+    let statement;
+    try {
+      // certificate-header: none — as in issue().
+      statement = await helpers.signJwtAsOffLoop(claims, 'RS256', null,
+                                                 { header: { typ: TYPE } });
+    } catch (e) {
+      log.debug("Caught in SoftwareStatement.issueAsync(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving SoftwareStatement.issueAsync(). Signing failed.");
+      return this.signingFailed(identifier, e);
+    }
+    log.debug("Leaving SoftwareStatement.issueAsync().");
+    return this.finish(identifier, claims, statement, options);
+  }
+
+  // A statement that could not be signed.
+  private signingFailed(identifier: string, e: any): Json {
+    const { errorCodes, log } = this.deps;
+    log.debug("Entering SoftwareStatement.signingFailed().");
+    log.error(errorCodes.tag('STS-ADMIN-0649') + 'software_statement: a ' +
+              'statement for "' + identifier + '" could not be signed: ' +
+              e.message);
+    log.debug("Leaving SoftwareStatement.signingFailed().");
+    return errorCodes.mark({ ok: false,
+             errors: ['The statement could not be signed: ' +
+                      e.message] }, 'STS-ADMIN-0649');
+  }
+
+  private draft(opts: Json): Json {
+    const { errorCodes, applications, validation, log, nowSec,
             randomId, jwtAccessToken } = this.deps;
     const self = this;
-    log.debug("Entering SoftwareStatement.issue().");
+    log.debug("Entering SoftwareStatement.draft().");
     const options = opts || {};
     const identifier = String(options.identifier || '').trim();
     const entry = identifier ? applications.get(identifier) : null;
     if (!entry) {
-      log.debug("Leaving SoftwareStatement.issue(). No such application.");
+      log.debug("Leaving SoftwareStatement.draft(). No such application.");
       return errorCodes.mark({ ok: false,
                errors: ['There is no application called "' + identifier +
                         '" here to issue a software statement for.'] },
@@ -907,9 +978,9 @@ class SoftwareStatement {
       try {
         metadata = text ? JSON.parse(text) : {};
       } catch (e) {
-        log.debug("Caught in SoftwareStatement.issue(): " +
+        log.debug("Caught in SoftwareStatement.draft(): " +
                   "" + ((e && e.message) || e));
-        log.debug("Leaving SoftwareStatement.issue(). The metadata is not " +
+        log.debug("Leaving SoftwareStatement.draft(). The metadata is not " +
                   "JSON.");
         return errorCodes.mark({ ok: false,
                  errors: ['The client metadata is not JSON: ' +
@@ -920,7 +991,7 @@ class SoftwareStatement {
       metadata = {};
     }
     if (typeof metadata !== 'object' || Array.isArray(metadata)) {
-      log.debug("Leaving SoftwareStatement.issue(). The metadata is not an " +
+      log.debug("Leaving SoftwareStatement.draft(). The metadata is not an " +
                 "object.");
       return errorCodes.mark({ ok: false,
                errors: ['The client metadata must be a JSON object of RFC ' +
@@ -929,7 +1000,7 @@ class SoftwareStatement {
     }
     const checked = validation.checkDocument(metadata, 'software statement');
     if (!checked.ok) {
-      log.debug("Leaving SoftwareStatement.issue(). The validator refused " +
+      log.debug("Leaving SoftwareStatement.draft(). The validator refused " +
                 "the metadata.");
       return errorCodes.mark({ ok: false,
                errors: [checked.detail] }, 'STS-ADMIN-0647');
@@ -938,7 +1009,7 @@ class SoftwareStatement {
       return JWT_CLAIMS.indexOf(name) >= 0 || SERVER_MEMBERS.indexOf(name) >= 0;
     });
     if (reserved.length) {
-      log.debug("Leaving SoftwareStatement.issue(). Reserved members.");
+      log.debug("Leaving SoftwareStatement.draft(). Reserved members.");
       return errorCodes.mark({ ok: false,
                errors: ['A software statement cannot fix ' +
                         reserved.join(', ') + ': ' +
@@ -951,7 +1022,7 @@ class SoftwareStatement {
     const problem = applications.registrationUriProblem(metadata) ||
                     applications.introspectionResponseProblem(metadata);
     if (problem) {
-      log.debug("Leaving SoftwareStatement.issue(). An unusable address or " +
+      log.debug("Leaving SoftwareStatement.draft(). An unusable address or " +
                 "algorithm.");
       return errorCodes.mark({ ok: false,
                errors: [problem.description] },
@@ -962,7 +1033,7 @@ class SoftwareStatement {
       // No request address and no `oauth2.issuer` pin: a caller that did not
       // come through either admin route. A statement with an empty `iss` would
       // be one section 2.3 forbids and no registration could ever match.
-      log.debug("Leaving SoftwareStatement.issue(). No issuer to name.");
+      log.debug("Leaving SoftwareStatement.draft(). No issuer to name.");
       return errorCodes.mark({ ok: false,
         errors: ['There is no issuer to put in the statement: the request ' +
                  'address was not passed and oauth2.issuer is not set.'] },
@@ -979,7 +1050,7 @@ class SoftwareStatement {
     // API's integer bound does not cover it.
     if (lifetime > 0 &&
         Number.isNaN(new Date((issuedAt + lifetime) * 1000).getTime())) {
-      log.debug("Leaving SoftwareStatement.issue(). Lifetime out of range.");
+      log.debug("Leaving SoftwareStatement.draft(). Lifetime out of range.");
       return errorCodes.mark({ ok: false,
         errors: ['lifetimeSeconds is too large: the statement would expire ' +
                  'after the last date this service can write.'] },
@@ -994,28 +1065,23 @@ class SoftwareStatement {
     if (lifetime > 0) {
       claims.exp = issuedAt + lifetime;
     }
-    let statement;
-    try {
-      // certificate-header: none — a software statement is verified only by
-      // this service, against its own key, so a certificate naming that key
-      // tells no verifier anything it needs.
-      statement = signJwtAs(claims, 'RS256', null,
-                            { header: { typ: TYPE } });
-    } catch (e) {
-      log.error(errorCodes.tag('STS-ADMIN-0649') + 'software_statement: a ' +
-                'statement for "' + identifier + '" could not be signed: ' +
-                e.message);
-      log.debug("Leaving SoftwareStatement.issue(). Signing failed.");
-      return errorCodes.mark({ ok: false,
-               errors: ['The statement could not be signed: ' +
-                        e.message] }, 'STS-ADMIN-0649');
-    }
+    log.debug("Leaving SoftwareStatement.draft().");
+    return { ok: true, identifier: identifier, claims: claims,
+             options: options };
+  }
+
+  // What `issue()` does once the statement is signed: it is written onto
+  // the entry, and the answer says so.
+  private finish(identifier: string, claims: Json, statement: string,
+                 options: Json): Json {
+    const { errorCodes, applications, log } = this.deps;
+    log.debug("Entering SoftwareStatement.finish().");
     const written = applications.updateApplication(identifier, {
       mode: 'set', attribute: 'oauthIssuedSoftwareStatement', value: statement,
       actor: options.actor || ''
     });
     if (written && written.ok === false) {
-      log.debug("Leaving SoftwareStatement.issue(). The entry refused it.");
+      log.debug("Leaving SoftwareStatement.finish(). The entry refused it.");
       return errorCodes.mark(written, errorCodes.codeOf(written) ||
                                        'STS-ADMIN-0649');
     }
@@ -1023,7 +1089,7 @@ class SoftwareStatement {
              identifier + '" as ' + claims.iss + (claims.exp
                ? ', valid until ' + new Date(claims.exp * 1000).toISOString()
                : ', with no expiry') + '.');
-    log.debug("Leaving SoftwareStatement.issue().");
+    log.debug("Leaving SoftwareStatement.finish().");
     return { ok: true, softwareStatement: statement, claims: claims,
              application: applications.get(identifier),
              message: 'A software statement for "' + identifier + '" is ' +
@@ -1139,5 +1205,6 @@ export = {
   resolve: slot.forward('resolve'),
   updateProblem: slot.forward('updateProblem'),
   issue: slot.forward('issue'),
+  issueAsync: slot.forward('issueAsync'),
   describe: slot.forward('describe')
 };

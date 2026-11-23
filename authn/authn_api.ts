@@ -1433,7 +1433,7 @@ class AuthnApi {
    */
   logoutAccountsAct(req: AuthnRequest<'logoutAccountsAct'>,
                     res: AuthnAnswering<'logoutAccountsAct'>,
-                    op: Operation): void {
+                    op: Operation): void | Promise<void> {
     const { log, authn, errorCodes } = this.deps;
     log.debug("Entering AuthnApi.logoutAccountsAct().");
     if (!this.bound(req, res)) {
@@ -1445,12 +1445,16 @@ class AuthnApi {
       log.debug("Leaving AuthnApi.logoutAccountsAct(). The body.");
       return;
     }
-    const done = AuthnApi.logout().signOutAccountsAct(req, res, body);
-    if (done.code) {
-      errorCodes.mark(res, done.code);
-    }
-    authn.answerJson(res, done.status, done.json);
-    log.debug("Leaving AuthnApi.logoutAccountsAct(). " + done.status);
+    // AWAITED (#1955 P8 follow-up): what the sign-out offers the browser
+    // is signed off the event loop first where the realm's keys are in the
+    // HSM. The promise goes back to the express guard.
+    log.debug("Leaving AuthnApi.logoutAccountsAct(). Signing out.");
+    return AuthnApi.logout().signOutAccountsActAsync(req, res, body).then((done) => {
+      if (done.code) {
+        errorCodes.mark(res, done.code);
+      }
+      authn.answerJson(res, done.status, done.json);
+    });
   }
 
   /**
@@ -1463,7 +1467,7 @@ class AuthnApi {
    */
   logoutAct(req: AuthnRequest<'logoutAct'>,
             res: AuthnAnswering<'logoutAct'>,
-            op: Operation): void {
+            op: Operation): void | Promise<void> {
     const { log, authn, errorCodes } = this.deps;
     log.debug("Entering AuthnApi.logoutAct().");
     if (!this.bound(req, res)) {
@@ -1475,12 +1479,16 @@ class AuthnApi {
       log.debug("Leaving AuthnApi.logoutAct(). The body.");
       return;
     }
-    const done = AuthnApi.logout().signOutAct(req, res, body);
-    if (done.code) {
-      errorCodes.mark(res, done.code);
-    }
-    authn.answerJson(res, done.status, done.json);
-    log.debug("Leaving AuthnApi.logoutAct(). " + done.status);
+    // AWAITED (#1955 P8 follow-up): what the sign-out offers the browser
+    // is signed off the event loop first where the realm's keys are in the
+    // HSM. The promise goes back to the express guard.
+    log.debug("Leaving AuthnApi.logoutAct(). Signing out.");
+    return AuthnApi.logout().signOutActAsync(req, res, body).then((done) => {
+      if (done.code) {
+        errorCodes.mark(res, done.code);
+      }
+      authn.answerJson(res, done.status, done.json);
+    });
   }
 
   // ---------------------------------------------------------------------------

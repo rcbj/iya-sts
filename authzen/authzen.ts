@@ -152,6 +152,14 @@ interface SurfaceDeps {
 const UMA_RESOURCE_TYPE = 'uma_resource';
 
 class AuthzenSurface {
+  // A REQUESTABLE DENIAL'S BINDING TOKEN, DEFERRED (#1955 P8 follow-up):
+  // where the realm's keys are in the HSM, the routes set this list around
+  // their synchronous evaluations, `requestableDenial()` defers each token's
+  // signature to it, and the answer is sent once `settleDenials()` has
+  // signed them off the event loop. Null otherwise: a software key signs in
+  // place, as it always did. One synchronous call holds it at a time.
+  private denialDeferral: any[] | null = null;
+
   /**
    * Builds the surface over its dependencies.
    *
@@ -522,7 +530,8 @@ class AuthzenSurface {
     const denial = !outcome.fault && !outcome.decision && xacmlDenied && req
       ? ar.requestableDenial(req, body,
                              accessRequests.termsOf(outcome.advice),
-                             caller.name, scoped.application)
+                             caller.name, scoped.application,
+                             self.denialDeferral || undefined)
       : null;
     // WHAT THE ROW CARRIES: who asked, about which application, the two
     // types and the action, the request id, the decision — and NO property
@@ -582,8 +591,65 @@ class AuthzenSurface {
       out.context = Object.assign(out.context || {},
         accessRequests.reevaluation(verdict, outcome.decision, denial));
     }
+    // A deferred token's denial is told which result carries it, so one
+    // that cannot be signed is taken back out (`settleDenials()`).
+    const deferral = self.denialDeferral;
+    if (denial && deferral && deferral.length &&
+        deferral[deferral.length - 1].denial === denial) {
+      deferral[deferral.length - 1].result = out;
+      deferral[deferral.length - 1].verdict = !!verdict;
+    }
     log.debug("Leaving AuthzenSurface.evaluateOne(). " + outcome.decision);
     return out;
+  }
+
+  // Runs synchronous evaluations with the denial deferral set where the
+  // realm's keys are in the HSM (#1955 P8 follow-up), and answers the list.
+  private deferringDenials(run: () => void): any[] | null {
+    const { log } = this.deps;
+    log.debug("Entering AuthzenSurface.deferringDenials().");
+    const deferral = helpers.keysInHsm() ? [] : null;
+    this.denialDeferral = deferral;
+    try {
+      run();
+    } finally {
+      this.denialDeferral = null;
+    }
+    log.debug("Leaving AuthzenSurface.deferringDenials(). " +
+              (deferral ? deferral.length : 'none') + ".");
+    return deferral && deferral.length ? deferral : null;
+  }
+
+  // Signs the deferred tokens off the event loop; a denial whose token was
+  // not signed is an ordinary `false` again, as the synchronous door
+  // answers one (no `access_request` without verifiable binding material).
+  private async settleDenials(deferral: any[]): Promise<void> {
+    const { log } = this.deps;
+    log.debug("Entering AuthzenSurface.settleDenials().");
+    const unsigned = await this.deps.accessRequests
+      .signDeferredDenials(deferral);
+    deferral.forEach(function (one: any) {
+      if (unsigned.indexOf(String(one.denial.evaluation_id)) < 0 ||
+          !one.result || !one.result.context) {
+        return;
+      }
+      const context = one.result.context;
+      delete context.evaluation_id;
+      delete context.evaluated_at;
+      delete context.access_request;
+      if (one.verdict) {
+        if (context.next_action === 'request') {
+          context.next_action = 'none';
+        }
+      } else {
+        delete context.reason;
+      }
+      if (!Object.keys(context).length) {
+        delete one.result.context;
+      }
+    });
+    log.debug("Leaving AuthzenSurface.settleDenials(). " + unsigned.length +
+              " unsigned.");
   }
 
   /**
@@ -1143,8 +1209,42 @@ class AuthzenSurface {
    */
   metadata(req: Req): any {
     const self = this;
-    const { log, helpers } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering AuthzenSurface.metadata().");
+    const out = self.unsignedMetadata(req);
+    const signed = self.signedMetadata(out);
+    if (signed) {
+      out.signed_metadata = signed;
+    }
+    log.debug("Leaving AuthzenSurface.metadata().");
+    return out;
+  }
+
+  /**
+   * `metadata()`, its `signed_metadata` signed off the event loop for a
+   * realm key in the HSM (#1955 P8 follow-up); the route awaits this one.
+   *
+   * @param req - the request
+   * @returns a promise of the document
+   */
+  async metadataAsync(req: Req): Promise<any> {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AuthzenSurface.metadataAsync().");
+    const out = self.unsignedMetadata(req);
+    const signed = await self.signedMetadataAsync(out);
+    if (signed) {
+      out.signed_metadata = signed;
+    }
+    log.debug("Leaving AuthzenSurface.metadataAsync().");
+    return out;
+  }
+
+  // The document's members, before `signed_metadata`.
+  private unsignedMetadata(req: Req): any {
+    const self = this;
+    const { log, helpers } = this.deps;
+    log.debug("Entering AuthzenSurface.unsignedMetadata().");
     // THE IDENTIFIER IS THE BASE THE API IS ADVERTISED UNDER, realm prefix
     // included: section 9.2.3 has a PEP refuse a document whose
     // `policy_decision_point` is not the one it built the URL from.
@@ -1186,11 +1286,7 @@ class AuthzenSurface {
     if (capabilities.length) {
       out.capabilities = capabilities;
     }
-    const signed = self.signedMetadata(out);
-    if (signed) {
-      out.signed_metadata = signed;
-    }
-    log.debug("Leaving AuthzenSurface.metadata().");
+    log.debug("Leaving AuthzenSurface.unsignedMetadata().");
     return out;
   }
 
@@ -1236,10 +1332,39 @@ class AuthzenSurface {
     }
   }
 
+  // `signedMetadata()` off the event loop (#1955 P8 follow-up): the same
+  // setting, the same claims, the same answer to a failure.
+  private async signedMetadataAsync(document: any): Promise<string> {
+    const { log, config, errorCodes } = this.deps;
+    log.debug("Entering AuthzenSurface.signedMetadataAsync().");
+    if (config.value('authzen.signedMetadata') === false) {
+      log.debug("Leaving AuthzenSurface.signedMetadataAsync(). Off.");
+      return '';
+    }
+    try {
+      const signed = String(await this.deps.loadOauth2()
+        .signPublishedDocumentAsync(Object.assign({}, document,
+          { sub: document.policy_decision_point }),
+        document.policy_decision_point, 3600, 'oauth-signed-metadata') ||
+        '');
+      log.debug("Leaving AuthzenSurface.signedMetadataAsync().");
+      return signed;
+    } catch (e) {
+      log.debug("Caught in AuthzenSurface.signedMetadataAsync(): " +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-AUTHZEN-0040') + 'authzen: the ' +
+                'metadata could not be signed: ' + ((e && e.message) || e));
+      log.debug("Leaving AuthzenSurface.signedMetadataAsync(). Not signed.");
+      return '';
+    }
+  }
+
   // Answers the metadata in the realm the request is in, or 501 while the
   // API is off there (the document would advertise an endpoint that does
   // not answer).
-  private sendMetadata(req: Req, res: Res): void {
+  // Signed off the event loop for an HSM key (#1955 P8 follow-up), so the
+  // answer is a promise the route returns.
+  private async sendMetadata(req: Req, res: Res): Promise<void> {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering AuthzenSurface.sendMetadata().");
@@ -1247,8 +1372,9 @@ class AuthzenSurface {
       log.debug("Leaving AuthzenSurface.sendMetadata(). Off.");
       return;
     }
+    const document = await self.metadataAsync(req);
     res.status(200).type('application/json').set('Cache-Control', 'no-store')
-       .send(JSON.stringify(authzenModel.held('metadata', self.metadata(req),
+       .send(JSON.stringify(authzenModel.held('metadata', document,
                                               METADATA_PATH), null, 2));
     log.debug("Leaving AuthzenSurface.sendMetadata().");
   }
@@ -1311,7 +1437,7 @@ class AuthzenSurface {
    * @param caller - the admitted caller
    * @param id - the request id, or ''
    */
-  batch(req: Req, res: Res, caller: any, id: string): void {
+  batch(req: Req, res: Res, caller: any, id: string): any {
     const self = this;
     const { log, config, errorCodes } = this.deps;
     log.debug("Entering AuthzenSurface.batch().");
@@ -1363,20 +1489,19 @@ class AuthzenSurface {
     // answer it (section 7.1: "backwards-compatible").
     if (!items.length) {
       const single = AuthzenSurface.merged(body, {});
-      const one = self.evaluateOne(single, caller, rows, id, where,
-                                   self.planOf([single]), 0, req);
-      if (one.error) {
-        errorCodes.mark(res, one.code);
-        // error-code: none — marked on the line above with the item's code.
-        callers.send(res, one.status, one.error.message);
-        log.debug("Leaving AuthzenSurface.batch(). One, refused.");
-        return;
+      let one: any = null;
+      const deferredOne = self.deferringDenials(function (): void {
+        one = self.evaluateOne(single, caller, rows, id, where,
+                               self.planOf([single]), 0, req);
+      });
+      if (deferredOne) {
+        log.debug("Leaving AuthzenSurface.batch(). One, its token signed " +
+                  "off the event loop.");
+        return self.settleDenials(deferredOne).then(function (): void {
+          self.sendBatchOne(res, one);
+        });
       }
-      res.status(200).type('application/json')
-         .set('Cache-Control', 'no-store')
-         .send(JSON.stringify(authzenModel.held('evaluation-response',
-           one.context ? { decision: one.decision, context: one.context }
-                       : { decision: one.decision }, EVALUATIONS_PATH)));
+      self.sendBatchOne(res, one);
       log.debug("Leaving AuthzenSurface.batch(). One.");
       return;
     }
@@ -1385,6 +1510,7 @@ class AuthzenSurface {
     const batchId = id || ('authzen-' +
                            self.deps.helpers.randomId(12));
     const out: any[] = [];
+    const results: any[] = [];
     // EVERY ITEM MERGED FIRST, and planned together: the token-exchange
     // binding's two gates and its scope tuples are one exchange (#1181),
     // so which gate an item is, and whose scope, is known only from the
@@ -1393,34 +1519,70 @@ class AuthzenSurface {
       return AuthzenSurface.merged(body, item);
     });
     const plan = self.planOf(requests);
-    for (let i = 0; i < items.length; i += 1) {
-      const request = requests[i];
-      const one = request === null
-        ? AuthzenSurface.itemRefused(items[i])
-        : self.evaluateOne(request, caller, rows,
-                           batchId + '#' + i, where, plan, i, req);
-      // AN ITEM'S FAILURE IS ITS OWN, said in its own context.error and
-      // never hidden by the batch's 200 (section 7.2). It is still false,
-      // which is the fail-closed reading of an item nobody could decide.
-      if (one.error) {
-        out.push({ decision: false, context: { error: one.error } });
-      } else {
-        out.push(one.context ? { decision: one.decision,
-                                 context: one.context }
-                             : { decision: one.decision });
+    const deferred = self.deferringDenials(function (): void {
+      for (let i = 0; i < items.length; i += 1) {
+        const request = requests[i];
+        const one = request === null
+          ? AuthzenSurface.itemRefused(items[i])
+          : self.evaluateOne(request, caller, rows,
+                             batchId + '#' + i, where, plan, i, req);
+        results.push(one);
+        const denied = !!one.error || one.decision === false;
+        if ((semantic === 'deny_on_first_deny' && denied) ||
+            (semantic === 'permit_on_first_permit' && !one.error &&
+             one.decision === true)) {
+          break;
+        }
       }
-      const denied = !!one.error || one.decision === false;
-      if ((semantic === 'deny_on_first_deny' && denied) ||
-          (semantic === 'permit_on_first_permit' && !one.error &&
-           one.decision === true)) {
-        break;
-      }
+    });
+    const finish = function (): void {
+      log.debug("Entering finish().");
+      results.forEach(function (one: any) {
+        // AN ITEM'S FAILURE IS ITS OWN, said in its own context.error and
+        // never hidden by the batch's 200 (section 7.2). It is still
+        // false, which is the fail-closed reading of an item nobody could
+        // decide.
+        if (one.error) {
+          out.push({ decision: false, context: { error: one.error } });
+        } else {
+          out.push(one.context ? { decision: one.decision,
+                                   context: one.context }
+                               : { decision: one.decision });
+        }
+      });
+      res.status(200).type('application/json')
+         .set('Cache-Control', 'no-store')
+         .send(JSON.stringify(authzenModel.held('evaluations-response',
+           { evaluations: out }, EVALUATIONS_PATH)));
+      log.debug("Leaving finish().");
+    };
+    if (deferred) {
+      log.debug("Leaving AuthzenSurface.batch(). Its tokens are signed off " +
+                "the event loop.");
+      return self.settleDenials(deferred).then(finish);
     }
-    res.status(200).type('application/json').set('Cache-Control', 'no-store')
-       .send(JSON.stringify(authzenModel.held('evaluations-response',
-         { evaluations: out }, EVALUATIONS_PATH)));
+    finish();
     log.debug("Leaving AuthzenSurface.batch(). " + out.length + " of " +
               items.length + " answered.");
+  }
+
+  // The answer to a batch of no items: one evaluation's.
+  private sendBatchOne(res: Res, one: any): void {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AuthzenSurface.sendBatchOne().");
+    if (one.error) {
+      errorCodes.mark(res, one.code);
+      // error-code: none — marked on the line above with the item's code.
+      callers.send(res, one.status, one.error.message);
+      log.debug("Leaving AuthzenSurface.sendBatchOne(). Refused.");
+      return;
+    }
+    res.status(200).type('application/json')
+       .set('Cache-Control', 'no-store')
+       .send(JSON.stringify(authzenModel.held('evaluation-response',
+         one.context ? { decision: one.decision, context: one.context }
+                     : { decision: one.decision }, EVALUATIONS_PATH)));
+    log.debug("Leaving AuthzenSurface.sendBatchOne().");
   }
 
   /**
@@ -1453,24 +1615,39 @@ class AuthzenSurface {
         return;
       }
       const body = AuthzenSurface.bodyOf(req);
-      const result = self.evaluateOne(body === undefined ? null : body,
-                                      caller, self.rows(), id,
-                                      'POST ' + EVALUATION_PATH, undefined,
-                                      undefined, req);
-      if (result.error) {
-        errorCodes.mark(res, result.code);
-        callers.send(res, result.status, result.error.message);
-        log.debug('Leaving POST ' + EVALUATION_PATH + '. ' + result.code);
-        return;
+      let result: any = null;
+      const deferred = self.deferringDenials(function (): void {
+        result = self.evaluateOne(body === undefined ? null : body,
+                                  caller, self.rows(), id,
+                                  'POST ' + EVALUATION_PATH, undefined,
+                                  undefined, req);
+      });
+      const send = function (): void {
+        log.debug("Entering send().");
+        if (result.error) {
+          errorCodes.mark(res, result.code);
+          callers.send(res, result.status, result.error.message);
+          log.debug('Leaving send(). ' + result.code);
+          return;
+        }
+        const answer: any = { decision: result.decision };
+        if (result.context) {
+          answer.context = result.context;
+        }
+        res.status(200).type('application/json')
+           .set('Cache-Control', 'no-store')
+           .send(JSON.stringify(authzenModel.held('evaluation-response',
+                                                  answer, EVALUATION_PATH)));
+        log.debug('Leaving send(). ' + result.decision);
+      };
+      // A requestable denial's token signed off the event loop first, where
+      // the realm's keys are in the HSM (#1955 P8 follow-up).
+      if (deferred) {
+        log.debug('Leaving POST ' + EVALUATION_PATH + '. Signing.');
+        return self.settleDenials(deferred).then(send);
       }
-      const answer: any = { decision: result.decision };
-      if (result.context) {
-        answer.context = result.context;
-      }
-      res.status(200).type('application/json').set('Cache-Control', 'no-store')
-         .send(JSON.stringify(authzenModel.held('evaluation-response', answer,
-                                                EVALUATION_PATH)));
-      log.debug('Leaving POST ' + EVALUATION_PATH + '. ' + result.decision);
+      send();
+      log.debug('Leaving POST ' + EVALUATION_PATH + '.');
     });
 
     // -----------------------------------------------------------------------
@@ -1500,8 +1677,11 @@ class AuthzenSurface {
         log.debug('Leaving POST ' + EVALUATIONS_PATH + '. Not JSON.');
         return;
       }
-      self.batch(req, res, caller, id);
+      // RETURNED (#1955 P8 follow-up): a deferred denial's token makes the
+      // answer a promise.
+      const answered = self.batch(req, res, caller, id);
       log.debug('Leaving POST ' + EVALUATIONS_PATH + '.');
+      return answered;
     });
 
     // -----------------------------------------------------------------------
@@ -1643,8 +1823,9 @@ class AuthzenSurface {
     // -----------------------------------------------------------------------
     app.get(METADATA_PATH, function (req, res) {
       log.debug('Entering GET ' + METADATA_PATH + '.');
-      self.sendMetadata(req, res);
+      const answered = self.sendMetadata(req, res);
       log.debug('Leaving GET ' + METADATA_PATH + '.');
+      return answered;
     });
     app.get(METADATA_PATH + '/*', function (req, res, next) {
       log.debug('Entering GET ' + METADATA_PATH + '/*.');
@@ -1662,8 +1843,9 @@ class AuthzenSurface {
       }
       // Once the realm's keys are made and certified: the path's prefix
       // named no realm, so `app.js` prepared none (`runInPreparedRealm()`).
-      self.deps.helpers.runInPreparedRealm(named, function () {
-        self.sendMetadata(req, res);
+      const answered = self.deps.helpers.runInPreparedRealm(named,
+                                                           function () {
+        return self.sendMetadata(req, res);
       }).catch(function (e: any) {
         log.debug('Caught in GET ' + METADATA_PATH + '/*: ' +
                   ((e && e.message) || e));
@@ -1671,6 +1853,7 @@ class AuthzenSurface {
         (next as any)(e);
       });
       log.debug('Leaving GET ' + METADATA_PATH + '/*.');
+      return answered;
     });
 
     log.debug("Leaving AuthzenSurface.registerRoutes().");

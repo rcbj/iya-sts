@@ -656,6 +656,56 @@ function childMain() {
     note(k14 === 'minted',
          'K14. a rotation\'s next RSA key is made with the setting off, its ' +
          'certificate signed off the loop', k14);
+    // The protocol modules' own async twins (#1955 P8 follow-up): signed
+    // metadata, SAML and WS-Federation, and a published JWT.
+    const docs = [
+      ['K16. SAML 2.0 IdP metadata (saml2_sso.metadataForAsync)',
+       function () {
+         return require(ROOT + '/saml/saml2_sso')
+           .metadataForAsync('https://p8.test', '');
+       }, 'EntityDescriptor'],
+      ['K17. SAML 1.1 metadata (saml11_sso.metadataForAsync)',
+       function () {
+         return require(ROOT + '/saml/saml11_sso')
+           .metadataForAsync('https://p8.test', '');
+       }, 'EntityDescriptor'],
+      ['K18. WS-Federation metadata (wsfed.federationMetadataAsync)',
+       function () {
+         return require(ROOT + '/ws-federation/wsfed')
+           .federationMetadataAsync('https://p8.test');
+       }, 'EntityDescriptor']
+    ];
+    for (let d = 0; d < docs.length; d++) {
+      const r = await offTheLoop(docs[d][1]);
+      const xml = r.out && typeof r.out === 'object' && r.out.xml
+        ? r.out.xml : r.out;
+      let ok = 'not signed';
+      try {
+        ok = /<ds:Signature/.test(String(xml)) &&
+             stsCrypto.verifyXmlSignature(String(xml), {
+               element: docs[d][2],
+               certPem: helpers.STS.xml.certPem }).ok;
+      } catch (e) {
+        ok = String((e && e.message) || e);
+      }
+      note(heldNothing(r) && ok === true,
+           docs[d][0] + ' is signed off the loop and verifies',
+           how(r) + ' ' + ok);
+    }
+    const k19 = await offTheLoop(function () {
+      return require(ROOT + '/oauth-oidc/oauth2').signPublishedDocumentAsync(
+        { sub: 'k19' }, 'https://p8.test', 300, 'oauth-signed-metadata');
+    });
+    let k19Ok = false;
+    try {
+      k19Ok = !!helpers.verifyOwnJws(k19.out);
+    } catch (e) {
+      k19Ok = String((e && e.message) || e);
+    }
+    note(heldNothing(k19) && k19Ok === true,
+         'K19. a published JWT — RFC 8414 signed_metadata, AuthZEN and ' +
+         'OpenID4VCI metadata (oauth2.signPublishedDocumentAsync) — is ' +
+         'signed off the loop and verifies', how(k19) + ' ' + k19Ok);
     if (WHICH === 'softhsm') {
       Object.keys(unpatched).forEach(function (name) {
         realLib[name] = unpatched[name];

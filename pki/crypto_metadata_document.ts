@@ -94,6 +94,10 @@ interface CryptoMetadataDeps {
   // published document (D9). Lazy for the same reason.
   signPublishedDocument: (claims: Json, issuer: string, lifetimeS: number,
                           useCase: string) => string;
+  // Its off-the-loop twin (#1955 P8 follow-up), which the route awaits.
+  signPublishedDocumentAsync: (claims: Json, issuer: string,
+                               lifetimeS: number,
+                               useCase: string) => Promise<string>;
   now: () => number;
 }
 
@@ -149,6 +153,14 @@ class CryptoMetadataDocument {
         // caller's, and signedJson() names 'oauth-signed-metadata'.
         return require('../oauth-oidc/oauth2')
           .signPublishedDocument(claims, issuer, lifetimeS, useCase);
+      },
+      signPublishedDocumentAsync: function (claims: Json, issuer: string,
+                                            lifetimeS: number,
+                                            useCase: string):
+                                            Promise<string> {
+        // certificate-header: none — a pass-through, as above.
+        return require('../oauth-oidc/oauth2')
+          .signPublishedDocumentAsync(claims, issuer, lifetimeS, useCase);
       },
       now: function (): number {
         return Date.now();
@@ -677,14 +689,42 @@ class CryptoMetadataDocument {
    * @returns the signed XML
    */
   signedXml(m: Json): string {
-    const { log, stsCrypto, helpers } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering CryptoMetadataDocument.signedXml().");
     const xml = this.toXml(m);
+    const signed = stsCrypto.signXml(xml, this.xmlSignatureOptions(xml));
+    log.debug("Leaving CryptoMetadataDocument.signedXml().");
+    return signed;
+  }
+
+  /**
+   * `signedXml()`, with a realm XML key in the HSM signing off the event
+   * loop (`stsCrypto.signXmlOffLoop()`, #1955 P8 follow-up); a software key
+   * signs the same bytes, in place.
+   *
+   * @param m - the model
+   * @returns a promise of the signed XML
+   */
+  async signedXmlAsync(m: Json): Promise<string> {
+    const { log, stsCrypto } = this.deps;
+    log.debug("Entering CryptoMetadataDocument.signedXmlAsync().");
+    const xml = this.toXml(m);
+    const signed = await stsCrypto.signXmlOffLoop(xml,
+      this.xmlSignatureOptions(xml));
+    log.debug("Leaving CryptoMetadataDocument.signedXmlAsync().");
+    return signed;
+  }
+
+  // What both XML signers hand `signXml()`.
+  private xmlSignatureOptions(xml: string): Json {
+    const { log, stsCrypto, helpers } = this.deps;
+    log.debug("Entering CryptoMetadataDocument.xmlSignatureOptions().");
     const how = require('../saml/document_settings').signatureOptions();
     // The key for the configured algorithm (#68): `STS.xmlSigner`.
     const signer = helpers.STS.xmlSigner;
     const id = (/ID="([^"]+)"/.exec(xml) || [])[1];
-    const signed = stsCrypto.signXml(xml, {
+    log.debug("Leaving CryptoMetadataDocument.xmlSignatureOptions().");
+    return {
       privateKeyPem: signer.privateKeyPem,
       privateKey: signer.privateKey,
       certPem: signer.certPem,
@@ -693,9 +733,7 @@ class CryptoMetadataDocument {
       sigAlg: how.sigAlg, c14nAlg: how.c14nAlg,
       placement: stsCrypto.PLACEMENT.FIRST,
       id: id
-    });
-    log.debug("Leaving CryptoMetadataDocument.signedXml().");
-    return signed;
+    };
   }
 
   // THE JSON, SIGNED — a JWS by the realm's current `jose` signer, through
@@ -715,6 +753,23 @@ class CryptoMetadataDocument {
                                       m.issuer, 3600, 'oauth-signed-metadata');
     log.debug("Leaving CryptoMetadataDocument.signedJson().");
     return out;
+  }
+
+  /**
+   * `signedJson()`, signed off the event loop for a realm key in the HSM
+   * (#1955 P8 follow-up).
+   *
+   * @param m - the model
+   * @returns a promise of the compact JWS
+   */
+  signedJsonAsync(m: Json): Promise<string> {
+    const { log, signPublishedDocumentAsync } = this.deps;
+    log.debug("Entering CryptoMetadataDocument.signedJsonAsync().");
+    log.debug("Leaving CryptoMetadataDocument.signedJsonAsync().");
+    return signPublishedDocumentAsync(Object.assign({}, m,
+                                                    { sub: m.issuer }),
+                                      m.issuer, 3600,
+                                      'oauth-signed-metadata');
   }
 
   // Which of the forms a request asked for, by suffix, then `Accept`.
@@ -751,8 +806,9 @@ class CryptoMetadataDocument {
    * @param req - the express request
    * @param res - the express response
    * @param suffix - the path's suffix, or empty
+   * @returns nothing, or for a signed form a promise the route returns
    */
-  answer(req: Req, res: Res, suffix: string): void {
+  answer(req: Req, res: Res, suffix: string): any {
     const { log, errorCodes } = this.deps;
     log.debug("Entering CryptoMetadataDocument.answer(). " + suffix);
     res.set('Cache-Control', 'no-store');
@@ -775,12 +831,22 @@ class CryptoMetadataDocument {
       return;
     }
     const form = this.formOf(req, suffix);
+    // THE SIGNED FORMS ARE SIGNED OFF THE EVENT LOOP for a realm key in the
+    // HSM (#1955 P8 follow-up), so their answer is a promise the route
+    // returns; a software key signs in place, as before.
+    if (form === 'signed.xml' || form === 'jwt') {
+      const signing = form === 'jwt' ? this.signedJsonAsync(m)
+                                     : this.signedXmlAsync(m);
+      log.debug("Leaving CryptoMetadataDocument.answer(). " + form +
+                ", being signed.");
+      return signing.then(function (signed: string): void {
+        res.status(200)
+           .type(form === 'jwt' ? 'application/jwt' : 'application/xml')
+           .send(signed);
+      });
+    }
     if (form === 'xml') {
       res.status(200).type('application/xml').send(this.toXml(m));
-    } else if (form === 'signed.xml') {
-      res.status(200).type('application/xml').send(this.signedXml(m));
-    } else if (form === 'jwt') {
-      res.status(200).type('application/jwt').send(this.signedJson(m));
     } else {
       res.status(200).type('application/json')
          .send(JSON.stringify(m, null, 2));
@@ -801,10 +867,11 @@ class CryptoMetadataDocument {
     [['', ''], ['.json', 'json'], ['.xml', 'xml'], ['.jwt', 'jwt'],
      ['.signed.xml', 'signed.xml'], ['.xsd', 'xsd']].forEach(
       function (pair: string[]): void {
-        app.get(BASE + pair[0], function (req: Req, res: Res): void {
+        app.get(BASE + pair[0], function (req: Req, res: Res): any {
           log.debug('Entering GET ' + BASE + pair[0] + '.');
-          self.answer(req, res, pair[1]);
+          const answered = self.answer(req, res, pair[1]);
           log.debug('Leaving GET ' + BASE + pair[0] + '.');
+          return answered;
         });
       });
     log.debug("Leaving CryptoMetadataDocument.registerRoutes().");

@@ -2577,15 +2577,19 @@ class WsFederation {
 
   // THE METADATA ROUTES' ONE ANSWER (#494): the document — the shared one
   // for no application.
-  private sendMetadata(req, res, application?) {
+  // Async since #1955 P8 follow-up: the document is signed off the event
+  // loop for a realm key in the HSM (`federationMetadataAsync()`).
+  private async sendMetadata(req, res, application?) {
     const { baseUrlOf, errorCodes, log } = this.deps;
     log.debug("Entering WsFederation.sendMetadata().");
+    const document = await this.federationMetadataAsync(baseUrlOf(req),
+                                                        application);
     // no-store like every other document here that carries the signing key:
     // in development mode the key is regenerated on every start, so a cached
     // copy describes a key that is gone and the failure looks like a broken
     // signature rather than a stale document.
     res.status(200).type('application/xml').set('Cache-Control', 'no-store')
-       .send(this.federationMetadata(baseUrlOf(req), application));
+       .send(document);
     log.debug("Leaving WsFederation.sendMetadata().");
   }
 
@@ -2623,6 +2627,25 @@ class WsFederation {
     // Lazily: `saml2_sso` is built after this module (10, 10a).
     const out = require('../saml/saml2_sso').metadataFor(base, '', true);
     log.debug("Leaving WsFederation.federationMetadata().");
+    return out;
+  }
+
+  /**
+   * `federationMetadata()`, signed off the event loop for a realm key in the
+   * HSM (#1955 P8 follow-up): `saml2_sso.metadataForAsync()`. The routes
+   * await this one; the synchronous one stays for in-place readers.
+   *
+   * @param base - the base URL the request reached
+   * @param application - as `federationMetadata()`'s
+   * @returns a promise of the XML document
+   */
+  async federationMetadataAsync(base, application?) {
+    const { log } = this.deps;
+    log.debug("Entering WsFederation.federationMetadataAsync(). " +
+              (application ? 'rp=' + application : '(shared)'));
+    const out = await require('../saml/saml2_sso').metadataForAsync(base, '',
+                                                                    true);
+    log.debug("Leaving WsFederation.federationMetadataAsync().");
     return out;
   }
 
@@ -2827,8 +2850,10 @@ class WsFederation {
     app.get('/FederationMetadata/2007-06/FederationMetadata.xml',
             (req, res) => {
       log.debug("Entering the WS-Federation metadata endpoint.");
-      this.sendMetadata(req, res);
+      // Returned for the express guard (#1955 P8 follow-up).
+      const sent = this.sendMetadata(req, res);
       log.debug("Leaving the WS-Federation metadata endpoint.");
+      return sent;
     });
 
     // ONE REGISTERED RELYING PARTY'S OWN DOCUMENT (#494). The same
@@ -2853,9 +2878,10 @@ class WsFederation {
                   "endpoint. 404.");
         return;
       }
-      this.sendMetadata(req, res, rp);
+      const sent = this.sendMetadata(req, res, rp);
       log.debug("Leaving the per-relying-party WS-Federation metadata " +
                 "endpoint.");
+      return sent;
     });
 
     log.debug("Leaving WsFederation.registerRoutes().");
@@ -2901,6 +2927,7 @@ export = {
   SAML11_TOKEN_TYPE: SAML11_TOKEN_TYPE,
   SAML2_TOKEN_TYPE: SAML2_TOKEN_TYPE,
   federationMetadata: slot.forward('federationMetadata'),
+  federationMetadataAsync: slot.forward('federationMetadataAsync'),
   roleDescriptor: slot.forward('roleDescriptor'),
   verifyAssertionSignature: slot.forward('verifyAssertionSignature'),
   // The cleanup requests one session is owed. Read by ../logout/logout.ts so

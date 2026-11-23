@@ -15241,7 +15241,12 @@ function httpsigCheckKey(name, entry, key, purpose) {
     log.debug("Leaving httpsigCheckKey(). Secret.");
     return null;
   }
-  if (!(key instanceof nodeCrypto.KeyObject) || key.type === 'secret' ||
+  // A realm key in the HSM (#1955 P8 follow-up) answers `type`,
+  // `asymmetricKeyType` and `asymmetricKeyDetails` as a KeyObject does, and
+  // is checked by them; it signs and never verifies.
+  const hsmSigner = purpose === 'sign' && isHsmKey(key);
+  if ((!(key instanceof nodeCrypto.KeyObject) && !hsmSigner) ||
+      key.type === 'secret' ||
       (purpose === 'sign' && key.type !== 'private')) {
     log.debug("Leaving httpsigCheckKey(). Not an asymmetric key.");
     return httpsigRefuse('STS-KEYS-0131',
@@ -15295,8 +15300,20 @@ function httpsigCheckKey(name, entry, key, purpose) {
 // HTTP_SIGN, section 3.3. Throws whatever the primitive throws; callers map
 // it. A post-quantum or composite JWS algorithm is signed by
 // `jwsSignatureOver()`, the function that signs it inside a JWS.
-function httpsigRawSign(entry, key, data) {
+function httpsigRawSign(entry, key, data, hsmDeferred) {
   log.debug("Entering httpsigRawSign(). " + entry.kind);
+  // A REALM KEY IN THE HSM (#1955 P8 follow-up): C_Sign under the JWS name
+  // the entry's algorithm is in the engine — or, handed a `hsmDeferred` by
+  // `signHttpMessageOffLoop()`, the signature deferred to C_SignAsync.
+  if (isHsmKey(key)) {
+    const hsmKey = hsmKeyOf(key);
+    const hsmAlg = hsmSigningAlg(hsmKey, httpsigJwsName(entry));
+    const hsmOut = hsmDeferred
+      ? hsmDeferred.hold(hsmKey, hsmAlg, data)
+      : hsmKey.signSync(hsmAlg, data);
+    log.debug("Leaving httpsigRawSign(). In the HSM, " + hsmAlg + ".");
+    return hsmOut;
+  }
   let out;
   switch (entry.kind) {
     case 'jws-pq':
@@ -15323,6 +15340,26 @@ function httpsigRawSign(entry, key, data) {
   }
   log.debug("Leaving httpsigRawSign().");
   return out;
+}
+
+// The JWS name of an HTTP signature algorithm's entry, which is what the
+// PKCS#11 engine signs by: RFC 9421 section 3.3's rows map onto RS256,
+// PS512, ES256, ES384 and EdDSA, with the same hash, salt and curve.
+function httpsigJwsName(entry) {
+  log.debug("Entering httpsigJwsName(). " + entry.kind);
+  if (entry.jws) {
+    log.debug("Leaving httpsigJwsName(). " + entry.jws);
+    return entry.jws;
+  }
+  const bits = String(entry.hash || '').replace(/^sha/, '');
+  const named = entry.kind === 'rsa-v1_5' ? 'RS' + bits
+    : entry.kind === 'rsa-pss' ? 'PS' + bits
+    : entry.kind === 'ecdsa'
+      ? ({ prime256v1: 'ES256', secp384r1: 'ES384',
+           secp521r1: 'ES512' }[String(entry.curve)] || '')
+    : entry.kind === 'eddsa' ? 'EdDSA' : '';
+  log.debug("Leaving httpsigJwsName(). " + named);
+  return named;
 }
 
 // HTTP_VERIFY, section 3.3. The HMAC comparison is constant-time, and a
@@ -15448,7 +15485,9 @@ function signHttpMessage(message, options) {
   }
   let signingKey;
   try {
-    signingKey = httpsigKeyOf(entry, opts.key, 'sign');
+    // An HSM key's reference is its key object (#1955 P8 follow-up).
+    signingKey = isHsmKey(opts.key) ? hsmKeyOf(opts.key)
+                                    : httpsigKeyOf(entry, opts.key, 'sign');
   } catch (e) {
     log.debug("Caught in signHttpMessage(): " + ((e && e.message) || e));
     log.debug("Leaving signHttpMessage(). The key cannot be read.");
@@ -15471,7 +15510,7 @@ function signHttpMessage(message, options) {
   let signatureBytes;
   try {
     signatureBytes = httpsigRawSign(entry, signingKey, Buffer.from(built.base,
-                                  'ascii'));
+                                  'ascii'), opts.hsmDeferred);
   } catch (e) {
     log.debug("Caught in signHttpMessage(): " + ((e && e.message) || e));
     log.debug("Leaving signHttpMessage(). Primitive threw.");
@@ -15493,6 +15532,51 @@ function signHttpMessage(message, options) {
     base: built.base,
     signatureBytes: signatureBytes
   };
+}
+
+/**
+ * `signHttpMessage()`, with a realm key in the HSM signing off the event
+ * loop (#1955 P8 follow-up): the signature base is built here, C_SignAsync
+ * signs it, and the signature is written into the answer. Any other key is
+ * `signHttpMessage()` itself, resolved.
+ *
+ * @param message - the HTTP message
+ * @param options - as for `signHttpMessage()`
+ * @returns a promise of `signHttpMessage()`'s answer
+ */
+async function signHttpMessageOffLoop(message, options) {
+  log.debug("Entering signHttpMessageOffLoop().");
+  const opts = options || {};
+  if (!isHsmKey(opts.key)) {
+    log.debug("Leaving signHttpMessageOffLoop(). signHttpMessage().");
+    return signHttpMessage(message, opts);
+  }
+  const deferral = hsmSignDeferral();
+  const pending = signHttpMessage(message,
+    Object.assign({}, opts, { hsmDeferred: deferral }));
+  if (!pending || !pending.ok) {
+    log.debug("Leaving signHttpMessageOffLoop(). Refused.");
+    return pending;
+  }
+  let made;
+  try {
+    made = await hsmDeferredSignature(deferral);
+  } catch (e) {
+    log.debug("Caught in signHttpMessageOffLoop(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving signHttpMessageOffLoop(). The HSM refused.");
+    return httpsigRefuse('STS-KEYS-0136',
+                         'Signing with ' + pending.algorithm +
+                         ' failed inside the cryptographic library: ' +
+                         ((e && e.message) || e));
+  }
+  log.debug("Leaving signHttpMessageOffLoop(). In the HSM.");
+  return Object.assign({}, pending, {
+    signature: opts.label + '=' +
+               sf.serializeItem({ type: 'bytes', value: made.signature,
+                                  params: [] }),
+    signatureBytes: made.signature
+  });
 }
 
 function httpsigHeaderKeyFor(headers, name) {
@@ -21379,6 +21463,7 @@ module.exports = {
   PKCS11_SIGNING_ALGS: Object.keys(pkcs11Engine.SIGNING),
   setPkcs11KeyResolver: setPkcs11KeyResolver,
   isHsmKey: isHsmKey,
+  signHttpMessageOffLoop: signHttpMessageOffLoop,
   signJwsOffLoop: signJwsOffLoop,
   signXmlOffLoop: signXmlOffLoop,
   signQueryStringOffLoop: signQueryStringOffLoop,

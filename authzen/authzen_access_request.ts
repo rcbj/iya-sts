@@ -551,10 +551,15 @@ class AccessRequests {
    * @param terms - the advice's terms
    * @param caller - the trusted caller's name
    * @param application - the trusted application
+   * @param deferred - #1955 P8 follow-up: where the realm's keys are in the
+   *   HSM, a list the binding token's signature is DEFERRED to — the token
+   *   is signed off the event loop by `signDeferredDenials()` before the
+   *   answer is sent; absent, it is signed here, as it always was
    * @returns the context members, or null
    */
   requestableDenial(req: Req, body: Json, terms: Terms | null,
-                    caller: string, application: string): Json | null {
+                    caller: string, application: string,
+                    deferred?: Json[]): Json | null {
     const self = this;
     const { log, errorCodes, helpers } = this.deps;
     log.debug("Entering AccessRequests.requestableDenial().");
@@ -586,6 +591,17 @@ class AccessRequests {
       terms: terms
     };
     let token = '';
+    if (deferred) {
+      const pending: Json = { claims: claims, base: base,
+                              lifetime: lifetime, denial: null };
+      deferred.push(pending);
+      const later = self.denialFrom(evaluationId, now, expiresAt, base,
+                                    terms, '');
+      pending.denial = later;
+      log.debug("Leaving AccessRequests.requestableDenial(). Its token is " +
+                "signed off the event loop.");
+      return later;
+    }
     try {
       token = String(self.deps.loadOauth2().signPublishedDocument(
         claims, base, lifetime, 'oauth-signed-metadata') || '');
@@ -600,16 +616,68 @@ class AccessRequests {
       log.debug("Leaving AccessRequests.requestableDenial(). Not signed.");
       return null;
     }
+    log.debug("Leaving AccessRequests.requestableDenial().");
+    return self.denialFrom(evaluationId, now, expiresAt, base, terms, token);
+  }
+
+  // The context members of a requestable denial, around its binding token.
+  private denialFrom(evaluationId: string, now: number, expiresAt: string,
+                     base: string, terms: Terms, token: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.denialFrom().");
     const accessRequest: Json = { expires_at: expiresAt,
                                   endpoint: base + REQUESTS_PATH,
                                   binding_token: token };
     if (terms.template) {
       accessRequest.template = terms.template;
     }
-    log.debug("Leaving AccessRequests.requestableDenial().");
+    log.debug("Leaving AccessRequests.denialFrom().");
     return { evaluation_id: evaluationId, evaluated_at: instant(now * 1000),
              reason: terms.reason || 'approval_required',
              access_request: accessRequest };
+  }
+
+  /**
+   * Signs the binding tokens `requestableDenial()` deferred (#1955 P8
+   * follow-up), off the event loop, writing each into its denial's
+   * `access_request`. A token that cannot be signed is logged as the
+   * synchronous door logs it (`STS-AUTHZEN-0087`) and its evaluation id
+   * answered, so the caller turns that denial back into an ordinary `false`.
+   *
+   * @param deferred - the list handed to `requestableDenial()`
+   * @returns a promise of the evaluation ids whose token was not signed
+   */
+  async signDeferredDenials(deferred: Json[]): Promise<string[]> {
+    const self = this;
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AccessRequests.signDeferredDenials(). " +
+              deferred.length);
+    const unsigned: string[] = [];
+    for (let i = 0; i < deferred.length; i++) {
+      const one = deferred[i];
+      let token = '';
+      try {
+        token = String(await self.deps.loadOauth2()
+          .signPublishedDocumentAsync(one.claims, one.base, one.lifetime,
+                                      'oauth-signed-metadata') || '');
+      } catch (e) {
+        log.debug("Caught in AccessRequests.signDeferredDenials(): " +
+                  ((e && e.message) || e));
+        log.error(errorCodes.tag('STS-AUTHZEN-0087') + 'authzen: a ' +
+                  'requestable denial\'s binding_token could not be signed, ' +
+                  'so the denial is answered as an ordinary false: ' +
+                  ((e && e.message) || e));
+        token = '';
+      }
+      if (token) {
+        one.denial.access_request.binding_token = token;
+      } else {
+        unsigned.push(String(one.denial.evaluation_id));
+      }
+    }
+    log.debug("Leaving AccessRequests.signDeferredDenials(). " +
+              unsigned.length + " unsigned.");
+    return unsigned;
   }
 
   // -------------------------------------------------------------------------
@@ -1594,7 +1662,10 @@ class AccessRequests {
   // Signs the notification and posts it. A signing failure is an attempt
   // with status 0 and no policy kind, so it is retried until the bound is
   // spent: a key can be briefly unreadable.
-  private sendCallback(task: Json): Promise<Json> {
+  // The bearer is signed off the event loop for a realm key in the HSM
+  // (#1955 P8 follow-up): `signPublishedDocumentAsync()`, which signs a
+  // software key in place.
+  private async sendCallback(task: Json): Promise<Json> {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering AccessRequests.sendCallback().");
@@ -1605,7 +1676,7 @@ class AccessRequests {
     }
     let bearer = '';
     try {
-      bearer = String(self.deps.loadOauth2().signPublishedDocument(
+      bearer = String(await self.deps.loadOauth2().signPublishedDocumentAsync(
         { aud: callback.endpoint, sub: task.requester,
           jti: self.deps.helpers.randomId(18),
           typ: 'authzen-access-request-callback', task_id: task.id,
@@ -2781,6 +2852,7 @@ export = {
   reevaluation: AccessRequests.reevaluation,
   enabled: slot.forward('enabled'),
   requestableDenial: slot.forward('requestableDenial'),
+  signDeferredDenials: slot.forward('signDeferredDenials'),
   submit: slot.forward('submit'),
   status: slot.forward('status'),
   cancel: slot.forward('cancel'),

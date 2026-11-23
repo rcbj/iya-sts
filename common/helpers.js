@@ -9140,6 +9140,8 @@ function signJwtAsOffLoop(payload, alg, secret, opts) {
     if (refused || (spec && spec.family === 'hmac')) {
       // A refusal, or an HMAC signature, which no HSM key makes: the
       // synchronous door's own answer.
+      // certificate-header: none — `opts` is the caller's, use case and
+      // all, handed on whole.
       const own = signJwtAs(payload, alg, secret, opts);
       log.debug("Leaving signJwtAsOffLoop(). signJwtAs().");
       return Promise.resolve(own);
@@ -9259,6 +9261,8 @@ function signJwtAsAsync(payload, alg, secret, opts) {
 function signJwt(payload, context, opts) {
   log.debug("Entering signJwt(). typ=" + (payload.typ || '(none)'));
   const plan = signJwtPlan(payload, opts);
+  // certificate-header: none — the header is the plan's, which
+  // signJwtPlan() built from the caller's own certificateHeader.
   const signed = stsCrypto.signJws(payload, plan.key, plan.options);
   signJwtRecorded(payload, context, signed);
   log.debug("Leaving signJwt().");
@@ -9285,6 +9289,8 @@ function signJwtOffLoop(payload, context, opts) {
     return Promise.reject(e);
   }
   log.debug("Leaving signJwtOffLoop().");
+  // certificate-header: none — the header is the plan's, which
+  // signJwtPlan() built from the caller's own certificateHeader.
   return stsCrypto.signJwsOffLoop(payload, plan.key, plan.options)
     .then(function (signed) {
       signJwtRecorded(payload, context, signed);
