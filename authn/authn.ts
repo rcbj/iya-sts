@@ -6856,10 +6856,14 @@ class Authn {
     // choice. A sign-in whose role step did not run changes nothing here;
     // what it still carries is asked of each policy at every issuance.
     if (extra.rolesDone === true && extra.application) {
-      const forApp = String(extra.application);
+      // By the registry identifier the step recorded its rows under, and a
+      // row an older build recorded under the protocol's name with it.
+      const eligibility = require('../xacml/role_eligibility');
+      const forApp = eligibility.applicationOf(String(extra.application));
       session.selectedRoles = (Array.isArray(session.selectedRoles)
         ? session.selectedRoles : []).filter(function (one: any) {
-        return one && String(one.application || '') !== forApp;
+        return one && eligibility.applicationOf(
+          String(one.application || '')) !== forApp;
       }).concat((Array.isArray(extra.selectedRoles) ? extra.selectedRoles
                                                      : [])
         .map(function (one: any) {
@@ -8730,12 +8734,22 @@ class Authn {
     // request or application, or the session the step itself starts
     // (`rolesDone`).
     // -------------------------------------------------------------------------
-    const roleOffer = extra.authenticated === false || extra.key ||
-      extra.rolesDone === true || !extra.request || !username ||
-      !extra.application
-      ? null
-      : this.roleOfferFor(String(username), String(extra.application),
-                          amr, String(acr || ''));
+    const roleAsked = !(extra.authenticated === false || extra.key ||
+      extra.rolesDone === true || !extra.request || !username);
+    const roleOffer = roleAsked && extra.application
+      ? this.roleOfferFor(String(username), String(extra.application),
+                          amr, String(acr || ''))
+      : null;
+    // A DOOR THAT NAMES NO APPLICATION AND CANNOT DRAW THE STEP — the
+    // certificate's `/tls/sign-in`, which has none to name — is asked
+    // about the realm-wide required roles (#1072's follow-ups): a required
+    // realm-wide role is asked of every sign-in, and this one cannot ask.
+    const roleRequiredHere = !!(roleOffer && roleOffer.required) ||
+      (roleAsked && !extra.application && extra.postLoginHold !== true &&
+       require('../xacml/role_eligibility').requiredFor({
+         username: String(username),
+         amr: Array.isArray(amr) ? amr.map(String) : [],
+         acr: String(acr || '') }).required);
     if (roleOffer && extra.postLoginHold === true) {
       extra.roleSelection = { offer: roleOffer, amr: (amr || []).slice(),
                               acr: String(acr || ''), via: String(via || '') };
@@ -8749,7 +8763,7 @@ class Authn {
       log.debug("Leaving Authn.startSessionHere(). Held for the role step.");
       return null;
     }
-    if (roleOffer && roleOffer.required) {
+    if (roleRequiredHere) {
       log.info(errorCodes.tag('STS-XACML-0329') + 'authn: a session for "' +
                username + '" was REFUSED at the ' + (via || 'sign-in') +
                ' door: a required dynamic role cannot be chosen there.');
@@ -12154,12 +12168,12 @@ class Authn {
   // `roles.dynamicSelection`, with the application's `appDynamicRoleSelection`
   // overriding it (rcbj's decision 2). Hot path: asked by the sign-in screen
   // and every held sign-in, so no Entering/Leaving pair would drown the log.
+  // By the application's registry identifier, whatever the protocol called
+  // it (`role_eligibility.ts`'s `selectionOn()`, #1072's follow-ups).
   private roleSelectionOn(application: string): boolean {
-    const { applications, config } = this.deps;
     try {
       return !!application &&
-        applications.settingFor(String(application),
-                                'roles.dynamicSelection', config) === true;
+        require('../xacml/role_eligibility').selectionOn(String(application));
     } catch (e) {
       this.deps.log.debug("Caught in Authn.roleSelectionOn(): " +
                           ((e && e.message) || e));
@@ -12182,6 +12196,43 @@ class Authn {
       require('../common/roles').dynamicRoles().length > 0;
     log.debug("Leaving Authn.roleBoxOffered(). " + on);
     return on;
+  }
+
+  /**
+   * Whether single sign-on into an application must send the person to
+   * sign in again first (#1072's follow-ups): the application would require
+   * a dynamic role of them and the session chose nothing for it — a
+   * sign-in for another application, or at a door that names none. A
+   * browser flow treats it as its force-login; a passive one refuses
+   * (`authn/role_selection.ts`'s `owedFor()`).
+   *
+   * @param session - the sign-on session
+   * @param application - the application, in its protocol's own name
+   * @returns true when a role choice is owed
+   */
+  roleChoiceOwed(session: any, application: string): boolean {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Authn.roleChoiceOwed().");
+    let owed = false;
+    try {
+      owed = !!session && !!String(application || '') &&
+        require('./role_selection').owedFor(session, String(application));
+    } catch (e) {
+      // A decision that cannot be made is not a sign-on to refuse: the
+      // issuance reads what the session holds, and holds no role for it.
+      log.error(errorCodes.tag('STS-XACML-0318') + 'authn: whether a role ' +
+                'choice is owed for "' + String(application) + '" could ' +
+                'not be decided: ' + ((e && e.message) || e));
+      owed = false;
+    }
+    if (owed) {
+      log.info(errorCodes.tag('STS-XACML-0333') + 'authn: the session of "' +
+               String(((session || {}).user || {}).username || '') + '" ' +
+               'chose no dynamic role for "' + String(application) + '", ' +
+               'which requires one; the person signs in again to choose.');
+    }
+    log.debug("Leaving Authn.roleChoiceOwed(). " + owed);
+    return owed;
   }
 
   // What this person may be offered at a sign-in to `application`, now:
@@ -21328,6 +21379,7 @@ export = {
   // sign-in screen draws its box.
   rolesAct: slot.forward('rolesAct'),
   roleBoxOffered: slot.forward('roleBoxOffered'),
+  roleChoiceOwed: slot.forward('roleChoiceOwed'),
   screenProblem: slot.forward('screenProblem'),
   screenAct: slot.forward('screenAct'),
   // Whether a sign-in must be a passkey with no username (#608).

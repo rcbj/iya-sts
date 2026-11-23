@@ -3429,7 +3429,13 @@ class Saml2Sso {
                         !readNow.multiFactor);
     const eapUnmet = !!(session && !PhishingResistance.eapDemandMet(
       session, request.requestedAuthnContexts));
-    const stale = mfaUnmet || eapUnmet;
+    // A REQUIRED DYNAMIC ROLE THE SESSION CHOSE NOTHING FOR (#1072): single
+    // sign-on carries no new choice, so the person signs in again, where the
+    // role step is drawn — once, as a ForceAuthn is (`returned` below).
+    const roleOwed = !!session &&
+      typeof this.deps.authn.roleChoiceOwed === 'function' &&
+      this.deps.authn.roleChoiceOwed(session, spEntityId);
+    const stale = mfaUnmet || eapUnmet || roleOwed;
     // ---------------------------------------------------------------------
     // ONE TRIP TO THE SIGN-IN SCREEN PER REQUEST, AND NEVER A SECOND
     // (2026-09-14).
@@ -4038,7 +4044,11 @@ class Saml2Sso {
     // service provider. STRIPPED from the return address, so the return
     // lands here with the new sign-in and goes on rather than forcing again.
     const forced = String(params.forceAuthn || '').toLowerCase() === 'true';
-    if (!session || forced) {
+    // And a required dynamic role the session chose nothing for (#1072).
+    const roleOwed = !!session && !forced &&
+      typeof this.deps.authn.roleChoiceOwed === 'function' &&
+      this.deps.authn.roleChoiceOwed(session, spEntityId);
+    if (!session || forced || roleOwed) {
       const kept = new URLSearchParams(this.rawQueryOf(req));
       kept.delete('forceAuthn');
       const query = kept.toString();

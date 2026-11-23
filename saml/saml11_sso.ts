@@ -2185,7 +2185,13 @@ class Saml11Sso {
     // carries the held `fid`, and goes on with the new sign-in.
     const forced = !held && String((req.query || {}).forceAuthn || '')
       .toLowerCase() === 'true';
-    if (!session || forced) {
+    // And a required dynamic role the session chose nothing for (#1072):
+    // single sign-on carries no new choice, so the person signs in again,
+    // where the role step is drawn. Not on the held return.
+    const roleOwed = !held && !!session && !forced &&
+      typeof authn.roleChoiceOwed === 'function' &&
+      authn.roleChoiceOwed(session, rpId);
+    if (!session || forced || roleOwed) {
       // Hold the parameters and go to authn.js's screen. The return address is
       // a GET on this endpoint carrying the held id, so coming back runs this
       // function again from the top with a session in place.

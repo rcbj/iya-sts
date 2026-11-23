@@ -4716,8 +4716,14 @@ function resolvedRoleClaims(context) {
   const username = String(ctx.username || ctx.subject || '');
   try {
     const forApplications = claimApplicationsOf(ctx);
-    // The session (#1072): its chosen dynamic roles, for the client the
-    // token is issued to as well as the applications it is for.
+    // THE SESSION'S CHOSEN DYNAMIC ROLES (#1072) ARE FOR THE APPLICATION THE
+    // SIGN-IN WAS FOR, and only for it (rcbj's decision 4): the client an
+    // OAuth token is issued to — never the resource an access token is FOR,
+    // whose own sign-in may have chosen otherwise — and, with no client,
+    // the application the caller resolved or the service provider or
+    // relying party the assertion is for, which is where a SAML or
+    // WS-Federation sign-in signed in to. `role_permissions.ts`'s
+    // narrowScope() asks the same question the same way.
     let client = null;
     try {
       client = ctx.client_id ? applications.forClientId(String(ctx.client_id))
@@ -4726,10 +4732,9 @@ function resolvedRoleClaims(context) {
       log.debug("Caught in resolvedRoleClaims(): " + ((e && e.message) || e));
       client = null;
     }
-    const chosenFor = forApplications.concat(
-      client && client.identifier &&
-      forApplications.indexOf(String(client.identifier)) < 0
-        ? [String(client.identifier)] : []);
+    const chosenFor = ctx.client_id
+      ? [String((client && client.identifier) || ctx.client_id)]
+      : (ctx.application ? [String(ctx.application)] : forApplications);
     log.debug("Leaving resolvedRoleClaims().");
     return roles.claimFor(
       username
@@ -8035,6 +8040,23 @@ function sessionAuthenticatedOfJti(jti) {
   return !record || record.sessionAuthenticated !== false;
 }
 
+// AND WHICH GRANT IT WAS ISSUED BY, by the same jti (#1072): UserInfo reads
+// a session's chosen dynamic roles only for a token of a grant with a
+// browser in it. '' for a jti this register never saw, which reads as it
+// always did.
+/**
+ * Returns the grant a token was issued by.
+ *
+ * @param jti - the token's jti
+ * @returns the grant's label, or ''
+ */
+function grantOfJti(jti) {
+  log.debug("Entering grantOfJti().");
+  const record = jti ? tokens.get(jti) : null;
+  log.debug("Leaving grantOfJti().");
+  return (record && record.grant) || '';
+}
+
 // Revoke every token matching a predicate, and say how many. Used by the
 // console's "revoke every access token" and "revoke everything for this
 // subject" buttons, which exist because revoking one jti at a time is not how
@@ -8614,6 +8636,7 @@ module.exports = {
   holdingsOf: holdingsOf,
   sessionIdOfJti: sessionIdOfJti,
   sessionAuthenticatedOfJti: sessionAuthenticatedOfJti,
+  grantOfJti: grantOfJti,
   recordAssertion: recordAssertion,
   recordTicket: recordTicket,
   recordCredential: recordCredential,

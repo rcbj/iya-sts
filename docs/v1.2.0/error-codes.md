@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5970** of them, in **57** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5972** of them, in **57** subsystems.
 
 ## Where a code appears
 
@@ -91,7 +91,7 @@ is an ordinary outcome.
 * [PIV key attestation (`STS-PIV`)](#sts-piv) — 26
 * [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 28
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 252
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 254
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 117
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
@@ -5456,6 +5456,8 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0329` | A session was refused at a door that cannot draw the role step (federation, a wallet, SPNEGO, a certificate) because a required dynamic role was offered to the person (#1072). | — |
 | `STS-XACML-0330` | A sign-in held for the role step had no pending sign-in to draw the step on, so it was refused (#1072). | — |
 | `STS-XACML-0331` | A remote PEP's heartbeat was refused: a member its entry stores carries a value the service cannot hold (fuzz run #595) — a counter that is not a non-negative integer of at most 2^53 - 1, a text member that is not a string or carries a control character, or signals, settings or listeners that are not an object or null. Nothing of it is recorded; the refusal names the member. | none — 400 invalid_request on POST /xacml/pep/heartbeat |
+| `STS-XACML-0332` | A flow that cannot draw the role step — the password grant, a token exchange, the RFC 7523 or RFC 7522 grant, the device grant, CIBA, WS-Trust, a Kerberos ticket or an LDAP bind — was refused because the application (or the realm, where it names none) would require the person to choose a dynamic role (#1072, rcbj's decision 5). | access_denied at the token endpoint (RFC 6749 section 5.2); wst:RequestFailed; KDC_ERR_POLICY (RFC 4120 section 7.5.9); LDAP unwillingToPerform (RFC 4511 section 4.1.9) |
+| `STS-XACML-0333` | Single sign-on into an application that requires a dynamic role was not answered from the session, which chose none for it (a sign-in for another application, or at a door that names none): the person was sent to sign in again and choose, or, where the request forbids asking (prompt=none, IsPassive), it was refused (#1072). | interaction_required (OIDC Core section 3.1.2.6) with prompt=none; NoPassive with IsPassive |
 
 ## STS-XPEP
 
