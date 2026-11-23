@@ -25885,6 +25885,40 @@ const CODES = [
       'admitted everybody. A tuning with a trust source, or without the ' +
       'requirement, serves again.',
     spec: 'none — an error in the PEP\'s log; the listener serves nothing' },
+  { code: 'STS-XPEP-0138',
+    summary: 'A caller asked this edge PDP for one of the AuthZEN Search ' +
+      'APIs (POST /access/v1/search/subject, resource or action). Those ' +
+      'are answered by the service, which holds the directory and the ' +
+      'resource and action catalogues. This edge answers 501, before ' +
+      'admission and without reading the body, and does not advertise ' +
+      'the paths. The code is logged and not sent. A turned-off edge, or ' +
+      'one that has not pulled, answers that condition first ' +
+      '(STS-XPEP-0044, STS-XPEP-0043, STS-AUTHZEN-0013, ' +
+      'STS-AUTHZEN-0014). HEAD stays 404.',
+    spec: 'AuthZEN Authorization API 1.0 section 8; HTTP 501' },
+  { code: 'STS-XPEP-0139',
+    summary: 'A caller asked this edge PDP for the Access Request and ' +
+      'Approval Profile (POST /access/v1/access-requests, GET of its ' +
+      'schema or of a task, POST or DELETE of a task\'s cancel). The ' +
+      'service holds the approval store. This edge answers 501 with the ' +
+      'evaluation error object, not problem+json, before admission and ' +
+      'without reading the body, and does not advertise the paths. A ' +
+      'POST to the task path without /cancel stays 404. The code is ' +
+      'logged and not sent. context.approval on an evaluation is not ' +
+      'this refusal: it is recognized and not used (STS-AUTHZEN-0084).',
+    spec: 'AuthZEN Access Request and Approval Profile; HTTP 501' },
+  { code: 'STS-XPEP-0140',
+    summary: 'An access evaluation was one of the OAuth token-exchange ' +
+      'binding\'s tuples: a gate (resource type audience and an action ' +
+      'issue:<type>:<grant>), a context member the binding reads, or, ' +
+      'beside a gate in the same batch, a scope or any other ' +
+      'non-audience resource type. The service holds delegation and the ' +
+      'directory. This edge answers 501 for that item — the whole ' +
+      'response when the request was one evaluation, and context.error ' +
+      'on a batch item — and does not forward it. The code is logged ' +
+      'and not sent. A lone scope or detail, and an audience whose ' +
+      'action is not a gate, stay ordinary evaluations.',
+    spec: 'AuthZEN OAuth token-exchange binding; HTTP 501' },
   { code: 'STS-AUTHZEN-0001',
     summary: 'An AuthZEN access evaluation request was not a JSON object.',
     spec: 'HTTP 400, an error message' },

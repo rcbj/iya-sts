@@ -105,6 +105,11 @@ pub struct AuthzenSettings {
     pub max_evaluations: usize,
     pub max_body_bytes: usize,
     pub return_reasons: bool,
+    /// The realm's `authzen.obligationsProfile` (#1177, #1205). Absent on
+    /// an older service's catalogue means on, which is that setting's
+    /// default: an edge that handed obligations while the realm had turned
+    /// the profile off would be wider than the service.
+    pub obligations_profile: bool,
 }
 
 impl Default for AuthzenSettings {
@@ -116,6 +121,7 @@ impl Default for AuthzenSettings {
             max_evaluations: 64,
             max_body_bytes: 262_144,
             return_reasons: false,
+            obligations_profile: true,
         }
     }
 }
@@ -151,6 +157,9 @@ impl AuthzenSettings {
             return_reasons: said["returnReasons"]
                 .as_bool()
                 .unwrap_or(d.return_reasons),
+            obligations_profile: said["obligationsProfile"]
+                .as_bool()
+                .unwrap_or(d.obligations_profile),
         }
     }
 }
@@ -668,7 +677,8 @@ impl Sync {
                     "batchEnabled": c.settings.batch_enabled,
                     "maxEvaluations": c.settings.max_evaluations,
                     "maxBodyBytes": c.settings.max_body_bytes,
-                    "returnReasons": c.settings.return_reasons
+                    "returnReasons": c.settings.return_reasons,
+                    "obligationsProfile": c.settings.obligations_profile
                 },
                 "lastPullAt": c.last_pull_at,
                 "lastPullOk": c.last_pull_ok,

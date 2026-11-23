@@ -74,6 +74,10 @@ pub mod components {
         pub max_body_bytes: i64,
         #[serde(rename = "returnReasons")]
         pub return_reasons: bool,
+        /// The realm's authzen.obligationsProfile. Absent on an older catalogue
+        /// means on.
+        #[serde(rename = "obligationsProfile")]
+        pub obligations_profile: bool,
     }
 
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]

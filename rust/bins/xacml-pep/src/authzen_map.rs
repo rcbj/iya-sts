@@ -22,7 +22,11 @@
 //! ordinary `false`; an Indeterminate over a processing or syntax error, or
 //! a root policy this container would not load, is a FAULT — a 500, or a
 //! batch item's `context.error` — never a denial.
-//! `urn:sts:xacml:obligation:log` is the one obligation discharged.
+//! `urn:sts:xacml:obligation:log` is the one obligation discharged. An
+//! obligation of any other id is handed in `context.obligations` only when
+//! the PEP declared, in `context.supported_obligations`, every type the
+//! answer carries and the realm's obligations profile is on (#1177, #1205);
+//! otherwise a Permit that carries one stays `false`.
 //!
 //! **WHAT IS NOT BYTE-FOR-BYTE THE SERVICE'S**: the sentence a refusal
 //! carries when a STRING will not parse at the row's datatype quotes this
@@ -53,6 +57,48 @@ const MAX_VALUE: usize = 8192;
 /// The most values a bag may carry.
 const MAX_BAG: usize = 256;
 
+/// `urn:sts:xacml:authzen:obligation:<type>` names a registered type.
+const OBLIGATION_PREFIX: &str = "urn:sts:xacml:authzen:obligation:";
+
+/// The one obligation this PDP discharges itself, as an audit row. It is
+/// never handed.
+const DISCHARGED_OBLIGATION: &str = "urn:sts:xacml:obligation:log";
+
+/// The Obligations Profile's registered types, in the model's order, then
+/// `custom` (#1177). What the metadata advertises while the profile is on.
+pub const SUPPORTED_OBLIGATION_TYPES: [&str; 4] = [
+    "step-up",
+    "notification",
+    "session_termination",
+    "custom",
+];
+
+/// A registered type: the properties it may not be handed without, and
+/// those that collect every assignment of their name.
+struct ObligationRule {
+    name: &'static str,
+    required: &'static [&'static str],
+    arrays: &'static [&'static str],
+}
+
+const OBLIGATION_RULES: [ObligationRule; 3] = [
+    ObligationRule {
+        name: "step-up",
+        required: &["acr_value"],
+        arrays: &["amr_values"],
+    },
+    ObligationRule {
+        name: "notification",
+        required: &["to", "body"],
+        arrays: &["to"],
+    },
+    ObligationRule {
+        name: "session_termination",
+        required: &["subject"],
+        arrays: &[],
+    },
+];
+
 /// A request that cannot be evaluated.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Refusal {
@@ -70,6 +116,13 @@ pub struct Evaluation {
     pub resource_type: String,
     pub resource_id: String,
     pub application: String,
+    /// `context.supported_obligations` when the request carried it (#1177).
+    /// Not an attribute: the catalogue may not name it.
+    pub supported_obligations: Option<Vec<String>>,
+    /// `context.approval` was present and well-formed (#1180). The object
+    /// itself is not kept: this edge does not verify an approval, and an
+    /// unverified one is not written into the XACML request.
+    pub approval_present: bool,
     pub attributes: Vec<AuthzenAttribute>,
     pub supplied: Vec<String>,
 }
@@ -91,6 +144,11 @@ pub struct Outcome {
     pub undischargeable: Vec<String>,
     pub discharged: Vec<String>,
     pub advice: Vec<Value>,
+    /// Obligations handed to the PEP in `context.obligations` (#1177).
+    pub obligations: Vec<Value>,
+    /// Why a handed obligation could not be built. Any one of these means
+    /// nothing is handed and a Permit stays false (`STS-AUTHZEN-0041`).
+    pub obligation_problems: Vec<String>,
 }
 
 fn refused(code: &'static str, message: String) -> Refusal {
@@ -208,6 +266,23 @@ pub fn read(body: &Value, rows: &[Row]) -> Result<Evaluation, Refusal> {
             }
         }
     }
+    // THE OBLIGATIONS PROFILE'S DECLARATION (#1177), the model's field: an
+    // array of at most 32 type names, each a string of at most 64
+    // characters. The field's own sentence, not the generic one.
+    let supported_obligations = match context.get("supported_obligations") {
+        None => None,
+        Some(value) => Some(obligation_declaration(value)?),
+    };
+    // `context.approval` (#1180): its shape is the model's. Whether it is
+    // an approval is the service's, against the store this edge does not
+    // hold, so a well-formed one is noted and then not used.
+    let approval_present = match context.get("approval") {
+        None => false,
+        Some(value) => {
+            approval_shape(value)?;
+            true
+        }
+    };
     let mut supplied: Vec<String> = [
         "subject.type",
         "subject.id",
@@ -220,6 +295,12 @@ pub fn read(body: &Value, rows: &[Row]) -> Result<Evaluation, Refusal> {
     .collect();
     if !application.is_empty() {
         supplied.push("context.application".into());
+    }
+    if supported_obligations.is_some() {
+        supplied.push("context.supported_obligations".into());
+    }
+    if approval_present {
+        supplied.push("context.approval".into());
     }
     let mut attributes = Vec::new();
     let properties_of = |name: &str| -> Map<String, Value> {
@@ -274,9 +355,50 @@ pub fn read(body: &Value, rows: &[Row]) -> Result<Evaluation, Refusal> {
         resource_type: at(&resource, 0),
         resource_id: at(&resource, 1),
         application,
+        supported_obligations,
+        approval_present,
         attributes,
         supplied,
     })
+}
+
+/// `context.supported_obligations` as the model reads it (#1177).
+fn obligation_declaration(value: &Value) -> Result<Vec<String>, Refusal> {
+    let sentence = "context.supported_obligations must be an array of at \
+                    most 32 obligation type names.";
+    let Some(list) = value.as_array() else {
+        return Err(refused("STS-AUTHZEN-0003", sentence.into()));
+    };
+    if list.len() > 32 {
+        return Err(refused("STS-AUTHZEN-0003", sentence.into()));
+    }
+    let mut names = Vec::with_capacity(list.len());
+    for item in list {
+        match item.as_str() {
+            Some(text) if js_length(text) <= 64 => {
+                names.push(text.to_string())
+            }
+            _ => return Err(refused("STS-AUTHZEN-0003", sentence.into())),
+        }
+    }
+    Ok(names)
+}
+
+/// `context.approval` as the model reads it (#1180): an object whose `id`
+/// is a non-empty string of at most 1024 characters. Any other member is
+/// ignored. A failure uses the field's sentence, including a missing id.
+fn approval_shape(value: &Value) -> Result<(), Refusal> {
+    let sentence = "context.approval must be the approval object a \
+                    completed access request returned, with its id.";
+    let Some(object) = value.as_object() else {
+        return Err(refused("STS-AUTHZEN-0003", sentence.into()));
+    };
+    match object.get("id").and_then(Value::as_str) {
+        Some(text) if !text.is_empty() && js_length(text) <= MAX_TEXT => {
+            Ok(())
+        }
+        _ => Err(refused("STS-AUTHZEN-0003", sentence.into())),
+    }
 }
 
 /// Walks one object's members against the catalogue, mapping each declared
@@ -530,11 +652,14 @@ pub fn request(evaluation: &Evaluation, trusted: &Trusted) -> Request {
 
 /// Maps the engine's answer and its deny-biased enforcement to an AuthZEN
 /// decision, fail-closed. `root_fault` is a root policy this container
-/// would not load — the service's `STS-XACML-0012`.
+/// would not load — the service's `STS-XACML-0012`. `supported` is the
+/// PEP's `context.supported_obligations` while the realm's obligations
+/// profile is on, or `None` to hand nothing (#1177, #1205).
 pub fn outcome(
     answer: &Response,
     enforcement: &Enforcement,
     root_fault: bool,
+    supported: Option<&[String]>,
 ) -> Outcome {
     let fault = root_fault
         || (answer.decision == Decision::Indeterminate
@@ -542,7 +667,7 @@ pub fn outcome(
                 answer.status.code,
                 StatusCode::ProcessingError | StatusCode::SyntaxError
             ));
-    let why = if fault {
+    let mut why = if fault {
         let said = answer
             .status
             .message
@@ -567,15 +692,128 @@ pub fn outcome(
             json!({ "id": one.id, "attributes": attributes })
         })
         .collect();
+    let mut decision = !fault && enforcement.allowed;
+    let mut undischargeable = enforcement.undischargeable.clone();
+    let mut obligations = Vec::new();
+    let mut obligation_problems = Vec::new();
+    // Handed ONLY when the PEP declared every type. Without that, a PEP
+    // that never heard of the profile would read `decision: true` and
+    // grant. With it, a Permit whose obligations all converted is true:
+    // the PEP must carry them out. A denial's are handed beside false.
+    if !fault {
+        if let Some(supported) = supported {
+            let (handed, problems) = obligations_of(answer);
+            obligation_problems = problems;
+            let declared = !handed.is_empty()
+                && obligation_problems.is_empty()
+                && handed.iter().all(|one| {
+                    one.get("type").and_then(Value::as_str).is_some_and(|t| {
+                        supported.iter().any(|name| name == t)
+                    })
+                });
+            if declared {
+                obligations = handed;
+                undischargeable.clear();
+                if answer.decision == Decision::Permit {
+                    decision = true;
+                    why = "The PDP said Permit, with obligations the PEP \
+                           declared it carries out."
+                        .to_string();
+                }
+            }
+        }
+    }
     Outcome {
         fault,
-        decision: !fault && enforcement.allowed,
+        decision,
         xacml_decision: answer.decision.as_str().to_string(),
         why,
-        undischargeable: enforcement.undischargeable.clone(),
+        undischargeable,
         discharged: enforcement.discharged.clone(),
         advice,
+        obligations,
+        obligation_problems,
     }
+}
+
+/// The answer's obligations as the Obligations Profile's, or why one could
+/// not be built. The log obligation is skipped. A problem means the caller
+/// hands nothing.
+fn obligations_of(answer: &Response) -> (Vec<Value>, Vec<String>) {
+    let mut handed = Vec::new();
+    let mut problems = Vec::new();
+    for one in &answer.obligations {
+        if one.id == DISCHARGED_OBLIGATION {
+            continue;
+        }
+        let named = one.id.strip_prefix(OBLIGATION_PREFIX).unwrap_or("");
+        let rule = OBLIGATION_RULES.iter().find(|rule| rule.name == named);
+        let type_name = rule.map(|rule| rule.name).unwrap_or("custom");
+        let required = rule.map(|rule| rule.required).unwrap_or(&[]);
+        let arrays = rule.map(|rule| rule.arrays).unwrap_or(&[]);
+        let mut properties = Map::new();
+        if type_name == "custom" {
+            properties.insert(
+                "xacml_obligation".into(),
+                Value::String(one.id.clone()),
+            );
+        }
+        for assignment in &one.assignments {
+            let name = assignment
+                .attribute_id
+                .rsplit(':')
+                .next()
+                .unwrap_or("");
+            if name.is_empty() {
+                continue;
+            }
+            let value = Value::String(assignment.lexical.clone());
+            match properties.remove(name) {
+                None => {
+                    let stored = if arrays.contains(&name) {
+                        Value::Array(vec![value])
+                    } else {
+                        value
+                    };
+                    properties.insert(name.to_string(), stored);
+                }
+                Some(Value::Array(mut items)) => {
+                    items.push(value);
+                    properties.insert(name.to_string(), Value::Array(items));
+                }
+                Some(held) => {
+                    properties.insert(
+                        name.to_string(),
+                        Value::Array(vec![held, value]),
+                    );
+                }
+            }
+        }
+        let missing: Vec<&str> = required
+            .iter()
+            .copied()
+            .filter(|name| match properties.get(*name) {
+                None => true,
+                Some(Value::String(text)) => text.is_empty(),
+                Some(_) => false,
+            })
+            .collect();
+        if !missing.is_empty() {
+            problems.push(format!(
+                "{} is a {} obligation without {}",
+                one.id,
+                type_name,
+                missing.join(", ")
+            ));
+            continue;
+        }
+        handed.push(json!({
+            "id": format!("obligation-{}", handed.len() + 1),
+            "type": type_name,
+            "properties": properties
+        }));
+    }
+    (handed, problems)
 }
 
 /// The `context` a decision carries when `authzen.returnReasons` is on:
@@ -607,7 +845,7 @@ pub(crate) mod tests {
     use crate::enforce::Enforcer;
     use crate::options::Bias;
     use sts_xacml::model::{attribute, category};
-    use sts_xacml::request::{ResolvedObligation, Status};
+    use sts_xacml::request::{ResolvedAssignment, ResolvedObligation, Status};
 
     /// `xacml-pep/authzen_cases.json`, the table this file and
     /// `authzen/authzen_map.ts` are both held to.
@@ -794,6 +1032,7 @@ pub(crate) mod tests {
                 a,
                 &enforcer.enforce(a.decision, &a.obligations),
                 root_fault,
+                None,
             )
         };
         let ok = StatusCode::Ok;
@@ -838,6 +1077,119 @@ pub(crate) mod tests {
             1
         );
         assert!(why["reason_admin"]["en"].is_string());
+    }
+
+    fn assigned(id: &str, lexical: &str) -> ResolvedAssignment {
+        ResolvedAssignment {
+            attribute_id: id.to_string(),
+            category: None,
+            issuer: None,
+            type_uri: types::STRING.to_string(),
+            value: sts_xacml::value::Value::String(lexical.to_string()),
+            lexical: lexical.to_string(),
+        }
+    }
+
+    /// A declared obligation is handed and a Permit becomes true. The same
+    /// answer with no declaration, or a type the PEP did not name, or a
+    /// required property missing, stays false and hands nothing.
+    #[test]
+    fn hands_a_declared_obligation() {
+        let enforcer = Enforcer::new(Bias::DenyBiased);
+        let step_up = "urn:sts:xacml:authzen:obligation:step-up";
+        let mut permit = answer(Decision::Permit, StatusCode::Ok, &[step_up]);
+        permit.obligations[0].assignments = vec![
+            assigned("urn:sts:xacml:authzen:acr_value", "urn:acr:loa2"),
+            assigned("amr_values", "pwd"),
+            assigned("amr_values", "otp"),
+        ];
+        let enforced = enforcer.enforce(permit.decision, &permit.obligations);
+        let none = outcome(&permit, &enforced, false, None);
+        assert!(!none.decision && none.obligations.is_empty());
+        assert_eq!(none.undischargeable, [step_up]);
+        let declared = outcome(
+            &permit,
+            &enforced,
+            false,
+            Some(&["step-up".to_string()]),
+        );
+        assert!(declared.decision);
+        assert!(declared.undischargeable.is_empty());
+        assert!(declared.obligation_problems.is_empty());
+        assert_eq!(declared.obligations[0]["type"], "step-up");
+        assert_eq!(
+            declared.obligations[0]["properties"]["acr_value"],
+            "urn:acr:loa2"
+        );
+        assert_eq!(
+            declared.obligations[0]["properties"]["amr_values"],
+            json!(["pwd", "otp"])
+        );
+        let other = outcome(
+            &permit,
+            &enforced,
+            false,
+            Some(&["notification".to_string()]),
+        );
+        assert!(!other.decision && other.obligations.is_empty());
+        let bare = answer(Decision::Permit, StatusCode::Ok, &[step_up]);
+        let bare_enforced =
+            enforcer.enforce(bare.decision, &bare.obligations);
+        let broken = outcome(
+            &bare,
+            &bare_enforced,
+            false,
+            Some(&["step-up".to_string()]),
+        );
+        assert!(!broken.decision && broken.obligations.is_empty());
+        assert!(!broken.obligation_problems.is_empty());
+        let custom_id = "urn:example:obligation:notify";
+        let custom = answer(Decision::Permit, StatusCode::Ok, &[custom_id]);
+        let custom_enforced =
+            enforcer.enforce(custom.decision, &custom.obligations);
+        let handed = outcome(
+            &custom,
+            &custom_enforced,
+            false,
+            Some(&["custom".to_string()]),
+        );
+        assert!(handed.decision);
+        assert_eq!(
+            handed.obligations[0]["properties"]["xacml_obligation"],
+            custom_id
+        );
+        let mut deny = answer(Decision::Deny, StatusCode::Ok, &[step_up]);
+        deny.obligations[0].assignments =
+            vec![assigned("acr_value", "urn:acr:loa2")];
+        let deny_enforced =
+            enforcer.enforce(deny.decision, &deny.obligations);
+        let beside = outcome(
+            &deny,
+            &deny_enforced,
+            false,
+            Some(&["step-up".to_string()]),
+        );
+        assert!(!beside.decision);
+        assert_eq!(beside.obligations[0]["type"], "step-up");
+        let logged = answer(
+            Decision::Permit,
+            StatusCode::Ok,
+            &["urn:sts:xacml:obligation:log", step_up],
+        );
+        let mut with_log = logged;
+        with_log.obligations[1].assignments =
+            vec![assigned("acr_value", "urn:acr:loa2")];
+        let log_enforced =
+            enforcer.enforce(with_log.decision, &with_log.obligations);
+        let kept = outcome(
+            &with_log,
+            &log_enforced,
+            false,
+            Some(&["step-up".to_string()]),
+        );
+        assert!(kept.decision);
+        assert_eq!(kept.obligations.len(), 1);
+        assert_eq!(kept.obligations[0]["type"], "step-up");
     }
 
     #[test]
