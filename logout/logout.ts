@@ -235,6 +235,8 @@ import clusterSecrets = require('../cluster/cluster_secrets');
 // The origins this service answers on (a LIBRARY, rule 3), for the
 // signed-out document's Origin check: the list the CORS answer is built from.
 import cors = require('../common/cors');
+// A refusal as a catalog sentence (#2006): a leaf library.
+import Sentence = require('../common/sentence');
 
 /**
  * The path of the protocol-independent sign-out.
@@ -4238,22 +4240,20 @@ class Logout {
     return /json/i.test(accept) && !/text\/html/i.test(accept);
   }
 
-  // WHY A NAME IS REFUSED, in English (rcbj's decision on #539). THE REASON
-  // NAMES WHICH OF THE TWO CLOSED IT, because the fixes differ: a setting
-  // somebody can turn back on, or a mode in which it is not offered.
-  private refusedNameMessage(asked?) {
+  // WHY A NAME IS REFUSED, a catalog sentence since #2006 (English until
+  // then, rcbj's decision on #539): the page draws it in its language, and
+  // the JSON door's `error_description` is its English. THE REASON NAMES
+  // WHICH OF THE TWO CLOSED IT, because the fixes differ: a setting somebody
+  // can turn back on, or a mode in which it is not offered.
+  private refusedNameMessage(asked?): Sentence {
     const { log, mode } = this.deps;
     log.debug("Entering Logout.refusedNameMessage().");
     log.debug("Leaving Logout.refusedNameMessage().");
-    return (mode.opensTestControls()
-        ? 'logout.anyUser is off on this instance'
-        : 'This service is in product mode, where a sign-out cannot name ' +
-          'somebody else whatever logout.anyUser says') +
-      ', so /logout acts only on the session you are holding. It was asked ' +
-      'about "' +
-      asked + '". To sign another person out, use /admin/logout (the ' +
-      'console\'s Admin Write role) or POST /admin-api/logout (an access ' +
-      'token carrying admin:write).';
+    return mode.opensTestControls()
+      ? Sentence.say('refusals.logout.nameRefusedAnyUserOff',
+                     { asked: String(asked) })
+      : Sentence.say('refusals.logout.nameRefusedProduct',
+                     { asked: String(asked) });
   }
 
   // The JSON door's answer to a browser holding several accounts that named
@@ -4288,28 +4288,23 @@ class Logout {
 
   // WHY NOBODY CAN BE ACTED ON, in English: the GET's sentence and the
   // act's, as each always read.
-  private nobodyMessage(act?: boolean) {
+  // A catalog sentence since #2006; which of the two closed naming is a
+  // `select` in the message (`anyUser` or `product`), never an English
+  // fragment passed in.
+  private nobodyMessage(act?: boolean): Sentence {
     const { log, mode } = this.deps;
     log.debug("Entering Logout.nobodyMessage().");
-    const closed = (mode.opensTestControls() ? 'logout.anyUser is off' :
-                    'product mode');
+    const closed = mode.opensTestControls() ? 'anyUser' : 'product';
     log.debug("Leaving Logout.nobodyMessage().");
     if (act) {
       return this.anyUserAllowed()
-        ? 'There is nobody to sign out: this request carries no session ' +
-          'cookie and named no username. A POST is never redirected to ' +
-          'the sign-in screen — a 303 would make it a GET and the fields ' +
-          'would be gone.'
-        : 'There is nobody to sign out: this request carries no session ' +
-          'cookie, and naming somebody is closed (' + closed + ').';
+        ? Sentence.say('refusals.logout.nobodyToSignOutOpen')
+        : Sentence.say('refusals.logout.nobodyToSignOutClosed',
+                       { closed: closed });
     }
     return this.anyUserAllowed()
-      ? 'There is no session cookie on this request. Name ' +
-        'somebody with ?username=, or sign in at /authn/login ' +
-        'first.'
-      : 'There is no session cookie on this request, and naming ' +
-        'somebody is closed (' + closed + '), so there is nobody for this ' +
-        'endpoint to act on. Sign in at /authn/login first.';
+      ? Sentence.say('refusals.logout.noSessionOpen')
+      : Sentence.say('refusals.logout.noSessionClosed', { closed: closed });
   }
 
   // The issuer identifier a front-channel notification's `iss` carries. This
@@ -4509,11 +4504,13 @@ class Logout {
         return a.key === asked;
       })[0];
       if (!one) {
+        const chooseAgain =
+          Sentence.say('refusals.logout.accountNotSignedIn');
         log.debug("Leaving Logout.signOutAccountsAct(). Not here.");
         return { status: 409, code: 'STS-LOGOUT-0012', json: { ok: false,
           next: 'refused',
-          errors: ['That account is not signed in in this browser any ' +
-                   'more. Choose again.'],
+          errors: [String(chooseAgain)],
+          messages: Sentence.messagesOf([chooseAgain]),
           view: this.accountStep(req, true) } };
       }
       log.debug("Leaving Logout.signOutAccountsAct(). One account.");
@@ -4558,11 +4555,10 @@ class Logout {
   private accountsOff(): Loose {
     const { log } = this.deps;
     log.debug("Entering Logout.accountsOff().");
+    const off = Sentence.say('refusals.logout.accountsOff');
     log.debug("Leaving Logout.accountsOff().");
     return { status: 400, code: 'STS-LOGOUT-0013', json: { ok: false,
-      errors: ['This trust realm does not keep several signed-in accounts ' +
-               'per browser (authn.multipleAccounts is off), so there is no ' +
-               'account to choose.'] } };
+      errors: [String(off)], messages: Sentence.messagesOf([off]) } };
   }
 
   // Several people's results as the one result a page draws: every list
@@ -4594,7 +4590,8 @@ class Logout {
   // operation table — and this module the logic, as `authn.ts` is for the
   // sign-in screen's operations. Each answers `{ status, code, json }`, and
   // the door sends it. Facts, no words: the page draws them in the
-  // `logout` catalogs' words; refusals are English.
+  // `logout` catalogs' words; a refusal is English in `errors` with its
+  // `refusals.logout.*` message beside it in `messages` (#2006).
   // ---------------------------------------------------------------------------
   // Who may be named here, for the page's closing note.
   private namingOf() {
@@ -4610,15 +4607,18 @@ class Logout {
     const { log, mode } = this.deps;
     log.debug("Entering Logout.subjectRefusal().");
     if (subject.refused) {
+      const named = this.refusedNameMessage(subject.asked);
       log.debug("Leaving Logout.subjectRefusal(). A name.");
       return { status: 403, code: 'STS-LOGOUT-0001', json: { ok: false,
-        errors: [this.refusedNameMessage(subject.asked)],
+        errors: [String(named)], messages: Sentence.messagesOf([named]),
         view: { state: 'refused',
                 verifiesCredentials: !!mode.verifiesCredentials() } } };
     }
+    const nobody = this.nobodyMessage(act);
     log.debug("Leaving Logout.subjectRefusal(). Nobody.");
     return { status: 401, code: 'STS-LOGOUT-0002', json: { ok: false,
-      errors: [this.nobodyMessage(act)], view: { state: 'nobody' } } };
+      errors: [String(nobody)], messages: Sentence.messagesOf([nobody]),
+      view: { state: 'nobody' } } };
   }
 
   /**
@@ -4731,9 +4731,10 @@ class Logout {
                   note: 'ending your other sessions needs a recent ' +
                         'sign-in (account.recentAuthMinutes)' }]
     });
+    const again = Sentence.say('refusals.logout.signInAgain');
     log.debug("Leaving Logout.reauthenticationRefusal().");
     return { status: 403, code: 'STS-LOGOUT-0015', json: { ok: false,
-      errors: ['Sign in again, then come back to end your other sessions.'],
+      errors: [String(again)], messages: Sentence.messagesOf([again]),
       view: { state: 'reauthenticate', signIn: signIn } } };
   }
 

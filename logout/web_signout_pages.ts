@@ -22,7 +22,8 @@
 // (`/logout/signout.css`, `LOGOUT_CSS`). A family's label, protocol, prose
 // and rows, and the result's messages, are the MODEL's words — the same
 // strings `/admin/logout` and the JSON door answer with — and are drawn as
-// they come; refusals are English.
+// they come; a refusal is drawn in the page's language from the
+// `refusals` catalogs (#2006).
 //
 // It is also the renderers' bundle, `logout/signout.bundle.js` under the
 // global `StsSignout`, which `tests/web_surfaces.js` loads to draw a page
@@ -85,11 +86,30 @@ function isSessionFamily(family: Json): boolean {
  */
 class SignoutPages {
   /**
+   * A sentence this page writes, as HTML, in the page's language (#2006):
+   * the catalog message's own inline markup kept and its parameters
+   * escaped, and the English given (already HTML) where the catalogs lack
+   * it.
+   *
+   * @param t - the translator
+   * @param key - the `refusals` key, a literal
+   * @param params - its parameters
+   * @param english - the English, as HTML
+   * @returns the HTML
+   */
+  static refusalHtml(t: Json, key: string, params: Json,
+                     english: string): string {
+    return t && typeof t.has === 'function' && t.has(key)
+      ? t.html(key, params) : english;
+  }
+
+  /**
    * One family's details, for the Details tab: its label, the protocol and
    * specification, what a sign-out does to it, and each row's detail and,
    * where it cannot be ended, why. Read-only: the controls are on the
    * Sign out tab, in the one list. A family that could not be read is a
-   * failure, and stays English.
+   * failure, drawn in the page's language around the service's English
+   * (#2006).
    *
    * @param family - the family, as the view lists it
    * @param t - the translator
@@ -100,10 +120,15 @@ class SignoutPages {
       '<div class="spec">' + esc(family.protocol) + ' — ' +
       esc(family.spec) + '</div>' + kit.note(esc(family.what));
     if (family.failure) {
-      return head + '<div class="err">This could not be read: ' +
-        esc(family.failure) + '. Everything else on this page is ' +
-        'unaffected, and a global logout still tries this family again.' +
-        '</div>';
+      // In the page's language (#2006); the failure itself is the
+      // service's own English about what went wrong, drawn as sent.
+      const english = 'This could not be read: ' + esc(family.failure) +
+        '. Everything else on this page is unaffected, and a global logout ' +
+        'still tries this family again.';
+      return head + '<div class="err">' +
+        SignoutPages.refusalHtml(t, 'refusals.logout.familyUnreadable',
+                                 { failure: String(family.failure) },
+                                 english) + '</div>';
     }
     const rows = family.rows || [];
     if (!rows.length) {
@@ -353,8 +378,9 @@ class SignoutPages {
 
   /**
    * A page the view refuses: a name that may not be used, or nobody to act
-   * on. The refusal itself is over the page (the API's `errors`); this is
-   * the rest of it, in English as it always was. The way back is a
+   * on. The refusal itself is over the page (the API's `errors`, drawn
+   * with their `messages`); this is the rest of it, in the page's language
+   * since #2006. The way back is a
    * navigation (`data-sts-navigate`), so the server can send a browser with
    * no session to sign in first.
    *
@@ -367,13 +393,16 @@ class SignoutPages {
     if (view.state === 'refused') {
       return '<h1>' + t.html('logout.heading') + '</h1><p class="sub">' +
         (view.verifiesCredentials
-          ? 'Signing yourself out needs no role; signing somebody else ' +
-            'out is an act on their account and needs the operator\'s ' +
-            'door.'
-          : 'Sign in as that person at <code>/authn/login</code> — no ' +
-            'password is checked in development mode') +
-        ' <code>/admin/logout</code> is the operator\'s door and is behind ' +
-        'the console\'s two roles.</p>';
+          ? SignoutPages.refusalHtml(t, 'refusals.logout.refusedVerifies', {},
+              'Signing yourself out needs no role; signing somebody else ' +
+              'out is an act on their account and needs the operator\'s ' +
+              'door. <code>/admin/logout</code> is the operator\'s door and ' +
+              'is behind the console\'s two roles.')
+          : SignoutPages.refusalHtml(t, 'refusals.logout.refusedDevelopment',
+              {}, 'Sign in as that person at <code>/authn/login</code> — no ' +
+              'password is checked in development mode ' +
+              '<code>/admin/logout</code> is the operator\'s door and is ' +
+              'behind the console\'s two roles.')) + '</p>';
     }
     return '<h1>' + t.html('logout.heading') + '</h1><p class="sub"><a ' +
       'href="/logout" data-sts-navigate="1">' + t.html('logout.startAgain') +
@@ -384,7 +413,8 @@ class SignoutPages {
    * The page when ending another session needs a recent sign-in (#1577,
    * ASVS 5.0.0 7.5.2): what to do, in the `logout` catalogs' words, and the
    * way to do it — a navigation to the sign-in the API began, which comes
-   * back here. The refusal itself is over the page, in English.
+   * back here. The refusal itself is over the page, in the page's
+   * language (#2006).
    *
    * @param view - the view: `signIn`, the address to sign in again at
    * @param ctx - the render context
