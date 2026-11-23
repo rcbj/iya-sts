@@ -790,6 +790,7 @@ class WsTrust {
       : fault.code === 'STS-WSTRUST-0084' ? 'STS-WSTRUST-0084'
       : fault.code === 'STS-WSTRUST-0085' ? 'STS-WSTRUST-0085'
       : fault.code === 'STS-WSTRUST-0086' ? 'STS-WSTRUST-0086'
+      : fault.code === 'STS-WSTRUST-0087' ? 'STS-WSTRUST-0087'
       : 'STS-WSTRUST-0077';
     log.debug("Leaving WsTrust.encryptionFault().");
     return { status: 500, version: version, errorCode: code,
@@ -2298,6 +2299,9 @@ class WsTrust {
     for (let i = 0; i < order.length; i++) {
       const reading = this.messageSignature(order[i], connection, prepare);
       if (reading && reading.ok) {
+        // Which document the signature verified over (#2007's review):
+        // what it covers is resolved against that one (markSigned()).
+        reading.overOpened = order[i] === opened;
         log.debug("Leaving WsTrust.signedReading(). Reading " + i + ".");
         return reading;
       }
@@ -4319,7 +4323,7 @@ class WsTrust {
       options.connection.acceptedSignature = signed;
       // The recipient expression may select only what this signature
       // covers (WsEncryption.coveredBySignature()).
-      WsEncryption.markSigned(doc);
+      WsEncryption.markSigned(doc, !!signed.overOpened);
     }
     // WHAT WAS OPENED IS HELD TO THE SIGNED BODY TOO (#521's step 5, on
     // #1908's review), before any encryption setting is read. A signature

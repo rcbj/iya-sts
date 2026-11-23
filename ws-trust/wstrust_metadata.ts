@@ -191,6 +191,10 @@ type Flags = {
   signsResponses?: boolean;
   encryptsBeforeSigning?: boolean;
   encryptsSignature?: boolean;
+  // `wstrust.encryptResponse` itself (#2007's review): the signature is
+  // encrypted only while answers are, so sp:EncryptSignature needs it.
+  // Not `encryptsResponses`, which the tests read as the suite.
+  responseEncryptionOn?: boolean;
   // `wstrust.advertiseEndpointIdentity` (rcbj, 2026-11-19): whether each
   // port carries a WS-AddressingIdentity EndpointReference holding the
   // encryption certificate. Off by default: the element is Microsoft's,
@@ -386,7 +390,8 @@ class WsTrustMetadata {
       encryptsBeforeSigning:
         config.value('wstrust.responseProtectionOrder') ===
           'encrypt-then-sign',
-      encryptsSignature: config.value('wstrust.encryptSignature') === true
+      encryptsSignature: config.value('wstrust.encryptSignature') === true,
+      responseEncryptionOn: config.value('wstrust.encryptResponse') === true
     };
     log.debug("Leaving WsTrustMetadata.liveFlags().");
     return out;
@@ -842,8 +847,9 @@ class WsTrustMetadata {
       // why.
       (flags.signsResponses ? '<sp:IncludeTimestamp/>' +
         (flags.encryptsBeforeSigning ? '<sp:EncryptBeforeSigning/>' : '') +
-        (flags.encryptsSignature && !flags.encryptsBeforeSigning
-          ? '<sp:EncryptSignature/>' : '') : '') +
+        (flags.encryptsSignature && flags.responseEncryptionOn &&
+         !flags.encryptsBeforeSigning ? '<sp:EncryptSignature/>' : '')
+        : '') +
       '<sp:OnlySignEntireHeadersAndBody/>' +
       '</wsp:Policy></sp:AsymmetricBinding>';
     log.debug("Leaving WsTrustMetadata.asymmetricBinding().");

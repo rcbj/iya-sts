@@ -13376,6 +13376,13 @@ const CODES = [
       'failed. The token is not sent (#1917, #1918).',
     spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 ' +
       'section 11' },
+  { code: 'STS-WSTRUST-0087',
+    summary: 'A WS-Trust request\'s signing map (wstrustSignRequestElements) ' +
+      'selected more than 256 elements of it. Nothing is issued: the map ' +
+      'is held to a bound, because each selected element is a walk of ' +
+      'the request (#1917).',
+    spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
+      'section 12' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +

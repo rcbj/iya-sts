@@ -41,10 +41,23 @@ const HOLDER = 'iyaWsEncryptionHolder';
 // prefix is the service's and never the request's is argued there.
 const PREFIXES = WebWsProtection.PREFIXES;
 
-// The requests whose signature was accepted (handleRst()), for the
-// recipient expression: a certificate it selects must be one that signature
-// covers (recipientOf()).
-const SIGNED = new WeakSet();
+// WHAT THE ACCEPTED SIGNATURE COVERS, per request (handleRst() marks it,
+// markSigned()), for the recipient expression (recipientOf()) and for the
+// request signing map (`ws_integrity.ts`). Worked out ONCE per request.
+//
+// RESOLVED TO NODES BEFORE ANYTHING IS OPENED (#2007's review, the merger,
+// 2026-11-23). A signature verified over the message as it arrived
+// (encrypt-then-sign) references the CIPHERTEXT, whose ids are gone once
+// decryptOne() puts the plaintext in its place. Matching ids against the
+// opened document let an on-path party add an EncryptedHeader, encrypted
+// to the realm's certificate, that opened to a header carrying the id of a
+// referenced EncryptedData: unreferenced as it arrived, so the signature
+// still verified, and "signed" once opened. So a reading over the arrival
+// is a set of NODES, and a restored element is covered only where the
+// ciphertext it replaced (`_stsFrom`) was one of them. A reading over the
+// opened copy (sign-then-encrypt) is by id, against the same plaintext it
+// verified, where such an injection is a repeated id the reader refused.
+const SIGNED = new WeakMap();
 
 const NOT_AN_ELEMENT = {
   thumbprint: true, ski: true, 'issuer-serial': true,
@@ -138,17 +151,79 @@ export = class WsEncryption {
   }
 
   /**
-   * Records that a request's WS-Security signature was accepted, so a
-   * certificate the recipient expression selects may be one it covers.
+   * Records that a request's WS-Security signature was accepted, and what
+   * it covers, before the request is opened: a certificate the recipient
+   * expression selects, and an element of the request signing map, must
+   * be one it covers (coveredBySignature()).
    *
-   * @param doc - the request
+   * @param doc - the request, not yet opened
+   * @param overOpened - the signature verified over the opened copy
+   *   (sign-then-encrypt), so its ids are the plaintext's
    */
-  static markSigned(doc): void {
+  static markSigned(doc, overOpened?: boolean): void {
     log.debug("Entering WsEncryption.markSigned().");
-    if (doc) {
-      SIGNED.add(doc);
+    if (!doc) {
+      log.debug("Leaving WsEncryption.markSigned(). No request.");
+      return;
     }
-    log.debug("Leaving WsEncryption.markSigned().");
+    if (overOpened) {
+      // Read by id once the request is opened, on first use.
+      SIGNED.set(doc, { byId: true, ids: null, own: '' });
+      log.debug("Leaving WsEncryption.markSigned(). Over the opened copy.");
+      return;
+    }
+    const read = WsEncryption.signatureIds(doc);
+    const nodes = new Set();
+    let ownNode = null;
+    if (read) {
+      const all = doc.getElementsByTagNameNS('*', '*');
+      for (let i = 0; i < all.length; i++) {
+        const id = WsEncryption.idOf(all[i]);
+        if (id && read.ids.has(id)) {
+          nodes.add(all[i]);
+        }
+        if (id && read.own && id === read.own) {
+          ownNode = all[i];
+        }
+      }
+    }
+    SIGNED.set(doc, { byId: false, nodes: nodes, ownNode: ownNode });
+    log.debug("Leaving WsEncryption.markSigned(). " + nodes.size +
+              " node(s).");
+  }
+
+  // The ids the request's signature references, and its own token's.
+  private static signatureIds(doc): any {
+    log.debug("Entering WsEncryption.signatureIds().");
+    let reading: any = null;
+    try {
+      reading = stsCrypto.readWsSecuritySignature(
+        new XMLSerializer().serializeToString(doc));
+    } catch (e) {
+      log.debug("Caught in WsEncryption.signatureIds(): " +
+                ((e && e.message) || e));
+      // Unreadable is covering nothing.
+      reading = null;
+    }
+    if (!reading || !reading.ok) {
+      log.debug("Leaving WsEncryption.signatureIds(). No reading.");
+      return null;
+    }
+    const ids = new Set((reading.references || []).map(function (one) {
+      return String(one).replace(/^#/, '');
+    }));
+    const own = reading.keyReference && reading.keyReference.kind === 'token'
+      ? String(reading.keyReference.id || '').replace(/^#/, '') : '';
+    log.debug("Leaving WsEncryption.signatureIds(). " + ids.size);
+    return { ids: ids, own: own };
+  }
+
+  // Once per ancestor a coverage walk visits.
+  private static idOf(node): string {
+    return String((node.getAttributeNS &&
+                   node.getAttributeNS(PREFIXES.wsu, 'Id')) ||
+                  (node.getAttribute && (node.getAttribute('Id') ||
+                   node.getAttribute('ID'))) || '');
   }
 
   // Every element restored from ciphertext must be one the map selects, or
@@ -698,6 +773,9 @@ export = class WsEncryption {
       const imported = doc.importNode(kids[i], true);
       if (imported.nodeType === 1) {
         imported._stsRestored = true;
+        // What it replaced, for coverage by a signature over the arrival
+        // (markSigned()): the EncryptedHeader and the EncryptedData.
+        imported._stsFrom = target === node ? [node] : [target, node];
       }
       context.insertBefore(imported, target);
     }
@@ -966,34 +1044,30 @@ export = class WsEncryption {
   // party on the path could have put there.
   static coveredBySignature(doc, node): boolean {
     log.debug("Entering WsEncryption.coveredBySignature().");
-    if (!SIGNED.has(doc)) {
+    const covering = SIGNED.get(doc);
+    if (!covering) {
       log.debug("Leaving WsEncryption.coveredBySignature(). Unsigned.");
       return false;
     }
-    let reading: any = null;
-    try {
-      reading = stsCrypto.readWsSecuritySignature(
-        new XMLSerializer().serializeToString(doc));
-    } catch (e) {
-      log.debug("Caught in WsEncryption.coveredBySignature(): " +
-                ((e && e.message) || e));
-      // Unreadable is not covered.
-      reading = null;
+    if (covering.byId && !covering.ids) {
+      const read = WsEncryption.signatureIds(doc);
+      covering.ids = read ? read.ids : new Set();
+      covering.own = read ? read.own : '';
     }
-    if (!reading || !reading.ok) {
-      log.debug("Leaving WsEncryption.coveredBySignature(). No reading.");
-      return false;
-    }
-    const ids = (reading.references || []).map(function (one) {
-      return String(one).replace(/^#/, '');
-    });
-    const own = reading.keyReference && reading.keyReference.kind === 'token'
-      ? String(reading.keyReference.id || '').replace(/^#/, '') : '';
     let cur = node;
     while (cur && cur.nodeType === 1) {
-      const id = String(cur.getAttributeNS(PREFIXES.wsu, 'Id') ||
-                        cur.getAttribute('Id') || '');
-      if (id && (ids.indexOf(id) >= 0 || (cur === node && id === own))) {
+      if (covering.byId) {
+        const id = WsEncryption.idOf(cur);
+        if (id && (covering.ids.has(id) ||
+                   (cur === node && id === covering.own))) {
+          log.debug("Leaving WsEncryption.coveredBySignature(). Covered.");
+          return true;
+        }
+      } else if (covering.nodes.has(cur) ||
+                 (cur === node && cur === covering.ownNode) ||
+                 (cur._stsFrom && cur._stsFrom.some(function (one) {
+                   return covering.nodes.has(one);
+                 }))) {
         log.debug("Leaving WsEncryption.coveredBySignature(). Covered.");
         return true;
       }
@@ -1677,12 +1751,9 @@ export = class WsEncryption {
 
   private static inOrder(nodes): any[] {
     log.debug("Entering WsEncryption.inOrder().");
-    const unique = [];
-    nodes.forEach(function (node) {
-      if (unique.indexOf(node) < 0) {
-        unique.push(node);
-      }
-    });
+    // A Set, not indexOf(): a broad map selects many nodes (#2007's
+    // review).
+    const unique: any[] = Array.from(new Set(nodes));
     unique.sort(function (a, b) {
       if (a === b) {
         return 0;

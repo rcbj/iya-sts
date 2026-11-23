@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6019** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6020** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -66,7 +66,7 @@ is an ordinary outcome.
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 447
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 86
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 87
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
 * [Federation (`STS-FED`)](#sts-fed) — 228
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
@@ -2839,6 +2839,7 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0084` | A WS-Trust request for an application that requires a signed request (wstrustSignRequest, or wstrust.signRequest) carried no WS-Security message signature this service accepted. Nothing is issued (#1917). | SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 section 12 |
 | `STS-WSTRUST-0085` | A WS-Trust request did not match its application's wstrustSignRequestElements: an expression selected nothing, or selected an element the accepted signature does not reference. Nothing is issued (#1917). | SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 section 12 |
 | `STS-WSTRUST-0086` | A WS-Trust response could not be signed while response signing is on (wstrustSignResponse, or wstrust.signResponse): an expression of wstrustSignResponseElements matched nothing or selected the wsse:Security header itself, the realm's XML signing key has no certificate to reference, or the signature failed. The token is not sent (#1917, #1918). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0087` | A WS-Trust request's signing map (wstrustSignRequestElements) selected more than 256 elements of it. Nothing is issued: the map is held to a bound, because each selected element is a walk of the request (#1917). | SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 section 12 |
 
 ## STS-WSFED
 

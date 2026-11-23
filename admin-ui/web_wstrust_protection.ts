@@ -455,8 +455,13 @@ class WebWsTrustProtection {
       const expr = WebWsProtection.pathFor(
         WebWsTrustProtection.chainOf(element));
       expression.value = expr;
-      add.disabled = false;
+      add.disabled = !expr;
       WebSafeDom.text(added, '');
+      if (!expr) {
+        // A name the subset cannot quote (stepFor()).
+        say(matches, t.text(K + 'apostrophe'), true);
+        return;
+      }
       // THE MATCHES, by the browser's own XPath engine over the parsed
       // sample, with the service's prefixes and nothing else.
       const hit = [];
@@ -475,8 +480,8 @@ class WebWsTrustProtection {
         // A browser whose engine refuses the expression: the expression is
         // still the service's to judge, so the count says only that the
         // browser could not show it. The reason is the engine's.
-        say(matches, 'This browser could not evaluate the expression: ' +
-          String((e && e.message) || e), true);
+        say(matches, t.text(K + 'noEvaluate',
+          { why: String((e && e.message) || e) }), true);
         return;
       }
       const buttons = tree.querySelectorAll('button.wsp-el');
@@ -497,7 +502,7 @@ class WebWsTrustProtection {
       WebSafeDom.render(tree, '');
       const Parser = env.window && env.window.DOMParser;
       if (!Parser) {
-        say(status, 'This browser cannot parse XML.', true);
+        say(status, t.text(K + 'noParser'), true);
         return;
       }
       let xml = null;
@@ -507,8 +512,8 @@ class WebWsTrustProtection {
       } catch (e) {
         // A parser that throws rather than answering a parsererror
         // document: the same refusal, with its reason.
-        say(status, 'The sample is not well-formed XML: ' +
-          String((e && e.message) || e), true);
+        say(status, t.text(K + 'notXmlWhy',
+          { why: String((e && e.message) || e) }), true);
         return;
       }
       const root = xml && xml.documentElement;
@@ -516,7 +521,7 @@ class WebWsTrustProtection {
       // `parsererror`, in every browser's own namespace or none.
       if (!root || root.localName === 'parsererror' ||
           xml.getElementsByTagName('parsererror').length) {
-        say(status, 'The sample is not well-formed XML.', true);
+        say(status, t.text(K + 'notXml'), true);
         return;
       }
       const drawn = WebWsTrustProtection.treeOf(root);

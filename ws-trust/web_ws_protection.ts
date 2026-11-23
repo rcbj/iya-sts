@@ -176,9 +176,14 @@ class WebWsProtection {
    *
    * @param local - the local name
    * @param ns - the namespace, or '' for none
-   * @returns the step
+   * @returns the step, or '' for a name or namespace holding an
+   *   apostrophe: the subset's literals are single-quoted and XPath 1.0
+   *   has no escape, so no expression in it can name one (#2007's review)
    */
   static stepFor(local: string, ns: string): string {
+    if (String(local).indexOf("'") >= 0 || String(ns).indexOf("'") >= 0) {
+      return '';
+    }
     if (!ns) {
       return local;
     }
@@ -198,11 +203,19 @@ class WebWsProtection {
    * ancestor, from the document element down.
    *
    * @param chain - `{ local, ns }` from the document element to the element
-   * @returns the expression
+   * @returns the expression, or '' where a step cannot be written
    */
   static pathFor(chain: { local: string, ns: string }[]): string {
-    return chain.map(function (one) {
-      return '/' + WebWsProtection.stepFor(one.local, one.ns);
+    const steps = chain.map(function (one) {
+      return WebWsProtection.stepFor(one.local, one.ns);
+    });
+    if (steps.some(function (one) {
+      return !one;
+    })) {
+      return '';
+    }
+    return steps.map(function (one) {
+      return '/' + one;
     }).join('');
   }
 

@@ -56,6 +56,7 @@ const WSSE = 'http://docs.oasis-open.org/wss/2004/01/' +
 const WSU = 'http://docs.oasis-open.org/wss/2004/01/' +
   'oasis-200401-wss-wssecurity-utility-1.0.xsd';
 const WSA = 'http://www.w3.org/2005/08/addressing';
+const SOAP12_NS = 'http://www.w3.org/2003/05/soap-envelope';
 const X509V3 = 'http://docs.oasis-open.org/wss/2004/01/' +
   'oasis-200401-wss-x509-token-profile-1.0#X509v3';
 const BASE64 = 'http://docs.oasis-open.org/wss/2004/01/' +
@@ -471,6 +472,128 @@ async function childBody() {
   set('wstrustSignResponse', '');
 
   // -------------------------------------------------------------------------
+  // P. ENCRYPT-THEN-SIGN, AND THE HEADER INJECTED INSIDE CIPHERTEXT (#2007's
+  // review). The client encrypts wsa:Action as an EncryptedHeader and signs
+  // that, so the signature references ciphertext the service replaces with
+  // the header once open. That header is signed. A second EncryptedHeader,
+  // added by a party on the path, encrypted to the realm and referenced by
+  // nothing, opens to a wsa:ReplyTo carrying the signed EncryptedHeader's
+  // id: unreferenced as it arrived, so the signature still verifies, and it
+  // must not count as signed once open.
+  // -------------------------------------------------------------------------
+  const XENC_NS = 'http://www.w3.org/2001/04/xmlenc#';
+  const DS_NS = 'http://www.w3.org/2000/09/xmldsig#';
+  const WSSE11 = 'http://docs.oasis-open.org/wss/' +
+    'oasis-wss-wssecurity-secext-1.1.xsd';
+  const parseX = function (xml) {
+    log.debug("Entering parseX().");
+    log.debug("Leaving parseX().");
+    return new xmldom.DOMParser().parseFromString(String(xml), 'text/xml');
+  };
+  const serial = function (node) {
+    log.debug("Entering serial().");
+    log.debug("Leaving serial().");
+    return new xmldom.XMLSerializer().serializeToString(node);
+  };
+  // `plain` as an EncryptedHeader `ehId` holding an EncryptedData `edId` of
+  // type Element, encrypted to the realm's certificate, its EncryptedKey
+  // first in the security header (wstrust_message_signature.js J's shape).
+  const encryptedHeader = function (doc, plain, ehId, edId) {
+    log.debug("Entering encryptedHeader(). " + ehId);
+    const data = doc.importNode(parseX(stsCrypto.encryptElement(plain,
+      helpers.STS.xml.certPem, { bare: true, algorithm: 'aes256-gcm',
+                                  keyTransport: 'rsa-oaep' }))
+      .documentElement, true);
+    data.setAttribute('Type', XENC_NS + 'Element');
+    data.setAttribute('Id', edId);
+    const keyInfo = data.getElementsByTagNameNS(DS_NS, 'KeyInfo')[0];
+    const key = keyInfo.getElementsByTagNameNS(XENC_NS, 'EncryptedKey')[0];
+    keyInfo.removeChild(key);
+    key.setAttribute('Id', 'EK-' + edId);
+    const list = doc.createElementNS(XENC_NS, 'xenc:ReferenceList');
+    const listed = doc.createElementNS(XENC_NS, 'xenc:DataReference');
+    listed.setAttribute('URI', '#' + edId);
+    list.appendChild(listed);
+    key.appendChild(list);
+    const str = doc.createElementNS(WSSE, 'wsse:SecurityTokenReference');
+    const points = doc.createElementNS(WSSE, 'wsse:Reference');
+    points.setAttribute('URI', '#EK-' + edId);
+    str.appendChild(points);
+    keyInfo.appendChild(str);
+    const holder = doc.createElementNS(WSSE11, 'wsse11:EncryptedHeader');
+    holder.setAttributeNS(WSU, 'wsu:Id', ehId);
+    holder.appendChild(data);
+    const security = doc.getElementsByTagNameNS(WSSE, 'Security')[0];
+    security.insertBefore(key, security.firstChild);
+    log.debug("Leaving encryptedHeader().");
+    return holder;
+  };
+  // An RST whose wsa:Action is encrypted as EH-action, then signed over the
+  // Body, the Timestamp and EH-action.
+  const encryptThenSign = function () {
+    log.debug("Entering encryptThenSign().");
+    const doc = parseX(envelope(Object.assign({}, alice, { wsa: true })));
+    const action = doc.getElementsByTagNameNS(WSA, 'Action')[0];
+    action.parentNode.replaceChild(encryptedHeader(doc, serial(action),
+                                                   'EH-action', 'ED-action'),
+                                   action);
+    let signed = xmldsig.signWsSecurity(serial(doc), {
+      privateKeyPem: alice.keyPem, certPem: alice.certPem,
+      signTimestamp: true, signIds: ['EH-action'] });
+    signed = signed.replace(/<ds:KeyInfo>[\s\S]*?<\/ds:KeyInfo>/,
+      '<ds:KeyInfo><wsse:SecurityTokenReference><wsse:Reference ' +
+      'URI="#x509" ValueType="' + X509V3 + '"/>' +
+      '</wsse:SecurityTokenReference></ds:KeyInfo>');
+    log.debug("Leaving encryptThenSign().");
+    return signed;
+  };
+  set('wstrustAcceptEncryptedElements', 'true');
+  set('wstrustSignRequest', 'true');
+  set('wstrustSignRequestElements', WebWsProtection.expressions(
+    'wstrustSignRequestElements', 'header'));
+  r = await ask('product', encryptThenSign());
+  t.check(r.status === 200 && />wmialice</.test(String(r.body)),
+          'P1. product: an EncryptedHeader encrypted and then signed is a ' +
+          'signed header once open, so the Header preset passes', brief(r));
+  const injected = (function () {
+    log.debug("Entering injected().");
+    const doc = parseX(encryptThenSign());
+    const header = doc.getElementsByTagNameNS(SOAP12_NS, 'Header')[0];
+    header.appendChild(encryptedHeader(doc, '<wsa:ReplyTo xmlns:wsa="' + WSA +
+      '" xmlns:wsu="' + WSU + '" wsu:Id="EH-action"><wsa:Address>' +
+      'https://evil.example/</wsa:Address></wsa:ReplyTo>', 'EH-evil',
+                                       'ED-evil'));
+    log.debug("Leaving injected().");
+    return serial(doc);
+  })();
+  r = await ask('product', injected);
+  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0085' &&
+          /ReplyTo/.test(String(r.body)),
+          'P2. product: a header injected inside unreferenced ciphertext, ' +
+          'carrying the signed EncryptedHeader\'s id, is not signed once ' +
+          'open: STS-WSTRUST-0085', brief(r));
+  r = await ask('development', injected);
+  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0085',
+          'P2. development holds it the same way', brief(r));
+  const broad = [];
+  for (let i = 0; i < 300; i++) {
+    broad.push('<x:E' + i + ' xmlns:x="urn:x"/>');
+  }
+  set('wstrustSignRequestElements', ['//*']);
+  r = await ask('development', sign({ inner: broad.join('') }));
+  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0087',
+          'P3. a map selecting more than 256 elements is STS-WSTRUST-0087',
+          brief(r));
+  set('wstrustSignRequestElements', []);
+  set('wstrustSignRequest', 'yes please');
+  r = await ask('development', envelope({}));
+  t.check(r.status === 500 && r.errorCode === 'STS-WSTRUST-0084',
+          'P4. a wstrustSignRequest that is not TRUE or FALSE fails closed: ' +
+          'an unsigned request is STS-WSTRUST-0084', brief(r));
+  set('wstrustSignRequest', '');
+  set('wstrustAcceptEncryptedElements', '');
+
+  // -------------------------------------------------------------------------
   // N. THE PRESETS AND THE SUBSET
   // -------------------------------------------------------------------------
   const both = ['http://schemas.xmlsoap.org/soap/envelope/',
@@ -514,6 +637,11 @@ async function childBody() {
           values[0] === '//x',
           'N3. a preset is ticked exactly when its expressions are in the ' +
           'map, and taking it out keeps the rest', JSON.stringify(values));
+  t.check(WebWsProtection.pathFor([{ local: 'a', ns: "urn:x'y" }]) === '' &&
+          WebWsProtection.pathFor([{ local: 'a', ns: 'urn:x' }]) ===
+            "/*[local-name()='a' and namespace-uri()='urn:x']",
+          'N4. the builder writes no expression for a namespace holding an ' +
+          'apostrophe, which the subset cannot quote');
 
   // -------------------------------------------------------------------------
   // O. THE WSDL
@@ -523,8 +651,16 @@ async function childBody() {
   t.check(!/sp:IncludeTimestamp/.test(plain) &&
           !/Answers are signed/.test(plain),
           'O1. answers unsigned: no sp:IncludeTimestamp in the binding');
+  const unencrypted = WsTrustMetadata.document(BASE, BASE, Object.assign({},
+    flags, { signsResponses: true, encryptsSignature: true,
+             responseEncryptionOn: false }));
+  t.check(/<sp:IncludeTimestamp\/>/.test(unencrypted) &&
+          !/<sp:EncryptSignature\/>/.test(unencrypted),
+          'O2. answers signed and not encrypted: no sp:EncryptSignature, ' +
+          'whatever wstrust.encryptSignature says');
   const signing = WsTrustMetadata.document(BASE, BASE, Object.assign({},
-    flags, { signsResponses: true, encryptsSignature: true }));
+    flags, { signsResponses: true, encryptsSignature: true,
+             responseEncryptionOn: true }));
   t.check(/<sp:IncludeTimestamp\/>/.test(signing) &&
           /<sp:EncryptSignature\/>/.test(signing) &&
           !/<sp:EncryptBeforeSigning\/>/.test(signing) &&
@@ -534,7 +670,7 @@ async function childBody() {
           'in the binding, and ResponseProtection on every output');
   const after = WsTrustMetadata.document(BASE, BASE, Object.assign({},
     flags, { signsResponses: true, encryptsBeforeSigning: true,
-             encryptsSignature: true }));
+             encryptsSignature: true, responseEncryptionOn: true }));
   t.check(/<sp:EncryptBeforeSigning\/>/.test(after) &&
           !/<sp:EncryptSignature\/>/.test(after),
           'O3. encrypt-then-sign: sp:EncryptBeforeSigning, and no ' +

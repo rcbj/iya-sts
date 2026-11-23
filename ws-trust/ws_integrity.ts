@@ -31,6 +31,7 @@ import stsCrypto = require('../common/crypto');
 import applications = require('../common/applications');
 import config = require('../common/config');
 import DomainMap = require('../common/domain_map');
+import errorCodes = require('../common/error_codes');
 import xmldom = require('../common/xml_parser');
 import documentSettings = require('../saml/document_settings');
 import WsEncryption = require('./ws_encryption');
@@ -65,6 +66,11 @@ const TOKEN_ID = 'iya-bst';
 const SIGNATURE_ID = 'iya-sig';
 const PART_ID = 'iya-signed-';
 
+// THE MOST ELEMENTS ONE MAP MAY SELECT in one message (#2007's review): a
+// broad expression (`soap:Body//*`) on a large request is a walk per node,
+// and no signed part a client sends is near this many.
+const MOST_SELECTED = 256;
+
 /**
  * WS-Security message integrity for WS-Trust: a request held to what its
  * application requires signed, and a response signed.
@@ -84,7 +90,7 @@ export = class WsIntegrity {
   static holdRequest(doc, accepted: boolean): any {
     log.debug("Entering WsIntegrity.holdRequest().");
     const appId = WsEncryption.applicationId(doc);
-    if (!WsIntegrity.on(appId, 'wstrust.signRequest')) {
+    if (!WsIntegrity.requiresSignedRequest(appId)) {
       log.debug("Leaving WsIntegrity.holdRequest(). Not required.");
       return { ok: true };
     }
@@ -97,6 +103,7 @@ export = class WsIntegrity {
     const named = WsIntegrity.stringsOf(appId, 'signRequestElements');
     const paths = named.length ? named
       : WebWsProtection.expressions('wstrustSignRequestElements', 'body');
+    let selected = 0;
     for (let i = 0; i < paths.length; i++) {
       const found = WsEncryption.select(doc, paths[i]);
       if (!found.ok) {
@@ -107,6 +114,13 @@ export = class WsIntegrity {
         log.debug("Leaving WsIntegrity.holdRequest(). Nothing matched.");
         return WsEncryption.fail('STS-WSTRUST-0085', 'FailedCheck',
           'an expression of the request signing map matched nothing');
+      }
+      selected += found.nodes.length;
+      if (selected > MOST_SELECTED) {
+        log.debug("Leaving WsIntegrity.holdRequest(). Too many.");
+        return WsEncryption.fail('STS-WSTRUST-0087', 'FailedCheck',
+          'the request signing map selects more than ' + MOST_SELECTED +
+          ' elements');
       }
       for (let n = 0; n < found.nodes.length; n++) {
         if (!WsEncryption.coveredBySignature(doc, found.nodes[n])) {
@@ -262,6 +276,12 @@ export = class WsIntegrity {
         return WsEncryption.fail('STS-WSTRUST-0086', 'RequestFailed',
           'an expression of the response signing map matched nothing');
       }
+      if (out.length + found.nodes.length > MOST_SELECTED) {
+        log.debug("Leaving WsIntegrity.partIds(). Too many.");
+        return WsEncryption.fail('STS-WSTRUST-0086', 'RequestFailed',
+          'the response signing map selects more than ' + MOST_SELECTED +
+          ' elements');
+      }
       for (let k = 0; k < found.nodes.length; k++) {
         const node = found.nodes[k];
         if (node.localName === 'Security' &&
@@ -332,6 +352,31 @@ export = class WsIntegrity {
       security.appendChild(token);
     }
     log.debug("Leaving WsIntegrity.layOut().");
+  }
+
+  // WHETHER A REQUEST MUST BE SIGNED, FAILING CLOSED (#2007's review). An
+  // application's wstrustSignRequest that does not parse as a boolean is
+  // `applications.settingFor()`'s warning and the service-wide value, which
+  // for this switch would be a typo that turned the requirement off. A
+  // value is there, so the application asked for something: it is
+  // required.
+  private static requiresSignedRequest(appId): boolean {
+    log.debug("Entering WsIntegrity.requiresSignedRequest().");
+    const app: any = appId ? applications.get(appId) : null;
+    const raw = app && app.fields
+      ? [].concat(app.fields.wstrustSignRequest || [])[0] : undefined;
+    if (raw !== undefined && raw !== null && String(raw).trim() !== '' &&
+        !config.parseAs('wstrust.signRequest', raw).ok) {
+      log.warn(errorCodes.tag('STS-REG-0025') + 'wstrust: ' + appId +
+               ' carries wstrustSignRequest="' + String(raw) + '", which ' +
+               'is not TRUE or FALSE; its requests are held to the ' +
+               'requirement, as if it were TRUE.');
+      log.debug("Leaving WsIntegrity.requiresSignedRequest(). Unreadable.");
+      return true;
+    }
+    const out = WsIntegrity.on(appId, 'wstrust.signRequest');
+    log.debug("Leaving WsIntegrity.requiresSignedRequest(). " + out);
+    return out;
   }
 
   private static on(appId, key): boolean {
