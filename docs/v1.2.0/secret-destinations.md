@@ -47,12 +47,16 @@ with its own secrets (`keys.kekField` and the like).
 
 The **Add a destination** tab takes you to the form. **The identifier and the
 provider are required**, outlined in red and marked *required* as on
-`/admin/users/new`. The fields one provider needs say so in words — *required
-when provider is aws* beside the region, and likewise the endpoint (azure,
-vault), the directory (file) and the write credential (every provider but
-file) — without the red outline, since the create needs them only for that
-provider. Everything else is optional. A refused add keeps every box as you
-typed it except the credential, which is never drawn back.
+`/admin/users/new`. The fields one provider needs are marked the same way
+while that provider is selected, and not while another is: the region for
+AWS, the endpoint for Azure and Vault, the directory for a file, and the
+write credential for every provider but file. Changing the provider moves
+the outline, the asterisk, the word *required* and the note above the form.
+While a field is not required it says which providers need it. Everything
+else is optional. A refused add keeps every box as you typed it except the
+credential, which is never drawn back. The Edit fold on the list marks those
+same fields for the destination's provider and follows a provider change; a
+write credential already set stays optional, because an empty box keeps it.
 `GET /admin-api/secret-destinations/new` answers the same fields, each with
 `required` and, where it applies, `requiredWhen`.
 
