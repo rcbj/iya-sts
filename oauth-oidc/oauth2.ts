@@ -2855,6 +2855,8 @@ class OAuth2Server {
                                             useCase);
     log.debug("Leaving OAuth2Server.signPublishedDocument(). " + plan.alg +
               ".");
+    // certificate-header: none — the use case is the caller's `useCase`,
+    // turned into `plan.options.header` by publishedDocumentPlan().
     return stsCrypto.signJws(plan.payload, plan.key, plan.options);
   }
 
@@ -2887,6 +2889,8 @@ class OAuth2Server {
     }
     log.debug("Leaving OAuth2Server.signPublishedDocumentAsync(). " +
               plan.alg + ".");
+    // certificate-header: none — as in signPublishedDocument(): the header
+    // is publishedDocumentPlan()'s, from the caller's `useCase`.
     return stsCrypto.signJwsOffLoop(plan.payload, plan.key, plan.options);
   }
 

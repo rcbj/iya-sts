@@ -170,6 +170,21 @@ function scanSigners() {
         continue;
       }
       const statement = statementFrom(text, match.index);
+      // A METHOD DEFINITION is not a call either (2026-11-23): a class
+      // method's head — the name at the start of its line, after nothing but
+      // modifiers, a parameter list with no call in it, an optional return
+      // type and the body's brace. Until #1993 the two
+      // `signPublishedDocument` heads passed only because the first
+      // statement of their bodies happened to name `certificateHeaderFor`;
+      // when the body moved into `publishedDocumentPlan()` they were
+      // reported as calls. The signing calls inside them are still scanned.
+      const METHOD_MODIFIERS =
+        /^\s*(?:(?:private|public|protected|static|async)\s+)*$/;
+      const METHOD_HEAD = /^\w+\([^()]*\)\s*(?::[^{};=]*)?\{/;
+      if (METHOD_MODIFIERS.test(before) &&
+          METHOD_HEAD.test(text.slice(match.index))) {
+        continue;
+      }
       const above = lines.slice(Math.max(0, lineNo - 4), lineNo).join('\n');
       if (/certificate-header: none/.test(above)) {
         if (!/certificate-header: none\s*—\s*\S/.test(above)) {
