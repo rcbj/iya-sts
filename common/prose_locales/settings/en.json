@@ -2130,6 +2130,8 @@
   "authzen.accessRequestMaxPending|description": "The most access requests one realm holds pending; past it a submission is refused 503 until some are decided or expire.",
   "authzen.accessRequestMaxDenials|label": "Requestable denials a realm records",
   "authzen.accessRequestMaxDenials|description": "The most requestable denials one realm records by evaluation_id (#1204). Past it a new denial is not recorded, and is still requestable by its binding_token; the access request job removes a record a day after its window.",
+  "authzen.accessRequestDisplay|label": "Display hints on access requests",
+  "authzen.accessRequestDisplay|description": "The Access Request and Approval Profile's display hints (#1204): a requestable denial carries access_request.display and a Task Handle carries task.display, each a title and a description. The denial's are the advice's display-title and display-description, verbatim, or else the service's own words in the language Accept-Language asks for. They are hints for a person and never policy. Off, neither is sent.",
   "authzen.callbackAttempts|label": "Access request callback attempts",
   "authzen.callbackAttempts|description": "How many times a finished access request's callback is sent, the first included (#1202). A network error, a timeout or an HTTP 5xx is tried again after authzen.callbackBackoffS, by the authzen.access-requests job. An HTTP 4xx, or a URL the outbound policy refuses, is not tried again. An application's appAuthzenCallbackConfig may set another bound for one URL. 1 is one attempt.",
   "authzen.callbackBackoffS|label": "Access request callback backoff (seconds)",

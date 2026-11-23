@@ -969,7 +969,15 @@ header argues each. What a maintainer needs quickly:
   address their own entry; a failure to mail is `0138` and the revocation
   stands. An emergency approval, whose approver is the door rather than a
   person, stays on the console.
-* Not built: `form_url`, `display`, BULK, ACTOR, CATALOG.
+* **`display` (#1204)** is a hint for a person, behind
+  `authzen.accessRequestDisplay` (off by default). The denial's is the
+  advice's `display-title` and `display-description` verbatim, or the
+  catalog `authzenDisplay` in the evaluation's `Accept-Language`; a Task
+  Handle's is the same catalog for its status. `handleOf()` draws it only
+  when it is handed a language list, so a callback's handle (built for
+  nobody) carries none. It is never bound, echoed or read back, and it
+  names no approver, role, group or policy.
+* Not built: `form_url`, BULK, ACTOR, CATALOG.
   `tests/authzen_access_request.js` holds it in process and
   `tests/protocol/sts_authzen.js` section 9 over HTTP.
 

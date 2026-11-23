@@ -16371,6 +16371,19 @@ const SETTINGS = [
                  'recorded, and is still requestable by its ' +
                  'binding_token; the access request job removes a record ' +
                  'a day after its window.' },
+  { key: 'authzen.accessRequestDisplay', group: 'AuthZEN',
+    label: 'Display hints on access requests',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_DISPLAY', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'The Access Request and Approval Profile\'s display ' +
+                 'hints (#1204): a requestable denial carries ' +
+                 'access_request.display and a Task Handle carries ' +
+                 'task.display, each a title and a description. The ' +
+                 'denial\'s are the advice\'s display-title and ' +
+                 'display-description, verbatim, or else the service\'s ' +
+                 'own words in the language Accept-Language asks for. ' +
+                 'They are hints for a person and never policy. Off, ' +
+                 'neither is sent.' },
   { key: 'authzen.callbackAttempts', group: 'AuthZEN',
     label: 'Access request callback attempts',
     env: 'STS_AUTHZEN_CALLBACK_ATTEMPTS', type: 'int',

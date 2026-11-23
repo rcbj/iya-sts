@@ -926,6 +926,7 @@ assignments, each named `urn:sts:xacml:advice:access-request:<name>`, say:
 | `emergency` | `true`: emergency access is allowed (below) |
 | `context-member` | a `context` member that binds the request and the approval (repeatable); none means only subject, resource and action bind |
 | `template`, `reason` | echoed as `context.access_request.template` and `context.reason` |
+| `display-title`, `display-description` | the denial's `display`, sent as written while `authzen.accessRequestDisplay` is on (below) |
 
 An example in ALFA:
 
@@ -977,6 +978,35 @@ and `requested_access.emergency`. Emergency access requires the
 justification. An ordinary submission sends none of them, and the
 service does not check a submission against the schema. There is no
 hosted form, so a denial does not carry `form_url`.
+
+### Display hints
+
+With `authzen.accessRequestDisplay` on (it is off by default), a
+requestable denial carries `access_request.display` and every Task Handle
+carries `task.display`. Each is a `title` and a `description`, the two
+names the profile's own examples use:
+
+```json
+"display": {
+  "title": "Request access",
+  "description": "This access can be requested. An approver the policy names decides, and the application asks again afterwards."
+}
+```
+
+A denial's display is the advice's `display-title` and
+`display-description` when the policy gives them, sent exactly as written.
+Otherwise it is the service's own sentence. A Task Handle's display
+describes its status (`pending`, `approved`, `denied`, `expired`,
+`cancelled` or `failed`). The service's sentences are in the language the
+request's `Accept-Language` asks for, among English, French, Spanish,
+German, Swedish, Filipino, Simplified and Traditional Chinese, Arabic and
+Hindi, and English otherwise. A callback's Task Handle carries no display,
+since nobody asked for a language.
+
+The hints are for a person. They never name an approver, a role, a group
+or a policy. A PEP may ignore them (the profile, section 11.3), and must not
+read approval into them (11.4). The service never reads them back: they
+are not part of the binding, and a submission does not echo them.
 
 ### Submitting, polling and cancelling
 
@@ -1217,6 +1247,7 @@ live source; this table is a copy.
 | `authzen.accessRequestRetryAfterS` | `STS_AUTHZEN_ACCESS_REQUEST_RETRY_AFTER_S` | `30` | `Retry-After` on a pending task |
 | `authzen.accessRequestMaxPending` | `STS_AUTHZEN_ACCESS_REQUEST_MAX_PENDING` | `10000` | Pending requests a realm holds before a submission is refused 503 |
 | `authzen.accessRequestMaxDenials` | `STS_AUTHZEN_ACCESS_REQUEST_MAX_DENIALS` | `100000` | Requestable denials a realm records by `evaluation_id`; past it a new one is requestable by its `binding_token` only |
+| `authzen.accessRequestDisplay` | `STS_AUTHZEN_ACCESS_REQUEST_DISPLAY` | `false` | A requestable denial carries `access_request.display` and a Task Handle `task.display` (see *Display hints*) |
 | `authzen.callbackAttempts` | `STS_AUTHZEN_CALLBACK_ATTEMPTS` | `5` | How many times a finished access request's callback is sent, the first included. `1` is one attempt. An application's `appAuthzenCallbackConfig` may set another bound for one URL |
 | `authzen.callbackBackoffS` | `STS_AUTHZEN_CALLBACK_BACKOFF_S` | `60` | Seconds to wait after the first failed callback; each later wait doubles, up to a day. The job runs every 60 seconds, so a shorter wait is not offered. An application's `appAuthzenCallbackConfig` may set a longer wait for one URL |
 | `authzen.externalPdp` | `STS_AUTHZEN_EXTERNAL_PDP` | `false` | Ask an external PDP before issuing an OAuth access token for a token exchange (see *Asking an external PDP*) |
@@ -1248,11 +1279,11 @@ live source; this table is a copy.
 
 None of these is advertised in the metadata:
 
-* Of the Access Request and Approval Profile: a hosted form (`form_url`)
-  and `display`, and the BULK, ACTOR and CATALOG companions. A denial
-  carries `request_schema_url`, may be submitted by `evaluation_id` or
-  by `binding_token` (which also carries `binding_hash`), and an
-  approval may carry `state`.
+* Of the Access Request and Approval Profile: a hosted form (`form_url`),
+  and the BULK, ACTOR and CATALOG companions. A denial carries
+  `request_schema_url` and, when switched on, `display`. It may be
+  submitted by `evaluation_id` or by `binding_token` (which also carries
+  `binding_hash`), and an approval may carry `state`.
 * Of the Callback Notifications Profile: the `partial` event and
   deployment-level event subscriptions. Retrying a notification that failed
   with a network error or an HTTP 5xx is built; see

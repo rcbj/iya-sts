@@ -8523,6 +8523,14 @@
     "en": "698617c5a3485120",
     "text": "Die Höchstzahl anforderbarer Ablehnungen, die ein Realm nach evaluation_id speichert (#1204). Darüber hinaus wird eine neue Ablehnung nicht gespeichert und bleibt über ihr binding_token anforderbar; der Zugriffsanfrage-Job entfernt einen Eintrag einen Tag nach seinem Zeitfenster."
   },
+  "authzen.accessRequestDisplay|label": {
+    "en": "2e4d23a3bbd81b74",
+    "text": "Anzeigehinweise bei Zugriffsanfragen"
+  },
+  "authzen.accessRequestDisplay|description": {
+    "en": "b9fd6a2d08cb3736",
+    "text": "Die Anzeigehinweise des Access Request and Approval Profile (#1204): Eine anforderbare Ablehnung trägt access_request.display und ein Task Handle trägt task.display, jeweils mit Titel und Beschreibung. Die der Ablehnung sind display-title und display-description des Advice, wörtlich, sonst die eigenen Worte des Dienstes in der Sprache, die Accept-Language verlangt. Es sind Hinweise für einen Menschen und niemals Richtlinie. Aus: Keiner wird gesendet."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

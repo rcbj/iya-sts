@@ -8523,6 +8523,14 @@
     "en": "698617c5a3485120",
     "text": "一個領域依 evaluation_id 記錄的可申請拒絕的最大數量（#1204）。超過後，新的拒絕不會被記錄，但仍可憑其 binding_token 申請；存取請求作業會在記錄的時間窗口結束一天後將其刪除。"
   },
+  "authzen.accessRequestDisplay|label": {
+    "en": "2e4d23a3bbd81b74",
+    "text": "存取申請的顯示提示"
+  },
+  "authzen.accessRequestDisplay|description": {
+    "en": "b9fd6a2d08cb3736",
+    "text": "Access Request and Approval 設定檔的顯示提示（#1204）：可申請的拒絕帶有 access_request.display，Task Handle 帶有 task.display，各含一個標題和一段描述。拒絕的提示是 advice 的 display-title 和 display-description，原樣使用；否則是服務自己的措辭，使用 Accept-Language 所要求的語言。它們是給人看的提示，絕不是政策。關閉時兩者都不傳送。"
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

@@ -722,6 +722,42 @@ async function theAccessRequests() {
       "answered " + elsewhere.status + " " +
       String(elsewhere.text).slice(0, 300));
   });
+  // DISPLAY (#1204): off by default, so the denial above carried none; on,
+  // the denial and the Task Handle carry the service's own words in the
+  // language asked for.
+  check("by default a requestable denial carries no display", function () {
+    assert.ok(!ar.display, JSON.stringify(ar.display));
+  });
+  const shownOn = await postJson(api("/config/set"),
+    { key: "authzen.accessRequestDisplay", value: true });
+  assert.ok(shownOn.status === 200, "setting authzen.accessRequestDisplay " +
+            "answered " + shownOn.status + " " + shownOn.text);
+  let shown = null;
+  let shownTask = null;
+  try {
+    shown = await evaluate(asked, caller, { "Accept-Language": "fr" });
+    shownTask = await pep("GET", String(task.status_endpoint), caller,
+                          undefined, { "Accept-Language": "de" });
+  } finally {
+    await postJson(api("/config/reset"),
+                   { key: "authzen.accessRequestDisplay" });
+  }
+  const shownAr = ((shown.body || {}).context || {}).access_request || {};
+  check("with authzen.accessRequestDisplay on, the denial's display is in " +
+        "the language asked for", function () {
+    assert.ok(shown.status === 200 && shownAr.display &&
+              shownAr.display.title === "Demander l\u2019accès" &&
+              shownAr.display.description,
+      "answered " + shown.status + " " + String(shown.text).slice(0, 400));
+  });
+  check("and the Task Handle's display follows its status", function () {
+    const handle = (shownTask.body || {}).task || {};
+    assert.ok(shownTask.status === 200 && handle.status === "approved" &&
+              (handle.display || {}).title ===
+                "Zugriffsanfrage genehmigt",
+      "answered " + shownTask.status + " " +
+      String(shownTask.text).slice(0, 400));
+  });
   log.debug("Leaving theAccessRequests().");
 }
 

@@ -8523,6 +8523,14 @@
     "en": "698617c5a3485120",
     "text": "एक रेल्म evaluation_id के अनुसार अधिकतम कितनी अनुरोध-योग्य अस्वीकृतियाँ दर्ज करता है (#1204)। इसके बाद नई अस्वीकृति दर्ज नहीं होती, और वह अपने binding_token से अब भी अनुरोध-योग्य रहती है; एक्सेस अनुरोध जॉब किसी रिकॉर्ड को उसकी अवधि के एक दिन बाद हटा देता है।"
   },
+  "authzen.accessRequestDisplay|label": {
+    "en": "2e4d23a3bbd81b74",
+    "text": "एक्सेस अनुरोधों पर प्रदर्शन संकेत"
+  },
+  "authzen.accessRequestDisplay|description": {
+    "en": "b9fd6a2d08cb3736",
+    "text": "Access Request and Approval प्रोफ़ाइल के प्रदर्शन संकेत (#1204): अनुरोध-योग्य अस्वीकृति access_request.display और Task Handle task.display रखता है, प्रत्येक में एक शीर्षक और एक विवरण। अस्वीकृति के संकेत advice के display-title और display-description हैं, शब्दशः, अन्यथा सेवा के अपने शब्द उस भाषा में जो Accept-Language माँगता है। ये किसी व्यक्ति के लिए संकेत हैं, कभी नीति नहीं। बंद होने पर कोई भी नहीं भेजा जाता।"
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

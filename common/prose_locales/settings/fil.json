@@ -8523,6 +8523,14 @@
     "en": "698617c5a3485120",
     "text": "Ang pinakamaraming hinihiling na pagtanggi na itinatala ng isang realm ayon sa evaluation_id (#1204). Lampas dito, hindi naitatala ang bagong pagtanggi, at maaari pa rin itong hilingin gamit ang binding_token nito; inaalis ng job ng mga kahilingan sa access ang isang tala isang araw matapos ang window nito."
   },
+  "authzen.accessRequestDisplay|label": {
+    "en": "2e4d23a3bbd81b74",
+    "text": "Mga pahiwatig sa pagpapakita ng mga kahilingan sa access"
+  },
+  "authzen.accessRequestDisplay|description": {
+    "en": "b9fd6a2d08cb3736",
+    "text": "Ang mga pahiwatig sa pagpapakita ng Access Request and Approval Profile (#1204): ang isang pagtangging maaaring hilingin ay may access_request.display at ang isang Task Handle ay may task.display, bawat isa ay may pamagat at paglalarawan. Ang sa pagtanggi ay ang display-title at display-description ng advice, nang eksakto, o kung wala ay ang sariling salita ng serbisyo sa wikang hinihingi ng Accept-Language. Mga pahiwatig ito para sa isang tao at hindi kailanman patakaran. Kapag naka-off, walang ipinapadala."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

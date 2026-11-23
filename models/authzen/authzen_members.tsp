@@ -322,6 +322,24 @@ model TaskHandle {
 
   @member(#{ cite: "AuthZEN Access Request and Approval Profile, the task" })
   progress?: Record<unknown>;
+
+  /** Hints for a person (section 7.1, #1204), while
+   * `authzen.accessRequestDisplay` is on. */
+  @member(#{ cite: "AuthZEN Access Request and Approval Profile section 7.1" })
+  display?: Display;
+}
+
+/**
+ * The display hints (sections 5.1 and 7.1, #1204): the two names the
+ * profile's own examples use, and no others.
+ */
+@members(#{ id: "display", cite: "AuthZEN Access Request and Approval Profile section 5.1", members: "closed" })
+model Display {
+  @member(#{ cite: "AuthZEN Access Request and Approval Profile section 5.1" })
+  title?: string;
+
+  @member(#{ cite: "AuthZEN Access Request and Approval Profile section 5.1" })
+  description?: string;
 }
 
 /** What a registered callback is sent, once. */

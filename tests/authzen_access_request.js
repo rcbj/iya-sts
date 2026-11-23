@@ -70,6 +70,10 @@
 //      and their pending request cancelled, so a person made again under
 //      the name inherits neither; a task from before the subject index is
 //      noted by the sweep job's backfill.
+//   Y. DISPLAY (#1204): none by default; on, the denial's display is the
+//      service's own words in the asked language, or the advice's
+//      display-title and display-description verbatim, and a Task Handle's
+//      follows its status; a handle built for a callback carries none.
 //   O. OFF: authzen.accessRequests off answers 501, the schema too, and
 //      no denial is requestable.
 // ---------------------------------------------------------------------------
@@ -125,6 +129,18 @@ const POLICY = [
   '                    "' + ADVICE + ':approver-group" = "azapprovers"',
   '                    "' + ADVICE + ':max-approval-seconds" = "3600"',
   '                    "' + ADVICE + ':emergency" = "true"',
+  '                }',
+  '            }',
+  '        }',
+  '        rule displayedWrite {',
+  '            deny',
+  '            target clause act == "write"',
+  '            on deny {',
+  '                advice "' + ADVICE + '" {',
+  '                    "' + ADVICE + ':approver-group" = "azapprovers"',
+  '                    "' + ADVICE + ':display-title" = "Ask your manager"',
+  '                    "' + ADVICE + ':display-description" = ' +
+  '"Writing doc-1 needs your manager\'s approval."',
   '                }',
   '            }',
   '        }',
@@ -1607,6 +1623,77 @@ async function childBody() {
           'D3. a task the subject index never noted (one from before it) ' +
           'is noted by the sweep job, and ended by the delete',
           JSON.stringify({ backfilled: backfilled, remade: remade }));
+
+  // -------------------------------------------------------------------------
+  // Y. DISPLAY (#1204): off by default; on, the denial's hints are the
+  // advice's own words or the service's in the asked language, and the
+  // task's follow its status. A callback's handle carries none.
+  // -------------------------------------------------------------------------
+  r = await request(port, 'POST', EVAL, pepCred, evaluation());
+  const plainAr = ((r.json || {}).context || {}).access_request || {};
+  t.check(r.status === 200 && plainAr.binding_token && !plainAr.display,
+          'Y1. by default a requestable denial carries no display',
+          brief(r));
+  r = await request(port, 'POST', SUBMIT, pepCred,
+                    submission(r.json || { context: { access_request: {} } }));
+  const plainTask = (r.json || {}).task || {};
+  t.check((r.status === 202 || r.status === 201) && plainTask.id &&
+          !plainTask.display,
+          'Y2. and its Task Handle none', brief(r));
+  inRealm(function () {
+    config.setOverride('authzen.accessRequestDisplay', true);
+  });
+  r = await request(port, 'POST', EVAL, pepCred, evaluation());
+  const shownDenied = r.json || {};
+  const shown = ((shownDenied.context || {}).access_request || {}).display ||
+    {};
+  t.check(r.status === 200 && shown.title === 'Request access' &&
+          /can be requested/.test(String(shown.description || '')) &&
+          Object.keys(shown).sort().join(',') === 'description,title',
+          'Y3. on, the denial carries the service\'s own display in English',
+          brief(r));
+  r = await request(port, 'POST', EVAL, pepCred, evaluation(), {
+    'accept-language': 'fr-CA, en;q=0.5' });
+  const french = (((r.json || {}).context || {}).access_request || {})
+    .display || {};
+  t.check(r.status === 200 && french.title === 'Demander l\u2019accès',
+          'Y4. in the language Accept-Language asks for', brief(r));
+  r = await request(port, 'POST', EVAL, pepCred,
+                    evaluation({ action: { name: 'write' } }),
+                    { 'accept-language': 'fr' });
+  const advised = (((r.json || {}).context || {}).access_request || {})
+    .display || {};
+  t.check(r.status === 200 && advised.title === 'Ask your manager' &&
+          advised.description ===
+            'Writing doc-1 needs your manager\'s approval.',
+          'Y5. the advice\'s display-title and display-description are ' +
+          'sent verbatim, never translated', brief(r));
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(shownDenied),
+                    { 'accept-language': 'de' });
+  const shownTask = (r.json || {}).task || {};
+  t.check(r.status === 202 && shownTask.display &&
+          shownTask.display.title === 'Zugriffsanfrage gesendet' &&
+          !/azbob|azapprovers|azarq-root/.test(JSON.stringify(
+            shownTask.display)),
+          'Y6. a pending Task Handle\'s display is its status\'s, in the ' +
+          'caller\'s language, naming no approver, group or policy',
+          brief(r));
+  r = await request(port, 'POST', PREFIX + '/access/v1/access-requests/' +
+                    shownTask.id + '/cancel', pepCred, {});
+  const cancelledTask = (r.json || {}).task || {};
+  t.check(r.status === 200 && cancelledTask.status === 'cancelled' &&
+          (cancelledTask.display || {}).title === 'Access request cancelled',
+          'Y7. and follows the status once it finishes', brief(r));
+  const callbackHandle = inRealm(function () {
+    return requests.handleOf(requests.task(String(shownTask.id)));
+  });
+  t.check(callbackHandle && callbackHandle.id === shownTask.id &&
+          !callbackHandle.display,
+          'Y8. a handle built for nobody\'s language, as a callback\'s is, ' +
+          'carries no display', JSON.stringify(callbackHandle));
+  inRealm(function () {
+    config.clearOverride('authzen.accessRequestDisplay');
+  });
 
   // -------------------------------------------------------------------------
   // O. OFF

@@ -1,0 +1,6 @@
+{
+  "denialTitle": "Solicitar acceso",
+  "denialDescription": "Este acceso se puede solicitar. Decide un aprobador que nombra la política, y después la aplicación vuelve a preguntar.",
+  "taskTitle": "{status, select, pending {Solicitud de acceso enviada} approved {Solicitud de acceso aprobada} denied {Solicitud de acceso denegada} expired {Solicitud de acceso caducada} cancelled {Solicitud de acceso cancelada} failed {Solicitud de acceso fallida} other {Solicitud de acceso}}",
+  "taskDescription": "{status, select, pending {Se ha preguntado a los aprobadores. La aplicación vuelve a preguntar cuando uno de ellos decida.} approved {Un aprobador aprobó esta solicitud. La aplicación vuelve a preguntar presentando la aprobación.} denied {Un aprobador denegó esta solicitud.} expired {Nadie decidió esta solicitud antes de que caducara.} cancelled {Esta solicitud se canceló.} failed {Esta solicitud no se pudo completar. Vuelva a solicitarla.} other {Esta solicitud está {status}.}}"
+}

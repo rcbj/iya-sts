@@ -8523,6 +8523,14 @@
     "en": "698617c5a3485120",
     "text": "El número máximo de denegaciones solicitables que un dominio registra por evaluation_id (#1204). Por encima de él, una denegación nueva no se registra y sigue siendo solicitable por su binding_token; el trabajo de solicitudes de acceso elimina un registro un día después de su ventana."
   },
+  "authzen.accessRequestDisplay|label": {
+    "en": "2e4d23a3bbd81b74",
+    "text": "Indicaciones de presentación en las solicitudes de acceso"
+  },
+  "authzen.accessRequestDisplay|description": {
+    "en": "b9fd6a2d08cb3736",
+    "text": "Las indicaciones de presentación del perfil Access Request and Approval (#1204): una denegación solicitable lleva access_request.display y un Task Handle lleva task.display, cada uno con un título y una descripción. Los de la denegación son el display-title y el display-description del advice, literalmente, o si no las propias palabras del servicio en el idioma que pide Accept-Language. Son indicaciones para una persona y nunca política. Desactivado, no se envía ninguno."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

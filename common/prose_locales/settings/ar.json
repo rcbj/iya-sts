@@ -8523,6 +8523,14 @@
     "en": "698617c5a3485120",
     "text": "أقصى عدد من حالات الرفض القابلة للطلب التي يسجلها نطاق واحد حسب evaluation_id (#1204). بعده لا يُسجَّل رفض جديد، ويبقى قابلًا للطلب بواسطة binding_token الخاص به؛ وتحذف مهمة طلبات الوصول السجل بعد يوم من نافذته."
   },
+  "authzen.accessRequestDisplay|label": {
+    "en": "2e4d23a3bbd81b74",
+    "text": "تلميحات العرض في طلبات الوصول"
+  },
+  "authzen.accessRequestDisplay|description": {
+    "en": "b9fd6a2d08cb3736",
+    "text": "تلميحات العرض في ملف Access Request and Approval (#1204): يحمل الرفض القابل للطلب access_request.display ويحمل Task Handle الحقل task.display، ولكل منهما عنوان ووصف. تلميحات الرفض هي display-title وdisplay-description من الـ advice حرفيًا، وإلا فهي كلمات الخدمة نفسها باللغة التي يطلبها Accept-Language. إنها تلميحات لشخص وليست سياسة أبدًا. عند الإيقاف لا يُرسل أي منهما."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

@@ -8523,6 +8523,14 @@
     "en": "698617c5a3485120",
     "text": "Det högsta antalet begärbara avslag som en sfär registrerar per evaluation_id (#1204). Därutöver registreras inte ett nytt avslag, och det kan fortfarande begäras med sitt binding_token; jobbet för åtkomstbegäranden tar bort en post en dag efter dess fönster."
   },
+  "authzen.accessRequestDisplay|label": {
+    "en": "2e4d23a3bbd81b74",
+    "text": "Visningstips för åtkomstbegäranden"
+  },
+  "authzen.accessRequestDisplay|description": {
+    "en": "b9fd6a2d08cb3736",
+    "text": "Access Request and Approval-profilens visningstips (#1204): ett begärbart avslag bär access_request.display och ett Task Handle bär task.display, var och en med en titel och en beskrivning. Avslagets är advicens display-title och display-description, ordagrant, annars tjänstens egna ord på det språk som Accept-Language ber om. De är tips för en människa och aldrig policy. Av: inget av dem skickas."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

@@ -100,8 +100,8 @@
     "text": "partial：存取評估 API（第 6 節），由 XACML 引擎依據領域根原則、透過每個領域的屬性目錄作出決定，支援 X-Request-ID 與第 11.3 節的挑戰；存取批次評估 API（第 7 節）及其三種語意；PDP 中繼資料（第 9 節）的兩種形式，包括 signed_metadata；供宣告類型之 PEP 使用的 Obligations Profile 草案；以及針對本服務自有的人員、應用程式、API、委派關係與原則動作的三個搜尋 API（第 8 節），分頁且不具傳遞性。尚缺：搜尋中逐結果的 obligations，以及仍為草案的 OAuth 設定檔。"
   },
   "stsmetadata.specs.authzen-arap.coverage": {
-    "en": "6be544a62f94329b",
-    "text": "partial：可申請的拒絕（context.access_request、evaluation_id、evaluated_at、reason），即領域政策以 access-request 建議標記的 Deny，透過本領域簽署的 binding_token 依值綁定（內嵌宣告與 binding_hash），並透過拒絕記錄依參照綁定；帶 Idempotency-Key 的提交、201 或 202 及 Task Handle；帶 Retry-After 的任務狀態端點；以 POST 或 DELETE 取消；六種狀態；reevaluate 完成模式、在受信任狀態中解析的 approval.id、簽發並驗證的 approval.state（仍須查找），以及以受信任事實送達政策的核准；next_action 與五種原因；每種問題類型；中繼資料成員、jwks_uri 與能力；可申請拒絕上的 request_schema_url，即同源的提交選用補充內容的 JSON Schema。缺少：託管表單（form_url）與 display，以及 BULK、ACTOR 與 CATALOG 配套規範。"
+    "en": "9813738c58fb614e",
+    "text": "partial：可申請的拒絕（context.access_request、evaluation_id、evaluated_at、reason），即領域政策以 access-request 建議標記的 Deny，透過本領域簽署的 binding_token 依值綁定（內嵌宣告與 binding_hash），並透過拒絕記錄依參照綁定；帶 Idempotency-Key 的提交、201 或 202 及 Task Handle；帶 Retry-After 的任務狀態端點；以 POST 或 DELETE 取消；六種狀態；reevaluate 完成模式、在受信任狀態中解析的 approval.id、簽發並驗證的 approval.state（仍須查找），以及以受信任事實送達政策的核准；next_action 與五種原因；每種問題類型；中繼資料成員、jwks_uri 與能力；可申請拒絕上的 request_schema_url，即同源的提交選用補充內容的 JSON Schema；在 authzen.accessRequestDisplay 開啟時，可申請拒絕與 Task Handle 上的 display，使用 advice 自己的措辭或服務以所請求語言給出的措辭。缺少：託管表單（form_url），以及 BULK、ACTOR 與 CATALOG 配套規範。"
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
     "en": "ca5109eae0e95b17",

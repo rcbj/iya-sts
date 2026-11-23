@@ -106,7 +106,8 @@
 // `requested_access.emergency`, and that emergency requires the
 // justification. None of them is required on an ordinary submission,
 // and the schema is not a second validator. This service hosts no
-// form, so `form_url` is never issued. `display` is still not built.
+// form, so `form_url` is never issued. `display` (#1204) is a hint for a
+// person, never bound or read back: see THE DISPLAY HINTS below.
 //
 // THE TASK is a row of the per-realm store `authzen.accessRequests`:
 // `pending`, then exactly once one of `approved`, `denied`, `expired`,
@@ -271,6 +272,11 @@ interface Terms {
   contextMembers: string[];
   template: string;
   reason: string;
+  // The advice's own display text (#1204), sent verbatim while
+  // `authzen.accessRequestDisplay` is on. Present only when the advice
+  // gives it, so a binding_token's terms are unchanged otherwise.
+  displayTitle?: string;
+  displayDescription?: string;
 }
 
 // An approver, as the two doors name one.
@@ -313,6 +319,7 @@ interface AccessRequestDeps {
   loadFedHttp(): any;
   loadScheduler(): any;
   loadAccessPep(): any;
+  loadI18n(): any;
 }
 
 /**
@@ -397,7 +404,9 @@ class AccessRequests {
       loadMailUses: lazy('loadMailUses', '../common/mail_uses'),
       loadFedHttp: lazy('loadFedHttp', '../federation/federation_http'),
       loadScheduler: lazy('loadScheduler', '../cluster/scheduler'),
-      loadAccessPep: lazy('loadAccessPep', '../xacml/xacml_access_pep')
+      loadAccessPep: lazy('loadAccessPep', '../xacml/xacml_access_pep'),
+      // The catalogs `display` is drawn from (#1204). A leaf.
+      loadI18n: lazy('loadI18n', '../common/i18n')
     };
   }
 
@@ -414,6 +423,137 @@ class AccessRequests {
     log.debug("Entering AccessRequests.enabled().");
     log.debug("Leaving AccessRequests.enabled().");
     return config.value('authzen.accessRequests') !== false;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE DISPLAY HINTS (#1204; the profile's sections 5.1, 7.1 and 11.11).
+  // Hints for a person, never policy (13.4): nothing reads them back, they
+  // are not bound and a submission never echoes them. They name no
+  // approver, role, group, policy or tuple (19, and 13.3.3).
+  // -------------------------------------------------------------------------
+  /**
+   * Whether the display hints are sent (`authzen.accessRequestDisplay`).
+   *
+   * @returns true when on
+   */
+  displays(): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering AccessRequests.displays().");
+    log.debug("Leaving AccessRequests.displays().");
+    return config.value('authzen.accessRequestDisplay') === true;
+  }
+
+  /**
+   * The languages a request's `Accept-Language` asks for, best first.
+   *
+   * @param req - the request, or nothing
+   * @returns canonical tags
+   */
+  languagesOf(req: Req | null | undefined): string[] {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.languagesOf().");
+    const header = req && req.headers
+      ? req.headers['accept-language'] : '';
+    if (!header) {
+      log.debug("Leaving AccessRequests.languagesOf(). None asked.");
+      return [];
+    }
+    let out: string[] = [];
+    try {
+      out = this.deps.loadI18n().acceptLanguage(String(header));
+    } catch (e) {
+      // A header that cannot be read asks for nothing: English.
+      log.debug("Caught in AccessRequests.languagesOf(): " +
+                ((e && e.message) || e));
+      out = [];
+    }
+    log.debug("Leaving AccessRequests.languagesOf(). " + out.join(' '));
+    return out;
+  }
+
+  /**
+   * A translator for those languages, English when nothing answers.
+   *
+   * @param languages - canonical tags, best first
+   * @returns the translator, or null when none can be built
+   */
+  private translatorFor(languages: string[]): Json {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.translatorFor().");
+    let out: Json = null;
+    try {
+      out = this.deps.loadI18n().translator(languages || []);
+    } catch (e) {
+      // No catalog: no display. The hints are optional (5.1, 7.1).
+      log.debug("Caught in AccessRequests.translatorFor(): " +
+                ((e && e.message) || e));
+      out = null;
+    }
+    log.debug("Leaving AccessRequests.translatorFor(). " + !!out);
+    return out;
+  }
+
+  /**
+   * A requestable denial's `display`: the advice's own text when it gave
+   * any, else the service's, in the asked language.
+   *
+   * @param terms - the advice's terms
+   * @param languages - the evaluation request's languages
+   * @returns `{ title, description }`, or null when off
+   */
+  denialDisplay(terms: Terms, languages: string[]): Json | null {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.denialDisplay().");
+    if (!self.displays()) {
+      log.debug("Leaving AccessRequests.denialDisplay(). Off.");
+      return null;
+    }
+    const t = (terms.displayTitle && terms.displayDescription)
+      ? null : self.translatorFor(languages);
+    const title = terms.displayTitle ||
+      (t ? String(t.text('authzenDisplay.denialTitle')) : '');
+    const description = terms.displayDescription ||
+      (t ? String(t.text('authzenDisplay.denialDescription')) : '');
+    const out: Json = {};
+    if (title) {
+      out.title = title;
+    }
+    if (description) {
+      out.description = description;
+    }
+    log.debug("Leaving AccessRequests.denialDisplay().");
+    return Object.keys(out).length ? out : null;
+  }
+
+  /**
+   * A Task Handle's `display`, for its status, in the asked language.
+   *
+   * @param status - the task's status
+   * @param languages - the caller's languages
+   * @returns `{ title, description }`, or null when off
+   */
+  taskDisplay(status: string, languages: string[]): Json | null {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.taskDisplay(). " + status);
+    if (!self.displays() || STATES.indexOf(status) < 0) {
+      log.debug("Leaving AccessRequests.taskDisplay(). Off.");
+      return null;
+    }
+    const t = self.translatorFor(languages);
+    if (!t) {
+      log.debug("Leaving AccessRequests.taskDisplay(). No catalog.");
+      return null;
+    }
+    const out = {
+      title: String(t.text('authzenDisplay.taskTitle',
+                           { status: status })),
+      description: String(t.text('authzenDisplay.taskDescription',
+                                 { status: status }))
+    };
+    log.debug("Leaving AccessRequests.taskDisplay().");
+    return out;
   }
 
   // An integer setting, read directly (never `|| n`, the root CLAUDE.md's
@@ -639,6 +779,13 @@ class AccessRequests {
           out.template = out.template || text.slice(0, 128);
         } else if (name === 'reason') {
           out.reason = out.reason || text.slice(0, 128);
+        } else if (name === 'display-title') {
+          // The policy author's words (#1204): kept as written, cut,
+          // never translated.
+          out.displayTitle = out.displayTitle || text.slice(0, 256);
+        } else if (name === 'display-description') {
+          out.displayDescription = out.displayDescription ||
+            text.slice(0, MAX_TEXT);
         }
       });
     });
@@ -792,6 +939,10 @@ class AccessRequests {
                                   binding_token: token };
     if (terms.template) {
       accessRequest.template = terms.template;
+    }
+    const display = self.denialDisplay(terms, self.languagesOf(req));
+    if (display) {
+      accessRequest.display = display;
     }
     log.debug("Leaving AccessRequests.requestableDenial().");
     return { evaluation_id: evaluationId, evaluated_at: instant(now * 1000),
@@ -1144,9 +1295,11 @@ class AccessRequests {
    * disclose to a caller not authorized for them.
    *
    * @param task - the row
+   * @param languages - the caller's languages, for `display` (#1204);
+   *   absent where nobody asked, as on a callback, and then no display
    * @returns the handle
    */
-  handleOf(task: Json): Json {
+  handleOf(task: Json, languages?: string[]): Json {
     const { log } = this.deps;
     log.debug("Entering AccessRequests.handleOf().");
     const out: Json = {
@@ -1161,6 +1314,11 @@ class AccessRequests {
       out.progress = { current_step: 1, total_steps: 1,
                        step_name: 'approval' };
     }
+    const display = languages ? this.taskDisplay(task.status, languages)
+      : null;
+    if (display) {
+      out.display = display;
+    }
     log.debug("Leaving AccessRequests.handleOf().");
     return out;
   }
@@ -1170,13 +1328,14 @@ class AccessRequests {
    * once it is approved (the profile: REQUIRED then).
    *
    * @param task - the row
+   * @param languages - the caller's languages, for `display`
    * @returns `{ task, result? }`
    */
-  bodyOf(task: Json): Json {
+  bodyOf(task: Json, languages?: string[]): Json {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering AccessRequests.bodyOf().");
-    const out: Json = { task: self.handleOf(task) };
+    const out: Json = { task: self.handleOf(task, languages || []) };
     if (task.status === 'approved' && task.approval) {
       const approval: Json = { id: task.approval.id,
                                approved_at: instant(
@@ -1474,7 +1633,8 @@ class AccessRequests {
         res.status(earlier.status === 'pending' ? 202 : 201)
            .type('application/json').set('Cache-Control', 'no-store')
            .set('Location', self.handleOf(earlier).status_endpoint)
-           .send(JSON.stringify(self.bodyOf(earlier), null, 2));
+           .send(JSON.stringify(self.bodyOf(earlier,
+             self.languagesOf(req)), null, 2));
         log.debug("Leaving AccessRequests.submit(). The same request.");
         return;
       }
@@ -1575,7 +1735,8 @@ class AccessRequests {
     res.status(task.status === 'pending' ? 202 : 201)
        .type('application/json').set('Cache-Control', 'no-store')
        .set('Location', self.handleOf(task).status_endpoint)
-       .send(JSON.stringify(self.bodyOf(task), null, 2));
+       .send(JSON.stringify(self.bodyOf(task, self.languagesOf(req)), null,
+                            2));
     log.debug("Leaving AccessRequests.submit(). " + task.id + " " +
               task.status);
   }
@@ -2400,7 +2561,8 @@ class AccessRequests {
               String(self.seconds('authzen.accessRequestRetryAfterS')));
     }
     res.status(200).type('application/json').set('Cache-Control', 'no-store')
-       .send(JSON.stringify(self.bodyOf(task), null, 2));
+       .send(JSON.stringify(self.bodyOf(task,
+         self.languagesOf((res as Json).req)), null, 2));
     log.debug("Leaving AccessRequests.status(). " + task.status);
   }
 
@@ -2435,7 +2597,8 @@ class AccessRequests {
         ? ' (' + String(given.reason).slice(0, 64) + ')' : '') });
     res.status(200).type('application/json').set('Cache-Control', 'no-store')
        .send(JSON.stringify(authzenModel.held('task-response',
-         { task: self.handleOf(task) }, 'the cancellation'), null, 2));
+         { task: self.handleOf(task, self.languagesOf((res as Json).req)) },
+         'the cancellation'), null, 2));
     log.debug("Leaving AccessRequests.cancel().");
   }
 
@@ -3790,6 +3953,7 @@ export = {
   cancel: slot.forward('cancel'),
   problem: slot.forward('problem'),
   task: slot.forward('task'),
+  handleOf: slot.forward('handleOf'),
   verify: slot.forward('verify'),
   decide: slot.forward('decide'),
   cancelByAdministrator: slot.forward('cancelByAdministrator'),

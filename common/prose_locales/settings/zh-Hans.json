@@ -8523,6 +8523,14 @@
     "en": "698617c5a3485120",
     "text": "一个领域按 evaluation_id 记录的可申请拒绝的最大数量（#1204）。超过后，新的拒绝不会被记录，但仍可凭其 binding_token 申请；访问请求作业会在记录的时间窗口结束一天后将其删除。"
   },
+  "authzen.accessRequestDisplay|label": {
+    "en": "2e4d23a3bbd81b74",
+    "text": "访问申请的显示提示"
+  },
+  "authzen.accessRequestDisplay|description": {
+    "en": "b9fd6a2d08cb3736",
+    "text": "Access Request and Approval 配置文件的显示提示（#1204）：可申请的拒绝携带 access_request.display，Task Handle 携带 task.display，各含一个标题和一段描述。拒绝的提示是 advice 的 display-title 和 display-description，原样使用；否则是服务自己的措辞，使用 Accept-Language 所要求的语言。它们是给人看的提示，绝不是策略。关闭时两者都不发送。"
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

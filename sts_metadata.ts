@@ -676,8 +676,11 @@ const SPECS: Spec[] = [
               'problem type; the metadata member, jwks_uri and capability; ' +
               'request_schema_url on a requestable denial, the same ' +
               'origin\'s JSON Schema of the submission\'s optional ' +
-              'augmentations. Missing: a hosted form (form_url) and ' +
-              'display, and the BULK, ACTOR and CATALOG companions.' },
+              'augmentations; display on a requestable denial and on a ' +
+              'Task Handle, the advice\'s own words or the service\'s in ' +
+              'the language asked for, while ' +
+              'authzen.accessRequestDisplay is on. Missing: a hosted form ' +
+              '(form_url), and the BULK, ACTOR and CATALOG companions.' },
   { id: 'authzen-arap-callback',
     name: 'AuthZEN Callback Notifications Profile 1.0 (draft)',
     where: 'OpenID Foundation AuthZEN WG',
