@@ -1843,6 +1843,14 @@ class ProtocolStack {
     // checked rather than agreed by hand.
     // -------------------------------------------------------------------------
     require('../admin-ui/crypto_metadata');
+    // #2012: the certificate sign-in handoff, `GET /authn/certificate/
+    // continue`. After `tls/tls_server` (20), whose screen door it asks, and
+    // `authn/authn` (8), whose session it reads — both at the request, so the
+    // order is for a reader; its one path collides with nothing.
+    const certificateHandoff = require('../tls/certificate_handoff');
+    this.build('tls/certificate_handoff', certificateHandoff,
+               'CertificateHandoff');
+    this.register(app, certificateHandoff, 'tls/certificate_handoff');
     this.build('ldap/ldap_cluster_connections',
                require('../ldap/ldap_cluster_connections'),
                'LdapClusterConnections');

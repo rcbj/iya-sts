@@ -313,7 +313,7 @@ op `getOpenApi`(`responses/200/content/application~1json/schema`: {
 
 @js(#{
     `additionalProperties`:false,
-    `properties`:#{`name`:#{`type`:"string"},`mfaNote`:#{`type`:"boolean"}},
+    `properties`:#{`name`:#{`type`:"string"},`mfaNote`:#{`type`:"boolean"},`handoff`:#{`type`:"string",`description`:"Where `certSignIn.handoff` is on and no certificate has arrived yet (#2012): the link to the listener that asks for a smart card or certificate, `/authn/certificate/continue?h=…`, with `name` empty."},`refused`:#{`type`:"string",`description`:"What that listener refused last, in English, or empty (#2012)."}},
     `$types`:#["object","null"]
   }) @hoisted model get_authn_api_pending__id__r200_application_json_view_certificate_h4 {}
 

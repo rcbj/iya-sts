@@ -6331,6 +6331,10 @@ function screenCertificateHolder(req) {
       // session: `GET /tls/sign-in`'s answer, from the same evidence.
       amr: certificateAmrOf(peer.cert, peer.username),
       revocationSaid: revocationSaid,
+      // What the certificate says of its holder (#127's facts), kept by the
+      // certificate sign-in handoff (#2012), which rebuilds the
+      // verification below from them once the sign-in completes.
+      verificationFacts: certificateFacts(peer.cert),
       // THE IDENTITY VERIFICATION (#127) `GET /tls/sign-in` records once
       // its session has started, recorded by the screen at the same point.
       recordVerification: function recordVerification() {

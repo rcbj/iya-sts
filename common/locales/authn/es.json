@@ -54,6 +54,8 @@
   "options.certificate": "O continúe con el certificado de cliente TLS que su navegador presentó en esta conexión. No se escribe nada: este servicio comprobó la cadena del certificado y si ha sido revocado.",
   "options.certificateMfaNote": "Esta solicitud necesita dos factores, así que después se le pedirá un segundo.",
   "options.certificateButton": "Continuar como {name} con su certificado",
+  "options.certificateHandoff": "O inicie sesión con una tarjeta inteligente o un certificado. Su navegador le pide que lo elija y, si lo tiene, su PIN.",
+  "options.certificateHandoffButton": "Iniciar sesión con una tarjeta inteligente o un certificado",
   "selectIdp.title": "Elija cómo iniciar sesión — servicio de autenticación",
   "selectIdp.heading": "Elija cómo iniciar sesión",
   "selectIdp.at": "Servicio de autenticación en <code>{base}</code>",

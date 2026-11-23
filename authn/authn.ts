@@ -1221,6 +1221,9 @@ interface AuthnDeps {
   // The sign-in screen's certificate door (#1051): `tls/tls_server.js`
   // where it is loaded already, or null. See `certificateDoor()`.
   certificateDoor: () => any;
+  // The certificate sign-in handoff (#2012), `tls/certificate_handoff.ts`,
+  // found the same way and for the same reason; null where not loaded.
+  certificateHandoff: () => any;
   stsCrypto: typeof stsCrypto;
   realms: typeof realms;
   app: typeof app;
@@ -1332,6 +1335,22 @@ class Authn {
                           (door ? 'Loaded.' : 'Not loaded.'));
         return door &&
           typeof door.screenCertificateHolder === 'function' ? door : null;
+      },
+      certificateHandoff: function certificateHandoff() {
+        helpers.log.debug("Entering certificateHandoff().");
+        let handoff: any = null;
+        try {
+          const file = require.resolve('../tls/certificate_handoff');
+          handoff = require.cache[file] ? require.cache[file].exports : null;
+        } catch (e) {
+          helpers.log.debug("Caught in certificateHandoff(): " +
+                            ((e && e.message) || e));
+          handoff = null;
+        }
+        helpers.log.debug("Leaving certificateHandoff(). " +
+                          (handoff ? 'Loaded.' : 'Not loaded.'));
+        return handoff && typeof handoff.offer === 'function' ? handoff
+                                                             : null;
       },
       stsCrypto: stsCrypto,
       realms: realms,
@@ -14681,6 +14700,12 @@ class Authn {
   /**
    * The screen's certificate offer: `{ name, mfaNote }`, or null.
    *
+   * A CERTIFICATE HANDED OFF (#2012, `tls/certificate_handoff.ts`): where
+   * `certSignIn.handoff` is on, the offer also carries `handoff`, the link
+   * to the listener that asks for a certificate, with an empty `name` until
+   * a certificate arrives there; the name is then the holder the listener
+   * found, for this sign-in and this browser, and the act continues as them.
+   *
    * @param req - the request for the view, whose connection is read
    * @param record - the pending sign-in
    * @returns the offer, or null
@@ -14692,14 +14717,35 @@ class Authn {
       log.debug("Leaving Authn.certificateOption(). Not taken here.");
       return null;
     }
+    const handoff = this.deps.certificateHandoff();
+    const handed = handoff && record.certificateHandoff
+      ? handoff.resultFor(req, record.id, record.certificateHandoff, false)
+      : null;
+    if (handed && handed.ok) {
+      log.debug("Leaving Authn.certificateOption(). Handed off.");
+      return { name: String(handed.username), mfaNote: !!record.forceMfa };
+    }
     const door = this.deps.certificateDoor();
     const offer = door ? door.screenCertificateOffer(req) : null;
-    if (!offer || !offer.username) {
+    if (offer && offer.username) {
+      log.debug("Leaving Authn.certificateOption(). Offered.");
+      return { name: String(offer.username), mfaNote: !!record.forceMfa };
+    }
+    const link = handoff
+      ? handoff.offer(req, record.id, String(record.certificateHandoff || ''))
+      : null;
+    if (!link) {
       log.debug("Leaving Authn.certificateOption(). No certificate.");
       return null;
     }
-    log.debug("Leaving Authn.certificateOption(). Offered.");
-    return { name: String(offer.username), mfaNote: !!record.forceMfa };
+    if (link.id !== record.certificateHandoff) {
+      record.certificateHandoff = link.id;
+      pending.set(record.id, record);
+    }
+    log.debug("Leaving Authn.certificateOption(). The handoff is offered.");
+    return { name: '', mfaNote: !!record.forceMfa, handoff: link.href,
+             // What the listener refused last, for the screen to say.
+             refused: handed && !handed.ok ? String(handed.why) : '' };
   }
 
   // THE ACT (#1051): the first factor the screen offered, checked again in
@@ -14721,10 +14767,17 @@ class Authn {
       return this.screenRefused(res, record,
         'Signing in with a certificate is not offered for this sign-in.');
     }
+    // A CERTIFICATE HANDED OFF (#2012): the listener's answer for this
+    // sign-in and this browser, once, in place of the connection's.
+    const handoff = this.deps.certificateHandoff();
+    const handed = handoff && record.certificateHandoff
+      ? handoff.resultFor(req, record.id, record.certificateHandoff, true)
+      : null;
     const door = this.deps.certificateDoor();
-    const holder = door ? await door.screenCertificateHolder(req)
-      : { ok: false, code: 'STS-AUTHN-0463',
-          why: 'Signing in with a certificate is not available here.' };
+    const holder = handed ? handed
+      : (door ? await door.screenCertificateHolder(req)
+        : { ok: false, code: 'STS-AUTHN-0463',
+            why: 'Signing in with a certificate is not available here.' });
     if (!holder.ok) {
       log.debug("Leaving Authn.certificateSignIn(). The certificate was " +
                 "refused.");
