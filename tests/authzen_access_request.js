@@ -1404,9 +1404,18 @@ async function childBody() {
                                                events: ['approved'] } }));
   const lostId = ((lostSetup.json || {}).task || {}).id;
   let release = null;
+  // THE POST STARTS LATER THAN notify() RETURNS (#1993): the callback is
+  // signed off the event loop first, so the test waits for the POST to be
+  // in flight before the other process writes, rather than assuming it
+  // already is.
+  let inFlight = null;
+  const posted = new Promise(function (resolve) {
+    inFlight = resolve;
+  });
   fedHttp.deliverJson = function () {
     return new Promise(function (resolve) {
       release = resolve;
+      inFlight();
     });
   };
   const lost = await inRealm(async function () {
@@ -1426,6 +1435,7 @@ async function childBody() {
     stored.callback = callback;
     own.tasks.set(lostId, stored);
     const flying = other.notify(own.tasks.get(lostId));
+    await posted;
     // Another process revokes, writing its own copy of the row.
     const theirs = JSON.parse(JSON.stringify(own.tasks.get(lostId)));
     theirs.approval.revokedAt = Math.floor(Date.now() / 1000);
