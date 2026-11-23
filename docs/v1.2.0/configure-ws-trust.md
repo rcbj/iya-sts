@@ -808,8 +808,8 @@ To refuse a request for an application unless it carries a WS-Security
 signature, turn on `wstrustSignRequest`. With no map, the signature must
 cover the Body, which every accepted signature does. To require the headers
 signed too, add the Header preset to `wstrustSignRequestElements`, or tick
-**Integrity → Request → Header** on the application's WS-Trust tab and press
-**Save**:
+its **Header** box under *Message protection in the console*, below, and
+press **Save**:
 
 ```bash
 api applications/set '{"application":"https://wsrp.example/","attribute":"wstrustSignRequest","value":"true"}'
@@ -837,7 +837,7 @@ signed with, for `saml.signatureAlgorithm`), and a
 `ds:Signature` over the Timestamp and the Body. A client verifies it with
 that certificate, which it should already trust as the realm's signer. To
 sign the headers as well, add the Header preset to
-`wstrustSignResponseElements` (**Integrity → Response → Header**); the map
+`wstrustSignResponseElements` (its **Header** box); the map
 then names what is signed beside the Timestamp, so keep the Body preset in it
 too.
 
@@ -852,13 +852,45 @@ The WSDL is one document per realm. Turning on the realm's
 WS-SecurityPolicy client expects every answer signed; an application that
 signs while the realm does not is configured on the client by hand.
 
-## Build an expression from a sample message
+## Message protection in the console
 
-The application's WS-Trust tab has an **XPath builder**. Paste a message the
-client sends, or one this service answered, press **Show elements**, and
-click an element. The builder writes an absolute expression in the subset
-this service evaluates, with its prefixes, and highlights what the expression
-matches. Choose the field and press **Add to field**, then **Save**.
+On the application's page, **Configuration → WS-Trust** has a **Message
+protection** table above the fields. It has a **Body** box and a **Header**
+box for each of the four XPath maps: encryption of the request and of the
+response (`wstrustEncryptRequestElements`, `wstrustEncryptResponseElements`)
+and signing of the request and of the response
+(`wstrustSignRequestElements`, `wstrustSignResponseElements`). Ticking a box
+adds a fixed set of expressions to that map, and unticking it takes out only
+those expressions. Every other expression stays. **Save** stores the map.
+
+The boxes store nothing of their own. A box is ticked whenever its map holds
+all of its expressions, including expressions typed by hand or set through
+the Management API:
+
+| Box | Encryption map | Signing map |
+|---|---|---|
+| Body | `/soap11:Envelope/soap11:Body/* \| /soap12:Envelope/soap12:Body/*` (the Body's content) | `/soap11:Envelope/soap11:Body \| /soap12:Envelope/soap12:Body` |
+| Header | every header block but `wsse:Security`, in SOAP 1.1 and 1.2 | the same |
+
+A map is read only while its switch is on. The switch is the attribute shown
+in the table's last column, or the realm's setting when that attribute is
+empty.
+
+Under the form, the **XPath builder** writes an expression for you:
+
+1. Paste a sample SOAP message into its box. A sample Issue request is there
+   to start with.
+2. Click **Show the elements**, then click an element name. The builder
+   writes an absolute expression for that element, using this service's
+   prefixes (`soap11`, `soap12`, `wst`, `wsse`, `wsu`, `wsa`, `saml`, …)
+   and not the sample's own. It marks every element of the sample the
+   expression matches. An element in a namespace this service has no prefix
+   for is written as `*[local-name()='…' and namespace-uri()='…']`.
+3. Choose a field and click **Add to field**. A map gets the expression as
+   a new value. `wstrustResponseRecipientXPath` holds one expression, so the
+   builder replaces it. Then click **Save** on the form.
+
+The sample is parsed in your browser and never sent.
 
 ## Related
 
