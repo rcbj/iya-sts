@@ -19463,8 +19463,11 @@ let pkcs11KeyResolver = null;
 const hsmKeys = new Map();
 
 /**
- * Hands in how a reference is resolved: `(ref) => { token, key, publicKey }`
- * on a token this thread holds. Filled by `secrets.js` when it loads.
+ * Hands in how a reference is resolved: `(ref, how) => { token, key,
+ * publicKey }` on a token this thread holds, or — `how.async` true — a
+ * promise of it, found off the event loop (`resolveHsmKeysAsync()`, #1955
+ * P8 follow-up; the same slot, asked a second way). Filled by `secrets.js`
+ * when it loads.
  *
  * @param fn - the resolver, or null
  */
@@ -19472,6 +19475,102 @@ function setPkcs11KeyResolver(fn) {
   log.debug('Entering setPkcs11KeyResolver().');
   pkcs11KeyResolver = typeof fn === 'function' ? fn : null;
   log.debug('Leaving setPkcs11KeyResolver().');
+}
+
+// ---------------------------------------------------------------------------
+// A KEY'S FIRST RESOLUTION IN A THREAD, OFF THE EVENT LOOP (#1955 P8
+// follow-up). `hsmKeyOf()` is synchronous — a key set is a property read —
+// and resolving a reference it has not seen is two searches and an attribute
+// read on the token. So the references a thread will be asked for are
+// resolved AHEAD, through the control thread, before it serves: the
+// keystore's start (every realm it holds, in every process and request
+// worker) and `helpers.prepareKeySet()` (a realm first seen later, before a
+// handler reads its set). What is resolved here is held exactly as
+// `hsmKeyOf()` holds what it resolves, so the read that follows finds it.
+// A reference that reaches this thread by no road that passes here — a
+// rotation another node made, adopted between two requests of a realm —
+// is still resolved in place at its first use, once.
+// ---------------------------------------------------------------------------
+/**
+ * The HSM key references in a value — a stored or shared key set, walked to
+ * a bounded depth.
+ *
+ * @param value - anything
+ * @returns the distinct reference texts
+ */
+function hsmRefsIn(value) {
+  log.debug('Entering hsmRefsIn().');
+  const out = new Set();
+  const seen = new Set();
+  const walk = function (v, depth) {
+    if (typeof v === 'string') {
+      if (v.indexOf(HSM_KEY_PREFIX) === 0) {
+        out.add(v);
+      }
+      return;
+    }
+    if (!v || typeof v !== 'object' || depth > 8 || seen.has(v) ||
+        Buffer.isBuffer(v)) {
+      return;
+    }
+    seen.add(v);
+    if (v instanceof Map) {
+      v.forEach(function (one) {
+        walk(one, depth + 1);
+      });
+      return;
+    }
+    for (const k of Object.keys(v)) {
+      walk(v[k], depth + 1);
+    }
+  };
+  walk(value, 0);
+  log.debug('Leaving hsmRefsIn(). ' + out.size + '.');
+  return Array.from(out);
+}
+
+/**
+ * Resolves HSM key references off the event loop, so a later synchronous
+ * `hsmKeyOf()` finds them held. Never rejects: a reference that cannot be
+ * resolved here is resolved (and refused, with its code) at its first use.
+ *
+ * @param refs - reference texts (`hsmRefsIn()`)
+ * @returns a promise of how many were resolved
+ */
+async function resolveHsmKeysAsync(refs) {
+  log.debug('Entering resolveHsmKeysAsync(). ' + (refs || []).length);
+  let made = 0;
+  for (const text of refs || []) {
+    if (hsmKeys.has(text) || !pkcs11KeyResolver) {
+      continue;
+    }
+    const ref = hsmRefOf(text);
+    if (!ref) {
+      continue;
+    }
+    try {
+      const found = await pkcs11KeyResolver(ref, { async: true });
+      if (!hsmKeys.has(text)) {
+        hsmKeys.set(text, makeHsmKey(found.token, found.key, found.publicKey,
+                                     ref));
+        made++;
+      }
+    } catch (e) {
+      log.debug('Caught in resolveHsmKeysAsync(): ' + ((e && e.message) || e));
+    }
+  }
+  log.debug('Leaving resolveHsmKeysAsync(). ' + made + ' resolved.');
+  return made;
+}
+
+/**
+ * Forgets the HSM keys this thread resolved, for a test that plays a new
+ * thread's first use. Nothing in the service calls it.
+ */
+function forgetHsmKeys() {
+  log.debug('Entering forgetHsmKeys().');
+  hsmKeys.clear();
+  log.debug('Leaving forgetHsmKeys().');
 }
 
 function hsmRefText(ref) {
@@ -20932,6 +21031,21 @@ async function generatePkcs11KeyPairAsync(token, tokenUri, spec, label) {
  * @param ref - the reference's members
  * @returns `{ token, key, publicKey }` for the resolver to hand back
  */
+/**
+ * `findPkcs11KeyPair()`, off the event loop (the token's control thread).
+ *
+ * @param token - the token
+ * @param ref - the reference
+ * @returns a promise of `{ token, key, publicKey }`
+ */
+async function findPkcs11KeyPairAsync(token, ref) {
+  log.debug('Entering findPkcs11KeyPairAsync().');
+  const found = await token.keyPairAsync(Buffer.from(String(ref.id), 'hex'),
+                                         { kty: ref.kty, crv: ref.crv });
+  log.debug('Leaving findPkcs11KeyPairAsync().');
+  return { token: token, key: found.key, publicKey: found.publicKey };
+}
+
 function findPkcs11KeyPair(token, ref) {
   log.debug('Entering findPkcs11KeyPair().');
   const found = token.keyPair(Buffer.from(String(ref.id), 'hex'),
@@ -21475,6 +21589,10 @@ module.exports = {
   generatePkcs11KeyPair: generatePkcs11KeyPair,
   generatePkcs11KeyPairAsync: generatePkcs11KeyPairAsync,
   findPkcs11KeyPair: findPkcs11KeyPair,
+  findPkcs11KeyPairAsync: findPkcs11KeyPairAsync,
+  hsmRefsIn: hsmRefsIn,
+  resolveHsmKeysAsync: resolveHsmKeysAsync,
+  forgetHsmKeys: forgetHsmKeys,
   pkcs11Capabilities: pkcs11Capabilities,
   // --- section 18: certificate field checks (#1360) ---
   CERTIFICATE_ROLES: CERTIFICATE_ROLES,

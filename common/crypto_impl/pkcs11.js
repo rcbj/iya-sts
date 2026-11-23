@@ -904,6 +904,7 @@ function newEntry(binding, lib, modulePath) {
                   inflight: 0, drainWaiters: [], recovering: null, epoch: 0,
                   control: null };
   entry.control = new Pkcs11Control(entry, bindingPathOf(binding));
+  entry.channel = outageChannel(entry);
   log.debug('Leaving newEntry().');
   return entry;
 }
@@ -997,7 +998,7 @@ function drained(entry) {
  * @param finalizeFirst - false when the module is already not initialized
  * @returns a promise settled once it is done
  */
-function reinitializeEntry(entry, finalizeFirst) {
+function reinitializeEntry(entry, finalizeFirst, seenEpoch) {
   log.debug('Entering reinitializeEntry().');
   if (entry.recovering) {
     log.debug('Leaving reinitializeEntry(). Joined.');
@@ -1006,10 +1007,30 @@ function reinitializeEntry(entry, finalizeFirst) {
   const done = function () {
     entry.recovering = null;
   };
+  // Whether the module was initialised again — by another thread, which
+  // said so on the outage channel — since the session that met the outage
+  // was opened: then that is what ended it, and finalizing again would end
+  // the sessions the other thread has just opened.
+  const since = function () {
+    return seenEpoch !== undefined && seenEpoch !== null &&
+           entry.epoch !== seenEpoch;
+  };
+  let skipped = false;
   entry.recovering = drained(entry).then(function () {
+    if (since()) {
+      skipped = true;
+      return true;
+    }
     return entry.control.call('reinitialize', [!!finalizeFirst]);
   }).then(function () {
-    entry.epoch++;
+    if (skipped) {
+      log.info('pkcs11: "' + entry.modulePath + '" was initialised again ' +
+               'by another thread since the session that met the outage ' +
+               'was opened; it is not finalized again.');
+    } else {
+      entry.epoch++;
+      announceReinitialized(entry);
+    }
     return Promise.all(Array.from(entry.tokens).map(function (t) {
       return t.afterReinitialize();
     }));
@@ -1022,6 +1043,89 @@ function reinitializeEntry(entry, finalizeFirst) {
   });
   log.debug('Leaving reinitializeEntry(). Started.');
   return entry.recovering;
+}
+
+// ---------------------------------------------------------------------------
+// THE OUTAGE CHANNEL: ONE RE-INITIALISATION FOR THE PROCESS, NOT ONE PER
+// THREAD (#1955 P8 follow-up). C_Finalize is process-wide, and each thread
+// that loaded a module (the front, every request worker) counts only its own
+// operations. Without this, a device that really went away was met by
+// several threads at once, each finalized the module after the others had
+// initialised it again, and an operation another thread had just retried
+// lost its one retry (STS-KEYS-0201). So a thread that has initialised a
+// module again says so on a BroadcastChannel of that module's path — every
+// thread of the process hears it with no plumbing through the pool — and
+// each other thread moves its epoch (its sessions from before are forgotten,
+// not closed: their handles may now name the announcer's), finds its slots
+// again, and — the point — does not finalize for an outage met on a session
+// opened before the announcement (`reinitializeEntry()`'s `seenEpoch`). What
+// is left is the time a message takes to arrive: two threads that both
+// finalize inside it still cost each other's retries, as before.
+// ---------------------------------------------------------------------------
+function outageChannel(entry) {
+  log.debug('Entering outageChannel().');
+  let channel = null;
+  try {
+    const workerThreads = require('worker_threads');
+    channel = new workerThreads.BroadcastChannel('iya-sts-pkcs11:' +
+                                                 entry.modulePath);
+    channel.onmessage = function (event) {
+      if (event && event.data && event.data.reinitialized) {
+        foreignReinitialized(entry);
+      }
+    };
+    if (typeof channel.unref === 'function') {
+      channel.unref();
+    }
+  } catch (e) {
+    // A runtime with no BroadcastChannel recovers each thread on its own,
+    // as before it existed.
+    log.debug('Caught in outageChannel(): ' + ((e && e.message) || e));
+    channel = null;
+  }
+  log.debug('Leaving outageChannel().');
+  return channel;
+}
+
+// Tells the other threads this one initialised the module again.
+function announceReinitialized(entry) {
+  log.debug('Entering announceReinitialized().');
+  if (entry.channel) {
+    try {
+      entry.channel.postMessage({ reinitialized: true });
+    } catch (e) {
+      log.debug('Caught in announceReinitialized(): ' +
+                ((e && e.message) || e));
+    }
+  }
+  log.debug('Leaving announceReinitialized().');
+}
+
+// Another thread initialised the module again: every session of this thread
+// from before is gone with it.
+function foreignReinitialized(entry) {
+  log.debug('Entering foreignReinitialized(). ' + entry.modulePath);
+  entry.epoch++;
+  const tokens = Array.from(entry.tokens);
+  for (const t of tokens) {
+    t.generation++;
+    t.dropIdle();
+  }
+  if (!entry.recovering) {
+    const done = function () {
+      entry.recovering = null;
+    };
+    entry.recovering = Promise.all(tokens.map(function (t) {
+      return t.findSlotAsync().then(function (slot) {
+        t.slot = slot;
+      }, function (e) {
+        // The next operation meets the module as it is.
+        log.debug('Caught in foreignReinitialized(): ' +
+                  ((e && e.message) || e));
+      });
+    })).then(done, done);
+  }
+  log.debug('Leaving foreignReinitialized().');
 }
 
 // ---------------------------------------------------------------------------
@@ -1446,7 +1550,7 @@ class Pkcs11Token {
   // After an outage met off the event loop: every idle session is dropped
   // (they were lost with the one that failed), and the module is initialised
   // again, once, where the error says the library itself lost the device.
-  async recover(err) {
+  async recover(err, seenEpoch) {
     log.debug('Entering Pkcs11Token.recover().');
     this.reconnects++;
     this.generation++;
@@ -1458,7 +1562,8 @@ class Pkcs11Token {
     this.dropIdle();
     if (REINITIALIZE_ON.has(ckr)) {
       await reinitializeEntry(this.entry,
-                              ckr !== CK.CKR_CRYPTOKI_NOT_INITIALIZED);
+                              ckr !== CK.CKR_CRYPTOKI_NOT_INITIALIZED,
+                              seenEpoch);
     }
     log.warn(errorCodes.tag('STS-KEYS-0201') + 'pkcs11: ' + this.describe() +
              ' answered ' + ((err && err.message) || err) + '; the session ' +
@@ -1470,7 +1575,7 @@ class Pkcs11Token {
   // place is safe only while no asynchronous operation of this thread holds
   // a session on it; otherwise it is started off the event loop, where it
   // waits for them, and this call is refused (STS-KEYS-0212).
-  recoverSync(err, what) {
+  recoverSync(err, what, seenEpoch) {
     log.debug('Entering Pkcs11Token.recoverSync().');
     this.reconnects++;
     this.generation++;
@@ -1480,9 +1585,13 @@ class Pkcs11Token {
       return;
     }
     this.dropIdle();
-    if (REINITIALIZE_ON.has(ckr)) {
+    // Initialised again by another thread since that session was opened:
+    // nothing to finalize (`reinitializeEntry()`).
+    const since = seenEpoch !== undefined && seenEpoch !== this.entry.epoch;
+    if (REINITIALIZE_ON.has(ckr) && !since) {
       if (this.entry.inflight > 0 || this.entry.recovering) {
-        reinitializeEntry(this.entry, ckr !== CK.CKR_CRYPTOKI_NOT_INITIALIZED)
+        reinitializeEntry(this.entry, ckr !== CK.CKR_CRYPTOKI_NOT_INITIALIZED,
+                          seenEpoch)
           .catch(function (e) {
             // The next operation meets the module as it is, and refuses
             // with its own answer.
@@ -1498,6 +1607,7 @@ class Pkcs11Token {
       CONTROL_OPS.reinitialize(this.entry.lib,
                                ckr !== CK.CKR_CRYPTOKI_NOT_INITIALIZED);
       this.entry.epoch++;
+      announceReinitialized(this.entry);
       for (const t of Array.from(this.entry.tokens)) {
         t.generation++;
         t.dropIdle();
@@ -1554,7 +1664,7 @@ class Pkcs11Token {
                     '; reconnecting once.');
           this.discard(session);
           try {
-            await this.recover(e);
+            await this.recover(e, session.epoch);
           } catch (r) {
             // The device is still away: the reconnect itself failed, which
             // is this operation's refusal, not a different one.
@@ -1648,7 +1758,7 @@ class Pkcs11Token {
                     ((e && e.message) || e) + '; reconnecting once.');
           this.dropSync(session);
           try {
-            this.recoverSync(e, what);
+            this.recoverSync(e, what, session.epoch);
           } catch (r) {
             // The device is still away: the reconnect itself failed, which
             // is this operation's refusal, not a different one.
@@ -2258,6 +2368,42 @@ class Pkcs11Token {
     return { key: this.privateKeyRef(idBuf, priv[0]), publicKey: publicKey };
   }
 
+  /**
+   * `keyPair()`, off the event loop: both searches and the public half's
+   * attributes made by the control thread, on one session.
+   *
+   * @param id - CKA_ID (bytes)
+   * @param spec - what the key should be: `{ kty, crv }`
+   * @returns a promise of `{ key, publicKey }`
+   */
+  async keyPairAsync(id, spec) {
+    log.debug('Entering Pkcs11Token.keyPairAsync().');
+    const idBuf = Buffer.from(id);
+    const control = this.entry.control;
+    const got = await this.run('a search', async function (lib, session) {
+      const priv = await control.call('find', [session,
+        [{ type: CK.CKA_CLASS, value: CK.CKO_PRIVATE_KEY },
+         { type: CK.CKA_ID, value: idBuf }]]);
+      const pub = await control.call('find', [session,
+        [{ type: CK.CKA_CLASS, value: CK.CKO_PUBLIC_KEY },
+         { type: CK.CKA_ID, value: idBuf }]]);
+      const attrs = pub.length === 1
+        ? await control.call('attributes', [session, pub[0],
+                                            publicTypes(spec)])
+        : [];
+      return { priv: priv, pub: pub, attrs: new Map(attrs) };
+    });
+    if (got.priv.length !== 1 || got.pub.length !== 1) {
+      throw refusal('STS-KEYS-0203', 'the signing key ' + b64u(idBuf) +
+        ' is not on ' + this.describe() + ' (' + got.priv.length +
+        ' private, ' + got.pub.length + ' public half/halves)');
+    }
+    const publicKey = this.publicKeyFrom(got.attrs, spec);
+    log.debug('Leaving Pkcs11Token.keyPairAsync().');
+    return { key: this.privateKeyRef(idBuf, got.priv[0]),
+             publicKey: publicKey };
+  }
+
   privateKeyRef(id, handle) {
     log.debug('Entering Pkcs11Token.privateKeyRef().');
     log.debug('Leaving Pkcs11Token.privateKeyRef().');
@@ -2785,6 +2931,9 @@ function forgetLibraries() {
   LIBRARIES.forEach(function (entry) {
     if (entry.control) {
       entry.control.stop();
+    }
+    if (entry.channel) {
+      entry.channel.close();
     }
   });
   LIBRARIES.clear();

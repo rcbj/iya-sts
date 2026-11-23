@@ -2171,7 +2171,7 @@ function heldSigningToken() {
 
 // THE RESOLVER `crypto.js` ASKS for a signing key's reference: the token the
 // reference names, held by this thread, and the key on it by CKA_ID.
-crypto.setPkcs11KeyResolver(function (ref) {
+crypto.setPkcs11KeyResolver(function (ref, how) {
   log.debug('Entering the PKCS#11 key resolver.');
   const uri = parsePkcs11Uri(String(ref.token || ''), true);
   const token = pkcs11Tokens.get(tokenKeyOf(uri));
@@ -2182,7 +2182,10 @@ crypto.setPkcs11KeyResolver(function (ref) {
       'it (and the keystore persist) in every process.'), 'STS-KEYS-0206');
   }
   log.debug('Leaving the PKCS#11 key resolver.');
-  return crypto.findPkcs11KeyPair(token, ref);
+  // Off the event loop where the caller can wait (#1955 P8 follow-up,
+  // `crypto.resolveHsmKeysAsync()`).
+  return how && how.async ? crypto.findPkcs11KeyPairAsync(token, ref)
+                          : crypto.findPkcs11KeyPair(token, ref);
 });
 
 /**

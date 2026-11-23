@@ -206,9 +206,12 @@ on. If that thread fails, the calls waiting on it are refused with
 `STS-KEYS-0211` and the next call starts a new one.
 
 What still runs on the event loop is the start (the first session, the slot
-and the mechanism list are read before the service listens), a key's first
-use in a process (its handle and public key are found once), and the
-blocking calls `keys.pkcs11SynchronousSign` opts in to. A blocking call uses
+and the mechanism list are read before the service listens) and the
+blocking calls `keys.pkcs11SynchronousSign` opts in to. A realm's keys are
+found on the token off the event loop before they are used: every stored key
+when a process or request worker starts, and a realm's keys before the first
+request that reads them. A key adopted after that (a rotation made on another
+node) is found in place, once, the first time it is used. A blocking call uses
 an idle session or one extra session the token keeps for blocking calls, so
 a token never has more than `keys.pkcs11Sessions` + 1 sessions open.
 
@@ -265,6 +268,12 @@ volume of tokens with a YubiHSM 2 should sign them with an EC key
   that arrive meanwhile wait for it. A blocking call that meets this is
   refused with `STS-KEYS-0212`, and the module is initialised again without
   blocking.
+* A module is shared by every thread of a process (the front and each
+  request worker), and finalizing it ends every thread's sessions. A thread
+  that initialises it again tells the others, which then do not finalize it
+  again for an outage they meet on a session from before. Two threads that
+  both finalize within the moment that message takes to arrive can still
+  cost an operation in flight its one retry (`STS-KEYS-0201`).
 * The other codes: `STS-KEYS-0202` (the module or token cannot be used),
   `STS-KEYS-0203` (the key), `STS-KEYS-0204` (no mechanism), `STS-KEYS-0205`
   (the URI or PIN), `STS-KEYS-0206` (a key in the HSM was asked to do

@@ -2833,38 +2833,21 @@ class OAuth2Server {
    */
   signPublishedDocument(claims: Json, issuer: string, lifetimeS: number,
                         useCase: string): string {
-    const { stsCrypto, log, STS, nowSec, signingKeyFor,
-            certificateHeaderFor, publishedKidFor, config } = this.deps;
+    const { stsCrypto, log } = this.deps;
     log.debug("Entering OAuth2Server.signPublishedDocument().");
-    const alg = String(config.value('oauth2.signedMetadataAlgorithm') ||
-                       'RS256');
-    // The use case's signer-group key in a hybrid-groups realm (#68), else
-    // the per-algorithm key — `signingKeyFor()` decides both.
-    const signer = signingKeyFor(alg, useCase);
-    if (alg === 'RS256' && signer.kid === STS.kid) {
-      log.debug("Leaving OAuth2Server.signPublishedDocument(). RS256.");
-      return stsCrypto.signJws(claims, STS.privateKey,
-        { algorithm: 'RS256', issuer: issuer, expiresIn: lifetimeS,
-          keyid: publishedKidFor(STS.kid),
-          header: certificateHeaderFor(useCase, 'RS256', STS.kid) });
-    }
-    const iat = nowSec();
-    const payload = Object.assign({}, claims,
-                                  { iss: issuer, iat: iat,
-                                    exp: iat + lifetimeS });
-    log.debug("Leaving OAuth2Server.signPublishedDocument(). " + alg + ".");
-    return stsCrypto.signJws(payload, signer.key,
-                             { algorithm: alg,
-                               keyid: publishedKidFor(signer.kid),
-                               header: certificateHeaderFor(useCase, alg,
-                                                           signer.kid) });
+    const plan = this.publishedDocumentPlan(claims, issuer, lifetimeS,
+                                            useCase);
+    log.debug("Leaving OAuth2Server.signPublishedDocument(). " + plan.alg +
+              ".");
+    return stsCrypto.signJws(plan.payload, plan.key, plan.options);
   }
 
   /**
    * `signPublishedDocument()`, with a realm key in the HSM signing off the
    * event loop (`stsCrypto.signJwsOffLoop()`, #1955 P8 follow-up). A software
    * key signs the same bytes, in place, as `signPublishedDocument()` does;
-   * every service caller awaits this one.
+   * every service caller awaits this one. The two share the plan
+   * (`publishedDocumentPlan()`) and differ only in the signing call.
    *
    * @param claims - the document's members
    * @param issuer - the issuer
@@ -2874,14 +2857,11 @@ class OAuth2Server {
    */
   signPublishedDocumentAsync(claims: Json, issuer: string, lifetimeS: number,
                              useCase: string): Promise<string> {
-    const { stsCrypto, log, STS, nowSec, signingKeyFor,
-            certificateHeaderFor, publishedKidFor, config } = this.deps;
+    const { stsCrypto, log } = this.deps;
     log.debug("Entering OAuth2Server.signPublishedDocumentAsync().");
-    const alg = String(config.value('oauth2.signedMetadataAlgorithm') ||
-                       'RS256');
-    let signer;
+    let plan: Json;
     try {
-      signer = signingKeyFor(alg, useCase);
+      plan = this.publishedDocumentPlan(claims, issuer, lifetimeS, useCase);
     } catch (e) {
       log.debug("Caught in OAuth2Server.signPublishedDocumentAsync(): " +
                 ((e && e.message) || e));
@@ -2889,24 +2869,42 @@ class OAuth2Server {
                 "signer.");
       return Promise.reject(e);
     }
+    log.debug("Leaving OAuth2Server.signPublishedDocumentAsync(). " +
+              plan.alg + ".");
+    return stsCrypto.signJwsOffLoop(plan.payload, plan.key, plan.options);
+  }
+
+  // What a published document is signed as: the algorithm, the key (the use
+  // case's signer-group key in a hybrid-groups realm, #68, else the
+  // per-algorithm key — `signingKeyFor()` decides both), the payload and
+  // the options. RS256 with the realm's own key keeps jsonwebtoken's claim
+  // conveniences (`issuer`, `expiresIn`), as it always did.
+  private publishedDocumentPlan(claims: Json, issuer: string,
+                                lifetimeS: number, useCase: string): Json {
+    const { log, STS, nowSec, signingKeyFor, certificateHeaderFor,
+            publishedKidFor, config } = this.deps;
+    log.debug("Entering OAuth2Server.publishedDocumentPlan().");
+    const alg = String(config.value('oauth2.signedMetadataAlgorithm') ||
+                       'RS256');
+    const signer = signingKeyFor(alg, useCase);
     if (alg === 'RS256' && signer.kid === STS.kid) {
-      log.debug("Leaving OAuth2Server.signPublishedDocumentAsync(). RS256.");
-      return stsCrypto.signJwsOffLoop(claims, STS.privateKey,
-        { algorithm: 'RS256', issuer: issuer, expiresIn: lifetimeS,
-          keyid: publishedKidFor(STS.kid),
-          header: certificateHeaderFor(useCase, 'RS256', STS.kid) });
+      log.debug("Leaving OAuth2Server.publishedDocumentPlan(). RS256.");
+      return { alg: 'RS256', payload: claims, key: STS.privateKey,
+               options: { algorithm: 'RS256', issuer: issuer,
+                          expiresIn: lifetimeS,
+                          keyid: publishedKidFor(STS.kid),
+                          header: certificateHeaderFor(useCase, 'RS256',
+                                                       STS.kid) } };
     }
     const iat = nowSec();
     const payload = Object.assign({}, claims,
                                   { iss: issuer, iat: iat,
                                     exp: iat + lifetimeS });
-    log.debug("Leaving OAuth2Server.signPublishedDocumentAsync(). " + alg +
-              ".");
-    return stsCrypto.signJwsOffLoop(payload, signer.key,
-                                    { algorithm: alg,
-                                      keyid: publishedKidFor(signer.kid),
-                                      header: certificateHeaderFor(useCase,
-                                        alg, signer.kid) });
+    log.debug("Leaving OAuth2Server.publishedDocumentPlan(). " + alg + ".");
+    return { alg: alg, payload: payload, key: signer.key,
+             options: { algorithm: alg, keyid: publishedKidFor(signer.kid),
+                        header: certificateHeaderFor(useCase, alg,
+                                                     signer.kid) } };
   }
 
   // RFC 8414 section 2.1: signed_metadata is a JWT whose claims are the

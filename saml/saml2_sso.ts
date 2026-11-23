@@ -4736,69 +4736,62 @@ class Saml2Sso {
    *   why }` — `policy` true for the issuance policy's refusal
    */
   pepProxyResponse(opts: any): any {
-    const { mode } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.pepProxyResponse(). sp=" + opts.spEntityId);
-    const session = opts.session;
-    const spEntityId = String(opts.spEntityId || '');
-    const acsUrl = String(opts.acsUrl || '');
-    const idpEntityId = this.idpEntityId();
-    const roleAnswer = gate.check({
-      application: spEntityId,
-      kind: gate.ISSUANCE.SAML_ASSERTION,
-      protocolFamilies: ['saml2'],
-      subject: { kind: 'user',
-                 name: String((session.user || {}).username || ''),
-                 authenticated: true },
-      claims: null,
-      session: session
-    });
-    if (!roleAnswer.allowed) {
+    const draft = this.pepProxyDraft(opts);
+    if (draft.answer) {
       log.debug("Leaving Saml2Sso.pepProxyResponse(). Refused by policy.");
-      return { ok: false, policy: true, why: roleAnswer.why };
+      return draft.answer;
     }
-    const built = this.buildAssertionFor({ id: '', requestedAuthnContexts: [] },
-                                         session, spEntityId, idpEntityId,
-                                         acsUrl);
-    const expiry = /NotOnOrAfter="([^"]+)"/.exec(built);
-    const wantsEncryption = !!this.settingFor(spEntityId,
-                                              'saml2.encryptAssertion') ||
-      String(this.fieldsOf(spEntityId).samlSpWantAssertionsEncrypted ||
-             '') === 'TRUE';
-    const sealed: any = wantsEncryption
-      ? this.encryptFor(spEntityId, built, 'saml:EncryptedAssertion',
-                        'assertion')
-      : { xml: built, encrypted: false };
-    if (wantsEncryption && !sealed.encrypted &&
-        (sealed.refused || !mode.sendsWeakerThanAsked())) {
-      log.debug("Leaving Saml2Sso.pepProxyResponse(). Encryption required " +
-                "and not possible.");
-      return { ok: false, policy: false,
-               why: 'the assertion for "' + spEntityId + '" is configured ' +
-                    'to be encrypted and could not be (' +
-                    (sealed.why || 'unknown') + ')' };
+    const built = this.buildAssertionFor(draft.request, draft.session,
+      draft.spEntityId, draft.idpEntityId, draft.acsUrl);
+    const sealed = this.pepProxySeal(draft, built);
+    if (sealed.answer) {
+      log.debug("Leaving Saml2Sso.pepProxyResponse(). Not sealed.");
+      return sealed.answer;
     }
-    const response = this.buildResponse({
-      issuer: idpEntityId, sp: spEntityId, destination: acsUrl,
-      inResponseTo: '', status: STATUS_SUCCESS, assertion: sealed.xml
-    });
+    const response = this.buildResponse(sealed.response);
     log.debug("Leaving Saml2Sso.pepProxyResponse(). Built.");
-    return { ok: true, xml: response.xml,
-             notOnOrAfter: expiry ? expiry[1] : '' };
+    return this.pepProxyAnswer(response, sealed.expiry);
   }
+
   /**
    * `pepProxyResponse()`, with the assertion and the Response signed off the
    * event loop for a realm key in the HSM (#1955 P8 follow-up). The PEP
    * proxy awaits this one; the synchronous one stays for in-place readers.
+   * The two share every step but the two signatures (`pepProxyDraft()`,
+   * `pepProxySeal()`, `pepProxyAnswer()`), so they cannot drift.
    *
    * @param opts - as `pepProxyResponse()`'s
    * @returns a promise of `pepProxyResponse()`'s answer
    */
   async pepProxyResponseAsync(opts: any): Promise<any> {
-    const { mode } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.pepProxyResponseAsync(). sp=" +
               opts.spEntityId);
+    const draft = this.pepProxyDraft(opts);
+    if (draft.answer) {
+      log.debug("Leaving Saml2Sso.pepProxyResponseAsync(). Refused by " +
+                "policy.");
+      return draft.answer;
+    }
+    const built = await this.buildAssertionForAsync(draft.request,
+      draft.session, draft.spEntityId, draft.idpEntityId, draft.acsUrl);
+    const sealed = this.pepProxySeal(draft, built);
+    if (sealed.answer) {
+      log.debug("Leaving Saml2Sso.pepProxyResponseAsync(). Not sealed.");
+      return sealed.answer;
+    }
+    const response = await this.buildResponseAsync(sealed.response);
+    log.debug("Leaving Saml2Sso.pepProxyResponseAsync(). Built.");
+    return this.pepProxyAnswer(response, sealed.expiry);
+  }
+
+  // The PEP proxy's Response before anything is signed: who it is about and
+  // for, and the issuance policy's answer (`answer` set when it refused).
+  private pepProxyDraft(opts: any): any {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.pepProxyDraft().");
     const session = opts.session;
     const spEntityId = String(opts.spEntityId || '');
     const acsUrl = String(opts.acsUrl || '');
@@ -4814,12 +4807,23 @@ class Saml2Sso {
       session: session
     });
     if (!roleAnswer.allowed) {
-      log.debug("Leaving Saml2Sso.pepProxyResponseAsync(). Refused by policy.");
-      return { ok: false, policy: true, why: roleAnswer.why };
+      log.debug("Leaving Saml2Sso.pepProxyDraft(). Refused by policy.");
+      return { answer: { ok: false, policy: true, why: roleAnswer.why } };
     }
-    const built = await this.buildAssertionForAsync(
-      { id: '', requestedAuthnContexts: [] }, session, spEntityId,
-      idpEntityId, acsUrl);
+    log.debug("Leaving Saml2Sso.pepProxyDraft().");
+    return { session: session, spEntityId: spEntityId, acsUrl: acsUrl,
+             idpEntityId: idpEntityId,
+             request: { id: '', requestedAuthnContexts: [] } };
+  }
+
+  // The signed assertion encrypted where the application asks, and the
+  // Response's options; `answer` set where encryption was required and not
+  // possible.
+  private pepProxySeal(draft: any, built: string): any {
+    const { mode } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.pepProxySeal().");
+    const spEntityId = draft.spEntityId;
     const expiry = /NotOnOrAfter="([^"]+)"/.exec(built);
     const wantsEncryption = !!this.settingFor(spEntityId,
                                               'saml2.encryptAssertion') ||
@@ -4831,21 +4835,26 @@ class Saml2Sso {
       : { xml: built, encrypted: false };
     if (wantsEncryption && !sealed.encrypted &&
         (sealed.refused || !mode.sendsWeakerThanAsked())) {
-      log.debug("Leaving Saml2Sso.pepProxyResponseAsync(). Encryption " +
-                "required " +
-                "and not possible.");
-      return { ok: false, policy: false,
+      log.debug("Leaving Saml2Sso.pepProxySeal(). Encryption required and " +
+                "not possible.");
+      return { answer: { ok: false, policy: false,
                why: 'the assertion for "' + spEntityId + '" is configured ' +
                     'to be encrypted and could not be (' +
-                    (sealed.why || 'unknown') + ')' };
+                    (sealed.why || 'unknown') + ')' } };
     }
-    const response = await this.buildResponseAsync({
-      issuer: idpEntityId, sp: spEntityId, destination: acsUrl,
-      inResponseTo: '', status: STATUS_SUCCESS, assertion: sealed.xml
-    });
-    log.debug("Leaving Saml2Sso.pepProxyResponseAsync(). Built.");
-    return { ok: true, xml: response.xml,
-             notOnOrAfter: expiry ? expiry[1] : '' };
+    log.debug("Leaving Saml2Sso.pepProxySeal().");
+    return { expiry: expiry ? expiry[1] : '',
+             response: { issuer: draft.idpEntityId, sp: spEntityId,
+                         destination: draft.acsUrl, inResponseTo: '',
+                         status: STATUS_SUCCESS, assertion: sealed.xml } };
+  }
+
+  // The PEP proxy's answer around a built Response.
+  private pepProxyAnswer(response: any, expiry: string): any {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.pepProxyAnswer().");
+    log.debug("Leaving Saml2Sso.pepProxyAnswer().");
+    return { ok: true, xml: response.xml, notOnOrAfter: expiry };
   }
 
   // Async since #1955 P8 follow-up: the assertion and the Response are

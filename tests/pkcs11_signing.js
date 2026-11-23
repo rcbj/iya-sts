@@ -55,9 +55,15 @@
 //      each operation's Init are the control thread's.
 //   L. a software key's output is byte-identical through the off-the-loop
 //      twins: a JWS, an XML signature, a Redirect-binding signature, an XML
-//      decryption.
+//      decryption; and the shared builders' twins answer alike (a published
+//      JWT byte for byte, the PEP proxy's Response but for its fresh ids).
 //   M. two tokens on one module meeting an outage at once recover with one
 //      re-initialisation, after their operations drain, and both sign.
+//   N. (SoftHSM2) another thread hears a re-initialisation on the outage
+//      channel and does not finalize again for an outage met on an older
+//      session, so this thread's new sessions survive.
+//   E2, K20 also hold a thread's FIRST use of a key: found off the event
+//      loop at the keystore's start and by `helpers.prepareKeySet()`.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -447,6 +453,15 @@ function childMain() {
       heldToken.dropIdle();
       heldToken.generation++;
     }
+    // AND A THREAD'S FIRST USE OF A KEY: the keys this thread resolved are
+    // forgotten and its key sets dropped, as a new request worker starts
+    // with neither, and the request middleware's road
+    // (`helpers.prepareKeySet()`) finds them again before anything reads a
+    // set — so K20 also holds that no first resolution searched the token on
+    // this thread.
+    stsCrypto.forgetHsmKeys();
+    helpers.resetStsKeys();
+    await helpers.prepareKeySet(REALM);
     async function offTheLoop(fn) {
       let fired = false;
       const timer = setTimeout(function () {
@@ -819,9 +834,41 @@ function childMain() {
     const kid0 = keys.kid;
     keystore.reset();
     keystore.setStore(store);
+    // A START WITH NOTHING RESOLVED (#1955 P8 follow-up): the keystore finds
+    // every stored HSM key through the control thread before it finishes,
+    // so reading the set after it makes no blocking PKCS#11 call here.
+    stsCrypto.forgetHsmKeys();
     await keystore.start();
     helpers.resetStsKeys();
+    const startLib = secrets.heldSigningToken().token.entry.lib;
+    const startCalls = [];
+    const startSaved = {};
+    if (WHICH === 'softhsm') {
+      Object.getOwnPropertyNames(Object.getPrototypeOf(startLib))
+        .forEach(function (name) {
+          if (!/^C_/.test(name) || /Async$/.test(name)) {
+            return;
+          }
+          startSaved[name] = true;
+          const through = startLib[name];
+          startLib[name] = function () {
+            startCalls.push(name);
+            return through.apply(startLib, arguments);
+          };
+        });
+    }
     const back = keysNow();
+    void back.kid;
+    void (back.extraKeys || []).length;
+    if (WHICH === 'softhsm') {
+      Object.keys(startSaved).forEach(function (name) {
+        delete startLib[name];
+      });
+      note(startCalls.length === 0,
+           'E2. the keystore\'s start found the stored HSM keys off the ' +
+           'event loop: reading the restored set made no blocking PKCS#11 ' +
+           'call', JSON.stringify(startCalls.slice(0, 20)));
+    }
     const rs2 = stsCrypto.signJws({ sub: 'p8-again' }, back.privateKey,
       { algorithm: 'RS256', keyid: back.kid });
     let rs2Ok = false;
@@ -1103,6 +1150,60 @@ function childMain() {
          'L4. a software key\'s XML decryption answers the same through ' +
          'decryptElementOffLoop()', (decTwinL && decTwinL.why) || '');
     config.setOverride('keys.pkcs11SynchronousSign', true);
+    // THE SHARED BUILDERS (#1955 P8 follow-up): the twins of a published
+    // JWT and of the PEP proxy's Response share every step but the
+    // signature. RS256 is deterministic, so a published JWT is the same
+    // bytes both ways within one second (asked again across a boundary).
+    const oauth2L = require(ROOT + '/oauth-oidc/oauth2');
+    let l5 = 'not signed';
+    for (let i = 0; i < 3; i++) {
+      const second0 = Math.floor(Date.now() / 1000);
+      const a5 = oauth2L.signPublishedDocument({ sub: 'l5' },
+        'https://l5.test', 300, 'oauth-signed-metadata');
+      const b5 = await oauth2L.signPublishedDocumentAsync({ sub: 'l5' },
+        'https://l5.test', 300, 'oauth-signed-metadata');
+      if (Math.floor(Date.now() / 1000) !== second0) {
+        continue;
+      }
+      l5 = a5 === b5 ? 'same' : 'different: ' + String(a5).slice(-20) +
+                                 ' / ' + String(b5).slice(-20);
+      break;
+    }
+    note(l5 === 'same',
+         'L5. a published JWT is the same bytes through ' +
+         'signPublishedDocumentAsync() as through signPublishedDocument()',
+         l5);
+    // The Response carries fresh IDs and instants, so it is compared with
+    // those (and the digests and signatures over them) blanked.
+    const sso2L = require(ROOT + '/saml/saml2_sso');
+    const blank = function (xml) {
+      return String(xml || '')
+        .replace(new RegExp('\\b(ID|IssueInstant|NotBefore|NotOnOrAfter|' +
+          'AuthnInstant|SessionIndex|SessionNotOnOrAfter|URI)="[^"]*"', 'g'),
+                 '$1=""')
+        .replace(/<(ds:DigestValue|ds:SignatureValue)>[^<]*</g, '<$1><')
+        .replace(/>_[0-9a-f]{20,}</g, '><');
+    };
+    let l6 = 'not built';
+    try {
+      const sessionL = { id: 'l6-session', user: { username: 'l6-alice' },
+                         authTime: Math.floor(Date.now() / 1000),
+                         amr: ['pwd'] };
+      const optsL = { session: sessionL, spEntityId: 'https://sp.l6.test',
+                      acsUrl: 'https://sp.l6.test/acs' };
+      const a6 = sso2L.pepProxyResponse(optsL);
+      const b6 = await sso2L.pepProxyResponseAsync(optsL);
+      l6 = a6.ok && b6.ok && blank(a6.xml) === blank(b6.xml) &&
+           /<ds:SignatureValue>/.test(a6.xml)
+        ? 'same' : 'different: ' + JSON.stringify([a6.ok, b6.ok,
+                                                  a6.why, b6.why]);
+    } catch (e) {
+      l6 = String((e && e.stack) || e).slice(0, 400);
+    }
+    note(l6 === 'same',
+         'L6. the PEP proxy\'s Response is the same document both ways, ' +
+         'but for its fresh identifiers, instants and the signatures over ' +
+         'them', l6);
 
     // ------------------------------------------------------------ M
     // TWO TOKENS ON ONE MODULE RECOVER TOGETHER (#1955 P8 follow-up): an
@@ -1191,6 +1292,111 @@ function childMain() {
            'with ONE re-initialisation, after their operations drain, and ' +
            'both sign after it', m);
       second.close();
+    }
+
+    // ------------------------------------------------------------ N
+    // ANOTHER THREAD'S OUTAGE (#1955 P8 follow-up, SoftHSM2): C_Finalize is
+    // process-wide. This thread initialises the module again and says so on
+    // the outage channel; a worker thread on the same module hears it, and
+    // when it then meets a device error on a session opened before, it does
+    // NOT finalize again — so this thread's fresh sessions survive and its
+    // next signature needs no reconnect.
+    if (WHICH === 'softhsm') {
+      const workerThreads = require('worker_threads');
+      const wcode = [
+        "const { parentPort, workerData } = require('worker_threads');",
+        "const binding = require(workerData.bindingPath);",
+        "const pk = require(workerData.root +",
+        "  '/common/crypto_impl/pkcs11');",
+        "(async function () {",
+        "  const t = pk.openToken(binding, {",
+        "    modulePath: workerData.modulePath,",
+        "    tokenLabel: 'second', pin: '4321', maxSessions: 2 });",
+        "  const k = await t.generateKeyPairAsync({ kty: 'EC', crv: 'P-256' },",
+        "    'n', require('crypto').randomBytes(8));",
+        "  await t.sign(k.key, 'ES256', Buffer.from('x'));",
+        "  const epoch0 = t.entry.epoch;",
+        "  parentPort.on('message', async function (m) {",
+        "    try {",
+        "      if (m.ask === 'epoch') {",
+        "        parentPort.postMessage({ epoch: t.entry.epoch });",
+        "      } else if (m.ask === 'outage') {",
+        "        await t.recover({ code: 0x30, message: 'test' }, epoch0);",
+        "        const sig = await t.sign(k.key, 'ES256', Buffer.from('y'));",
+        "        parentPort.postMessage({ recovered: true, sig: sig.length });",
+        "      }",
+        "    } catch (e) {",
+        "      parentPort.postMessage({ error: String((e && e.stack) || e) });",
+        "    }",
+        "  });",
+        "  parentPort.postMessage({ ready: true, epoch: epoch0 });",
+        "})().catch(function (e) {",
+        "  parentPort.postMessage({ error: String((e && e.stack) || e) });",
+        "});"].join('\n');
+      let n = 'not run';
+      const w = new workerThreads.Worker(wcode, { eval: true,
+        workerData: { root: ROOT, bindingPath: process.env.PS_PKCS11JS,
+                      modulePath: String(process.env.STS_KEYS_PKCS11_MODULE) }
+      });
+      const nextOf = function (pred) {
+        return new Promise(function (resolve) {
+          const f = function (msg) {
+            if (msg.error || pred(msg)) {
+              w.off('message', f);
+              resolve(msg);
+            }
+          };
+          w.on('message', f);
+        });
+      };
+      try {
+        const ready = await nextOf(function (msg) {
+          return msg.ready;
+        });
+        if (ready.error) {
+          throw new Error(ready.error);
+        }
+        const mainKey = await heldToken.generateKeyPairAsync(
+          { kty: 'EC', crv: 'P-256' }, 'n-main', nodeCrypto.randomBytes(8));
+        await heldToken.recover({ code: 0x30, message: 'test' });
+        let moved = { epoch: ready.epoch };
+        for (let i = 0; i < 50 && moved.epoch === ready.epoch; i++) {
+          await new Promise(function (resolve) {
+            setTimeout(resolve, 20);
+          });
+          w.postMessage({ ask: 'epoch' });
+          moved = await nextOf(function (msg) {
+            return msg.epoch !== undefined;
+          });
+        }
+        await heldToken.sign(mainKey.key, 'ES256', Buffer.from('n1'));
+        const before = heldToken.reconnects;
+        w.postMessage({ ask: 'outage' });
+        const got = await nextOf(function (msg) {
+          return msg.recovered;
+        });
+        const after = await heldToken.sign(mainKey.key, 'ES256',
+                                           Buffer.from('n2'));
+        n = JSON.stringify({ heard: moved.epoch !== ready.epoch,
+                             worker: got.recovered ? 'signed' : got.error,
+                             reconnects: heldToken.reconnects - before,
+                             signed: nodeCrypto.verify('sha256',
+                               Buffer.from('n2'),
+                               { key: mainKey.publicKey,
+                                 dsaEncoding: 'ieee-p1363' }, after) });
+        const parsed = JSON.parse(n);
+        n = (parsed.heard && parsed.worker === 'signed' &&
+             parsed.reconnects === 0 && parsed.signed ? 'held ' : 'wrong ') +
+            n;
+      } catch (e) {
+        n = String((e && e.stack) || e).slice(0, 600);
+      }
+      await w.terminate();
+      note(/^held/.test(n),
+           'N1. a worker thread hears this thread initialise the module ' +
+           'again, and an outage it then meets on an older session does not ' +
+           'finalize it again: this thread signs after it with no reconnect',
+           n);
     }
   })().catch(function (e) {
     note(false, 'the child ran to the end', e && e.stack);

@@ -3234,6 +3234,46 @@ function keySetNeedsMaking(realmId) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// A REALM'S HSM KEYS, FOUND OFF THE EVENT LOOP BEFORE A HANDLER READS ITS SET
+// (#1955 P8 follow-up). The keystore's start resolves every realm it held
+// then; a realm whose stored set this thread first meets later — created on
+// another node, adopted since — has its references resolved here, through
+// the token's control thread (`stsCrypto.resolveHsmKeysAsync()`), once per
+// realm per thread. The request middleware is the road (`app.js`). A
+// reference adopted after that — a rotation another node made — is resolved
+// in place at its first use, once.
+// ---------------------------------------------------------------------------
+const hsmResolvedRealms = new Set();
+
+// A promise that settles once the realm's stored HSM keys are held, or null
+// when there is nothing to find (or it was done). Never rejects.
+function hsmKeysAhead(realmId) {
+  log.debug("Entering hsmKeysAhead().");
+  if (hsmResolvedRealms.has(realmId) ||
+      !String(config.value('keys.signingKeyToken') || '').trim()) {
+    log.debug("Leaving hsmKeysAhead(). Nothing to do.");
+    return null;
+  }
+  const realm = realmForKeys(realmId);
+  const stored = keystore.storedFor(realm.id);
+  if (!stored) {
+    // Asked again next time: a set may be stored for it later.
+    log.debug("Leaving hsmKeysAhead(). Nothing stored.");
+    return null;
+  }
+  hsmResolvedRealms.add(realmId);
+  const refs = stsCrypto.hsmRefsIn(stored);
+  if (!refs.length) {
+    log.debug("Leaving hsmKeysAhead(). No HSM key.");
+    return null;
+  }
+  log.debug("Leaving hsmKeysAhead(). " + refs.length + " reference(s).");
+  return stsCrypto.resolveHsmKeysAsync(refs).then(function () {
+    return undefined;
+  });
+}
+
 // On libuv's thread pool, through `crypto.js`'s generateKeyPairAsync() (#453).
 function generateRsaPairAsync(bits, asPem) {
   log.debug("Entering generateRsaPairAsync(). bits=" + bits);
@@ -3266,6 +3306,13 @@ function generateRsaPairAsync(bits, asPem) {
 function prepareKeySet(realmId, options) {
   log.debug("Entering prepareKeySet(). realm=" + realmId);
   const id = String(realmId || '');
+  const ahead = hsmKeysAhead(id);
+  if (ahead) {
+    log.debug("Leaving prepareKeySet(). Its HSM keys are found first.");
+    return ahead.then(function () {
+      return prepareKeySet(realmId, options);
+    });
+  }
   const awaitCertificate = !(options && options.awaitCertificate === false);
   if (!keySetNeedsMaking(id)) {
     // HELD — BUT PERHAPS NOT YET CERTIFIED (2026-11-17): a set a read made
@@ -4789,6 +4836,7 @@ function xmlSignatureChoice() {
  */
 function resetStsKeys() {
   log.debug("Entering resetStsKeys().");
+  hsmResolvedRealms.clear();
   const held = stsKeysFor.existing();
   if (held && typeof held.clear === 'function') {
     held.clear();

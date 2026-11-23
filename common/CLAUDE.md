@@ -8078,10 +8078,15 @@ SLH-DSA has no mechanism here. `docs/v1.2.0/hsm.md` is the operator half.
   is forgotten — never closed (its handle may name a new session) nor lent
   again — and `open` never reset while sessions are lent.
   CKR_CRYPTOKI_NOT_INITIALIZED skips C_Finalize: another thread did it, and
-  finalizing again would end the sessions that thread just opened. A
-  thread's count cannot see another thread's calls, which is the one gap: a
-  device that really went away can cost an operation in flight on another
-  thread its retry.
+  finalizing again would end the sessions that thread just opened. **And
+  the threads tell each other** (`outageChannel()`): a thread that
+  initialised the module again posts on a BroadcastChannel named for the
+  module's path — every thread hears it, no plumbing through the pool — and
+  the others move their epoch and do not finalize for an outage met on a
+  session opened before it (`tests/pkcs11_signing.js` N). What is left is the
+  message's own flight time: two threads finalizing inside it still cost
+  each other's retries. A SharedArrayBuffer would close that too, at the
+  price of handing one to every request worker through the pool; not done.
 * **A SIGNING KEY IN THE HSM TRAVELS WHERE A PEM TRAVELS.** Its "PEM" is a
   reference, `pkcs11-key:v1:<b64url {token, id, kty, crv, bits}>` — what
   `export()` answers and what `keystore.js` seals — and `privateKeyFrom()`
@@ -8171,10 +8176,15 @@ SLH-DSA has no mechanism here. `docs/v1.2.0/hsm.md` is the operator half.
   loop, and eager sessions could exhaust a YubiHSM 2's sixteen at start. A
   test's fake has no file to load in a thread and is called in place.
   `tests/pkcs11_signing.js` K20 records every call the serving thread's
-  binding gets on SoftHSM2 and holds the list to the `…Async` ones. What
-  stays on the loop is the start (`connect()`), a key's first resolution in
-  a thread (`keyPair()`: the resolver is synchronous by design), and the
-  blocking opt-in, which takes an idle session or the token's one blocking
+  binding gets on SoftHSM2 and holds the list to the `…Async` ones,
+  including a thread's first use of a key: the resolver is synchronous by
+  design, so the references are resolved AHEAD through the control thread
+  (`crypto.resolveHsmKeysAsync()`, the same resolver slot asked with
+  `{ async: true }`) at the keystore's start, for every stored realm, and in
+  `helpers.prepareKeySet()` for a realm first met later (E2, K20). A
+  reference adopted after both — a rotation another node made — is still
+  resolved in place, once. What stays on the loop is the start
+  (`connect()`) and the blocking opt-in, which takes an idle session or the token's one blocking
   session — never one past `maxSessions` + 1. Key GENERATION is asynchronous
   through `prepareKeySet()` and a rotation; the synchronous `makeStsKeys()`
   road still generates in place, for a set nobody prepared (`app.js`

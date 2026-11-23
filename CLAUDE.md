@@ -332,7 +332,7 @@ holds is the table above; what each module is for is that directory's
 | `common/openpgp_keys.ts` | `setDirectory` (a person located with their S/MIME values, the five OpenPGP/mail-encryption attributes written, a person by `mail`), filled by `ldap/ldap_server.js` (#1955 P6) | `common/CLAUDE.md` (`openpgp_keys.ts`) |
 | `common/hardware_tokens.ts` | `registerRetirer(kind, …)` (a credential kind's lost-key retire action), filled by each later #1955 phase's module for the kind it adds; `fido` and `x509` are built in (#1955 P1) | `common/CLAUDE.md` |
 | `common/roles.js` | `setSelectionReader` (the dynamic roles a session chose and is still eligible for; EMPTY IS NOBODY'S CHOICE), filled by `authn/role_selection.ts` at 23c (#1072) | `common/CLAUDE.md` (3dg) |
-| `common/crypto.js` | `setPkcs11KeyResolver` (an HSM signing key's reference found on a token this thread holds), filled by `common/secrets.js` at load, which requires `crypto.js` and so cannot be required back (#1955 P8) | `common/CLAUDE.md` (*Keys in a hardware security module*) |
+| `common/crypto.js` | `setPkcs11KeyResolver` (an HSM signing key's reference found on a token this thread holds, in place or, asked `{ async: true }`, off the event loop), filled by `common/secrets.js` at load, which requires `crypto.js` and so cannot be required back (#1955 P8) | `common/CLAUDE.md` (*Keys in a hardware security module*) |
 
    **`setTruststore()` is the one slot not filled by the module that owns what
    it carries** — `common/protocol_stack.ts` fills it, because the owner is first
