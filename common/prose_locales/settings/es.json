@@ -5983,6 +5983,38 @@
     "en": "ffc141f1ac37ec59",
     "text": "Cómo se envuelve la clave de contenido de un solo uso de una respuesta WS-Trust hacia la clave pública RSA del destinatario. `rsa-oaep` es el RSA-OAEP de XML Encryption 1.1 con SHA-256 y MGF1-SHA-256; `rsa-oaep-mgf1p` es OAEP sobre SHA-1. Un destinatario cuyo certificado es EC se cifra mediante acuerdo de claves ECDH-ES diga lo que diga este ajuste. El wstrustKeyTransportAlgorithm de una aplicación prevalece. `rsa-1_5` es RSAES-PKCS1-v1_5 y está roto, y se ofrece porque un solicitante desplegado puede no aceptar ningún otro. ADVERTENCIA: rsa-1_5 es solo del modo de desarrollo — en modo producto se ignora donde se lee, en este ajuste y en el wstrustKeyTransportAlgorithm de una aplicación (se usa rsa-oaep-mgf1p, se registra una vez, STS-CORE-0106), y fijarlo se rechaza (STS-CORE-0103, STS-REG-0193). Un elemento wst:EncryptWith puede nombrar este algoritmo solo mientras el cifrado de la respuesta está activado."
   },
+  "wstrust.signRequest|label": {
+    "en": "ee6db27fb290a51c",
+    "text": "Exigir una solicitud firmada"
+  },
+  "wstrust.signRequest|description": {
+    "en": "3155eaca9d1a8680",
+    "text": "Si un RequestSecurityToken cuyo AppliesTo no nombra ninguna aplicación propia debe llevar una firma de mensaje WS-Security. El wstrustSignRequest de una aplicación reemplaza este valor para una solicitud cuyo AppliesTo la nombra, y su wstrustSignRequestElements nombra qué más debe cubrir la firma además del SOAP Body. Activado, una solicitud sin una firma aceptada, o una cuya firma no cubre un elemento nombrado, es un wsse:FailedCheck. El modo de desarrollo cree una firma, como siempre ha hecho."
+  },
+  "wstrust.signResponse|label": {
+    "en": "9eb9dbebd82abfea",
+    "text": "Firmar una respuesta"
+  },
+  "wstrust.signResponse|description": {
+    "en": "3a78c4fc80cc38a7",
+    "text": "Si un RequestSecurityTokenResponse lleva un wsu:Timestamp y una firma de mensaje WS-Security sobre él y el SOAP Body, hecha con la clave de firma XML de este dominio y que nombra su certificado en un BinarySecurityToken. El wstrustSignResponse de una aplicación prevalece, y su wstrustSignResponseElements nombra lo que la firma cubre en lugar del Body. Una falta se envía sin firmar. El binding del WSDL lleva sp:IncludeTimestamp mientras esto está activado. Activado, y si la firma no puede hacerse, la solicitud es una falta en ambos modos."
+  },
+  "wstrust.responseProtectionOrder|label": {
+    "en": "55a63069d07b808c",
+    "text": "Orden de protección de la respuesta"
+  },
+  "wstrust.responseProtectionOrder|description": {
+    "en": "0c8e29e5ac06276d",
+    "text": "El orden en que se firma y se cifra una respuesta WS-Trust cuando ambos están activados. `sign-then-encrypt` firma el texto en claro y es el valor predeterminado de WS-SecurityPolicy; `encrypt-then-sign` firma el texto cifrado, y el binding del WSDL lleva entonces sp:EncryptBeforeSigning. La cabecera wsse:Security se escribe en el orden en que un receptor la procesa. El wstrustResponseProtectionOrder de una aplicación prevalece."
+  },
+  "wstrust.encryptSignature|label": {
+    "en": "98953d7bb9c3dc42",
+    "text": "Cifrar la firma de una respuesta"
+  },
+  "wstrust.encryptSignature|description": {
+    "en": "32f9389b65f0eb67",
+    "text": "Si la ds:Signature de una respuesta WS-Trust también se cifra (sp:EncryptSignature de WS-SecurityPolicy), para el destinatario de la respuesta. Solo se lee mientras la respuesta se firma y después se cifra. El binding del WSDL lleva sp:EncryptSignature mientras esto está activado. El wstrustEncryptSignature de una aplicación prevalece."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Inicio de sesión iniciado por el proveedor de identidad"
