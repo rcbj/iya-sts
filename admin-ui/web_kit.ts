@@ -1900,6 +1900,57 @@ class WebKit {
     return 'pf ' + list.map(function (id) { return 'pf-' + id; }).join(' ');
   }
 
+  // A LIST OF FREE TEXT, one box per value with its bin and a "+" (the
+  // field grid's array cell). A function of its own since #1917, so the
+  // WS-Trust message-protection boxes can draw a map's list again in the
+  // browser, after rewriting its values, exactly as the grid draws it.
+  /**
+   * Draws a free-text list field's boxes, bins and "+".
+   *
+   * @param row - the field, typed (`attribute`, `what`, `example`)
+   * @param held - its values
+   * @param options - `fieldGridCell()`'s options (`redraw`, `derived`)
+   * @param t - optional; the translator (#539), the default when left out
+   * @returns the list as HTML
+   */
+  static fieldListOf(row, held, options,
+                     t = webMessages.WebTranslator.fallback()) {
+    const opts = options || {};
+    const name = 'field.' + row.attribute;
+    const id = 'fg-' + row.attribute;
+    const hint = WebKit.tip(row.what || row.attribute);
+    const eg = t.text('consoleKit.grid.example');
+    return '<div class="fg-list">' + held.map(function (value, n) {
+      return '<div class="fg-item"><input type="text" id="' +
+        WebKit.esc(id + '-' + n) + '" name="' + WebKit.esc(name + '.' + n) +
+        '" value="' + WebKit.esc(value) + '"' + hint +
+        (row.example
+          ? ' placeholder="' + WebKit.esc(eg + row.example) +
+            '"' : '') + ' aria-label="' +
+        WebKit.esc(t.text('consoleKit.grid.valueN',
+                          { attribute: row.attribute, n: n + 1 })) + '">' +
+        '<button type="submit" class="secondary fg-drop" name="drop" ' +
+        'value="' + WebKit.esc(row.attribute + '.' + n) + '" formaction="' +
+        WebKit.esc(opts.redraw + '#fgc-' + row.attribute) +
+          '" formnovalidate ' +
+        'title="' + WebKit.esc(t.text('consoleKit.grid.delete')) +
+        '" aria-label="' + WebKit.esc(t.text('consoleKit.grid.deleteN',
+          { n: n + 1, attribute: row.attribute })) + '">' +
+        WebKit.trashIcon() +
+        '</button></div>';
+    }).join('') +
+    WebKit.derivedListItems((opts.derived || {})[row.attribute], t) +
+    (held.length || ((opts.derived || {})[row.attribute] || []).length
+      ? '' : '<span class="state-none">' +
+      t.html('consoleKit.grid.noValues') + '</span>') +
+    '<button type="submit" class="secondary fg-grow" name="grow" value="' +
+    WebKit.esc(row.attribute) + '" formaction="' +
+    WebKit.esc(opts.redraw + '#fgc-' + row.attribute) +
+    '" formnovalidate title="' + WebKit.esc(t.text('consoleKit.grid.add')) +
+    '" aria-label="' + WebKit.esc(t.text('consoleKit.grid.addTo',
+      { attribute: row.attribute })) + '">+</button></div>';
+  }
+
   /**
    * Draws one field of the grid: its name (with its sentence as a tooltip),
    * the families it belongs to, and the control its type needs.
@@ -1974,35 +2025,7 @@ class WebKit {
             outside(row.choices, value) + '</label>';
         }).join('') + '</div>';
     } else if (row.type === 'array') {
-      control = '<div class="fg-list">' + held.map(function (value, n) {
-        return '<div class="fg-item"><input type="text" id="' +
-          WebKit.esc(id + '-' + n) + '" name="' + WebKit.esc(name + '.' + n) +
-          '" value="' + WebKit.esc(value) + '"' + hint +
-          (row.example
-            ? ' placeholder="' + WebKit.esc(eg + row.example) +
-              '"' : '') + ' aria-label="' +
-          WebKit.esc(t.text('consoleKit.grid.valueN',
-                            { attribute: row.attribute, n: n + 1 })) + '">' +
-          '<button type="submit" class="secondary fg-drop" name="drop" ' +
-          'value="' + WebKit.esc(row.attribute + '.' + n) + '" formaction="' +
-          WebKit.esc(opts.redraw + '#fgc-' + row.attribute) +
-            '" formnovalidate ' +
-          'title="' + WebKit.esc(t.text('consoleKit.grid.delete')) +
-          '" aria-label="' + WebKit.esc(t.text('consoleKit.grid.deleteN',
-            { n: n + 1, attribute: row.attribute })) + '">' +
-          WebKit.trashIcon() +
-          '</button></div>';
-      }).join('') +
-      WebKit.derivedListItems((opts.derived || {})[row.attribute], t) +
-      (held.length || ((opts.derived || {})[row.attribute] || []).length
-        ? '' : '<span class="state-none">' +
-        t.html('consoleKit.grid.noValues') + '</span>') +
-      '<button type="submit" class="secondary fg-grow" name="grow" value="' +
-      WebKit.esc(row.attribute) + '" formaction="' +
-      WebKit.esc(opts.redraw + '#fgc-' + row.attribute) +
-      '" formnovalidate title="' + WebKit.esc(t.text('consoleKit.grid.add')) +
-      '" aria-label="' + WebKit.esc(t.text('consoleKit.grid.addTo',
-        { attribute: row.attribute })) + '">+</button></div>';
+      control = WebKit.fieldListOf(row, held, opts, t);
     } else if (row.type === 'boolean') {
       const upper = first.toUpperCase();
       const radio = function (value, label) {
