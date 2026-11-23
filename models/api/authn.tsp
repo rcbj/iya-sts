@@ -407,6 +407,7 @@ op `getScreen`(`parameters/0/schema`: SignInId,
       `protocol`?: string;
       `application`?: string;
       `error`?: string;
+      `refusal`?: NullableRefusal;
       `locked`?: string;
       `hint`?: string;
       `screen`?: boolean;

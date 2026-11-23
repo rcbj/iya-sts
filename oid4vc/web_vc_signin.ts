@@ -740,9 +740,9 @@ class WalletFlow {
       this.env().location.assign(String(json.location));
       return;
     }
-    const why = (json && ((json.errors || []).join(' ') ||
+    const why = (json && (this.surface.said(json) ||
                           json.error_description)) ||
-      'The service answered ' + answer.status + '.';
+      this.surface.answeredStatus(answer.status);
     this.surface.showView(json && json.view ? json.view : null, why);
   }
 }

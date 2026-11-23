@@ -800,6 +800,13 @@ namespace IyaSts.Api.Common;
 
 @hoisted model WithActionCategoryLabel {`action`?: string; `category`?: string; `label`?: string}
 
+@js(#{`description`:"A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language."}) @hoisted model RefusalInnerMessage {`key`: string; `params`?: Record<StringOrNumeric>}
+@hoisted union RefusalMessageParam {string, numeric, RefusalInnerMessage}
+@js(#{`description`:"A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`."}) @hoisted model RefusalMessage {`key`: string; `params`?: Record<RefusalMessageParam>}
+@hoisted union RefusalMessageOrNull {RefusalMessage, null}
+@js(#{`description`:"One entry per sentence of `errors`, null where a sentence has no catalog message (#2006)."}) @hoisted model RefusalMessages is (RefusalMessageOrNull)[];
+@js(#{`description`:"The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message."}) @hoisted model WithErrorsMessages {`errors`: (string)[]; `messages`: RefusalMessages}
+@hoisted union NullableRefusal {WithErrorsMessages, null}
 @hoisted model WithOkMessageErrors {`ok`: boolean; `message`?: string; `errors`?: (string)[]}
 
 @hoisted model WithAddressUsernameToken {`address`?: string; `username`?: string; `token`?: string}
@@ -1160,7 +1167,7 @@ namespace IyaSts.Api.Common;
 
 @hoisted model WithOkErrorsDescriptionEtc4 { `ok`?: boolean; `errors`?: (string)[]; @js(#{`description`:"The nodes there are."}) `nodes`?: (string)[] }
 
-@hoisted model WithOkNextErrorsEtc5 { `ok`?: boolean; `next`?: "refused"; `errors`?: (string)[]; `error`?: string; `error_description`?: string }
+@hoisted model WithOkNextErrorsEtc5 { `ok`?: boolean; `next`?: "refused"; `errors`?: (string)[]; `messages`?: RefusalMessages; `error`?: string; `error_description`?: string }
 
 @hoisted model WithOkErrorsErrorEtc52 { `ok`?: boolean; `errors`?: (string)[]; `error`?: string; `error_description`?: string; `message`?: string }
 
@@ -1887,7 +1894,7 @@ model XacmlPepListenerTuningFields {
 
 @hoisted model WithWalletHeadingRetryEtc8 { `wallet`?: "refused"; `heading`?: string; `retry`?: string; `checks`?: (WithOkNameDetail)[]; `verdict`?: string; `back`?: string; `backKind`?: "portal" | "screen" | "none"; `reissue`?: string }
 
-@hoisted model WithOkErrorsErrorEtc8 { `ok`?: boolean; `errors`?: (string)[]; `error`?: string; `error_description`?: string; `next`?: "refused"; `challenge`?: string; `rpId`?: string; `options`?: WithRpIdUserVerificationTimeoutEtc4 }
+@hoisted model WithOkErrorsErrorEtc8 { `ok`?: boolean; `errors`?: (string)[]; `messages`?: RefusalMessages; `error`?: string; `error_description`?: string; `next`?: "refused"; `challenge`?: string; `rpId`?: string; `options`?: WithRpIdUserVerificationTimeoutEtc4 }
 
 @hoisted model WithLevelFormatSummaryEtc7 { `level`?: string; `format`?: string; `summary`?: string; `verifiedAt`?: NullOrStringOrNumeric2; `chainSerials`?: (string)[]; `revocation`?: WithStatusReasonSerialEtc7; `freshness`?: WithStatusDetail }
 
@@ -2003,7 +2010,7 @@ model XacmlPepListenerTuningFields {
 
 @hoisted model WithIdentifierNameKindsEtc12 { `identifier`?: string; `name`?: NullableString; `kinds`?: (string)[]; `role`?: string; `registered`?: boolean; `finishUris`?: (string)[]; `webApplication`?: boolean; `grantsHeld`?: WithTotalPendingApprovedEtc4; `activeTokens`?: integer; `counters`?: Record<NumericOrStringOrNullEtc>; `lastAt`?: NullOrStringOrNumeric; `lastEvent`?: NullableString }
 
-@hoisted model WithOkErrorsErrorEtc13 { `ok`?: boolean; `errors`?: (string)[]; `error`?: string; `error_description`?: string; `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused"; `location`?: string; `step`?: string; `id`?: string; `form`?: WithMethodActionDescriptionEtc4; `notice`?: string; `end`?: {`title`?: string}; `passkey`?: WithUnknownCredentialAutofill }
+@hoisted model WithOkErrorsErrorEtc13 { `ok`?: boolean; `errors`?: (string)[]; `messages`?: RefusalMessages; `error`?: string; `error_description`?: string; `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused"; `location`?: string; `step`?: string; `id`?: string; `form`?: WithMethodActionDescriptionEtc4; `notice`?: string; `end`?: {`title`?: string}; `passkey`?: WithUnknownCredentialAutofill }
 
 @hoisted model WithIdUsernameSubEtc15 { `id`?: string; `username`?: string; `sub`?: string; `amr`?: string; `acr`?: string; `startedAt`?: numeric; `authTime`?: numeric; `authentications`?: numeric; `expires`?: numeric; `expired`?: boolean; `wsfedRealms`?: (string)[]; `deviceBound`?: NullableObject40; `accountSet`?: string; `tokens`?: (WithStateKeyJtiEtc29)[]; `tokensPaging`?: WithPagePagesPerPageEtc8 }
 
@@ -2161,17 +2168,17 @@ model XacmlPepListenerTuningFields {
 
 @hoisted model WithJweXmlKerberosEtc4 { `jwe`?: WithKeyManagementOutKeyManagementInContentEncryption; `xml`?: WithBlockCiphersKeyTransportsConfigured; `kerberos`?: WithPerformedDecodeOnlyPreference; `tls`?: WithWhatSockets }
 
-@hoisted model WithOkCsrfUiLocalesEtc8 { `ok`?: boolean; `csrf`?: string; `uiLocales`?: string; `preferredLanguage`?: WithValuePopulated; `view`?: WithStateAccountsPreselectedEtc4; `errors`?: (string)[]; `error`?: string; `error_description`?: string }
+@hoisted model WithOkCsrfUiLocalesEtc8 { `ok`?: boolean; `csrf`?: string; `uiLocales`?: string; `preferredLanguage`?: WithValuePopulated; `view`?: WithStateAccountsPreselectedEtc4; `errors`?: (string)[]; `messages`?: RefusalMessages; `error`?: string; `error_description`?: string }
 
 @hoisted model WithJwtBiscuitZcapEtc6 { `jwt`?: WithJwksUriAlgKidEtc5; `biscuit`?: WithAlgorithmRootPublicKeyRevocationEndpointEtc5; `zcap`?: WithControllerCryptosuite; `macaroon`?: {`root_key`?: string}; `jwt-encrypted`?: WithAuthorizationServerResourceServer }
 
-@hoisted model WithOkCsrfUiLocalesEtc9 { `ok`?: boolean; `csrf`?: string; `uiLocales`?: string; `preferredLanguage`?: WithValuePopulated; `view`?: WithWalletStateKindEtc22; `next`?: "refused"; `errors`?: (string)[]; `error`?: string; `error_description`?: string }
+@hoisted model WithOkCsrfUiLocalesEtc9 { `ok`?: boolean; `csrf`?: string; `uiLocales`?: string; `preferredLanguage`?: WithValuePopulated; `view`?: WithWalletStateKindEtc22; `next`?: "refused"; `errors`?: (string)[]; `messages`?: RefusalMessages; `error`?: string; `error_description`?: string }
 
 @hoisted model WithEnabledTurnOnLoginHintEtc8 { `enabled`?: boolean; `turnOn`?: NullableObject18; `loginHint`?: string; `didClaim`?: boolean; `published`?: NullableObject19; `subjects`?: (WithSubjectLabelEnrolledAtEtc9)[]; `notice`?: string; `fresh`?: WithKindRidDidEtc4 }
 
 @hoisted model WithDevicesPlatformsProofEtc8 { `devices`?: (WithIdLabelApplicationsEtc9)[]; `platforms`?: (string)[]; `proof`?: NullableObject22; `audience`?: string; `proofTyp`?: string; `linking`?: NullableObject23; `link`?: WithEnrolledKeysRoaming; `remember`?: boolean }
 
-@hoisted model WithOkCsrfUiLocalesEtc92 { `ok`?: boolean; `csrf`?: string; `uiLocales`?: string; `preferredLanguage`?: WithValuePopulated; `view`?: WithWalletKindSecondFactorEtc10; `next`?: "refused"; `errors`?: (string)[]; `error`?: string; `error_description`?: string }
+@hoisted model WithOkCsrfUiLocalesEtc92 { `ok`?: boolean; `csrf`?: string; `uiLocales`?: string; `preferredLanguage`?: WithValuePopulated; `view`?: WithWalletKindSecondFactorEtc10; `next`?: "refused"; `errors`?: (string)[]; `messages`?: RefusalMessages; `error`?: string; `error_description`?: string }
 
 @hoisted model WithHeldExposesOfferableEtc5 { `held`?: (WithClientClientNamePermissionIdEtc10)[]; `exposes`?: (WithResourceResourceNameBaseUriEtc8)[]; `offerable`?: (NullableString)[]; `grantedOut`?: (WithClientClientNamePermissionIdEtc10)[]; `paging`?: WithHeldExposesGrantedOut }
 
@@ -2191,9 +2198,9 @@ model XacmlPepListenerTuningFields {
 
 @hoisted model WithRealmRegeneratedEveryStartSigningEtc9 { `realm`?: string; `regeneratedEveryStart`?: boolean; `signing`?: WithKtyBitsAlgEtc7; `curveKeys`?: (WithAlgKtyCrvEtc5)[]; `postQuantum`?: WithAlgorithmsGeneratedKeysEtc4; `signerGroups`?: WithModelKeys; `bbs`?: WithCryptosuiteCurveWhat; `tls`?: WithSubjectNamesFingerprint256Etc7; `spiffe`?: WithEnabledReadyPerRealmEtc13 }
 
-@hoisted model WithOkErrorsErrorEtc132 { `ok`?: boolean; `errors`?: (string)[]; `error`?: string; `error_description`?: string; `mode`?: "create" | "get"; `challenge`?: string; `rpId`?: string; `user`?: WithNameDisplayNameId; `allow`?: (string)[]; `exclude`?: (string)[]; `options`?: WithRpAlgorithmsAttestationEtc10; `fallback`?: NullableObject33; `next`?: "refused" }
+@hoisted model WithOkErrorsErrorEtc132 { `ok`?: boolean; `errors`?: (string)[]; `messages`?: RefusalMessages; `error`?: string; `error_description`?: string; `mode`?: "create" | "get"; `challenge`?: string; `rpId`?: string; `user`?: WithNameDisplayNameId; `allow`?: (string)[]; `exclude`?: (string)[]; `options`?: WithRpAlgorithmsAttestationEtc10; `fallback`?: NullableObject33; `next`?: "refused" }
 
-@hoisted model WithOkErrorsErrorEtc12 { `ok`?: boolean; `errors`?: (string)[]; `error`?: string; `error_description`?: string; `next`?: "signed-out" | "inventory" | "refused"; `username`?: string; `account`?: string; `location`?: string; `ownSessionEnded`?: boolean; `scope`?: "global" | "selected"; `form`?: WithMethodActionFieldsEtc4; `view`?: WithStateScopeKeyEtc11 }
+@hoisted model WithOkErrorsErrorEtc12 { `ok`?: boolean; `errors`?: (string)[]; `messages`?: RefusalMessages; `error`?: string; `error_description`?: string; `next`?: "signed-out" | "inventory" | "refused"; `username`?: string; `account`?: string; `location`?: string; `ownSessionEnded`?: boolean; `scope`?: "global" | "selected"; `form`?: WithMethodActionFieldsEtc4; `view`?: WithStateScopeKeyEtc11 }
 
 @hoisted model WithPageGroupsSettingCountEtc11 { `page`?: string; `groups`?: (WithGroupSettings3)[]; `settingCount`?: integer; `editableCount`?: integer; `overridden`?: (string)[]; `setWith`?: string; `context`?: WithConfigFileDefaultsFilePersistsAppconfigEtc72; @js(#{`description`:"The other pages, by settings group."}) `sharedWith`?: Record<({`path`?: string; `label`?: string})[]> }
 
@@ -2211,7 +2218,7 @@ model XacmlPepListenerTuningFields {
 
 @hoisted model WithStateUsernameNamedEtc16 { `state`?: "inventory" | "accounts" | "refused" | "nobody"; `username`?: string; `named`?: boolean; `naming`?: "open" | "off" | "product"; `account`?: string; `key`?: string; `sessions`?: numeric; `families`?: (WithIdLabelProtocolEtc10)[]; `total`?: numeric; `listed`?: numeric; `notListed`?: numeric; `maxRows`?: numeric; `at`?: numeric; `accounts`?: (WithKeyUsernameDisplayNameEtc4)[]; `preselected`?: string; `verifiesCredentials`?: boolean }
 
-@hoisted model WithOkErrorsErrorEtc17 { `ok`?: boolean; `errors`?: (string)[]; `error`?: string; `error_description`?: string; `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused"; `location`?: string; `step`?: string; `id`?: string; `form`?: WithMethodActionDescriptionEtc4; `notice`?: string; `end`?: {`title`?: string}; `passkey`?: WithUnknownCredentialAutofill; `go`?: string; `state`?: string; `expiresIn`?: numeric; `view`?: WithWalletHeadingRetryEtc8 }
+@hoisted model WithOkErrorsErrorEtc17 { `ok`?: boolean; `errors`?: (string)[]; `messages`?: RefusalMessages; `error`?: string; `error_description`?: string; `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused"; `location`?: string; `step`?: string; `id`?: string; `form`?: WithMethodActionDescriptionEtc4; `notice`?: string; `end`?: {`title`?: string}; `passkey`?: WithUnknownCredentialAutofill; `go`?: string; `state`?: string; `expiresIn`?: numeric; `view`?: WithWalletHeadingRetryEtc8 }
 
 @hoisted model WithIdKindThumbprintEtc11 { `id`?: string; `kind`?: string; `thumbprint`?: string; `label`?: string; `added`?: NullOrStringOrNumeric; `addedBy`?: string; `proof`?: string; `attestation`?: WithLevelFormatSummaryEtc7; @js(#{ `x-free-form`:"A device key's public material as its kind carries it: a client's JWK, a certificate, or a WebAuthn credential.", `description`:"A device key's public material as its kind carries it: a client's JWK, a certificate, or a WebAuthn credential." }) `material`?: unknown }
 
@@ -2245,9 +2252,9 @@ model XacmlPepListenerTuningFields {
 
 @hoisted model WithInstalledStreamsSettingsEtc4 { `installed`?: boolean; `streams`?: (WithStreamIdStatusStatusReasonEtc14)[]; `settings`?: (WithSettingAttributeValueEtc4)[]; `json`?: WithInstalledStreamsSettings }
 
-@hoisted model WithOkCsrfUiLocalesEtc82 { `ok`?: boolean; `csrf`?: string; `uiLocales`?: string; `preferredLanguage`?: WithValuePopulated; `view`?: WithPageIdUsernameEtc22; `errors`?: (string)[]; `error`?: string; `error_description`?: string }
+@hoisted model WithOkCsrfUiLocalesEtc82 { `ok`?: boolean; `csrf`?: string; `uiLocales`?: string; `preferredLanguage`?: WithValuePopulated; `view`?: WithPageIdUsernameEtc22; `errors`?: (string)[]; `messages`?: RefusalMessages; `error`?: string; `error_description`?: string }
 
-@hoisted model WithOkCsrfUiLocalesEtc83 { `ok`?: boolean; `csrf`?: string; `uiLocales`?: string; `preferredLanguage`?: WithValuePopulated; `view`?: WithStateUsernameNamedEtc16; `errors`?: (string)[]; `error`?: string; `error_description`?: string }
+@hoisted model WithOkCsrfUiLocalesEtc83 { `ok`?: boolean; `csrf`?: string; `uiLocales`?: string; `preferredLanguage`?: WithValuePopulated; `view`?: WithStateUsernameNamedEtc16; `errors`?: (string)[]; `messages`?: RefusalMessages; `error`?: string; `error_description`?: string }
 
 @hoisted model WithResourcesPermissionsGrantsEtc4 { `resources`?: (WithIdentifierNameBaseUriEtc6)[]; `permissions`?: (WithResourceResourceNameBaseUriEtc82)[]; `grants`?: (WithClientClientNamePermissionIdEtc102)[]; `counts`?: WithResourcesPermissionsUnidentifiedEtc8 }
 

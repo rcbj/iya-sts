@@ -1,0 +1,13 @@
+{
+  "web.answered": "The service answered {status}.",
+  "web.answeredNoJson": "The service answered {status} with no JSON.",
+  "web.refusedStatus": "Refused ({status}).",
+  "web.unreachable": "The service's API could not be reached.",
+  "web.noOperation": "This control has no API operation ({control}), so the page refuses it rather than guess.",
+  "web.notAPageTitle": "Not a page",
+  "web.notAPage": "{path} is not a page here.",
+  "web.notDrawnTitle": "This page could not be drawn",
+  "web.noState": "The service sent no state for it.",
+  "web.nobodySignedIn": "Nobody was signed in",
+  "web.noStepToRestart": "This page names no sign-in step to start over from."
+}

@@ -77,6 +77,7 @@ import WebI18n = require('./web_i18n');
 import webMessages = require('./web_messages');
 import WebAccounts = require('./web_accounts');
 import WebFooter = require('./web_footer');
+import WebSaid = require('./web_said');
 
 type Json = any;
 
@@ -359,9 +360,80 @@ class WebSurface extends WebPage {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // A REFUSAL IN THE PAGE'S LANGUAGE (#2006, rcbj 2026-11-23).
+  //
+  // An API that refuses answers `errors` in English and, beside them,
+  // `messages: [{ key, params }]` — one per sentence, `null` where a
+  // sentence has no catalog message (`common/sentence.ts`). Each is drawn
+  // with the page's translator from the `refusals` catalogs every surface
+  // loads, and a sentence whose key (or a parameter's key) the catalogs do
+  // not have is drawn in the English it was sent with, so a missing key
+  // never draws its name. A sentence the runtime writes itself — the API
+  // unreachable, a page that is not one — is `refusal()`, with its English
+  // beside the key for a page whose catalogs could not be read either.
+  // ---------------------------------------------------------------------------
   /**
-   * Draws a page that says something went wrong: in English, as every
-   * refusal here is.
+   * One catalog message in the page's language (`WebSaid.sentence()`).
+   *
+   * @param t - the page's translator
+   * @param message - `{ key, params }`
+   * @returns the sentence, or ''
+   */
+  static sentence(t: Json, message: Json): string {
+    return WebSaid.sentence(t, message);
+  }
+
+  /**
+   * What an answer's `errors` say, in the page's language
+   * (`WebSaid.saidWith()`).
+   *
+   * @param t - the page's translator
+   * @param json - the answer
+   * @returns the sentences, joined, or ''
+   */
+  static saidWith(t: Json, json: Json): string {
+    return WebSaid.saidWith(t, json);
+  }
+
+  /**
+   * What an answer's `errors` say, in this page's language.
+   *
+   * @param json - the answer
+   * @returns the sentences, joined, or ''
+   */
+  said(json: Json): string {
+    return WebSurface.saidWith(this.t, json);
+  }
+
+  /**
+   * A refusal this runtime writes itself, in the page's language, and in
+   * the English given where the page's catalogs could not be read.
+   *
+   * @param key - the `refusals` key, a literal
+   * @param params - its parameters
+   * @param english - the English, for a page with no catalogs
+   * @returns the sentence
+   */
+  refusal(key: string, params: Json, english: string): string {
+    return WebSurface.sentence(this.t, { key: key, params: params || {} }) ||
+      english;
+  }
+
+  /**
+   * "The service answered <status>.", in the page's language.
+   *
+   * @param status - the HTTP status
+   * @returns the sentence
+   */
+  answeredStatus(status: number): string {
+    return this.refusal('refusals.web.answered', { status: String(status) },
+                        'The service answered ' + status + '.');
+  }
+
+  /**
+   * Draws a page that says something went wrong, its title and detail in
+   * the page's language where the caller drew them so (#2006).
    *
    * @param title - what went wrong
    * @param detail - the detail
@@ -409,7 +481,10 @@ class WebSurface extends WebPage {
     const page = this.find(path);
     if (!page) {
       this.view = null;
-      this.drawProblem('Not a page', path + ' is not a page here.');
+      this.drawProblem(this.refusal('refusals.web.notAPageTitle', {},
+                                    'Not a page'),
+        this.refusal('refusals.web.notAPage', { path: path },
+                     path + ' is not a page here.'));
       return;
     }
     const qs = new URLSearchParams(query).toString();
@@ -419,8 +494,12 @@ class WebSurface extends WebPage {
                                              (qs ? '?' + qs : ''));
     const json = answer.json || {};
     if (answer.json === null) {
-      this.drawProblem('This page could not be drawn',
-        'The service answered ' + answer.status + ' with no JSON.');
+      this.drawProblem(this.refusal('refusals.web.notDrawnTitle', {},
+                                    'This page could not be drawn'),
+        this.refusal('refusals.web.answeredNoJson',
+                     { status: String(answer.status) },
+                     'The service answered ' + answer.status +
+                     ' with no JSON.'));
       return;
     }
     // ANOTHER PAGE INSTEAD (#571: a chooser with fewer than two partners
@@ -434,9 +513,9 @@ class WebSurface extends WebPage {
     // the page's renderer to draw (#571: a pending id that expired).
     if ((answer.status !== 200 || json.ok === false) && !json.view) {
       this.view = null;
-      this.drawProblem('This page could not be drawn',
-        (json.errors || []).join(' ') ||
-        'The service answered ' + answer.status + '.');
+      this.drawProblem(this.refusal('refusals.web.notDrawnTitle', {},
+                                    'This page could not be drawn'),
+        this.said(json) || this.answeredStatus(answer.status));
       return;
     }
     // A person's own language, where the API answered it, outranks the
@@ -450,8 +529,8 @@ class WebSurface extends WebPage {
                                       own: json.preferredLanguage });
     }
     if (answer.status !== 200 || json.ok === false) {
-      this.flash = { error: (json.errors || []).join(' ') ||
-                            'The service answered ' + answer.status + '.' };
+      this.flash = { error: this.said(json) ||
+                            this.answeredStatus(answer.status) };
     }
     this.lastAnswer = json;
     this.view = { page: page, query: query, json: json.view || json };
@@ -517,15 +596,18 @@ class WebSurface extends WebPage {
       fields[name] = value;
     });
     if (!await this.ensureFormTable()) {
-      this.flash = { error: 'The service\'s API could not be reached.' };
+      this.flash = { error: this.refusal('refusals.web.unreachable', {},
+        'The service\'s API could not be reached.') };
       this.redraw();
       return;
     }
     const op = path ? this.formTable['POST ' + path] : null;
     if (!op) {
-      this.flash = { error: 'This control has no API operation (' +
+      this.flash = { error: this.refusal('refusals.web.noOperation',
+        { control: String(path || target.pathname) },
+        'This control has no API operation (' +
         (path || target.pathname) + '), so the page refuses it rather ' +
-        'than guess.' };
+        'than guess.') };
       this.redraw();
       return;
     }
@@ -564,8 +646,10 @@ class WebSurface extends WebPage {
   async answered(path: string | null, answer: Json): Promise<void> {
     const json = answer.json || { ok: answer.status < 400 };
     const said = json.ok === false
-      ? { error: (json.errors || []).join(' ') ||
-                 'Refused (' + answer.status + ').' }
+      ? { error: this.said(json) ||
+                 this.refusal('refusals.web.refusedStatus',
+                              { status: String(answer.status) },
+                              'Refused (' + answer.status + ').') }
       : { message: String(json.message || '') };
     if (json.location) {
       this.env.location.assign(String(json.location));

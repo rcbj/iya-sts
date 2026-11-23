@@ -685,6 +685,9 @@ import passkeyPolicy = require('../common/passkey_policy');
 import postLogin = require('../common/post_login');
 // The language a page is drawn in, and the chooser (#539). Libraries.
 import i18n = require('../common/i18n');
+// A refusal's sentence as a catalog message (#2006): English to every
+// reader that treats it as text, its key beside it in an answer.
+import Sentence = require('../common/sentence');
 import PageLocale = require('../common/page_locale');
 // THE SIGN-IN SURFACE'S SHELL AND BUNDLE (#571, 3cl). A LIBRARY (rule 3):
 // `helpers` and node's modules; it takes the express app as an argument.
@@ -12860,7 +12863,7 @@ class Authn {
    *   a classical passkey refused where a post-quantum one is required
    * @returns nothing
    */
-  screenRefused(res: AnyAuthnAnswering, record, message: string,
+  screenRefused(res: AnyAuthnAnswering, record, message: string | Sentence,
     extra?: { status?: number, unknownCredential?: string,
     noAutofill?: boolean, postQuantumRequired?: boolean }): void {
     const { log } = this.deps;
@@ -12876,6 +12879,11 @@ class Authn {
     const live = !!(record && record.id && !(record.expires < Date.now()));
     if (live) {
       record.screenError = json && !fromStep ? '' : String(message || '');
+      // ITS KEY BESIDE IT (#2006): the record is stored as JSON, where a
+      // sentence is its English, so the screen's view could not draw it in
+      // the page's language from `screenError` alone.
+      record.screenErrorMessage = record.screenError
+        ? Sentence.stored(message) : null;
       // THE PANEL (#946) is the record's, like the sentence, so the screen's
       // view draws it whichever way the refusal reached the screen; every
       // refusal sets it afresh, so the next one without it clears it.
@@ -12885,6 +12893,10 @@ class Authn {
     if (json) {
       const body: any = { ok: false, next: 'refused',
                           errors: [String(message || 'Refused.')] };
+      const messages = Sentence.messagesOf([message]);
+      if (messages) {
+        body.messages = messages;
+      }
       if (fromStep && live) {
         body.location = this.locationOf(res, realms.currentPrefix() +
           LOGIN_PATH + '?authn=' + encodeURIComponent(String(record.id)));
@@ -13917,11 +13929,16 @@ class Authn {
    * @param status - the HTTP status, 400 where left out
    * @returns nothing
    */
-  stepRefused(res: AnyAuthnAnswering, why: string, status?: number): void {
+  stepRefused(res: AnyAuthnAnswering, why: string | Sentence,
+              status?: number): void {
     const { log } = this.deps;
     log.debug("Entering Authn.stepRefused(). " + (status || 400));
-    this.answerJson(res, status || 400, { ok: false, next: 'refused',
-                                          errors: [String(why)] });
+    const body: any = { ok: false, next: 'refused', errors: [String(why)] };
+    const messages = Sentence.messagesOf([why]);
+    if (messages) {
+      body.messages = messages;
+    }
+    this.answerJson(res, status || 400, body);
     log.debug("Leaving Authn.stepRefused().");
   }
 
@@ -14054,6 +14071,7 @@ class Authn {
     const back = !!(record && record.id);
     if (back) {
       record.screenError = '';
+      delete record.screenErrorMessage;
       delete record.postQuantumRequired;
       delete record.passkeyChallenge;
       record.rememberBrowser = false;
@@ -14935,12 +14953,23 @@ class Authn {
     // page's refusal, `screenRefused()`). English, as every refusal (#539).
     const error = [String(problem || ''), String(record.screenError || '')]
       .filter(Boolean).join(' ');
+    // THE SAME SENTENCES AS AN ANSWER CARRIES THEM (#2006), where the
+    // refusal left a catalog message on the record: the browser draws
+    // `error` from these in the page's language, and the configuration's
+    // problem, which is the operator's text, as it is.
+    const said = record.screenErrorMessage && record.screenError
+      ? { errors: [String(problem || ''), String(record.screenError)]
+            .filter(Boolean),
+          messages: (problem ? [null] : [])
+            .concat([record.screenErrorMessage]) }
+      : null;
     const view = {
       id: String(record.id),
       base: baseUrlOf(req),
       protocol: String(record.protocol || ''),
       application: String(record.application || ''),
       error: error,
+      refusal: said,
       locked: locked,
       hint: String(record.hint || ''),
       // The form: drawn at all, and with a password field.
@@ -18769,6 +18798,7 @@ class Authn {
     // A sentence the screen was showing belongs to the act before this one,
     // and so does #946's panel.
     delete record.screenError;
+    delete record.screenErrorMessage;
     delete record.postQuantumRequired;
 
     if (String(body.action || '') === 'cancel') {
