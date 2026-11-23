@@ -720,10 +720,15 @@ rules read for a token:
   before any SET of it is built, and `actOn()` skips a RISC SET whose `txn`
   that row names (`ownAct()`). Only this service's own receivers share the
   register, so a partner or a remote receiver is told exactly what it was.
-  A detector's compromise, an administrator's, and a SET whose row the
-  receiving process has not yet applied still act — the last is a race the
-  change-log's latency bounds (the row is written before the SET is
-  queued), and it errs towards acting. H1 to H4.
+  A detector's compromise and an administrator's still act. **A SET whose
+  row the receiving process has not yet applied** was a third, a race the
+  change-log's latency bounded: the internal poll runs on whichever request
+  worker the scheduler picks, and in run 45236493306's mariadb mode (three
+  workers) it acted on the person's own report and revoked their portal
+  token. Since then `pollSurface()` pulls the change log
+  (`catchUpBeforeTaking()`, `persistence.syncNow()`) before it takes a
+  batch: the SET it was answered was committed, and the row was written
+  before it. A pull that fails still errs towards acting. H1 to H4.
 
 **FOUND THROUGH THE INDEX, NEVER A WALK** (`tokenKeysNamed()`): the token
 register's `u:` and `s:` keys for every identifier the SET spells, and for

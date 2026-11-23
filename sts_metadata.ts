@@ -4186,7 +4186,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'authzen.searchMaxCandidates, and said incomplete past it.' },
   { path: '/access/v1/access-requests', group: 'AuthZEN',
     name: 'Submit an access request',
-    specs: ['authzen-arap', 'authzen-arap-callback'],
+    specs: ['authzen-arap', 'authzen-arap-callback', 'authzen-arap-actor',
+            'authzen-arap-bulk'],
     what: 'POST a denied evaluation\'s subject, resource, action and ' +
           'context with the denial it received (its binding_token and ' +
           'expires_at, echoed unchanged); get 202 and a Task Handle, or 201 ' +
@@ -4230,7 +4231,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'caller as the Catalogs Document. A submission\'s ' +
           'requested_access.entitlement must be one of them.' },
   { path: '/access/v1/access-requests/:id', group: 'AuthZEN',
-    name: 'An access request\'s task status', specs: ['authzen-arap'],
+    name: 'An access request\'s task status',
+    specs: ['authzen-arap', 'authzen-arap-bulk'],
     what: 'GET the task: its status (pending, approved, denied, expired, ' +
           'cancelled, failed), Retry-After while pending, and once approved ' +
           'the reevaluate result with the approval the PEP carries on its ' +
@@ -4238,7 +4240,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'caller that submitted it alone; to anybody else it is ' +
           'unknown_task.' },
   { path: '/access/v1/access-requests/:id/cancel', group: 'AuthZEN',
-    name: 'Cancel an access request', specs: ['authzen-arap'],
+    name: 'Cancel an access request',
+    specs: ['authzen-arap', 'authzen-arap-bulk'],
     what: 'POST, or DELETE, to cancel a pending task of the caller\'s; a ' +
           'finished one answers 409 invalid_task_state.' },
   { path: '/.well-known/authzen-configuration', group: 'AuthZEN',
@@ -5153,7 +5156,7 @@ const ENDPOINTS: EndpointEntry[] = [
   // reason to know it is here is the certificate — one anchor covers both.
   { path: '/tls/sign-in', group: 'TLS', name: 'Sign in with a client ' +
       'certificate',
-    specs: ['rfc8446', 'rfc5280', 'fips201'],
+    specs: ['rfc8446', 'rfc5280', 'fips201', 'rfc9440'],
     what: 'A VERIFIED CLIENT CERTIFICATE BECOMES A SESSION (2026-09-05), on ' +
           'this port since 2026-09-16 — it was a side effect of reaching ' +
           'either deleted TLS listener, which meant loading a diagnostic ' +
@@ -5166,7 +5169,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'stored in userCertificate on exactly one entry of the realm ' +
           '(never matched by its common name), and an application\'s ' +
           'certificate (an RFC 8705 credential, not a person) are each ' +
-          'answered 200 with no session and the reason.' },
+          'answered 200 with no session and the reason. Behind a ' +
+          'TLS-terminating proxy the administrator named ' +
+          '(tls.trustedProxyCertificates and tls.trustedProxyAddresses, ' +
+          'off by default), the certificate is RFC 9440\'s Client-Cert ' +
+          'and Client-Cert-Chain, verified here as a handshake\'s would ' +
+          'be; from anybody else those headers are removed.' },
   { path: '/authn/certificate/continue', group: 'TLS',
     name: 'Certificate sign-in on its own listener',
     specs: ['rfc8446', 'rfc5280', 'fips201'],
