@@ -360,8 +360,8 @@
     "text": "本领域中每个实体硬件令牌（YubiKey、智能卡）一行，按厂商和序列号索引：谁持有它、它的型号和其上的凭据。序列号只根据证明记录。从不包含机密。"
   },
   "caches.store.hardware_tokens.register.bound": {
-    "en": "260467c777c74957",
-    "text": "进程持有的行是每个领域 5,000 条的缓存；登记册本身受其列出的凭据限制（FIDO 为 webauthn.maxKeysPerPerson）。"
+    "en": "b2eadcf654a8cb28",
+    "text": "强制：进程持有的行是每个领域 5,000 条的缓存，最旧的会被丢弃，下次请求时再从存储中读取；登记册本身受其列出的凭据限制（FIDO 为 webauthn.maxKeysPerPerson）。"
   },
   "caches.store.hardware_tokens.register.lifetime": {
     "en": "c18bfda6fa452b2b",
@@ -728,8 +728,8 @@
     "text": "管理员从供应商的 PSKC 种子文件（RFC 6030）导入的每个 HOTP 或 TOTP 密钥各占一行，按供应商、序列号和密钥 id 索引：未分配（其密钥已密封）、已分配给某人（密钥已删除，现位于其条目上）或已停用。"
   },
   "caches.store.oath_tokens.inventory.bound": {
-    "en": "cbe61377f99c025d",
-    "text": "进程持有的行是每个领域 5,000 条的缓存；清单的规模受管理员导入量限制，每个文件最多 2,000 个密钥。"
+    "en": "c93f702fb2bd8e60",
+    "text": "强制：进程持有的行是每个领域 5,000 条的缓存，最旧的会被丢弃，下次请求时再从存储中读取；清单受管理员导入的内容限制，每个文件最多 2,000 个密钥。"
   },
   "caches.store.oath_tokens.inventory.lifetime": {
     "en": "4f13467dac65d62f",
@@ -1148,8 +1148,8 @@
     "text": "每个正在注册 OpenPGP 密钥的人一个质询：其用 gpg --clearsign 签署的文本、其随机数（nonce）以及失效时间。只能使用一次，通过对该随机数的集群声明来实现。"
   },
   "caches.store.openpgp.challenges.bound": {
-    "en": "70f8ecd02c4392d1",
-    "text": "每人一个（以 entryUUID 为键），每个的有效期为 openpgp.challengeLifetimeS。"
+    "en": "bcb019b421b3e33e",
+    "text": "强制：进程持有的质询是每个领域 5,000 个的缓存，最旧的会被丢弃，下次请求时再从存储中读取；存储为每人保存一个（以 entryUUID 为键），每个持续 openpgp.challengeLifetimeS。"
   },
   "caches.store.openpgp.wkd.title": {
     "en": "dc47d455d5283de5",
@@ -1160,8 +1160,8 @@
     "text": "Web 密钥目录对每个哈希地址返回哪一个 OpenPGP 密钥：持有者（一个 entryUUID）及其发布的指纹。这只是一个指针：密钥本身从条目中读取。从不是机密。"
   },
   "caches.store.openpgp.wkd.bound": {
-    "en": "e8a7abbcc8bba7fc",
-    "text": "进程持有的行是每个领域 5,000 条的缓存；登记表中每位已选择发布的人员一行。"
+    "en": "67c6603e0b96fd95",
+    "text": "强制：进程持有的行是每个领域 5,000 条的缓存，最旧的会被丢弃，下次请求时再从存储中读取；登记册为每位选择加入的人保存一行。"
   },
   "caches.store.openpgp.wkd.lifetime": {
     "en": "06861887c7e6c8f1",
@@ -1692,8 +1692,8 @@
     "text": "管理员从 CSV 导入的每个 YubiKey OTP 各占一行，按序列号索引：未分配（其 AES 密钥已密封）、已分配给某人（密钥已删除，现位于其条目上）或已停用。"
   },
   "caches.store.yubiotp.inventory.bound": {
-    "en": "9f558f556a019acc",
-    "text": "进程持有的行是每个领域 5,000 条的缓存。"
+    "en": "1b2409611ca2ae53",
+    "text": "强制：进程持有的行是每个领域 5,000 条的缓存，最旧的会被丢弃，下次请求时再从存储中读取。"
   },
   "caches.store.yubiotp.inventory.lifetime": {
     "en": "4f13467dac65d62f",

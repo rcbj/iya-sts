@@ -232,8 +232,8 @@
     "text": "Registrar la contraseña de arranque generada"
   },
   "admin.logBootstrapPassword|description": {
-    "en": "856dddf1ed8c2407",
-    "text": "Solo en modo producto. Desactivado, el valor predeterminado, la contraseña generada para el primer administrador se escribe en el archivo bootstrap-admin-password de persistence.dataDir, legible solo por este servicio, y el registro indica dónde. Activado, se escribe en el registro del servicio. ADVERTENCIA: activado, no se cumple el requisito 16.2.5 de ASVS 5.0.0, porque una credencial llega al registro. Un arranque posterior elimina ese archivo, una vez que alguien ya tiene una credencial."
+    "en": "8591cfda7dde139a",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, la contraseña generada para el primer administrador se escribe en el archivo bootstrap-admin-password de persistence.dataDir, legible solo por este servicio, y el registro indica dónde. Activado, se escribe en el registro del servicio. ADVERTENCIA: activado, no se cumple el requisito 16.2.5 de ASVS 5.0.0, porque una credencial llega al registro. El archivo de un dominio de confianza añade a ese nombre un guion y el id del dominio. Un arranque posterior elimina un archivo en cuanto la contraseña que contiene ya no abre su cuenta."
   },
   "oauth2.allowConfidentialWithoutPkce|label": {
     "en": "c33a0a31a1d623b1",
@@ -424,8 +424,8 @@
     "text": "Permitir un nombre de administrador predeterminado en producción"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "7375f4bf636f5366",
-    "text": "Solo en modo producto. Desactivado, el valor predeterminado, un administrador de arranque llamado admin, root, sa o administrator, o sin nombre, recibe un nombre generado impredecible, escrito con su contraseña en el archivo bootstrap-admin-password de persistence.dataDir en el primer inicio (véase admin.logBootstrapPassword). Activado, se usa el nombre configurado tal cual. ADVERTENCIA: el requisito 6.3.2 de ASVS 5.0.0 prohíbe un nombre de cuenta predeterminado, así que déjelo desactivado fuera de un entorno de pruebas. Un arranque posterior elimina ese archivo, una vez que alguien ya tiene una credencial."
+    "en": "7007ae597c41e813",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, un administrador de arranque llamado admin, root, sa o administrator, o sin nombre, recibe un nombre generado impredecible, escrito con su contraseña en el archivo bootstrap-admin-password de persistence.dataDir en el primer inicio (véase admin.logBootstrapPassword). Activado, se usa el nombre configurado tal cual. ADVERTENCIA: el requisito 6.3.2 de ASVS 5.0.0 prohíbe un nombre de cuenta predeterminado, así que déjelo desactivado fuera de un entorno de pruebas. El archivo de un dominio de confianza añade a ese nombre un guion y el id del dominio. Un arranque posterior elimina un archivo en cuanto la contraseña que contiene ya no abre su cuenta."
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "Cuenta del administrador inicial"
   },
   "admin.bootstrapUsername|description": {
-    "en": "8b69eb9d4cb0b130",
-    "text": "El nombre de usuario del administrador inicial (2026-09-13), en el dominio PREDETERMINADO y, desde el 2026-09-14, en cada dominio de confianza, donde administra solo ese dominio: se crea al arrancar si no existe, es miembro de ambos roles de consola, se le obliga a cambiar su contraseña en su primer inicio de sesión y no se puede eliminar ni renombrar. Hasta que inicie sesión por primera vez en /admin, cualquier persona que haya iniciado sesión puede usar la consola (admin.openWhenEmpty). En desarrollo cualquier contraseña le permite iniciar sesión, como a todos. EN MODO PRODUCTO es también quien recibe una contraseña generada cuando arranca este servicio y NADIE en el dominio tiene una credencial; el nombre y esa contraseña se escriben una sola vez en el archivo bootstrap-admin-password de persistence.dataDir, legible solo por este servicio (el registro indica dónde, y solo los incluye él mismo con admin.logBootstrapPassword activado), y son la única forma de entrar en un despliegue nuevo en modo producto. La contraseña generada nunca se escribe donde alguien ya tiene una credencial, así que no puede sobrescribir una contraseña. El cambio obligatorio solo se aplica a una cuenta que este paso CREÓ — una cuenta existente con este nombre conserva su contraseña y solo recibe los dos roles. Un arranque posterior elimina ese archivo, una vez que alguien ya tiene una credencial."
+    "en": "938e9e0c7b3b97fa",
+    "text": "El nombre de usuario del administrador inicial (2026-09-13), en el dominio PREDETERMINADO y, desde el 2026-09-14, en cada dominio de confianza, donde administra solo ese dominio: se crea al arrancar si no existe, es miembro de ambos roles de consola, se le obliga a cambiar su contraseña en su primer inicio de sesión y no se puede eliminar ni renombrar. Hasta que inicie sesión por primera vez en /admin, cualquier persona que haya iniciado sesión puede usar la consola (admin.openWhenEmpty). En desarrollo cualquier contraseña le permite iniciar sesión, como a todos. EN MODO PRODUCTO es también quien recibe una contraseña generada cuando arranca este servicio y NADIE en el dominio tiene una credencial; el nombre y esa contraseña se escriben una sola vez en el archivo bootstrap-admin-password de persistence.dataDir, legible solo por este servicio (el registro indica dónde, y solo los incluye él mismo con admin.logBootstrapPassword activado), y son la única forma de entrar en un despliegue nuevo en modo producto. La contraseña generada nunca se escribe donde alguien ya tiene una credencial, así que no puede sobrescribir una contraseña. El cambio obligatorio solo se aplica a una cuenta que este paso CREÓ — una cuenta existente con este nombre conserva su contraseña y solo recibe los dos roles. El archivo de un dominio de confianza añade a ese nombre un guion y el id del dominio. Un arranque posterior elimina un archivo en cuanto la contraseña que contiene ya no abre su cuenta."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -3307,59 +3307,59 @@
     "en": "82f545cd2dea952b",
     "text": "Lo que permite a un inicio de sesión PKINIT reclamar una clave ligada al hardware (el indicador pkinit-hardware y el amr hwk). `inference`, el valor por defecto y el comportamiento anterior a #1955: un certificado de inicio de sesión con tarjeta inteligente cuya clave no generó este servicio, o evidencia de atestación registrada. `evidence`: solo una clave que cubre la atestación de un token de hardware, y una passkey obtiene hwk solo cuando su atestación se verificó y es de confianza (swk en otro caso). Un inicio de sesión con certificado sobre TLS obtiene hwk, y sc para una clave en una tarjeta inteligente, solo a partir de evidencia en ambos casos, y solo para el titular del certificado."
   },
-"pskc.allowPlaintextImport|label": {
+  "pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
     "text": "Aceptar archivos de semillas PSKC sin cifrar en modo producto"
   },
-"pskc.allowPlaintextImport|description": {
+  "pskc.allowPlaintextImport|description": {
     "en": "7efe34e872e4772e",
     "text": "Si un administrador puede importar, en modo producto, un archivo de semillas PSKC (RFC 6030) cuyos secretos de token NO están cifrados. Desactivado de forma predeterminada: un archivo así ha sido una lista de segundos factores válidos en cada disco y buzón por el que pasó, y un proveedor puede cifrarlo con una clave precompartida o una contraseña (secciones 6.1 y 6.2). El modo desarrollo lo acepta en cualquier caso."
   },
-"yubiotp.allowPlaintextImport|label": {
+  "yubiotp.allowPlaintextImport|label": {
     "en": "b1c1ac235f98cc47",
     "text": "Aceptar archivos CSV de OTP YubiKey en claro en modo producto"
   },
-"yubiotp.allowPlaintextImport|description": {
+  "yubiotp.allowPlaintextImport|description": {
     "en": "f409449d46d5831a",
     "text": "Si un administrador puede importar, en modo producto, un CSV de secretos de OTP YubiKey (número de serie, identidad pública, identidad privada, clave AES). Desactivado de forma predeterminada: el archivo es una lista de segundos factores válidos. El modo desarrollo acepta uno en cualquier caso. Los secretos se sellan cuando se acepta el archivo, y el archivo no se conserva."
   },
-"openpgp.wkd|label": {
+  "openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",
     "text": "Publicar claves en el Web Key Directory"
   },
-"openpgp.wkd|description": {
+  "openpgp.wkd|description": {
     "en": "7822103f89ac59b3",
     "text": "Responder al Web Key Directory (draft-koch-openpgp-webkey-service) para los dominios de correo de este dominio de confianza: /.well-known/openpgpkey/<domain>/hu/<hash> (el método avanzado, en openpgpkey.<domain>) y /.well-known/openpgpkey/hu/<hash> (el método directo), además del archivo de política de cada uno. Solo se devuelve la clave de una persona que lo aceptó en el portal. Desactivado de forma predeterminada."
   },
-"openpgp.wkdDomains|label": {
+  "openpgp.wkdDomains|label": {
     "en": "d1c4b728593ff000",
     "text": "Dominios de correo que sirve el Web Key Directory"
   },
-"openpgp.wkdDomains|description": {
+  "openpgp.wkdDomains|description": {
     "en": "ad64f7216191123c",
     "text": "Los dominios de correo para los que responde el Web Key Directory de este dominio de confianza, separados por comas. Vacío, el valor predeterminado, significa el propio dominio DNS del dominio de confianza. Una solicitud sin dominio de confianza en su ruta la responde el dominio de confianza que sirve su dominio DNS, primero el predeterminado."
   },
-"openpgp.challengeLifetimeS|label": {
+  "openpgp.challengeLifetimeS|label": {
     "en": "dbf558cf0b4b8f90",
     "text": "Vigencia del desafío de registro (segundos)"
   },
-"openpgp.challengeLifetimeS|description": {
+  "openpgp.challengeLifetimeS|description": {
     "en": "e9130c8e82368cc6",
     "text": "Cuánto tiempo sigue siendo válido el desafío que una persona firma con gpg --clearsign para registrar una clave OpenPGP. Se consume una sola vez, y una persona tiene uno cada vez."
   },
-"openpgp.signatureSkewS|label": {
+  "openpgp.signatureSkewS|label": {
     "en": "d927cf1f04bd9d51",
     "text": "Desfase de reloj admitido en la firma de prueba (segundos)"
   },
-"openpgp.signatureSkewS|description": {
+  "openpgp.signatureSkewS|description": {
     "en": "2772763d3d363b6d",
     "text": "Cuánto puede diferir el reloj del equipo que firma del de este servicio: se rechaza una prueba firmada antes de la emisión del desafío, o después del momento actual, por más de este valor (STS-OPENPGP-0010)."
   },
-"openpgp.minRsaBits|label": {
+  "openpgp.minRsaBits|label": {
     "en": "f3dc9f85de143630",
     "text": "Clave OpenPGP RSA más pequeña"
   },
-"openpgp.minRsaBits|description": {
+  "openpgp.minRsaBits|description": {
     "en": "cd16018c848ce538",
     "text": "La clave RSA más corta, principal o subclave, que acepta un registro OpenPGP. Se aceptan Ed25519, Ed448, ECDSA y ECDH sobre P-256, P-384 y P-521, X25519 y X448, y los compuestos RFC 9980 ML-DSA-65+Ed25519, ML-DSA-87+Ed448, ML-KEM-768+X25519 y ML-KEM-1024+X448 cuando openpgp.algorithms los nombra. DSA, ElGamal, las curvas Brainpool y SLH-DSA nunca se aceptan (STS-OPENPGP-0004)."
   },
@@ -8387,6 +8387,14 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "El máximo de solicitudes de acceso que un dominio retiene pendientes; superado, un envío se rechaza con 503 hasta que algunas se decidan o venzan."
   },
+  "authzen.accessRequestMaxDenials|label": {
+    "en": "09e695949f0cc1cc",
+    "text": "Denegaciones solicitables que registra un dominio"
+  },
+  "authzen.accessRequestMaxDenials|description": {
+    "en": "698617c5a3485120",
+    "text": "El número máximo de denegaciones solicitables que un dominio registra por evaluation_id (#1204). Por encima de él, una denegación nueva no se registra y sigue siendo solicitable por su binding_token; el trabajo de solicitudes de acceso elimina un registro un día después de su ventana."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"
@@ -8400,8 +8408,8 @@
     "text": "Access request callback backoff (seconds)"
   },
   "authzen.callbackBackoffS|description": {
-    "en": "27141a0f28d94b83",
-    "text": "How long to wait after a failed access request callback before the next attempt (#1202). The authzen.access-requests job runs every 60 seconds, so a shorter wait could not be honoured. An application's appAuthzenCallbackConfig may set a longer wait for one URL."
+    "en": "43f2cb7740fc7efe",
+    "text": "Cuánto esperar tras el primer fallo de una devolución de llamada de una solicitud de acceso antes del siguiente intento (#1202). Cada espera posterior es el doble de la anterior, hasta un día. El trabajo authzen.access-requests se ejecuta cada 60 segundos, así que una espera más corta no podría respetarse. El appAuthzenCallbackConfig de una aplicación puede fijar una espera más larga para una URL."
   },
   "authzen.externalPdp|label": {
     "en": "8a0af08389fe6cda",
@@ -13072,16 +13080,16 @@
     "text": "Algoritmos de la CA de usuario SSH"
   },
   "pki.sshUserCaAlgorithms|description": {
-    "en": "bdb54445a0279b8d",
-    "text": "Qué algoritmos puede usar la autoridad de certificados de usuario SSH, por orden de preferencia. ssh-mldsa-65 es ML-DSA-65 (FIPS 204) bajo un nombre de cable que define este servicio, porque OpenSSH no define ninguno: la clave pública y la firma son crudas, con la forma que usa ssh-ed25519. La línea OpenSSH TrustedUserCAKeys que publica este servicio sigue siendo el primer algoritmo clásico de esta lista, o ssh-ed25519 cuando la lista solo nombra ssh-mldsa-65. Un par que no entiende ML-DSA sigue confiando en esa línea. ssh-rsa (SHA-1) no se ofrece. La autoridad ML-DSA se crea solo cuando este entorno puede generar la clave; si no, los certificados siguen siendo clásicos (se registra STS-PKI-0290 y la autoridad clásica sigue respondiendo)."
+    "en": "5c4c22c2ab500fd4",
+    "text": "Qué algoritmos puede usar la autoridad de certificación de usuarios SSH, por orden de preferencia. ssh-mldsa-65 es ML-DSA-65 (FIPS 204) con un nombre de transporte que define este servicio, porque OpenSSH no define ninguno: la clave pública y la firma van en bruto, con la forma que usa ssh-ed25519. La línea OpenSSH TrustedUserCAKeys que publica este servicio sigue siendo el primer algoritmo clásico de esta lista, o ssh-ed25519 cuando la lista solo nombra ssh-mldsa-65. Un par que no entiende ML-DSA sigue confiando en esa línea. La clave de la autoridad ML-DSA se publica en GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65; OpenSSH estándar todavía no puede verificar un certificado ML-DSA. No se ofrece ssh-rsa (SHA-1). La autoridad ML-DSA solo se crea cuando este entorno de ejecución puede generar la clave; en caso contrario los certificados siguen siendo clásicos (se registra STS-PKI-0290 y la autoridad clásica sigue respondiendo), salvo que pki.sshUserCaPqcOnly esté activado."
   },
   "pki.sshUserCaPqcOnly|label": {
     "en": "74aae1308361ba58",
     "text": "Los certificados de usuario SSH son solo poscuánticos"
   },
   "pki.sshUserCaPqcOnly|description": {
-    "en": "39b21e5b95f84da1",
-    "text": "Activado, un certificado de usuario SSH nuevo lo firma la autoridad ML-DSA, y solo cuando esa autoridad existe. La línea TrustedUserCAKeys publicada sigue siendo la clave clásica, para que un cliente OpenSSH que ya confía en ella no reciba un algoritmo que no puede analizar. En un entorno que no puede generar ML-DSA, el certificado sigue siendo clásico y la solicitud no falla. Los certificados clásicos ya emitidos siguen verificándose. No puede estar activado mientras lo esté pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Desactivado de manera predeterminada."
+    "en": "dcbf21b3230dcf07",
+    "text": "Si está activado, un nuevo certificado de usuario SSH lo firma la autoridad ML-DSA y nada más. OpenSSH estándar todavía no puede verificar un certificado ML-DSA, así que solo un servidor SSH preparado para verificar ssh-mldsa-65, que confíe en la clave publicada en GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65, acepta estos certificados. La línea predeterminada de esa ruta sigue siendo la clave clásica. Cuando el reino no tiene autoridad ML-DSA (este entorno de ejecución no puede generar ML-DSA, o ssh-mldsa-65 no está en pki.sshUserCaAlgorithms) la solicitud se rechaza (STS-PKI-0297) en lugar de responderse con un certificado clásico. Los certificados clásicos ya emitidos se siguen verificando. No puede estar activado a la vez que pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Desactivado de forma predeterminada."
   },
   "pki.sshUserCaPqcAlongsideClassical|label": {
     "en": "c3201f8841200c32",

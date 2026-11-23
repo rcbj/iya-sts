@@ -85,9 +85,19 @@ function send(method, path, options) {
   log.debug("Leaving send().");
   return new Promise(function (resolve, reject) {
     const transport = target.protocol === "http:" ? require("http") : https;
+    // THE NAME THE CERTIFICATE IS CHECKED AGAINST IS THE ONE DIALLED, not
+    // the Host header: node's agent takes `servername` from `headers.host`
+    // when it is set, so the direct-method request below (Host: the WKD
+    // domain, which the stack's certificate does not name) failed the
+    // handshake with ERR_TLS_CERT_ALTNAME_INVALID before the service saw
+    // it. Host still reaches the service as the header the WKD reads. An
+    // IP address is not a server name (RFC 6066 section 3), so none is
+    // sent for one.
     const req = transport.request({
       method: method, hostname: target.hostname, port: target.port,
-      path: target.pathname + target.search, headers: headers
+      path: target.pathname + target.search, headers: headers,
+      servername: require("net").isIP(target.hostname) ? ""
+                                                       : target.hostname
     }, function (res) {
       const chunks = [];
       res.on("data", function (c) {

@@ -551,71 +551,71 @@
     "en": "f7fb5461e2325e1e",
     "text": "Un jeton matériel a été déclaré perdu et ses identifiants retirés"
   },
-"audit.actions.oath-token.import.label": {
+  "audit.actions.oath-token.import.label": {
     "en": "4da380e22dff30ec",
     "text": "Le fichier de semences PSKC d’un fournisseur a été importé, ou refusé"
   },
-"audit.actions.oath-token.assign.label": {
+  "audit.actions.oath-token.assign.label": {
     "en": "19b678e9bbc10747",
     "text": "Un jeton OATH importé a été attribué à une personne, ou réclamé par elle"
   },
-"audit.actions.oath-token.claim.label": {
+  "audit.actions.oath-token.claim.label": {
     "en": "5c54ac8752e21682",
     "text": "La réclamation d’un jeton OATH importé par une personne a été refusée"
   },
-"audit.actions.oath-token.remove.label": {
+  "audit.actions.oath-token.remove.label": {
     "en": "92d69a1a2d848892",
     "text": "Un jeton OATH non attribué a été supprimé de l’inventaire"
   },
-"audit.actions.yubiotp.import.label": {
+  "audit.actions.yubiotp.import.label": {
     "en": "6f92401fa557c5e6",
     "text": "Un CSV d’OTP YubiKey a été importé, ou refusé"
   },
-"audit.actions.yubiotp.assign.label": {
+  "audit.actions.yubiotp.assign.label": {
     "en": "c4f793ef7a16734a",
     "text": "Un OTP YubiKey importé a été attribué à une personne"
   },
-"audit.actions.yubiotp.claim.label": {
+  "audit.actions.yubiotp.claim.label": {
     "en": "08d55e823350bd4a",
     "text": "Une personne a revendiqué un OTP YubiKey importé, ou la revendication a été refusée"
   },
-"audit.actions.yubiotp.remove.label": {
+  "audit.actions.yubiotp.remove.label": {
     "en": "a4a9aedd10cc2813",
     "text": "Un OTP YubiKey non attribué a été retiré de l’inventaire"
   },
-"audit.actions.yubiotp.client-add.label": {
+  "audit.actions.yubiotp.client-add.label": {
     "en": "40676cb783f36097",
     "text": "Un client YK-VAL a été créé"
   },
-"audit.actions.yubiotp.client-remove.label": {
+  "audit.actions.yubiotp.client-remove.label": {
     "en": "92433c797106d523",
     "text": "Un client YK-VAL a été retiré"
   },
-"audit.actions.openpgp.challenge.label": {
+  "audit.actions.openpgp.challenge.label": {
     "en": "454a22b5bcd9d6a2",
     "text": "Un défi d'enregistrement de clé OpenPGP a été émis"
   },
-"audit.actions.openpgp.key-registered.label": {
+  "audit.actions.openpgp.key-registered.label": {
     "en": "1ed8de1f8777a015",
     "text": "Une clé OpenPGP a été enregistrée sur preuve de possession"
   },
-"audit.actions.openpgp.key-refused.label": {
+  "audit.actions.openpgp.key-refused.label": {
     "en": "f1e7e3c6808ba33b",
     "text": "Une clé OpenPGP n'a pas été enregistrée"
   },
-"audit.actions.openpgp.key-removed.label": {
+  "audit.actions.openpgp.key-removed.label": {
     "en": "89a284fa6508eae4",
     "text": "Une clé OpenPGP a été supprimée"
   },
-"audit.actions.openpgp.publication.label": {
+  "audit.actions.openpgp.publication.label": {
     "en": "f6d12f16eca6796a",
     "text": "Une clé OpenPGP a été publiée dans le Web Key Directory, ou en a été retirée"
   },
-"audit.actions.openpgp.mail-encryption.label": {
+  "audit.actions.openpgp.mail-encryption.label": {
     "en": "ba0fb7a4133d94e2",
     "text": "La façon dont les messages adressés à une personne sont chiffrés a été modifiée"
   },
-"audit.actions.openpgp.smime-certificate.label": {
+  "audit.actions.openpgp.smime-certificate.label": {
     "en": "663072a33ce1e178",
     "text": "Le certificat S/MIME d'une personne a été défini ou supprimé"
   },
@@ -1134,6 +1134,14 @@
   "audit.actions.authzen.access-request.callback.label": {
     "en": "432e877d55af1913",
     "text": "Le rappel (callback) d’une demande d’accès AuthZEN a été envoyé ou a échoué"
+  },
+  "audit.actions.authzen.access-request.failed.label": {
+    "en": "ff702bec26fec0b2",
+    "text": "Une demande d'accès AuthZEN a échoué"
+  },
+  "audit.actions.authzen.access-request.denials-full.label": {
+    "en": "d4a30614c3be855a",
+    "text": "Le magasin des refus AuthZEN pouvant faire l'objet d'une demande était plein"
   },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
@@ -1786,6 +1794,14 @@
   "audit.actions.portal.signing-key.revoked.label": {
     "en": "55c1155d5daa1c68",
     "text": "Une personne a révoqué l’une de ses paires de clés de signature"
+  },
+  "audit.actions.ssh-user-ca.issue.label": {
+    "en": "b0dab5b91c44213d",
+    "text": "Un certificat utilisateur SSH a été délivré à une personne"
+  },
+  "audit.actions.ssh-user-ca.revoke.label": {
+    "en": "45c66d3faec475a4",
+    "text": "Une personne a révoqué l’un de ses certificats utilisateur SSH"
   },
   "audit.actions.did.person.published.label": {
     "en": "36165dbbaae0269a",

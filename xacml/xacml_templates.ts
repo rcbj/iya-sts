@@ -4467,8 +4467,9 @@ const TEMPLATES: TemplateRow[] = [
         help: 'yes or no. The FOURTH rule (#1180): a person the denying ' +
               'policy\'s advice named — holding its approver role, in its ' +
               'approver group, or an owner of the application — may ' +
-              'approve, deny or revoke that access request (action ' +
-              'approve-access-request on resource authzen-access-request). ' +
+              'approve, deny or revoke that access request (actions ' +
+              'approve-access-request and revoke-access-request on ' +
+              'resource authzen-access-request). ' +
               'No refuses every approver, so no request is ever approved. ' +
               'The first rule never permits this resource.' },
       { name: 'permitAdministratorApproval',
@@ -4908,6 +4909,10 @@ const TEMPLATES: TemplateRow[] = [
         // `common/access_gate.ts`'s RESOURCE.AUTHZEN_ACCESS_REQUEST and
         // ACTION.APPROVE_ACCESS_REQUEST, written out for the report rule's
         // reason.
+        // `revoke-access-request` (#1203) is ACTION.REVOKE_ACCESS_REQUEST,
+        // permitted wherever an approval is: the same approvers, the same
+        // self-approval rule. A realm that wants the two apart overrides
+        // this document.
         target: B.targetOf([[
           B.match(F1 + 'string-equal',
                   B.value(TYPE.STRING, 'authzen-access-request'),
@@ -4915,6 +4920,10 @@ const TEMPLATES: TemplateRow[] = [
                                TYPE.STRING))], [
           B.match(F1 + 'string-equal',
                   B.value(TYPE.STRING, 'approve-access-request'),
+                  B.designator(model.CATEGORY.ACTION,
+                               model.ATTRIBUTE.ACTION_ID, TYPE.STRING)),
+          B.match(F1 + 'string-equal',
+                  B.value(TYPE.STRING, 'revoke-access-request'),
                   B.designator(model.CATEGORY.ACTION,
                                model.ATTRIBUTE.ACTION_ID, TYPE.STRING))]]),
         condition: B.apply(F1 + 'and', approvalConjuncts),

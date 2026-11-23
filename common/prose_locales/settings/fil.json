@@ -232,8 +232,8 @@
     "text": "I-log ang nabuong bootstrap password"
   },
   "admin.logBootstrapPassword|description": {
-    "en": "856dddf1ed8c2407",
-    "text": "Sa product mode lang. Kapag naka-off, ang default, isinusulat ang password na nabuo para sa unang administrator sa file na bootstrap-admin-password sa persistence.dataDir, na ang serbisyong ito lang ang makakabasa, at sinasabi ng log kung saan. Kapag naka-on, isinusulat ito sa service log. BABALA: kapag naka-on, hindi natutugunan ang requirement 16.2.5 ng ASVS 5.0.0, dahil umaabot sa log ang credential. Ang susunod na pagsisimula ay nagbubura ng file na iyon kapag may humahawak na ng kredensyal."
+    "en": "8591cfda7dde139a",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, isinusulat ang password na nabuo para sa unang administrator sa file na bootstrap-admin-password sa persistence.dataDir, na ang serbisyong ito lang ang makakabasa, at sinasabi ng log kung saan. Kapag naka-on, isinusulat ito sa service log. BABALA: kapag naka-on, hindi natutugunan ang requirement 16.2.5 ng ASVS 5.0.0, dahil umaabot sa log ang credential. Nagdaragdag ang file ng isang trust realm ng gitling at ng realm id sa pangalang iyon. Ang susunod na pagsisimula ay nagbubura ng isang file kapag hindi na nabubuksan ng password na nasa loob nito ang account nito."
   },
   "oauth2.allowConfidentialWithoutPkce|label": {
     "en": "c33a0a31a1d623b1",
@@ -424,8 +424,8 @@
     "text": "Payagan ang default na pangalan ng administrator sa product"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "7375f4bf636f5366",
-    "text": "Sa product mode lang. Kapag naka-off, ang default, ang bootstrap administrator na pinangalanang admin, root, sa o administrator, o walang pangalan, ay binibigyan ng hindi mahulaang nabuong pangalan, na isinusulat kasama ng password nito sa file na bootstrap-admin-password sa persistence.dataDir sa unang pagsisimula (tingnan ang admin.logBootstrapPassword). Kapag naka-on, ginagamit ang naka-configure na pangalan. BABALA: ipinagbabawal ng requirement 6.3.2 ng ASVS 5.0.0 ang default na pangalan ng account, kaya iwanang naka-off ito sa labas ng test stack. Ang susunod na pagsisimula ay nagbubura ng file na iyon kapag may humahawak na ng kredensyal."
+    "en": "7007ae597c41e813",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, ang bootstrap administrator na pinangalanang admin, root, sa o administrator, o walang pangalan, ay binibigyan ng hindi mahulaang nabuong pangalan, na isinusulat kasama ng password nito sa file na bootstrap-admin-password sa persistence.dataDir sa unang pagsisimula (tingnan ang admin.logBootstrapPassword). Kapag naka-on, ginagamit ang naka-configure na pangalan. BABALA: ipinagbabawal ng requirement 6.3.2 ng ASVS 5.0.0 ang default na pangalan ng account, kaya iwanang naka-off ito sa labas ng test stack. Nagdaragdag ang file ng isang trust realm ng gitling at ng realm id sa pangalang iyon. Ang susunod na pagsisimula ay nagbubura ng isang file kapag hindi na nabubuksan ng password na nasa loob nito ang account nito."
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "Account ng bootstrap administrator"
   },
   "admin.bootstrapUsername|description": {
-    "en": "8b69eb9d4cb0b130",
-    "text": "Ang username ng bootstrap administrator (2026-09-13), sa DEFAULT na realm at, mula 2026-09-14, sa bawat trust realm, kung saan ang realm na iyon lang ang pinangangasiwaan nito: ginagawa sa startup kung wala pa, miyembro ng parehong console role, pinipilit na palitan ang password nito sa unang sign-in, at hindi mabubura o mapapalitan ng pangalan. Hangga't hindi pa ito unang nagsa-sign in sa /admin, puwedeng gamitin ng bawat naka-sign in na tao ang console (admin.openWhenEmpty). Sa development, kahit anong password ay nagsa-sign in dito, gaya ng sa lahat. SA PRODUCT MODE, ito rin ang binibigyan ng ginawang password kapag nag-start ang serbisyong ito at WALANG sinuman sa realm ang may hawak na credential; ang pangalan at ang password na iyon ay isinusulat nang isang beses sa file na bootstrap-admin-password sa persistence.dataDir, na mababasa lang ng serbisyong ito (sinasabi ng log kung saan, at dala lang mismo ng log ang mga ito kapag naka-on ang admin.logBootstrapPassword), at iyon lang ang daan papasok sa bagong product deployment. Hindi kailanman isinusulat ang ginawang password kung saan may may hawak nang credential, kaya hindi nito mao-overwrite ang isang password. Nalalapat lang ang sapilitang pagpapalit sa account na GINAWA ng hakbang na ito — ang kasalukuyang account na may ganitong pangalan ay nagpapanatili ng password nito at binibigyan lang ng dalawang role. Ang susunod na pagsisimula ay nagbubura ng file na iyon kapag may humahawak na ng kredensyal."
+    "en": "938e9e0c7b3b97fa",
+    "text": "Ang username ng bootstrap administrator (2026-09-13), sa DEFAULT na realm at, mula 2026-09-14, sa bawat trust realm, kung saan ang realm na iyon lang ang pinangangasiwaan nito: ginagawa sa startup kung wala pa, miyembro ng parehong console role, pinipilit na palitan ang password nito sa unang sign-in, at hindi mabubura o mapapalitan ng pangalan. Hangga't hindi pa ito unang nagsa-sign in sa /admin, puwedeng gamitin ng bawat naka-sign in na tao ang console (admin.openWhenEmpty). Sa development, kahit anong password ay nagsa-sign in dito, gaya ng sa lahat. SA PRODUCT MODE, ito rin ang binibigyan ng ginawang password kapag nag-start ang serbisyong ito at WALANG sinuman sa realm ang may hawak na credential; ang pangalan at ang password na iyon ay isinusulat nang isang beses sa file na bootstrap-admin-password sa persistence.dataDir, na mababasa lang ng serbisyong ito (sinasabi ng log kung saan, at dala lang mismo ng log ang mga ito kapag naka-on ang admin.logBootstrapPassword), at iyon lang ang daan papasok sa bagong product deployment. Hindi kailanman isinusulat ang ginawang password kung saan may may hawak nang credential, kaya hindi nito mao-overwrite ang isang password. Nalalapat lang ang sapilitang pagpapalit sa account na GINAWA ng hakbang na ito — ang kasalukuyang account na may ganitong pangalan ay nagpapanatili ng password nito at binibigyan lang ng dalawang role. Nagdaragdag ang file ng isang trust realm ng gitling at ng realm id sa pangalang iyon. Ang susunod na pagsisimula ay nagbubura ng isang file kapag hindi na nabubuksan ng password na nasa loob nito ang account nito."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -3307,59 +3307,59 @@
     "en": "82f545cd2dea952b",
     "text": "Kung ano ang nagpapahintulot sa isang PKINIT sign-in na mag-angkin ng key na nakatali sa hardware (ang indicator na pkinit-hardware at amr hwk). `inference`, ang default at ang pag-uugali bago ang #1955: isang smart-card logon certificate na ang key ay hindi ginawa ng serbisyong ito, o naitalang ebidensiya ng attestation. `evidence`: tanging key na saklaw ng attestation ng isang hardware token, at nakakakuha ng hwk ang isang passkey lamang kapag napatunayan at pinagkakatiwalaan ang attestation nito (swk kung hindi). Ang certificate sign-in sa TLS ay nakakakuha ng hwk, at sc para sa key sa smart card, mula lamang sa ebidensiya sa alinmang kaso, at para lamang sa may-hawak ng certificate."
   },
-"pskc.allowPlaintextImport|label": {
+  "pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
     "text": "Tanggapin ang mga plaintext PSKC seed file sa product mode"
   },
-"pskc.allowPlaintextImport|description": {
+  "pskc.allowPlaintextImport|description": {
     "en": "7efe34e872e4772e",
     "text": "Kung maaaring mag-import ang isang administrator ng PSKC seed file (RFC 6030) na HINDI naka-encrypt ang mga token secret, sa product mode. Naka-off bilang default: ang ganitong file ay naging listahan ng gumaganang mga ikalawang factor sa bawat disk at mailbox na dinaanan nito, at kaya itong i-encrypt ng vendor sa ilalim ng pre-shared key o password (mga section 6.1 at 6.2). Tumatanggap nito ang development mode anuman ang mangyari."
   },
-"yubiotp.allowPlaintextImport|label": {
+  "yubiotp.allowPlaintextImport|label": {
     "en": "b1c1ac235f98cc47",
     "text": "Tanggapin ang mga plaintext YubiKey OTP CSV file sa product mode"
   },
-"yubiotp.allowPlaintextImport|description": {
+  "yubiotp.allowPlaintextImport|description": {
     "en": "f409449d46d5831a",
     "text": "Kung maaaring mag-import ang isang administrator, sa product mode, ng CSV ng mga YubiKey OTP secret (serial, public id, private id, AES key). Naka-off bilang default: ang file ay listahan ng gumaganang mga ikalawang factor. Tumatanggap ang development mode ng isa anuman ang mangyari. Sini-seal ang mga secret kapag tinanggap ang file, at hindi itinatabi ang file."
   },
-"openpgp.wkd|label": {
+  "openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",
     "text": "Ilathala ang mga key sa Web Key Directory"
   },
-"openpgp.wkd|description": {
+  "openpgp.wkd|description": {
     "en": "7822103f89ac59b3",
     "text": "Sagutin ang Web Key Directory (draft-koch-openpgp-webkey-service) para sa mga mail domain ng realm na ito: /.well-known/openpgpkey/<domain>/hu/<hash> (ang advanced method, sa openpgpkey.<domain>) at /.well-known/openpgpkey/hu/<hash> (ang direct method), at ang policy file ng bawat isa. Ang key lang ng taong pumayag sa portal ang sinasagot. Naka-off bilang default."
   },
-"openpgp.wkdDomains|label": {
+  "openpgp.wkdDomains|label": {
     "en": "d1c4b728593ff000",
     "text": "Mga mail domain na sineserbisyuhan ng Web Key Directory"
   },
-"openpgp.wkdDomains|description": {
+  "openpgp.wkdDomains|description": {
     "en": "ad64f7216191123c",
     "text": "Ang mga mail domain na sinasagot ng Web Key Directory ng realm na ito, pinaghihiwalay ng kuwit. Kapag walang laman, ang default, ito ang sariling DNS domain ng realm. Ang request na walang realm sa path nito ay sinasagot ng realm na nagseserbisyo sa domain nito, ang default realm muna."
   },
-"openpgp.challengeLifetimeS|label": {
+  "openpgp.challengeLifetimeS|label": {
     "en": "dbf558cf0b4b8f90",
     "text": "Tagal ng challenge sa pagrehistro (segundo)"
   },
-"openpgp.challengeLifetimeS|description": {
+  "openpgp.challengeLifetimeS|description": {
     "en": "e9130c8e82368cc6",
     "text": "Gaano katagal valid ang challenge na pinipirmahan ng isang tao gamit ang gpg --clearsign para magrehistro ng OpenPGP key. Isang beses lang itong ginagamit, at isa lang ang hawak ng tao sa bawat pagkakataon."
   },
-"openpgp.signatureSkewS|label": {
+  "openpgp.signatureSkewS|label": {
     "en": "d927cf1f04bd9d51",
     "text": "Clock skew ng proof signature (segundo)"
   },
-"openpgp.signatureSkewS|description": {
+  "openpgp.signatureSkewS|description": {
     "en": "2772763d3d363b6d",
     "text": "Gaano kalayo ang orasan ng pumipirmang computer mula sa orasan ng serbisyong ito: ang proof na pinirmahan nang mas maaga kaysa sa pag-issue ng challenge, o mas huli kaysa ngayon, nang lampas dito ay tinatanggihan (STS-OPENPGP-0010)."
   },
-"openpgp.minRsaBits|label": {
+  "openpgp.minRsaBits|label": {
     "en": "f3dc9f85de143630",
     "text": "Pinakamaliit na RSA OpenPGP key"
   },
-"openpgp.minRsaBits|description": {
+  "openpgp.minRsaBits|description": {
     "en": "cd16018c848ce538",
     "text": "Ang pinakamaikling RSA key, primary man o subkey, na tinatanggap ng pagrehistro ng OpenPGP. Tinatanggap ang Ed25519, Ed448, ECDSA at ECDH sa P-256, P-384 at P-521, X25519 at X448, at ang mga composite ng RFC 9980 na ML-DSA-65+Ed25519, ML-DSA-87+Ed448, ML-KEM-768+X25519 at ML-KEM-1024+X448 kapag pinangalanan sila ng openpgp.algorithms. Hindi kailanman tinatanggap ang DSA, ElGamal, ang mga Brainpool curve at SLH-DSA (STS-OPENPGP-0004)."
   },
@@ -8387,6 +8387,14 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "Ang pinakamaraming access request na hawak ng isang realm bilang pending; lampas dito, tinatanggihan ang pagsumite nang may 503 hanggang may mapagpasyahan o mag-expire."
   },
+  "authzen.accessRequestMaxDenials|label": {
+    "en": "09e695949f0cc1cc",
+    "text": "Mga hinihiling na pagtanggi na itinatala ng isang realm"
+  },
+  "authzen.accessRequestMaxDenials|description": {
+    "en": "698617c5a3485120",
+    "text": "Ang pinakamaraming hinihiling na pagtanggi na itinatala ng isang realm ayon sa evaluation_id (#1204). Lampas dito, hindi naitatala ang bagong pagtanggi, at maaari pa rin itong hilingin gamit ang binding_token nito; inaalis ng job ng mga kahilingan sa access ang isang tala isang araw matapos ang window nito."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"
@@ -8400,8 +8408,8 @@
     "text": "Access request callback backoff (seconds)"
   },
   "authzen.callbackBackoffS|description": {
-    "en": "27141a0f28d94b83",
-    "text": "How long to wait after a failed access request callback before the next attempt (#1202). The authzen.access-requests job runs every 60 seconds, so a shorter wait could not be honoured. An application's appAuthzenCallbackConfig may set a longer wait for one URL."
+    "en": "43f2cb7740fc7efe",
+    "text": "Gaano katagal maghihintay matapos ang unang nabigong callback ng isang kahilingan sa access bago ang susunod na pagsubok (#1202). Ang bawat kasunod na paghihintay ay doble ng nauna, hanggang isang araw. Tumatakbo ang job na authzen.access-requests bawat 60 segundo, kaya hindi masusunod ang mas maikling paghihintay. Maaaring magtakda ang appAuthzenCallbackConfig ng isang application ng mas mahabang paghihintay para sa isang URL."
   },
   "authzen.externalPdp|label": {
     "en": "8a0af08389fe6cda",
@@ -13072,16 +13080,16 @@
     "text": "Mga algorithm ng SSH user CA"
   },
   "pki.sshUserCaAlgorithms|description": {
-    "en": "bdb54445a0279b8d",
-    "text": "Kung aling mga algorithm ang maaaring gamitin ng SSH user certificate authority, ayon sa preferensiya. Ang ssh-mldsa-65 ay ML-DSA-65 (FIPS 204) sa ilalim ng wire name na binibigyang-kahulugan ng serbisyong ito, dahil walang binibigyang-kahulugan ang OpenSSH: hilaw ang public key at ang lagda, sa hugis na ginagamit ng ssh-ed25519. Ang linyang OpenSSH TrustedUserCAKeys na inilalathala ng serbisyong ito ay nananatiling unang classical na algorithm sa listahang ito, o ssh-ed25519 kapag ssh-mldsa-65 lamang ang pinangalanan. Ang kapwa na hindi nakakaunawa ng ML-DSA ay patuloy na nagtitiwala sa linyang iyon. Hindi iniaalok ang ssh-rsa (SHA-1). Nilikha ang awtoridad na ML-DSA lamang kapag kaya ng runtime na ito na bumuo ng key; kung hindi, classical pa rin ang mga certificate (itinatala ang STS-PKI-0290 at sumasagot pa rin ang classical na awtoridad)."
+    "en": "5c4c22c2ab500fd4",
+    "text": "Kung aling mga algorithm ang maaaring gamitin ng awtoridad ng sertipiko ng mga user ng SSH, ayon sa pagkakasunod ng kagustuhan. Ang ssh-mldsa-65 ay ML-DSA-65 (FIPS 204) sa ilalim ng pangalang pang-wire na itinakda ng serbisyong ito, dahil walang itinakda ang OpenSSH: hilaw ang public key at ang lagda, sa hugis na ginagamit ng ssh-ed25519. Ang linyang OpenSSH TrustedUserCAKeys na inilalathala ng serbisyong ito ay nananatiling unang klasikong algorithm sa listahang ito, o ssh-ed25519 kapag ssh-mldsa-65 lang ang nasa listahan. Patuloy na nagtitiwala sa linyang iyon ang kabilang panig na hindi nakauunawa ng ML-DSA. Inilalathala ang key ng awtoridad na ML-DSA sa GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65; hindi pa kayang i-verify ng karaniwang OpenSSH ang isang sertipikong ML-DSA. Hindi inaalok ang ssh-rsa (SHA-1). Ginagawa lang ang awtoridad na ML-DSA kapag kayang bumuo ng key ng runtime na ito; kung hindi, nananatiling klasiko ang mga sertipiko (itinatala ang STS-PKI-0290 at sumasagot pa rin ang klasikong awtoridad), maliban kung naka-on ang pki.sshUserCaPqcOnly."
   },
   "pki.sshUserCaPqcOnly|label": {
     "en": "74aae1308361ba58",
     "text": "Ang mga SSH user certificate ay post-quantum lamang"
   },
   "pki.sshUserCaPqcOnly|description": {
-    "en": "39b21e5b95f84da1",
-    "text": "Kapag naka-on, ang bagong SSH user certificate ay pinipirmahan ng awtoridad na ML-DSA, at kapag umiiral lamang ang awtoridad na iyon. Ang inilathalang linyang TrustedUserCAKeys ay nananatiling classical na key, kaya ang OpenSSH client na nagtitiwala na rito ay hindi binibigyan ng algorithm na hindi nito ma-parse. Sa runtime na hindi makabuo ng ML-DSA, classical pa rin ang certificate at hindi nabibigo ang kahilingan. Patuloy na bini-verify ang mga classical na certificate na naibigay na. Hindi maaaring naka-on habang naka-on ang pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Naka-off bilang default."
+    "en": "dcbf21b3230dcf07",
+    "text": "Kapag naka-on, ang bagong sertipiko ng user ng SSH ay nilalagdaan ng awtoridad na ML-DSA at wala nang iba. Hindi pa kayang i-verify ng karaniwang OpenSSH ang isang sertipikong ML-DSA, kaya ang SSH server lang na ginawa para i-verify ang ssh-mldsa-65, na nagtitiwala sa key sa GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65, ang tumatanggap sa mga sertipikong ito. Nananatiling klasikong key ang default na linya sa path na iyon. Kapag walang awtoridad na ML-DSA ang realm (hindi kayang bumuo ng ML-DSA ang runtime na ito, o wala ang ssh-mldsa-65 sa pki.sshUserCaAlgorithms), tinatanggihan ang kahilingan (STS-PKI-0297) sa halip na sagutin ng klasikong sertipiko. Patuloy na nave-verify ang mga klasikong sertipikong naibigay na. Hindi maaaring naka-on habang naka-on ang pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Naka-off bilang default."
   },
   "pki.sshUserCaPqcAlongsideClassical|label": {
     "en": "c3201f8841200c32",

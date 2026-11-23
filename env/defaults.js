@@ -1299,6 +1299,7 @@ var config = {
     accessRequestEmergencyS: 3600,     // How long emergency access holds (seconds)
     accessRequestRetryAfterS: 30,      // Retry-After on a pending access request (seconds)
     accessRequestMaxPending: 10000,    // Pending access requests a realm holds
+    accessRequestMaxDenials: 100000,   // Requestable denials a realm records
     callbackAttempts: 5,               // Access request callback attempts
     callbackBackoffS: 60,              // Access request callback backoff (seconds)
     externalPdp: false,                // Ask an external PDP before a token exchange.

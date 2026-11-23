@@ -68,7 +68,7 @@ class AccountSshUserCa {
     const { log } = this.deps;
     log.debug("Entering AccountSshUserCa.statusOf().");
     const code = String(ctx.errorCodes.codeOf(answer) || fallback);
-    if (code === 'STS-PKI-0290') {
+    if (code === 'STS-PKI-0290' || code === 'STS-PKI-0297') {
       log.debug("Leaving AccountSshUserCa.statusOf(). 503.");
       return 503;
     }

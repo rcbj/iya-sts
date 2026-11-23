@@ -232,8 +232,8 @@
     "text": "Journaliser le mot de passe d’amorçage généré"
   },
   "admin.logBootstrapPassword|description": {
-    "en": "856dddf1ed8c2407",
-    "text": "Mode produit uniquement. Désactivé, par défaut, le mot de passe généré pour le premier administrateur est écrit dans le fichier bootstrap-admin-password de persistence.dataDir, lisible par ce seul service, et le journal indique où. Activé, il est écrit dans le journal du service. AVERTISSEMENT : activé, l’exigence 16.2.5 d’ASVS 5.0.0 n’est pas respectée, car un identifiant atteint le journal. Un démarrage ultérieur supprime ce fichier, dès que quelqu’un détient déjà un identifiant."
+    "en": "8591cfda7dde139a",
+    "text": "Mode produit uniquement. Désactivé, par défaut, le mot de passe généré pour le premier administrateur est écrit dans le fichier bootstrap-admin-password de persistence.dataDir, lisible par ce seul service, et le journal indique où. Activé, il est écrit dans le journal du service. AVERTISSEMENT : activé, l’exigence 16.2.5 d’ASVS 5.0.0 n’est pas respectée, car un identifiant atteint le journal. Le fichier d’un domaine de confiance ajoute à ce nom un trait d’union et l’identifiant du domaine. Un démarrage ultérieur supprime un fichier dès que le mot de passe qu’il contient n’ouvre plus son compte."
   },
   "oauth2.allowConfidentialWithoutPkce|label": {
     "en": "c33a0a31a1d623b1",
@@ -424,8 +424,8 @@
     "text": "Autoriser un nom d’administrateur par défaut en production"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "7375f4bf636f5366",
-    "text": "Mode produit uniquement. Désactivé, par défaut, un administrateur d’amorçage nommé admin, root, sa ou administrator, ou sans nom, reçoit un nom généré imprévisible, écrit avec son mot de passe dans le fichier bootstrap-admin-password de persistence.dataDir au premier démarrage (voir admin.logBootstrapPassword). Activé, le nom configuré est utilisé tel quel. AVERTISSEMENT : l’exigence 6.3.2 d’ASVS 5.0.0 interdit un nom de compte par défaut ; laissez ce réglage désactivé hors d’une pile de test. Un démarrage ultérieur supprime ce fichier, dès que quelqu’un détient déjà un identifiant."
+    "en": "7007ae597c41e813",
+    "text": "Mode produit uniquement. Désactivé, par défaut, un administrateur d’amorçage nommé admin, root, sa ou administrator, ou sans nom, reçoit un nom généré imprévisible, écrit avec son mot de passe dans le fichier bootstrap-admin-password de persistence.dataDir au premier démarrage (voir admin.logBootstrapPassword). Activé, le nom configuré est utilisé tel quel. AVERTISSEMENT : l’exigence 6.3.2 d’ASVS 5.0.0 interdit un nom de compte par défaut ; laissez ce réglage désactivé hors d’une pile de test. Le fichier d’un domaine de confiance ajoute à ce nom un trait d’union et l’identifiant du domaine. Un démarrage ultérieur supprime un fichier dès que le mot de passe qu’il contient n’ouvre plus son compte."
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "Compte administrateur d’amorçage"
   },
   "admin.bootstrapUsername|description": {
-    "en": "8b69eb9d4cb0b130",
-    "text": "Le nom d’utilisateur de l’administrateur d’amorçage (2026-09-13), dans le domaine PAR DÉFAUT et, depuis le 2026-09-14, dans chaque domaine de confiance, où il n’administre que ce domaine : créé au démarrage s’il est absent, membre des deux rôles de la console, obligé de changer son mot de passe à sa première connexion, et impossible à supprimer ou à renommer. Tant qu’il ne s’est pas connecté une première fois à /admin, toute personne connectée peut utiliser la console (admin.openWhenEmpty). En développement, n’importe quel mot de passe le connecte, comme pour tout le monde. EN MODE PRODUIT, c’est aussi lui qui reçoit un mot de passe généré lorsque ce service démarre et que PERSONNE dans le domaine ne détient d’identifiant ; le nom et ce mot de passe sont écrits une seule fois dans le fichier bootstrap-admin-password de persistence.dataDir, lisible uniquement par ce service (le journal indique où, et ne les contient lui-même qu’avec admin.logBootstrapPassword activé), et sont le seul moyen d’entrer dans un déploiement produit neuf. Le mot de passe généré n’est jamais écrit là où quelqu’un détient déjà un identifiant ; il ne peut donc écraser aucun mot de passe. Le changement obligatoire ne s’applique qu’à un compte que cette étape a CRÉÉ — un compte existant portant ce nom conserve son mot de passe et reçoit seulement les deux rôles. Un démarrage ultérieur supprime ce fichier, dès que quelqu’un détient déjà un identifiant."
+    "en": "938e9e0c7b3b97fa",
+    "text": "Le nom d’utilisateur de l’administrateur d’amorçage (2026-09-13), dans le domaine PAR DÉFAUT et, depuis le 2026-09-14, dans chaque domaine de confiance, où il n’administre que ce domaine : créé au démarrage s’il est absent, membre des deux rôles de la console, obligé de changer son mot de passe à sa première connexion, et impossible à supprimer ou à renommer. Tant qu’il ne s’est pas connecté une première fois à /admin, toute personne connectée peut utiliser la console (admin.openWhenEmpty). En développement, n’importe quel mot de passe le connecte, comme pour tout le monde. EN MODE PRODUIT, c’est aussi lui qui reçoit un mot de passe généré lorsque ce service démarre et que PERSONNE dans le domaine ne détient d’identifiant ; le nom et ce mot de passe sont écrits une seule fois dans le fichier bootstrap-admin-password de persistence.dataDir, lisible uniquement par ce service (le journal indique où, et ne les contient lui-même qu’avec admin.logBootstrapPassword activé), et sont le seul moyen d’entrer dans un déploiement produit neuf. Le mot de passe généré n’est jamais écrit là où quelqu’un détient déjà un identifiant ; il ne peut donc écraser aucun mot de passe. Le changement obligatoire ne s’applique qu’à un compte que cette étape a CRÉÉ — un compte existant portant ce nom conserve son mot de passe et reçoit seulement les deux rôles. Le fichier d’un domaine de confiance ajoute à ce nom un trait d’union et l’identifiant du domaine. Un démarrage ultérieur supprime un fichier dès que le mot de passe qu’il contient n’ouvre plus son compte."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -3307,59 +3307,59 @@
     "en": "82f545cd2dea952b",
     "text": "Ce qui permet à une connexion PKINIT de revendiquer une clé liée au matériel (l’indicateur pkinit-hardware et l’amr hwk). `inference`, la valeur par défaut et le comportement avant #1955 : un certificat de connexion par carte à puce dont ce service n’a pas généré la clé, ou une preuve d’attestation enregistrée. `evidence` : seulement une clé couverte par l’attestation d’un jeton matériel, et une clé d’accès n’obtient hwk que si son attestation a été vérifiée et est de confiance (swk sinon). Une connexion par certificat sur TLS obtient hwk, et sc pour une clé sur une carte à puce, uniquement à partir de preuves dans les deux cas, et seulement pour le titulaire du certificat."
   },
-"pskc.allowPlaintextImport|label": {
+  "pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
     "text": "Accepter les fichiers de semences PSKC en clair en mode produit"
   },
-"pskc.allowPlaintextImport|description": {
+  "pskc.allowPlaintextImport|description": {
     "en": "7efe34e872e4772e",
     "text": "Si un administrateur peut importer, en mode produit, un fichier de semences PSKC (RFC 6030) dont les secrets de jetons NE sont PAS chiffrés. Désactivé par défaut : un tel fichier a été une liste de deuxièmes facteurs fonctionnels sur chaque disque et chaque boîte aux lettres qu’il a traversés, et un fournisseur peut le chiffrer sous une clé prépartagée ou un mot de passe (sections 6.1 et 6.2). Le mode développement en accepte un dans tous les cas."
   },
-"yubiotp.allowPlaintextImport|label": {
+  "yubiotp.allowPlaintextImport|label": {
     "en": "b1c1ac235f98cc47",
     "text": "Accepter les fichiers CSV d’OTP YubiKey en clair en mode produit"
   },
-"yubiotp.allowPlaintextImport|description": {
+  "yubiotp.allowPlaintextImport|description": {
     "en": "f409449d46d5831a",
     "text": "Si un administrateur peut importer, en mode produit, un CSV de secrets d’OTP YubiKey (numéro de série, identité publique, identité privée, clé AES). Désactivé par défaut : le fichier est une liste de deuxièmes facteurs fonctionnels. Le mode développement en accepte un dans tous les cas. Les secrets sont scellés lorsque le fichier est accepté, et le fichier n’est pas conservé."
   },
-"openpgp.wkd|label": {
+  "openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",
     "text": "Publier les clés dans le Web Key Directory"
   },
-"openpgp.wkd|description": {
+  "openpgp.wkd|description": {
     "en": "7822103f89ac59b3",
     "text": "Répondre au Web Key Directory (draft-koch-openpgp-webkey-service) pour les domaines de messagerie de ce domaine de confiance : /.well-known/openpgpkey/<domain>/hu/<hash> (la méthode avancée, sur openpgpkey.<domain>) et /.well-known/openpgpkey/hu/<hash> (la méthode directe), ainsi que le fichier de politique de chacune. Seule la clé d'une personne ayant accepté la publication sur le portail est renvoyée. Désactivé par défaut."
   },
-"openpgp.wkdDomains|label": {
+  "openpgp.wkdDomains|label": {
     "en": "d1c4b728593ff000",
     "text": "Domaines de messagerie servis par le Web Key Directory"
   },
-"openpgp.wkdDomains|description": {
+  "openpgp.wkdDomains|description": {
     "en": "ad64f7216191123c",
     "text": "Les domaines de messagerie pour lesquels le Web Key Directory de ce domaine de confiance répond, séparés par des virgules. Vide, la valeur par défaut, désigne le propre domaine DNS du domaine de confiance. Une requête dont le chemin ne comporte aucun domaine de confiance reçoit la réponse du domaine de confiance qui sert son domaine DNS, le domaine par défaut en premier."
   },
-"openpgp.challengeLifetimeS|label": {
+  "openpgp.challengeLifetimeS|label": {
     "en": "dbf558cf0b4b8f90",
     "text": "Durée de validité du défi d'enregistrement (secondes)"
   },
-"openpgp.challengeLifetimeS|description": {
+  "openpgp.challengeLifetimeS|description": {
     "en": "e9130c8e82368cc6",
     "text": "Durée pendant laquelle reste valable le défi qu'une personne signe avec gpg --clearsign pour enregistrer une clé OpenPGP. Il n'est consommé qu'une fois, et une personne n'en a qu'un à la fois."
   },
-"openpgp.signatureSkewS|label": {
+  "openpgp.signatureSkewS|label": {
     "en": "d927cf1f04bd9d51",
     "text": "Décalage d'horloge admis pour la signature de preuve (secondes)"
   },
-"openpgp.signatureSkewS|description": {
+  "openpgp.signatureSkewS|description": {
     "en": "2772763d3d363b6d",
     "text": "L'écart admis entre l'horloge de l'ordinateur signataire et celle de ce service : une preuve signée avant l'émission du défi, ou après l'instant présent, de plus que cette valeur est refusée (STS-OPENPGP-0010)."
   },
-"openpgp.minRsaBits|label": {
+  "openpgp.minRsaBits|label": {
     "en": "f3dc9f85de143630",
     "text": "Plus petite clé OpenPGP RSA"
   },
-"openpgp.minRsaBits|description": {
+  "openpgp.minRsaBits|description": {
     "en": "cd16018c848ce538",
     "text": "La clé RSA la plus courte, principale ou sous-clé, qu'un enregistrement OpenPGP accepte. Ed25519, Ed448, ECDSA et ECDH sur P-256, P-384 et P-521, X25519 et X448, ainsi que les composites RFC 9980 ML-DSA-65+Ed25519, ML-DSA-87+Ed448, ML-KEM-768+X25519 et ML-KEM-1024+X448 sont acceptés lorsque openpgp.algorithms les nomme. DSA, ElGamal, les courbes Brainpool et SLH-DSA ne le sont jamais (STS-OPENPGP-0004)."
   },
@@ -8387,6 +8387,14 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "Le nombre maximal de demandes d’accès qu’un domaine conserve en attente ; au-delà, une soumission est refusée avec 503 jusqu’à ce que certaines soient décidées ou expirent."
   },
+  "authzen.accessRequestMaxDenials|label": {
+    "en": "09e695949f0cc1cc",
+    "text": "Refus susceptibles de demande enregistrés par un domaine"
+  },
+  "authzen.accessRequestMaxDenials|description": {
+    "en": "698617c5a3485120",
+    "text": "Le nombre maximal de refus susceptibles de demande qu’un domaine enregistre par evaluation_id (#1204). Au-delà, un nouveau refus n’est pas enregistré et reste demandable par son binding_token ; la tâche des demandes d’accès supprime un enregistrement un jour après sa fenêtre."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"
@@ -8400,8 +8408,8 @@
     "text": "Access request callback backoff (seconds)"
   },
   "authzen.callbackBackoffS|description": {
-    "en": "27141a0f28d94b83",
-    "text": "How long to wait after a failed access request callback before the next attempt (#1202). The authzen.access-requests job runs every 60 seconds, so a shorter wait could not be honoured. An application's appAuthzenCallbackConfig may set a longer wait for one URL."
+    "en": "43f2cb7740fc7efe",
+    "text": "Délai d’attente après le premier échec d’un rappel de demande d’accès avant la tentative suivante (#1202). Chaque attente suivante est le double de la précédente, jusqu’à un jour. La tâche authzen.access-requests s’exécute toutes les 60 secondes, si bien qu’une attente plus courte ne pourrait pas être respectée. Le appAuthzenCallbackConfig d’une application peut fixer une attente plus longue pour une URL."
   },
   "authzen.externalPdp|label": {
     "en": "8a0af08389fe6cda",
@@ -13072,16 +13080,16 @@
     "text": "Algorithmes de l’AC utilisateur SSH"
   },
   "pki.sshUserCaAlgorithms|description": {
-    "en": "bdb54445a0279b8d",
-    "text": "Les algorithmes que l’autorité de certification des certificats utilisateur SSH peut utiliser, par ordre de préférence. ssh-mldsa-65 est ML-DSA-65 (FIPS 204) sous un nom de fil que ce service définit, parce qu’OpenSSH n’en définit aucun : la clé publique et la signature sont brutes, dans la forme qu’utilise ssh-ed25519. La ligne OpenSSH TrustedUserCAKeys que ce service publie reste le premier algorithme classique de cette liste, ou ssh-ed25519 lorsque la liste ne nomme que ssh-mldsa-65. Un pair qui ne comprend pas ML-DSA continue de faire confiance à cette ligne. ssh-rsa (SHA-1) n’est pas offert. L’autorité ML-DSA n’est créée que lorsque ce moteur peut générer la clé ; sinon les certificats restent classiques (STS-PKI-0290 est enregistré et l’autorité classique répond encore)."
+    "en": "5c4c22c2ab500fd4",
+    "text": "Les algorithmes que l’autorité de certification des utilisateurs SSH peut utiliser, par ordre de préférence. ssh-mldsa-65 est ML-DSA-65 (FIPS 204) sous un nom de transport que ce service définit, car OpenSSH n’en définit aucun : la clé publique et la signature sont brutes, sous la forme qu’utilise ssh-ed25519. La ligne OpenSSH TrustedUserCAKeys que ce service publie reste le premier algorithme classique de cette liste, ou ssh-ed25519 lorsque la liste ne nomme que ssh-mldsa-65. Un pair qui ne comprend pas ML-DSA continue de faire confiance à cette ligne. La clé de l’autorité ML-DSA est publiée à GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65 ; OpenSSH standard ne sait pas encore vérifier un certificat ML-DSA. ssh-rsa (SHA-1) n’est pas proposé. L’autorité ML-DSA n’est créée que si cet environnement d’exécution peut générer la clé ; sinon les certificats restent classiques (STS-PKI-0290 est enregistré et l’autorité classique répond toujours), sauf si pki.sshUserCaPqcOnly est activé."
   },
   "pki.sshUserCaPqcOnly|label": {
     "en": "74aae1308361ba58",
     "text": "Les certificats utilisateur SSH sont uniquement post-quantiques"
   },
   "pki.sshUserCaPqcOnly|description": {
-    "en": "39b21e5b95f84da1",
-    "text": "Activé, un nouveau certificat utilisateur SSH est signé par l’autorité ML-DSA, et seulement lorsque cette autorité existe. La ligne TrustedUserCAKeys publiée reste la clé classique, afin qu’un client OpenSSH qui lui fait déjà confiance ne reçoive pas un algorithme qu’il ne peut pas analyser. Sur un moteur qui ne peut pas générer ML-DSA, le certificat reste classique et la demande n’échoue pas. Les certificats classiques déjà émis continuent d’être vérifiés. Ne peut pas être activé en même temps que pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Désactivé par défaut."
+    "en": "dcbf21b3230dcf07",
+    "text": "Activé, un nouveau certificat utilisateur SSH est signé par l’autorité ML-DSA et par rien d’autre. OpenSSH standard ne sait pas encore vérifier un certificat ML-DSA : seul un serveur SSH conçu pour vérifier ssh-mldsa-65, et qui fait confiance à la clé publiée à GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65, accepte ces certificats. La ligne par défaut à ce chemin reste la clé classique. Lorsque le domaine n’a pas d’autorité ML-DSA (cet environnement d’exécution ne sait pas générer ML-DSA, ou ssh-mldsa-65 n’est pas dans pki.sshUserCaAlgorithms), la demande est refusée (STS-PKI-0297) au lieu de recevoir un certificat classique. Les certificats classiques déjà émis restent vérifiables. Ne peut pas être activé en même temps que pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Désactivé par défaut."
   },
   "pki.sshUserCaPqcAlongsideClassical|label": {
     "en": "c3201f8841200c32",

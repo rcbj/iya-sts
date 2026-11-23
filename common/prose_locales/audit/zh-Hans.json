@@ -551,71 +551,71 @@
     "en": "f7fb5461e2325e1e",
     "text": "硬件令牌已报告丢失，其凭据已停用"
   },
-"audit.actions.oath-token.import.label": {
+  "audit.actions.oath-token.import.label": {
     "en": "4da380e22dff30ec",
     "text": "供应商的 PSKC 种子文件已导入或被拒绝"
   },
-"audit.actions.oath-token.assign.label": {
+  "audit.actions.oath-token.assign.label": {
     "en": "19b678e9bbc10747",
     "text": "导入的 OATH 令牌已分配给某人，或被某人认领"
   },
-"audit.actions.oath-token.claim.label": {
+  "audit.actions.oath-token.claim.label": {
     "en": "5c54ac8752e21682",
     "text": "某人对导入的 OATH 令牌的认领被拒绝"
   },
-"audit.actions.oath-token.remove.label": {
+  "audit.actions.oath-token.remove.label": {
     "en": "92d69a1a2d848892",
     "text": "未分配的 OATH 令牌已从清单中移除"
   },
-"audit.actions.yubiotp.import.label": {
+  "audit.actions.yubiotp.import.label": {
     "en": "6f92401fa557c5e6",
     "text": "导入或拒绝了 YubiKey OTP CSV"
   },
-"audit.actions.yubiotp.assign.label": {
+  "audit.actions.yubiotp.assign.label": {
     "en": "c4f793ef7a16734a",
     "text": "导入的 YubiKey OTP 已分配给某人"
   },
-"audit.actions.yubiotp.claim.label": {
+  "audit.actions.yubiotp.claim.label": {
     "en": "08d55e823350bd4a",
     "text": "某人认领了导入的 YubiKey OTP，或认领被拒绝"
   },
-"audit.actions.yubiotp.remove.label": {
+  "audit.actions.yubiotp.remove.label": {
     "en": "a4a9aedd10cc2813",
     "text": "未分配的 YubiKey OTP 已从清单中移除"
   },
-"audit.actions.yubiotp.client-add.label": {
+  "audit.actions.yubiotp.client-add.label": {
     "en": "40676cb783f36097",
     "text": "已创建 YK-VAL 客户端"
   },
-"audit.actions.yubiotp.client-remove.label": {
+  "audit.actions.yubiotp.client-remove.label": {
     "en": "92433c797106d523",
     "text": "已移除 YK-VAL 客户端"
   },
-"audit.actions.openpgp.challenge.label": {
+  "audit.actions.openpgp.challenge.label": {
     "en": "454a22b5bcd9d6a2",
     "text": "已发出 OpenPGP 密钥注册质询"
   },
-"audit.actions.openpgp.key-registered.label": {
+  "audit.actions.openpgp.key-registered.label": {
     "en": "1ed8de1f8777a015",
     "text": "已凭持有证明注册 OpenPGP 密钥"
   },
-"audit.actions.openpgp.key-refused.label": {
+  "audit.actions.openpgp.key-refused.label": {
     "en": "f1e7e3c6808ba33b",
     "text": "OpenPGP 密钥未被注册"
   },
-"audit.actions.openpgp.key-removed.label": {
+  "audit.actions.openpgp.key-removed.label": {
     "en": "89a284fa6508eae4",
     "text": "已删除 OpenPGP 密钥"
   },
-"audit.actions.openpgp.publication.label": {
+  "audit.actions.openpgp.publication.label": {
     "en": "f6d12f16eca6796a",
     "text": "OpenPGP 密钥已在 Web 密钥目录中发布或撤回"
   },
-"audit.actions.openpgp.mail-encryption.label": {
+  "audit.actions.openpgp.mail-encryption.label": {
     "en": "ba0fb7a4133d94e2",
     "text": "发给某人的邮件的加密方式已更改"
   },
-"audit.actions.openpgp.smime-certificate.label": {
+  "audit.actions.openpgp.smime-certificate.label": {
     "en": "663072a33ce1e178",
     "text": "某人的 S/MIME 证书已设置或删除"
   },
@@ -1134,6 +1134,14 @@
   "audit.actions.authzen.access-request.callback.label": {
     "en": "432e877d55af1913",
     "text": "已发送 AuthZEN 访问请求的回调，或回调失败"
+  },
+  "audit.actions.authzen.access-request.failed.label": {
+    "en": "ff702bec26fec0b2",
+    "text": "一个 AuthZEN 访问请求失败"
+  },
+  "audit.actions.authzen.access-request.denials-full.label": {
+    "en": "d4a30614c3be855a",
+    "text": "AuthZEN 可申请拒绝存储已满"
   },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
@@ -1786,6 +1794,14 @@
   "audit.actions.portal.signing-key.revoked.label": {
     "en": "55c1155d5daa1c68",
     "text": "某人吊销了自己的一个签名密钥对"
+  },
+  "audit.actions.ssh-user-ca.issue.label": {
+    "en": "b0dab5b91c44213d",
+    "text": "已为某人签发 SSH 用户证书"
+  },
+  "audit.actions.ssh-user-ca.revoke.label": {
+    "en": "45c66d3faec475a4",
+    "text": "某人吊销了自己的一张 SSH 用户证书"
   },
   "audit.actions.did.person.published.label": {
     "en": "36165dbbaae0269a",

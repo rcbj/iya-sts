@@ -232,8 +232,8 @@
     "text": "Das erzeugte Bootstrap-Passwort protokollieren"
   },
   "admin.logBootstrapPassword|description": {
-    "en": "856dddf1ed8c2407",
-    "text": "Nur im Produktmodus. Aus, der Standard, wird das für den ersten Administrator erzeugte Passwort in die Datei bootstrap-admin-password in persistence.dataDir geschrieben, lesbar nur für diesen Dienst, und das Protokoll nennt den Ort. An wird es stattdessen in das Dienstprotokoll geschrieben. WARNUNG: an ist ASVS 5.0.0 Anforderung 16.2.5 nicht erfüllt, weil Anmeldedaten das Protokoll erreichen. Ein späterer Start löscht diese Datei, sobald bereits jemand Zugangsdaten besitzt."
+    "en": "8591cfda7dde139a",
+    "text": "Nur im Produktmodus. Aus, der Standard, wird das für den ersten Administrator erzeugte Passwort in die Datei bootstrap-admin-password in persistence.dataDir geschrieben, lesbar nur für diesen Dienst, und das Protokoll nennt den Ort. An wird es stattdessen in das Dienstprotokoll geschrieben. WARNUNG: an ist ASVS 5.0.0 Anforderung 16.2.5 nicht erfüllt, weil Anmeldedaten das Protokoll erreichen. Die Datei eines Vertrauensbereichs hängt an diesen Namen einen Bindestrich und die ID des Vertrauensbereichs an. Ein späterer Start löscht eine Datei, sobald das Passwort darin sein Konto nicht mehr öffnet."
   },
   "oauth2.allowConfidentialWithoutPkce|label": {
     "en": "c33a0a31a1d623b1",
@@ -424,8 +424,8 @@
     "text": "Einen Standard-Administratornamen im Produkt erlauben"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "7375f4bf636f5366",
-    "text": "Nur im Produktmodus. Aus, der Standard, erhält ein Bootstrap-Administrator mit dem Namen admin, root, sa oder administrator, oder ganz ohne Namen, einen nicht vorhersagbaren erzeugten Namen, der mit seinem Passwort beim ersten Start in die Datei bootstrap-admin-password in persistence.dataDir geschrieben wird (siehe admin.logBootstrapPassword). An wird der konfigurierte Name so verwendet, wie er ist. WARNUNG: ASVS 5.0.0 Anforderung 6.3.2 verbietet einen Standardnamen für ein Konto; lassen Sie dies daher außerhalb eines Teststapels aus. Ein späterer Start löscht diese Datei, sobald bereits jemand Zugangsdaten besitzt."
+    "en": "7007ae597c41e813",
+    "text": "Nur im Produktmodus. Aus, der Standard, erhält ein Bootstrap-Administrator mit dem Namen admin, root, sa oder administrator, oder ganz ohne Namen, einen nicht vorhersagbaren erzeugten Namen, der mit seinem Passwort beim ersten Start in die Datei bootstrap-admin-password in persistence.dataDir geschrieben wird (siehe admin.logBootstrapPassword). An wird der konfigurierte Name so verwendet, wie er ist. WARNUNG: ASVS 5.0.0 Anforderung 6.3.2 verbietet einen Standardnamen für ein Konto; lassen Sie dies daher außerhalb eines Teststapels aus. Die Datei eines Vertrauensbereichs hängt an diesen Namen einen Bindestrich und die ID des Vertrauensbereichs an. Ein späterer Start löscht eine Datei, sobald das Passwort darin sein Konto nicht mehr öffnet."
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "Konto des Bootstrap-Administrators"
   },
   "admin.bootstrapUsername|description": {
-    "en": "8b69eb9d4cb0b130",
-    "text": "Der Benutzername des Bootstrap-Administrators (2026-09-13), im STANDARD-Vertrauensbereich und seit 2026-09-14 in jedem Vertrauensbereich, wo er nur diesen Vertrauensbereich verwaltet: beim Start angelegt, falls er fehlt, Mitglied beider Rollen der Konsole, bei der ersten Anmeldung zur Änderung seines Passworts gezwungen und unmöglich zu löschen oder umzubenennen. Bis zur ersten Anmeldung bei /admin darf jede angemeldete Person die Konsole verwenden (admin.openWhenEmpty). In der Entwicklung meldet jedes Passwort ihn an, wie bei allen anderen. IM PRODUKTMODUS ist er außerdem derjenige, der ein erzeugtes Passwort erhält, wenn dieser Dienst startet und NIEMAND im Vertrauensbereich Anmeldedaten besitzt; der Name und dieses Passwort werden einmal in die Datei bootstrap-admin-password in persistence.dataDir geschrieben, lesbar nur für diesen Dienst (das Protokoll nennt den Ort und trägt sie selbst nur, wenn admin.logBootstrapPassword an ist), und sie sind der einzige Weg in eine frische Produktbereitstellung. Das erzeugte Passwort wird niemals geschrieben, wo bereits jemand Anmeldedaten besitzt, sodass es kein Passwort überschreiben kann. Die erzwungene Änderung gilt nur für ein Konto, das dieser Schritt ANGELEGT hat — ein bestehendes Konto dieses Namens behält sein Passwort und erhält nur die beiden Rollen. Ein späterer Start löscht diese Datei, sobald bereits jemand Zugangsdaten besitzt."
+    "en": "938e9e0c7b3b97fa",
+    "text": "Der Benutzername des Bootstrap-Administrators (2026-09-13), im STANDARD-Vertrauensbereich und seit 2026-09-14 in jedem Vertrauensbereich, wo er nur diesen Vertrauensbereich verwaltet: beim Start angelegt, falls er fehlt, Mitglied beider Rollen der Konsole, bei der ersten Anmeldung zur Änderung seines Passworts gezwungen und unmöglich zu löschen oder umzubenennen. Bis zur ersten Anmeldung bei /admin darf jede angemeldete Person die Konsole verwenden (admin.openWhenEmpty). In der Entwicklung meldet jedes Passwort ihn an, wie bei allen anderen. IM PRODUKTMODUS ist er außerdem derjenige, der ein erzeugtes Passwort erhält, wenn dieser Dienst startet und NIEMAND im Vertrauensbereich Anmeldedaten besitzt; der Name und dieses Passwort werden einmal in die Datei bootstrap-admin-password in persistence.dataDir geschrieben, lesbar nur für diesen Dienst (das Protokoll nennt den Ort und trägt sie selbst nur, wenn admin.logBootstrapPassword an ist), und sie sind der einzige Weg in eine frische Produktbereitstellung. Das erzeugte Passwort wird niemals geschrieben, wo bereits jemand Anmeldedaten besitzt, sodass es kein Passwort überschreiben kann. Die erzwungene Änderung gilt nur für ein Konto, das dieser Schritt ANGELEGT hat — ein bestehendes Konto dieses Namens behält sein Passwort und erhält nur die beiden Rollen. Die Datei eines Vertrauensbereichs hängt an diesen Namen einen Bindestrich und die ID des Vertrauensbereichs an. Ein späterer Start löscht eine Datei, sobald das Passwort darin sein Konto nicht mehr öffnet."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -3307,59 +3307,59 @@
     "en": "82f545cd2dea952b",
     "text": "Was einer PKINIT-Anmeldung erlaubt, einen hardwaregebundenen Schlüssel zu beanspruchen (den Indikator pkinit-hardware und amr hwk). `inference`, der Standard und das Verhalten vor #1955: ein Smartcard-Anmeldezertifikat, dessen Schlüssel dieser Dienst nicht erzeugt hat, oder aufgezeichnete Attestierungsnachweise. `evidence`: nur ein Schlüssel, den die Attestierung eines Hardware-Tokens abdeckt, und ein Passkey erhält hwk nur, wenn seine Attestierung geprüft und vertrauenswürdig war (sonst swk). Eine Zertifikatsanmeldung über TLS erhält hwk und sc für einen Schlüssel auf einer Smartcard in beiden Fällen nur aus Nachweisen und nur für den Inhaber des Zertifikats."
   },
-"pskc.allowPlaintextImport|label": {
+  "pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
     "text": "PSKC-Seed-Dateien im Klartext im Produktmodus annehmen"
   },
-"pskc.allowPlaintextImport|description": {
+  "pskc.allowPlaintextImport|description": {
     "en": "7efe34e872e4772e",
     "text": "Ob ein Administrator im Produktmodus eine PSKC-Seed-Datei (RFC 6030) importieren darf, deren Token-Geheimnisse NICHT verschlüsselt sind. Standardmäßig aus: eine solche Datei war auf jeder Festplatte und in jedem Postfach, das sie durchlaufen hat, eine Liste funktionierender zweiter Faktoren, und ein Hersteller kann sie unter einem vorab geteilten Schlüssel oder einem Passwort verschlüsseln (Abschnitte 6.1 und 6.2). Der Entwicklungsmodus nimmt eine solche Datei in jedem Fall an."
   },
-"yubiotp.allowPlaintextImport|label": {
+  "yubiotp.allowPlaintextImport|label": {
     "en": "b1c1ac235f98cc47",
     "text": "YubiKey-OTP-CSV-Dateien im Klartext im Produktmodus annehmen"
   },
-"yubiotp.allowPlaintextImport|description": {
+  "yubiotp.allowPlaintextImport|description": {
     "en": "f409449d46d5831a",
     "text": "Ob ein Administrator im Produktmodus eine CSV mit YubiKey-OTP-Geheimnissen (Seriennummer, öffentliche Identität, private Identität, AES-Schlüssel) importieren darf. Standardmäßig aus: die Datei ist eine Liste funktionierender zweiter Faktoren. Der Entwicklungsmodus nimmt eine solche Datei in jedem Fall an. Die Geheimnisse werden versiegelt, wenn die Datei angenommen wird, und die Datei wird nicht behalten."
   },
-"openpgp.wkd|label": {
+  "openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",
     "text": "Schlüssel im Web Key Directory veröffentlichen"
   },
-"openpgp.wkd|description": {
+  "openpgp.wkd|description": {
     "en": "7822103f89ac59b3",
     "text": "Das Web Key Directory (draft-koch-openpgp-webkey-service) für die Mail-Domains dieses Vertrauensbereichs beantworten: /.well-known/openpgpkey/<domain>/hu/<hash> (die erweiterte Methode, auf openpgpkey.<domain>) und /.well-known/openpgpkey/hu/<hash> (die direkte Methode) sowie die jeweilige Richtliniendatei. Beantwortet wird nur der Schlüssel einer Person, die im Portal zugestimmt hat. Standardmäßig aus."
   },
-"openpgp.wkdDomains|label": {
+  "openpgp.wkdDomains|label": {
     "en": "d1c4b728593ff000",
     "text": "Vom Web Key Directory bediente Mail-Domains"
   },
-"openpgp.wkdDomains|description": {
+  "openpgp.wkdDomains|description": {
     "en": "ad64f7216191123c",
     "text": "Die Mail-Domains, für die das Web Key Directory dieses Vertrauensbereichs antwortet, durch Kommas getrennt. Leer, der Standard, bedeutet die eigene DNS-Domain des Vertrauensbereichs. Eine Anfrage ohne Vertrauensbereich im Pfad beantwortet der Vertrauensbereich, der ihre Domain bedient, zuerst der Standard-Vertrauensbereich."
   },
-"openpgp.challengeLifetimeS|label": {
+  "openpgp.challengeLifetimeS|label": {
     "en": "dbf558cf0b4b8f90",
     "text": "Gültigkeitsdauer der Registrierungs-Challenge (Sekunden)"
   },
-"openpgp.challengeLifetimeS|description": {
+  "openpgp.challengeLifetimeS|description": {
     "en": "e9130c8e82368cc6",
     "text": "Wie lange die Challenge gültig bleibt, die eine Person mit gpg --clearsign signiert, um einen OpenPGP-Schlüssel zu registrieren. Sie wird einmal verbraucht, und eine Person hat jeweils nur eine."
   },
-"openpgp.signatureSkewS|label": {
+  "openpgp.signatureSkewS|label": {
     "en": "d927cf1f04bd9d51",
     "text": "Zulässige Uhrabweichung der Nachweissignatur (Sekunden)"
   },
-"openpgp.signatureSkewS|description": {
+  "openpgp.signatureSkewS|description": {
     "en": "2772763d3d363b6d",
     "text": "Wie weit die Uhr des signierenden Computers von der dieses Dienstes abweichen darf: Ein Nachweis, der um mehr als diesen Wert vor Ausstellung der Challenge oder nach dem jetzigen Zeitpunkt signiert wurde, wird abgelehnt (STS-OPENPGP-0010)."
   },
-"openpgp.minRsaBits|label": {
+  "openpgp.minRsaBits|label": {
     "en": "f3dc9f85de143630",
     "text": "Kleinster RSA-OpenPGP-Schlüssel"
   },
-"openpgp.minRsaBits|description": {
+  "openpgp.minRsaBits|description": {
     "en": "cd16018c848ce538",
     "text": "Der kürzeste RSA-Schlüssel, Haupt- oder Unterschlüssel, den eine OpenPGP-Registrierung akzeptiert. Ed25519, Ed448, ECDSA und ECDH auf P-256, P-384 und P-521, X25519 und X448 sowie die RFC-9980-Komposite ML-DSA-65+Ed25519, ML-DSA-87+Ed448, ML-KEM-768+X25519 und ML-KEM-1024+X448 werden akzeptiert, wenn openpgp.algorithms sie nennt. DSA, ElGamal, die Brainpool-Kurven und SLH-DSA nie (STS-OPENPGP-0004)."
   },
@@ -8387,6 +8387,14 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "Die meisten Zugriffsanfragen, die ein Vertrauensbereich gleichzeitig ausstehend hält; darüber wird eine Einreichung mit 503 abgelehnt, bis einige entschieden werden oder ablaufen."
   },
+  "authzen.accessRequestMaxDenials|label": {
+    "en": "09e695949f0cc1cc",
+    "text": "Anforderbare Ablehnungen, die ein Realm speichert"
+  },
+  "authzen.accessRequestMaxDenials|description": {
+    "en": "698617c5a3485120",
+    "text": "Die Höchstzahl anforderbarer Ablehnungen, die ein Realm nach evaluation_id speichert (#1204). Darüber hinaus wird eine neue Ablehnung nicht gespeichert und bleibt über ihr binding_token anforderbar; der Zugriffsanfrage-Job entfernt einen Eintrag einen Tag nach seinem Zeitfenster."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"
@@ -8400,8 +8408,8 @@
     "text": "Access request callback backoff (seconds)"
   },
   "authzen.callbackBackoffS|description": {
-    "en": "27141a0f28d94b83",
-    "text": "How long to wait after a failed access request callback before the next attempt (#1202). The authzen.access-requests job runs every 60 seconds, so a shorter wait could not be honoured. An application's appAuthzenCallbackConfig may set a longer wait for one URL."
+    "en": "43f2cb7740fc7efe",
+    "text": "Wie lange nach dem ersten fehlgeschlagenen Callback einer Zugriffsanfrage bis zum nächsten Versuch gewartet wird (#1202). Jede weitere Wartezeit ist doppelt so lang wie die vorige, bis zu einem Tag. Der Job authzen.access-requests läuft alle 60 Sekunden, daher könnte eine kürzere Wartezeit nicht eingehalten werden. Das appAuthzenCallbackConfig einer Anwendung kann für eine URL eine längere Wartezeit festlegen."
   },
   "authzen.externalPdp|label": {
     "en": "8a0af08389fe6cda",
@@ -13072,16 +13080,16 @@
     "text": "Algorithmen der SSH-Benutzer-CA"
   },
   "pki.sshUserCaAlgorithms|description": {
-    "en": "bdb54445a0279b8d",
-    "text": "Welche Algorithmen die Zertifizierungsstelle für SSH-Benutzerzertifikate verwenden darf, in der Reihenfolge der Bevorzugung. ssh-mldsa-65 ist ML-DSA-65 (FIPS 204) unter einem Leitungsnamen, den dieser Dienst definiert, weil OpenSSH keinen definiert: der öffentliche Schlüssel und die Signatur sind roh, in der Form, die ssh-ed25519 verwendet. Die OpenSSH-Zeile TrustedUserCAKeys, die dieser Dienst veröffentlicht, bleibt der erste klassische Algorithmus dieser Liste, oder ssh-ed25519, wenn die Liste nur ssh-mldsa-65 nennt. Ein Partner, der ML-DSA nicht versteht, vertraut dieser Zeile weiter. ssh-rsa (SHA-1) wird nicht angeboten. Die ML-DSA-Stelle wird nur angelegt, wenn diese Laufzeit den Schlüssel erzeugen kann; sonst bleiben die Zertifikate klassisch (STS-PKI-0290 wird aufgezeichnet und die klassische Stelle antwortet weiter)."
+    "en": "5c4c22c2ab500fd4",
+    "text": "Welche Algorithmen die SSH-Benutzerzertifizierungsstelle in der Reihenfolge der Präferenz verwenden darf. ssh-mldsa-65 ist ML-DSA-65 (FIPS 204) unter einem Übertragungsnamen, den dieser Dienst festlegt, weil OpenSSH keinen festlegt: Öffentlicher Schlüssel und Signatur sind roh, in der Form, die ssh-ed25519 verwendet. Die OpenSSH-Zeile TrustedUserCAKeys, die dieser Dienst veröffentlicht, bleibt der erste klassische Algorithmus dieser Liste, oder ssh-ed25519, wenn die Liste nur ssh-mldsa-65 nennt. Eine Gegenstelle, die ML-DSA nicht versteht, vertraut weiter dieser Zeile. Der Schlüssel der ML-DSA-Stelle wird unter GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65 veröffentlicht; Standard-OpenSSH kann ein ML-DSA-Zertifikat noch nicht prüfen. ssh-rsa (SHA-1) wird nicht angeboten. Die ML-DSA-Stelle wird nur erzeugt, wenn diese Laufzeitumgebung den Schlüssel erzeugen kann; andernfalls bleiben Zertifikate klassisch (STS-PKI-0290 wird protokolliert und die klassische Stelle antwortet weiter), außer wenn pki.sshUserCaPqcOnly eingeschaltet ist."
   },
   "pki.sshUserCaPqcOnly|label": {
     "en": "74aae1308361ba58",
     "text": "SSH-Benutzerzertifikate sind nur Post-Quanten"
   },
   "pki.sshUserCaPqcOnly|description": {
-    "en": "39b21e5b95f84da1",
-    "text": "Ein signiert ein neues SSH-Benutzerzertifikat durch die ML-DSA-Stelle, und nur wenn diese Stelle existiert. Die veröffentlichte TrustedUserCAKeys-Zeile bleibt der klassische Schlüssel, damit ein OpenSSH-Client, der ihr schon vertraut, keinen Algorithmus erhält, den er nicht lesen kann. Auf einer Laufzeit, die ML-DSA nicht erzeugen kann, bleibt das Zertifikat klassisch und die Anfrage schlägt nicht fehl. Bereits ausgestellte klassische Zertifikate werden weiter geprüft. Kann nicht an sein, während pki.sshUserCaPqcAlongsideClassical an ist (STS-PKI-0296). Standardmäßig aus."
+    "en": "dcbf21b3230dcf07",
+    "text": "Wenn eingeschaltet, wird ein neues SSH-Benutzerzertifikat von der ML-DSA-Stelle und von nichts anderem signiert. Standard-OpenSSH kann ein ML-DSA-Zertifikat noch nicht prüfen; nur ein SSH-Server, der ssh-mldsa-65 prüfen kann und dem Schlüssel unter GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65 vertraut, akzeptiert diese Zertifikate. Die Standardzeile unter diesem Pfad bleibt der klassische Schlüssel. Hat der Realm keine ML-DSA-Stelle (diese Laufzeitumgebung kann ML-DSA nicht erzeugen, oder ssh-mldsa-65 steht nicht in pki.sshUserCaAlgorithms), wird die Anfrage abgelehnt (STS-PKI-0297), statt mit einem klassischen Zertifikat beantwortet zu werden. Bereits ausgestellte klassische Zertifikate bleiben prüfbar. Kann nicht eingeschaltet sein, während pki.sshUserCaPqcAlongsideClassical eingeschaltet ist (STS-PKI-0296). Standardmäßig aus."
   },
   "pki.sshUserCaPqcAlongsideClassical|label": {
     "en": "c3201f8841200c32",

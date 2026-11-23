@@ -19338,6 +19338,11 @@ class OAuth2Server {
             subject: exchangeSubject,
             party: sameParty ? null : exchangeParty,
             audiences: issuedAudiences.map(String),
+            // An exchange that names no audience or resource is asked about
+            // this authorization server itself (#1200's review): a gate
+            // whose resource id is '' is an item error at a PDP, this
+            // service's own included, and the exchange then failed closed.
+            defaultTarget: self.issuerOf(base),
             scopes: String(issuedScope || '').split(/\s+/)
               .filter(function (one: string) {
                 return !!one;
@@ -19404,6 +19409,11 @@ class OAuth2Server {
             lifetimeCapS = asked.lifetimeCapS;
           }
         }
+        if (wantsRefresh && lifetimeCapS !== null) {
+          log.info('Token exchange: the external AuthZEN PDP capped the ' +
+                   'access token at ' + lifetimeCapS + ' seconds, so no ' +
+                   'refresh token is issued beside it.');
+        }
         exchanged = await issue({
           jkt: dpopJkt,
           sub: subject.sub || 'urn:sts:exchanged',
@@ -19445,7 +19455,12 @@ class OAuth2Server {
           // a client certificate mints a BOUND refresh token, which is the
           // whole of RFC 9449 section 5 and RFC 8705 section 3 on the long-
           // lived half of a grant.
-          withRefresh: wantsRefresh,
+          // NOT WHEN THE EXTERNAL PDP CAPPED THE LIFETIME (#1200's review):
+          // its token_lifetime bounds this grant, and a refresh token would
+          // mint full-lifetime access tokens past the cap later, where the
+          // PDP is not asked again. RFC 8693 section 2.2.1 leaves a refresh
+          // token to the server; the client exchanges again instead.
+          withRefresh: wantsRefresh && lifetimeCapS === null,
           // RFC 8707, reached through RFC 8693 section 2.1, and only relevant
           // now that there is a refresh token to carry it: `resources` is what
           // the refresh grant compares a renewal against, so an exchange
@@ -19455,7 +19470,8 @@ class OAuth2Server {
           // AUDIENCES go on it rather than `requestedResources` alone, because
           // `aud` on the token being minted is the union of both and the two
           // must not come to describe different resource servers.
-          resources: wantsRefresh ? issuedAudiences : undefined,
+          resources: wantsRefresh && lifetimeCapS === null
+            ? issuedAudiences : undefined,
           // The PDP's token_lifetime, when it named one. null does not cap:
           // Number(null) is 0, and the cap only shortens a positive life.
           lifetimeCapS: lifetimeCapS,

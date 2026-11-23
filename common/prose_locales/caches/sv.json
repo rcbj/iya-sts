@@ -360,8 +360,8 @@
     "text": "En rad per fysisk maskinvarutoken (en YubiKey, ett smart kort) i den här sfären, nycklad på tillverkare och serienummer: vem som innehar den, dess modell och inloggningsuppgifterna på den. Ett serienummer registreras bara utifrån attestering. Aldrig en hemlighet."
   },
   "caches.store.hardware_tokens.register.bound": {
-    "en": "260467c777c74957",
-    "text": "Raderna en process håller är en cache på 5 000 per sfär; registret självt begränsas av de inloggningsuppgifter det listar (webauthn.maxKeysPerPerson för FIDO)."
+    "en": "b2eadcf654a8cb28",
+    "text": "Upprätthållen: raderna en process håller är en cache på 5 000 per sfär; de äldsta släpps och läses från lagret igen när de efterfrågas nästa gång; registret självt begränsas av de inloggningsuppgifter det listar (webauthn.maxKeysPerPerson för FIDO)."
   },
   "caches.store.hardware_tokens.register.lifetime": {
     "en": "c18bfda6fa452b2b",
@@ -728,8 +728,8 @@
     "text": "En rad per HOTP- eller TOTP-nyckel som en administratör importerade från en leverantörs PSKC-fröfil (RFC 6030), med leverantör, serienummer och nyckel-id som nyckel: ej tilldelad (hemligheten förseglad), tilldelad en person (hemligheten borttagen, nu på personens post) eller avvecklad."
   },
   "caches.store.oath_tokens.inventory.bound": {
-    "en": "cbe61377f99c025d",
-    "text": "Raderna en process har är en cache på 5 000 per sfär; inventariet begränsas av vad administratörer importerar, högst 2 000 nycklar per fil."
+    "en": "c93f702fb2bd8e60",
+    "text": "Upprätthållen: raderna en process håller är en cache på 5 000 per sfär; de äldsta släpps och läses från lagret igen när de efterfrågas nästa gång; inventariet begränsas av vad administratörer importerar, högst 2 000 nycklar per fil."
   },
   "caches.store.oath_tokens.inventory.lifetime": {
     "en": "4f13467dac65d62f",
@@ -1148,8 +1148,8 @@
     "text": "En utmaning per person som registrerar en OpenPGP-nyckel: texten personen signerar med gpg --clearsign, dess nonce och när den upphör. Förbrukas en gång, genom ett klusteranspråk på nonce-värdet."
   },
   "caches.store.openpgp.challenges.bound": {
-    "en": "70f8ecd02c4392d1",
-    "text": "En per person (nycklad på entryUUID), var och en giltig i openpgp.challengeLifetimeS."
+    "en": "bcb019b421b3e33e",
+    "text": "Upprätthållen: utmaningarna en process håller är en cache på 5 000 per sfär; de äldsta släpps och läses från lagret igen när de efterfrågas nästa gång; lagret håller en per person (nycklad på entryUUID), var och en i openpgp.challengeLifetimeS."
   },
   "caches.store.openpgp.wkd.title": {
     "en": "dc47d455d5283de5",
@@ -1160,8 +1160,8 @@
     "text": "Vilken OpenPGP-nyckel Web Key Directory svarar med för varje hashad adress: innehavaren (ett entryUUID) och fingeravtrycket som personen publicerade. En pekare: själva nyckeln läses från posten. Aldrig en hemlighet."
   },
   "caches.store.openpgp.wkd.bound": {
-    "en": "e8a7abbcc8bba7fc",
-    "text": "Raderna en process håller är en cache på 5 000 per sfär; registret håller en rad per person som har valt att delta."
+    "en": "67c6603e0b96fd95",
+    "text": "Upprätthållen: raderna en process håller är en cache på 5 000 per sfär; de äldsta släpps och läses från lagret igen när de efterfrågas nästa gång; registret håller en rad per person som valt det."
   },
   "caches.store.openpgp.wkd.lifetime": {
     "en": "06861887c7e6c8f1",
@@ -1692,8 +1692,8 @@
     "text": "En rad per YubiKey-OTP som en administratör importerade från en CSV, med serienummer som nyckel: ej tilldelad (AES-nyckeln förseglad), tilldelad en person (hemligheten borttagen, nu på personens post) eller avvecklad."
   },
   "caches.store.yubiotp.inventory.bound": {
-    "en": "9f558f556a019acc",
-    "text": "Raderna en process har är en cache på 5 000 per sfär."
+    "en": "1b2409611ca2ae53",
+    "text": "Upprätthållen: raderna en process håller är en cache på 5 000 per sfär; de äldsta släpps och läses från lagret igen när de efterfrågas nästa gång."
   },
   "caches.store.yubiotp.inventory.lifetime": {
     "en": "4f13467dac65d62f",

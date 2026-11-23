@@ -111,7 +111,9 @@ cacheRegistry.register({
   maxEntries: function (): number {
     return 5000;
   },
-  bound: 'The rows a process holds are a cache of 5,000 per realm.',
+  bound: 'Enforced: the rows a process holds are a cache of 5,000 per ' +
+    'realm, the oldest dropped and read from the store again when next ' +
+    'asked.',
   lifetime: function (): string {
     return 'Until an unassigned token is removed; an assigned or retired ' +
       'token is kept.';

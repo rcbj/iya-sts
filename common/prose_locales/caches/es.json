@@ -360,8 +360,8 @@
     "text": "Una fila por cada token de hardware físico (una YubiKey, una tarjeta inteligente) de este dominio, indexada por fabricante y número de serie: quién lo tiene, su modelo y las credenciales que contiene. Un número de serie solo se registra a partir de una atestación. Nunca un secreto."
   },
   "caches.store.hardware_tokens.register.bound": {
-    "en": "260467c777c74957",
-    "text": "Las filas que guarda un proceso son una caché de 5000 por dominio; el propio registro está limitado por las credenciales que enumera (webauthn.maxKeysPerPerson para FIDO)."
+    "en": "b2eadcf654a8cb28",
+    "text": "Aplicado: las filas que guarda un proceso son una caché de 5.000 por dominio; las más antiguas se descartan y se vuelven a leer del almacén la próxima vez que se piden; el registro en sí está acotado por las credenciales que enumera (webauthn.maxKeysPerPerson para FIDO)."
   },
   "caches.store.hardware_tokens.register.lifetime": {
     "en": "c18bfda6fa452b2b",
@@ -728,8 +728,8 @@
     "text": "Una fila por cada clave HOTP o TOTP que un administrador importó del archivo de semillas PSKC de un proveedor (RFC 6030), indexada por proveedor, número de serie e id de clave: sin asignar (su secreto sellado), asignada a una persona (el secreto eliminado, ahora en su entrada) o retirada."
   },
   "caches.store.oath_tokens.inventory.bound": {
-    "en": "cbe61377f99c025d",
-    "text": "Las filas que guarda un proceso son una caché de 5.000 por dominio; el inventario está limitado por lo que importan los administradores, como máximo 2.000 claves por archivo."
+    "en": "c93f702fb2bd8e60",
+    "text": "Aplicado: las filas que guarda un proceso son una caché de 5.000 por dominio; las más antiguas se descartan y se vuelven a leer del almacén la próxima vez que se piden; el inventario está acotado por lo que importan los administradores, como máximo 2.000 claves por archivo."
   },
   "caches.store.oath_tokens.inventory.lifetime": {
     "en": "4f13467dac65d62f",
@@ -1148,8 +1148,8 @@
     "text": "Un desafío por cada persona que registra una clave OpenPGP: el texto que firma con gpg --clearsign, su nonce y cuándo caduca. Se consume una sola vez, mediante una reclamación del nonce en todo el clúster."
   },
   "caches.store.openpgp.challenges.bound": {
-    "en": "70f8ecd02c4392d1",
-    "text": "Uno por persona (indexado por entryUUID), cada uno durante openpgp.challengeLifetimeS."
+    "en": "bcb019b421b3e33e",
+    "text": "Aplicado: los desafíos que guarda un proceso son una caché de 5.000 por dominio; los más antiguos se descartan y se vuelven a leer del almacén la próxima vez que se piden; el almacén guarda uno por persona (con clave entryUUID), cada uno durante openpgp.challengeLifetimeS."
   },
   "caches.store.openpgp.wkd.title": {
     "en": "dc47d455d5283de5",
@@ -1160,8 +1160,8 @@
     "text": "Qué clave OpenPGP devuelve el Web Key Directory para cada dirección con hash: el titular (un entryUUID) y la huella digital que publicó. Un puntero: la clave en sí se lee de la entrada. Nunca un secreto."
   },
   "caches.store.openpgp.wkd.bound": {
-    "en": "e8a7abbcc8bba7fc",
-    "text": "Las filas que mantiene un proceso son una caché de 5.000 por dominio de confianza; el registro mantiene una fila por cada persona que lo aceptó."
+    "en": "67c6603e0b96fd95",
+    "text": "Aplicado: las filas que guarda un proceso son una caché de 5.000 por dominio; las más antiguas se descartan y se vuelven a leer del almacén la próxima vez que se piden; el registro guarda una fila por cada persona que lo eligió."
   },
   "caches.store.openpgp.wkd.lifetime": {
     "en": "06861887c7e6c8f1",
@@ -1692,8 +1692,8 @@
     "text": "Una fila por cada OTP YubiKey que un administrador importó desde un CSV, indexada por número de serie: sin asignar (su clave AES sellada), asignada a una persona (el secreto eliminado, ahora en su entrada) o retirada."
   },
   "caches.store.yubiotp.inventory.bound": {
-    "en": "9f558f556a019acc",
-    "text": "Las filas que guarda un proceso son una caché de 5.000 por dominio."
+    "en": "1b2409611ca2ae53",
+    "text": "Aplicado: las filas que guarda un proceso son una caché de 5.000 por dominio; las más antiguas se descartan y se vuelven a leer del almacén la próxima vez que se piden."
   },
   "caches.store.yubiotp.inventory.lifetime": {
     "en": "4f13467dac65d62f",

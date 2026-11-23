@@ -4641,6 +4641,8 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'The realm OpenSSH user CA public key', specs: [],
     what: 'NON-SPEC (#1955 P3): the realm-scoped OpenSSH user CA key, ' +
           'published as an authorized-key line for SSH servers to trust. ' +
+          'With `?algorithm=ssh-mldsa-65` it answers the realm\'s ML-DSA ' +
+          'authority instead, which stock OpenSSH cannot verify yet. ' +
           'Ungated and `no-store`, on the main port only: the plain-HTTP ' +
           'revocation listener refuses it, because the key is a trust ' +
           'anchor. The corresponding CA private key never leaves this ' +

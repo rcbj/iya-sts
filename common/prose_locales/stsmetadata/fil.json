@@ -100,8 +100,8 @@
     "text": "partial: ang Access Evaluation API (section 6), pinagpapasyahan ng XACML engine laban sa root policy ng realm sa pamamagitan ng per-realm na attribute catalogue, na may X-Request-ID at ang section 11.3 challenge, ang Access Evaluations API (section 7) na may tatlong semantics nito, at ang PDP metadata (section 9) sa dalawang anyo nito, kasama ang signed_metadata, at ang Obligations Profile draft para sa PEP na nagdedeklara ng mga type, at ang tatlong Search API (section 8) sa mga tao, application, API, delegation relationship at policy action ng serbisyong ito, may paging at hindi transitive. Kulang: per-result na obligation sa isang search, at ang OAuth profile, na draft pa rin."
   },
   "stsmetadata.specs.authzen-arap.coverage": {
-    "en": "e785acbe5ead52ad",
-    "text": "partial: ang requestable na denial (context.access_request, evaluation_id, evaluated_at, reason) kung saan minamarkahan ng policy ng realm ang isang Deny ng access-request advice, naka-bind ayon sa value sa pamamagitan ng binding_token na pinipirmahan ng realm na ito (ang mga inline claim); ang pagsumite na may Idempotency-Key, 201 o 202 at isang Task Handle; ang task status endpoint na may Retry-After; pagkansela sa pamamagitan ng POST o DELETE; ang anim na status; ang reevaluate completion mode, ang approval.id na nireresolba sa trusted state at ang approval na umaabot sa policy bilang trusted facts; next_action at ang limang reason; bawat problem type; ang metadata member, jwks_uri at capability. Kulang: evaluation_id bilang binding ayon sa reference, approval.state, ang hashed na binding form, mga machine-readable na anyo (form_url, request_schema_url), display, at ang mga companion na BULK, ACTOR at CATALOG."
+    "en": "6be544a62f94329b",
+    "text": "partial: ang pagtangging maaaring hilingin (context.access_request, evaluation_id, evaluated_at, reason) kung saan minamarkahan ng patakaran ng realm ang isang Deny gamit ang advice na access-request, naka-bind ayon sa halaga sa pamamagitan ng binding_token na nilagdaan ng realm na ito (mga inline claim at binding_hash) at ayon sa reference mula sa tala ng pagtanggi; ang pagsusumite na may Idempotency-Key, 201 o 202 at isang Task Handle; ang endpoint ng status ng task na may Retry-After; pagkansela sa POST o DELETE; ang anim na status; ang reevaluate na completion mode, approval.id na nalulutas sa pinagkakatiwalaang estado, approval.state na inilalabas at bine-verify na kailangan pa rin ang lookup, at ang pag-apruba na umaabot sa patakaran bilang pinagkakatiwalaang mga katotohanan; next_action at ang limang dahilan; bawat uri ng problema; ang metadata member, jwks_uri at ang capability; request_schema_url sa isang pagtangging maaaring hilingin, ang JSON Schema sa parehong origin ng mga opsyonal na dagdag ng pagsusumite. Kulang: isang naka-host na form (form_url) at display, at ang mga kasamang BULK, ACTOR at CATALOG."
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
     "en": "ca5109eae0e95b17",
@@ -878,6 +878,10 @@
   "stsmetadata.endpoints./access/v1/access-requests.what": {
     "en": "15c0d860d27c7cbe",
     "text": "I-POST ang subject, resource, action at context ng isang tinanggihang evaluation kasama ang denial na natanggap nito (ang binding_token at expires_at nito, ibinabalik nang hindi binabago); makakuha ng 202 at isang Task Handle, o 201 na may resulta kapag agad itong napagpasyahan (emergency access na pinapayagan ng policy). Tanging ang Deny na minarkahan ng policy ng realm ng advice na urn:sts:xacml:advice:access-request ang requestable. Parehong caller door at AUTHZEN_PEPS gaya ng isang evaluation; iginagalang ang Idempotency-Key bawat caller; callback lang sa URL na nakarehistro para sa caller. Bawat pagtanggi ay problem+json."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/schema.what": {
+    "en": "ec6a3b36123f646a",
+    "text": "GET ng JSON Schema (draft 2020-12) ng mga dagdag na maaaring idagdag ng isang pagsusumite: context.business_justification, at requested_access.requested_until at emergency, na ang huli ay nangangailangan ng katwiran. Pampubliko, kapareho ng origin ng access_request_endpoint; ang request_schema_url ng isang pagtangging maaaring hilingin ang tumutukoy dito. Walang naka-host na form, kaya walang pagtanggi na may form_url. Sumasagot ng 501 habang naka-off ang API o ang profile. Nakarehistro bago ang path ng status ng task, na kung hindi ay babasahin ang \"schema\" bilang id."
   },
   "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
     "en": "264083b977756230",
@@ -2220,12 +2224,12 @@
     "text": "NON-SPEC (#1955 P4). Ang mga HOTP at TOTP token na in-import ng mga administrator mula sa mga PSKC seed file ng mga vendor, hindi naka-assign, naka-assign o retirado, naka-page at hinahanap ayon sa serial o tao. Hindi kailanman secret. Kapareho ng GET /admin/hardware-tokens (ang OATH tab nito)."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-"en": "cdbf34a1fbdf290e",
-"text": "NON-SPEC (#1955). lost, na may { key }: minamarkahang nawala ang token, inaalis ang bawat passkey dito, nire-revoke ang bawat certificate dito dahil sa keyCompromise, nagpapadala ng CAEP credential-change para sa bawat isa at tinatapos ang mga session na kanilang na-sign in. enrol-piv, na may { username, profile, csr, attestationCertificate?, attestationIssuer? }: isang PIV slot certificate na inisyu sa taong iyon sa pamamagitan ng EST Issuing CA, napatunayan ang YubiKey PIV attestation nito at naitala ang YubiKey. recover-key, na may { username, serial }: ang naka-escrow na piv-key-management key ng taong iyon, na pinahihintulutan lamang ng access-control policy sa PIV_KEY_RECOVERY, pagkatapos ng kamakailang sign-in. revoke-ssh, na may { username, serial }: nire-revoke ang SSH user certificate ng taong iyon at inilalagay sa KRL ng realm. Ang apat na aksiyon ng console sa pahinang iyon."
+    "en": "cdbf34a1fbdf290e",
+    "text": "NON-SPEC (#1955). lost, na may { key }: minamarkahang nawala ang token, inaalis ang bawat passkey dito, nire-revoke ang bawat certificate dito dahil sa keyCompromise, nagpapadala ng CAEP credential-change para sa bawat isa at tinatapos ang mga session na kanilang na-sign in. enrol-piv, na may { username, profile, csr, attestationCertificate?, attestationIssuer? }: isang PIV slot certificate na inisyu sa taong iyon sa pamamagitan ng EST Issuing CA, napatunayan ang YubiKey PIV attestation nito at naitala ang YubiKey. recover-key, na may { username, serial }: ang naka-escrow na piv-key-management key ng taong iyon, na pinahihintulutan lamang ng access-control policy sa PIV_KEY_RECOVERY, pagkatapos ng kamakailang sign-in. revoke-ssh, na may { username, serial }: nire-revoke ang SSH user certificate ng taong iyon at inilalagay sa KRL ng realm. Ang apat na aksiyon ng console sa pahinang iyon."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
     "en": "f5b724d2c79b5f74",
-"text": "nag-uulat ng nawalang hardware token at nagreretiro ng mga credential nito, nag-iisyu ng PIV slot certificate, nagbibigay ng naka-escrow na key, o nire-revoke ang SSH certificate ng isang tao"
+    "text": "nag-uulat ng nawalang hardware token at nagreretiro ng mga credential nito, nag-iisyu ng PIV slot certificate, nagbibigay ng naka-escrow na key, o nire-revoke ang SSH certificate ng isang tao"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -3131,19 +3135,19 @@
     "en": "9547cda6898c37a6",
     "text": "humihingi ng post-quantum na passkey pagkatapos ng sign-in, saka itinatatag ang sign-on session na pinigil nito"
   },
-"stsmetadata.endpoints./wsapi/2.0/verify.what": {
+  "stsmetadata.endpoints./wsapi/2.0/verify.what": {
     "en": "ff0550a4318594c6",
     "text": "VALIDATION PROTOCOL 2.0 NG YUBICO (#1955 P5). GET o POST ng id, otp, nonce at h. Naka-off bilang default: sumasagot ang route ng OPERATION_NOT_ALLOWED at walang nilalagda. Kapag naka-on, sinusuri ang client id at ang HMAC-SHA1 sa bawat mode, kasama ang development; naaalala ang nonce nang limang minuto; ginagastos ang tumugmang OTP. Cache-Control: no-store. Walang ipinapadala sa YubiCloud."
   },
-"stsmetadata.endpoints./wsapi/2.0/verify.effect": {
+  "stsmetadata.endpoints./wsapi/2.0/verify.effect": {
     "en": "bb2bc4011c8240ac",
     "text": "sinusuri ang isang YubiKey OTP para sa client na lumagda sa request, o sumasagot ng OPERATION_NOT_ALLOWED habang naka-off ang yubiotp.ykval"
   },
-"stsmetadata.endpoints./authn/roles.what": {
+  "stsmetadata.endpoints./authn/roles.what": {
     "en": "88814e89f81f8d86",
     "text": "MGA DYNAMIC NA MAPIPILING TUNGKULIN (#1072). Pagkatapos ng lahat ng factor, ang pag-sign in sa application na ang realm ay may dynamic na tungkulin (maliban kung pinapatay ito ng roles.dynamicSelection o ng appDynamicRoleSelection ng application) ay PINAPAHINTO habang pinagpapasyahan para sa tao ang patakarang XACML ng bawat dynamic na tungkulin; Permit lang ang nag-aalok ng tungkulin. Kapag tinsek ng tao ang \"Pumili ng mga tungkulin para sa pag-sign in na ito\", o may iniaalok na kailangang tungkulin, inililista ng pahinang ito ang mapipili; ang Magpatuloy (/authn-api/mfa/{id}/roles) ay sinusuri ang pinili laban sa alok ng hakbang at muli sa mga patakaran, at sinisimulan ang session na nakatala ang pinili sa session record, hindi kailanman sa directory. Dadalhin ng token para sa application na iyon ang mga piniling tungkulin, bawat isa ay muling sinusuri sa patakaran nito sa bawat pag-isyu. Kailangan ng ?mfa= id mula sa pinahintong pag-sign in; kapag wala, 400 ang sagot."
   },
-"stsmetadata.endpoints./authn/roles.effect": {
+  "stsmetadata.endpoints./authn/roles.effect": {
     "en": "fc2116e31d3ead37",
     "text": "nagtatanong kung aling mga dynamic na mapipiling tungkulin ang gagamitin sa pag-sign in na ito, saka sinisimulan ang pinahintong session kasama ang pinili"
   },
@@ -4204,8 +4208,8 @@
     "text": "partial: mga pirma ng ML-DSA-65+Ed25519 at ML-DSA-87+Ed448, at pag-encrypt ng ML-KEM-768+X25519 at ML-KEM-1024+X448, sa pagrehistro at kapag ginamit ang isang nakaimbak na key. Ang composite ay post-quantum. Nililimitahan ng openpgp.pqcOnly ang pagrehistro lamang. Ang parehong hati ng isang pirma ay sine-verify ng common/crypto_impl/openpgp_pqc.js. Kulang: SLH-DSA (mga algorithm id 32-34), at hindi bumubuo ang serbisyong ito ng key na RFC 9980. Hindi binibigyang-kahulugan ng openpgp.js ang mga key na ito."
   },
   "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
-    "en": "e83d747632c38b14",
-    "text": "NON-SPEC (#1955 P3): ang OpenSSH user CA key ng realm, inilathala bilang authorized-key line na pinagkakatiwalaan ng mga SSH server. Walang gate at `no-store`, sa pangunahing port lamang: tinatanggihan ito ng plain-HTTP revocation listener, dahil trust anchor ang key. Hindi kailanman umaalis sa serbisyong ito ang kaukulang pribadong key ng CA."
+    "en": "c6a8759e4a5e40c9",
+    "text": "NON-SPEC (#1955 P3): ang OpenSSH user CA key ng realm, inilathala bilang authorized-key line na pinagkakatiwalaan ng mga SSH server. Kapag may `?algorithm=ssh-mldsa-65`, ang ML-DSA authority ng realm ang isinasagot nito, na hindi pa kayang i-verify ng karaniwang OpenSSH. Walang gate at `no-store`, sa pangunahing port lamang: tinatanggihan ito ng plain-HTTP revocation listener, dahil trust anchor ang key. Hindi kailanman umaalis sa serbisyong ito ang kaukulang pribadong key ng CA."
   },
   "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
     "en": "2e4cdead67408937",

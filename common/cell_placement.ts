@@ -111,6 +111,11 @@ const ROWS: Row[] = [
          'in every cell' },
   { prefix: '/pki', strategy: 'local',
     why: 'the certificate authority is the global tier\'s' },
+  { prefix: '/wsapi/2.0/verify', strategy: 'local',
+    why: 'YK-VAL (#1955 P5): its clients and its nonce replay set are the ' +
+         'global tier\'s (persistence/tiers.js), so any cell checks the ' +
+         'client and the nonce; the OTP is checked against the token ' +
+         'inventory of the cell that answers' },
   { prefix: '/crypto', strategy: 'local',
     why: 'the signer generations are the global tier\'s' },
   { prefix: '/docs', strategy: 'local', why: 'static documentation' },

@@ -100,8 +100,8 @@
     "text": "partial: Access Evaluation API (avsnitt 6), avgjort av XACML-motorn mot sfärens rotpolicy genom en attributkatalog per sfär, med X-Request-ID och utmaningen i avsnitt 11.3, Access Evaluations API (avsnitt 7) med dess tre semantiker, och PDP-metadata (avsnitt 9) i båda formerna, signed_metadata inkluderad, samt utkastet Obligations Profile för en PEP som deklarerar typerna, och de tre Search API:erna (avsnitt 8) över den här tjänstens egna personer, applikationer, API:er, delegeringsrelationer och policyåtgärder, sidindelade och inte transitiva. Saknas: obligations per resultat i en sökning, och OAuth-profilen, fortfarande ett utkast."
   },
   "stsmetadata.specs.authzen-arap.coverage": {
-    "en": "e785acbe5ead52ad",
-    "text": "partial: det begärbara nekandet (context.access_request, evaluation_id, evaluated_at, reason) där sfärens policy markerar ett Deny med advice för åtkomstbegäran, bundet via värde med en binding_token som den här sfären signerar (de inbäddade anspråken); inskickningen med Idempotency-Key, 201 eller 202 och ett Task Handle; uppgiftsstatus-endpointen med Retry-After; avbrytande via POST eller DELETE; de sex statusarna; reevaluate-slutförandeläget, approval.id löst i betrott tillstånd och godkännandet som når policyn som betrodda fakta; next_action och de fem reasons; varje problemtyp; metadatamedlemmen, jwks_uri och capability. Saknas: evaluation_id som bindning via referens, approval.state, den hashade bindningsformen, maskinläsbara former (form_url, request_schema_url), display samt kompanjonerna BULK, ACTOR och CATALOG."
+    "en": "6be544a62f94329b",
+    "text": "partial: den begärbara nekan (context.access_request, evaluation_id, evaluated_at, reason) där sfärens policy markerar en Deny med advice access-request, bunden till värdet med ett binding_token som sfären signerar (inbäddade claims och binding_hash) och via referens från nekansposten; inlämningen med Idempotency-Key, 201 eller 202 och ett Task Handle; uppgiftens statusslutpunkt med Retry-After; avbrott med POST eller DELETE; de sex statusarna; slutförandeläget reevaluate, approval.id löst i betrott tillstånd, approval.state utfärdat och verifierat med uppslagningen fortfarande krävd, och godkännandet som når policyn som betrodda fakta; next_action och de fem orsakerna; varje problemtyp; metadatamedlemmen, jwks_uri och förmågan; request_schema_url på en begärbar nekan, samma ursprungs JSON Schema för inlämningens valfria tillägg. Saknas: ett värdat formulär (form_url) och display, samt följeslagarna BULK, ACTOR och CATALOG."
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
     "en": "ca5109eae0e95b17",
@@ -878,6 +878,10 @@
   "stsmetadata.endpoints./access/v1/access-requests.what": {
     "en": "15c0d860d27c7cbe",
     "text": "POST:a en nekad utvärderings subject, resource, action och context med nekandet den fick (dess binding_token och expires_at, ekade oförändrade); få 202 och ett Task Handle, eller 201 med resultatet när det avgörs direkt (nödåtkomst som policyn tillåter). Endast ett Deny som sfärens policy markerat med advice urn:sts:xacml:advice:access-request är begärbart. Samma anropardörr och AUTHZEN_PEPS som en utvärdering; Idempotency-Key respekteras per anropare; en callback endast till en URL som registrerats för anroparen. Varje avvisning är problem+json."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/schema.what": {
+    "en": "ec6a3b36123f646a",
+    "text": "GET av JSON Schema (draft 2020-12) för de tillägg en inlämning får göra: context.business_justification samt requested_access.requested_until och emergency, där det sista kräver motiveringen. Offentligt, samma ursprung som access_request_endpoint; en begärbar nekans request_schema_url pekar ut det. Inget formulär finns, så ingen nekan bär form_url. Svarar 501 medan API:et eller profilen är avstängd. Registrerad före uppgiftens statussökväg, som annars skulle läsa \"schema\" som ett id."
   },
   "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
     "en": "264083b977756230",
@@ -2220,12 +2224,12 @@
     "text": "NON-SPEC (#1955 P4). De HOTP- och TOTP-tokens som administratörer importerat från leverantörers PSKC-fröfiler, ej tilldelade, tilldelade eller avvecklade, sidindelade och sökbara på serienummer eller person. Aldrig en hemlighet. Speglar GET /admin/hardware-tokens (dess OATH-flik)."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-"en": "cdbf34a1fbdf290e",
-"text": "NON-SPEC (#1955). lost, med { key }: token markeras som förlorad, varje passkey på den tas bort, varje certifikat på den återkallas för keyCompromise, en CAEP credential-change skickas för var och en och de sessioner de loggade in avslutas. enrol-piv, med { username, profile, csr, attestationCertificate?, attestationIssuer? }: ett PIV-platscertifikat utfärdat till den personen över EST:s utfärdande CA, dess YubiKey-PIV-attestering verifierad och YubiKey registrerad. recover-key, med { username, serial }: den personens deponerade piv-key-management-nyckel, som åtkomstpolicyn endast tillåter PIV_KEY_RECOVERY, efter en nylig inloggning. revoke-ssh, med { username, serial }: den personens SSH-användarcertifikat återkallat och lagt på sfärens KRL. Konsolens fyra åtgärder på den sidan."
+    "en": "cdbf34a1fbdf290e",
+    "text": "NON-SPEC (#1955). lost, med { key }: token markeras som förlorad, varje passkey på den tas bort, varje certifikat på den återkallas för keyCompromise, en CAEP credential-change skickas för var och en och de sessioner de loggade in avslutas. enrol-piv, med { username, profile, csr, attestationCertificate?, attestationIssuer? }: ett PIV-platscertifikat utfärdat till den personen över EST:s utfärdande CA, dess YubiKey-PIV-attestering verifierad och YubiKey registrerad. recover-key, med { username, serial }: den personens deponerade piv-key-management-nyckel, som åtkomstpolicyn endast tillåter PIV_KEY_RECOVERY, efter en nylig inloggning. revoke-ssh, med { username, serial }: den personens SSH-användarcertifikat återkallat och lagt på sfärens KRL. Konsolens fyra åtgärder på den sidan."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
     "en": "f5b724d2c79b5f74",
-"text": "anmäler en hårdvarutoken som förlorad och drar tillbaka dess autentiseringsuppgifter, utfärdar ett PIV-platscertifikat, lämnar ut en deponerad nyckel eller återkallar en persons SSH-certifikat"
+    "text": "anmäler en hårdvarutoken som förlorad och drar tillbaka dess autentiseringsuppgifter, utfärdar ett PIV-platscertifikat, lämnar ut en deponerad nyckel eller återkallar en persons SSH-certifikat"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -3131,19 +3135,19 @@
     "en": "9547cda6898c37a6",
     "text": "ber om en postkvantnyckel efter en inloggning och etablerar sedan inloggningssessionen som den höll kvar"
   },
-"stsmetadata.endpoints./wsapi/2.0/verify.what": {
+  "stsmetadata.endpoints./wsapi/2.0/verify.what": {
     "en": "ff0550a4318594c6",
     "text": "YUBICOS VALIDERINGSPROTOKOLL 2.0 (#1955 P5). GET eller POST av id, otp, nonce och h. Av som standard: vägen svarar OPERATION_NOT_ALLOWED och signerar inget. På kontrolleras klient-id och HMAC-SHA1 i varje läge, inklusive utveckling; en nonce sparas i fem minuter; en matchande OTP förbrukas. Cache-Control: no-store. Inget skickas till YubiCloud."
   },
-"stsmetadata.endpoints./wsapi/2.0/verify.effect": {
+  "stsmetadata.endpoints./wsapi/2.0/verify.effect": {
     "en": "bb2bc4011c8240ac",
     "text": "kontrollerar en YubiKey-OTP för en klient som signerade begäran, eller svarar OPERATION_NOT_ALLOWED medan yubiotp.ykval är av"
   },
-"stsmetadata.endpoints./authn/roles.what": {
+  "stsmetadata.endpoints./authn/roles.what": {
     "en": "88814e89f81f8d86",
     "text": "DYNAMISKT VALBARA ROLLER (#1072). Efter alla faktorer HÅLLS en inloggning till ett program vars sfär definierar en dynamisk roll (om inte roles.dynamicSelection eller programmets appDynamicRoleSelection stänger av det) medan varje dynamisk rolls XACML-behörighetspolicy beslutas för personen; endast Permit erbjuder en roll. Om personen markerade ”Välj roller för den här inloggningen”, eller en obligatorisk roll erbjuds, visar sidan vad som kan väljas; Fortsätt (/authn-api/mfa/{id}/roles) prövar valet mot stegets erbjudande och åter mot policyerna, och startar sessionen med valet på sessionsposten, aldrig i katalogen. En token för programmet bär sedan de valda rollerna, var och en prövad mot sin policy vid varje utfärdande. Kräver ett ?mfa=-id från den hållna inloggningen; utan det blir svaret 400."
   },
-"stsmetadata.endpoints./authn/roles.effect": {
+  "stsmetadata.endpoints./authn/roles.effect": {
     "en": "fc2116e31d3ead37",
     "text": "frågar vilka dynamiskt valbara roller som ska användas för inloggningen och startar sedan den hållna sessionen med valet"
   },
@@ -4204,8 +4208,8 @@
     "text": "partial: signaturer ML-DSA-65+Ed25519 och ML-DSA-87+Ed448, och kryptering ML-KEM-768+X25519 och ML-KEM-1024+X448, vid registrering och när en lagrad nyckel används. En komposit räknas som postkvant. openpgp.pqcOnly begränsar bara registreringen. Båda halvorna av en signatur verifieras av common/crypto_impl/openpgp_pqc.js. Saknas: SLH-DSA (algoritm-id 32-34), och den här tjänsten genererar ingen RFC 9980-nyckel. openpgp.js tolkar inte dessa nycklar."
   },
   "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
-    "en": "e83d747632c38b14",
-    "text": "NON-SPEC (#1955 P3): sfärens egen OpenSSH-användar-CA-nyckel, publicerad som en authorized-key-rad som SSH-servrar litar på. Utan grind och `no-store`, endast på huvudporten: den okrypterade HTTP-lyssnaren för återkallelse avvisar den, eftersom nyckeln är ett förtroendeankare. Motsvarande privata CA-nyckel lämnar aldrig denna tjänst."
+    "en": "c6a8759e4a5e40c9",
+    "text": "NON-SPEC (#1955 P3): sfärens egen OpenSSH-användar-CA-nyckel, publicerad som en authorized-key-rad som SSH-servrar litar på. Med `?algorithm=ssh-mldsa-65` svarar den i stället med sfärens ML-DSA-utfärdare, som vanlig OpenSSH ännu inte kan verifiera. Utan grind och `no-store`, endast på huvudporten: den okrypterade HTTP-lyssnaren för återkallelse avvisar den, eftersom nyckeln är ett förtroendeankare. Motsvarande privata CA-nyckel lämnar aldrig denna tjänst."
   },
   "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
     "en": "2e4cdead67408937",

@@ -95,6 +95,10 @@
     "en": "4b0c4feb0af59f04",
     "text": "提交存取請求"
   },
+  "endpoints.route./access/v1/access-requests/schema.name": {
+    "en": "e39be1976aa651db",
+    "text": "存取請求的提交結構描述"
+  },
   "endpoints.route./access/v1/access-requests/:id.name": {
     "en": "c8bcbb33d07cfb8f",
     "text": "存取請求的工作狀態"
@@ -290,6 +294,14 @@
   "endpoints.route./pki/revocation.name": {
     "en": "f399711ce1261bf4",
     "text": "本服務發布的每個 CRL 與 OCSP 回應程式"
+  },
+  "endpoints.route./pki/ssh-user-ca/:scope.name": {
+    "en": "a3f367e6aa3bd539",
+    "text": "領域的 OpenSSH 使用者 CA 公開金鑰"
+  },
+  "endpoints.route./pki/ssh-user-krl/:scope.name": {
+    "en": "a6ecaa76d097f280",
+    "text": "領域的 OpenSSH 使用者金鑰撤銷清單"
   },
   "endpoints.route./admin-api/xacml.name": {
     "en": "d3b1d402a612012c",
@@ -1264,8 +1276,8 @@
     "text": "匯入的 OATH 權杖"
   },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-"en": "33209f967f070175",
-"text": "硬體權杖動作"
+    "en": "33209f967f070175",
+    "text": "硬體權杖動作"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
@@ -1911,11 +1923,11 @@
     "en": "69876d051e66729c",
     "text": "登入後活動步驟"
   },
-"endpoints.route./wsapi/2.0/verify.name": {
+  "endpoints.route./wsapi/2.0/verify.name": {
     "en": "0734c12f6e3eb870",
     "text": "YK-VAL 2.0 驗證"
   },
-"endpoints.route./authn/roles.name": {
+  "endpoints.route./authn/roles.name": {
     "en": "d10487ebcbc8b238",
     "text": "動態角色步驟"
   },

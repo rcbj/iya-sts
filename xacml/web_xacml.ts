@@ -569,7 +569,18 @@ class XacmlPage {
             done: String((row.callbackDelivery.attempts || []).length),
             bound: String(row.callbackDelivery.bound == null
                           ? '' : row.callbackDelivery.bound)
-          }) + '</div>' : '') +
+          }) + '</div>' +
+          // EACH ATTEMPT (#1202): its time, its outcome and its code.
+          (row.callbackDelivery.attempts || []).map(function (one) {
+            return '<div class="sub">' + t.html(one.ok
+              ? 'consoleXacml.authzen.callbackAttemptOk'
+              : 'consoleXacml.authzen.callbackAttemptFailed', {
+              when: t.date(Number(one.at) * 1000),
+              status: String(one.status || 0),
+              why: String(one.why || ''),
+              code: String(one.code || '')
+            }) + '</div>';
+          }).join('') : '') +
         (row.emergency ? ' <strong>' +
           t.html('consoleXacml.authzen.emergency') + '</strong>' : '') +
         (row.approval ? '<div class="sub">' +

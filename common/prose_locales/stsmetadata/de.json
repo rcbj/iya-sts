@@ -100,8 +100,8 @@
     "text": "partial: die Access Evaluation API (Abschnitt 6), entschieden von der XACML-Engine gegen die Wurzelrichtlinie des Vertrauensbereichs über einen Attributkatalog je Vertrauensbereich, mit X-Request-ID und der Challenge aus Abschnitt 11.3, die Access Evaluations API (Abschnitt 7) mit ihren drei Semantiken und die PDP-Metadaten (Abschnitt 9) in beiden Formen, signed_metadata eingeschlossen, der Entwurf Obligations Profile für einen PEP, der die Typen deklariert, sowie die drei Search APIs (Abschnitt 8) über die eigenen Personen, Anwendungen, APIs, Delegationsbeziehungen und Richtlinienaktionen dieses Dienstes, seitenweise und nicht transitiv. Es fehlt: Obligations je Ergebnis in einer Suche und das OAuth-Profil, noch ein Entwurf."
   },
   "stsmetadata.specs.authzen-arap.coverage": {
-    "en": "e785acbe5ead52ad",
-    "text": "partial: die anfragbare Ablehnung (context.access_request, evaluation_id, evaluated_at, reason), wo die Richtlinie des Vertrauensbereichs ein Deny mit dem Access-Request-Advice markiert, wertgebunden mit einem binding_token, das dieser Vertrauensbereich signiert (die Inline-Claims); die Einreichung mit Idempotency-Key, 201 oder 202 und einem Task Handle; der Endpunkt für den Aufgabenstatus mit Retry-After; der Abbruch per POST oder DELETE; die sechs Statuswerte; der Abschlussmodus reevaluate, wobei approval.id im vertrauenswürdigen Zustand aufgelöst wird und die Genehmigung die Richtlinie als vertrauenswürdige Tatsachen erreicht; next_action und die fünf Gründe; jeder Problemtyp; das Metadaten-Element, jwks_uri und capability. Es fehlt: evaluation_id als Bindung per Verweis, approval.state, die gehashte Bindungsform, maschinenlesbare Formulare (form_url, request_schema_url), display sowie die Begleiter BULK, ACTOR und CATALOG."
+    "en": "6be544a62f94329b",
+    "text": "partial: die anforderbare Ablehnung (context.access_request, evaluation_id, evaluated_at, reason), wo die Richtlinie des Realms ein Deny mit dem Advice access-request kennzeichnet, per Wert gebunden durch ein binding_token, das dieser Realm signiert (Inline-Claims und binding_hash), und per Referenz aus dem Ablehnungseintrag; die Einreichung mit Idempotency-Key, 201 oder 202 und einem Task Handle; der Statusendpunkt der Aufgabe mit Retry-After; der Abbruch per POST oder DELETE; die sechs Status; der Abschlussmodus reevaluate, approval.id im vertrauenswürdigen Zustand aufgelöst, approval.state ausgestellt und geprüft, wobei die Suche weiterhin nötig ist, und die Genehmigung, die die Richtlinie als vertrauenswürdige Fakten erreicht; next_action und die fünf Gründe; jeder Problemtyp; das Metadatenmitglied, jwks_uri und die Fähigkeit; request_schema_url auf einer anforderbaren Ablehnung, das JSON Schema gleichen Ursprungs der optionalen Ergänzungen der Einreichung. Es fehlen: ein gehostetes Formular (form_url) und display sowie die Begleiter BULK, ACTOR und CATALOG."
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
     "en": "ca5109eae0e95b17",
@@ -878,6 +878,10 @@
   "stsmetadata.endpoints./access/v1/access-requests.what": {
     "en": "15c0d860d27c7cbe",
     "text": "POST von subject, resource, action und context einer abgelehnten Evaluation zusammen mit der Ablehnung, die sie erhielt (ihr binding_token und expires_at, unverändert zurückgespiegelt); Antwort 202 und ein Task Handle, oder 201 mit dem Ergebnis, wenn sofort entschieden wird (Notfallzugriff, den die Richtlinie erlaubt). Nur ein Deny, das die Richtlinie des Vertrauensbereichs mit dem Advice urn:sts:xacml:advice:access-request markiert hat, ist anfragbar. Dieselbe Tür für den Aufrufer und AUTHZEN_PEPS wie bei einer Evaluation; der Idempotency-Key wird je Aufrufer beachtet; ein Callback nur an eine URL, die für den Aufrufer registriert ist. Jede Ablehnung ist problem+json."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/schema.what": {
+    "en": "ec6a3b36123f646a",
+    "text": "GET des JSON Schema (Draft 2020-12) der Ergänzungen, die eine Einreichung hinzufügen darf: context.business_justification sowie requested_access.requested_until und emergency, Letzteres nur mit Begründung. Öffentlich, gleicher Ursprung wie access_request_endpoint; die request_schema_url einer anforderbaren Ablehnung verweist darauf. Es wird kein Formular gehostet, daher trägt keine Ablehnung form_url. Antwortet 501, solange die API oder das Profil aus ist. Vor dem Statuspfad der Aufgabe registriert, der „schema“ sonst als ID lesen würde."
   },
   "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
     "en": "264083b977756230",
@@ -2220,12 +2224,12 @@
     "text": "NON-SPEC (#1955 P4). Die HOTP- und TOTP-Token, die Administratoren aus PSKC-Seed-Dateien von Herstellern importiert haben, nicht zugewiesen, zugewiesen oder außer Betrieb, seitenweise und nach Seriennummer oder Person durchsuchbar. Nie ein Geheimnis. Entspricht GET /admin/hardware-tokens (seinem OATH-Tab)."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-"en": "cdbf34a1fbdf290e",
-"text": "NON-SPEC (#1955). lost, mit { key }: das Token wird als verloren markiert, jeder Passkey darauf entfernt, jedes Zertifikat darauf wegen keyCompromise widerrufen, für jedes ein CAEP credential-change gesendet und die damit angemeldeten Sitzungen beendet. enrol-piv, mit { username, profile, csr, attestationCertificate?, attestationIssuer? }: ein PIV-Slot-Zertifikat für diese Person über die EST-Issuing-CA, dessen YubiKey-PIV-Attestierung geprüft und der YubiKey aufgezeichnet. recover-key, mit { username, serial }: der hinterlegte piv-key-management-Schlüssel dieser Person, den die Zugriffsrichtlinie nur PIV_KEY_RECOVERY erlaubt, nach einer kürzlichen Anmeldung. revoke-ssh, mit { username, serial }: das SSH-Benutzerzertifikat dieser Person widerrufen und auf die KRL des Realms gesetzt. Die vier Aktionen der Konsole auf dieser Seite."
+    "en": "cdbf34a1fbdf290e",
+    "text": "NON-SPEC (#1955). lost, mit { key }: das Token wird als verloren markiert, jeder Passkey darauf entfernt, jedes Zertifikat darauf wegen keyCompromise widerrufen, für jedes ein CAEP credential-change gesendet und die damit angemeldeten Sitzungen beendet. enrol-piv, mit { username, profile, csr, attestationCertificate?, attestationIssuer? }: ein PIV-Slot-Zertifikat für diese Person über die EST-Issuing-CA, dessen YubiKey-PIV-Attestierung geprüft und der YubiKey aufgezeichnet. recover-key, mit { username, serial }: der hinterlegte piv-key-management-Schlüssel dieser Person, den die Zugriffsrichtlinie nur PIV_KEY_RECOVERY erlaubt, nach einer kürzlichen Anmeldung. revoke-ssh, mit { username, serial }: das SSH-Benutzerzertifikat dieser Person widerrufen und auf die KRL des Realms gesetzt. Die vier Aktionen der Konsole auf dieser Seite."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
     "en": "f5b724d2c79b5f74",
-"text": "meldet ein Hardware-Token als verloren und zieht seine Anmeldedaten zurück, stellt ein PIV-Slot-Zertifikat aus, gibt einen hinterlegten Schlüssel heraus oder widerruft das SSH-Zertifikat einer Person"
+    "text": "meldet ein Hardware-Token als verloren und zieht seine Anmeldedaten zurück, stellt ein PIV-Slot-Zertifikat aus, gibt einen hinterlegten Schlüssel heraus oder widerruft das SSH-Zertifikat einer Person"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -3131,19 +3135,19 @@
     "en": "9547cda6898c37a6",
     "text": "verlangt nach einer Anmeldung einen Post-Quantum-Passkey und richtet dann die Anmeldesitzung ein, die es gehalten hat"
   },
-"stsmetadata.endpoints./wsapi/2.0/verify.what": {
+  "stsmetadata.endpoints./wsapi/2.0/verify.what": {
     "en": "ff0550a4318594c6",
     "text": "YUBICOS VALIDIERUNGSPROTOKOLL 2.0 (#1955 P5). GET oder POST von id, otp, nonce und h. Standardmäßig aus: die Route antwortet OPERATION_NOT_ALLOWED und signiert nichts. An werden die Client-Kennung und der HMAC-SHA1 in jedem Modus geprüft, einschließlich der Entwicklung; eine Nonce wird fünf Minuten behalten; ein passendes OTP wird verbraucht. Cache-Control: no-store. Nichts wird an YubiCloud gesendet."
   },
-"stsmetadata.endpoints./wsapi/2.0/verify.effect": {
+  "stsmetadata.endpoints./wsapi/2.0/verify.effect": {
     "en": "bb2bc4011c8240ac",
     "text": "prüft ein YubiKey-OTP für einen Client, der die Anfrage signiert hat, oder antwortet OPERATION_NOT_ALLOWED, solange yubiotp.ykval aus ist"
   },
-"stsmetadata.endpoints./authn/roles.what": {
+  "stsmetadata.endpoints./authn/roles.what": {
     "en": "88814e89f81f8d86",
     "text": "DYNAMISCH AUSWÄHLBARE ROLLEN (#1072). Nach allen Faktoren wird eine Anmeldung an einer Anwendung, deren Bereich eine dynamische Rolle definiert (sofern roles.dynamicSelection oder appDynamicRoleSelection der Anwendung es nicht abschalten), ANGEHALTEN, während für die Person die XACML-Berechtigungsrichtlinie jeder dynamischen Rolle entschieden wird; nur Permit bietet eine Rolle an. Hat die Person „Rollen für diese Anmeldung wählen“ angekreuzt oder wird eine erforderliche Rolle angeboten, listet diese Seite die Wahlmöglichkeiten; Weiter (/authn-api/mfa/{id}/roles) prüft die Wahl gegen das Angebot des Schritts und erneut gegen die Richtlinien und startet die Sitzung mit der Wahl im Sitzungsdatensatz, nie im Verzeichnis. Ein Token für diese Anwendung trägt dann die gewählten Rollen, jede bei jeder Ausstellung erneut gegen ihre Richtlinie geprüft. Benötigt eine von der angehaltenen Anmeldung erzeugte ?mfa=-Kennung; ohne sie lautet die Antwort 400."
   },
-"stsmetadata.endpoints./authn/roles.effect": {
+  "stsmetadata.endpoints./authn/roles.effect": {
     "en": "fc2116e31d3ead37",
     "text": "fragt, welche dynamisch auswählbaren Rollen für diese Anmeldung verwendet werden sollen, und startet dann die angehaltene Sitzung mit dieser Wahl"
   },
@@ -4204,8 +4208,8 @@
     "text": "partial: Signaturen ML-DSA-65+Ed25519 und ML-DSA-87+Ed448 sowie Verschlüsselung ML-KEM-768+X25519 und ML-KEM-1024+X448, bei der Registrierung und wenn ein gespeicherter Schlüssel verwendet wird. Ein Komposit zählt als Post-Quanten. openpgp.pqcOnly schränkt nur die Registrierung ein. Beide Hälften einer Signatur prüft common/crypto_impl/openpgp_pqc.js. Es fehlen: SLH-DSA (Algorithmus-IDs 32-34), und dieser Dienst erzeugt keinen RFC-9980-Schlüssel. openpgp.js liest diese Schlüssel nicht."
   },
   "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
-    "en": "e83d747632c38b14",
-    "text": "NON-SPEC (#1955 P3): der realmbezogene OpenSSH-Benutzer-CA-Schlüssel, als authorized-key-Zeile veröffentlicht, der SSH-Server vertrauen. Ohne Gate und `no-store`, nur auf dem Hauptport: der Klartext-HTTP-Sperr-Listener lehnt ihn ab, weil der Schlüssel ein Vertrauensanker ist. Der zugehörige private CA-Schlüssel verlässt diesen Dienst nie."
+    "en": "c6a8759e4a5e40c9",
+    "text": "NON-SPEC (#1955 P3): der realmbezogene OpenSSH-Benutzer-CA-Schlüssel, als authorized-key-Zeile veröffentlicht, der SSH-Server vertrauen. Mit `?algorithm=ssh-mldsa-65` antwortet er stattdessen mit der ML-DSA-Autorität des Realms, die Standard-OpenSSH noch nicht prüfen kann. Ohne Gate und `no-store`, nur auf dem Hauptport: der Klartext-HTTP-Sperr-Listener lehnt ihn ab, weil der Schlüssel ein Vertrauensanker ist. Der zugehörige private CA-Schlüssel verlässt diesen Dienst nie."
   },
   "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
     "en": "2e4cdead67408937",

@@ -610,6 +610,10 @@
           },
           "returnReasons": {
             "type": "boolean"
+          },
+          "obligationsProfile": {
+            "type": "boolean",
+            "description": "The realm's authzen.obligationsProfile, as pulled. The default, and an absent member, is on."
           }
         },
         "additionalProperties": false,
@@ -619,7 +623,8 @@
           "batchEnabled",
           "maxEvaluations",
           "maxBodyBytes",
-          "returnReasons"
+          "returnReasons",
+          "obligationsProfile"
         ]
       },
       "Catalogue": {

@@ -232,8 +232,8 @@
     "text": "Logga det genererade startlösenordet"
   },
   "admin.logBootstrapPassword|description": {
-    "en": "856dddf1ed8c2407",
-    "text": "Endast produktläge. Av, standardvärdet, skrivs lösenordet som genereras för den första administratören till filen bootstrap-admin-password i persistence.dataDir, som bara den här tjänsten kan läsa, och loggen säger var. På skrivs det till tjänstens logg. VARNING: på uppfylls inte krav 16.2.5 i ASVS 5.0.0, eftersom en autentiseringsuppgift hamnar i loggen. En senare start tar bort den filen när någon redan har en autentiseringsuppgift."
+    "en": "8591cfda7dde139a",
+    "text": "Endast produktläge. Av, standardvärdet, skrivs lösenordet som genereras för den första administratören till filen bootstrap-admin-password i persistence.dataDir, som bara den här tjänsten kan läsa, och loggen säger var. På skrivs det till tjänstens logg. VARNING: på uppfylls inte krav 16.2.5 i ASVS 5.0.0, eftersom en autentiseringsuppgift hamnar i loggen. En förtroendesfärs fil lägger till ett bindestreck och sfärens id till det namnet. En senare start tar bort en fil när lösenordet i den inte längre öppnar dess konto."
   },
   "oauth2.allowConfidentialWithoutPkce|label": {
     "en": "c33a0a31a1d623b1",
@@ -424,8 +424,8 @@
     "text": "Tillåt ett administratörsnamn som är standard i produktläge"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "7375f4bf636f5366",
-    "text": "Endast produktläge. Av, standardvärdet, får en startadministratör som heter admin, root, sa eller administrator, eller saknar namn, ett oförutsägbart genererat namn som skrivs med lösenordet till filen bootstrap-admin-password i persistence.dataDir vid första start (se admin.logBootstrapPassword). På används det konfigurerade namnet som det är. VARNING: krav 6.3.2 i ASVS 5.0.0 förbjuder ett kontonamn som är standard, så låt detta vara av utanför en testmiljö. En senare start tar bort den filen när någon redan har en autentiseringsuppgift."
+    "en": "7007ae597c41e813",
+    "text": "Endast produktläge. Av, standardvärdet, får en startadministratör som heter admin, root, sa eller administrator, eller saknar namn, ett oförutsägbart genererat namn som skrivs med lösenordet till filen bootstrap-admin-password i persistence.dataDir vid första start (se admin.logBootstrapPassword). På används det konfigurerade namnet som det är. VARNING: krav 6.3.2 i ASVS 5.0.0 förbjuder ett kontonamn som är standard, så låt detta vara av utanför en testmiljö. En förtroendesfärs fil lägger till ett bindestreck och sfärens id till det namnet. En senare start tar bort en fil när lösenordet i den inte längre öppnar dess konto."
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "Konto för initial administratör"
   },
   "admin.bootstrapUsername|description": {
-    "en": "8b69eb9d4cb0b130",
-    "text": "Den initiala administratörens användarnamn (2026-09-13), i STANDARDSFÄREN och, sedan 2026-09-14, i varje förtroendesfär, där kontot administrerar enbart den sfären: skapas vid start om det saknas, är medlem i båda konsolrollerna, tvingas byta lösenord vid sin första inloggning och kan inte tas bort eller byta namn. Tills det första gången loggar in i /admin får varje inloggad person använda konsolen (admin.openWhenEmpty). I utvecklingsläge loggar vilket lösenord som helst in det, som för alla. I PRODUKTIONSLÄGE är det också kontot som får ett genererat lösenord när tjänsten startar och INGEN i sfären har några inloggningsuppgifter; namnet och det lösenordet skrivs en gång till filen bootstrap-admin-password i persistence.dataDir, läsbar bara för tjänsten (loggen säger var, och innehåller dem själv bara med admin.logBootstrapPassword på), och är den enda vägen in i en ny produktionsdriftsättning. Det genererade lösenordet skrivs aldrig där någon redan har inloggningsuppgifter, så det kan inte skriva över ett lösenord. Det tvingade bytet gäller bara ett konto som detta steg SKAPADE — ett befintligt konto med det här namnet behåller sitt lösenord och får bara de två rollerna. En senare start tar bort den filen när någon redan har en autentiseringsuppgift."
+    "en": "938e9e0c7b3b97fa",
+    "text": "Den initiala administratörens användarnamn (2026-09-13), i STANDARDSFÄREN och, sedan 2026-09-14, i varje förtroendesfär, där kontot administrerar enbart den sfären: skapas vid start om det saknas, är medlem i båda konsolrollerna, tvingas byta lösenord vid sin första inloggning och kan inte tas bort eller byta namn. Tills det första gången loggar in i /admin får varje inloggad person använda konsolen (admin.openWhenEmpty). I utvecklingsläge loggar vilket lösenord som helst in det, som för alla. I PRODUKTIONSLÄGE är det också kontot som får ett genererat lösenord när tjänsten startar och INGEN i sfären har några inloggningsuppgifter; namnet och det lösenordet skrivs en gång till filen bootstrap-admin-password i persistence.dataDir, läsbar bara för tjänsten (loggen säger var, och innehåller dem själv bara med admin.logBootstrapPassword på), och är den enda vägen in i en ny produktionsdriftsättning. Det genererade lösenordet skrivs aldrig där någon redan har inloggningsuppgifter, så det kan inte skriva över ett lösenord. Det tvingade bytet gäller bara ett konto som detta steg SKAPADE — ett befintligt konto med det här namnet behåller sitt lösenord och får bara de två rollerna. En förtroendesfärs fil lägger till ett bindestreck och sfärens id till det namnet. En senare start tar bort en fil när lösenordet i den inte längre öppnar dess konto."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -3307,59 +3307,59 @@
     "en": "82f545cd2dea952b",
     "text": "Vad som låter en PKINIT-inloggning göra anspråk på en hårdvarubunden nyckel (indikatorn pkinit-hardware och amr hwk). `inference`, standard och beteendet före #1955: ett certifikat för smartkortsinloggning vars nyckel denna tjänst inte genererade, eller registrerade attesteringsbevis. `evidence`: endast en nyckel som en hårdvarutokens attestering täcker, och en passkey får hwk endast när dess attestering verifierats och är betrodd (annars swk). En certifikatinloggning över TLS får hwk, och sc för en nyckel på ett smartkort, endast från bevis i båda fallen, och endast för certifikatets innehavare."
   },
-"pskc.allowPlaintextImport|label": {
+  "pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
     "text": "Godta PSKC-fröfiler i klartext i produktläget"
   },
-"pskc.allowPlaintextImport|description": {
+  "pskc.allowPlaintextImport|description": {
     "en": "7efe34e872e4772e",
     "text": "Om en administratör i produktläget får importera en PSKC-fröfil (RFC 6030) vars tokenhemligheter INTE är krypterade. Av som standard: en sådan fil har varit en lista över fungerande andra faktorer på varje disk och i varje brevlåda den har passerat, och en leverantör kan kryptera den under en förutdelad nyckel eller ett lösenord (avsnitt 6.1 och 6.2). Utvecklingsläget godtar en oavsett."
   },
-"yubiotp.allowPlaintextImport|label": {
+  "yubiotp.allowPlaintextImport|label": {
     "en": "b1c1ac235f98cc47",
     "text": "Godta CSV-filer med YubiKey-OTP i klartext i produktläget"
   },
-"yubiotp.allowPlaintextImport|description": {
+  "yubiotp.allowPlaintextImport|description": {
     "en": "f409449d46d5831a",
     "text": "Om en administratör i produktläget får importera en CSV med YubiKey-OTP-hemligheter (serienummer, publik identitet, privat identitet, AES-nyckel). Av som standard: filen är en lista över fungerande andra faktorer. Utvecklingsläget godtar en oavsett. Hemligheterna förseglas när filen godtas, och filen behålls inte."
   },
-"openpgp.wkd|label": {
+  "openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",
     "text": "Publicera nycklar i Web Key Directory"
   },
-"openpgp.wkd|description": {
+  "openpgp.wkd|description": {
     "en": "7822103f89ac59b3",
     "text": "Besvara Web Key Directory (draft-koch-openpgp-webkey-service) för den här sfärens e-postdomäner: /.well-known/openpgpkey/<domain>/hu/<hash> (den avancerade metoden, på openpgpkey.<domain>) och /.well-known/openpgpkey/hu/<hash> (den direkta metoden), och respektive policyfil. Bara nyckeln för en person som har valt att delta på portalen besvaras. Avstängt som standard."
   },
-"openpgp.wkdDomains|label": {
+  "openpgp.wkdDomains|label": {
     "en": "d1c4b728593ff000",
     "text": "E-postdomäner som Web Key Directory betjänar"
   },
-"openpgp.wkdDomains|description": {
+  "openpgp.wkdDomains|description": {
     "en": "ad64f7216191123c",
     "text": "E-postdomänerna som den här sfärens Web Key Directory svarar för, kommaseparerade. Tomt, standardvärdet, betyder sfärens egen DNS-domän. En begäran utan sfär i sökvägen besvaras av den sfär som betjänar dess domän, standardsfären först."
   },
-"openpgp.challengeLifetimeS|label": {
+  "openpgp.challengeLifetimeS|label": {
     "en": "dbf558cf0b4b8f90",
     "text": "Registreringsutmaningens livslängd (sekunder)"
   },
-"openpgp.challengeLifetimeS|description": {
+  "openpgp.challengeLifetimeS|description": {
     "en": "e9130c8e82368cc6",
     "text": "Hur länge den utmaning som en person signerar med gpg --clearsign för att registrera en OpenPGP-nyckel är giltig. Den förbrukas en gång, och en person har en åt gången."
   },
-"openpgp.signatureSkewS|label": {
+  "openpgp.signatureSkewS|label": {
     "en": "d927cf1f04bd9d51",
     "text": "Tillåten klockavvikelse för bevissignaturen (sekunder)"
   },
-"openpgp.signatureSkewS|description": {
+  "openpgp.signatureSkewS|description": {
     "en": "2772763d3d363b6d",
     "text": "Hur mycket den signerande datorns klocka får avvika från tjänstens: ett bevis signerat tidigare än utmaningen utfärdades, eller senare än nu, med mer än så avvisas (STS-OPENPGP-0010)."
   },
-"openpgp.minRsaBits|label": {
+  "openpgp.minRsaBits|label": {
     "en": "f3dc9f85de143630",
     "text": "Minsta RSA-nyckel för OpenPGP"
   },
-"openpgp.minRsaBits|description": {
+  "openpgp.minRsaBits|description": {
     "en": "cd16018c848ce538",
     "text": "Den kortaste RSA-nyckel, primärnyckel eller undernyckel, som en OpenPGP-registrering accepterar. Ed25519, Ed448, ECDSA och ECDH på P-256, P-384 och P-521, X25519 och X448, samt RFC 9980-kompositerna ML-DSA-65+Ed25519, ML-DSA-87+Ed448, ML-KEM-768+X25519 och ML-KEM-1024+X448 accepteras när openpgp.algorithms nämner dem. DSA, ElGamal, Brainpool-kurvorna och SLH-DSA accepteras aldrig (STS-OPENPGP-0004)."
   },
@@ -8387,6 +8387,14 @@
     "en": "6b3f5e73f6fcafaf",
     "text": "Det högsta antalet åtkomstbegäranden en sfär rymmer som väntande; efter det avvisas en inskickning med 503 tills några avgjorts eller gått ut."
   },
+  "authzen.accessRequestMaxDenials|label": {
+    "en": "09e695949f0cc1cc",
+    "text": "Begärbara avslag som en sfär registrerar"
+  },
+  "authzen.accessRequestMaxDenials|description": {
+    "en": "698617c5a3485120",
+    "text": "Det högsta antalet begärbara avslag som en sfär registrerar per evaluation_id (#1204). Därutöver registreras inte ett nytt avslag, och det kan fortfarande begäras med sitt binding_token; jobbet för åtkomstbegäranden tar bort en post en dag efter dess fönster."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"
@@ -8400,8 +8408,8 @@
     "text": "Access request callback backoff (seconds)"
   },
   "authzen.callbackBackoffS|description": {
-    "en": "27141a0f28d94b83",
-    "text": "How long to wait after a failed access request callback before the next attempt (#1202). The authzen.access-requests job runs every 60 seconds, so a shorter wait could not be honoured. An application's appAuthzenCallbackConfig may set a longer wait for one URL."
+    "en": "43f2cb7740fc7efe",
+    "text": "Hur länge det väntas efter det första misslyckade återanropet för en åtkomstbegäran innan nästa försök (#1202). Varje senare väntetid är dubbelt så lång som den föregående, upp till ett dygn. Jobbet authzen.access-requests körs var 60:e sekund, så en kortare väntetid kunde inte hållas. En applikations appAuthzenCallbackConfig kan ange en längre väntetid för en URL."
   },
   "authzen.externalPdp|label": {
     "en": "8a0af08389fe6cda",
@@ -13072,16 +13080,16 @@
     "text": "Algoritmer för SSH-användar-CA"
   },
   "pki.sshUserCaAlgorithms|description": {
-    "en": "bdb54445a0279b8d",
-    "text": "Vilka algoritmer SSH-användarcertifikatets CA får använda, i preferensordning. ssh-mldsa-65 är ML-DSA-65 (FIPS 204) under ett trådnamn som den här tjänsten definierar, eftersom OpenSSH inte definierar något: den publika nyckeln och signaturen är råa, i den form ssh-ed25519 använder. OpenSSH-raden TrustedUserCAKeys som den här tjänsten publicerar förblir den första klassiska algoritmen i listan, eller ssh-ed25519 när listan bara nämner ssh-mldsa-65. En part som inte förstår ML-DSA fortsätter att lita på den raden. ssh-rsa (SHA-1) erbjuds inte. ML-DSA-auktoriteten skapas bara när den här körningen kan generera nyckeln; annars förblir certifikaten klassiska (STS-PKI-0290 registreras och den klassiska auktoriteten svarar fortfarande)."
+    "en": "5c4c22c2ab500fd4",
+    "text": "Vilka algoritmer certifikatutfärdaren för SSH-användare får använda, i prioritetsordning. ssh-mldsa-65 är ML-DSA-65 (FIPS 204) under ett överföringsnamn som den här tjänsten definierar, eftersom OpenSSH inte definierar något: den publika nyckeln och signaturen är råa, i den form ssh-ed25519 använder. Den OpenSSH-rad för TrustedUserCAKeys som tjänsten publicerar förblir den första klassiska algoritmen i listan, eller ssh-ed25519 när listan bara nämner ssh-mldsa-65. En motpart som inte förstår ML-DSA fortsätter att lita på den raden. ML-DSA-utfärdarens nyckel publiceras på GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65; standard-OpenSSH kan ännu inte verifiera ett ML-DSA-certifikat. ssh-rsa (SHA-1) erbjuds inte. ML-DSA-utfärdaren skapas bara när den här körmiljön kan generera nyckeln; annars förblir certifikaten klassiska (STS-PKI-0290 registreras och den klassiska utfärdaren svarar fortfarande), om inte pki.sshUserCaPqcOnly är på."
   },
   "pki.sshUserCaPqcOnly|label": {
     "en": "74aae1308361ba58",
     "text": "SSH-användarcertifikat är endast postkvantum"
   },
   "pki.sshUserCaPqcOnly|description": {
-    "en": "39b21e5b95f84da1",
-    "text": "På innebär att ett nytt SSH-användarcertifikat signeras av ML-DSA-auktoriteten, och bara när den auktoriteten finns. Den publicerade TrustedUserCAKeys-raden förblir den klassiska nyckeln, så att en OpenSSH-klient som redan litar på den inte får en algoritm den inte kan tolka. På en körning som inte kan generera ML-DSA förblir certifikatet klassiskt och begäran misslyckas inte. Redan utfärdade klassiska certifikat verifieras fortfarande. Kan inte vara på samtidigt som pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Av som standard."
+    "en": "dcbf21b3230dcf07",
+    "text": "När den är på signeras ett nytt SSH-användarcertifikat av ML-DSA-utfärdaren och av inget annat. Standard-OpenSSH kan ännu inte verifiera ett ML-DSA-certifikat, så bara en SSH-server byggd för att verifiera ssh-mldsa-65, som litar på nyckeln på GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65, godtar dessa certifikat. Standardraden på den sökvägen förblir den klassiska nyckeln. När sfären saknar ML-DSA-utfärdare (körmiljön kan inte generera ML-DSA, eller ssh-mldsa-65 finns inte i pki.sshUserCaAlgorithms) avvisas begäran (STS-PKI-0297) i stället för att besvaras med ett klassiskt certifikat. Redan utfärdade klassiska certifikat fortsätter att verifieras. Kan inte vara på samtidigt som pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Av som standard."
   },
   "pki.sshUserCaPqcAlongsideClassical|label": {
     "en": "c3201f8841200c32",

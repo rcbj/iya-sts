@@ -178,7 +178,7 @@ certificate uploaded instead), the validity, and â€” when it was revoked here â€
 | `stsNotDelegated` | sensitive and cannot be delegated (Kerberos's NOT_DELEGATED) (#108) |
 | `stsMayAct` | the one party this person named as a delegate. It becomes `may_act` in their access tokens |
 | `stsAuthzenApplication` | the applications this person or service account may ask the AuthZEN API about, one per value; set by an administrator only (#563) |
-| `stsAuthzenCallbackUri` | stored https URLs on a person or service account. A submission no longer honours them, and `set-callbacks` refuses a person or a service account. New registration is `appAuthzenCallbackUri` on an application (#1202) |
+| `stsAuthzenCallbackUri` | the https access request callback URLs registered for a person or service account (#1180), written by `set-callbacks` and honoured as an application's `appAuthzenCallbackUri` is. A per-URL retry override is an application's only |
 | `stsServiceAccountPolicy` | the [named service-account policy](service-accounts.md#named-policies) a service account is governed by, or `default`; single-valued, held only by a service account and cleared with `stsServiceAccount`. Set on the person's Policies tab, with `POST /admin-api/users/set-attribute`, or by an LDAP modify, each checked against the realm's policies (#1240) |
 | `stsMailVerified` | the address they proved they receive mail at (#63) |
 | `stsMailVerifyToken`, `stsMailVerifyExpires`, `stsMailVerifyAddress` | a pending verification link. The token is **withheld** |

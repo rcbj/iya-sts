@@ -95,6 +95,10 @@
     "en": "4b0c4feb0af59f04",
     "text": "Soumettre une demande d’accès"
   },
+  "endpoints.route./access/v1/access-requests/schema.name": {
+    "en": "e39be1976aa651db",
+    "text": "Le schéma de soumission d’une demande d’accès"
+  },
   "endpoints.route./access/v1/access-requests/:id.name": {
     "en": "c8bcbb33d07cfb8f",
     "text": "État de la tâche d’une demande d’accès"
@@ -290,6 +294,14 @@
   "endpoints.route./pki/revocation.name": {
     "en": "f399711ce1261bf4",
     "text": "Chaque CRL et répondeur OCSP que publie ce service"
+  },
+  "endpoints.route./pki/ssh-user-ca/:scope.name": {
+    "en": "a3f367e6aa3bd539",
+    "text": "La clé publique de l’AC utilisateurs OpenSSH du domaine"
+  },
+  "endpoints.route./pki/ssh-user-krl/:scope.name": {
+    "en": "a6ecaa76d097f280",
+    "text": "La liste de révocation des clés utilisateurs OpenSSH du domaine"
   },
   "endpoints.route./admin-api/xacml.name": {
     "en": "d3b1d402a612012c",
@@ -1264,8 +1276,8 @@
     "text": "Jetons OATH importés"
   },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
-"en": "33209f967f070175",
-"text": "Actions sur les jetons matériels"
+    "en": "33209f967f070175",
+    "text": "Actions sur les jetons matériels"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
@@ -1911,11 +1923,11 @@
     "en": "69876d051e66729c",
     "text": "Étape d’activité après connexion"
   },
-"endpoints.route./wsapi/2.0/verify.name": {
+  "endpoints.route./wsapi/2.0/verify.name": {
     "en": "0734c12f6e3eb870",
     "text": "Vérification YK-VAL 2.0"
   },
-"endpoints.route./authn/roles.name": {
+  "endpoints.route./authn/roles.name": {
     "en": "d10487ebcbc8b238",
     "text": "Étape des rôles dynamiques"
   },

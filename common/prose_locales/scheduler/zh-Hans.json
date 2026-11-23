@@ -36,8 +36,8 @@
     "text": "AuthZEN 访问请求到期"
   },
   "sched.jobs.authzen.access-requests.describe": {
-    "en": "f219a842a3345525",
-    "text": "将每个已超过 expires_at 的待处理 AuthZEN 访问请求（#1180）移为 expired——写入其审计行并发送其回调——在已完成一天之后，或其批准失效之后（以较晚者为准）将其移除，并重试因网络错误或 HTTP 5xx 而失败的回调投递，直至尝试上限（#1202）。读取时会自行应用截止时间，因此这里只是记录与清理，从不负责决定。"
+    "en": "19cf8cda48af4f1e",
+    "text": "将每个超过 expires_at 的待处理 AuthZEN 访问请求（#1180）改为 expired——写入其审计行并发送其回调——在已完成的请求完成一天后将其删除（若其批准到期更晚，则在批准到期时），在可申请拒绝的时间窗口结束一天后将其删除，并对因网络错误或 HTTP 5xx 而失败的回调投递进行重试，直到达到尝试上限，每次等待为上一次的两倍（#1202）。回调仍在尝试时保留已完成的请求，审批人解析为无人的待处理请求改为 failed。读取本身会应用截止时间，因此这只是记录与清理，从不作出决定。"
   },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",
@@ -654,6 +654,14 @@
   "sched.jobs.ssf.stream-maintenance.describe": {
     "en": "bd4794eda9c5d2d2",
     "text": "对接收方已不活动达 ssf.inactivityTimeoutS 的流进行暂停、禁用或删除（SSF 1.0 section 8.1.1），暂停或禁用前先以 stream-updated 事件通告；并向每个已启用、且在 ssf.verificationEveryS 内未从本发送方收到验证事件的流发送验证事件（section 8.1.4）。"
+  },
+  "sched.jobs.ssh-user-ca.krl.title": {
+    "en": "9694f71884ac8e1b",
+    "text": "SSH 用户 CA 吊销列表"
+  },
+  "sched.jobs.ssh-user-ca.krl.describe": {
+    "en": "c84b42d3aab3bdde",
+    "text": "在已签发证书被吊销后刷新每个领域的 OpenSSH 用户 CA KRL，并移除已过期的吊销。"
   },
   "sched.jobs.tls.ticket-key-rotate.title": {
     "en": "8bb62416b0f1932c",

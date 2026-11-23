@@ -3220,36 +3220,72 @@ function refusedCurveKey(cert) {
 
 // The trust anchors a listener's context holds, parsed once per PEM.
 const parsedAnchors = new Map();
+
+function parsedAnchor(pem) {
+  log.debug("Entering parsedAnchor().");
+  const text = String(pem || '');
+  if (!parsedAnchors.has(text)) {
+    let parsed = null;
+    try {
+      parsed = text ? stsCrypto.parseCertificate(text) : null;
+    } catch (e) {
+      log.debug("Caught in parsedAnchor(): " + ((e && e.message) || e));
+      // An anchor node cannot parse completes no chain; it is skipped.
+      parsed = null;
+    }
+    parsedAnchors.set(text, parsed);
+  }
+  log.debug("Leaving parsedAnchor().");
+  return parsedAnchors.get(text);
+}
+
 function anchorCertificates() {
   log.debug("Entering anchorCertificates().");
   const out = [];
   (secureContextOptions().ca || []).forEach(function (pem) {
-    const text = String(pem);
-    if (!parsedAnchors.has(text)) {
-      let parsed = null;
-      try {
-        parsed = stsCrypto.parseCertificate(text);
-      } catch (e) {
-        log.debug("Caught in anchorCertificates(): " +
-                  ((e && e.message) || e));
-        // An anchor node cannot parse completes no chain; it is skipped.
-        parsed = null;
-      }
-      parsedAnchors.set(text, parsed);
-    }
-    if (parsedAnchors.get(text)) {
-      out.push(parsedAnchors.get(text));
+    const parsed = parsedAnchor(pem);
+    if (parsed) {
+      out.push(parsed);
     }
   });
   log.debug("Leaving anchorCertificates(). " + out.length);
   return out;
 }
 
+// Whether the leaf IS one of this listener's anchors, by SHA-256 of the DER.
+// OpenSSL's issuer lookup is by subject name, so a fingerprint is the only
+// comparison that tells two same-subject anchors apart (#1242).
+function leafIsAnchor(leaf, pems) {
+  log.debug("Entering leafIsAnchor().");
+  const wanted = normalisedFingerprint(leaf && leaf.fingerprint256);
+  if (wanted.length !== 64) {
+    log.debug("Leaving leafIsAnchor(). No fingerprint.");
+    return false;
+  }
+  const list = pems || secureContextOptions().ca || [];
+  const found = list.some(function (pem) {
+    const parsed = parsedAnchor(pem);
+    return !!parsed &&
+      normalisedFingerprint(parsed.fingerprint256) === wanted;
+  });
+  log.debug("Leaving leafIsAnchor(). " + found);
+  return found;
+}
+
 // The peer's chain as X509Certificate objects, leaf first: what the client
 // sent, then issuers from the anchors, stopping at a self-issued top.
 // `selfIssuedTop` says whether the last one issued itself.
-function peerChainOf(leaf) {
+// `pems` is that listener's `ca` list, when the caller has it.
+function peerChainOf(leaf, pems) {
   log.debug("Entering peerChainOf().");
+  // THE LEAF IS AN ANCHOR (#1242). A later OpenSSL can set
+  // issuerCertificate to the OTHER certificate of the same subject, and
+  // holdToPathRules then refuses that non-CA above the leaf. The chain of
+  // an anchor presented as itself is the certificate alone.
+  if (leafIsAnchor(leaf, pems)) {
+    log.debug("Leaving peerChainOf(). The leaf is an anchor.");
+    return { chain: [leaf], selfIssuedTop: true };
+  }
   const chain = [leaf];
   const seen = new Set([leaf.fingerprint256]);
   let next = leaf.issuerCertificate;
@@ -3260,9 +3296,11 @@ function peerChainOf(leaf) {
   }
   let top = chain[chain.length - 1];
   let selfIssuedTop = top.checkIssued(top);
-  const anchors = selfIssuedTop ? [] : anchorCertificates();
+  const held = selfIssuedTop ? [] : (pems
+    ? pems.map(parsedAnchor).filter(Boolean)
+    : anchorCertificates());
   while (!selfIssuedTop && chain.length < 16) {
-    const issuer = anchors.find(function (one) {
+    const issuer = held.find(function (one) {
       return !seen.has(one.fingerprint256) && top.checkIssued(one);
     });
     if (!issuer) {
@@ -3302,7 +3340,7 @@ function legacyPeerCertificate(read, detailed) {
 
 // The first certificate of the peer's chain on a refused curve, described,
 // or '' — and the chain, for the replacement reader.
-function readPeerChain(socket) {
+function readPeerChain(socket, pems) {
   log.debug("Entering readPeerChain().");
   const leaf = typeof socket.getPeerX509Certificate === 'function'
     ? socket.getPeerX509Certificate() : undefined;
@@ -3310,7 +3348,7 @@ function readPeerChain(socket) {
     log.debug("Leaving readPeerChain(). No certificate.");
     return null;
   }
-  const read = peerChainOf(leaf);
+  const read = peerChainOf(leaf, pems);
   read.problem = '';
   read.chain.some(function (cert, depth) {
     const why = refusedCurveKey(cert);
@@ -3323,6 +3361,75 @@ function readPeerChain(socket) {
   });
   log.debug("Leaving readPeerChain(). " + (read.problem || 'accepted'));
   return read;
+}
+
+// The `ca` list the listener verifies against. The process-wide list is what
+// a listener with no policy of its own uses, and what a policy that throws
+// falls back to so recognition is not skipped.
+function caPemsFor(server) {
+  log.debug("Entering caPemsFor().");
+  const entry = externalServers.find(function (one) {
+    return one.server === server;
+  });
+  let pems = [];
+  try {
+    const policy = entry ? policyFor(entry.kind, entry.realm) : undefined;
+    pems = secureContextOptions(policy).ca || [];
+  } catch (e) {
+    log.debug("Caught in caPemsFor(): " + ((e && e.message) || e));
+    pems = secureContextOptions().ca || [];
+  }
+  log.debug("Leaving caPemsFor(). " + pems.length);
+  return pems;
+}
+
+// What OpenSSL reports when it accepted the wrong same-subject anchor and
+// stopped. INVALID_PURPOSE and the clock are not this, and are not promoted.
+const ANCHOR_NAME_COLLISION = new Set([
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'CERT_SIGNATURE_FAILURE',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE'
+]);
+
+// A presented certificate that IS an installed anchor, which OpenSSL refused
+// because another anchor holds its subject. The handshake then says verified.
+// A certificate that anchor issued is a different fingerprint and stays
+// refused (#1242). A resumed session with no peer certificate is left alone.
+function recogniseInstalledAnchor(socket, pems, label) {
+  log.debug("Entering recogniseInstalledAnchor().");
+  if (!socket || socket.authorized === true) {
+    log.debug("Leaving recogniseInstalledAnchor(). Already verified.");
+    return;
+  }
+  const raw = /** @type {any} */ (socket.authorizationError);
+  const error = String((raw && raw.code) || raw || '');
+  if (!ANCHOR_NAME_COLLISION.has(error)) {
+    log.debug("Leaving recogniseInstalledAnchor(). Not a name collision.");
+    return;
+  }
+  let leaf = null;
+  try {
+    leaf = typeof socket.getPeerX509Certificate === 'function'
+      ? socket.getPeerX509Certificate() : null;
+  } catch (e) {
+    log.debug("Caught in recogniseInstalledAnchor(): " +
+              ((e && e.message) || e));
+    // A peer certificate that cannot be read is not an anchor this listener
+    // installed. The handshake stays as OpenSSL left it.
+    leaf = null;
+  }
+  if (!leaf || !leafIsAnchor(leaf, pems)) {
+    log.debug("Leaving recogniseInstalledAnchor(). Not an anchor.");
+    return;
+  }
+  socket.authorized = true;
+  socket.authorizationError = null;
+  log.info(errorCodes.tag('STS-TLS-0064') + 'tls: a presented certificate ' +
+           'on ' + label + ' is an installed anchor whose subject another ' +
+           'anchor holds, so OpenSSL reported ' + error + '. It is verified ' +
+           'by its fingerprint (#1242).');
+  log.debug("Leaving recogniseInstalledAnchor(). Recognised.");
 }
 
 // Kept for callers that only want the verdict.
@@ -3352,7 +3459,13 @@ function refuseNonNistCurveCertificatesOn(server, label) {
   server.prependListener('secureConnection', function (socket) {
     let read = null;
     try {
-      read = readPeerChain(socket);
+      // BEFORE the curve is read (#1242). Two anchors with one subject make
+      // OpenSSL refuse the later certificate even though it is in `ca`.
+      // Matching the leaf to an anchor by fingerprint is what verifies it,
+      // and the chain read below must see that certificate as itself.
+      const pems = caPemsFor(server);
+      recogniseInstalledAnchor(socket, pems, label);
+      read = readPeerChain(socket, pems);
     } catch (e) {
       // A chain X509Certificate itself cannot walk is not one this guard
       // can judge; the socket is left exactly as node made it.
@@ -4693,7 +4806,8 @@ function listenerPolicies() {
  * @param options - `source` (default `runtime`), `strict` (refuse the whole
  * bundle if any block cannot be read) and `addedBy`
  * @returns `{ added, duplicates, total }`, or with `error` and `errorCode` when
- * nothing was added
+ * nothing was added. `warning` names a same-subject collision that was kept
+ * (#1242); it is not a refusal
  */
 // Whether this process's truststore holds to the admission rule. The MODE IS
 // ASKED IN THE DEFAULT REALM, `truststoreOpenToAnybody()`'s reason: these are
@@ -4729,6 +4843,182 @@ function admissionProblemOf(row, rows) {
     .anchorProblemSync(row.pem, { heldAnchors: held });
   log.debug("Leaving admissionProblemOf(). " + (problem ? problem.code : 'ok'));
   return problem;
+}
+
+// ---------------------------------------------------------------------------
+// TWO ANCHORS, ONE SUBJECT (#1242).
+//
+// OpenSSL looks an issuer up by subject name, and by the authority key
+// identifier only when the certificate BEING VERIFIED carries one. A second
+// self-signed certificate with the same subject and no authority key
+// identifier is in `ca` and still fails the handshake with
+// DEPTH_ZERO_SELF_SIGNED_CERT: the lookup returns the earlier certificate,
+// the signature does not match, and OpenSSL does not try the next one.
+// Distinct subject and authority key identifiers are a CA key rollover and
+// are not a collision. The key ids are cached by PEM, not stored on the row,
+// so a public copy cannot carry them. pkijs is required here rather than at
+// load: this module must not require common/pki.js while the anchors file is
+// being read, and pkijs does not require this module.
+// ---------------------------------------------------------------------------
+/** @type {Map<string, { ski: string, aki: string }>} */
+const anchorKeyIds = new Map();
+
+function extensionBytes(pem, oid) {
+  log.debug("Entering extensionBytes().");
+  let bytes = null;
+  try {
+    const parsed = stsCrypto.parseCertificate(pem);
+    const pkijs = require('pkijs');
+    const cert = pkijs.Certificate.fromBER(new Uint8Array(parsed.raw));
+    const ext = (cert.extensions || []).find(function (one) {
+      return one.extnID === oid;
+    });
+    const block = ext && /** @type {any} */ (ext.extnValue);
+    const view = block && block.valueBlock && block.valueBlock.valueHexView;
+    if (view) {
+      bytes = view;
+    }
+  } catch (e) {
+    log.debug("Caught in extensionBytes(): " + ((e && e.message) || e));
+    // A key id this runtime cannot read does not distinguish two anchors.
+    // OpenSSL then looks the issuer up by subject name.
+    bytes = null;
+  }
+  log.debug("Leaving extensionBytes().");
+  return bytes;
+}
+
+function hexOfKeyId(bytes) {
+  log.debug("Entering hexOfKeyId().");
+  let hex = '';
+  if (bytes) {
+    try {
+      const asn1js = require('asn1js');
+      const parsed = asn1js.fromBER(bytes);
+      const node = parsed && /** @type {any} */ (parsed.result);
+      const view = node && node.valueBlock && node.valueBlock.valueHexView;
+      if (view && view.length) {
+        hex = Buffer.from(view).toString('hex');
+      }
+    } catch (e) {
+      log.debug("Caught in hexOfKeyId(): " + ((e && e.message) || e));
+      // Absent and unreadable are the same to the lookup: no key id.
+      hex = '';
+    }
+  }
+  log.debug("Leaving hexOfKeyId().");
+  return hex;
+}
+
+function authorityHex(bytes) {
+  log.debug("Entering authorityHex().");
+  let hex = '';
+  if (bytes) {
+    try {
+      const asn1js = require('asn1js');
+      const parsed = asn1js.fromBER(bytes);
+      const node = parsed && /** @type {any} */ (parsed.result);
+      const fields = node && node.valueBlock && node.valueBlock.value;
+      const id = (fields || []).filter(function (field) {
+        return field.idBlock.tagClass === 3 && field.idBlock.tagNumber === 0;
+      })[0];
+      const view = id && /** @type {any} */ (id.valueBlock).valueHexView;
+      if (view && view.length) {
+        hex = Buffer.from(view).toString('hex');
+      }
+    } catch (e) {
+      log.debug("Caught in authorityHex(): " + ((e && e.message) || e));
+      // No authority key id means the lookup is by subject name alone.
+      hex = '';
+    }
+  }
+  log.debug("Leaving authorityHex().");
+  return hex;
+}
+
+function keyIdsOf(pem) {
+  log.debug("Entering keyIdsOf().");
+  const text = String(pem || '');
+  const cached = anchorKeyIds.get(text);
+  if (cached) {
+    log.debug("Leaving keyIdsOf(). Cached.");
+    return cached;
+  }
+  const read = {
+    ski: hexOfKeyId(extensionBytes(text, '2.5.29.14')),
+    aki: authorityHex(extensionBytes(text, '2.5.29.35'))
+  };
+  anchorKeyIds.set(text, read);
+  log.debug("Leaving keyIdsOf().");
+  return read;
+}
+
+// True when OpenSSL would accept `earlier` as a candidate issuer of `later`:
+// `later` carries no authority key id, or one that names `earlier`'s subject
+// key id (including an earlier anchor that publishes none).
+function nameCollides(earlier, later) {
+  log.debug("Entering nameCollides().");
+  const aki = keyIdsOf(later && later.pem).aki;
+  if (!aki) {
+    log.debug("Leaving nameCollides(). No authority key id.");
+    return true;
+  }
+  const ski = keyIdsOf(earlier && earlier.pem).ski;
+  const collides = !ski || ski === aki;
+  log.debug("Leaving nameCollides(). " + collides);
+  return collides;
+}
+
+// The earliest OTHER anchor OpenSSL would find for this subject. The slice
+// before this row is the lookup order; a row not yet stored is compared with
+// every anchor already held. An unreadable subject is not a collision.
+function earlierSameSubject(described) {
+  log.debug("Entering earlierSameSubject().");
+  const subject = described && described.subject;
+  if (!described || described.readable === false || !subject ||
+      subject === '(unreadable)') {
+    log.debug("Leaving earlierSameSubject(). Unreadable.");
+    return null;
+  }
+  const mine = normalisedFingerprint(described.fingerprint256);
+  const index = anchors.findIndex(function (one) {
+    return normalisedFingerprint(one.fingerprint256) === mine;
+  });
+  const before = index < 0 ? anchors : anchors.slice(0, index);
+  const earlier = before.find(function (one) {
+    return one.readable !== false && one.subject &&
+      one.subject !== '(unreadable)' && one.subject === subject &&
+      normalisedFingerprint(one.fingerprint256) !== mine &&
+      nameCollides(one, described);
+  }) || null;
+  log.debug("Leaving earlierSameSubject()." +
+            (earlier ? " Shadowed." : ""));
+  return earlier;
+}
+
+function collisionWarning(described, earlier) {
+  log.debug("Entering collisionWarning().");
+  log.debug("Leaving collisionWarning().");
+  return 'The subject of ' + described.fingerprint256 + ' (' +
+    described.subject + ') is already held by ' +
+    earlier.fingerprint256 + '. OpenSSL looks an issuer up by that ' +
+    'name, so a certificate this anchor issued does not verify while ' +
+    'the earlier one is installed (STS-TLS-0064). Presenting this ' +
+    'certificate itself still verifies.';
+}
+
+function recordSubjectCollision(anchor, where) {
+  log.debug("Entering recordSubjectCollision().");
+  const earlier = earlierSameSubject(anchor);
+  if (!earlier) {
+    log.debug("Leaving recordSubjectCollision(). None.");
+    return '';
+  }
+  const warning = collisionWarning(anchor, earlier);
+  log.warn(errorCodes.tag('STS-TLS-0064') + 'tls: ' + where + ': ' +
+           warning);
+  log.debug("Leaving recordSubjectCollision(). Shadowed.");
+  return warning;
 }
 
 function addAnchors(text, options) {
@@ -4778,6 +5068,7 @@ function addAnchors(text, options) {
   }
   let added = 0;
   let duplicates = 0;
+  const warnings = [];
   for (const one of described) {
     const already = anchors.some(function (anchor) {
       return anchor.fingerprint256 === one.fingerprint256;
@@ -4787,14 +5078,20 @@ function addAnchors(text, options) {
       continue;
     }
     if (anchors.length >= MAX_ANCHORS) {
-      if (added) applyAnchors();
+      if (added) {
+        applyAnchors();
+      }
       log.debug('Leaving addAnchors(). The truststore is full.');
-      return { added: added, duplicates: duplicates, total: anchors.length,
-        errorCode: 'STS-TLS-0014',
+      const full = { added: added, duplicates: duplicates,
+        total: anchors.length, errorCode: 'STS-TLS-0014',
         error: 'This truststore holds at most ' + MAX_ANCHORS + ' anchors; ' +
           added + ' were added before it filled up. Remove one first — ' +
           'POST /admin-api/tls/trust/remove, or the row button on ' +
           '/admin/tls/trust.' };
+      if (warnings.length) {
+        full.warning = warnings.join(' ');
+      }
+      return full;
     }
     const pushed = Object.assign(one, {
       source: opts.source === 'file' ? 'file' : 'runtime',
@@ -4810,13 +5107,24 @@ function addAnchors(text, options) {
     }
     anchors.push(pushed);
     added += 1;
+    const collision = recordSubjectCollision(pushed, 'a runtime add');
+    if (collision) {
+      warnings.push(collision);
+    }
     log.info('tls: trusting client certificates issued by ' +
              one.subject + ' (' + one.fingerprint256 + ')');
   }
-  if (added) applyAnchors();
+  if (added) {
+    applyAnchors();
+  }
   log.debug('Leaving addAnchors(). added=' + added + ' duplicates=' +
             duplicates);
-  return { added: added, duplicates: duplicates, total: anchors.length };
+  const result = { added: added, duplicates: duplicates,
+                   total: anchors.length };
+  if (warnings.length) {
+    result.warning = warnings.join(' ');
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -4889,8 +5197,7 @@ function removeAnchor(fingerprint) {
 // what a page says without changing what a handshake reads.
 function publicAnchor(anchor) {
   log.debug("Entering publicAnchor().");
-  log.debug("Leaving publicAnchor().");
-  return {
+  const row = {
     subject: anchor.subject, issuer: anchor.issuer, serial: anchor.serial,
     notBefore: anchor.notBefore, notAfter: anchor.notAfter,
     fingerprint256: anchor.fingerprint256, ca: !!anchor.ca,
@@ -4905,6 +5212,14 @@ function publicAnchor(anchor) {
     persisted: anchor.source === 'file' ? true : !!anchor.stored,
     addedAt: anchor.addedAt || '', pem: anchor.pem
   };
+  // The earlier anchor the name lookup hits (#1242). Omitted when this row
+  // is that anchor, or when the key identifiers tell the two apart.
+  const earlier = earlierSameSubject(anchor);
+  if (earlier) {
+    row.shadowedBy = earlier.fingerprint256;
+  }
+  log.debug("Leaving publicAnchor().");
+  return row;
 }
 
 function listAnchors() {
@@ -5106,6 +5421,8 @@ function reloadStoredAnchors() {
                'is one the admission rule refuses, and it is kept: ' +
                refused.why);
     }
+    recordSubjectCollision(anchors[anchors.length - 1],
+                           'a stored anchor restored');
     added += 1;
   });
   if (added || removed) {
@@ -6262,6 +6579,8 @@ let anchorsFileReport = { file: '', loaded: 0 };
       // row from here comes back at the next start however it is removed.
       anchors.push(Object.assign(described, {
         source: 'file', addedAt: new Date().toISOString() }));
+      recordSubjectCollision(anchors[anchors.length - 1],
+                             'tls.trustAnchorsFile');
     }
   });
   if (found.length > MAX_ANCHORS) {

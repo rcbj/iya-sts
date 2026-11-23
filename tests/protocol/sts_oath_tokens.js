@@ -270,9 +270,22 @@ async function test() {
               hotpPolicy.detail);
     const listed = await send("GET", OPERATION + "/oath?q=" +
                               encodeURIComponent(serial));
-    await send("POST", "/admin-api/users/create", { json: {
+    // THE PERSON HOLDS EVERY ATTRIBUTE THE DEFAULT ATTRIBUTE POLICY
+    // REQUIRES (#396): uid, cn and sn always, givenName and mail by default.
+    // Product mode refuses a create without them (STS-LDAP-0162), and the
+    // single-node, mariadb and cells stacks run product mode, so with cn
+    // and sn alone the create was refused there and every assignment below
+    // answered "There is nobody called ..." (run 45143091785). Memory mode
+    // is development, which does not ask, and passed. The create is now
+    // checked, so a refusal is reported as the create's and not as the
+    // assignment's.
+    const created = await send("POST", "/admin-api/users/create", { json: {
       username: person, invent: false,
-      attributes: { cn: "OATH " + person, sn: person } } });
+      attributes: { cn: "OATH " + person, sn: person, givenName: "OATH",
+                    mail: person + "@oath-tokens.example.net" } } });
+    assert.ok(created.status === 200 || created.status === 201,
+              "creating " + person + " answered " + created.status + " " +
+              created.raw.slice(0, 300));
     const assigned = await send("POST", OPERATION + "/assign-oath",
       { json: { key: tokenKey, username: person } });
     const again = await send("POST", OPERATION + "/assign-oath",

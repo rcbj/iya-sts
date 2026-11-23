@@ -100,8 +100,8 @@
     "text": "partial：存取評估 API（第 6 節），由 XACML 引擎依據領域根原則、透過每個領域的屬性目錄作出決定，支援 X-Request-ID 與第 11.3 節的挑戰；存取批次評估 API（第 7 節）及其三種語意；PDP 中繼資料（第 9 節）的兩種形式，包括 signed_metadata；供宣告類型之 PEP 使用的 Obligations Profile 草案；以及針對本服務自有的人員、應用程式、API、委派關係與原則動作的三個搜尋 API（第 8 節），分頁且不具傳遞性。尚缺：搜尋中逐結果的 obligations，以及仍為草案的 OAuth 設定檔。"
   },
   "stsmetadata.specs.authzen-arap.coverage": {
-    "en": "e785acbe5ead52ad",
-    "text": "partial：可請求的拒絕（context.access_request、evaluation_id、evaluated_at、reason），即領域原則以 access-request advice 標記的 Deny，依值繫結，使用本領域簽署的 binding_token（內嵌宣告）；帶 Idempotency-Key 的提交，201 或 202 以及 Task Handle；帶 Retry-After 的工作狀態端點；透過 POST 或 DELETE 取消；六種狀態；reevaluate 完成模式，approval.id 在可信狀態中解析，核准作為可信事實到達原則；next_action 及五種 reason；每種 problem 類型；中繼資料成員、jwks_uri 與能力。尚缺：以參照方式繫結的 evaluation_id、approval.state、雜湊繫結形式、機器可讀形式（form_url、request_schema_url）、display，以及 BULK、ACTOR 與 CATALOG 配套規範。"
+    "en": "6be544a62f94329b",
+    "text": "partial：可申請的拒絕（context.access_request、evaluation_id、evaluated_at、reason），即領域政策以 access-request 建議標記的 Deny，透過本領域簽署的 binding_token 依值綁定（內嵌宣告與 binding_hash），並透過拒絕記錄依參照綁定；帶 Idempotency-Key 的提交、201 或 202 及 Task Handle；帶 Retry-After 的任務狀態端點；以 POST 或 DELETE 取消；六種狀態；reevaluate 完成模式、在受信任狀態中解析的 approval.id、簽發並驗證的 approval.state（仍須查找），以及以受信任事實送達政策的核准；next_action 與五種原因；每種問題類型；中繼資料成員、jwks_uri 與能力；可申請拒絕上的 request_schema_url，即同源的提交選用補充內容的 JSON Schema。缺少：託管表單（form_url）與 display，以及 BULK、ACTOR 與 CATALOG 配套規範。"
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
     "en": "ca5109eae0e95b17",
@@ -878,6 +878,10 @@
   "stsmetadata.endpoints./access/v1/access-requests.what": {
     "en": "15c0d860d27c7cbe",
     "text": "提交一個被拒絕的評估的主體、資源、動作與內容，並附上其收到的拒絕（其 binding_token 與 expires_at，原樣回傳）；得到 202 與 Task Handle，或在立即作出決定時（原則允許的緊急存取）得到 201 及結果。只有被領域原則以 advice urn:sts:xacml:advice:access-request 標記的 Deny 才可請求。與評估相同的呼叫端入口與 AUTHZEN_PEPS；依呼叫端遵守 Idempotency-Key；回呼僅發往為該呼叫端註冊的 URL。每次拒絕都是 problem+json。"
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/schema.what": {
+    "en": "ec6a3b36123f646a",
+    "text": "GET 提交可加入的補充內容的 JSON Schema（draft 2020-12）：context.business_justification，以及 requested_access.requested_until 和 emergency，後者須附理由。公開，與 access_request_endpoint 同源；可申請拒絕的 request_schema_url 指向它。不託管任何表單，因此任何拒絕都不帶 form_url。API 或該設定檔關閉時回應 501。在任務狀態路徑之前註冊，否則後者會把「schema」當作 id。"
   },
   "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
     "en": "264083b977756230",
@@ -2220,12 +2224,12 @@
     "text": "NON-SPEC (#1955 P4)。管理員從供應商 PSKC 種子檔案匯入的 HOTP 與 TOTP 權杖，包括未指派、已指派或已停用者，可分頁並依序號或人員搜尋。絕不包含密鑰。對應 GET /admin/hardware-tokens（其 OATH 分頁）。"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-"en": "cdbf34a1fbdf290e",
-"text": "NON-SPEC（#1955）。lost，帶 { key }：權杖被標記為遺失，其上的每個通行金鑰被移除，其上的每張憑證因 keyCompromise 被撤銷，為每項傳送 CAEP credential-change，並結束它們登入的工作階段。enrol-piv，帶 { username, profile, csr, attestationCertificate?, attestationIssuer? }：透過 EST 簽發 CA 為此人簽發 PIV 槽憑證，驗證其 YubiKey PIV 證明並記錄該 YubiKey。recover-key，帶 { username, serial }：此人託管的 piv-key-management 金鑰，存取控制原則只允許 PIV_KEY_RECOVERY 在近期登入後取得。revoke-ssh，帶 { username, serial }：撤銷此人的 SSH 使用者憑證並將其列入領域的 KRL。該頁面上主控台的四個動作。"
+    "en": "cdbf34a1fbdf290e",
+    "text": "NON-SPEC（#1955）。lost，帶 { key }：權杖被標記為遺失，其上的每個通行金鑰被移除，其上的每張憑證因 keyCompromise 被撤銷，為每項傳送 CAEP credential-change，並結束它們登入的工作階段。enrol-piv，帶 { username, profile, csr, attestationCertificate?, attestationIssuer? }：透過 EST 簽發 CA 為此人簽發 PIV 槽憑證，驗證其 YubiKey PIV 證明並記錄該 YubiKey。recover-key，帶 { username, serial }：此人託管的 piv-key-management 金鑰，存取控制原則只允許 PIV_KEY_RECOVERY 在近期登入後取得。revoke-ssh，帶 { username, serial }：撤銷此人的 SSH 使用者憑證並將其列入領域的 KRL。該頁面上主控台的四個動作。"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
     "en": "f5b724d2c79b5f74",
-"text": "回報硬體權杖遺失並撤回其憑證資料、簽發 PIV 槽憑證、交出託管金鑰，或撤銷某人的 SSH 憑證"
+    "text": "回報硬體權杖遺失並撤回其憑證資料、簽發 PIV 槽憑證、交出託管金鑰，或撤銷某人的 SSH 憑證"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -3131,19 +3135,19 @@
     "en": "9547cda6898c37a6",
     "text": "在登入後要求一個後量子密碼金鑰，然後建立其暫扣的單一登入工作階段"
   },
-"stsmetadata.endpoints./wsapi/2.0/verify.what": {
+  "stsmetadata.endpoints./wsapi/2.0/verify.what": {
     "en": "ff0550a4318594c6",
     "text": "YUBICO 驗證協定 2.0（#1955 P5）。id、otp、nonce 和 h 的 GET 或 POST。預設關閉：路由回應 OPERATION_NOT_ALLOWED 且不簽章。開啟後，在包括開發模式在內的每種模式下核對用戶端 id 與 HMAC-SHA1；nonce 保留五分鐘；相符的 OTP 被消耗。Cache-Control: no-store。不向 YubiCloud 傳送任何內容。"
   },
-"stsmetadata.endpoints./wsapi/2.0/verify.effect": {
+  "stsmetadata.endpoints./wsapi/2.0/verify.effect": {
     "en": "bb2bc4011c8240ac",
     "text": "為簽署了要求的用戶端核對 YubiKey OTP，或在 yubiotp.ykval 關閉時回應 OPERATION_NOT_ALLOWED"
   },
-"stsmetadata.endpoints./authn/roles.what": {
+  "stsmetadata.endpoints./authn/roles.what": {
     "en": "88814e89f81f8d86",
     "text": "可動態選擇的角色（#1072）。完成所有驗證因素後，對於其領域定義了動態角色的應用程式（除非 roles.dynamicSelection 或應用程式的 appDynamicRoleSelection 將其關閉），登入會被暫停，同時為此人判定每個動態角色自身的 XACML 資格政策；只有 Permit 才會提供角色。如果此人勾選了「為此次登入選擇角色」，或者提供了必選角色，此頁面會列出可選的角色；「繼續」（/authn-api/mfa/{id}/roles）會將選擇與該步驟的提供內容以及政策再次核對，然後啟動工作階段，並將選擇記錄在工作階段記錄中，絕不寫入目錄。之後該應用程式的權杖會攜帶所選角色，每次簽發時都會再次依其政策判定。需要由被暫停的登入產生的 ?mfa= 識別碼；直接造訪會回傳 400。"
   },
-"stsmetadata.endpoints./authn/roles.effect": {
+  "stsmetadata.endpoints./authn/roles.effect": {
     "en": "fc2116e31d3ead37",
     "text": "詢問此次登入要使用哪些可動態選擇的角色，然後以該選擇啟動被暫停的工作階段"
   },
@@ -4204,8 +4208,8 @@
     "text": "partial：登記時以及使用已儲存金鑰時的 ML-DSA-65+Ed25519 與 ML-DSA-87+Ed448 簽章，以及 ML-KEM-768+X25519 與 ML-KEM-1024+X448 加密。複合演算法計為後量子。openpgp.pqcOnly 只收窄登記。簽章的兩個部分由 common/crypto_impl/openpgp_pqc.js 核驗。缺少：SLH-DSA（演算法識別碼 32-34），且本服務不產生 RFC 9980 金鑰。openpgp.js 不解析這些金鑰。"
   },
   "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
-    "en": "e83d747632c38b14",
-    "text": "NON-SPEC（#1955 P3）：領域範圍的 OpenSSH 使用者 CA 金鑰，以 authorized-key 行發布，供 SSH 伺服器信任。無閘控且 `no-store`，僅在主連接埠提供：明文 HTTP 撤銷監聽器拒絕它，因為該金鑰是信任錨。對應的 CA 私密金鑰從不離開本服務。"
+    "en": "c6a8759e4a5e40c9",
+    "text": "NON-SPEC（#1955 P3）：領域範圍的 OpenSSH 使用者 CA 金鑰，以 authorized-key 行發布，供 SSH 伺服器信任。帶 `?algorithm=ssh-mldsa-65` 時改為回傳該領域的 ML-DSA 簽發機構，標準 OpenSSH 目前尚無法驗證它。無閘控且 `no-store`，僅在主連接埠提供：明文 HTTP 撤銷監聽器拒絕它，因為該金鑰是信任錨。對應的 CA 私密金鑰從不離開本服務。"
   },
   "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
     "en": "2e4cdead67408937",

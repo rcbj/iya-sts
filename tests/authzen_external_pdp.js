@@ -12,7 +12,10 @@
 //
 //   * An injected dial. The switch off dials nothing. The batch is the
 //     worked example. A false subject or party gate is 0125. A false
-//     scope, granted_scope and token_lifetime only narrow. A timeout, a
+//     scope, granted_scope and token_lifetime only narrow. A refused gate
+//     is invalid_target for a named audience and invalid_grant for an
+//     exchange naming none, which is asked about the AS's issuer. A
+//     timeout, a
 //     non-2xx and outbound off are 0124. A bad body is 0126. A missing
 //     certificate is 0127 and is not dialled. http, userinfo, a query and
 //     a fragment are 0123 and are not dialled.
@@ -21,7 +24,9 @@
 //     120 seconds, the setting is then raised to 3600, and the exchanged
 //     token lives about the subject token's remaining life. A closed port
 //     is 503 and STS-AUTHZEN-0124, in development, where the local
-//     issuance policy would still have issued.
+//     issuance policy would still have issued. An exchange naming no
+//     audience is decided, and a capped exchange carries no refresh
+//     token (#1200's review).
 
 const childProcess = require('child_process');
 const fs = require('fs');
@@ -392,14 +397,15 @@ async function unitFindings() {
   const refusedOut = await refused.pdp.consult(workedInput());
   note(rows, refusedOut.ok === false &&
        refusedOut.code === 'STS-AUTHZEN-0125' && refusedOut.status === 400 &&
-       refusedOut.error === 'invalid_request' &&
+       refusedOut.error === 'invalid_target' &&
        refusedOut.description === REFUSED &&
        refusedOut.description.indexOf('STS-') < 0 &&
        refusedOut.description.indexOf(GATE) < 0 &&
        refusedOut.description.indexOf('https://') < 0 &&
        refused.infos.join(' ').indexOf(GATE) < 0,
-       'a false subject gate is 0125 and wins over a narrowing; the ' +
-       'client is told neither the gate nor the code',
+       'a false subject gate for a named audience is 0125, ' +
+       'invalid_target (RFC 8693 section 2.2.2), and wins over a ' +
+       'narrowing; the client is told neither the gate nor the code',
        JSON.stringify(refusedOut) + ' ' + refused.infos.join(' | '));
 
   const party = harness(Ctor, {
@@ -414,6 +420,31 @@ async function unitFindings() {
   const partyOut = await party.pdp.consult(workedInput());
   note(rows, partyOut.code === 'STS-AUTHZEN-0125' && partyOut.status === 400,
        'a false requesting-party gate is 0125', JSON.stringify(partyOut));
+
+  const untargeted = Object.assign(workedInput(), {
+    audiences: [], defaultTarget: 'https://as.example/realm/azext' });
+  const untargetedBuilt = Ctor.batchOf(untargeted);
+  const noTarget = harness(Ctor, {
+    reply: function (url, options) {
+      return permit(options.body, function (one, index) {
+        if (index === 0) {
+          one.decision = false;
+        }
+      });
+    }
+  });
+  const noTargetOut = await noTarget.pdp.consult(untargeted);
+  note(rows, untargetedBuilt.body.resource.id ===
+         'https://as.example/realm/azext' &&
+       untargetedBuilt.body.evaluations[2].resource.id ===
+         'https://as.example/realm/azext' &&
+       noTargetOut.code === 'STS-AUTHZEN-0125' &&
+       noTargetOut.error === 'invalid_grant',
+       'an exchange naming no audience is asked about the authorization ' +
+       'server\'s issuer, never an empty id, and its refusal is ' +
+       'invalid_grant',
+       JSON.stringify({ body: untargetedBuilt.body.resource,
+                        out: noTargetOut }));
 
   const narrowed = harness(Ctor, {
     reply: function (url, options) {
@@ -588,7 +619,8 @@ async function unitFindings() {
   });
   note(rows, noParty.body.resource.id === '' &&
        noParty.items.length === 2 && noParty.items[0].kind === 'subject',
-       'no audience is one gate whose resource id is empty',
+       'no audience and no defaultTarget (a caller other than the token ' +
+       'endpoint, which always passes one) is one gate, id empty',
        JSON.stringify(noParty.body.resource));
 
   const two = {
@@ -854,7 +886,7 @@ async function childBody() {
       fields: {
         oauthClientId: 'azext-as', oauthClientSecret: secret,
         oauthTokenEndpointAuthMethod: 'client_secret_post',
-        oauthGrantType: ['password', EXCHANGE]
+        oauthGrantType: ['password', EXCHANGE, 'refresh_token']
       }
     });
     note(rows, client && client.ok !== false,
@@ -902,6 +934,40 @@ async function childBody() {
          exchanged.status + ' life ' + life + ' left ' + left + ' ' +
          exchanged.text.slice(0, 400) + ' marks ' +
          marks.slice(before).join(','));
+    // THIS SERVICE'S OWN DIRECTION-A PDP, asked about an exchange naming
+    // no audience (#1200's review): the gate's resource is the
+    // authorization server's issuer, which the PDP decides, rather than
+    // '', which it answered as an item error.
+    const untargetedAt = marks.length;
+    const untargeted = await postForm(port, '/oauth2/token', Object.assign({
+      grant_type: EXCHANGE, subject_token: subject,
+      subject_token_type: ACCESS
+    }, auth), serverCa.certPem);
+    note(rows, untargeted.status === 200 && !!untargeted.json.access_token &&
+         marks.slice(untargetedAt).indexOf('STS-AUTHZEN-0126') < 0 &&
+         marks.slice(untargetedAt).indexOf('STS-AUTHZEN-0124') < 0,
+         'an exchange naming no audience is decided by this service\'s ' +
+         'own PDP, not refused as an item error',
+         untargeted.status + ' ' + untargeted.text.slice(0, 400) +
+         ' marks ' + marks.slice(untargetedAt).join(','));
+    // THE CAP REACHES A REFRESH TOKEN TOO (#1200's review): an exchange the
+    // PDP capped is issued none, though one was asked for.
+    const refreshAsked = await postForm(port, '/oauth2/token',
+      Object.assign({
+        grant_type: EXCHANGE, subject_token: subject,
+        subject_token_type: ACCESS, audience: AUDIENCE,
+        requested_token_type: 'urn:ietf:params:oauth:token-type:' +
+                              'refresh_token'
+      }, auth), serverCa.certPem);
+    const refreshMinted = claimsOf(refreshAsked.json.access_token);
+    const refreshLife = refreshMinted
+      ? refreshMinted.exp - refreshMinted.iat : 0;
+    note(rows, refreshAsked.status === 200 && !!refreshMinted &&
+         refreshLife < 600 && !refreshAsked.json.refresh_token,
+         'an exchange the external PDP capped carries no refresh token, ' +
+         'so the cap cannot be outlived by renewing it',
+         refreshAsked.status + ' life ' + refreshLife + ' ' +
+         refreshAsked.text.slice(0, 400));
     const faultAt = marks.length;
     const closed = config.setOverride('authzen.externalPdpUrl',
       'https://127.0.0.1:1' + PREFIX + '/access/v1/evaluations');

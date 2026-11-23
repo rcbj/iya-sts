@@ -360,8 +360,8 @@
     "text": "Isang row bawat pisikal na hardware token (isang YubiKey, isang smart card) sa realm na ito, naka-key ayon sa vendor at serial: sino ang may hawak, ang modelo nito at ang mga credential dito. Naitatala lamang ang serial mula sa attestation. Hindi kailanman isang lihim."
   },
   "caches.store.hardware_tokens.register.bound": {
-    "en": "260467c777c74957",
-    "text": "Ang mga row na hawak ng isang proseso ay cache na 5,000 bawat realm; ang rehistro mismo ay nililimitahan ng mga credential na inililista nito (webauthn.maxKeysPerPerson para sa FIDO)."
+    "en": "b2eadcf654a8cb28",
+    "text": "Ipinapatupad: ang mga row na hawak ng isang proseso ay isang cache na 5,000 bawat realm; itinatapon ang pinakaluma at binabasang muli mula sa store kapag hiningi ulit; ang register mismo ay may hangganan ayon sa mga credential na nakalista rito (webauthn.maxKeysPerPerson para sa FIDO)."
   },
   "caches.store.hardware_tokens.register.lifetime": {
     "en": "c18bfda6fa452b2b",
@@ -728,8 +728,8 @@
     "text": "Isang row bawat HOTP o TOTP key na in-import ng administrator mula sa PSKC seed file ng vendor (RFC 6030), naka-key ayon sa vendor, serial at key id: hindi naka-assign (naka-seal ang secret nito), naka-assign sa isang tao (inalis ang secret, nasa entry na niya ngayon) o retirado."
   },
   "caches.store.oath_tokens.inventory.bound": {
-    "en": "cbe61377f99c025d",
-    "text": "Ang mga row na hawak ng isang process ay cache ng 5,000 bawat realm; ang inventory ay nalilimitahan ng ini-import ng mga administrator, hanggang 2,000 key bawat file."
+    "en": "c93f702fb2bd8e60",
+    "text": "Ipinapatupad: ang mga row na hawak ng isang proseso ay isang cache na 5,000 bawat realm; itinatapon ang pinakaluma at binabasang muli mula sa store kapag hiningi ulit; ang imbentaryo ay may hangganan ayon sa ini-import ng mga administrator, hanggang 2,000 key bawat file."
   },
   "caches.store.oath_tokens.inventory.lifetime": {
     "en": "4f13467dac65d62f",
@@ -1148,8 +1148,8 @@
     "text": "Isang challenge bawat taong nagrerehistro ng OpenPGP key: ang text na pinipirmahan niya gamit ang gpg --clearsign, ang nonce nito at kung kailan ito mag-e-expire. Isang beses lang ginagamit, sa pamamagitan ng cluster claim sa nonce."
   },
   "caches.store.openpgp.challenges.bound": {
-    "en": "70f8ecd02c4392d1",
-    "text": "Isa bawat tao (naka-key sa entryUUID), bawat isa ay para sa openpgp.challengeLifetimeS."
+    "en": "bcb019b421b3e33e",
+    "text": "Ipinapatupad: ang mga challenge na hawak ng isang proseso ay isang cache na 5,000 bawat realm; itinatapon ang pinakaluma at binabasang muli mula sa store kapag hiningi ulit; may hawak ang store na isa bawat tao (naka-key sa entryUUID), bawat isa ay para sa openpgp.challengeLifetimeS."
   },
   "caches.store.openpgp.wkd.title": {
     "en": "dc47d455d5283de5",
@@ -1160,8 +1160,8 @@
     "text": "Kung aling OpenPGP key ang isinasagot ng Web Key Directory para sa bawat hashed address: ang may hawak (isang entryUUID) at ang fingerprint na inilathala niya. Isang pointer: ang key mismo ay binabasa mula sa entry. Hindi kailanman secret."
   },
   "caches.store.openpgp.wkd.bound": {
-    "en": "e8a7abbcc8bba7fc",
-    "text": "Ang mga row na hawak ng isang process ay cache na 5,000 bawat realm; ang register ay may isang row bawat taong pumayag."
+    "en": "67c6603e0b96fd95",
+    "text": "Ipinapatupad: ang mga row na hawak ng isang proseso ay isang cache na 5,000 bawat realm; itinatapon ang pinakaluma at binabasang muli mula sa store kapag hiningi ulit; may hawak ang register na isang row bawat taong pumayag."
   },
   "caches.store.openpgp.wkd.lifetime": {
     "en": "06861887c7e6c8f1",
@@ -1692,8 +1692,8 @@
     "text": "Isang row bawat YubiKey OTP na in-import ng administrator mula sa isang CSV, naka-key ayon sa serial: hindi naka-assign (naka-seal ang AES key nito), naka-assign sa isang tao (inalis ang secret, nasa entry na niya ngayon) o retirado."
   },
   "caches.store.yubiotp.inventory.bound": {
-    "en": "9f558f556a019acc",
-    "text": "Ang mga row na hawak ng isang process ay cache ng 5,000 bawat realm."
+    "en": "1b2409611ca2ae53",
+    "text": "Ipinapatupad: ang mga row na hawak ng isang proseso ay isang cache na 5,000 bawat realm; itinatapon ang pinakaluma at binabasang muli mula sa store kapag hiningi ulit."
   },
   "caches.store.yubiotp.inventory.lifetime": {
     "en": "4f13467dac65d62f",

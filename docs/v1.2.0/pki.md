@@ -129,13 +129,30 @@ own wire name for a raw ML-DSA-65 public key and signature, in the shape
 `ssh-ed25519` uses. It is a second authority and is left off that line. The
 ML-DSA authority is created only when this runtime can generate the key.
 When it cannot, new certificates stay classical and the failure is recorded
-(`STS-PKI-0290`).
+(`STS-PKI-0290`), unless `pki.sshUserCaPqcOnly` is on.
+
+**Stock OpenSSH cannot verify an ML-DSA certificate yet.** No released
+`sshd` knows `ssh-mldsa-65`, so a certificate signed by the ML-DSA
+authority is accepted only by an SSH server built to verify it. The
+ML-DSA authority's public key is published beside the classical one:
+
+```
+GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65
+```
+
+It answers one `ssh-mldsa-65` line, `no-store`, or 404 (`STS-PKI-0298`)
+when the realm has no ML-DSA authority. Any other `algorithm` value is
+refused with 400. Do not add that line to a stock OpenSSH
+`TrustedUserCAKeys` file; keep the classical line there.
 
 `pki.sshUserCaPqcOnly` (`STS_PKI_SSH_USER_CA_PQC_ONLY`, off by default)
-signs a new certificate with the ML-DSA authority when that authority
-exists, and leaves the published line classical. On a runtime that cannot
-generate ML-DSA the certificate stays classical and the request still
-succeeds. Certificates already issued keep verifying.
+signs a new certificate with the ML-DSA authority and nothing else. Turn
+it on only when every SSH server that must accept these certificates can
+verify ML-DSA. When the realm has no ML-DSA authority (this runtime cannot
+generate ML-DSA, or `ssh-mldsa-65` is not in `pki.sshUserCaAlgorithms`),
+the request is refused with HTTP 503 (`STS-PKI-0297`). No classical
+certificate is issued in its place. Certificates already issued keep
+verifying.
 
 `pki.sshUserCaPqcAlongsideClassical`
 (`STS_PKI_SSH_USER_CA_PQC_ALONGSIDE_CLASSICAL`, off by default) issues the
@@ -1956,7 +1973,7 @@ running, on **Protocols → PKI** (`/admin/pki`).
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
 | `pki.sshUserCaAlgorithms` | `STS_PKI_SSH_USER_CA_ALGORITHMS` | `ssh-mldsa-65,ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,rsa-sha2-256,rsa-sha2-512` | yes | Which algorithms the SSH user CA may sign with, in preference order. Each name is a checkbox and an order number. The published `TrustedUserCAKeys` line is the first classical name, or `ssh-ed25519` when the list names only `ssh-mldsa-65`. `ssh-mldsa-65` is a second authority and is left off that line. `ssh-rsa` (SHA-1) is absent. |
-| `pki.sshUserCaPqcOnly` | `STS_PKI_SSH_USER_CA_PQC_ONLY` | `false` | yes | A new certificate is signed by the ML-DSA authority when that authority exists. The published line stays classical. Cannot be on while `pki.sshUserCaPqcAlongsideClassical` is on (`STS-PKI-0296`). |
+| `pki.sshUserCaPqcOnly` | `STS_PKI_SSH_USER_CA_PQC_ONLY` | `false` | yes | A new certificate is signed by the ML-DSA authority only. Stock OpenSSH cannot verify it yet. Without an ML-DSA authority the request is refused (`STS-PKI-0297`). The default published line stays classical; the ML-DSA key is at `?algorithm=ssh-mldsa-65`. Cannot be on while `pki.sshUserCaPqcAlongsideClassical` is on (`STS-PKI-0296`). |
 | `pki.sshUserCaPqcAlongsideClassical` | `STS_PKI_SSH_USER_CA_PQC_ALONGSIDE_CLASSICAL` | `false` | yes | A new certificate is issued twice when the ML-DSA authority exists: the classical certificate and an ML-DSA certificate beside it. Cannot be on while `pki.sshUserCaPqcOnly` is on (`STS-PKI-0296`). |
 | `pki.sshSoftwareLifetimeSeconds` | `STS_PKI_SSH_SOFTWARE_LIFETIME_SECONDS` | `300` | yes | The longest lifetime, in seconds, an SSH user certificate may be issued with for a key no verified hardware evidence covers: a plain key, or an sk- security key sent without a trusted attestation. The request may ask for less. Five minutes by default. |
 | `pki.sshHardwareLifetimeSeconds` | `STS_PKI_SSH_HARDWARE_LIFETIME_SECONDS` | `3600` | yes | The longest lifetime, in seconds, an SSH user certificate may be issued with for a key verified hardware evidence covers: an sk- security key whose attestation verified and is trusted, or a key an attested PIV certificate certifies. The request may ask for less. One hour by default, which is also the most. |

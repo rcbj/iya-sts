@@ -254,6 +254,33 @@
       "code": "STS-AUTHZEN-0011"
     },
     {
+      "what": "C15d. context.supported_obligations is the Obligations Profile's declaration, not a catalogue property (#1177)",
+      "value": {
+        "object": "context",
+        "property": "supported_obligations",
+        "attributeId": "urn:example:obligations"
+      },
+      "code": "STS-AUTHZEN-0011"
+    },
+    {
+      "what": "C15e. context.approval is an access request's approval, recognized and not a trusted fact (#1180)",
+      "value": {
+        "object": "context",
+        "property": "approval",
+        "attributeId": "urn:example:approval"
+      },
+      "code": "STS-AUTHZEN-0011"
+    },
+    {
+      "what": "C15f. and so is a path under it, context.approval.id",
+      "value": {
+        "object": "context",
+        "property": "approval.id",
+        "attributeId": "urn:example:approval-id"
+      },
+      "code": "STS-AUTHZEN-0011"
+    },
+    {
       "what": "C16. a bare directory name in a subject category",
       "value": {
         "object": "subject",
@@ -1528,6 +1555,113 @@
         }
       },
       "code": "STS-AUTHZEN-0004"
+    },
+    {
+      "what": "V31. context.supported_obligations is supplied and mapped to no attribute (#1177)",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        },
+        "context": {
+          "supported_obligations": [
+            "step-up"
+          ]
+        }
+      },
+      "code": "",
+      "supplied": [
+        "subject.type",
+        "subject.id",
+        "action.name",
+        "resource.type",
+        "resource.id",
+        "context.supported_obligations"
+      ],
+      "attributes": []
+    },
+    {
+      "what": "V32. context.supported_obligations must be an array of type names",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        },
+        "context": {
+          "supported_obligations": "step-up"
+        }
+      },
+      "code": "STS-AUTHZEN-0003"
+    },
+    {
+      "what": "V33. context.approval is supplied and mapped to no attribute; an extra member is ignored (#1180)",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        },
+        "context": {
+          "application": "portal",
+          "approval": {
+            "id": "t1",
+            "state": "signed"
+          }
+        }
+      },
+      "code": "",
+      "supplied": [
+        "subject.type",
+        "subject.id",
+        "action.name",
+        "resource.type",
+        "resource.id",
+        "context.application",
+        "context.approval"
+      ],
+      "attributes": []
+    },
+    {
+      "what": "V34. context.approval without an id is the field's refusal",
+      "body": {
+        "subject": {
+          "type": "user",
+          "id": "alice"
+        },
+        "action": {
+          "name": "read"
+        },
+        "resource": {
+          "type": "document",
+          "id": "doc-1"
+        },
+        "context": {
+          "approval": {
+            "state": "signed"
+          }
+        }
+      },
+      "code": "STS-AUTHZEN-0003"
     }
   ]
 }

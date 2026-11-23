@@ -100,8 +100,8 @@
     "text": "partial: واجهة Access Evaluation API (القسم 6)، يقررها محرك XACML مقابل سياسة الجذر لنطاق الثقة عبر فهرس سمات لكل نطاق ثقة، مع X-Request-ID وتحدي القسم 11.3، وواجهة Access Evaluations API (القسم 7) بدلالاتها الثلاث، وبيانات PDP الوصفية (القسم 9) في شكليها كليهما بما في ذلك signed_metadata، ومسودة Obligations Profile لـ PEP يصرّح بالأنواع، وواجهات Search API الثلاث (القسم 8) على أشخاص هذه الخدمة وتطبيقاتها وواجهاتها وعلاقات التفويض وإجراءات السياسة، مرقَّمة الصفحات وغير متعدية. الناقص: الالتزامات لكل نتيجة في بحث، وملف OAuth، وهو ما زال مسودة."
   },
   "stsmetadata.specs.authzen-arap.coverage": {
-    "en": "e785acbe5ead52ad",
-    "text": "partial: الرفض القابل للطلب (context.access_request وevaluation_id وevaluated_at وreason) حيث تعلّم سياسة نطاق الثقة قرار Deny بنصح طلب الوصول، مربوطاً بالقيمة برمز binding_token يوقّعه نطاق الثقة هذا (المطالبات المضمَّنة)؛ والتقديم مع Idempotency-Key والاستجابة 201 أو 202 ومقبض Task Handle؛ ونقطة نهاية حالة المهمة مع Retry-After؛ والإلغاء بـ POST أو DELETE؛ والحالات الست؛ ووضع الإكمال reevaluate، مع حل approval.id في حالة موثوقة ووصول الاعتماد إلى السياسة بوصفها وقائع موثوقة؛ وnext_action والأسباب الخمسة؛ وكل نوع مشكلة؛ وعضو البيانات الوصفية وjwks_uri وcapability. الناقص: evaluation_id بوصفه ربطاً بالمرجع، وapproval.state، وشكل الربط المُجزَّأ، والأشكال المقروءة آلياً (form_url وrequest_schema_url) وdisplay، ومرافقات BULK وACTOR وCATALOG."
+    "en": "6be544a62f94329b",
+    "text": "partial: الرفض القابل للطلب (context.access_request وevaluation_id وevaluated_at وreason) حيث تضع سياسة النطاق علامة على Deny باستخدام نصيحة access-request، مربوطًا بالقيمة عبر binding_token يوقعه هذا النطاق (مطالبات مضمنة وbinding_hash) وبالمرجع من سجل الرفض؛ والطلب مع Idempotency-Key و201 أو 202 وTask Handle؛ ونقطة نهاية حالة المهمة مع Retry-After؛ والإلغاء عبر POST أو DELETE؛ والحالات الست؛ ووضع الإكمال reevaluate، وapproval.id المحلول في حالة موثوقة، وapproval.state الصادر والمتحقق منه مع بقاء البحث مطلوبًا، ووصول الموافقة إلى السياسة كحقائق موثوقة؛ وnext_action والأسباب الخمسة؛ وكل نوع مشكلة؛ وعضو البيانات الوصفية وjwks_uri والقدرة؛ وrequest_schema_url على الرفض القابل للطلب، أي مخطط JSON Schema من الأصل نفسه لإضافات الطلب الاختيارية. الناقص: نموذج مستضاف (form_url) وdisplay، والمرافقات BULK وACTOR وCATALOG."
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
     "en": "ca5109eae0e95b17",
@@ -878,6 +878,10 @@
   "stsmetadata.endpoints./access/v1/access-requests.what": {
     "en": "15c0d860d27c7cbe",
     "text": "أرسِل POST لموضوع تقييم مرفوض ومورده وإجرائه وسياقه مع الرفض الذي تلقاه (binding_token وexpires_at، يُعادان بلا تغيير)؛ لتحصل على 202 ومقبض مهمة Task Handle، أو على 201 مع النتيجة حين يُقرَّر فورًا (وصول طارئ تسمح به السياسة). لا يُطلب إلا رفض Deny وسمته سياسة نطاق الثقة بالنصيحة urn:sts:xacml:advice:access-request. باب المستدعي نفسه وAUTHZEN_PEPS كما في التقييم؛ يُحترَم Idempotency-Key لكل مستدعٍ؛ واستدعاء راجع فقط إلى URL مسجَّل للمستدعي. كل رفض بصيغة problem+json."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/schema.what": {
+    "en": "ec6a3b36123f646a",
+    "text": "GET لمخطط JSON Schema (draft 2020-12) للإضافات التي يجوز أن يضيفها الطلب: context.business_justification، وrequested_access.requested_until وemergency، والأخير يتطلب المبرر. عام، من الأصل نفسه لـ access_request_endpoint؛ ويشير إليه request_schema_url في الرفض القابل للطلب. لا يُستضاف أي نموذج، لذا لا يحمل أي رفض form_url. يجيب 501 ما دامت الواجهة أو الملف التعريفي معطلين. يُسجَّل قبل مسار حالة المهمة، الذي كان سيقرأ \"schema\" معرّفًا لولا ذلك."
   },
   "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
     "en": "264083b977756230",
@@ -2220,12 +2224,12 @@
     "text": "NON-SPEC (#1955 P4). رموز HOTP وTOTP التي استوردها المسؤولون من ملفات بذور PSKC للمورّدين، غير مُسنَدة أو مُسنَدة أو مُوقَفة، مقسّمة إلى صفحات وقابلة للبحث بالرقم التسلسلي أو الشخص. ليست سرًّا أبدًا. تطابق GET /admin/hardware-tokens (علامة تبويب OATH فيها)."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-"en": "cdbf34a1fbdf290e",
-"text": "NON-SPEC (#1955). lost، مع { key }: يُعلَّم الرمز مفقودًا، ويُزال كل مفتاح مرور عليه، وتُبطَل كل شهادة عليه بسبب keyCompromise، ويُرسل CAEP credential-change لكل منها وتُنهى الجلسات التي سجّلت دخولها. enrol-piv، مع { username, profile, csr, attestationCertificate?, attestationIssuer? }: شهادة فتحة PIV تصدر لذلك الشخص عبر جهة الإصدار في EST، مع التحقق من إثبات YubiKey PIV وتسجيل الـ YubiKey. recover-key، مع { username, serial }: مفتاح piv-key-management المودَع لذلك الشخص، الذي لا تسمح به سياسة التحكم في الوصول إلا لـ PIV_KEY_RECOVERY، بعد تسجيل دخول حديث. revoke-ssh، مع { username, serial }: إبطال شهادة مستخدم SSH لذلك الشخص ووضعها في قائمة KRL للنطاق. الإجراءات الأربعة لوحدة التحكم في تلك الصفحة."
+    "en": "cdbf34a1fbdf290e",
+    "text": "NON-SPEC (#1955). lost، مع { key }: يُعلَّم الرمز مفقودًا، ويُزال كل مفتاح مرور عليه، وتُبطَل كل شهادة عليه بسبب keyCompromise، ويُرسل CAEP credential-change لكل منها وتُنهى الجلسات التي سجّلت دخولها. enrol-piv، مع { username, profile, csr, attestationCertificate?, attestationIssuer? }: شهادة فتحة PIV تصدر لذلك الشخص عبر جهة الإصدار في EST، مع التحقق من إثبات YubiKey PIV وتسجيل الـ YubiKey. recover-key، مع { username, serial }: مفتاح piv-key-management المودَع لذلك الشخص، الذي لا تسمح به سياسة التحكم في الوصول إلا لـ PIV_KEY_RECOVERY، بعد تسجيل دخول حديث. revoke-ssh، مع { username, serial }: إبطال شهادة مستخدم SSH لذلك الشخص ووضعها في قائمة KRL للنطاق. الإجراءات الأربعة لوحدة التحكم في تلك الصفحة."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
     "en": "f5b724d2c79b5f74",
-"text": "يبلّغ عن فقدان رمز عتادي ويسحب بيانات اعتماده، أو يصدر شهادة فتحة PIV، أو يسلّم مفتاحًا مودَعًا، أو يبطل شهادة SSH لشخص"
+    "text": "يبلّغ عن فقدان رمز عتادي ويسحب بيانات اعتماده، أو يصدر شهادة فتحة PIV، أو يسلّم مفتاحًا مودَعًا، أو يبطل شهادة SSH لشخص"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -3131,19 +3135,19 @@
     "en": "9547cda6898c37a6",
     "text": "يطلب مفتاح مرور ما بعد الكمّ بعد تسجيل الدخول، ثم يقيم جلسة تسجيل الدخول التي احتجزها"
   },
-"stsmetadata.endpoints./wsapi/2.0/verify.what": {
+  "stsmetadata.endpoints./wsapi/2.0/verify.what": {
     "en": "ff0550a4318594c6",
     "text": "بروتوكول التحقق 2.0 من YUBICO (#1955 P5). GET أو POST لـ id وotp وnonce وh. معطّل افتراضيًا: يجيب المسار OPERATION_NOT_ALLOWED ولا يوقّع شيئًا. وعند التفعيل يُفحص معرّف العميل وHMAC-SHA1 في كل وضع، بما فيه التطوير؛ ويُحفظ nonce خمس دقائق؛ ويُستهلك OTP المطابق. Cache-Control: no-store. لا يُرسل شيء إلى YubiCloud."
   },
-"stsmetadata.endpoints./wsapi/2.0/verify.effect": {
+  "stsmetadata.endpoints./wsapi/2.0/verify.effect": {
     "en": "bb2bc4011c8240ac",
     "text": "يفحص OTP لـ YubiKey لعميل وقّع الطلب، أو يجيب OPERATION_NOT_ALLOWED ما دام yubiotp.ykval معطّلًا"
   },
-"stsmetadata.endpoints./authn/roles.what": {
+  "stsmetadata.endpoints./authn/roles.what": {
     "en": "88814e89f81f8d86",
     "text": "الأدوار القابلة للاختيار ديناميكيًا (#1072). بعد كل العوامل، يُعلَّق تسجيل الدخول إلى تطبيق يعرّف نطاقه دورًا ديناميكيًا (ما لم يوقفه roles.dynamicSelection أو appDynamicRoleSelection الخاص بالتطبيق) بينما تُقرَّر للشخص سياسة أهلية XACML الخاصة بكل دور ديناميكي؛ ولا يعرض الدورَ إلا Permit. إذا حدد الشخص «اختيار الأدوار لتسجيل الدخول هذا» أو عُرض دور مطلوب، تسرد هذه الصفحة ما يمكن اختياره؛ ويتحقق «متابعة» (/authn-api/mfa/{id}/roles) من الاختيار مقابل عرض الخطوة ومقابل السياسات مرة أخرى، ثم يبدأ الجلسة مع تسجيل الاختيار في سجل الجلسة، لا في الدليل أبدًا. يحمل رمز ذلك التطبيق بعد ذلك الأدوار المختارة، ويُعاد سؤال سياسة كل منها عند كل إصدار. يتطلب معرّف ?mfa= أنشأه تسجيل الدخول المعلَّق؛ ومن دونه يكون الرد 400."
   },
-"stsmetadata.endpoints./authn/roles.effect": {
+  "stsmetadata.endpoints./authn/roles.effect": {
     "en": "fc2116e31d3ead37",
     "text": "يسأل عن الأدوار القابلة للاختيار ديناميكيًا التي ستُستخدم في تسجيل الدخول هذا، ثم يبدأ الجلسة المعلَّقة بهذا الاختيار"
   },
@@ -4204,8 +4208,8 @@
     "text": "partial: توقيعات ML-DSA-65+Ed25519 وML-DSA-87+Ed448، وتشفير ML-KEM-768+X25519 وML-KEM-1024+X448، عند التسجيل وعند استخدام مفتاح مخزّن. يُحسب المركّب ما بعد الكم. يضيّق openpgp.pqcOnly التسجيل فقط. يتحقق common/crypto_impl/openpgp_pqc.js من نصفي التوقيع. الناقص: SLH-DSA (معرّفات الخوارزمية 32-34)، ولا يولّد هذا الخدمة مفتاح RFC 9980. لا يحلّل openpgp.js هذه المفاتيح."
   },
   "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
-    "en": "e83d747632c38b14",
-    "text": "NON-SPEC (#1955 P3): مفتاح جهة OpenSSH للمستخدمين الخاص بالنطاق، منشورًا كسطر authorized-key تثق به خوادم SSH. دون بوابة و`no-store`، على المنفذ الرئيسي فقط: يرفضه مستمع الإبطال عبر HTTP غير المشفر، لأن المفتاح مرساة ثقة. لا يغادر المفتاح الخاص المقابل للجهة هذه الخدمة أبدًا."
+    "en": "c6a8759e4a5e40c9",
+    "text": "NON-SPEC (#1955 P3): مفتاح جهة OpenSSH للمستخدمين الخاص بالنطاق، منشورًا كسطر authorized-key تثق به خوادم SSH. مع `?algorithm=ssh-mldsa-65` يجيب بمفتاح جهة ML-DSA الخاصة بالنطاق بدلًا منه، وهو ما لا يستطيع OpenSSH القياسي التحقق منه بعد. دون بوابة و`no-store`، على المنفذ الرئيسي فقط: يرفضه مستمع الإبطال عبر HTTP غير المشفر، لأن المفتاح مرساة ثقة. لا يغادر المفتاح الخاص المقابل للجهة هذه الخدمة أبدًا."
   },
   "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
     "en": "2e4cdead67408937",

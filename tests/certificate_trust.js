@@ -206,9 +206,20 @@ async function run(t, double, crls) {
       usages: ['nonRepudiation'], eku: eku });
     const usageVerdict = await trust.assess(purpose.id,
       { leaf: wrongUsage.pem }, opts);
-    t.check(!usageVerdict.ok && usageVerdict.checks['key-usage'] === 'failed' &&
-            usageVerdict.code === 'STS-KEYS-0171',
-            'A. ' + purpose.id + ': the wrong keyUsage', usageVerdict.code);
+    if (purpose.leaf.keyUsage.length) {
+      t.check(!usageVerdict.ok &&
+              usageVerdict.checks['key-usage'] === 'failed' &&
+              usageVerdict.code === 'STS-KEYS-0171',
+              'A. ' + purpose.id + ': the wrong keyUsage', usageVerdict.code);
+    } else {
+      // A ROW THAT ASKS NO keyUsage (piv-attestation, #1955 P2: the slot's
+      // attestation certificate signs nothing, so no usage is asked of it)
+      // has no wrong one: the leaf holds, and the check is not failed.
+      t.check(usageVerdict.ok &&
+              usageVerdict.checks['key-usage'] !== 'failed',
+              'A. ' + purpose.id + ': asks no keyUsage, so any one holds',
+              usageVerdict.code + ' ' + JSON.stringify(usageVerdict.checks));
+    }
 
     if (!purpose.leaf.mayBeCa) {
       const isCa = await kit.mint({ cn: purpose.id + ' ca', issuer: root,

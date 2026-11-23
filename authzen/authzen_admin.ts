@@ -23,13 +23,12 @@
 //   set-scope         the applications a caller may ask about: a person's or
 //                     service account's `stsAuthzenApplication`, or an
 //                     application's `appAuthzenApplication`, replaced whole
-//   set-callbacks     the callback URLs registered for an application
-//                     (#1180, #1202): `appAuthzenCallbackUri`, replaced
-//                     whole, and `appAuthzenCallbackConfig` where a URL
-//                     overrides the realm's retry bound. A person or a
-//                     service account is refused. A stored
-//                     `stsAuthzenCallbackUri` stays readable and is not a
-//                     registration a submission may name.
+//   set-callbacks     the callback URLs registered for a caller (#1180,
+//                     #1202): an application's `appAuthzenCallbackUri`,
+//                     replaced whole, and `appAuthzenCallbackConfig` where
+//                     a URL overrides the realm's retry bound; a person's
+//                     or service account's `stsAuthzenCallbackUri`, which
+//                     takes no override (`STS-AUTHZEN-0137`).
 //   approve-access-request, deny-access-request, revoke-access-request,
 //   cancel-access-request
 //                     an administrator's act on one access request (#1180,
@@ -70,8 +69,9 @@ const API_OBJECT = 'sts-authzen-api';
 const PERSON_SCOPE = 'stsAuthzenApplication';
 const APPLICATION_SCOPE = 'appAuthzenApplication';
 
-// The person's callback URLs (#1180). Readable, and no longer written or
-// honoured: a callback is an application's (#1202).
+// The person's or service account's callback URLs (#1180). Written and
+// honoured as in 1.1.0: rcbj's decision 4 on #1180 registers a callback
+// for the requester, whoever that is (the review of #1202 restored it).
 const PERSON_CALLBACK = 'stsAuthzenCallbackUri';
 const APPLICATION_CALLBACK = 'appAuthzenCallbackUri';
 const APPLICATION_CALLBACK_CONFIG = 'appAuthzenCallbackConfig';
@@ -1018,10 +1018,10 @@ class AuthzenAdmin {
     return { url: urlText, attempts: attempts, backoff: backoff };
   }
 
-  // THE CALLBACK URLS AN APPLICATION MAY NAME (#1180, #1202): an
-  // administrator's, replaced whole. A person or a service account is
-  // refused even when the list is empty, so a clear does not write the
-  // person's attribute. Stored person values are left where they are.
+  // THE CALLBACK URLS A CALLER MAY NAME (#1180, #1202): an
+  // administrator's, replaced whole. An application's may carry a retry
+  // override per URL; a person's or service account's may not, since
+  // their entry has nowhere to keep one.
   private setCallbacks(body: any, who: any): any {
     const self = this;
     const { log, applications, audit } = this.deps;
@@ -1063,20 +1063,41 @@ class AuthzenAdmin {
     const caller = self.callerOf(String(body.caller || ''));
     if (!caller) {
       log.debug("Leaving AuthzenAdmin.setCallbacks(). Nobody.");
-      return self.refused('STS-AUTHZEN-0094', 'There is no application ' +
-                          'called "' +
+      return self.refused('STS-AUTHZEN-0094', 'There is no person, service ' +
+                          'account or application called "' +
                           String(body.caller || '').slice(0, 120) +
                           '" in this realm.');
-    }
-    if (caller.kind !== 'application') {
-      log.debug("Leaving AuthzenAdmin.setCallbacks(). Not an application.");
-      return self.refused('STS-AUTHZEN-0136', 'A callback is registered ' +
-                          'only for an application. ' + caller.name + ' is ' +
-                          'a ' + caller.kind + '.');
     }
     const urls = specs.map(function (one: any) {
       return one.url;
     });
+    if (caller.kind !== 'application') {
+      if (specs.some(function (one: any) {
+        return one.attempts !== null || one.backoff !== null;
+      })) {
+        log.debug("Leaving AuthzenAdmin.setCallbacks(). An override for " +
+                  "a person.");
+        return self.refused('STS-AUTHZEN-0137', 'attempts=N and ' +
+                            'backoff=S are an application\'s; ' +
+                            caller.name + ' is a ' + caller.kind + ', ' +
+                            'whose callbacks take the realm\'s settings.');
+      }
+      if (!directory || !directory.write(caller.dn, PERSON_CALLBACK, urls)) {
+        log.debug("Leaving AuthzenAdmin.setCallbacks(). Not written.");
+        return self.refused('STS-AUTHZEN-0094', 'The callback URLs could ' +
+                            'not be written onto ' + caller.dn + '.');
+      }
+      audit.audit({ action: 'admin.authzen.callbacks.set',
+                    actor: String(who.actor || ''), protocol: 'AuthZEN',
+                    detail: 'Registered ' + urls.length + ' access request ' +
+                            'callback URL(s) for the AuthZEN caller ' +
+                            caller.name + ', via ' +
+                            String(who.via || 'console') + '.' });
+      log.debug("Leaving AuthzenAdmin.setCallbacks(). A " + caller.kind +
+                ".");
+      return { ok: true, changed: true,
+               caller: Object.assign({}, caller, { callbacks: urls }) };
+    }
     const configs = specs.filter(function (one: any) {
       return one.attempts !== null || one.backoff !== null;
     }).map(function (one: any) {

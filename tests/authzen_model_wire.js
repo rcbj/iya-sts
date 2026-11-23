@@ -66,7 +66,12 @@
 // because the state names the approved tuple. Naming the approval by id
 // is still out_of_scope. And again for #1204's forms: a requestable
 // denial carries request_schema_url, the same origin's submission
-// schema. No form_url.
+// schema. No form_url. And again for the review of #1202 (2026-11-23): a
+// person's or service account's callback is registered and honoured as in
+// 1.1.0, so the unregistered callback's sentence names the caller again and
+// the person's events-a-string step is the events refusal. And a state
+// that verifies, echoed against another resource, is out_of_scope with
+// next_action request (#1204's review), as the id alone is.
 //
 // A CHILD PROCESS, as tests/oauth_model_wire.js runs one: the protocol stack
 // and a listener are loaded once, fresh, and nothing leaks into the runner.
@@ -833,6 +838,11 @@ function childMain() {
         authzenAdmin.act({ action: 'set-callbacks', caller: 'azapp',
                            callbacks: CALLBACK },
                          { actor: 'azbob', via: 'api' });
+        // A person's callback is honoured again (the review of #1202), so
+        // the person's events-a-string step is that refusal, as in 1.1.0.
+        authzenAdmin.act({ action: 'set-callbacks', caller: 'azpep',
+                           callbacks: CALLBACK },
+                         { actor: 'azbob', via: 'api' });
       });
       r = await step('submission: callback events a string', 'POST', SUBMIT,
                      pep, submission(denied, { callback: {
@@ -869,7 +879,7 @@ function childMain() {
                       context: { application: 'todo-app',
                                  approval: approval } }));
       // The result's approval carries state, which names doc-2. Another
-      // resource does not match that state (#1204).
+      // resource is out_of_scope, as the id alone is (#1204's review).
       await step('re-evaluation, state for another resource', 'POST', EVAL,
                  appCred, ok({ resource: { type: 'document', id: 'doc-9' },
                                context: { application: 'todo-app',
