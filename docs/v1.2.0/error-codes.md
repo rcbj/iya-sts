@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5974** of them, in **57** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5975** of them, in **57** subsystems.
 
 ## Where a code appears
 
@@ -77,7 +77,7 @@ is an ordinary outcome.
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 35
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 63
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 64
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 174
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
@@ -4060,6 +4060,7 @@ Raised from: tls/.
 | `STS-TLS-0061` | A TLS listener already held its bound of connections that failed at the TLS layer, so another was closed at once rather than held for its alert to be read, and the TCP reset could discard the alert (tls/alert_close.ts, 2026-11-13). | none (logged): the connection closes with its alert sent |
 | `STS-TLS-0062` | A server-side TLS socket has no raw socket under it (TLSSocket._parent), so a connection that fails at the TLS layer is closed at once and its alert can be lost to the TCP reset (tls/alert_close.ts, 2026-11-13). | none (logged once) |
 | `STS-TLS-0063` | A certificate this realm issued names its holder as a service account (urn:sts:sa:<name>, #1827), and in its realm that entry is not a service account, or there is none. The TLS client gate (tls_client_certificates.js identityOf()) refuses it as an identity at every door that asks it; each door refuses it under its own code for a certificate that is not an identity. | none (logged): the door's own refusal |
+| `STS-TLS-0064` | Two client-truststore anchors share a subject and not a key. OpenSSL looks an issuer up by subject name, so the later one is shadowed: a certificate it issued does not verify (DEPTH_ZERO_SELF_SIGNED_CERT) while the earlier one is installed. The add is kept and warned (the row's shadowedBy names the earlier fingerprint). Presenting the shadowed certificate itself is recognised by its fingerprint and verified (#1242). | the add succeeds with warning; the handshake of the certificate itself verifies |
 
 ## STS-VC
 

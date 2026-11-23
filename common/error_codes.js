@@ -18695,6 +18695,16 @@ const CODES = [
       'at every door that asks it; each door refuses it under its own code ' +
       'for a certificate that is not an identity.',
     spec: 'none (logged): the door\'s own refusal' },
+  { code: 'STS-TLS-0064',
+    summary: 'Two client-truststore anchors share a subject and not a key. ' +
+      'OpenSSL looks an issuer up by subject name, so the later one is ' +
+      'shadowed: a certificate it issued does not verify ' +
+      '(DEPTH_ZERO_SELF_SIGNED_CERT) while the earlier one is installed. ' +
+      'The add is kept and warned (the row\'s shadowedBy names the earlier ' +
+      'fingerprint). Presenting the shadowed certificate itself is ' +
+      'recognised by its fingerprint and verified (#1242).',
+    spec: 'the add succeeds with warning; the handshake of the certificate ' +
+      'itself verifies' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +

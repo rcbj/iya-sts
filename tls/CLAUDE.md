@@ -1368,6 +1368,16 @@ LEFT OUT, NOT FATAL** (`STS-TLS-0057`): an expired CA in the file must not stop 
 service, and an anchor left out trusts less rather than more. `common/CLAUDE.md`
 (3dd) argues the mode.
 
+**TWO ANCHORS WITH ONE SUBJECT (#1242).** OpenSSL looks an issuer up by subject
+name, and uses the authority key identifier only when the certificate being
+verified carries one. A later anchor whose subject is already held, and which
+that lookup cannot tell from the earlier one, is kept: the add warns
+(`STS-TLS-0064`, the row's `shadowedBy` names the earlier fingerprint) and
+presenting that certificate itself verifies, because the handshake matches it
+by fingerprint. A certificate it issued does not, while the earlier anchor is
+installed. A later anchor whose authority key identifier names a different
+subject key identifier is a key rollover: no warning, and both verify.
+
 ## THE PROTOCOL POLICY, AND THE BIND ADDRESS
 
 **`protocolOptions()` is where `tls.minVersion`, `tls.ciphers` — and since #212
