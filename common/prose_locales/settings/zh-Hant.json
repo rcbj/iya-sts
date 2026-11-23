@@ -2200,12 +2200,12 @@
     "text": "權杖在啟動時於每個程序中開啟一次"
   },
   "keys.pkcs11SynchronousSign|label": {
-    "en": "c8e3fedf4601518d",
-    "text": "允許同步 PKCS#11 簽章"
+    "en": "66785a52cf616805",
+    "text": "允許阻塞的 PKCS#11 呼叫"
   },
   "keys.pkcs11SynchronousSign|description": {
-    "en": "1cb742f146d4c7c1",
-    "text": "關閉為預設：以 HSM 中的金鑰簽章只透過繫結的非同步 `C_Sign`。同步路徑（JWS、XML 簽章、SAML 宣告）拒絕 HSM 金鑰（`STS-KEYS-0209`），而不在事件迴圈上等待權杖。開啟後這些路徑呼叫 `C_Sign`，事件迴圈會等待。沒有非同步簽章的模組只有在此項開啟時才能簽章。解密不變。可依領域設定。"
+    "en": "328ad6368a172a36",
+    "text": "關閉（預設）：用 HSM 中領域金鑰所做的任何事都不會在事件迴圈上等待。每個入口（JWS 或存取權杖、XML 簽章、SAML 斷言、WS-Federation 回應、WS-Trust 權杖、XML 或 JWE 解密、金鑰集的憑證）都使用繫結的非同步 `C_SignAsync`、`C_DecryptAsync` 與 `C_DeriveKeyAsync`。阻塞呼叫會被拒絕（`STS-KEYS-0209`）：沒有非同步呼叫的模組得到的就是這個結果。開啟：明確同意阻塞呼叫——這樣的模組呼叫 `C_Sign`、`C_Decrypt` 或 `C_DeriveKey`，事件迴圈等待權杖。可依領域設定。"
   },
   "keys.cellKekProvider|label": {
     "en": "9103eeef061197fd",

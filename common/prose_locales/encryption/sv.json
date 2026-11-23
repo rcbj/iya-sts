@@ -244,8 +244,8 @@
     "text": "OCH NYCKELN FÅR INTE LIGGA PÅ DEN DISK DEN SKYDDAR. En nyckelfil på samma okrypterade volym som lagret ger båda halvorna till den som tar volymen; det duger för en utvecklingsstack och är varför `file`-leverantören är standard, och det är inte en driftsättning. keys.kekProvider väljer ett hemlighetslager i stället."
   },
   "encryption.notes.signingKeys": {
-    "en": "d0eeec647d97c442",
-    "text": "VAR DEN HÄR SFÄREN SIGNERAR (#1955). Med keys.signingKeyStore pkcs11 skapades de klassiska signeringsnycklar som anges som i HSM:en i det token som keys.signingKeyToken namnger, och de lämnar det aldrig: varje signatur är ett PKCS#11-anrop. Postkvantnycklar skapas alltid i mjukvara, eftersom ingen PKCS#11-modul här erbjuder ML-DSA eller SLH-DSA, och detsamma gäller varje kurva som modulen inte skapar. Inställningen gäller nyckeluppsättningar som skapas eller roteras efter att den ändrats. En synkron signatur görs bara medan keys.pkcs11SynchronousSign är på; annars nekar den dörren (STS-KEYS-0209) och de asynkrona dörrarna signerar ändå."
+    "en": "42b4a12838250b88",
+    "text": "VAR DENNA SFÄR SIGNERAR (#1955). Med keys.signingKeyStore pkcs11 skapades de klassiska signeringsnycklar som anges som i HSM:en i den token som keys.signingKeyToken namnger, och de lämnar den aldrig: varje signatur och dekryptering med dem är ett PKCS#11-anrop, gjort utanför händelseloopen (C_SignAsync, C_DecryptAsync, C_DeriveKeyAsync). Ett blockerande anrop görs bara medan keys.pkcs11SynchronousSign är på, för en modul utan asynkront anrop; annars vägras det (STS-KEYS-0209). Postkvantnycklar skapas alltid i programvara, eftersom ingen PKCS#11-modul här erbjuder ML-DSA eller SLH-DSA, och så görs även varje kurva som modulen inte skapar. Inställningen gäller nyckeluppsättningar som skapas eller roteras efter att den ändrats."
   },
   "encryption.notes.accountingNote": {
     "en": "4e3af979f8ed8bd7",

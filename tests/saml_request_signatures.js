@@ -287,7 +287,7 @@ function spMetadataDocument(entityId, opts) {
     '</md:SPSSODescriptor></md:EntityDescriptor>';
 }
 
-function run(t) {
+async function run(t) {
   log.debug("Entering run().");
   const config = require('../common/config');
   const errorCodes = require('../common/error_codes');
@@ -877,15 +877,19 @@ function run(t) {
   // -------------------------------------------------------------------------
   // A NameIDPolicy the metadata does not declare is answered with a Response
   // — which is also where the chosen endpoint is visible.
-  const probe = function (opts) {
+  // Awaited (#1955 P8 follow-up): a Response is answered once its signature
+  // settles, so the handler's promise is what says the answer is written.
+  const probe = async function (opts) {
     log.debug("Entering probe().");
     const raw = redirectQuery(stsCrypto, authnRequest(Object.assign(
       { issuer: spM, format: F_TRANSIENT, acs: null }, opts)), 'p',
       keyA.privateKeyPem);
+    const res = fakeRes();
+    await sso(fakeReq('GET', '/saml2/sso', queryObject(raw), raw), res);
     log.debug("Leaving probe().");
-    return getSso(raw);
+    return res;
   };
-  const byDefault = probe({ id: '_h1' });
+  const byDefault = await probe({ id: '_h1' });
   t.check(byDefault.statusCode === 303 &&
           urls.isAt(byDefault.location, base + '/acs1'),
           'no ACS named: the DEFAULT endpoint (isDefault="true"), on its own ' +
@@ -899,32 +903,32 @@ function run(t) {
             'as a Response carrying Requester / InvalidNameIDPolicy',
             answered.slice(0, 400));
   }
-  const byIndex = probe({ id: '_h2', index: 0 });
+  const byIndex = await probe({ id: '_h2', index: 0 });
   t.check(byIndex.statusCode === 200 &&
           byIndex.body.indexOf('action="' + base + '/acs0"') >= 0,
           'AssertionConsumerServiceIndex="0": that endpoint, on ITS binding ' +
           '(a form POST)', byIndex.statusCode + ' ' +
           byIndex.body.slice(0, 200));
-  const byUrl = probe({ id: '_h3', acs: base + '/acs0' });
+  const byUrl = await probe({ id: '_h3', acs: base + '/acs0' });
   t.check(byUrl.statusCode === 200 &&
           byUrl.body.indexOf('action="' + base + '/acs0"') >= 0,
           'a registered AssertionConsumerServiceURL is answered there',
           byUrl.statusCode);
-  const badIndex = probe({ id: '_h4', index: 7 });
+  const badIndex = await probe({ id: '_h4', index: 7 });
   t.check(badIndex.statusCode === 400 &&
           codeOf(badIndex) === 'STS-SAML-0069',
           'an unknown AssertionConsumerServiceIndex is REFUSED, STS-SAML-0069',
           badIndex.statusCode + ' ' + codeOf(badIndex));
-  const paosIndex = probe({ id: '_h5', index: 2 });
+  const paosIndex = await probe({ id: '_h5', index: 2 });
   t.check(paosIndex.statusCode === 400 &&
           codeOf(paosIndex) === 'STS-SAML-0069',
           'an index whose endpoint is PAOS is refused too',
           paosIndex.statusCode + ' ' + codeOf(paosIndex));
-  const badUrl = probe({ id: '_h6', acs: 'https://evil.test/acs' });
+  const badUrl = await probe({ id: '_h6', acs: 'https://evil.test/acs' });
   t.check(badUrl.statusCode === 400 && codeOf(badUrl) === 'STS-SAML-0070',
           'IN DEVELOPMENT, an ACS URL not in the consumed metadata is ' +
           'REFUSED, STS-SAML-0070', badUrl.statusCode + ' ' + codeOf(badUrl));
-  const goodFormat = probe({ id: '_h7', format: F_EMAIL });
+  const goodFormat = await probe({ id: '_h7', format: F_EMAIL });
   t.check(toSignIn(goodFormat),
           'a declared NameIDPolicy Format goes on to the sign-in screen',
           goodFormat.statusCode + ' ' + codeOf(goodFormat));
@@ -958,16 +962,16 @@ function run(t) {
   // -------------------------------------------------------------------------
   t.log.info('I. Single Logout');
   // -------------------------------------------------------------------------
-  const getSlo = function (raw) {
+  const getSlo = async function (raw) {
     log.debug("Entering getSlo().");
     const res = fakeRes();
-    slo(fakeReq('GET', '/saml2/slo', queryObject(raw), raw), res);
+    await slo(fakeReq('GET', '/saml2/slo', queryObject(raw), raw), res);
     log.debug("Leaving getSlo().");
     return res;
   };
   const signedLogout = redirectQuery(stsCrypto, logoutRequest(spM, '_i1'),
                                      'lo', keyA.privateKeyPem);
-  const okLogout = getSlo(signedLogout);
+  const okLogout = await getSlo(signedLogout);
   t.check(okLogout.statusCode === 303 &&
           urls.isAt(okLogout.location, base + '/slo-response'),
           'a signed LogoutRequest is verified and answered at the consumed ' +
@@ -978,7 +982,7 @@ function run(t) {
               inflateParam(okLogout.location, 'SAMLResponse')),
             'and what goes there is a LogoutResponse');
   }
-  const tamperedLogout = getSlo(signedLogout.replace('RelayState=lo',
+  const tamperedLogout = await getSlo(signedLogout.replace('RelayState=lo',
                                                      'RelayState=LO'));
   t.check(tamperedLogout.statusCode === 403 &&
           codeOf(tamperedLogout) === 'STS-SAML-0061' &&
@@ -986,14 +990,14 @@ function run(t) {
           'a LogoutRequest tampered with after signing is REFUSED and ends ' +
           'no session', tamperedLogout.statusCode + ' ' +
           codeOf(tamperedLogout));
-  const unsignedLogout = getSlo(redirectQuery(stsCrypto,
+  const unsignedLogout = await getSlo(redirectQuery(stsCrypto,
     logoutRequest(spM, '_i2'), 'lo'));
   t.check(unsignedLogout.statusCode === 403 &&
           codeOf(unsignedLogout) === 'STS-SAML-0063',
           'an UNSIGNED LogoutRequest from a service provider that must sign ' +
           'is refused', unsignedLogout.statusCode + ' ' +
           codeOf(unsignedLogout));
-  const unsignedLogoutDev = getSlo(redirectQuery(stsCrypto,
+  const unsignedLogoutDev = await getSlo(redirectQuery(stsCrypto,
     logoutRequest(spU, '_i3'), 'lo'));
   t.check(unsignedLogoutDev.statusCode !== 403,
           'development: an unsigned LogoutRequest from a service provider ' +
@@ -1007,7 +1011,7 @@ function run(t) {
     'Value="urn:oasis:names:tc:SAML:2.0:status:Success"/></samlp:Status>' +
     '</samlp:LogoutResponse>', 'r', keyB.privateKeyPem, RSA_SHA256,
     'SAMLResponse');
-  const badResponse = getSlo(signedResponse);
+  const badResponse = await getSlo(signedResponse);
   t.check(badResponse.statusCode === 403 &&
           codeOf(badResponse) === 'STS-SAML-0061',
           'a LogoutResponse signed by the wrong key is refused too',

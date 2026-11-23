@@ -326,6 +326,30 @@ class FapiClient {
   }
 
   /**
+   * `clientAssertion()`, signed off the event loop where the realm's key is
+   * in the HSM (`helpers.signJwtAsOffLoop()`, #1955 P8 follow-up); a
+   * software key signs the same bytes, in place.
+   *
+   * @param record - the relationship, its `fedPeer` the issuer
+   * @returns a promise of the assertion
+   */
+  static clientAssertionAsync(record: Json): Promise<string> {
+    log.debug("Entering FapiClient.clientAssertionAsync().");
+    const iat = Math.floor(Date.now() / 1000);
+    const claims = {
+      iss: String(record.fedClientId || ''),
+      sub: String(record.fedClientId || ''),
+      aud: String(record.fedPeer || '').trim(),
+      jti: stsCrypto.randomUuid(),
+      iat: iat,
+      exp: iat + ASSERTION_LIFETIME_S
+    };
+    log.debug("Leaving FapiClient.clientAssertionAsync().");
+    // certificate-header: none — as in clientAssertion().
+    return helpers.signJwtAsOffLoop(claims, 'PS256', null, {});
+  }
+
+  /**
    * Signs the authorization request as a request object (RFC 9101), PS256,
    * living 60 seconds. The parameters already on `params` are the claims.
    *
@@ -351,6 +375,34 @@ class FapiClient {
     // key the relationship registered at the partner (RFC 9101).
     return helpers.signJwtAs(claims, 'PS256', null,
                              { header: { typ: 'oauth-authz-req+jwt' } });
+  }
+
+  /**
+   * `requestObject()`, signed off the event loop where the realm's key is in
+   * the HSM (#1955 P8 follow-up); a software key signs the same bytes.
+   *
+   * @param record - the relationship
+   * @param params - the authorization parameters
+   * @returns a promise of the request object
+   */
+  static requestObjectAsync(record: Json,
+                            params: URLSearchParams): Promise<string> {
+    log.debug("Entering FapiClient.requestObjectAsync().");
+    const claims: Json = {};
+    params.forEach(function (value, name) {
+      claims[name] = value;
+    });
+    const now = Math.floor(Date.now() / 1000);
+    claims.iss = String(record.fedClientId || '');
+    claims.aud = String(record.fedPeer || '').trim();
+    claims.iat = now;
+    claims.nbf = now;
+    claims.exp = now + ASSERTION_LIFETIME_S;
+    claims.jti = stsCrypto.randomUuid();
+    log.debug("Leaving FapiClient.requestObjectAsync().");
+    // certificate-header: none — as in requestObject().
+    return helpers.signJwtAsOffLoop(claims, 'PS256', null,
+                                    { header: { typ: 'oauth-authz-req+jwt' } });
   }
 
   /**

@@ -244,8 +244,8 @@
     "text": "UND DER SCHLÜSSEL DARF NICHT AUF DER PLATTE LEBEN, DIE ER SCHÜTZT. Eine Schlüsseldatei auf demselben unverschlüsselten Volume wie der Speicher händigt beide Hälften dem aus, der das Volume an sich nimmt; das ist für einen Entwicklungsstack in Ordnung und der Grund, warum der Provider `file` der Standard ist, und es ist kein Deployment. keys.kekProvider wählt stattdessen einen Secret Store."
   },
   "encryption.notes.signingKeys": {
-    "en": "d0eeec647d97c442",
-    "text": "WO DIESER VERTRAUENSBEREICH SIGNIERT (#1955). Mit keys.signingKeyStore pkcs11 wurden die als im HSM aufgeführten klassischen Signaturschlüssel in dem Token erzeugt, das keys.signingKeyToken nennt, und verlassen es nie: Jede Signatur ist ein PKCS#11-Aufruf. Post-Quanten-Schlüssel werden immer in Software erzeugt, weil kein PKCS#11-Modul hier ML-DSA oder SLH-DSA anbietet, und ebenso jede Kurve, die das Modul nicht erzeugt. Die Einstellung gilt für Schlüsselsätze, die nach ihrer Änderung erzeugt oder rotiert werden. Eine synchrone Signatur wird nur erzeugt, solange keys.pkcs11SynchronousSign eingeschaltet ist; sonst verweigert diese Tür (STS-KEYS-0209) und die asynchronen Türen signieren weiter."
+    "en": "42b4a12838250b88",
+    "text": "WO DIESER VERTRAUENSBEREICH SIGNIERT (#1955). Mit keys.signingKeyStore pkcs11 wurden die als im HSM aufgeführten klassischen Signaturschlüssel in dem Token erzeugt, das keys.signingKeyToken nennt, und verlassen es nie: jede Signatur und Entschlüsselung mit ihnen ist ein PKCS#11-Aufruf, außerhalb des Ereignisloops ausgeführt (C_SignAsync, C_DecryptAsync, C_DeriveKeyAsync). Ein blockierender Aufruf erfolgt nur, solange keys.pkcs11SynchronousSign eingeschaltet ist, für ein Modul ohne asynchronen Aufruf; sonst wird er verweigert (STS-KEYS-0209). Post-Quanten-Schlüssel werden immer in Software erzeugt, weil kein PKCS#11-Modul hier ML-DSA oder SLH-DSA anbietet, ebenso jede Kurve, die das Modul nicht erzeugt. Die Einstellung gilt für Schlüsselsätze, die nach ihrer Änderung erzeugt oder rotiert werden."
   },
   "encryption.notes.accountingNote": {
     "en": "4e3af979f8ed8bd7",

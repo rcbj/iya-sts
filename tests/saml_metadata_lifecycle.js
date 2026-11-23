@@ -1099,23 +1099,25 @@ async function run(t) {
     // -----------------------------------------------------------------------
     t.log.info('F4. #112: per-provider paths for an unregistered name');
     // -----------------------------------------------------------------------
-    const scopedGet = function (handler, path, name, param) {
+    const scopedGet = async function (handler, path, name, param) {
       log.debug("Entering scopedGet().");
       const res = kit.fakeRes();
       const params = {};
       params[param] = name;
-      handler(kit.fakeReq('GET', path + '/' + encodeURIComponent(name), {},
-                          '', '', { params: params }), res);
+      await handler(kit.fakeReq('GET',
+                                path + '/' + encodeURIComponent(name), {},
+                                '', '', { params: params }), res);
       log.debug("Leaving scopedGet().");
       return res;
     };
-    const scopedPost = function (handler, path, name, param) {
+    const scopedPost = async function (handler, path, name, param) {
       log.debug("Entering scopedPost().");
       const res = kit.fakeRes();
       const params = {};
       params[param] = name;
-      handler(kit.fakeReq('POST', path + '/' + encodeURIComponent(name), {},
-                          '', '<x/>', { params: params }), res);
+      await handler(kit.fakeReq('POST',
+                                path + '/' + encodeURIComponent(name), {},
+                                '', '<x/>', { params: params }), res);
       log.debug("Leaving scopedPost().");
       return res;
     };
@@ -1148,53 +1150,55 @@ async function run(t) {
     };
     await kit.withSettings(config, { 'global.mode': 'product' },
       async function () {
-        const m = scopedGet(meta2, '/saml2/metadata', nobody, 'sp');
+        const m = await scopedGet(meta2, '/saml2/metadata', nobody, 'sp');
         t.check(is404(m, 'STS-SAML-0082') && !applications.get(nobody),
                 'PRODUCT: /saml2/metadata/{unregistered} is 404, ' +
                 'text/plain, no-store, STS-SAML-0082, and registers nothing',
                 m.statusCode + ' ' + codeOf(m) + ' ' + m.body.slice(0, 120));
-        [['sso', sso2, scopedGet], ['slo', slo2, scopedGet],
-         ['ars', ars2, scopedPost]].forEach(function (row) {
-          const r = row[2](row[1], '/saml2/' + row[0], nobody, 'sp');
+        for (const row of [['sso', sso2, scopedGet], ['slo', slo2, scopedGet],
+                           ['ars', ars2, scopedPost]]) {
+          const r = await row[2](row[1], '/saml2/' + row[0], nobody, 'sp');
           t.check(is404(r, 'STS-SAML-0082'),
                   'PRODUCT: /saml2/' + row[0] + '/{unregistered} is 404 too',
                   r.statusCode + ' ' + codeOf(r));
-        });
-        const asOauth = scopedGet(meta2, '/saml2/metadata', oauthClient,
+        }
+        const asOauth = await scopedGet(meta2, '/saml2/metadata', oauthClient,
                                   'sp');
         t.check(is404(asOauth, 'STS-SAML-0082'),
                 'an application that is NOT a SAML 2.0 service provider ' +
                 'is 404 as well', asOauth.statusCode + ' ' + codeOf(asOauth));
-        const mine = scopedGet(meta2, '/saml2/metadata', registered2, 'sp');
+        const mine = await scopedGet(meta2, '/saml2/metadata', registered2,
+                                     'sp');
         t.check(mine.statusCode === 200 && /EntityDescriptor/.test(mine.body),
                 'a REGISTERED service provider\'s document is 200',
                 mine.statusCode + ' ' + mine.body.slice(0, 160));
-        const bySlug = scopedGet(meta2, '/saml2/metadata',
+        const bySlug = await scopedGet(meta2, '/saml2/metadata',
                                  saml2sso.slugOf(registered2), 'sp');
         t.equal(bySlug.statusCode, 200, 'and by its slug');
-        const m11 = scopedGet(meta11, '/saml11/metadata', nobody, 'rp');
+        const m11 = await scopedGet(meta11, '/saml11/metadata', nobody, 'rp');
         t.check(is404(m11, 'STS-SAML-0083'),
                 'PRODUCT: /saml11/metadata/{unregistered} is 404, ' +
                 'STS-SAML-0083', m11.statusCode + ' ' + codeOf(m11));
-        const s11 = scopedGet(sso11, '/saml11/sso', nobody, 'rp');
-        const r11 = scopedPost(responder11, '/saml11/responder', nobody,
+        const s11 = await scopedGet(sso11, '/saml11/sso', nobody, 'rp');
+        const r11 = await scopedPost(responder11, '/saml11/responder', nobody,
                                'rp');
         t.check(is404(s11, 'STS-SAML-0083') && is404(r11, 'STS-SAML-0083'),
                 'and so are /saml11/sso/{rp} and /saml11/responder/{rp}',
                 s11.statusCode + ' ' + r11.statusCode);
-        const byRp = scopedGet(meta11, '/saml11/metadata', rp11, 'rp');
+        const byRp = await scopedGet(meta11, '/saml11/metadata', rp11, 'rp');
         t.check(byRp.statusCode === 200 &&
                 /EntityDescriptor/.test(byRp.body),
                 'a REGISTERED relying party\'s document is 200',
                 byRp.statusCode + ' ' + byRp.body.slice(0, 160));
-        const saml2As11 = scopedGet(meta11, '/saml11/metadata', registered2,
-                                    'rp');
+        const saml2As11 = await scopedGet(meta11, '/saml11/metadata',
+                                          registered2, 'rp');
         t.check(is404(saml2As11, 'STS-SAML-0083'),
                 'a SAML 2.0 service provider is not a SAML 1.1 relying ' +
                 'party', saml2As11.statusCode + ' ' + codeOf(saml2As11));
       });
-    const devMeta = scopedGet(meta2, '/saml2/metadata', nobody, 'sp');
-    const devMeta11 = scopedGet(meta11, '/saml11/metadata', nobody, 'rp');
+    const devMeta = await scopedGet(meta2, '/saml2/metadata', nobody, 'sp');
+    const devMeta11 = await scopedGet(meta11, '/saml11/metadata', nobody,
+                                      'rp');
     t.check(devMeta.statusCode === 200 && devMeta11.statusCode === 200,
             'DEVELOPMENT is unchanged: both documents are minted for a ' +
             'name nobody registered', devMeta.statusCode + ' ' +
@@ -1220,10 +1224,12 @@ async function run(t) {
         log.debug("Leaving setHeader().");
       }
     }, 'alice', [], '1', 'Test', {});
-    const issue = function (sp, id) {
+    // Awaited (#1955 P8 follow-up): the issuer signs off the event loop
+    // where the realm's keys are in the HSM, and answers a promise.
+    const issue = async function (sp, id) {
       log.debug("Entering issue().");
       const res = kit.fakeRes();
-      direct.issueSignInResponse(res, {
+      await direct.issueSignInResponse(res, {
         request: direct.readAuthnRequest(authnRequest(sp, id)),
         session: session, spEntityId: sp,
         idpEntityId: 'https://idp.test/saml2/metadata',
@@ -1237,12 +1243,13 @@ async function run(t) {
     const spNoCert = newSp('no-cert');
     await kit.withSettings(config, { 'saml2.encryptAssertion': true },
       async function () {
-        const dev = issue(spNoCert, '_e1');
+        const dev = await issue(spNoCert, '_e1');
         t.check(/<saml:Assertion\b/.test(dev.xml) &&
                 !/EncryptedAssertion/.test(dev.xml),
                 'DEVELOPMENT, encryption on, no certificate: the assertion ' +
                 'goes in CLEAR', dev.xml.slice(0, 200));
-        const prod = kit.withSettings(config, { 'global.mode': 'product' },
+        const prod = await kit.withSettings(config,
+          { 'global.mode': 'product' },
           function () {
             return issue(spNoCert, '_e2');
           });
@@ -1264,8 +1271,8 @@ async function run(t) {
             JSON.stringify(wants.errors || ''));
     t.equal(config.value('saml2.encryptAssertion'), false,
             'with saml2.encryptAssertion OFF');
-    ['development', 'product'].forEach(function (mode) {
-      const answered = kit.withSettings(config, { 'global.mode': mode },
+    for (const mode of ['development', 'product']) {
+      const answered = await kit.withSettings(config, { 'global.mode': mode },
         function () {
           return issue(spWants, '_w' + mode);
         });
@@ -1273,7 +1280,7 @@ async function run(t) {
               !/<saml:Assertion\b/.test(answered.xml),
               mode + ': the assertion is ENCRYPTED to the metadata\'s key',
               answered.xml.slice(0, 200));
-    });
+    }
   } finally {
     config.clearOverride('saml2.mdqBaseUrl');
     config.clearOverride('federation.outboundAllowHttp');
