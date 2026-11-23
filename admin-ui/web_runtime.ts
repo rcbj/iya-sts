@@ -3493,7 +3493,10 @@ class ConsoleRuntime extends SpaClient {
   }
 
   /**
-   * Outlines and enforces fields required only for a selected choice.
+   * Marks fields required only for a selected choice, the way an always
+   * required field is marked: the outline, the word "required", the
+   * browser's `required`, and the note above the form. While the choice
+   * does not need the field, the cell says which choices do.
    *
    * @returns nothing
    */
@@ -3501,6 +3504,39 @@ class ConsoleRuntime extends SpaClient {
     const doc = this.env.document;
     const forms = doc && doc.querySelectorAll
       ? doc.querySelectorAll('form') : [];
+    // An empty select shows its first option. The mark follows that
+    // option, which is what the page drew, rather than treating "nothing
+    // chosen" as a choice that requires nothing.
+    const choiceOf = function (controller: Json): string {
+      const value = controller ? String(controller.value || '') : '';
+      const options = controller && controller.options;
+      if (!options || !options.length) {
+        return value;
+      }
+      let known = false;
+      for (let n = 0; n < options.length; n++) {
+        if (String(options[n].value) === value) {
+          known = true;
+          break;
+        }
+      }
+      if (value !== '' && known) {
+        return value;
+      }
+      const first = String(options[0].value || '');
+      return first !== '' ? first : value;
+    };
+    const markSpan = function (node: Json, word: boolean,
+                               required: boolean): void {
+      if (!node || !node.classList ||
+          typeof node.classList.contains !== 'function') {
+        return;
+      }
+      const want = word ? 'fg-req-word' : 'fg-req-when';
+      if (node.classList.contains(want)) {
+        node.hidden = word ? !required : required;
+      }
+    };
     for (let i = 0; i < forms.length; i++) {
       const form = forms[i];
       const cells = form.querySelectorAll(
@@ -3515,7 +3551,7 @@ class ConsoleRuntime extends SpaClient {
           const name = String(cell.getAttribute(
             'data-required-when-field') || '');
           const controller = form.elements.namedItem(name);
-          const value = controller ? String(controller.value || '') : '';
+          const value = choiceOf(controller);
           const values = String(cell.getAttribute(
             'data-required-when-values') || '').split(/\s+/);
           const controls = cell.querySelectorAll('input,select,textarea');
@@ -3529,13 +3565,47 @@ class ConsoleRuntime extends SpaClient {
           } else {
             cell.classList.remove('fg-required');
           }
+          const words = cell.querySelectorAll('.fg-req-word');
+          for (let w = 0; w < words.length; w++) {
+            markSpan(words[w], true, required);
+          }
+          const whens = cell.querySelectorAll('.fg-req-when');
+          for (let w = 0; w < whens.length; w++) {
+            markSpan(whens[w], false, required);
+          }
           for (let k = 0; k < controls.length; k++) {
-            if (String(controls[k].type || '').toLowerCase() !==
+            if (String(controls[k].type || '').toLowerCase() ===
                 'checkbox') {
-              controls[k].required = required;
+              continue;
+            }
+            controls[k].required = required;
+            if (typeof controls[k].setAttribute !== 'function') {
+              continue;
+            }
+            if (required) {
+              controls[k].setAttribute('aria-required', 'true');
+            } else if (typeof controls[k].removeAttribute === 'function') {
+              controls[k].removeAttribute('aria-required');
             }
           }
         }
+        if (typeof form.querySelector !== 'function') {
+          return;
+        }
+        const list = form.querySelector('[data-required-list]');
+        if (!list || typeof form.querySelectorAll !== 'function') {
+          return;
+        }
+        const marked = form.querySelectorAll('.fg-cell.fg-required');
+        const labels: string[] = [];
+        for (let n = 0; n < marked.length; n++) {
+          const label = marked[n].getAttribute
+            ? marked[n].getAttribute('data-label') : '';
+          if (label) {
+            labels.push(String(label));
+          }
+        }
+        list.textContent = labels.join(', ');
       };
       for (let j = 0; j < cells.length; j++) {
         const name = String(cells[j].getAttribute(
