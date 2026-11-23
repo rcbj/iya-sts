@@ -90,11 +90,13 @@ pub const SEARCH_ACTION_PATH: &str = "/access/v1/search/action";
 pub const ACCESS_REQUESTS_PATH: &str = "/access/v1/access-requests";
 // The path scan (`tests/model_pep.js`) reads a `*_PATH` literal only when
 // it sits on the same line as `=`. The dispatch parses the item and cancel
-// tails, so those two constants are for the scan.
+// tails, so those two constants are for the scan. rustfmt would wrap them.
+#[rustfmt::skip]
 pub const ACCESS_REQUEST_SCHEMA_PATH: &str = "/access/v1/access-requests/schema";
 #[allow(dead_code)]
 pub const ACCESS_REQUEST_PATH: &str = "/access/v1/access-requests/{id}";
 #[allow(dead_code)]
+#[rustfmt::skip]
 pub const ACCESS_REQUEST_CANCEL_PATH: &str = "/access/v1/access-requests/{id}/cancel";
 
 const SEARCH_MESSAGE: &str = "The Search APIs are answered by the service, \
@@ -246,7 +248,10 @@ fn search_path(path: &str) -> bool {
 /// Which service-only path this method hits, if it hits one. `None` for
 /// HEAD and for every method the profile does not answer, so those stay
 /// the generic 404.
-fn refusal_of(method: &str, path: &str) -> Option<(&'static str, &'static str)> {
+fn refusal_of(
+    method: &str,
+    path: &str,
+) -> Option<(&'static str, &'static str)> {
     if method == "POST" && search_path(path) {
         return Some(("STS-XPEP-0138", SEARCH_MESSAGE));
     }
@@ -1077,10 +1082,8 @@ impl Pep {
         };
         // A gate anywhere in the batch makes every item stand beside one,
         // classified on the merged item, as the service classifies.
-        let prepared: Vec<Option<Value>> = items
-            .iter()
-            .map(|item| merged(given, item))
-            .collect();
+        let prepared: Vec<Option<Value>> =
+            items.iter().map(|item| merged(given, item)).collect();
         let beside_gate = prepared
             .iter()
             .any(|item| item.as_ref().is_some_and(is_gate));
@@ -2159,8 +2162,10 @@ mod tests {
         options.pdp_url = "http://127.0.0.1:9".into();
         options.audit_enabled = true;
         let client = PdpClient::new(&options).unwrap();
-        let sync =
-            std::sync::Arc::new(crate::sync::Sync::new(client.clone(), options.clone()));
+        let sync = std::sync::Arc::new(crate::sync::Sync::new(
+            client.clone(),
+            options.clone(),
+        ));
         crate::service::Pep::new(
             options.clone(),
             sts_core::version::load(std::path::Path::new(".")),
@@ -2192,7 +2197,14 @@ mod tests {
             "context": { "application": "todo-app", "may_act": { "sub": "g" } }
         });
         let one = pep
-            .evaluate_one(&gate, &caller, &catalogue, "b-1", EVALUATION_PATH, true)
+            .evaluate_one(
+                &gate,
+                &caller,
+                &catalogue,
+                "b-1",
+                EVALUATION_PATH,
+                true,
+            )
             .await;
         assert_eq!(one.code, "STS-XPEP-0140");
         assert_eq!(one.error.as_ref().unwrap().0, 501);
@@ -2210,11 +2222,25 @@ mod tests {
             "resource": { "type": "protected_resource", "id": "documents.read" }
         });
         let beside = pep
-            .evaluate_one(&scope, &caller, &catalogue, "", EVALUATION_PATH, true)
+            .evaluate_one(
+                &scope,
+                &caller,
+                &catalogue,
+                "",
+                EVALUATION_PATH,
+                true,
+            )
             .await;
         assert!(beside.error.unwrap().1.contains("(a scope)"));
         let alone = pep
-            .evaluate_one(&scope, &caller, &catalogue, "", EVALUATION_PATH, false)
+            .evaluate_one(
+                &scope,
+                &caller,
+                &catalogue,
+                "",
+                EVALUATION_PATH,
+                false,
+            )
             .await;
         assert_ne!(alone.code, "STS-XPEP-0140");
         assert!(alone.error.is_none());
@@ -2225,7 +2251,12 @@ mod tests {
         });
         let ordinary = pep
             .evaluate_one(
-                &audience, &caller, &catalogue, "", EVALUATION_PATH, true,
+                &audience,
+                &caller,
+                &catalogue,
+                "",
+                EVALUATION_PATH,
+                true,
             )
             .await;
         assert_ne!(ordinary.code, "STS-XPEP-0140");
@@ -2235,7 +2266,14 @@ mod tests {
             "resource": { "type": "document", "id": "d1" }
         });
         let detail = pep
-            .evaluate_one(&detail, &caller, &catalogue, "", EVALUATION_PATH, true)
+            .evaluate_one(
+                &detail,
+                &caller,
+                &catalogue,
+                "",
+                EVALUATION_PATH,
+                true,
+            )
             .await;
         assert!(detail.error.unwrap().1.contains("(a detail)"));
         let other_grant = json!({
@@ -2256,7 +2294,12 @@ mod tests {
         });
         let decided = pep
             .evaluate_one(
-                &approval, &caller, &catalogue, "b-2", EVALUATION_PATH, false,
+                &approval,
+                &caller,
+                &catalogue,
+                "b-2",
+                EVALUATION_PATH,
+                false,
             )
             .await;
         assert!(decided.error.is_none() && !decided.decision);

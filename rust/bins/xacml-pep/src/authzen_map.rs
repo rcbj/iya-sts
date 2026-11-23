@@ -66,12 +66,8 @@ const DISCHARGED_OBLIGATION: &str = "urn:sts:xacml:obligation:log";
 
 /// The Obligations Profile's registered types, in the model's order, then
 /// `custom` (#1177). What the metadata advertises while the profile is on.
-pub const SUPPORTED_OBLIGATION_TYPES: [&str; 4] = [
-    "step-up",
-    "notification",
-    "session_termination",
-    "custom",
-];
+pub const SUPPORTED_OBLIGATION_TYPES: [&str; 4] =
+    ["step-up", "notification", "session_termination", "custom"];
 
 /// A registered type: the properties it may not be handed without, and
 /// those that collect every assignment of their name.
@@ -375,9 +371,7 @@ fn obligation_declaration(value: &Value) -> Result<Vec<String>, Refusal> {
     let mut names = Vec::with_capacity(list.len());
     for item in list {
         match item.as_str() {
-            Some(text) if js_length(text) <= 64 => {
-                names.push(text.to_string())
-            }
+            Some(text) if js_length(text) <= 64 => names.push(text.to_string()),
             _ => return Err(refused("STS-AUTHZEN-0003", sentence.into())),
         }
     }
@@ -394,9 +388,7 @@ fn approval_shape(value: &Value) -> Result<(), Refusal> {
         return Err(refused("STS-AUTHZEN-0003", sentence.into()));
     };
     match object.get("id").and_then(Value::as_str) {
-        Some(text) if !text.is_empty() && js_length(text) <= MAX_TEXT => {
-            Ok(())
-        }
+        Some(text) if !text.is_empty() && js_length(text) <= MAX_TEXT => Ok(()),
         _ => Err(refused("STS-AUTHZEN-0003", sentence.into())),
     }
 }
@@ -707,9 +699,9 @@ pub fn outcome(
             let declared = !handed.is_empty()
                 && obligation_problems.is_empty()
                 && handed.iter().all(|one| {
-                    one.get("type").and_then(Value::as_str).is_some_and(|t| {
-                        supported.iter().any(|name| name == t)
-                    })
+                    one.get("type")
+                        .and_then(Value::as_str)
+                        .is_some_and(|t| supported.iter().any(|name| name == t))
                 });
             if declared {
                 obligations = handed;
@@ -759,11 +751,7 @@ fn obligations_of(answer: &Response) -> (Vec<Value>, Vec<String>) {
             );
         }
         for assignment in &one.assignments {
-            let name = assignment
-                .attribute_id
-                .rsplit(':')
-                .next()
-                .unwrap_or("");
+            let name = assignment.attribute_id.rsplit(':').next().unwrap_or("");
             if name.is_empty() {
                 continue;
             }
@@ -1107,12 +1095,8 @@ pub(crate) mod tests {
         let none = outcome(&permit, &enforced, false, None);
         assert!(!none.decision && none.obligations.is_empty());
         assert_eq!(none.undischargeable, [step_up]);
-        let declared = outcome(
-            &permit,
-            &enforced,
-            false,
-            Some(&["step-up".to_string()]),
-        );
+        let declared =
+            outcome(&permit, &enforced, false, Some(&["step-up".to_string()]));
         assert!(declared.decision);
         assert!(declared.undischargeable.is_empty());
         assert!(declared.obligation_problems.is_empty());
@@ -1133,8 +1117,7 @@ pub(crate) mod tests {
         );
         assert!(!other.decision && other.obligations.is_empty());
         let bare = answer(Decision::Permit, StatusCode::Ok, &[step_up]);
-        let bare_enforced =
-            enforcer.enforce(bare.decision, &bare.obligations);
+        let bare_enforced = enforcer.enforce(bare.decision, &bare.obligations);
         let broken = outcome(
             &bare,
             &bare_enforced,
@@ -1161,8 +1144,7 @@ pub(crate) mod tests {
         let mut deny = answer(Decision::Deny, StatusCode::Ok, &[step_up]);
         deny.obligations[0].assignments =
             vec![assigned("acr_value", "urn:acr:loa2")];
-        let deny_enforced =
-            enforcer.enforce(deny.decision, &deny.obligations);
+        let deny_enforced = enforcer.enforce(deny.decision, &deny.obligations);
         let beside = outcome(
             &deny,
             &deny_enforced,

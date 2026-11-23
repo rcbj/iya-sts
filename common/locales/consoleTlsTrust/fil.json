@@ -36,5 +36,6 @@
   "linkJson": "ang pahinang ito bilang JSON",
   "linkApi": "ang parehong nilalaman sa management API",
   "linkSettings": "ang mga setting ng mga TLS listener",
-  "linkPki": "ang sariling certificate authority ng serbisyong ito"
+  "linkPki": "ang sariling certificate authority ng serbisyong ito",
+  "shadowedBy": "Natakpan ng naunang anchor na may parehong paksa ({fingerprint}). Hindi magpapatunay ang sertipikong inilabas ng anchor na ito habang naka-install ang una. Magpapatunay pa rin ang pagpapakita ng sertipikong ito mismo."
 }

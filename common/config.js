@@ -8398,8 +8398,9 @@ const SETTINGS = [
   // first classical name in this list (or ssh-ed25519 when the list names
   // none). ssh-mldsa-65 is this service's own wire name: a raw ML-DSA-65
   // public key and a raw signature, in the ssh-ed25519 shape. It is a
-  // second authority, stored beside the classical one, and it is not
-  // concatenated onto TrustedUserCAKeys.
+  // second authority, stored beside the classical one, published at the
+  // same path with ?algorithm=ssh-mldsa-65 and never concatenated onto
+  // TrustedUserCAKeys.
   { key: 'pki.sshUserCaAlgorithms', group: 'PKI',
     label: 'SSH user CA algorithms',
     env: 'STS_PKI_SSH_USER_CA_ALGORITHMS', type: 'csv',
@@ -8421,22 +8422,29 @@ const SETTINGS = [
                  'stays the first classical algorithm in this list, or ' +
                  'ssh-ed25519 when the list names only ssh-mldsa-65. A ' +
                  'peer that does not understand ML-DSA keeps trusting that ' +
-                 'line. ssh-rsa (SHA-1) is not offered. The ML-DSA ' +
+                 'line. The ML-DSA authority\'s key is published at ' +
+                 'GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65; ' +
+                 'stock OpenSSH cannot verify an ML-DSA certificate yet. ' +
+                 'ssh-rsa (SHA-1) is not offered. The ML-DSA ' +
                  'authority is created only when this runtime can generate ' +
                  'the key; otherwise certificates stay classical ' +
                  '(STS-PKI-0290 is recorded and the classical authority ' +
-                 'still answers).' },
+                 'still answers), unless pki.sshUserCaPqcOnly is on.' },
   { key: 'pki.sshUserCaPqcOnly', group: 'PKI',
     label: 'SSH user certificates are post-quantum only',
     env: 'STS_PKI_SSH_USER_CA_PQC_ONLY', type: 'bool', dflt: false,
     runtime: true,
     description: 'When on, a new SSH user certificate is signed by the ' +
-                 'ML-DSA authority, and only when that authority exists. ' +
-                 'The published TrustedUserCAKeys line stays the classical ' +
-                 'key, so an OpenSSH client that already trusts it is not ' +
-                 'handed an algorithm it cannot parse. On a runtime that ' +
-                 'cannot generate ML-DSA the certificate stays classical ' +
-                 'and the request does not fail. Already issued classical ' +
+                 'ML-DSA authority and by nothing else. Stock OpenSSH ' +
+                 'cannot verify an ML-DSA certificate yet, so only an SSH ' +
+                 'server built to verify ssh-mldsa-65, trusting the key at ' +
+                 'GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65, ' +
+                 'accepts these certificates. The default line at that ' +
+                 'path stays the classical key. When the realm has no ' +
+                 'ML-DSA authority (this runtime cannot generate ML-DSA, ' +
+                 'or ssh-mldsa-65 is not in pki.sshUserCaAlgorithms) the ' +
+                 'request is refused (STS-PKI-0297) rather than answered ' +
+                 'with a classical certificate. Already issued classical ' +
                  'certificates keep verifying. Cannot be on while ' +
                  'pki.sshUserCaPqcAlongsideClassical is on (STS-PKI-0296). ' +
                  'Off by default.' },

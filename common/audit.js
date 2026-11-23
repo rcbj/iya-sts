@@ -1667,6 +1667,13 @@ const ACTIONS = [
   // #1290: a person's key pair is removed by REVOKING it, row by row.
   { action: 'portal.signing-key.revoked', category: 'authentication',
     label: 'A person revoked one of their signing key pairs' },
+  // An OpenSSH user certificate from the realm's user CA (#1955 P3):
+  // `common/ssh_user_ca.ts` writes the issue, `account-api/ssh_user_ca.ts`
+  // the holder's revocation.
+  { action: 'ssh-user-ca.issue', category: 'authentication',
+    label: 'A person was issued an SSH user certificate' },
+  { action: 'ssh-user-ca.revoke', category: 'authentication',
+    label: 'A person revoked one of their SSH user certificates' },
   // #1291: a person's own did:web, published from the user portal.
   { action: 'did.person.published', category: 'authentication',
     label: 'A person published a did:web of their own' },

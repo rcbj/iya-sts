@@ -13072,16 +13072,16 @@
     "text": "Algorithmes de l’AC utilisateur SSH"
   },
   "pki.sshUserCaAlgorithms|description": {
-    "en": "bdb54445a0279b8d",
-    "text": "Les algorithmes que l’autorité de certification des certificats utilisateur SSH peut utiliser, par ordre de préférence. ssh-mldsa-65 est ML-DSA-65 (FIPS 204) sous un nom de fil que ce service définit, parce qu’OpenSSH n’en définit aucun : la clé publique et la signature sont brutes, dans la forme qu’utilise ssh-ed25519. La ligne OpenSSH TrustedUserCAKeys que ce service publie reste le premier algorithme classique de cette liste, ou ssh-ed25519 lorsque la liste ne nomme que ssh-mldsa-65. Un pair qui ne comprend pas ML-DSA continue de faire confiance à cette ligne. ssh-rsa (SHA-1) n’est pas offert. L’autorité ML-DSA n’est créée que lorsque ce moteur peut générer la clé ; sinon les certificats restent classiques (STS-PKI-0290 est enregistré et l’autorité classique répond encore)."
+    "en": "5c4c22c2ab500fd4",
+    "text": "Les algorithmes que l’autorité de certification des utilisateurs SSH peut utiliser, par ordre de préférence. ssh-mldsa-65 est ML-DSA-65 (FIPS 204) sous un nom de transport que ce service définit, car OpenSSH n’en définit aucun : la clé publique et la signature sont brutes, sous la forme qu’utilise ssh-ed25519. La ligne OpenSSH TrustedUserCAKeys que ce service publie reste le premier algorithme classique de cette liste, ou ssh-ed25519 lorsque la liste ne nomme que ssh-mldsa-65. Un pair qui ne comprend pas ML-DSA continue de faire confiance à cette ligne. La clé de l’autorité ML-DSA est publiée à GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65 ; OpenSSH standard ne sait pas encore vérifier un certificat ML-DSA. ssh-rsa (SHA-1) n’est pas proposé. L’autorité ML-DSA n’est créée que si cet environnement d’exécution peut générer la clé ; sinon les certificats restent classiques (STS-PKI-0290 est enregistré et l’autorité classique répond toujours), sauf si pki.sshUserCaPqcOnly est activé."
   },
   "pki.sshUserCaPqcOnly|label": {
     "en": "74aae1308361ba58",
     "text": "Les certificats utilisateur SSH sont uniquement post-quantiques"
   },
   "pki.sshUserCaPqcOnly|description": {
-    "en": "39b21e5b95f84da1",
-    "text": "Activé, un nouveau certificat utilisateur SSH est signé par l’autorité ML-DSA, et seulement lorsque cette autorité existe. La ligne TrustedUserCAKeys publiée reste la clé classique, afin qu’un client OpenSSH qui lui fait déjà confiance ne reçoive pas un algorithme qu’il ne peut pas analyser. Sur un moteur qui ne peut pas générer ML-DSA, le certificat reste classique et la demande n’échoue pas. Les certificats classiques déjà émis continuent d’être vérifiés. Ne peut pas être activé en même temps que pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Désactivé par défaut."
+    "en": "dcbf21b3230dcf07",
+    "text": "Activé, un nouveau certificat utilisateur SSH est signé par l’autorité ML-DSA et par rien d’autre. OpenSSH standard ne sait pas encore vérifier un certificat ML-DSA : seul un serveur SSH conçu pour vérifier ssh-mldsa-65, et qui fait confiance à la clé publiée à GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65, accepte ces certificats. La ligne par défaut à ce chemin reste la clé classique. Lorsque le domaine n’a pas d’autorité ML-DSA (cet environnement d’exécution ne sait pas générer ML-DSA, ou ssh-mldsa-65 n’est pas dans pki.sshUserCaAlgorithms), la demande est refusée (STS-PKI-0297) au lieu de recevoir un certificat classique. Les certificats classiques déjà émis restent vérifiables. Ne peut pas être activé en même temps que pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Désactivé par défaut."
   },
   "pki.sshUserCaPqcAlongsideClassical|label": {
     "en": "c3201f8841200c32",

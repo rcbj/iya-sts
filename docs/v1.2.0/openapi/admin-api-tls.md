@@ -312,7 +312,7 @@ Scope: `admin:read`.
 
 The anchors LDAPS 636 and the main HTTPS port verify a CLIENT certificate against. A certificate that chains to one of these is verified, and a verified certificate is an identity here — it starts a sign-on session and it is what admits a remote XACML PEP to `/xacml/pep/*` — so this list is whose certificates this service believes.
 
-Each row carries the subject, issuer, serial, validity, SHA-256 fingerprint (the colon form `openssl x509 -fingerprint -sha256` prints), whether it is a CA, the PEM, and `source`: `file` for one read from `tls.trustAnchorsFile` at startup, `runtime` for one added while the process was running, with `persisted` saying whether it was written down.
+Each row carries the subject, issuer, serial, validity, SHA-256 fingerprint (the colon form `openssl x509 -fingerprint -sha256` prints), whether it is a CA, the PEM, and `source`: `file` for one read from `tls.trustAnchorsFile` at startup, `runtime` for one added while the process was running, with `persisted` saying whether it was written down. `shadowedBy`, when present, is the fingerprint of an earlier anchor with the same subject that OpenSSL would find first looking an issuer up by that name (#1242).
 
 **A RUNTIME ANCHOR IS PERSISTED** in `ou=trustAnchors` in the default realm's directory, so it survives a restart wherever the directory does (`persistence.mode` ldif or postgres) and reaches every other process against the same store. A `file` anchor is not stored there and comes back at the next start however it was removed.
 
@@ -352,6 +352,7 @@ Scope: `admin:read`.
 | `anchors[].persisted` | boolean |  |  |
 | `anchors[].readable` | boolean |  |  |
 | `anchors[].serial` | string, or null |  |  |
+| `anchors[].shadowedBy` | string |  |  |
 | `anchors[].source` | string |  |  |
 | `anchors[].subject` | string, or null |  |  |
 | `anchors[].unadmittable` | string |  |  |
@@ -411,6 +412,7 @@ Scope: `admin:read`.
 | `anchors[].persisted` | boolean |  |  |
 | `anchors[].readable` | boolean |  |  |
 | `anchors[].serial` | string, or null |  |  |
+| `anchors[].shadowedBy` | string |  |  |
 | `anchors[].source` | string |  |  |
 | `anchors[].subject` | string, or null |  |  |
 | `anchors[].unadmittable` | string |  |  |
@@ -460,7 +462,7 @@ Scope: `admin:read`.
 
 Adds every `-----BEGIN CERTIFICATE-----` block in `certificates` — the root, or the whole chain above the leaf — and applies the new truststore to every listener with `setSecureContext()`. The next handshake is judged against it; connections already open keep the truststore they were made under.
 
-**ALL OR NOTHING ON A BLOCK OPENSSL CANNOT READ.** If any block does not parse, none is added: an anchor the listener cannot parse makes the next truststore change throw on every listener. A certificate already held is counted in `duplicates` and not added twice. The truststore holds at most 32 anchors; an add that fills it keeps what went in and says why the rest did not in `warning`.
+**ALL OR NOTHING ON A BLOCK OPENSSL CANNOT READ.** If any block does not parse, none is added: an anchor the listener cannot parse makes the next truststore change throw on every listener. A certificate already held is counted in `duplicates` and not added twice. The truststore holds at most 32 anchors; an add that fills it keeps what went in and says why the rest did not in `warning`. Two anchors with the same subject and different keys are both added. When OpenSSL would accept the earlier one as the issuer of a certificate the later one signed, `warning` names that collision (STS-TLS-0064) and the earlier fingerprint. Presenting the later certificate itself still verifies.
 
 **PERSISTED** in `ou=trustAnchors` wherever the directory is; `persisted` in the reply says whether every anchor this call added was written down.
 

@@ -7,7 +7,7 @@
 // THE CERTIFICATE & KEY CONFIGURATION PANE, DRIVEN THROUGH ITS OWN DOORS.
 //
 // `/admin/pki` grew the parent project's *PKI / X.509* workflow on 2026-09-10:
-// fourteen profiles, five cryptographic approaches, forty-one key algorithms,
+// eighteen profiles, five cryptographic approaches, forty-one key algorithms,
 // a subject DN, twenty-two X.509v3 extension cards, a PKCS#10 request and four
 // keystore formats — a hundred and fifteen form fields over
 // `common/vendored/x509.js`, which is that project's own encoder byte for
@@ -598,7 +598,9 @@ async function theStoreIsReported() {
   check("it publishes the pane's whole vocabulary, so a client reads it from " +
         "the service rather than from a copy of it in a document", function () {
     assert.ok(wb.fields.length >= 100, "only " + wb.fields.length + " fields");
-    assert.strictEqual(wb.profiles.length, 14);
+    // Eighteen since #1955 P2 added the four PIV slot profiles (piv-auth,
+    // piv-sign, piv-key-management, piv-card-auth) to the fourteen.
+    assert.strictEqual(wb.profiles.length, 18);
     assert.strictEqual(wb.pqModes.length, 5);
     assert.ok(wb.keyAlgorithms.length >= 7);
     assert.deepStrictEqual(wb.keystoreFormats, ["pem", "der", "jwk", "pkcs12"]);

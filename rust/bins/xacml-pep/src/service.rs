@@ -1344,7 +1344,13 @@ mod tests {
         ];
         for (method, path) in access {
             let (status, body) = ask(&pep, method.clone(), path, https.clone());
-            assert_eq!(status, StatusCode::NOT_IMPLEMENTED, "{} {}", method, path);
+            assert_eq!(
+                status,
+                StatusCode::NOT_IMPLEMENTED,
+                "{} {}",
+                method,
+                path
+            );
             assert!(body.contains("approval store"), "{}: {}", path, body);
             assert!(!body.contains("STS-XPEP"), "{}", body);
         }
@@ -1373,12 +1379,8 @@ mod tests {
             crl_only: true,
             ..Transport::default()
         };
-        let (status, body) = ask(
-            &pep,
-            Method::POST,
-            "/access/v1/access-requests",
-            crl,
-        );
+        let (status, body) =
+            ask(&pep, Method::POST, "/access/v1/access-requests", crl);
         assert_eq!(status, StatusCode::NOT_FOUND);
         assert!(body.contains("CRL"), "{}", body);
     }

@@ -36,8 +36,8 @@
     "text": "Ablauf von AuthZEN-Zugriffsanfragen"
   },
   "sched.jobs.authzen.access-requests.describe": {
-    "en": "f219a842a3345525",
-    "text": "Verschiebt jede ausstehende AuthZEN-Zugriffsanfrage (#1180), deren expires_at überschritten ist, in den Zustand abgelaufen — schreibt ihre Audit-Zeile und sendet ihren Callback — entfernt eine abgeschlossene einen Tag nach ihrem Abschluss oder, wenn das später ist, sobald ihre Genehmigung abgelaufen ist, und wiederholt eine Callback-Zustellung, die mit einem Netzwerkfehler oder einem HTTP 5xx fehlgeschlagen ist, bis zur Versuchsgrenze (#1202). Ein Lesezugriff wendet die Frist selbst an; dies ist also die Aufzeichnung und die Bereinigung, nie das, was entscheidet."
+    "en": "fae6b34a12fb0695",
+    "text": "Verschiebt jede ausstehende AuthZEN-Zugriffsanfrage (#1180), deren expires_at überschritten ist, in den Zustand abgelaufen — schreibt ihre Audit-Zeile und sendet ihren Callback — entfernt eine abgeschlossene einen Tag nach ihrem Abschluss oder, wenn das später ist, sobald ihre Genehmigung abgelaufen ist, entfernt eine anfragbare Ablehnung einen Tag nach ihrem Zeitfenster und wiederholt eine Callback-Zustellung, die mit einem Netzwerkfehler oder einem HTTP 5xx fehlgeschlagen ist, bis zur Versuchsgrenze (#1202). Ein Lesezugriff wendet die Frist selbst an; dies ist also die Aufzeichnung und die Bereinigung, nie das, was entscheidet."
   },
   "sched.jobs.caches.eject-expired.title": {
     "en": "0cd05b8d7db4c75b",
@@ -654,6 +654,14 @@
   "sched.jobs.ssf.stream-maintenance.describe": {
     "en": "bd4794eda9c5d2d2",
     "text": "Pausiert, deaktiviert oder löscht einen Stream, dessen Receiver seit ssf.inactivityTimeoutS inaktiv ist (SSF 1.0 section 8.1.1), kündigt eine Pause oder Deaktivierung zuerst mit einem stream-updated-Ereignis an und sendet ein verification-Ereignis an jeden aktivierten Stream, der von diesem Transmitter seit ssf.verificationEveryS keines erhalten hat (section 8.1.4)."
+  },
+  "sched.jobs.ssh-user-ca.krl.title": {
+    "en": "9694f71884ac8e1b",
+    "text": "Sperrliste der SSH-Benutzer-CA"
+  },
+  "sched.jobs.ssh-user-ca.krl.describe": {
+    "en": "c84b42d3aab3bdde",
+    "text": "Aktualisiert die KRL der OpenSSH-Benutzer-CA jedes Vertrauensbereichs nach Widerrufen ausgestellter Zertifikate und entfernt abgelaufene Widerrufe."
   },
   "sched.jobs.tls.ticket-key-rotate.title": {
     "en": "8bb62416b0f1932c",

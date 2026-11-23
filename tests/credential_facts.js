@@ -57,6 +57,11 @@ const TRIM = 'ada';
 
 const SHARED = ['password', 'primaryKeys', 'mfaKeys', 'totp', 'totpUsable',
                 'mfaRequired', 'secondFactor', 'usable'];
+// The census carries #1955's HOTP (P4) and YubiKey OTP (P5) facts beside
+// the shared eight; a roster row draws neither, so they are compared with
+// mechanismsFor() alone.
+const CENSUS = ['password', 'primaryKeys', 'mfaKeys', 'totp', 'totpUsable',
+                'hotp', 'yubi', 'mfaRequired', 'secondFactor', 'usable'];
 const ROW_KEYS = ['username', 'inDirectory', 'known', 'password',
                   'primaryKeys', 'mfaKeys', 'totp', 'totpUsable',
                   'totpDetail', 'backupCodes', 'recoveryAdvised',
@@ -249,8 +254,10 @@ function compare(t, people, rows, census) {
     if (!row || !facts) {
       return;
     }
-    t.equal(JSON.stringify(Object.keys(facts)), JSON.stringify(SHARED),
+    t.equal(JSON.stringify(Object.keys(facts)), JSON.stringify(CENSUS),
             what + ' census members, in order');
+    t.equal(facts.hotp, !!mechanisms.hotp, what + ' census hotp');
+    t.equal(facts.yubi, !!mechanisms.yubi, what + ' census yubi');
     t.equal(JSON.stringify(Object.keys(row)), JSON.stringify(ROW_KEYS),
             what + ' roster members, in order');
     t.equal(JSON.stringify(sharedOf(row)),

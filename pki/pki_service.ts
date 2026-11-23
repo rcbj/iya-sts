@@ -230,14 +230,24 @@ class PkiService {
   }
 
   /**
-   * Answers a realm's OpenSSH user CA public key.
+   * Answers a realm's OpenSSH user CA public key: the classical authority's
+   * line, or with `algorithm` `ssh-mldsa-65` the ML-DSA authority's.
    *
    * @param res - the express response
    * @param scopeSegment - the scope as the path spells it
+   * @param algorithm - the `algorithm` query parameter, or ''
    */
-  async sshUserCaFor(res, scopeSegment) {
+  async sshUserCaFor(res, scopeSegment, algorithm = '') {
     const { log, pki, realms, errorCodes, revocation } = this.deps;
     log.debug("Entering PkiService.sshUserCaFor(). scope=" + scopeSegment);
+    const wanted = String(algorithm || '');
+    if (wanted && wanted !== 'ssh-mldsa-65') {
+      errorCodes.mark(res, 'STS-PKI-0298');
+      this.refuse(res, 400, 'The algorithm parameter names no SSH user CA ' +
+                  'this service publishes; it is ssh-mldsa-65 or absent.');
+      log.debug("Leaving PkiService.sshUserCaFor(). Unknown algorithm.");
+      return;
+    }
     const scope = revocation.scopeFromSegment(scopeSegment);
     if (scope === pki.SERVICE_SCOPE || scope === pki.PROCESS_SCOPE ||
         !realms.get(scope)) {
@@ -256,10 +266,21 @@ class PkiService {
         log.debug("Leaving PkiService.sshUserCaFor(). Unavailable.");
         return;
       }
-      // THE CLASSICAL LINE ONLY. answer.pqcPublicLine is the ML-DSA
-      // sibling and is not concatenated here: OpenSSH's TrustedUserCAKeys
-      // file has no post-quantum algorithm to parse.
-      const body = answer.publicLine + '\n';
+      // ONE LINE PER ANSWER. Without the parameter it is the classical
+      // authority, the line a stock OpenSSH TrustedUserCAKeys file can
+      // parse. With `algorithm=ssh-mldsa-65` it is the ML-DSA authority
+      // that signs a certificate under pki.sshUserCaPqcOnly or beside the
+      // classical one, published so a server that verifies ML-DSA has a
+      // key to trust. The two are never concatenated: OpenSSH has no
+      // post-quantum algorithm to parse, and a file it half reads is worse
+      // than one it reads whole.
+      if (wanted && !answer.pqcPublicLine) {
+        errorCodes.mark(res, 'STS-PKI-0298');
+        this.refuse(res, 404, 'This realm has no ML-DSA SSH user CA.');
+        log.debug("Leaving PkiService.sshUserCaFor(). No ML-DSA CA.");
+        return;
+      }
+      const body = (wanted ? answer.pqcPublicLine : answer.publicLine) + '\n';
       res.status(200).type('text/plain')
          .set('Cache-Control', 'no-store')
          .set('Content-Length', String(Buffer.byteLength(body)))
@@ -911,7 +932,9 @@ class PkiService {
                 ' authority(ies).');
     });
     app.get('/pki/ssh-user-ca/:scope', function (req, res) {
-      self.sshUserCaFor(res, String(req.params.scope));
+      const algorithm = req.query && typeof req.query.algorithm === 'string'
+        ? req.query.algorithm : '';
+      self.sshUserCaFor(res, String(req.params.scope), algorithm);
     });
     app.get('/pki/ssh-user-krl/:scope', function (req, res) {
       self.sshUserKrlFor(res, String(req.params.scope));
