@@ -5,8 +5,9 @@ title: Languages and regions
 # Languages and regions
 
 The pages people read can be drawn in any language, for any region, that has a
-catalog. That covers the sign-in screens, consent, sign-out, the user portal
-and the admin console. English is the source language. These are shipped:
+catalog. That covers the sign-in screens, consent, sign-out, the user portal,
+the reports application and the admin console. English is the source language.
+These are shipped:
 
 | Language | Locales the chooser offers | Catalogs |
 |---|---|---|
@@ -24,31 +25,39 @@ and the admin console. English is the source language. These are shipped:
 [User-facing pages](user-facing-pages.md) lists every page a person sees, and
 whether each is translated yet.
 
-> **What is translated so far (#539, in phases).** The sign-in screens and
-> every second-factor step, the emailed and wallet sign-ins, consent, the
-> hand-off pages, sign-out, the front door, the realm chooser and the GNAP
-> pages, the user portal (with a language field on the person's own
-> account), the built-in mail and the admin console — including the text the
-> server writes into a console page's data (#543): setting descriptions,
-> policy rules, each page's notes and the protocol metadata. See [Text the
-> server writes](#text-the-server-writes).
+> **What is translated (#539).** The sign-in screens and every second-factor
+> step, the emailed and wallet sign-ins, consent, the hand-off pages,
+> sign-out, the front door, the realm chooser, the GNAP pages, the user
+> portal (with a language field on the person's own account), the reports
+> application, the six protocol description pages (the page's own words; the
+> facts each one shows stay English), the built-in mail and the admin
+> console — including the text the server writes into a console page's data
+> (#543): setting descriptions, policy rules, each page's notes and the
+> protocol metadata. See [Text the server writes](#text-the-server-writes).
 
 > **Every catalog except English was machine-written and has not been
 > reviewed by a native speaker.** Each catalog's status is in
 > `common/locales/catalogs.json` (`machine-unreviewed`). Have the text reviewed
 > before you rely on it, and mark a catalog `reviewed` once it has been.
 
-**Errors are always in English.** Refusals, validation messages, error pages,
-protocol error descriptions and log lines are never translated. A page in
-Swedish shows a refused password in English.
+**A refusal on a page that continues stays in English.** A wrong password on
+the sign-in screen, a validation message, an API error and a log line are
+written in English. A page in Swedish shows a refused password in English.
+
+**The page that ends a browser flow is in the chosen language (#1326).**
+Its heading, the sentence saying what was wrong, the background and the
+diagnostic labels follow that language. A protocol value on the page (the
+`error`, the `error_description`, a URI, the `state`) is shown as it was
+sent.
 
 ## Which language a page is drawn in
 
 The first of these that a catalog answers wins:
 
 1. **`ui_locales`** on the OpenID Connect authorization request in progress
-   (Core 1.0, section 3.1.2.1). It is honoured on the sign-in screens. The
-   discovery document's `ui_locales_supported` lists the offered locales.
+   (Core 1.0, section 3.1.2.1). It is honoured on the sign-in screens and
+   on the consent screen. The discovery document's `ui_locales_supported`
+   lists the offered locales.
 2. **The person's own `preferredLanguage`** (RFC 2798), once the page knows
    who they are. A value the [locale policy](#the-locale-policy) filled in
    when the account was created is treated as the policy's, not the
@@ -114,16 +123,31 @@ Hebrew, Persian and Urdu are not.
 
 ## The language chooser
 
-Every user-facing page carries a small **Language** form. It works without
-JavaScript. Choosing a language:
+A page a person can stay on carries a **Language** control. A page that
+posts itself onward (the hand-offs), the move to a person's home cell, and
+the session-check iframe do not: there is nothing to redraw.
+
+Where the control is a form, it posts to `POST /authn/language` and has a
+submit button, so sending the choice needs no script. On a static page the
+browser draws that form, and with scripts blocked the page says that it
+needs its script. The user portal is one of these: its script draws the
+form and then leaves the submit to the browser.
+
+The admin console's control is a list in the page header, with no submit
+button. Choosing a language calls `POST /admin-api/console/language`, which
+needs the console's script. The first choice follows the browser and clears
+the person's own language.
+
+Choosing a language:
 
 - remembers it in the `sts_lang` cookie, which lasts a year, is `HttpOnly` and
   is `SameSite=Lax` (prefixed in product mode, as
   [every cookie](product-security.md) is);
 - if you are signed in, also sets your own `preferredLanguage`, because your
   entry outranks the cookie;
-- returns you to the page you were on. The return address is always a path on
-  this service. Anything else returns you to `/`.
+- brings you back to the page you were on. A form's return address is always
+  a path on this service. Anything else returns you to `/`. The console
+  draws the same page again.
 
 A language no catalog answers is refused (`STS-I18N-0008`).
 
@@ -237,5 +261,6 @@ text written by another node running an older build.
 A sentence that has changed since it was translated is shown in English until
 its translation is updated. An out-of-date translation is never shown. These
 translations are machine-written and unreviewed, like the catalogs above.
-Regional overlays (`fr-CA`, `es-ES`, `zh-Hant-HK`) use their base language's
-text for now.
+Regional overlays (`fr-CA`, `es-ES`, `zh-Hant-HK`) carry the sentences whose
+wording differs from the base language. A sentence an overlay does not carry
+is read from the base.

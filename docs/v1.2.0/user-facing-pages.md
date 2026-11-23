@@ -17,10 +17,10 @@ language ([Languages and regions](languages.md)):
 - **Yes**: translated, with the language chooser on the page.
 - **Yes, no chooser**: translated, but the page cannot carry a chooser. A
   page that submits itself has nothing to redraw.
-- **Planned (phase N)**: not yet translated. Issue #539 is converting the
-  pages in phases.
-- **English**: deliberately not translated. Error and refusal text is always
-  English, everywhere.
+- **English**: deliberately not translated. A refusal on a page that
+  continues, a validation message and an API error stay English. The page
+  that ends a browser flow follows the chosen language
+  ([Languages and regions](languages.md)).
 
 ## Signing in
 
@@ -242,10 +242,14 @@ menu, and saves the administrator's own `preferredLanguage`
 (`POST /admin-api/console/language`). The API explorer at
 `/admin/api-explorer` is part of it.
 
-Two kinds of text on a console page stay English for now. The first is error
-and refusal text, as everywhere. The second is text the server writes into a
-page's data: each setting's description, a policy's rule sentences, and the
-explanations some server modules supply.
+A refusal on a page that continues, and an API error, stay English. The page
+that ends a browser flow follows the chosen language. The text the server
+writes into a page's data is translated for the language the console chose:
+a setting's description, a policy's rule sentences, a page's notes, scheduler
+jobs, caches and the protocol metadata. The console sends that language on
+every request. A few of those sentences stay English;
+[Languages and regions](languages.md#text-the-server-writes) says which, and
+that an API caller which sends no `Accept-Language` still reads English.
 
 ## Mail
 
@@ -360,6 +364,10 @@ iframe at `/oauth2/check_session`, the fragment page a federation relationship
 uses, and the Kerberos exchange at `/authn/spnego`. Neither does the embedded
 protocol debugger, which is a separate application.
 
+The page that ends a browser flow ("This request could not be completed", and
+the other refusals drawn that way) is for the person, in the chosen language
+(#1326). A protocol value on it is shown as it was sent.
+
 ## Pages that are not for end users
 
 They are listed so the list above is complete. None is planned for
@@ -373,5 +381,3 @@ translation:
 - **Operator and diagnostic views**: the XACML,
   SPIFFE, SCIM, Shared Signals and SAML description pages are translated
   since #584 — see *The protocol families' description pages* above.
-- **Error pages**: "This request could not be completed" and every other
-  refusal. These are English by design.
