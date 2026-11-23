@@ -73,6 +73,23 @@ function inMode(m, fn) {
   }
 }
 
+// inMode() for a function that returns a promise: the mode is held until
+// it settles. WS-Federation signs its assertion and its metadata off the
+// event loop since #1955 P8's follow-up (#1993), so its answers are
+// promises, and a mode cleared on the synchronous return would be cleared
+// while the signing it was set for is still running.
+async function inModeAsync(m, fn) {
+  log.debug("Entering inModeAsync(). " + m);
+  config.setOverride('global.mode', m);
+  try {
+    const out = await fn();
+    log.debug("Leaving inModeAsync().");
+    return out;
+  } finally {
+    config.clearOverride('global.mode');
+  }
+}
+
 function bothModes(fn) {
   log.debug("Entering bothModes().");
   log.debug("Leaving bothModes().");
@@ -144,8 +161,10 @@ function fakeRes() {
 // A WS-Federation sign-in response for `realm`, the wresult the page
 // carries, and whether its assertion's signature verifies as this service's.
 // The reply address is a stand-in nothing answers at: the response is read
-// off the page, never POSTed.
-function wsfedIssued(realm, tokenType) {
+// off the page, never POSTed. AWAITED: issueSignInResponse() returns the
+// promise of its page since #1993 (the assertion is signed off the event
+// loop), and the page is empty until it settles.
+async function wsfedIssued(realm, tokenType) {
   log.debug("Entering wsfedIssued().");
   const wsfed = require('../ws-federation/wsfed');
   const instance = new wsfed.WsFederation(wsfed.WsFederation.defaultDeps());
@@ -153,9 +172,10 @@ function wsfedIssued(realm, tokenType) {
                     authTime: Math.floor(Date.now() / 1000),
                     user: { username: 'in-alice' }, events: [] };
   const res = fakeRes();
-  instance.issueSignInResponse({}, res, { wa: 'wsignin1.0', wtrealm: realm },
-                               session, realm, REPLY_URL,
-                               tokenType || wsfed.SAML2_TOKEN_TYPE);
+  await instance.issueSignInResponse({}, res,
+                                     { wa: 'wsignin1.0', wtrealm: realm },
+                                     session, realm, REPLY_URL,
+                                     tokenType || wsfed.SAML2_TOKEN_TYPE);
   const m = /name="wresult" value="([^"]*)"/.exec(res.body);
   const wresult = m ? unescapeXml(m[1]) : '';
   const s2 = /<saml:Issuer>([^<]*)<\/saml:Issuer>/.exec(wresult);
@@ -169,7 +189,8 @@ function wsfedIssued(realm, tokenType) {
            body: res.body.slice(0, 300) };
 }
 
-// The WS-Federation metadata routes, asked as express would ask them.
+// The WS-Federation metadata routes, asked as express would ask them. Each
+// answer is awaited: the routes return sendMetadata()'s promise since #1993.
 function metadataRoutes() {
   log.debug("Entering metadataRoutes().");
   const wsfed = require('../ws-federation/wsfed');
@@ -180,15 +201,16 @@ function metadataRoutes() {
     post: function () {},
     contentSecurityPolicy: function () { return ''; }
   });
-  const ask = function (path, params) {
+  const ask = async function (path, params) {
     log.debug("Entering ask(). " + path);
     const res = fakeRes();
-    routes[path]({ params: params || {}, headers: { host: 'sts.in.example' },
-                   protocol: 'https',
-                   get: function (k) {
-                     return String(k).toLowerCase() === 'host'
-                       ? 'sts.in.example' : undefined;
-                   } }, res);
+    await routes[path]({ params: params || {},
+                         headers: { host: 'sts.in.example' },
+                         protocol: 'https',
+                         get: function (k) {
+                           return String(k).toLowerCase() === 'host'
+                             ? 'sts.in.example' : undefined;
+                         } }, res);
     const m = /<(?:md:)?EntityDescriptor [^>]*\bentityID="([^"]*)"/
       .exec(res.body);
     log.debug("Leaving ask().");
@@ -291,16 +313,16 @@ function wstrustIssuers(t, expected) {
   log.debug("Leaving wstrustIssuers().");
 }
 
-function wsfedIssuers(t) {
+async function wsfedIssuers(t) {
   log.debug("Entering wsfedIssuers().");
   const wsfed = require('../ws-federation/wsfed');
-  ['development', 'product'].forEach(function (m) {
-    inMode(m, function () {
+  for (const m of ['development', 'product']) {
+    await inModeAsync(m, async function () {
       // No request is ambient here, so the name is the configured base's.
       const expected = IssuerNames.issuer();
-      const s2 = wsfedIssued('in-app', wsfed.SAML2_TOKEN_TYPE);
-      const s11 = wsfedIssued('in-app', wsfed.SAML11_TOKEN_TYPE);
-      const unreg = wsfedIssued(UNREG_REALM, wsfed.SAML2_TOKEN_TYPE);
+      const s2 = await wsfedIssued('in-app', wsfed.SAML2_TOKEN_TYPE);
+      const s11 = await wsfedIssued('in-app', wsfed.SAML11_TOKEN_TYPE);
+      const unreg = await wsfedIssued(UNREG_REALM, wsfed.SAML2_TOKEN_TYPE);
       t.check(s2.status === 200 && s2.issuer === expected &&
               s11.status === 200 && s11.issuer === expected &&
               s2.signed && s11.signed &&
@@ -311,24 +333,24 @@ function wsfedIssuers(t) {
               'signature verifies as this service\'s',
               JSON.stringify([s2, s11, unreg]));
     });
-  });
+  }
   log.debug("Leaving wsfedIssuers().");
 }
 
-function wsfedMetadata(t, prefix) {
+async function wsfedMetadata(t, prefix) {
   log.debug("Entering wsfedMetadata().");
   const sso = require('../saml/saml2_sso');
   const routes = metadataRoutes();
   const expected = IssuerNames.issuer(BASE + prefix);
-  ['development', 'product'].forEach(function (m) {
-    inMode(m, function () {
-      const own = routes.of('in-app');
-      const bySlug = routes.of(sso.slugOf('in-app'));
-      const shared = routes.shared();
-      const unreg = routes.of('in-nobody');
+  for (const m of ['development', 'product']) {
+    await inModeAsync(m, async function () {
+      const own = await routes.of('in-app');
+      const bySlug = await routes.of(sso.slugOf('in-app'));
+      const shared = await routes.shared();
+      const unreg = await routes.of('in-nobody');
       // An entry that merely turned up (the wtrealm the sign-in above
       // filed) is not registered either.
-      const seenOnly = routes.of(UNREG_REALM);
+      const seenOnly = await routes.of(UNREG_REALM);
       t.check(own.status === 200 && own.entityId === expected &&
               /no-store/.test(own.cache) && bySlug.entityId === expected &&
               shared.status === 200 && shared.entityId === expected &&
@@ -344,7 +366,7 @@ function wsfedMetadata(t, prefix) {
               'U5b. ' + m + ': an unregistered segment is a 404 ' +
               '(STS-WSFED-0019)', JSON.stringify([unreg, seenOnly]));
     });
-  });
+  }
   log.debug("Leaving wsfedMetadata().");
 }
 
@@ -363,7 +385,7 @@ function browserProfiles(t) {
   log.debug("Leaving browserProfiles().");
 }
 
-function inRealm(t, defaultIssuer) {
+async function inRealm(t, defaultIssuer) {
   log.debug("Entering inRealm().");
   const id = 'in-' + process.pid;
   const made = realms.create({ id: id, name: id, domain: id + '.example.net',
@@ -375,7 +397,7 @@ function inRealm(t, defaultIssuer) {
     return;
   }
   try {
-    realms.run(made.realm, function () {
+    await realms.run(made.realm, async function () {
       const prefix = String(realms.currentPrefix() || '');
       const own = IssuerNames.issuer();
       t.check(prefix && own.indexOf(prefix) >= 0 && own !== defaultIssuer,
@@ -390,8 +412,8 @@ function inRealm(t, defaultIssuer) {
               JSON.stringify(app));
       // handleRst() is handed BASE itself, as a caller with no request.
       wstrustIssuers(t, IssuerNames.issuer(BASE));
-      wsfedIssuers(t);
-      wsfedMetadata(t, prefix);
+      await wsfedIssuers(t);
+      await wsfedMetadata(t, prefix);
       browserProfiles(t);
     });
   } finally {
@@ -400,11 +422,11 @@ function inRealm(t, defaultIssuer) {
   log.debug("Leaving inRealm().");
 }
 
-function run(t) {
+async function run(t) {
   log.debug("Entering run().");
   defaultRealm(t);
   browserProfiles(t);
-  inRealm(t, IssuerNames.issuer());
+  await inRealm(t, IssuerNames.issuer());
   log.debug("Leaving run().");
   return undefined;
 }

@@ -198,8 +198,10 @@ function childMain() {
           transportSp: direct2.encryptionAlgorithmsFor(SP).keyTransport,
           signs11Assertion: !!applications.settingFor(
             RP, 'saml11.signAssertion', config),
-          signs11Response: !!direct11.buildResponse(
-            { rp: RP, assertion: '' }).signed,
+          // AWAITED: buildResponse() signs off the event loop since #1993
+          // and answers a promise, whose `.signed` is always undefined.
+          signs11Response: !!(await direct11.buildResponse(
+            { rp: RP, assertion: '' })).signed,
           header: grpc.requireSecurityHeader(),
           headerView: !!(spiffe.json && spiffe.json.workloadApi &&
                          spiffe.json.workloadApi.securityHeaderRequired),
