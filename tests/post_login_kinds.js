@@ -28,6 +28,10 @@
 //   H. A deleted person's progress goes for every activity in the table.
 //   I. Without a test's list, the table's activities are asked; the started
 //      activities offer the same list.
+//   J. A row whose module does not load is not asked, logged once under
+//      STS-AUTHN-0581, and tried again: once it loads it is asked.
+//   K. An activity that throws is logged at error level under
+//      STS-AUTHN-0582, once in the process.
 // ===========================================================================
 
 const log = require('bunyan').createLogger({ name: 'post_login_kinds',
@@ -42,22 +46,31 @@ function testKind(id, exposure, who, calls) {
   log.debug("Entering testKind().");
   const out = {
     id: id, exposure: exposure,
-    enabledIn: function (profile) {
+    enabledIn: function enabledIn(profile) {
+      log.debug("Entering testKind().enabledIn().");
+      log.debug("Leaving testKind().enabledIn().");
       return profile[id + 'On'] === true;
     },
-    turnedOn: function (profile) {
+    turnedOn: function turnedOn(profile) {
+      log.debug("Entering testKind().turnedOn().");
       const on = Object.assign({}, profile);
       on[id + 'On'] = true;
+      log.debug("Leaving testKind().turnedOn().");
       return on;
     },
-    timing: function () {
+    timing: function timing() {
+      log.debug("Entering testKind().timing().");
+      log.debug("Leaving testKind().timing().");
       return { snoozeDays: 3, graceDays: 10 };
     },
-    due: function (username) {
+    due: function due(username) {
+      log.debug("Entering testKind().due().");
       calls.push(id + ':' + username);
       if (who === 'throw') {
+        log.debug("Leaving testKind().due(). Throwing.");
         throw new Error('this activity cannot be asked');
       }
+      log.debug("Leaving testKind().due().");
       return who.indexOf(username) >= 0
         ? { reason: 'classical', enforceable: true, method: 'register',
             fallback: 'none', extra: id }
@@ -68,7 +81,7 @@ function testKind(id, exposure, who, calls) {
   return out;
 }
 
-function build(profile, withKinds, calls) {
+function build(profile, withKinds, calls, logger) {
   log.debug("Entering build().");
   const helpers = require('../common/helpers');
   const PostLogin = require('../common/post_login').PostLogin;
@@ -121,7 +134,7 @@ function build(profile, withKinds, calls) {
       return false;
     }
   };
-  const deps = { log: helpers.log, credentials: credentials,
+  const deps = { log: logger || helpers.log, credentials: credentials,
     passkeyPolicy: { select: function () {
       return null;
     } },
@@ -291,6 +304,76 @@ function run(t) {
   t.equal(require('../common/post_login_activities').ACTIVITIES.join(','),
     Kinds.ids().join(','),
     'and an administrator may start the same ones');
+
+  // J. A module that does not load, then does.
+  const errors = [];
+  const helpers = require('../common/helpers');
+  const recording = { debug: function () {
+    return helpers.log.debug.apply(helpers.log, arguments);
+  }, info: function () {
+    return helpers.log.info.apply(helpers.log, arguments);
+  }, warn: function () {
+    return helpers.log.warn.apply(helpers.log, arguments);
+  }, error: function (line) {
+    errors.push(String(line));
+  } };
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const file = path.join(os.tmpdir(), 'sts-plk-' + process.pid + '-' +
+                                      Date.now() + '.js');
+  const realKinds = Kinds.KINDS;
+  Kinds.KINDS = realKinds.concat([{ id: 'probe', exposure: 'other',
+                                    module: file }]);
+  try {
+    const j = build(Object.assign({}, on, { probeOn: true }), null, [],
+                    recording);
+    const before = j.postLogin.dueListFor('ann').map(function (one) {
+      return one.activity;
+    }).join(',');
+    j.postLogin.dueListFor('ann');
+    const logged = errors.filter(function (line) {
+      return /STS-AUTHN-0581/.test(line);
+    }).length;
+    fs.writeFileSync(file, '"use strict";\nmodule.exports = { kind: {\n' +
+      '  id: "probe", exposure: "other",\n' +
+      '  enabledIn: function (p) { return p.probeOn === true; },\n' +
+      '  turnedOn: function (p) { return Object.assign({}, p, ' +
+      '{ probeOn: true }); },\n' +
+      '  timing: function () { return { snoozeDays: 1, graceDays: 0 }; },\n' +
+      '  due: function (u) { return u === "ann" ? { reason: "probe", ' +
+      'enforceable: false, method: "", fallback: "none" } : null; }\n' +
+      '} };\n');
+    const after = j.postLogin.dueListFor('ann').map(function (one) {
+      return one.activity;
+    }).join(',');
+    t.check(before === PQC && logged === 1,
+      'J. a row whose module does not load is not asked, and is logged ' +
+      'once under STS-AUTHN-0581 over two sign-ins', before + ' ' + logged);
+    t.equal(after, PQC + ',probe',
+      'and it is tried again: once the module loads, its activity is asked');
+  } finally {
+    Kinds.KINDS = realKinds;
+    try {
+      fs.rmSync(file, { force: true });
+    } catch (e) {
+      // A temporary file left behind is not a failed assertion.
+      log.debug("Caught in run(): " + ((e && e.message) || e));
+    }
+  }
+
+  // K. An activity that throws, logged once.
+  errors.length = 0;
+  const k = build(several, function (cc) {
+    return [testKind('other', 'other', 'throw', cc)];
+  }, [], recording);
+  k.postLogin.dueListFor('ann');
+  k.postLogin.dueListFor('bob');
+  const thrown = errors.filter(function (line) {
+    return /STS-AUTHN-0582/.test(line) && /"other"/.test(line);
+  }).length;
+  t.equal(thrown, 1, 'K. an activity that throws is an error under ' +
+    'STS-AUTHN-0582, logged once in the process');
   log.debug("Leaving run().");
 }
 

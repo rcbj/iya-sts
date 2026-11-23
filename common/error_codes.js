@@ -8620,6 +8620,12 @@ const CODES = [
       'question it must answer). The other activities are still asked ' +
       '(#2009).',
     spec: 'Log line; nobody is asked that activity' },
+  { code: 'STS-AUTHN-0582',
+    summary: 'A post-login activity could not say whether a person is due ' +
+      'it (its answer threw), so it was not asked at that sign-in, even ' +
+      'where it may have been required. The other activities are still ' +
+      'asked. Logged at error level once per activity in a process (#2009).',
+    spec: 'Log line; the sign-in goes on without that activity' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

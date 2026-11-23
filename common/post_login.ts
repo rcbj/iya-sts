@@ -214,8 +214,14 @@ class PostLogin {
    */
   static readonly PQC_MIGRATION = PQC_MIGRATION;
 
-  // The table's activities, once built (`kindsAsked()`).
-  private loadedKinds: Kind[] | null = null;
+  // The table's activities that loaded, by id (`kindsAsked()`); a row that
+  // failed is not kept, and is tried again.
+  private loadedKinds: Record<string, Kind> = {};
+
+  // What was already logged at error level once in this process: a module
+  // that did not load (`load:<id>`), an activity whose answer threw
+  // (`due:<id>`).
+  private warnedKinds: Set<string> = new Set();
 
   /**
    * Builds the module over its dependencies.
@@ -451,29 +457,38 @@ class PostLogin {
     const out: Kind = {
       id: PQC_MIGRATION,
       exposure: 'forgery',
-      enabledIn: function (profile: Record<string, any>): boolean {
+      enabledIn: function enabledIn(profile: Record<string, any>): boolean {
+        log.debug("Entering PostLogin.passkeyKind().enabledIn().");
+        log.debug("Leaving PostLogin.passkeyKind().enabledIn().");
         return profile.enabled === true &&
                String(profile.activity || '') === PQC_MIGRATION;
       },
-      turnedOn: function (profile: Record<string, any>):
+      turnedOn: function turnedOn(profile: Record<string, any>):
           Record<string, any> {
+        log.debug("Entering PostLogin.passkeyKind().turnedOn().");
+        log.debug("Leaving PostLogin.passkeyKind().turnedOn().");
         return Object.assign({}, profile, { enabled: true,
                                             activity: PQC_MIGRATION });
       },
-      timing: function (rules: Record<string, any>):
+      timing: function timing(rules: Record<string, any>):
           { snoozeDays: number; graceDays: number } {
+        log.debug("Entering PostLogin.passkeyKind().timing().");
+        log.debug("Leaving PostLogin.passkeyKind().timing().");
         return { snoozeDays: Number(rules.snoozeDays) || 1,
                  graceDays: Number(rules.graceDays) || 0 };
       },
-      due: function (username: string, rules: Record<string, any>,
-                     application: string): any {
+      due: function due(username: string, rules: Record<string, any>,
+                        application: string): any {
+        log.debug("Entering PostLogin.passkeyKind().due().");
         // The WebAuthn policy reads the passkey profile selected for this
         // person and application (#535, #940).
         self.deps.passkeyPolicy.select(username, application || '');
         const found = self.reasonFor(username, rules);
         if (!found) {
+          log.debug("Leaving PostLogin.passkeyKind().due(). Not due.");
           return null;
         }
+        log.debug("Leaving PostLogin.passkeyKind().due(). " + found.reason);
         return {
           reason: found.reason,
           enforceable: found.reason !== 'none' ||
@@ -493,9 +508,14 @@ class PostLogin {
   // order — the passkey migration answered here, every other row by the
   // module it names, required the first time it is asked (the table's
   // header argues why lazily). A module that is not whole is not asked, and
-  // is logged under STS-AUTHN-0581 once per process: the other activities
-  // are still asked, because one activity that cannot answer must not stop
-  // a person being asked another. A test's deps may hand its own list.
+  // is logged under STS-AUTHN-0581 the first time in this process (a line
+  // per sign-in would bury the log): the other activities are still
+  // asked, because one activity that cannot answer must not stop a person
+  // being asked another. ONLY WHAT LOADED IS KEPT: a row that failed is
+  // tried again at the next question, so a failure that passes (a module
+  // that threw while something it reads was not yet loaded — node keeps no
+  // module that threw) does not leave the activity unasked for the life of
+  // the process. A test's deps may hand its own list.
   private kindsAsked(): Kind[] {
     const { log } = this.deps;
     log.debug("Entering PostLogin.kindsAsked().");
@@ -505,15 +525,17 @@ class PostLogin {
                 " given.");
       return given;
     }
-    if (this.loadedKinds) {
-      log.debug("Leaving PostLogin.kindsAsked(). Held.");
-      return this.loadedKinds;
-    }
+    const loaded = this.loadedKinds;
     const out: Kind[] = [];
     PostLoginKinds.KINDS.forEach((row) => {
+      if (loaded[row.id]) {
+        out.push(loaded[row.id]);
+        return;
+      }
       if (!row.module) {
         if (row.id === PQC_MIGRATION) {
-          out.push(this.passkeyKind());
+          loaded[row.id] = this.passkeyKind();
+          out.push(loaded[row.id]);
         }
         return;
       }
@@ -528,14 +550,20 @@ class PostLogin {
       }
       const problem = PostLoginKinds.problemWith(row, kind);
       if (problem) {
-        log.error(errorCodes.tag('STS-AUTHN-0581') + 'post-login: the ' +
-                  'activity "' + row.id + '" is not asked: its module (' +
-                  row.module + ') ' + problem + '.');
+        const why = 'post-login: the activity "' + row.id + '" is not ' +
+          'asked: its module (' + row.module + ') ' + problem + '.';
+        if (this.warnedKinds.has('load:' + row.id)) {
+          log.debug(why);
+        } else {
+          this.warnedKinds.add('load:' + row.id);
+          log.error(errorCodes.tag('STS-AUTHN-0581') + why +
+                    ' Tried again at every sign-in; logged once.');
+        }
         return;
       }
+      loaded[row.id] = kind as Kind;
       out.push(kind as Kind);
     });
-    this.loadedKinds = out;
     log.debug("Leaving PostLogin.kindsAsked(). " + out.length + ".");
     return out;
   }
@@ -742,9 +770,19 @@ class PostLogin {
           }
         } catch (e) {
           // One activity that cannot be answered asks nothing, and leaves
-          // the others asked.
-          log.debug("Caught in PostLogin.dueListFor(): " + kind.id + ": " +
-                    ((e && e.message) || e));
+          // the others asked — but NOT QUIETLY: an activity that throws is
+          // one that may be REQUIRED of this person and is not being asked,
+          // so it is an error with its code, the first time in this process
+          // (once a sign-in would bury the log), and a debug line after.
+          const why = 'post-login: the activity "' + kind.id + '" could ' +
+            'not say whether "' + username + '" is due it, so it is not ' +
+            'asked: ' + ((e && e.message) || e);
+          log.debug("Caught in PostLogin.dueListFor(): " + why);
+          if (!this.warnedKinds.has('due:' + kind.id)) {
+            this.warnedKinds.add('due:' + kind.id);
+            log.error(errorCodes.tag('STS-AUTHN-0582') + why +
+                      '. Logged once in this process.');
+          }
         }
       });
     } catch (e) {
@@ -756,9 +794,11 @@ class PostLogin {
     }
     const kinds = this.kindsAsked();
     const exposureOf = function (id: string): number {
+      log.debug("Entering PostLogin.dueListFor().exposureOf().");
       const kind = kinds.filter(function (one) {
         return one.id === id;
       })[0];
+      log.debug("Leaving PostLogin.dueListFor().exposureOf().");
       return PostLoginKinds.exposureRank(kind ? kind.exposure : '');
     };
     out.sort(function (a, b) {
@@ -805,7 +845,8 @@ class PostLogin {
    * The next activity a sign-in asks (#2009 P1, design X3): of what is
    * due, the first not already asked at this sign-in — every REQUIRED one,
    * and at most ONE that may be skipped, so a sign-in does not become a
-   * questionnaire. The others are asked at a later sign-in.
+   * questionnaire (rcbj's decision D2 on #2009, 2026-11-23). The others are
+   * asked at a later sign-in.
    *
    * @param username - the person
    * @param application - the application signed in to

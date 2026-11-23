@@ -4168,10 +4168,33 @@ one click from skipped.
   pending record. `refusedSession()` turns `extra.postLogin` into the step
   (`postLoginStep()`, `factor: 'post-login'`, the door's amr/acr/credential
   kept as `held`) on `/authn/post-login`; `finishPostLogin()` starts the held
-  session with `postLoginDone` once Register's ceremony verifies or Skip is
-  taken. A door that cannot draw the step (federation, wallet, SPNEGO,
+  session once Register's ceremony verifies or Skip is taken — or holds it
+  again for the next activity due (below). A door that cannot draw the step (federation, wallet, SPNEGO,
   certificate, anything outside this file) is NOT interrupted for a
   skippable activity and is REFUSED for a required one (STS-AUTHN-0473).
+* **SEVERAL ACTIVITIES ARE ASKED IN TURN (#2009 P1, 2026-11-23).**
+  `startSessionHere()` asks `postLogin.nextDue()`, not `dueFor()`:
+  never an activity already asked at this sign-in, and at most ONE that may
+  be skipped, every required one still asked (rcbj's decision D2 on #2009).
+  `finishPostLogin()` starts the held session with `postLoginHold`,
+  `postLoginAsked` (this activity added) and `postLoginSkippableAsked`
+  rather than `postLoginDone`, so it is held again for the next activity due
+  and `refusedSession()` draws that step as it drew this one; with nothing
+  more due it starts and returns to the caller. The asked list lives only in
+  the server's pending step, so nothing a browser sends can skip one.
+  `postLoginDone` is still honoured where a caller sets it.
+* **THE ROLES ARE SETTLED BEFORE A POST-LOGIN STEP (`rolesSettled`, #2009 —
+  a behaviour change).** The role step (#1072) is asked first, so the
+  session `finishPostLogin()` starts carries `rolesSettled` and the role
+  question is not asked again. Until #2009 it was, because that session was
+  started without `postLoginHold`: a sign-in naming no application ran
+  `role_eligibility.requiredFor()` a second time and could be refused
+  STS-XACML-0329 after the person had done the activity, and an offer that
+  appeared during the step was asked then. Not `rolesDone`, which also
+  REPLACES the session's role choice for the application. `roleHeldOf()`
+  and `finishRoles()` carry `postLoginAsked` too, so a session the role step
+  holds never re-asks an activity. `tests/post_login.js` N drives the chain
+  and the offer that appears.
 * **A post-login step is answered to no other step's act**
   (`mfaStepFor(id, accepts)`): a code, a recovery code or a wallet posted to
   its id would start the held session without the activity.
