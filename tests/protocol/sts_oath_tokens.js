@@ -466,7 +466,7 @@ async function hotpResyncTest() {
   await mustDo("POST", hotpRealm("/admin-api/users/create"), {
     username: H_PERSON, invent: false, credential: "password",
     password: H_PASSWORD,
-    attributes: { cn: "HOTP " + H_PERSON, sn: H_PERSON,
+    attributes: { cn: "HOTP " + H_PERSON, sn: H_PERSON, givenName: "HOTP",
                   mail: H_PERSON + "@" + H_REALM + ".example.net" } },
     "the person was not created");
   await mustDo("POST", hotpRealm(OPERATION + "/assign-oath"),
