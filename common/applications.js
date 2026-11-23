@@ -2756,6 +2756,16 @@ const FIELD_EXAMPLES = {
   wstrustEncryptionCertificate: '-----BEGIN CERTIFICATE----- MIIC… ' +
     '-----END CERTIFICATE-----',
   wstrustResponseRecipientXPath: '//wsse:Security/wsse:BinarySecurityToken',
+  // WS-Security message integrity (#1917): the console's Body preset for
+  // each map, and the switches.
+  wstrustSignRequestElements: '/soap11:Envelope/soap11:Body | ' +
+    '/soap12:Envelope/soap12:Body',
+  wstrustSignResponseElements: '/soap11:Envelope/soap11:Body | ' +
+    '/soap12:Envelope/soap12:Body',
+  wstrustSignRequest: 'true',
+  wstrustSignResponse: 'true',
+  wstrustResponseProtectionOrder: 'sign-then-encrypt',
+  wstrustEncryptSignature: 'false',
   krb5ServicePrincipalName: 'HTTP/app.example.com@EXAMPLE.COM',
   oid4vpClientId: 'x509_san_dns:verifier.example.com',
   federationPartnerId: 'partner-idp',
