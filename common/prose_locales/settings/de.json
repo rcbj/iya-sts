@@ -232,8 +232,8 @@
     "text": "Das erzeugte Bootstrap-Passwort protokollieren"
   },
   "admin.logBootstrapPassword|description": {
-    "en": "856dddf1ed8c2407",
-    "text": "Nur im Produktmodus. Aus, der Standard, wird das für den ersten Administrator erzeugte Passwort in die Datei bootstrap-admin-password in persistence.dataDir geschrieben, lesbar nur für diesen Dienst, und das Protokoll nennt den Ort. An wird es stattdessen in das Dienstprotokoll geschrieben. WARNUNG: an ist ASVS 5.0.0 Anforderung 16.2.5 nicht erfüllt, weil Anmeldedaten das Protokoll erreichen. Ein späterer Start löscht diese Datei, sobald bereits jemand Zugangsdaten besitzt."
+    "en": "8591cfda7dde139a",
+    "text": "Nur im Produktmodus. Aus, der Standard, wird das für den ersten Administrator erzeugte Passwort in die Datei bootstrap-admin-password in persistence.dataDir geschrieben, lesbar nur für diesen Dienst, und das Protokoll nennt den Ort. An wird es stattdessen in das Dienstprotokoll geschrieben. WARNUNG: an ist ASVS 5.0.0 Anforderung 16.2.5 nicht erfüllt, weil Anmeldedaten das Protokoll erreichen. Die Datei eines Vertrauensbereichs hängt an diesen Namen einen Bindestrich und die ID des Vertrauensbereichs an. Ein späterer Start löscht eine Datei, sobald das Passwort darin sein Konto nicht mehr öffnet."
   },
   "oauth2.allowConfidentialWithoutPkce|label": {
     "en": "c33a0a31a1d623b1",
@@ -424,8 +424,8 @@
     "text": "Einen Standard-Administratornamen im Produkt erlauben"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "7375f4bf636f5366",
-    "text": "Nur im Produktmodus. Aus, der Standard, erhält ein Bootstrap-Administrator mit dem Namen admin, root, sa oder administrator, oder ganz ohne Namen, einen nicht vorhersagbaren erzeugten Namen, der mit seinem Passwort beim ersten Start in die Datei bootstrap-admin-password in persistence.dataDir geschrieben wird (siehe admin.logBootstrapPassword). An wird der konfigurierte Name so verwendet, wie er ist. WARNUNG: ASVS 5.0.0 Anforderung 6.3.2 verbietet einen Standardnamen für ein Konto; lassen Sie dies daher außerhalb eines Teststapels aus. Ein späterer Start löscht diese Datei, sobald bereits jemand Zugangsdaten besitzt."
+    "en": "7007ae597c41e813",
+    "text": "Nur im Produktmodus. Aus, der Standard, erhält ein Bootstrap-Administrator mit dem Namen admin, root, sa oder administrator, oder ganz ohne Namen, einen nicht vorhersagbaren erzeugten Namen, der mit seinem Passwort beim ersten Start in die Datei bootstrap-admin-password in persistence.dataDir geschrieben wird (siehe admin.logBootstrapPassword). An wird der konfigurierte Name so verwendet, wie er ist. WARNUNG: ASVS 5.0.0 Anforderung 6.3.2 verbietet einen Standardnamen für ein Konto; lassen Sie dies daher außerhalb eines Teststapels aus. Die Datei eines Vertrauensbereichs hängt an diesen Namen einen Bindestrich und die ID des Vertrauensbereichs an. Ein späterer Start löscht eine Datei, sobald das Passwort darin sein Konto nicht mehr öffnet."
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "Konto des Bootstrap-Administrators"
   },
   "admin.bootstrapUsername|description": {
-    "en": "8b69eb9d4cb0b130",
-    "text": "Der Benutzername des Bootstrap-Administrators (2026-09-13), im STANDARD-Vertrauensbereich und seit 2026-09-14 in jedem Vertrauensbereich, wo er nur diesen Vertrauensbereich verwaltet: beim Start angelegt, falls er fehlt, Mitglied beider Rollen der Konsole, bei der ersten Anmeldung zur Änderung seines Passworts gezwungen und unmöglich zu löschen oder umzubenennen. Bis zur ersten Anmeldung bei /admin darf jede angemeldete Person die Konsole verwenden (admin.openWhenEmpty). In der Entwicklung meldet jedes Passwort ihn an, wie bei allen anderen. IM PRODUKTMODUS ist er außerdem derjenige, der ein erzeugtes Passwort erhält, wenn dieser Dienst startet und NIEMAND im Vertrauensbereich Anmeldedaten besitzt; der Name und dieses Passwort werden einmal in die Datei bootstrap-admin-password in persistence.dataDir geschrieben, lesbar nur für diesen Dienst (das Protokoll nennt den Ort und trägt sie selbst nur, wenn admin.logBootstrapPassword an ist), und sie sind der einzige Weg in eine frische Produktbereitstellung. Das erzeugte Passwort wird niemals geschrieben, wo bereits jemand Anmeldedaten besitzt, sodass es kein Passwort überschreiben kann. Die erzwungene Änderung gilt nur für ein Konto, das dieser Schritt ANGELEGT hat — ein bestehendes Konto dieses Namens behält sein Passwort und erhält nur die beiden Rollen. Ein späterer Start löscht diese Datei, sobald bereits jemand Zugangsdaten besitzt."
+    "en": "938e9e0c7b3b97fa",
+    "text": "Der Benutzername des Bootstrap-Administrators (2026-09-13), im STANDARD-Vertrauensbereich und seit 2026-09-14 in jedem Vertrauensbereich, wo er nur diesen Vertrauensbereich verwaltet: beim Start angelegt, falls er fehlt, Mitglied beider Rollen der Konsole, bei der ersten Anmeldung zur Änderung seines Passworts gezwungen und unmöglich zu löschen oder umzubenennen. Bis zur ersten Anmeldung bei /admin darf jede angemeldete Person die Konsole verwenden (admin.openWhenEmpty). In der Entwicklung meldet jedes Passwort ihn an, wie bei allen anderen. IM PRODUKTMODUS ist er außerdem derjenige, der ein erzeugtes Passwort erhält, wenn dieser Dienst startet und NIEMAND im Vertrauensbereich Anmeldedaten besitzt; der Name und dieses Passwort werden einmal in die Datei bootstrap-admin-password in persistence.dataDir geschrieben, lesbar nur für diesen Dienst (das Protokoll nennt den Ort und trägt sie selbst nur, wenn admin.logBootstrapPassword an ist), und sie sind der einzige Weg in eine frische Produktbereitstellung. Das erzeugte Passwort wird niemals geschrieben, wo bereits jemand Anmeldedaten besitzt, sodass es kein Passwort überschreiben kann. Die erzwungene Änderung gilt nur für ein Konto, das dieser Schritt ANGELEGT hat — ein bestehendes Konto dieses Namens behält sein Passwort und erhält nur die beiden Rollen. Die Datei eines Vertrauensbereichs hängt an diesen Namen einen Bindestrich und die ID des Vertrauensbereichs an. Ein späterer Start löscht eine Datei, sobald das Passwort darin sein Konto nicht mehr öffnet."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",

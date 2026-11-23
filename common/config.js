@@ -1462,8 +1462,9 @@ const SETTINGS = [
                  'for the first administrator is written to the file ' +
                  'bootstrap-admin-password in persistence.dataDir, readable ' +
                  'only by this service, and the log says where. ' +
-                 'A later start deletes that file, once somebody already ' +
-                 'holds a credential. ' +
+                 'A trust realm\'s file adds a hyphen and the realm id to ' +
+                 'that name. A later start deletes a file once the password ' +
+                 'in it no longer opens its account. ' +
                  'On, it is written to the service log instead. WARNING: on, ' +
                  'ASVS 5.0.0 requirement 16.2.5 is not met, because a ' +
                  'credential reaches the log.' },
@@ -1717,8 +1718,9 @@ const SETTINGS = [
                  'name, written with its password to the file ' +
                  'bootstrap-admin-password in persistence.dataDir at first ' +
                  'start (see admin.logBootstrapPassword). ' +
-                 'A later start deletes that file, once somebody already ' +
-                 'holds a credential. ' +
+                 'A trust realm\'s file adds a hyphen and the realm id to ' +
+                 'that name. A later start deletes a file once the password ' +
+                 'in it no longer opens its account. ' +
                  'On, the ' +
                  'configured name is used as it is. WARNING: ASVS 5.0.0 ' +
                  'requirement 6.3.2 forbids a default account name, so leave ' +
@@ -1750,8 +1752,9 @@ const SETTINGS = [
                  'only by this service (the log says where, and carries them ' +
                  'itself only with admin.logBootstrapPassword on), and are ' +
                  'the only way into a fresh product deployment. ' +
-                 'A later start deletes that file, once somebody already ' +
-                 'holds a credential. ' +
+                 'A trust realm\'s file adds a hyphen and the realm id to ' +
+                 'that name. A later start deletes a file once the password ' +
+                 'in it no longer opens its account. ' +
                  'The generated password is never ' +
                  'written where somebody already holds a credential, so it ' +
                  'cannot overwrite a password. The forced change applies ' +

@@ -1660,7 +1660,8 @@ function clusterFile(opts, kind) {
   log.debug("Entering clusterFile(). " + kind);
   const name = kind === 'haproxy' ? 'pep-cluster-haproxy.cfg'
     : kind === 'reach' ? 'pep-cluster-reach-sts.sh'
-      : 'docker-compose.pep-cluster.yml';
+      : kind === 'ca' ? 'pep-cluster-' + SERVICE_CA
+        : 'docker-compose.pep-cluster.yml';
   const file = path.join(clusterDir(opts), name);
   log.debug("Leaving clusterFile().");
   return file;
@@ -1966,7 +1967,8 @@ function haproxyConfig(names) {
  *
  * @param baseDir - the directory the compose file is written in
  * @param opts - the options
- * @param plan - `{ hostPort, members }` and each member's reach flag
+ * @param plan - `{ hostPort, members, ca }`, each member's reach flag, and
+ *   whether the cluster directory holds the service's CA
  * @returns the YAML
  */
 function clusterComposeText(baseDir, opts, plan) {
@@ -2021,15 +2023,29 @@ function clusterComposeText(baseDir, opts, plan) {
   lines.push('    container_name: companion-' + opts.cluster);
   lines.push('    hostname: companion');
   lines.push('    restart: unless-stopped');
-  lines.push('    ports:');
-  lines.push('      - "127.0.0.1:${COMPANION_HOST_PORT:-9700}:9700"');
+  // NO HOST PORT (#1972). The companion is reached only as the upstream of
+  // the members' reverse proxy, http://companion:9700 on this network, and
+  // that route takes the person from identity HEADERS the proxy sets. A
+  // port published on the host, even on 127.0.0.1, let any local process
+  // send those headers straight to the companion and be whoever it named.
+  // Nothing the registrar writes or starts dials it from the host.
+  // THE SERVICE'S CERTIFICATE IS VERIFIED, against the anchor --ca gave
+  // (copied beside this file), and never turned off: without --ca the
+  // companion verifies against the roots in its image.
+  if (plan.ca) {
+    lines.push('    volumes:');
+    lines.push('      - ' + yamlVolume(baseDir, clusterFile(opts, 'ca'),
+      '/certs/' + SERVICE_CA + ':ro'));
+  }
   lines.push('    environment:');
   lines.push('      COMPANION_PORT: "9700"');
   lines.push('      COMPANION_PUBLIC_URL: "http://127.0.0.1:9700"');
   lines.push('      COMPANION_STS_URL: "https://sts:8081"');
   lines.push('      COMPANION_STS_PUBLIC_URL: "https://localhost:8081"');
   lines.push('      COMPANION_KRB5_SERVICE_PORT: "off"');
-  lines.push('      COMPANION_STS_TLS_INSECURE: "true"');
+  if (plan.ca) {
+    lines.push('      COMPANION_STS_CA_FILE: "/certs/' + SERVICE_CA + '"');
+  }
   lines.push('networks:');
   lines.push('  default:');
   lines.push('    name: ${STS_NETWORK:-iya-sts_default}');
@@ -2059,9 +2075,11 @@ function singleComposeText(opts, mount) {
     '    env_file: ./' + ENV_FILE,
     '    volumes:',
     '      - ./:' + mount + ':ro',
+    // On 127.0.0.1 only (#1972), as the cluster's load balancer is: a
+    // listener another host must reach is published by editing this line.
     '    ports:',
-    '      - "9444:9443"',
-    '      - "9543:9543"',
+    '      - "127.0.0.1:9444:9443"',
+    '      - "127.0.0.1:9543:9543"',
     '    restart: unless-stopped',
     ''
   ].join('\n');
@@ -2112,7 +2130,9 @@ function writeEnvironment(opts, where) {
         : memberPdpUrl(outDir, where.pdpUrl);
       described[name] = { out: outDir, reach: pdpHost(pdp) === 'localhost' };
     });
-    const full = { hostPort: plan.hostPort, members: described };
+    const full = { hostPort: plan.hostPort, members: described,
+                   ca: !!where.caPem ||
+                       fs.existsSync(clusterFile(opts, 'ca')) };
     compose = clusterComposeText(path.resolve(opts.out), opts, full);
     extra = ' The cluster compose is ' + clusterFile(opts, 'compose') +
       ', load balancer 127.0.0.1:' + plan.hostPort + ' only.';
@@ -2122,6 +2142,9 @@ function writeEnvironment(opts, where) {
       }, null, 2) + '\n', false);
       writeOut(clusterFile(opts, 'haproxy'),
                haproxyConfig(Object.keys(described)), false);
+      if (where.caPem) {
+        writeOut(clusterFile(opts, 'ca'), where.caPem, false);
+      }
       if (Object.keys(described).some(function (name) {
         return described[name].reach;
       })) {
@@ -2346,14 +2369,14 @@ async function main(argv) {
       console.log('\nThe load balancer listens on 127.0.0.1:' +
         opts.clusterHostPort + ' only (the reverse proxy). The ' +
         'companion is http://companion:9700 on the cluster network ' +
-        '(127.0.0.1:9700 on this host). The decision API is not ' +
+        'only, not published on this host. The decision API is not ' +
         'published. There is no TCP forwarder.');
     } else {
       console.log('\nStart it:\n  docker run -d --name ' + opts.name +
         ' --hostname ' + opts.name + ' --env-file ' +
         path.join(opts.out, ENV_FILE) + ' \\\n    -v "' +
         path.resolve(opts.out) + ':' + (opts.mount || '/certs') + ':ro" ' +
-        '-p 9444:9443 iyasec/iya-sts-xacml-pep\n' +
+        '-p 127.0.0.1:9444:9443 iyasec/iya-sts-xacml-pep\n' +
         'or: (cd ' + opts.out + ' && docker compose -f ' + COMPOSE_FILE +
         ' up -d)');
     }

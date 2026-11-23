@@ -199,7 +199,7 @@ add`, which a realm's SPIFFE listeners on an address of their own need). There
 is no `curl`, `wget` or `jq` in it: a health check is node, as the compose
 file's is — `node /usr/src/sts/common/healthcheck_probe.js`, which verifies
 the certificate against the Root the service publishes on its plain-HTTP
-port 8082 (an image older than 1.1.1 does not have it, which is why the file
+port 8082 (an image older than 1.2.0 does not have it, which is why the file
 below falls back to an unverified check there). To add a package to an image of your own, build `FROM` this one
 and install it there. A cloud SDK is a build argument instead
 (`STS_CLOUD_SDKS`).
@@ -462,9 +462,9 @@ docker compose up -d --wait
 * **Signing in.** The console's first account has a generated name and a
   password generated on the first start. Both are written, as `name:password`,
   to `data/bootstrap-admin-password`, which only the service can read; the log
-  names the account and says where. The next start removes that file, so read
-  it before you restart. The password has to be changed at the
-  first sign-in. To choose the password instead, put
+  names the account and says where. The password has to be changed at the
+  first sign-in, and the first start after that removes the file, because the
+  password in it no longer opens the account. To choose the password instead, put
   `STS_ADMIN_BOOTSTRAP_PASSWORD=...` in `.env` before the first start; the log
   then names the account, and no file is written.
 
@@ -634,9 +634,9 @@ built from and the build instant are reported beside it.
 **Each merge into `main` is the next patch**: 1.0.0, then 1.0.1, 1.0.2 and
 so on. The build works it out from the repository's `vM.N.P` git tags, and
 nothing is written back to the repository, so the repo-root `VERSION` file
-still says the release a person last set (`1.0.0`). Editing `VERSION` is how
-a new minor or major release starts: set to `1.1.0`, the next build of
-`main` is `1.1.0` and the ones after it `1.1.1`, `1.1.2`. **A release that
+still says the release a person last set (`1.2.0`). Editing `VERSION` is how
+a new minor or major release starts: set to `1.3.0`, the next build of
+`main` is `1.3.0` and the ones after it `1.3.1`, `1.3.2`. **A release that
 needs a database upgrade script is always a new minor or major release**,
 never a patch, so moving between patch releases never asks you to run one. A build of any
 other branch, or from a checkout, carries `VERSION` as written.
@@ -745,7 +745,9 @@ the service makes the first administrator with:
   the data directory, readable only by the service. It is not written to the
   log.
 
-The file holds both, as `username:password`. Read it with:
+The file holds both, as `username:password`. A trust realm bootstrapped at
+the same start gets a file of its own, `bootstrap-admin-password-` followed by
+the realm id, beside it. Read the default realm's with:
 
 ```bash
 docker compose exec sts cat data/bootstrap-admin-password

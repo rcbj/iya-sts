@@ -1479,6 +1479,23 @@ through `waitForOwnFlush()`:
   follows the log from there, so the rows this worker could not apply reach
   it. The front process has nobody to replace it: its pulls go on failing a
   bound at a time, and the line says so.
+* **SLOW IS NOT STUCK (the #1934 follow-up, 2026-11-23).** The ask waited
+  for nothing but the first bound, and the front ended the worker 8 s after
+  it: a flush whose statement was only slow (a lock held for a minute, a
+  failover) was killed mid-commit, and this worker's unflushed writes — a
+  revocation among them, which rcbj's rule says is never lost — with it.
+  So the ask (STS-STORE-0177) waits until the flush has been out
+  `OWN_FLUSH_STUCK_FACTOR` (4) bounds since it began (`flushingSince`), and
+  carries `flushing: { since, giveUpAt }`, `giveUpAt` being
+  `OWN_FLUSH_HARD_FACTOR` (10) bounds after it began. The worker's drain
+  waits for that flush to land or fail before it exits
+  (`settleOwnFlush()`, called by `request_worker.ts`'s `releaseThenExit()`,
+  which until then exited 2 s after its listener closed whatever was in
+  flight), and the front does not end it before `giveUpAt` plus its own
+  8 s. Past that the flush has had no answer from the driver for 5 minutes
+  by default and is abandoned, said as STS-WORKER-0057. Factors of the
+  bound rather than settings, so a stack that shortens the bound shortens
+  them with it.
 * **The STS-STORE-0039 line says it**: the directory applier carries
   `ownFlushWait()` beside itself (the `prepare` arrangement), and the line
   names the entry, how long the apply has waited on this process's own flush

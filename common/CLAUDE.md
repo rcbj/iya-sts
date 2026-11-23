@@ -2066,7 +2066,13 @@ refuses every read-your-write request for as long as that flush stays out —
 replace, the worker is marked `retiring` (out of `readyWorkers()`, so no
 request, session pin or scheduler run goes to it), sent `stop`, and ended
 past `RETIRE_DRAIN_MS` (8000, `stop()`'s default) if its drain waits on the
-commit that never comes (STS-WORKER-0056). `reap()` then forks the
+commit that never comes (STS-WORKER-0056). **Not while its own flush is out**
+(the follow-up of 2026-11-23): the ask comes only once that flush has been
+out four bounds (STS-STORE-0177) and carries `flushing.giveUpAt`, ten bounds
+after it began; the worker's drain waits for the flush to settle
+(`persistence.settleOwnFlush()`), and the front ends it no sooner than
+`RETIRE_DRAIN_MS` past `giveUpAt` (STS-WORKER-0057), so a flush that is only
+slow keeps its writes. `reap()` then forks the
 replacement into its slot. STS-WORKER-0055 names each, or says why the worker
 is kept. Its exit counts as a stopped exit, not a crash.
 
@@ -8079,7 +8085,8 @@ SLH-DSA has no mechanism here. `docs/v1.2.0/hsm.md` is the operator half.
   not require it back). The object answers `type`, `asymmetricKeyType` and
   `asymmetricKeyDetails` like a KeyObject, so the key set, its generations,
   the pool's key channel and the store needed no change, and **no schema
-  change** (1.1.1 is a patch release). Every signing door asks `isHsmKey()`
+  change** (none was needed; it was written while develop was 1.1.1, a
+  patch release). Every signing door asks `isHsmKey()`
   first: `signJws()` (jsonwebtoken's framing kept exactly — through
   `classicalSigningInput()`, or a throwaway key of the same kind whose
   signature is discarded), `signJwsAsync()` (`C_SignAsync`), `signXml()` (the
@@ -13320,12 +13327,19 @@ above the function named; what a maintainer needs before touching them:
   because a node whose seed committed after another node's password write
   replaced the entry with one holding none. The winner catches up, runs, waits
   for its commit and releases; a loser logs who holds it and prints nothing; a
-  store that cannot be asked runs nothing (`STS-AUTHN-0185`). A start that
-  finds a credential already held removes
-  `persistence.dataDir/bootstrap-admin-password`. A start that wrote the file
-  itself does not, so a later realm in the same process still has the password,
-  and a node that loses the claim does not remove it (`STS-AUTHN-0567` when
-  the removal fails; the service still starts).
+  store that cannot be asked runs nothing (`STS-AUTHN-0185`). **The password
+  file is one per realm (#1969)**: the default realm's is
+  `persistence.dataDir/bootstrap-admin-password`, as it always was, and a trust
+  realm's is `bootstrap-admin-password-<realm id>` — one shared name let each
+  realm of a first start overwrite the last. A start that finds a credential
+  already held removes its realm's file **only once the password in it no
+  longer opens the account it names** (verified against the stored hash, not
+  by comparing an mtime with a node's clock): the winner releases the claim
+  as soon as it commits, so a node starting a moment later on a shared data
+  directory wins the claim and reaches the removal, and an age rule would
+  delete the only unread copy. A start that wrote the file itself does not
+  remove it, and a node that loses the claim never reaches the removal
+  (`STS-AUTHN-0567` when it fails; the service still starts).
 * **`cert_enrollment.ts`**: `bindEabOnce()` claims the key id before the binding
   is written (the same account retrying at a second node before replication is
   refused once — the claim cannot say which account holds it);

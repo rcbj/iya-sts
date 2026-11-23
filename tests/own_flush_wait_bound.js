@@ -29,7 +29,12 @@
 //   3. a wait past the bound is STS-STORE-0176, logged ONCE for the flush
 //      however many pulls waited it out;
 //   4. as a request worker, the process asks the front to replace it, once
-//      (`{ replaceWorker }` on the worker channel);
+//      (`{ replaceWorker }` on the worker channel) — and only once its flush
+//      is STUCK, out four bounds since it began, not at the first bound a
+//      wait runs out (STS-STORE-0177); the ask carries the flush's start
+//      and the instant it is given up on, ten bounds after it began, and
+//      a drain's `settleOwnFlush()` waits for the held flush and answers
+//      true once it lands, so a flush that is only slow keeps its writes;
 //   5. NO ROW IS DROPPED: no STS-STORE-0042, and once the flush settles the
 //      next barrier catches up and the other node's change is applied;
 //   6. the front process (no STS_REQUEST_WORKER) reports a second wedged
@@ -157,6 +162,7 @@ async function childMain() {
     await persistence.flush();
     dirs.set('fwb', new Map());
     const PERSON = { uid: ['fwbcarol'], entryuuid: ['fwb-1'] };
+    let heldSince = 0;
     const carol = function (attributes) {
       log.debug("Entering carol().");
       dirs.get('fwb').set(LOCK_KEY, entry(LOCK_KEY, attributes));
@@ -179,6 +185,7 @@ async function childMain() {
       release = resolve;
     });
     carol(Object.assign({ title: ['here'] }, PERSON));
+    heldSince = Date.now();
     const heldFlush = persistence.flush();
     await tick(30);
     // ANOTHER NODE WRITES THE SAME ENTRY, and says so in the change log.
@@ -229,18 +236,64 @@ async function childMain() {
           ' STS-STORE-0038 line(s), the barrier held ' + tookMs + ' ms: ' +
           wedged.join('').slice(0, 800));
     check(wedged.length === 1 && wedged[0].indexOf(LOCK_KEY) >= 0 &&
-          wedged[0].indexOf('asking the front process to replace it') >= 0,
+          wedged[0].indexOf('asks the front process to replace it only if ' +
+                            'the flush is still out 4000 ms') >= 0,
           '3b. and the line names the entry and says this worker asks to ' +
-          'be replaced', wedged.join('').slice(0, 800));
-    // 4.
+          'be replaced only once the flush is stuck',
+          wedged.join('').slice(0, 800));
+    // 4. SLOW IS NOT STUCK: nothing is asked while the flush is younger
+    // than four bounds (4000 ms here).
+    const askedEarly = sent.filter(function (message) {
+      return message && message.replaceWorker;
+    }).length;
+    const ageThen = Date.now() - heldSince;
+    check(ageThen >= 4000 || askedEarly === 0,
+          '4a. A FLUSH THAT IS ONLY SLOW IS NOT A REASON TO BE REPLACED: ' +
+          'no ask while it is out less than four bounds',
+          askedEarly + ' ask(s) with the flush out ' + ageThen + ' ms');
+    // A DRAIN WAITS FOR THE FLUSH: still out, the wait has not answered.
+    // Started now, well inside the ten bounds (10000 ms) it is given.
+    const drained = persistence.settleOwnFlush();
+    const drainedEarly = await settledWithin(drained, 500);
+    if (Date.now() - heldSince < 4300) {
+      await tick(4300 - (Date.now() - heldSince));
+    }
+    db.log.push({ seq: db.log.length + 1, origin: 'node-b', kind: 'directory',
+                  realm: 'fwb', key: LOCK_KEY });
+    // The pull is not awaited whole: the flush is released as soon as the
+    // ask is sent, before the ten bounds are up, as a slow flush would land.
+    const stuckPull = persistence.syncNow();
+    const askedBy = Date.now() + 10000;
+    while (Date.now() < askedBy && !sent.some(function (message) {
+      return message && message.replaceWorker;
+    })) {
+      await tick(50);
+    }
     const asks = sent.filter(function (message) {
       return message && message.replaceWorker;
     });
+    const flushingAsk = (asks[0] && asks[0].replaceWorker.flushing) || {};
     check(asks.length === 1 &&
-          asks[0].replaceWorker.code === 'STS-STORE-0176' &&
-          String(asks[0].replaceWorker.reason).indexOf(LOCK_KEY) >= 0,
-          '4. AS A REQUEST WORKER IT ASKS THE FRONT PROCESS TO REPLACE IT, ' +
-          'ONCE', JSON.stringify(asks));
+          asks[0].replaceWorker.code === 'STS-STORE-0177' &&
+          String(asks[0].replaceWorker.reason).indexOf(LOCK_KEY) >= 0 &&
+          flushingAsk.since > 0 &&
+          flushingAsk.giveUpAt === flushingAsk.since + 10000,
+          '4. ONCE IT IS STUCK, AS A REQUEST WORKER IT ASKS THE FRONT ' +
+          'PROCESS TO REPLACE IT, ONCE, carrying the flush\'s start and the ' +
+          'instant it is given up on (ten bounds after it began)',
+          JSON.stringify(asks));
+    check(lines.filter(function (line) {
+      return line.indexOf('"msg":"[STS-STORE-0177]') >= 0;
+    }).length === 1, '4b. and says so once, under STS-STORE-0177',
+    lines.filter(function (line) {
+      return line.indexOf('STS-STORE-0177') >= 0;
+    }).join('').slice(0, 800));
+    check(drainedEarly === 'wedged' &&
+          (persistence.ownFlushInFlight() || {}).giveUpAt ===
+            flushingAsk.giveUpAt,
+          '4c. A DRAIN\'S settleOwnFlush() WAITS while the flush is out, ' +
+          'with the same give-up instant the ask carried',
+          JSON.stringify(persistence.ownFlushInFlight()));
 
     // 5.
     check(!lines.some(function (line) {
@@ -252,6 +305,11 @@ async function childMain() {
     db.hold = null;
     release();
     await settledWithin(heldFlush, 5000);
+    await settledWithin(stuckPull, 15000);
+    check(await settledWithin(drained, 5000) === true &&
+          persistence.ownFlushInFlight() === null,
+          '4d. and answers true once the flush lands: a slow flush keeps its ' +
+          'writes', '');
     const after = await settledWithin(persistence.syncNow(), 15000);
     check(after !== 'wedged' && after && after.caughtUp === true,
           '5b. once the flush settles the next barrier catches up',
@@ -333,7 +391,7 @@ function run(t) {
   if (result.threw) {
     t.bad('the child process threw', result.threw);
   }
-  t.check(result.seen.length >= 12,
+  t.check(result.seen.length >= 16,
           'every step ran — a step that stopped being reached would take ' +
           'its assertions with it and still say "passed"',
           String(result.seen.length) + ' assertion(s) recorded');

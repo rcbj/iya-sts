@@ -644,8 +644,8 @@
     "text": "Le mot de passe généré est écrit dans le journal du service."
   },
   "mode.requirements.bootstrap-password-file.product": {
-    "en": "e12d4ddc2b4d4724",
-    "text": "Il est écrit dans un fichier lisible par ce seul service, et le journal indique où, sauf si admin.logBootstrapPassword est activé."
+    "en": "f6a1cd8269e19c3e",
+    "text": "Il est écrit dans un fichier lisible par ce seul service, et le journal indique où, sauf si admin.logBootstrapPassword est activé. Le fichier d’un domaine de confiance ajoute à ce nom un trait d’union et l’identifiant du domaine. Un démarrage ultérieur supprime un fichier dès que le mot de passe qu’il contient n’ouvre plus son compte."
   },
   "mode.requirements.pkce-every-client.what": {
     "en": "7e2c6f1869e39287",

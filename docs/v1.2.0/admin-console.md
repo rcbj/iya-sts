@@ -147,9 +147,12 @@ before anything else. In development any password gets it to that screen; in
 product mode its password is `admin.bootstrapPassword`, or one generated at the
 first start. A generated one is written, with the name, to the file
 `bootstrap-admin-password` in `persistence.dataDir` as `name:password`, readable
-only by the service, and the log names the account and says where. A later start
-deletes that file, once somebody already holds a credential, so read it before
-you restart. `admin.logBootstrapPassword` writes
+only by the service, and the log names the account and says where; a trust
+realm's is `bootstrap-admin-password-<realm id>`. A later start deletes a file
+once the password in it no longer opens its account, which is once the account
+has chosen its new password at the first sign-in. Until then a restart leaves
+it, so that a node starting beside the one that wrote it, on a shared data
+directory, does not delete a password nobody has read. `admin.logBootstrapPassword` writes
 it to the log instead, which only a test stack should do. In product mode it
 must also set up a second factor at that first sign-in (see
 [Authentication](authentication.md#requiring-a-second-factor-of-everybody)). It cannot be deleted or renamed through the console,
