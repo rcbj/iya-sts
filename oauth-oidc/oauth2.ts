@@ -3869,6 +3869,25 @@ class OAuth2Server {
     return out;
   }
 
+  // UserInfo's half of `selectionSessionOf()`: the grant the presented
+  // access token descends from, read off the token register by its jti.
+  // `refresh_token` there is a refresh whose origin was never recorded —
+  // a row from before #1072's follow-ups — and is read as a grant with no
+  // browser: SAFE, because it may descend from the device grant or CIBA,
+  // and leaving a chosen role off a UserInfo answer grants nothing.
+  private userinfoSelectionSession(claims: Json): string {
+    const { log, stats } = this.deps;
+    log.debug("Entering OAuth2Server.userinfoSelectionSession().");
+    const descends = String(stats.grantOfJti(claims && claims.jti) || '');
+    const sessionId = String((claims && claims.sid) ||
+                             stats.sessionIdOfJti(claims && claims.jti) || '');
+    const out = descends === 'refresh_token' ? ''
+      : this.selectionSessionOf({ grant: descends, session_id: sessionId });
+    log.debug("Leaving OAuth2Server.userinfoSelectionSession(). " +
+              (out ? 'The session.' : 'None.'));
+    return out;
+  }
+
   private customClaimContext(base: Json, payload: Json, user: Json,
                              grant?: string, sessionId?: string): Json {
     const { log } = this.deps;
@@ -3935,6 +3954,11 @@ class OAuth2Server {
              grantId: String((opts && (opts.grant_id || opts.grant_family ||
                                        opts.set_id)) || ''),
              grantRefresh: !!(opts && opts.grant_family),
+             // WHERE A REFRESH CAME FROM (#1072): the grant its chain began
+             // with (the refresh token's `grant_type`), so UserInfo holds a
+             // refreshed device or CIBA token to its origin's rule.
+             originGrant: opts && opts.grant === 'refresh_token'
+               ? String(opts.origin_grant || '') : '',
              // THE KEY UNDER A BOUND CERTIFICATE (#432 follow-up): the
              // SubjectPublicKeyInfo SHA-256 of the client certificate on the
              // Token Request, which the register keeps beside `x5t` when the
@@ -14175,11 +14199,10 @@ class OAuth2Server {
     const configured = scopeClaims.gate(
       stats.jwtClaims('userinfo', self.customClaimContext(
         base, claims, user, undefined,
-        // Not for a token of a grant with no browser in it (#1072).
-        self.selectionSessionOf({
-          grant: stats.grantOfJti(claims.jti),
-          session_id: String(claims.sid || stats.sessionIdOfJti(claims.jti) ||
-                             '') }))),
+        // Not for a token of a grant with no browser in it (#1072), a
+        // refresh judged by where it came from; a refresh whose origin the
+        // register does not hold carries none (`grantOfJti()` argues it).
+        self.userinfoSelectionSession(claims))),
       claims.scope, 'UserInfo response');
     Object.assign(body, configured);
     if (Object.keys(configured).length) {

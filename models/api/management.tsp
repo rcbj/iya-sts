@@ -1890,6 +1890,7 @@ namespace IyaSts.Api.Management {
       `^sessionAuthenticated$`:#{`type`:"boolean"},
       `^grantId$`:#{`type`:"string"},
       `^grantRefresh$`:#{`type`:"boolean"},
+      `^originGrant$`:#{`type`:"string"},
       `^order$`:#{`type`:"integer"},
       `^revocationReach$`:#{`type`:"string"},
       `^expiresAt$`:#{`type`:"number"},

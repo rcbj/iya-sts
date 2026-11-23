@@ -770,6 +770,13 @@ function recordJwt(payload, signed, context) {
     // sessionsFromArtifacts().
     length: String(signed || '').length
   };
+  // WHERE A REFRESH CAME FROM (#1072): the grant the refreshed chain
+  // descends from, its refresh token's `grant_type`, stated by the issuer.
+  // Only on a refresh, so every other row is the shape it always was;
+  // `grantOfJti()` answers it in place of `refresh_token`.
+  if (issuedUnder.originGrant) {
+    record.originGrant = String(issuedUnder.originGrant);
+  }
   // On demand (#820 part 3) the bound is the cache's: every record stays in
   // the store until its own expiry, and `revokeWhere()` must still find it.
   if (!tokens.onDemandLive() && tokens.size >= MAX_TOKENS) {
@@ -8040,21 +8047,37 @@ function sessionAuthenticatedOfJti(jti) {
   return !record || record.sessionAuthenticated !== false;
 }
 
-// AND WHICH GRANT IT WAS ISSUED BY, by the same jti (#1072): UserInfo reads
+// AND WHICH GRANT IT DESCENDS FROM, by the same jti (#1072): UserInfo reads
 // a session's chosen dynamic roles only for a token of a grant with a
-// browser in it. '' for a jti this register never saw, which reads as it
-// always did.
+// browser in it, and a refresh is the grant it came from — a device or
+// CIBA token refreshed is still a device or CIBA token. '' for a jti this
+// register never saw, which reads as it always did.
+//
+// **A REFRESH WHOSE ORIGIN IS NOT RECORDED ANSWERS `refresh_token`** — a
+// row written before `originGrant` existed, or one whose refresh token
+// carried no `grant_type`. Its caller treats that as a grant with no
+// browser and carries no chosen role: such a token may descend from the
+// device grant or CIBA, and guessing "a browser" would widen what UserInfo
+// says. What it costs is a code-flow token refreshed before this change
+// answering UserInfo without its chosen role until its next refresh, and a
+// role left off is never a role granted. (The other reading — a browser
+// grant unless shown otherwise — was rejected for that reason.)
 /**
- * Returns the grant a token was issued by.
+ * Returns the grant a token descends from: the grant that issued it, or
+ * for a refresh the grant its chain began with, where that was recorded.
  *
  * @param jti - the token's jti
- * @returns the grant's label, or ''
+ * @returns the grant's label, `refresh_token` for a refresh whose origin is
+ *   not recorded, or ''
  */
 function grantOfJti(jti) {
   log.debug("Entering grantOfJti().");
   const record = jti ? tokens.get(jti) : null;
-  log.debug("Leaving grantOfJti().");
-  return (record && record.grant) || '';
+  const grant = (record && record.grant) || '';
+  const out = grant === 'refresh_token' && record.originGrant
+    ? String(record.originGrant) : grant;
+  log.debug("Leaving grantOfJti(). " + (out || '(none)'));
+  return out;
 }
 
 // Revoke every token matching a predicate, and say how many. Used by the

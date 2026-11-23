@@ -7030,7 +7030,10 @@ is duplicated.
   exchange and Native SSO, the two assertion grants, the device grant, CIBA
   — and a refresh descending from one (`origin_grant`), through
   `selectionSessionOf()`; UserInfo asks the token register's
-  `grantOfJti()`. The session id still goes on those tokens for `sid` and
+  `grantOfJti()`, which answers a refresh by its `originGrant` (the
+  refresh token's `grant_type`, recorded since 2026-11-23), and reads a
+  refresh with none recorded as a grant with no browser — safe, since it
+  may descend from the device grant or CIBA. The session id still goes on those tokens for `sid` and
   the sign-out's revocation. WS-Trust, Kerberos and LDAP pass none.
 * **A required role refuses a flow with no browser** (decision 5):
   `authn/role_selection.ts`'s `noBrowserRefusal()` (STS-XACML-0332),

@@ -421,6 +421,47 @@ function sectionR(t, k) {
           'R5. nor a refresh descending from the device grant');
   t.equal(of({ grant: 'password' }), '',
           'R6. nor the password grant');
+  // UserInfo, from the token register: where each access token came from.
+  const { stats } = k;
+  const stamp = Date.now().toString(36);
+  const exp = Math.floor(Date.now() / 1000) + 600;
+  const record = function (jti, under) {
+    log.debug("Entering record(). " + jti);
+    stats.recordJwt({ jti: jti, typ: 'at+jwt', sub: 'flo-op', exp: exp,
+                      client_id: 'flo-web-client' }, 'x.y.z',
+                    Object.assign({ kind: 'access_token', sessionId: 'r1',
+                                    username: 'flo-op' }, under));
+    log.debug("Leaving record().");
+  };
+  record('r-code-' + stamp, { grant: 'authorization_code' });
+  record('r-dev-' + stamp, { grant: 'refresh_token',
+                             originGrant: 'device_code' });
+  record('r-ciba-' + stamp, { grant: 'refresh_token', originGrant: 'ciba' });
+  record('r-ref-' + stamp, { grant: 'refresh_token',
+                             originGrant: 'authorization_code' });
+  record('r-old-' + stamp, { grant: 'refresh_token' });
+  const info = function (jti) {
+    log.debug("Entering info(). " + jti);
+    log.debug("Leaving info().");
+    return proto.userinfoSelectionSession.call(
+      { deps: { log: log, stats: stats },
+        selectionSessionOf: proto.selectionSessionOf },
+      { jti: jti, sid: 'r1' });
+  };
+  t.equal(stats.grantOfJti('r-dev-' + stamp), 'device_code',
+          'R7. the register answers a refreshed token by the grant it ' +
+          'descends from');
+  t.equal(info('r-code-' + stamp), 'r1',
+          'R8. UserInfo reads the session for a code-flow access token');
+  t.equal(info('r-ref-' + stamp), 'r1',
+          'R9. and for a refresh of one');
+  t.equal(info('r-dev-' + stamp), '',
+          'R10. but not for a refreshed device-grant token');
+  t.equal(info('r-ciba-' + stamp), '',
+          'R11. nor for a refreshed CIBA token');
+  t.equal(info('r-old-' + stamp), '',
+          'R12. and a refresh whose origin the register does not hold ' +
+          'carries none');
   log.debug("Leaving sectionR().");
 }
 

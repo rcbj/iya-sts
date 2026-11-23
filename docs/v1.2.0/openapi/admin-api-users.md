@@ -1549,6 +1549,7 @@ Scope: `admin:read`.
 | `(shape 2).sessions[].tokens[].kind` | string |  |  |
 | `(shape 2).sessions[].tokens[].length` | number |  |  |
 | `(shape 2).sessions[].tokens[].nbf` | number |  |  |
+| `(shape 2).sessions[].tokens[].originGrant` | string |  |  |
 | `(shape 2).sessions[].tokens[].revocable` | boolean |  |  |
 | `(shape 2).sessions[].tokens[].revoked` | boolean |  |  |
 | `(shape 2).sessions[].tokens[].revokedAt` | number |  |  |
@@ -1603,6 +1604,7 @@ Scope: `admin:read`.
 | `(shape 2).tokensOnEndedSessions[].kind` | string |  |  |
 | `(shape 2).tokensOnEndedSessions[].length` | number |  |  |
 | `(shape 2).tokensOnEndedSessions[].nbf` | number |  |  |
+| `(shape 2).tokensOnEndedSessions[].originGrant` | string |  |  |
 | `(shape 2).tokensOnEndedSessions[].revocable` | boolean |  |  |
 | `(shape 2).tokensOnEndedSessions[].revoked` | boolean |  |  |
 | `(shape 2).tokensOnEndedSessions[].revokedAt` | number |  |  |
@@ -1644,6 +1646,7 @@ Scope: `admin:read`.
 | `(shape 2).tokensWithNoSession[].kind` | string |  |  |
 | `(shape 2).tokensWithNoSession[].length` | number |  |  |
 | `(shape 2).tokensWithNoSession[].nbf` | number |  |  |
+| `(shape 2).tokensWithNoSession[].originGrant` | string |  |  |
 | `(shape 2).tokensWithNoSession[].revocable` | boolean |  |  |
 | `(shape 2).tokensWithNoSession[].revoked` | boolean |  |  |
 | `(shape 2).tokensWithNoSession[].revokedAt` | number |  |  |
