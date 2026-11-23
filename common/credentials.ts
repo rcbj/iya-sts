@@ -4524,8 +4524,8 @@ class Credentials {
     if (!credentialId || !s.challenge) {
       log.debug("Leaving Credentials.spendAssertion(). Nothing to spend.");
       return Promise.resolve(coded('STS-AUTHN-0182', { ok: false,
-        reason: 'store', detail: 'The assertion names no credential or ' +
-                                 'challenge, so it cannot be spent.' }));
+        reason: 'store',
+        detail: Sentence.say('refusals.passkey.assertionNothingToSpend') }));
     }
     log.debug("Leaving Credentials.spendAssertion(). Claiming the challenge.");
     return claims.claim({
@@ -4539,14 +4539,14 @@ class Credentials {
                    'been answered, by another node or a request racing this ' +
                    'one.');
           return coded('STS-AUTHN-0181', { ok: false, reason: 'replay',
-            detail: 'this sign-in step has already been answered' });
+            detail: Sentence.say('refusals.passkey.assertionAnswered') });
         }
         log.error(errorCodes.tag('STS-AUTHN-0182') + 'credentials: a ' +
                   'security-key assertion for ' + name + ' could not be ' +
                   'proved unspent (' + (claimed.why || claimed.reason) +
                   '), so it was refused.');
         return coded('STS-AUTHN-0182', { ok: false, reason: 'store',
-          detail: 'the assertion could not be checked just now' });
+          detail: Sentence.say('refusals.passkey.assertionUnchecked') });
       }
       return counters.advance({
         scope: WEBAUTHN_COUNTER_SCOPE, key: credentialId, value: signCount,
@@ -4566,16 +4566,15 @@ class Credentials {
                                answer.highest);
             return coded('STS-AUTHN-0035', { ok: false, reason: 'counter',
               highest: answer.highest,
-              detail: 'the signature counter did not increase (now ' +
-                      signCount + ', highest seen ' + answer.highest +
-                      ') — the key may have been cloned' });
+              detail: Sentence.say('refusals.passkey.counterBehind', {
+                now: signCount, highest: String(answer.highest) }) });
           }
           log.error(errorCodes.tag('STS-AUTHN-0182') + 'credentials: the ' +
                     'signature counter for ' + name + ' could not be ' +
                     'advanced (' + (answer.why || answer.reason) + '), so ' +
                     'the assertion was refused.');
           return coded('STS-AUTHN-0182', { ok: false, reason: 'store',
-            detail: 'the signature counter could not be checked just now' });
+            detail: Sentence.say('refusals.passkey.counterUnchecked') });
         }
         const recorded = this.noteKeyUsed(name, credentialId, signCount,
                                           s.flags);
