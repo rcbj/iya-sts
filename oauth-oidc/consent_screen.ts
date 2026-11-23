@@ -138,6 +138,8 @@ import ShellDocument = require('../common/shell_document');
 import listenerMap = require('../common/listener_map');
 // What a detail's limits say, row by row, for the view (#576).
 import AccessLimits = require('../common/access_limits');
+// A refusal as a catalog sentence (#2006): a leaf library.
+import Sentence = require('../common/sentence');
 
 // A loose JSON-shaped object: a pending record, a row, an answer.
 type Json = any;
@@ -630,7 +632,8 @@ class ConsentScreen {
   // the person the question was asked of. Each refusal leaves the record
   // ALONE — a screen that spent itself on a refusal would turn each of them
   // into a denial of service against the person it was asked of — and
-  // names its code (marked by the caller) and its sentence (English).
+  // names its code (marked by the caller) and its sentence, a catalog one
+  // (`refusals.consent.*`, #2006) that is English to every text reader.
   // `answering` words the sentence for an answer rather than the page.
   // -------------------------------------------------------------------------
   /**
@@ -648,11 +651,8 @@ class ConsentScreen {
     if (!record) {
       log.debug("Leaving ConsentScreen.askedOf(). Nothing pending.");
       return { ok: false, code: 'STS-OAUTH-0149', why: answering
-        ? 'This consent form has expired, or it has already been answered. ' +
-          'Start the request again from the application that sent you here.'
-        : 'There is no consent waiting under that id, or it has expired. ' +
-          'Start the request again from the application that sent you ' +
-          'here — nothing was issued and nothing was recorded.' };
+        ? Sentence.say('refusals.consent.formExpired')
+        : Sentence.say('refusals.consent.nothingWaiting') };
     }
     const who = this.answeredBy(req, record);
     if (!who.ok) {
@@ -661,20 +661,15 @@ class ConsentScreen {
         code: who.why === 'nosession' ? 'STS-OAUTH-0150' : 'STS-OAUTH-0151',
         why: who.why === 'nosession'
           ? (answering
-            ? 'Nobody is signed in here any more, so this answer belongs to ' +
-              'nobody. Nothing was recorded.'
-            : 'Nobody is signed in here any more, so there is nobody to ' +
-              'record an answer for. Start the request again from the ' +
-              'application that sent you here.')
+            ? Sentence.say('refusals.consent.nobodySignedInAnswer')
+            : Sentence.say('refusals.consent.nobodySignedIn'))
           : (answering
-            ? 'This consent was asked of "' + record.username + '" and ' +
-              'this browser is signed in as "' + who.who + '". Nothing was ' +
-              'recorded.'
-            : 'This consent was asked of "' + record.username + '" and the ' +
-              'session in this browser belongs to "' + who.who + '". It is ' +
-              'refused rather than recorded against whoever happens to be ' +
-              'signed in, which is the one failure at this door that would ' +
-              'write something untrue into the directory.') };
+            ? Sentence.say('refusals.consent.otherPersonAnswer',
+                           { asked: String(record.username),
+                             signedIn: String(who.who) })
+            : Sentence.say('refusals.consent.otherPerson',
+                           { asked: String(record.username),
+                             signedIn: String(who.who) })) };
     }
     log.debug("Leaving ConsentScreen.askedOf(). It is them.");
     return { ok: true, record: record, who: who };
@@ -775,12 +770,19 @@ class ConsentScreen {
   // them, as `/authn-api`'s refusals are. The code was marked by the caller;
   // it is never in the body.
   // error-code: none — the definition of this helper; every call site marks its own code first
-  private refused(res: Res, status: number, why: string): void {
+  // `messages` beside `errors` where the sentence is a catalog one (#2006);
+  // `error_description` stays its English.
+  private refused(res: Res, status: number, why: string | Sentence): void {
     const { log, authn } = this.deps;
     log.debug("Entering ConsentScreen.refused(). " + status);
-    authn.answerJson(res, status, { ok: false, next: 'refused',
-                                    errors: [why], error: 'invalid_request',
-                                    error_description: why });
+    const body: Json = { ok: false, next: 'refused',
+                         errors: [String(why)], error: 'invalid_request',
+                         error_description: String(why) };
+    const messages = Sentence.messagesOf([why]);
+    if (messages) {
+      body.messages = messages;
+    }
+    authn.answerJson(res, status, body);
     log.debug("Leaving ConsentScreen.refused().");
   }
 
@@ -995,7 +997,7 @@ class ConsentScreen {
         log.debug("Leaving the consent screen. " + found.code + ".");
         errorCodes.mark(res, found.code);
         // error-code: none — marked on the line above, askedOf()'s code
-        return oauthError(res, 400, 'invalid_request', found.why);
+        return oauthError(res, 400, 'invalid_request', String(found.why));
       }
       self.shell(req, res, found.record);
       log.debug("Leaving the consent screen. The shell, for " +

@@ -153,8 +153,10 @@ class WebEmbeddedSurface extends WebSurface {
                                     own: this.own });
     if (!state) {
       this.view = null;
-      this.drawProblem('This page could not be drawn',
-                       'The service sent no state for it.');
+      this.drawProblem(this.refusal('refusals.web.notDrawnTitle', {},
+                                    'This page could not be drawn'),
+                       this.refusal('refusals.web.noState', {},
+                                    'The service sent no state for it.'));
       return;
     }
     const row = this.find(path) || this.options.pages[0];
@@ -224,8 +226,8 @@ class WebEmbeddedSurface extends WebSurface {
   async submit(form: Json, submitter: Json): Promise<void> {
     void form;
     void submitter;
-    this.flash = { error: 'This page sends nothing, so the form was not ' +
-                          'sent.' };
+    this.flash = { error: this.refusal('refusals.spnego.sendsNothing',
+      {}, 'This page sends nothing, so the form was not sent.') };
     this.redraw();
   }
 }

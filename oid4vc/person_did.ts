@@ -90,6 +90,9 @@ import mode = require('../common/mode');
 import realms = require('../common/realms');
 import vcDataIntegrity = require('./vc_data_integrity');
 import siop = require('./siop');
+// A refusal's sentence (#2006): English to every text reader, drawn in the
+// wallet page's language.
+import Sentence = require('../common/sentence');
 import cellLocator = require('../common/cell_locator');
 import cells = require('../common/cells');
 
@@ -178,7 +181,7 @@ interface PersonDidDeps {
 }
 
 // An answer that refuses: `{ ok: false, code, error }`.
-const refusal = function (code: string, error: string): Json {
+const refusal = function (code: string, error: string | Sentence): Json {
   helpers.log.debug("Entering refusal(). " + code);
   helpers.log.debug("Leaving refusal().");
   return { ok: false, code: code, error: error };
@@ -1248,7 +1251,7 @@ class PersonDid {
     log.debug("Entering PersonDid.publishGenerated(). user=" + username);
     const settings = this.settings();
     const custody = settings.custody;
-    const deny = (code: string, error: string): Json => {
+    const deny = (code: string, error: string | Sentence): Json => {
       log.debug("Entering deny(). " + code);
       this.audited('did.person.published', username, username,
                    'publish a DID (' + custody + ' custody)',
@@ -1457,7 +1460,7 @@ class PersonDid {
                 transaction: string, location: Json): Json {
     const { log } = this.deps;
     log.debug("Entering PersonDid.publishWallet(). user=" + username);
-    const deny = (code: string, error: string): Json => {
+    const deny = (code: string, error: string | Sentence): Json => {
       log.debug("Entering deny(). " + code);
       this.audited('did.person.published', SELF_BY, username,
                    'publish a DID (wallet custody)',
@@ -1519,14 +1522,13 @@ class PersonDid {
     if (!record || record.deactivated) {
       log.debug("Leaving PersonDid.ownActive(). None.");
       return refusal('STS-VC-0172', record
-        ? 'that DID is deactivated; a deactivated DID takes no change.'
-        : 'you have no published DID with that id.');
+               ? Sentence.say('refusals.did.deactivated')
+               : Sentence.say('refusals.did.noSuchDid'));
     }
     if (record.versions.length >= MAX_VERSIONS) {
       log.debug("Leaving PersonDid.ownActive(). History full.");
-      return refusal('STS-VC-0176', record.did + ' has ' + MAX_VERSIONS +
-                     ' versions, the most one DID keeps; publish a new DID ' +
-                     'and deactivate this one.');
+      return refusal('STS-VC-0176', Sentence.say('refusals.did.historyFull',
+               { did: String(record.did), versions: MAX_VERSIONS }));
     }
     log.debug("Leaving PersonDid.ownActive().");
     return { ok: true, record: record, records: records };
@@ -1551,8 +1553,8 @@ class PersonDid {
     }));
     if (!written) {
       log.debug("Leaving PersonDid.append(). Not stored.");
-      return refusal('STS-VC-0174', 'the directory did not store the new ' +
-                     'version.');
+      return refusal('STS-VC-0174',
+        Sentence.say('refusals.did.versionNotStored'));
     }
     // THE PIN FOLLOWS THE NEW VERSION, with the provenance the subject has
     // now — which `siop.enrol()` writes as a re-proof (`again`) and says
@@ -1592,7 +1594,7 @@ class PersonDid {
     const { log, stsCrypto, seal } = this.deps;
     log.debug("Entering PersonDid.changeRealmKey(). " + change);
     const action = change === 'add' ? 'add-key' : 'rotate-key';
-    const deny = (code: string, error: string): Json => {
+    const deny = (code: string, error: string | Sentence): Json => {
       log.debug("Entering deny(). " + code);
       this.audited('did.person.version', username, username,
                    action + ' on a published DID',
@@ -1607,10 +1609,8 @@ class PersonDid {
     }
     if (found.record.custody !== 'realm') {
       log.debug("Leaving PersonDid.changeRealmKey(). Not realm custody.");
-      return deny('STS-VC-0173', 'the key of ' + found.record.did + ' is ' +
-                  'held by your wallet, so a change is authorized by a key ' +
-                  'it names now and proved by the new key: two wallet round ' +
-                  'trips, started from its Add key or Rotate key.');
+      return deny('STS-VC-0173', Sentence.say('refusals.did.walletKeyChange',
+               { did: String(found.record.did) }));
     }
     const current = this.current(found.record);
     const alg = String((current.keys[0] && current.keys[0].publicKeyJwk.alg) ||
@@ -1622,8 +1622,7 @@ class PersonDid {
     const kept = seal(JSON.stringify(pair.privateJwk));
     if (!kept) {
       log.debug("Leaving PersonDid.changeRealmKey(). Not sealed.");
-      return deny('STS-VC-0175', 'the new private key could not be sealed, ' +
-                  'so the DID was not changed.');
+      return deny('STS-VC-0175', Sentence.say('refusals.did.keyNotSealed'));
     }
     const keys = change === 'add' ? current.keys.concat([key]) : [key];
     const privateKeys: Json = {};
@@ -1666,19 +1665,19 @@ class PersonDid {
     const text = String(act || '');
     if (!ACT.test(text)) {
       log.debug("Leaving PersonDid.actProblem(). Malformed.");
-      return refusal('STS-VC-0172', 'that is not a DID act.');
+      return refusal('STS-VC-0172', Sentence.say('refusals.did.notAnAct'));
     }
     const settings = this.settings();
     if (text === 'publish') {
       if (!settings.publishing) {
         log.debug("Leaving PersonDid.actProblem(). Off.");
-        return refusal('STS-VC-0167', 'this realm does not publish DIDs ' +
-                       'for people (did.personPublishing is off).');
+        return refusal('STS-VC-0167',
+          Sentence.say('refusals.did.publishingOff'));
       }
       if (settings.custody !== 'wallet') {
         log.debug("Leaving PersonDid.actProblem(). Not wallet custody.");
-        return refusal('STS-VC-0173', 'this realm generates the key of a ' +
-                       'DID it publishes; publish one from the portal.');
+        return refusal('STS-VC-0173',
+          Sentence.say('refusals.did.realmGeneratesKey'));
       }
       log.debug("Leaving PersonDid.actProblem(). None.");
       return null;
@@ -1696,18 +1695,16 @@ class PersonDid {
     if (!subject || subject.proof !== 'wallet') {
       log.debug("Leaving PersonDid.actProblem(). Not a proved DID.");
       return refusal('STS-VC-0173', found.record.custody === 'realm'
-        ? 'the key of ' + found.record.did + ' is held by this realm; ' +
-          'change it with its own Add key or Rotate key.'
-        : 'the key of ' + found.record.did + ' was handed to you and has ' +
-          'not been proved with a wallet; prove it (Enrol a wallet, ' +
-          'signing as the DID) before changing it.');
+               ? Sentence.say('refusals.did.realmHoldsKey',
+                              { did: String(found.record.did) })
+               : Sentence.say('refusals.did.keyNotProved',
+                              { did: String(found.record.did) }));
     }
     if (/^key\./.test(text) && !this.livePending(found.record)) {
       log.debug("Leaving PersonDid.actProblem(). Nothing authorized.");
-      return refusal('STS-VC-0171', 'a new key is accepted only after a ' +
-                     'key ' + found.record.did + ' names now authorized ' +
-                     'the change, in the last ' + PENDING_TTL_S +
-                     ' seconds.');
+      return refusal('STS-VC-0171',
+        Sentence.say('refusals.did.newKeyUnauthorized',
+               { did: String(found.record.did), seconds: PENDING_TTL_S }));
     }
     log.debug("Leaving PersonDid.actProblem(). None.");
     return null;
@@ -1751,7 +1748,7 @@ class PersonDid {
       return done.ok ? Object.assign({ step: 'published' }, done) : done;
     }
     const [kind, rid] = String(act).split('.');
-    const deny = (code: string, error: string): Json => {
+    const deny = (code: string, error: string | Sentence): Json => {
       log.debug("Entering deny(). " + code);
       this.audited(kind === 'key' ? 'did.person.version'
                                   : 'did.person.authorized',
@@ -1781,11 +1778,9 @@ class PersonDid {
       if (!proved || proved.subject !== record.did ||
           this.thumbprintsOf(current).indexOf(proved.thumbprint) < 0) {
         log.debug("Leaving PersonDid.finishWalletAct(). Not the DID's key.");
-        return deny('STS-VC-0171', 'a change of ' + record.did + ' is ' +
-                    'authorized by the DID itself, signing with a key its ' +
-                    'current version (' + current.versionId + ') names; ' +
-                    'this answer was signed by ' +
-                    String((proved && proved.subject) || 'no key') + '.');
+        return deny('STS-VC-0171', Sentence.say('refusals.did.changeSignedBy', {
+                 did: String(record.did), version: String(current.versionId),
+                 signer: String((proved && proved.subject) || 'no key') }));
       }
       const change = kind === 'authorize-add' ? 'add' : 'rotate';
       const at = this.deps.now();
@@ -1801,8 +1796,8 @@ class PersonDid {
         return one.rid === record.rid ? next : one;
       }))) {
         log.debug("Leaving PersonDid.finishWalletAct(). Not stored.");
-        return deny('STS-VC-0174', 'the directory did not store the ' +
-                    'authorization.');
+        return deny('STS-VC-0174',
+          Sentence.say('refusals.did.authorizationNotStored'));
       }
       this.audited('did.person.authorized', SELF_BY, username,
                    'authorized ' + change + ' on ' + record.did + ' with ' +
@@ -1826,8 +1821,8 @@ class PersonDid {
     }
     if (this.thumbprintsOf(current).indexOf(proved.thumbprint) >= 0) {
       log.debug("Leaving PersonDid.finishWalletAct(). Already named.");
-      return deny('STS-VC-0170', 'that key is already in the current ' +
-                  'version of ' + record.did + '; prove a new one.');
+      return deny('STS-VC-0170', Sentence.say('refusals.did.keyAlreadyCurrent',
+               { did: String(record.did) }));
     }
     const key = this.keyEntry(proved.jwk, proved.alg);
     const keys = pending.change === 'add' ? current.keys.concat([key])

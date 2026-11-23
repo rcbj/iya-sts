@@ -293,8 +293,10 @@ function check(request) {
     log.debug('Leaving check(). The account is disabled.');
     return errorCodes.mark({
       allowed: false, decision: 'Deny', disabled: true,
-      why: 'The account "' + subject.name + '" is disabled, so nothing is ' +
-           'issued on its behalf.',
+      // A catalog sentence (#2006); required lazily, this file being a
+      // leaf.
+      why: require('./sentence').say('refusals.account.disabledNoIssue',
+                                     { account: String(subject.name) }),
       roles: [], required: [], policy: null
     }, 'STS-AUTHN-0201');
   }
@@ -1519,7 +1521,9 @@ function noDecision(answer) {
   }
   log.debug("Leaving noDecision(). Refused.");
   return errorCodes.mark({ allowed: false, decision: 'Indeterminate',
-    why: 'No issuance decision could be made.' }, 'STS-XACML-0183');
+    // A catalog sentence (#2006); required lazily, this file being a leaf.
+    why: require('./sentence').say('refusals.policy.noIssuanceDecision') },
+    'STS-XACML-0183');
 }
 
 function allow(why) {
@@ -1527,6 +1531,71 @@ function allow(why) {
   log.debug("Leaving allow().");
   return { allowed: true, decision: 'NotApplicable', why: why,
            roles: [], required: [], policy: null };
+}
+
+// THE GATE ANSWERS ITS `why` AS ENGLISH TEXT, AS IT ALWAYS DID (#2006).
+// A refusal written for a person is a `Sentence` (`common/sentence.ts`),
+// which the sign-in screen draws in the page's language; but every protocol
+// family hands the gate's `why` to its own error answer — an OAuth
+// `error_description`, a SAML StatusMessage, a WS-Trust fault — and some of
+// them test `typeof why === 'string'` or call a string's methods on it
+// (the merger's review of #2006 found `sanitizeDescription()` passing one
+// unsanitised into RFC 6749's character set). So every answer leaves here
+// with `why` as its English, and the sentence beside it as `said`, which
+// only the sign-in screen reads. A few levels deep, for the per-scope and
+// per-right verdicts.
+function asText(answer, depth) {
+  log.debug("Entering asText().");
+  const level = depth || 0;
+  if (!answer || typeof answer !== 'object' || level > 3) {
+    log.debug("Leaving asText(). Nothing to do.");
+    return answer;
+  }
+  if (Array.isArray(answer)) {
+    answer.forEach(function (one) {
+      asText(one, level + 1);
+    });
+    log.debug("Leaving asText(). A list.");
+    return answer;
+  }
+  if (answer.why !== null && typeof answer.why === 'object' &&
+      !Array.isArray(answer.why)) {
+    answer.said = answer.why;
+    answer.why = String(answer.why);
+  }
+  Object.keys(answer).forEach(function (key) {
+    if (key !== 'said' && key !== 'why' && answer[key] &&
+        typeof answer[key] === 'object') {
+      asText(answer[key], level + 1);
+    }
+  });
+  log.debug("Leaving asText().");
+  return answer;
+}
+
+// One exported check, its answer — or its promise's — made text.
+/**
+ * Wraps one exported check so its answer's `why` is English text.
+ *
+ * @template {(...args: any[]) => any} T
+ * @param {T} fn - the check
+ * @returns {T} the same check, answering text
+ */
+function textAnswering(fn) {
+  log.debug("Entering textAnswering().");
+  // NO ENTERING/LEAVING PAIR in `textAnswered()`: it wraps every issuance
+  // check, whose own entry and exit are logged, and a second pair per check
+  // would only double them — the hot-path exception the code style allows.
+  const out = function textAnswered() {
+    const answer = fn.apply(this, arguments);
+    return answer && typeof answer.then === 'function'
+      ? answer.then(function (settled) {
+        return asText(settled, 0);
+      })
+      : asText(answer, 0);
+  };
+  log.debug("Leaving textAnswering().");
+  return /** @type {any} */ (out);
 }
 
 /**
@@ -1542,9 +1611,9 @@ module.exports = {
   KINDS: KINDS,
   setDecider: setDecider,
   deciderInstalled: deciderInstalled,
-  check: check,
-  checkScopes: checkScopes,
-  checkGnapRights: checkGnapRights,
+  check: textAnswering(check),
+  checkScopes: textAnswering(checkScopes),
+  checkGnapRights: textAnswering(checkGnapRights),
   PROTOCOL_OF_KIND: PROTOCOL_OF_KIND,
   FAMILIES_OF_KIND: FAMILIES_OF_KIND,
   deviceFactsOf: deviceFactsOf,
@@ -1555,10 +1624,10 @@ module.exports = {
   // token's issuance is decided on.
   riskFactsOf: riskFactsOf,
   EXCHANGE: EXCHANGE,
-  checkExchange: checkExchange,
+  checkExchange: textAnswering(checkExchange),
   TRANSFER: TRANSFER,
-  checkTransfer: checkTransfer,
+  checkTransfer: textAnswering(checkTransfer),
   PASSKEY: PASSKEY,
-  checkPasskey: checkPasskey,
+  checkPasskey: textAnswering(checkPasskey),
   strictTransferReading: strictTransferReading
 };

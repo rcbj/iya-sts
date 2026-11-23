@@ -855,6 +855,11 @@ model GnapApiAnswer {
   @member(#{ cite: "this service's own (#578): English sentences", own: true })
   errors?: string[];
 
+  // Each sentence of `errors` as a catalog message, `{ key, params }`, or
+  // null (#2006): the page draws it in its language.
+  @member(#{ cite: "this service's own (#2006): errors' catalog messages", own: true })
+  messages?: unknown[];
+
   // The person's own language, as `authn.preferredLanguageOf()` answers it
   // and `/authn-api` models it (`WithValuePopulated`): an object, never a
   // bare tag. It was declared a string until 2026-11-12, so every view
