@@ -29,10 +29,11 @@ tracing.workspace = true
 indexmap.workspace = true
 regex.workspace = true
 oidc-caep-risc.workspace = true
-
-[dev-dependencies]
-# The generated request and answer types (#1830), which the tests hold this
-# binary's real answers to.
+# The generated model (#1830): the tests hold this binary's real answers to
+# its request and answer types, and since #1205's follow-up the binary itself
+# reads the Obligations Profile's rules from it (authzen_map.rs), so it is a
+# normal dependency. As a dev-dependency only, `cargo test` passed and the
+# image's `cargo build --release` could not find the crate.
 sts-model-pep.workspace = true
 
 [lints]
