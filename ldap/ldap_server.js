@@ -13735,12 +13735,14 @@ function certificateBindingHolders(kind, value) {
               ', asked.');
     return indexed;
   }
-  // NO WINDOW: the in-memory holders of the one attribute the value lives
-  // in, `peopleByMail()`'s fallback asked of the holders rather than of
-  // every entry.
-  eachHolderOfAny([kind === 'upn' ? 'userprincipalname'
-                                  : 'stscertificatebinding'],
-  function (entry) {
+  // NO WINDOW: the directory is a Map in this process, and the walk reads
+  // memory, never the store — `peopleByMail()`'s arrangement, and a BARRIER
+  // of `tests/no_full_directory_walk_in_jobs.js` for that reason. It was
+  // `eachHolderOfAny()` for a day (run 45236493306), which is the same walk
+  // without a window, but whose names must each be in the store's asked
+  // index (`tests/directory_asked_names.js`); the windowed question here is
+  // the `certificatebinding` index above, so neither name belongs there.
+  eachEntryInRealm(function (entry) {
     if (holds(entry)) {
       add(entry);
     }
