@@ -448,16 +448,16 @@
     "text": "Ein Token mit öffentlichem Schlüssel, das ein Inhaber OFFLINE abschwächen kann, wie ein Macaroon, das aber jeder prüfen kann, der den öffentlichen Wurzelschlüssel hält. Seine Autorisierungslogik ist Datalog, das im Token mitgeführt wird, daher läuft der Prüfer IMMER mit Grenzen für Zeit und Iterationen."
   },
   "crypto.standards.cms.coverage": {
-    "en": "d33248e25a15b5a7",
-    "text": "partial: SignedData mit einem Unterzeichner und signierten Attributen, geprüft über die Attributbytes wie empfangen und DER-sortiert geschrieben; EnvelopedData mit KeyTransRecipientInfo (RSA PKCS#1 v1.5 und OAEP) und AES-CBC-Inhalt; degeneriertes SignedData nur mit Zertifikaten und CRLs; für S/MIME-E-Mails (#1955) ein EnvelopedData, geschrieben mit einem OAEP-SHA-256-KeyTransRecipientInfo oder einem ECDH-KeyAgreeRecipientInfo. Keine authentifizierten oder komprimierten Daten, keine Gegensignaturen."
+    "en": "f750e6cf7ac566b2",
+    "text": "partial: SignedData mit einem Unterzeichner und signierten Attributen, geprüft über die Attributbytes wie empfangen und DER-sortiert geschrieben; EnvelopedData mit KeyTransRecipientInfo (RSA PKCS#1 v1.5 und OAEP) und AES-CBC-Inhalt; degeneriertes SignedData nur mit Zertifikaten und CRLs; für S/MIME-E-Mails (#1955) ein EnvelopedData, geschrieben mit einem OAEP-SHA-256-KeyTransRecipientInfo, einem ECDH-KeyAgreeRecipientInfo oder, für ein ML-KEM-Zertifikat, einer KEMRecipientInfo. Keine authentifizierten oder komprimierten Daten, keine Gegensignaturen."
   },
   "crypto.standards.cms.what": {
-    "en": "e09c8508abab483b",
-    "text": "Der Umschlag, den SCEP (scep/scep_cms.ts) liest und schreibt: eine vom Antragsteller signierte und an die RA verschlüsselte Anfrage sowie ein von der RA signiertes CertRep, dessen Zertifikat an den Antragsteller verschlüsselt ist. Seit #1955 auch das S/MIME-EnvelopedData, in dem E-Mails verschlüsselt werden; es fügt ein KeyAgreeRecipientInfo für einen EC-Empfänger (dhSinglePass-stdDH-sha256kdf, AES-256-Key-Wrap) und ein OAEP-SHA-256-KeyTransRecipientInfo für einen RSA-Empfänger hinzu."
+    "en": "05b9f7ff9bec76df",
+    "text": "Der Umschlag, den SCEP (scep/scep_cms.ts) liest und schreibt: eine vom Antragsteller signierte und an die RA verschlüsselte Anfrage sowie ein von der RA signiertes CertRep, dessen Zertifikat an den Antragsteller verschlüsselt ist. Seit #1955 auch das S/MIME-EnvelopedData, in dem E-Mails verschlüsselt werden; es fügt ein KeyAgreeRecipientInfo für einen EC-Empfänger (dhSinglePass-stdDH-sha256kdf, AES-256-Key-Wrap) und ein OAEP-SHA-256-KeyTransRecipientInfo für einen RSA-Empfänger sowie eine KEMRecipientInfo für ein ML-KEM-Zertifikat hinzu. Eine Laufzeit, die nicht kapseln kann, fällt nicht auf RSA oder ECDH zurück."
   },
   "crypto.standards.openpgp.coverage": {
-    "en": "5d4c9889762ddbd2",
-    "text": "partial: Lesen übertragbarer öffentlicher Schlüssel v4 und v6, Prüfen einer Klartextsignatur und Verschlüsseln einer PGP/MIME-Nachricht, alles über openpgp.js; die erweiterte und die direkte Abfrage des Web Key Directory und seine Richtliniendatei. Kein Signieren, kein Entschlüsseln, keine Übermittlung an einen Web Key Service, kein Keyserver."
+    "en": "d27e08a2f317c75c",
+    "text": "partial: Lesen übertragbarer öffentlicher Schlüssel v4 und v6, Prüfen einer Klartextsignatur und Verschlüsseln einer PGP/MIME-Nachricht, über openpgp.js; ein zusammengesetzter RFC-9980-Schlüssel wird hier gelesen und beide Hälften werden geprüft. Die erweiterte und die direkte Abfrage des Web Key Directory und seine Richtliniendatei. Kein Signieren, kein Entschlüsseln, keine Übermittlung an einen Web Key Service, kein Keyserver und kein SLH-DSA."
   },
   "crypto.standards.openpgp.what": {
     "en": "039de4dd3b49b9ab",
@@ -692,12 +692,12 @@
     "text": "Nichts. Eine Registrierung trägt die Signatur der PERSON, und eine verschlüsselte Nachricht wird nicht signiert (DKIM signiert die äußere Nachricht, wie es jede Nachricht signiert)."
   },
   "crypto.families.openpgp.verifies": {
-    "en": "c3dbfb38087cb3de",
-    "text": "Einen BESITZNACHWEIS bei der Registrierung: eine Klartextsignatur (gpg --clearsign) über genau die Challenge, die dieser Dienst der Person ausgestellt hat, durch einen signierfähigen Schlüssel des zu registrierenden Schlüssels, erstellt nach Ausstellung der Challenge (openpgp.signatureSkewS) und zu diesem Zeitpunkt gültig; der Schlüssel selbst weder widerrufen noch abgelaufen, mit einer gültigen Benutzer-ID, die die Adresse des Eintrags enthält. Schlüssel nach RFC 9580 v6 und RFC 4880 v4, gelesen von openpgp.js. Ein S/MIME-Zertifikat wird auf Gültigkeit, Schlüssel und Verwendungszweck geprüft, nicht auf seine Kette: Es bestimmt nur, an wen eine Nachricht verschlüsselt wird."
+    "en": "e571039950254fa8",
+    "text": "Einen BESITZNACHWEIS bei der Registrierung: eine Klartextsignatur (gpg --clearsign) über genau die Challenge, die dieser Dienst der Person ausgestellt hat, durch einen signierfähigen Schlüssel des zu registrierenden Schlüssels, erstellt nach Ausstellung der Challenge (openpgp.signatureSkewS) und zu diesem Zeitpunkt gültig; der Schlüssel selbst weder widerrufen noch abgelaufen, mit einer gültigen Benutzer-ID, die die Adresse des Eintrags enthält. Schlüssel nach RFC 9580 v6 und RFC 4880 v4, gelesen von openpgp.js. Ein S/MIME-Zertifikat wird auf Gültigkeit, Schlüssel und Verwendungszweck geprüft, nicht auf seine Kette: Es bestimmt nur, an wen eine Nachricht verschlüsselt wird. Zusammengesetzte RFC-9980-Schlüssel liest der eigene Leser dieses Dienstes, der beide Hälften prüft; openpgp.js liest sie nicht."
   },
   "crypto.families.openpgp.encrypts": {
-    "en": "1a05c1b540cd5082",
-    "text": "E-MAILS, wenn die Person es gewählt hat oder der Vertrauensbereich es verlangt (mail.encryptionRequired): PGP/MIME (RFC 3156) an den Verschlüsselungsschlüssel des Schlüssels, wie openpgp.js ihn wählt (SEIPD mit AES bei einem v4-Schlüssel, AEAD bei einem v6-Schlüssel); S/MIME (RFC 8551) als CMS EnvelopedData, Inhaltsverschlüsselung AES-256-CBC, der Inhaltsschlüssel unter RSAES-OAEP mit SHA-256 oder ECDH (dhSinglePass-stdDH-sha256kdf, AES-256-Key-Wrap)."
+    "en": "92940be7441a9817",
+    "text": "E-MAILS, wenn die Person es gewählt hat oder der Vertrauensbereich es verlangt (mail.encryptionRequired): PGP/MIME (RFC 3156) an den Verschlüsselungsschlüssel des Schlüssels, wie openpgp.js ihn wählt (SEIPD mit AES bei einem v4-Schlüssel, AEAD bei einem v6-Schlüssel); S/MIME (RFC 8551) als CMS EnvelopedData, Inhaltsverschlüsselung AES-256-CBC, der Inhaltsschlüssel unter RSAES-OAEP mit SHA-256 oder ECDH (dhSinglePass-stdDH-sha256kdf, AES-256-Key-Wrap). Ein ML-KEM-Zertifikat (RFC 9935) ist eine KEMRecipientInfo (RFC 9629): die Inhaltsverschlüsselung bleibt AES-256-CBC, und eine Laufzeit, die nicht kapseln kann, fällt nicht auf RSA oder ECDH zurück."
   },
   "crypto.families.openpgp.decrypts": {
     "en": "9cc3e24fe9d0a9d8",
@@ -716,24 +716,24 @@
     "text": "Registrierter Schlüssel, Signieren"
   },
   "crypto.families.openpgp.algorithms.0.how": {
-    "en": "91736ec1cb35b5f2",
-    "text": "Ed25519, Ed448, ECDSA P-256/P-384/P-521, RSA mit openpgp.minRsaBits (mindestens 3072)"
+    "en": "f27dbb16784e93f8",
+    "text": "ML-DSA-65+Ed25519, ML-DSA-87+Ed448 (RFC 9980), dann Ed25519, Ed448, ECDSA P-256/P-384/P-521, RSA von mindestens openpgp.minRsaBits (mindestens 3072)"
   },
   "crypto.families.openpgp.algorithms.1.what": {
     "en": "9f7b65405a49bedd",
     "text": "Registrierter Schlüssel, Verschlüsseln"
   },
   "crypto.families.openpgp.algorithms.1.how": {
-    "en": "e28f57b2d61b83be",
-    "text": "X25519, X448, ECDH Curve25519 und P-256/P-384/P-521, RSA mit openpgp.minRsaBits"
+    "en": "660feb6cfc44d305",
+    "text": "ML-KEM-768+X25519, ML-KEM-1024+X448 (RFC 9980), dann X25519, X448, ECDH Curve25519 und P-256/P-384/P-521, RSA von mindestens openpgp.minRsaBits"
   },
   "crypto.families.openpgp.algorithms.2.what": {
     "en": "66b873543aebf01b",
     "text": "Abgelehnt"
   },
   "crypto.families.openpgp.algorithms.2.how": {
-    "en": "18369a474bec2b97",
-    "text": "DSA, ElGamal, Brainpool-Kurven"
+    "en": "4c8437ead9bd7364",
+    "text": "DSA, ElGamal, Brainpool-Kurven, SLH-DSA"
   },
   "crypto.families.openpgp.algorithms.3.what": {
     "en": "429d783fabc235c9",
@@ -748,8 +748,8 @@
     "text": "S/MIME-Schlüsseltransport"
   },
   "crypto.families.openpgp.algorithms.4.how": {
-    "en": "acf5bad1301fd2cc",
-    "text": "RSAES-OAEP SHA-256; ECDH stdDH SHA-256-KDF, AES-256-Wrap"
+    "en": "bccae46bcdf822fb",
+    "text": "RSAES-OAEP SHA-256; ECDH stdDH SHA-256 KDF, AES-256-Wrap; ML-KEM (RFC 9935) als KEMRecipientInfo, HKDF-SHA-256 und AES-Wrap"
   },
   "crypto.families.openpgp.algorithms.5.what": {
     "en": "727e1a6e39e36a93",
@@ -1484,8 +1484,8 @@
     "text": "SHA-1, SHA-256 oder SHA-512, innerhalb des HMAC und sonst nirgends."
   },
   "crypto.families.one-time-passwords-totp.whatItDoesNot": {
-    "en": "f38dd0b2f7ce307b",
-    "text": "Er verrät niemandem, wie der aktuelle Code lautet, und er richtet nie jemanden auf einem Anmeldebildschirm ein — Einrichten bedeutet, ein Geheimnis angezeigt zu bekommen, also geschieht es dort, wo die Person bereits authentifiziert ist oder einen Aktivierungslink hat. Einer driftenden TOTP-Uhr wird das Abweichungsfenster angeboten und sonst nichts. Ein zählerbasiertes (HOTP-)Token wird aus zwei aufeinanderfolgenden Codes neu synchronisiert, nie aus einem. Er bewahrt nie den Schlüssel oder das Passwort einer Seed-Datei auf und öffnet nie eine an ein Zertifikat verschlüsselte Datei."
+    "en": "313115cd82b83d1b",
+    "text": "Er verrät niemandem, wie der aktuelle Code lautet, und er richtet nie jemanden auf einem Anmeldebildschirm ein — Einrichten bedeutet, ein Geheimnis angezeigt zu bekommen, also geschieht es dort, wo die Person bereits authentifiziert ist oder einen Aktivierungslink hat. Einer driftenden TOTP-Uhr wird das Abweichungsfenster angeboten und sonst nichts. Ein zählerbasiertes (HOTP-)Token wird aus zwei aufeinanderfolgenden Codes neu synchronisiert, nie aus einem. Er bewahrt nie den Schlüssel oder das Passwort einer Seed-Datei auf und öffnet nie eine an ein Zertifikat verschlüsselte Datei. HOTP (RFC 4226) und ein PSKC-Seed (RFC 6030) haben keinen Post-Quanten-MAC: der MAC ist HMAC-SHA-1, SHA-256 oder SHA-512."
   },
   "crypto.families.one-time-passwords-totp.algorithms.0.what": {
     "en": "0c410835b8ade404",
@@ -1524,8 +1524,8 @@
     "text": "Nichts. Der CRC ist CRC-16, Polynom 0x8408. Eine YK-VAL-Signatur ist HMAC-SHA1."
   },
   "crypto.families.yubico-otp.whatItDoesNot": {
-    "en": "a977ea47369edb7c",
-    "text": "Es ruft niemals YubiCloud auf. Es prüft niemals den Zeitstempel. Es registriert niemals einen Slot, solange yubiotp.offered aus ist, und es beantwortet YK-VAL niemals, solange yubiotp.ykval aus ist. Es schreibt niemals die Programmierzeile oder den HMAC-Schlüssel eines Clients ins Protokoll."
+    "en": "f93ab78e99cd9d8d",
+    "text": "Es ruft niemals YubiCloud auf. Es prüft niemals den Zeitstempel. Es registriert niemals einen Slot, solange yubiotp.offered aus ist, und es beantwortet YK-VAL niemals, solange yubiotp.ykval aus ist. Es schreibt niemals die Programmierzeile oder den HMAC-Schlüssel eines Clients ins Protokoll. Es hat keinen Post-Quanten-Parameter: das OTP ist AES-128-ECB eines einzelnen 16-Byte-Blocks."
   },
   "crypto.families.yubico-otp.algorithms.0.what": {
     "en": "6c0e6acd35694622",

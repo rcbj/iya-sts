@@ -8386,6 +8386,28 @@ function jwkThumbprintUri(jwk) {
 const SIGNING_JWK_PAIR_ALGS = ['ES256', 'ES384', 'EdDSA'];
 
 /**
+ * Generates a post-quantum signing key through `pq_jose.js`.
+ *
+ * An ML-DSA private key is the 32-octet seed (RFC 9964 section 3.2). This
+ * runtime's OpenSSL has to offer the algorithm; `mlDsaAvailable()` is the
+ * question, and a caller that skipped it meets the same refusal here.
+ * @param alg - a JOSE name `pq_jose.generate()` accepts, such as ML-DSA-65
+ * @returns `{ pub, priv }`, both Buffers
+ * @throws Error when the algorithm is unknown or ML-DSA cannot be generated
+ */
+function generatePqKeyPair(alg) {
+  log.debug("Entering generatePqKeyPair(). " + alg);
+  const name = String(alg || '');
+  if (name.indexOf('ML-DSA') === 0 && !mlDsaAvailable()) {
+    log.debug("Leaving generatePqKeyPair(). Unavailable.");
+    throw new Error('this runtime cannot generate an ' + name + ' key');
+  }
+  const pair = pqJose.generate(name);
+  log.debug("Leaving generatePqKeyPair().");
+  return { pub: Buffer.from(pair.pub), priv: Buffer.from(pair.priv) };
+}
+
+/**
  * Generates a signing key pair and returns both halves as JWKs, with the
  * private half also as PKCS#8 PEM.
  *
@@ -19404,17 +19426,29 @@ function hsmRefOf(text) {
 // POLICY.** #1368's registry and a realm's per-surface sign/accept lists
 // have no OpenPGP surface: an OpenPGP key's algorithm is not one of the JWS,
 // COSE, XML, X.509, CMS, Data Integrity or HTTP Signature identifiers they
-// are lists of, and nothing here signs with it. What a key may use:
+// are lists of, and nothing here signs with it. What a key may use, when
+// `openpgp.algorithms` names it (the default names every one):
 //
-//   signing     Ed25519 and Ed448 (v6 `ed25519`/`ed448`, v4 `eddsaLegacy`
-//               on `ed25519Legacy`), ECDSA on P-256, P-384 and P-521, RSA of
-//               at least `minRsaBits` (the caller's setting, 3072 at least)
-//   encryption  X25519 and X448 (v6), ECDH on Curve25519 (v4) and on P-256,
-//               P-384 and P-521, RSA of at least `minRsaBits`
+//   signing     RFC 9980's ML-DSA-65+Ed25519 (MUST) and ML-DSA-87+Ed448
+//               (SHOULD), then Ed25519 and Ed448 (v6 `ed25519`/`ed448`,
+//               v4 `eddsaLegacy` on `ed25519Legacy`), ECDSA on P-256, P-384
+//               and P-521, RSA of at least `minRsaBits` (3072 at least)
+//   encryption  RFC 9980's ML-KEM-768+X25519 (MUST) and ML-KEM-1024+X448
+//               (SHOULD), then X25519 and X448 (v6), ECDH on Curve25519
+//               (v4) and on P-256, P-384 and P-521, RSA of `minRsaBits`
 //
 // DSA and ElGamal are refused outright (RFC 9580 section 9.1 deprecates
-// both), and so are the Brainpool curves, which no OpenPGP card this
-// service is meant for ships keys on and which nothing here needs.
+// both), and so are the Brainpool curves. SLH-DSA (RFC 9980 ids 32–34) is
+// a MAY and is not implemented, so a key that uses it is refused too.
+//
+// **openpgp.js DOES NOT READ AN RFC 9980 KEY.** Those algorithm ids fail
+// inside it, so `crypto_impl/openpgp_pqc.js` reads them, checks BOTH halves
+// of a composite signature over the same data digest, and combines the KEM
+// shares. `openpgp.pqcOnly` and `openpgp.pqcAlongsideClassical` narrow
+// REGISTRATION only: a classical key already stored still verifies. A
+// composite name counts as post-quantum, so alongside requires a separate
+// classical key. When this runtime cannot check ML-DSA, the key is refused
+// (STS-OPENPGP-0026) rather than stored on the EdDSA half alone.
 //
 // **S/MIME IS pkijs'S EnvelopedData, ON NODE'S WEB CRYPTO** — the engine
 // `installPkijsWebCrypto()` hands pkijs for CRLs. AES-256-CBC content
@@ -19434,15 +19468,34 @@ const openpgpEngine = LazyModule.of('common/crypto_impl/openpgp_engine.js',
     return require('./crypto_impl/openpgp_engine.js');
   }, log);
 
+// RFC 9980 keys, read here rather than by openpgp.js (the header). A leaf
+// of this file, the same way the engine is: nothing else requires it.
+/** @type {typeof import('./crypto_impl/openpgp_pqc.js')} */
+const openpgpPqc = LazyModule.of('common/crypto_impl/openpgp_pqc.js',
+  function () {
+    return require('./crypto_impl/openpgp_pqc.js');
+  }, log);
+
 /** The OpenPGP signing algorithms a key may use (the header). */
 const OPENPGP_SIGNING_ALGORITHMS = Object.freeze([
+  'ML-DSA-65+Ed25519', 'ML-DSA-87+Ed448',
   'ed25519', 'ed448', 'eddsaLegacy/ed25519Legacy', 'ecdsa/nistP256',
   'ecdsa/nistP384', 'ecdsa/nistP521', 'rsaSign', 'rsaEncryptSign']);
 
 /** The OpenPGP encryption algorithms a key may use (the header). */
 const OPENPGP_ENCRYPTION_ALGORITHMS = Object.freeze([
+  'ML-KEM-768+X25519', 'ML-KEM-1024+X448',
   'x25519', 'x448', 'ecdh/curve25519Legacy', 'ecdh/nistP256',
   'ecdh/nistP384', 'ecdh/nistP521', 'rsaEncrypt', 'rsaEncryptSign']);
+
+/**
+ * The RFC 9980 composite names. A composite counts as post-quantum for
+ * `openpgp.pqcOnly` and `openpgp.pqcAlongsideClassical`: the classical
+ * half is bound to the post-quantum half and is not a separate key.
+ */
+const OPENPGP_PQ_NAMES = Object.freeze([
+  'ML-DSA-65+Ed25519', 'ML-DSA-87+Ed448',
+  'ML-KEM-768+X25519', 'ML-KEM-1024+X448']);
 
 /** The smallest RSA key the allow list ever accepts, whatever is asked. */
 const OPENPGP_MIN_RSA_BITS = 3072;
@@ -19454,21 +19507,79 @@ const OPENPGP_MAX_KEY_BYTES = 65536;
 const OPENPGP_MAX_SIGNED_BYTES = 16384;
 
 /**
+ * The name the allow list is written in: `algorithm` or `algorithm/curve`.
+ *
+ * @param alg - `{ algorithm, curve }`
+ * @returns the name
+ */
+function openpgpNamed(alg) {
+  log.debug("Entering openpgpNamed().");
+  const a = alg || {};
+  const name = String(a.algorithm || '');
+  log.debug("Leaving openpgpNamed().");
+  return a.curve ? name + '/' + a.curve : name;
+}
+
+/**
+ * The caller's accept list, or null when the caller passed none — none
+ * means the whole universe, so a reader that only passes `minRsaBits`
+ * still accepts every name the lists hold.
+ *
+ * @param accept - a csv string, an array, or omitted
+ * @returns the names, or null
+ */
+function openpgpAcceptNames(accept) {
+  log.debug("Entering openpgpAcceptNames().");
+  if (accept == null || accept === '') {
+    log.debug("Leaving openpgpAcceptNames(). The universe.");
+    return null;
+  }
+  const raw = Array.isArray(accept) ? accept : String(accept).split(',');
+  const names = [];
+  raw.forEach(function (item) {
+    const text = String(item || '').trim();
+    if (text) {
+      names.push(text);
+    }
+  });
+  log.debug("Leaving openpgpAcceptNames(). " + names.length);
+  return names;
+}
+
+/**
+ * Whether a name is one of the RFC 9980 composites.
+ *
+ * @param name - the allow-list name
+ * @returns true when it is
+ */
+function openpgpIsPq(name) {
+  log.debug("Entering openpgpIsPq().");
+  log.debug("Leaving openpgpIsPq().");
+  return OPENPGP_PQ_NAMES.indexOf(String(name || '')) >= 0;
+}
+
+/**
  * Says what is wrong with one OpenPGP key's algorithm for a use, or ''.
  *
  * @param alg - `{ algorithm, curve, bits }` as the engine describes it
  * @param use - `sign` or `encrypt`
  * @param minRsaBits - the realm's minimum RSA size
+ * @param accept - the realm's `openpgp.algorithms`, or omitted for the
+ *   whole universe
  * @returns '' when allowed, else the reason
  */
-function openpgpAlgorithmProblem(alg, use, minRsaBits) {
+function openpgpAlgorithmProblem(alg, use, minRsaBits, accept) {
   log.debug("Entering openpgpAlgorithmProblem(). " + use);
   const a = alg || { algorithm: '', curve: '', bits: 0 };
-  const list = use === 'sign' ? OPENPGP_SIGNING_ALGORITHMS
+  const universe = use === 'sign' ? OPENPGP_SIGNING_ALGORITHMS
     : OPENPGP_ENCRYPTION_ALGORITHMS;
   const name = String(a.algorithm || '');
   const named = a.curve ? name + '/' + a.curve : name;
   const floor = Math.max(OPENPGP_MIN_RSA_BITS, Number(minRsaBits) || 0);
+  const asked = openpgpAcceptNames(accept);
+  const list = asked ? universe.filter(function (n) {
+    return asked.indexOf(n) >= 0;
+  }) : universe;
   let out = '';
   if (list.indexOf(named) < 0 && list.indexOf(name) < 0) {
     out = (named || 'an unknown algorithm') + ' is not an OpenPGP ' +
@@ -19480,6 +19591,69 @@ function openpgpAlgorithmProblem(alg, use, minRsaBits) {
   }
   log.debug("Leaving openpgpAlgorithmProblem(). " + (out ? 'Refused.'
                                                        : 'Allowed.'));
+  return out;
+}
+
+/**
+ * What `openpgp.pqcOnly` or `openpgp.pqcAlongsideClassical` refuses at
+ * REGISTRATION, or ''. Verification of a stored key does not call this:
+ * those switches do not retire a key already held. When both are set
+ * (the environment, before a write rule can refuse the pair), `pqcOnly`
+ * wins, the same way a passkey request does.
+ *
+ * @param description - the key's description
+ * @param opts - `{ registration, pqcOnly, pqcAlongsideClassical }`
+ * @returns '' when the key may be registered, else the reason
+ */
+function openpgpRegistrationProblem(description, opts) {
+  log.debug("Entering openpgpRegistrationProblem().");
+  const options = opts || {};
+  if (!options.registration) {
+    log.debug("Leaving openpgpRegistrationProblem(). Not registration.");
+    return '';
+  }
+  const pqcOnly = !!options.pqcOnly;
+  const alongside = !!options.pqcAlongsideClassical && !pqcOnly;
+  if (!pqcOnly && !alongside) {
+    log.debug("Leaving openpgpRegistrationProblem(). No lane.");
+    return '';
+  }
+  const d = description || {};
+  let out = '';
+  if (pqcOnly) {
+    const signName = openpgpNamed(d.signing || d.primary);
+    const encName = d.encryption ? openpgpNamed(d.encryption) : '';
+    if (!openpgpIsPq(signName) || (encName && !openpgpIsPq(encName))) {
+      out = 'openpgp.pqcOnly is on, so a new key must use a ' +
+        'post-quantum algorithm (' + OPENPGP_PQ_NAMES.join(', ') + '); ' +
+        (signName || 'the signing key') +
+        (encName ? ' and ' + encName + ' are not' : ' is not') +
+        ' one';
+    }
+  } else {
+    const parts = [d.primary].concat(d.subkeys || []);
+    let pq = false;
+    let classical = false;
+    parts.forEach(function (alg) {
+      const named = openpgpNamed(alg);
+      if (!named) {
+        return;
+      }
+      if (openpgpIsPq(named)) {
+        pq = true;
+      } else {
+        classical = true;
+      }
+    });
+    if (!pq || !classical) {
+      out = 'openpgp.pqcAlongsideClassical is on, so a new key must ' +
+        'carry a post-quantum algorithm and a separate classical one; ' +
+        'a composite name such as ML-DSA-65+Ed25519 counts as ' +
+        'post-quantum only';
+    }
+  }
+  log.debug("Leaving openpgpRegistrationProblem(). " +
+            (out ? 'Refused.' : 'Allowed.'));
   return out;
 }
 
@@ -19504,9 +19678,13 @@ function openpgpRefusal(code, why, extra) {
  * a signing key and — when it has one — an encryption key the list accepts.
  *
  * @param input - the armored key, or its binary packets
- * @param options - `{ at: Date, minRsaBits }`
+ * @param options - `{ at: Date, minRsaBits, accept, registration, pqcOnly,
+ *   pqcAlongsideClassical }`. `accept` is `openpgp.algorithms`; omitted,
+ *   the whole universe applies. The two post-quantum switches are read
+ *   only when `registration` is true.
  * @returns `{ ok: true, key, description, armored, binary }`, or a coded
- *   refusal (STS-OPENPGP-0001 to -0006)
+ *   refusal (STS-OPENPGP-0001 to -0006, or -0026 when ML-DSA cannot be
+ *   checked)
  */
 async function openpgpReadKey(input, options) {
   log.debug("Entering openpgpReadKey().");
@@ -19522,16 +19700,59 @@ async function openpgpReadKey(input, options) {
       : 'no key was given');
   }
   const read = await openpgpEngine.readPublicKey(input);
-  if (!read.ok) {
-    log.debug("Leaving openpgpReadKey(). " + read.reason);
-    return read.reason === 'secret'
-      ? openpgpRefusal('STS-OPENPGP-0002', 'that is a SECRET key; paste ' +
-          'the public key (gpg --armor --export), never the secret one')
-      : openpgpRefusal('STS-OPENPGP-0001', read.reason === 'several'
-          ? 'the block holds more than one key; export exactly one'
-          : 'the block is not an OpenPGP public key: ' + read.why);
+  let source = null;
+  if (read.ok) {
+    source = {
+      key: read.key,
+      description: await openpgpEngine.describeKey(read.key, at),
+      armored: openpgpEngine.armor(read.key),
+      binary: openpgpEngine.binaryOf(read.key)
+    };
+  } else if (read.reason === 'secret') {
+    log.debug("Leaving openpgpReadKey(). Secret.");
+    return openpgpRefusal('STS-OPENPGP-0002', 'that is a SECRET key; paste ' +
+      'the public key (gpg --armor --export), never the secret one');
+  } else if (read.reason === 'several') {
+    log.debug("Leaving openpgpReadKey(). Several.");
+    return openpgpRefusal('STS-OPENPGP-0001', 'the block holds more than ' +
+                          'one key; export exactly one');
+  } else {
+    // openpgp.js cannot read an RFC 9980 key. The leaf says whether this
+    // block is one, and refuses it when the ML-DSA half cannot be checked.
+    const pq = openpgpPqc.readPublicKey(input, at);
+    if (pq.reason === 'secret') {
+      log.debug("Leaving openpgpReadKey(). Secret.");
+      return openpgpRefusal('STS-OPENPGP-0002', 'that is a SECRET key; ' +
+        'paste the public key (gpg --armor --export), never the secret one');
+    }
+    if (pq.reason === 'unchecked') {
+      log.debug("Leaving openpgpReadKey(). Unchecked.");
+      return openpgpRefusal('STS-OPENPGP-0026',
+        'the key\'s post-quantum self-signature could not be checked on ' +
+        'this runtime (' + pq.why + '), so it was not stored',
+        { description: pq.description });
+    }
+    if (pq.ok) {
+      source = {
+        key: pq.key,
+        description: pq.description,
+        armored: pq.armored || openpgpPqc.armorPublic(pq.binary),
+        binary: pq.binary
+      };
+    } else if (pq.reason === 'bad-signature') {
+      log.debug("Leaving openpgpReadKey(). Bad self-signature.");
+      return openpgpRefusal('STS-OPENPGP-0008',
+        'the signature does not verify: ' + pq.why,
+        { description: pq.description });
+    } else {
+      log.debug("Leaving openpgpReadKey(). " + (pq.reason || read.reason));
+      return openpgpRefusal('STS-OPENPGP-0001', pq.reason === 'several'
+        ? 'the block holds more than one key; export exactly one'
+        : 'the block is not an OpenPGP public key: ' +
+          (pq.reason === 'not-pqc' ? read.why : (pq.why || read.why)));
+    }
   }
-  const d = await openpgpEngine.describeKey(read.key, at);
+  const d = source.description;
   if (d.revoked) {
     log.debug("Leaving openpgpReadKey(). Revoked.");
     return openpgpRefusal('STS-OPENPGP-0003', 'the key ' + d.fingerprint +
@@ -19542,21 +19763,23 @@ async function openpgpReadKey(input, options) {
     return openpgpRefusal('STS-OPENPGP-0003', 'the key ' + d.fingerprint +
                           ' expired at ' + d.expiresAt, { description: d });
   }
-  const primary = openpgpAlgorithmProblem(d.primary, 'sign', opts.minRsaBits);
+  const primary = openpgpAlgorithmProblem(d.primary, 'sign', opts.minRsaBits,
+                                          opts.accept);
   const signing = d.signing
-    ? openpgpAlgorithmProblem(d.signing, 'sign', opts.minRsaBits)
+    ? openpgpAlgorithmProblem(d.signing, 'sign', opts.minRsaBits, opts.accept)
     : 'the key has no valid signing key, so it cannot prove possession';
   const encryption = d.encryption
-    ? openpgpAlgorithmProblem(d.encryption, 'encrypt', opts.minRsaBits) : '';
-  const problem = primary || signing || encryption;
+    ? openpgpAlgorithmProblem(d.encryption, 'encrypt', opts.minRsaBits,
+                             opts.accept) : '';
+  const lane = openpgpRegistrationProblem(d, opts);
+  const problem = primary || signing || encryption || lane;
   if (problem) {
     log.debug("Leaving openpgpReadKey(). Weak or unusable.");
     return openpgpRefusal('STS-OPENPGP-0004', problem, { description: d });
   }
   log.debug("Leaving openpgpReadKey(). " + d.fingerprint);
-  return { ok: true, key: read.key, description: d,
-           armored: openpgpEngine.armor(read.key),
-           binary: openpgpEngine.binaryOf(read.key) };
+  return { ok: true, key: source.key, description: d,
+           armored: source.armored, binary: source.binary };
 }
 
 /**
@@ -19601,9 +19824,19 @@ async function openpgpVerifyChallenge(signedText, key, options) {
       'signed message: sign the challenge with gpg --clearsign and paste ' +
       'everything from -----BEGIN PGP SIGNED MESSAGE----- to the end');
   }
-  const verified = await openpgpEngine.verifyCleartext(text, key, at);
+  // A stored post-quantum key is verified by the leaf. pqcOnly is not
+  // passed: it narrowed registration, and this proof is of a key already
+  // held. An unchecked ML-DSA half is a refusal, not a pass on EdDSA alone.
+  const verified = key && key.pqc
+    ? openpgpPqc.verifyCleartext(text, key)
+    : await openpgpEngine.verifyCleartext(text, key, at);
   if (!verified.ok) {
     log.debug("Leaving openpgpVerifyChallenge(). " + verified.reason);
+    if (verified.reason === 'unchecked') {
+      return openpgpRefusal('STS-OPENPGP-0026',
+        'the post-quantum half of the signature could not be checked on ' +
+        'this runtime (' + verified.why + ')');
+    }
     return verified.reason === 'unreadable' || verified.reason === 'unsigned'
       ? openpgpRefusal('STS-OPENPGP-0007', 'the signed message could not ' +
                        'be read: ' + verified.why)
@@ -19627,7 +19860,7 @@ async function openpgpVerifyChallenge(signedText, key, options) {
       'lifetime (check the clock of the computer that signed it)');
   }
   const problem = openpgpAlgorithmProblem(verified.signer, 'sign',
-                                          opts.minRsaBits);
+                                          opts.minRsaBits, opts.accept);
   if (problem) {
     log.debug("Leaving openpgpVerifyChallenge(). The signer is weak.");
     return openpgpRefusal('STS-OPENPGP-0004', problem);
@@ -19648,14 +19881,27 @@ async function openpgpVerifyChallenge(signedText, key, options) {
  */
 async function openpgpEncrypt(bytes, armoredKey, at) {
   log.debug("Entering openpgpEncrypt().");
-  const read = await openpgpEngine.readPublicKey(String(armoredKey || ''));
-  if (!read.ok) {
-    log.debug("Leaving openpgpEncrypt(). Unreadable.");
-    // error-code: none — the caller tags the failure with its own code
-    throw new Error('the stored OpenPGP key does not read: ' + read.why);
+  const text = String(armoredKey || '');
+  const when = at instanceof Date ? at : new Date();
+  const read = await openpgpEngine.readPublicKey(text);
+  if (read.ok) {
+    const out = await openpgpEngine.encryptTo(Buffer.from(bytes || []),
+                                              read.key, when);
+    log.debug("Leaving openpgpEncrypt().");
+    return out;
   }
-  const out = await openpgpEngine.encryptTo(Buffer.from(bytes || []),
-                                            read.key, at);
+  const pq = openpgpPqc.readPublicKey(text, when);
+  if (!pq.ok) {
+    log.debug("Leaving openpgpEncrypt(). Unreadable.");
+    // error-code: none — the caller tags the failure with its own code.
+    // An unchecked key was stored only after a runtime that could check
+    // it; this process must not encrypt to a key it cannot re-verify.
+    const why = pq.reason === 'unchecked'
+      ? 'its post-quantum signature could not be checked (' + pq.why + ')'
+      : (pq.reason === 'not-pqc' ? read.why : (pq.why || read.why));
+    throw new Error('the stored OpenPGP key does not read: ' + why);
+  }
+  const out = openpgpPqc.encryptTo(Buffer.from(bytes || []), pq.key);
   log.debug("Leaving openpgpEncrypt().");
   return out;
 }
@@ -19669,9 +19915,20 @@ async function openpgpEncrypt(bytes, armoredKey, at) {
  */
 async function openpgpBinaryKey(armoredKey) {
   log.debug("Entering openpgpBinaryKey().");
-  const read = await openpgpEngine.readPublicKey(String(armoredKey || ''));
-  log.debug("Leaving openpgpBinaryKey(). " + (read.ok ? 'Read.' : 'No.'));
-  return read.ok ? openpgpEngine.binaryOf(read.key) : null;
+  const text = String(armoredKey || '');
+  const read = await openpgpEngine.readPublicKey(text);
+  if (read.ok) {
+    log.debug("Leaving openpgpBinaryKey(). Read.");
+    return openpgpEngine.binaryOf(read.key);
+  }
+  // The armor was checked when it was stored. Publishing it again on a
+  // runtime that cannot re-check ML-DSA still returns the bytes; it does
+  // not accept a new key (that refusal is openpgpReadKey's).
+  const pq = openpgpPqc.readPublicKey(text);
+  const binary = pq.binary && (pq.ok || pq.reason === 'unchecked')
+    ? pq.binary : null;
+  log.debug("Leaving openpgpBinaryKey(). " + (binary ? 'Read.' : 'No.'));
+  return binary;
 }
 
 /**
@@ -19748,6 +20005,33 @@ const SMIME_ANY_EKU = '2.5.29.37.0';
 const SMIME_MIN_RSA_BITS = 2048;
 const SMIME_CURVES = { '1.2.840.10045.3.1.7': 'P-256',
                        '1.3.132.0.34': 'P-384', '1.3.132.0.35': 'P-521' };
+// RFC 9935: an ML-KEM key in a certificate, parameters absent, and
+// keyEncipherment when key usage is present. RFC 9629 carries it in CMS
+// as KEMRecipientInfo inside OtherRecipientInfo (id-ori-kem is .13.3, not
+// the .13.1 other-recipient arc). ML-KEM-512 wraps with AES-128; 768 and
+// 1024 wrap with AES-256. The content cipher stays AES-256-CBC.
+const SMIME_KEM = {
+  '2.16.840.1.101.3.4.4.1': {
+    name: 'ML-KEM-512', publicBytes: 800, cipherBytes: 768,
+    kekBytes: 16, wrap: 'id-aes128-wrap',
+    wrapOid: '2.16.840.1.101.3.4.1.5', kem: 'ml_kem512'
+  },
+  '2.16.840.1.101.3.4.4.2': {
+    name: 'ML-KEM-768', publicBytes: 1184, cipherBytes: 1088,
+    kekBytes: 32, wrap: 'id-aes256-wrap',
+    wrapOid: '2.16.840.1.101.3.4.1.45', kem: 'ml_kem768'
+  },
+  '2.16.840.1.101.3.4.4.3': {
+    name: 'ML-KEM-1024', publicBytes: 1568, cipherBytes: 1568,
+    kekBytes: 32, wrap: 'id-aes256-wrap',
+    wrapOid: '2.16.840.1.101.3.4.1.45', kem: 'ml_kem1024'
+  }
+};
+const SMIME_ORI_KEM = '1.2.840.113549.1.9.16.13.3';
+const SMIME_HKDF_SHA256 = '1.2.840.113549.1.9.16.3.28';
+const SMIME_AES256_CBC = '2.16.840.1.101.3.4.1.42';
+const SMIME_ID_DATA = '1.2.840.113549.1.7.1';
+const SMIME_ID_ENVELOPED = '1.2.840.113549.1.7.3';
 
 /**
  * The certificates a `userSMIMECertificate` value holds: RFC 2798 section
@@ -19991,14 +20275,25 @@ function hsmSigningAlg(key, jwsAlg) {
   const spec = JWS_ALGS[jwsAlg];
   const kind = key.asymmetricKeyType;
   const details = key.asymmetricKeyDetails || {};
+  const signing = pkcs11Engine.SIGNING[jwsAlg];
+  const parameter = String(details.parameterSet || '');
+  // An ML-DSA key signs only its own parameter set, and only when SIGNING
+  // names that algorithm. An RSA key asked for ML-DSA still fails here
+  // (STS-KEYS-0206). The token must also offer CKM_ML_DSA; that check is
+  // `Pkcs11Token.sign()`, because this function does not hold the token.
+  const mldsa = !!(signing && signing.kty === 'AKP' && spec &&
+    spec.family === 'pq' && (kind === 'ml-dsa' || kind === 'akp') &&
+    parameter === jwsAlg);
   const fits = spec && ((spec.family === 'rsa' && kind === 'rsa') ||
     (spec.family === 'ec' && kind === 'ec' &&
      details.namedCurve === spec.namedCurve) ||
-    (jwsAlg === 'EdDSA' && (kind === 'ed25519' || kind === 'ed448')));
-  if (!fits || pkcs11Engine.SIGNING[jwsAlg] === undefined) {
+    (jwsAlg === 'EdDSA' && (kind === 'ed25519' || kind === 'ed448')) ||
+    mldsa);
+  if (!fits || signing === undefined) {
     throw errorCodes.mark(new Error('the HSM key (' + kind + ') does not ' +
-      'sign ' + jwsAlg + '; post-quantum, HMAC and Ed448 signatures are ' +
-      'made in software, never by a key in the HSM'), 'STS-KEYS-0206');
+      'sign ' + jwsAlg + '; ML-DSA is asked of the HSM only for an ML-DSA ' +
+      'key of that parameter set, and SLH-DSA, HMAC and Ed448 stay in ' +
+      'software'), 'STS-KEYS-0206');
   }
   log.debug('Leaving hsmSigningAlg().');
   return jwsAlg;
@@ -20191,6 +20486,9 @@ function pkcs11Capabilities(token) {
   if (flags.has(CK.CKM_EC_EDWARDS_KEY_PAIR_GEN)) {
     generates.push('Ed25519');
   }
+  if (flags.has(CK.CKM_ML_DSA_KEY_PAIR_GEN)) {
+    generates.push('ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87');
+  }
   log.debug('Leaving pkcs11Capabilities().');
   return { signs: token.signingAlgorithms(), generates: generates };
 }
@@ -20241,23 +20539,41 @@ function smimeRecipientProblem(certificate, at) {
       return 'the EC curve ' + (curve || '(none)') + ' is not P-256, ' +
         'P-384 or P-521';
     }
+  } else if (SMIME_KEM[oid]) {
+    // RFC 9935: parameters absent, and keyEncipherment when usage is set.
+    kind = 'kem';
+    const row = SMIME_KEM[oid];
+    if (alg.algorithmParams) {
+      log.debug("Leaving smimeRecipientProblem(). Parameters.");
+      return row.name + ' carries parameters, and its identifier has none';
+    }
+    const bits = c.subjectPublicKeyInfo.subjectPublicKey;
+    const raw = Buffer.from(bits.valueBlock.valueHexView ||
+      bits.valueBlock.valueHex || []);
+    if (raw.length !== row.publicBytes) {
+      log.debug("Leaving smimeRecipientProblem(). Public key.");
+      return 'an ' + row.name + ' public key is ' + raw.length +
+        ' octets, not ' + row.publicBytes;
+    }
   } else {
     log.debug("Leaving smimeRecipientProblem(). Key kind.");
-    return 'a ' + oid + ' key cannot receive S/MIME here (RSA or EC only)';
+    return 'a ' + oid + ' key cannot receive S/MIME here (RSA, EC or ' +
+      'ML-KEM)';
   }
   const extensions = c.extensions || [];
   const usage = extensions.filter(function (x) {
     return x.extnID === '2.5.29.15';
   })[0];
   if (usage && usage.parsedValue) {
-    // The KeyUsage BIT STRING: bit 2 keyEncipherment, bit 4 keyAgreement.
+    // The KeyUsage BIT STRING: bit 2 keyEncipherment (RSA and ML-KEM,
+    // RFC 9935), bit 4 keyAgreement (EC).
     const view = new Uint8Array(usage.parsedValue.valueBlock.valueHexView);
     const first = view.length ? view[0] : 0;
-    const needed = kind === 'rsa' ? 0x20 : 0x08;
+    const needed = kind === 'ec' ? 0x08 : 0x20;
     if (!(first & needed)) {
       log.debug("Leaving smimeRecipientProblem(). Key usage.");
-      return 'its key usage does not allow ' + (kind === 'rsa'
-        ? 'keyEncipherment' : 'keyAgreement');
+      return 'its key usage does not allow ' + (kind === 'ec'
+        ? 'keyAgreement' : 'keyEncipherment');
     }
   }
   const eku = extensions.filter(function (x) {
@@ -20348,8 +20664,257 @@ function smimeRecipientCertificate(values, at) {
 }
 
 /**
+ * An ArrayBuffer view of a buffer, for asn1js.
+ *
+ * @param buf - octets
+ * @returns the view
+ */
+function smimeAsn1View(buf) {
+  log.debug("Entering smimeAsn1View().");
+  const b = Buffer.from(buf);
+  log.debug("Leaving smimeAsn1View().");
+  return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+}
+
+/**
+ * DER of an asn1js block.
+ *
+ * @param block - the block
+ * @returns the encoding
+ */
+function smimeDer(block) {
+  log.debug("Entering smimeDer().");
+  const out = Buffer.from(block.toBER(false));
+  log.debug("Leaving smimeDer().");
+  return out;
+}
+
+/**
+ * An AlgorithmIdentifier with parameters absent.
+ *
+ * @param oid - the algorithm
+ * @returns the asn1js sequence
+ */
+function smimeAlgId(oid) {
+  log.debug("Entering smimeAlgId().");
+  log.debug("Leaving smimeAlgId().");
+  return new asn1js.Sequence({
+    value: [new asn1js.ObjectIdentifier({ value: oid })]
+  });
+}
+
+/**
+ * HKDF-SHA-256 of a KEM shared secret, then AES Key Wrap of the content-
+ * encryption key. RFC 9629: the info is CMSORIforKEMOtherInfo, the salt is
+ * absent (RFC 5869's HashLen zeros; this runtime's empty salt is that),
+ * and the output length is kekLength.
+ *
+ * @param sharedSecret - the KEM shared secret
+ * @param wrapOid - the wrap algorithm
+ * @param kekBytes - 16 or 32
+ * @param cek - the content-encryption key
+ * @returns `{ kek, wrapped, info }`
+ */
+function smimeKemWrap(sharedSecret, wrapOid, kekBytes, cek) {
+  log.debug("Entering smimeKemWrap().");
+  const info = smimeDer(new asn1js.Sequence({
+    value: [smimeAlgId(wrapOid), new asn1js.Integer({ value: kekBytes })]
+  }));
+  const kek = Buffer.from(nodeCrypto.hkdfSync('sha256',
+    Buffer.from(sharedSecret), Buffer.alloc(32, 0), info, kekBytes));
+  const wrap = kekBytes === 16 ? 'id-aes128-wrap' : 'id-aes256-wrap';
+  const cipher = nodeCrypto.createCipheriv(wrap, kek, Buffer.alloc(8, 0xa6));
+  const wrapped = Buffer.concat([cipher.update(Buffer.from(cek)),
+                                 cipher.final()]);
+  log.debug("Leaving smimeKemWrap().");
+  return { kek: kek, wrapped: wrapped, info: info };
+}
+
+/**
+ * The ML-KEM public key in a certificate: the BIT STRING's payload.
+ *
+ * @param certificate - a pkijs certificate
+ * @param row - the SMIME_KEM row
+ * @returns the raw public key
+ */
+function smimeKemPublic(certificate, row) {
+  log.debug("Entering smimeKemPublic().");
+  const bits = certificate.subjectPublicKeyInfo.subjectPublicKey;
+  const raw = Buffer.from(bits.valueBlock.valueHexView ||
+    bits.valueBlock.valueHex || []);
+  if (raw.length !== row.publicBytes) {
+    log.debug("Leaving smimeKemPublic(). Length.");
+    throw new Error('an ' + row.name + ' public key is ' + raw.length +
+      ' octets, not ' + row.publicBytes);
+  }
+  log.debug("Leaving smimeKemPublic().");
+  return raw;
+}
+
+/**
+ * OtherRecipientInfo for one KEM recipient: context tag 4, IMPLICIT, so
+ * the bytes are `A4`, the oriType OID, then the KEMRecipientInfo SEQUENCE.
+ * CMS is IMPLICIT TAGS; an extra SEQUENCE around the two fields would be
+ * the EXPLICIT form, which a recipient will not read.
+ *
+ * @param spec - issuer and serial blocks, the KEM oid, kemct, kek length,
+ *   wrap oid and the wrapped key
+ * @returns the asn1js block
+ */
+function smimeOtherRecipient(spec) {
+  log.debug("Entering smimeOtherRecipient().");
+  const kemInfo = new asn1js.Sequence({
+    value: [
+      new asn1js.Integer({ value: 0 }),
+      new asn1js.Sequence({ value: [spec.issuer, spec.serial] }),
+      smimeAlgId(spec.kemOid),
+      new asn1js.OctetString({ valueHex: smimeAsn1View(spec.kemct) }),
+      smimeAlgId(SMIME_HKDF_SHA256),
+      new asn1js.Integer({ value: spec.kekBytes }),
+      smimeAlgId(spec.wrapOid),
+      new asn1js.OctetString({ valueHex: smimeAsn1View(spec.encryptedKey) })
+    ]
+  });
+  const ori = new asn1js.Constructed({
+    idBlock: { tagClass: 3, tagNumber: 4 },
+    value: [
+      new asn1js.ObjectIdentifier({ value: SMIME_ORI_KEM }),
+      kemInfo
+    ]
+  });
+  log.debug("Leaving smimeOtherRecipient().");
+  return ori;
+}
+
+/**
+ * ContentInfo of an EnvelopedData version 3 (a recipient of type other),
+ * content encrypted with AES-256-CBC. The encrypted content is an IMPLICIT
+ * context-0 OCTET STRING.
+ *
+ * @param ori - the OtherRecipientInfo block
+ * @param iv - the 16-octet IV
+ * @param ciphertext - the padded ciphertext
+ * @returns the asn1js ContentInfo
+ */
+function smimeKemContentInfo(ori, iv, ciphertext) {
+  log.debug("Entering smimeKemContentInfo().");
+  const encrypted = new asn1js.OctetString({
+    valueHex: smimeAsn1View(ciphertext)
+  });
+  encrypted.idBlock.tagClass = 3;
+  encrypted.idBlock.tagNumber = 0;
+  const encryptedContent = new asn1js.Sequence({
+    value: [
+      new asn1js.ObjectIdentifier({ value: SMIME_ID_DATA }),
+      new asn1js.Sequence({
+        value: [
+          new asn1js.ObjectIdentifier({ value: SMIME_AES256_CBC }),
+          new asn1js.OctetString({ valueHex: smimeAsn1View(iv) })
+        ]
+      }),
+      encrypted
+    ]
+  });
+  const enveloped = new asn1js.Sequence({
+    value: [
+      new asn1js.Integer({ value: 3 }),
+      new asn1js.Set({ value: [ori] }),
+      encryptedContent
+    ]
+  });
+  log.debug("Leaving smimeKemContentInfo().");
+  return new asn1js.Sequence({
+    value: [
+      new asn1js.ObjectIdentifier({ value: SMIME_ID_ENVELOPED }),
+      new asn1js.Constructed({
+        idBlock: { tagClass: 3, tagNumber: 0 },
+        value: [enveloped]
+      })
+    ]
+  });
+}
+
+/**
+ * Builds the KEM envelope from a shared secret that is already in hand.
+ * Production obtains that secret from encapsulate. A test passes a fixed
+ * one, because a runtime without ML-KEM cannot encapsulate and must still
+ * be able to check the wrap and the DER. `share.cek` and `share.iv`, when
+ * set, are that test's content key; production leaves them unset.
+ *
+ * @param mimeBytes - the inner MIME entity
+ * @param certificate - the pkijs certificate
+ * @param row - the SMIME_KEM row
+ * @param kemOid - the certificate's key oid
+ * @param share - `{ cipherText, sharedSecret, cek?, iv? }`
+ * @returns the ContentInfo DER
+ */
+function smimeKemAssemble(mimeBytes, certificate, row, kemOid, share) {
+  log.debug("Entering smimeKemAssemble().");
+  const cek = share.cek ? Buffer.from(share.cek) : nodeCrypto.randomBytes(32);
+  const iv = share.iv ? Buffer.from(share.iv) : nodeCrypto.randomBytes(16);
+  const kemct = Buffer.from(share.cipherText);
+  const shared = Buffer.from(share.sharedSecret);
+  if (cek.length !== 32 || iv.length !== 16 || shared.length !== 32 ||
+      kemct.length !== row.cipherBytes) {
+    log.debug("Leaving smimeKemAssemble(). Sizes.");
+    throw new Error(row.name + ' needs a 32-octet shared secret, a ' +
+      row.cipherBytes + '-octet ciphertext, a 32-octet content key and ' +
+      'a 16-octet IV');
+  }
+  const cipher = nodeCrypto.createCipheriv('aes-256-cbc', cek, iv);
+  const body = Buffer.concat([cipher.update(Buffer.from(mimeBytes)),
+                              cipher.final()]);
+  const wrapped = smimeKemWrap(shared, row.wrapOid, row.kekBytes, cek);
+  const ori = smimeOtherRecipient({
+    issuer: certificate.issuer.toSchema(),
+    serial: certificate.serialNumber,
+    kemOid: kemOid, kemct: kemct, kekBytes: row.kekBytes,
+    wrapOid: row.wrapOid, encryptedKey: wrapped.wrapped
+  });
+  const out = smimeDer(smimeKemContentInfo(ori, iv, body));
+  log.debug("Leaving smimeKemAssemble(). " + out.length + " bytes.");
+  return out;
+}
+
+/**
+ * Encapsulates to the certificate's ML-KEM key and builds the envelope.
+ * A runtime that cannot encapsulate refuses. It does not fall back to a
+ * classical recipient: the certificate cannot open that.
+ *
+ * @param mimeBytes - the inner MIME entity
+ * @param certificate - the pkijs certificate
+ * @param row - the SMIME_KEM row
+ * @param kemOid - the certificate's key oid
+ * @returns a promise of the DER
+ */
+async function smimeKemEnvelope(mimeBytes, certificate, row, kemOid) {
+  log.debug("Entering smimeKemEnvelope(). " + row.name);
+  const raw = smimeKemPublic(certificate, row);
+  let share;
+  try {
+    share = nobleMlKem[row.kem].encapsulate(raw);
+  } catch (e) {
+    log.debug("Caught in smimeKemEnvelope(): " + ((e && e.message) || e));
+    log.error(errorCodes.tag('STS-OPENPGP-0028') +
+      'ML-KEM encapsulation is not available (' + row.name + '): ' +
+      ((e && e.message) || e));
+    log.debug("Leaving smimeKemEnvelope(). Unavailable.");
+    throw new Error('ML-KEM encapsulation is not available on this ' +
+      'runtime');
+  }
+  const out = smimeKemAssemble(mimeBytes, certificate, row, kemOid, {
+    cipherText: share.cipherText, sharedSecret: share.sharedSecret
+  });
+  log.debug("Leaving smimeKemEnvelope().");
+  return out;
+}
+
+/**
  * Encrypts a MIME entity to an S/MIME recipient certificate: a CMS
- * ContentInfo holding an EnvelopedData (the header), DER.
+ * ContentInfo holding an EnvelopedData (the header), DER. An ML-KEM
+ * certificate takes RFC 9629's KEMRecipientInfo. RSA and EC stay on
+ * pkijs's RSA-OAEP and ECDH path. The content cipher is AES-256-CBC
+ * either way.
  *
  * @param mimeBytes - the inner MIME entity, headers and body
  * @param certificateDer - the recipient's certificate
@@ -20359,9 +20924,17 @@ function smimeRecipientCertificate(values, at) {
 async function smimeEnvelope(mimeBytes, certificateDer) {
   log.debug("Entering smimeEnvelope().");
   const pkijs = require('pkijs');
-  installPkijsWebCrypto(pkijs);
   const certificate = pkijs.Certificate.fromBER(
     new Uint8Array(Buffer.from(certificateDer)));
+  const oid = String(
+    certificate.subjectPublicKeyInfo.algorithm.algorithmId);
+  const kem = SMIME_KEM[oid];
+  if (kem) {
+    const out = await smimeKemEnvelope(mimeBytes, certificate, kem, oid);
+    log.debug("Leaving smimeEnvelope(). " + out.length + " bytes, ML-KEM.");
+    return out;
+  }
+  installPkijsWebCrypto(pkijs);
   const enveloped = new pkijs.EnvelopedData();
   enveloped.addRecipientByCertificate(certificate, {
     oaepHashAlgorithm: 'SHA-256', kdfAlgorithm: 'SHA-256',
@@ -20393,8 +20966,10 @@ module.exports = {
   // --- section 19: OpenPGP and S/MIME (#1955 P6) ---
   OPENPGP_SIGNING_ALGORITHMS: OPENPGP_SIGNING_ALGORITHMS,
   OPENPGP_ENCRYPTION_ALGORITHMS: OPENPGP_ENCRYPTION_ALGORITHMS,
+  OPENPGP_PQ_NAMES: OPENPGP_PQ_NAMES,
   OPENPGP_MIN_RSA_BITS: OPENPGP_MIN_RSA_BITS,
   openpgpAlgorithmProblem: openpgpAlgorithmProblem,
+  openpgpRegistrationProblem: openpgpRegistrationProblem,
   openpgpReadKey: openpgpReadKey,
   openpgpNormaliseText: openpgpNormaliseText,
   openpgpVerifyChallenge: openpgpVerifyChallenge,
@@ -20405,6 +20980,8 @@ module.exports = {
   wkdHash: wkdHash,
   smimeRecipientCertificate: smimeRecipientCertificate,
   smimeEnvelope: smimeEnvelope,
+  smimeKemWrap: smimeKemWrap,
+  smimeKemAssemble: smimeKemAssemble,
   // --- section 19: keys in a hardware security module (#1955) ---
   openPkcs11Token: openPkcs11Token,
   forgetPkcs11Libraries: forgetPkcs11Libraries,
@@ -20736,6 +21313,7 @@ module.exports = {
   jwkThumbprintUri: jwkThumbprintUri,
   SIGNING_JWK_PAIR_ALGS: SIGNING_JWK_PAIR_ALGS,
   generateSigningJwkPair: generateSigningJwkPair,
+  generatePqKeyPair: generatePqKeyPair,
   certificateThumbprint: certificateThumbprint,
   wssThumbprintSha1: wssThumbprintSha1,
   wssIssuerName: wssIssuerName,

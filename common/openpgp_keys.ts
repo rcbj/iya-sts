@@ -586,8 +586,17 @@ class OpenPgpKeys {
         'for a new one and sign it.'));
     }
     const minRsaBits = Number(this.setting('openpgp.minRsaBits'));
+    // pqcOnly and alongside narrow THIS registration. Verification of the
+    // proof below passes the algorithm list and not those switches, so a
+    // classical key already accepted is not re-judged by them.
+    const algorithms = [].concat(this.setting('openpgp.algorithms') || []);
+    const pqcOnly = this.setting('openpgp.pqcOnly') === true;
+    const alongside = this.setting('openpgp.pqcAlongsideClassical') === true;
     const key: Json = await c.openpgpReadKey(String((input &&
-      input.publicKey) || ''), { at: new Date(at), minRsaBits: minRsaBits });
+      input.publicKey) || ''), {
+      at: new Date(at), minRsaBits: minRsaBits, accept: algorithms,
+      registration: true, pqcOnly: pqcOnly,
+      pqcAlongsideClassical: alongside });
     if (!key.ok) {
       log.debug("Leaving OpenPgpKeys.register(). The key.");
       return refused(this.refuse(this.deps.errorCodes.codeOf(key) ||
@@ -609,7 +618,8 @@ class OpenPgpKeys {
       String((input && input.signed) || ''), key.key, {
         expectedText: String(held.text), issuedAt: Number(held.issuedAt),
         at: new Date(at), skewS: Number(this.setting(
-          'openpgp.signatureSkewS')), minRsaBits: minRsaBits });
+          'openpgp.signatureSkewS')), minRsaBits: minRsaBits,
+        accept: algorithms });
     if (!proof.ok) {
       log.debug("Leaving OpenPgpKeys.register(). The proof.");
       return refused(this.refuse(this.deps.errorCodes.codeOf(proof) ||
@@ -1289,6 +1299,37 @@ class OpenPgpKeys {
     return ok;
   }
 
+  // THE RULE BETWEEN THE TWO SWITCHES, the passkey lanes' rule
+  // (`authn/webauthn_policy.ts`'s `laneWriteRule`) for a key. Both on is a
+  // contradiction: pqcOnly accepts a post-quantum key and nothing else,
+  // alongside requires a classical key beside it. Refused at the write. A
+  // value that arrives from the environment is read with pqcOnly winning
+  // (`openpgpRegistrationProblem`).
+  /**
+   * Refuses a write that would turn on `openpgp.pqcAlongsideClassical`
+   * and `openpgp.pqcOnly` together.
+   *
+   * @param key - the setting being written
+   * @param parsed - its parsed value
+   * @returns `{ problem, code }`, or null
+   */
+  static laneWriteRule(key: string, parsed: unknown): Json {
+    helpers.log.debug("Entering OpenPgpKeys.laneWriteRule(). " + key);
+    const other = key === 'openpgp.pqcAlongsideClassical'
+      ? 'openpgp.pqcOnly'
+      : (key === 'openpgp.pqcOnly' ? 'openpgp.pqcAlongsideClassical' : '');
+    if (!other || parsed !== true || config.value(other) !== true) {
+      helpers.log.debug("Leaving OpenPgpKeys.laneWriteRule().");
+      return null;
+    }
+    helpers.log.debug("Leaving OpenPgpKeys.laneWriteRule(). Refused.");
+    return { code: 'STS-OPENPGP-0027',
+             problem: '"' + key + '" cannot be on while "' + other +
+               '" is: post-quantum only accepts a post-quantum key, and ' +
+               'a post-quantum key beside a classical one needs both. ' +
+               'Turn "' + other + '" off first.' };
+  }
+
   // For the tests: the realm's challenges and publications cleared.
   /**
    * Clears the ambient realm's challenges and publications; tests only.
@@ -1309,6 +1350,8 @@ const slot = new InstanceSlot<OpenPgpKeys>(
     instance.installRetirer(hardwareTokens);
   },
   helpers.log);
+
+config.addWriteRule(OpenPgpKeys.laneWriteRule);
 
 slot.buildNowUnlessDeferred();
 

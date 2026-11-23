@@ -2337,7 +2337,7 @@ regex is gone: every door STATES `admin`, `user`, `policy` or `system` —
 entity)`, `endEverySessionIn()`, `endRelyingPartySessions()` — and the words
 reach `reason_admin` only. A derived session ends with its parent's entity; a
 door that says nothing is `system` with `STS-AUTHN-0290`. The table of doors
-and their entities is `docs/v1.1.0/caep-events.md`'s `session-revoked` section.
+and their entities is `docs/v1.2.0/caep-events.md`'s `session-revoked` section.
 `caep.ts`'s own fallback (`byAdmin`, then `user`) is kept for a notice from
 elsewhere that states nothing; `authn` always states one.
 

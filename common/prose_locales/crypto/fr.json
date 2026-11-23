@@ -448,16 +448,16 @@
     "text": "Un jeton à clé publique qu’un détenteur peut atténuer HORS LIGNE, comme un macaroon, mais vérifiable par quiconque détient la clé publique racine. Sa logique d’autorisation est du Datalog transporté dans le jeton, de sorte que le vérificateur s’exécute TOUJOURS avec des limites de temps et d’itérations."
   },
   "crypto.standards.cms.coverage": {
-    "en": "d33248e25a15b5a7",
-    "text": "partial : SignedData avec un seul signataire et des attributs signés, vérifiés sur les octets des attributs tels que reçus et écrits triés selon DER ; EnvelopedData avec KeyTransRecipientInfo (RSA PKCS#1 v1.5 et OAEP) et contenu AES-CBC ; SignedData dégénéré (certificats seuls) avec certificats et CRL ; pour les messages S/MIME (#1955), un EnvelopedData écrit avec un KeyTransRecipientInfo OAEP SHA-256 ou un KeyAgreeRecipientInfo ECDH. Ni données authentifiées ou compressées, ni contre-signatures."
+    "en": "f750e6cf7ac566b2",
+    "text": "partial : SignedData avec un seul signataire et des attributs signés, vérifiés sur les octets des attributs tels que reçus et écrits triés selon DER ; EnvelopedData avec KeyTransRecipientInfo (RSA PKCS#1 v1.5 et OAEP) et contenu AES-CBC ; SignedData dégénéré (certificats seuls) avec certificats et CRL ; pour les messages S/MIME (#1955), un EnvelopedData écrit avec un KeyTransRecipientInfo OAEP SHA-256, un KeyAgreeRecipientInfo ECDH, ou, pour un certificat ML-KEM, un KEMRecipientInfo. Ni données authentifiées ou compressées, ni contre-signatures."
   },
   "crypto.standards.cms.what": {
-    "en": "e09c8508abab483b",
-    "text": "L'enveloppe que SCEP (scep/scep_cms.ts) lit et écrit : une requête signée par le demandeur et chiffrée pour la RA, et un CertRep signé par la RA dont le certificat est chiffré pour le demandeur. Depuis #1955, également l'EnvelopedData S/MIME dans lequel les messages sont chiffrés, qui ajoute un KeyAgreeRecipientInfo pour un destinataire EC (dhSinglePass-stdDH-sha256kdf, encapsulation de clé AES-256) et un KeyTransRecipientInfo OAEP SHA-256 pour un destinataire RSA."
+    "en": "05b9f7ff9bec76df",
+    "text": "L'enveloppe que SCEP (scep/scep_cms.ts) lit et écrit : une requête signée par le demandeur et chiffrée pour la RA, et un CertRep signé par la RA dont le certificat est chiffré pour le demandeur. Depuis #1955, également l'EnvelopedData S/MIME dans lequel les messages sont chiffrés, qui ajoute un KeyAgreeRecipientInfo pour un destinataire EC (dhSinglePass-stdDH-sha256kdf, encapsulation de clé AES-256) et un KeyTransRecipientInfo OAEP SHA-256 pour un destinataire RSA, et un KEMRecipientInfo pour un certificat ML-KEM. Un moteur qui ne peut pas encapsuler ne revient pas à RSA ni à ECDH."
   },
   "crypto.standards.openpgp.coverage": {
-    "en": "5d4c9889762ddbd2",
-    "text": "partial : lecture des clés publiques transférables v4 et v6, vérification d'une signature en clair et chiffrement d'un message PGP/MIME, le tout via openpgp.js ; les recherches avancée et directe du Web Key Directory et son fichier de politique. Ni signature, ni déchiffrement, ni soumission au Web Key Service, ni serveur de clés."
+    "en": "d27e08a2f317c75c",
+    "text": "partial : lecture des clés publiques transférables v4 et v6, vérification d'une signature en clair et chiffrement d'un message PGP/MIME, via openpgp.js ; une clé composite RFC 9980 est lue ici et les deux moitiés sont vérifiées. Les recherches avancée et directe du Web Key Directory et son fichier de politique. Ni signature, ni déchiffrement, ni soumission au Web Key Service, ni serveur de clés, ni SLH-DSA."
   },
   "crypto.standards.openpgp.what": {
     "en": "039de4dd3b49b9ab",
@@ -692,12 +692,12 @@
     "text": "Rien. Un enregistrement porte la signature de la PERSONNE, et un message chiffré n'est pas signé (DKIM signe le message extérieur, comme il signe chaque message)."
   },
   "crypto.families.openpgp.verifies": {
-    "en": "c3dbfb38087cb3de",
-    "text": "Une PREUVE DE POSSESSION à l'enregistrement : une signature en clair (gpg --clearsign) portant exactement sur le défi que ce service a émis pour la personne, par une clé apte à signer de la clé qu'elle enregistre, faite après l'émission du défi (openpgp.signatureSkewS) et valide à ce moment ; la clé elle-même ni révoquée ni expirée, avec un identifiant utilisateur valide contenant l'adresse de l'entrée. Clés RFC 9580 v6 et RFC 4880 v4, lues par openpgp.js. Un certificat S/MIME est contrôlé quant à sa validité, sa clé et son usage, sans vérification de chaîne : il sert uniquement à choisir le destinataire pour lequel un message est chiffré."
+    "en": "e571039950254fa8",
+    "text": "Une PREUVE DE POSSESSION à l'enregistrement : une signature en clair (gpg --clearsign) portant exactement sur le défi que ce service a émis pour la personne, par une clé apte à signer de la clé qu'elle enregistre, faite après l'émission du défi (openpgp.signatureSkewS) et valide à ce moment ; la clé elle-même ni révoquée ni expirée, avec un identifiant utilisateur valide contenant l'adresse de l'entrée. Clés RFC 9580 v6 et RFC 4880 v4, lues par openpgp.js. Un certificat S/MIME est contrôlé quant à sa validité, sa clé et son usage, sans vérification de chaîne : il sert uniquement à choisir le destinataire pour lequel un message est chiffré. Les clés composites RFC 9980 sont lues par le lecteur propre à ce service, qui vérifie les deux moitiés ; openpgp.js ne les analyse pas."
   },
   "crypto.families.openpgp.encrypts": {
-    "en": "1a05c1b540cd5082",
-    "text": "Les MESSAGES, lorsque la personne l'a choisi ou que le domaine de confiance l'exige (mail.encryptionRequired) : PGP/MIME (RFC 3156) pour la clé de chiffrement de la clé, selon le choix d'openpgp.js (SEIPD avec AES pour une clé v4, AEAD pour une clé v6) ; S/MIME (RFC 8551) sous forme de CMS EnvelopedData, chiffrement du contenu en AES-256-CBC, la clé de contenu protégée par RSAES-OAEP avec SHA-256 ou par ECDH (dhSinglePass-stdDH-sha256kdf, encapsulation de clé AES-256)."
+    "en": "92940be7441a9817",
+    "text": "Les MESSAGES, lorsque la personne l'a choisi ou que le domaine de confiance l'exige (mail.encryptionRequired) : PGP/MIME (RFC 3156) pour la clé de chiffrement de la clé, selon le choix d'openpgp.js (SEIPD avec AES pour une clé v4, AEAD pour une clé v6) ; S/MIME (RFC 8551) sous forme de CMS EnvelopedData, chiffrement du contenu en AES-256-CBC, la clé de contenu protégée par RSAES-OAEP avec SHA-256 ou par ECDH (dhSinglePass-stdDH-sha256kdf, encapsulation de clé AES-256). Un certificat ML-KEM (RFC 9935) est un KEMRecipientInfo (RFC 9629) : le chiffrement du contenu reste AES-256-CBC, et un moteur qui ne peut pas encapsuler ne revient pas à RSA ni à ECDH."
   },
   "crypto.families.openpgp.decrypts": {
     "en": "9cc3e24fe9d0a9d8",
@@ -716,24 +716,24 @@
     "text": "Clé enregistrée, signature"
   },
   "crypto.families.openpgp.algorithms.0.how": {
-    "en": "91736ec1cb35b5f2",
-    "text": "Ed25519, Ed448, ECDSA P-256/P-384/P-521, RSA d'au moins openpgp.minRsaBits (3072 au minimum)"
+    "en": "f27dbb16784e93f8",
+    "text": "ML-DSA-65+Ed25519, ML-DSA-87+Ed448 (RFC 9980), puis Ed25519, Ed448, ECDSA P-256/P-384/P-521, RSA d’au moins openpgp.minRsaBits (3072 au minimum)"
   },
   "crypto.families.openpgp.algorithms.1.what": {
     "en": "9f7b65405a49bedd",
     "text": "Clé enregistrée, chiffrement"
   },
   "crypto.families.openpgp.algorithms.1.how": {
-    "en": "e28f57b2d61b83be",
-    "text": "X25519, X448, ECDH Curve25519 et P-256/P-384/P-521, RSA d'au moins openpgp.minRsaBits"
+    "en": "660feb6cfc44d305",
+    "text": "ML-KEM-768+X25519, ML-KEM-1024+X448 (RFC 9980), puis X25519, X448, ECDH Curve25519 et P-256/P-384/P-521, RSA d’au moins openpgp.minRsaBits"
   },
   "crypto.families.openpgp.algorithms.2.what": {
     "en": "66b873543aebf01b",
     "text": "Refusés"
   },
   "crypto.families.openpgp.algorithms.2.how": {
-    "en": "18369a474bec2b97",
-    "text": "DSA, ElGamal, courbes Brainpool"
+    "en": "4c8437ead9bd7364",
+    "text": "DSA, ElGamal, courbes Brainpool, SLH-DSA"
   },
   "crypto.families.openpgp.algorithms.3.what": {
     "en": "429d783fabc235c9",
@@ -748,8 +748,8 @@
     "text": "Transport de clé S/MIME"
   },
   "crypto.families.openpgp.algorithms.4.how": {
-    "en": "acf5bad1301fd2cc",
-    "text": "RSAES-OAEP SHA-256 ; ECDH stdDH KDF SHA-256, encapsulation AES-256"
+    "en": "bccae46bcdf822fb",
+    "text": "RSAES-OAEP SHA-256 ; ECDH stdDH KDF SHA-256, encapsulation AES-256 ; ML-KEM (RFC 9935) en KEMRecipientInfo, HKDF-SHA-256 et AES-Wrap"
   },
   "crypto.families.openpgp.algorithms.5.what": {
     "en": "727e1a6e39e36a93",
@@ -1484,8 +1484,8 @@
     "text": "SHA-1, SHA-256 ou SHA-512, à l’intérieur du HMAC et nulle part ailleurs."
   },
   "crypto.families.one-time-passwords-totp.whatItDoesNot": {
-    "en": "f38dd0b2f7ce307b",
-    "text": "Il ne dit jamais à personne quel est le code actuel, et il n’enrôle jamais personne sur un écran de connexion — s’enrôler, c’est se voir montrer un secret, donc cela se fait là où la personne est déjà authentifiée ou détient un lien d’activation. À une horloge TOTP qui dérive, on offre la fenêtre de décalage et rien d’autre. Un jeton à compteur (HOTP) est resynchronisé à partir de deux codes consécutifs, jamais d’un seul. Il ne conserve jamais la clé ni le mot de passe d’un fichier de semences, et n’ouvre jamais un fichier chiffré pour un certificat."
+    "en": "313115cd82b83d1b",
+    "text": "Il ne dit jamais à personne quel est le code actuel, et il n’enrôle jamais personne sur un écran de connexion — s’enrôler, c’est se voir montrer un secret, donc cela se fait là où la personne est déjà authentifiée ou détient un lien d’activation. À une horloge TOTP qui dérive, on offre la fenêtre de décalage et rien d’autre. Un jeton à compteur (HOTP) est resynchronisé à partir de deux codes consécutifs, jamais d’un seul. Il ne conserve jamais la clé ni le mot de passe d’un fichier de semences, et n’ouvre jamais un fichier chiffré pour un certificat. HOTP (RFC 4226) et une graine PSKC (RFC 6030) n’ont pas de MAC post-quantique : le MAC est HMAC-SHA-1, SHA-256 ou SHA-512."
   },
   "crypto.families.one-time-passwords-totp.algorithms.0.what": {
     "en": "0c410835b8ade404",
@@ -1524,8 +1524,8 @@
     "text": "Rien. Le CRC est un CRC-16, polynôme 0x8408. Une signature YK-VAL est un HMAC-SHA1."
   },
   "crypto.families.yubico-otp.whatItDoesNot": {
-    "en": "a977ea47369edb7c",
-    "text": "Il n’appelle jamais YubiCloud. Il ne vérifie jamais l’horodatage. Il n’enrôle jamais un emplacement tant que yubiotp.offered est désactivé, et il ne répond jamais à YK-VAL tant que yubiotp.ykval est désactivé. Il n’écrit jamais dans le journal la ligne de programmation ni la clé HMAC d’un client."
+    "en": "f93ab78e99cd9d8d",
+    "text": "Il n’appelle jamais YubiCloud. Il ne vérifie jamais l’horodatage. Il n’enrôle jamais un emplacement tant que yubiotp.offered est désactivé, et il ne répond jamais à YK-VAL tant que yubiotp.ykval est désactivé. Il n’écrit jamais dans le journal la ligne de programmation ni la clé HMAC d’un client. Il n’a aucun paramètre post-quantique : le OTP est l’AES-128-ECB d’un seul bloc de 16 octets."
   },
   "crypto.families.yubico-otp.algorithms.0.what": {
     "en": "6c0e6acd35694622",

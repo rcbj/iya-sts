@@ -480,12 +480,12 @@
     "text": "full——就授權伺服器而言，「而且預設關閉」——「設定檔」oauth2.fapi=1-advanced（依領域設定，或具名授權伺服器的 fapi 成員），即 Baseline 再加上更多（#139）：以值或以參照傳遞的 JWS 簽署請求物件（第 1 項），exp 與 nbf 在 60 分鐘內，aud 為簽發者（第 13、15、17 項）；response_type 為 code id_token，或 code 搭配 JARM（第 2 項）；ID Token 作為帶有 s_hash 的分離式簽章（5.2.2.1）；僅限受發送者約束的存取權杖——mTLS，或 DPoP（除非 oauth2.fapiRequireMtls）——並發布 mtls_endpoint_aliases（第 5、6 項）；tls_client_auth、self_signed_tls_client_auth 或 private_key_jwt，且沒有公開用戶端（第 14、16 項）；推送的請求使用 PKCE S256（第 18 項，並依該節所述放寬 Baseline 第 7 項）；雙向的每個簽章都使用 PS256 或 ES256，絕不使用 RSA1_5（8.6），此伺服器預設以 PS256 簽署。主控台、入口網站與偵錯工具皆符合：推送至 PAR 的已簽署請求物件、JARM，以及已繫結的權杖。「未」涵蓋：一致性測試套件（#176）。"
   },
   "stsmetadata.specs.fapi2-security.coverage": {
-    "en": "f7a75985a1885edb",
-    "text": "full——就授權伺服器而言，「而且預設關閉」——「設定檔」oauth2.fapi=2-security（依領域設定，或具名授權伺服器的 fapi 成員），一個獨立的設定檔（#140）：開啟 RFC 9700 模式；僅限機密用戶端，透過 mTLS 或 private_key_jwt，斷言的 aud 為字串形式的簽發者（5.3.2.1 第 3、6、8 項）；僅限受發送者約束的權杖，透過 mTLS 或 DPoP（第 4-5 項）；不輪替重新整理權杖，除非 oauth2.refreshTokenRotation 強制輪替（第 9 項）；60 秒的授權碼（第 11 項）；超前 60 秒以上的 iat 或 nbf 會被拒絕（第 13 項）；僅限 code，必須使用 PAR 且需驗證用戶端，PKCE S256，redirect_uri 須推送，request_uri 少於 600 秒（5.3.2.2）；PS256、ES256 或 EdDSA，RSA 2048 與 EC 224 位元（5.4.1）。TLS（5.2）：BCP 195 的加密套件是每個接聽程式的預設值，偏好 TLS 1.3。DPoP nonce 仍為選用，同意則遵循一般規則。Attacker Model 沒有規範性要求；docs/v1.1.0/oauth-security.md 將每種攻擊者類別對應到阻止它的機制。主控台、入口網站與偵錯工具皆符合。「未」涵蓋：一致性測試套件（#176）。"
+    "en": "01028f08fd980cb6",
+    "text": "full——就授權伺服器而言，「而且預設關閉」——「設定檔」oauth2.fapi=2-security（依領域設定，或具名授權伺服器的 fapi 成員），一個獨立的設定檔（#140）：開啟 RFC 9700 模式；僅限機密用戶端，透過 mTLS 或 private_key_jwt，斷言的 aud 為字串形式的簽發者（5.3.2.1 第 3、6、8 項）；僅限受發送者約束的權杖，透過 mTLS 或 DPoP（第 4-5 項）；不輪替重新整理權杖，除非 oauth2.refreshTokenRotation 強制輪替（第 9 項）；60 秒的授權碼（第 11 項）；超前 60 秒以上的 iat 或 nbf 會被拒絕（第 13 項）；僅限 code，必須使用 PAR 且需驗證用戶端，PKCE S256，redirect_uri 須推送，request_uri 少於 600 秒（5.3.2.2）；PS256、ES256 或 EdDSA，RSA 2048 與 EC 224 位元（5.4.1）。TLS（5.2）：BCP 195 的加密套件是每個接聽程式的預設值，偏好 TLS 1.3。DPoP nonce 仍為選用，同意則遵循一般規則。Attacker Model 沒有規範性要求；docs/v1.2.0/oauth-security.md 將每種攻擊者類別對應到阻止它的機制。主控台、入口網站與偵錯工具皆符合。「未」涵蓋：一致性測試套件（#176）。"
   },
   "stsmetadata.specs.fapi2-message-signing.coverage": {
-    "en": "35f9077fddbb7a8e",
-    "text": "full——就授權伺服器而言，「而且預設關閉」——「設定檔」oauth2.fapi=2-message-signing，即 Security Profile 加上全部三個元件（#141，rcbj 的決定）：PAR 上必須使用 JAR 簽署的請求物件，aud 為簽發者，exp 與 nbf 在 60 分鐘內（5.3）；必須使用 JARM，iss 位於 JWT 內（5.4）；RFC 9701 內省回應須簽署（5.5）。第 5.2 節的不可否認性屬於指引，於 docs/v1.1.0/oauth-security.md 中回應。主控台、入口網站與偵錯工具皆符合。RFC 9421 HTTP 簽章「不」屬於最終規格：它們是 FAPI 2.0 Http Signatures，即下一個項目（#178）。"
+    "en": "8aff442a2af8fd53",
+    "text": "full——就授權伺服器而言，「而且預設關閉」——「設定檔」oauth2.fapi=2-message-signing，即 Security Profile 加上全部三個元件（#141，rcbj 的決定）：PAR 上必須使用 JAR 簽署的請求物件，aud 為簽發者，exp 與 nbf 在 60 分鐘內（5.3）；必須使用 JARM，iss 位於 JWT 內（5.4）；RFC 9701 內省回應須簽署（5.5）。第 5.2 節的不可否認性屬於指引，於 docs/v1.2.0/oauth-security.md 中回應。主控台、入口網站與偵錯工具皆符合。RFC 9421 HTTP 簽章「不」屬於最終規格：它們是 FAPI 2.0 Http Signatures，即下一個項目（#178）。"
   },
   "stsmetadata.specs.fapi2-http-signatures.coverage": {
     "en": "84f23a449916fdc1",
@@ -760,16 +760,16 @@
     "text": "partial：簽署，relaxed/relaxed，使用至少 2048 位元金鑰的 rsa-sha256（RFC 8301），位於 common/crypto.js，在設定了網域時套用於 SMTP 傳輸所送出的內容。未實作：simple 正規化、l= 以及驗證他人寄出的郵件——本服務不接收任何郵件。DKIM 尚未登錄任何後量子演算法。"
   },
   "stsmetadata.specs.rfc9580.coverage": {
-    "en": "086f96d364365827",
-    "text": "partial：讀取 v6 與（RFC 4880）v4 可傳輸公開金鑰，驗證由其簽署金鑰作出的明文簽章，並將訊息加密至其加密金鑰，皆透過 openpgp.js 完成（common/crypto.js 第 19 節）。接受 Ed25519、Ed448、NIST 曲線上的 ECDSA 與 ECDH、X25519、X448 以及長度為 openpgp.minRsaBits 的 RSA；拒絕 DSA、ElGamal 與 Brainpool。缺少：簽署、解密、金鑰環、金鑰伺服器。"
+    "en": "a2930bdb8ffe747d",
+    "text": "partial：讀取 v6 與（RFC 4880）v4 可傳輸公開金鑰，驗證由其簽署金鑰作出的明文簽章，並將訊息加密至其加密金鑰，經典演算法透過 openpgp.js 完成。RFC 9980 複合金鑰在此讀取（見 rfc9980）。接受 Ed25519、Ed448、NIST 曲線上的 ECDSA 與 ECDH、X25519、X448 以及長度為 openpgp.minRsaBits 的 RSA；拒絕 DSA、ElGamal 與 Brainpool。缺少：簽署、解密、金鑰環、金鑰伺服器。"
   },
   "stsmetadata.specs.rfc3156.coverage": {
     "en": "aa799b14a54ace0f",
     "text": "partial：multipart/encrypted，包含 application/pgp-encrypted 版本部分與封裝後的訊息，真正的郵件標頭受保護地置於其中。缺少：multipart/signed——本服務以 DKIM 而非 OpenPGP 簽署郵件。"
   },
   "stsmetadata.specs.rfc8551.coverage": {
-    "en": "a07a1e013186f3d4",
-    "text": "partial：application/pkcs7-mime enveloped-data，即採 AES-256-CBC 內容加密、以 RSAES-OAEP（SHA-256）或 ECDH 金鑰協商為收件者的 CMS EnvelopedData，加密至本人的 userSMIMECertificate。缺少：signed-data、AuthEnvelopedData（AES-GCM）、解密。"
+    "en": "5c1b77d839bd8cc2",
+    "text": "partial：application/pkcs7-mime enveloped-data，即採 AES-256-CBC 內容加密的 CMS EnvelopedData。經典憑證使用 RSAES-OAEP（SHA-256）或 ECDH。ML-KEM 憑證（RFC 9935）使用 KEMRecipientInfo（RFC 9629）：HKDF-SHA-256 與 AES-Wrap。無法封裝的執行環境不會改用經典演算法送出該訊息。缺少：signed-data、AuthEnvelopedData（AES-GCM）、解密。"
   },
   "stsmetadata.specs.wkd.coverage": {
     "en": "e1c6b9651ff1e58c",
@@ -2280,8 +2280,8 @@
     "text": "規格行為之上的非規格介面。以 JSON 提供的已使用斷言歷史：此領域接受過且尚未到期的每個 RFC 7523 與 RFC 7522 斷言，附歷史保存位置（持久、跨程序不可分割）、相對於 oauth2.assertionReplayCacheSize 的即時計數，可依文字、格式、用途與狀態篩選，並以 ?page= 與 ?per= 分頁。任何資料列中都不含斷言與認證資訊。唯讀。對應 GET /admin/used-assertions。"
   },
   "stsmetadata.endpoints./admin-api/error-codes.what": {
-    "en": "6a8ddafe4157455e",
-    "text": "非規格端點。本服務可能產生之每種失敗狀況的中央表格，STS-<SUBSYSTEM>-<NNNN>，以 JSON 提供：每個代碼及其子系統、失敗的是什麼、以其協定自身詞彙告知「用戶端」的內容，以及此領域保存的稽核記錄中有多少資料列帶有它——可依子系統、文字與 ?seen=1 篩選，並以 ?page= 與 ?per= 分頁。代碼絕不會傳送給用戶端：它只出現在稽核資料列與記錄行中。唯讀——此表格就是原始碼。對應 GET /admin/error-codes；相同的表格即 docs/v1.1.0/error-codes.md。"
+    "en": "d4977def3313bbf1",
+    "text": "非規格端點。本服務可能產生之每種失敗狀況的中央表格，STS-<SUBSYSTEM>-<NNNN>，以 JSON 提供：每個代碼及其子系統、失敗的是什麼、以其協定自身詞彙告知「用戶端」的內容，以及此領域保存的稽核記錄中有多少資料列帶有它——可依子系統、文字與 ?seen=1 篩選，並以 ?page= 與 ?per= 分頁。代碼絕不會傳送給用戶端：它只出現在稽核資料列與記錄行中。唯讀——此表格就是原始碼。對應 GET /admin/error-codes；相同的表格即 docs/v1.2.0/error-codes.md。"
   },
   "stsmetadata.endpoints./admin-api/audit-export.what": {
     "en": "c975b83632fa12f4",
@@ -4198,5 +4198,9 @@
   "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
     "en": "1716521c9c5e119d",
     "text": "NON-SPEC (#1955)。某人的託管 piv-key-management 憑證（piv.keyEscrow）：序號、主體、有效期間以及每張憑證是否已被撤銷。絕不包含金鑰。與 GET /admin/hardware-tokens 對應。"
+  },
+  "stsmetadata.specs.rfc9980.coverage": {
+    "en": "5feb46765c8bc465",
+    "text": "partial：登記時以及使用已儲存金鑰時的 ML-DSA-65+Ed25519 與 ML-DSA-87+Ed448 簽章，以及 ML-KEM-768+X25519 與 ML-KEM-1024+X448 加密。複合演算法計為後量子。openpgp.pqcOnly 只收窄登記。簽章的兩個部分由 common/crypto_impl/openpgp_pqc.js 核驗。缺少：SLH-DSA（演算法識別碼 32-34），且本服務不產生 RFC 9980 金鑰。openpgp.js 不解析這些金鑰。"
   }
 }

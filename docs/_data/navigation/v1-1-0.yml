@@ -36,7 +36,6 @@
     - { title: Data classification, url: /data-classification.html }
     - { title: Logging inventory, url: /logging-inventory.html }
     - { title: Key management, url: /key-management.html }
-    - { title: Keys in a hardware security module, url: /hsm.html }
     - { title: Field-level access, url: /field-access.html }
     - { title: Communication inventory, url: /communications.html }
     - { title: File uploads, url: /file-uploads.html }
@@ -93,7 +92,6 @@
     - { title: Signing out, url: /signing-out.html }
     - { title: Risk scoring, url: /risk-scoring.html }
     - { title: Devices, url: /devices.html }
-    - { title: "One-time code tokens (HOTP, PSKC)", url: /one-time-code-tokens.html }
     - { title: "Mail: reset, verification, notices", url: /mail.html }
     - { title: Reports, url: /reporting.html }
     - { title: Attribute sources, url: /attribute-sources.html }
@@ -147,7 +145,6 @@
     - { title: XACML 3.0 and ALFA, url: /xacml.html }
     - { title: "Configuring XACML and ALFA", url: /configure-xacml.html }
     - { title: Fine-grained authorization, url: /fga.html }
-    - { title: Dynamic selectable roles, url: /dynamic-roles.html }
     - { title: AuthZEN, url: /authzen.html }
     - { title: User-Managed Access, url: /uma.html }
     - { title: Remote PEP, url: /remote-pep.html }
@@ -205,10 +202,10 @@
     - { title: OpenID Connect authentication flows, url: /debugger/oauth2-oidc/oidc-flows.html }
     - { title: Dynamic client registration, url: /debugger/oauth2-oidc/dynamic-client-registration.html }
     - { title: "Token detail, introspection, UserInfo, JWKS", url: /debugger/oauth2-oidc/related-tools.html }
-    - { title: The SAML workflow, url: /debugger/saml/ }
+    - { title: The SAML workflow, url: /debugger/saml.html }
     - { title: SAML Assertion Tool, url: /debugger/saml-assertion.html }
     - { title: SAML decoders, url: /debugger/saml-decoders.html }
-    - { title: The WS-Trust workflow, url: /debugger/wstrust/ }
+    - { title: The WS-Trust workflow, url: /debugger/wstrust.html }
     - { title: JWT Tools, url: /debugger/jwt-tools.html }
     - { title: Digital Signature, url: /debugger/digital-signature.html }
 

@@ -641,7 +641,7 @@ What scaling DOES involve is the credential choice, and it is the PDP's
 register that makes it a choice: one certificate is one row, and a heartbeat
 replaces the row's notify URL and counters, so instances sharing a
 certificate show as one row that flips between them and are nudged one at a
-time. `docs/v1.1.0/remote-pep.md`, *Running more than one*, is where that is told to
+time. `docs/v1.2.0/remote-pep.md`, *Running more than one*, is where that is told to
 an operator; it is not repeated here.
 
 ---
@@ -1007,7 +1007,7 @@ not applying.
   (types, action, caller, application, request id, never a value) saying it
   was forwarded, with the code when it failed. `GET /`'s
   `catalogue.fgaApplications` is a COUNT — `GET /` answers anybody.
-* **WHAT THE OPERATOR OWES**, in `docs/v1.1.0/remote-pep.md`: the PEP's own entry
+* **WHAT THE OPERATOR OWES**, in `docs/v1.2.0/remote-pep.md`: the PEP's own entry
   (the one its certificate is stored on, already holding REMOTE_PEPS) holds
   AUTHZEN_PEPS and has every enforcing application its callers ask about in
   its scope; and the realm's door admits a certificate. **Since #1210 the

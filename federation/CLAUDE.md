@@ -2203,7 +2203,7 @@ partner. Unchanged with the setting off. Federation's own Single Logout and
 
 ## WHAT ASVS 5.0.0 LEVEL 2 ADDED TO THE SERVICE-PROVIDER HALF (#1497-#1499, #1523, #1541, #1542, #1554)
 
-`docs/v1.1.0/federation.md` says what each refuses; this is why each is shaped so.
+`docs/v1.2.0/federation.md` says what each refuses; this is why each is shaped so.
 
 * **The browser that started the flow (#1497, product only,
   `bindsSignInSteps()`).** The context was found by its handle alone, so a flow
@@ -2393,7 +2393,7 @@ The adapters (what a source and a path cannot say) are a CLOSED set named in
 the profile. `github-verified-email` is the first. Apple's client-secret JWT
 and `user` field, the Microsoft tenant issuer and TikTok's `client_key` are
 the next. Which platforms can be supported is
-`../docs/v1.1.0/federation-consumer-providers.md`.
+`../docs/v1.2.0/federation-consumer-providers.md`.
 
 ### Steam is the one provider that is not OAuth (#746, 2026-11-05)
 
@@ -2560,7 +2560,7 @@ dial a URL a caller supplies.
 **The OpenID Foundation's suite plays the OpenID Provider, and this service
 is its relying party through an inbound OpenID Connect relationship** — the
 one way this service is somebody's relying party (`common/oidc_rp.ts`, the
-embedded debugger's client, is not the target). `docs/v1.1.0/conformance.md` said
+embedded debugger's client, is not the target). `docs/v1.2.0/conformance.md` said
 the relying-party plans were not run because "this service is no one's
 relying party but its own"; federation made that untrue, and
 `tests/protocol/sts_oidcc_rp_conformance.js` runs eleven of them

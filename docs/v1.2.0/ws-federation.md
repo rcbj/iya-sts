@@ -1,0 +1,401 @@
+---
+title: WS-Federation
+---
+
+# WS-Federation
+
+iya-sts is a **WS-Federation identity provider**: the Web (Passive) Requestor
+Profile of
+[WS-Federation 1.2](https://docs.oasis-open.org/wsfed/federation/v1.2/os/ws-federation-1.2-spec-os.html)
+(section 13) — sign-in, sign-out and sign-out cleanup — with signed federation
+metadata at the path AD FS publishes it. Every trust realm has its own, with
+its own entityID and signing key. There is no built-in relying party (#592): a
+test that needs one uses the test peer (`tests/peer/`).
+
+A relying party redirects a browser to `/wsfed?wa=wsignin1.0`; the person signs
+in at the service's one sign-in screen; and the browser comes back **with a
+form POST, not a redirect**, carrying a WS-Trust `RequestSecurityTokenResponse`
+that wraps a signed SAML assertion. Because the token travels in a form body it
+is not length-limited and never lands in a URL, a log or a `Referer` header.
+
+That form POST (section 13.2.2) shapes the response page. It needs a script to
+submit itself, so the page relaxes `script-src` to `'self'` naming one real
+resource, `/wsfed/autopost.js` — an inline script would not run at all,
+silently, leaving a page that looks as if it is working and never posts. Its
+submit button is labelled for a person rather than hidden, because with
+scripting off the button *is* the mechanism. And `form-action` stays out of the
+content security policy: the form posts to `wreply`, which is by definition
+another origin, and `form-action 'self'` would block the response from ever
+reaching the relying party while the sign-in still appeared to succeed.
+
+## Features
+
+### Endpoints
+
+| Path | What it is |
+|---|---|
+| `GET\|POST /wsfed` | the passive requestor endpoint, dispatched on `wa`; with no `wa` it describes itself and every parameter, the way `GET /sts` does |
+| `GET /FederationMetadata/2007-06/FederationMetadata.xml` | the signed federation metadata |
+| `GET /wsfed/metadata/{rp}` | one **registered** relying party's own signed metadata, naming the entityID its assertions are issued under (#494) |
+| `GET /wsfed/initiate/{rp}` | an [identity-provider-initiated sign-in](#identity-provider-initiated-sign-in) to one registered relying party, by identifier or slug; **off by default** (#712) |
+| `GET /wsfed/initiate?wtrealm=…` | the same, with the relying party as a parameter |
+| `GET /wsfed/autopost.js` | the one script the sign-in response page runs |
+
+In a trust realm every path is under `/realm/{id}`. The full, current list is
+at `/admin/sts-metadata`.
+
+### `wa`: the actions
+
+| `wa` | What happens |
+|---|---|
+| `wsignin1.0` | sign in and POST a token to `wreply` (13.2.1, 13.2.2) |
+| `wsignout1.0` | end the session and send `wsignoutcleanup1.0` to every relying party it signed into (13.2.4) |
+| `wsignoutcleanup1.0` | end the session and stop — no further cleanup requests |
+| `wattr1.0`, `wpseudo1.0` | answered 501 with an explanation: the attribute and pseudonym services are not implemented |
+
+### Sign-in parameters
+
+| Parameter | What is done with it |
+|---|---|
+| `wtrealm` | required; the relying party's identifier and the assertion's audience — in product, a registered relying party (see [the mode table](#development-and-product-mode)) |
+| `wreply` | where the response is POSTed — see [the mode table](#development-and-product-mode) |
+| `wctx` | echoed back **byte for byte** and never interpreted |
+| `wct` | the request timestamp; its skew is recorded, not enforced |
+| `wfresh` | the maximum age of the authentication, in **minutes** — the one place this profile and OIDC's `max_age` differ in unit, and reading it as seconds makes every request look fresh: `0` forces the sign-in screen, `N` re-shows it when the session is older; a value that is not a number is refused. It is dropped on the way back from the sign-in screen, as `prompt=login` is, or it would demand a fresh authentication forever |
+| `wauth` | an authentication method the relying party demands — see [`wauth`](#wauth-a-step-up-never-a-fake) |
+| `whr` | the home realm; recorded and shown, nothing is forwarded |
+| `wreq` | an RST by value; its `TokenType` chooses the token, and an `AppliesTo` that disagrees with `wtrealm` is logged (`wtrealm` wins) |
+| `wreqptr` | **refused** — see below |
+| `wp`, `wencoding` | logged; no policy is enforced |
+| `tokenType`, `trust` | **non-spec** test controls: `tokenType=saml2` for a SAML 2.0 assertion, `trust=1.3` for the ws-sx 200512 wrapper |
+
+### The token
+
+**The default token is a SAML 1.1 assertion**, because that is what AD FS
+issues to a WS-Federation relying party and what the libraries written against
+it (WIF, `Microsoft.Owin.Security.WsFederation`) read first. A SAML 2.0 assertion is issued when the `wreq` RST's `TokenType`
+asks for one, or with the non-spec `tokenType=saml2`. Both are offered in the
+metadata's `fed:TokenTypesOffered`.
+
+The assertion is built by the same builders as the
+[SAML 1.1](saml11.md) and [SAML 2.0](saml2-sso.md) identity providers: its
+issuer is the realm's OAuth 2.0 issuer (#523), it is signed with `saml.signatureAlgorithm`, its
+validity window is widened by `saml.clockSkewS`, and it carries the matching
+set of [custom SAML attributes](saml2-sso.md#custom-saml-attributes) — the
+SAML 1.1 set by default, whose attributes default to the claim namespace
+WS-Federation relying parties read. The built-in claims use the Microsoft claim
+URIs, because WS-Federation defines a claim dialect and no vocabulary, and every
+relying party in this ecosystem was written against those.
+
+Its lifetime is `wsfed.assertionLifetimeMin` — separate from the SAML 1.1
+browser profile's, because a WS-Federation session is read for longer — and a
+relying party may overrule it with `wsfedAssertionLifetimeMin` on its entry (see
+[the assertion settings](saml2-sso.md#the-assertion-settings-every-application-inherits)).
+The RSTR's `wsu:Lifetime` states the lifetime without the skew.
+
+**The SAML 2.0 token names the session it came from** ([#1243](https://github.com/rcbj/iya-sts/issues/1243)),
+as the [SAML 2.0 identity provider's](saml2-sso.md) assertion does:
+
+- **`SessionIndex` is the sign-on session's id**, the one a
+  [CAEP `session-revoked`](caep-events.md#session-revoked) names. A relying
+  party that keeps it from the sign-in can tell which of its own sessions to
+  end when that event arrives. Every token issued in one session carries the
+  same value.
+- **`AuthnInstant` is when the person authenticated**, the session's
+  authentication time, not when the token was issued. A relying party that
+  limits the authentication's age reads it from here.
+- **The bearer `SubjectConfirmation` carries `SubjectConfirmationData`**: a
+  `Recipient` that is the `wreply` the token is posted to, and a `NotOnOrAfter`
+  equal to the `Conditions`' (skew included). There is no `InResponseTo`,
+  because a `wsignin1.0` is not a SAML request. SAML 2.0 makes this element
+  optional and WS-Federation does not require it, but relying-party libraries
+  written for SAML 2.0 refuse a token without it.
+
+Until #1243 the SAML 2.0 token carried the assertion's own ID as
+`SessionIndex`, the time of issue as `AuthnInstant`, and a bare bearer
+confirmation. The SAML 1.1 token's `AuthenticationInstant` was already the
+session's authentication time.
+
+**`ds:Signature` sits in three different positions** in the three documents
+this profile involves — last in a SAML 1.1 assertion, second (after `Issuer`)
+in a SAML 2.0 one, and first in the federation metadata's `EntityDescriptor` —
+and all three are schema-mandated rather than stylistic. A client that looks
+for it in one place will fail on the others. The SAML 1.1 spellings that
+differ from 2.0 are listed on [SAML 1.1](saml11.md#the-assertion).
+
+**The RSTR is WS-Trust February 2005** by default, as a single
+`RequestSecurityTokenResponse` — what AD FS emits and WIF-era relying parties
+parse. `trust=1.3` switches to a ws-sx 200512 RSTR Collection, the shape
+[WS-Trust](ws-trust.md) at `/sts` uses, so a client can be driven through both.
+
+**The authentication method is what happened**, in the token's own vocabulary:
+a password, `multipleauthn` for two factors (in SAML 1.1 and SAML 2.0 alike,
+the value AD FS emits), a hardware token for a passwordless security key in SAML
+1.1 (`unspecified` in SAML 2.0, which has no honest class for it), and the
+certificate, Kerberos or federated values where those were used.
+
+### Signing in, and single sign-on
+
+There is no WS-Federation sign-in screen: the person signs in at the
+[authentication service](authentication.md) every protocol here uses, and lands
+in the one session store. So a person who signed in for OAuth, SAML or the
+console is not asked again, a security key or TOTP works at the screen, and a
+relying party whose application entry names a
+[federation](federation.md) partner sends the person to that partner. Sign in
+at the OpenID Connect screen with a security key and arrive at `wsignin1.0`,
+and the assertion's `AuthenticationMethod` reflects the `amr` the session
+recorded; signing out of either protocol signs out of both.
+
+One quirk is kept: WS-Federation section 13.2.1 allows the sign-in request to
+arrive as a cross-site form POST, which `SameSite=Lax` keeps the session cookie
+off, so such a request goes to the sign-in screen even when a session exists,
+and the screen says so rather than looking like a broken session. A GET does
+not have this problem. The alternative, `SameSite=None`, would be a decision
+needing its own argument; `Lax` is deliberate.
+
+**In product mode a person is asked, once per relying party, before a session
+they already have signs them in to it** (ASVS 5.0.0 7.6.2): a `wsignin1.0`
+carries no signature, so without the question any page could sign a person in
+to any registered relying party. It is the [consent screen](oauth-oidc.md#consent)
+OpenID Connect uses; an Allow is kept and answers every later sign-in to that
+relying party, and a Deny is a 403 page (`STS-WSFED-0031`).
+`wsfed.ssoConsent` turns it on (product) or off (development), and
+`wsfedSsoConsent` on the application's entry overrides it for one relying
+party.
+
+### Who may start a sign-in
+
+Two switches, each a realm setting with a per-relying-party override on the
+application's WS-Federation sub-tab (#426):
+
+| Setting | Override on the entry | Default | Governs |
+|---|---|---|---|
+| `wsfed.spInitiatedSso` | `wsfedSpInitiatedSso` | on | a `wsignin1.0` at `/wsfed`, which the relying party starts |
+| `wsfed.idpInitiatedSso` | `wsfedIdpInitiatedSso` | **off** | `/wsfed/initiate/{rp}`, which this identity provider starts |
+
+With `wsfed.spInitiatedSso` off for a relying party, its `wsignin1.0` is a 403
+page (`STS-WSFED-0028`). **A `wsignin1.0` carries no signature**, so this
+service cannot prove a request came from the relying party it names: turning
+the switch off closes that door to everybody, and it is no evidence of who
+opened it while it was on.
+
+### Identity-provider-initiated sign-in
+
+WS-Federation 1.2 has no request for an identity provider to start a sign-in
+(AD FS calls its own `idpinitiatedsignon`), so this link is this service's:
+
+```
+GET /wsfed/initiate/{rp}[?wctx=…]
+GET /wsfed/initiate?wtrealm={rp}[&wctx=…]
+```
+
+`{rp}` is a **registered** relying party's identifier (its `wtrealm`,
+URL-encoded) or its slug. The query form is for an identifier whose slashes a
+path segment carries badly.
+
+* **Off until a relying party opts in**: set `wsfedIdpInitiatedSso` to TRUE on
+  its entry, or `wsfed.idpInitiatedSso` for the realm. Off, the link is a 403
+  page (`STS-WSFED-0025`). It is off by default because the relying party
+  receives a response it did not ask for, and cannot tell one a person chose
+  from one somebody pushed into their browser.
+* **A registered relying party only, in both modes** (404, `STS-WSFED-0024`).
+* **`wreply` is refused** (400, `STS-WSFED-0026`), not ignored. The response
+  goes only to the **first `wsfedReplyUrl` registered** on the entry — never
+  one this service merely observed from an earlier request, in either mode. With
+  none, the link is refused (400, `STS-WSFED-0027`).
+* **`wctx` is passed through byte for byte.** `tokenType` and `trust` mean
+  what they mean at `/wsfed`; nothing else on the link is read.
+* **It is a `wsignin1.0`'s issuance**: the person signs in at the
+  authentication service if there is no session (and comes back to the link),
+  the issuance policy decides, a CAEP `session-presented` is sent, and the
+  relying party is recorded on the session, so [`/logout`](signing-out.md) and
+  `wsignout1.0` send it a cleanup request.
+* **A denial on risk is a step-up, once**: when the issuance policy denies on
+  the session's risk and names a factor, the person is sent to sign in again
+  with that factor demanded and comes back to the link. Still denied on the
+  way back, the link is a 403 page (`STS-WSFED-0029`). A `wsignin1.0` denied on
+  risk is refused (`STS-WSFED-0011`) as before.
+
+### `wauth`: a step-up, never a fake
+
+`wauth` is how a relying party **demands** an authentication type.
+
+* A **password** method is honoured.
+* A **hardware token** demand is met by a security key, used alone or after a
+  password.
+* A **multi-factor** demand is met only by two real factors — a password and a
+  one-time code, or a password and a key. A passkey used with no password
+  does not answer it.
+* A demand the session does not meet is a **step-up**, in every mode — the
+  same mechanism as `acr_values=mfa` in OAuth: the
+  person is sent back through the sign-in screen with exactly what the demand
+  needs — a hardware demand is offered only the key, a multi-factor demand a
+  second factor — and the assertion then reports what actually happened. A
+  person with no key is told to enrol one.
+* **One attempt.** A demand still unmet on the way back is refused
+  (`STS-WSFED-0009` for a hardware token, `STS-WSFED-0010` for multi-factor),
+  so a demand the screen cannot satisfy does not loop.
+* **An unknown `wauth` is refused** (`STS-WSFED-0006`) rather than answered
+  with a method that did not happen.
+
+### `wreqptr` is never dereferenced
+
+`wreqptr` names a URL the identity provider is meant to fetch the request from.
+Fetching an arbitrary URL taken from a query parameter is a server-side request
+forgery, so the request is refused with a page saying to send the RST by value
+in `wreq` instead.
+
+### Signing out
+
+`wsignout1.0` ends the session — the same one OAuth and SAML read, so they are
+signed out too — and loads each relying party's `wsfedSignOutUri`, or with none
+set the `wreply` its sign-in went to, with
+`wa=wsignoutcleanup1.0` as a one-pixel image, printing the same URLs as links so
+a failed cleanup can be seen. With a `wreply` on the request, the page offers a
+**link** back rather than redirecting, because a redirect would abandon the
+cleanups. The cleanup images are what front-channel logout is, so that one
+response widens `img-src` to `*`: a cleanup ping is by definition a third-party
+origin, and the URLs are ones an administrator declared or the relying parties
+themselves supplied as `wreply`. `wsignoutcleanup1.0` arriving here ends the session and sends no
+cleanups of its own, which would loop between two identity providers. The
+protocol-independent `/logout` sends the same cleanups; see
+[Signing out](signing-out.md).
+
+### Federation metadata
+
+`/FederationMetadata/2007-06/FederationMetadata.xml` is at **AD FS's path**,
+because WS-Federation names none and that is where every relying party in this
+ecosystem looks first. It is signed, names this identity provider by the
+realm's OAuth 2.0 issuer (#523), and holds a `fed:SecurityTokenServiceType` `RoleDescriptor`
+with `fed:TokenTypesOffered`, `fed:ClaimTypesOffered`, the
+`PassiveRequestorEndpoint` and the `SecurityTokenServiceEndpoint` — the latter
+at `/sts`, the same service answering the active profile
+([WS-Trust](ws-trust.md)). It describes what this realm's mode
+actually emits. **It describes the realm's one entity** (#524): the same
+entity is also the SAML 2.0 and SAML 1.1 identity provider, so its
+`IDPSSODescriptor` and `AttributeAuthorityDescriptor` are in it beside the
+WS-Federation role. `/saml2/metadata` and `/saml11/metadata` serve the same
+document without the WS-Federation role, because its
+`xsi:type="fed:SecurityTokenServiceType"` resolves only with the WS-Federation
+schema and a SAML-only consumer that validates metadata strictly (SimpleSAMLphp,
+for one) refuses a document it cannot resolve. One entityID, one signer, two
+consistent views; a relying party configured from any of them trusts the same
+entity.
+
+**One name, in every protocol** (#523). The metadata's `entityID` and every
+assertion's Issuer are the realm's OAuth 2.0 issuer — the string
+`/.well-known/oauth-authorization-server` publishes, which SAML SSO and
+WS-Trust name themselves by too — for every relying party, registered or not.
+It is not a setting; pin `global.publicBaseUrl` so it does not follow the host
+a request arrived on.
+
+`/wsfed/metadata/{rp}` — `{rp}` the application's identifier (its `wtrealm`)
+or its slug, as on `/admin/saml2` — is the same document, for a relying party
+that is configured per application. A segment naming no registered relying
+party is a 404 (`STS-WSFED-0019`) in both modes.
+
+### Not implemented
+
+`wresultptr` (the response is always by value), the attribute and pseudonym
+services (`wattr1.0`, `wpseudo1.0`, which answer 501 explaining what they would
+have done), token encryption (a passive request carries no recipient
+certificate; WS-Trust replaces the elements an application names with
+`xenc:EncryptedData`), the metadata exchange over SOAP, and any
+authorization or policy enforcement (`wp` and `wencoding` are logged and
+nothing more). `wreqptr` is refused by design.
+
+## Development and product mode
+
+| | Development | Product |
+|---|---|---|
+| `wtrealm` | any relying party; it is filed in the register | a **registered** relying party only — one an administrator, dynamic registration, an OpenID Federation or this service's seeding put there, not one the register merely recorded from an earlier sign-in. Any other is a 404 page (`STS-WSFED-0021`) before the sign-in screen, and nothing is recorded (#496) |
+| `wreply` | used as it stands; with none, the registered one, and with none registered the request is refused | must be one of the `wsfedReplyUrl` values on the `wtrealm`'s application entry, exact match; with none, the registered one. An address development merely observed is refused until an operator confirms it |
+| Password at the sign-in screen | any password but `invalid` | verified |
+| Single sign-on to a relying party the person has not agreed to | answered | asked first, once (`wsfed.ssoConsent`) |
+| A parameter given twice, or in both the query string and the body | not refused for that reason | refused, 400 (`STS-CORE-0173`) |
+| Given name, surname, mail, display name, UPN | invented, and described that way in the metadata | read off the directory entry, or omitted — and the signed metadata describes them that way |
+
+The `wauth` step-up, the `wreqptr` refusal and `wctx` round trip behave the
+same in both modes, and so does `/wsfed/initiate`: a registered relying party
+and a registered reply address only, whatever the mode. See
+[What is not checked](what-is-not-checked.md).
+
+## Configuration
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `wsfed.assertionLifetimeMin` | `STS_WSFED_ASSERTION_LIFETIME_MIN` | `60` | yes | The lifetime of the assertion and of the RSTR's `wsu:Lifetime`; per relying party with `wsfedAssertionLifetimeMin`. |
+| `wsfed.idpInitiatedSso` | `STS_WSFED_IDP_INITIATED_SSO` | `false` | yes | Whether `/wsfed/initiate/{rp}` signs a person in to a relying party that did not ask; per relying party with `wsfedIdpInitiatedSso`. |
+| `wsfed.spInitiatedSso` | `STS_WSFED_SP_INITIATED_SSO` | `true` | yes | Whether a relying party's `wsignin1.0` is answered; per relying party with `wsfedSpInitiatedSso`. |
+| `wsfed.ssoConsent` | `STS_WSFED_SSO_CONSENT` | `true` in product, `false` in development | yes | Ask a person once per relying party before single sign-on signs them in to it; per relying party with `wsfedSsoConsent`. |
+
+The assertion's issuer, signature algorithm, skew and attributes are the shared
+`saml.*` settings and the SAML attribute sets — see the
+[SAML 2.0 configuration](saml2-sso.md#configuration). This table is a copy; the
+live source is `/admin/wsfed`, the **SAML assertions** tab of `/admin/saml2`
+(for `wsfed.assertionLifetimeMin`) and `GET /admin-api/config`. See
+[Configuration](configuration.md) for how a value is resolved; a setting is
+changed on those pages or with `POST /admin-api/config/set`.
+
+## Design decisions
+
+* **SAML 1.1 is the default token.** AD FS issues SAML 1.1 to a WS-Federation
+  relying party unless told otherwise, and a service defaulting to the rarer type
+  would exercise the wrong half of those clients.
+* **The February 2005 RSTR by default, ws-sx on request.** It is what AD FS
+  emits; a relying party that has only ever seen one shape has usually
+  hard-coded it, and `trust=1.3` shows that.
+* **`wctx` is echoed byte for byte.** It is the relying party's state and the
+  commonest thing an identity provider mangles; an altered `wctx` looks exactly
+  like a lost session.
+* **One session and one sign-in screen for every protocol.** A screen of its
+  own once made federation, `fedAuthnMechanism` and the WebAuthn step inert for
+  this profile alone; the shared screen makes single sign-on real.
+* **`wauth` is a step-up, never a fake.** A relying party that demanded a
+  factor is either given it, after the person provides it, or refused — never
+  handed an assertion claiming a method that did not happen.
+* **A passkey used with no password is not two factors.** Hardware-token and multi-factor
+  demands are separate questions, and one session can answer the first and not
+  the second.
+* **`wreqptr` is refused.** Following a URL from a query parameter is
+  server-side request forgery with a specification citation attached.
+* **Sign-out offers a link back rather than redirecting**, so the cleanup
+  images finish loading; a received cleanup does not fan out, so two identity
+  providers cannot loop.
+* **One name, and no setting for it (#523).** The metadata's `entityID` and
+  every assertion's Issuer are the realm's OAuth 2.0 issuer, so they cannot
+  disagree. `wsfed.entityId` and `saml.issuer` are retired.
+* **There is no built-in relying party (#592).** One shipped until then, as the
+  default `wreply` and a page that verified the response check by check; it
+  was demonstration code in the runtime, and the test peer plays the relying
+  party a test needs.
+
+## In the running service
+
+* **Protocols → WS-Federation** (`/admin/wsfed`): the endpoint, the entityID,
+  and which setting is which. The assertion's issuer
+  and contents are configured on the SAML pages —
+  [SAML assertions](saml2-sso.md#the-assertion-settings-every-application-inherits)
+  and [Custom SAML attributes](saml2-sso.md#custom-saml-attributes).
+* A relying party is an application under **Applications**, where its
+  `wsfedReplyUrl` values are registered and an observed one is confirmed or
+  discarded.
+* `GET /admin-api/wsfed` returns the same settings; the full API is in
+  `/admin-api/openapi.json`.
+* `GET /wsfed` describes the profile and every parameter as this realm treats
+  them. Failures are shown as a page (there is no error response in this
+  profile) and recorded under `STS-WSFED-NNNN` codes — see
+  [Error codes](error-codes.md).
+
+## Related
+
+* [SAML 1.1 browser profiles](saml11.md) and
+  [SAML 2.0 Web Browser SSO](saml2-sso.md), which build the assertion and hold
+  the assertion settings and custom attributes
+* [WS-Trust](ws-trust.md), whose RSTR this profile carries
+* [Authentication](authentication.md), [Sessions](sessions.md),
+  [Signing out](signing-out.md), [Federation](federation.md)
+* [OAuth 2.0 security](oauth-security.md) — RFC 9470 step-up, the mechanism
+  `wauth` shares
+* [Trust realms](trust-realms.md), [What is not checked](what-is-not-checked.md),
+  [Configuration](configuration.md)

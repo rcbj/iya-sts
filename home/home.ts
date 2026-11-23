@@ -29,7 +29,7 @@
 // hand-written list of highlights here would be a second, unchecked copy of it
 // — wrong within a month, on the page most likely to be read first and least
 // likely to be re-read. The documentation site makes the same argument in
-// `docs/v1.1.0/endpoints.md` and this page holds to it: LINK to the thing that
+// `docs/v1.2.0/endpoints.md` and this page holds to it: LINK to the thing that
 // generates the list.
 //
 // ---------------------------------------------------------------------------
@@ -200,7 +200,7 @@ const REPO_URL = 'https://github.com/rcbj/iya-sts';
 
 const ISSUES_URL = REPO_URL + '/issues';
 
-const DOCS_URL = 'https://rcbj.github.io/iya-sts/v1.1.0/';
+const DOCS_URL = 'https://rcbj.github.io/iya-sts/v1.2.0/';
 
 // Relative on purpose. This service is reached as localhost, as `sts` on a
 // compose network and through a published port, and `baseUrlOf()` exists

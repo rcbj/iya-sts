@@ -112,7 +112,7 @@ function homeCases(root) {
         external: true },
       { id: 'issues', href: 'https://github.com/rcbj/iya-sts/issues',
         external: true },
-      { id: 'docs', href: 'https://rcbj.github.io/iya-sts/v1.1.0/',
+      { id: 'docs', href: 'https://rcbj.github.io/iya-sts/v1.2.0/',
         external: true },
       { id: 'console', href: consoleHref, external: false },
       { id: 'portal', href: '/portal', external: false },

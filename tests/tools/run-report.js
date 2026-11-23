@@ -2632,7 +2632,7 @@ async function main() {
         // THE DIRECTORY'S PORT UNDER THE NAME A JOB LOOKS IT UP BY, AND THAT
         // IS NOT THE NAME THE SERVICE READS IT FROM.
         //
-        // The service takes `LDAP_PORT` (docs/v1.1.0/configuration.md's
+        // The service takes `LDAP_PORT` (docs/v1.2.0/configuration.md's
         // settings table is the authority, and `service.js`'s PORT_VARS uses
         // those spellings);
         // `sts_global_logout.js` reads **`STS_LDAP_PORT`**. Every other

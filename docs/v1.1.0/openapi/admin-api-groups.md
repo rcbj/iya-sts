@@ -391,7 +391,7 @@ One membership value onto one group. `group` is its `cn` or its whole DN; `membe
 
 **Removing one is not here.** It is an `ldapmodify` or a SCIM `PATCH`, and POST /admin-api/rbac for the two groups that grant the console.
 
-**Mirrors** `POST /admin/groups, POST /admin/groups/new and POST /admin/groups/owners` on the admin console.
+**Mirrors** `POST /admin/groups and POST /admin/groups/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -499,7 +499,7 @@ Adds a person or a group of this realm to the group's `owner` values (RFC 4519 s
 
 **AN OWNER GRANTS NOTHING**: nothing in this service reads `owner` to decide anything.
 
-**Mirrors** `POST /admin/groups, POST /admin/groups/new and POST /admin/groups/owners` on the admin console.
+**Mirrors** `POST /admin/groups and POST /admin/groups/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -567,7 +567,7 @@ An entry under `ou=groups`, as a `groupOfNames` — so it is counted as a group 
 
 **IT GRANTS NOTHING.** No endpoint here decides anything on a group. The two that do are `admin.readGroup` and `admin.writeGroup`, and they are granted at POST /admin-api/rbac rather than by creating a group with the right name — though creating one with the right name and adding somebody to it does the same thing, because those two ARE ordinary groups in this directory.
 
-**Mirrors** `POST /admin/groups, POST /admin/groups/new and POST /admin/groups/owners` on the admin console.
+**Mirrors** `POST /admin/groups and POST /admin/groups/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -671,44 +671,6 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `reason` | string |  |  |
 
-## GET /admin-api/groups/new
-
-`getNewGroupForm`
-
-**What a group may be created with, and which of it is required**
-
-The create's fields in `createFields`, each with `required` — `group` (the `cn`) is the one the create refuses without; `note`, `mail` and `members` are optional — plus the container a group lands in, `groupsDn`, which is THIS REALM'S. **It creates nothing**: the create is `POST /admin-api/groups/create`. A process with no directory answers `directory: false`.
-
-**Mirrors** `GET /admin/groups/new` on the admin console.
-
-Scope: `admin:read`.
-
-**Parameters**
-
-| Name | In | Type | Required | What it is |
-|---|---|---|---|---|
-| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
-| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
-
-**200**: The fields, which are required, the container and the realm.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `canWrite` | boolean |  |  |
-| `createFields` | list |  |  |
-| `createFields[]` | object |  | One field of a directory object's create (#1132): the name the create takes it under and whether the create refuses without it. A field is required exactly when the create refuses an empty or absent value; every other field is optional. |
-| `createFields[].name` | string | yes |  |
-| `createFields[].required` | boolean | yes |  |
-| `createFields[].requiredWhen` | object |  | A field required for some choices only: the create refuses without it when `field` holds one of `values`, and is otherwise indifferent. `required` is false for such a field. |
-| `createFields[].requiredWhen.field` | string | yes |  |
-| `createFields[].requiredWhen.values` | list | yes |  |
-| `createFields[].requiredWhen.values[]` | string |  |  |
-| `directory` | boolean |  |  |
-| `groupsDn` | string, or null |  |  |
-| `realm` | object |  |  |
-| `realm.id` | string |  |  |
-| `realm.name` | string |  |  |
-
 ## POST /admin-api/groups/remove-owner
 
 `removeGroupOwner`
@@ -717,7 +679,7 @@ Scope: `admin:read`.
 
 Takes one `owner` value off the group and writes at once (#603). `owner` is the DN the group lists; one it does not list is refused. The last owner may go: a group needs none.
 
-**Mirrors** `POST /admin/groups, POST /admin/groups/new and POST /admin/groups/owners` on the admin console.
+**Mirrors** `POST /admin/groups and POST /admin/groups/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -777,7 +739,7 @@ Scope: `admin:write`.
 
 Writes one `mail` value onto the group's own entry, or removes it when `mail` is empty. It is where a report definition shared with the group sends its result notices (the reports application, #989); a shared group with no address is written up as STS-REPORT-0037 when a notice is due. `group` is its `cn` or its whole DN. **Idempotent**: the same address again, or clearing one that is already absent, answers `ok: true` with `changed: false`. A value that is not an address (one local part, one `@`, a domain with a dot, no whitespace) is refused.
 
-**Mirrors** `POST /admin/groups, POST /admin/groups/new and POST /admin/groups/owners` on the admin console.
+**Mirrors** `POST /admin/groups and POST /admin/groups/owners` on the admin console.
 
 Scope: `admin:write`.
 
@@ -873,7 +835,7 @@ Scope: `admin:write`.
 
 Writes one value of `attribute` — the attribute by which a group names its policy of a kind, `stsPasskeyPolicy` for the passkey policy — onto the group's own entry, or removes it when `policy` is empty. `policy` is `default` or a named policy of that kind this realm holds (STS-LDAP-0195 otherwise); an attribute no kind declares is refused (STS-LDAP-0194). The policy a group names competes for each of its members on precedence with the policy the application names, the policy the person names and the policies their other groups name: the lowest applies, ties by name, else `default`. A named policy a group still names cannot be deleted. `GET /admin-api/groups?group=` lists the attributes and their choices as `policyReferences`. **Idempotent**: the value the group already names answers `changed: false`.
 
-**Mirrors** `POST /admin/groups, POST /admin/groups/new and POST /admin/groups/owners` on the admin console.
+**Mirrors** `POST /admin/groups and POST /admin/groups/owners` on the admin console.
 
 Scope: `admin:write`.
 

@@ -480,12 +480,12 @@
     "text": "full لخادم التفويض، ومتوقف افتراضيًا — ملف التعريف oauth2.fapi=1-advanced (لكل نطاق ثقة، أو عضو fapi في خادم تفويض مسمّى)، وهو Baseline وأكثر (#139): كائن طلب موقّع بـ JWS بالقيمة أو بالمرجع (البند 1) مع exp وnbf ضمن 60 دقيقة وaud هو المُصدِر (البنود 13 و15 و17)؛ وresponse_type بقيمة code id_token، أو code مع JARM (البند 2)؛ وID Token بوصفه توقيعًا منفصلًا مع s_hash (5.2.2.1)؛ ورموز وصول مقيّدة المُرسِل فقط — mTLS، أو DPoP ما لم يكن oauth2.fapiRequireMtls — مع نشر mtls_endpoint_aliases (البندان 5 و6)؛ وtls_client_auth أو self_signed_tls_client_auth أو private_key_jwt وبلا عميل عام (البندان 14 و16)؛ وPKCE S256 للطلبات المدفوعة (البند 18، وبند Baseline 7 مُرخَّى كما يقول القسم)؛ وPS256 أو ES256 لكل توقيع في الاتجاهين وأبدًا RSA1_5 (8.6)، وهذا الخادم يوقّع PS256 افتراضيًا. تتوافق وحدة التحكم والبوابة والمُنقّح: كائن طلب موقّع يُدفَع إلى PAR، وJARM، ورمز مميز مقيّد. غير المغطى: جناح المطابقة (#176)."
   },
   "stsmetadata.specs.fapi2-security.coverage": {
-    "en": "f7a75985a1885edb",
-    "text": "full لخادم التفويض، ومتوقف افتراضيًا — ملف التعريف oauth2.fapi=2-security (لكل نطاق ثقة، أو عضو fapi في خادم تفويض مسمّى)، ملف تعريف قائم بذاته (#140): وضع RFC 9700 مُشغَّل؛ وعملاء سريون فقط، عبر mTLS أو private_key_jwt، وaud التأكيد هو المُصدِر بوصفه سلسلة (بنود 5.3.2.1 أرقام 3 و6 و8)؛ ورموز مميزة مقيّدة المُرسِل فقط، عبر mTLS أو DPoP (البندان 4-5)؛ وبلا تدوير لرمز التحديث ما لم يفرضه oauth2.refreshTokenRotation (البند 9)؛ ورموز تفويض من 60 ثانية (البند 11)؛ وiat أو nbf يسبق بأكثر من 60 ثانية يُرفض (البند 13)؛ وcode فقط، وPAR مطلوب ومصادَق على العميل، وPKCE S256، وredirect_uri مدفوع، وrequest_uris أقل من 600 ثانية (5.3.2.2)؛ وPS256 أو ES256 أو EdDSA، وRSA 2048 وEC 224 بتًا (5.4.1). TLS (5.2): أجنحة BCP 195 هي افتراضي كل مستمع، وTLS 1.3 مفضّل. تبقى nonce في DPoP اختيارية، وتتبع الموافقة القواعد العادية. Attacker Model بلا متطلبات معيارية؛ ويربط docs/v1.1.0/oauth-security.md كل صنف مهاجم بما يوقفه. تتوافق وحدة التحكم والبوابة والمُنقّح. غير المغطى: جناح المطابقة (#176)."
+    "en": "01028f08fd980cb6",
+    "text": "full لخادم التفويض، ومتوقف افتراضيًا — ملف التعريف oauth2.fapi=2-security (لكل نطاق ثقة، أو عضو fapi في خادم تفويض مسمّى)، ملف تعريف قائم بذاته (#140): وضع RFC 9700 مُشغَّل؛ وعملاء سريون فقط، عبر mTLS أو private_key_jwt، وaud التأكيد هو المُصدِر بوصفه سلسلة (بنود 5.3.2.1 أرقام 3 و6 و8)؛ ورموز مميزة مقيّدة المُرسِل فقط، عبر mTLS أو DPoP (البندان 4-5)؛ وبلا تدوير لرمز التحديث ما لم يفرضه oauth2.refreshTokenRotation (البند 9)؛ ورموز تفويض من 60 ثانية (البند 11)؛ وiat أو nbf يسبق بأكثر من 60 ثانية يُرفض (البند 13)؛ وcode فقط، وPAR مطلوب ومصادَق على العميل، وPKCE S256، وredirect_uri مدفوع، وrequest_uris أقل من 600 ثانية (5.3.2.2)؛ وPS256 أو ES256 أو EdDSA، وRSA 2048 وEC 224 بتًا (5.4.1). TLS (5.2): أجنحة BCP 195 هي افتراضي كل مستمع، وTLS 1.3 مفضّل. تبقى nonce في DPoP اختيارية، وتتبع الموافقة القواعد العادية. Attacker Model بلا متطلبات معيارية؛ ويربط docs/v1.2.0/oauth-security.md كل صنف مهاجم بما يوقفه. تتوافق وحدة التحكم والبوابة والمُنقّح. غير المغطى: جناح المطابقة (#176)."
   },
   "stsmetadata.specs.fapi2-message-signing.coverage": {
-    "en": "35f9077fddbb7a8e",
-    "text": "full لخادم التفويض، ومتوقف افتراضيًا — ملف التعريف oauth2.fapi=2-message-signing، وهو Security Profile مضافًا إليه المكوّنات الثلاثة كلها (#141، قرار rcbj): كائن طلب موقّع بـ JAR مطلوب عند PAR، مع aud هو المُصدِر وexp وnbf ضمن 60 دقيقة (5.3)؛ وJARM مطلوب، وiss داخل JWT (5.4)؛ واستجابات الاستبطان في RFC 9701 مُوقَّعة (5.5). عدم الإنكار في القسم 5.2 إرشاد، والإجابة عنه في docs/v1.1.0/oauth-security.md. تتوافق وحدة التحكم والبوابة والمُنقّح. توقيعات HTTP في RFC 9421 ليست جزءًا من المواصفة النهائية: إنها FAPI 2.0 Http Signatures، المدخل التالي (#178)."
+    "en": "8aff442a2af8fd53",
+    "text": "full لخادم التفويض، ومتوقف افتراضيًا — ملف التعريف oauth2.fapi=2-message-signing، وهو Security Profile مضافًا إليه المكوّنات الثلاثة كلها (#141، قرار rcbj): كائن طلب موقّع بـ JAR مطلوب عند PAR، مع aud هو المُصدِر وexp وnbf ضمن 60 دقيقة (5.3)؛ وJARM مطلوب، وiss داخل JWT (5.4)؛ واستجابات الاستبطان في RFC 9701 مُوقَّعة (5.5). عدم الإنكار في القسم 5.2 إرشاد، والإجابة عنه في docs/v1.2.0/oauth-security.md. تتوافق وحدة التحكم والبوابة والمُنقّح. توقيعات HTTP في RFC 9421 ليست جزءًا من المواصفة النهائية: إنها FAPI 2.0 Http Signatures، المدخل التالي (#178)."
   },
   "stsmetadata.specs.fapi2-http-signatures.coverage": {
     "en": "84f23a449916fdc1",
@@ -760,16 +760,16 @@
     "text": "partial: التوقيع، relaxed/relaxed، وrsa-sha256 بمفتاح لا يقل عن 2048 بتًا (RFC 8301)، في common/crypto.js، على ما يرسله نقل SMTP حين يُكوَّن نطاق. ناقص: الصيغة القانونية simple، وl=، والتحقق من بريد أرسله أي طرف آخر — لا تستقبل هذه الخدمة شيئًا. ليس لـ DKIM خوارزمية ما بعد الكم مسجَّلة."
   },
   "stsmetadata.specs.rfc9580.coverage": {
-    "en": "086f96d364365827",
-    "text": "partial: قراءة مفتاح عام قابل للنقل، v6 و(RFC 4880) v4، والتحقق من توقيع نص صريح بمفتاح توقيع منه، وتشفير رسالة إلى مفتاح التشفير فيه، كل ذلك عبر openpgp.js (common/crypto.js القسم 19). تُقبل Ed25519 وEd448 وECDSA وECDH على منحنيات NIST، وX25519 وX448 وRSA بطول openpgp.minRsaBits؛ وتُرفض DSA وElGamal وBrainpool. الناقص: التوقيع، وفك التشفير، وحلقة المفاتيح، وخادم المفاتيح."
+    "en": "a2930bdb8ffe747d",
+    "text": "partial: قراءة مفتاح عام قابل للنقل، v6 و(RFC 4880) v4، والتحقق من توقيع نص صريح بمفتاح توقيع منه، وتشفير رسالة إلى مفتاح التشفير فيه، تمر الخوارزميات التقليدية عبر openpgp.js. وتُقرأ مركّبات RFC 9980 هنا (انظر rfc9980). تُقبل Ed25519 وEd448 وECDSA وECDH على منحنيات NIST، وX25519 وX448 وRSA بطول openpgp.minRsaBits؛ وتُرفض DSA وElGamal وBrainpool. الناقص: التوقيع، وفك التشفير، وحلقة المفاتيح، وخادم المفاتيح."
   },
   "stsmetadata.specs.rfc3156.coverage": {
     "en": "aa799b14a54ace0f",
     "text": "partial: multipart/encrypted مع جزء إصدار application/pgp-encrypted والرسالة المدرّعة، والترويسات الحقيقية محمية في الداخل. الناقص: multipart/signed — تُوقّع هذه الخدمة البريد بـ DKIM لا بـ OpenPGP."
   },
   "stsmetadata.specs.rfc8551.coverage": {
-    "en": "a07a1e013186f3d4",
-    "text": "partial: application/pkcs7-mime enveloped-data، وهي CMS EnvelopedData بتشفير محتوى AES-256-CBC ومستلم باتفاق مفاتيح RSAES-OAEP (SHA-256) أو ECDH، إلى userSMIMECertificate الخاصة بالشخص. الناقص: signed-data، وAuthEnvelopedData (AES-GCM)، وفك التشفير."
+    "en": "5c1b77d839bd8cc2",
+    "text": "partial: application/pkcs7-mime enveloped-data، وهي CMS EnvelopedData بتشفير محتوى AES-256-CBC. تستخدم الشهادة التقليدية RSAES-OAEP (SHA-256) أو ECDH. وتستخدم شهادة ML-KEM (RFC 9935)‏ KEMRecipientInfo (RFC 9629): HKDF-SHA-256 وAES-Wrap. وبيئة التشغيل التي لا تستطيع التغليف لا ترسل الرسالة بخوارزمية تقليدية. الناقص: signed-data، وAuthEnvelopedData (AES-GCM)، وفك التشفير."
   },
   "stsmetadata.specs.wkd.coverage": {
     "en": "e1c6b9651ff1e58c",
@@ -2280,8 +2280,8 @@
     "text": "سطح NON-SPEC فوق سلوك مواصفة. تاريخ التأكيدات المستخدمة كـ JSON: كل تأكيد وفق RFC 7523 وRFC 7522 قبله نطاق الثقة هذا ولم ينتهِ بعد، مع أين يُحفظ التاريخ (persistent، وذري عبر العمليات)، والعدد الحي مقابل oauth2.assertionReplayCacheSize، مُرشَّحًا بالنص والتنسيق والاستخدام والحالة ومُصفَّحًا بـ ?page= و?per=. لا تأكيد ولا بيانات اعتماد في أي صف. للقراءة فقط. يطابق GET /admin/used-assertions."
   },
   "stsmetadata.endpoints./admin-api/error-codes.what": {
-    "en": "6a8ddafe4157455e",
-    "text": "NON-SPEC. الجدول المركزي لكل شرط إخفاق يمكن أن تنتجه هذه الخدمة، STS-<SUBSYSTEM>-<NNNN>، كـ JSON: كل رمز مع نظامه الفرعي، وما أخفق، وما يُقال للعميل بمفردات بروتوكوله، وكم صفًا يحمل سجل التدقيق المحتفظ به ذلك الرمز في نطاق الثقة هذا — مُرشَّحًا بالنظام الفرعي والنص و?seen=1، ومُصفَّحًا بـ ?page= و?per=. لا يُرسل الرمز إلى عميل أبدًا: هو على صف التدقيق وفي سطر السجل فقط. للقراءة فقط — الجدول مصدر. يطابق GET /admin/error-codes؛ والجدول نفسه هو docs/v1.1.0/error-codes.md."
+    "en": "d4977def3313bbf1",
+    "text": "NON-SPEC. الجدول المركزي لكل شرط إخفاق يمكن أن تنتجه هذه الخدمة، STS-<SUBSYSTEM>-<NNNN>، كـ JSON: كل رمز مع نظامه الفرعي، وما أخفق، وما يُقال للعميل بمفردات بروتوكوله، وكم صفًا يحمل سجل التدقيق المحتفظ به ذلك الرمز في نطاق الثقة هذا — مُرشَّحًا بالنظام الفرعي والنص و?seen=1، ومُصفَّحًا بـ ?page= و?per=. لا يُرسل الرمز إلى عميل أبدًا: هو على صف التدقيق وفي سطر السجل فقط. للقراءة فقط — الجدول مصدر. يطابق GET /admin/error-codes؛ والجدول نفسه هو docs/v1.2.0/error-codes.md."
   },
   "stsmetadata.endpoints./admin-api/audit-export.what": {
     "en": "c975b83632fa12f4",
@@ -4198,5 +4198,9 @@
   "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
     "en": "1716521c9c5e119d",
     "text": "NON-SPEC (#1955). شهادات piv-key-management المودَعة لشخص ما (piv.keyEscrow): الرقم التسلسلي والموضوع والصلاحية وما إذا كانت كل منها قد أُلغيت. لا مفتاح أبدًا. يطابق GET /admin/hardware-tokens."
+  },
+  "stsmetadata.specs.rfc9980.coverage": {
+    "en": "5feb46765c8bc465",
+    "text": "partial: توقيعات ML-DSA-65+Ed25519 وML-DSA-87+Ed448، وتشفير ML-KEM-768+X25519 وML-KEM-1024+X448، عند التسجيل وعند استخدام مفتاح مخزّن. يُحسب المركّب ما بعد الكم. يضيّق openpgp.pqcOnly التسجيل فقط. يتحقق common/crypto_impl/openpgp_pqc.js من نصفي التوقيع. الناقص: SLH-DSA (معرّفات الخوارزمية 32-34)، ولا يولّد هذا الخدمة مفتاح RFC 9980. لا يحلّل openpgp.js هذه المفاتيح."
   }
 }

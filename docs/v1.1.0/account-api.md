@@ -77,12 +77,7 @@ anything else, with the owner being the subject.
 application entry declares it in `oauthAllowedScope`, and only
 `sts-user-portal` declares it out of the box. To let a native application
 manage a person's own account, declare the scope on that application. It
-then signs the person in through an authorization-code flow or RFC 8628's
-device authorization flow. A browserless CLI requests
-`scope=openid account:manage` and the realm's `/account-api` as its `resource`;
-the person sees both the scopes and resource before approving on the portal.
-The CLI polls `/oauth2/token` with the device code and uses the resulting
-access token at the API.
+then signs the person in the same way.
 
 The API itself is represented in every realm by the application
 **`sts-account-api`**, which holds the audience a token for it names. It is an

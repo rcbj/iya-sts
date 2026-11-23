@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 #
 # An ICAP service in front of the `clamav` container, for a stack that wants
-# malware scanning with ClamAV. See docs/v1.1.0/malware-scanning.md.
+# malware scanning with ClamAV. See docs/v1.2.0/malware-scanning.md.
 FROM debian:bookworm-slim
 RUN apt-get update \
  && apt-get install -y --no-install-recommends c-icap libc-icap-mod-virus-scan socat openssl \

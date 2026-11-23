@@ -301,7 +301,6 @@ The door of the portal's `GET /portal/activate`.
 | `pending.options` | object |  |  |
 | `pending.options.algorithms` | list |  |  |
 | `pending.options.algorithms[]` | integer |  |  |
-| `pending.options.appidExclude` | string |  |  |
 | `pending.options.attestation` | string |  |  |
 | `pending.options.authenticatorSelection` | object |  |  |
 | `pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -309,9 +308,6 @@ The door of the portal's `GET /portal/activate`.
 | `pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `pending.options.credProps` | boolean |  |  |
-| `pending.options.credProtect` | object |  |  |
-| `pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
-| `pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `pending.options.hints` | list |  |  |
 | `pending.options.hints[]` | string |  |  |
 | `pending.options.minPinLength` | boolean |  |  |
@@ -379,7 +375,6 @@ The door of the portal's `GET /portal/activate`.
 | `view.pending.options` | object |  |  |
 | `view.pending.options.algorithms` | list |  |  |
 | `view.pending.options.algorithms[]` | integer |  |  |
-| `view.pending.options.appidExclude` | string |  |  |
 | `view.pending.options.attestation` | string |  |  |
 | `view.pending.options.authenticatorSelection` | object |  |  |
 | `view.pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -387,9 +382,6 @@ The door of the portal's `GET /portal/activate`.
 | `view.pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `view.pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `view.pending.options.credProps` | boolean |  |  |
-| `view.pending.options.credProtect` | object |  |  |
-| `view.pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
-| `view.pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `view.pending.options.hints` | list |  |  |
 | `view.pending.options.hints[]` | string |  |  |
 | `view.pending.options.minPinLength` | boolean |  |  |
@@ -457,7 +449,6 @@ The door of the portal's `GET /portal/activate`.
 | `view.pending.options` | object |  |  |
 | `view.pending.options.algorithms` | list |  |  |
 | `view.pending.options.algorithms[]` | integer |  |  |
-| `view.pending.options.appidExclude` | string |  |  |
 | `view.pending.options.attestation` | string |  |  |
 | `view.pending.options.authenticatorSelection` | object |  |  |
 | `view.pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -465,9 +456,6 @@ The door of the portal's `GET /portal/activate`.
 | `view.pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `view.pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `view.pending.options.credProps` | boolean |  |  |
-| `view.pending.options.credProtect` | object |  |  |
-| `view.pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
-| `view.pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `view.pending.options.hints` | list |  |  |
 | `view.pending.options.hints[]` | string |  |  |
 | `view.pending.options.minPinLength` | boolean |  |  |
@@ -569,7 +557,6 @@ The door of the portal's `POST /portal/activate`.
 | `view.pending.options` | object |  |  |
 | `view.pending.options.algorithms` | list |  |  |
 | `view.pending.options.algorithms[]` | integer |  |  |
-| `view.pending.options.appidExclude` | string |  |  |
 | `view.pending.options.attestation` | string |  |  |
 | `view.pending.options.authenticatorSelection` | object |  |  |
 | `view.pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -577,9 +564,6 @@ The door of the portal's `POST /portal/activate`.
 | `view.pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `view.pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `view.pending.options.credProps` | boolean |  |  |
-| `view.pending.options.credProtect` | object |  |  |
-| `view.pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
-| `view.pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `view.pending.options.hints` | list |  |  |
 | `view.pending.options.hints[]` | string |  |  |
 | `view.pending.options.minPinLength` | boolean |  |  |
@@ -647,7 +631,6 @@ The door of the portal's `POST /portal/activate`.
 | `view.pending.options` | object |  |  |
 | `view.pending.options.algorithms` | list |  |  |
 | `view.pending.options.algorithms[]` | integer |  |  |
-| `view.pending.options.appidExclude` | string |  |  |
 | `view.pending.options.attestation` | string |  |  |
 | `view.pending.options.authenticatorSelection` | object |  |  |
 | `view.pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -655,9 +638,6 @@ The door of the portal's `POST /portal/activate`.
 | `view.pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `view.pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `view.pending.options.credProps` | boolean |  |  |
-| `view.pending.options.credProtect` | object |  |  |
-| `view.pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
-| `view.pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `view.pending.options.hints` | list |  |  |
 | `view.pending.options.hints[]` | string |  |  |
 | `view.pending.options.minPinLength` | boolean |  |  |
@@ -725,7 +705,6 @@ The door of the portal's `POST /portal/activate`.
 | `view.pending.options` | object |  |  |
 | `view.pending.options.algorithms` | list |  |  |
 | `view.pending.options.algorithms[]` | integer |  |  |
-| `view.pending.options.appidExclude` | string |  |  |
 | `view.pending.options.attestation` | string |  |  |
 | `view.pending.options.authenticatorSelection` | object |  |  |
 | `view.pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -733,9 +712,6 @@ The door of the portal's `POST /portal/activate`.
 | `view.pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `view.pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `view.pending.options.credProps` | boolean |  |  |
-| `view.pending.options.credProtect` | object |  |  |
-| `view.pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
-| `view.pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `view.pending.options.hints` | list |  |  |
 | `view.pending.options.hints[]` | string |  |  |
 | `view.pending.options.minPinLength` | boolean |  |  |
@@ -1135,7 +1111,6 @@ Scope: `account:manage`.
 |---|---|---|---|---|
 | `done` | query | string |  |  |
 | `page` | query |  |  | The page of the list, 1 for the first. |
-| `reauthenticate` | query | one of `1`, empty |  | `1`: each launch link asks for a fresh sign-in (#1072) — `forceAuthn=true` for SAML, `wfresh=0` for WS-Federation, `prompt=login` passed to an OpenID Connect client — so the person may choose dynamic roles for that application. The portal's *Sign in again*. |
 | `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
@@ -1147,9 +1122,7 @@ Scope: `account:manage`.
 | `notSignIn` | integer |  |  |
 | `page` | integer |  |  |
 | `pages` | integer |  |  |
-| `reauthenticate` | boolean |  |  |
 | `refused` | integer |  |  |
-| `rolesOffered` | boolean |  |  |
 | `rows` | list |  |  |
 | `rows[].description` | string |  |  |
 | `rows[].families` | list |  |  |
@@ -1419,7 +1392,7 @@ Scope: `account:manage`.
 | `action` | empty, or one of `create-eab`, `delete-eab`, `create-challenge`, `delete-challenge`, `revoke` |  | What to do. |
 | `id` | string |  | The challenge password to delete. |
 | `kid` | string |  | The account binding key to delete. |
-| `profile` | empty, or one of `tls-server`, `tls-client`, `tls-server-client`, `digital-signature`, `key-encipherment`, `code-signing`, `email`, `timestamping`, `smartcard-logon`, `piv-auth`, `piv-sign`, `piv-key-management`, `piv-card-auth`, `device` |  | The profile a new SCEP challenge is for. |
+| `profile` | empty, or one of `tls-server`, `tls-client`, `tls-server-client`, `digital-signature`, `key-encipherment`, `code-signing`, `email`, `timestamping`, `smartcard-logon`, `device` |  | The profile a new SCEP challenge is for. |
 | `reason` | empty, or one of `unspecified`, `keyCompromise`, `affiliationChanged`, `superseded`, `cessationOfOperation` |  | The RFC 5280 reason for a revocation. |
 | `serial` | string |  | The serial of the certificate to revoke. |
 
@@ -3716,8 +3689,6 @@ Scope: `account:manage`.
 | `record.clientId` | string |  |  |
 | `record.clientName` | string |  |  |
 | `record.expiresAt` | string or number, or null |  |  |
-| `record.resources` | list |  |  |
-| `record.resources[]` | string |  |  |
 | `record.scope` | string |  |  |
 | `record.userCode` | string |  |  |
 | `typed` | string |  |  |
@@ -3766,8 +3737,6 @@ Scope: `account:manage`.
 | `view.record.clientId` | string |  |  |
 | `view.record.clientName` | string |  |  |
 | `view.record.expiresAt` | string or number, or null |  |  |
-| `view.record.resources` | list |  |  |
-| `view.record.resources[]` | string |  |  |
 | `view.record.scope` | string |  |  |
 | `view.record.userCode` | string |  |  |
 | `view.typed` | string |  |  |
@@ -3786,8 +3755,6 @@ Scope: `account:manage`.
 | `view.record.clientId` | string |  |  |
 | `view.record.clientName` | string |  |  |
 | `view.record.expiresAt` | string or number, or null |  |  |
-| `view.record.resources` | list |  |  |
-| `view.record.resources[]` | string |  |  |
 | `view.record.scope` | string |  |  |
 | `view.record.userCode` | string |  |  |
 | `view.typed` | string |  |  |
@@ -3840,8 +3807,6 @@ Scope: `account:manage`.
 | `view.record.clientId` | string |  |  |
 | `view.record.clientName` | string |  |  |
 | `view.record.expiresAt` | string or number, or null |  |  |
-| `view.record.resources` | list |  |  |
-| `view.record.resources[]` | string |  |  |
 | `view.record.scope` | string |  |  |
 | `view.record.userCode` | string |  |  |
 | `view.typed` | string |  |  |
@@ -3880,8 +3845,6 @@ Scope: `account:manage`.
 | `view.record.clientId` | string |  |  |
 | `view.record.clientName` | string |  |  |
 | `view.record.expiresAt` | string or number, or null |  |  |
-| `view.record.resources` | list |  |  |
-| `view.record.resources[]` | string |  |  |
 | `view.record.scope` | string |  |  |
 | `view.record.userCode` | string |  |  |
 | `view.typed` | string |  |  |
@@ -5279,7 +5242,6 @@ Scope: `account:manage`.
 | `enrol.pending.options` | object |  |  |
 | `enrol.pending.options.algorithms` | list |  |  |
 | `enrol.pending.options.algorithms[]` | integer |  |  |
-| `enrol.pending.options.appidExclude` | string |  |  |
 | `enrol.pending.options.attestation` | string |  |  |
 | `enrol.pending.options.authenticatorSelection` | object |  |  |
 | `enrol.pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -5287,9 +5249,6 @@ Scope: `account:manage`.
 | `enrol.pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `enrol.pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `enrol.pending.options.credProps` | boolean |  |  |
-| `enrol.pending.options.credProtect` | object |  |  |
-| `enrol.pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
-| `enrol.pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `enrol.pending.options.hints` | list |  |  |
 | `enrol.pending.options.hints[]` | string |  |  |
 | `enrol.pending.options.minPinLength` | boolean |  |  |
@@ -5455,7 +5414,6 @@ Scope: `account:manage`.
 | `view.enrol.pending.options` | object |  |  |
 | `view.enrol.pending.options.algorithms` | list |  |  |
 | `view.enrol.pending.options.algorithms[]` | integer |  |  |
-| `view.enrol.pending.options.appidExclude` | string |  |  |
 | `view.enrol.pending.options.attestation` | string |  |  |
 | `view.enrol.pending.options.authenticatorSelection` | object |  |  |
 | `view.enrol.pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -5463,9 +5421,6 @@ Scope: `account:manage`.
 | `view.enrol.pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `view.enrol.pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `view.enrol.pending.options.credProps` | boolean |  |  |
-| `view.enrol.pending.options.credProtect` | object |  |  |
-| `view.enrol.pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
-| `view.enrol.pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `view.enrol.pending.options.hints` | list |  |  |
 | `view.enrol.pending.options.hints[]` | string |  |  |
 | `view.enrol.pending.options.minPinLength` | boolean |  |  |
@@ -5578,7 +5533,6 @@ Scope: `account:manage`.
 | `view.enrol.pending.options` | object |  |  |
 | `view.enrol.pending.options.algorithms` | list |  |  |
 | `view.enrol.pending.options.algorithms[]` | integer |  |  |
-| `view.enrol.pending.options.appidExclude` | string |  |  |
 | `view.enrol.pending.options.attestation` | string |  |  |
 | `view.enrol.pending.options.authenticatorSelection` | object |  |  |
 | `view.enrol.pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -5586,9 +5540,6 @@ Scope: `account:manage`.
 | `view.enrol.pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `view.enrol.pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `view.enrol.pending.options.credProps` | boolean |  |  |
-| `view.enrol.pending.options.credProtect` | object |  |  |
-| `view.enrol.pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
-| `view.enrol.pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `view.enrol.pending.options.hints` | list |  |  |
 | `view.enrol.pending.options.hints[]` | string |  |  |
 | `view.enrol.pending.options.minPinLength` | boolean |  |  |
@@ -5719,7 +5670,6 @@ Scope: `account:manage`.
 | `view.enrol.pending.options` | object |  |  |
 | `view.enrol.pending.options.algorithms` | list |  |  |
 | `view.enrol.pending.options.algorithms[]` | integer |  |  |
-| `view.enrol.pending.options.appidExclude` | string |  |  |
 | `view.enrol.pending.options.attestation` | string |  |  |
 | `view.enrol.pending.options.authenticatorSelection` | object |  |  |
 | `view.enrol.pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -5727,9 +5677,6 @@ Scope: `account:manage`.
 | `view.enrol.pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `view.enrol.pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `view.enrol.pending.options.credProps` | boolean |  |  |
-| `view.enrol.pending.options.credProtect` | object |  |  |
-| `view.enrol.pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
-| `view.enrol.pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `view.enrol.pending.options.hints` | list |  |  |
 | `view.enrol.pending.options.hints[]` | string |  |  |
 | `view.enrol.pending.options.minPinLength` | boolean |  |  |
@@ -5876,7 +5823,6 @@ Scope: `account:manage`.
 | `view.enrol.pending.options` | object |  |  |
 | `view.enrol.pending.options.algorithms` | list |  |  |
 | `view.enrol.pending.options.algorithms[]` | integer |  |  |
-| `view.enrol.pending.options.appidExclude` | string |  |  |
 | `view.enrol.pending.options.attestation` | string |  |  |
 | `view.enrol.pending.options.authenticatorSelection` | object |  |  |
 | `view.enrol.pending.options.authenticatorSelection.authenticatorAttachment` | string |  |  |
@@ -5884,9 +5830,6 @@ Scope: `account:manage`.
 | `view.enrol.pending.options.authenticatorSelection.residentKey` | string |  |  |
 | `view.enrol.pending.options.authenticatorSelection.userVerification` | string |  |  |
 | `view.enrol.pending.options.credProps` | boolean |  |  |
-| `view.enrol.pending.options.credProtect` | object |  |  |
-| `view.enrol.pending.options.credProtect.credentialProtectionPolicy` | string |  |  |
-| `view.enrol.pending.options.credProtect.enforceCredentialProtectionPolicy` | boolean |  |  |
 | `view.enrol.pending.options.hints` | list |  |  |
 | `view.enrol.pending.options.hints[]` | string |  |  |
 | `view.enrol.pending.options.minPinLength` | boolean |  |  |
@@ -6214,28 +6157,6 @@ Scope: `account:manage`.
 | `fresh.codes[]` | string |  |  |
 | `fresh.handle` | string |  |  |
 | `fresh.replacing` | boolean |  |  |
-| `hotp` | object |  |  |
-| `hotp.detail` | object |  |  |
-| `hotp.detail.digits` | number |  |  |
-| `hotp.detail.enrolledAt` | number |  |  |
-| `hotp.detail.lastUsedAt` | number |  |  |
-| `hotp.detail.model` | string |  |  |
-| `hotp.detail.serial` | string |  |  |
-| `hotp.detail.source` | string |  | `enrolled` (from the QR code or the ykman command) or `pskc-import` (a vendor-provisioned token an administrator imported). |
-| `hotp.detail.vendor` | string |  |  |
-| `hotp.digits` | integer |  | How many digits a new enrolment's codes have. |
-| `hotp.enrolled` | boolean |  | Whether you hold a one-time code token. |
-| `hotp.offered` | boolean |  | Whether the authentication policy offers new enrolments (hotp). |
-| `hotp.resyncWindow` | integer |  | How far ahead two consecutive codes are searched when you resynchronise (hotp.resyncWindow). |
-| `hotp.setup` | object |  | The enrolment in progress, or null. |
-| `hotp.setup.counter` | number |  |  |
-| `hotp.setup.digits` | number |  |  |
-| `hotp.setup.grouped` | string |  |  |
-| `hotp.setup.issuer` | string |  |  |
-| `hotp.setup.qr` | string |  | The otpauth://hotp URI as an SVG data URI, or empty when it could not be drawn. |
-| `hotp.setup.ykman` | string |  | The command that programs a YubiKey's second OTP slot with this secret. |
-| `hotp.usable` | boolean |  | Whether this service can check its codes. |
-| `hotp.window` | integer |  | How many presses that never reached this service are forgiven (hotp.window). |
 | `setup` | object |  |  |
 | `setup.algorithm` | string |  |  |
 | `setup.digits` | number |  |  |
@@ -6257,19 +6178,6 @@ Scope: `account:manage`.
 | `totp.usable` | boolean |  |  |
 | `username` | string |  |  |
 | `verifiesCredentials` | boolean |  |  |
-| `yubiotp` | object |  |  |
-| `yubiotp.detail` | object |  |  |
-| `yubiotp.detail.enrolledAt` | number |  |  |
-| `yubiotp.detail.lastUsedAt` | number |  |  |
-| `yubiotp.detail.publicId` | string |  |  |
-| `yubiotp.detail.serial` | string |  |  |
-| `yubiotp.detail.source` | string |  | `enrolled` or `csv-import`. |
-| `yubiotp.enrolled` | boolean |  | Whether you hold a YubiKey OTP. |
-| `yubiotp.offered` | boolean |  | Whether new enrolments, assignments and claims are offered (yubiotp.offered). |
-| `yubiotp.setup` | object |  | The enrolment in progress, or null. |
-| `yubiotp.setup.publicId` | string |  |  |
-| `yubiotp.setup.ykman` | string |  | The command that programs a YubiKey's first OTP slot. Shown once, and not logged. |
-| `yubiotp.usable` | boolean |  | Whether this service can check its passwords. |
 
 **400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
 
@@ -6307,7 +6215,7 @@ Scope: `account:manage`.
 
 **Sets up, confirms or removes your second factors**
 
-`start` mints a secret and holds it (ask the view for the QR code); `confirm` checks a code from the app (rate limited) and enrols it; `remove` takes it off, and ends every session its codes signed in (`sessionsEnded`, #722). `hotp-start`, `hotp-confirm` and `hotp-remove` do the same for a counter-based one-time code token (RFC 4226, #1955) — the view's `hotp.setup` carries its otpauth://hotp QR code and the `ykman` command that programs a YubiKey's OTP slot — and `hotp-resync` brings back a token pressed too often from two consecutive codes (`code`, `code2`; rate limited). `yubiotp-start` and `yubiotp-confirm` do the same for a YubiKey OTP slot (Yubico's published OTP, #1955 P5): the view's `yubiotp.setup` carries the `ykman` command, shown once and not logged, and `code` is the OTP the key types (up to 48 modhex characters). `yubiotp-claim` takes `serial` and `code` for a token an administrator imported. `yubiotp-remove` takes it off. `generate-codes` answers a set of recovery codes ONCE, in `view.fresh`, and stores nothing; `confirm-codes` stores their hashes; `discard-codes` throws the pending set away. `email-factor-on` (with `kind`) and `email-factor-off` opt in and out of the emailed second factor. A refusal carries the page's `view`.
+`start` mints a secret and holds it (ask the view for the QR code); `confirm` checks a code from the app (rate limited) and enrols it; `remove` takes it off, and ends every session its codes signed in (`sessionsEnded`, #722). `generate-codes` answers a set of recovery codes ONCE, in `view.fresh`, and stores nothing; `confirm-codes` stores their hashes; `discard-codes` throws the pending set away. `email-factor-on` (with `kind`) and `email-factor-off` opt in and out of the emailed second factor. A refusal carries the page's `view`.
 
 The door of the portal's `POST /portal/mfa`.
 
@@ -6324,12 +6232,10 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `action` | empty, or one of `start`, `confirm`, `remove`, `hotp-start`, `hotp-confirm`, `hotp-resync`, `hotp-remove`, `yubiotp-start`, `yubiotp-confirm`, `yubiotp-remove`, `yubiotp-claim`, `generate-codes`, `confirm-codes`, `discard-codes`, `email-factor-on`, `email-factor-off` |  | The step: `start` an authenticator app, `confirm` it with a code, `remove` it; `hotp-start`, `hotp-confirm`, `hotp-resync` (two consecutive codes) or `hotp-remove` a one-time code token (RFC 4226); `yubiotp-start`, `yubiotp-confirm` or `yubiotp-remove` a YubiKey OTP, or `yubiotp-claim` one an administrator imported (`serial` and `code`); `generate-codes`, `confirm-codes` or `discard-codes` a set of recovery codes; `email-factor-on` or `email-factor-off`. |
-| `code` | string |  | For `confirm` and `hotp-confirm`: the code the app or token shows; for `hotp-resync`, the first of two consecutive codes; for `yubiotp-confirm` and `yubiotp-claim`, the OTP the YubiKey types (32 to 48 modhex characters). |
-| `code2` | string |  | For `hotp-resync`: the code the token showed next. |
+| `action` | empty, or one of `start`, `confirm`, `remove`, `generate-codes`, `confirm-codes`, `discard-codes`, `email-factor-on`, `email-factor-off` |  | The step: `start` an authenticator app, `confirm` it with a code, `remove` it; `generate-codes`, `confirm-codes` or `discard-codes` a set of recovery codes; `email-factor-on` or `email-factor-off`. |
+| `code` | string |  | For `confirm`: the code the app shows. |
 | `handle` | string |  | For `confirm-codes` and `discard-codes`: the pending set's handle, from `generate-codes`'s answer. |
 | `kind` | empty, or one of `code`, `link` |  | For `email-factor-on`: a mailed `code` or a sign-in `link`. |
-| `serial` | string |  | For `yubiotp-claim`: the serial of a YubiKey OTP an administrator imported. |
 
 **200**: The answer.
 
@@ -6378,28 +6284,6 @@ Scope: `account:manage`.
 | `view.fresh.codes[]` | string |  |  |
 | `view.fresh.handle` | string |  |  |
 | `view.fresh.replacing` | boolean |  |  |
-| `view.hotp` | object |  |  |
-| `view.hotp.detail` | object |  |  |
-| `view.hotp.detail.digits` | number |  |  |
-| `view.hotp.detail.enrolledAt` | number |  |  |
-| `view.hotp.detail.lastUsedAt` | number |  |  |
-| `view.hotp.detail.model` | string |  |  |
-| `view.hotp.detail.serial` | string |  |  |
-| `view.hotp.detail.source` | string |  | `enrolled` (from the QR code or the ykman command) or `pskc-import` (a vendor-provisioned token an administrator imported). |
-| `view.hotp.detail.vendor` | string |  |  |
-| `view.hotp.digits` | integer |  | How many digits a new enrolment's codes have. |
-| `view.hotp.enrolled` | boolean |  | Whether you hold a one-time code token. |
-| `view.hotp.offered` | boolean |  | Whether the authentication policy offers new enrolments (hotp). |
-| `view.hotp.resyncWindow` | integer |  | How far ahead two consecutive codes are searched when you resynchronise (hotp.resyncWindow). |
-| `view.hotp.setup` | object |  | The enrolment in progress, or null. |
-| `view.hotp.setup.counter` | number |  |  |
-| `view.hotp.setup.digits` | number |  |  |
-| `view.hotp.setup.grouped` | string |  |  |
-| `view.hotp.setup.issuer` | string |  |  |
-| `view.hotp.setup.qr` | string |  | The otpauth://hotp URI as an SVG data URI, or empty when it could not be drawn. |
-| `view.hotp.setup.ykman` | string |  | The command that programs a YubiKey's second OTP slot with this secret. |
-| `view.hotp.usable` | boolean |  | Whether this service can check its codes. |
-| `view.hotp.window` | integer |  | How many presses that never reached this service are forgiven (hotp.window). |
 | `view.setup` | object |  |  |
 | `view.setup.algorithm` | string |  |  |
 | `view.setup.digits` | number |  |  |
@@ -6421,19 +6305,6 @@ Scope: `account:manage`.
 | `view.totp.usable` | boolean |  |  |
 | `view.username` | string |  |  |
 | `view.verifiesCredentials` | boolean |  |  |
-| `view.yubiotp` | object |  |  |
-| `view.yubiotp.detail` | object |  |  |
-| `view.yubiotp.detail.enrolledAt` | number |  |  |
-| `view.yubiotp.detail.lastUsedAt` | number |  |  |
-| `view.yubiotp.detail.publicId` | string |  |  |
-| `view.yubiotp.detail.serial` | string |  |  |
-| `view.yubiotp.detail.source` | string |  | `enrolled` or `csv-import`. |
-| `view.yubiotp.enrolled` | boolean |  | Whether you hold a YubiKey OTP. |
-| `view.yubiotp.offered` | boolean |  | Whether new enrolments, assignments and claims are offered (yubiotp.offered). |
-| `view.yubiotp.setup` | object |  | The enrolment in progress, or null. |
-| `view.yubiotp.setup.publicId` | string |  |  |
-| `view.yubiotp.setup.ykman` | string |  | The command that programs a YubiKey's first OTP slot. Shown once, and not logged. |
-| `view.yubiotp.usable` | boolean |  | Whether this service can check its passwords. |
 
 **400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
 
@@ -6478,28 +6349,6 @@ Scope: `account:manage`.
 | `view.fresh.codes[]` | string |  |  |
 | `view.fresh.handle` | string |  |  |
 | `view.fresh.replacing` | boolean |  |  |
-| `view.hotp` | object |  |  |
-| `view.hotp.detail` | object |  |  |
-| `view.hotp.detail.digits` | number |  |  |
-| `view.hotp.detail.enrolledAt` | number |  |  |
-| `view.hotp.detail.lastUsedAt` | number |  |  |
-| `view.hotp.detail.model` | string |  |  |
-| `view.hotp.detail.serial` | string |  |  |
-| `view.hotp.detail.source` | string |  | `enrolled` (from the QR code or the ykman command) or `pskc-import` (a vendor-provisioned token an administrator imported). |
-| `view.hotp.detail.vendor` | string |  |  |
-| `view.hotp.digits` | integer |  | How many digits a new enrolment's codes have. |
-| `view.hotp.enrolled` | boolean |  | Whether you hold a one-time code token. |
-| `view.hotp.offered` | boolean |  | Whether the authentication policy offers new enrolments (hotp). |
-| `view.hotp.resyncWindow` | integer |  | How far ahead two consecutive codes are searched when you resynchronise (hotp.resyncWindow). |
-| `view.hotp.setup` | object |  | The enrolment in progress, or null. |
-| `view.hotp.setup.counter` | number |  |  |
-| `view.hotp.setup.digits` | number |  |  |
-| `view.hotp.setup.grouped` | string |  |  |
-| `view.hotp.setup.issuer` | string |  |  |
-| `view.hotp.setup.qr` | string |  | The otpauth://hotp URI as an SVG data URI, or empty when it could not be drawn. |
-| `view.hotp.setup.ykman` | string |  | The command that programs a YubiKey's second OTP slot with this secret. |
-| `view.hotp.usable` | boolean |  | Whether this service can check its codes. |
-| `view.hotp.window` | integer |  | How many presses that never reached this service are forgiven (hotp.window). |
 | `view.setup` | object |  |  |
 | `view.setup.algorithm` | string |  |  |
 | `view.setup.digits` | number |  |  |
@@ -6521,19 +6370,6 @@ Scope: `account:manage`.
 | `view.totp.usable` | boolean |  |  |
 | `view.username` | string |  |  |
 | `view.verifiesCredentials` | boolean |  |  |
-| `view.yubiotp` | object |  |  |
-| `view.yubiotp.detail` | object |  |  |
-| `view.yubiotp.detail.enrolledAt` | number |  |  |
-| `view.yubiotp.detail.lastUsedAt` | number |  |  |
-| `view.yubiotp.detail.publicId` | string |  |  |
-| `view.yubiotp.detail.serial` | string |  |  |
-| `view.yubiotp.detail.source` | string |  | `enrolled` or `csv-import`. |
-| `view.yubiotp.enrolled` | boolean |  | Whether you hold a YubiKey OTP. |
-| `view.yubiotp.offered` | boolean |  | Whether new enrolments, assignments and claims are offered (yubiotp.offered). |
-| `view.yubiotp.setup` | object |  | The enrolment in progress, or null. |
-| `view.yubiotp.setup.publicId` | string |  |  |
-| `view.yubiotp.setup.ykman` | string |  | The command that programs a YubiKey's first OTP slot. Shown once, and not logged. |
-| `view.yubiotp.usable` | boolean |  | Whether this service can check its passwords. |
 
 **401**: No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.
 
@@ -6598,28 +6434,6 @@ Scope: `account:manage`.
 | `view.fresh.codes[]` | string |  |  |
 | `view.fresh.handle` | string |  |  |
 | `view.fresh.replacing` | boolean |  |  |
-| `view.hotp` | object |  |  |
-| `view.hotp.detail` | object |  |  |
-| `view.hotp.detail.digits` | number |  |  |
-| `view.hotp.detail.enrolledAt` | number |  |  |
-| `view.hotp.detail.lastUsedAt` | number |  |  |
-| `view.hotp.detail.model` | string |  |  |
-| `view.hotp.detail.serial` | string |  |  |
-| `view.hotp.detail.source` | string |  | `enrolled` (from the QR code or the ykman command) or `pskc-import` (a vendor-provisioned token an administrator imported). |
-| `view.hotp.detail.vendor` | string |  |  |
-| `view.hotp.digits` | integer |  | How many digits a new enrolment's codes have. |
-| `view.hotp.enrolled` | boolean |  | Whether you hold a one-time code token. |
-| `view.hotp.offered` | boolean |  | Whether the authentication policy offers new enrolments (hotp). |
-| `view.hotp.resyncWindow` | integer |  | How far ahead two consecutive codes are searched when you resynchronise (hotp.resyncWindow). |
-| `view.hotp.setup` | object |  | The enrolment in progress, or null. |
-| `view.hotp.setup.counter` | number |  |  |
-| `view.hotp.setup.digits` | number |  |  |
-| `view.hotp.setup.grouped` | string |  |  |
-| `view.hotp.setup.issuer` | string |  |  |
-| `view.hotp.setup.qr` | string |  | The otpauth://hotp URI as an SVG data URI, or empty when it could not be drawn. |
-| `view.hotp.setup.ykman` | string |  | The command that programs a YubiKey's second OTP slot with this secret. |
-| `view.hotp.usable` | boolean |  | Whether this service can check its codes. |
-| `view.hotp.window` | integer |  | How many presses that never reached this service are forgiven (hotp.window). |
 | `view.setup` | object |  |  |
 | `view.setup.algorithm` | string |  |  |
 | `view.setup.digits` | number |  |  |
@@ -6641,19 +6455,6 @@ Scope: `account:manage`.
 | `view.totp.usable` | boolean |  |  |
 | `view.username` | string |  |  |
 | `view.verifiesCredentials` | boolean |  |  |
-| `view.yubiotp` | object |  |  |
-| `view.yubiotp.detail` | object |  |  |
-| `view.yubiotp.detail.enrolledAt` | number |  |  |
-| `view.yubiotp.detail.lastUsedAt` | number |  |  |
-| `view.yubiotp.detail.publicId` | string |  |  |
-| `view.yubiotp.detail.serial` | string |  |  |
-| `view.yubiotp.detail.source` | string |  | `enrolled` or `csv-import`. |
-| `view.yubiotp.enrolled` | boolean |  | Whether you hold a YubiKey OTP. |
-| `view.yubiotp.offered` | boolean |  | Whether new enrolments, assignments and claims are offered (yubiotp.offered). |
-| `view.yubiotp.setup` | object |  | The enrolment in progress, or null. |
-| `view.yubiotp.setup.publicId` | string |  |  |
-| `view.yubiotp.setup.ykman` | string |  | The command that programs a YubiKey's first OTP slot. Shown once, and not logged. |
-| `view.yubiotp.usable` | boolean |  | Whether this service can check its passwords. |
 
 ## GET /account-api/openapi.json
 
@@ -6695,302 +6496,6 @@ Built from the operation table at the moment it is asked, for the realm it is as
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `ok` | boolean |  |  |
-
-## GET /account-api/openpgp
-
-`getOpenPgp`
-
-**Your OpenPGP key and mail encryption**
-
-Your registered OpenPGP public key, the registration challenge you were issued, whether your key is published in the Web Key Directory, your S/MIME certificate and how mail to you is encrypted.
-
-The door of the portal's `GET /portal/openpgp`.
-
-Scope: `account:manage`.
-
-**Parameters**
-
-| Name | In | Type | Required | What it is |
-|---|---|---|---|---|
-| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
-| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
-
-**200**: The answer.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
-| `challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
-| `challenge.text` | string | yes |  |
-| `key` | object, or null | yes | The person's registered OpenPGP public key (#1955). |
-| `key.algorithm` | string | yes | The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`). |
-| `key.armored` | string | yes | The public key, ASCII-armored. |
-| `key.created` | string | yes | When the key was made, ISO 8601. |
-| `key.encryption` | string | yes | The encryption key's algorithm; empty for a key with none valid when registered. |
-| `key.expiresAt` | string | yes | When it expires, ISO 8601; empty for never. |
-| `key.fingerprint` | string | yes | The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one. |
-| `key.registeredAt` | string | yes | When it was registered, ISO 8601. |
-| `key.registeredVia` | string | yes | Where: `portal` or `api`. |
-| `key.userIds` | list | yes | The user ids that carried the entry's address when it was registered. |
-| `key.userIds[]` | string |  |  |
-| `key.version` | integer | yes | The key version, 4 or 6. |
-| `mail` | string | yes | The address on the caller's entry, which a key's user id must carry. |
-| `mailEncryption` | object | yes | How mail to the person is encrypted (#1955). |
-| `mailEncryption.choice` | string | yes | `none`, `openpgp` or `smime`. |
-| `mailEncryption.openpgpUsable` | boolean | yes | Whether the registered OpenPGP key has an encryption key valid now. |
-| `mailEncryption.smimeCertificate` | object, or null | yes |  |
-| `mailEncryption.smimeCertificate.serial` | string | yes |  |
-| `mailEncryption.smimeCertificate.subject` | string | yes |  |
-| `mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
-| `mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
-| `wkd` | object | yes | The person's Web Key Directory publication (#1955). |
-| `wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
-| `wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
-| `wkd.hash` | string | yes | The hashed local part of the person's address, z-base-32. |
-| `wkd.optedIn` | boolean | yes | Whether the person chose to publish their key. |
-| `wkd.published` | boolean | yes | Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves. |
-| `wkd.url` | string | yes | The advanced method's URL for the address; empty without one. |
-
-**400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `error_description` | string |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean |  |  |
-
-**401**: No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `error_description` | string |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean |  |  |
-
-**403**: The token is for another audience or does not carry `account:manage`, or the access policy refused the person.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `error_description` | string |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean |  |  |
-
-## POST /account-api/openpgp
-
-`actOnOpenPgp`
-
-**Registers, removes or publishes your OpenPGP key, or sets your mail encryption**
-
-`challenge` issues a registration challenge (one at a time, for `openpgp.challengeLifetimeS`). `register` takes `publicKey` (one armored public key) and `signed` (the challenge signed with `gpg --clearsign`; on a YubiKey OpenPGP card the card signs): the key must be neither revoked nor expired, use an accepted algorithm, carry a valid user id with your entry's address, and have signed exactly the challenge since it was issued. `remove` removes it. `publish` and `withdraw` set whether the Web Key Directory answers it. `mail-encryption` takes `choice` (`none`, `openpgp`, `smime`). `smime` takes `certificate` (a PEM certificate naming your address; empty removes it). It asks for a recent sign-in. A refusal carries the page's `view`.
-
-The door of the portal's `POST /portal/openpgp`.
-
-Scope: `account:manage`.
-
-**Parameters**
-
-| Name | In | Type | Required | What it is |
-|---|---|---|---|---|
-| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
-| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
-
-**Request body**
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `action` | one of `challenge`, `register`, `remove`, `publish`, `withdraw`, `mail-encryption`, `smime` | yes | What to do. |
-| `certificate` | string |  | `smime`: a PEM or base64 DER certificate; empty removes it. |
-| `choice` | string |  | `mail-encryption`: `none`, `openpgp` or `smime`. |
-| `publicKey` | string |  | `register`: the armored OpenPGP public key. |
-| `signed` | string |  | `register`: the challenge signed with `gpg --clearsign`. |
-
-**200**: The answer.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `message` | string | yes |  |
-| `ok` | boolean | yes |  |
-| `view` | object | yes |  |
-| `view.challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
-| `view.challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
-| `view.challenge.text` | string | yes |  |
-| `view.key` | object, or null | yes | The person's registered OpenPGP public key (#1955). |
-| `view.key.algorithm` | string | yes | The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`). |
-| `view.key.armored` | string | yes | The public key, ASCII-armored. |
-| `view.key.created` | string | yes | When the key was made, ISO 8601. |
-| `view.key.encryption` | string | yes | The encryption key's algorithm; empty for a key with none valid when registered. |
-| `view.key.expiresAt` | string | yes | When it expires, ISO 8601; empty for never. |
-| `view.key.fingerprint` | string | yes | The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one. |
-| `view.key.registeredAt` | string | yes | When it was registered, ISO 8601. |
-| `view.key.registeredVia` | string | yes | Where: `portal` or `api`. |
-| `view.key.userIds` | list | yes | The user ids that carried the entry's address when it was registered. |
-| `view.key.userIds[]` | string |  |  |
-| `view.key.version` | integer | yes | The key version, 4 or 6. |
-| `view.mail` | string | yes | The address on the caller's entry, which a key's user id must carry. |
-| `view.mailEncryption` | object | yes | How mail to the person is encrypted (#1955). |
-| `view.mailEncryption.choice` | string | yes | `none`, `openpgp` or `smime`. |
-| `view.mailEncryption.openpgpUsable` | boolean | yes | Whether the registered OpenPGP key has an encryption key valid now. |
-| `view.mailEncryption.smimeCertificate` | object, or null | yes |  |
-| `view.mailEncryption.smimeCertificate.serial` | string | yes |  |
-| `view.mailEncryption.smimeCertificate.subject` | string | yes |  |
-| `view.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
-| `view.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
-| `view.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
-| `view.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
-| `view.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
-| `view.wkd.hash` | string | yes | The hashed local part of the person's address, z-base-32. |
-| `view.wkd.optedIn` | boolean | yes | Whether the person chose to publish their key. |
-| `view.wkd.published` | boolean | yes | Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves. |
-| `view.wkd.url` | string | yes | The advanced method's URL for the address; empty without one. |
-
-**400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `errors` | list | yes |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean | yes |  |
-| `view` | object |  |  |
-| `view.challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
-| `view.challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
-| `view.challenge.text` | string | yes |  |
-| `view.key` | object, or null | yes | The person's registered OpenPGP public key (#1955). |
-| `view.key.algorithm` | string | yes | The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`). |
-| `view.key.armored` | string | yes | The public key, ASCII-armored. |
-| `view.key.created` | string | yes | When the key was made, ISO 8601. |
-| `view.key.encryption` | string | yes | The encryption key's algorithm; empty for a key with none valid when registered. |
-| `view.key.expiresAt` | string | yes | When it expires, ISO 8601; empty for never. |
-| `view.key.fingerprint` | string | yes | The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one. |
-| `view.key.registeredAt` | string | yes | When it was registered, ISO 8601. |
-| `view.key.registeredVia` | string | yes | Where: `portal` or `api`. |
-| `view.key.userIds` | list | yes | The user ids that carried the entry's address when it was registered. |
-| `view.key.userIds[]` | string |  |  |
-| `view.key.version` | integer | yes | The key version, 4 or 6. |
-| `view.mail` | string | yes | The address on the caller's entry, which a key's user id must carry. |
-| `view.mailEncryption` | object | yes | How mail to the person is encrypted (#1955). |
-| `view.mailEncryption.choice` | string | yes | `none`, `openpgp` or `smime`. |
-| `view.mailEncryption.openpgpUsable` | boolean | yes | Whether the registered OpenPGP key has an encryption key valid now. |
-| `view.mailEncryption.smimeCertificate` | object, or null | yes |  |
-| `view.mailEncryption.smimeCertificate.serial` | string | yes |  |
-| `view.mailEncryption.smimeCertificate.subject` | string | yes |  |
-| `view.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
-| `view.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
-| `view.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
-| `view.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
-| `view.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
-| `view.wkd.hash` | string | yes | The hashed local part of the person's address, z-base-32. |
-| `view.wkd.optedIn` | boolean | yes | Whether the person chose to publish their key. |
-| `view.wkd.published` | boolean | yes | Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves. |
-| `view.wkd.url` | string | yes | The advanced method's URL for the address; empty without one. |
-
-**401**: No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `error_description` | string |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean |  |  |
-
-**403**: The token is for another audience or does not carry `account:manage`, or the access policy refused the person.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `error_description` | string |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean |  |  |
-
-**404**: There is no entry for you in this realm.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `errors` | list | yes |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean | yes |  |
-| `view` | object |  |  |
-| `view.challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
-| `view.challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
-| `view.challenge.text` | string | yes |  |
-| `view.key` | object, or null | yes | The person's registered OpenPGP public key (#1955). |
-| `view.key.algorithm` | string | yes | The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`). |
-| `view.key.armored` | string | yes | The public key, ASCII-armored. |
-| `view.key.created` | string | yes | When the key was made, ISO 8601. |
-| `view.key.encryption` | string | yes | The encryption key's algorithm; empty for a key with none valid when registered. |
-| `view.key.expiresAt` | string | yes | When it expires, ISO 8601; empty for never. |
-| `view.key.fingerprint` | string | yes | The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one. |
-| `view.key.registeredAt` | string | yes | When it was registered, ISO 8601. |
-| `view.key.registeredVia` | string | yes | Where: `portal` or `api`. |
-| `view.key.userIds` | list | yes | The user ids that carried the entry's address when it was registered. |
-| `view.key.userIds[]` | string |  |  |
-| `view.key.version` | integer | yes | The key version, 4 or 6. |
-| `view.mail` | string | yes | The address on the caller's entry, which a key's user id must carry. |
-| `view.mailEncryption` | object | yes | How mail to the person is encrypted (#1955). |
-| `view.mailEncryption.choice` | string | yes | `none`, `openpgp` or `smime`. |
-| `view.mailEncryption.openpgpUsable` | boolean | yes | Whether the registered OpenPGP key has an encryption key valid now. |
-| `view.mailEncryption.smimeCertificate` | object, or null | yes |  |
-| `view.mailEncryption.smimeCertificate.serial` | string | yes |  |
-| `view.mailEncryption.smimeCertificate.subject` | string | yes |  |
-| `view.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
-| `view.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
-| `view.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
-| `view.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
-| `view.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
-| `view.wkd.hash` | string | yes | The hashed local part of the person's address, z-base-32. |
-| `view.wkd.optedIn` | boolean | yes | Whether the person chose to publish their key. |
-| `view.wkd.published` | boolean | yes | Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves. |
-| `view.wkd.url` | string | yes | The advanced method's URL for the address; empty without one. |
-
-**500**: The act verified but could not be written, or threw.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `errors` | list | yes |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean | yes |  |
-| `view` | object |  |  |
-| `view.challenge` | object, or null | yes | The person's outstanding registration challenge (#1955): the text to sign with `gpg --clearsign`. |
-| `view.challenge.expiresAt` | string | yes | When it lapses, ISO 8601. |
-| `view.challenge.text` | string | yes |  |
-| `view.key` | object, or null | yes | The person's registered OpenPGP public key (#1955). |
-| `view.key.algorithm` | string | yes | The primary key's algorithm, as openpgp.js names it (`ed25519`, `eddsaLegacy ed25519Legacy`, `ecdsa nistP256`, `rsaEncryptSign 4096`). |
-| `view.key.armored` | string | yes | The public key, ASCII-armored. |
-| `view.key.created` | string | yes | When the key was made, ISO 8601. |
-| `view.key.encryption` | string | yes | The encryption key's algorithm; empty for a key with none valid when registered. |
-| `view.key.expiresAt` | string | yes | When it expires, ISO 8601; empty for never. |
-| `view.key.fingerprint` | string | yes | The fingerprint, lower-case hex: 40 characters for a v4 key, 64 for a v6 one. |
-| `view.key.registeredAt` | string | yes | When it was registered, ISO 8601. |
-| `view.key.registeredVia` | string | yes | Where: `portal` or `api`. |
-| `view.key.userIds` | list | yes | The user ids that carried the entry's address when it was registered. |
-| `view.key.userIds[]` | string |  |  |
-| `view.key.version` | integer | yes | The key version, 4 or 6. |
-| `view.mail` | string | yes | The address on the caller's entry, which a key's user id must carry. |
-| `view.mailEncryption` | object | yes | How mail to the person is encrypted (#1955). |
-| `view.mailEncryption.choice` | string | yes | `none`, `openpgp` or `smime`. |
-| `view.mailEncryption.openpgpUsable` | boolean | yes | Whether the registered OpenPGP key has an encryption key valid now. |
-| `view.mailEncryption.smimeCertificate` | object, or null | yes |  |
-| `view.mailEncryption.smimeCertificate.serial` | string | yes |  |
-| `view.mailEncryption.smimeCertificate.subject` | string | yes |  |
-| `view.mailEncryption.smimeProblem` | string | yes | Why no S/MIME certificate on the entry can receive, in English; empty otherwise. |
-| `view.mailEncryption.smimeUsable` | boolean | yes | Whether the person's userSMIMECertificate holds a certificate that can receive now. |
-| `view.wkd` | object | yes | The person's Web Key Directory publication (#1955). |
-| `view.wkd.domainServed` | boolean | yes | Whether the domain of the person's address is one the realm's directory serves. |
-| `view.wkd.enabled` | boolean | yes | Whether the realm answers the Web Key Directory (`openpgp.wkd`). |
-| `view.wkd.hash` | string | yes | The hashed local part of the person's address, z-base-32. |
-| `view.wkd.optedIn` | boolean | yes | Whether the person chose to publish their key. |
-| `view.wkd.published` | boolean | yes | Whether it is answered now: a key, the choice, the realm's switch and a domain the realm serves. |
-| `view.wkd.url` | string | yes | The advanced method's URL for the address; empty without one. |
 
 ## GET /account-api/overview
 
@@ -10044,574 +9549,6 @@ Scope: `account:manage`.
 | `view.tls.trusted` | boolean |  |  |
 | `view.tokenEndpoint` | string |  |  |
 | `view.username` | string |  |  |
-
-## POST /account-api/ssh/certificates
-
-`issueSshCertificate`
-
-**Issues an SSH user certificate**
-
-Certifies one authorized public key for principals belonging to the caller, with a separate authorization decision for every principal. Security-key evidence is verified before it can produce a hardware-bound certificate. The caller may revoke only certificates issued to their own token subject.
-
-Scope: `account:manage`.
-
-**Parameters**
-
-| Name | In | Type | Required | What it is |
-|---|---|---|---|---|
-| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
-| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
-
-**Request body**
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `attestation` | string |  | Base64 OpenSSH security-key attestation evidence, required for `sk-*` keys. |
-| `lifetimeS` | integer |  | Certificate lifetime in seconds. Defaults to 300; maximum 300 for ordinary keys and 3600 with verified hardware evidence. |
-| `principals` | list | yes | The requested principals. Each must be the caller's username or one of their group common names. |
-| `principals[]` | string |  |  |
-| `publicKey` | string | yes | One OpenSSH public key line; certificate keys and authorized-key options are not accepted. |
-
-**200**: The OpenSSH user certificate, in authorized-key format.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `certificate` | string | yes |  |
-| `hardwareBound` | boolean | yes |  |
-| `ok` | boolean | yes |  |
-| `serialHex` | string | yes |  |
-| `validAfter` | integer | yes |  |
-| `validBefore` | integer | yes |  |
-
-**400**: The request did not validate or the key could not be issued.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `error_description` | string |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean |  |  |
-
-**401**: No valid DPoP-bound account access token.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `error_description` | string |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean |  |  |
-
-**403**: A requested principal or hardware evidence was refused.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `error_description` | string |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean |  |  |
-
-**429**: The caller exceeded the certificate issuance rate limit.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `error_description` | string |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean |  |  |
-
-**503**: The SSH user CA is not available.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `error_description` | string |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean |  |  |
-
-## POST /account-api/ssh/certificates/revoke
-
-`revokeSshCertificate`
-
-**Revokes an SSH user certificate**
-
-Revokes a certificate issued to the caller's token subject and updates the realm's OpenSSH KRL. A certificate belonging to another subject is not disclosed.
-
-Scope: `account:manage`.
-
-**Parameters**
-
-| Name | In | Type | Required | What it is |
-|---|---|---|---|---|
-| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
-| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
-
-**Request body**
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `serialHex` | string | yes | The serial from a certificate previously issued to this caller, in hexadecimal. |
-
-**200**: The certificate was revoked.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `ok` | boolean | yes |  |
-| `revoked` | boolean | yes |  |
-
-**400**: The serial is invalid.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `error_description` | string |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean |  |  |
-
-**401**: No valid DPoP-bound account access token.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `error_description` | string |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean |  |  |
-
-**403**: The revocation was refused.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `error_description` | string |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean |  |  |
-
-**404**: No certificate with this serial belongs to the caller.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `error_description` | string |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean |  |  |
-
-**503**: The SSH user CA is not available.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `error_description` | string |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean |  |  |
-
-## GET /account-api/tokens
-
-`getTokens`
-
-**Your hardware tokens**
-
-Each physical security key or smart card this realm recorded you as holding, from its attestation: its vendor, serial, model and form factor, whether it is active or was reported lost, and your credentials on it.
-
-The door of the portal's `GET /portal/tokens`.
-
-Scope: `account:manage`.
-
-**Parameters**
-
-| Name | In | Type | Required | What it is |
-|---|---|---|---|---|
-| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
-| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
-
-**200**: The answer.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `escrowed` | list | yes | The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key. |
-| `escrowed[].issuedAt` | string | yes |  |
-| `escrowed[].notAfter` | string | yes |  |
-| `escrowed[].profile` | string | yes |  |
-| `escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
-| `escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name. |
-| `escrowed[].subject` | string | yes |  |
-| `issued` | object |  | `enrol-piv`'s answer only: the certificate issued, drawn once. |
-| `issued.attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
-| `issued.certificatePem` | string | yes | The certificate, PEM: import it with ykman piv certificates import. |
-| `issued.chainPem` | list | yes | The issuing chain, PEM, nearest first. |
-| `issued.chainPem[]` | string |  |  |
-| `issued.profile` | string | yes |  |
-| `issued.serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
-| `issued.token` | string | yes | The hardware token it was recorded on, `<vendor>/<serial>`, or empty. |
-| `piv` | object | yes | What the PIV enrolment form may issue here. |
-| `piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
-| `piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
-| `piv.profiles[]` | string |  |  |
-| `piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
-| `recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
-| `recovered.certificatePem` | string | yes |  |
-| `recovered.chainPem` | list | yes |  |
-| `recovered.chainPem[]` | string |  |  |
-| `recovered.privateKeyPem` | string | yes | The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card. |
-| `recovered.serialHex` | string | yes |  |
-| `tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
-| `tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
-| `tokens[].credentials` | list | yes | The caller's own credentials on it. |
-| `tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
-| `tokens[].credentials[].label` | string | yes | Its name, where it has one. |
-| `tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
-| `tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
-| `tokens[].key` | string | yes | The token's register key, `<vendor>/<serial>`: what `actOnTokens` names. |
-| `tokens[].lostAt` | string | yes | When it was reported lost, or empty. |
-| `tokens[].model` | string | yes |  |
-| `tokens[].registeredAt` | string | yes |  |
-| `tokens[].serial` | string | yes | The serial its attestation named. |
-| `tokens[].status` | string | yes | `active` or `lost`. |
-| `tokens[].vendor` | string | yes |  |
-
-**400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `error_description` | string |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean |  |  |
-
-**401**: No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `error_description` | string |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean |  |  |
-
-**403**: The token is for another audience or does not carry `account:manage`, or the access policy refused the person.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `error_description` | string |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean |  |  |
-
-## POST /account-api/tokens
-
-`actOnTokens`
-
-**Reports one of your hardware tokens lost, claims an imported token, enrols a PIV certificate, or recovers an escrowed key**
-
-`claim` (#1955 P4) takes a one-time code token an administrator imported from its vendor's PSKC file: give the `serial` printed on it and a `code` it shows now (rate limited, one refusal for a wrong serial and a wrong code alike), and it becomes your second factor with that code spent. `lost` marks the token lost and retires every credential of yours on it: its passkeys are removed, its certificates revoked (keyCompromise), a CAEP credential-change is sent for each, and the sign-on sessions they signed in end. `enrol-piv` issues you a PIV slot certificate (`profile`) from a certificate request (`csr`) and, optionally, its YubiKey PIV attestation: the slot's attestation certificate (`attestationCertificate`) and the f9 attestation certificate (`attestationIssuer`). `recover-key` answers your escrowed piv-key-management key for certificate `serial`. `attach-key` notes which of your tokens (`key`) the escrowed key of certificate `serial` was loaded on, so reporting the token lost revokes it. Each asks for a recent sign-in. A refusal carries the page's `view`.
-
-The door of the portal's `POST /portal/tokens`.
-
-Scope: `account:manage`.
-
-**Parameters**
-
-| Name | In | Type | Required | What it is |
-|---|---|---|---|---|
-| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
-| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
-
-**Request body**
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `action` | empty, or one of `lost`, or one of `claim`, or one of `enrol-piv`, or one of `recover-key`, or one of `attach-key` |  | What to do; `lost` where none is named. `claim` (#1955 P4) takes an imported one-time code token by its serial and a code it shows now. |
-| `attestationCertificate` | string |  | `enrol-piv`: the slot's attestation certificate, PEM (ykman piv keys attest). |
-| `attestationIssuer` | string |  | `enrol-piv`: the f9 attestation certificate, PEM (ykman piv certificates export f9), and any intermediate after it. |
-| `code` | string |  | `claim`: a code the token shows now. |
-| `csr` | string |  | `enrol-piv`: the PKCS#10 certificate request, PEM. |
-| `key` | string |  | `lost` and `attach-key`: the token's key, `<vendor>/<serial>`. |
-| `profile` | string |  | `enrol-piv`: piv-auth, piv-sign, piv-key-management or piv-card-auth. |
-| `serial` | string |  | `claim`: the serial printed on the token. `recover-key` and `attach-key`: the escrowed certificate's serial, hex. |
-
-**200**: The answer.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `message` | string | yes |  |
-| `ok` | boolean | yes |  |
-| `view` | object | yes |  |
-| `view.escrowed` | list | yes | The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key. |
-| `view.escrowed[].issuedAt` | string | yes |  |
-| `view.escrowed[].notAfter` | string | yes |  |
-| `view.escrowed[].profile` | string | yes |  |
-| `view.escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
-| `view.escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name. |
-| `view.escrowed[].subject` | string | yes |  |
-| `view.issued` | object |  | `enrol-piv`'s answer only: the certificate issued, drawn once. |
-| `view.issued.attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
-| `view.issued.certificatePem` | string | yes | The certificate, PEM: import it with ykman piv certificates import. |
-| `view.issued.chainPem` | list | yes | The issuing chain, PEM, nearest first. |
-| `view.issued.chainPem[]` | string |  |  |
-| `view.issued.profile` | string | yes |  |
-| `view.issued.serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
-| `view.issued.token` | string | yes | The hardware token it was recorded on, `<vendor>/<serial>`, or empty. |
-| `view.piv` | object | yes | What the PIV enrolment form may issue here. |
-| `view.piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
-| `view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
-| `view.piv.profiles[]` | string |  |  |
-| `view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
-| `view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
-| `view.recovered.certificatePem` | string | yes |  |
-| `view.recovered.chainPem` | list | yes |  |
-| `view.recovered.chainPem[]` | string |  |  |
-| `view.recovered.privateKeyPem` | string | yes | The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card. |
-| `view.recovered.serialHex` | string | yes |  |
-| `view.tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
-| `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
-| `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
-| `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
-| `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
-| `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
-| `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
-| `view.tokens[].key` | string | yes | The token's register key, `<vendor>/<serial>`: what `actOnTokens` names. |
-| `view.tokens[].lostAt` | string | yes | When it was reported lost, or empty. |
-| `view.tokens[].model` | string | yes |  |
-| `view.tokens[].registeredAt` | string | yes |  |
-| `view.tokens[].serial` | string | yes | The serial its attestation named. |
-| `view.tokens[].status` | string | yes | `active` or `lost`. |
-| `view.tokens[].vendor` | string | yes |  |
-
-**400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `errors` | list | yes |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean | yes |  |
-| `view` | object |  |  |
-| `view.escrowed` | list | yes | The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key. |
-| `view.escrowed[].issuedAt` | string | yes |  |
-| `view.escrowed[].notAfter` | string | yes |  |
-| `view.escrowed[].profile` | string | yes |  |
-| `view.escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
-| `view.escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name. |
-| `view.escrowed[].subject` | string | yes |  |
-| `view.issued` | object |  | `enrol-piv`'s answer only: the certificate issued, drawn once. |
-| `view.issued.attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
-| `view.issued.certificatePem` | string | yes | The certificate, PEM: import it with ykman piv certificates import. |
-| `view.issued.chainPem` | list | yes | The issuing chain, PEM, nearest first. |
-| `view.issued.chainPem[]` | string |  |  |
-| `view.issued.profile` | string | yes |  |
-| `view.issued.serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
-| `view.issued.token` | string | yes | The hardware token it was recorded on, `<vendor>/<serial>`, or empty. |
-| `view.piv` | object | yes | What the PIV enrolment form may issue here. |
-| `view.piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
-| `view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
-| `view.piv.profiles[]` | string |  |  |
-| `view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
-| `view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
-| `view.recovered.certificatePem` | string | yes |  |
-| `view.recovered.chainPem` | list | yes |  |
-| `view.recovered.chainPem[]` | string |  |  |
-| `view.recovered.privateKeyPem` | string | yes | The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card. |
-| `view.recovered.serialHex` | string | yes |  |
-| `view.tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
-| `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
-| `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
-| `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
-| `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
-| `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
-| `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
-| `view.tokens[].key` | string | yes | The token's register key, `<vendor>/<serial>`: what `actOnTokens` names. |
-| `view.tokens[].lostAt` | string | yes | When it was reported lost, or empty. |
-| `view.tokens[].model` | string | yes |  |
-| `view.tokens[].registeredAt` | string | yes |  |
-| `view.tokens[].serial` | string | yes | The serial its attestation named. |
-| `view.tokens[].status` | string | yes | `active` or `lost`. |
-| `view.tokens[].vendor` | string | yes |  |
-
-**401**: No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `error_description` | string |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean |  |  |
-
-**403**: The token is for another audience or does not carry `account:manage`, or the access policy refused the person.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `error_description` | string |  |  |
-| `errors` | list |  |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean |  |  |
-
-**404**: No such token is held by you.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `errors` | list | yes |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean | yes |  |
-| `view` | object |  |  |
-| `view.escrowed` | list | yes | The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key. |
-| `view.escrowed[].issuedAt` | string | yes |  |
-| `view.escrowed[].notAfter` | string | yes |  |
-| `view.escrowed[].profile` | string | yes |  |
-| `view.escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
-| `view.escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name. |
-| `view.escrowed[].subject` | string | yes |  |
-| `view.issued` | object |  | `enrol-piv`'s answer only: the certificate issued, drawn once. |
-| `view.issued.attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
-| `view.issued.certificatePem` | string | yes | The certificate, PEM: import it with ykman piv certificates import. |
-| `view.issued.chainPem` | list | yes | The issuing chain, PEM, nearest first. |
-| `view.issued.chainPem[]` | string |  |  |
-| `view.issued.profile` | string | yes |  |
-| `view.issued.serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
-| `view.issued.token` | string | yes | The hardware token it was recorded on, `<vendor>/<serial>`, or empty. |
-| `view.piv` | object | yes | What the PIV enrolment form may issue here. |
-| `view.piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
-| `view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
-| `view.piv.profiles[]` | string |  |  |
-| `view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
-| `view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
-| `view.recovered.certificatePem` | string | yes |  |
-| `view.recovered.chainPem` | list | yes |  |
-| `view.recovered.chainPem[]` | string |  |  |
-| `view.recovered.privateKeyPem` | string | yes | The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card. |
-| `view.recovered.serialHex` | string | yes |  |
-| `view.tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
-| `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
-| `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
-| `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
-| `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
-| `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
-| `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
-| `view.tokens[].key` | string | yes | The token's register key, `<vendor>/<serial>`: what `actOnTokens` names. |
-| `view.tokens[].lostAt` | string | yes | When it was reported lost, or empty. |
-| `view.tokens[].model` | string | yes |  |
-| `view.tokens[].registeredAt` | string | yes |  |
-| `view.tokens[].serial` | string | yes | The serial its attestation named. |
-| `view.tokens[].status` | string | yes | `active` or `lost`. |
-| `view.tokens[].vendor` | string | yes |  |
-
-**409**: The token was already reported lost, or the person already holds as many certificates as the realm allows.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `errors` | list | yes |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean | yes |  |
-| `view` | object |  |  |
-| `view.escrowed` | list | yes | The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key. |
-| `view.escrowed[].issuedAt` | string | yes |  |
-| `view.escrowed[].notAfter` | string | yes |  |
-| `view.escrowed[].profile` | string | yes |  |
-| `view.escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
-| `view.escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name. |
-| `view.escrowed[].subject` | string | yes |  |
-| `view.issued` | object |  | `enrol-piv`'s answer only: the certificate issued, drawn once. |
-| `view.issued.attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
-| `view.issued.certificatePem` | string | yes | The certificate, PEM: import it with ykman piv certificates import. |
-| `view.issued.chainPem` | list | yes | The issuing chain, PEM, nearest first. |
-| `view.issued.chainPem[]` | string |  |  |
-| `view.issued.profile` | string | yes |  |
-| `view.issued.serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
-| `view.issued.token` | string | yes | The hardware token it was recorded on, `<vendor>/<serial>`, or empty. |
-| `view.piv` | object | yes | What the PIV enrolment form may issue here. |
-| `view.piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
-| `view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
-| `view.piv.profiles[]` | string |  |  |
-| `view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
-| `view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
-| `view.recovered.certificatePem` | string | yes |  |
-| `view.recovered.chainPem` | list | yes |  |
-| `view.recovered.chainPem[]` | string |  |  |
-| `view.recovered.privateKeyPem` | string | yes | The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card. |
-| `view.recovered.serialHex` | string | yes |  |
-| `view.tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
-| `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
-| `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
-| `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
-| `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
-| `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
-| `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
-| `view.tokens[].key` | string | yes | The token's register key, `<vendor>/<serial>`: what `actOnTokens` names. |
-| `view.tokens[].lostAt` | string | yes | When it was reported lost, or empty. |
-| `view.tokens[].model` | string | yes |  |
-| `view.tokens[].registeredAt` | string | yes |  |
-| `view.tokens[].serial` | string | yes | The serial its attestation named. |
-| `view.tokens[].status` | string | yes | `active` or `lost`. |
-| `view.tokens[].vendor` | string | yes |  |
-
-**503**: The certificate could not be issued or recorded, or an escrowed key could not be opened.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `error` | string |  |  |
-| `errors` | list | yes |  |
-| `errors[]` | string |  |  |
-| `ok` | boolean | yes |  |
-| `view` | object |  |  |
-| `view.escrowed` | list | yes | The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key. |
-| `view.escrowed[].issuedAt` | string | yes |  |
-| `view.escrowed[].notAfter` | string | yes |  |
-| `view.escrowed[].profile` | string | yes |  |
-| `view.escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
-| `view.escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name. |
-| `view.escrowed[].subject` | string | yes |  |
-| `view.issued` | object |  | `enrol-piv`'s answer only: the certificate issued, drawn once. |
-| `view.issued.attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
-| `view.issued.certificatePem` | string | yes | The certificate, PEM: import it with ykman piv certificates import. |
-| `view.issued.chainPem` | list | yes | The issuing chain, PEM, nearest first. |
-| `view.issued.chainPem[]` | string |  |  |
-| `view.issued.profile` | string | yes |  |
-| `view.issued.serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
-| `view.issued.token` | string | yes | The hardware token it was recorded on, `<vendor>/<serial>`, or empty. |
-| `view.piv` | object | yes | What the PIV enrolment form may issue here. |
-| `view.piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
-| `view.piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
-| `view.piv.profiles[]` | string |  |  |
-| `view.piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
-| `view.recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
-| `view.recovered.certificatePem` | string | yes |  |
-| `view.recovered.chainPem` | list | yes |  |
-| `view.recovered.chainPem[]` | string |  |  |
-| `view.recovered.privateKeyPem` | string | yes | The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card. |
-| `view.recovered.serialHex` | string | yes |  |
-| `view.tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
-| `view.tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
-| `view.tokens[].credentials` | list | yes | The caller's own credentials on it. |
-| `view.tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
-| `view.tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
-| `view.tokens[].credentials[].label` | string | yes | Its name, where it has one. |
-| `view.tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
-| `view.tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
-| `view.tokens[].key` | string | yes | The token's register key, `<vendor>/<serial>`: what `actOnTokens` names. |
-| `view.tokens[].lostAt` | string | yes | When it was reported lost, or empty. |
-| `view.tokens[].model` | string | yes |  |
-| `view.tokens[].registeredAt` | string | yes |  |
-| `view.tokens[].serial` | string | yes | The serial its attestation named. |
-| `view.tokens[].status` | string | yes | `active` or `lost`. |
-| `view.tokens[].vendor` | string | yes |  |
 
 ## GET /account-api/verify-email
 

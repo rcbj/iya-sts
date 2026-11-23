@@ -1,11 +1,11 @@
 ---
 title: "Digital Signature"
-nav_order: 41
+nav_order: 31
 ---
 
 # Digital Signature
 
-> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.5 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](access.md) says how to reach, enable and disable it.
+> Copied from the [id-proto-debugger](https://github.com/rcbj/id-proto-debugger) release 0.9.3 user guide, which is the debugger this service embeds. Its addresses are the embedded ones: the debugger is `https://localhost:8444/` and its api `https://localhost:8444/api`. [Accessing the debugger](access.md) says how to reach, enable and disable it.
 
 **Digital Signature** (`/digital_signature.html`) generates keys, signs or
 MACs a value, and checks the result, in the browser. Cryptography here is
@@ -18,7 +18,7 @@ the one exception: that PEM is handed to the certificate page through
 Open it from the **Tools** pane on the OAuth2 / OIDC pages. The
 introduction on the page numbers these twelve panes in this order. When
 the page loads, the XML **SignatureMethod** menu gains the draft group
-described in [Post-quantum XML Signature](https://github.com/rcbj/id-proto-debugger/blob/0.9.5/docs/v0.9.5/xmldsig-pqc.md).
+described in [Post-quantum XML Signature](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/xmldsig-pqc.md).
 
 This page has no screenshot. The pictures in the
 [OAuth2 / OIDC guide](oauth2-oidc/index.md) come from the Selenium jobs, and
@@ -26,39 +26,6 @@ those jobs were not re-run for this pass.
 
 * TOC
 {:toc}
-
-## Overview
-
-**Digital Signature** (`/digital_signature.html`) signs and MACs in the
-browser with pure JavaScript, so it does not need Web Crypto. Keys are not
-stored. Opening **View certificate details** is the exception: that
-certificate is passed to the certificate page through `localStorage`.
-
-The page has twelve panes, in this order.
-
-| # | Pane | Default |
-|---|---|---|
-| 1 | SLH-DSA | SLH-DSA-SHA2-128s, pure |
-| 2 | Stateful hash-based signatures (LMS/HSS and XMSS) | HSS, one tree. See [Stateful hash-based signatures](https://github.com/rcbj/id-proto-debugger/blob/0.9.5/docs/v0.9.5/hbs.md) |
-| 3 | RSA | PKCS#1 v1.5, SHA-256, 2048-bit |
-| 4 | ECC | ECDSA P-256, SHA-256 |
-| 5 | ML-DSA | ML-DSA-65, pure |
-| 6 | Composite ML-DSA (draft) | ML-DSA-44-ES256 |
-| 7 | BBS | BLS12-381-SHA-256, UTF-8 messages |
-| 8 | JWS | HS256, compact serialization |
-| 9 | XML Digital Signature | enveloped, RSA-SHA256, exclusive C14N, last child of the root |
-| 10 | Keyed-hash MACs | HMAC-SHA256 |
-| 11 | Block-cipher MACs | AES-CMAC |
-| 12 | Universal-hash MACs | Poly1305 |
-
-On load, the XML **SignatureMethod** menu gains the draft post-quantum
-group described in
-[Post-quantum XML Signature](https://github.com/rcbj/id-proto-debugger/blob/0.9.5/docs/v0.9.5/xmldsig-pqc.md). The introduction on
-the page numbers these twelve panes in this order, and the note on the
-XML pane says those methods are a draft. The Tools blurb on both
-OAuth2 / OIDC pages names the same twelve panes.
-
-The field list is in [Digital Signature](digital-signature.md).
 
 ## The twelve panes
 
@@ -68,14 +35,14 @@ panes** is the switch at the top.
 | # | Pane | Default algorithm | Where the detail lives |
 |---|---|---|---|
 | 1 | SLH-DSA | SLH-DSA-SHA2-128s, pure (no pre-hash) | On this page |
-| 2 | Stateful hash-based signatures (LMS/HSS and XMSS) | HSS, `LMOTS_SHA256_N32_W8`, `LMS_SHA256_M32_H5`, one tree | [Stateful hash-based signatures](https://github.com/rcbj/id-proto-debugger/blob/0.9.5/docs/v0.9.5/hbs.md) |
+| 2 | Stateful hash-based signatures (LMS/HSS and XMSS) | HSS, `LMOTS_SHA256_N32_W8`, `LMS_SHA256_M32_H5`, one tree | [Stateful hash-based signatures](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/hbs.md) |
 | 3 | RSA | PKCS#1 v1.5, SHA-256, 2048-bit | On this page |
 | 4 | ECC | ECDSA P-256, SHA-256 | On this page |
 | 5 | ML-DSA | ML-DSA-65, pure (no pre-hash) | On this page |
 | 6 | Composite ML-DSA | ML-DSA-44-ES256 | On this page. Draft. |
 | 7 | BBS | BLS12-381-SHA-256, UTF-8 messages | On this page |
 | 8 | JWS | HS256, compact serialization | On this page |
-| 9 | XML Digital Signature | Enveloped, RSA-SHA256, exclusive C14N | On this page, plus [Post-quantum XML Signature](https://github.com/rcbj/id-proto-debugger/blob/0.9.5/docs/v0.9.5/xmldsig-pqc.md) |
+| 9 | XML Digital Signature | Enveloped, RSA-SHA256, exclusive C14N | On this page, plus [Post-quantum XML Signature](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/xmldsig-pqc.md) |
 | 10 | Keyed-hash MACs | HMAC-SHA256 | On this page |
 | 11 | Block-cipher MACs | AES-CMAC | On this page |
 | 12 | Universal-hash MACs | Poly1305 | On this page |
@@ -104,7 +71,7 @@ The private key changes every time it signs. The pane keeps the index in
 the private-key box and rewrites it on **Sign**. Spending one one-time key
 twice is a separate button, so the failure is something you can watch.
 Parameter sets, the HSS layer count, and the XMSS^MT height are all on the
-pane. Read [Stateful hash-based signatures](https://github.com/rcbj/id-proto-debugger/blob/0.9.5/docs/v0.9.5/hbs.md) before you change one:
+pane. Read [Stateful hash-based signatures](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/hbs.md) before you change one:
 a signature that verifies against itself can still be the wrong scheme.
 
 ## Pane 3 — RSA
@@ -138,7 +105,7 @@ Default **ML-DSA-44-ES256**. Also ML-DSA-65-ES256, ML-DSA-87-ES384,
 ML-DSA-44-Ed25519, ML-DSA-65-Ed25519, and ML-DSA-87-Ed448. The private key
 box is the 32-byte ML-DSA seed followed by the traditional private key.
 Download is PEM or JWK. The X.509 encoding of a composite is a different
-draft and lives on the [PKI](https://github.com/rcbj/id-proto-debugger/blob/0.9.5/docs/v0.9.5/pki.md) page.
+draft and lives on the [PKI](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/pki.md) page.
 
 ## Pane 7 — BBS
 
@@ -192,7 +159,7 @@ appends an optgroup labelled **Post-quantum —
 draft-eastlake-rfc9231bis-xmlsec-uris**, sixteen ML-DSA, SLH-DSA, and
 HSS-LMS methods. The note above the menu says those sixteen are a draft.
 The identifiers and why they say *draft* are in
-[Post-quantum XML Signature](https://github.com/rcbj/id-proto-debugger/blob/0.9.5/docs/v0.9.5/xmldsig-pqc.md).
+[Post-quantum XML Signature](https://github.com/rcbj/id-proto-debugger/blob/0.9.3/docs/xmldsig-pqc.md).
 
 | Field | Default |
 |---|---|

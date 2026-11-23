@@ -32,5 +32,5 @@
   "th.whatFailed": "Ce qui a échoué",
   "th.clientSees": "Ce que voit le client",
   "codes.none": "Aucun résultat.",
-  "note.table": "La table est <code>common/error_codes.js</code> et cette page n’a aucune commande : un code n’est jamais renuméroté ni réutilisé, car il finit dans des règles d’alerte et des recherches enregistrées, et une condition qui cesse d’exister garde sa ligne, marquée comme retirée. La même table est publiée sous <code>docs/v1.1.0/error-codes.md</code>, générée à partir du source, et cette liste est disponible à <code>GET /admin-api/error-codes</code> avec les mêmes paramètres. La pagination se fait avec <code>?page=</code> et <code>?per=</code> (au plus {max} lignes par page)."
+  "note.table": "La table est <code>common/error_codes.js</code> et cette page n’a aucune commande : un code n’est jamais renuméroté ni réutilisé, car il finit dans des règles d’alerte et des recherches enregistrées, et une condition qui cesse d’exister garde sa ligne, marquée comme retirée. La même table est publiée sous <code>docs/v1.2.0/error-codes.md</code>, générée à partir du source, et cette liste est disponible à <code>GET /admin-api/error-codes</code> avec les mêmes paramètres. La pagination se fait avec <code>?page=</code> et <code>?per=</code> (au plus {max} lignes par page)."
 }

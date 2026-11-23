@@ -6,8 +6,8 @@
 // File: openapi_pages.js
 //
 // ---------------------------------------------------------------------------
-// docs/v1.1.0/openapi/ IS EXACTLY WHAT THE DOCUMENTS PRODUCE (rcbj,
-// 2026-11-06), the rule `docs/v1.1.0/error-codes.md` has for its table: a
+// docs/v1.2.0/openapi/ IS EXACTLY WHAT THE DOCUMENTS PRODUCE (rcbj,
+// 2026-11-06), the rule `docs/v1.2.0/error-codes.md` has for its table: a
 // second copy of 833 operations is otherwise wrong within a week.
 // tests/tools/openapi_pages.js writes them.
 // ---------------------------------------------------------------------------
@@ -23,7 +23,7 @@ const { pagesOf, APIS } = require('./tools/openapi_pages');
 
 // The latest documentation version's folder; the frozen releases beside it
 // are never regenerated or checked (docs/CLAUDE.md, *The versioned site*).
-const DIR = path.join(__dirname, '..', 'docs', 'v1.1.0', 'openapi');
+const DIR = path.join(__dirname, '..', 'docs', 'v1.2.0', 'openapi');
 const FIX = 'run tests/tools/regenerate-openapi-pages.sh';
 
 function run(t) {
@@ -53,7 +53,7 @@ function run(t) {
 
 module.exports = {
   name: 'openapi_pages',
-  describe: 'docs/v1.1.0/openapi/ is exactly what the OpenAPI documents ' +
+  describe: 'docs/v1.2.0/openapi/ is exactly what the OpenAPI documents ' +
     'produce',
   run: run
 };

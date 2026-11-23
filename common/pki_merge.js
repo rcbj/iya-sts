@@ -95,7 +95,7 @@ const log = bunyan.createLogger({ name: 'pki_merge' });
 config.registerLogger(log);
 
 // The members a row may hold that are one CA TIER each, and the map of them.
-const TIER_MEMBERS = ['root', 'intermediate', 'sshUserCa'];
+const TIER_MEMBERS = ['root', 'intermediate', 'sshUserCa', 'sshUserCaPqc'];
 const TIER_MAP_MEMBERS = ['issuing'];
 
 // The use case whose displaced certificates stay published (#318).

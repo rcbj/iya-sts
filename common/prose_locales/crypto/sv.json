@@ -448,16 +448,16 @@
     "text": "En token med publik nyckel som en innehavare kan försvaga OFFLINE, likt en macaroon, men som kan verifieras av vem som helst som håller den publika rotnyckeln. Dess auktoriseringslogik är Datalog som bärs inuti token, så verifieraren körs ALLTID med tids- och iterationsgränser."
   },
   "crypto.standards.cms.coverage": {
-    "en": "d33248e25a15b5a7",
-    "text": "partial: SignedData med en signerare och signerade attribut, verifierad över attributbytena så som de togs emot och skrivna DER-sorterade; EnvelopedData med KeyTransRecipientInfo (RSA PKCS#1 v1.5 och OAEP) och AES-CBC-innehåll; degenererad SignedData med enbart certifikat och CRL:er; för S/MIME-e-post (#1955) en EnvelopedData skriven med en OAEP SHA-256 KeyTransRecipientInfo eller en ECDH KeyAgreeRecipientInfo. Inga autentiserade eller komprimerade data, inga kontrasignaturer."
+    "en": "f750e6cf7ac566b2",
+    "text": "partial: SignedData med en signerare och signerade attribut, verifierad över attributbytena så som de togs emot och skrivna DER-sorterade; EnvelopedData med KeyTransRecipientInfo (RSA PKCS#1 v1.5 och OAEP) och AES-CBC-innehåll; degenererad SignedData med enbart certifikat och CRL:er; för S/MIME-e-post (#1955) en EnvelopedData skriven med en OAEP SHA-256 KeyTransRecipientInfo, en ECDH KeyAgreeRecipientInfo eller, för ett ML-KEM-certifikat, en KEMRecipientInfo. Inga autentiserade eller komprimerade data, inga kontrasignaturer."
   },
   "crypto.standards.cms.what": {
-    "en": "e09c8508abab483b",
-    "text": "Kuvertet som SCEP (scep/scep_cms.ts) läser och skriver: en begäran signerad av den begärande och krypterad till RA, och ett CertRep signerat av RA vars certifikat är krypterat till den begärande. Sedan #1955 även S/MIME EnvelopedData som e-post krypteras i, vilket lägger till en KeyAgreeRecipientInfo för en EC-mottagare (dhSinglePass-stdDH-sha256kdf, AES-256 key wrap) och en OAEP SHA-256 KeyTransRecipientInfo för en RSA-mottagare."
+    "en": "05b9f7ff9bec76df",
+    "text": "Kuvertet som SCEP (scep/scep_cms.ts) läser och skriver: en begäran signerad av den begärande och krypterad till RA, och ett CertRep signerat av RA vars certifikat är krypterat till den begärande. Sedan #1955 även S/MIME EnvelopedData som e-post krypteras i, vilket lägger till en KeyAgreeRecipientInfo för en EC-mottagare (dhSinglePass-stdDH-sha256kdf, AES-256 key wrap) och en OAEP SHA-256 KeyTransRecipientInfo för en RSA-mottagare, och en KEMRecipientInfo för ett ML-KEM-certifikat. En körning som inte kan kapsla in faller inte tillbaka till RSA eller ECDH."
   },
   "crypto.standards.openpgp.coverage": {
-    "en": "5d4c9889762ddbd2",
-    "text": "partial: läsning av överförbara publika nycklar v4 och v6, verifiering av en klartextsignatur och kryptering av ett PGP/MIME-meddelande, allt genom openpgp.js; Web Key Directorys avancerade och direkta uppslag och policyfil. Ingen signering, ingen dekryptering, ingen inlämning via Web Key Service, ingen nyckelserver."
+    "en": "d27e08a2f317c75c",
+    "text": "partial: läsning av överförbara publika nycklar v4 och v6, verifiering av en klartextsignatur och kryptering av ett PGP/MIME-meddelande, genom openpgp.js; en sammansatt RFC 9980-nyckel läses här och båda halvorna kontrolleras.  Web Key Directorys avancerade och direkta uppslag och policyfil. Ingen signering, ingen dekryptering, ingen inlämning via Web Key Service, ingen nyckelserver och ingen SLH-DSA."
   },
   "crypto.standards.openpgp.what": {
     "en": "039de4dd3b49b9ab",
@@ -692,12 +692,12 @@
     "text": "Ingenting. En registrering är PERSONENS signatur, och ett krypterat meddelande signeras inte (DKIM signerar det yttre meddelandet, som det signerar varje meddelande)."
   },
   "crypto.families.openpgp.verifies": {
-    "en": "c3dbfb38087cb3de",
-    "text": "Ett INNEHAVSBEVIS vid registrering: en klartextsignatur (gpg --clearsign) över exakt den utmaning tjänsten utfärdade till personen, gjord av en signeringskapabel nyckel i den nyckel som registreras, skapad efter att utmaningen utfärdades (openpgp.signatureSkewS) och giltig då; själva nyckeln varken återkallad eller utgången, med ett giltigt användar-ID som innehåller postens adress. Nycklar enligt RFC 9580 v6 och RFC 4880 v4, lästa av openpgp.js. Ett S/MIME-certifikat kontrolleras för giltighet, nyckel och användning, men kedjan valideras inte: det väljer bara vem ett meddelande krypteras till."
+    "en": "e571039950254fa8",
+    "text": "Ett INNEHAVSBEVIS vid registrering: en klartextsignatur (gpg --clearsign) över exakt den utmaning tjänsten utfärdade till personen, gjord av en signeringskapabel nyckel i den nyckel som registreras, skapad efter att utmaningen utfärdades (openpgp.signatureSkewS) och giltig då; själva nyckeln varken återkallad eller utgången, med ett giltigt användar-ID som innehåller postens adress. Nycklar enligt RFC 9580 v6 och RFC 4880 v4, lästa av openpgp.js. Ett S/MIME-certifikat kontrolleras för giltighet, nyckel och användning, men kedjan valideras inte: det väljer bara vem ett meddelande krypteras till. Sammansatta RFC 9980-nycklar läses av den här tjänstens egen läsare, som kontrollerar båda halvorna; openpgp.js tolkar dem inte."
   },
   "crypto.families.openpgp.encrypts": {
-    "en": "1a05c1b540cd5082",
-    "text": "E-POST, där personen har valt det eller sfären kräver det (mail.encryptionRequired): PGP/MIME (RFC 3156) till nyckelns krypteringsnyckel, som openpgp.js väljer (SEIPD med AES för en v4-nyckel, AEAD för en v6-nyckel); S/MIME (RFC 8551) som en CMS EnvelopedData, AES-256-CBC för innehållskryptering, innehållsnyckeln under RSAES-OAEP med SHA-256 eller ECDH (dhSinglePass-stdDH-sha256kdf, AES-256 key wrap)."
+    "en": "92940be7441a9817",
+    "text": "E-POST, där personen har valt det eller sfären kräver det (mail.encryptionRequired): PGP/MIME (RFC 3156) till nyckelns krypteringsnyckel, som openpgp.js väljer (SEIPD med AES för en v4-nyckel, AEAD för en v6-nyckel); S/MIME (RFC 8551) som en CMS EnvelopedData, AES-256-CBC för innehållskryptering, innehållsnyckeln under RSAES-OAEP med SHA-256 eller ECDH (dhSinglePass-stdDH-sha256kdf, AES-256 key wrap). Ett ML-KEM-certifikat (RFC 9935) är en KEMRecipientInfo (RFC 9629): innehållskrypteringen förblir AES-256-CBC, och en körning som inte kan kapsla in faller inte tillbaka till RSA eller ECDH."
   },
   "crypto.families.openpgp.decrypts": {
     "en": "9cc3e24fe9d0a9d8",
@@ -716,24 +716,24 @@
     "text": "Registrerad nyckel, signering"
   },
   "crypto.families.openpgp.algorithms.0.how": {
-    "en": "91736ec1cb35b5f2",
-    "text": "Ed25519, Ed448, ECDSA P-256/P-384/P-521, RSA med openpgp.minRsaBits (minst 3072)"
+    "en": "f27dbb16784e93f8",
+    "text": "ML-DSA-65+Ed25519, ML-DSA-87+Ed448 (RFC 9980), sedan Ed25519, Ed448, ECDSA P-256/P-384/P-521, RSA på minst openpgp.minRsaBits (minst 3072)"
   },
   "crypto.families.openpgp.algorithms.1.what": {
     "en": "9f7b65405a49bedd",
     "text": "Registrerad nyckel, kryptering"
   },
   "crypto.families.openpgp.algorithms.1.how": {
-    "en": "e28f57b2d61b83be",
-    "text": "X25519, X448, ECDH Curve25519 och P-256/P-384/P-521, RSA med openpgp.minRsaBits"
+    "en": "660feb6cfc44d305",
+    "text": "ML-KEM-768+X25519, ML-KEM-1024+X448 (RFC 9980), sedan X25519, X448, ECDH Curve25519 och P-256/P-384/P-521, RSA på minst openpgp.minRsaBits"
   },
   "crypto.families.openpgp.algorithms.2.what": {
     "en": "66b873543aebf01b",
     "text": "Avvisas"
   },
   "crypto.families.openpgp.algorithms.2.how": {
-    "en": "18369a474bec2b97",
-    "text": "DSA, ElGamal, Brainpool-kurvor"
+    "en": "4c8437ead9bd7364",
+    "text": "DSA, ElGamal, Brainpool-kurvor, SLH-DSA"
   },
   "crypto.families.openpgp.algorithms.3.what": {
     "en": "429d783fabc235c9",
@@ -748,8 +748,8 @@
     "text": "S/MIME-nyckeltransport"
   },
   "crypto.families.openpgp.algorithms.4.how": {
-    "en": "acf5bad1301fd2cc",
-    "text": "RSAES-OAEP SHA-256; ECDH stdDH SHA-256 KDF, AES-256 wrap"
+    "en": "bccae46bcdf822fb",
+    "text": "RSAES-OAEP SHA-256; ECDH stdDH SHA-256 KDF, AES-256-omslag; ML-KEM (RFC 9935) som KEMRecipientInfo, HKDF-SHA-256 och AES-Wrap"
   },
   "crypto.families.openpgp.algorithms.5.what": {
     "en": "727e1a6e39e36a93",
@@ -1484,8 +1484,8 @@
     "text": "SHA-1, SHA-256 eller SHA-512, inuti HMAC och ingen annanstans."
   },
   "crypto.families.one-time-passwords-totp.whatItDoesNot": {
-    "en": "f38dd0b2f7ce307b",
-    "text": "Den talar aldrig om för någon vad den aktuella koden är, och den registrerar aldrig någon på en inloggningsskärm — att registrera sig innebär att få se en hemlighet, så det sker där personen redan är autentiserad eller har en aktiveringslänk. En TOTP-klocka som driver erbjuds avvikelsefönstret och inget annat. En räknarbaserad (HOTP-)token synkroniseras om från två på varandra följande koder, aldrig från en. Den sparar aldrig en fröfils nyckel eller lösenord, och öppnar aldrig en fil som är krypterad till ett certifikat."
+    "en": "313115cd82b83d1b",
+    "text": "Den talar aldrig om för någon vad den aktuella koden är, och den registrerar aldrig någon på en inloggningsskärm — att registrera sig innebär att få se en hemlighet, så det sker där personen redan är autentiserad eller har en aktiveringslänk. En TOTP-klocka som driver erbjuds avvikelsefönstret och inget annat. En räknarbaserad (HOTP-)token synkroniseras om från två på varandra följande koder, aldrig från en. Den sparar aldrig en fröfils nyckel eller lösenord, och öppnar aldrig en fil som är krypterad till ett certifikat. HOTP (RFC 4226) och ett PSKC-frö (RFC 6030) har ingen postkvant-MAC: MAC:en är HMAC-SHA-1, SHA-256 eller SHA-512."
   },
   "crypto.families.one-time-passwords-totp.algorithms.0.what": {
     "en": "0c410835b8ade404",
@@ -1524,8 +1524,8 @@
     "text": "Inget. CRC:n är CRC-16, polynom 0x8408. En YK-VAL-signatur är HMAC-SHA1."
   },
   "crypto.families.yubico-otp.whatItDoesNot": {
-    "en": "a977ea47369edb7c",
-    "text": "Den anropar aldrig YubiCloud. Den kontrollerar aldrig tidsstämpeln. Den registrerar aldrig en plats medan yubiotp.offered är av, och den svarar aldrig på YK-VAL medan yubiotp.ykval är av. Den loggar aldrig programmeringsraden eller en klients HMAC-nyckel."
+    "en": "f93ab78e99cd9d8d",
+    "text": "Den anropar aldrig YubiCloud. Den kontrollerar aldrig tidsstämpeln. Den registrerar aldrig en plats medan yubiotp.offered är av, och den svarar aldrig på YK-VAL medan yubiotp.ykval är av. Den loggar aldrig programmeringsraden eller en klients HMAC-nyckel. Den har ingen postkvantparameter: OTP:n är AES-128-ECB av ett 16-byteblock."
   },
   "crypto.families.yubico-otp.algorithms.0.what": {
     "en": "6c0e6acd35694622",

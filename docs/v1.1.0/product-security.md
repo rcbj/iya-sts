@@ -22,8 +22,7 @@ state of your own deployment.
 2. **Find the administrator's name and password at first start.** Unless you
    set `admin.bootstrapUsername` to a name of your own, the name is generated.
    Both are written to `bootstrap-admin-password` in `persistence.dataDir`,
-   readable only by the service, and the log says where. A later start deletes
-   that file, once somebody already holds a credential. See
+   readable only by the service, and the log says where. See
    [The admin console](admin-console.md#the-bootstrap-administrator).
 3. **Check that your clients can use the defaults.** The settings below turn
    older behaviour back on where a client cannot manage without it.

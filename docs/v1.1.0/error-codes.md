@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5960** of them, in **57** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5753** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -51,19 +51,19 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 21
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 112
-* [Worker pools (`STS-WORKER`)](#sts-worker) — 56
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 115
+* [Service core (`STS-CORE`)](#sts-core) — 111
+* [Worker pools (`STS-WORKER`)](#sts-worker) — 54
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 114
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 198
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 282
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 188
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 275
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 446
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 436
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 83
@@ -81,22 +81,17 @@ is an ordinary outcome.
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 174
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
-* [Mail (`STS-MAIL`)](#sts-mail) — 44
+* [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 15
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
-* [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 13
-* [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 35
-* [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 30
-* [PIV key attestation (`STS-PIV`)](#sts-piv) — 26
-* [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 25
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 252
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 224
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 111
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 98
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 301
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 299
 * [Management API (`STS-API`)](#sts-api) — 97
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
@@ -274,7 +269,6 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0177` | One or more settings have no row in env/defaults.js (or the file is not there) and no value in any layer above it, so each takes the image's own default. The defaults file is older than the image — usually an env/ directory mounted or copied from an earlier release. The service starts; the warning names each setting and the file. | none — a warning logged at startup; nothing is refused |
 | `STS-CORE-0178` | One or more settings in env/defaults.js hold a value that is not the image's default. The file's value is used, as before the upgrade; a defaults file copied from an earlier release pins every default changed since. The warning names each setting and the file. | none — a warning logged at startup; nothing is refused |
 | `STS-CORE-0179` | env/defaults.js is present and could not be loaded (it does not parse, or throws), so the service refused to start. A missing file is not this: the image's own defaults are used (STS-CORE-0177). | — |
-| `STS-CORE-0180` | A store could not forget what it held for a trust realm this process never defined and the store no longer lists (#1938); it is asked again at the next realm read. | — |
 
 ## STS-WORKER
 
@@ -338,8 +332,6 @@ Raised from: common/request_pool.js, common/request_worker.ts, common/service_st
 | `STS-WORKER-0052` | A request worker revoked something a refresh token rests on (a session, a token, a refresh family, a grant or an account) after the answer's headers had gone, so the front process could not file it for the refresh grant's wait before the client saw the answer (the review of #879). The revocation stands; a refresh routed to a worker that has not applied it may be answered until the workers converge. Logged at the first and every hundredth. | Nothing: the request is answered as it was |
 | `STS-WORKER-0053` | A dispatched request or operation was refused because its request worker had not caught up with the writes answered before it within workers.readBarrierTimeoutMs; answering from what that worker held could have been wrong. The worker's STS-STORE-0039 line says where its change pull's time went. | HTTP 503 (Retry-After: 5), plain text; an LDAP operation LDAP_UNAVAILABLE, a Kerberos message KDC_ERR_SVC_UNAVAILABLE |
 | `STS-WORKER-0054` | A request the front process answers itself was refused because that process had not caught up with the change log within workers.readBarrierTimeoutMs; answering from its own copy could have been wrong. | HTTP 503 (Retry-After: 5), plain text |
-| `STS-WORKER-0055` | A request worker reported that its change-log pull waited on its own flush past workers.readBarrierTimeoutMs (STS-STORE-0176), so the front process retired it — nothing more routed to it, then drained — and forks a replacement into its slot when it exits. A pool that is stopping or has given up keeps the worker, and the line says why. | — |
-| `STS-WORKER-0056` | A request worker retired because its change-log pull was wedged (STS-WORKER-0055) did not finish draining within 8000 ms and was ended; its replacement follows as for any worker that exits. | — |
 
 ## STS-STORE
 
@@ -387,7 +379,7 @@ Raised from: persistence/.
 | `STS-STORE-0036` | The postgres LISTEN connection for change notifications could not connect; the poll still converges. | — |
 | `STS-STORE-0037` | The change log could not be read at startup, so this process runs uncoordinated and keeps retrying. | — |
 | `STS-STORE-0038` | A pull of other processes' changes from the change log failed; this process is behind until a retry succeeds. | — |
-| `STS-STORE-0039` | A read barrier gave up before catching up with the change log and told its caller so; a request pool barrier asks again and refuses once workers.readBarrierTimeoutMs has passed. The line breaks the pull's time down: reading pages, the rows by kind, preparing, the event loop's turns, and the rest — and says when the apply is waiting on this process's own flush, and for how long (STS-STORE-0176). | — |
+| `STS-STORE-0039` | A read barrier gave up before catching up with the change log and told its caller so; a request pool barrier asks again and refuses once workers.readBarrierTimeoutMs has passed. The line breaks the pull's time down: reading pages, the rows by kind, preparing, the event loop's turns, and the rest. | — |
 | `STS-STORE-0040` | A read barrier could not read the change log and told its caller it did not catch up; a request pool barrier asks again and refuses once workers.readBarrierTimeoutMs has passed. | — |
 | `STS-STORE-0041` | Preparing a page of replicated rows of one kind failed; they are applied one at a time. | — |
 | `STS-STORE-0042` | One replicated change could not be applied in this process; the rest of the page is unaffected. | — |
@@ -463,7 +455,6 @@ Raised from: persistence/.
 | `STS-STORE-0173` | A background build of an index the store was owed (#876, #882) — CREATE INDEX CONCURRENTLY on PostgreSQL, an in-place ALTER on MariaDB — failed. The service goes on without the index, by a slower plan; the next start tries again, or the owner runs the upgrade script. | none — the store opens without it |
 | `STS-STORE-0174` | A realm another process changed could not be applied in this one: the realm registry refused the replicated update. This process keeps the realm as it was until a later change applies, and does not write its copy back over the store. | none — logged; the request that wrote it was already answered |
 | `STS-STORE-0175` | A minted row another process wrote could not be merged into the copy this process holds (the store's merge threw), so the arriving row replaced the held copy, as it did before such rows were merged. | none — logged |
-| `STS-STORE-0176` | A change-log apply of a directory entry waited for this process's own flush of that entry past workers.readBarrierTimeoutMs and the flush had not settled. The pull fails before its position moves, so the row is read again and never dropped; a request worker asks the front process to replace it (STS-WORKER-0055). Reported once a flush; a read barrier's STS-STORE-0039 line names the wait while it lasts. | — |
 
 ## STS-CLUSTER
 
@@ -834,16 +825,6 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0197` | The service did not start because, in product mode, a key-encryption key was to be read from a file rather than a secret store or a key management service. | ASVS 5.0.0 13.3.1 |
 | `STS-KEYS-0198` | The Azure Key Vault or Managed HSM key named as the key-encryption key (azure-keys) was answered with no key version, or one that is not letters and digits. A wrapped data key is stored with the version that wrapped it, so nothing is wrapped and the service does not start. | — |
 | `STS-KEYS-0199` | A stored signing-key, certificate-authority or data-key row belongs to a realm that no longer exists — a write that landed after the realm was removed — and was skipped and deleted rather than refusing the start or kept. | — |
-| `STS-KEYS-0200` | The signing keys of a trust realm this process never defined were dropped once the store no longer listed it (#1938), and the cached key set built from them could not be. | — |
-| `STS-KEYS-0201` | A PKCS#11 operation failed on the hardware security module: no session could be opened, or a wrap, unwrap, signature or search was refused, including after one reconnect (a connector restart or a lost device is met by the next operation, never by a timer). A data key that does not unwrap at start stops the start; a signature is refused (#1955). | — |
-| `STS-KEYS-0202` | The PKCS#11 module could not be used: keys.pkcs11Module is empty, the module would not load or initialize, or no single token matches the URI's token label, serial and slot (#1955). | — |
-| `STS-KEYS-0203` | The key a PKCS#11 URI names is not usable: it is not on the token (and keys.pkcs11GenerateKey is off, or this is a request worker), more than one object matches, or it is extractable or not AES-256 (#1955). | — |
-| `STS-KEYS-0204` | The PKCS#11 token offers no mechanism this service wraps a data key with for this key (CKM_AES_GCM, CKM_AES_KEY_WRAP_PAD, CKM_YUBICO_AES_CCM_WRAP), or not the one keys.pkcs11Mechanism names (#1955). | — |
-| `STS-KEYS-0205` | The PKCS#11 location or PIN is wrong: the location is not an RFC 7512 URI naming an object, it carries a PIN (pin-value, pin-source), the PIN secret could not be read or holds none for the token, or the token refused it (#1955). | — |
-| `STS-KEYS-0206` | A realm whose signing keys are in the HSM was asked for something only a key in this process can do — the private key itself, a decryption, or an algorithm the HSM does not sign — and refused it rather than making a software key (#1955). | — |
-| `STS-KEYS-0207` | A signing key could not be made in, or read back from, the hardware security module: the module offers no key-pair generation for that algorithm or curve, or answered no public key (#1955). | — |
-| `STS-KEYS-0208` | A realm key in the HSM was asked to decrypt (RSA-OAEP) or to agree (ECDH) and the module refused it: the key was made without CKA_DECRYPT or CKA_DERIVE, by a build before the HSM keys could decrypt. Rotating the realm's signing keys makes keys that can (#1955). | — |
-| `STS-KEYS-0209` | A signature with a key in the HSM was asked of a synchronous door, or of a module with no asynchronous C_Sign, while keys.pkcs11SynchronousSign is off. The event loop is not held for the token; turn the setting on to sign that way (#1955). | — |
 
 ## STS-PKI
 
@@ -1128,13 +1109,6 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0286` | A realm's credential-signing key could not be certified (#1880): no issuer identifier or key to name, or the JOSE Issuing CA refused. It still signs; its credentials carry no x5c until it is certified. | none: the credential is issued without x5c |
 | `STS-PKI-0287` | A realm's live credential-signing certificate was revoked for a reason that distrusts its key (keyCompromise, cACompromise, aACompromise, privilegeWithdrawn, certificateHold, unspecified or an unknown reason), so credentials are signed by a new key of the family from now on and the old key is neither published nor accepted while that revocation stands (#1880). | none: the credential is issued under the new key |
 | `STS-PKI-0288` | This realm's mdoc Issuing Authority CA or document signer could not be minted or restored (#1862): no credential issuer URI, a country code that is not ISO 3166-1 alpha-2, or the certificates could not be issued. An mdoc is not issued, and GET /oid4vci/mdoc-iaca answers 500. | the credential endpoint fails as it fails any signing error; the public certificate answers 500 |
-| `STS-PKI-0289` | A request to issue an SSH user certificate (#1955 P3) had an unsupported key, invalid principals, or a lifetime outside the allowed range. | The account API refuses the request |
-| `STS-PKI-0290` | The SSH user CA could not be created or used, a user certificate could not be signed or recorded, or its KRL could not be built (#1955 P3). | The account API or SSH KRL endpoint fails |
-| `STS-PKI-0291` | A requested SSH certificate revocation (#1955 P3) named a malformed serial or one this realm did not issue. | The account API refuses the request |
-| `STS-PKI-0292` | A public SSH user CA or KRL request (#1955 P3) named a scope that does not have a realm SSH user CA. | The public PKI endpoint refuses the request |
-| `STS-PKI-0293` | A person requested an SSH user certificate (#1955 P3) while pki.personSelfService is off. | The account API refuses the request |
-| `STS-PKI-0294` | An SSH user certificate request (#1955 P3) had no UID, named a principal the access policy refused, or its hardware evidence could not be verified or recorded. | The account API refuses the request |
-| `STS-PKI-0295` | A person requested SSH user certificates (#1955 P3) too often and the shared rate limiter refused it. | The account API refuses the request with HTTP 429 |
 
 ## STS-ENROLL
 
@@ -1419,7 +1393,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0028` | WebAuthn verification failed: clientDataJSON's type is not the ceremony's (webauthn.create / webauthn.get). | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0029` | WebAuthn verification failed: the challenge in clientDataJSON is not the one this service issued for the step. | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0030` | WebAuthn verification failed: the origin in clientDataJSON is not this service's origin or on webauthn.allowedOrigins. | HTTP 200 page naming the failed check |
-| `STS-AUTHN-0031` | WebAuthn verification failed: the RP ID hash in the authenticator data is not SHA-256 of the expected RP ID — or, for a legacy U2F key whose client used the appid extension, of the AppID it was imported under (#1955). | HTTP 200 page naming the failed check |
+| `STS-AUTHN-0031` | WebAuthn verification failed: the RP ID hash in the authenticator data is not SHA-256 of the expected RP ID. | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0032` | WebAuthn verification failed: the authenticator data does not have the user-present (UP) flag set. | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0033` | WebAuthn verification failed: webauthn.userVerification is required and the authenticator did not set the user-verified (UV) flag. | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0034` | WebAuthn registration failed: the authenticator data carries no attested credential data (AT flag clear). | HTTP 200 page naming the failed check |
@@ -1825,16 +1799,6 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0555` | A /authn-api request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
 | `STS-AUTHN-0556` | An administrator's passkey enrolment was begun or finished for a person named with a control character, a NUL or half of a surrogate pair. No directory name holds one, the pending record is keyed by the two names joined with a newline, and PostgreSQL cannot store a NUL, so it was refused before the pending record was touched (STS-STORE-0063). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-AUTHN-0557` | An authenticator app enrolment was begun for a name holding a control character or a NUL. No directory name holds one, and the pending enrolment is keyed by the name, which PostgreSQL cannot store with a NUL in it (STS-STORE-0063), so it was refused before the pending record was touched. | action result with the reason |
-| `STS-AUTHN-0558` | The account-set expiry job could not read the sessions a batch of browsers' account sets lists, asynchronously (#780). The batch decides nothing: no session is moved to remembered and no set is deleted on it, and the next run starts again at that batch. | none: a scheduler job; logged, never sent |
-| `STS-AUTHN-0559` | A passkey was not registered: the passkey policy asks a security key for CTAP 2.1 credential protection and enforces it (credProtect, enforceCredProtect, #1955), and the authenticator reported a lower credProtect level, or none, which is level 1. The issuance policy's cred-protect rule. Asked where every key is written. | HTTP 200 page naming the refusal; /admin-api and /account-api HTTP 400 with {ok:false, errors} |
-| `STS-AUTHN-0560` | A passkey policy save was refused: enforceCredProtect was on while credProtect was none, so there was no level to enforce (#1955). Nothing was written. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-AUTHN-0561` | A legacy U2F security key was not imported: its AppID is not one webauthn.u2fAppIds lists, or that setting is empty, which is the feature off (#1955). Nothing was written. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-AUTHN-0562` | A legacy U2F security key was not imported: its key handle is not base64 or base64url of 1 to 255 bytes (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-AUTHN-0563` | A legacy U2F security key was not imported: its public key is not an uncompressed P-256 point (65 bytes starting 0x04, on the curve) (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-AUTHN-0564` | A legacy U2F security key was not imported: its counter is not a whole number from 0 to 4294967295 (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-AUTHN-0565` | A sign-in step was answered by a legacy U2F security key that may not answer it: the step is passwordless (a U2F key cannot verify the person), or webauthn.u2fAppIds no longer permits its AppID at this RP ID (#1955). | HTTP 200 page naming the refusal |
-| `STS-AUTHN-0566` | A write of webauthn.u2fAppIds was refused: an entry is not a U2F AppID — an absolute https URL with a host, no user name or password and no fragment, at most 2048 characters (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-AUTHN-0567` | The bootstrap password file could not be removed on a start that found a credential already held. The plaintext is left on disk. | Log line; the service still starts, and the file is left |
 
 ## STS-OAUTH
 
@@ -4504,10 +4468,6 @@ Raised from: common/mail.ts, common/mail_transports.ts, common/mail_uses.ts, com
 | `STS-MAIL-0038` | A followed verification link for a NEW address could not write it to the entry (#64, D5). | HTTP 400 page |
 | `STS-MAIL-0039` | A person asked to change their address to something that is not an address this service can send to (#64, D5). | HTTP 400 page |
 | `STS-MAIL-0180` | The notice telling a person that a GNAP grant waits for their approval on the portal could not be queued; the request still waits there (#432 phase 6). | log only |
-| `STS-MAIL-0240` | A message whose template mail.encryptionRequired names was not queued: the person has chosen no mail encryption, so nothing could encrypt it. The use's own refusal handling applies (#1955). | log only (the use refuses as for any unsent message) |
-| `STS-MAIL-0241` | A message was not queued because the encryption the person chose cannot be honoured now (no usable OpenPGP encryption key, no S/MIME certificate that can receive); it is not sent in the clear against their choice (#1955). | log only (the use refuses as for any unsent message) |
-| `STS-MAIL-0242` | An encrypted message cannot be carried by the realm's transport: Azure Communication Services takes structured content and cannot send a MIME entity this service composed (#1955). | log only |
-| `STS-MAIL-0243` | An encrypted message could not be encrypted at send time (the stored key or certificate no longer reads); it is a dead letter, never sent in the clear (#1955). | log only |
 
 ## STS-I18N
 
@@ -4965,180 +4925,6 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0052` | The Android attestation recheck's backfill could not write a device whose stsDeviceAndroidKey marker is missing or wrong; that device's keys are rechecked only once a later write of it derives the marker (#615). | — |
 | `STS-DEVICE-0053` | A device of a deleted person could not be removed from the register, so a person made again under the name owns it. Remove it on the Devices page. | — |
 
-## STS-HWTOKEN
-
-**Hardware tokens.** The hardware token register (#1955): one record per physical token (a YubiKey, a smart card) keyed by vendor and serial, the serial taken only from attestation, the credentials on it, and the lost-key act that retires every one of them.
-
-Raised from: common/hardware_tokens.ts, mgmt-api/hardware_tokens_api.ts, portal/account_tokens.ts.
-
-| Code | What failed | Client sees |
-|---|---|---|
-| `STS-HWTOKEN-0001` | A hardware token's serial was offered with an evidence source that is not attestation (the FIDO enterprise attestation, a PIV key attestation or a vendor import); nothing was recorded (#1955). | — |
-| `STS-HWTOKEN-0002` | An attestation named no vendor and serial the hardware token register can key a token by; nothing was recorded (#1955). | — |
-| `STS-HWTOKEN-0003` | A credential of an unknown kind, or with an empty reference, was offered to the hardware token register (#1955). | — |
-| `STS-HWTOKEN-0004` | A hardware token's credential named a person with no directory entry to hold it (#1955). | — |
-| `STS-HWTOKEN-0005` | The lost-key act named a hardware token that is not in the realm's register, or (at the portal) not held by the caller (#1955). | HTTP 404 (the page with the sentence) |
-| `STS-HWTOKEN-0006` | The lost-key act named a hardware token already reported lost (#1955). | HTTP 409 (the page with the sentence) |
-| `STS-HWTOKEN-0007` | A credential on a hardware token reported lost could not be retired: its kind's retire action refused or threw. The token is marked lost; the credential named on the audit row is still live and must be removed by hand (#1955). | — |
-| `STS-HWTOKEN-0008` | A retire action for a hardware token credential kind was refused at installation: it named an unknown kind, no label or no retire function (#1955, rule 3e). | — |
-| `STS-HWTOKEN-0009` | A credential on a hardware token reported lost is of a kind no retire action is installed for, so it was not retired and is still live (#1955). | — |
-| `STS-HWTOKEN-0010` | At the portal's lost-key act a credential on the token was registered by another person, so it was left for an administrator to retire (#1955). | — |
-| `STS-HWTOKEN-0011` | A passkey was written and the hardware token register could not record the token its attestation named; the key stands, and the token is recorded when it is next registered (#1955). | — |
-| `STS-HWTOKEN-0012` | A hardware token act named an action that is not one of the page's (#1955). | HTTP 400 (the page with the sentence) |
-| `STS-HWTOKEN-0013` | The hardware token list or the lost-key act failed with an unexpected error at /admin-api; the log line has the stack (#1955). | HTTP 500 |
-
-## STS-OATH
-
-**OATH one-time code tokens.** Counter-based one-time codes (RFC 4226, #1955 P4): the look-ahead, resynchronisation and the counter spent by compare-and-set in the store; and vendor-provisioned tokens imported from a PSKC seed file (RFC 6030), kept unassigned by serial until an administrator assigns one or its holder claims it.
-
-Raised from: common/hotp.ts, common/credentials.ts, common/pskc.ts, common/oath_tokens.ts, mgmt-api/hardware_tokens_api.ts, portal/account_tokens.ts.
-
-| Code | What failed | Client sees |
-|---|---|---|
-| `STS-OATH-0001` | An HOTP code (or a pair given to resynchronise) was not the token's number of digits; it was refused (#1955). | RFC 4226 section 5.3 |
-| `STS-OATH-0002` | A person's HOTP credential could not be read (not JSON this service wrote, or a secret sealed under another key-encryption key); its code was refused rather than the person let through on one factor (#1955). | — |
-| `STS-OATH-0003` | An HOTP code matched no counter in the look-ahead window; it was refused (#1955). | RFC 4226 section 7.4 |
-| `STS-OATH-0004` | Two codes given to resynchronise an HOTP token were not consecutive codes of it within the resync window; nothing was changed (#1955). | RFC 4226 section 7.4 |
-| `STS-OATH-0005` | An HOTP code matched a counter that had already been accepted, by another node, another worker or a request racing this one; it was refused as a replay (#1955). | RFC 4226 section 7.2 |
-| `STS-OATH-0006` | An HOTP code matched and could not be proved unspent, because the store could not be asked to advance its counter; it was refused (#1955). | — |
-| `STS-OATH-0007` | An HOTP code, a resynchronisation or a removal was asked of somebody who holds no HOTP credential (or not the token named) (#1955). | — |
-| `STS-OATH-0008` | An HOTP enrolment or a token claim was refused because the authentication policy has one-time code tokens (hotp) off (#1955). | — |
-| `STS-OATH-0009` | An HOTP enrolment was confirmed after it had expired, or none was pending (#1955). | — |
-| `STS-OATH-0010` | An HOTP secret could not be sealed under the key-encryption key, so it was not written (#1955). | — |
-| `STS-OATH-0011` | The credential store threw or refused while an HOTP credential was read or written (#1955). | — |
-| `STS-OATH-0012` | No credential store is installed, so an HOTP credential could not be enrolled or kept (#1955). | — |
-| `STS-OATH-0013` | An HOTP enrolment was asked for no name, or for a name holding a control character, which no person has (#1955). | — |
-| `STS-OATH-0014` | In product mode an HOTP enrolment was refused for a name with no directory entry (#1955). | — |
-| `STS-OATH-0020` | A PSKC seed file was not XML this service will parse (not well formed, a document type or entity declaration, or too large); nothing was imported (#1955). | RFC 6030 |
-| `STS-OATH-0021` | A PSKC seed file's document element was not a version 1.0 KeyContainer in the urn:ietf:params:xml:ns:keyprov:pskc namespace; nothing was imported (#1955). | RFC 6030 section 4 |
-| `STS-OATH-0022` | A key in a PSKC seed file names an algorithm that is not HOTP or TOTP, or a response format that is not 6 to 8 decimal digits, or a TOTP time origin other than 0; that key was skipped (#1955). | RFC 6030 section 4.3.4 |
-| `STS-OATH-0023` | A PSKC seed file names an encryption, MAC or key-derivation algorithm this service does not open (or an encryption key by a certificate, section 6.3); nothing was imported (#1955). | RFC 6030 section 6 |
-| `STS-OATH-0024` | A PSKC seed file carries its secrets in plaintext and product mode refuses that unless pskc.allowPlaintextImport is on; nothing was imported (#1955). | RFC 6030 section 6 |
-| `STS-OATH-0025` | A PSKC seed file is encrypted and the import supplied no pre-shared key (or no password, for a passphrase-based file), or a key of the wrong length; nothing was imported (#1955). | RFC 6030 section 6.1 |
-| `STS-OATH-0026` | A PSKC seed file's MAC did not verify: the key or password is wrong, or the file was altered; nothing was imported (#1955). | RFC 6030 section 6.1.1 |
-| `STS-OATH-0027` | A PSKC encrypted value did not decrypt (a key that is wrong, or a value that is not an IV and whole blocks), or carries no ValueMAC where its cipher has no integrity of its own; nothing was imported (#1955). | RFC 6030 section 6.1 |
-| `STS-OATH-0028` | A key package in a PSKC seed file names no device serial (DeviceInfo/SerialNo), which is what a token is kept and claimed by; that key was skipped (#1955). | RFC 6030 section 4.3.1 |
-| `STS-OATH-0029` | A PSKC seed file holds more key packages than one import takes, or none; nothing was imported (#1955). | — |
-| `STS-OATH-0030` | A key in a PSKC seed file is already in this realm's token inventory (the same vendor, serial and key id); it was skipped (#1955). | — |
-| `STS-OATH-0040` | No token in this realm's OATH inventory has that key (#1955). | — |
-| `STS-OATH-0041` | An OATH token was assigned or claimed that is already assigned to somebody (#1955). | — |
-| `STS-OATH-0042` | An OATH token was assigned to a name with no directory entry in this realm (#1955). | — |
-| `STS-OATH-0043` | A person's claim of an imported OATH token named a serial no unassigned token has, or a code none of that serial's tokens produced; nothing was assigned (#1955). | — |
-| `STS-OATH-0044` | An imported OATH token was assigned or claimed while the authentication policy has its kind (totp or hotp) off (#1955). | — |
-| `STS-OATH-0045` | The OATH token inventory could not be read or written (#1955). | HTTP 500 |
-| `STS-OATH-0046` | An imported token's secret could not be sealed under the key-encryption key, so the token was not kept (#1955). | — |
-| `STS-OATH-0047` | A lost hardware token's OATH credential could not be retired (#1955). | — |
-| `STS-OATH-0049` | An imported OATH token that is assigned was asked to be removed; it is retired by reporting the token lost instead (#1955). | — |
-| `STS-OATH-0050` | An Account API act on a one-time code token was refused: unknown, or too many attempts in the code budget (#1955). | HTTP 400 |
-
-## STS-YUBIOTP
-
-**Yubico OTP.** Yubico OTP (#1955 P5): a YubiKey OTP slot checked locally with AES-128, an inventory of unassigned tokens, and the YK-VAL 2.0 endpoint. No call is made to YubiCloud.
-
-Raised from: common/yubiotp.ts, common/yubiotp_store.ts, common/credentials.ts, authn/ykval.ts, ldap/ldap_server.js.
-
-| Code | What failed | Client sees |
-|---|---|---|
-| `STS-YUBIOTP-0001` | A YubiKey OTP was not 32 to 48 even modhex characters, or it named no public identity (#1955 P5). | — |
-| `STS-YUBIOTP-0002` | A person holds a YubiKey OTP credential this process cannot read, so it was refused rather than ignored (#1955 P5). | — |
-| `STS-YUBIOTP-0003` | A YubiKey OTP did not decrypt, failed its CRC, or carried another public or private identity than the one enrolled (#1955 P5). | — |
-| `STS-YUBIOTP-0004` | A YubiKey OTP's use and session counters were not strictly above the last accepted pair, so it was a replay (#1955 P5). | — |
-| `STS-YUBIOTP-0005` | A YubiKey OTP matched and its counter could not be spent in the store, so it was refused (#1955 P5). | — |
-| `STS-YUBIOTP-0006` | A YubiKey OTP was checked for a person who holds none (#1955 P5). | — |
-| `STS-YUBIOTP-0007` | Enrolling, assigning or claiming a YubiKey OTP was refused because yubiotp.offered is off or the authentication policy disallows yubico-otp. A credential already held is still checked (#1955 P5). | — |
-| `STS-YUBIOTP-0008` | A YubiKey OTP enrolment had expired before it was confirmed (#1955 P5). | — |
-| `STS-YUBIOTP-0009` | A YubiKey OTP secret or a YK-VAL client key could not be sealed under the key-encryption key, so it was not kept (#1955 P5). | — |
-| `STS-YUBIOTP-0010` | A YubiKey OTP credential could not be written to the directory (#1955 P5). | — |
-| `STS-YUBIOTP-0011` | No credential store is installed, so a YubiKey OTP credential cannot be kept (#1955 P5). | — |
-| `STS-YUBIOTP-0012` | YK-VAL was asked while yubiotp.ykval is off, so the endpoint answered OPERATION_NOT_ALLOWED (#1955 P5). | YK-VAL 2.0 |
-| `STS-YUBIOTP-0013` | A YK-VAL verify request omitted id, otp, nonce or h (#1955 P5). | YK-VAL 2.0 |
-| `STS-YUBIOTP-0014` | A YK-VAL verify request's HMAC-SHA1 did not match the client key (#1955 P5). | YK-VAL 2.0 |
-| `STS-YUBIOTP-0015` | A YK-VAL verify request named a client id this realm has not been given (#1955 P5). | YK-VAL 2.0 |
-| `STS-YUBIOTP-0016` | A YK-VAL nonce was reused inside five minutes (#1955 P5). | YK-VAL 2.0 |
-| `STS-YUBIOTP-0017` | A YK-VAL verify request's OTP did not match an enrolled public identity (#1955 P5). | YK-VAL 2.0 |
-| `STS-YUBIOTP-0018` | A YK-VAL verify request replayed an OTP whose counters were already spent (#1955 P5). | YK-VAL 2.0 |
-| `STS-YUBIOTP-0019` | A plaintext YubiKey CSV was refused in product mode unless yubiotp.allowPlaintextImport is on (#1955 P5). | — |
-| `STS-YUBIOTP-0020` | A YubiKey CSV could not be read as serial, public id, private id and AES key (#1955 P5). | — |
-| `STS-YUBIOTP-0021` | An inventoried YubiKey OTP's secret could not be opened (#1955 P5). | — |
-| `STS-YUBIOTP-0022` | An assigned YubiKey OTP was asked to be removed; it is retired by reporting the token lost (#1955 P5). | — |
-| `STS-YUBIOTP-0023` | No YubiKey OTP with that serial is in this realm's inventory (#1955 P5). | — |
-| `STS-YUBIOTP-0024` | A person's claim of a YubiKey OTP named a serial no unassigned token has, or an OTP that token did not produce (#1955 P5). | — |
-| `STS-YUBIOTP-0025` | A YubiKey OTP carried a zero use counter and a zero session counter, which this service does not accept (#1955 P5). | — |
-| `STS-YUBIOTP-0026` | A YubiKey public identity is already enrolled for somebody else (#1955 P5). | — |
-| `STS-YUBIOTP-0027` | YK-VAL or an LDAP bind could not finish checking a YubiKey OTP (#1955 P5). | — |
-| `STS-YUBIOTP-0028` | A lost hardware token's YubiKey OTP credential could not be retired (#1955 P5). | — |
-| `STS-YUBIOTP-0029` | A YK-VAL client id was not 1 to 16 digits, or that client already exists (#1955 P5). | — |
-| `STS-YUBIOTP-0030` | An operator asked to clear a YubiKey OTP for a person who holds none (#1955 P5). | HTTP 400 (API) or a 303 with error= |
-
-## STS-PIV
-
-**PIV key attestation.** YubiKey PIV key attestation at certificate enrolment (#1955 P2): the request's attestation read and verified against the realm's PIV attestation anchors and its PIN and touch policy, the four PIV slot profiles, the escrow of piv-key-management keys, and the mapping of an outside PIV or CAC card by its card UUID.
-
-Raised from: common/piv_attestation.ts, common/cert_enrollment.ts, common/piv_enrolment.ts, portal/account_tokens.ts, mgmt-api/hardware_tokens_api.ts.
-
-| Code | What failed | Client sees |
-|---|---|---|
-| `STS-PIV-0001` | A shipped PIV attestation certificate (common/pki_piv_anchors.json) did not match its pinned SHA-256 and is not used (#1955). | — |
-| `STS-PIV-0002` | Refused under paranoid PKI mode for piv-attestation: a YubiKey PIV key attestation chain; nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor out of reach). | the use case's refusal (#1360, #1955) |
-| `STS-PIV-0003` | Refused under paranoid PKI mode for piv-card: an outside PIV or CAC card's certificate mapped by its card UUID; the leaf's keyUsage or validity failed, or the use case itself refused. | the use case's refusal (#1360, #1955) |
-| `STS-PIV-0004` | A PIV attestation could not be read: the request's id-aa-attestation attribute is no AttestationBundle, the form's two certificates are not one slot certificate and an f9 certificate, or a server-generated key carried one (#1955). | HTTP 400; EST, SCEP and ACME refuse the request |
-| `STS-PIV-0005` | A PIV attestation certifies a different public key from the certificate request's (#1955). | HTTP 400 |
-| `STS-PIV-0006` | A PIV attestation does not chain to a PIV attestation anchor of the realm (piv.attestationAnchors, Yubico's roots by default), or the realm has none (#1955). | HTTP 400 |
-| `STS-PIV-0007` | A PIV attestation names no serial number (Yubico extension 1.3.6.1.4.1.41482.3.7), so no hardware token can be recorded from it (#1955). | HTTP 400 |
-| `STS-PIV-0008` | A PIV attestation is of another slot than the PIV profile asked is for (9a piv-auth, 9c piv-sign, 9d piv-key-management, 9e piv-card-auth) (#1955). | HTTP 400 |
-| `STS-PIV-0009` | The PIV enrolment form was sent without a certificate request, without a PIV profile, or for a person the caller may not enrol (#1955). | HTTP 400 (the page with the sentence) |
-| `STS-PIV-0010` | A PIV profile was asked without a PIV attestation in a realm that requires one (piv.requireAttestation) (#1955). | HTTP 400 |
-| `STS-PIV-0011` | An attested PIV key's PIN policy is weaker than the realm requires (piv.pinPolicy) (#1955). | HTTP 400 |
-| `STS-PIV-0012` | An attested PIV key's touch policy is weaker than the realm requires (piv.touchPolicy) (#1955). | HTTP 400 |
-| `STS-PIV-0013` | A piv-card-auth (slot 9e) certificate was refused at a sign-in, because that key works without a PIN (piv.cardAuthSignIn) (#1955). | the TLS sign-in and PKINIT refusals |
-| `STS-PIV-0014` | A certificate was issued from a verified PIV attestation and the hardware token register could not record its token; the certificate stands and earns no hardware claim (#1955). | — |
-| `STS-PIV-0016` | A PIV enrolment or key-recovery act failed with an unexpected error; the log line has the stack (#1955). | HTTP 500 |
-| `STS-PIV-0020` | A piv-key-management key was to be escrowed and no key-encryption key is held to seal it, so it was neither generated nor kept (#1955, D7). | HTTP 503 |
-| `STS-PIV-0021` | EST /serverkeygen was asked for a piv-key-management key in a realm that does not escrow them (piv.keyEscrow): a server-generated 9d key exists only to be escrowed (#1955, D7). | HTTP 501 |
-| `STS-PIV-0022` | An escrowed key was asked for and no escrowed piv-key-management key is held for that certificate on that person (#1955, D7). | HTTP 404 |
-| `STS-PIV-0023` | An administrator's recovery of an escrowed key was refused by the access-control policy: the caller does not hold PIV_KEY_RECOVERY (roles.pivKeyRecoveryGroup), or no policy decider is installed (#1955, D7). | HTTP 403 |
-| `STS-PIV-0024` | An escrowed key could not be opened (its data encryption key is not held, or the sealed value is damaged) (#1955, D7). | HTTP 503 |
-| `STS-PIV-0025` | An escrowed certificate could not be attached to a hardware token: the token is not the caller's, is lost, or the certificate is not an escrowed one of theirs (#1955, D7). | HTTP 404 |
-| `STS-PIV-0030` | An outside PIV or CAC card's certificate, from an issuer in piv.externalIssuers, was not mapped: it asserts none of piv.externalPolicyOids, or does not carry exactly one urn:uuid subjectAltName (#1955, D8). | the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468) |
-| `STS-PIV-0031` | An outside PIV or CAC card's certificate names a card UUID that is in stsPivCardUuid on no person of the realm (#1955, D8). | the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468) |
-| `STS-PIV-0032` | An outside PIV or CAC card's card UUID is in stsPivCardUuid on more than one person, so it names nobody (#1955, D8). | the outside-certificate refusal (STS-TLS-0055, STS-AUTHN-0469) |
-| `STS-PIV-0034` | A value written to stsPivCardUuid is not a card UUID in RFC 9562 form (or is the nil UUID); nothing was written (#1955, D8). | HTTP 400 (the directory write); LDAP constraintViolation |
-| `STS-PIV-0035` | A card UUID written to stsPivCardUuid is already held by another entry of the realm, which would make the card name two people; nothing was written (#1955, D8). | HTTP 400 (the directory write); LDAP constraintViolation |
-
-## STS-OPENPGP
-
-**OpenPGP keys and mail encryption.** A person's OpenPGP public key registered with a proof of possession (#1955 P6), its publication in the Web Key Directory, their S/MIME certificate, and how mail to them is encrypted.
-
-Raised from: common/openpgp_keys.ts, common/crypto.js (section 19), portal/account_openpgp.ts, mgmt-api/openpgp_api.ts.
-
-| Code | What failed | Client sees |
-|---|---|---|
-| `STS-OPENPGP-0001` | An OpenPGP public key offered for registration did not read: it was empty, larger than the 64 KiB this service reads, more than one key, or not an OpenPGP key at all (#1955). | HTTP 400 (the page with the sentence) |
-| `STS-OPENPGP-0002` | A SECRET OpenPGP key was offered for registration; nothing was stored. The person is told to export the public key (#1955). | HTTP 400 (the page with the sentence) |
-| `STS-OPENPGP-0003` | An OpenPGP key offered for registration is revoked or has expired (#1955). | HTTP 400 (the page with the sentence) |
-| `STS-OPENPGP-0004` | An OpenPGP key, or the subkey that made its proof, uses an algorithm the allow list refuses (DSA, ElGamal, a Brainpool curve, or RSA shorter than openpgp.minRsaBits), or has no valid signing key (#1955). | HTTP 400 (the page with the sentence) |
-| `STS-OPENPGP-0005` | No valid user id of an OpenPGP key offered for registration carries the address on the person's entry (#1955). | HTTP 400 (the page with the sentence) |
-| `STS-OPENPGP-0006` | A person with no mail address asked for an OpenPGP registration challenge, or offered a key; a key is registered for the address its user id names (#1955). | HTTP 400 (the page with the sentence) |
-| `STS-OPENPGP-0007` | The proof of possession offered with an OpenPGP key is not a readable cleartext-signed message (gpg --clearsign) (#1955). | HTTP 400 (the page with the sentence) |
-| `STS-OPENPGP-0008` | The proof of possession offered with an OpenPGP key does not verify, or was made by a key that is not a signing key of it (#1955). | HTTP 400 (the page with the sentence) |
-| `STS-OPENPGP-0009` | The text an OpenPGP proof of possession signs is not the challenge this service issued the person (#1955). | HTTP 400 (the page with the sentence) |
-| `STS-OPENPGP-0010` | An OpenPGP proof of possession was signed before the challenge was issued or after now, beyond openpgp.signatureSkewS (#1955). | HTTP 400 (the page with the sentence) |
-| `STS-OPENPGP-0011` | No value of a person's userSMIMECertificate holds a certificate that can receive S/MIME now (expired, an unsupported key, a key usage or extended key usage that excludes it), so mail to them cannot be S/MIME-encrypted (#1955). | log only |
-| `STS-OPENPGP-0012` | An OpenPGP key was offered with no outstanding challenge for the person, a lapsed one, or one already spent by another request (#1955). | HTTP 400 (the page with the sentence) |
-| `STS-OPENPGP-0013` | An OpenPGP operation named a person with no entry in the realm (#1955). | HTTP 404 |
-| `STS-OPENPGP-0014` | An OpenPGP operation named an unknown action, or an unknown mail encryption choice (#1955). | HTTP 400 |
-| `STS-OPENPGP-0015` | A person with no OpenPGP key registered asked to remove or publish one (#1955). | HTTP 400 (the page with the sentence) |
-| `STS-OPENPGP-0016` | A person chose OpenPGP for their mail while no registered key of theirs has an encryption key valid now (#1955). | HTTP 400 (the page with the sentence) |
-| `STS-OPENPGP-0017` | A person chose S/MIME for their mail while their userSMIMECertificate holds no certificate that can receive (#1955). | HTTP 400 (the page with the sentence) |
-| `STS-OPENPGP-0018` | An S/MIME certificate offered for a person's entry is not a certificate, cannot receive S/MIME now, or does not name the address on the entry (#1955). | HTTP 400 (the page with the sentence) |
-| `STS-OPENPGP-0019` | An OpenPGP key, a publication choice, a mail encryption choice or an S/MIME certificate verified but could not be written to the person's entry (#1955). | HTTP 500 |
-| `STS-OPENPGP-0020` | An OpenPGP operation was asked before the directory filled its slot (ldap/ldap_server.js), so no person could be read (#1955). | HTTP 500 |
-| `STS-OPENPGP-0021` | A Web Key Directory request named a domain or a hashed local part that is not one (#1955). | HTTP 404 |
-| `STS-OPENPGP-0022` | A Web Key Directory request named a domain no realm serves: openpgp.wkd is off, or no realm's openpgp.wkdDomains (or own domain) is it (#1955). | HTTP 404 |
-| `STS-OPENPGP-0023` | A Web Key Directory lookup threw; the client is told the key could not be read (#1955). | HTTP 500 |
-| `STS-OPENPGP-0024` | A Web Key Directory request named an address with no published key: nobody holds it, the person did not opt in, the key was removed or replaced, or it expired (#1955). | HTTP 404 |
-| `STS-OPENPGP-0025` | An OpenPGP operation of the account API or the management API threw (#1955). | HTTP 500 |
-
 ## STS-SVCACCT
 
 **Service accounts.** Service accounts (#221): person entries carrying stsServiceAccount, the service-account policy that governs them (the third kind on Directory → Policies), the doors that policy closes, and the rotation that pushes a new password to a secrets manager before committing it.
@@ -5424,34 +5210,6 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0300` | A reverse-proxy route's `path` is /.iya-pep or under /.iya-pep/, the prefix the proxy reserves for its own callback and sign-out (#1830): an updated PEP refuses the whole configuration. | HTTP 400 on /admin-api; configured: false at the pull |
 | `STS-XACML-0301` | issue-pep-credential named a service account that does not hold REMOTE_PEPS (it is not in the group roles.remotePepGroup names), so the key would authenticate an entry no PEP door admits (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-XACML-0302` | issue-pep-credential certified and registered the new key, and revokePrevious could not revoke one of the entry's other RFC 7523 keys; the new key works, and the old one still does too (#1827, phase 3). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-XACML-0303` | A role was written with a membership mode other than static or dynamic-selectable (#1072). | — |
-| `STS-XACML-0304` | A dynamic selectable role was written with a member or a conferring client (#1072): such a role is held by nobody and offered at sign-in, so the write was refused, whether it made a role with members dynamic or added a member to a dynamic role. | — |
-| `STS-XACML-0305` | A console or native role was to be made dynamic selectable (#1072); their holders are fixed, so the write was refused. | — |
-| `STS-XACML-0306` | A dynamic role's selection was neither optional nor required (#1072). | — |
-| `STS-XACML-0307` | A dynamic role's exclusive group was not a name of up to 64 letters, digits and . _ : - (#1072). | — |
-| `STS-XACML-0308` | A role only applications may hold was to be made dynamic selectable (#1072); a dynamic role is chosen by a person at sign-in. | — |
-| `STS-XACML-0309` | The selection of a static role was to be set (#1072); only a dynamic selectable role is chosen at sign-in. | — |
-| `STS-XACML-0310` | A dynamic role's eligibility policy (xacmlRole, #1072) was to be made the root of the repository; it is decided alone, for one role, so the write was refused. | — |
-| `STS-XACML-0311` | A dynamic role's eligibility was asked about, or its policy set, for a role this realm does not hold (#1072); nobody is eligible. | — |
-| `STS-XACML-0312` | A static role was asked about as a dynamic one, or given an eligibility policy (#1072); only a dynamic selectable role is offered. | — |
-| `STS-XACML-0313` | A dynamic role has no eligibility policy (#1072), so nobody is eligible for it. | — |
-| `STS-XACML-0314` | A dynamic role names an eligibility policy that is not in ou=policies (#1072); nobody is eligible for it. | — |
-| `STS-XACML-0315` | A dynamic role names a policy that is not its own: it carries another role's xacmlRole, or none (#1072). It is never adopted, and nobody is eligible. | — |
-| `STS-XACML-0316` | A dynamic role's eligibility policy is disabled (#1072); nobody is eligible. | — |
-| `STS-XACML-0317` | A dynamic role's eligibility policy does not parse (#1072); nobody is eligible. | — |
-| `STS-XACML-0318` | A dynamic role's eligibility could not be decided: the PDP met a processing or syntax error, or the decision threw (#1072). The person is not eligible. | — |
-| `STS-XACML-0319` | A person is not eligible for a dynamic role: its policy did not answer Permit, or no person was named (#1072). | — |
-| `STS-XACML-0320` | A dynamic role that belongs to one application was asked about for a sign-in to another (#1072); it is offered only on its own application's. | — |
-| `STS-XACML-0321` | A dynamic role's eligibility policy was given as neither or both of document (XACML XML) and alfa (#1072). | — |
-| `STS-XACML-0322` | A dynamic role would not take the reference to its new eligibility policy (#1072); a new policy was taken back. | — |
-| `STS-XACML-0324` | The reader of a session's chosen dynamic roles threw while roles were resolved (#1072); no dynamic role was held. | — |
-| `STS-XACML-0325` | A sign-in's role step was submitted with a role it did not offer (#1072): fabricated, from another realm, application or sign-in, or not eligible when the step was drawn. Nothing was chosen. | HTTP 400 |
-| `STS-XACML-0326` | A sign-in's role step was submitted with two roles of one exclusive group (#1072). Nothing was chosen. | HTTP 400 |
-| `STS-XACML-0327` | A sign-in's role step was submitted without any of the required roles it offered (#1072). Nothing was chosen. | HTTP 400 |
-| `STS-XACML-0328` | A role chosen at a sign-in's role step was no longer eligible when it was submitted (#1072); the step is drawn again. | HTTP 400 |
-| `STS-XACML-0329` | A session was refused at a door that cannot draw the role step (federation, a wallet, SPNEGO, a certificate) because a required dynamic role was offered to the person (#1072). | — |
-| `STS-XACML-0330` | A sign-in held for the role step had no pending sign-in to draw the step on, so it was refused (#1072). | — |
-| `STS-XACML-0331` | A remote PEP's heartbeat was refused: a member its entry stores carries a value the service cannot hold (fuzz run #595) — a counter that is not a non-negative integer of at most 2^53 - 1, a text member that is not a string or carries a control character, or signals, settings or listeners that are not an object or null. Nothing of it is recorded; the refusal names the member. | none — 400 invalid_request on POST /xacml/pep/heartbeat |
 
 ## STS-XPEP
 
@@ -5705,19 +5463,6 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0119` | A remote PEP's access token at /access/v1 does not carry authzen:evaluate, or sts-remote-pep no longer holds the delegated permission grant of it on sts-authzen-api (#1827). | HTTP 403, WWW-Authenticate: DPoP error="insufficient_scope" |
 | `STS-AUTHZEN-0120` | A remote PEP's access token at /access/v1 names no entry under this realm's ou=users, or one that does not hold REMOTE_PEPS: the token of the client every PEP shares admits only a remote PEP (#1827). | HTTP 401 (no entry) or 403 (not a remote PEP) |
 | `STS-AUTHZEN-0121` | A remote PEP's access token arrived at /access/v1 while xacml.pepAuthentication is certificate, which accepts a remote PEP only by its client certificate (#1827). | HTTP 401, WWW-Authenticate: DPoP error="invalid_token" |
-| `STS-AUTHZEN-0122` | An AuthZEN access request submission did not carry Content-Type: application/json, which AuthZEN 1.0 section 10.1 requires; refused before its body was read (#936). | HTTP 415 Unsupported Media Type (RFC 9110 section 15.5.16), application/problem+json (RFC 9457) |
-| `STS-AUTHZEN-0123` | An RFC 8693 token exchange was not issued because authzen.externalPdpUrl is empty, will not parse, is not absolute https, or carries a userinfo, query or fragment. The external AuthZEN PDP was not dialled (#1200). | HTTP 503 temporarily_unavailable (the client is not told the code or the address) |
-| `STS-AUTHZEN-0124` | An RFC 8693 token exchange was not issued because the external AuthZEN PDP gave no answer: federation.outbound is off, the PDP was unreachable or timed out, the dial threw, or the PDP answered a non-2xx. The local decision is not issued in its place (#1200). | HTTP 503 temporarily_unavailable |
-| `STS-AUTHZEN-0125` | An RFC 8693 token exchange was not issued because the external AuthZEN PDP refused a subject or requesting-party gate. Which gate is not told to the client (#1200). | HTTP 400 invalid_request |
-| `STS-AUTHZEN-0126` | An RFC 8693 token exchange was not issued because the external AuthZEN PDP answered 2xx with a body that is not the batch's decision: not JSON, a missing or differently sized evaluations array, an item that is not an object, a decision that is not a boolean, or an item carrying context.error (#1200). | HTTP 503 temporarily_unavailable |
-| `STS-AUTHZEN-0127` | An RFC 8693 token exchange was not issued because the client certificate or key for the external AuthZEN PDP is empty, unreadable, outside security.fileRoots, or not a PEM, or a named CA file is. The PDP was not dialled (#1200). | HTTP 503 temporarily_unavailable |
-| `STS-AUTHZEN-0128` | An AuthZEN authorization-detail tuple named somebody other than the exchange subject. The binding adds requesting-party tuples for scopes on a Txn-Token only, so a cell for the party is the same refusal; answered false (#1201). | decision: false |
-| `STS-AUTHZEN-0129` | An AuthZEN authorization-detail cell is not granted: its type could not be read or is no longer declared, or, where the type's application enforces fine-grained authorization, the cell is not covered by the subject token's authorization_details or the subject token was not issued here (#1201). | decision: false |
-| `STS-AUTHZEN-0130` | An application that enforces fine-grained authorization refused an AuthZEN authorization-detail cell of one of its types; answered false (#1201). | decision: false |
-| `STS-AUTHZEN-0131` | The authorization-detail types could not be read while an AuthZEN token-exchange batch was planned or a cell was decided, so no detail tuple is recognized from that read (#1201). | none — logged; a cell already recognized is answered false (STS-AUTHZEN-0129) |
-| `STS-AUTHZEN-0132` | An AuthZEN token-exchange subject gate was given an issuance audience that is not an array of that gate's resource id. It would broaden the target, so it is not sent (#1201). | none — logged; the envelope is sent without it |
-| `STS-AUTHZEN-0133` | An AuthZEN token-exchange subject gate was given an issuance claim that is reserved, is not on the subject token, or is wider than the subject token's value. It is not sent (#1201). | none — logged; the envelope is sent without that claim |
-| `STS-AUTHZEN-0134` | An AuthZEN token-exchange subject gate was given an empty issuance audience, which withdraws that gate's target; answered false (#1201). | decision: false |
 
 ## STS-FGA
 
@@ -6151,8 +5896,6 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0948` | An uploaded WS-Trust decryption key pair was refused for its key type: XML Encryption here unwraps a content key with RSA of at least 2048 bits or EC on P-256, P-384 or P-521 and nothing else. Nothing was written (#1668). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0949` | An uploaded WS-Trust decryption certificate was refused because its keyUsage leaves out keyEncipherment (an RSA key) or keyAgreement (an EC key), or its validity has ended. Nothing was written (#1668). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0950` | An application's WS-Trust decryption key pair was asked to be issued, uploaded or removed and the realm's registry holds no such application, or a remove found no key pair on it, or an uploaded certificate is already another application's. Nothing was written (#1668). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-ADMIN-0951` | An operator's import of a legacy U2F security key named nobody (#1955). | HTTP 400 (API) |
-| `STS-ADMIN-0952` | An operator's import of a legacy U2F security key was refused; the inner code says why — the AppID, the key handle, the public key, the counter, or the writer's own rules (#1955). | HTTP 400 (API) |
 
 ## STS-API
 

@@ -1,7 +1,7 @@
 # CLAUDE.md — `gnap/`
 
 **The Grant Negotiation and Authorization Protocol** (RFC 9635) and its
-**resource server connections** (RFC 9767), added 2026-09-12. `docs/v1.1.0/gnap.md` is
+**resource server connections** (RFC 9767), added 2026-09-12. `docs/v1.2.0/gnap.md` is
 the user-facing half; this is why it is built the way it is.
 
 ## What was asked for, and the four decisions that shaped it
@@ -170,7 +170,7 @@ is ONE require in the require order — and three `register()` calls, `gnap`,
 * **`/:as/gnap` matches `/admin/gnap`.** Reserved first segments fall through
   (`RESERVED_AS_NAMES`); the console route is registered later and still wins.
 * **A JWT's type is its HEADER `typ`, `gnap-at+jwt` (#157, 2026-10-05).** Until
-  then the header said `JWT`, `docs/v1.1.0/gnap.md` said it said `GNAP`, and
+  then the header said `JWT`, `docs/v1.2.0/gnap.md` said it said `GNAP`, and
   `GnapTokens.verify()` read the PAYLOAD's `typ: GNAP` — the token register's
   private marker, the same kind as OAuth's `Bearer`. Every JWT a realm signs
   uses one key, so explicit typing (RFC 8725 section 3.11) is what tells a
@@ -189,7 +189,7 @@ in the original token's audience — and could then ADD any right registered for
 a downstream resource server. They are Kerberos's S4U2Self and S4U2Proxy in
 another protocol, so `gnap_delegation.ts` puts **#186's two questions** to the
 issuance policy through `common/delegation_policy.ts`, exactly as the token
-exchange, WS-Trust and the KDC do (`common/CLAUDE.md` rule 3az, `docs/v1.1.0/delegation.md`).
+exchange, WS-Trust and the KDC do (`common/CLAUDE.md` rule 3az, `docs/v1.2.0/delegation.md`).
 
 * **No GNAP setting decides who may act.** rcbj's #186 rule is one set of
   controls on the entries for every protocol, and GNAP is a fourth protocol
@@ -538,7 +538,7 @@ introspection. Each format now gets the mechanism it HAS, and none is invented:
 |---|---|---|
 | `jwt-signed`, `jwt-encrypted` | a Token Status List `status.status_list` claim, in the realm's ONE access-token list it shares with OAuth's RFC 9068 tokens (rcbj's decision 4) | `oauth-oidc/access_token_status.ts`, which argues the list; `gnap_tokens.ts` allocates in `mint()` |
 | `biscuit` | the revoked tokens' revocation identifiers at `GET /gnap/biscuit/revocations` — **this service's own**, since no document says where a biscuit revocation list is published | `token_biscuit.ts` (read at mint), `gnap_store.ts` (`saveToken()`), `gnap.ts` |
-| `macaroon`, `zcap` | **none** — introspection, or a short `gnap.accessTokenLifetimeS` and rotation; documented in `docs/v1.1.0/gnap.md`, no format invented | — |
+| `macaroon`, `zcap` | **none** — introspection, or a short `gnap.accessTokenLifetimeS` and rotation; documented in `docs/v1.2.0/gnap.md`, no format invented | — |
 
 Why each piece is where it is:
 
@@ -1232,7 +1232,7 @@ federation and XACML — its header argues the placement):
 `gnap.zcapCryptosuite`, per realm: **`eddsa-jcs-2022` by default**,
 `mldsa44-jcs-2024` and `slhdsa128-jcs-2024` (post-quantum, W3C FPWD), and
 `Ed25519Signature2020` **for compatibility only, with a warning in
-`docs/v1.1.0/gnap.md`**. `token_zcap.ts`'s header argues the choice from the texts:
+`docs/v1.2.0/gnap.md`**. `token_zcap.ts`'s header argues the choice from the texts:
 RFC 9767 names ZCAP-LD v0.3, which requires a Data Integrity proof and pins no
 suite, and ZCAP-LD v0.4.0-rc.6 uses `eddsa-jcs-2022` in every example. Four
 things a reader will otherwise rediscover:

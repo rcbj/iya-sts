@@ -19,7 +19,7 @@
 //
 // **WHAT A PROTOCOL REQUEST CAN PROVE GROWS PER PHASE**, by `phase` in the table:
 // a setting governs nothing until its sites are wired, which
-// `docs/v1.1.0/pki-use-cases.md` says of each. Phase 0 wires
+// `docs/v1.2.0/pki-use-cases.md` says of each. Phase 0 wires
 // `anchor-admission` at the client-certificate truststore, whose mode is asked
 // in the DEFAULT realm because a handshake has no realm. So that section writes
 // to the default realm, which is why this job is `exclusive`, and puts it back

@@ -76,7 +76,7 @@
 //                            said no. `allow` is the default because most
 //                            passkeys people hold are synced, and refusing
 //                            them is a realm's deliberate choice of
-//                            device-bound keys (docs/v1.1.0/authentication.md).
+//                            device-bound keys (docs/v1.2.0/authentication.md).
 //
 // #529 (2026-10-08) added three rows for a security key's PIN, CTAP 2.1
 // section 12.4's minPinLength extension:

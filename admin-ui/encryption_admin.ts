@@ -594,7 +594,7 @@ const NOTES = Object.freeze({
     'That layer is the operator\'s — LUKS or an encrypted ZFS dataset ' +
     'under PGDATA, a cloud disk with a customer-managed key, or one of ' +
     'the PostgreSQL forks that has TDE, since the community build has ' +
-    'none. docs/v1.1.0/encryption-at-rest.md is this repository\'s write-up ' +
+    'none. docs/v1.2.0/encryption-at-rest.md is this repository\'s write-up ' +
     'of the options.',
   keyResidency:
     'AND THE KEY MUST NOT LIVE ON THE DISK IT PROTECTS. A key file on ' +

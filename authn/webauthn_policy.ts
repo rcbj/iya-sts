@@ -360,7 +360,9 @@ class WebauthnPolicy {
       minPinLength: passkeyPolicy.pinLengthRule(passkeys).enforce,
       // WHAT A REGISTRATION ASKS OF A SECURITY KEY'S CREDENTIAL PROTECTION
       // (#1955 P7): the passkey policy's credProtect, `''` for none, and
-      // whether the browser is asked to enforce it.
+      // whether the browser is asked to enforce it. credProtect is a
+      // policy extension. The signature algorithms stay
+      // `webauthn.algorithms`, which already offers ML-DSA.
       credProtect: passkeyPolicy.credProtectRule(passkeys).policy,
       enforceCredProtect: passkeyPolicy.credProtectRule(passkeys).enforce,
       mfaAllowed: config.value('webauthn.mfaAllowed') !== false,
@@ -2237,7 +2239,8 @@ class WebauthnPolicy {
       // `enforceCredentialProtectionPolicy` — flat here, as credProps and
       // minPinLength are, and made `extensions` by the browser runtime
       // (`WebWebAuthn.creationExtensions()`). Absent while the passkey
-      // policy asks for none, so the options are what they were.
+      // policy asks for none, so the options are what they were. It names
+      // no signature algorithm: that list is `algorithms` above.
       credProtect: live.credProtect
         ? { credentialProtectionPolicy: live.credProtect,
             enforceCredentialProtectionPolicy: live.enforceCredProtect }

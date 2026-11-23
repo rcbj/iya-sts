@@ -1214,7 +1214,7 @@ const SCHEMA_ROUTINES = [
 // fall between the count and the first trigger. Only when the counters hold
 // nothing: a second run, a second process, or the script after the driver,
 // adds nothing. Linear in the rows, ONCE: at 200M a long first start, said
-// in `docs/v1.1.0/postgres-schema.md`.
+// in `docs/v1.2.0/postgres-schema.md`.
 // ---------------------------------------------------------------------------
 const LOCK_FOR_BACKFILL =
   'LOCK TABLE sts_ldap_entries IN SHARE ROW EXCLUSIVE MODE';

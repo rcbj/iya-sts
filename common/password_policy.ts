@@ -1159,7 +1159,7 @@ class PasswordPolicy {
 
   // A name in a password is the first thing guessed (#1505, ASVS 5.0.0
   // 6.1.2, 6.2.11). The list is the service's own names, this realm's name and
-  // domain, and `security.passwordContextWords`; docs/v1.1.0/password-words.md
+  // domain, and `security.passwordContextWords`; docs/v1.2.0/password-words.md
   // is the documentation of it. Letters swapped for look-alikes count, and `1`
   // is tried as both of the letters it stands for.
   private contextWordIn(password: string): string {

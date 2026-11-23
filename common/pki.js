@@ -1052,7 +1052,7 @@ function signatureForIssuer(parent, preferred, subjectKeyAlg) {
 // encoder writing what it is handed is defensible; handing it a time with
 // milliseconds in it is what this module was doing wrong. The parent project
 // should still drop fractional seconds on the way out — that is its bug to
-// fix, and `docs/v1.1.0/parent-project-migration.md` is where this repository
+// fix, and `docs/v1.2.0/parent-project-migration.md` is where this repository
 // records what it owes that one.
 // ---------------------------------------------------------------------------
 function certificateInstant(at) {
@@ -14756,11 +14756,24 @@ function sshKeyFields(type, reader) {
       { kty: 'OKP', crv: 'Ed25519', x: b64u(pk) }), curve: '', sk: true,
              application: application };
   }
+  // THIS SERVICE'S OWN NAME. OpenSSH defines no ML-DSA key type. The body
+  // is the raw public key, the same shape as ssh-ed25519's one string.
+  // There is no node key: a caller verifies with the raw bytes.
+  if (type === 'ssh-mldsa-65') {
+    const pk = reader.string();
+    if (pk.length !== 1952) {
+      log.debug("Leaving sshKeyFields(). A bad ML-DSA-65 key.");
+      // error-code: none — see sshReader()
+      throw new Error('an ML-DSA-65 SSH key is 1952 bytes');
+    }
+    log.debug("Leaving sshKeyFields(). ML-DSA-65.");
+    return { key: null, raw: pk, curve: '', pq: true };
+  }
   log.debug("Leaving sshKeyFields(). Unsupported.");
   // error-code: none — see sshReader()
   throw new Error('the SSH key type ' + type + ' is not supported (ssh-rsa, ' +
-                  'ecdsa-sha2-nistp256/384/521, ssh-ed25519 and the two ' +
-                  'security-key types are)');
+                  'ecdsa-sha2-nistp256/384/521, ssh-ed25519, ssh-mldsa-65 ' +
+                  'and the two security-key types are)');
 }
 
 // A packed list of name-value pairs (critical options, extensions).
@@ -14787,8 +14800,9 @@ function sshOptions(bytes) {
  * `ssh.ParsePublicKey()`.
  *
  * @param blob - the wire-format bytes
- * @returns `{ type, key, curve, blob }` for a key; a certificate adds its
- *   fields, `signatureKey`, `signature` and `signed` (the signed bytes)
+ * @returns `{ type, key, curve, blob, raw }` for a key (`raw` is the
+ *   ML-DSA public key); a certificate adds its fields, `signatureKey`,
+ *   `signature` and `signed` (the signed bytes)
  * @throws Error on anything unreadable
  */
 function parseSshPublicKey(blob) {
@@ -14804,8 +14818,11 @@ function parseSshPublicKey(blob) {
       throw new Error('trailing bytes after the SSH public key');
     }
     log.debug("Leaving parseSshPublicKey(). A key.");
+    // raw is the ML-DSA public key. Classical algorithms leave it unset
+    // and carry the key in `key` instead.
     return { type: type, key: fields.key, curve: fields.curve, blob: bytes,
-             sk: !!fields.sk, application: fields.application || '' };
+             raw: fields.raw || null, sk: !!fields.sk,
+             application: fields.application || '' };
   }
   const keyType = type.slice(0, -SSH_CERT_SUFFIX.length);
   const nonce = reader.string();
@@ -14842,7 +14859,8 @@ function parseSshPublicKey(blob) {
   log.debug("Leaving parseSshPublicKey(). A certificate.");
   return {
     type: keyType, certType: type, key: fields.key, curve: fields.curve,
-    sk: !!fields.sk, application: fields.application || '',
+    raw: fields.raw || null, sk: !!fields.sk,
+    application: fields.application || '',
     blob: bytes, nonce: nonce, serial: serial, kind: kind, keyId: keyId,
     principals: principals, validAfter: validAfter, validBefore: validBefore,
     criticalOptions: criticalOptions, extensions: extensions,
@@ -15031,6 +15049,14 @@ async function checkSshHostCertificate(cert, principal, authorities,
 // ecdsa-sha2-nistp256/384/521 or RFC 8332's rsa-sha2-256 and rsa-sha2-512,
 // NEVER `ssh-rsa` (SHA-1), which OpenSSH itself has refused by default since
 // 8.8.
+//
+// OPENSSH DEFINES NO POST-QUANTUM USER CERTIFICATE. A second authority,
+// `sshUserCaPqc`, signs with this service's own `ssh-mldsa-65` (a raw
+// ML-DSA-65 public key and a raw signature, the ssh-ed25519 shape) when the
+// runtime can generate one. The line `/pki/ssh-user-ca` publishes is always
+// the classical authority: a peer's TrustedUserCAKeys file cannot be asked
+// to parse an algorithm OpenSSH does not name. `pki.sshUserCaPqcOnly`
+// changes what a NEW certificate is signed with, not that published line.
 // ---------------------------------------------------------------------------
 
 const SSH_USER_CA_USE_CASE = 'ssh-user-ca';
@@ -15053,7 +15079,7 @@ async function sshUserCaForAsync(scopeId) {
   try {
     const answer = await oneBuildInTheCluster(id, 'sshUserCa', existing,
       async function () {
-        const key = await generateSshCaKey('ssh-ed25519');
+        const key = await generateSshCaKey(sshClassicalCaAlgorithm());
         const row = Object.assign({}, rawRowFor(id) || {}, {
           sshUserCa: {
             algorithm: key.algorithm,
@@ -15068,6 +15094,11 @@ async function sshUserCaForAsync(scopeId) {
         return { ok: true, ca: row.sshUserCa };
       }, { claim: SSH_USER_CA_USE_CASE + ':' + id,
            label: 'the realm\'s SSH user CA' });
+    if (answer && answer.ok) {
+      // The sibling is best-effort. A runtime that cannot generate ML-DSA
+      // keeps the classical authority and does not fail the realm.
+      await ensureSshUserCaPqc(id);
+    }
     log.debug("Leaving sshUserCaForAsync(). " +
               (answer && answer.ok ? 'Ready.' : 'Refused.'));
     return answer;
@@ -15086,7 +15117,8 @@ async function sshUserCaForAsync(scopeId) {
  * Answers the realm's OpenSSH `TrustedUserCAKeys` line.
  *
  * @param scopeId - the realm
- * @returns `{ ok, publicLine, fingerprint }`, or a marked refusal
+ * @returns `{ ok, publicLine, fingerprint, pqcPublicLine,
+ *   pqcFingerprint }`, or a marked refusal
  */
 async function sshUserCaPublicKeyAsync(scopeId) {
   log.debug("Entering sshUserCaPublicKeyAsync().");
@@ -15095,9 +15127,16 @@ async function sshUserCaPublicKeyAsync(scopeId) {
     log.debug("Leaving sshUserCaPublicKeyAsync(). Refused.");
     return answer;
   }
+  const row = rawRowFor(realmIdOf(scopeId)) || {};
+  const pqc = row.sshUserCaPqc;
   log.debug("Leaving sshUserCaPublicKeyAsync().");
+  // `publicLine` is the classical key only. `pqcPublicLine` is the sibling
+  // for an operator who asked for ML-DSA certificates. The HTTP body is
+  // `publicLine` alone: OpenSSH's TrustedUserCAKeys line stays classical.
   return { ok: true, publicLine: answer.ca.publicLine,
-           fingerprint: answer.ca.fingerprint };
+           fingerprint: answer.ca.fingerprint,
+           pqcPublicLine: pqc ? pqc.publicLine : '',
+           pqcFingerprint: pqc ? pqc.fingerprint : '' };
 }
 
 /**
@@ -15149,36 +15188,56 @@ async function issueSshUserCertificateAsync(scopeId, spec) {
     log.debug("Leaving issueSshUserCertificateAsync(). No CA.");
     return caAnswer;
   }
-  const now = Math.floor(Date.now() / 1000);
-  let serial = BigInt('0x' + stsCrypto.randomBytes(8).toString('hex')) &
-               BigInt('0x7fffffffffffffff');
-  if (serial === BigInt(0)) {
-    serial = BigInt(1);
+  const pqcAnswer = await ensureSshUserCaPqc(id);
+  const pqcCa = pqcAnswer && pqcAnswer.ok ? pqcAnswer.ca : null;
+  // pqcOnly signs the new certificate with the ML-DSA authority when that
+  // key exists. It does not exist on a runtime that cannot generate
+  // ML-DSA, and the certificate stays classical rather than failing.
+  // Alongside issues both. The published TrustedUserCAKeys line is neither.
+  const onlyPqc = sshUserCaPqcOnly() && !!pqcCa;
+  const beside = sshUserCaAlongside() && !!pqcCa;
+  const cas = [];
+  if (!onlyPqc) {
+    cas.push({ ca: caAnswer.ca, member: 'sshUserCa' });
   }
-  const serialHex = serial.toString(16);
+  if (onlyPqc || beside) {
+    cas.push({ ca: pqcCa, member: 'sshUserCaPqc' });
+  }
+  const now = Math.floor(Date.now() / 1000);
   const validAfter = now - 30;
   const validBefore = now + seconds;
   try {
-    const certificate = buildSshCertificate({
-      subjectBlob: subject.blob, serial: serial,
-      keyId: 'sts:' + serialHex, principals: principals,
-      validAfter: validAfter, validBefore: validBefore,
-      criticalOptions: {}, extensions: [],
-      caAlgorithm: caAnswer.ca.algorithm,
-      caPrivateKey: caAnswer.ca.privateKeyPem,
-      caPublicBlob: Buffer.from(caAnswer.ca.publicBlobB64, 'base64')
+    const signed = cas.map(function (one) {
+      const serial = nextSshUserSerial();
+      const serialHex = serial.toString(16);
+      const certificate = buildSshCertificate({
+        subjectBlob: subject.blob, serial: serial,
+        keyId: 'sts:' + serialHex, principals: principals,
+        validAfter: validAfter, validBefore: validBefore,
+        criticalOptions: {}, extensions: [],
+        caAlgorithm: one.ca.algorithm,
+        caPrivateKey: one.ca.privateSeedB64
+          ? Buffer.from(one.ca.privateSeedB64, 'base64')
+          : one.ca.privateKeyPem,
+        caPublicBlob: Buffer.from(one.ca.publicBlobB64, 'base64')
+      });
+      return { line: certificate.line, serialHex: serialHex,
+               member: one.member };
     });
     const row = rawRowFor(id) || {};
     const issued = (row.sshIssued || []).filter(function (one) {
       return !one.notAfter || new Date(one.notAfter).getTime() > Date.now();
     });
-    issued.push({
-      serialHex: serialHex, keyType: subject.type,
-      keyFingerprint: sshFingerprint(subject),
-    ownerSubject: String(s.ownerSubject || ''),
-    issuedAt: new Date(now * 1000).toISOString(),
-      notAfter: new Date(validBefore * 1000).toISOString(),
-      hardwareBound: s.hardwareBound === true
+    signed.forEach(function (one) {
+      issued.push({
+        serialHex: one.serialHex, keyType: subject.type,
+        keyFingerprint: sshFingerprint(subject),
+        ownerSubject: String(s.ownerSubject || ''),
+        issuedAt: new Date(now * 1000).toISOString(),
+        notAfter: new Date(validBefore * 1000).toISOString(),
+        hardwareBound: s.hardwareBound === true,
+        caMember: one.member
+      });
     });
     saveRow(id, Object.assign({}, row, { sshIssued: issued }));
     const outcome = await keystore.pkiSettled(id);
@@ -15192,8 +15251,13 @@ async function issueSshUserCertificateAsync(scopeId, spec) {
       ] }, 'STS-PKI-0290');
     }
     log.debug("Leaving issueSshUserCertificateAsync(). Issued.");
-    return { ok: true, line: certificate.line, serialHex: serialHex,
-             validAfter: validAfter, validBefore: validBefore };
+    const primary = signed[0];
+    const extra = signed.length > 1 ? signed[1] : null;
+    const pqc = extra || (onlyPqc ? primary : null);
+    return { ok: true, line: primary.line, serialHex: primary.serialHex,
+             validAfter: validAfter, validBefore: validBefore,
+             pqcLine: pqc ? pqc.line : '',
+             pqcSerialHex: pqc ? pqc.serialHex : '' };
   } catch (e) {
     log.error(errorCodes.tag('STS-PKI-0290') + 'pki: an SSH user ' +
               'certificate could not be signed or recorded: ' +
@@ -15338,8 +15402,25 @@ async function buildSshUserKrlAsync(scopeId) {
   }).map(function (one) {
     return pkiMerge.normalSerial(one.serialHex);
   }).sort();
+  const pqcCa = row.sshUserCaPqc;
+  const classicalSerials = [];
+  const pqcSerials = [];
+  const bySerial = {};
+  (row.sshIssued || []).forEach(function (one) {
+    bySerial[pkiMerge.normalSerial(one.serialHex)] = one.caMember ||
+      'sshUserCa';
+  });
+  serials.forEach(function (one) {
+    if (bySerial[one] === 'sshUserCaPqc') {
+      pqcSerials.push(one);
+    } else {
+      classicalSerials.push(one);
+    }
+  });
   const digest = stsCrypto.digest('sha256',
-    ca.fingerprint + ':' + serials.join(','), 'hex');
+    ca.fingerprint + ':' + classicalSerials.join(',') + '|' +
+    ((pqcCa && pqcCa.fingerprint) || '') + ':' + pqcSerials.join(','),
+    'hex');
   if (row.sshKrl && row.sshKrl.digest === digest &&
       row.sshKrl.bytesB64) {
     log.debug("Leaving buildSshUserKrlAsync(). Cached.");
@@ -15348,15 +15429,27 @@ async function buildSshUserKrlAsync(scopeId) {
   try {
     const previous = Number((row.sshKrl || {}).version) || 0;
     const version = Math.max(now, previous + 1);
+    const authorities = [];
+    if (classicalSerials.length) {
+      authorities.push({
+        caBlob: Buffer.from(ca.publicBlobB64, 'base64'),
+        serials: classicalSerials.map(function (one) {
+          return BigInt('0x' + one);
+        })
+      });
+    }
+    if (pqcCa && pqcSerials.length) {
+      authorities.push({
+        caBlob: Buffer.from(pqcCa.publicBlobB64, 'base64'),
+        serials: pqcSerials.map(function (one) {
+          return BigInt('0x' + one);
+        })
+      });
+    }
     const bytes = buildSshKrl({
       version: BigInt(version), generatedAt: BigInt(now),
       comment: 'Iya STS SSH user CA',
-      authorities: [{
-        caBlob: Buffer.from(ca.publicBlobB64, 'base64'),
-        serials: serials.map(function (one) {
-          return BigInt('0x' + one);
-        })
-      }],
+      authorities: authorities,
       keySha256: []
     });
     saveRow(id, Object.assign({}, row, { sshKrl: {
@@ -15409,8 +15502,110 @@ const SSH_CA_ALGORITHMS = {
   'rsa-sha2-256': { kind: 'rsa', keyType: 'ssh-rsa', bits: 3072,
                     scheme: { family: 'rsa-pkcs1', hash: 'sha256' } },
   'rsa-sha2-512': { kind: 'rsa', keyType: 'ssh-rsa', bits: 3072,
-                    scheme: { family: 'rsa-pkcs1', hash: 'sha512' } }
+                    scheme: { family: 'rsa-pkcs1', hash: 'sha512' } },
+  // OpenSSH defines no such type. The wire form is this service's own:
+  // one string of the raw ML-DSA-65 public key, and a raw signature, the
+  // ssh-ed25519 shape. It is never the published TrustedUserCAKeys line.
+  'ssh-mldsa-65': { kind: 'pq', keyType: 'ssh-mldsa-65', jose: 'ML-DSA-65',
+                    publicBytes: 1952,
+                    scheme: { family: 'pq', alg: 'ML-DSA-65' } }
 };
+
+/**
+ * The SSH user CA algorithms this realm configured, in order, dropping a
+ * name the table does not know. `ssh-rsa` is not in the table.
+ *
+ * @returns the names
+ */
+function sshUserCaAlgorithmList() {
+  log.debug("Entering sshUserCaAlgorithmList().");
+  const configured = config.value('pki.sshUserCaAlgorithms');
+  const names = Array.isArray(configured) ? configured : [];
+  const out = [];
+  names.forEach(function (name) {
+    if (SSH_CA_ALGORITHMS[name] && out.indexOf(name) < 0) {
+      out.push(name);
+    }
+  });
+  log.debug("Leaving sshUserCaAlgorithmList(). " + out.join(','));
+  return out;
+}
+
+/**
+ * The first classical algorithm in the configured list. The published
+ * OpenSSH line is this algorithm's key, never `ssh-mldsa-65`. A list that
+ * names only the post-quantum algorithm still publishes ssh-ed25519.
+ *
+ * @returns an SSH_CA_ALGORITHMS name whose kind is not `pq`
+ */
+function sshClassicalCaAlgorithm() {
+  log.debug("Entering sshClassicalCaAlgorithm().");
+  const list = sshUserCaAlgorithmList();
+  let name = 'ssh-ed25519';
+  for (let i = 0; i < list.length; i++) {
+    if (SSH_CA_ALGORITHMS[list[i]].kind !== 'pq') {
+      name = list[i];
+      break;
+    }
+  }
+  log.debug("Leaving sshClassicalCaAlgorithm(). " + name);
+  return name;
+}
+
+/**
+ * Whether the configured list asks for the ML-DSA authority at all.
+ *
+ * @returns true when `ssh-mldsa-65` is on the list
+ */
+function sshPqCaWanted() {
+  log.debug("Entering sshPqCaWanted().");
+  const wanted = sshUserCaAlgorithmList().indexOf('ssh-mldsa-65') >= 0;
+  log.debug("Leaving sshPqCaWanted(). " + wanted);
+  return wanted;
+}
+
+/**
+ * Whether a new certificate is signed only by the ML-DSA authority.
+ * `pqcOnly` wins when both switches were set from the environment.
+ *
+ * @returns the switch
+ */
+function sshUserCaPqcOnly() {
+  log.debug("Entering sshUserCaPqcOnly().");
+  const on = config.value('pki.sshUserCaPqcOnly') === true;
+  log.debug("Leaving sshUserCaPqcOnly(). " + on);
+  return on;
+}
+
+/**
+ * Whether a new certificate is issued twice, classically and with ML-DSA.
+ * Ignored while `pqcOnly` is on.
+ *
+ * @returns the switch
+ */
+function sshUserCaAlongside() {
+  log.debug("Entering sshUserCaAlongside().");
+  const on = config.value('pki.sshUserCaPqcAlongsideClassical') === true &&
+    !sshUserCaPqcOnly();
+  log.debug("Leaving sshUserCaAlongside(). " + on);
+  return on;
+}
+
+/**
+ * A fresh positive certificate serial.
+ *
+ * @returns the serial
+ */
+function nextSshUserSerial() {
+  log.debug("Entering nextSshUserSerial().");
+  let serial = BigInt('0x' + stsCrypto.randomBytes(8).toString('hex')) &
+               BigInt('0x7fffffffffffffff');
+  if (serial === BigInt(0)) {
+    serial = BigInt(1);
+  }
+  log.debug("Leaving nextSshUserSerial().");
+  return serial;
+}
 
 // RFC 4251's types, written. A HOT PATH for a certificate's every field: no
 // Entering/Leaving pair, as `sshReader()`'s methods have none.
@@ -15503,16 +15698,101 @@ async function generateSshCaKey(algorithm) {
     throw new Error('the SSH CA algorithm ' + algorithm + ' is not one of ' +
                     Object.keys(SSH_CA_ALGORITHMS).join(', '));
   }
+  if (spec.kind === 'pq') {
+    if (!stsCrypto.mlDsaAvailable()) {
+      log.debug("Leaving generateSshCaKey(). ML-DSA is unavailable.");
+      throw new Error('this runtime cannot generate an ML-DSA SSH CA key');
+    }
+    const pair = stsCrypto.generatePqKeyPair(spec.jose);
+    if (pair.pub.length !== spec.publicBytes) {
+      log.debug("Leaving generateSshCaKey(). Wrong public key.");
+      throw new Error('an ' + algorithm + ' public key is ' +
+                      spec.publicBytes + ' octets; this one is ' +
+                      pair.pub.length);
+    }
+    const pq = sshPqPublicKey(algorithm, pair.pub);
+    log.debug("Leaving generateSshCaKey(). " + algorithm);
+    return { algorithm: algorithm, privatePem: '', privateSeed: pair.priv,
+             publicBlob: pq.blob, publicLine: pq.line,
+             fingerprint: sshFingerprint({ blob: pq.blob }) };
+  }
   const options = spec.kind === 'ec' ? { namedCurve: spec.curve }
     : (spec.kind === 'rsa' ? { modulusLength: spec.bits } : {});
   const pair = await stsCrypto.generateKeyPairAsync(spec.kind, options);
   const pub = sshPublicKeyOf(pair.publicKey);
   log.debug("Leaving generateSshCaKey().");
-  return { algorithm: algorithm,
+  return { algorithm: algorithm, privateSeed: null,
            privatePem: String(pair.privateKey.export({ type: 'pkcs8',
                                                        format: 'pem' })),
            publicBlob: pub.blob, publicLine: pub.line,
            fingerprint: sshFingerprint({ blob: pub.blob }) };
+}
+
+/**
+ * The ssh-ed25519-shaped public blob of a raw ML-DSA public key.
+ *
+ * @param algorithm - `ssh-mldsa-65`
+ * @param rawPublic - the raw public key
+ * @returns `{ type, blob, line }`
+ */
+function sshPqPublicKey(algorithm, rawPublic) {
+  log.debug("Entering sshPqPublicKey(). " + algorithm);
+  const raw = Buffer.from(rawPublic);
+  const blob = Buffer.concat([sshString(algorithm), sshString(raw)]);
+  log.debug("Leaving sshPqPublicKey().");
+  return { type: algorithm, blob: blob,
+           line: algorithm + ' ' + blob.toString('base64') };
+}
+
+/**
+ * Ensures the ML-DSA sibling authority when the algorithm list names it
+ * and this runtime can generate the key. A failure here is recorded and
+ * swallowed: the classical authority still issues.
+ *
+ * @param scopeId - the realm
+ * @returns `{ ok, ca }`, or null when there is no sibling
+ */
+async function ensureSshUserCaPqc(scopeId) {
+  log.debug("Entering ensureSshUserCaPqc().");
+  const id = realmIdOf(scopeId);
+  if (!sshPqCaWanted() || !stsCrypto.mlDsaAvailable()) {
+    log.debug("Leaving ensureSshUserCaPqc(). Not offered.");
+    return null;
+  }
+  const existing = function () {
+    const row = rawRowFor(id);
+    return row && row.sshUserCaPqc
+      ? { ok: true, ca: row.sshUserCaPqc } : null;
+  };
+  try {
+    const answer = await oneBuildInTheCluster(id, 'sshUserCaPqc', existing,
+      async function () {
+        const key = await generateSshCaKey('ssh-mldsa-65');
+        const row = Object.assign({}, rawRowFor(id) || {}, {
+          sshUserCaPqc: {
+            algorithm: key.algorithm,
+            privateSeedB64: key.privateSeed.toString('base64'),
+            publicBlobB64: key.publicBlob.toString('base64'),
+            publicLine: key.publicLine,
+            fingerprint: key.fingerprint,
+            createdAt: new Date().toISOString()
+          }
+        });
+        saveRow(id, row);
+        return { ok: true, ca: row.sshUserCaPqc };
+      }, { claim: SSH_USER_CA_USE_CASE + '-pqc:' + id,
+           label: 'the realm\'s post-quantum SSH user CA' });
+    log.debug("Leaving ensureSshUserCaPqc(). " +
+              (answer && answer.ok ? 'Ready.' : 'Absent.'));
+    return answer;
+  } catch (e) {
+    log.error(errorCodes.tag('STS-PKI-0290') + 'pki: the "' +
+              (id || 'default') + '" realm\'s post-quantum SSH user CA ' +
+              'could not be made, so certificates stay classical: ' +
+              ((e && e.message) || e));
+    log.debug("Leaving ensureSshUserCaPqc(). Failed.");
+    return null;
+  }
 }
 
 /**
@@ -15531,8 +15811,15 @@ function sshSign(algorithm, privateKey, data) {
     // error-code: none — a programming error; the CA checked its algorithm
     throw new Error('the SSH CA algorithm ' + algorithm + ' is unknown');
   }
-  const key = stsCrypto.privateKeyFrom(privateKey);
-  const raw = stsCrypto.signRawSignature(spec.scheme, key, data);
+  let raw;
+  if (spec.kind === 'pq') {
+    const seed = Buffer.isBuffer(privateKey) ? privateKey
+      : Buffer.from(String(privateKey || ''), 'base64');
+    raw = stsCrypto.signRawSignature(spec.scheme, seed, data);
+  } else {
+    const key = stsCrypto.privateKeyFrom(privateKey);
+    raw = stsCrypto.signRawSignature(spec.scheme, key, data);
+  }
   let blob = raw;
   if (spec.kind === 'ec') {
     blob = Buffer.concat([sshMpint(raw.subarray(0, spec.bytes)),
@@ -16577,6 +16864,45 @@ async function csrProofOfPossession(csr, spkiPem, desc) {
   return !!ok;
 }
 
+/**
+ * Refuses a write that would turn on both SSH user-CA switches. The same
+ * shape as a passkey lane: one narrows a new certificate to ML-DSA, the
+ * other issues a classical certificate beside it.
+ *
+ * @param key - the setting being written
+ * @param parsed - its parsed value
+ * @param inRealm - unused; the switches are not process-only
+ * @param beside - a companion setting's value as this write leaves it
+ * @returns `{ problem, code }`, or null
+ */
+function sshUserCaLaneWriteRule(key, parsed, inRealm, beside) {
+  log.debug("Entering sshUserCaLaneWriteRule(). " + key);
+  const other = key === 'pki.sshUserCaPqcAlongsideClassical'
+    ? 'pki.sshUserCaPqcOnly'
+    : (key === 'pki.sshUserCaPqcOnly'
+      ? 'pki.sshUserCaPqcAlongsideClassical' : '');
+  // A rule runs for every write. beside('') throws "no such setting"
+  // and a throwing rule refuses nothing (STS-CORE-0149).
+  if (!other || parsed !== true) {
+    log.debug("Leaving sshUserCaLaneWriteRule().");
+    return null;
+  }
+  const otherOn = typeof beside === 'function'
+    ? beside(other) === true : config.value(other) === true;
+  if (!otherOn) {
+    log.debug("Leaving sshUserCaLaneWriteRule().");
+    return null;
+  }
+  log.debug("Leaving sshUserCaLaneWriteRule(). Refused.");
+  return { code: 'STS-PKI-0296',
+           problem: '"' + key + '" cannot be on while "' + other +
+             '" is: post-quantum only signs a new certificate with the ' +
+             'ML-DSA authority, and a classical certificate beside one ' +
+             'needs both. Turn "' + other + '" off first.' };
+}
+
+config.addWriteRule(sshUserCaLaneWriteRule);
+
 module.exports = {
   verifyChain: verifyChain,
   issueOutsideHierarchy: issueOutsideHierarchy,
@@ -16624,7 +16950,10 @@ module.exports = {
   // --- the SSH user CA's wire formats (#1955 P3) ---
   SSH_USER_CERT: SSH_USER_CERT,
   SSH_CA_ALGORITHMS: SSH_CA_ALGORITHMS,
+  sshClassicalCaAlgorithm: sshClassicalCaAlgorithm,
+  sshUserCaLaneWriteRule: sshUserCaLaneWriteRule,
   sshPublicKeyOf: sshPublicKeyOf,
+  sshPqPublicKey: sshPqPublicKey,
   generateSshCaKey: generateSshCaKey,
   buildSshCertificate: buildSshCertificate,
   buildSshKrl: buildSshKrl,

@@ -20,7 +20,7 @@
 //   2. every code the source uses is registered, and every registered code is
 //      used somewhere (a row nothing raises is documentation of a condition
 //      that cannot happen);
-//   3. docs/v1.1.0/error-codes.md is exactly what the table generates;
+//   3. docs/v1.2.0/error-codes.md is exactly what the table generates;
 //   4. **every failure-shaped call site has a code beside it** — the patterns
 //      are FAILURE_PATTERNS below, and this is the check that makes "future
 //      failures get a code" a property of the build rather than of memory;
@@ -654,7 +654,7 @@ function run(t) {
     page = '';
   }
   t.check(page === errorCodes.markdown(),
-          'docs/v1.1.0/error-codes.md is exactly what the table ' +
+          'docs/v1.2.0/error-codes.md is exactly what the table ' +
           'generates', page ? 'stale — run: node common/error_codes.js ' +
                                     '--docs'
                                   : 'missing — run: node ' +

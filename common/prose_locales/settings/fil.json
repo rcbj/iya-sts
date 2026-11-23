@@ -1424,8 +1424,8 @@
     "text": "Mga lumang U2F AppID"
   },
   "webauthn.u2fAppIds|description": {
-    "en": "05b1b01773d86d5d",
-    "text": "Ang mga FIDO U2F AppID — ang mga https URL kung saan nirehistro ng isang lumang U2F relying party ang mga security key nito — na ang mga kredensyal ay maaaring i-import sa mga entry ng mga tao at gamitin para mag-sign in dito, na pinaghihiwalay ng kuwit. **WALANG LAMAN, ang default, ay naka-off ang feature**: walang maaaring i-import, walang ceremony na nagdadala ng extension na appid o appidExclude (WebAuthn Level 3 sections 10.1.1 at 10.1.2), at hindi nagsa-sign in ang na-import na key. Ginagamit lamang ang isang AppID sa RP ID na kaugnay nito: ang host nito ay ang RP ID, o suffix ng isa ang isa pa. Kung saan iba ang host sa host ng origin, kinukuha ng browser ang AppID URL para sa isang TrustedFacets list na nagpapangalan sa origin na ito, na kailangang patuloy na ihain ng lumang serbisyo. Pangalawang factor lamang ang na-import na key: hindi kayang i-verify ng U2F key ang tao."
+    "en": "e17d7febccd7d076",
+    "text": "Ang mga FIDO U2F AppID — ang mga https URL kung saan nirehistro ng isang lumang U2F relying party ang mga security key nito — na ang mga kredensyal ay maaaring i-import sa mga entry ng mga tao at gamitin para mag-sign in dito, na pinaghihiwalay ng kuwit. **WALANG LAMAN, ang default, ay naka-off ang feature**: walang maaaring i-import, walang ceremony na nagdadala ng extension na appid o appidExclude (WebAuthn Level 3 sections 10.1.1 at 10.1.2), at hindi nagsa-sign in ang na-import na key. Ginagamit lamang ang isang AppID sa RP ID na kaugnay nito: ang host nito ay ang RP ID, o suffix ng isa ang isa pa. Kung saan iba ang host sa host ng origin, kinukuha ng browser ang AppID URL para sa isang TrustedFacets list na nagpapangalan sa origin na ito, na kailangang patuloy na ihain ng lumang serbisyo. Pangalawang factor lamang ang na-import na key: hindi kayang i-verify ng U2F key ang tao. Ang U2F ay ECDSA sa P-256 at walang post-quantum na algorithm."
   },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
@@ -3360,8 +3360,8 @@
     "text": "Pinakamaliit na RSA OpenPGP key"
   },
 "openpgp.minRsaBits|description": {
-    "en": "ad48516e31a7c45b",
-    "text": "Ang pinakamaikling RSA key, primary man o subkey, na tinatanggap ng pagrehistro ng OpenPGP. Tinatanggap ang Ed25519, Ed448, ECDSA at ECDH sa P-256, P-384 at P-521, X25519 at X448; hindi kailanman tinatanggap ang DSA, ElGamal at ang mga Brainpool curve (STS-OPENPGP-0004)."
+    "en": "cd16018c848ce538",
+    "text": "Ang pinakamaikling RSA key, primary man o subkey, na tinatanggap ng pagrehistro ng OpenPGP. Tinatanggap ang Ed25519, Ed448, ECDSA at ECDH sa P-256, P-384 at P-521, X25519 at X448, at ang mga composite ng RFC 9980 na ML-DSA-65+Ed25519, ML-DSA-87+Ed448, ML-KEM-768+X25519 at ML-KEM-1024+X448 kapag pinangalanan sila ng openpgp.algorithms. Hindi kailanman tinatanggap ang DSA, ElGamal, ang mga Brainpool curve at SLH-DSA (STS-OPENPGP-0004)."
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
@@ -9212,8 +9212,8 @@
     "text": "I-fingerprint ang browser sa sign-in"
   },
   "risk.fingerprinting|description": {
-    "en": "452ca90f0592fe8b",
-    "text": "NAKA-OFF BILANG DEFAULT (#62 P6). Kapag naka-on, nagpapatakbo ang sign-in screen ng isang script, ang FingerprintJS (MIT; wala itong ipinapadala kahit saan), na kumakalkula ng identifier mula sa inilalantad ng browser at inilalagay ito sa form; keyed digest lang ang iniingatan ng serbisyo, at ang browser na hindi pa kailanman pinag-sign in-an ng taong ito ay ang signal na new-device (x2). Personal data ang browser fingerprint: kumpletuhin ang privacy impact assessment sa docs/v1.1.0/risk-scoring.md, at sabihan ang mga taong nagsa-sign in, bago ito i-on. Kada realm, gaya ng bawat setting."
+    "en": "c34ba5805bddbb8b",
+    "text": "NAKA-OFF BILANG DEFAULT (#62 P6). Kapag naka-on, nagpapatakbo ang sign-in screen ng isang script, ang FingerprintJS (MIT; wala itong ipinapadala kahit saan), na kumakalkula ng identifier mula sa inilalantad ng browser at inilalagay ito sa form; keyed digest lang ang iniingatan ng serbisyo, at ang browser na hindi pa kailanman pinag-sign in-an ng taong ito ay ang signal na new-device (x2). Personal data ang browser fingerprint: kumpletuhin ang privacy impact assessment sa docs/v1.2.0/risk-scoring.md, at sabihan ang mga taong nagsa-sign in, bago ito i-on. Kada realm, gaya ng bawat setting."
   },
   "risk.breachCheck|label": {
     "en": "8b4443cd88527e75",
@@ -11640,8 +11640,8 @@
     "text": "From address"
   },
   "mail.from|description": {
-    "en": "b1da52c40fbad767",
-    "text": "Ang address na pinagpapadalhan ng bawat mensahe. Ang walang laman ay nangangahulugang `no-reply@` ang DNS domain ng realm. Dapat payagan ang provider na magpadala bilang ito: isang verified identity sa SES, isang MailFrom address ng nakakonektang domain sa Azure, ang ini-impersonate na mailbox (o isa sa mga send-as alias nito) para sa Gmail — at ang SPF, DKIM at DMARC para sa domain nito ay paksa ng docs/v1.1.0/mail.md."
+    "en": "a8b259e6c1037325",
+    "text": "Ang address na pinagpapadalhan ng bawat mensahe. Ang walang laman ay nangangahulugang `no-reply@` ang DNS domain ng realm. Dapat payagan ang provider na magpadala bilang ito: isang verified identity sa SES, isang MailFrom address ng nakakonektang domain sa Azure, ang ini-impersonate na mailbox (o isa sa mga send-as alias nito) para sa Gmail — at ang SPF, DKIM at DMARC para sa domain nito ay paksa ng docs/v1.2.0/mail.md."
   },
   "mail.fromName|label": {
     "en": "54fc2703a4957936",
@@ -11776,8 +11776,8 @@
     "text": "DKIM algorithm"
   },
   "mail.dkimAlgorithm|description": {
-    "en": "62ed500aeff2bc8a",
-    "text": "`rsa-sha256` (RFC 6376; isang 2048-bit na key o mas malaki, ayon sa RFC 8301) o `ed25519-sha256` (RFC 8463). Marami pang receiver ang RSA lang ang vine-verify, kaya ang domain na lumilipat sa Ed25519 ay naglalathala ng dalawa at pumipirma nang dalawang beses sa ibang lugar. Wala pang nakarehistrong post-quantum algorithm ang DKIM; sinasabi iyon ng docs/v1.1.0/mail.md."
+    "en": "0d88e4862621b8df",
+    "text": "`rsa-sha256` (RFC 6376; isang 2048-bit na key o mas malaki, ayon sa RFC 8301) o `ed25519-sha256` (RFC 8463). Marami pang receiver ang RSA lang ang vine-verify, kaya ang domain na lumilipat sa Ed25519 ay naglalathala ng dalawa at pumipirma nang dalawang beses sa ibang lugar. Wala pang nakarehistrong post-quantum algorithm ang DKIM; sinasabi iyon ng docs/v1.2.0/mail.md."
   },
   "mail.dkimKeyProvider|label": {
     "en": "7e4fc266794b62d9",
@@ -12008,16 +12008,16 @@
     "text": "Kailangan ng self-service reset ang verified address"
   },
   "mail.resetRequiresVerifiedAddress|description": {
-    "en": "81dfbb5f1c67cc3c",
-    "text": "Ipadala lang ang self-service reset link sa address na VERIFIED na ng tao (isang link na sinundan niya mula rito). Naka-on bilang default, dahil ang link ay ang account mismo: ang address na isinulat ng isang import o provisioning feed, at hindi kailanman napatunayan ninuman, ay hindi lugar na pagpapadalhan nito. **Mas mahinang setting ang pag-off dito**, para sa directory na pinagkakatiwalaan ang mga address kung paano isinulat; dala ng docs/v1.1.0/mail.md ang babala."
+    "en": "af24c1ddaf83c884",
+    "text": "Ipadala lang ang self-service reset link sa address na VERIFIED na ng tao (isang link na sinundan niya mula rito). Naka-on bilang default, dahil ang link ay ang account mismo: ang address na isinulat ng isang import o provisioning feed, at hindi kailanman napatunayan ninuman, ay hindi lugar na pagpapadalhan nito. **Mas mahinang setting ang pag-off dito**, para sa directory na pinagkakatiwalaan ang mga address kung paano isinulat; dala ng docs/v1.2.0/mail.md ang babala."
   },
   "mail.resetRequiresBackupCode|label": {
     "en": "addd650807ec39b2",
     "text": "Kailangan ng self-service reset ang recovery code"
   },
   "mail.resetRequiresBackupCode|description": {
-    "en": "2d8885388b97eb61",
-    "text": "Hinihingi ng forgot-password form ang USERNAME, ang verified na ADDRESS sa account at isa sa mga RECOVERY CODE ng tao, at nagpapadala lang ng reset link kapag tama ang tatlo — saka nagagamit ang code. Sinasagot ang bawat kombinasyon ng parehong pangungusap. **Mas mahinang setting ang pag-off dito**: bumabalik ang form sa iisang field (isang username o ang address), at ang reset ay kasinlakas lang ng mailbox na pinupuntahan nito — na pinapayagan ng NIST SP 800-63B-4 para sa recovery, at binababalaan ng docs/v1.1.0/mail.md. Ang taong walang hawak na recovery code ay hindi makakapag-reset ng sariling password habang naka-on ito; kaya ito ng administrator."
+    "en": "f0eccb7bb4055b20",
+    "text": "Hinihingi ng forgot-password form ang USERNAME, ang verified na ADDRESS sa account at isa sa mga RECOVERY CODE ng tao, at nagpapadala lang ng reset link kapag tama ang tatlo — saka nagagamit ang code. Sinasagot ang bawat kombinasyon ng parehong pangungusap. **Mas mahinang setting ang pag-off dito**: bumabalik ang form sa iisang field (isang username o ang address), at ang reset ay kasinlakas lang ng mailbox na pinupuntahan nito — na pinapayagan ng NIST SP 800-63B-4 para sa recovery, at binababalaan ng docs/v1.2.0/mail.md. Ang taong walang hawak na recovery code ay hindi makakapag-reset ng sariling password habang naka-on ito; kaya ito ng administrator."
   },
   "mail.verificationTtlMinutes|label": {
     "en": "49c2a4b66ba8a448",
@@ -13026,5 +13026,53 @@
   "roles.pivKeyRecoveryGroup|description": {
     "en": "801616eea12559a5",
     "text": "Ang directory group na ang mga miyembro ay may hawak ng built-in na role na PIV_KEY_RECOVERY (#1955), na hinihingi ng access-control policy, bukod sa Admin Write, para mabawi ang naka-escrow na piv-key-management key ng ibang tao (piv.keyEscrow). Dine-decrypt ng key na iyon ang mail ng tao, kaya walang may hawak ng role hanggang idagdag sila ng administrator sa grupo. Kapag walang laman, walang makakabawi ng key ng ibang tao; binabawi ng may hawak ang sarili niya sa portal."
+  },
+  "openpgp.algorithms|label": {
+    "en": "6973a8aeaa30b96b",
+    "text": "Mga algorithm na tinatanggap"
+  },
+  "openpgp.algorithms|description": {
+    "en": "7bf4b57c9c6e7d1f",
+    "text": "Ang mga algorithm ng OpenPGP na maaaring gamitin ng isang key, ayon sa pagkakasunud-sunod ng preferensiya. Una ang mga composite ng RFC 9980: lumalagda ang ML-DSA-65+Ed25519 at ML-DSA-87+Ed448, nag-e-encrypt ang ML-KEM-768+X25519 at ML-KEM-1024+X448. Pagkatapos ang mga classical na pangalan: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa sa nistP256, nistP384 at nistP521, rsaSign at rsaEncryptSign, x25519, x448, ecdh sa curve25519Legacy at sa parehong mga NIST curve, at rsaEncrypt. Tinatanggihan sa pagrehistro at sa pag-verify ang pangalang wala sa listahang ito (STS-OPENPGP-0004). Hindi ipinatupad ang SLH-DSA. Pinangalanan ng default ang bawat isa sa mga ito."
+  },
+  "openpgp.pqcOnly|label": {
+    "en": "d3ff53ec011bbf1f",
+    "text": "Magrehistro lamang ng post-quantum na key"
+  },
+  "openpgp.pqcOnly|description": {
+    "en": "a42ec597602f45d5",
+    "text": "Kapag naka-on, ang bagong rehistrong key ay dapat gumamit ng post-quantum na algorithm na pinangalanan ng openpgp.algorithms: ML-DSA-65+Ed25519 o ML-DSA-87+Ed448 para sa signing key, at ML-KEM-768+X25519 o ML-KEM-1024+X448 kapag may encryption key. Pagrehistro lamang ang nililimitahan: ang classical na key na rehistrado na ay patuloy na bini-verify at tumatanggap pa rin ng mail. Hindi maaaring naka-on habang naka-on ang openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Naka-off bilang default."
+  },
+  "openpgp.pqcAlongsideClassical|label": {
+    "en": "57f71c1990eb46d9",
+    "text": "Post-quantum na key kasabay ng classical"
+  },
+  "openpgp.pqcAlongsideClassical|description": {
+    "en": "2b5f6cf2a07130e5",
+    "text": "Kapag naka-on, ang bagong rehistrong key ay dapat magdala ng post-quantum na algorithm at ng hiwalay na classical na algorithm. Ang composite na pangalan gaya ng ML-DSA-65+Ed25519 ay post-quantum lamang, kaya ang classical na hati ay ibang key, halimbawa isang Ed25519 o X25519 na subkey sa tabi nito. Ang key na rehistrado na ay hinahayaan. Hindi maaaring naka-on habang naka-on ang openpgp.pqcOnly (STS-OPENPGP-0027). Naka-off bilang default."
+  },
+  "pki.sshUserCaAlgorithms|label": {
+    "en": "1fa9bf9eedbabd99",
+    "text": "Mga algorithm ng SSH user CA"
+  },
+  "pki.sshUserCaAlgorithms|description": {
+    "en": "bdb54445a0279b8d",
+    "text": "Kung aling mga algorithm ang maaaring gamitin ng SSH user certificate authority, ayon sa preferensiya. Ang ssh-mldsa-65 ay ML-DSA-65 (FIPS 204) sa ilalim ng wire name na binibigyang-kahulugan ng serbisyong ito, dahil walang binibigyang-kahulugan ang OpenSSH: hilaw ang public key at ang lagda, sa hugis na ginagamit ng ssh-ed25519. Ang linyang OpenSSH TrustedUserCAKeys na inilalathala ng serbisyong ito ay nananatiling unang classical na algorithm sa listahang ito, o ssh-ed25519 kapag ssh-mldsa-65 lamang ang pinangalanan. Ang kapwa na hindi nakakaunawa ng ML-DSA ay patuloy na nagtitiwala sa linyang iyon. Hindi iniaalok ang ssh-rsa (SHA-1). Nilikha ang awtoridad na ML-DSA lamang kapag kaya ng runtime na ito na bumuo ng key; kung hindi, classical pa rin ang mga certificate (itinatala ang STS-PKI-0290 at sumasagot pa rin ang classical na awtoridad)."
+  },
+  "pki.sshUserCaPqcOnly|label": {
+    "en": "74aae1308361ba58",
+    "text": "Ang mga SSH user certificate ay post-quantum lamang"
+  },
+  "pki.sshUserCaPqcOnly|description": {
+    "en": "39b21e5b95f84da1",
+    "text": "Kapag naka-on, ang bagong SSH user certificate ay pinipirmahan ng awtoridad na ML-DSA, at kapag umiiral lamang ang awtoridad na iyon. Ang inilathalang linyang TrustedUserCAKeys ay nananatiling classical na key, kaya ang OpenSSH client na nagtitiwala na rito ay hindi binibigyan ng algorithm na hindi nito ma-parse. Sa runtime na hindi makabuo ng ML-DSA, classical pa rin ang certificate at hindi nabibigo ang kahilingan. Patuloy na bini-verify ang mga classical na certificate na naibigay na. Hindi maaaring naka-on habang naka-on ang pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Naka-off bilang default."
+  },
+  "pki.sshUserCaPqcAlongsideClassical|label": {
+    "en": "c3201f8841200c32",
+    "text": "May post-quantum na certificate din ang mga SSH user certificate"
+  },
+  "pki.sshUserCaPqcAlongsideClassical|description": {
+    "en": "b38eab63ec092b6c",
+    "text": "Kapag naka-on, ang bagong SSH user certificate ay inilalabas nang dalawang beses kapag umiiral ang awtoridad na ML-DSA: ang classical na certificate, na siyang ginagamit ng OpenSSH client, at isang ML-DSA na certificate sa tabi nito. Hindi maaaring naka-on habang naka-on ang pki.sshUserCaPqcOnly (STS-PKI-0296). Naka-off bilang default. Hindi konsepto ng OpenSSH ang composite; ang classical na certificate at ang ML-DSA na certificate ay dalawang lagda, hindi isang hybrid na lagda."
   }
 }

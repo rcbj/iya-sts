@@ -1424,8 +1424,8 @@
     "text": "AppID U2F anciens"
   },
   "webauthn.u2fAppIds|description": {
-    "en": "05b1b01773d86d5d",
-    "text": "Les AppID FIDO U2F — les URL https sous lesquelles une ancienne partie de confiance U2F a enregistré ses clés de sécurité — dont les identifiants peuvent être importés sur les entrées des personnes et utilisés pour se connecter ici, séparés par des virgules. **VIDE, la valeur par défaut, signifie la fonction désactivée** : rien ne peut être importé, aucune cérémonie ne porte l’extension appid ou appidExclude (WebAuthn Level 3 sections 10.1.1 et 10.1.2), et une clé importée ne connecte personne. Un AppID n’est utilisé qu’à un RP ID auquel il se rapporte : son hôte est le RP ID, ou l’un est un suffixe de l’autre. Là où l’hôte diffère de celui de l’origine, le navigateur récupère l’URL de l’AppID pour une liste TrustedFacets nommant cette origine, que l’ancien service doit continuer à servir. Une clé importée n’est qu’un second facteur : une clé U2F ne peut pas vérifier la personne."
+    "en": "e17d7febccd7d076",
+    "text": "Les AppID FIDO U2F — les URL https sous lesquelles une ancienne partie de confiance U2F a enregistré ses clés de sécurité — dont les identifiants peuvent être importés sur les entrées des personnes et utilisés pour se connecter ici, séparés par des virgules. **VIDE, la valeur par défaut, signifie la fonction désactivée** : rien ne peut être importé, aucune cérémonie ne porte l’extension appid ou appidExclude (WebAuthn Level 3 sections 10.1.1 et 10.1.2), et une clé importée ne connecte personne. Un AppID n’est utilisé qu’à un RP ID auquel il se rapporte : son hôte est le RP ID, ou l’un est un suffixe de l’autre. Là où l’hôte diffère de celui de l’origine, le navigateur récupère l’URL de l’AppID pour une liste TrustedFacets nommant cette origine, que l’ancien service doit continuer à servir. Une clé importée n’est qu’un second facteur : une clé U2F ne peut pas vérifier la personne. U2F est de l’ECDSA sur P-256 et n’a aucun algorithme post-quantique."
   },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
@@ -3360,8 +3360,8 @@
     "text": "Plus petite clé OpenPGP RSA"
   },
 "openpgp.minRsaBits|description": {
-    "en": "ad48516e31a7c45b",
-    "text": "La clé RSA la plus courte, principale ou sous-clé, qu'un enregistrement OpenPGP accepte. Ed25519, Ed448, ECDSA et ECDH sur P-256, P-384 et P-521, X25519 et X448 sont acceptés ; DSA, ElGamal et les courbes Brainpool ne le sont jamais (STS-OPENPGP-0004)."
+    "en": "cd16018c848ce538",
+    "text": "La clé RSA la plus courte, principale ou sous-clé, qu'un enregistrement OpenPGP accepte. Ed25519, Ed448, ECDSA et ECDH sur P-256, P-384 et P-521, X25519 et X448, ainsi que les composites RFC 9980 ML-DSA-65+Ed25519, ML-DSA-87+Ed448, ML-KEM-768+X25519 et ML-KEM-1024+X448 sont acceptés lorsque openpgp.algorithms les nomme. DSA, ElGamal, les courbes Brainpool et SLH-DSA ne le sont jamais (STS-OPENPGP-0004)."
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
@@ -9212,8 +9212,8 @@
     "text": "Empreinte du navigateur à la connexion"
   },
   "risk.fingerprinting|description": {
-    "en": "452ca90f0592fe8b",
-    "text": "DÉSACTIVÉ PAR DÉFAUT (#62 P6). Activé, l’écran de connexion exécute un script, FingerprintJS (MIT ; il n’envoie rien nulle part), qui calcule un identifiant à partir de ce qu’expose le navigateur et le place dans le formulaire ; le service ne conserve qu’un condensat à clé, et un navigateur depuis lequel cette personne ne s’est jamais connectée constitue le signal new-device (x2). Une empreinte de navigateur est une donnée personnelle : réalisez l’analyse d’impact relative à la protection des données décrite dans docs/v1.1.0/risk-scoring.md, et informez les personnes qui se connectent, avant de l’activer. Par domaine, comme chaque paramètre."
+    "en": "c34ba5805bddbb8b",
+    "text": "DÉSACTIVÉ PAR DÉFAUT (#62 P6). Activé, l’écran de connexion exécute un script, FingerprintJS (MIT ; il n’envoie rien nulle part), qui calcule un identifiant à partir de ce qu’expose le navigateur et le place dans le formulaire ; le service ne conserve qu’un condensat à clé, et un navigateur depuis lequel cette personne ne s’est jamais connectée constitue le signal new-device (x2). Une empreinte de navigateur est une donnée personnelle : réalisez l’analyse d’impact relative à la protection des données décrite dans docs/v1.2.0/risk-scoring.md, et informez les personnes qui se connectent, avant de l’activer. Par domaine, comme chaque paramètre."
   },
   "risk.breachCheck|label": {
     "en": "8b4443cd88527e75",
@@ -11640,8 +11640,8 @@
     "text": "Adresse d’expédition"
   },
   "mail.from|description": {
-    "en": "b1da52c40fbad767",
-    "text": "L’adresse depuis laquelle chaque message est envoyé. Vide signifie `no-reply@` suivi du domaine DNS du domaine. Le fournisseur doit être autorisé à envoyer en son nom : une identité vérifiée dans SES, une adresse MailFrom d’un domaine connecté dans Azure, la boîte aux lettres usurpée par délégation (ou l’un de ses alias d’envoi) pour Gmail — et SPF, DKIM et DMARC pour son domaine sont le sujet de docs/v1.1.0/mail.md."
+    "en": "a8b259e6c1037325",
+    "text": "L’adresse depuis laquelle chaque message est envoyé. Vide signifie `no-reply@` suivi du domaine DNS du domaine. Le fournisseur doit être autorisé à envoyer en son nom : une identité vérifiée dans SES, une adresse MailFrom d’un domaine connecté dans Azure, la boîte aux lettres usurpée par délégation (ou l’un de ses alias d’envoi) pour Gmail — et SPF, DKIM et DMARC pour son domaine sont le sujet de docs/v1.2.0/mail.md."
   },
   "mail.fromName|label": {
     "en": "54fc2703a4957936",
@@ -11776,8 +11776,8 @@
     "text": "Algorithme DKIM"
   },
   "mail.dkimAlgorithm|description": {
-    "en": "62ed500aeff2bc8a",
-    "text": "`rsa-sha256` (RFC 6376 ; une clé de 2048 bits ou plus, selon le RFC 8301) ou `ed25519-sha256` (RFC 8463). De nombreux destinataires ne vérifient encore que RSA ; un domaine qui passe à Ed25519 publie donc les deux et signe deux fois ailleurs. DKIM n’a encore aucun algorithme post-quantique enregistré ; docs/v1.1.0/mail.md le signale."
+    "en": "0d88e4862621b8df",
+    "text": "`rsa-sha256` (RFC 6376 ; une clé de 2048 bits ou plus, selon le RFC 8301) ou `ed25519-sha256` (RFC 8463). De nombreux destinataires ne vérifient encore que RSA ; un domaine qui passe à Ed25519 publie donc les deux et signe deux fois ailleurs. DKIM n’a encore aucun algorithme post-quantique enregistré ; docs/v1.2.0/mail.md le signale."
   },
   "mail.dkimKeyProvider|label": {
     "en": "7e4fc266794b62d9",
@@ -12008,16 +12008,16 @@
     "text": "La réinitialisation en libre-service exige une adresse vérifiée"
   },
   "mail.resetRequiresVerifiedAddress|description": {
-    "en": "81dfbb5f1c67cc3c",
-    "text": "N’envoyer un lien de réinitialisation en libre-service qu’à une adresse que la personne a VÉRIFIÉE (par un lien qu’elle a suivi depuis celle-ci). Activé par défaut, car le lien donne le compte : une adresse écrite par une importation ou un flux de provisionnement, et que personne n’a jamais prouvée, n’est pas un endroit où l’envoyer. **Le désactiver est un réglage plus faible**, pour un annuaire dont les adresses sont considérées comme fiables telles qu’écrites ; docs/v1.1.0/mail.md porte l’avertissement."
+    "en": "af24c1ddaf83c884",
+    "text": "N’envoyer un lien de réinitialisation en libre-service qu’à une adresse que la personne a VÉRIFIÉE (par un lien qu’elle a suivi depuis celle-ci). Activé par défaut, car le lien donne le compte : une adresse écrite par une importation ou un flux de provisionnement, et que personne n’a jamais prouvée, n’est pas un endroit où l’envoyer. **Le désactiver est un réglage plus faible**, pour un annuaire dont les adresses sont considérées comme fiables telles qu’écrites ; docs/v1.2.0/mail.md porte l’avertissement."
   },
   "mail.resetRequiresBackupCode|label": {
     "en": "addd650807ec39b2",
     "text": "La réinitialisation en libre-service exige un code de récupération"
   },
   "mail.resetRequiresBackupCode|description": {
-    "en": "2d8885388b97eb61",
-    "text": "Le formulaire de mot de passe oublié demande le NOM D’UTILISATEUR, l’ADRESSE vérifiée du compte et l’un des CODES DE RÉCUPÉRATION de la personne, et n’envoie un lien de réinitialisation que si les trois sont corrects — le code est alors consommé. Chaque combinaison reçoit la même phrase en réponse. **Le désactiver est un réglage plus faible** : le formulaire revient à un seul champ (un nom d’utilisateur ou l’adresse), et une réinitialisation est alors aussi forte que la boîte aux lettres à laquelle elle est envoyée — ce que NIST SP 800-63B-4 autorise pour la récupération, et contre quoi docs/v1.1.0/mail.md met en garde. Une personne qui ne détient aucun code de récupération ne peut pas réinitialiser elle-même son mot de passe tant que ce paramètre est activé ; un administrateur le peut."
+    "en": "f0eccb7bb4055b20",
+    "text": "Le formulaire de mot de passe oublié demande le NOM D’UTILISATEUR, l’ADRESSE vérifiée du compte et l’un des CODES DE RÉCUPÉRATION de la personne, et n’envoie un lien de réinitialisation que si les trois sont corrects — le code est alors consommé. Chaque combinaison reçoit la même phrase en réponse. **Le désactiver est un réglage plus faible** : le formulaire revient à un seul champ (un nom d’utilisateur ou l’adresse), et une réinitialisation est alors aussi forte que la boîte aux lettres à laquelle elle est envoyée — ce que NIST SP 800-63B-4 autorise pour la récupération, et contre quoi docs/v1.2.0/mail.md met en garde. Une personne qui ne détient aucun code de récupération ne peut pas réinitialiser elle-même son mot de passe tant que ce paramètre est activé ; un administrateur le peut."
   },
   "mail.verificationTtlMinutes|label": {
     "en": "49c2a4b66ba8a448",
@@ -13026,5 +13026,53 @@
   "roles.pivKeyRecoveryGroup|description": {
     "en": "801616eea12559a5",
     "text": "Le groupe de l’annuaire dont les membres détiennent le rôle intégré PIV_KEY_RECOVERY (#1955), que la politique de contrôle d’accès exige, en plus d’Admin Write, pour récupérer la clé piv-key-management séquestrée d’une autre personne (piv.keyEscrow). Cette clé déchiffre le courrier de la personne : personne ne détient donc le rôle tant qu’un administrateur ne l’a pas ajouté au groupe. Vide, ne permet à personne de récupérer la clé d’une autre personne ; le détenteur récupère la sienne sur le portail."
+  },
+  "openpgp.algorithms|label": {
+    "en": "6973a8aeaa30b96b",
+    "text": "Algorithmes acceptés"
+  },
+  "openpgp.algorithms|description": {
+    "en": "7bf4b57c9c6e7d1f",
+    "text": "Les algorithmes OpenPGP qu’une clé peut utiliser, par ordre de préférence. Les composites RFC 9980 d’abord : ML-DSA-65+Ed25519 et ML-DSA-87+Ed448 signent, ML-KEM-768+X25519 et ML-KEM-1024+X448 chiffrent. Puis les noms classiques : ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa sur nistP256, nistP384 et nistP521, rsaSign et rsaEncryptSign, x25519, x448, ecdh sur curve25519Legacy et les mêmes courbes NIST, et rsaEncrypt. Un nom absent de cette liste est refusé à l’enregistrement et à la vérification (STS-OPENPGP-0004). SLH-DSA n’est pas implémenté. La valeur par défaut nomme chacun d’eux."
+  },
+  "openpgp.pqcOnly|label": {
+    "en": "d3ff53ec011bbf1f",
+    "text": "N’enregistrer que des clés post-quantiques"
+  },
+  "openpgp.pqcOnly|description": {
+    "en": "a42ec597602f45d5",
+    "text": "Activé, une clé nouvellement enregistrée doit utiliser un algorithme post-quantique nommé par openpgp.algorithms : ML-DSA-65+Ed25519 ou ML-DSA-87+Ed448 pour la clé de signature, et ML-KEM-768+X25519 ou ML-KEM-1024+X448 lorsqu’elle a une clé de chiffrement. Cela ne restreint que l’enregistrement : une clé classique déjà enregistrée se vérifie encore et reçoit encore le courrier. Ne peut pas être activé en même temps qu’openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Désactivé par défaut."
+  },
+  "openpgp.pqcAlongsideClassical|label": {
+    "en": "57f71c1990eb46d9",
+    "text": "Clé post-quantique à côté d’une clé classique"
+  },
+  "openpgp.pqcAlongsideClassical|description": {
+    "en": "2b5f6cf2a07130e5",
+    "text": "Activé, une clé nouvellement enregistrée doit porter à la fois un algorithme post-quantique et un algorithme classique distinct. Un nom composite tel que ML-DSA-65+Ed25519 compte uniquement comme post-quantique, donc la moitié classique est une autre clé, par exemple une sous-clé Ed25519 ou X25519 à côté. Une clé déjà enregistrée est laissée telle quelle. Ne peut pas être activé en même temps qu’openpgp.pqcOnly (STS-OPENPGP-0027). Désactivé par défaut."
+  },
+  "pki.sshUserCaAlgorithms|label": {
+    "en": "1fa9bf9eedbabd99",
+    "text": "Algorithmes de l’AC utilisateur SSH"
+  },
+  "pki.sshUserCaAlgorithms|description": {
+    "en": "bdb54445a0279b8d",
+    "text": "Les algorithmes que l’autorité de certification des certificats utilisateur SSH peut utiliser, par ordre de préférence. ssh-mldsa-65 est ML-DSA-65 (FIPS 204) sous un nom de fil que ce service définit, parce qu’OpenSSH n’en définit aucun : la clé publique et la signature sont brutes, dans la forme qu’utilise ssh-ed25519. La ligne OpenSSH TrustedUserCAKeys que ce service publie reste le premier algorithme classique de cette liste, ou ssh-ed25519 lorsque la liste ne nomme que ssh-mldsa-65. Un pair qui ne comprend pas ML-DSA continue de faire confiance à cette ligne. ssh-rsa (SHA-1) n’est pas offert. L’autorité ML-DSA n’est créée que lorsque ce moteur peut générer la clé ; sinon les certificats restent classiques (STS-PKI-0290 est enregistré et l’autorité classique répond encore)."
+  },
+  "pki.sshUserCaPqcOnly|label": {
+    "en": "74aae1308361ba58",
+    "text": "Les certificats utilisateur SSH sont uniquement post-quantiques"
+  },
+  "pki.sshUserCaPqcOnly|description": {
+    "en": "39b21e5b95f84da1",
+    "text": "Activé, un nouveau certificat utilisateur SSH est signé par l’autorité ML-DSA, et seulement lorsque cette autorité existe. La ligne TrustedUserCAKeys publiée reste la clé classique, afin qu’un client OpenSSH qui lui fait déjà confiance ne reçoive pas un algorithme qu’il ne peut pas analyser. Sur un moteur qui ne peut pas générer ML-DSA, le certificat reste classique et la demande n’échoue pas. Les certificats classiques déjà émis continuent d’être vérifiés. Ne peut pas être activé en même temps que pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Désactivé par défaut."
+  },
+  "pki.sshUserCaPqcAlongsideClassical|label": {
+    "en": "c3201f8841200c32",
+    "text": "Les certificats utilisateur SSH portent aussi un certificat post-quantique"
+  },
+  "pki.sshUserCaPqcAlongsideClassical|description": {
+    "en": "b38eab63ec092b6c",
+    "text": "Activé, un nouveau certificat utilisateur SSH est émis deux fois lorsque l’autorité ML-DSA existe : le certificat classique, celui qu’utilise un client OpenSSH, et un certificat ML-DSA à côté. Ne peut pas être activé en même temps que pki.sshUserCaPqcOnly (STS-PKI-0296). Désactivé par défaut. Un composite n’est pas une notion qu’OpenSSH a ; le certificat classique et le certificat ML-DSA sont deux signatures, pas une signature hybride."
   }
 }

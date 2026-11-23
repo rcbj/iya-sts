@@ -46542,7 +46542,8 @@ op `recountPasskeyReport`(@js(#{`examples`:#[#{}]}) `requestBody/content/applica
   `addedAt`: string;
   @js(#{`description`:"The evidence source it was recorded from."}) `source`: string;
   @js(#{`description`:"Whether the evidence says its key is on a smart card."}) `smartCard`: boolean;
-  @js(#{`description`:"Whether the lost-key act retired it."}) `retired`: boolean
+  @js(#{`description`:"Whether the lost-key act retired it."}) `retired`: boolean;
+  @js(#{`description`:"The signature algorithm recorded for it, when the door that wrote it named one (an ML-DSA passkey's COSE algorithm). Absent where the credential has none."}) `algorithm`?: string
 }
 
 @hoisted model HardwareTokenAdminRow {
@@ -47166,7 +47167,7 @@ op `issueOpenPgpChallenge`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/
   #{
     `operationId`:"registerOpenPgpKey",
     `summary`:"Register a person's OpenPGP key on their proof (#1955)",
-    `description`:"`publicKey` (one armored public key) and `signed` (the person's outstanding challenge signed with `gpg --clearsign`): the key must be neither revoked nor expired, use an accepted algorithm (Ed25519, Ed448, ECDSA and ECDH on P-256 to P-521, X25519, X448, RSA of `openpgp.minRsaBits`), carry a valid user id with the entry's address, and have signed exactly the challenge since it was issued. It replaces any key the person had.\n\n**Mirrors** `POST /admin/openpgp` on the admin console.",
+    `description`:"`publicKey` (one armored public key) and `signed` (the person's outstanding challenge signed with `gpg --clearsign`): the key must be neither revoked nor expired, use an algorithm `openpgp.algorithms` names (RFC 9980 composites ML-DSA-65+Ed25519, ML-DSA-87+Ed448, ML-KEM-768+X25519 and ML-KEM-1024+X448, then Ed25519, Ed448, ECDSA and ECDH on P-256 to P-521, X25519, X448, and RSA of `openpgp.minRsaBits`), carry a valid user id with the entry's address, and have signed exactly the challenge since it was issued. `openpgp.pqcOnly` narrows a new registration to the composites. It replaces any key the person had.\n\n**Mirrors** `POST /admin/openpgp` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{

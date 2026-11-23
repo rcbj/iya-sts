@@ -17,7 +17,7 @@
 // such a value still stored), and what product mode still does not check.
 //
 // **THE PROSE CITED THIS PAGE BEFORE IT EXISTED.** `mode.js`'s REQUIREMENTS
-// comment, `global.mode`'s description, `docs/v1.1.0/what-is-not-checked.md`
+// comment, `global.mode`'s description, `docs/v1.2.0/what-is-not-checked.md`
 // and the root CLAUDE.md all said `/admin/mode` and `GET /admin-api/mode`
 // published the report, and neither was registered — only tests read it. So the
 // page is the report, drawn, and adds no fact of its own: a sentence here that

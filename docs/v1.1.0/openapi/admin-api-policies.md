@@ -326,8 +326,6 @@ Scope: `admin:read`.
 | `authn.profile.federationPrimary` | list, or string, or number, or boolean, or null |  |  |
 | `authn.profile.federationPrimary[]` | string, or number, or boolean, or null |  |  |
 | `authn.profile.from` | string |  |  |
-| `authn.profile.hotpSecondFactor` | list, or string, or number, or boolean, or null |  |  |
-| `authn.profile.hotpSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `authn.profile.inherited` | boolean |  |  |
 | `authn.profile.kerberosPrimary` | list, or string, or number, or boolean, or null |  |  |
 | `authn.profile.kerberosPrimary[]` | string, or number, or boolean, or null |  |  |
@@ -362,8 +360,6 @@ Scope: `admin:read`.
 | `authn.profile.walletPrimary[]` | string, or number, or boolean, or null |  |  |
 | `authn.profile.walletSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `authn.profile.walletSecondFactor[]` | string, or number, or boolean, or null |  |  |
-| `authn.profile.yubicoOtpSecondFactor` | list, or string, or number, or boolean, or null |  |  |
-| `authn.profile.yubicoOtpSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `authn.references` | map |  |  |
 | `authn.references.{key}` | string |  |  |
 | `authn.rules` | list |  |  |
@@ -630,8 +626,6 @@ Scope: `admin:read`.
 | `passkey.profile.backupEligibility[]` | string, or number, or boolean, or null |  |  |
 | `passkey.profile.clientRules` | list, or string, or number, or boolean, or null |  |  |
 | `passkey.profile.clientRules[]` | string, or number, or boolean, or null |  |  |
-| `passkey.profile.credProtect` | list, or string, or number, or boolean, or null |  |  |
-| `passkey.profile.credProtect[]` | string, or number, or boolean, or null |  |  |
 | `passkey.profile.credentialLabel` | list, or string, or number, or boolean, or null |  |  |
 | `passkey.profile.credentialLabel[]` | string, or number, or boolean, or null |  |  |
 | `passkey.profile.description` | string |  |  |
@@ -640,8 +634,6 @@ Scope: `admin:read`.
 | `passkey.profile.dn` | string |  |  |
 | `passkey.profile.enforceAttestationAtSignIn` | list, or string, or number, or boolean, or null |  |  |
 | `passkey.profile.enforceAttestationAtSignIn[]` | string, or number, or boolean, or null |  |  |
-| `passkey.profile.enforceCredProtect` | list, or string, or number, or boolean, or null |  |  |
-| `passkey.profile.enforceCredProtect[]` | string, or number, or boolean, or null |  |  |
 | `passkey.profile.enforcePinLength` | list, or string, or number, or boolean, or null |  |  |
 | `passkey.profile.enforcePinLength[]` | string, or number, or boolean, or null |  |  |
 | `passkey.profile.enforced` | boolean |  |  |
@@ -1382,43 +1374,6 @@ Scope: `admin:write`.
 | `policy.secondFactors[]` | string |  |  |
 | `removed` | boolean |  |  |
 
-## GET /admin-api/policies/new
-
-`getNewPolicyForm`
-
-**The kinds a named policy may be made of, and which of a kind's fields a save requires**
-
-Every kind whose profiles may be named, in `kinds`, and — with `kind` — that kind's create fields in `createFields`, each with `required`: the name (`profile`, or `name` for the authentication policy) always, since a save with no name edits the DEFAULT policy; the precedence and the description never; and each of the kind's own fields unless the save keeps the value in force when it is left out. **It saves nothing**: a named policy is made by the kind's save act with a name the realm does not hold yet, `POST /admin-api/policies/save-<kind>-policy` (`save-named-authn-policy` for the authentication policy).
-
-**Mirrors** `GET /admin/policies/new` on the admin console.
-
-Scope: `admin:read`.
-
-**Parameters**
-
-| Name | In | Type | Required | What it is |
-|---|---|---|---|---|
-| `kind` | query | string |  | The kind of policy to make, one of `kinds`. Without one, or with one no kind is, `createFields` is empty and `kind` null. |
-| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
-| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
-
-**200**: The kinds, and the asked kind's fields with which are required.
-
-| Member | Type | Required | What it is |
-|---|---|---|---|
-| `createFields` | list |  |  |
-| `createFields[]` | object |  | One field of a directory object's create (#1132): the name the create takes it under and whether the create refuses without it. A field is required exactly when the create refuses an empty or absent value; every other field is optional. |
-| `createFields[].name` | string | yes |  |
-| `createFields[].required` | boolean | yes |  |
-| `createFields[].requiredWhen` | object |  | A field required for some choices only: the create refuses without it when `field` holds one of `values`, and is otherwise indifferent. `required` is false for such a field. |
-| `createFields[].requiredWhen.field` | string | yes |  |
-| `createFields[].requiredWhen.values` | list | yes |  |
-| `createFields[].requiredWhen.values[]` | string |  |  |
-| `kind` | string, or null |  |  |
-| `kinds` | list |  |  |
-| `kinds[].id` | string |  |  |
-| `kinds[].label` | string |  |  |
-
 ## POST /admin-api/policies/remove-person-attribute
 
 `removePersonAttribute`
@@ -1637,8 +1592,6 @@ Scope: `admin:write`.
 | `profile.federationPrimary` | list, or string, or number, or boolean, or null |  |  |
 | `profile.federationPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.from` | string |  |  |
-| `profile.hotpSecondFactor` | list, or string, or number, or boolean, or null |  |  |
-| `profile.hotpSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `profile.inherited` | boolean |  |  |
 | `profile.kerberosPrimary` | list, or string, or number, or boolean, or null |  |  |
 | `profile.kerberosPrimary[]` | string, or number, or boolean, or null |  |  |
@@ -1673,8 +1626,6 @@ Scope: `admin:write`.
 | `profile.walletPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.walletSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.walletSecondFactor[]` | string, or number, or boolean, or null |  |  |
-| `profile.yubicoOtpSecondFactor` | list, or string, or number, or boolean, or null |  |  |
-| `profile.yubicoOtpSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `removed` | boolean |  |  |
 | `rules` | list |  |  |
 | `rules[]` | string |  |  |
@@ -1714,8 +1665,6 @@ Scope: `admin:write`.
 | `profile.federationPrimary` | list, or string, or number, or boolean, or null |  |  |
 | `profile.federationPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.from` | string |  |  |
-| `profile.hotpSecondFactor` | list, or string, or number, or boolean, or null |  |  |
-| `profile.hotpSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `profile.inherited` | boolean |  |  |
 | `profile.kerberosPrimary` | list, or string, or number, or boolean, or null |  |  |
 | `profile.kerberosPrimary[]` | string, or number, or boolean, or null |  |  |
@@ -1750,8 +1699,6 @@ Scope: `admin:write`.
 | `profile.walletPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.walletSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.walletSecondFactor[]` | string, or number, or boolean, or null |  |  |
-| `profile.yubicoOtpSecondFactor` | list, or string, or number, or boolean, or null |  |  |
-| `profile.yubicoOtpSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `removed` | boolean |  |  |
 | `rules` | list |  |  |
 | `rules[]` | string |  |  |
@@ -1891,8 +1838,6 @@ Scope: `admin:write`.
 | `profile.backupEligibility[]` | string, or number, or boolean, or null |  |  |
 | `profile.clientRules` | list, or string, or number, or boolean, or null |  |  |
 | `profile.clientRules[]` | string, or number, or boolean, or null |  |  |
-| `profile.credProtect` | list, or string, or number, or boolean, or null |  |  |
-| `profile.credProtect[]` | string, or number, or boolean, or null |  |  |
 | `profile.credentialLabel` | list, or string, or number, or boolean, or null |  |  |
 | `profile.credentialLabel[]` | string, or number, or boolean, or null |  |  |
 | `profile.description` | string |  |  |
@@ -1901,8 +1846,6 @@ Scope: `admin:write`.
 | `profile.dn` | string |  |  |
 | `profile.enforceAttestationAtSignIn` | list, or string, or number, or boolean, or null |  |  |
 | `profile.enforceAttestationAtSignIn[]` | string, or number, or boolean, or null |  |  |
-| `profile.enforceCredProtect` | list, or string, or number, or boolean, or null |  |  |
-| `profile.enforceCredProtect[]` | string, or number, or boolean, or null |  |  |
 | `profile.enforcePinLength` | list, or string, or number, or boolean, or null |  |  |
 | `profile.enforcePinLength[]` | string, or number, or boolean, or null |  |  |
 | `profile.enforced` | boolean |  |  |
@@ -1974,8 +1917,6 @@ Scope: `admin:write`.
 | `profile.backupEligibility[]` | string, or number, or boolean, or null |  |  |
 | `profile.clientRules` | list, or string, or number, or boolean, or null |  |  |
 | `profile.clientRules[]` | string, or number, or boolean, or null |  |  |
-| `profile.credProtect` | list, or string, or number, or boolean, or null |  |  |
-| `profile.credProtect[]` | string, or number, or boolean, or null |  |  |
 | `profile.credentialLabel` | list, or string, or number, or boolean, or null |  |  |
 | `profile.credentialLabel[]` | string, or number, or boolean, or null |  |  |
 | `profile.description` | string |  |  |
@@ -1984,8 +1925,6 @@ Scope: `admin:write`.
 | `profile.dn` | string |  |  |
 | `profile.enforceAttestationAtSignIn` | list, or string, or number, or boolean, or null |  |  |
 | `profile.enforceAttestationAtSignIn[]` | string, or number, or boolean, or null |  |  |
-| `profile.enforceCredProtect` | list, or string, or number, or boolean, or null |  |  |
-| `profile.enforceCredProtect[]` | string, or number, or boolean, or null |  |  |
 | `profile.enforcePinLength` | list, or string, or number, or boolean, or null |  |  |
 | `profile.enforcePinLength[]` | string, or number, or boolean, or null |  |  |
 | `profile.enforced` | boolean |  |  |
@@ -2544,7 +2483,6 @@ Scope: `admin:write`.
 | `emailLinkSecondFactor` | boolean, or string | yes | A single-use link mailed to the person's VERIFIED address, which completes the sign-in only in the browser that started it. NIST SP 800-63B-4 section 3.1.3.1: "Email SHALL NOT be used for out-of-band authentication", because a mailbox may be reached with a password alone, and mail may be read in transit or rerouted. Off by default for that reason; turn it on only where that is an accepted risk. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false. |
 | `emailResendS` | integer, or string | yes | A new code or link replaces the last one, which stops working. At most three are sent for one sign-in step. Between 15 and 600. Default 60. |
 | `federationPrimary` | boolean, or string | yes | A sign-in asserted by a configured federation partner. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
-| `hotpSecondFactor` | boolean, or string |  | An RFC 4226 one-time code from a counter-based token (#1955): a YubiKey's OTP slot, or a vendor's token an administrator imported from a PSKC seed file. Never a first factor. Off here, nobody may ENROL or claim one; a person who already holds one is still asked for it, as an authenticator app's holder is. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true; a save that leaves it out keeps the profile's current value, so a client written before it is not refused and changes nothing. |
 | `kerberosPrimary` | boolean, or string | yes | GET /authn/spnego with a Kerberos ticket. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
 | `passkeyPrimary` | boolean, or string | yes | Any passkey (WebAuthn credential) the person holds, signing them in with no password. A passkey has no role: this row says, at each sign-in, whether any of them may be a first factor in this realm, unless the first factors of the authentication policy an application names (appAuthnPolicy) say otherwise. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
 | `passwordPrimary` | boolean, or string | yes | A password on the sign-in screen. As a SECOND factor it is the password asked for after a wallet or other passwordless first factor. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
@@ -2559,7 +2497,6 @@ Scope: `admin:write`.
 | `totpSecondFactor` | boolean, or string | yes | An RFC 6238 one-time code. Never a first factor: this service holds the same shared secret the app does. Off here, nobody may ENROL one; a person who already holds one is still asked for it, because an off switch that downgraded every enrolled account to a password alone would do something other than it says (this row replaced totp.enabled, and keeps its contract). (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
 | `walletPrimary` | boolean, or string | yes | /authn/wallet with a credential this realm issued, or a SIOPv2 self-issued ID Token from an enrolled key. As a SECOND factor, the wallet presented after a password. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
 | `walletSecondFactor` | boolean, or string | yes | /authn/wallet with a credential this realm issued, or a SIOPv2 self-issued ID Token from an enrolled key. As a SECOND factor, the wallet presented after a password. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
-| `yubicoOtpSecondFactor` | boolean, or string |  | A YubiKey OTP (Yubico's published modhex one-time password, #1955). Never a first factor: this service holds the AES key. Off here, nobody may ENROL, assign or claim one, even when yubiotp.offered is on; a person who already holds one is still asked for it. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true; a save that leaves it out keeps the profile's current value, so a client written before it is not refused and changes nothing. |
 
 **200**: The profile now in force and the rules as sentences.
 
@@ -2596,8 +2533,6 @@ Scope: `admin:write`.
 | `profile.federationPrimary` | list, or string, or number, or boolean, or null |  |  |
 | `profile.federationPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.from` | string |  |  |
-| `profile.hotpSecondFactor` | list, or string, or number, or boolean, or null |  |  |
-| `profile.hotpSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `profile.inherited` | boolean |  |  |
 | `profile.kerberosPrimary` | list, or string, or number, or boolean, or null |  |  |
 | `profile.kerberosPrimary[]` | string, or number, or boolean, or null |  |  |
@@ -2632,8 +2567,6 @@ Scope: `admin:write`.
 | `profile.walletPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.walletSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.walletSecondFactor[]` | string, or number, or boolean, or null |  |  |
-| `profile.yubicoOtpSecondFactor` | list, or string, or number, or boolean, or null |  |  |
-| `profile.yubicoOtpSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `removed` | boolean |  |  |
 | `rules` | list |  |  |
 | `rules[]` | string |  |  |
@@ -2673,8 +2606,6 @@ Scope: `admin:write`.
 | `profile.federationPrimary` | list, or string, or number, or boolean, or null |  |  |
 | `profile.federationPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.from` | string |  |  |
-| `profile.hotpSecondFactor` | list, or string, or number, or boolean, or null |  |  |
-| `profile.hotpSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `profile.inherited` | boolean |  |  |
 | `profile.kerberosPrimary` | list, or string, or number, or boolean, or null |  |  |
 | `profile.kerberosPrimary[]` | string, or number, or boolean, or null |  |  |
@@ -2709,8 +2640,6 @@ Scope: `admin:write`.
 | `profile.walletPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.walletSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.walletSecondFactor[]` | string, or number, or boolean, or null |  |  |
-| `profile.yubicoOtpSecondFactor` | list, or string, or number, or boolean, or null |  |  |
-| `profile.yubicoOtpSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `removed` | boolean |  |  |
 | `rules` | list |  |  |
 | `rules[]` | string |  |  |
@@ -2889,7 +2818,7 @@ Scope: `admin:write`.
 
 **Set the passkey policy profile**
 
-Writes `cn=default,ou=passkeyPolicies` in this realm's directory, REPLACING what is there; a realm with no entry of its own follows the default realm's. `allowUsernameless` (on by default) offers a passkey sign-in with no username. `requireUsernameless` (off, #608) makes it the only way in for an application whose named authentication policy (`appAuthnPolicy`) lists `webauthn` alone as its first factor: no username field, and a sign-in naming a person refused; it needs `allowUsernameless`, and the `default` profile never applies it to the admin console, the debugger or the user portal. While it is off, "Use a security key" asks the authenticator for a discoverable credential (`residentKey: required`), as "Create a passkey" always does; while it is on, it asks `securityKeyResidentKey` (`discouraged`, `preferred` or `required`, default `required`). `backupEligibility` (`allow` by default) set to `disallow` refuses a synced (backup-eligible) passkey at registration and at sign-in. `enforcePinLength` (off) asks a key for its minimum PIN length (CTAP 2.1 minPinLength) and holds it to `minPinLength` (4 to 63); `pinLengthOnlyIfSupported` (off) accepts a key that does not report. `enforceAttestationAtSignIn` (off) holds every passkey sign-in to the attestation rules in force. `passkeyHints`, `securityKeyHints` and `signInHints` are the WebAuthn hints each ceremony sends, in order, or `none`. `enterpriseSerialAttribute` (empty) names the attribute of a person's entry holding their security-key serials, which a registration's trusted enterprise attestation must name. `userDisplayName`, `rpNameExtras` and `credentialLabel` are the names a passkey prompt and a new key show. `aggregateDevices` (on) offers a person's passkeys as one sign-in choice; off, one per passkey. `postQuantumRequired` (`off`, #718) set to `sign-in` lets only a post-quantum (ML-DSA) passkey sign a person in, as the first credential or the second factor, and `registration-and-sign-in` refuses a classical one at registration too; refused while the realm offers no ML-DSA (STS-AUTHN-0357). `attestationAlgorithms` (`none`, #941, optional) lists the algorithms a passkey's ATTESTATION must be signed with, statement and every certificate leaf to anchor: `post-quantum`, `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87`, `slh-dsa`, `composite-ml-dsa`; set, it demands a trusted statement and refuses any other at registration (STS-AUTHN-0411), and at sign-in while `enforceAttestationAtSignIn` is on (STS-AUTHN-0412). `postQuantumAllowCredentials` (`realm`, #946; optional) chooses how the passkey step names the keys while one is required: `narrow` the post-quantum ones only, `list-and-refuse` every one, a classical assertion then refused after the ceremony with a page saying why, and `realm` the realm's webauthn.postQuantumAllowCredentials. `registrationAlgorithms` (`realm`, #940; optional) is the ordered list a registration offers this profile's people in place of the realm's webauthn.algorithms, and `registrationMode` (`realm`, #940; optional) is `pq-only` (ML-DSA only, no classical retry), `pq-first` (ML-DSA, then the classical algorithms, whatever the realm's pqcOnly), `classical-only` (no ML-DSA, no post-quantum lane) or `realm` (webauthn.pqcOnly and webauthn.pqcAlongsideClassical); a passkey outside what the profile offers is refused at registration (STS-AUTHN-0432). `clientRules` (empty, #1112; optional) names the clients — `<browser> on <system>`, each a family or `*` with an optional major-version range, `;` between rules — whose registrations offer the list less ML-DSA, where a classical passkey is allowed. `credProtect` (`none`, #1955; optional) asks a registration's authenticator for CTAP 2.1 credential protection at `userVerificationOptional`, `userVerificationOptionalWithCredentialIDList` or `userVerificationRequired`, and records the level the key reports; `enforceCredProtect` (off; optional) asks the browser to enforce it and refuses a key reporting a lower level (STS-AUTHN-0559), and is refused on while `credProtect` is `none` (STS-AUTHN-0560). Refused: `classical-only` with `postQuantumRequired` not `off` or with `attestationAlgorithms` set (STS-AUTHN-0430), and `pq-only` or `pq-first` where the list offered names no ML-DSA (STS-AUTHN-0431).
+Writes `cn=default,ou=passkeyPolicies` in this realm's directory, REPLACING what is there; a realm with no entry of its own follows the default realm's. `allowUsernameless` (on by default) offers a passkey sign-in with no username. `requireUsernameless` (off, #608) makes it the only way in for an application whose named authentication policy (`appAuthnPolicy`) lists `webauthn` alone as its first factor: no username field, and a sign-in naming a person refused; it needs `allowUsernameless`, and the `default` profile never applies it to the admin console, the debugger or the user portal. While it is off, "Use a security key" asks the authenticator for a discoverable credential (`residentKey: required`), as "Create a passkey" always does; while it is on, it asks `securityKeyResidentKey` (`discouraged`, `preferred` or `required`, default `required`). `backupEligibility` (`allow` by default) set to `disallow` refuses a synced (backup-eligible) passkey at registration and at sign-in. `enforcePinLength` (off) asks a key for its minimum PIN length (CTAP 2.1 minPinLength) and holds it to `minPinLength` (4 to 63); `pinLengthOnlyIfSupported` (off) accepts a key that does not report. `enforceAttestationAtSignIn` (off) holds every passkey sign-in to the attestation rules in force. `passkeyHints`, `securityKeyHints` and `signInHints` are the WebAuthn hints each ceremony sends, in order, or `none`. `enterpriseSerialAttribute` (empty) names the attribute of a person's entry holding their security-key serials, which a registration's trusted enterprise attestation must name. `userDisplayName`, `rpNameExtras` and `credentialLabel` are the names a passkey prompt and a new key show. `aggregateDevices` (on) offers a person's passkeys as one sign-in choice; off, one per passkey. `postQuantumRequired` (`off`, #718) set to `sign-in` lets only a post-quantum (ML-DSA) passkey sign a person in, as the first credential or the second factor, and `registration-and-sign-in` refuses a classical one at registration too; refused while the realm offers no ML-DSA (STS-AUTHN-0357). `attestationAlgorithms` (`none`, #941, optional) lists the algorithms a passkey's ATTESTATION must be signed with, statement and every certificate leaf to anchor: `post-quantum`, `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87`, `slh-dsa`, `composite-ml-dsa`; set, it demands a trusted statement and refuses any other at registration (STS-AUTHN-0411), and at sign-in while `enforceAttestationAtSignIn` is on (STS-AUTHN-0412). `postQuantumAllowCredentials` (`realm`, #946; optional) chooses how the passkey step names the keys while one is required: `narrow` the post-quantum ones only, `list-and-refuse` every one, a classical assertion then refused after the ceremony with a page saying why, and `realm` the realm's webauthn.postQuantumAllowCredentials. `registrationAlgorithms` (`realm`, #940; optional) is the ordered list a registration offers this profile's people in place of the realm's webauthn.algorithms, and `registrationMode` (`realm`, #940; optional) is `pq-only` (ML-DSA only, no classical retry), `pq-first` (ML-DSA, then the classical algorithms, whatever the realm's pqcOnly), `classical-only` (no ML-DSA, no post-quantum lane) or `realm` (webauthn.pqcOnly and webauthn.pqcAlongsideClassical); a passkey outside what the profile offers is refused at registration (STS-AUTHN-0432). `clientRules` (empty, #1112; optional) names the clients — `<browser> on <system>`, each a family or `*` with an optional major-version range, `;` between rules — whose registrations offer the list less ML-DSA, where a classical passkey is allowed. Refused: `classical-only` with `postQuantumRequired` not `off` or with `attestationAlgorithms` set (STS-AUTHN-0430), and `pq-only` or `pq-first` where the list offered names no ML-DSA (STS-AUTHN-0431).
 
 **Every field is required** and one left out is refused by name rather than reset to a default, because a save that quietly loosened a rule nobody mentioned is the mistake nobody sees.
 
@@ -2914,12 +2843,10 @@ Scope: `admin:write`.
 | `attestationAlgorithms` | string |  | `none` BY DEFAULT: an attestation is accepted whatever it is signed with. Otherwise a list from post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa and composite-ml-dsa: a passkey registers only with a TRUSTED attestation that carries a certificate, whose statement signature and the signature on every certificate of its chain, from the leaf to the trust anchor, are each one the list allows (`post-quantum` allows any ML-DSA, SLH-DSA or composite ML-DSA signature). Self and none attestation are refused, having no certificate. With enforceAttestationAtSignIn on, every sign-in holds the passkey to it by what its registration recorded, so a passkey registered before the rule stops working. This is the attestation's algorithm, not the passkey's own (postQuantumRequired). Left out of a save, the built-in default is kept. An ordered, comma-separated list of post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa, composite-ml-dsa, or `none`. Default `none`. |
 | `backupEligibility` | one of `allow`, `disallow` | yes | `allow` (the default) accepts any passkey. `disallow` accepts only DEVICE-BOUND ones: a passkey whose authenticator says it may be backed up or synced (the BE flag, WebAuthn Level 3 section 6.1) is refused when it is registered and when it signs somebody in, so a synced passkey enrolled before the realm said no stops working too. BE never changes for a credential. Default `allow`. |
 | `clientRules` | string |  | EMPTY BY DEFAULT: every client is offered the list as it stands. Otherwise up to 20 rules separated by `;`, each `<browser> on <system>`, where either side is a family as the passkey ceremony rows name it (`Chrome`, `Firefox`, `macOS`, `Android`) or `*` for any, optionally followed by a major-version range (`141`, `130-140`, `130-`, `-140`): `Firefox 140- on Linux; * on Android 13`. A passkey registration from a matching client offers the list less ML-DSA (ES256 and RS256 where that leaves none). Not applied where a classical passkey is not allowed — registrationMode pq-only, webauthn.pqcOnly, postQuantumRequired registration-and-sign-in, or at the sign-in step under postQuantumRequired sign-in — nor to the post-quantum lane, and the ceremony row says it was not. Left out of a save, empty is kept. Default empty. |
-| `credProtect` | one of `none`, `userVerificationOptional`, `userVerificationOptionalWithCredentialIDList`, `userVerificationRequired` |  | `none` BY DEFAULT: a registration asks for no credential protection, and its options are what they always were. Otherwise a registration asks the authenticator (CTAP 2.1 section 12.1, the credProtect extension) to protect the new credential at that level: `userVerificationOptional` (level 1, what a credential has without the extension), `userVerificationOptionalWithCredentialIDList` (level 2: the key does not reveal or use the credential without user verification unless the relying party names it in allowCredentials, so nobody holding the key can find a discoverable credential on it) or `userVerificationRequired` (level 3: the key uses the credential only after a PIN or biometric). The level the key reports is recorded on the passkey. Most platform and synced passkeys report nothing. Left out of a save, the built-in default is kept. Default `none`. |
 | `credentialLabel` | string | yes | EMPTY BY DEFAULT: the provider's name, else "Passkey" or "Security key". Otherwise this text, with {provider} and {kind} filled in, at most 60 characters. The person may rename it afterwards, as always. Default empty. |
 | `description` | string |  | What the profile is for, for the next person. Optional. |
 | `deviceBoundRequired` | boolean, or string |  | OFF BY DEFAULT. On, an issuance to an application this profile covers waits until the sign-on session is bound to the browser's key, and is refused when the browser skipped that registration or the wait elapsed without a binding. A session that was never offered registration is not refused by this row. Refused while authn.deviceBoundSessions is off. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false. |
 | `enforceAttestationAtSignIn` | boolean, or string | yes | OFF BY DEFAULT. The attestation rules (the webauthn.attestation* settings: the policy, the AAGUID list, the certification level and FIPS) are checked when a passkey is registered. On, they are checked again at every sign-in against what was recorded then and the FIDO Metadata Service as it is now, so a key registered before a rule was tightened, or whose model was since reported compromised, stops signing anybody in. A key with no trusted attestation fails every rule that demands one. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false. |
-| `enforceCredProtect` | boolean, or string |  | OFF BY DEFAULT. On, the browser is asked to enforce the row above (enforceCredentialProtectionPolicy), and a registration whose authenticator reports a lower level than the row above asks for is refused; a key that reports nothing is at level 1. Needs the row above set to a level other than none. Left out of a save, the built-in default is kept. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false. |
 | `enforcePinLength` | boolean, or string | yes | OFF BY DEFAULT. On, registration asks the authenticator for its minimum PIN length (CTAP 2.1 section 12.4, the minPinLength extension), records it on the key, and refuses a key whose minimum is below the next row, at registration and at every sign-in. A key answers only for relying parties it was configured to tell (CTAP 2.1 setMinPINLength with this RP ID); every other key, and every platform or synced passkey, does not report, and is refused unless the row after next is on. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false. |
 | `enterpriseSerialAttribute` | string | yes | EMPTY BY DEFAULT: no serial is checked. Set to an attribute of a person's entry (for example `serialNumber`, which may hold several values), a security key registers only with a TRUSTED enterprise attestation whose certificate names a device serial that is one of that person's values. Needs webauthn.attestation set to enterprise, and the vendor or platform configured to release enterprise attestation to this RP ID; without that the browser sends ordinary attestation and every registration is refused. A directory attribute name, or empty for none. Default empty. |
 | `lanes` | one of `realm`, `both`, `one` |  | `realm` (the default) follows webauthn.pqcAlongsideClassical. `both` gives this profile's people a classical and a post-quantum passkey side by side, each under its own user handle, wherever the realm's setting is off; `one` gives them one lane wherever it is on. webauthn.pqcOnly still means one lane. Refused as `both` with registrationMode classical-only. Left out of a save, `realm` is kept. Default `realm`. |
@@ -2963,8 +2890,6 @@ Scope: `admin:write`.
 | `profile.backupEligibility[]` | string, or number, or boolean, or null |  |  |
 | `profile.clientRules` | list, or string, or number, or boolean, or null |  |  |
 | `profile.clientRules[]` | string, or number, or boolean, or null |  |  |
-| `profile.credProtect` | list, or string, or number, or boolean, or null |  |  |
-| `profile.credProtect[]` | string, or number, or boolean, or null |  |  |
 | `profile.credentialLabel` | list, or string, or number, or boolean, or null |  |  |
 | `profile.credentialLabel[]` | string, or number, or boolean, or null |  |  |
 | `profile.description` | string |  |  |
@@ -2973,8 +2898,6 @@ Scope: `admin:write`.
 | `profile.dn` | string |  |  |
 | `profile.enforceAttestationAtSignIn` | list, or string, or number, or boolean, or null |  |  |
 | `profile.enforceAttestationAtSignIn[]` | string, or number, or boolean, or null |  |  |
-| `profile.enforceCredProtect` | list, or string, or number, or boolean, or null |  |  |
-| `profile.enforceCredProtect[]` | string, or number, or boolean, or null |  |  |
 | `profile.enforcePinLength` | list, or string, or number, or boolean, or null |  |  |
 | `profile.enforcePinLength[]` | string, or number, or boolean, or null |  |  |
 | `profile.enforced` | boolean |  |  |
@@ -3046,8 +2969,6 @@ Scope: `admin:write`.
 | `profile.backupEligibility[]` | string, or number, or boolean, or null |  |  |
 | `profile.clientRules` | list, or string, or number, or boolean, or null |  |  |
 | `profile.clientRules[]` | string, or number, or boolean, or null |  |  |
-| `profile.credProtect` | list, or string, or number, or boolean, or null |  |  |
-| `profile.credProtect[]` | string, or number, or boolean, or null |  |  |
 | `profile.credentialLabel` | list, or string, or number, or boolean, or null |  |  |
 | `profile.credentialLabel[]` | string, or number, or boolean, or null |  |  |
 | `profile.description` | string |  |  |
@@ -3056,8 +2977,6 @@ Scope: `admin:write`.
 | `profile.dn` | string |  |  |
 | `profile.enforceAttestationAtSignIn` | list, or string, or number, or boolean, or null |  |  |
 | `profile.enforceAttestationAtSignIn[]` | string, or number, or boolean, or null |  |  |
-| `profile.enforceCredProtect` | list, or string, or number, or boolean, or null |  |  |
-| `profile.enforceCredProtect[]` | string, or number, or boolean, or null |  |  |
 | `profile.enforcePinLength` | list, or string, or number, or boolean, or null |  |  |
 | `profile.enforcePinLength[]` | string, or number, or boolean, or null |  |  |
 | `profile.enforced` | boolean |  |  |

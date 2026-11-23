@@ -184,9 +184,14 @@ class AccountTokens {
       status: String(one.status), lostAt: String(one.lostAt || ''),
       registeredAt: String(one.registeredAt || ''),
       credentials: (one.credentials || []).map(function (c: Json) {
-        return { kind: String(c.kind), label: String(c.label || ''),
-                 addedAt: String(c.addedAt || ''),
-                 retired: !!c.retired };
+        const row: Json = { kind: String(c.kind),
+                            label: String(c.label || ''),
+                            addedAt: String(c.addedAt || ''),
+                            retired: !!c.retired };
+        if (c.algorithm) {
+          row.algorithm = String(c.algorithm);
+        }
+        return row;
       })
     };
   }

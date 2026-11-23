@@ -2550,7 +2550,7 @@ const SPECS: Spec[] = [
               '(5.2): BCP 195\'s suites are every listener\'s default, TLS ' +
               '1.3 preferred. DPoP nonces stay optional, and consent follows ' +
               'the ordinary rules. The Attacker Model has no normative ' +
-              'requirements; docs/v1.1.0/oauth-security.md maps each ' +
+              'requirements; docs/v1.2.0/oauth-security.md maps each ' +
               'attacker class to what stops it. The console, portal and ' +
               'debugger conform. NOT covered: the conformance suite (#176).' },
   { id: 'fapi2-message-signing', name: 'FAPI 2.0 Message Signing (final)',
@@ -2563,7 +2563,7 @@ const SPECS: Spec[] = [
               'issuer and exp and nbf within 60 minutes (5.3); JARM ' +
               'required, iss inside the JWT (5.4); RFC 9701 introspection ' +
               'responses signed (5.5). Section 5.2\'s non-repudiation is ' +
-              'guidance, answered in docs/v1.1.0/oauth-security.md. The ' +
+              'guidance, answered in docs/v1.2.0/oauth-security.md. The ' +
               'console, portal and debugger conform. RFC 9421 HTTP ' +
               'signatures are NOT ' +
               'part of the final specification: they are FAPI 2.0 Http ' +
@@ -3684,12 +3684,23 @@ const SPECS: Spec[] = [
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9580',
     coverage: 'partial: reading a transferable public key, v6 and (RFC ' +
               '4880) v4, verifying a cleartext signature by a signing ' +
-              'key of it, and encrypting a message to its encryption key, ' +
-              'all through openpgp.js (common/crypto.js section 19). ' +
-              'Ed25519, Ed448, ECDSA and ECDH on the NIST curves, X25519, ' +
-              'X448 and RSA of openpgp.minRsaBits are accepted; DSA, ' +
-              'ElGamal and Brainpool are refused. Missing: signing, ' +
-              'decryption, a keyring, a keyserver.' },
+              'key of it, and encrypting a message to its encryption key. ' +
+              'Classical algorithms go through openpgp.js. RFC 9980 ' +
+              'composites are read here (see rfc9980). Ed25519, Ed448, ' +
+              'ECDSA and ECDH on the NIST curves, X25519, X448 and RSA of ' +
+              'openpgp.minRsaBits are accepted; DSA, ElGamal and Brainpool ' +
+              'are refused. Missing: signing, decryption, a keyring, a ' +
+              'keyserver.' },
+  { id: 'rfc9980', name: 'Post-Quantum Cryptography in OpenPGP (RFC 9980)',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9980',
+    coverage: 'partial: ML-DSA-65+Ed25519 and ML-DSA-87+Ed448 ' +
+              'signatures, and ML-KEM-768+X25519 and ML-KEM-1024+X448 ' +
+              'encryption, at registration and when a stored key is used. ' +
+              'A composite counts as post-quantum. openpgp.pqcOnly narrows ' +
+              'registration only. Both halves of a signature are verified ' +
+              'by common/crypto_impl/openpgp_pqc.js. Missing: SLH-DSA ' +
+              '(algorithm ids 32-34), and this service does not generate ' +
+              'an RFC 9980 key. openpgp.js does not parse these keys.' },
   { id: 'rfc3156', name: 'MIME Security with OpenPGP (RFC 3156)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc3156',
     coverage: 'partial: multipart/encrypted with an application/' +
@@ -3699,9 +3710,12 @@ const SPECS: Spec[] = [
   { id: 'rfc8551', name: 'S/MIME 4.0 Message Specification (RFC 8551)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8551',
     coverage: 'partial: application/pkcs7-mime enveloped-data, a CMS ' +
-              'EnvelopedData with AES-256-CBC content encryption and an ' +
-              'RSAES-OAEP (SHA-256) or ECDH key agreement recipient, to the ' +
-              'person\'s userSMIMECertificate. Missing: signed-data, ' +
+              'EnvelopedData with AES-256-CBC content encryption. A ' +
+              'classical certificate uses RSAES-OAEP (SHA-256) or ECDH. ' +
+              'An ML-KEM certificate (RFC 9935) uses KEMRecipientInfo ' +
+              '(RFC 9629): HKDF-SHA-256 and AES-Wrap. A runtime that ' +
+              'cannot encapsulate does not send the message under a ' +
+              'classical algorithm. Missing: signed-data, ' +
               'AuthEnvelopedData (AES-GCM), decryption.' },
   { id: 'wkd', name: 'OpenPGP Web Key Directory ' +
                      '(draft-koch-openpgp-webkey-service)',
@@ -6042,7 +6056,7 @@ const ENDPOINTS: EndpointEntry[] = [
           'of a message, checked when saved. The console\'s three forms.' },
   // #1955 P6: Directory → OpenPGP keys.
   { path: '/admin-api/openpgp', group: 'Management API',
-    name: 'OpenPGP keys', specs: ['openapi', 'rfc9580', 'wkd'],
+    name: 'OpenPGP keys', specs: ['openapi', 'rfc9580', 'rfc9980', 'wkd'],
     what: 'NON-SPEC (#1955). What Directory → OpenPGP keys draws: with ' +
           '?user=, that person\'s OpenPGP key, their outstanding ' +
           'registration challenge, their Web Key Directory publication, ' +
@@ -6051,7 +6065,7 @@ const ENDPOINTS: EndpointEntry[] = [
           '/admin/openpgp.' },
   { path: '/admin-api/openpgp/:action', group: 'Management API',
     name: 'OpenPGP key actions',
-    specs: ['openapi', 'rfc9580', 'rfc3156', 'rfc8551', 'wkd'],
+    specs: ['openapi', 'rfc9580', 'rfc9980', 'rfc3156', 'rfc8551', 'wkd'],
     effect: 'issues a challenge, registers or removes an OpenPGP key, ' +
             'publishes it, or sets a person\'s mail encryption or S/MIME ' +
             'certificate',
@@ -7372,7 +7386,7 @@ const ENDPOINTS: EndpointEntry[] = [
           '?seen=1, paged with ?page= and ?per=. A CODE IS NEVER SENT TO A ' +
           'CLIENT: it is on the audit row and in the log line only. READ ' +
           'ONLY — the table is source. Mirrors GET /admin/error-codes; the ' +
-          'same table is docs/v1.1.0/error-codes.md.' },
+          'same table is docs/v1.2.0/error-codes.md.' },
   { path: '/admin-api/audit-export', group: 'Management API',
     name: 'Audit export', specs: ['openapi'],
     what: 'NON-SPEC (#641). What Monitoring → Audit export draws: each ' +
@@ -10854,7 +10868,7 @@ const PROTOCOLS: Protocol[] = [
           'and per form, the person always the token\'s subject, described ' +
           'by its own OpenAPI document.' },
   { name: 'OpenPGP', groups: ['OpenPGP'],
-    specs: ['rfc9580', 'rfc3156', 'rfc8551', 'wkd'],
+    specs: ['rfc9580', 'rfc9980', 'rfc3156', 'rfc8551', 'wkd'],
     what: 'A person\'s OpenPGP key (#1955), registered on the portal or by ' +
           'an administrator on a proof of possession — the person signs a ' +
           'challenge with gpg --clearsign, on a YubiKey\'s OpenPGP card ' +

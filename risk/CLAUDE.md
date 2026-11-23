@@ -446,7 +446,7 @@ decision (2026-10-06, option A): `risk.mediumScorePercent` defaults to 300,
 θ = 3** — a calibrated line rather than 1, above the largest user term seen
 on a shared-network stack (1.98); `risk.calibrationMediumPercent` is how a
 realm tunes it. HIGH stays at 10 (`risk.highScorePercent` 1000); what that
-does to the evaluators is in `docs/v1.1.0/risk-scoring.md`, *Levels*.
+does to the evaluators is in `docs/v1.2.0/risk-scoring.md`, *Levels*.
 `tests/risk_model.js` holds the decomposition on all 82 notebook scores and
 the shared-network case; `tests/risk_engine.js` C2–C3 the record and the page.
 

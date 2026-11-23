@@ -1424,8 +1424,8 @@
     "text": "Äldre U2F-AppID:n"
   },
   "webauthn.u2fAppIds|description": {
-    "en": "05b1b01773d86d5d",
-    "text": "FIDO U2F-AppID:n — https-URL:erna som en äldre U2F-förlitande part registrerade sina säkerhetsnycklar under — vars autentiseringsuppgifter får importeras till personers poster och användas för att logga in här, kommaseparerade. **TOMT, standard, betyder att funktionen är av**: ingenting kan importeras, ingen ceremoni bär tillägget appid eller appidExclude (WebAuthn Level 3 avsnitt 10.1.1 och 10.1.2), och en importerad nyckel loggar inte in någon. Ett AppID används bara vid ett RP ID det hör till: dess värd är RP ID:t, eller så är det ena ett suffix av det andra. Där värden skiljer sig från ursprungets hämtar webbläsaren AppID-URL:en efter en TrustedFacets-lista som nämner detta ursprung, som den äldre tjänsten måste fortsätta att tillhandahålla. En importerad nyckel är bara en andra faktor: en U2F-nyckel kan inte verifiera personen."
+    "en": "e17d7febccd7d076",
+    "text": "FIDO U2F-AppID:n — https-URL:erna som en äldre U2F-förlitande part registrerade sina säkerhetsnycklar under — vars autentiseringsuppgifter får importeras till personers poster och användas för att logga in här, kommaseparerade. **TOMT, standard, betyder att funktionen är av**: ingenting kan importeras, ingen ceremoni bär tillägget appid eller appidExclude (WebAuthn Level 3 avsnitt 10.1.1 och 10.1.2), och en importerad nyckel loggar inte in någon. Ett AppID används bara vid ett RP ID det hör till: dess värd är RP ID:t, eller så är det ena ett suffix av det andra. Där värden skiljer sig från ursprungets hämtar webbläsaren AppID-URL:en efter en TrustedFacets-lista som nämner detta ursprung, som den äldre tjänsten måste fortsätta att tillhandahålla. En importerad nyckel är bara en andra faktor: en U2F-nyckel kan inte verifiera personen. U2F är ECDSA över P-256 och har ingen postkvantalgoritm."
   },
   "webauthn.algorithms|label": {
     "en": "47c0895479d03828",
@@ -3360,8 +3360,8 @@
     "text": "Minsta RSA-nyckel för OpenPGP"
   },
 "openpgp.minRsaBits|description": {
-    "en": "ad48516e31a7c45b",
-    "text": "Den kortaste RSA-nyckel, primärnyckel eller undernyckel, som en OpenPGP-registrering accepterar. Ed25519, Ed448, ECDSA och ECDH på P-256, P-384 och P-521, X25519 och X448 accepteras; DSA, ElGamal och Brainpool-kurvorna accepteras aldrig (STS-OPENPGP-0004)."
+    "en": "cd16018c848ce538",
+    "text": "Den kortaste RSA-nyckel, primärnyckel eller undernyckel, som en OpenPGP-registrering accepterar. Ed25519, Ed448, ECDSA och ECDH på P-256, P-384 och P-521, X25519 och X448, samt RFC 9980-kompositerna ML-DSA-65+Ed25519, ML-DSA-87+Ed448, ML-KEM-768+X25519 och ML-KEM-1024+X448 accepteras när openpgp.algorithms nämner dem. DSA, ElGamal, Brainpool-kurvorna och SLH-DSA accepteras aldrig (STS-OPENPGP-0004)."
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
@@ -9212,8 +9212,8 @@
     "text": "Ta fingeravtryck av webbläsaren vid inloggning"
   },
   "risk.fingerprinting|description": {
-    "en": "452ca90f0592fe8b",
-    "text": "AV SOM STANDARD (#62 P6). På: inloggningsskärmen kör ett skript, FingerprintJS (MIT; det skickar ingenting någonstans), som beräknar en identifierare från det webbläsaren exponerar och lägger den i formuläret; tjänsten behåller bara en nycklad sammanfattning, och en webbläsare som den här personen aldrig har loggat in från är signalen new-device (x2). Ett webbläsarfingeravtryck är personuppgifter: genomför konsekvensbedömningen avseende integritet i docs/v1.1.0/risk-scoring.md, och informera dem som loggar in, innan du slår på det. Per sfär, som varje inställning."
+    "en": "c34ba5805bddbb8b",
+    "text": "AV SOM STANDARD (#62 P6). På: inloggningsskärmen kör ett skript, FingerprintJS (MIT; det skickar ingenting någonstans), som beräknar en identifierare från det webbläsaren exponerar och lägger den i formuläret; tjänsten behåller bara en nycklad sammanfattning, och en webbläsare som den här personen aldrig har loggat in från är signalen new-device (x2). Ett webbläsarfingeravtryck är personuppgifter: genomför konsekvensbedömningen avseende integritet i docs/v1.2.0/risk-scoring.md, och informera dem som loggar in, innan du slår på det. Per sfär, som varje inställning."
   },
   "risk.breachCheck|label": {
     "en": "8b4443cd88527e75",
@@ -11640,8 +11640,8 @@
     "text": "Avsändaradress"
   },
   "mail.from|description": {
-    "en": "b1da52c40fbad767",
-    "text": "Adressen som varje meddelande skickas från. Tomt betyder `no-reply@` sfärens DNS-domän. Leverantören måste tillåtas skicka som den: en verifierad identitet i SES, en MailFrom-adress i en ansluten domän i Azure, den brevlåda som personifieras (eller ett av dess send-as-alias) för Gmail — och SPF, DKIM och DMARC för dess domän är ämnet för docs/v1.1.0/mail.md."
+    "en": "a8b259e6c1037325",
+    "text": "Adressen som varje meddelande skickas från. Tomt betyder `no-reply@` sfärens DNS-domän. Leverantören måste tillåtas skicka som den: en verifierad identitet i SES, en MailFrom-adress i en ansluten domän i Azure, den brevlåda som personifieras (eller ett av dess send-as-alias) för Gmail — och SPF, DKIM och DMARC för dess domän är ämnet för docs/v1.2.0/mail.md."
   },
   "mail.fromName|label": {
     "en": "54fc2703a4957936",
@@ -11776,8 +11776,8 @@
     "text": "DKIM-algoritm"
   },
   "mail.dkimAlgorithm|description": {
-    "en": "62ed500aeff2bc8a",
-    "text": "`rsa-sha256` (RFC 6376; en nyckel på 2048 bitar eller större, enligt RFC 8301) eller `ed25519-sha256` (RFC 8463). Många mottagare verifierar fortfarande bara RSA, så en domän som går över till Ed25519 publicerar båda och signerar två gånger på annat håll. DKIM har ännu ingen registrerad postkvantisk algoritm; docs/v1.1.0/mail.md säger det."
+    "en": "0d88e4862621b8df",
+    "text": "`rsa-sha256` (RFC 6376; en nyckel på 2048 bitar eller större, enligt RFC 8301) eller `ed25519-sha256` (RFC 8463). Många mottagare verifierar fortfarande bara RSA, så en domän som går över till Ed25519 publicerar båda och signerar två gånger på annat håll. DKIM har ännu ingen registrerad postkvantisk algoritm; docs/v1.2.0/mail.md säger det."
   },
   "mail.dkimKeyProvider|label": {
     "en": "7e4fc266794b62d9",
@@ -12008,16 +12008,16 @@
     "text": "Självbetjäningsåterställning kräver en verifierad adress"
   },
   "mail.resetRequiresVerifiedAddress|description": {
-    "en": "81dfbb5f1c67cc3c",
-    "text": "Skicka en länk för självbetjäningsåterställning bara till en adress som personen har VERIFIERAT (en länk som personen följde från den). Påslaget som standard, eftersom länken är kontot: en adress som en import eller ett provisioneringsflöde skrev, och som ingen någonsin bevisade, är inget ställe att skicka den till. **Att stänga av det är en svagare inställning**, för en katalog vars adresser är betrodda som de är skrivna; docs/v1.1.0/mail.md innehåller varningen."
+    "en": "af24c1ddaf83c884",
+    "text": "Skicka en länk för självbetjäningsåterställning bara till en adress som personen har VERIFIERAT (en länk som personen följde från den). Påslaget som standard, eftersom länken är kontot: en adress som en import eller ett provisioneringsflöde skrev, och som ingen någonsin bevisade, är inget ställe att skicka den till. **Att stänga av det är en svagare inställning**, för en katalog vars adresser är betrodda som de är skrivna; docs/v1.2.0/mail.md innehåller varningen."
   },
   "mail.resetRequiresBackupCode|label": {
     "en": "addd650807ec39b2",
     "text": "Självbetjäningsåterställning kräver en återställningskod"
   },
   "mail.resetRequiresBackupCode|description": {
-    "en": "2d8885388b97eb61",
-    "text": "Formuläret för glömt lösenord frågar efter ANVÄNDARNAMNET, den verifierade ADRESSEN på kontot och en av personens ÅTERSTÄLLNINGSKODER, och skickar en återställningslänk bara när alla tre stämmer — koden förbrukas då. Varje kombination besvaras med samma mening. **Att stänga av det är en svagare inställning**: formuläret går tillbaka till ett fält (ett användarnamn eller adressen), och en återställning är då lika stark som brevlådan den går till — vilket NIST SP 800-63B-4 tillåter för återställning, och vilket docs/v1.1.0/mail.md varnar för. En person som inte har några återställningskoder kan inte återställa sitt lösenord själv medan det är påslaget; en administratör kan."
+    "en": "f0eccb7bb4055b20",
+    "text": "Formuläret för glömt lösenord frågar efter ANVÄNDARNAMNET, den verifierade ADRESSEN på kontot och en av personens ÅTERSTÄLLNINGSKODER, och skickar en återställningslänk bara när alla tre stämmer — koden förbrukas då. Varje kombination besvaras med samma mening. **Att stänga av det är en svagare inställning**: formuläret går tillbaka till ett fält (ett användarnamn eller adressen), och en återställning är då lika stark som brevlådan den går till — vilket NIST SP 800-63B-4 tillåter för återställning, och vilket docs/v1.2.0/mail.md varnar för. En person som inte har några återställningskoder kan inte återställa sitt lösenord själv medan det är påslaget; en administratör kan."
   },
   "mail.verificationTtlMinutes|label": {
     "en": "49c2a4b66ba8a448",
@@ -13026,5 +13026,53 @@
   "roles.pivKeyRecoveryGroup|description": {
     "en": "801616eea12559a5",
     "text": "Katalogruppen vars medlemmar innehar den inbyggda rollen PIV_KEY_RECOVERY (#1955), som åtkomstkontrollpolicyn kräver, utöver Admin Write, för att återställa en annan persons deponerade piv-key-management-nyckel (piv.keyEscrow). Den nyckeln dekrypterar personens e-post, så ingen innehar rollen förrän en administratör lägger till dem i gruppen. Tomt låter ingen återställa en annan persons nyckel; innehavaren återställer sin egen på portalen."
+  },
+  "openpgp.algorithms|label": {
+    "en": "6973a8aeaa30b96b",
+    "text": "Accepterade algoritmer"
+  },
+  "openpgp.algorithms|description": {
+    "en": "7bf4b57c9c6e7d1f",
+    "text": "De OpenPGP-algoritmer en nyckel får använda, i preferensordning. Först RFC 9980-kompositer: ML-DSA-65+Ed25519 och ML-DSA-87+Ed448 signerar, ML-KEM-768+X25519 och ML-KEM-1024+X448 krypterar. Sedan de klassiska namnen: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa på nistP256, nistP384 och nistP521, rsaSign och rsaEncryptSign, x25519, x448, ecdh på curve25519Legacy och samma NIST-kurvor, och rsaEncrypt. Ett namn som saknas i listan avvisas vid registrering och vid verifiering (STS-OPENPGP-0004). SLH-DSA är inte implementerat. Standardvärdet namnger vart och ett av dessa."
+  },
+  "openpgp.pqcOnly|label": {
+    "en": "d3ff53ec011bbf1f",
+    "text": "Registrera endast postkvantnycklar"
+  },
+  "openpgp.pqcOnly|description": {
+    "en": "a42ec597602f45d5",
+    "text": "På innebär att en nyregistrerad nyckel måste använda en postkvantalgoritm som openpgp.algorithms nämner: ML-DSA-65+Ed25519 eller ML-DSA-87+Ed448 för signeringsnyckeln, och ML-KEM-768+X25519 eller ML-KEM-1024+X448 när den har en krypteringsnyckel. Det begränsar bara registreringen: en klassisk nyckel som redan är registrerad verifieras fortfarande och tar fortfarande emot post. Kan inte vara på samtidigt som openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Av som standard."
+  },
+  "openpgp.pqcAlongsideClassical|label": {
+    "en": "57f71c1990eb46d9",
+    "text": "Postkvantnyckel vid sidan av en klassisk"
+  },
+  "openpgp.pqcAlongsideClassical|description": {
+    "en": "2b5f6cf2a07130e5",
+    "text": "På innebär att en nyregistrerad nyckel måste bära både en postkvantalgoritm och en separat klassisk algoritm. Ett kompositnamn som ML-DSA-65+Ed25519 räknas bara som postkvant, så den klassiska halvan är en annan nyckel, till exempel en Ed25519- eller X25519-undernyckel bredvid. En redan registrerad nyckel lämnas som den är. Kan inte vara på samtidigt som openpgp.pqcOnly (STS-OPENPGP-0027). Av som standard."
+  },
+  "pki.sshUserCaAlgorithms|label": {
+    "en": "1fa9bf9eedbabd99",
+    "text": "Algoritmer för SSH-användar-CA"
+  },
+  "pki.sshUserCaAlgorithms|description": {
+    "en": "bdb54445a0279b8d",
+    "text": "Vilka algoritmer SSH-användarcertifikatets CA får använda, i preferensordning. ssh-mldsa-65 är ML-DSA-65 (FIPS 204) under ett trådnamn som den här tjänsten definierar, eftersom OpenSSH inte definierar något: den publika nyckeln och signaturen är råa, i den form ssh-ed25519 använder. OpenSSH-raden TrustedUserCAKeys som den här tjänsten publicerar förblir den första klassiska algoritmen i listan, eller ssh-ed25519 när listan bara nämner ssh-mldsa-65. En part som inte förstår ML-DSA fortsätter att lita på den raden. ssh-rsa (SHA-1) erbjuds inte. ML-DSA-auktoriteten skapas bara när den här körningen kan generera nyckeln; annars förblir certifikaten klassiska (STS-PKI-0290 registreras och den klassiska auktoriteten svarar fortfarande)."
+  },
+  "pki.sshUserCaPqcOnly|label": {
+    "en": "74aae1308361ba58",
+    "text": "SSH-användarcertifikat är endast postkvantum"
+  },
+  "pki.sshUserCaPqcOnly|description": {
+    "en": "39b21e5b95f84da1",
+    "text": "På innebär att ett nytt SSH-användarcertifikat signeras av ML-DSA-auktoriteten, och bara när den auktoriteten finns. Den publicerade TrustedUserCAKeys-raden förblir den klassiska nyckeln, så att en OpenSSH-klient som redan litar på den inte får en algoritm den inte kan tolka. På en körning som inte kan generera ML-DSA förblir certifikatet klassiskt och begäran misslyckas inte. Redan utfärdade klassiska certifikat verifieras fortfarande. Kan inte vara på samtidigt som pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Av som standard."
+  },
+  "pki.sshUserCaPqcAlongsideClassical|label": {
+    "en": "c3201f8841200c32",
+    "text": "SSH-användarcertifikat bär också ett postkvantcertifikat"
+  },
+  "pki.sshUserCaPqcAlongsideClassical|description": {
+    "en": "b38eab63ec092b6c",
+    "text": "På innebär att ett nytt SSH-användarcertifikat utfärdas två gånger när ML-DSA-auktoriteten finns: det klassiska certifikatet, som en OpenSSH-klient använder, och ett ML-DSA-certifikat bredvid. Kan inte vara på samtidigt som pki.sshUserCaPqcOnly (STS-PKI-0296). Av som standard. En komposit är inget begrepp OpenSSH har; det klassiska certifikatet och ML-DSA-certifikatet är två signaturer, inte en hybridsignatur."
   }
 }

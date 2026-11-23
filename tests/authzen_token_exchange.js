@@ -18,7 +18,7 @@
 //   F. THE FIXED RULES: which tuples are the binding's, the context members
 //      and their one JSON type, the subject types, and every fixed `false`
 //      (another grant, an unregistered type, a third party, a scope with no
-//      gate or naming somebody else) — and `docs/v1.1.0/authzen.md`'s table is
+//      gate or naming somebody else) — and `docs/v1.2.0/authzen.md`'s table is
 //      `FIXED_RULES`.
 //   C. THE CATALOGUE may add a row (`context.tenant`, whose attribute
 //      reaches the exchange question) and may not override one: every
@@ -284,13 +284,13 @@ function theFixedRules(t, surface) {
           exchange.TOKEN_TYPES.txn_token ===
             'urn:ietf:params:oauth:token-type:txn_token',
           'F2. the registered token types, ID-JAG and Txn-Token among them');
-  const docs = fs.readFileSync(path.join(ROOT, 'docs/v1.1.0/authzen.md'),
+  const docs = fs.readFileSync(path.join(ROOT, 'docs/v1.2.0/authzen.md'),
                                'utf8');
   const missing = exchange.FIXED_RULES.filter(function (one) {
     return docs.indexOf(one.member) < 0;
   }).map(function (one) { return one.member; });
   t.check(exchange.FIXED_RULES.length >= 15 && !missing.length,
-          'F3. docs/v1.1.0/authzen.md publishes every fixed rule (' +
+          'F3. docs/v1.2.0/authzen.md publishes every fixed rule (' +
           exchange.FIXED_RULES.length + ')', missing.join('; '));
   t.check(catalogue.BINDING_CONTEXT.join() ===
           Object.keys(exchange.CONTEXT_TYPES).join(),

@@ -2590,7 +2590,7 @@ beside the User-Agent's. The risk engine scores a digest this person never
 signed in from as `new-device` (×2).
 
 **Turning it on is the operator's decision**, after the privacy impact
-assessment `docs/v1.1.0/risk-scoring.md` sets out: a browser fingerprint is personal
+assessment `docs/v1.2.0/risk-scoring.md` sets out: a browser fingerprint is personal
 data about the device, collected without the person doing anything.
 
 ## EVERY SIGN-IN SCREEN ANSWERS A REFUSED SESSION, AND THE REFUSAL SAYS WHY (2026-09-22, #62 P0)

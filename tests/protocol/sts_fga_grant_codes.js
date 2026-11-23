@@ -53,7 +53,7 @@ const LOCATION = "https://fgg-docs.example.net/api";
 const EXCHANGE = "urn:ietf:params:oauth:grant-type:token-exchange";
 // At issuance the question is `grant-authorization-detail` with the
 // detail's action beside it; at access time the action itself
-// (`sts_fga.js`'s NO_DELETE, docs/v1.1.0/fga.md's two examples in one
+// (`sts_fga.js`'s NO_DELETE, docs/v1.2.0/fga.md's two examples in one
 // document).
 const DENY_DELETE = [
   "namespace fggdeny {",

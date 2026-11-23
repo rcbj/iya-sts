@@ -82,9 +82,7 @@ membership, a valid key or a listener pair already there is reported as
 | 4. the assertion key | generated in `--out`; only the request goes to `POST /admin-api/xacml/issue-pep-credential` | the key in `--out` is registered and valid |
 | 5. the cluster, with `--cluster` | `POST /admin-api/xacml/add-pep-cluster-member` (and `create-pep-cluster` with `--create-cluster`) | it is a member already |
 | 6. the HTTPS listener pair | `POST /admin-api/xacml/issue-pep-certificate` | `--out` holds a pair (`--reissue-https` replaces it) |
-| 7. the environment | writes `pep.env` and `docker-compose.pep.yml`. With `--cluster`, that compose is the cluster: every member whose `--out` is in the same directory, one load balancer published on `127.0.0.1` only, and the companion. The parent of `--out` also gets `docker-compose.pep-cluster.yml`, `pep-cluster-haproxy.cfg` and the saved port | never; rewritten each run |
-| 8. the companion path | a `--cluster` run registers it (so does `--pep-app`): the role (`POST /admin-api/roles/create-role`), the confidential client (`POST /admin-api/applications/create` and `POST /admin-api/consent/grant-global-consent`) and one session route (`POST /admin-api/xacml/set-pep-cluster-proxy`, or `set-pep-cluster-route` when the cluster already has a proxy) | the route is already that one role's, and the callback is registered |
-| 9. the containers, with `--cluster` | `docker compose up -d --no-build --pull never` of `docker-compose.pep-cluster.yml`: the members, the load balancer and the companion. The identity service is not in that file | `--dry-run` only says it would |
+| 7. the environment | writes `pep.env` and `docker-compose.pep.yml` | never; rewritten each run |
 
 **The listener pair waits for the first registration**, because the realm
 issues it only to a PEP that has registered
@@ -103,38 +101,12 @@ What `--out` holds:
 | `service-ca.pem` | the anchor from `--ca`, given to the PEP as `PEP_TLS_CA` |
 | `pep.env`, `docker-compose.pep.yml` | the container's environment, and a compose service using it |
 
-With `--cluster`, the parent of every member's `--out` holds the shared
-files: `docker-compose.pep-cluster.yml` (the members and one load balancer),
-`pep-cluster-haproxy.cfg` (TLS passes through; `balance source` on 9543,
-round robin on 9443), `pep-cluster-<name>.json` (the host port and each
-member's directory) and, when a member's `PEP_PDP_URL` host is `localhost`,
-`pep-cluster-reach-sts.sh`. Put each member's `--out` in that one directory.
-A later member rewrites the compose so the same load balancer fronts all of
-them.
-
 Other options: `--key-alg=rsa-2048`, `--https-dns` and `--https-ip` (more
 names on the listener certificate), `--new-key` and `--revoke-previous` (a
 new assertion key, the old ones revoked), `--group` (the remote PEPs group,
 if not `roles.remotePepGroup`), `--mount` (where the container mounts
 `--out`, default `/certs`) and `--dry-run`, which writes nothing anywhere and
 says what each step would do. `--help` lists them all.
-
-**A `--cluster` run registers one path** on the cluster's shared reverse proxy,
-in front of the companion container's `/pep-app`. `--pep-app` is the same
-switch and is refused without `--cluster`. The defaults are the application
-`pep-app`, the role `pep-app` (that one role, on
-both read and write), the path `/pep-app` (GET, HEAD and POST), the upstream
-`http://companion:9700` and the public base the load balancer took
-(`https://localhost:9543` when that port is free). Override them with
-`--app`, `--role`, `--path`, `--upstream` and `--public-base`. The
-route signs a browser in and forwards the caller's identity in the headers the
-companion echoes (`X-Remote-User`, `X-Iya-User`, `X-Iya-Email`, `X-Iya-Name`,
-`X-Iya-Groups`, `X-Iya-Auth`, `X-Iya-Amr`). The client's redirect URI is the
-public base plus `/.iya-pep/callback`. A member that publishes an address of
-its own needs that callback too, and the command registers it. The client
-secret is printed once, when the application is created; a later run does not
-rotate it. The role is created empty: grant it to the people who may use the
-application. A run that does not join a cluster leaves the proxy alone.
 
 **TLS.** The tool verifies the service's certificate. Name its anchor with
 `--ca` (or `NODE_EXTRA_CA_CERTS`). `--insecure` turns verification off and
@@ -184,8 +156,7 @@ join a cluster, see [Remote PEP clusters](#remote-pep-clusters).
 
 ### Starting it
 
-A run that did not join a cluster writes one compose service. Start that PEP
-with the files from the tool:
+With the files from the tool:
 
 ```bash
 docker run -d --name remote-pep-3 --hostname remote-pep-3 \
@@ -193,40 +164,8 @@ docker run -d --name remote-pep-3 --hostname remote-pep-3 \
   -v "$PWD/remote-pep-3:/certs:ro" -p 9444:9443 iyasec/iya-sts-xacml-pep
 ```
 
-or `docker compose -f docker-compose.pep.yml up -d` in that directory. That
-file publishes the decision API on the host's 9444 and the reverse proxy on
-9543.
-
-A `--cluster` run writes one compose for every member whose `--out` sits in
-the same directory, then starts it:
-
-```bash
-docker compose -f docker-compose.pep-cluster.yml up -d --no-build --pull never
-```
-
-That is the command the tool runs. It starts the members, the load balancer
-and the companion (`companion-<cluster>`, hostname `companion`,
-`127.0.0.1:9700`). It does not start the identity service. Set
-`STS_COMPANION_IMAGE` when the companion image is not `iya-sts-companion`,
-`XACML_PEP_IMAGE` for the PEP image, and `PEP_LB_IMAGE` for HAProxy.
-
-The members publish no host ports. One HAProxy container sits in front of
-them and the host publishes only its reverse-proxy listener, on `127.0.0.1`
-and the port the tool chose: 9543 when it is free, otherwise the first free
-port from 18443 through 18543. Pass `--public-base https://localhost:<port>`
-to pin it; a later member reuses the port in `pep-cluster-<name>.json`. The
-decision API (9443) stays on the cluster network. There is no TCP forwarder.
-The compose joins `${STS_NETWORK:-iya-sts_default}` and does not define the
-identity service.
-
-When a member's `PEP_PDP_URL` host is exactly `localhost`, that member starts
-through `pep-cluster-reach-sts.sh`. The script points the name `localhost` at
-the `sts` container, so the container dials the service and a browser is sent
-to the same `https://localhost:<port>`. `127.0.0.1` stays the PEP, which is
-what its healthcheck dials. A URL of `https://127.0.0.1` or `https://sts:8081`
-is left as given.
-
-The environment it needs is `PEP_PDP_URL` (the address the **container** reaches
+or `docker compose -f docker-compose.pep.yml up -d` in that directory. The
+environment it needs is `PEP_PDP_URL` (the address the **container** reaches
 the service at, with the realm's prefix), `PEP_NAME`,
 `PEP_CLIENT_ID=sts-remote-pep`, `PEP_ASSERTION_KEY`, `PEP_HTTPS_CERT` and
 `PEP_HTTPS_KEY`, and `PEP_TLS_CA` for the service's anchor. The PEP
@@ -234,12 +173,13 @@ authenticates with its key alone and needs no client certificate
 ([How the PEP authenticates to the service](#how-the-pep-authenticates-to-the-service)).
 Every other variable is in [Configuration](#configuration).
 
-**The published ports are only a starting point** for a single PEP. The
-`docker run` command and a non-cluster `docker-compose.pep.yml` publish the
-PEP's HTTPS listener on the host's 9444 (and the compose file the reverse
-proxy's 9543). On a host that already runs a PEP, those ports are taken. A
-cluster compose publishes none of them: only the load balancer, on
-`127.0.0.1`.
+**The published ports are only a starting point.** The command above and
+`docker-compose.pep.yml` publish the PEP's HTTPS listener on the host's 9444
+(and the compose file the reverse proxy's 9543). On a host that already runs
+a PEP, or a load balancer in front of several, those ports are taken. Pick
+free ones, or publish none and put the container on the network its callers
+and the service share, as a second member of a cluster behind one load
+balancer is run.
 
 Then issue the listener pair: run the tool again, or follow
 [An HTTPS listener](#an-https-listener-certified-by-the-realm-it-registered-to).
@@ -1091,12 +1031,6 @@ The PEP sends the member only when its hostname is such a name. A PEP
 older than this sends none, and its default names are as before. An older
 service ignores the member.
 
-The service also refuses a heartbeat that carries a value it cannot store
-on the PEP's row (`STS-XACML-0331`), and records nothing of it. A counter
-must be a whole number from 0 to 2^53 - 1, and a text member such as
-`version` a string with no control character. The PEP never sends anything
-else, so it does not meet this refusal.
-
 * **No HTTPS certificate, no URL.** `POST /notify` is answered on HTTPS only,
   so a PEP with no pair yet advertises nothing and converges by polling. The
   URL is derived again on every reload of the pair. A new certificate that
@@ -1201,11 +1135,9 @@ instead. Either way:
   so round robin per connection is right there.
 
 A restarted instance has lost its sessions, so the people it was serving sign
-in again whatever the balancer does. `register-remote-pep.js` writes that
-split into `pep-cluster-haproxy.cfg`: `balance source` on 9543 and round
-robin on 9443, and the compose publishes only the proxy listener on
-`127.0.0.1`. The demonstration stack's `iya-sts-8081/pep-haproxy.cfg` is the
-same arrangement.
+in again whatever the balancer does. The demonstration stack's balancer,
+`iya-sts-8081/pep-haproxy.cfg`, is an example: `balance source` on 9543 and
+round robin on 9443.
 
 ### One certificate per instance, or one shared
 

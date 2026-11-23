@@ -30,7 +30,7 @@
 // THE THREE WEBHOOK TEXTAREAS NAME THEMSELVES BESIDE THE BOX. A textarea
 // inside its label takes the hover, so the name's tooltip never appears.
 // The description is the label's `title`. The same sentences are the
-// management API's field descriptions and `docs/v1.1.0/audit-export.md`.
+// management API's field descriptions and `docs/v1.2.0/audit-export.md`.
 //
 // A `web_` MODULE: other `web_` modules only, no log, bundled for a
 // browser by `build-typescript.sh`.

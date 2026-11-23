@@ -83,7 +83,7 @@
 //      is not an HTTP response, or `errorCodes.tag('STS-…')` at the front of a
 //      log message for a failure no audit row can hold;
 //   3. `node common/error_codes.js --docs`, which regenerates
-//      `docs/v1.1.0/error-codes.md`.
+//      `docs/v1.2.0/error-codes.md`.
 //
 // `tests/error_codes.js` fails on a code used and not registered, a code
 // registered and used nowhere, a documentation page that is stale, and a
@@ -92,7 +92,7 @@
 // property of the build rather than of anybody remembering.
 //
 // Run directly:
-//   node common/error_codes.js --docs     regenerate docs/v1.1.0/error-codes.md
+//   node common/error_codes.js --docs     regenerate docs/v1.2.0/error-codes.md
 //   node common/error_codes.js --check    non-zero if the page is stale
 //   node common/error_codes.js --json     the table
 // ===========================================================================
@@ -5474,6 +5474,12 @@ const CODES = [
     summary: 'A person requested SSH user certificates (#1955 P3) too often ' +
       'and the shared rate limiter refused it.',
     spec: 'The account API refuses the request with HTTP 429' },
+  { code: 'STS-PKI-0296',
+    summary: 'A write turned on pki.sshUserCaPqcOnly and ' +
+      'pki.sshUserCaPqcAlongsideClassical together. One narrows a new ' +
+      'certificate to the ML-DSA authority; the other issues a classical ' +
+      'certificate and an ML-DSA certificate. They cannot both be on.',
+    spec: 'The console and the management API refuse the write' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -23495,9 +23501,11 @@ const CODES = [
     spec: 'HTTP 400 (the page with the sentence)' },
   { code: 'STS-OPENPGP-0004',
     summary: 'An OpenPGP key, or the subkey that made its proof, uses an ' +
-      'algorithm the allow list refuses (DSA, ElGamal, a Brainpool ' +
-      'curve, or RSA shorter than openpgp.minRsaBits), or has no ' +
-      'valid signing key (#1955).',
+      'algorithm openpgp.algorithms does not name (DSA, ElGamal, a ' +
+      'Brainpool curve, SLH-DSA, or any other name absent from that ' +
+      'list), or RSA shorter than openpgp.minRsaBits, or has no valid ' +
+      'signing key, or fails openpgp.pqcOnly or ' +
+      'openpgp.pqcAlongsideClassical at registration (#1955).',
     spec: 'HTTP 400 (the page with the sentence)' },
   { code: 'STS-OPENPGP-0005',
     summary: 'No valid user id of an OpenPGP key offered for registration ' +
@@ -23597,6 +23605,24 @@ const CODES = [
     summary: 'An OpenPGP operation of the account API or the management ' +
       'API threw (#1955).',
     spec: 'HTTP 500' },
+  { code: 'STS-OPENPGP-0026',
+    summary: 'A post-quantum OpenPGP key (RFC 9980), or a proof signed ' +
+      'with one, could not have its ML-DSA half checked on this ' +
+      'runtime, so the key was not stored and the proof was not ' +
+      'accepted. The EdDSA half alone is not enough.',
+    spec: 'HTTP 400 (the page with the sentence)' },
+  { code: 'STS-OPENPGP-0027',
+    summary: 'A write turned on openpgp.pqcOnly and ' +
+      'openpgp.pqcAlongsideClassical together. Post-quantum only ' +
+      'accepts a post-quantum key; alongside requires a post-quantum ' +
+      'key and a separate classical one. The write was refused.',
+    spec: 'HTTP 400 (the settings write)' },
+  { code: 'STS-OPENPGP-0028',
+    summary: 'An S/MIME message to an ML-KEM certificate could not be ' +
+      'built: this runtime cannot encapsulate (ML-KEM needs OpenSSL ' +
+      '3.5). The message was not sent under a classical algorithm ' +
+      'instead.',
+    spec: 'the mail send; STS-MAIL-0243 carries the sentence' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile was named with something ' +
@@ -31284,7 +31310,7 @@ function escapeCell(text) {
 }
 
 /**
- * Generates `docs/v1.1.0/error-codes.md` from the table.
+ * Generates `docs/v1.2.0/error-codes.md` from the table.
  *
  * @returns the page's Markdown
  */
@@ -31418,7 +31444,7 @@ function markdown() {
 
 /**
  * Returns the path of the generated documentation page,
- * `docs/v1.1.0/error-codes.md`.
+ * `docs/v1.2.0/error-codes.md`.
  *
  * @returns the absolute path
  */
@@ -31428,7 +31454,7 @@ function docsPath() {
   log.debug("Leaving docsPath().");
   // The latest documentation version's folder; the frozen releases beside
   // it are never regenerated (docs/CLAUDE.md, *The versioned site*).
-  return path.join(__dirname, '..', 'docs', 'v1.1.0', 'error-codes.md');
+  return path.join(__dirname, '..', 'docs', 'v1.2.0', 'error-codes.md');
 }
 
 /**
@@ -31475,11 +31501,11 @@ if (require.main === module) {
       current = '';
     }
     if (current !== markdown()) {
-      console.error('[error_codes] docs/v1.1.0/error-codes.md is stale. Run: ' +
+      console.error('[error_codes] docs/v1.2.0/error-codes.md is stale. Run: ' +
                     'node common/error_codes.js --docs');
       process.exit(1);
     }
-    console.log('docs/v1.1.0/error-codes.md matches the table (' +
+    console.log('docs/v1.2.0/error-codes.md matches the table (' +
         CODES.length + ' codes)');
   } else {
     console.log(JSON.stringify({ subsystems: SUBSYSTEMS, codes: CODES }, null,
