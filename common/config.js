@@ -7393,9 +7393,11 @@ const SETTINGS = [
                  '#1955: a smart-card logon certificate whose key this ' +
                  'service did not generate, or recorded attestation ' +
                  'evidence. `evidence`: only a key a hardware token\'s ' +
-                 'attestation covers. A certificate sign-in over TLS ' +
-                 'earns hwk, and sc for a key on a smart card, only from ' +
-                 'evidence in either case.' },
+                 'attestation covers, and a passkey earns hwk only where ' +
+                 'its attestation was verified and trusted (swk ' +
+                 'otherwise). A certificate sign-in over TLS earns hwk, ' +
+                 'and sc for a key on a smart card, only from evidence in ' +
+                 'either case, and only for the certificate\'s holder.' },
 
   // #1955 P4: a vendor's PSKC seed file (RFC 6030) with its secrets in
   // the clear. `common/mode.js`'s `refusesPlaintextSeedFiles()` reads it.
@@ -7462,7 +7464,8 @@ const SETTINGS = [
     description: 'A piv-card-auth (slot 9e) key works without a PIN, for ' +
                  'physical access, so its certificate is refused at the ' +
                  'TLS sign-in and at PKINIT (STS-PIV-0013) unless this is ' +
-                 'on.' },
+                 'on. A slot 9e key is certified under piv-card-auth only ' +
+                 '(STS-PIV-0037), and never earns hwk or sc.' },
   { key: 'piv.keyEscrow', group: 'Devices',
     label: 'Escrow piv-key-management keys',
     env: 'STS_PIV_KEY_ESCROW', type: 'bool', dflt: false, runtime: true,

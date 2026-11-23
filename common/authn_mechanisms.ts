@@ -151,12 +151,33 @@ class AuthnMechanisms {
     // (`authn.ts`'s `hardwareTokenOf()`). It is IN ADDITION to `webauthn`:
     // a list naming only `attested-hardware` is satisfied by an attested
     // security key or smart card and by nothing else.
-    if (((one.context || {}).credential || {}).hardwareToken) {
+    // AND THE TOKEN IS STILL ACTIVE NOW (the #1955 review): the snapshot is
+    // the sign-in's, and a token reported lost since proves nothing of the
+    // session's key. A register that cannot be asked proves nothing either.
+    const token = ((one.context || {}).credential || {}).hardwareToken;
+    if (token && AuthnMechanisms.tokenStillActive(String(token.key || ''))) {
       out.push('attested-hardware');
     }
     log.debug('Leaving AuthnMechanisms.ofEvent(). ' +
               (out.join(', ') || 'none'));
     return out;
+  }
+
+  // Whether the hardware token register still lists a token as active.
+  // Reached lazily: the register reaches the credential store.
+  private static tokenStillActive(key: string): boolean {
+    log.debug('Entering AuthnMechanisms.tokenStillActive().');
+    let active = false;
+    try {
+      const now = key ? require('./hardware_tokens').byKey(key) : null;
+      active = !!now && String(now.status || '') === 'active';
+    } catch (e) {
+      log.debug('Caught in AuthnMechanisms.tokenStillActive(): ' +
+                ((e && e.message) || e));
+      active = false;
+    }
+    log.debug('Leaving AuthnMechanisms.tokenStillActive(). ' + active);
+    return active;
   }
 
   /**

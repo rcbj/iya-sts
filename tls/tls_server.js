@@ -5525,7 +5525,7 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
   // WHAT THE CERTIFICATE'S KEY EARNS (#1955 P1): `swk` as always, `hwk`
   // where a hardware token's attestation covers the key, with `sc` where
   // it says the key is on a smart card. Never inferred here.
-  const amr = certificateAmrOf(cert);
+  const amr = certificateAmrOf(cert, username);
   try {
     session = authn.startSession(res, username, amr, '1',
                                  'a client certificate on the ' + mode +
@@ -5621,7 +5621,8 @@ function cardAuthRefusalOf(cert) {
   let refusal = null;
   try {
     refusal = require('../common/piv_attestation').signInRefusal(
-      String((cert && cert.serialNumber) || ''));
+      String((cert && cert.serialNumber) || ''),
+      String((cert && cert.fingerprint256) || ''));
   } catch (e) {
     log.debug('Caught in cardAuthRefusalOf(): ' + ((e && e.message) || e));
     refusal = null;
@@ -5633,12 +5634,17 @@ function cardAuthRefusalOf(cert) {
 // The RFC 8176 amr a client certificate's sign-in earns (#1955 P1): what
 // the hardware token register's evidence says of its key, `swk` when it
 // says nothing or cannot be asked. `common/hardware_tokens.ts` argues it.
-function certificateAmrOf(cert) {
+// The certificate is named by its thumbprint and serial, and earns only
+// the person it signs in, when they are its holder (the #1955 review).
+function certificateAmrOf(cert, username) {
   log.debug('Entering certificateAmrOf().');
   let amr = ['swk'];
   try {
-    amr = require('../common/hardware_tokens').certificateAmr(
-      String((cert && cert.serialNumber) || ''));
+    amr = require('../common/hardware_tokens').certificateAmr({
+      der: cert && cert.raw ? cert.raw : undefined,
+      thumbprint: String((cert && cert.fingerprint256) || ''),
+      serial: String((cert && cert.serialNumber) || ''),
+      username: String(username || '') });
   } catch (e) {
     log.debug('Caught in certificateAmrOf(): ' + ((e && e.message) || e));
     amr = ['swk'];
@@ -5912,7 +5918,7 @@ function screenCertificateHolder(req) {
       serial: String(peer.cert.serialNumber || ''),
       // What the certificate's key earns (#1955 P1), for the screen's
       // session: `GET /tls/sign-in`'s answer, from the same evidence.
-      amr: certificateAmrOf(peer.cert),
+      amr: certificateAmrOf(peer.cert, peer.username),
       revocationSaid: revocationSaid,
       // THE IDENTITY VERIFICATION (#127) `GET /tls/sign-in` records once
       // its session has started, recorded by the screen at the same point.

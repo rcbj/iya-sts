@@ -156,8 +156,12 @@ interface Krb5PkinitDeps {
   // whether the realm still lets the inference stand (#1955): reached at
   // the moment of use, and nothing (with the inference standing) when it
   // cannot be asked.
-  hardwareEvidence: (serialHex: string) => {
-    hardware: boolean; smartCard: boolean; inferenceAllowed: boolean };
+  // Since the #1955 review: by the certificate itself (its thumbprint and
+  // serial) and the person it would sign in, who must be its holder; and
+  // `cardAuth`, the PIV rule's refusal of a key that needs no PIN, or ''.
+  hardwareEvidence: (leaf: Buffer, username: string) => {
+    hardware: boolean; smartCard: boolean; inferenceAllowed: boolean;
+    cardAuth: string };
 }
 
 // The KDC's key and certificate in this process, per trust realm.
@@ -267,18 +271,32 @@ class Krb5Pkinit {
       revocationStatus: function () {
         return require('../common/revocation_status');
       },
-      hardwareEvidence: function (serialHex: string) {
+      hardwareEvidence: function (leaf: Buffer, username: string) {
+        let cardAuth = '';
+        try {
+          const refusal = require('../common/piv_attestation').signInRefusal(
+            pki.certificateSerialHex(leaf),
+            cryptoLib.digest('sha256', leaf, 'hex'));
+          cardAuth = refusal ? String(refusal.why || 'card-auth') : '';
+        } catch (e) {
+          helpers.log.debug('Caught in hardwareEvidence(): ' +
+                            ((e && e.message) || e));
+          // Not enrolled here, or no register to ask: not this rule's.
+          cardAuth = '';
+        }
         try {
           const tokens = require('../common/hardware_tokens');
-          const ev = tokens.evidenceFor('x509', serialHex);
+          const ev = tokens.certificateEvidence({ der: leaf,
+            serial: pki.certificateSerialHex(leaf), username: username });
           return { hardware: !!ev.hardware, smartCard: !!ev.smartCard,
-                   inferenceAllowed: tokens.inferenceAllowed() };
+                   inferenceAllowed: tokens.inferenceAllowed(),
+                   cardAuth: cardAuth };
         } catch (e) {
           helpers.log.debug('Caught in hardwareEvidence(): ' +
                             ((e && e.message) || e));
           // No register to ask: no evidence, and the inference as before.
           return { hardware: false, smartCard: false,
-                   inferenceAllowed: true };
+                   inferenceAllowed: true, cardAuth: cardAuth };
         }
       },
       nodeName: function () {
@@ -773,8 +791,17 @@ class Krb5Pkinit {
     // EKU, and the smart-card evidence earns `sc` beside it. The inference
     // stands only while `hardwareTokens.hardwareClaims` is `inference`, the
     // default, so an existing realm's tickets say what they said.
-    const evidence = this.deps.hardwareEvidence(
-      this.deps.pki.certificateSerialHex(leaf));
+    const names = (cname && cname.name) || [];
+    const evidence = this.deps.hardwareEvidence(leaf,
+      names.length === 1 ? String(names[0]) : '');
+    // A PIV CARD AUTHENTICATION KEY (slot 9e) SIGNS NOBODY IN HERE either
+    // (the #1955 review): it needs no PIN, which is what PKINIT's
+    // `pkinit-smartcard` claims, and the TLS door already refuses it.
+    if (evidence.cardAuth) {
+      log.debug('Leaving Krb5Pkinit.checkCertificate(). A card-auth key.');
+      return this.refuse(codec.ERROR.CLIENT_NOT_TRUSTED, 'STS-PIV-0013',
+                         evidence.cardAuth);
+    }
     const inferred = facts.ekus.indexOf(SMARTCARD_LOGON_EKU) >= 0 &&
                      bound.keySource !== 'server' &&
                      evidence.inferenceAllowed;

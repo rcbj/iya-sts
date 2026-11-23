@@ -3304,8 +3304,8 @@
     "text": "Ce qui donne droit à une revendication de clé matérielle"
   },
   "hardwareTokens.hardwareClaims|description": {
-    "en": "e0341e4e47f3b2f8",
-    "text": "Ce qui permet à une connexion PKINIT de revendiquer une clé liée au matériel (l'indicateur pkinit-hardware et amr hwk). `inference`, la valeur par défaut et le comportement d'avant #1955 : un certificat d'ouverture de session par carte à puce dont ce service n'a pas généré la clé, ou une preuve d'attestation enregistrée. `evidence` : seulement une clé couverte par l'attestation d'un jeton matériel. Une connexion par certificat sur TLS n'obtient hwk, et sc pour une clé sur une carte à puce, qu'à partir d'une preuve, dans les deux cas."
+    "en": "82f545cd2dea952b",
+    "text": "Ce qui permet à une connexion PKINIT de revendiquer une clé liée au matériel (l’indicateur pkinit-hardware et l’amr hwk). `inference`, la valeur par défaut et le comportement avant #1955 : un certificat de connexion par carte à puce dont ce service n’a pas généré la clé, ou une preuve d’attestation enregistrée. `evidence` : seulement une clé couverte par l’attestation d’un jeton matériel, et une clé d’accès n’obtient hwk que si son attestation a été vérifiée et est de confiance (swk sinon). Une connexion par certificat sur TLS obtient hwk, et sc pour une clé sur une carte à puce, uniquement à partir de preuves dans les deux cas, et seulement pour le titulaire du certificat."
   },
 "pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
@@ -12992,8 +12992,8 @@
     "text": "Permettre à un certificat piv-card-auth de se connecter"
   },
   "piv.cardAuthSignIn|description": {
-    "en": "1852da24c3fbfade",
-    "text": "Une clé piv-card-auth (emplacement 9e) fonctionne sans PIN, pour l’accès physique ; son certificat est donc refusé à la connexion TLS et à PKINIT (STS-PIV-0013), sauf si ce réglage est activé."
+    "en": "e9e37c8e6becb7ee",
+    "text": "Une clé piv-card-auth (emplacement 9e) fonctionne sans PIN, pour l’accès physique ; son certificat est donc refusé à la connexion TLS et à PKINIT (STS-PIV-0013), sauf si ce réglage est activé. Une clé de l’emplacement 9e n’est certifiée que sous piv-card-auth (STS-PIV-0037) et n’obtient jamais hwk ni sc."
   },
   "piv.keyEscrow|label": {
     "en": "f2efc85c3d2bac38",

@@ -3304,8 +3304,8 @@
     "text": "Vad som ger anspråk på maskinvarunyckel"
   },
   "hardwareTokens.hardwareClaims|description": {
-    "en": "e0341e4e47f3b2f8",
-    "text": "Vad som låter en PKINIT-inloggning göra anspråk på en maskinvarubunden nyckel (indikatorn pkinit-hardware och amr hwk). `inference`, standardvärdet och beteendet före #1955: ett certifikat för smartkortsinloggning vars nyckel den här tjänsten inte genererade, eller registrerat attesteringsbevis. `evidence`: endast en nyckel som en maskinvarutokens attestering täcker. En certifikatinloggning över TLS får hwk, och sc för en nyckel på ett smart kort, endast utifrån bevis i båda fallen."
+    "en": "82f545cd2dea952b",
+    "text": "Vad som låter en PKINIT-inloggning göra anspråk på en hårdvarubunden nyckel (indikatorn pkinit-hardware och amr hwk). `inference`, standard och beteendet före #1955: ett certifikat för smartkortsinloggning vars nyckel denna tjänst inte genererade, eller registrerade attesteringsbevis. `evidence`: endast en nyckel som en hårdvarutokens attestering täcker, och en passkey får hwk endast när dess attestering verifierats och är betrodd (annars swk). En certifikatinloggning över TLS får hwk, och sc för en nyckel på ett smartkort, endast från bevis i båda fallen, och endast för certifikatets innehavare."
   },
 "pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
@@ -12992,8 +12992,8 @@
     "text": "Låt ett piv-card-auth-certifikat logga in"
   },
   "piv.cardAuthSignIn|description": {
-    "en": "1852da24c3fbfade",
-    "text": "En piv-card-auth-nyckel (plats 9e) fungerar utan PIN-kod, för fysisk åtkomst, så dess certifikat avvisas vid TLS-inloggningen och vid PKINIT (STS-PIV-0013) om inte detta är på."
+    "en": "e9e37c8e6becb7ee",
+    "text": "En piv-card-auth-nyckel (plats 9e) fungerar utan PIN-kod, för fysisk åtkomst, så dess certifikat avvisas vid TLS-inloggningen och vid PKINIT (STS-PIV-0013) om inte detta är på. En nyckel på plats 9e certifieras endast under piv-card-auth (STS-PIV-0037) och får aldrig hwk eller sc."
   },
   "piv.keyEscrow|label": {
     "en": "f2efc85c3d2bac38",

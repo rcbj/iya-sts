@@ -8545,6 +8545,12 @@ const CODES = [
     summary: 'The bootstrap password file could not be removed on a start ' +
       'that found a credential already held. The plaintext is left on disk.',
     spec: 'Log line; the service still starts, and the file is left' },
+  { code: 'STS-AUTHN-0580',
+    summary: 'A legacy U2F key was not imported: the person\'s passkey ' +
+      'policy enforces a CTAP 2.1 credProtect level, which an imported key ' +
+      'ran no ceremony to report and cannot prove (#1955).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -23483,6 +23489,42 @@ const CODES = [
       'another entry of the realm, which would make the card name two ' +
       'people; nothing was written (#1955, D8).',
     spec: 'HTTP 400 (the directory write); LDAP constraintViolation' },
+  { code: 'STS-PIV-0036',
+    summary: 'A PIV attestation\'s subject names no slot, and the profile ' +
+      'asked is a PIV slot profile or one that signs in (tls-client, ' +
+      'tls-server-client, smartcard-logon), for which the slot is the ' +
+      'point of the check (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-PIV-0037',
+    summary: 'A PIV attestation of slot 9e, the Card Authentication key that ' +
+      'works without a PIN, was offered for a profile other than ' +
+      'piv-card-auth (#1955).',
+    spec: 'HTTP 400' },
+  // ===== SSHCA =============================================================
+  { code: 'STS-SSHCA-0001',
+    summary: 'The SSH user CA\'s public key or its KRL was asked for on the ' +
+      'plain-HTTP revocation listener, where neither is served: the CA key ' +
+      'is a trust anchor and the KRL is unsigned, so plain HTTP would let ' +
+      'anybody on the path replace them (#1955).',
+    spec: 'HTTP 404, text/plain' },
+  { code: 'STS-SSHCA-0002',
+    summary: 'An SSH certificate principal named a group whose name is a ' +
+      'person\'s uid in the realm, or a system account such as root, which ' +
+      'a server would sign the member in as (#1955).',
+    spec: 'HTTP 403' },
+  { code: 'STS-SSHCA-0003',
+    summary: 'An SSH security-key attestation was sent without the ' +
+      'challenge ssh-keygen was given, which the attestation signed, so ' +
+      'it could not be verified (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-SSHCA-0004',
+    summary: 'An administrator\'s SSH certificate act named nobody of the ' +
+      'realm\'s directory (#1955).',
+    spec: 'HTTP 404' },
+  { code: 'STS-SSHCA-0005',
+    summary: 'A person\'s SSH user certificates could not be read or ' +
+      'revoked: the register threw (#1955).',
+    spec: 'HTTP 500 or 503' },
   // ===== OPENPGP ===========================================================
   { code: 'STS-OPENPGP-0001',
     summary: 'An OpenPGP public key offered for registration did not ' +

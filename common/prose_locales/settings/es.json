@@ -3304,8 +3304,8 @@
     "text": "Qué da derecho a declarar una clave de hardware"
   },
   "hardwareTokens.hardwareClaims|description": {
-    "en": "e0341e4e47f3b2f8",
-    "text": "Qué permite que un inicio de sesión PKINIT declare una clave vinculada al hardware (el indicador pkinit-hardware y amr hwk). `inference`, el valor predeterminado y el comportamiento anterior a #1955: un certificado de inicio de sesión con tarjeta inteligente cuya clave no generó este servicio, o una prueba de atestación registrada. `evidence`: solo una clave que cubre la atestación de un token de hardware. Un inicio de sesión con certificado sobre TLS obtiene hwk, y sc para una clave en una tarjeta inteligente, solo a partir de pruebas, en ambos casos."
+    "en": "82f545cd2dea952b",
+    "text": "Lo que permite a un inicio de sesión PKINIT reclamar una clave ligada al hardware (el indicador pkinit-hardware y el amr hwk). `inference`, el valor por defecto y el comportamiento anterior a #1955: un certificado de inicio de sesión con tarjeta inteligente cuya clave no generó este servicio, o evidencia de atestación registrada. `evidence`: solo una clave que cubre la atestación de un token de hardware, y una passkey obtiene hwk solo cuando su atestación se verificó y es de confianza (swk en otro caso). Un inicio de sesión con certificado sobre TLS obtiene hwk, y sc para una clave en una tarjeta inteligente, solo a partir de evidencia en ambos casos, y solo para el titular del certificado."
   },
 "pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
@@ -12992,8 +12992,8 @@
     "text": "Permitir iniciar sesión con un certificado piv-card-auth"
   },
   "piv.cardAuthSignIn|description": {
-    "en": "1852da24c3fbfade",
-    "text": "Una clave piv-card-auth (ranura 9e) funciona sin PIN, para el acceso físico, por lo que su certificado se rechaza en el inicio de sesión TLS y en PKINIT (STS-PIV-0013) salvo que esto esté activado."
+    "en": "e9e37c8e6becb7ee",
+    "text": "Una clave piv-card-auth (ranura 9e) funciona sin PIN, para el acceso físico, así que su certificado se rechaza en el inicio de sesión TLS y en PKINIT (STS-PIV-0013) salvo que esto esté activado. Una clave de la ranura 9e solo se certifica con piv-card-auth (STS-PIV-0037) y nunca obtiene hwk ni sc."
   },
   "piv.keyEscrow|label": {
     "en": "f2efc85c3d2bac38",

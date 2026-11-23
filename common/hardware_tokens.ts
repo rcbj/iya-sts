@@ -111,7 +111,21 @@
 // key this service did not generate) stays as the realm setting
 // `hardwareTokens.hardwareClaims`: `inference` (the default, the behaviour
 // before #1955, with evidence ADDED) or `evidence` (only recorded evidence
-// earns `hwk` and `pkinit-hardware`), which P2 switches PIV to.
+// earns `hwk` and `pkinit-hardware`). The default is still `inference` for
+// every kind, PIV included: P2 added the evidence PIV earns, and did not
+// switch a realm's setting. A realm that wants only evidence sets
+// `evidence`, and then a WebAuthn assertion earns `hwk` too only from a
+// trusted attestation of its key (`fidoAmr()`), `swk` otherwise.
+//
+// **A CERTIFICATE IS FILED BY ITS SHA-256 THUMBPRINT** (`sha256:<hex>`,
+// since the #1955 review), with its serial beside it, and the person asking
+// must be the credential's holder (`certificateEvidence()`). A serial is
+// unique per issuer only, so a certificate an outside CA issued with the
+// same serial as an attested one earned that one's `hwk` and `sc`. Rows
+// filed by serial before the review are still read: a serial match counts
+// only when the enrolled record's thumbprint is the presented
+// certificate's. A slot 9e (Card Authentication) key's credential is no
+// evidence at all: it works without a PIN.
 //
 // A LIBRARY (rule 3): it registers no route. It requires `realms`, `config`,
 // `audit`, `error_codes` and `helpers`; `credentials`, `cert_enrollment`,
@@ -126,6 +140,7 @@ import config = require('./config');
 import audit = require('./audit');
 import errorCodes = require('./error_codes');
 import cacheRegistry = require('./cache_registry');
+import stsCrypto = require('./crypto');
 
 type Json = any;
 
@@ -251,10 +266,16 @@ interface TokenCredential {
   // name). Absent when the door did not name one.
   algorithm?: string;
   addedAt: string;
+  // A certificate's serial (hex) and SHA-256 thumbprint (hex), beside a
+  // `sha256:` reference (the #1955 review).
+  serial?: string;
+  thumbprint?: string;
   evidence: { source: string; hardware: boolean; smartCard: boolean;
               // A PIV slot's key's policies, from its attestation (#1955 P2):
               // per credential, since each slot has its own.
-              pinPolicy?: string; touchPolicy?: string };
+              pinPolicy?: string; touchPolicy?: string;
+              // The PIV slot the attestation named.
+              slot?: string };
   retired?: { at: string; ok: boolean; code?: string; why?: string };
 }
 
@@ -270,6 +291,7 @@ interface HardwareTokensDeps {
   config: typeof config;
   audit: typeof audit;
   errorCodes: typeof errorCodes;
+  crypto: typeof stsCrypto;
   now: () => number;
   // Reached at the moment of use (header).
   loadCredentials: () => Json;
@@ -313,7 +335,7 @@ class HardwareTokens {
     helpers.log.debug("Leaving HardwareTokens.defaultDeps().");
     return {
       log: helpers.log, helpers: helpers, config: config, audit: audit,
-      errorCodes: errorCodes, now: Date.now,
+      errorCodes: errorCodes, crypto: stsCrypto, now: Date.now,
       loadCredentials: function (): Json {
         return require('./credentials');
       },
@@ -410,9 +432,15 @@ class HardwareTokens {
   static refOf(kind: string, ref: unknown): string {
     helpers.log.debug("Entering HardwareTokens.refOf().");
     const text = HardwareTokens.text(ref);
-    const out = kind === 'x509'
-      ? text.toLowerCase().replace(/[^0-9a-f]/g, '').replace(/^0+(?=.)/, '')
-      : text;
+    // A thumbprint keeps its prefix and every digit; a serial (the form
+    // before the #1955 review) loses its separators and leading zeros.
+    const thumb = kind === 'x509' && /^sha256:/i.test(text)
+      ? 'sha256:' + text.slice(7).toLowerCase().replace(/[^0-9a-f]/g, '')
+      : '';
+    const out = thumb ? (thumb.length === 71 ? thumb : '')
+      : (kind === 'x509'
+        ? text.toLowerCase().replace(/[^0-9a-f]/g, '').replace(/^0+(?=.)/, '')
+        : text);
     helpers.log.debug("Leaving HardwareTokens.refOf().");
     return out;
   }
@@ -518,9 +546,15 @@ class HardwareTokens {
       previousLoss: held && held.status === 'lost' ? held.lost : null
     } : JSON.parse(JSON.stringify(held));
     const previousHolder = created ? '' : String(base.holder || '');
-    // The latest attested credential names the holder: whoever registered
-    // something on the physical key last has it. A change is audited.
-    base.holder = holder;
+    // THE TOKEN'S HOLDER IS WHOEVER REGISTERED IT FIRST, and stays so (the
+    // #1955 review): a second person's credential on the same key is filed
+    // under that person (`credentials[].holder`), who may act on the token
+    // for their own credentials (`markLost()`), and is audited. Moving the
+    // record's holder to the latest registrant let anybody who registered a
+    // credential on a key take the token's record from its holder.
+    if (!base.holder) {
+      base.holder = holder;
+    }
     if (s.model) {
       base.model = HardwareTokens.text(s.model);
     }
@@ -544,6 +578,16 @@ class HardwareTokens {
     }
     if (ev.touchPolicy) {
       entry.evidence.touchPolicy = HardwareTokens.text(ev.touchPolicy);
+    }
+    if (ev.slot) {
+      entry.evidence.slot = HardwareTokens.text(ev.slot).toLowerCase();
+    }
+    if (kind === 'x509' && cred.serial) {
+      entry.serial = HardwareTokens.refOf('x509', cred.serial);
+    }
+    if (kind === 'x509' && cred.thumbprint) {
+      entry.thumbprint = HardwareTokens.text(cred.thumbprint).toLowerCase()
+        .replace(/[^0-9a-f]/g, '');
     }
     // And of the token: a FIPS-certified key, said by its f9 certificate.
     if (s.fips === true) {
@@ -584,11 +628,12 @@ class HardwareTokens {
         ev.source + ')',
       { key: key, kind: kind, source: ev.source, via: s.via || '' });
     if (previousHolder && previousHolder !== holder) {
-      log.info('hardware_tokens: token ' + key + ' was registered by ' +
-               'another person than the one who held it.');
+      log.info('hardware_tokens: token ' + key + ' carries a credential ' +
+               'of another person than the one who holds it.');
       this.recordAudit('hardware-token.holder-change', s.actor || username,
-        username, 'Hardware token ' + key + ' changed hands',
-        { key: key, previousHolder: this.nameOfHolder(previousHolder) });
+        username, 'Hardware token ' + key + ' carries a credential of a ' +
+        'second person; its holder is unchanged',
+        { key: key, holder: this.nameOfHolder(previousHolder) });
     }
     log.debug("Leaving HardwareTokens.recordAttested(). " +
               (created ? 'Created.' : 'Updated.'));
@@ -619,7 +664,10 @@ class HardwareTokens {
     const holder = this.holderOf(String(s.username || ''));
     const held: Json = register.get(key) || null;
     if (!held || !holder || held.status !== 'active' ||
-        held.holder !== holder) {
+        !(held.holder === holder ||
+          (held.credentials || []).some(function (c: Json) {
+            return c && c.holder === holder;
+          }))) {
       log.debug("Leaving HardwareTokens.attachCredential(). Not theirs.");
       return this.refuse('STS-PIV-0025', 'No active hardware token "' +
         HardwareTokens.text(key) + '" is held by you.');
@@ -950,6 +998,13 @@ class HardwareTokens {
     const c = (found.record.credentials || []).filter(function (one: Json) {
       return one.kind === kind && String(one.ref) === wanted;
     })[0];
+    // A CARD AUTHENTICATION KEY (PIV slot 9e) IS NO EVIDENCE (the #1955
+    // review): it works without a PIN, so it earns neither `hwk` nor `sc`,
+    // whatever profile it was certified under.
+    if (c && c.evidence && String(c.evidence.slot || '') === '9e') {
+      log.debug("Leaving HardwareTokens.evidenceFor(). A card-auth key.");
+      return none;
+    }
     // The attestation's facts (#1955 P2, X4) beside the evidence: the
     // credential's policies and the token's firmware, form factor and FIPS
     // mark, each '' (false) where the evidence did not say.
@@ -990,6 +1045,99 @@ class HardwareTokens {
     return value !== 'evidence';
   }
 
+  // -------------------------------------------------------------------------
+  // A CERTIFICATE'S EVIDENCE (header, the #1955 review). `spec`: { der?,
+  // thumbprint? (hex, any case, colons allowed: Node's `fingerprint256`),
+  // serial?, username? }. By thumbprint first; a row filed by serial alone
+  // (before the review) counts only when the enrolled record of that serial
+  // is the same certificate; and with `username`, only when that person is
+  // the credential's holder.
+  // -------------------------------------------------------------------------
+  /**
+   * What recorded attestation evidence says of one certificate's key.
+   *
+   * @param spec - the certificate (its DER or thumbprint, and its serial)
+   *   and the person presenting it
+   * @returns evidenceFor()'s answer
+   */
+  certificateEvidence(spec: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokens.certificateEvidence().");
+    const s = spec || {};
+    let thumb = String(s.thumbprint || '').toLowerCase()
+      .replace(/[^0-9a-f]/g, '');
+    if (s.der) {
+      try {
+        thumb = this.deps.crypto.digest('sha256', Buffer.from(s.der), 'hex');
+      } catch (e) {
+        log.debug("Caught in HardwareTokens.certificateEvidence(): " +
+                  ((e && e.message) || e));
+        thumb = '';
+      }
+    }
+    const serial = HardwareTokens.refOf('x509', s.serial);
+    let ev = thumb.length === 64 ? this.evidenceFor('x509', 'sha256:' + thumb)
+                                 : this.evidenceFor('x509', '');
+    let ref = ev.token ? 'sha256:' + thumb : '';
+    if (!ev.token && serial && thumb.length === 64) {
+      const old = this.evidenceFor('x509', serial);
+      if (old.token && this.sameCertificate(old.token, serial, thumb)) {
+        ev = old;
+        ref = serial;
+      }
+    }
+    if (ev.token && s.username !== undefined) {
+      const holder = this.holderOf(String(s.username || ''));
+      const record = register.get(ev.token);
+      const c = ((record && record.credentials) || []).filter(
+        function (one: Json) {
+          return one.kind === 'x509' && String(one.ref) === ref;
+        })[0];
+      const theirs = String((c && c.holder) ||
+                            (record && record.holder) || '');
+      if (!holder || theirs !== holder) {
+        log.info('hardware_tokens: a certificate on token ' + ev.token +
+                 ' was presented by somebody other than its holder; it ' +
+                 'earns nothing.');
+        ev = this.evidenceFor('x509', '');
+      }
+    }
+    log.debug("Leaving HardwareTokens.certificateEvidence(). " +
+              (ev.hardware ? 'Hardware.' : 'None.'));
+    return ev;
+  }
+
+  // Whether a credential filed by serial is the certificate with this
+  // thumbprint: the credential's own thumbprint where it has one, else the
+  // enrolled record of that serial (`cert_enrollment.findEnrolled()`).
+  private sameCertificate(key: string, serial: string,
+                          thumb: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokens.sameCertificate().");
+    const record = register.get(key);
+    const c = ((record && record.credentials) || []).filter(
+      function (one: Json) {
+        return one.kind === 'x509' && String(one.ref) === serial;
+      })[0];
+    if (c && c.thumbprint) {
+      log.debug("Leaving HardwareTokens.sameCertificate(). Its own.");
+      return String(c.thumbprint) === thumb;
+    }
+    let found: Json = null;
+    try {
+      found = this.deps.loadEnrollment().findEnrolled(serial,
+        c && c.family ? c.family : undefined);
+    } catch (e) {
+      log.debug("Caught in HardwareTokens.sameCertificate(): " +
+                ((e && e.message) || e));
+      found = null;
+    }
+    const same = !!(found && found.record && found.record.thumbprint &&
+      String(found.record.thumbprint).toLowerCase() === thumb);
+    log.debug("Leaving HardwareTokens.sameCertificate(). " + same);
+    return same;
+  }
+
   // The certificate sign-in's claim (the two TLS doors): `swk` as before,
   // `hwk` where the evidence says the key is hardware, and `sc` beside it
   // where the evidence says the key is on a smart card. Never inferred: a
@@ -997,16 +1145,67 @@ class HardwareTokens {
   /**
    * The RFC 8176 amr a certificate sign-in earns.
    *
-   * @param serialHex - the certificate's serial in hex
+   * @param cert - `certificateEvidence()`'s spec, or (before the #1955
+   *   review) the certificate's serial in hex
    * @returns `['swk']`, `['hwk']` or `['hwk','sc']`
    */
-  certificateAmr(serialHex: string): string[] {
+  certificateAmr(cert: Json): string[] {
     const { log } = this.deps;
     log.debug("Entering HardwareTokens.certificateAmr().");
-    const ev = this.evidenceFor('x509', String(serialHex || ''));
+    const ev = cert && typeof cert === 'object'
+      ? this.certificateEvidence(cert)
+      : this.evidenceFor('x509', String(cert || ''));
     const out = ev.hardware ? (ev.smartCard ? ['hwk', 'sc'] : ['hwk'])
                             : ['swk'];
     log.debug("Leaving HardwareTokens.certificateAmr(). " + out.join(','));
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // X3 FOR A PASSKEY (the #1955 review). Under `inference` (the default) a
+  // WebAuthn assertion earns `hwk` as it always did. Under `evidence` it
+  // earns `hwk` only where its key's attestation was verified and trusted —
+  // an active token in this register lists it, or the stored attestation
+  // chained to the realm's anchors — and `swk` otherwise: a synced passkey
+  // or a key with `none` attestation proves possession of a key, not where
+  // it lives.
+  // -------------------------------------------------------------------------
+  /**
+   * The RFC 8176 key value a WebAuthn assertion earns.
+   *
+   * @param username - the person
+   * @param credentialId - the credential that answered
+   * @returns `hwk` or `swk`
+   */
+  fidoAmr(username: string, credentialId: string): string {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokens.fidoAmr().");
+    if (this.inferenceAllowed()) {
+      log.debug("Leaving HardwareTokens.fidoAmr(). Inferred.");
+      return 'hwk';
+    }
+    const id = String(credentialId || '');
+    const ev = this.evidenceFor('fido', id);
+    if (ev.hardware) {
+      log.debug("Leaving HardwareTokens.fidoAmr(). A token's.");
+      return 'hwk';
+    }
+    let key: Json = null;
+    try {
+      key = (this.deps.loadCredentials().keysOf(String(username || '')) ||
+             []).filter(function (one: Json) {
+        return String(one.credentialId) === id;
+      })[0] || null;
+    } catch (e) {
+      log.debug("Caught in HardwareTokens.fidoAmr(): " +
+                ((e && e.message) || e));
+      // No key to read is no evidence.
+      key = null;
+    }
+    const att = (key && key.attestation) || {};
+    const out = att.verified === true && att.trusted === true ? 'hwk'
+                                                              : 'swk';
+    log.debug("Leaving HardwareTokens.fidoAmr(). " + out);
     return out;
   }
 
@@ -1030,8 +1229,15 @@ class HardwareTokens {
     const record: Json = register.get(key);
     const onlyHolder = s.onlyHolder ? this.holderOf(String(s.onlyHolder))
                                     : '';
-    if (!record || (s.onlyHolder && (!onlyHolder ||
-                                     record.holder !== onlyHolder))) {
+    // A PERSON MAY REPORT A TOKEN LOST WHEN THEY HOLD IT OR ANY CREDENTIAL
+    // ON IT (the #1955 review): only their own credentials are retired
+    // below, and marking the token lost stops it being evidence for anyone.
+    const holds = !!onlyHolder && !!record &&
+      (record.holder === onlyHolder ||
+       (record.credentials || []).some(function (c: Json) {
+         return c && c.holder === onlyHolder;
+       }));
+    if (!record || (s.onlyHolder && !holds)) {
       log.debug("Leaving HardwareTokens.markLost(). Unknown.");
       return this.refuse('STS-HWTOKEN-0005', 'No hardware token "' +
         HardwareTokens.text(key) + '" is ' + (s.onlyHolder
@@ -1307,17 +1513,81 @@ class HardwareTokens {
     const { log } = this.deps;
     log.debug("Entering HardwareTokens.retireCertificate().");
     const enrollment = this.deps.loadEnrollment();
-    const answer = await enrollment.revokeEnrolled(c.ref, 'keyCompromise',
-      ctx.actor, c.family ? { family: c.family } : {});
+    // A `sha256:` reference carries its serial beside it (the #1955 review);
+    // an older one IS the serial.
+    const serial = c.serial || (String(c.ref).indexOf('sha256:') === 0
+      ? '' : c.ref);
+    const answer = serial ? await enrollment.revokeEnrolled(serial,
+      'keyCompromise', ctx.actor, c.family ? { family: c.family } : {})
+      : { ok: false, error: 'the certificate\'s serial is not on the ' +
+          'token record' };
     if (answer && answer.ok) {
+      // THE SESSIONS IT SIGNED IN END TOO (the #1955 review), as a lost
+      // passkey's do: revoking the certificate stops the next sign-in, and
+      // a session it already started would otherwise go on satisfying
+      // `attested-hardware` from its sign-in's snapshot.
+      const ended = this.endCertificateSessions(token, c, ctx, serial);
       log.debug("Leaving HardwareTokens.retireCertificate(). Revoked.");
-      return { ok: true };
+      return { ok: true, sessionsEnded: ended };
     }
     log.debug("Leaving HardwareTokens.retireCertificate(). Refused.");
     return { ok: false, errorCode: this.deps.errorCodes.codeOf(answer) ||
                'STS-HWTOKEN-0007',
              why: String((answer && (answer.error || (answer.errors || [])[0]))
                          || 'not revoked') };
+  }
+
+  // The sessions a lost certificate signed in, ended through the one
+  // selective sign-out (`logout.endFactorSessions()`), by the certificate's
+  // fingerprint as the sign-in door recorded it (Node's `fingerprint256`:
+  // upper case, colon separated). The thumbprint is the credential's own,
+  // or the enrolled record's for a row filed by serial. Answers how many
+  // ended; a failure is logged and the revocation stands.
+  private endCertificateSessions(token: Json, c: TokenCredential, ctx: Json,
+                                 serial: string): number {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokens.endCertificateSessions().");
+    let thumb = String(c.thumbprint || '');
+    if (!thumb && String(c.ref).indexOf('sha256:') === 0) {
+      thumb = String(c.ref).slice(7);
+    }
+    if (!thumb && serial) {
+      try {
+        const found = this.deps.loadEnrollment().findEnrolled(serial,
+          c.family || undefined);
+        thumb = String((found && found.record &&
+                        found.record.thumbprint) || '');
+      } catch (e) {
+        log.debug("Caught in HardwareTokens.endCertificateSessions(): " +
+                  ((e && e.message) || e));
+        thumb = '';
+      }
+    }
+    const print = (thumb.toUpperCase().match(/../g) || []).join(':');
+    if (!print) {
+      log.debug("Leaving HardwareTokens.endCertificateSessions(). No " +
+                "thumbprint.");
+      return 0;
+    }
+    let ended: Json = null;
+    try {
+      ended = this.deps.loadLogout().endFactorSessions(
+        String(ctx.username || ''),
+        { kind: 'certificate', certificateId: print },
+        { actor: ctx.actor, channel: 'http',
+          initiatingEntity: ctx.initiatingEntity,
+          by: ctx.actor + ' reporting hardware token ' + token.vendor + ' ' +
+              token.serial + ' lost' });
+    } catch (e) {
+      log.debug("Caught in HardwareTokens.endCertificateSessions(): " +
+                ((e && e.message) || e));
+      // The certificate is revoked, so no new session starts with it; one
+      // it already started is ended by the next sign-out or expiry, and
+      // `attested-hardware` reads the token's status now (lost).
+      ended = null;
+    }
+    log.debug("Leaving HardwareTokens.endCertificateSessions().");
+    return Number((ended && ended.sessionsEnded) || 0);
   }
 
   // -------------------------------------------------------------------------
@@ -1424,6 +1694,8 @@ export = {
   evidenceFor: slot.forward('evidenceFor'),
   inferenceAllowed: slot.forward('inferenceAllowed'),
   certificateAmr: slot.forward('certificateAmr'),
+  certificateEvidence: slot.forward('certificateEvidence'),
+  fidoAmr: slot.forward('fidoAmr'),
   markLost: slot.forward('markLost'),
   registerRetirer: slot.forward('registerRetirer'),
   retirerKinds: slot.forward('retirerKinds'),

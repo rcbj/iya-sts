@@ -12783,6 +12783,16 @@ One record per physical token (a YubiKey, a smart card) per realm, keyed by
 as `{ kind, ref }`. The file's header is the argument; what a maintainer of
 this directory has to know beside it:
 
+* **The #1955 review**: a certificate is filed by `sha256:<thumbprint>` with
+  its serial beside it, and `certificateEvidence()` (the TLS doors, PKINIT,
+  the sign-in snapshot, the SSH PIV match) answers only for the
+  credential's holder; rows filed by serial are read when the enrolled
+  record of that serial is the certificate presented. A token's holder is
+  its first registrant; a credential's holder may report it lost. A slot 9e
+  credential is no evidence. The x509 retirer ends the certificate's
+  sessions (`endFactorSessions` kind `certificate`), and `attested-hardware`
+  asks the register again at issuance. Under `hardwareClaims: evidence` a
+  passkey earns `hwk` only from a trusted attestation (`fidoAmr()`).
 * **A serial is recorded only from attestation**: `recordAttested()` is the
   one writer and takes an evidence source from a closed list
   (`fido-enterprise-attestation`, `piv-attestation` since P2, `vendor-import`,

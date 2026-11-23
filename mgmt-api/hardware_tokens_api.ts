@@ -117,6 +117,47 @@ class HardwareTokensApi {
     helpers.log.debug("Leaving HardwareTokensApi.wire().");
   }
 
+  // Whether a PERSON's sign-in behind this token is older than
+  // `account.recentAuthMinutes` (zero: never asked), the management API's
+  // `reauthenticationOwed()` rule.
+  /**
+   * Whether the caller must sign in again before a recovery.
+   *
+   * @param caller - `res.locals.apiCaller`
+   * @returns true when the sign-in is stale
+   */
+  static signInIsStale(caller: Json): boolean {
+    helpers.log.debug("Entering HardwareTokensApi.signInIsStale().");
+    const limit = Number(require('../common/config')
+      .value('account.recentAuthMinutes')) * 60;
+    if (!limit || !caller || caller.kind !== 'person') {
+      helpers.log.debug("Leaving HardwareTokensApi.signInIsStale(). Not " +
+                        "asked.");
+      return false;
+    }
+    const at = Number(caller.authTime || 0);
+    helpers.log.debug("Leaving HardwareTokensApi.signInIsStale().");
+    return !(at > 0 && Date.now() / 1000 - at <= limit);
+  }
+
+  // RFC 9470's answer, as the management API's `refuseStaleSignIn()` sends
+  // it, so the console signs in again in its popup and resends.
+  private refuseStaleSignIn(req: Json, res: Json): void {
+    const { log, errorCodes: codes } = this.deps;
+    log.debug("Entering HardwareTokensApi.refuseStaleSignIn().");
+    const limit = Number(require('../common/config')
+      .value('account.recentAuthMinutes')) * 60;
+    const scheme = /^dpop /i.test(String(req.headers.authorization || ''))
+      ? 'DPoP' : 'Bearer';
+    res.set('WWW-Authenticate', scheme +
+            ' error="insufficient_user_authentication", max_age=' + limit);
+    codes.mark(res, 'STS-API-0145');
+    this.sendJson(res, 401, { ok: false,
+      error: 'insufficient_user_authentication',
+      errors: ['Sign in again to recover an escrowed key.'] });
+    log.debug("Leaving HardwareTokensApi.refuseStaleSignIn().");
+  }
+
   /**
    * Sends a JSON body with `Cache-Control: no-store`.
    *
@@ -631,6 +672,24 @@ class HardwareTokensApi {
                 .join(', ') + '.'] });
             log.debug("Leaving the management API hardware tokens " +
                       "action. Unknown.");
+            return;
+          }
+          // A RECOVERY OF SOMEBODY'S ESCROWED KEY OWES A RECENT SIGN-IN
+          // (the #1955 review), as the holder's own door does
+          // (`/account-api`'s `recentAuth`) and as every act that changes
+          // how somebody signs in does here (#1538): it hands out a key
+          // that reads the person's mail. A program has no person to ask.
+          if (action === 'recover-key' &&
+              HardwareTokensApi.signInIsStale(caller)) {
+            self.refuseStaleSignIn(req, res);
+            log.debug("Leaving the management API hardware tokens " +
+                      "action. Sign in again.");
+            return;
+          }
+          if (action === 'revoke-ssh') {
+            self.revokeSsh(res, actor, body);
+            log.debug("Leaving the management API hardware tokens " +
+                      "action. An SSH revocation.");
             return;
           }
           if (action !== 'lost') {

@@ -3304,8 +3304,8 @@
     "text": "Ano ang nagbibigay ng claim na hardware key"
   },
   "hardwareTokens.hardwareClaims|description": {
-    "en": "e0341e4e47f3b2f8",
-    "text": "Ano ang nagpapahintulot sa PKINIT sign-in na mag-claim ng key na nakatali sa hardware (ang pkinit-hardware indicator at amr hwk). `inference`, ang default at ang gawi bago ang #1955: isang smart-card logon certificate na ang key ay hindi ginawa ng serbisyong ito, o naitalang ebidensya ng attestation. `evidence`: tanging key na sakop ng attestation ng isang hardware token. Ang certificate sign-in sa TLS ay nakakakuha ng hwk, at sc para sa key na nasa smart card, mula lamang sa ebidensya sa alinmang kaso."
+    "en": "82f545cd2dea952b",
+    "text": "Kung ano ang nagpapahintulot sa isang PKINIT sign-in na mag-angkin ng key na nakatali sa hardware (ang indicator na pkinit-hardware at amr hwk). `inference`, ang default at ang pag-uugali bago ang #1955: isang smart-card logon certificate na ang key ay hindi ginawa ng serbisyong ito, o naitalang ebidensiya ng attestation. `evidence`: tanging key na saklaw ng attestation ng isang hardware token, at nakakakuha ng hwk ang isang passkey lamang kapag napatunayan at pinagkakatiwalaan ang attestation nito (swk kung hindi). Ang certificate sign-in sa TLS ay nakakakuha ng hwk, at sc para sa key sa smart card, mula lamang sa ebidensiya sa alinmang kaso, at para lamang sa may-hawak ng certificate."
   },
 "pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
@@ -12992,8 +12992,8 @@
     "text": "Payagang mag-sign in ang piv-card-auth na sertipiko"
   },
   "piv.cardAuthSignIn|description": {
-    "en": "1852da24c3fbfade",
-    "text": "Gumagana ang piv-card-auth key (slot 9e) nang walang PIN, para sa pisikal na pagpasok, kaya tinatanggihan ang sertipiko nito sa TLS sign-in at sa PKINIT (STS-PIV-0013) maliban kung naka-on ito."
+    "en": "e9e37c8e6becb7ee",
+    "text": "Gumagana ang isang piv-card-auth (slot 9e) key nang walang PIN, para sa pisikal na pagpasok, kaya tinatanggihan ang certificate nito sa TLS sign-in at sa PKINIT (STS-PIV-0013) maliban kung naka-on ito. Ang key sa slot 9e ay sinesertipika lamang sa ilalim ng piv-card-auth (STS-PIV-0037), at hindi kailanman nakakakuha ng hwk o sc."
   },
   "piv.keyEscrow|label": {
     "en": "f2efc85c3d2bac38",

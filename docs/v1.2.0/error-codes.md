@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5970** of them, in **57** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5978** of them, in **57** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 446
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 447
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 83
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 13
 * [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 35
 * [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 30
-* [PIV key attestation (`STS-PIV`)](#sts-piv) — 26
+* [PIV key attestation (`STS-PIV`)](#sts-piv) — 28
 * [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 28
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 252
@@ -1836,6 +1836,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0565` | A sign-in step was answered by a legacy U2F security key that may not answer it: the step is passwordless (a U2F key cannot verify the person), or webauthn.u2fAppIds no longer permits its AppID at this RP ID (#1955). | HTTP 200 page naming the refusal |
 | `STS-AUTHN-0566` | A write of webauthn.u2fAppIds was refused: an entry is not a U2F AppID — an absolute https URL with a host, no user name or password and no fragment, at most 2048 characters (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-AUTHN-0567` | The bootstrap password file could not be removed on a start that found a credential already held. The plaintext is left on disk. | Log line; the service still starts, and the file is left |
+| `STS-AUTHN-0580` | A legacy U2F key was not imported: the person's passkey policy enforces a CTAP 2.1 credProtect level, which an imported key ran no ceremony to report and cannot prove (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-OAUTH
 
@@ -5105,6 +5106,8 @@ Raised from: common/piv_attestation.ts, common/cert_enrollment.ts, common/piv_en
 | `STS-PIV-0032` | An outside PIV or CAC card's card UUID is in stsPivCardUuid on more than one person, so it names nobody (#1955, D8). | the outside-certificate refusal (STS-TLS-0055, STS-AUTHN-0469) |
 | `STS-PIV-0034` | A value written to stsPivCardUuid is not a card UUID in RFC 9562 form (or is the nil UUID); nothing was written (#1955, D8). | HTTP 400 (the directory write); LDAP constraintViolation |
 | `STS-PIV-0035` | A card UUID written to stsPivCardUuid is already held by another entry of the realm, which would make the card name two people; nothing was written (#1955, D8). | HTTP 400 (the directory write); LDAP constraintViolation |
+| `STS-PIV-0036` | A PIV attestation's subject names no slot, and the profile asked is a PIV slot profile or one that signs in (tls-client, tls-server-client, smartcard-logon), for which the slot is the point of the check (#1955). | HTTP 400 |
+| `STS-PIV-0037` | A PIV attestation of slot 9e, the Card Authentication key that works without a PIN, was offered for a profile other than piv-card-auth (#1955). | HTTP 400 |
 
 ## STS-OPENPGP
 

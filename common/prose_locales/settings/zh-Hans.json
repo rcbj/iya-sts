@@ -3304,8 +3304,8 @@
     "text": "凭什么获得硬件密钥声明"
   },
   "hardwareTokens.hardwareClaims|description": {
-    "en": "e0341e4e47f3b2f8",
-    "text": "什么能让 PKINIT 登录声明硬件绑定的密钥（pkinit-hardware 指示符和 amr hwk）。`inference`：默认值，也是 #1955 之前的行为——本服务未生成其密钥的智能卡登录证书，或已记录的证明证据。`evidence`：仅限硬件令牌的证明所覆盖的密钥。通过 TLS 的证书登录只有在有证据时才获得 hwk，以及智能卡上密钥的 sc，两种情况都是如此。"
+    "en": "82f545cd2dea952b",
+    "text": "什么使 PKINIT 登录可以声称硬件绑定密钥（pkinit-hardware 指示符和 amr hwk）。`inference` 是默认值，也是 #1955 之前的行为：其密钥并非由本服务生成的智能卡登录证书，或已记录的证明证据。`evidence`：只有硬件令牌证明所覆盖的密钥；通行密钥只有在其证明经过验证且可信时才获得 hwk（否则为 swk）。通过 TLS 的证书登录在两种情况下都只能凭证据获得 hwk（智能卡上的密钥另加 sc），而且只对证书持有人有效。"
   },
 "pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
@@ -12992,8 +12992,8 @@
     "text": "允许 piv-card-auth 证书登录"
   },
   "piv.cardAuthSignIn|description": {
-    "en": "1852da24c3fbfade",
-    "text": "piv-card-auth（插槽 9e）密钥无需 PIN 即可使用，用于物理门禁，因此除非开启此项，否则其证书在 TLS 登录和 PKINIT 时会被拒绝（STS-PIV-0013）。"
+    "en": "e9e37c8e6becb7ee",
+    "text": "piv-card-auth（槽 9e）密钥无需 PIN 即可使用，用于物理门禁，因此除非启用此项，其证书在 TLS 登录和 PKINIT 时会被拒绝（STS-PIV-0013）。槽 9e 的密钥只在 piv-card-auth 下获得认证（STS-PIV-0037），永远不会获得 hwk 或 sc。"
   },
   "piv.keyEscrow|label": {
     "en": "f2efc85c3d2bac38",

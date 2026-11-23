@@ -5452,6 +5452,20 @@ class AdminActions {
       }, { importedBy: { username: String(admin.username || ctx.actor ||
                                           'operator'),
                          sub: String(admin.sub || ''), at: Date.now() } });
+      // A CREDENTIAL ADDED TO SOMEBODY BY AN ADMINISTRATOR IS TOLD (the #1955
+      // review): CAEP credential-change `create` and, through the same
+      // call, the person's own security notice by mail — as every other
+      // administrator's change to how somebody signs in is.
+      if (result.ok) {
+        accountSignals.credentialChanged({ username: who,
+          credentialType: 'fido-u2f', changeType: 'create',
+          friendlyName: String(body.label || ''), via: ctx.via,
+          initiatingEntity: 'admin',
+          reasonAdmin: 'An administrator imported a U2F security key for ' +
+                       who + '.',
+          reasonUser: 'A security key was added to your account by an ' +
+                      'administrator.' });
+      }
       auditLog.record({
         category: 'authentication', action: 'admin.mfa.key.imported',
         actor: ctx.actor, target: who,

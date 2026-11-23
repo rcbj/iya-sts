@@ -49,13 +49,28 @@ evidence `pskc-import`. See [One-time code tokens](one-time-code-tokens.md).
 A YubiKey PIV key attestation records a smart-card certificate the same way,
 with evidence `piv-attestation`.
 
+**A token's holder is whoever registered it first.** A second person who
+registers a credential on the same physical key is recorded as that
+credential's holder; the token's holder does not change (the audit row
+`hardware-token.holder-change` says a second person's credential was
+added). Either person may report the token lost, and each retires only their
+own credentials.
+
+**A certificate is recorded by its SHA-256 thumbprint**, with its serial
+beside it. A serial is unique only within one issuer, so a certificate that
+an outside CA issued with the same serial as an attested one earns nothing.
+A certificate also earns nothing when someone other than its holder
+presents it. Certificates recorded by serial before this release are still
+read, and count only when the certificate presented is the one enrolled
+under that serial.
+
 | Evidence source | What records it |
 |---|---|
 | `fido-enterprise-attestation` | A passkey registration whose trusted enterprise attestation names a serial |
 | `piv-attestation` | A certificate issued from a verified YubiKey PIV key attestation |
 | `pskc-import` | The serial a vendor's PSKC seed file names, recorded when that token is assigned or claimed |
 | `yubiotp-import` | The serial an administrator's YubiKey OTP CSV names, recorded when that token is assigned or claimed |
-| `ssh-security-key-attestation` | The serial an OpenSSH security key's attestation names when an SSH user certificate is issued for that key |
+| `ssh-security-key-attestation` | The device serial a trusted OpenSSH security-key attestation names when an SSH user certificate is issued for that key. An attestation that names no device serial records no token: the evidence stays on the issued certificate |
 | `vendor-import` | An administrator's import of a vendor's token file (a later release) |
 
 ## Seeing them
@@ -83,7 +98,8 @@ can report a token lost. The service then does all of the following at once:
    with no way in needs an activation link or their recovery codes. The
    portal says so.
 3. Each **certificate** on it is revoked for `keyCompromise` through the
-   ordinary revocation path, so the CRL and OCSP show it.
+   ordinary revocation path, so the CRL and OCSP show it, and the sign-on
+   sessions the certificate signed in end.
    Each **one-time code secret** imported from a seed file is taken off its
    holder's entry (where it is still that token's), and the token is marked
    retired in the inventory, never to be assigned again.
@@ -100,10 +116,11 @@ can report a token lost. The service then does all of the following at once:
    recovery. Under `any` nothing is recorded.
 
 The portal retires only the caller's own credentials, and asks for a recent
-sign-in. Someone else might have registered a credential on the same physical
+sign-in. A person who holds any credential on the token may report it lost
+there. Someone else might have registered a credential on the same physical
 key; the portal leaves those for an administrator. When an administrator
-reports lost a token held by a Security Administrator, the act needs
-`admin:security`, as clearing that person's factors does.
+reports lost a token on which a Security Administrator holds a credential, the
+act needs `admin:security`, as clearing that person's factors does.
 
 If a credential cannot be retired, the service names it in the answer and on
 the audit row, and that credential is still live. A key that turns up again is
@@ -129,8 +146,20 @@ RFC 8176 `amr` values that say a key is in hardware are earned from
 | `inference` (the default) | the inference above, or recorded evidence |
 | `evidence` | recorded evidence only |
 
-A passkey sign-in records `hwk` as it always has. Whether its attestation was
-trusted is a separate fact, and phishing-resistance policy reads it (`phrh`).
+A passkey sign-in records `hwk` as it always has while the setting is
+`inference`. Under `evidence` it records `hwk` only when the key's
+attestation was verified and trusted, and `swk` otherwise: a synced passkey,
+or a key registered with `none` attestation, proves possession of a key and
+not where the key lives. Whether its attestation was trusted is also a
+separate fact that phishing-resistance policy reads (`phrh`).
+
+**A slot 9e key is never evidence.** The PIV Card Authentication key works
+without a PIN, so a certificate for it earns neither `hwk` nor `sc`, and an
+attestation of slot 9e is accepted only for the `piv-card-auth` profile.
+
+**The `attested-hardware` sign-in mechanism is asked again at every
+issuance.** A session that signed in with a token's credential stops
+meeting it when the token is reported lost.
 
 ## Requiring a hardware token
 
@@ -257,8 +286,17 @@ the family's `allowedProfiles`.
 
 The PIV profiles are issued to people only. **A `piv-card-auth` certificate
 does not sign anybody in** by default: the 9e key works without a PIN, for
-door readers. `piv.cardAuthSignIn` lets it sign in over TLS. PKINIT never
-accepts it, because it carries neither PKINIT purpose.
+door readers. `piv.cardAuthSignIn` lets it sign in over TLS. PKINIT refuses
+it (`STS-PIV-0013`), and it carries neither PKINIT purpose anyway.
+
+**The attestation's slot must fit the profile.** An attestation of slot 9e is
+accepted only for `piv-card-auth` (`STS-PIV-0037`), whatever profile the
+request names, so a key with no PIN cannot be certified for smart-card logon
+or TLS client authentication. An attestation whose subject names no slot is
+refused for a PIV profile and for `tls-client`, `tls-server-client` and
+`smartcard-logon` (`STS-PIV-0036`). The FIPS mark is read from the f9
+certificate that signed the slot's certificate, never from whichever
+certificate the request sent first.
 
 The certificate issued for a profile is signed by that profile's issuing
 CA. The key in the slot is the subject's. A YubiKey 5 attests a classical
@@ -334,7 +372,11 @@ the request is refused rather than the key kept in plain. With escrow off,
 - **An administrator** recovers a person's escrowed key on Directory →
   Hardware tokens → Escrowed keys, or with
   `POST /admin-api/hardware-tokens/recover-key` and
-  `{ "username": "...", "serial": "..." }`. Admin Write is not enough. The
+  `{ "username": "...", "serial": "..." }`. The administrator must have
+  signed in within `account.recentAuthMinutes`, as the holder must; an
+  older sign-in is answered `401` with RFC 9470's
+  `insufficient_user_authentication`, and the console signs in again. Admin
+  Write is not enough. The
   access-control policy decides it (resource `piv-key-escrow`, action
   `recover-key`), and the built-in policy permits only a caller holding the
   **PIV_KEY_RECOVERY** role. That role is held by members of the group that
@@ -389,6 +431,9 @@ refuses the certificate before this mapping is asked.
 | `piv.externalPolicyOids` | the two PIV Authentication policies | The policies an outside card must assert |
 | `roles.pivKeyRecoveryGroup` | `piv-key-recovery` | The group whose members hold PIV_KEY_RECOVERY |
 | `pki.paranoidPivAttestation`, `pki.paranoidPivCard` | on | The two use cases' rows under paranoid PKI mode |
+| `hardwareTokens.hardwareClaims` | `inference` | Whether a PKINIT inference, and a passkey without trusted attestation, still earns `hwk` |
+
+Every row is also in [Configuration](configuration.md#devices).
 
 ## Error codes
 

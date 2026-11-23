@@ -3304,8 +3304,8 @@
     "text": "Was einen Hardware-Schlüssel-Anspruch begründet"
   },
   "hardwareTokens.hardwareClaims|description": {
-    "en": "e0341e4e47f3b2f8",
-    "text": "Was einer PKINIT-Anmeldung erlaubt, einen hardwaregebundenen Schlüssel zu beanspruchen (der Indikator pkinit-hardware und amr hwk). `inference`, der Standard und das Verhalten vor #1955: ein Smartcard-Anmeldezertifikat, dessen Schlüssel dieser Dienst nicht erzeugt hat, oder ein erfasster Attestierungsnachweis. `evidence`: nur ein Schlüssel, den die Attestierung eines Hardware-Tokens abdeckt. Eine Zertifikatsanmeldung über TLS erhält hwk, und sc für einen Schlüssel auf einer Smartcard, in beiden Fällen nur aus einem Nachweis."
+    "en": "82f545cd2dea952b",
+    "text": "Was einer PKINIT-Anmeldung erlaubt, einen hardwaregebundenen Schlüssel zu beanspruchen (den Indikator pkinit-hardware und amr hwk). `inference`, der Standard und das Verhalten vor #1955: ein Smartcard-Anmeldezertifikat, dessen Schlüssel dieser Dienst nicht erzeugt hat, oder aufgezeichnete Attestierungsnachweise. `evidence`: nur ein Schlüssel, den die Attestierung eines Hardware-Tokens abdeckt, und ein Passkey erhält hwk nur, wenn seine Attestierung geprüft und vertrauenswürdig war (sonst swk). Eine Zertifikatsanmeldung über TLS erhält hwk und sc für einen Schlüssel auf einer Smartcard in beiden Fällen nur aus Nachweisen und nur für den Inhaber des Zertifikats."
   },
 "pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
@@ -12992,8 +12992,8 @@
     "text": "Anmeldung mit einem piv-card-auth-Zertifikat zulassen"
   },
   "piv.cardAuthSignIn|description": {
-    "en": "1852da24c3fbfade",
-    "text": "Ein piv-card-auth-Schlüssel (Slot 9e) funktioniert ohne PIN, für den physischen Zutritt; daher wird sein Zertifikat bei der TLS-Anmeldung und bei PKINIT abgelehnt (STS-PIV-0013), sofern dies nicht eingeschaltet ist."
+    "en": "e9e37c8e6becb7ee",
+    "text": "Ein piv-card-auth-Schlüssel (Slot 9e) funktioniert ohne PIN, für den physischen Zutritt; daher wird sein Zertifikat bei der TLS-Anmeldung und bei PKINIT abgelehnt (STS-PIV-0013), sofern dies nicht eingeschaltet ist. Ein Slot-9e-Schlüssel wird nur unter piv-card-auth zertifiziert (STS-PIV-0037) und erhält nie hwk oder sc."
   },
   "piv.keyEscrow|label": {
     "en": "f2efc85c3d2bac38",
