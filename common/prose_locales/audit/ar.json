@@ -551,71 +551,75 @@
     "en": "f7fb5461e2325e1e",
     "text": "أُبلغ عن فقد رمز مادي وأُبطلت بيانات اعتماده"
   },
-"audit.actions.oath-token.import.label": {
+  "audit.actions.oath-token.import.label": {
     "en": "4da380e22dff30ec",
     "text": "استُورد ملف بذور PSKC لمورّد، أو رُفض"
   },
-"audit.actions.oath-token.assign.label": {
+  "audit.actions.oath-token.assign.label": {
     "en": "19b678e9bbc10747",
     "text": "أُسند رمز OATH مستورد إلى شخص، أو طالب به شخص"
   },
-"audit.actions.oath-token.claim.label": {
+  "audit.actions.oath-token.claim.label": {
     "en": "5c54ac8752e21682",
     "text": "رُفضت مطالبة شخص برمز OATH مستورد"
   },
-"audit.actions.oath-token.remove.label": {
+  "audit.actions.oath-token.remove.label": {
     "en": "92d69a1a2d848892",
     "text": "أُزيل رمز OATH غير مُسنَد من المخزون"
   },
-"audit.actions.yubiotp.import.label": {
+  "audit.actions.yubiotp.import.label": {
     "en": "6f92401fa557c5e6",
     "text": "استُورد ملف CSV لـ OTP الخاص بـ YubiKey، أو رُفض"
   },
-"audit.actions.yubiotp.assign.label": {
+  "audit.actions.yubiotp.assign.label": {
     "en": "c4f793ef7a16734a",
     "text": "أُسند OTP مستورد لـ YubiKey إلى شخص"
   },
-"audit.actions.yubiotp.claim.label": {
+  "audit.actions.yubiotp.claim.label": {
     "en": "08d55e823350bd4a",
     "text": "طالب شخص بـ OTP مستورد لـ YubiKey، أو رُفضت المطالبة"
   },
-"audit.actions.yubiotp.remove.label": {
+  "audit.actions.yubiotp.remove.label": {
     "en": "a4a9aedd10cc2813",
     "text": "أُزيل OTP غير مُسنَد لـ YubiKey من المخزون"
   },
-"audit.actions.yubiotp.client-add.label": {
+  "audit.actions.yubiotp.client-add.label": {
     "en": "40676cb783f36097",
     "text": "أُنشئ عميل YK-VAL"
   },
-"audit.actions.yubiotp.client-remove.label": {
+  "audit.actions.yubiotp.client-remove.label": {
     "en": "92433c797106d523",
     "text": "أُزيل عميل YK-VAL"
   },
-"audit.actions.openpgp.challenge.label": {
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "استُرد مفتاح مودَع لإدارة مفاتيح PIV"
+  },
+  "audit.actions.openpgp.challenge.label": {
     "en": "454a22b5bcd9d6a2",
     "text": "صدر تحدٍّ لتسجيل مفتاح OpenPGP"
   },
-"audit.actions.openpgp.key-registered.label": {
+  "audit.actions.openpgp.key-registered.label": {
     "en": "1ed8de1f8777a015",
     "text": "سُجّل مفتاح OpenPGP بناءً على إثبات حيازة"
   },
-"audit.actions.openpgp.key-refused.label": {
+  "audit.actions.openpgp.key-refused.label": {
     "en": "f1e7e3c6808ba33b",
     "text": "لم يُسجَّل مفتاح OpenPGP"
   },
-"audit.actions.openpgp.key-removed.label": {
+  "audit.actions.openpgp.key-removed.label": {
     "en": "89a284fa6508eae4",
     "text": "أُزيل مفتاح OpenPGP"
   },
-"audit.actions.openpgp.publication.label": {
+  "audit.actions.openpgp.publication.label": {
     "en": "f6d12f16eca6796a",
     "text": "نُشر مفتاح OpenPGP في دليل مفاتيح الويب (Web Key Directory) أو سُحب منه"
   },
-"audit.actions.openpgp.mail-encryption.label": {
+  "audit.actions.openpgp.mail-encryption.label": {
     "en": "ba0fb7a4133d94e2",
     "text": "تغيّرت طريقة تشفير البريد المرسل إلى شخص"
   },
-"audit.actions.openpgp.smime-certificate.label": {
+  "audit.actions.openpgp.smime-certificate.label": {
     "en": "663072a33ce1e178",
     "text": "عُيّنت شهادة S/MIME لشخص أو أُزيلت"
   },
@@ -1787,6 +1791,14 @@
     "en": "55c1155d5daa1c68",
     "text": "أبطل شخص أحد أزواج مفاتيح التوقيع الخاصة به"
   },
+  "audit.actions.ssh-user-ca.issue.label": {
+    "en": "b0dab5b91c44213d",
+    "text": "صدرت لشخص شهادة مستخدم SSH"
+  },
+  "audit.actions.ssh-user-ca.revoke.label": {
+    "en": "45c66d3faec475a4",
+    "text": "ألغى شخص إحدى شهادات مستخدم SSH الخاصة به"
+  },
   "audit.actions.did.person.published.label": {
     "en": "36165dbbaae0269a",
     "text": "نشر شخص did:web خاصًا به"
@@ -2454,9 +2466,5 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "أُزيل إعداد الوكيل العكسي لعنقود PEP بعيد"
-  },
-  "audit.actions.piv-escrow.recover.label": {
-    "en": "0cad829ec7cafc72",
-    "text": "استُرد مفتاح مودَع لإدارة مفاتيح PIV"
   }
 }

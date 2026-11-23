@@ -864,7 +864,8 @@ async function everyDocumentedExampleIsAccepted(doc) {
       return;
     }
     rows.push({ path: relative, example: example,
-                operationId: operation.operationId });
+                operationId: operation.operationId,
+                documented: Object.keys(operation.responses || {}) });
   });
 
   assert.ok(rows.length > 60,
@@ -895,9 +896,19 @@ async function everyDocumentedExampleIsAccepted(doc) {
                          JSON.stringify(row.example));
       continue;
     }
-    assert.ok(reply.status === 400 && errors.length,
+    // A REFUSAL ABOUT THE REFERENT IS A 400, OR A 4xx THE OPERATION ITSELF
+    // DOCUMENTS (2026-11-23). The hardware-token acts (#1955) answer a key,
+    // serial or client id the realm does not hold with 404 and an assigned
+    // token with 409, and say so in their own `responses`; the example's
+    // serial is invented, so that is what a replay meets. What is held to
+    // is the same: a documented status, and `errors` saying why.
+    const documentedRefusal = reply.status === 400 ||
+      (reply.status >= 400 && reply.status < 500 &&
+       row.documented.indexOf(String(reply.status)) >= 0);
+    assert.ok(documentedRefusal && errors.length,
       "POST " + row.path + ", sent the document's own example, answered " +
-      reply.status + " with no `errors` array: " +
+      reply.status + " (documented: " + row.documented.join(", ") +
+      ") with no `errors` array, or with a status it does not document: " +
       JSON.stringify(reply.body).slice(0, 300) + ". Every refusal on this " +
       "API carries `errors`, because a status alone is not something a " +
       "caller can act on.");

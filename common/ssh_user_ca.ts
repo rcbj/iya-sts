@@ -30,6 +30,7 @@ import config = require('./config');
 import hardwareTokens = require('./hardware_tokens');
 import errorCodes = require('./error_codes');
 import audit = require('./audit');
+import CertificateTrust = require('./certificate_trust');
 
 type Json = any;
 
@@ -47,6 +48,7 @@ interface SshUserCaDeps {
   hardwareTokens: typeof hardwareTokens;
   errorCodes: typeof errorCodes;
   audit: typeof audit;
+  trust: typeof CertificateTrust;
   directory(): Json;
   webauthn(): Json;
 }
@@ -77,6 +79,7 @@ class SshUserCa {
       log: helpers.log, pki: pki, crypto: stsCrypto,
       accessGate: accessGate, config: config,
       hardwareTokens: hardwareTokens, errorCodes: errorCodes, audit: audit,
+      trust: CertificateTrust,
       directory: function (): Json {
         return require('../ldap/ldap_server');
       },
@@ -146,7 +149,7 @@ class SshUserCa {
   }
 
   private async securityKeyEvidence(key: Json, encoded: string): Promise<Json> {
-    const { log, pki: certificate, crypto, config: cfg, webauthn } =
+    const { log, pki: certificate, crypto, config: cfg, webauthn, trust } =
       this.deps;
     log.debug("Entering SshUserCa.securityKeyEvidence().");
     if (!encoded || encoded.length > 87384 ||
@@ -200,8 +203,14 @@ class SshUserCa {
       .map(function (one: Json): Buffer {
         return Buffer.from(one.der);
       });
-    const path = await certificate.verifyPathToAnchors(
-      attestation.certificate, [], anchors);
+    // THE VALIDATION DOOR (#1360): a security key's attestation is a WebAuthn
+    // attestation, so it is held to that row, and the signer truststore is
+    // asked when no anchor is configured, as `authn/webauthn_attestation.ts`
+    // asks.
+    const path = trust.anchorsAvailable('webauthn-attestation', anchors)
+      ? await trust.path('webauthn-attestation', attestation.certificate, [],
+        anchors, { now: Date.now(), siteAsksRevocation: true })
+      : { ok: false, reason: 'no trust anchor is configured or listed' };
     if (!path.ok) {
       log.debug("Leaving SshUserCa.securityKeyEvidence(). Untrusted.");
       return null;

@@ -644,8 +644,8 @@
     "text": "Det genererade lösenordet skrivs till tjänstens logg."
   },
   "mode.requirements.bootstrap-password-file.product": {
-    "en": "e12d4ddc2b4d4724",
-    "text": "Det skrivs till en fil som bara den här tjänsten kan läsa, och loggen säger var, om inte admin.logBootstrapPassword är på."
+    "en": "aa423786d143e231",
+    "text": "Det skrivs till en fil som bara den här tjänsten kan läsa, och loggen säger var, om inte admin.logBootstrapPassword är på. En senare start tar bort filen, när någon redan har en inloggningsuppgift."
   },
   "mode.requirements.pkce-every-client.what": {
     "en": "7e2c6f1869e39287",

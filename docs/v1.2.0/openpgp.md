@@ -38,12 +38,17 @@ On the portal, **OpenPGP and mail encryption** (`/portal/openpgp`):
 The key is accepted only if all of these hold:
 
 - it is one **public** key (a secret key is refused and never stored);
-- it is neither revoked nor expired;
+- it is neither revoked nor expired, and only signatures made by the key
+  itself are believed: a subkey with no binding signature, a revocation or
+  an expiry that does not verify is ignored, and a subkey is encrypted to
+  only when its binding's key flags name an encryption use;
 - a valid user ID of it carries **the address on your account**;
-- the signature was made by a signing key of it, over exactly the challenge,
+- the signed message carries **exactly one** signature (`STS-OPENPGP-0029`
+  otherwise), made by a signing key of it, over exactly the challenge,
   after the challenge was issued (allowing `openpgp.signatureSkewS` for the
   signing computer's clock);
-- its algorithms are ones this service accepts.
+- its algorithms are ones this service accepts, for every subkey it would
+  sign or be encrypted with, not only the one in use today.
 
 | Use | Accepted | Refused |
 |---|---|---|
@@ -166,6 +171,29 @@ neutral subject for its kind — "A security notice from …", "A message from
 …", "A notification from …" in the recipient's language. The real subject,
 sender and recipient are inside, as protected headers. Nothing new is signed:
 the outer message is signed with [DKIM](mail.md) as every message is.
+
+### A key belongs to its address
+
+A key is used only for an address one of its valid user IDs names, and a
+certificate only for an address it names.
+
+- **Mail to your own address** is encrypted to the key. If the key no longer
+  names that address, the choice cannot be kept and the message is not
+  queued (`STS-MAIL-0241`).
+- **Mail to another address** — the notice that your address changed, sent
+  to the former address, or a verification link sent to a new address you
+  asked for — is encrypted only if the key names that address. Otherwise it
+  is sent **unencrypted**, even when `mail.encryptionRequired` names its
+  template: a message encrypted to a key that address does not hold could
+  not be read there, and refusing it would leave the change impossible to
+  finish.
+- **When your address changes** to one the key does not name, the key is
+  removed from your entry and from the Web Key Directory, your choice goes
+  back to **Do not encrypt my mail**, and the audit log records it
+  (`openpgp.key-removed`). Register a key whose user ID carries the new
+  address. A key that names the new address too is kept, and its
+  publication moves to the new address. An S/MIME choice whose certificate
+  does not name the new address goes back to no encryption the same way.
 
 ### Messages that must be encrypted
 
