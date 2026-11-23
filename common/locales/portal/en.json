@@ -66,6 +66,8 @@
   "nav.ciba.heading": "Sign-in requests",
   "nav.access-requests.label": "Access requests",
   "nav.access-requests.heading": "Access requests waiting for you",
+  "nav.access-request.label": "Your access requests",
+  "nav.access-request.heading": "Your access requests",
   "nav.device.label": "Sign in a device",
   "nav.device.heading": "Sign in a device",
   "nav.claim-sources.label": "Claim sources",

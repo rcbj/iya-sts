@@ -216,8 +216,12 @@
     "text": "full：每個授權回應都攜帶 iss，包括錯誤回應，且兩份探索文件都公告 authorization_response_iss_parameter_supported，讓客戶端知道可以要求它。"
   },
   "stsmetadata.specs.rfc8705.coverage": {
-    "en": "924a15881d40c04d",
-    "text": "full——第 2 至 5 節。「第 5 節」（#139）：在主連接埠會索取客戶端證書的情況下，每個讀取證書的端點都是自己的別名，因此 mtls_endpoint_aliases 以其自己的地址指名權杖、撤銷、內省、PAR 與 UserInfo 端點。「第 2 節」：tls_client_auth 驗證證書鏈已驗證通過的證書，該證書須由此領域簽發給該應用程式（urn:sts:application:），或攜帶五個已註冊主體參數之一（subject_dn 以名稱比較、san_dns、san_uri、san_ip、san_email）；self_signed_tls_client_auth 比對 jwks 的 x5c 或指紋；宣告的方法在每種模式下、於權杖與 PAR 端點都會被遵守。「第 3 節」：任何攜帶證書的請求，其存取權杖與重新整理權杖上都有 cnf[\"x5t#S256\"]，在每個受保護端點與 /admin-api 檢查，並在內省時回報；註冊 tls_client_certificate_bound_access_tokens 的客戶端若沒有證書會被拒絕。「第 4 與 7.1 節」：公開客戶端的重新整理權杖與證書繫結，以證書驗證的客戶端可使用新證書重新整理。「未經驗證」的證書仍會繫結，如第 3 節所允許。僅在主連接埠為 TLS 時（global.https），也只在那裡公告 tls_client_certificate_bound_access_tokens。從不從代理標頭讀取證書。"
+    "en": "b53effdbb54d526a",
+    "text": "full——第 2 至 5 節。「第 5 節」（#139）：在主連接埠會索取客戶端證書的情況下，每個讀取證書的端點都是自己的別名，因此 mtls_endpoint_aliases 以其自己的地址指名權杖、撤銷、內省、PAR 與 UserInfo 端點。「第 2 節」：tls_client_auth 驗證證書鏈已驗證通過的證書，該證書須由此領域簽發給該應用程式（urn:sts:application:），或攜帶五個已註冊主體參數之一（subject_dn 以名稱比較、san_dns、san_uri、san_ip、san_email）；self_signed_tls_client_auth 比對 jwks 的 x5c 或指紋；宣告的方法在每種模式下、於權杖與 PAR 端點都會被遵守。「第 3 節」：任何攜帶證書的請求，其存取權杖與重新整理權杖上都有 cnf[\"x5t#S256\"]，在每個受保護端點與 /admin-api 檢查，並在內省時回報；註冊 tls_client_certificate_bound_access_tokens 的客戶端若沒有證書會被拒絕。「第 4 與 7.1 節」：公開客戶端的重新整理權杖與證書繫結，以證書驗證的客戶端可使用新證書重新整理。「未經驗證」的證書仍會繫結，如第 3 節所允許。僅在主連接埠為 TLS 時（global.https），也只在那裡公告 tls_client_certificate_bound_access_tokens。只有作為 RFC 9440 的證書時，才會從標頭讀取證書，且只來自依其證書與地址指出的終止 TLS 之代理（#2012）。"
+  },
+  "stsmetadata.specs.rfc9440.coverage": {
+    "en": "b761bd646855719e",
+    "text": "partial: 來源伺服器的那一半，預設為關閉（#2012）。Client-Cert 與 Client-Cert-Chain 只從管理員「同時」依其連線所用的客戶端證書與其地址指出的終止 TLS 之代理讀取（tls.trustedProxyCertificates、tls.trustedProxyAddresses）；轉送的證書鏈在此處驗證至客戶端信任存放區，然後在每道門上代替交握中的證書。來自任何其他傳送者時，這兩個標頭會被移除並記錄。此服務從不充當代理。"
   },
   "stsmetadata.specs.rfc8707.coverage": {
     "en": "bc07e530c0abe862",
@@ -386,6 +390,10 @@
   "stsmetadata.specs.rfc8823.coverage": {
     "en": "c6914ceb37d9389d",
     "text": "partial：email 識別碼類型與 email 設定檔。不執行 email-reply-00 挑戰（不會寄送任何內容至該地址）；地址為該人自己的 mail 屬性時即獲授權。"
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "d223f1239342ae1c",
+    "text": "partial: 四個金鑰插槽作為證書設定檔（PIV Authentication 9a、Digital Signature 9c、Key Management 9d、Card Authentication 9e，後者預設不讓任何人登入）；外部 PIV 或 CAC 卡片在宣告 PIV Authentication 原則時依其 urn:uuid subjectAltName 中的卡片 UUID 對應（預設為關閉）；第 6.2.3.1 節的 PKI-AUTH 作為證書登入設定檔（#2012）：簽發者、keyUsage、extendedKeyUsage 以及 RFC 5280 原則處理沿路徑帶過的原則（包括對應），以及依簽發者與序號、簽發者與 SKI、金鑰、證書或卡片 UUID 繫結至一個帳戶，在領域要求時附帶經驗證的撤銷狀態，如有需要可位於獨立的接聽程式上。不支援 FASC-N、CHUID、卡片管理或生物辨識。"
   },
   "stsmetadata.specs.rfc7030.coverage": {
     "en": "bc9984adc698cc63",
@@ -564,8 +572,12 @@
     "text": "第 3.11 節中對請求驗證所得主體的別名。GET、PUT、PATCH 與 DELETE 會將認證資訊解析為目錄項目，並委派給 /Users/{id} 使用的「同一組」User 處理常式，因此不會有第二條需要保持同步的讀寫路徑。過去它對每個方法都回應 501，因為這裡沒有任何驗證，而其中「兩個 501 至今仍然正確」並予以保留：「匿名」呼叫端沒有可作為別名的主體（別名無法使用，這與資源不存在不同），而 POST 會建立一個依定義早已存在的主體。指名某個沒有項目者的認證資訊——client_credentials 權杖、客戶端憑證——則改為得到 404。"
   },
   "stsmetadata.endpoints./tls/sign-in.what": {
-    "en": "b9f18166e17e9c9d",
-    "text": "經驗證的客戶端憑證會成為工作階段（2026-09-05），自 2026-09-16 起位於此連接埠——過去這是連上任一已刪除 TLS 接聽程式的副作用，意味著載入一個診斷頁面就會讓你登入。它會回答收到了什麼、是否驗證通過、權杖端點會將權杖繫結至的指紋、撤銷檢查的結果，以及是否已開始工作階段。它在交握時不拒絕任何人，也無法拒絕：無法驗證的憑證、本服務簽發但不是 TLS 客戶端身分的憑證、未儲存在本領域恰好一個項目之 userCertificate 中的外部憑證授權單位憑證（從不依一般名稱比對），以及應用程式的憑證（RFC 8705 認證資訊，而非人）都會得到 200，不建立工作階段並附上原因。"
+    "en": "86c9267a55ef2564",
+    "text": "經驗證的客戶端憑證會成為工作階段（2026-09-05），自 2026-09-16 起位於此連接埠——過去這是連上任一已刪除 TLS 接聽程式的副作用，意味著載入一個診斷頁面就會讓你登入。它會回答收到了什麼、是否驗證通過、權杖端點會將權杖繫結至的指紋、撤銷檢查的結果，以及是否已開始工作階段。它在交握時不拒絕任何人，也無法拒絕：無法驗證的憑證、本服務簽發但不是 TLS 客戶端身分的憑證、未儲存在本領域恰好一個項目之 userCertificate 中的外部憑證授權單位憑證（從不依一般名稱比對），以及應用程式的憑證（RFC 8705 認證資訊，而非人）都會得到 200，不建立工作階段並附上原因。在管理員指定的 TLS 終止代理伺服器之後（tls.trustedProxyCertificates 與 tls.trustedProxyAddresses，預設關閉），憑證為 RFC 9440 的 Client-Cert 與 Client-Cert-Chain，在此以交握時的方式驗證；來自其他任何來源的這些標頭都會被移除。"
+  },
+  "stsmetadata.endpoints./authn/certificate/continue.what": {
+    "en": "7a42e6050c748fd8",
+    "text": "「證書登入交接」（#2012，預設為關閉：certSignIn.handoff）。登入畫面連結到此處，位於 certificate-sign-in 應用程式所對應的接聽程式上——其 clientAuth 會要求證書——因此只在這一個請求上要求智能卡及其 PIN。證書依畫面自身之證書入口的要求檢查，繫結至待處理的登入與瀏覽器的登入工作階段（兩個請求都攜帶它），然後瀏覽器被送回畫面，畫面以其持有者的身分繼續。未知、已使用或已過期的交接以 400 回應，未攜帶發起瀏覽器之工作階段而到達的交接以 403 回應。"
   },
   "stsmetadata.endpoints./tls/server-certificate.what": {
     "en": "54631edee4eb2352",

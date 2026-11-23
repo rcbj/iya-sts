@@ -4564,6 +4564,43 @@ this directory's:
   holds a policy reference set at a create to its closed set (STS-LDAP-0106),
   as `update()` does an edit.
 
+## `stsCertificateBinding`: A CERTIFICATE SIGN-IN BINDING (#2012, 2026-11-23)
+
+The rule is `common/CLAUDE.md` 3dh. A person attribute (OID 950, `own`
+names), multi-valued, one canonical binding per value —
+`certificate-sha256:`, `issuer-serial:`, `issuer-ski:`, `spki-sha256:`,
+`issuer-subject:` or `subject:`, issuer-scoped values naming the issuing CA by
+its SubjectPublicKeyInfo's SHA-256. This file owns:
+
+* **THE WRITE GUARD, AT `stsPivCardUuid`'S THREE DOORS** (`putEntry()`,
+  `writePersonAttribute()`, the LDAP modify): `certificateBindingRefusal()`
+  canonicalises each value through `certificate_binding.bindingValueOf()` and
+  refuses one outside the grammar (STS-TLS-0069) or one another entry of the
+  realm holds (STS-TLS-0070) — the resolution refuses two holders anyway, but
+  the write that makes them is the mistake. On the person page beside the card
+  UUIDs (`person_editor.ts`), never the portal's: a person writing one would
+  choose whose certificate signs them in.
+* **FOUND BY THE `certificatebinding` INDEX** (`certificateBindingHolders()`,
+  on certificate enrollment's slot, people only, at most three):
+  `directory_codec.js` derives one key per stored value, lower-cased, and one
+  `upn:<lower-cased>` per `userPrincipalName`, so the `upn` method is the
+  same probe; the `email` method is `peopleByMail()`. A windowed process asks
+  the store's index alone (a person is always windowed); a process with no
+  window holds the directory as a Map and walks it, reading memory and never
+  the store — `peopleByMail()`'s arrangement, and a BARRIER of
+  `tests/no_full_directory_walk_in_jobs.js` for that reason. The uniqueness
+  check that calls it returns before any lookup when the entry written
+  carries no binding, so the CRL and federation jobs' writes never reach it
+  (run 45236493306's walk guards found that they did). It is NOT
+  `eachHolderOfAny()`: without a window that is the same walk, and every
+  name it is given must be in the store's asked index
+  (`tests/directory_asked_names.js`, run 45269202825), which the windowed
+  question here does not use. No schema moves. Recording a binding is a write, so it is keyed; a
+  `userPrincipalName` stored before #2012 is keyed by
+  `persistence/granting_index_backfill.js`'s second walk, which re-keys every
+  entry naming one of `directory_codec.BACKFILL_ATTRIBUTES` once
+  (`persistence/CLAUDE.md`).
+
 ## `userCertificate`: WHAT AN OUTSIDE CERTIFICATE IS STORED IN, AND HOW IT IS FOUND (#1061, 2026-10-27)
 
 The rule is `common/CLAUDE.md` 3ag. This file owns where the certificate is

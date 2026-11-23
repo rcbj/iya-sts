@@ -99,6 +99,14 @@
     "en": "e39be1976aa651db",
     "text": "存取請求的提交結構描述"
   },
+  "endpoints.route./access/v1/access-requests/catalogs/:evaluation.name": {
+    "en": "c633cd939009e41d",
+    "text": "存取申請的 Catalogs Document"
+  },
+  "endpoints.route./access/v1/access-requests/catalogs/:evaluation/entitlements.name": {
+    "en": "2fc2571728b32fa3",
+    "text": "存取申請的權限目錄"
+  },
   "endpoints.route./access/v1/access-requests/:id.name": {
     "en": "c8bcbb33d07cfb8f",
     "text": "存取請求的工作狀態"
@@ -466,6 +474,10 @@
   "endpoints.route./tls/sign-in.name": {
     "en": "a670f321ddd2f009",
     "text": "以用戶端憑證登入"
+  },
+  "endpoints.route./authn/certificate/continue.name": {
+    "en": "801f4e0b4934b5df",
+    "text": "在獨立的接聽程式上進行憑證登入"
   },
   "endpoints.route./tls/server-certificate.name": {
     "en": "9458f47a8a347911",
@@ -1278,6 +1290,14 @@
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
     "en": "33209f967f070175",
     "text": "硬體權杖動作"
+  },
+  "endpoints.route./admin-api/hardware-tokens/ssh-certificates.name": {
+    "en": "3bb1ef22ae2ed554",
+    "text": "某人的 SSH 使用者憑證"
+  },
+  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
+    "en": "f46d01f7581b5379",
+    "text": "託管的 PIV 金鑰"
   },
   "endpoints.route./admin-api/scim/clients.name": {
     "en": "63c8ee9a6d93cb89",
@@ -2642,13 +2662,5 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS（會索取用戶端憑證，但從不強制要求）"
-  },
-  "endpoints.route./admin-api/hardware-tokens/escrowed.name": {
-    "en": "f46d01f7581b5379",
-    "text": "託管的 PIV 金鑰"
-  },
-  "endpoints.route./admin-api/hardware-tokens/ssh-certificates.name": {
-    "en": "3bb1ef22ae2ed554",
-    "text": "某人的 SSH 使用者憑證"
   }
 }

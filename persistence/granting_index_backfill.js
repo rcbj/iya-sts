@@ -110,9 +110,17 @@ const SKIP_LINES = 10;
 // declares (`realms.handles()` never names it, so no lookup, purge or
 // completion probe sees it), realm '' and keys with a `$`, which no keyed
 // digest holds.
+//
+// **A SECOND WALK SINCE #2012**: the candidates are the entries naming one of
+// `directory_codec.BACKFILL_ATTRIBUTES` — the granting six and the two the
+// `certificatebinding` key is derived from (`userPrincipalName`,
+// `stsCertificateBinding`) — and every candidate's whole `valueKeys` is
+// recomputed, so a store that finished #1311's walk walks once more under a
+// new mark and cursor, and the old two rows are left where they are (a
+// finished cursor names nothing). A store new since #2012 walks once.
 const HANDLE = 'ldap.grantinggroup';
-const MARK_KEY = '$index-complete$';
-const CURSOR_KEY = '$cursor$';
+const MARK_KEY = '$index-complete-2$';
+const CURSOR_KEY = '$cursor-2$';
 
 // Whether this process has seen the mark in every database it walks, so the
 // job says it is off rather than asking again. Set by a run that finds or
@@ -565,6 +573,29 @@ function install(schedulerInstance) {
 }
 
 /**
+ * Whether every directory row is keyed under this walk's attributes, as far
+ * as this process knows: true where the mark was seen, and where there is no
+ * store to walk (every entry is then resident, and a question walks them).
+ * Otherwise false, and a read of the mark is started for the next question
+ * (#2012: a low-affinity `upn` binding is not asked before this is true, so a
+ * duplicate UPN on an entry not yet keyed cannot make a match look unique).
+ *
+ * @returns true when the keys are complete
+ */
+function keysComplete() {
+  log.debug("Entering keysComplete().");
+  if (completeHere || !walkableDriver()) {
+    log.debug("Leaving keysComplete(). Yes.");
+    return true;
+  }
+  primeAsync().catch(function (e) {
+    log.debug("Caught in keysComplete(): " + ((e && e.message) || e));
+  });
+  log.debug("Leaving keysComplete(). Not yet.");
+  return false;
+}
+
+/**
  * Forgets what this process learned, for the tests.
  */
 function reset() {
@@ -590,6 +621,7 @@ module.exports = {
   combined: combined,
   offReason: offReason,
   primeAsync: primeAsync,
+  keysComplete: keysComplete,
   runOnce: runOnce,
   install: install,
   reset: reset

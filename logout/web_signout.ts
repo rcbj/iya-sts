@@ -79,12 +79,13 @@ class SignoutSurface extends WebSurface {
       // THE SERVICE COULD NOT BE REACHED (#731): the act was never answered,
       // so nothing is known to have been signed out — and a page that said
       // nothing, the act's rejection unhandled, left the person to assume
-      // it had been. It is a refusal drawn over the page, in English as
-      // every refusal here is, and the page and the account control are
-      // left as they were (nothing changed, so nothing is announced).
+      // it had been. It is a refusal drawn over the page, in the page's
+      // language (#2006), and the page and the account control are left as
+      // they were (nothing changed, so nothing is announced).
       return { status: 0, json: { ok: false, errors: [
         'The service could not be reached, so nothing was signed out. ' +
-        'Check the connection and try again.'] } };
+        'Check the connection and try again.'],
+        messages: [{ key: 'refusals.logout.unreachable' }] } };
     }
     const json = await res.json().catch(function () {
       return null;
@@ -111,19 +112,22 @@ class SignoutSurface extends WebSurface {
     const select = fields.select === undefined ? []
       : [].concat(fields.select);
     if (fields.scope === 'selected' && !select.length) {
-      this.flash = { error: 'Nothing is ticked, so nothing was ended.' };
+      this.flash = { error: this.refusal('refusals.logout.nothingTicked', {},
+        'Nothing is ticked, so nothing was ended.') };
       this.redraw();
       return;
     }
     if (!await this.ensureFormTable()) {
-      this.flash = { error: 'The service\'s API could not be reached.' };
+      this.flash = { error: this.refusal('refusals.web.unreachable', {},
+        'The service\'s API could not be reached.') };
       this.redraw();
       return;
     }
     const op = this.formTable['POST /logout'];
     if (!op) {
-      this.flash = { error: 'This control has no API operation (/logout), ' +
-        'so the page refuses it rather than guess.' };
+      this.flash = { error: this.refusal('refusals.web.noOperation',
+        { control: '/logout' }, 'This control has no API operation ' +
+        '(/logout), so the page refuses it rather than guess.') };
       this.redraw();
       return;
     }
@@ -151,19 +155,23 @@ class SignoutSurface extends WebSurface {
    */
   async chooseAccount(fields: Json): Promise<void> {
     if (!fields.account) {
-      this.flash = { error: 'Choose an account, or every account.' };
+      this.flash = { error: this.refusal('refusals.logout.chooseAccount', {},
+        'Choose an account, or every account.') };
       this.redraw();
       return;
     }
     if (!await this.ensureFormTable()) {
-      this.flash = { error: 'The service\'s API could not be reached.' };
+      this.flash = { error: this.refusal('refusals.web.unreachable', {},
+        'The service\'s API could not be reached.') };
       this.redraw();
       return;
     }
     const op = this.formTable['POST /logout/accounts'];
     if (!op) {
-      this.flash = { error: 'This control has no API operation ' +
-        '(/logout/accounts), so the page refuses it rather than guess.' };
+      this.flash = { error: this.refusal('refusals.web.noOperation',
+        { control: '/logout/accounts' }, 'This control has no API ' +
+        'operation (/logout/accounts), so the page refuses it rather than ' +
+        'guess.') };
       this.redraw();
       return;
     }
@@ -175,7 +183,7 @@ class SignoutSurface extends WebSurface {
       return;
     }
     if (json && !json.ok && json.view) {
-      this.flash = { error: (json.errors || []).join(' ') };
+      this.flash = { error: this.said(json) };
       this.view = { page: (this.view && this.view.page) ||
                           this.find('/logout'),
                     query: {}, json: json.view };
@@ -210,15 +218,15 @@ class SignoutSurface extends WebSurface {
     // other refusal is still drawn over the page it came from.
     if (json && !json.ok && json.view &&
         json.view.state === 'reauthenticate') {
-      this.flash = { error: (json.errors || []).join(' ') };
+      this.flash = { error: this.said(json) };
       this.view = { page: (this.view && this.view.page) ||
                           this.find('/logout'),
                     query: {}, json: json.view };
       this.drawView();
       return;
     }
-    this.flash = { error: (json && (json.errors || []).join(' ')) ||
-                          'The service answered ' + answer.status + '.' };
+    this.flash = { error: (json && this.said(json)) ||
+                          this.answeredStatus(answer.status) };
     this.redraw();
   }
 

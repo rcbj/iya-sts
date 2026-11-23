@@ -506,6 +506,29 @@ app.use(function refuseForeignEdge(req, res, next) {
 });
 
 // ---------------------------------------------------------------------------
+// A CLIENT CERTIFICATE A TLS-TERMINATING PROXY FORWARDED (RFC 9440, #2012).
+// From a proxy named by both its certificate and its address
+// (`tls.trustedProxyCertificates`, `tls.trustedProxyAddresses`), the
+// forwarded certificate is verified here and the request's socket is replaced
+// by a view answering it, for every door below; from anybody else the
+// headers are removed. Here, in the front process, so a request worker is
+// handed the forwarded certificate (`request_pool.js`'s `peerOf()` reads the
+// view) and never the headers; below the realm and the edge refusal, and
+// above the resumed-chain wait, which reads the socket.
+// `common/forwarded_client_certificate.ts` argues it. Built at the first
+// request, so this file's own load order does not change.
+// ---------------------------------------------------------------------------
+let forwardedCertificate = null;
+// A HOT PATH: every request passes it, so no Entering/Leaving pair.
+app.use(function forwardedClientCertificateLazily(req, res, next) {
+  if (!forwardedCertificate) {
+    forwardedCertificate =
+      require('./forwarded_client_certificate').middleware();
+  }
+  forwardedCertificate(req, res, next);
+});
+
+// ---------------------------------------------------------------------------
 // THE AMBIENT REQUEST, for the one thing a signer needs a request for and
 // cannot be handed one: the ORIGIN of the `x5u` address a signed token carries
 // (common/jose_certificate_header.js, 2026-09-13). Entered for the life of the

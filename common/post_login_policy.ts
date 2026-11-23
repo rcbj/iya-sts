@@ -221,7 +221,12 @@ const REFERENCES = Object.freeze({ application: 'appPostLoginPolicy',
                                    group: 'stsPostLoginPolicy' });
 
 /**
- * The activities a profile may ask for. One today.
+ * The values of the `activity` row: the passkey migration, which the
+ * profile's own `enabled` turns on. It stays one value since #2009 (design
+ * X2, backwards compatibility): every activity added beside it has a block
+ * of rows of its own, with its own switch, so a profile saved before reads
+ * each new one as off. The activities there are is
+ * `common/post_login_kinds.ts`'s table, not this list.
  */
 const ACTIVITIES = ['pqc-passkey-migration'];
 
@@ -806,16 +811,23 @@ class PostLoginPolicy {
    * activity switched on — the cheap question asked before any per-person
    * one.
    *
+   * @param isOn - what "an activity on" means for a profile; `post_login.ts`
+   *   hands every activity's own switch (#2009). Omitted, `enabled`, the
+   *   passkey migration's.
    * @returns true where one is on
    */
-  anyEnabled(): boolean {
+  anyEnabled(isOn?: (profile: PostLoginProfile) => boolean): boolean {
     const { log } = this.deps;
     log.debug("Entering PostLoginPolicy.anyEnabled().");
+    const on = typeof isOn === 'function' ? isOn
+      : function (profile: PostLoginProfile): boolean {
+        return profile.enabled === true;
+      };
     let out = false;
     try {
-      out = this.read(DEFAULT_PROFILE).enabled === true ||
+      out = on(this.read(DEFAULT_PROFILE)) ||
         this.namedProfiles().some((one) => {
-          return this.read(one).enabled === true;
+          return on(this.read(one));
         });
     } catch (e) {
       // Nothing can be read: nothing is asked.

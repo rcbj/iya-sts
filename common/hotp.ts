@@ -57,6 +57,8 @@
 // ===========================================================================
 
 import helpers = require('./helpers');
+// A refusal a person reads, as a catalog sentence (#2006).
+import Sentence = require('./sentence');
 import config = require('./config');
 import crypto = require('./crypto');
 import errorCodes = require('./error_codes');
@@ -82,7 +84,7 @@ interface HotpSettings {
 
 type HotpVerdict =
   | { ok: true; counter: number; next: number; ahead: number }
-  | { ok: false; reason: string; detail: string };
+  | { ok: false; reason: string; detail: string | Sentence };
 
 interface HotpDeps {
   log: {
@@ -273,13 +275,15 @@ class Hotp {
     if (!/^[0-9]+$/.test(code) || code.length !== digits) {
       log.debug("Leaving Hotp.verify(). Not " + digits + " digits.");
       return codes.mark({ ok: false, reason: 'shape',
-        detail: 'A code is ' + digits + ' digits.' }, 'STS-OATH-0001');
+        detail: Sentence.say('refusals.factor.codeDigits',
+                             { digits: digits }) },
+        'STS-OATH-0001');
     }
     const secret = this.secretOf(record);
     if (!secret) {
       log.debug("Leaving Hotp.verify(). The secret is unusable.");
       return codes.mark({ ok: false, reason: 'store',
-        detail: 'The stored shared secret could not be read.' },
+        detail: Sentence.say('refusals.factor.secretUnreadable') },
         'STS-OATH-0002');
     }
     const base = Math.max(0, Math.floor(Number((record && record.counter) ||
@@ -295,9 +299,8 @@ class Hotp {
     if (matched < 0) {
       log.debug("Leaving Hotp.verify(). No counter in the window.");
       return codes.mark({ ok: false, reason: 'mismatch',
-        detail: 'That code is not right. If your token has been pressed ' +
-                'many times without signing in, resynchronise it with two ' +
-                'codes in a row.' }, 'STS-OATH-0003');
+        detail: Sentence.say('refusals.factor.hotpMismatch') },
+        'STS-OATH-0003');
     }
     log.debug("Leaving Hotp.verify(). Accepted at counter " + matched + ".");
     return { ok: true, counter: matched, next: matched + 1,
@@ -337,14 +340,14 @@ class Hotp {
       log.debug("Leaving Hotp.resync(). Not two codes of " + digits +
                 " digits.");
       return codes.mark({ ok: false, reason: 'shape',
-        detail: 'Resynchronising takes two codes of ' + digits + ' digits, ' +
-                'one after the other.' }, 'STS-OATH-0001');
+        detail: Sentence.say('refusals.factor.hotpResyncShape',
+                             { digits: digits }) }, 'STS-OATH-0001');
     }
     const secret = this.secretOf(record);
     if (!secret) {
       log.debug("Leaving Hotp.resync(). The secret is unusable.");
       return codes.mark({ ok: false, reason: 'store',
-        detail: 'The stored shared secret could not be read.' },
+        detail: Sentence.say('refusals.factor.secretUnreadable') },
         'STS-OATH-0002');
     }
     const base = Math.max(0, Math.floor(Number((record && record.counter) ||
@@ -367,9 +370,8 @@ class Hotp {
     if (matched < 0) {
       log.debug("Leaving Hotp.resync(). No consecutive pair.");
       return codes.mark({ ok: false, reason: 'mismatch',
-        detail: 'Those two codes are not consecutive codes of this token ' +
-                'within ' + window + ' presses. Press it twice more and ' +
-                'enter both codes.' }, 'STS-OATH-0004');
+        detail: Sentence.say('refusals.factor.hotpResyncMismatch',
+                             { window: window }) }, 'STS-OATH-0004');
     }
     log.debug("Leaving Hotp.resync(). Found at counter " + matched + ".");
     return { ok: true, counter: matched, next: matched + 1,

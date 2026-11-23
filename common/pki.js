@@ -10270,6 +10270,88 @@ function adoptGenerationCertificate(id, useCaseId, slot, kid, publicKeyPem) {
 }
 
 // ---------------------------------------------------------------------------
+// A CLASSICAL KEY'S CERTIFICATE IS KEPT FOR AS LONG AS IT IS STILL CURRENT
+// (GitHub Actions run 45189343764, 2026-11-23).
+//
+// `certifyKeySet()` re-issued the RSA key's two certificates and every curve
+// key's on every call, over keys that had not changed. It is called on every
+// new generation (`helpers.js`'s `replaceGeneration()` -> `certifyLater()`),
+// and the hourly `signing.rotate` mints a `next` key for any unit that lacks
+// one — the post-quantum units, which arrive after the first run, lack one
+// at the next hour. So at the first full hour of every product service the
+// classical slots took new certificates and new SHA-256 fingerprints: the
+// console's keys page, drawn before it, linked seven certificates (RS256 and
+// the six curve keys) that `/admin/crypto-metadata` no longer held, and
+// `sts_admin_console` failed in every mode with a store whenever its crawl
+// crossed the hour. The post-quantum keys kept theirs, because
+// `certifyPqKeys()` has always asked this question; this is that question
+// for the keys it was never asked of.
+//
+// CURRENT is: the plain slot holds a record over THIS key (`kid` and the
+// SubjectPublicKeyInfo's SHA-256), signed by the Issuing CA the branch holds
+// now, on a branch that still chains to the Root, not pinned, not expired and
+// not on its authority's revocation list. Anything else is certified again,
+// exactly as before — a rebuilt branch, a reissued authority, a revoked
+// certificate over a key the realm still signs with (`common/CLAUDE.md`,
+// *What is still re-certified whatever was revoked*), and a new key.
+// ---------------------------------------------------------------------------
+function heldCertificateIsCurrent(id, useCaseId, slot, kid, publicKeyPem) {
+  log.debug("Entering heldCertificateIsCurrent(). " + useCaseId + ':' + slot);
+  const held = certificateFor(id, useCaseId, slot);
+  if (!held || held.pinned || !held.serialHex) {
+    log.debug("Leaving heldCertificateIsCurrent(). None held, or pinned.");
+    return false;
+  }
+  if (kid && held.kid !== String(kid)) {
+    log.debug("Leaving heldCertificateIsCurrent(). Another key's.");
+    return false;
+  }
+  let fingerprint = '';
+  try {
+    fingerprint = thumbprintOf(publicKeyPem);
+  } catch (e) {
+    log.debug("Caught in heldCertificateIsCurrent(): " +
+              ((e && e.message) || e));
+    log.debug("Leaving heldCertificateIsCurrent(). Unreadable key.");
+    return false;
+  }
+  if (held.subjectKeyFingerprint !== fingerprint) {
+    log.debug("Leaving heldCertificateIsCurrent(). Over another key.");
+    return false;
+  }
+  const row = rawRowFor(id);
+  const issuingNow = ((row && row.issuing && row.issuing[useCaseId]) || {})
+    .certificatePem;
+  if (!issuingNow || (held.chainPem || [])[0] !== issuingNow ||
+      !scopeChainsToRoot(id)) {
+    log.debug("Leaving heldCertificateIsCurrent(). Another authority.");
+    return false;
+  }
+  const ends = new Date(held.notAfter).getTime();
+  if (!(ends > Date.now())) {
+    log.debug("Leaving heldCertificateIsCurrent(). Expired.");
+    return false;
+  }
+  let revoked = null;
+  try {
+    revoked = require('./pki_revocation').isRevoked(id, useCaseId,
+                                                    held.serialHex);
+  } catch (e) {
+    // No revocation module in this process (an in-process caller that never
+    // loaded it): nothing here can have revoked the certificate.
+    log.debug("Caught in heldCertificateIsCurrent(): " +
+              ((e && e.message) || e));
+    revoked = null;
+  }
+  if (revoked) {
+    log.debug("Leaving heldCertificateIsCurrent(). Revoked.");
+    return false;
+  }
+  log.debug("Leaving heldCertificateIsCurrent(). Current.");
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // THE STANDBY KEY GENERATIONS (2026-09-22, #42): the `next` key of each unit,
 // published before it is promoted, and each retired key still verifying. Each
 // is certified under its unit's Issuing CA in a slot of its own
@@ -10419,25 +10501,67 @@ async function certifyStandbyGroupEntry(id, one, standby) {
     : one.unit + '@' + one.kid + ': ' + done.errors.join(' ');
 }
 
+// ---------------------------------------------------------------------------
+// ONE CERTIFICATION OF A REALM'S KEY SET AT A TIME, IN THIS PROCESS
+// (2026-11-23).
+//
+// A set made by a read is certified by `helpers.js`'s `certifyLater()`, not
+// awaited; `pki.start()`, the realm watcher, a new generation and a request
+// waiting for its `x5c` each ask too. Two of them in flight together each
+// found a slot with no current certificate, each signed one, and the one that
+// saved second replaced the first's — a certificate that had already been
+// read, published or linked, gone a moment later (the in-process twin of the
+// start-up race several processes run against the store, which the merge
+// settles "first to commit wins"). Queued, the second finds the first's
+// certificates current and keeps them (`heldCertificateIsCurrent()`).
+// Nothing here calls back into a certification of the same realm, so the
+// queue cannot wait on itself.
+// ---------------------------------------------------------------------------
+const keySetCertifications = new Map();
+
 /**
  * Certifies every key in a realm's key set under its Issuing CAs: the RSA
  * key under JOSE and XML, the curve keys, the post-quantum keys and the
  * signer groups.
  *
+ * One at a time per realm in this process; a certificate already current is
+ * kept.
  * @param realmId - the realm
  * @param keys - the realm's key set
- * @returns a promise of `{ ok, certified, failed }`
+ * @returns a promise of `{ ok, certified, unchanged, failed }`
  */
-async function certifyKeySet(realmId, keys) {
+function certifyKeySet(realmId, keys) {
   log.debug('Entering certifyKeySet(). realm=' + realmId);
   const id = realmIdOf(realmId);
+  const before = keySetCertifications.get(id) || Promise.resolve();
+  const mine = before.then(null, function (e) {
+    log.debug("Caught in certifyKeySet(): " + ((e && e.message) || e));
+  }).then(function () {
+    return certifyKeySetNow(id, keys);
+  });
+  keySetCertifications.set(id, mine);
+  const forget = function () {
+    if (keySetCertifications.get(id) === mine) {
+      keySetCertifications.delete(id);
+    }
+  };
+  mine.then(forget, forget);
+  log.debug('Leaving certifyKeySet(). Queued.');
+  return mine;
+}
+
+async function certifyKeySetNow(realmId, keys) {
+  log.debug('Entering certifyKeySetNow(). realm=' + realmId);
+  const id = realmIdOf(realmId);
   if (!rawRowFor(id) || !rawRowFor(id).issuing) {
-    log.debug('Leaving certifyKeySet(). No branch for that realm.');
+    log.debug('Leaving certifyKeySetNow(). No branch for that realm.');
     return errorCodes.mark({ ok: false, certified: 0,
              errors: ['The "' + (id || 'default') + '" realm has no ' +
                       'certificate authority branch.'] }, 'STS-PKI-0008');
   }
   let certified = 0;
+  // Of those, the RSA and curve certificates already current and kept.
+  let unchanged = 0;
   const failed = [];
   // The kids still generations of this set, whose certificates a promotion
   // moves aside rather than supersedes (`keepDisplacedCertificate()`).
@@ -10455,7 +10579,7 @@ async function certifyKeySet(realmId, keys) {
     log.error(errorCodes.tag('STS-PKI-0030') + 'pki: the "' + id + '" ' +
               'realm\'s signing key could not be read to certify ' +
               'it: ' + e.message);
-    log.debug("Leaving certifyKeySet().");
+    log.debug("Leaving certifyKeySetNow().");
     return errorCodes.mark({ ok: false, certified: 0, errors: [e.message] },
                            'STS-PKI-0030');
   }
@@ -10468,7 +10592,7 @@ async function certifyKeySet(realmId, keys) {
       xmlPublicPem = stsCrypto.publicKeyOf(keys.xmlKey.privateKeyPem)
         .export({ type: 'spki', format: 'pem' });
     } catch (e) {
-      log.debug("Caught in certifyKeySet(): " + ((e && e.message) || e));
+      log.debug("Caught in certifyKeySetNow(): " + ((e && e.message) || e));
       xmlPublicPem = rsaPublicPem;
     }
   }
@@ -10485,6 +10609,13 @@ async function certifyKeySet(realmId, keys) {
     if (adoptGenerationCertificate(id, job.useCase, job.slot, job.kid,
                                    job.publicKeyPem)) {
       certified += 1;
+      continue;
+    }
+    // Still current: kept, so its fingerprint lives as long as the key.
+    if (heldCertificateIsCurrent(id, job.useCase, job.slot, job.kid,
+                                 job.publicKeyPem)) {
+      certified += 1;
+      unchanged += 1;
       continue;
     }
     const done = await certify(id, job.useCase, {
@@ -10521,6 +10652,11 @@ async function certifyKeySet(realmId, keys) {
     keepDisplacedCertificate(id, 'jose', slot, jwk.kid, keepKids);
     if (adoptGenerationCertificate(id, 'jose', slot, jwk.kid, publicPem)) {
       certified += 1;
+      continue;
+    }
+    if (heldCertificateIsCurrent(id, 'jose', slot, jwk.kid, publicPem)) {
+      certified += 1;
+      unchanged += 1;
       continue;
     }
     const done = await certify(id, 'jose', {
@@ -10583,11 +10719,14 @@ async function certifyKeySet(realmId, keys) {
     log.info('pki: the "' + id + '" realm\'s ' + certified + ' signing keys ' +
              'are certified under its own Intermediate CA — ' + extras.length +
              ' curve key(s) and the RSA key, which is certified twice ' +
-             'because it signs both JWTs and XML documents.');
+             'because it signs both JWTs and XML documents. ' + unchanged +
+             ' of the RSA and curve certificates were already current and ' +
+             'were kept.');
   }
-  log.debug('Leaving certifyKeySet(). ' + certified + ' certified.');
-  const verdict = { ok: !failed.length, certified: certified, failed: failed };
-  log.debug("Leaving certifyKeySet().");
+  log.debug('Leaving certifyKeySetNow(). ' + certified + ' certified.');
+  const verdict = { ok: !failed.length, certified: certified,
+                    unchanged: unchanged, failed: failed };
+  log.debug("Leaving certifyKeySetNow().");
   return failed.length ? errorCodes.mark(verdict, 'STS-PKI-0031') : verdict;
 }
 

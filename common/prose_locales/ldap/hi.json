@@ -1327,6 +1327,30 @@
     "en": "0462e40dda10b491",
     "text": "एक XPATH व्यंजक जो उस प्रमाणपत्र तत्व को चुनता है जिस पर WS-TRUST प्रतिक्रिया एन्क्रिप्ट होती है: एक ds:X509Certificate या एक BinarySecurityToken जिसका ValueType #X509v3 पर समाप्त होता है। वही उपसमुच्चय जो तत्व मानचित्रों का है। सेट होने पर और कुछ न चुनने पर, या इन दोनों में से नहीं होने वाला तत्व चुनने पर, कोई प्राप्तकर्ता नहीं है और अगला स्रोत आज़माया नहीं जाता। चुना हुआ प्रमाणपत्र तत्व जिसका पाठ प्रमाणपत्र नहीं है वह पूर्ण एन्क्रिप्शन का दोष है, और अगला स्रोत आज़माया नहीं जाता। अनसेट होने पर प्राप्तकर्ता अनुरोध के WS-Security हस्ताक्षर द्वारा नामित पहला हस्ताक्षरकर्ता प्रमाणपत्र तत्व है — वह BinarySecurityToken जिस पर उस हस्ताक्षर का संदर्भ इंगित करता है, या उस हस्ताक्षर के KeyInfo में एक ds:X509Certificate। थंबप्रिंट, Subject Key Identifier, या जारीकर्ता और क्रमांक कोई प्रमाणपत्र तत्व नहीं है।"
   },
+  "applications.schema.attributes.wstrustSignRequest.what": {
+    "en": "c6e7e2b383b3c121",
+    "text": "TRUE या FALSE: आवश्यक करें कि जिस अनुरोध का AppliesTo यह अनुप्रयोग है, वह WS-Security संदेश हस्ताक्षर लेकर आए, wstrust.signRequest को ओवरराइड करते हुए। चालू होने पर, बिना स्वीकृत हस्ताक्षर वाला अनुरोध FailedCheck है, और wstrustSignRequestElements द्वारा चुना गया हर तत्व उस हस्ताक्षर से आच्छादित होना चाहिए। विकास मोड हस्ताक्षर पर विश्वास करता है, जैसा वह हमेशा करता आया है, और फिर भी मानचित्र को उसी से परखता है जिसे वह हस्ताक्षर संदर्भित करता है।"
+  },
+  "applications.schema.attributes.wstrustSignRequestElements.what": {
+    "en": "e532921147503182",
+    "text": "WS-TRUST अनुरोध के वे तत्व जिन पर हस्ताक्षर होना ही चाहिए, हर एक के लिए एक XPath 1.0 अभिव्यक्ति, wstrustEncryptRequestElements के उपसमुच्चय में। हर अभिव्यक्ति को कम से कम एक तत्व चुनना चाहिए, और उसके द्वारा चुना गया हर तत्व ऐसा होना चाहिए जिसे अनुरोध का स्वीकृत WS-Security हस्ताक्षर संदर्भित करता है, या ऐसे किसी तत्व के भीतर हो; अन्यथा अनुरोध FailedCheck है। खाली होने पर, SOAP Body, जिसे हस्ताक्षर हमेशा आच्छादित करता है। केवल तभी पढ़ा जाता है जब wstrustSignRequest (या wstrust.signRequest) चालू हो।"
+  },
+  "applications.schema.attributes.wstrustSignResponse.what": {
+    "en": "c3c370b774dafc63",
+    "text": "TRUE या FALSE: इस अनुप्रयोग के लिए WS-Trust प्रतिक्रिया पर WS-Security संदेश हस्ताक्षर करें, wstrust.signResponse को ओवरराइड करते हुए। प्रतिक्रिया अपने wsse:Security हेडर में एक wsu:Timestamp और एक ds:Signature रखती है, जो इस विश्वास क्षेत्र की XML हस्ताक्षर कुंजी से बना है और एक BinarySecurityToken के माध्यम से उसके प्रमाणपत्र को संदर्भित करता है; हस्ताक्षर Timestamp और wstrustSignResponseElements के तत्वों को आच्छादित करता है। दोष बिना हस्ताक्षर के भेजा जाता है। चालू होने पर, और हस्ताक्षर न बन सके, तो अनुरोध दोनों मोड में दोष है।"
+  },
+  "applications.schema.attributes.wstrustSignResponseElements.what": {
+    "en": "ede8d6da5ff09808",
+    "text": "WS-TRUST प्रतिक्रिया के वे तत्व जिन्हें उसका हस्ताक्षर wsu:Timestamp के अलावा आच्छादित करता है, हर एक के लिए एक XPath 1.0 अभिव्यक्ति, wstrustEncryptResponseElements के उपसमुच्चय में। खाली होने पर, SOAP Body। बिना wsu:Id वाले तत्व को एक दिया जाता है। कोई अभिव्यक्ति जो किसी से मेल न खाए, या जो स्वयं wsse:Security हेडर को चुने, दोष है।"
+  },
+  "applications.schema.attributes.wstrustResponseProtectionOrder.what": {
+    "en": "ea20b5eba3587695",
+    "text": "वह क्रम जिसमें इस अनुप्रयोग के लिए WS-Trust प्रतिक्रिया पर हस्ताक्षर और एन्क्रिप्शन होता है जब दोनों चालू हों, wstrust.responseProtectionOrder को ओवरराइड करते हुए: sign-then-encrypt (हस्ताक्षर के डाइजेस्ट साफ़ पाठ के होते हैं, WS-SecurityPolicy का डिफ़ॉल्ट) या encrypt-then-sign (वे सिफरटेक्स्ट के होते हैं)। wsse:Security हेडर उसी क्रम में लिखा जाता है जिसमें प्राप्तकर्ता उसे संसाधित करता है।"
+  },
+  "applications.schema.attributes.wstrustEncryptSignature.what": {
+    "en": "05bb26087cc96574",
+    "text": "TRUE या FALSE: इस अनुप्रयोग के लिए WS-Trust प्रतिक्रिया का ds:Signature भी एन्क्रिप्ट करें (WS-SecurityPolicy का sp:EncryptSignature), wstrust.encryptSignature को ओवरराइड करते हुए। केवल तभी पढ़ा जाता है जब प्रतिक्रिया पर हस्ताक्षर और एन्क्रिप्शन दोनों हों, पहले हस्ताक्षर; हस्ताक्षर प्रतिक्रिया के प्राप्तकर्ता के लिए एन्क्रिप्ट किया जाता है।"
+  },
   "applications.schema.attributes.wstrustDecryptionCertificate.what": {
     "en": "b00a63a9bafc49ad",
     "text": "वह प्रमाणपत्र जिस पर इस एप्लिकेशन के लिए WS-TRUST अनुरोध एन्क्रिप्ट किया जाता है, PEM। जब तक यह सेट है, इस एप्लिकेशन के लिए अनुरोध इसकी निजी कुंजी से डिक्रिप्ट होता है, रियल्म की कुंजी से नहीं, और रियल्म की कुंजी पर एन्क्रिप्ट किया गया उसके लिए अनुरोध FailedCheck है। सार्वजनिक: एप्लिकेशन पृष्ठ और GET /admin-api/applications इसे देते हैं।"

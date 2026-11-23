@@ -37,6 +37,7 @@
 // text the sign-out page uses too: a paragraph longer than a line becomes a
 // `<details>` whose summary is its first sentence (rcbj, 2026-10-12).
 import kit = require('../admin-ui/web_kit');
+import WebSaid = require('../common/web_said');
 
 type Json = any;
 
@@ -259,6 +260,22 @@ class WebAuthnLogin {
    */
   static certificateRow(v: Json, t: Json): string {
     const c = v.certificate;
+    // THE HANDOFF (#2012): no certificate yet, and a listener that asks for
+    // one. A plain link, because the browser has to make a new connection
+    // there for the smart card to sign; the listener sends it back here.
+    if (c && !c.name && c.handoff) {
+      return '<div class="row cert">' +
+        kit.note(t.html('authn.options.certificateHandoff') +
+          (c.mfaNote ? ' <span id="certificate-mfa-note">' +
+                       t.html('authn.options.certificateMfaNote') + '</span>'
+                     : '')) +
+        (c.refused ? kit.note('<span id="certificate-handoff-refused">' +
+                              WebAuthnLogin.esc(String(c.refused)) +
+                              '</span>') : '') +
+        '<a id="kc-certificate-handoff" class="fedbtn" href="' +
+        WebAuthnLogin.esc(String(c.handoff)) + '">' +
+        t.html('authn.options.certificateHandoffButton') + '</a></div>';
+    }
     if (!c || !c.name) {
       return '';
     }
@@ -429,14 +446,18 @@ class WebAuthnLogin {
    *
    * @param view - `GET /authn-api/pending/{id}`'s view
    * @param ctx - the surface's context: `t`, and `error` — an act's
-   *   refusal, English — and `autofill`
+   *   refusal, in the page's language — and `autofill`
    * @returns the body
    */
   static render(view: Json, ctx: Json): string {
     const t = ctx.t;
     const v = view || {};
     const esc = WebAuthnLogin.esc;
-    const error = [String(v.error || ''), String((ctx && ctx.error) || '')]
+    // The view's sentence in the page's language where it carried its
+    // catalog message (#2006, `refusal`), and the act's, which the runtime
+    // has already drawn so.
+    const error = [(v.refusal && WebSaid.saidWith(t, v.refusal)) ||
+                   String(v.error || ''), String((ctx && ctx.error) || '')]
       .filter(Boolean).join(' ');
     return '<h1>' + t.html('authn.login.heading') + '</h1>' +
       '<p class="sub">' + t.html('authn.login.at', { base: String(v.base) }) +

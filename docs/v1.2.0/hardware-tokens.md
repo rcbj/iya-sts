@@ -418,6 +418,14 @@ nobody. A reissued card has a new UUID, which an administrator records again.
 The issuing CA must also be in a client truststore, or the TLS handshake
 refuses the certificate before this mapping is asked.
 
+This mapping is one hop: it accepts a card only from an issuing CA listed
+here. A [certificate sign-in profile](configure-tls.md#smart-card-and-certificate-sign-in)
+with the `card-uuid` binding names the Federal Common Policy root instead and
+accepts every agency CA under it, checking `id-fpki-common-authentication`
+over the whole Federal PKI path, policy mappings included. It reads the same
+`stsPivCardUuid`. A card a profile covers is answered by that profile, and
+this mapping is not asked for it.
+
 ## Settings
 
 | Setting | Default | What it does |

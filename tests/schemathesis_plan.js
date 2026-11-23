@@ -728,9 +728,31 @@ function pepSection(t) {
   const authzen = pep.documentOf(pep.PEP_CELLS.filter(function (one) {
     return one.key === "pep-authzen";
   })[0]);
-  t.equal(pep.publicOperations(authzen).join(","),
-    "GET /.well-known/authzen-configuration",
-    "the AuthZEN metadata is the edge PDP's one open operation");
+  // The metadata takes no admission (AuthZEN 1.0 section 9), and since #1205
+  // neither do the Search API and the Access Request profile: the edge does
+  // not hold the directory or the approval store, so it answers each 501
+  // (STS-XPEP-0138, 0139) without reading a body or asking for a
+  // certificate. Those are open, and answer nothing but a refusal.
+  const authzenOpen = pep.publicOperations(authzen);
+  t.equal(authzenOpen.join(","),
+    "GET /.well-known/authzen-configuration," +
+    "POST /access/v1/access-requests," +
+    "GET /access/v1/access-requests/schema," +
+    "GET /access/v1/access-requests/{id}," +
+    "POST /access/v1/access-requests/{id}/cancel," +
+    "DELETE /access/v1/access-requests/{id}/cancel," +
+    "POST /access/v1/search/action," +
+    "POST /access/v1/search/resource," +
+    "POST /access/v1/search/subject",
+    "the edge PDP's open operations are the AuthZEN metadata and the " +
+    "service-only paths it refuses 501");
+  t.check(authzenOpen.filter(function (one) {
+    return one !== "GET /.well-known/authzen-configuration";
+  }).every(function (one) {
+    const parts = one.split(" ");
+    const op = authzen.paths[parts[1]][parts[0].toLowerCase()];
+    return Object.keys(op.responses).sort().join(",") === "404,501,503";
+  }), "every open operation but the metadata answers only 404, 501 or 503");
   const control = pep.documentOf(pep.PEP_REALM_SURFACES[0]);
   t.equal(pep.publicOperations(control).length, 0,
     "every control-plane operation is gated");

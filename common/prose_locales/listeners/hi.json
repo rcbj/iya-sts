@@ -139,6 +139,14 @@
     "en": "1d66f74984228996",
     "text": "साइन-इन सेवा और उसके द्वितीय कारक, वॉलेट, SPNEGO और प्रमाणपत्र साइन-इन, तथा साइन-आउट।"
   },
+  "listeners.applications.certificate-sign-in.label": {
+    "en": "b64346dfecab1d4d",
+    "text": "प्रमाणपत्र साइन-इन"
+  },
+  "listeners.applications.certificate-sign-in.what": {
+    "en": "4eb1f17babcf76e5",
+    "text": "वह श्रोता जिसे प्रमाणपत्र साइन-इन सौंपा जाता है: वह एक अनुरोध जो स्मार्ट कार्ड या प्रमाणपत्र माँगता है।"
+  },
   "listeners.applications.portal.label": {
     "en": "00cf214ba77e7497",
     "text": "उपयोगकर्ता पोर्टल"

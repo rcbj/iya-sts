@@ -137,6 +137,8 @@ model Person {
   stsWebauthnCredential?: (DirectoryJson)[];
   @attr(#{kind: "multi", what: "The FIPS 201 card UUIDs of the person's outside PIV or CAC cards, one lower-case UUID per card (no urn:uuid: prefix). A card certificate from one of the realm's piv.externalIssuers that names one of these in its urn:uuid subjectAltName signs this person in (#1955). Written by an administrator; a reissued card has a new UUID."})
   stsPivCardUuid?: (string)[];
+  @attr(#{kind: "multi", what: "The person's certificate sign-in bindings, one canonical value each: certificate-sha256:<sha256>, issuer-serial:<issuer spki sha256>:<serial>, issuer-ski:<issuer spki sha256>:<ski>, spki-sha256:<sha256>, issuer-subject:<issuer spki sha256>:<subject DN> or subject:<subject DN>. A client certificate that one of the realm's certSignIn.profiles covers and whose binding matches signs this person in (#2012). Written by an administrator; held unique."})
+  stsCertificateBinding?: (string)[];
   @attr(#{kind: "single", what: "The public half of the person's Kerberos keys, one JSON value: the key version number, the encryption types and when they were derived."})
   stsKrb5KeyInfo?: DirectoryJson;
   @attr(#{kind: "multi", what: "The person's RFC 7486 HOBA client public keys, one value per key as `<kid> <base64 DER>`, registered at /.well-known/hoba/register. Public."})

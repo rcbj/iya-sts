@@ -10819,6 +10819,26 @@ hourly `signing.retire` ran during it). The displaced serial is now kept in
 cluster merge already keeps: `good` until it expires, `revoked` once something
 revokes it, never unknown. `tests/signing_rotation.js` section J.
 
+### And a certificate that is still current is not replaced at all (2026-11-23)
+
+The paragraph above described `certifyKeySet()` re-issuing the RSA key's two
+certificates and every curve key's on EVERY call, over keys that had not
+changed. It is called for every new generation, and the hourly
+`signing.rotate` mints a `next` key for any unit that lacks one — the
+post-quantum units, made after its first run, lack one at the next hour. So
+at the first full hour of every product service those slots took new
+fingerprints, and the console's keys page, drawn before it, linked seven
+certificates `/admin/crypto-metadata` no longer held (`sts_admin_console`,
+GitHub Actions run 45189343764, every mode with a store; it had done the same
+at 10:00 in the run before, outside the crawl). Now
+`heldCertificateIsCurrent()` keeps a plain slot's record when it is over the
+same `kid` and SubjectPublicKeyInfo, signed by the Issuing CA the branch holds
+now on a branch that chains to the Root, unpinned, unexpired and not revoked —
+the question `certifyPqKeys()` always asked. A new key, a rebuilt branch, a
+reissued authority and a revoked certificate over a live key still re-certify.
+The verdict's `unchanged` and the closing log line count what was kept.
+`tests/signing_certificate_stability.js`.
+
 ### And its `x5u` keeps answering until it expires (2026-10-13, #318)
 
 #185 kept the serial and not the certificate, so `/pki/chain/{scope}/{sha256}.pem`
@@ -12336,6 +12356,80 @@ deleted with `users/delete`. Three things now:
 
 **A re-homing is not a delete**: `cell_rehome.ts` passes `moved`, and nothing is
 revoked. `tests/deleted_certificates.js` holds all of it.
+
+## 3dh. CERTIFICATE SIGN-IN PROFILES, RFC 9440 AND THE HANDOFF (#2012, 2026-11-23)
+
+Measured against a PIV sign-in requirements document (FIPS 201-3 section
+6.2.3.1's PKI-AUTH over client-authenticated TLS); rcbj's three decisions on
+#2012 are below. Every piece is OFF or EMPTY by default, and then the service
+is exactly what it was. The headers of the three files argue them in full.
+
+* **`certificate_binding.ts` — A PROFILE PER ISSUER, `certSignIn.profiles`.**
+  A JSON array per realm. A profile COVERS a client certificate when one of
+  its `issuers` (the SHA-256 of a CA's SubjectPublicKeyInfo, so a renewed CA
+  certificate under the same key is the same issuer) is in the VALIDATED
+  path above the leaf — OpenSSL's, which `revocation_status.fromSocket()`
+  hands down as `input.chain`. A covered leaf is held to the profile's
+  `keyUsage` (all), `extendedKeyUsage` (one of) and `policies`, the last
+  through `pki.pathPolicyOutcome()` — RFC 5280 section 6.1 with the profile's
+  policies as initial-policy-set and initial-explicit-policy — so a policy
+  MAPPED to `id-fpki-common-authentication` through a bridge counts, and the
+  one-hop `piv.externalIssuers` mapping is no longer the only way to accept a
+  Federal PKI card. SYNCHRONOUS ON PURPOSE: the doors that read an identity
+  (`checkSocket()`, SCIM, XACML, WS-Trust) are synchronous, and the path's
+  signatures were already verified by whoever validated it.
+* **THE METHODS, AND rcbj's DECISION 1 (2026-11-23).** High affinity:
+  `certificate-sha256` (#1061's `userCertificate`, or a stored value),
+  `issuer-serial`, `issuer-ski`, `spki-sha256`, `card-uuid`; the default is
+  `certificate-sha256` and `issuer-serial`. Low affinity — `upn` (SAN UPN to
+  `userPrincipalName`), `email` (SAN rfc822Name to `mail`), `issuer-subject`,
+  `subject` — **only on a profile with `"lowAffinity": true`**; the write rule
+  refuses a name method without it (STS-TLS-0065), so a failed high-affinity
+  match cannot fall back to a name: there is none to fall back to. This
+  reverses #1061's "never by its name" for that opted-in case alone.
+* **EVERY ENABLED METHOD IS ASKED, AND THEY MUST AGREE.** One naming two
+  people, or two naming different people, is `STORED_TWICE`; none is
+  `NOT_STORED`; outside the profile is `NOT_STORED` with STS-TLS-0066 in the
+  log. Those two errors were kept rather than new ones added because every
+  door already refuses both under its own codes (`tls/tls_server.js`, the
+  screen, SCIM, WS-Trust, XACML, SSF) and "names more than one account" /
+  "names nobody" is each one condition. A covered certificate never reaches
+  the older two mappings. **With no profile covering it**, #1061 and #1955 D8
+  answer as before, with one change: a certificate stored on one person whose
+  card UUID another holds is now `STORED_TWICE` (STS-TLS-0067), where it
+  signed in the first.
+* **`stsCertificateBinding`**, a person attribute (OID 950), holds the stored
+  values in the grammar `bindingValueOf()` canonicalises; `ldap/CLAUDE.md`
+  has the write guard and the `certificatebinding` index.
+* **`certSignIn.requireRevocation`, rcbj's decision 3.** `auto` (the default)
+  requires a verified status — verdict `good` — in product
+  (`mode.refusesUnknownRevocationStatus()`) and leaves development to
+  `pki.revocationCheck`; `on` requires it everywhere. Asked in
+  `tls_server.certificateRefusal()`, so `/tls/sign-in`, the screen and the
+  handoff all take it, and reported as a revocation refusal (`STS-TLS-0071` on
+  `/tls/sign-in`, the screen's STS-AUTHN-0464). Sign-ins only: RFC 8705 and the
+  other doors keep the revocation policy as it was.
+* **`forwarded_client_certificate.ts` — RFC 9440, rcbj's decision 2.** Believed
+  only from a proxy named by BOTH `tls.trustedProxyCertificates` (the SHA-256
+  of the client certificate it connects with, which must have verified) AND
+  `tls.trustedProxyAddresses`; one without the other trusts nobody
+  (STS-TLS-0076). The forwarded chain is verified HERE to the client
+  truststore (`pki.verifyPathToAnchors()`), and the request's `req.socket` is
+  replaced, for that request, by a Proxy over the real socket whose
+  `authorized`, `getPeerCertificate()` and `getPeerX509Certificate()` answer
+  the forwarded certificate — or none: a request from the proxy never
+  presents the proxy's own certificate to a door. Every door reads a client
+  certificate through the socket, so none changed. It runs in `app.js` in the
+  front process before dispatch, so a worker gets the forwarded certificate
+  through `request_pool.js`'s `peerOf()` and never the headers; from any other
+  sender both headers are deleted and recorded (STS-TLS-0072, at most once a
+  minute). `oauth2_bcp.js`'s `no-certificate-header` note says the same.
+* **THE HANDOFF** (`certSignIn.handoff`, rcbj: an option, off by default) is
+  `tls/CLAUDE.md`'s, with the `certificate-sign-in` hosted application.
+* **WHAT HAS NO TEST**: a real handshake through a profile, the handoff over
+  two real listeners, and a real TLS-terminating proxy. `tests/certificate_binding.js`
+  holds the logic in process over certificates made at run time; nothing has
+  been tried with a physical YubiKey.
 
 ## 3ag. `cert_enrollment.ts`: ACME, EST AND SCEP ISSUE THROUGH ONE CORE (2026-09-13)
 
@@ -15337,6 +15431,37 @@ reasons for the shape:
   `error_page.ts` below. What stays English is what a PROGRAM reads: an API's
   error answer, an `error_description`, a log line. A page shows those as
   data, in its diagnostics, never as its prose.
+* **AND FOR EVERY STATIC SURFACE'S REFUSALS BY #2006 (rcbj, 2026-11-23)**:
+  the sentence the sign-in screen and its steps, the wallet sign-in,
+  consent, sign-out, GNAP's interaction pages and federation's pages show
+  when an act is refused is drawn in the page's language. **The browser
+  translates** (#570's decision 3 holds): an answer keeps `errors:
+  [English]`, what a program reads, and carries `messages: [{ key, params
+  }]` beside it, one per sentence, `null` for text with no message. The
+  server's half is `sentence.ts`: `Sentence.say('refusals.<area>.<name>',
+  params)` is a value whose English, formatted from
+  `locales/refusals/en.json`, is what `String()`, concatenation,
+  `JSON.stringify()` and `join()` give, so a log line, an audit note and a
+  stored record read exactly what they read before, and only the lines that
+  ANSWER a refusal ask `Sentence.messagesOf()` (`authn.ts`'s
+  `refusalBody()`, `AuthnApi.refuse()`, `VcSignin.refuse()`, GNAP's
+  `apiRefusal()`, …). A sentence that must outlive the request in a store
+  keeps its message beside its English (`screenErrorMessage`, an outcome's
+  `reasonMessage`), because the store keeps only the English. The
+  browser's half is `web_said.ts` (`WebSurface.said()`, `refusal()` for a
+  sentence the runtime writes itself, its English inline because the
+  catalogs may be what failed to load); a key the catalogs lack is drawn in
+  the English it was sent with, never as its name. Every surface loads the
+  `refusals` namespace (`web_i18n.ts`), because the sentence is often a
+  shared library's. **A parameter that is words is a `Sentence` of its own**;
+  a fragment chosen in code is two keys or a `select`, never English passed
+  as a parameter. **Still English**: operator-written text (a policy's
+  advice, an application's configuration problem), technical detail
+  passed as a parameter, a validation shape refusal, the portal's and the
+  console's refusals, and every specification endpoint's answer.
+  `tests/refusal_sentences.js` holds the design and that no sign-in door is
+  handed an English literal; `tests/i18n_catalogs.js` test E scans
+  `Sentence.say('` and `.refusal('` as it scans `t.text('`.
 * **`error_page.ts` IS THE ONE ERROR PAGE (#1326).** The error in the yellow
   box (the protocol's `error` as a value, a sentence in the page's language),
   an action where the page has one, the background in a `<details>`, a note to
@@ -16466,6 +16591,41 @@ policy's to say; there is no second switch.
   because `credentials.ts` may not reach the audit log.
 * **`lanes`** on the passkey policy (#1104) feeds
   `webauthnPolicy.alongsideClassical()` through `registrationRows()`.
+
+### 3ct, continued: several activities, one table (#2009 P1, 2026-11-23)
+
+rcbj: post-login activities for the other credentials a token carries
+(#1955) — the mail-encryption key and the PIV certificates — designed on
+#2009 from the passkey activity. P1 is the framework and adds no activity;
+`post_login_kinds.ts`'s header argues it. What reaches outside it:
+
+* **`post_login_kinds.ts` is the ONE list.** The started activities'
+  `ACTIVITIES` and `forgetPerson()` read it; the policy's `activity` row
+  stays a one-value enum meaning the passkey migration (design X2: each new
+  activity gets a BLOCK of rows with its own switch, so a profile saved
+  before reads it as off — backwards compatibility, no migration). The
+  report's filter (`report/catalog.ts`) is still its own copy until P4:
+  that module requires nothing of this service.
+* **A closed table read lazily, not a hook** (rule 3e, failed both ways
+  round in the header). A row names the module that answers for its
+  activity; one that is not whole is not asked, and the others are.
+* **`dueListFor()` answers every activity due**, required first, then by
+  exposure (`decrypt-later` — an encryption key, harvest now — before
+  `forgery`), then the table's order. `dueFor()` is its first, or the one
+  named (the started activities' mail asks for its own). `nextDue()` is the
+  sign-in's question: never one already asked at this sign-in, and at most
+  ONE that may be skipped, every required one asked (rcbj's decision D2 on
+  #2009). How the sign-in asks them in turn is `authn/CLAUDE.md`'s.
+* **A failure is never quiet.** A row whose module does not load is not
+  asked (STS-AUTHN-0581) and is tried again at the next question, only what
+  loaded being kept; an activity whose answer throws is not asked at that
+  sign-in (STS-AUTHN-0582). Each is an error line once per activity in a
+  process, debug after, because a line per sign-in would bury the log.
+* **What every activity shares is `dueOf()`**: who asks (the policy with
+  the activity on; a named profile with it off excludes; else the oldest
+  running started activity of it), then the snooze and the allotted time
+  from the activity's own `timing()`. The passkey migration is
+  `passkeyKind()`, its answers unchanged.
 
 ## 3cx. `policy_selection.ts`: WHAT A NAMED POLICY COVERS NAMES IT, AND ONE RANKING FOR EVERY KIND (#1235, 2026-10-30)
 

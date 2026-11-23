@@ -20,7 +20,8 @@
 //   * `profile` — what a consumer provider's newcomer is asked for before
 //     the account is created (#729), its words from `federationPages`;
 //   * `refused`, `off`, `noRelationship` — what the login and linking
-//     endpoints say when they will not go on: English, every word (#539's
+//     endpoints say when they will not go on: in the page's language since
+//     #2006 (English, every word, until then: #539's
 //     decision 6), as the server drew them, through the one outcome
 //     renderer (`common/web_outcome.ts`).
 //
@@ -31,6 +32,7 @@
 // ---------------------------------------------------------------------------
 
 import WebOutcome = require('../common/web_outcome');
+import WebSaid = require('../common/web_said');
 
 type Json = any;
 
@@ -64,20 +66,24 @@ class WebFederationViews {
       return WebFederationViews.profile(v, ctx.t);
     }
     if (v.kind === 'refused') {
-      return WebFederationViews.refused(v);
+      return WebFederationViews.refused(v, ctx.t);
     }
     if (v.kind === 'webfinger') {
       return WebFederationViews.webfinger(v, ctx.t);
     }
     if (v.kind === 'off') {
-      return WebFederationViews.off();
+      return WebFederationViews.off(ctx.t);
     }
     if (v.kind === 'noRelationship') {
-      return WebFederationViews.noRelationship(v);
+      return WebFederationViews.noRelationship(v, ctx.t);
     }
-    return WebOutcome.draw({ heading: 'This page could not be drawn',
-      why: 'The service sent a view this page does not know (' +
-           String(v.kind) + ').', whyTone: 'err' });
+    return WebOutcome.draw({
+      heading: WebFederationViews.refusal('refusals.web.notDrawnTitle', {},
+                                          'This page could not be drawn',
+                                          ctx.t),
+      why: WebFederationViews.refusal('refusals.federation.unknownView',
+        { kind: String(v.kind) }, 'The service sent a view this page does ' +
+        'not know (' + String(v.kind) + ').', ctx.t), whyTone: 'err' });
   }
 
   /**
@@ -99,15 +105,21 @@ class WebFederationViews {
       return ctx.t.text('federationPages.profile.title');
     }
     if (kind === 'refused') {
-      return 'Refused';
+      return WebFederationViews.refusal('refusals.federation.title.refused',
+                                        {}, 'Refused', ctx.t);
     }
     if (kind === 'webfinger') {
       return ctx.t.text('federationPages.webfinger.title');
     }
     if (kind === 'noRelationship') {
-      return 'No such relationship';
+      return WebFederationViews.refusal(
+        'refusals.federation.title.noRelationship', {},
+        'No such relationship', ctx.t);
     }
-    return kind === 'off' ? 'Not here' : 'Federation';
+    return kind === 'off'
+      ? WebFederationViews.refusal('refusals.federation.title.notHere', {},
+                                   'Not here', ctx.t)
+      : 'Federation';
   }
 
   /**
@@ -389,57 +401,118 @@ class WebFederationViews {
   }
 
   /**
-   * A refusal of the login or linking endpoint: English, as the server
-   * drew it (`refuse()`), with where it is recorded.
+   * A sentence this page writes itself, as text, in the page's language,
+   * and in the English given where the catalogs lack it (#2006). The key
+   * comes first, as in `WebSurface.refusal()`, so `tests/i18n_catalogs.js`
+   * finds it.
+   *
+   * @param key - the `refusals` key, a literal
+   * @param params - its parameters
+   * @param english - the English
+   * @param t - the translator
+   * @returns the sentence, as text
+   */
+  static refusal(key: string, params: Json, english: string,
+                 t: Json): string {
+    return WebSaid.sentence(t, { key: key, params: params || {} }) || english;
+  }
+
+  /**
+   * The same as HTML: the message's own inline markup kept, its parameters
+   * escaped; the English given (already HTML) where the catalogs lack it.
+   *
+   * @param t - the translator
+   * @param key - the `refusals` key, a literal
+   * @param params - its parameters
+   * @param english - the English, as HTML
+   * @returns the HTML
+   */
+  static refusalHtml(t: Json, key: string, params: Json,
+                     english: string): string {
+    return t && typeof t.has === 'function' && t.has(key)
+      ? t.html(key, params || {}) : english;
+  }
+
+  /**
+   * A refusal of the login or linking endpoint, in the page's language
+   * (#2006): `what` and `why` from their catalog messages where the server
+   * sent them (`whatMessage`, `whyMessage`), their English otherwise — a
+   * partner's or a library's words are drawn as sent — with where it is
+   * recorded.
    *
    * @param v - the `refused` view: `what`, `why`, `relationship`
+   * @param t - the translator
    * @returns the body
    */
-  static refused(v: Json): string {
+  static refused(v: Json, t: Json): string {
     const id = String(v.relationship || '');
     const notes = [];
     if (id) {
-      notes.push('This is recorded on the relationship as ' +
-        '<code>fedLastError</code>. The whole record is at <a href="' +
+      // The link carries an href, which a message may not, so the note is
+      // two messages with the anchor between them.
+      notes.push(WebFederationViews.refusalHtml(t,
+        'refusals.federation.recordedOnBefore', {},
+        'This is recorded on the relationship as ' +
+        '<code>fedLastError</code>. The whole record is at') + ' <a href="' +
         CONSOLE_PATH + '?relationship=' + esc(encodeURIComponent(id)) +
-        '">' + CONSOLE_PATH + '</a>, and every refusal is also a row in ' +
-        'the audit log.');
+        '">' + CONSOLE_PATH + '</a>' +
+        WebFederationViews.refusalHtml(t,
+          'refusals.federation.recordedOnAfter', {},
+          ', and every refusal is also a row in the audit log.'));
     }
-    notes.push('<strong>This service refuses rather than accepting here, ' +
+    notes.push(WebFederationViews.refusalHtml(t,
+      'refusals.federation.refusesHere', {},
+      '<strong>This service refuses rather than accepting here, ' +
       'which is the opposite of what it does everywhere else.</strong> ' +
       'What arrives at a federation endpoint is an unauthenticated request ' +
       'claiming to be a person, and the session it would produce is the ' +
       'one every other protocol in this process reads. See ' +
-      'federation/CLAUDE.md.');
-    return WebOutcome.draw({ heading: 'The federated sign-in was refused',
-      what: String(v.what || ''), why: String(v.why || ''),
+      'federation/CLAUDE.md.'));
+    return WebOutcome.draw({
+      heading: WebFederationViews.refusal('refusals.federation.refusedHeading',
+        {}, 'The federated sign-in was refused', t),
+      what: WebSaid.sentence(t, v.whatMessage) || String(v.what || ''),
+      why: WebSaid.sentence(t, v.whyMessage) || String(v.why || ''),
       ids: { what: 'federation-refused', why: 'federation-why' },
       notes: notes,
-      links: [{ href: INDEX_PATH, label: 'Back to the federation index' }] });
+      links: [{ href: INDEX_PATH,
+                label: WebFederationViews.refusal(
+                  'refusals.federation.backToIndex', {},
+                  'Back to the federation index', t) }] });
   }
 
   /**
-   * Federation is turned off: English, as the server drew it.
+   * Federation is turned off, in the page's language (#2006).
    *
+   * @param t - the translator
    * @returns the body
    */
-  static off(): string {
-    return WebOutcome.draw({ heading: 'Federation is off',
+  static off(t: Json): string {
+    return WebOutcome.draw({
+      heading: WebFederationViews.refusal('refusals.federation.offHeading',
+                                          {}, 'Federation is off', t),
       ids: { what: 'federation-off' },
-      notes: ['<code>federation.enabled</code> is off, so no federation ' +
-              'endpoint answers. No relationship was changed.'] });
+      notes: [WebFederationViews.refusalHtml(t, 'refusals.federation.off', {},
+        '<code>federation.enabled</code> is off, so no federation ' +
+        'endpoint answers. No relationship was changed.')] });
   }
 
   /**
-   * No relationship by the name asked for: English, as the server drew it.
+   * No relationship by the name asked for, in the page's language (#2006).
    *
    * @param v - the `noRelationship` view: `id`
+   * @param t - the translator
    * @returns the body
    */
-  static noRelationship(v: Json): string {
-    return WebOutcome.draw({ heading: 'No such federation relationship',
-      notes: ['There is no relationship called <code>' + esc(v.id) +
-              '</code>. The configured ones are on the federation index.'],
+  static noRelationship(v: Json, t: Json): string {
+    return WebOutcome.draw({
+      heading: WebFederationViews.refusal(
+        'refusals.federation.noRelationshipHeading', {},
+        'No such federation relationship', t),
+      notes: [WebFederationViews.refusalHtml(t,
+        'refusals.federation.noRelationship', { id: String(v.id || '') },
+        'There is no relationship called <code>' + esc(v.id) +
+        '</code>. The configured ones are on the federation index.')],
       links: [{ href: INDEX_PATH, label: INDEX_PATH,
                 id: 'federation-index' }] });
   }

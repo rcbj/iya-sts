@@ -30,6 +30,8 @@ const log = bunyan.createLogger({
   name: 'issuance_refusal_reason',
   level: process.env.LOG_LEVEL || 'info' });
 
+// `reasonFor()` answers a `Sentence` since #2006, whose English is what
+// `String()` gives; the sentences are read as text.
 async function run(t) {
   log.debug("Entering run().");
   delete process.env.CONFIG_FILE;
@@ -41,10 +43,10 @@ async function run(t) {
   const held = ['EVERYBODY', 'ALL_AUTHENTICATED_USERS', 'ADMIN_WRITE'];
 
   t.log.info('=== A. a held role and another rule\'s Deny ===');
-  const other = pep.reasonFor({ decision: model.DECISION.DENY,
+  const other = String(pep.reasonFor({ decision: model.DECISION.DENY,
     obligations: [{ id: 'urn:sts:xacml:obligation:example',
                     assignments: [] }] },
-  held, ['EVERYBODY'], asked);
+  held, ['EVERYBODY'], asked));
   t.check(/a rule other than the role requirement/.test(other) &&
           other.indexOf('urn:sts:xacml:obligation:example') >= 0 &&
           other.indexOf('holds EVERYBODY, ALL_AUTHENTICATED_USERS') < 0,
@@ -52,17 +54,17 @@ async function run(t) {
   'list the roles as though they fell short', other);
 
   t.log.info('=== B. the same with no obligation ===');
-  const bare = pep.reasonFor({ decision: model.DECISION.DENY,
+  const bare = String(pep.reasonFor({ decision: model.DECISION.DENY,
                                obligations: [] },
-                             held, ['EVERYBODY'], asked);
+                             held, ['EVERYBODY'], asked));
   t.check(/a rule other than the role requirement/.test(bare) &&
           bare.indexOf('/admin/xacml/decide') >= 0,
   'B1. with no obligation it points at /admin/xacml/decide', bare);
 
   t.log.info('=== C. a role the subject does not hold ===');
-  const role = pep.reasonFor({ decision: model.DECISION.DENY,
+  const role = String(pep.reasonFor({ decision: model.DECISION.DENY,
                                obligations: [] },
-                             ['EVERYBODY'], ['staff'], asked);
+                             ['EVERYBODY'], ['staff'], asked));
   t.equal(role, '"sts-admin-console" requires staff and "fuzzer-1" holds ' +
           'EVERYBODY.', 'C1. the role sentence is unchanged where a ' +
           'required role is missing');

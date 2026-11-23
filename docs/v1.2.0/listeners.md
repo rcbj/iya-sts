@@ -33,6 +33,7 @@ one, the paths it answers and where it is.
 |---|---|
 | `home` | `GET /`, the documentation, terms and policy pages, the realm list |
 | `authn` | The sign-in service, its second factors, the wallet, SPNEGO and certificate sign-ins (`/tls/sign-in`), and `/logout` |
+| `certificate-sign-in` | `/authn/certificate/continue`, the one request of a [certificate sign-in handoff](configure-tls.md#a-listener-of-its-own-for-the-card-the-handoff) that asks for a smart card or certificate. Map it to a listener whose `clientAuth` asks for one. It reads the sign-on session cookie, so the cookie rule below applies to it |
 | `portal` | The user portal |
 | `report` | Reports at `/report`, and `/report-api` |
 | `admin-console` | The admin console, `/admin` |

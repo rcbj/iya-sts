@@ -3165,7 +3165,7 @@ function create(options) {
         'value_keys END AS value_keys FROM sts_ldap_entries WHERE ' +
         '(realm, dn_key) > ($1, $2) ORDER BY realm, dn_key LIMIT $4',
         [cursor ? cursor.realm : '', cursor ? cursor.dnKey : '',
-         require('./directory_codec').GRANTING_ATTRIBUTES.slice(), limit]
+         require('./directory_codec').BACKFILL_ATTRIBUTES.slice(), limit]
       ).then(function (r) {
         return (r && r.rows) || [];
       });

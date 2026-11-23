@@ -362,6 +362,19 @@ class ProtocolStack {
                'PivAttestation');
     this.build('common/piv_enrolment', require('./piv_enrolment'),
                'PivEnrolment');
+    // #2012: certificate sign-in profiles and their bindings. A library
+    // (rule 3) whose require adds the write rule `certSignIn.profiles` is
+    // held to; the directory is reached through certificate enrollment's
+    // slot at the moment of use.
+    this.build('common/certificate_binding',
+               require('./certificate_binding'), 'CertificateBinding');
+    // #2012: RFC 9440's forwarded client certificate, believed from a named
+    // TLS-terminating proxy only. A library; `app.js`'s middleware reaches
+    // it at the first request, and the client truststore it verifies to at
+    // the request.
+    this.build('common/forwarded_client_certificate',
+               require('./forwarded_client_certificate'),
+               'ForwardedClientCertificate');
     // #1955 P4: a PSKC seed file's reader, and the OATH token inventory it
     // fills. Two libraries (rule 3); the inventory installs the register's
     // `hotp` and `totp` retirers when it is installed, so after it.
@@ -576,6 +589,11 @@ class ProtocolStack {
     this.build('portal/portal_access_requests',
                require('../portal/portal_access_requests'),
                'PortalAccessRequests');
+    // #1204: /portal/access-request, an AuthZEN denial's hosted form and a
+    // request's ticket. The same lazy reach as the approvers' page.
+    this.build('portal/portal_access_request',
+               require('../portal/portal_access_request'),
+               'PortalAccessRequest');
     // #150: /portal/device, where a person enters a device's user code.
     this.build('portal/portal_device', require('../portal/portal_device'),
                'PortalDevice');
@@ -1825,6 +1843,14 @@ class ProtocolStack {
     // checked rather than agreed by hand.
     // -------------------------------------------------------------------------
     require('../admin-ui/crypto_metadata');
+    // #2012: the certificate sign-in handoff, `GET /authn/certificate/
+    // continue`. After `tls/tls_server` (20), whose screen door it asks, and
+    // `authn/authn` (8), whose session it reads — both at the request, so the
+    // order is for a reader; its one path collides with nothing.
+    const certificateHandoff = require('../tls/certificate_handoff');
+    this.build('tls/certificate_handoff', certificateHandoff,
+               'CertificateHandoff');
+    this.register(app, certificateHandoff, 'tls/certificate_handoff');
     this.build('ldap/ldap_cluster_connections',
                require('../ldap/ldap_cluster_connections'),
                'LdapClusterConnections');

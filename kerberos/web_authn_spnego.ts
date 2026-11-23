@@ -24,8 +24,8 @@
 //     and what to do when nothing happened (a browser not configured for
 //     this host), with the service principal a program asks a ticket for.
 //   * `off` — the 403 when `krb5.spnegoAuthentication` is false, naming the
-//     setting. A refusal, so its sentences are English (#539's decision 6)
-//     — only the link back to the password screen is translated.
+//     setting. A refusal, drawn in the page's language from the `refusals`
+//     catalogs since #2006 (English, #539's decision 6, until then).
 //   * `withheld` — the 200 when `?mutual=off` was honoured (#896): the
 //     ticket was accepted, the AP-REP was withheld and no session was
 //     started. Translated (#896's review): it is a page a person reads, and
@@ -164,21 +164,46 @@ class WebAuthnSpnego {
   }
 
   /**
-   * The 403's page: the door is off. English, as a refusal is.
+   * A refusal's sentence as HTML, in the page's language (#2006): the
+   * message's own inline markup kept and its parameters escaped, and the
+   * English given (already HTML) where the catalogs lack it.
+   *
+   * @param t - the translator
+   * @param key - the `refusals` key, a literal
+   * @param params - its parameters
+   * @param english - the English, as HTML
+   * @returns the HTML
+   */
+  static refusalHtml(t: Json, key: string, params: Json,
+                     english: string): string {
+    return t && typeof t.has === 'function' && t.has(key)
+      ? t.html(key, params || {}) : english;
+  }
+
+  /**
+   * The 403's page: the door is off, in the page's language (#2006). The
+   * link to the console carries an href, which a message may not, so the
+   * sentence around it is two messages.
    *
    * @param view - the view: `setting` (a `demoPath`, the demonstration page,
    *   until #595 moved it to the development companion)
-   * @param t - the translator, for the link back only
+   * @param t - the translator
    * @returns the HTML
    */
   static off(view: Json, t: Json): string {
     const esc = WebAuthnSpnego.esc;
-    return '<h1>403 &mdash; integrated authentication is off</h1>' +
-      '<div class="err" id="spnego-off">This service can sign people in ' +
-      'with a Kerberos ticket, and <code>' + esc(view.setting) +
-      '</code> is set to false.</div><p>Turn it on at <a href="' +
-      esc(CONSOLE_PATH) + '">' + esc(CONSOLE_PATH) + '</a>, or ' +
-      'with <code>POST /admin-api/config/set</code>.</p>' +
+    return '<h1>' + WebAuthnSpnego.refusalHtml(t,
+        'refusals.spnego.offHeading', {},
+        '403 &mdash; integrated authentication is off') + '</h1>' +
+      '<div class="err" id="spnego-off">' + WebAuthnSpnego.refusalHtml(t,
+        'refusals.spnego.off', { setting: String(view.setting || '') },
+        'This service can sign people in with a Kerberos ticket, and ' +
+        '<code>' + esc(view.setting) + '</code> is set to false.') +
+      '</div><p>' + WebAuthnSpnego.refusalHtml(t,
+        'refusals.spnego.turnOnBefore', {}, 'Turn it on at') +
+      ' <a href="' + esc(CONSOLE_PATH) + '">' + esc(CONSOLE_PATH) + '</a>' +
+      WebAuthnSpnego.refusalHtml(t, 'refusals.spnego.turnOnAfter', {},
+        ', or with <code>POST /admin-api/config/set</code>.') + '</p>' +
       WebAuthnSpnego.fallback(view, t);
   }
 
@@ -307,7 +332,10 @@ class WebAuthnSpnego {
       return ctx.t.text('spnego.signedIn.title');
     }
     if (v.kind === 'off') {
-      return 'Integrated authentication is off';
+      return ctx.t && typeof ctx.t.has === 'function' &&
+        ctx.t.has('refusals.spnego.offTitle')
+        ? ctx.t.text('refusals.spnego.offTitle')
+        : 'Integrated authentication is off';
     }
     if (v.kind === 'withheld') {
       return ctx.t.text('spnego.withheld.title');

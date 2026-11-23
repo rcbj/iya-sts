@@ -45,6 +45,7 @@ import WalletPages = require('./web_wallet');
 import DevicesPages = require('./web_devices');
 import CibaPages = require('./web_ciba');
 import AccessRequestPages = require('./web_access_requests');
+import AccessRequestFormPages = require('./web_access_request');
 import DevicePages = require('./web_device');
 import ClaimSourcesPages = require('./web_claim_sources');
 import ConnectedAccountsPages = require('./web_connected_accounts');
@@ -82,6 +83,7 @@ const PAGES: PortalPage[] = [].concat(
   DevicesPages.PAGES,
   CibaPages.PAGES,
   AccessRequestPages.PAGES,
+  AccessRequestFormPages.PAGES,
   DevicePages.PAGES,
   ClaimSourcesPages.PAGES,
   ConnectedAccountsPages.PAGES,

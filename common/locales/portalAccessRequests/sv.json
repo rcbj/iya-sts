@@ -8,6 +8,8 @@
   "resource": "På",
   "application": "Program",
   "requester": "Begärd av",
+  "entitlement": "Begärd åtkomst",
+  "actor": "Agerat av",
   "waits": "Den väntar till {when}.",
   "approve": "Godkänn",
   "deny": "Neka",

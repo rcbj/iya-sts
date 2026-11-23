@@ -3315,13 +3315,69 @@
     "en": "7efe34e872e4772e",
     "text": "Om en administratör i produktläget får importera en PSKC-fröfil (RFC 6030) vars tokenhemligheter INTE är krypterade. Av som standard: en sådan fil har varit en lista över fungerande andra faktorer på varje disk och i varje brevlåda den har passerat, och en leverantör kan kryptera den under en förutdelad nyckel eller ett lösenord (avsnitt 6.1 och 6.2). Utvecklingsläget godtar en oavsett."
   },
-  "yubiotp.allowPlaintextImport|label": {
-    "en": "b1c1ac235f98cc47",
-    "text": "Godta CSV-filer med YubiKey-OTP i klartext i produktläget"
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "PIV-attesteringsrötter (PEM)"
   },
-  "yubiotp.allowPlaintextImport|description": {
-    "en": "f409449d46d5831a",
-    "text": "Om en administratör i produktläget får importera en CSV med YubiKey-OTP-hemligheter (serienummer, publik identitet, privat identitet, AES-nyckel). Av som standard: filen är en lista över fungerande andra faktorer. Utvecklingsläget godtar en oavsett. Hemligheterna förseglas när filen godtas, och filen behålls inte."
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "Rötterna som en YubiKey-PIV-nyckelattestering måste kedja till, som ett PEM-paket. Tomt använder de två som Yubico publicerar (Yubico PIV Root CA Serial 263751, och Yubico Attestation Root 1 för firmware 5.7.4 och senare), levererade i common/pki_piv_anchors.json och fästa där med SHA-256, tillsammans med Yubicos PIV-mellancertifikat. Ett certifikat här ersätter de levererade rötterna."
+  },
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "Kräv en PIV-attestering för PIV-profilerna"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "På: en begäran om ett piv-auth-, piv-sign-, piv-key-management- eller piv-card-auth-certifikat avvisas om den inte bär en YubiKey-PIV-attestering som kan verifieras (STS-PIV-0010). En deponerad piv-key-management-nyckel från EST /serverkeygen är undantaget: den här tjänsten genererade den. Av, standardvärdet: en sådan begäran utan attestering utfärdas utan maskinvarubevis; en begäran som bär en attestering som inte kan verifieras avvisas i båda fallen."
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "Svagaste PIN-policy som en attesterad PIV-nyckel får ha"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "Vad attesteringens PIN-policy minst måste vara. `once`: PIN-koden en gång per session (en Bio-nyckels match-once räknas); `always`: PIN-koden före varje användning (match-always räknas). `any`, standardvärdet, kräver ingen PIN-policy. En nyckel vars attestering är svagare avvisas (STS-PIV-0011)."
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "Svagaste beröringspolicy som en attesterad PIV-nyckel får ha"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "Vad attesteringens beröringspolicy minst måste vara. `cached`: en beröring som kommer ihåg i 15 sekunder; `always`: en beröring vid varje användning. `any`, standardvärdet, kräver ingen. En nyckel vars attestering är svagare avvisas (STS-PIV-0012)."
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "Låt ett piv-card-auth-certifikat logga in"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "e9e37c8e6becb7ee",
+    "text": "En piv-card-auth-nyckel (plats 9e) fungerar utan PIN-kod, för fysisk åtkomst, så dess certifikat avvisas vid TLS-inloggningen och vid PKINIT (STS-PIV-0013) om inte detta är på. En nyckel på plats 9e certifieras endast under piv-card-auth (STS-PIV-0037) och får aldrig hwk eller sc."
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "Deponera piv-key-management-nycklar"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "På: EST /serverkeygen för profilen piv-key-management behåller den genererade privata nyckeln, förseglad under nyckelkrypteringsnyckeln, så att innehavaren (på portalen, efter en ny inloggning) eller en administratör med rollen för återställning av PIV-nycklar kan återställa den och dekryptera gammal e-post när ett kort har gått förlorat. Avvisas där ingen nyckelkrypteringsnyckel finns (STS-PIV-0020). En deponerad nyckel är aldrig maskinvarubevis. Av, standardvärdet: /serverkeygen avvisar profilen piv-key-management (STS-PIV-0021), så en 9d-nyckel genereras på kortet och förvaras ingen annanstans."
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "Externa utfärdande PIV- eller CAC-CA:er som mappas via kort-UUID (PEM)"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "De utfärdande CA:er vars PIV- eller CAC-kortcertifikat loggar in en person via FIPS 201-kort-UUID: ett klientcertifikat som en av dem har utfärdat direkt, som anger en policy i piv.externalPolicyOids och bär exakt ett urn:uuid-subjectAltName, mappas till den enda person vars stsPivCardUuid innehåller det UUID:t. Aldrig via namnet, och ingen post skapas. CA:n måste också finnas i ett förtroendelager för klienter, annars avvisar handskakningen den först. Tomt, standardvärdet, mappar ingenting."
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "PIV Authentication-policyer som ett externt kort måste ange"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "Certifikatpolicyerna, av vilka ett externt korts certifikat måste ange en för att mappas via sitt kort-UUID: som standard id-fpki-common-authentication (Federal PKI Common Policys PIV Authentication) och id-fpki-certpcy-pivi-hardware (PIV-I). Lägg till en CAC-utfärdares egna maskinvarupolicyer här."
   },
   "openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",
@@ -3355,6 +3411,30 @@
     "en": "2772763d3d363b6d",
     "text": "Hur mycket den signerande datorns klocka får avvika från tjänstens: ett bevis signerat tidigare än utmaningen utfärdades, eller senare än nu, med mer än så avvisas (STS-OPENPGP-0010)."
   },
+  "openpgp.algorithms|label": {
+    "en": "6973a8aeaa30b96b",
+    "text": "Accepterade algoritmer"
+  },
+  "openpgp.algorithms|description": {
+    "en": "7bf4b57c9c6e7d1f",
+    "text": "De OpenPGP-algoritmer en nyckel får använda, i preferensordning. Först RFC 9980-kompositer: ML-DSA-65+Ed25519 och ML-DSA-87+Ed448 signerar, ML-KEM-768+X25519 och ML-KEM-1024+X448 krypterar. Sedan de klassiska namnen: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa på nistP256, nistP384 och nistP521, rsaSign och rsaEncryptSign, x25519, x448, ecdh på curve25519Legacy och samma NIST-kurvor, och rsaEncrypt. Ett namn som saknas i listan avvisas vid registrering och vid verifiering (STS-OPENPGP-0004). SLH-DSA är inte implementerat. Standardvärdet namnger vart och ett av dessa."
+  },
+  "openpgp.pqcOnly|label": {
+    "en": "d3ff53ec011bbf1f",
+    "text": "Registrera endast postkvantnycklar"
+  },
+  "openpgp.pqcOnly|description": {
+    "en": "a42ec597602f45d5",
+    "text": "På innebär att en nyregistrerad nyckel måste använda en postkvantalgoritm som openpgp.algorithms nämner: ML-DSA-65+Ed25519 eller ML-DSA-87+Ed448 för signeringsnyckeln, och ML-KEM-768+X25519 eller ML-KEM-1024+X448 när den har en krypteringsnyckel. Det begränsar bara registreringen: en klassisk nyckel som redan är registrerad verifieras fortfarande och tar fortfarande emot post. Kan inte vara på samtidigt som openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Av som standard."
+  },
+  "openpgp.pqcAlongsideClassical|label": {
+    "en": "57f71c1990eb46d9",
+    "text": "Postkvantnyckel vid sidan av en klassisk"
+  },
+  "openpgp.pqcAlongsideClassical|description": {
+    "en": "2b5f6cf2a07130e5",
+    "text": "På innebär att en nyregistrerad nyckel måste bära både en postkvantalgoritm och en separat klassisk algoritm. Ett kompositnamn som ML-DSA-65+Ed25519 räknas bara som postkvant, så den klassiska halvan är en annan nyckel, till exempel en Ed25519- eller X25519-undernyckel bredvid. En redan registrerad nyckel lämnas som den är. Kan inte vara på samtidigt som openpgp.pqcOnly (STS-OPENPGP-0027). Av som standard."
+  },
   "openpgp.minRsaBits|label": {
     "en": "f3dc9f85de143630",
     "text": "Minsta RSA-nyckel för OpenPGP"
@@ -3362,6 +3442,14 @@
   "openpgp.minRsaBits|description": {
     "en": "cd16018c848ce538",
     "text": "Den kortaste RSA-nyckel, primärnyckel eller undernyckel, som en OpenPGP-registrering accepterar. Ed25519, Ed448, ECDSA och ECDH på P-256, P-384 och P-521, X25519 och X448, samt RFC 9980-kompositerna ML-DSA-65+Ed25519, ML-DSA-87+Ed448, ML-KEM-768+X25519 och ML-KEM-1024+X448 accepteras när openpgp.algorithms nämner dem. DSA, ElGamal, Brainpool-kurvorna och SLH-DSA accepteras aldrig (STS-OPENPGP-0004)."
+  },
+  "yubiotp.allowPlaintextImport|label": {
+    "en": "b1c1ac235f98cc47",
+    "text": "Godta CSV-filer med YubiKey-OTP i klartext i produktläget"
+  },
+  "yubiotp.allowPlaintextImport|description": {
+    "en": "f409449d46d5831a",
+    "text": "Om en administratör i produktläget får importera en CSV med YubiKey-OTP-hemligheter (serienummer, publik identitet, privat identitet, AES-nyckel). Av som standard: filen är en lista över fungerande andra faktorer. Utvecklingsläget godtar en oavsett. Hemligheterna förseglas när filen godtas, och filen behålls inte."
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
@@ -3931,6 +4019,62 @@
     "en": "a28c6bc9859fc3aa",
     "text": "Den postkvantnyckel som en certifikatutfärdare som den här tjänsten bygger bär BREDVID sin klassiska, i de icke-kritiska tilläggen subjectAltPublicKeyInfo, altSignatureAlgorithm och altSignatureValue i ITU-T X.509 (2019) klausul 9.8 — ett hybridcertifikat. **AVSTÄNGT (`none`) SOM STANDARD** (rcbj, 2026-09-26): ett hybridcertifikat är för stort eller för okänt för ett antal produkter — libest avvisar varje enroll-svar över 4 KB, vilket varje hybridlöv är — så standarden är den ursprungliga hierarkin, där varje användningsfall och varje signatur har sitt eget klassiska nyckelpar. Ange ett värde så signerar varje utfärdare som byggs därefter varje certifikat den utfärdar två gånger: klassiskt i de vanliga fälten, som varje validerare läser, och med den här nyckeln över preTBSCertificate, som en hybridmedveten validerare läser. Den här tjänsten är en sådan: ett certifikat som utfärdats av en utfärdare med en alternativ nyckel MUST bära en giltig alternativ signatur för att verifieras här (STS-PKI-0201, STS-PKI-0202), så den klassiska signaturen ensam är aldrig en väg förbi. ML-DSA-87 (FIPS 204, kategori 5) är det rekommenderade värdet, eftersom en utfärdare lever längre än de nycklar den certifierar. Värdet läses vid NÄSTA bygge av en nivå; en hierarki behåller det den byggdes med. SLH-DSA (FIPS 205) erbjuds för ett hashbaserat ankare och kostar SEKUNDER per signatur, dvs. per utfärdat certifikat. VARNING: med `none` är utfärdarna endast klassiska, och deras certifikat kan förfalskas av en angripare med kvantdator."
   },
+  "pki.sshUserCaAlgorithms|label": {
+    "en": "1fa9bf9eedbabd99",
+    "text": "Algoritmer för SSH-användar-CA"
+  },
+  "pki.sshUserCaAlgorithms|description": {
+    "en": "5c4c22c2ab500fd4",
+    "text": "Vilka algoritmer certifikatutfärdaren för SSH-användare får använda, i prioritetsordning. ssh-mldsa-65 är ML-DSA-65 (FIPS 204) under ett överföringsnamn som den här tjänsten definierar, eftersom OpenSSH inte definierar något: den publika nyckeln och signaturen är råa, i den form ssh-ed25519 använder. Den OpenSSH-rad för TrustedUserCAKeys som tjänsten publicerar förblir den första klassiska algoritmen i listan, eller ssh-ed25519 när listan bara nämner ssh-mldsa-65. En motpart som inte förstår ML-DSA fortsätter att lita på den raden. ML-DSA-utfärdarens nyckel publiceras på GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65; standard-OpenSSH kan ännu inte verifiera ett ML-DSA-certifikat. ssh-rsa (SHA-1) erbjuds inte. ML-DSA-utfärdaren skapas bara när den här körmiljön kan generera nyckeln; annars förblir certifikaten klassiska (STS-PKI-0290 registreras och den klassiska utfärdaren svarar fortfarande), om inte pki.sshUserCaPqcOnly är på."
+  },
+  "pki.sshUserCaPqcOnly|label": {
+    "en": "74aae1308361ba58",
+    "text": "SSH-användarcertifikat är endast postkvantum"
+  },
+  "pki.sshUserCaPqcOnly|description": {
+    "en": "dcbf21b3230dcf07",
+    "text": "När den är på signeras ett nytt SSH-användarcertifikat av ML-DSA-utfärdaren och av inget annat. Standard-OpenSSH kan ännu inte verifiera ett ML-DSA-certifikat, så bara en SSH-server byggd för att verifiera ssh-mldsa-65, som litar på nyckeln på GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65, godtar dessa certifikat. Standardraden på den sökvägen förblir den klassiska nyckeln. När sfären saknar ML-DSA-utfärdare (körmiljön kan inte generera ML-DSA, eller ssh-mldsa-65 finns inte i pki.sshUserCaAlgorithms) avvisas begäran (STS-PKI-0297) i stället för att besvaras med ett klassiskt certifikat. Redan utfärdade klassiska certifikat fortsätter att verifieras. Kan inte vara på samtidigt som pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Av som standard."
+  },
+  "pki.sshUserCaPqcAlongsideClassical|label": {
+    "en": "c3201f8841200c32",
+    "text": "SSH-användarcertifikat bär också ett postkvantcertifikat"
+  },
+  "pki.sshUserCaPqcAlongsideClassical|description": {
+    "en": "b38eab63ec092b6c",
+    "text": "På innebär att ett nytt SSH-användarcertifikat utfärdas två gånger när ML-DSA-auktoriteten finns: det klassiska certifikatet, som en OpenSSH-klient använder, och ett ML-DSA-certifikat bredvid. Kan inte vara på samtidigt som pki.sshUserCaPqcOnly (STS-PKI-0296). Av som standard. En komposit är inget begrepp OpenSSH har; det klassiska certifikatet och ML-DSA-certifikatet är två signaturer, inte en hybridsignatur."
+  },
+  "pki.sshSoftwareLifetimeSeconds|label": {
+    "en": "e65480d5e0de0ff6",
+    "text": "Längsta SSH-användarcertifikat utan hårdvarubevis (s)"
+  },
+  "pki.sshSoftwareLifetimeSeconds|description": {
+    "en": "45980657cb573f83",
+    "text": "Den längsta livslängd, i sekunder, som ett SSH-användarcertifikat får utfärdas med för en nyckel som inget verifierat hårdvarubevis täcker: en vanlig nyckel, eller en sk-säkerhetsnyckel som skickats utan betrodd attestering. Begäran får be om mindre. Fem minuter som standard."
+  },
+  "pki.sshHardwareLifetimeSeconds|label": {
+    "en": "58130ddb50b2cf1b",
+    "text": "Längsta SSH-användarcertifikat med hårdvarubevis (s)"
+  },
+  "pki.sshHardwareLifetimeSeconds|description": {
+    "en": "93fab84d44ca2078",
+    "text": "Den längsta livslängd, i sekunder, som ett SSH-användarcertifikat får utfärdas med för en nyckel som ett verifierat hårdvarubevis täcker: en sk-säkerhetsnyckel vars attestering verifierats och är betrodd, eller en nyckel som ett attesterat PIV-certifikat certifierar. Begäran får be om mindre. En timme som standard, vilket också är det högsta."
+  },
+  "pki.sshUserCertificateExtensions|label": {
+    "en": "7bd63846ccd81f4e",
+    "text": "Tillägg som ett SSH-användarcertifikat bär"
+  },
+  "pki.sshUserCertificateExtensions|description": {
+    "en": "66d53e3e95faddca",
+    "text": "De OpenSSH-certifikattillägg (PROTOCOL.certkeys) som ett nytt SSH-användarcertifikat bär, kommaseparerade. Standard är ssh-keygens egen uppsättning; ett certifikat utan tillägg låter innehavaren logga in utan terminal, vidarebefordran eller rc-fil. no-touch-required kan läggas till. Ett namn som OpenSSH inte definierar tas bort."
+  },
+  "pki.sshGroupPrincipals|label": {
+    "en": "92bc72613cff7a8d",
+    "text": "Grupper vars namn får vara SSH-principaler"
+  },
+  "pki.sshGroupPrincipals|description": {
+    "en": "401372878bd26042",
+    "text": "De katalog­grupper vars common name en medlem får begära som principal i ett SSH-certifikat, kommaseparerade, var och en fortfarande avgjord av åtkomstpolicyn (resurs ssh-user-ca, åtgärd issue-ssh-principal). Tomt, standardvärdet, betyder ingen: ett certifikat namnger bara personens uid, eftersom en grupp inte ger något bara genom att vara en grupp. En grupp vars namn är en persons uid eller ett systemkonto som root avvisas oavsett detta."
+  },
   "pki.organisation|label": {
     "en": "163fd96758a3b8b3",
     "text": "Standardnamn på organisation (O=)"
@@ -4322,6 +4466,22 @@
   "pki.paranoidPkinit|description": {
     "en": "4cd0d308a974fcbd",
     "text": "Användningsfall `pkinit`: klientcertifikatet i en RFC 4556 AS-REQ. Kontrollen var redan full (kedja till sfärens identitets-CA:er, giltighet med krb5.clockSkew, id-pkinit-KPClientAuth eller Microsofts EKU för smartkort, återkallelse); paranoid gör den till ett enda anrop av dörren, så den är samma kod som för varje annat användningsfall. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "Paranoid: en attesteringskedja för en YubiKey-PIV-nyckel"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "Användningsfall `piv-attestation` (#1955): platsens attesteringscertifikat och f9-attesteringscertifikatet vid en PIV-registrering. Paranoid kontrollerar giltighetsfönstret vid nuvarande tidpunkt, sökvägen till piv.attestationAnchors och återkallelse där kedjan anger en lista. Av: endast detta användningsfall kör sökvägskontrollen utan fältkontrollerna, medan alla andra rader och huvudinställningen lämnas orörda; av i produktläge loggas det en gång (STS-PKI-0239) och visas i rött på /admin/pki/trust."
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "Paranoid: ett externt PIV- eller CAC-kort som mappas via kort-UUID"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "Användningsfall `piv-card` (#1955): ett klientcertifikat från en utfärdande CA i piv.externalIssuers, mappat via sitt kort-UUID. Paranoid kontrollerar keyUsage digitalSignature och lövcertifikatets giltighetsfönster utöver utfärdarkontrollen ett steg upp. Av: endast detta användningsfall kör bara utfärdarkontrollen, medan alla andra rader och huvudinställningen lämnas orörda; av i produktläge loggas det en gång (STS-PKI-0239) och visas i rött på /admin/pki/trust."
   },
   "pki.paranoidEnrollmentCredential|label": {
     "en": "ce5c0d1996e12403",
@@ -5983,6 +6143,38 @@
     "en": "ffc141f1ac37ec59",
     "text": "Hur engångsinnehållsnyckeln i ett WS-Trust-svar omsluts till mottagarens RSA-publika nyckel. `rsa-oaep` är XML Encryption 1.1:s RSA-OAEP med SHA-256 och MGF1-SHA-256; `rsa-oaep-mgf1p` är OAEP över SHA-1. En mottagare vars certifikat är EC krypteras till med ECDH-ES-nyckelöverenskommelse vad det här än säger. En applikations wstrustKeyTransportAlgorithm åsidosätter detta. `rsa-1_5` är RSAES-PKCS1-v1_5 och är brutet, och det erbjuds eftersom en driftsatt begärare kanske inte godtar något annat. VARNING: rsa-1_5 är endast utvecklingsläge — i produktläge ignoreras det där det läses, på den här inställningen och på en applikations wstrustKeyTransportAlgorithm (rsa-oaep-mgf1p används, loggas en gång, STS-CORE-0106), och att ställa in det avvisas (STS-CORE-0103, STS-REG-0193). Ett wst:EncryptWith-element får namnge den här algoritmen endast medan svarskryptering är på."
   },
+  "wstrust.signRequest|label": {
+    "en": "ee6db27fb290a51c",
+    "text": "Kräv en signerad begäran"
+  },
+  "wstrust.signRequest|description": {
+    "en": "3155eaca9d1a8680",
+    "text": "Om ett RequestSecurityToken vars AppliesTo inte namnger någon egen applikation måste bära en WS-Security-meddelandesignatur. En applikations wstrustSignRequest åsidosätter detta för en begäran vars AppliesTo namnger den, och dess wstrustSignRequestElements namnger vad signaturen dessutom måste täcka utöver SOAP Body. På är en begäran utan godtagen signatur, eller en vars signatur inte täcker ett namngivet element, ett wsse:FailedCheck. Utvecklingsläget tror på en signatur, som det alltid har gjort."
+  },
+  "wstrust.signResponse|label": {
+    "en": "9eb9dbebd82abfea",
+    "text": "Signera ett svar"
+  },
+  "wstrust.signResponse|description": {
+    "en": "3a78c4fc80cc38a7",
+    "text": "Om ett RequestSecurityTokenResponse bär en wsu:Timestamp och en WS-Security-meddelandesignatur över den och SOAP Body, gjord med den här sfärens XML-signeringsnyckel och som namnger dess certifikat i ett BinarySecurityToken. En applikations wstrustSignResponse åsidosätter detta, och dess wstrustSignResponseElements namnger vad signaturen täcker i stället för Body. Ett fel skickas osignerat. WSDL:ens bindning bär sp:IncludeTimestamp medan detta är på. På, och signaturen inte kan göras, är begäran ett fel i båda lägena."
+  },
+  "wstrust.responseProtectionOrder|label": {
+    "en": "55a63069d07b808c",
+    "text": "Ordning för svarsskydd"
+  },
+  "wstrust.responseProtectionOrder|description": {
+    "en": "0c8e29e5ac06276d",
+    "text": "Den ordning i vilken ett WS-Trust-svar signeras och krypteras när båda är på. `sign-then-encrypt` signerar klartexten och är standard i WS-SecurityPolicy; `encrypt-then-sign` signerar chiffertexten, och WSDL:ens bindning bär då sp:EncryptBeforeSigning. wsse:Security-huvudet skrivs i den ordning en mottagare behandlar det. En applikations wstrustResponseProtectionOrder åsidosätter detta."
+  },
+  "wstrust.encryptSignature|label": {
+    "en": "98953d7bb9c3dc42",
+    "text": "Kryptera ett svars signatur"
+  },
+  "wstrust.encryptSignature|description": {
+    "en": "32f9389b65f0eb67",
+    "text": "Om ds:Signature i ett WS-Trust-svar också krypteras (WS-SecurityPolicys sp:EncryptSignature), till svarets mottagare. Läses bara medan svaret signeras och sedan krypteras. WSDL:ens bindning bär sp:EncryptSignature medan detta är på. En applikations wstrustEncryptSignature åsidosätter detta."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Inloggning initierad av identitetsleverantören"
@@ -6026,6 +6218,46 @@
   "tls.trustIssuedClientCertificates|restartReason": {
     "en": "a1bd9f7dd30ee833",
     "text": "tjänstens rot läggs in i lyssnarnas förtroendelager för klienter när deras TLS-kontext byggs"
+  },
+  "certSignIn.profiles|label": {
+    "en": "45c9a918accd04eb",
+    "text": "Profiler för certifikatinloggning (JSON)"
+  },
+  "certSignIn.profiles|description": {
+    "en": "4a9b75892efe6f41",
+    "text": "En JSON-array med profiler för certifikatinloggning för klientcertifikat från utfärdare som den här tjänsten inte driver. Var och en är {\"id\", \"issuers\", \"keyUsage\", \"extendedKeyUsage\", \"policies\", \"bindings\", \"lowAffinity\"}: issuers är SHA-256 av varje täckt CA:s SubjectPublicKeyInfo, och ett certifikat vars validerade sökväg innehåller en av dem täcks av den första sådana profilen; keyUsage de bitar det måste bära alla; extendedKeyUsage de syften av vilka det måste bära ett; policies de policyer av vilka policybehandlingen enligt RFC 5280 måste bära en genom dess sökväg (policymappningar respekteras); bindings de metoder som namnger dess konto (certificate-sha256, issuer-serial, issuer-ski, spki-sha256 och card-uuid, och endast med lowAffinity true namnmetoderna upn, email, issuer-subject och subject; certificate-sha256 och issuer-serial som standard). Varje metod tillfrågas; två konton, eller inget, loggar inte in någon. Bindningar lagras i stsCertificateBinding på personen. TOMT, standard, täcker inget certifikat: ett externt certifikat är posten som lagrar det i userCertificate, eller ett PIV-kort via piv.externalIssuers, som tidigare."
+  },
+  "certSignIn.requireRevocation|label": {
+    "en": "d14071167a900fe4",
+    "text": "Kräv en verifierad återkallelsestatus vid certifikatinloggning"
+  },
+  "certSignIn.requireRevocation|description": {
+    "en": "13f77eb21eb17caf",
+    "text": "Om ett klientcertifikat loggar in en person endast med en verifierad återkallelsestatus: varje certifikat i dess sökväg uppslaget och inget på en lista. auto, standard, kräver det i produktläge och lämnar utveckling åt pki.revocationCheck, som tidigare; on kräver det i alla lägen, så att en status som soft-fail skulle godta (okänd, eller inte tillfrågad) nekar inloggningen (STS-TLS-0071). Det avgör endast inloggningar: /tls/sign-in, inloggningsskärmen och certifikatöverlämningen."
+  },
+  "certSignIn.handoff|label": {
+    "en": "37bcae84a89e5ef8",
+    "text": "Erbjud en certifikatinloggning på en egen lyssnare"
+  },
+  "certSignIn.handoff|description": {
+    "en": "2cd83e3c2c6b4cb0",
+    "text": "Påslaget erbjuder inloggningsskärmen ”Logga in med smartkort eller certifikat”, som skickar webbläsaren till /authn/certificate/continue på den lyssnare som den värdade applikationen certificate-sign-in är mappad till (listeners.applications) — en anpassad lyssnare vars clientAuth begär ett certifikat — och tillbaka till skärmen, som fortsätter som certifikatets innehavare. Certifikatet binds till den väntande inloggningen och till webbläsarens inloggningssession, så lyssnaren måste dela huvudportens värdnamn eller båda ligga under authn.cookieDomain. Med tls.mainPortDisableOptionalClientCertificate påslaget begär huvudporten då inget certifikat av någon anslutning, och de andra vägarna in ser aldrig någon fråga. Avstängt, standard, erbjuder skärmen endast certifikatet på dess egen anslutning."
+  },
+  "tls.trustedProxyCertificates|label": {
+    "en": "56e567aa855102b5",
+    "text": "Klientcertifikat för TLS-terminerande proxyservrar (SHA-256)"
+  },
+  "tls.trustedProxyCertificates|description": {
+    "en": "5ebd0abc01f9dfdf",
+    "text": "SHA-256-fingeravtrycken för de klientcertifikat som en TLS-terminerande proxy presenterar när den ansluter hit. För en begäran på en anslutning som presenterar ett av dem, från en adress i tls.trustedProxyAddresses, verifieras dess huvuden Client-Cert och Client-Cert-Chain enligt RFC 9440 här mot klientens förtroendelager och återkallelse, och det certifikatet står för handskakningens vid varje dörr. Båda inställningarna krävs; från varje annan avsändare tas de två huvudena bort och registreras (STS-TLS-0072) och läses aldrig. TOMT, standard, läser ett certifikat endast från handskakningen."
+  },
+  "tls.trustedProxyAddresses|label": {
+    "en": "4bc0cf2135bd81af",
+    "text": "Adresser för TLS-terminerande proxyservrar"
+  },
+  "tls.trustedProxyAddresses|description": {
+    "en": "92e72546afce7f59",
+    "text": "De adresser eller CIDR-intervall som en proxy i tls.trustedProxyCertificates ansluter från (10.0.0.0/8, fd00::/8). Båda inställningarna krävs innan ett vidarebefordrat klientcertifikat läses. Ett värde som varken är en adress eller ett intervall ignoreras och loggas, vidgas aldrig."
   },
   "tls.hostnames|label": {
     "en": "fbb4cf44ba96aa51",
@@ -8395,6 +8627,54 @@
     "en": "698617c5a3485120",
     "text": "Det högsta antalet begärbara avslag som en sfär registrerar per evaluation_id (#1204). Därutöver registreras inte ett nytt avslag, och det kan fortfarande begäras med sitt binding_token; jobbet för åtkomstbegäranden tar bort en post en dag efter dess fönster."
   },
+  "authzen.accessRequestDisplay|label": {
+    "en": "2e4d23a3bbd81b74",
+    "text": "Visningstips för åtkomstbegäranden"
+  },
+  "authzen.accessRequestDisplay|description": {
+    "en": "b9fd6a2d08cb3736",
+    "text": "Access Request and Approval-profilens visningstips (#1204): ett begärbart avslag bär access_request.display och ett Task Handle bär task.display, var och en med en titel och en beskrivning. Avslagets är advicens display-title och display-description, ordagrant, annars tjänstens egna ord på det språk som Accept-Language ber om. De är tips för en människa och aldrig policy. Av: inget av dem skickas."
+  },
+  "authzen.accessRequestForm|label": {
+    "en": "2e34659783fbd924",
+    "text": "Värdat formulär för åtkomstbegäranden"
+  },
+  "authzen.accessRequestForm|description": {
+    "en": "37c92b9ca48d6f87",
+    "text": "Access Request and Approval-profilens värdade formulär (#1204): ett begärbart avslag som den här sfären har registrerat bär form_url, portalsidan /portal/access-request, där avslagets subjekt loggar in och skickar åtkomstbegäran med en motivering; den nekade PEP:en får tillbaka den uppgiften när den skickar samma avslag. Ett Task Handle bär links.ticket, samma sida, där subjektet ser begärans status. Av: inget skickas och sidan gör ingen begäran."
+  },
+  "authzen.accessRequestCatalogs|label": {
+    "en": "ccb71d0eb2d2512b",
+    "text": "Kataloger för åtkomstbegäranden"
+  },
+  "authzen.accessRequestCatalogs|description": {
+    "en": "1f38cbb80e80bafc",
+    "text": "AuthZEN Access Request Catalog-profilen (#1204): ett registrerat begärbart avslag vars advice listar värden urn:sts:xacml:advice:access-request:entitlement bär request_catalogs_url, dess Catalogs Document och Catalog Endpoint svarar den anropare som avslaget gavs till, en begäran måste välja en av behörigheterna i requested_access.entitlement, och godkännandet för den till policyn som ett betrott faktum. Av: advicens behörigheter ignoreras och de två slutpunkterna svarar 501."
+  },
+  "authzen.accessRequestActor|label": {
+    "en": "746cf58e932ffdab",
+    "text": "Agerande parter i åtkomstbegäranden"
+  },
+  "authzen.accessRequestActor|description": {
+    "en": "2ad9ec45c4e1ebfe",
+    "text": "AuthZEN Actor Delegation-profilen (#1204): en åtkomstbegärans client.actor-kedja verifieras mot anroparens egna autentiseringsuppgift (en länk som är anroparen själv, eller act-kedjan i dess egen åtkomsttoken) och nekas annars, och client.source registreras. Båda visas för godkännarna och i granskningsloggen, och ingen av dem är ett policyfaktum. Av: båda godtas och läses aldrig."
+  },
+  "authzen.accessRequestBulk|label": {
+    "en": "626b8aa6d7729f4b",
+    "text": "Åtkomstbegäranden i klump"
+  },
+  "authzen.accessRequestBulk|description": {
+    "en": "8abb7e835c531ac9",
+    "text": "AuthZEN Bulk Access Requests-profilen (#1204): en inlämning med items, var och en med sitt eget avslag, kontrolleras post för post som en enskild, och besvaras med ett Task Handle vars status sammanfattar posterna (partial när de slutade olika) och vars poster var och en bär sitt eget resultat. Varje post godkänns och omprövas för sig. Av: items nekas som tidigare."
+  },
+  "authzen.accessRequestMaxBulkItems|label": {
+    "en": "bed33a03d68efa71",
+    "text": "Poster i en åtkomstbegäran i klump"
+  },
+  "authzen.accessRequestMaxBulkItems|description": {
+    "en": "9a1f15e576f964cb",
+    "text": "Det största antalet poster en åtkomstbegäran i klump får ha (#1204). Var och en räknas mot authzen.accessRequestMaxPending."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"
@@ -9726,6 +10006,14 @@
   "roles.xacmlUserGroup|description": {
     "en": "d19a9234253beccc",
     "text": "Kataloggruppen vars medlemmar har den inbyggda rollen XACML_USER, som är vad de tre egentliga XACML-slutpunkterna kräver — GET /xacml, POST /xacml/pdp och GET /xacml/policies. En anropare som visar ett klientcertifikat som tjänsten VERIFIERAT är någon den kan namnge; medlemskap i den här gruppen är det som gör dem till någon den släpper in, och de två hålls isär av samma skäl som för roles.remotePepGroup ovan: ett certifikat bevisar en identitet och en grupp ger en behörighet. DET ÄR EN ANDRA GRUPP OCH INTE SAMMA: REMOTE_PEPS når de tre /xacml/pep-slutpunkterna, som lämnar ut de dokument tjänsten tillämpar sin egen åtkomstkontroll med, och en grupp som gav båda skulle göra att en anropare som släpps in på själva XACML-ytan tyst släpps in på dem också. Att sätta den till den tomma strängen betyder att INGEN har rollen, vilket stänger de tre slutpunkterna för alla anropare; det är sättet att ta bort XACML-ytan utan att stänga av xacml.enabled och förlora de inbyggda utfärdande- och åtkomst-PEP:arna med den."
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "Grupp som ger rollen PIV_KEY_RECOVERY"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "Katalogruppen vars medlemmar innehar den inbyggda rollen PIV_KEY_RECOVERY (#1955), som åtkomstkontrollpolicyn kräver, utöver Admin Write, för att återställa en annan persons deponerade piv-key-management-nyckel (piv.keyEscrow). Den nyckeln dekrypterar personens e-post, så ingen innehar rollen förrän en administratör lägger till dem i gruppen. Tomt låter ingen återställa en annan persons nyckel; innehavaren återställer sin egen på portalen."
   },
   "roles.authzenPepGroup|label": {
     "en": "8dacfdf5504e732a",
@@ -12962,173 +13250,5 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Gäller bara protokollfelsökarens lyssnare: http.http2MaxConcurrentStreams. -1, standardvärdet, följer http.http2MaxConcurrentStreams; allt annat avgör bara för den här lyssnaren. Hur många begäranden en HTTP/2-anslutning får ha öppna samtidigt (SETTINGS_MAX_CONCURRENT_STREAMS); en ström utöver det avvisas tills en annan är klar. 100, standardvärdet, är det minsta värde RFC 9113 rekommenderar; nodes eget är obegränsat, vilket skulle låta en enda anslutning bära arbetet för tusentals. Det begränsar arbetet på en anslutning som http.maxConnections begränsar anslutningarna. En ny anslutning följer en ändring direkt, och en öppen skickas det nya värdet."
-  },
-  "piv.attestationAnchors|label": {
-    "en": "ebc10f6a7dcbbf58",
-    "text": "PIV-attesteringsrötter (PEM)"
-  },
-  "piv.attestationAnchors|description": {
-    "en": "487e76edeb4446b9",
-    "text": "Rötterna som en YubiKey-PIV-nyckelattestering måste kedja till, som ett PEM-paket. Tomt använder de två som Yubico publicerar (Yubico PIV Root CA Serial 263751, och Yubico Attestation Root 1 för firmware 5.7.4 och senare), levererade i common/pki_piv_anchors.json och fästa där med SHA-256, tillsammans med Yubicos PIV-mellancertifikat. Ett certifikat här ersätter de levererade rötterna."
-  },
-  "piv.requireAttestation|label": {
-    "en": "4e11b0db111faccf",
-    "text": "Kräv en PIV-attestering för PIV-profilerna"
-  },
-  "piv.requireAttestation|description": {
-    "en": "ef38975436c5ac4f",
-    "text": "På: en begäran om ett piv-auth-, piv-sign-, piv-key-management- eller piv-card-auth-certifikat avvisas om den inte bär en YubiKey-PIV-attestering som kan verifieras (STS-PIV-0010). En deponerad piv-key-management-nyckel från EST /serverkeygen är undantaget: den här tjänsten genererade den. Av, standardvärdet: en sådan begäran utan attestering utfärdas utan maskinvarubevis; en begäran som bär en attestering som inte kan verifieras avvisas i båda fallen."
-  },
-  "piv.pinPolicy|label": {
-    "en": "0f683a0cb1db1988",
-    "text": "Svagaste PIN-policy som en attesterad PIV-nyckel får ha"
-  },
-  "piv.pinPolicy|description": {
-    "en": "c3f9fcec406b9806",
-    "text": "Vad attesteringens PIN-policy minst måste vara. `once`: PIN-koden en gång per session (en Bio-nyckels match-once räknas); `always`: PIN-koden före varje användning (match-always räknas). `any`, standardvärdet, kräver ingen PIN-policy. En nyckel vars attestering är svagare avvisas (STS-PIV-0011)."
-  },
-  "piv.touchPolicy|label": {
-    "en": "a88f111c7b13657f",
-    "text": "Svagaste beröringspolicy som en attesterad PIV-nyckel får ha"
-  },
-  "piv.touchPolicy|description": {
-    "en": "d78f0d5df0256787",
-    "text": "Vad attesteringens beröringspolicy minst måste vara. `cached`: en beröring som kommer ihåg i 15 sekunder; `always`: en beröring vid varje användning. `any`, standardvärdet, kräver ingen. En nyckel vars attestering är svagare avvisas (STS-PIV-0012)."
-  },
-  "piv.cardAuthSignIn|label": {
-    "en": "61b2226403ad5c61",
-    "text": "Låt ett piv-card-auth-certifikat logga in"
-  },
-  "piv.cardAuthSignIn|description": {
-    "en": "e9e37c8e6becb7ee",
-    "text": "En piv-card-auth-nyckel (plats 9e) fungerar utan PIN-kod, för fysisk åtkomst, så dess certifikat avvisas vid TLS-inloggningen och vid PKINIT (STS-PIV-0013) om inte detta är på. En nyckel på plats 9e certifieras endast under piv-card-auth (STS-PIV-0037) och får aldrig hwk eller sc."
-  },
-  "piv.keyEscrow|label": {
-    "en": "f2efc85c3d2bac38",
-    "text": "Deponera piv-key-management-nycklar"
-  },
-  "piv.keyEscrow|description": {
-    "en": "cf9618144b67dff3",
-    "text": "På: EST /serverkeygen för profilen piv-key-management behåller den genererade privata nyckeln, förseglad under nyckelkrypteringsnyckeln, så att innehavaren (på portalen, efter en ny inloggning) eller en administratör med rollen för återställning av PIV-nycklar kan återställa den och dekryptera gammal e-post när ett kort har gått förlorat. Avvisas där ingen nyckelkrypteringsnyckel finns (STS-PIV-0020). En deponerad nyckel är aldrig maskinvarubevis. Av, standardvärdet: /serverkeygen avvisar profilen piv-key-management (STS-PIV-0021), så en 9d-nyckel genereras på kortet och förvaras ingen annanstans."
-  },
-  "piv.externalIssuers|label": {
-    "en": "e96143ab9556db35",
-    "text": "Externa utfärdande PIV- eller CAC-CA:er som mappas via kort-UUID (PEM)"
-  },
-  "piv.externalIssuers|description": {
-    "en": "0fb91dba2cb957d3",
-    "text": "De utfärdande CA:er vars PIV- eller CAC-kortcertifikat loggar in en person via FIPS 201-kort-UUID: ett klientcertifikat som en av dem har utfärdat direkt, som anger en policy i piv.externalPolicyOids och bär exakt ett urn:uuid-subjectAltName, mappas till den enda person vars stsPivCardUuid innehåller det UUID:t. Aldrig via namnet, och ingen post skapas. CA:n måste också finnas i ett förtroendelager för klienter, annars avvisar handskakningen den först. Tomt, standardvärdet, mappar ingenting."
-  },
-  "piv.externalPolicyOids|label": {
-    "en": "930c5800dfa36905",
-    "text": "PIV Authentication-policyer som ett externt kort måste ange"
-  },
-  "piv.externalPolicyOids|description": {
-    "en": "2398931e8d58f5c4",
-    "text": "Certifikatpolicyerna, av vilka ett externt korts certifikat måste ange en för att mappas via sitt kort-UUID: som standard id-fpki-common-authentication (Federal PKI Common Policys PIV Authentication) och id-fpki-certpcy-pivi-hardware (PIV-I). Lägg till en CAC-utfärdares egna maskinvarupolicyer här."
-  },
-  "pki.paranoidPivAttestation|label": {
-    "en": "e645d02c49d2f9bf",
-    "text": "Paranoid: en attesteringskedja för en YubiKey-PIV-nyckel"
-  },
-  "pki.paranoidPivAttestation|description": {
-    "en": "fdb7c0eb631758ea",
-    "text": "Användningsfall `piv-attestation` (#1955): platsens attesteringscertifikat och f9-attesteringscertifikatet vid en PIV-registrering. Paranoid kontrollerar giltighetsfönstret vid nuvarande tidpunkt, sökvägen till piv.attestationAnchors och återkallelse där kedjan anger en lista. Av: endast detta användningsfall kör sökvägskontrollen utan fältkontrollerna, medan alla andra rader och huvudinställningen lämnas orörda; av i produktläge loggas det en gång (STS-PKI-0239) och visas i rött på /admin/pki/trust."
-  },
-  "pki.paranoidPivCard|label": {
-    "en": "4078a93e7117d6f9",
-    "text": "Paranoid: ett externt PIV- eller CAC-kort som mappas via kort-UUID"
-  },
-  "pki.paranoidPivCard|description": {
-    "en": "d4d5fb070575e1c6",
-    "text": "Användningsfall `piv-card` (#1955): ett klientcertifikat från en utfärdande CA i piv.externalIssuers, mappat via sitt kort-UUID. Paranoid kontrollerar keyUsage digitalSignature och lövcertifikatets giltighetsfönster utöver utfärdarkontrollen ett steg upp. Av: endast detta användningsfall kör bara utfärdarkontrollen, medan alla andra rader och huvudinställningen lämnas orörda; av i produktläge loggas det en gång (STS-PKI-0239) och visas i rött på /admin/pki/trust."
-  },
-  "roles.pivKeyRecoveryGroup|label": {
-    "en": "2f231e1e99785dc6",
-    "text": "Grupp som ger rollen PIV_KEY_RECOVERY"
-  },
-  "roles.pivKeyRecoveryGroup|description": {
-    "en": "801616eea12559a5",
-    "text": "Katalogruppen vars medlemmar innehar den inbyggda rollen PIV_KEY_RECOVERY (#1955), som åtkomstkontrollpolicyn kräver, utöver Admin Write, för att återställa en annan persons deponerade piv-key-management-nyckel (piv.keyEscrow). Den nyckeln dekrypterar personens e-post, så ingen innehar rollen förrän en administratör lägger till dem i gruppen. Tomt låter ingen återställa en annan persons nyckel; innehavaren återställer sin egen på portalen."
-  },
-  "openpgp.algorithms|label": {
-    "en": "6973a8aeaa30b96b",
-    "text": "Accepterade algoritmer"
-  },
-  "openpgp.algorithms|description": {
-    "en": "7bf4b57c9c6e7d1f",
-    "text": "De OpenPGP-algoritmer en nyckel får använda, i preferensordning. Först RFC 9980-kompositer: ML-DSA-65+Ed25519 och ML-DSA-87+Ed448 signerar, ML-KEM-768+X25519 och ML-KEM-1024+X448 krypterar. Sedan de klassiska namnen: ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa på nistP256, nistP384 och nistP521, rsaSign och rsaEncryptSign, x25519, x448, ecdh på curve25519Legacy och samma NIST-kurvor, och rsaEncrypt. Ett namn som saknas i listan avvisas vid registrering och vid verifiering (STS-OPENPGP-0004). SLH-DSA är inte implementerat. Standardvärdet namnger vart och ett av dessa."
-  },
-  "openpgp.pqcOnly|label": {
-    "en": "d3ff53ec011bbf1f",
-    "text": "Registrera endast postkvantnycklar"
-  },
-  "openpgp.pqcOnly|description": {
-    "en": "a42ec597602f45d5",
-    "text": "På innebär att en nyregistrerad nyckel måste använda en postkvantalgoritm som openpgp.algorithms nämner: ML-DSA-65+Ed25519 eller ML-DSA-87+Ed448 för signeringsnyckeln, och ML-KEM-768+X25519 eller ML-KEM-1024+X448 när den har en krypteringsnyckel. Det begränsar bara registreringen: en klassisk nyckel som redan är registrerad verifieras fortfarande och tar fortfarande emot post. Kan inte vara på samtidigt som openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Av som standard."
-  },
-  "openpgp.pqcAlongsideClassical|label": {
-    "en": "57f71c1990eb46d9",
-    "text": "Postkvantnyckel vid sidan av en klassisk"
-  },
-  "openpgp.pqcAlongsideClassical|description": {
-    "en": "2b5f6cf2a07130e5",
-    "text": "På innebär att en nyregistrerad nyckel måste bära både en postkvantalgoritm och en separat klassisk algoritm. Ett kompositnamn som ML-DSA-65+Ed25519 räknas bara som postkvant, så den klassiska halvan är en annan nyckel, till exempel en Ed25519- eller X25519-undernyckel bredvid. En redan registrerad nyckel lämnas som den är. Kan inte vara på samtidigt som openpgp.pqcOnly (STS-OPENPGP-0027). Av som standard."
-  },
-  "pki.sshUserCaAlgorithms|label": {
-    "en": "1fa9bf9eedbabd99",
-    "text": "Algoritmer för SSH-användar-CA"
-  },
-  "pki.sshUserCaAlgorithms|description": {
-    "en": "5c4c22c2ab500fd4",
-    "text": "Vilka algoritmer certifikatutfärdaren för SSH-användare får använda, i prioritetsordning. ssh-mldsa-65 är ML-DSA-65 (FIPS 204) under ett överföringsnamn som den här tjänsten definierar, eftersom OpenSSH inte definierar något: den publika nyckeln och signaturen är råa, i den form ssh-ed25519 använder. Den OpenSSH-rad för TrustedUserCAKeys som tjänsten publicerar förblir den första klassiska algoritmen i listan, eller ssh-ed25519 när listan bara nämner ssh-mldsa-65. En motpart som inte förstår ML-DSA fortsätter att lita på den raden. ML-DSA-utfärdarens nyckel publiceras på GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65; standard-OpenSSH kan ännu inte verifiera ett ML-DSA-certifikat. ssh-rsa (SHA-1) erbjuds inte. ML-DSA-utfärdaren skapas bara när den här körmiljön kan generera nyckeln; annars förblir certifikaten klassiska (STS-PKI-0290 registreras och den klassiska utfärdaren svarar fortfarande), om inte pki.sshUserCaPqcOnly är på."
-  },
-  "pki.sshUserCaPqcOnly|label": {
-    "en": "74aae1308361ba58",
-    "text": "SSH-användarcertifikat är endast postkvantum"
-  },
-  "pki.sshUserCaPqcOnly|description": {
-    "en": "dcbf21b3230dcf07",
-    "text": "När den är på signeras ett nytt SSH-användarcertifikat av ML-DSA-utfärdaren och av inget annat. Standard-OpenSSH kan ännu inte verifiera ett ML-DSA-certifikat, så bara en SSH-server byggd för att verifiera ssh-mldsa-65, som litar på nyckeln på GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65, godtar dessa certifikat. Standardraden på den sökvägen förblir den klassiska nyckeln. När sfären saknar ML-DSA-utfärdare (körmiljön kan inte generera ML-DSA, eller ssh-mldsa-65 finns inte i pki.sshUserCaAlgorithms) avvisas begäran (STS-PKI-0297) i stället för att besvaras med ett klassiskt certifikat. Redan utfärdade klassiska certifikat fortsätter att verifieras. Kan inte vara på samtidigt som pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Av som standard."
-  },
-  "pki.sshUserCaPqcAlongsideClassical|label": {
-    "en": "c3201f8841200c32",
-    "text": "SSH-användarcertifikat bär också ett postkvantcertifikat"
-  },
-  "pki.sshUserCaPqcAlongsideClassical|description": {
-    "en": "b38eab63ec092b6c",
-    "text": "På innebär att ett nytt SSH-användarcertifikat utfärdas två gånger när ML-DSA-auktoriteten finns: det klassiska certifikatet, som en OpenSSH-klient använder, och ett ML-DSA-certifikat bredvid. Kan inte vara på samtidigt som pki.sshUserCaPqcOnly (STS-PKI-0296). Av som standard. En komposit är inget begrepp OpenSSH har; det klassiska certifikatet och ML-DSA-certifikatet är två signaturer, inte en hybridsignatur."
-  },
-  "pki.sshSoftwareLifetimeSeconds|label": {
-    "en": "e65480d5e0de0ff6",
-    "text": "Längsta SSH-användarcertifikat utan hårdvarubevis (s)"
-  },
-  "pki.sshSoftwareLifetimeSeconds|description": {
-    "en": "45980657cb573f83",
-    "text": "Den längsta livslängd, i sekunder, som ett SSH-användarcertifikat får utfärdas med för en nyckel som inget verifierat hårdvarubevis täcker: en vanlig nyckel, eller en sk-säkerhetsnyckel som skickats utan betrodd attestering. Begäran får be om mindre. Fem minuter som standard."
-  },
-  "pki.sshHardwareLifetimeSeconds|label": {
-    "en": "58130ddb50b2cf1b",
-    "text": "Längsta SSH-användarcertifikat med hårdvarubevis (s)"
-  },
-  "pki.sshHardwareLifetimeSeconds|description": {
-    "en": "93fab84d44ca2078",
-    "text": "Den längsta livslängd, i sekunder, som ett SSH-användarcertifikat får utfärdas med för en nyckel som ett verifierat hårdvarubevis täcker: en sk-säkerhetsnyckel vars attestering verifierats och är betrodd, eller en nyckel som ett attesterat PIV-certifikat certifierar. Begäran får be om mindre. En timme som standard, vilket också är det högsta."
-  },
-  "pki.sshUserCertificateExtensions|label": {
-    "en": "7bd63846ccd81f4e",
-    "text": "Tillägg som ett SSH-användarcertifikat bär"
-  },
-  "pki.sshUserCertificateExtensions|description": {
-    "en": "66d53e3e95faddca",
-    "text": "De OpenSSH-certifikattillägg (PROTOCOL.certkeys) som ett nytt SSH-användarcertifikat bär, kommaseparerade. Standard är ssh-keygens egen uppsättning; ett certifikat utan tillägg låter innehavaren logga in utan terminal, vidarebefordran eller rc-fil. no-touch-required kan läggas till. Ett namn som OpenSSH inte definierar tas bort."
-  },
-  "pki.sshGroupPrincipals|label": {
-    "en": "92bc72613cff7a8d",
-    "text": "Grupper vars namn får vara SSH-principaler"
-  },
-  "pki.sshGroupPrincipals|description": {
-    "en": "401372878bd26042",
-    "text": "De katalog­grupper vars common name en medlem får begära som principal i ett SSH-certifikat, kommaseparerade, var och en fortfarande avgjord av åtkomstpolicyn (resurs ssh-user-ca, åtgärd issue-ssh-principal). Tomt, standardvärdet, betyder ingen: ett certifikat namnger bara personens uid, eftersom en grupp inte ger något bara genom att vara en grupp. En grupp vars namn är en persons uid eller ett systemkonto som root avvisas oavsett detta."
   }
 }

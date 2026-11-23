@@ -261,9 +261,9 @@ nothing, follows none of its links in place — the password screen is a full
 navigation that mints its arrival cookie — and draws it again from the same
 state when a language is chosen). The browser translates, in #539's order
 with the pending sign-in's `ui_locales` and a signed-in person's own
-language; the `off` page's sentences and the checks table are English, as a
-refusal and a diagnostic are, and its link back to the password screen is
-translated, where the server drew it in English. **Script is required**
+language; the `off` page's sentences are `refusals.spnego.*` catalog
+messages since #2006, and the checks table stays English, as a diagnostic
+is. **Script is required**
 (rcbj on #569): the `<noscript>` says so and draws nothing else.
 
 **The one header that changed is the Content-Security-Policy**, which a page

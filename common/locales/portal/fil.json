@@ -66,6 +66,8 @@
   "nav.ciba.heading": "Mga request sa pag-sign in",
   "nav.access-requests.label": "Mga kahilingan sa access",
   "nav.access-requests.heading": "Mga kahilingan sa access na naghihintay sa iyo",
+  "nav.access-request.label": "Iyong mga kahilingan sa access",
+  "nav.access-request.heading": "Iyong mga kahilingan sa access",
   "nav.device.label": "Mag-sign in ng device",
   "nav.device.heading": "Mag-sign in ng device",
   "nav.claim-sources.label": "Mga pinagmumulan ng claim",

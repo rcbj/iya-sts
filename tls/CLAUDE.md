@@ -2219,7 +2219,9 @@ functions `GET /tls/sign-in` runs:
   verdict, then those two functions, answering the holder (with
   `recordVerification()`, the #127 identity verification `GET /tls/sign-in`
   records once its session starts) or a refusal with its STS-AUTHN-0463..0466
-  code and an English sentence for the screen.
+  code and a sentence for the screen — a `refusals.authn.certificate*`
+  catalog sentence (#2006), English to every text reader, which the screen
+  draws in its own language (the PIV card-auth refusal is still text).
 * **TWO DIFFERENCES, BOTH FORCED.** The realm is the PENDING SIGN-IN'S, not
   the certificate's — the protocol that sent the person decided it — so
   `tls_client_certificates.checkSocket()` refuses a certificate from another
@@ -2282,3 +2284,53 @@ module's:
   `sts_global_logout`), which need a stack; they were not run in #1061's
   session.
 
+## A CERTIFICATE SIGN-IN ON A LISTENER OF ITS OWN, AND A PROXY'S CERTIFICATE (#2012, 2026-11-23)
+
+`common/CLAUDE.md` 3dh has the profiles, the bindings and the revocation
+requirement; what is this directory's:
+
+* **THE HANDOFF, `tls/certificate_handoff.ts` (rcbj: an option, OFF by
+  default, `certSignIn.handoff`).** The screen's certificate offer (#1051)
+  reads the certificate on the SCREEN's connection, so the listener the screen
+  is on must ask every connection for one, and a browser holding a smart card
+  then prompts whoever came to type a password. The handoff moves the ask to
+  one request: the view's `certificate.handoff` links to
+  `/authn/certificate/continue?h=<id>`, the new `certificate-sign-in` hosted
+  application (`common/hosted_applications.js`, prefix `/authn/certificate`,
+  longer than `/authn` and so found first), which an administrator maps to a
+  custom listener whose `clientAuth` asks for a certificate. With
+  `tls.mainPortDisableOptionalClientCertificate` on, the main port then asks
+  nobody.
+* **WHAT IT ASKS IS `screenCertificateHolder()`**, the screen's own door, in
+  the pending sign-in's realm (the link carries the realm prefix): revocation
+  and the realm's requirement, the identity gate, every profile, the
+  card-authentication refusal. Its answer is written on the handoff row, with
+  `verificationFacts` (the #127 facts the screen's `recordVerification()`
+  needs, which a closure cannot carry across processes), and the browser goes
+  back to `/authn/login?authn=<id>` — a Location `step_address.hide()` moves
+  into the fragment in product, as every redirect to the screen is.
+* **BOUND TO THE BROWSER ON BOTH LEGS.** The handoff row names the pending
+  sign-in AND the `sts_session` the view was drawn for. `continue` refuses
+  another session (403, STS-TLS-0075), so a link sent to somebody else cannot
+  attach their certificate to the sender's sign-in; the act takes the answer
+  only for its own pending sign-in and session, once (`resultFor(…, true)`).
+  The cookie must reach the listener, which is why the application is
+  `session: true`: `listener_map.js`'s D3 rule then refuses a mapping onto a
+  host the cookie does not reach. The rows are `tls.certificateHandoffs`, a
+  `realms.map()` kept and expiring like `authn.pending` (five minutes), cell
+  tier with it.
+* **RFC 9440, `common/forwarded_client_certificate.ts`.** From a proxy named by
+  its certificate AND its address, the request's `req.socket` is a view of the
+  real one answering the forwarded certificate, so every door here —
+  `/tls/sign-in`, the screen, RFC 8705, SCIM, XACML — reads it without a line
+  changed, and none can read the PROXY's certificate as a person's. Installed
+  in `common/app.js` above the request pool, so `request_pool.js`'s `peerOf()`
+  hands a worker the forwarded leaf and its built chain.
+* **THE REVOCATION REQUIREMENT** is in `certificateRefusal()`, after the
+  revoked refusal and before the identity gate, as `refusedOnRevocation` with
+  `revocationRequired` — `GET /tls/sign-in` marks STS-TLS-0071, the screen
+  answers its STS-AUTHN-0464.
+* **WHAT HAS NO TEST**: the handoff over two real listeners and a real
+  browser, and a request through a real TLS-terminating proxy.
+  `tests/certificate_binding.js` holds both in process over stubs; no protocol
+  job binds a second listener for it yet.

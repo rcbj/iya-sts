@@ -843,7 +843,10 @@ class IssuanceRefused extends Error {
     this.name = 'IssuanceRefused';
     this.issuance = answer;
     this.kind = kind;
-    this.message = answer.why;
+    // English text (#2006): a gate's `why` may be a `Sentence`, and an
+    // Error's message, which `oauthError()` sends as `error_description`,
+    // is a string.
+    this.message = String(answer.why || '');
     log.debug("Leaving IssuanceRefused.constructor().");
   }
 }
@@ -2855,6 +2858,8 @@ class OAuth2Server {
                                             useCase);
     log.debug("Leaving OAuth2Server.signPublishedDocument(). " + plan.alg +
               ".");
+    // certificate-header: none — the use case is the caller's `useCase`,
+    // turned into `plan.options.header` by publishedDocumentPlan().
     return stsCrypto.signJws(plan.payload, plan.key, plan.options);
   }
 
@@ -2887,6 +2892,8 @@ class OAuth2Server {
     }
     log.debug("Leaving OAuth2Server.signPublishedDocumentAsync(). " +
               plan.alg + ".");
+    // certificate-header: none — as in signPublishedDocument(): the header
+    // is publishedDocumentPlan()'s, from the caller's `useCase`.
     return stsCrypto.signJwsOffLoop(plan.payload, plan.key, plan.options);
   }
 

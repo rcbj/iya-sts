@@ -110,7 +110,9 @@ foundation (`common/CLAUDE.md` 3cl), and the sign-in screen is the largest:
   (`step` and the address of the page that draws it, by its own GET),
   `password-change`, `home-cell` (#98's restart: the start's method, address
   and fields, sent by the runtime exactly as the re-post page sent them), or
-  `refused` with the English sentence and no error code. One copy of the
+  `refused` with the English sentence, its catalog message beside it
+  (`messages`, #2006: the page draws it in its own language), and no
+  error code. One copy of the
   logic answers both kinds of door: `answersJson(res)` (`res.locals.authnApi`,
   set by the API) is asked at the one line where a page was sent, and a door
   that is still a FORM (the wallet's, until #574) gets a 303 instead — its
@@ -194,7 +196,8 @@ that page; nothing draws a page that loads it now, and it is gone.
 
 **A page with nowhere to go** gets a way off (`AuthnSurface.put()`). The
 problem page — a sign-in this service no longer has, or any other refusal
-that drew no view — shows the language chooser and the English sentence
+that drew no view — shows the language chooser and the sentence (in the
+page's language where its answer named a catalog message, #2006)
 and nothing else, and the same is true of any screen whose body draws
 neither a link nor a button (the chooser redraws the page, so it is not
 one). That page tells the person to close the browser tab or window and
@@ -327,7 +330,9 @@ Every page in that table also carries **Start over** (`start-over`, below).
   set-up step's "Set up a passkey"), a recovery-code page with no unspent
   code, a password page after a password. **The emailed factor's pages
   answer the shell whatever their query**, and the view draws what is
-  wrong as the end page `endPage()` drew (state `end`, English).
+  wrong as the end page `endPage()` drew (state `end`: its title and
+  sentence in English, and as catalog messages, `titleRefusal` and
+  `refusal`, which the page draws in its own language, #2006).
 * **THE ID IS A BEARER CAPABILITY**, as `?mfa=` always was: every act is
   bound as the screen's are (JSON, an Origin of this service, the
   `X-CSRF-Token` of the `sts_session` cookie), the id is never logged, and
@@ -3155,7 +3160,8 @@ next refusal, the next screen act and Start over); `screenView()` answers
 `postQuantumRequired` as `postQuantumHelp()`'s `{ register }` and
 the step's facts carry `postQuantumHelp` beside `postQuantumRefused`.
 `WebAuthnLogin.postQuantumPanel()` draws it on the screen and the step page,
-translated, under the English sentence. `register` is `/portal/keys` where
+translated, under the sentence (translated too since #2006). `register`
+is `/portal/keys` where
 passkeys may be registered here. (#939's upgrade link went with the
 portal's Upgrade button, #1100: the post-login activity upgrades a classical
 passkey at a sign-in.) The usernameless
@@ -4168,10 +4174,33 @@ one click from skipped.
   pending record. `refusedSession()` turns `extra.postLogin` into the step
   (`postLoginStep()`, `factor: 'post-login'`, the door's amr/acr/credential
   kept as `held`) on `/authn/post-login`; `finishPostLogin()` starts the held
-  session with `postLoginDone` once Register's ceremony verifies or Skip is
-  taken. A door that cannot draw the step (federation, wallet, SPNEGO,
+  session once Register's ceremony verifies or Skip is taken — or holds it
+  again for the next activity due (below). A door that cannot draw the step (federation, wallet, SPNEGO,
   certificate, anything outside this file) is NOT interrupted for a
   skippable activity and is REFUSED for a required one (STS-AUTHN-0473).
+* **SEVERAL ACTIVITIES ARE ASKED IN TURN (#2009 P1, 2026-11-23).**
+  `startSessionHere()` asks `postLogin.nextDue()`, not `dueFor()`:
+  never an activity already asked at this sign-in, and at most ONE that may
+  be skipped, every required one still asked (rcbj's decision D2 on #2009).
+  `finishPostLogin()` starts the held session with `postLoginHold`,
+  `postLoginAsked` (this activity added) and `postLoginSkippableAsked`
+  rather than `postLoginDone`, so it is held again for the next activity due
+  and `refusedSession()` draws that step as it drew this one; with nothing
+  more due it starts and returns to the caller. The asked list lives only in
+  the server's pending step, so nothing a browser sends can skip one.
+  `postLoginDone` is still honoured where a caller sets it.
+* **THE ROLES ARE SETTLED BEFORE A POST-LOGIN STEP (`rolesSettled`, #2009 —
+  a behaviour change).** The role step (#1072) is asked first, so the
+  session `finishPostLogin()` starts carries `rolesSettled` and the role
+  question is not asked again. Until #2009 it was, because that session was
+  started without `postLoginHold`: a sign-in naming no application ran
+  `role_eligibility.requiredFor()` a second time and could be refused
+  STS-XACML-0329 after the person had done the activity, and an offer that
+  appeared during the step was asked then. Not `rolesDone`, which also
+  REPLACES the session's role choice for the application. `roleHeldOf()`
+  and `finishRoles()` carry `postLoginAsked` too, so a session the role step
+  holds never re-asks an activity. `tests/post_login.js` N drives the chain
+  and the offer that appears.
 * **A post-login step is answered to no other step's act**
   (`mfaStepFor(id, accepts)`): a code, a recovery code or a wallet posted to
   its id would start the held session without the activity.

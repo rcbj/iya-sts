@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6001** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6035** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -63,10 +63,10 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 447
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 449
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 83
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 87
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
 * [Federation (`STS-FED`)](#sts-fed) — 228
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
@@ -77,12 +77,12 @@ is an ordinary outcome.
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 35
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 64
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 76
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 174
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
 * [Mail (`STS-MAIL`)](#sts-mail) — 44
-* [Languages and locales (`STS-I18N`)](#sts-i18n) — 15
+* [Languages and locales (`STS-I18N`)](#sts-i18n) — 16
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
 * [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 13
@@ -94,7 +94,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 254
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 140
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 122
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 137
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 301
@@ -1845,6 +1845,8 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0566` | A write of webauthn.u2fAppIds was refused: an entry is not a U2F AppID — an absolute https URL with a host, no user name or password and no fragment, at most 2048 characters (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-AUTHN-0567` | The bootstrap password file could not be removed on a start that found a credential already held. The plaintext is left on disk. | Log line; the service still starts, and the file is left |
 | `STS-AUTHN-0580` | A legacy U2F key was not imported: the person's passkey policy enforces a CTAP 2.1 credProtect level, which an imported key ran no ceremony to report and cannot prove (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0581` | A post-login activity is not asked: the module its row in common/post_login_kinds.ts names could not be loaded, or does not export a whole activity (its id and exposure the row's, and every question it must answer). The other activities are still asked (#2009). | Log line; nobody is asked that activity |
+| `STS-AUTHN-0582` | A post-login activity could not say whether a person is due it (its answer threw), so it was not asked at that sign-in, even where it may have been required. The other activities are still asked. Logged at error level once per activity in a process (#2009). | Log line; the sign-in goes on without that activity |
 
 ## STS-OAUTH
 
@@ -2836,6 +2838,10 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0081` | Response encryption is on and the certificate wstrustResponseRecipientXPath selects is neither the BinarySecurityToken the request's accepted WS-Security signature names nor inside a part that signature references, so it is a certificate a party on the path could have put there. An unsigned request has no such certificate. Nothing is issued. | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0082` | A WS-Trust request carried ciphertext encrypted to an application's own decryption key, and the request is not for that application: the AppliesTo the opened request names is another application, or none, or its ciphertexts were encrypted to the keys of more than one application. A key that opens a request does not choose whose it is. Nothing is issued (#1668). | SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 section 12 |
 | `STS-WSTRUST-0083` | A WS-Trust request for an application that holds its own decryption key pair carried ciphertext encrypted to the realm's XML Encryption key. While the application holds one, a request for it is encrypted to its certificate and to nothing else. Nothing is issued (#1668). | SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 section 12 |
+| `STS-WSTRUST-0084` | A WS-Trust request for an application that requires a signed request (wstrustSignRequest, or wstrust.signRequest) carried no WS-Security message signature this service accepted. Nothing is issued (#1917). | SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 section 12 |
+| `STS-WSTRUST-0085` | A WS-Trust request did not match its application's wstrustSignRequestElements: an expression selected nothing, or selected an element the accepted signature does not reference. Nothing is issued (#1917). | SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 section 12 |
+| `STS-WSTRUST-0086` | A WS-Trust response could not be signed while response signing is on (wstrustSignResponse, or wstrust.signResponse): an expression of wstrustSignResponseElements matched nothing or selected the wsse:Security header itself, the realm's XML signing key has no certificate to reference, or the signature failed. The token is not sent (#1917, #1918). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0087` | A WS-Trust request's signing map (wstrustSignRequestElements) selected more than 256 elements of it. Nothing is issued: the map is held to a bound, because each selected element is a walk of the request (#1917). | SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 section 12 |
 
 ## STS-WSFED
 
@@ -4068,6 +4074,18 @@ Raised from: tls/.
 | `STS-TLS-0062` | A server-side TLS socket has no raw socket under it (TLSSocket._parent), so a connection that fails at the TLS layer is closed at once and its alert can be lost to the TCP reset (tls/alert_close.ts, 2026-11-13). | none (logged once) |
 | `STS-TLS-0063` | A certificate this realm issued names its holder as a service account (urn:sts:sa:<name>, #1827), and in its realm that entry is not a service account, or there is none. The TLS client gate (tls_client_certificates.js identityOf()) refuses it as an identity at every door that asks it; each door refuses it under its own code for a certificate that is not an identity. | none (logged): the door's own refusal |
 | `STS-TLS-0064` | Two client-truststore anchors share a subject, and their subject key identifiers do not tell them apart. OpenSSL looks an issuer up by subject name and may check a certificate against either, so a certificate one of them issued may not verify (CERT_SIGNATURE_FAILURE) while both are installed; which one it finds first is not promised. The add is kept and warned, and each row's shadowedBy names the other's fingerprint (the lowest, when several share it). Presenting either self-signed certificate itself is recognised by its fingerprint and verified, when its own purpose, key usage, validity and critical extensions allow a client certificate (#1242). | the add succeeds with warning; the handshake of the certificate itself verifies |
+| `STS-TLS-0065` | certSignIn.profiles is not a JSON array of well-formed certificate sign-in profiles (an id, the issuers' SubjectPublicKeyInfo SHA-256s, keyUsage names, extendedKeyUsage and policy OIDs, known binding methods, a name method only with lowAffinity true). A write is refused; a stored value that is not one is not used, and no certificate is covered by a profile (#2012). | HTTP 400 (the setting write); none (logged) when read |
+| `STS-TLS-0066` | A client certificate a certificate sign-in profile covers is outside it: its keyUsage, its extendedKeyUsage, or the certificate policies RFC 5280 policy processing carries through its path are not the profile's, so it names nobody (#2012). | the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468) |
+| `STS-TLS-0067` | A client certificate's bindings name more than one account: one method found several people, two methods found different people, or the certificate is stored on one person and carries a PIV card UUID another holds; it names nobody (#2012). | the outside-certificate refusal (STS-TLS-0055, STS-AUTHN-0469) |
+| `STS-TLS-0068` | A client certificate a certificate sign-in profile covers is bound to nobody: none of the profile's binding methods found an account (#2012). | the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468) |
+| `STS-TLS-0069` | A value written to stsCertificateBinding is not a certificate sign-in binding in the grammar certificate_binding.ts canonicalises (certificate-sha256:, issuer-serial:, issuer-ski:, spki-sha256:, issuer-subject: or subject:); nothing was written (#2012). | HTTP 400 (the directory write); LDAP constraintViolation |
+| `STS-TLS-0070` | A certificate sign-in binding written to stsCertificateBinding is already held by another entry of the realm, which would make one certificate name two people; nothing was written (#2012). | HTTP 400 (the directory write); LDAP constraintViolation |
+| `STS-TLS-0071` | A certificate sign-in was refused because the realm requires a verified revocation status (certSignIn.requireRevocation) and the status was unknown or not consulted (#2012). | HTTP 200 (GET /tls/sign-in, session.refusedOnRevocation); the sign-in screen's STS-AUTHN-0464 |
+| `STS-TLS-0072` | A request carried an RFC 9440 Client-Cert or Client-Cert-Chain header from a sender that is not a trusted TLS-terminating proxy (tls.trustedProxyCertificates and tls.trustedProxyAddresses), so both were removed before anything read them (#2012). | none (recorded): the request goes on without them |
+| `STS-TLS-0073` | A trusted TLS-terminating proxy forwarded a Client-Cert that is not an RFC 9440 byte sequence of one certificate, or whose chain does not verify to the client truststore, so the request presents no client certificate (#2012). | none (logged): the request goes on with no certificate |
+| `STS-TLS-0074` | A certificate sign-in handoff (/authn/certificate/continue) named no live handoff: unknown, used, expired, or certSignIn.handoff is off (#2012). | HTTP 400 |
+| `STS-TLS-0075` | A certificate sign-in handoff arrived without the sign-on session cookie of the browser that started it, so the certificate was not bound to that sign-in: the listener does not share the main port's host name and is not under authn.cookieDomain, or another browser opened the link (#2012). | HTTP 403 |
+| `STS-TLS-0076` | Only one of tls.trustedProxyCertificates and tls.trustedProxyAddresses is set, so no forwarded client certificate is read: a TLS-terminating proxy is trusted by both its certificate and its address (#2012). | none (logged) |
 
 ## STS-VC
 
@@ -4543,6 +4561,7 @@ Raised from: common/i18n.ts, common/locale_policy.ts, common/page_locale.ts, aut
 | `STS-I18N-0013` | An application (appLocalePolicy) or a group (stsLocalePolicy) names a locale policy that this realm does not hold — written past the console, or the policy deleted by hand. The reference selects nothing and `default` applies where nothing else names a profile: the locale policy decides only a fallback language, so it does not fail closed (#1238). | none — a warning in the log |
 | `STS-I18N-0014` | A named locale policy was not deleted: an application (appLocalePolicy) or a group (stsLocalePolicy) of this realm still names it (#1238). | HTTP 400 (management API) |
 | `STS-I18N-0015` | POST /authn/language came from a page of another site (#1442). | HTTP 403 |
+| `STS-I18N-0016` | A refusal named a `refusals` catalog key the English catalog does not have — a sentence a store kept under another build, or a rollback — so the English it was given, or a general sentence, was sent instead of the key, with no catalog message beside it (#2006). | none — a warning in the log |
 
 ## STS-GNAP
 
@@ -5769,6 +5788,21 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0143` | A pending AuthZEN access request moved to failed because the approvers its advice names (configured static roles, groups, the application's owners) resolve to nobody but its subject (#1202). A computed or dynamic role, or a directory that cannot be read, is never taken for nobody. Noticed by the authzen.access-requests job. | the task status failed |
 | `STS-AUTHZEN-0144` | The requestable denial store of a realm is full (authzen.accessRequestMaxDenials), so a new denial is not recorded by evaluation_id; it is still requestable by its binding_token (#1204). Logged when the store fills, not per denial. | none — logged and audited once |
 | `STS-AUTHZEN-0145` | The authorization-detail types could not be read while the AuthZEN catalogue a remote PEP pulls was built, so it carries tokenExchangeDetailTypes as null (#1205). An edge PDP reads that closed: while the token-exchange binding is on, every resource type other than audience and protected_resource beside a token-exchange gate is a detail tuple it answers 501 (STS-XPEP-0140). The next pull that can read them sends the list. | none — logged; the catalogue is still sent |
+| `STS-AUTHZEN-0146` | The hosted access request form (/portal/access-request, #1204) was opened or submitted with an evaluation_id this realm holds no requestable denial record for: never issued, removed a day after its window, or not recorded because the store was full. | the profile's section 16, form_url; the portal answers 404 |
+| `STS-AUTHZEN-0147` | The hosted access request form or ticket was opened by somebody who is not the subject of the denial or the request it names (the subject's type is one of authzen.resolveSubjectTypes and its id one of the person's names). The same answer as a request that does not exist (#1204). | the profile's sections 13.1 and 13.3.3; the portal answers 404 |
+| `STS-AUTHZEN-0148` | The hosted access request form was opened or submitted after the requestable denial's window had passed (#1204). | the profile's section 13.2, expired_denial; the portal answers 410 |
+| `STS-AUTHZEN-0149` | An access request was submitted on the hosted form while authzen.accessRequestForm (or the profile) is off (#1204). | none — the portal answers 403 |
+| `STS-AUTHZEN-0150` | A Catalogs Document or Catalog Endpoint of the AuthZEN access request catalogs (#1204) was asked for a denial this realm did not record, whose advice lists no entitlements, or by a caller it was not answered to or that is no longer scoped to its application. | the CATALOG companion's sections 7 and 11; 404 problem+json |
+| `STS-AUTHZEN-0151` | A Catalog Endpoint call carried a cursor this endpoint did not issue for the same search (#1204). | the CATALOG companion's section 7; 400 problem+json |
+| `STS-AUTHZEN-0152` | An access request for a denial whose catalog lists entitlements carried no requested_access.entitlement, or one the catalog does not list (#1204). | the CATALOG companion's section 10.3; 400 problem+json |
+| `STS-AUTHZEN-0153` | The access request catalogs were called while authzen.accessRequestCatalogs (or the profile) is off (#1204). | none — 501 problem+json |
+| `STS-AUTHZEN-0154` | An access request's client.actor named a chain the caller's own credential does not authorize: neither one link that is the caller itself nor, link for link, the act chain of its own access token (#1204, the ACTOR companion). | the ACTOR companion's section 3.2; 400 problem+json |
+| `STS-AUTHZEN-0155` | An access request's client.actor or client.source was malformed: a link without its id or sub, a non-string or overlong member, a chain deeper than 8, or an external_url that is not https (#1204). | the ACTOR companion's section 3.1; 400 problem+json |
+| `STS-AUTHZEN-0156` | A bulk access request carried a top-level resource or action beside items (#1204). | the BULK companion's section 3.1; 400 problem+json |
+| `STS-AUTHZEN-0157` | A bulk access request's items were not 1 to authzen.accessRequestMaxBulkItems objects (#1204). | the BULK companion's section 3.2; 400 problem+json |
+| `STS-AUTHZEN-0158` | A bulk access request carried a top-level denial, or an item without its own: this service issues no bundle denial (#1204). | the BULK companion's section 3.3; invalid_denial_binding |
+| `STS-AUTHZEN-0159` | A bulk access request's items named denials about different applications (#1204). | none — 400 problem+json |
+| `STS-AUTHZEN-0160` | A bulk access request carried a callback, which this service does not take on a bulk request (#1204). | none — 400 problem+json |
 
 ## STS-FGA
 

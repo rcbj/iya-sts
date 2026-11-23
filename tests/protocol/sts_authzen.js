@@ -178,6 +178,10 @@ const TODO_POLICY = [
   '                advice "urn:sts:xacml:advice:access-request" {',
   '                    "urn:sts:xacml:advice:access-request:approver-group"',
   '                        = "todo-approvers"',
+  // The CATALOG companion's one catalog (#1204), read only while
+  // authzen.accessRequestCatalogs is on.
+  '                    "urn:sts:xacml:advice:access-request:entitlement"',
+  '                        = "publish-once|Publish once"',
   '                }',
   '            }',
   '        }',
@@ -721,6 +725,191 @@ async function theAccessRequests() {
               elsewhere.body.context.reason === "out_of_scope",
       "answered " + elsewhere.status + " " +
       String(elsewhere.text).slice(0, 300));
+  });
+  // DISPLAY (#1204): off by default, so the denial above carried none; on,
+  // the denial and the Task Handle carry the service's own words in the
+  // language asked for.
+  check("by default a requestable denial carries no display", function () {
+    assert.ok(!ar.display, JSON.stringify(ar.display));
+  });
+  const shownOn = await postJson(api("/config/set"),
+    { key: "authzen.accessRequestDisplay", value: true });
+  assert.ok(shownOn.status === 200, "setting authzen.accessRequestDisplay " +
+            "answered " + shownOn.status + " " + shownOn.text);
+  let shown = null;
+  let shownTask = null;
+  try {
+    shown = await evaluate(asked, caller, { "Accept-Language": "fr" });
+    shownTask = await pep("GET", String(task.status_endpoint), caller,
+                          undefined, { "Accept-Language": "de" });
+  } finally {
+    await postJson(api("/config/reset"),
+                   { key: "authzen.accessRequestDisplay" });
+  }
+  const shownAr = ((shown.body || {}).context || {}).access_request || {};
+  check("with authzen.accessRequestDisplay on, the denial's display is in " +
+        "the language asked for", function () {
+    assert.ok(shown.status === 200 && shownAr.display &&
+              shownAr.display.title === "Demander l\u2019accès" &&
+              shownAr.display.description,
+      "answered " + shown.status + " " + String(shown.text).slice(0, 400));
+  });
+  check("and the Task Handle's display follows its status", function () {
+    const handle = (shownTask.body || {}).task || {};
+    assert.ok(shownTask.status === 200 && handle.status === "approved" &&
+              (handle.display || {}).title ===
+                "Zugriffsanfrage genehmigt",
+      "answered " + shownTask.status + " " +
+      String(shownTask.text).slice(0, 400));
+  });
+  // THE HOSTED FORM (#1204): off by default; on, a recorded denial names
+  // form_url on the portal, a Task Handle names links.ticket, and the
+  // form's account API operation takes nobody's word for who is asking.
+  check("by default a requestable denial carries no form_url", function () {
+    assert.ok(!ar.form_url, String(ar.form_url));
+  });
+  const formOn = await postJson(api("/config/set"),
+    { key: "authzen.accessRequestForm", value: true });
+  assert.ok(formOn.status === 200, "setting authzen.accessRequestForm " +
+            "answered " + formOn.status + " " + formOn.text);
+  let formDenial = null;
+  let formTask = null;
+  let formApi = null;
+  try {
+    formDenial = await evaluate(asked);
+    formTask = await pep("GET", String(task.status_endpoint), caller);
+    formApi = await fetchJson(base + PREFIX + "/account-api/access-request" +
+                              "?evaluation_id=" + encodeURIComponent(String(
+                                ((formDenial.body || {}).context || {})
+                                  .evaluation_id || "")),
+                              { headers: { Authorization: "" } });
+  } finally {
+    await postJson(api("/config/reset"),
+                   { key: "authzen.accessRequestForm" });
+  }
+  const formCtx = (formDenial.body || {}).context || {};
+  check("with authzen.accessRequestForm on, the denial names form_url, " +
+        "the portal page", function () {
+    const url = new URL(String((formCtx.access_request || {}).form_url));
+    assert.ok(formDenial.status === 200 &&
+              url.pathname === PREFIX + "/portal/access-request" &&
+              url.searchParams.get("evaluation_id") ===
+                formCtx.evaluation_id &&
+              url.origin === new URL(String(
+                formCtx.access_request.endpoint)).origin,
+      "answered " + formDenial.status + " " +
+      String(formDenial.text).slice(0, 400));
+  });
+  check("and the Task Handle names links.ticket", function () {
+    const links = ((formTask.body || {}).task || {}).links || {};
+    const url = new URL(String(links.ticket));
+    assert.ok(formTask.status === 200 &&
+              url.pathname === PREFIX + "/portal/access-request" &&
+              url.searchParams.get("request") === task.id,
+      "answered " + formTask.status + " " +
+      String(formTask.text).slice(0, 400));
+  });
+  check("the form's account API operation needs the person's own token",
+        function () {
+    assert.ok(formApi.status === 401 || formApi.status === 403,
+      "answered " + formApi.status + " " + String(formApi.text).slice(0, 300));
+  });
+  // THE CATALOG COMPANION (#1204): off by default; on, the denial names
+  // request_catalogs_url, and its document and endpoint answer the caller.
+  check("by default a requestable denial names no request_catalogs_url",
+        function () {
+    assert.ok(!ar.request_catalogs_url, String(ar.request_catalogs_url));
+  });
+  const catOn = await postJson(api("/config/set"),
+    { key: "authzen.accessRequestCatalogs", value: true });
+  assert.ok(catOn.status === 200, "setting authzen.accessRequestCatalogs " +
+            "answered " + catOn.status + " " + catOn.text);
+  let catDenial = null;
+  let catDoc = null;
+  let catItems = null;
+  try {
+    catDenial = await evaluate(asked);
+    const catUrl = String((((catDenial.body || {}).context || {})
+      .access_request || {}).request_catalogs_url || "");
+    catDoc = catUrl ? await pep("GET", catUrl, caller) : null;
+    const endpoint = String(((((catDoc || {}).body || {}).fields || {})[
+      "/requested_access/entitlement"] || {}).endpoint || "");
+    catItems = endpoint ? await pep("GET", endpoint + "?q=publish", caller)
+      : null;
+  } finally {
+    await postJson(api("/config/reset"),
+                   { key: "authzen.accessRequestCatalogs" });
+  }
+  check("with authzen.accessRequestCatalogs on, the denial's Catalogs " +
+        "Document and Catalog Endpoint answer its caller", function () {
+    const items = (((catItems || {}).body) || {}).items || [];
+    assert.ok(catDoc && catDoc.status === 200 && catItems &&
+              catItems.status === 200 && items.length === 1 &&
+              items[0].value === "publish-once",
+      "answered " + (catDenial && catDenial.status) + " / " +
+      (catDoc && String(catDoc.text).slice(0, 300)) + " / " +
+      (catItems && String(catItems.text).slice(0, 300)));
+  });
+  // THE ACTOR COMPANION (#1204): on, a chain the caller's certificate does
+  // not authorize is refused before anything is made.
+  const actOn = await postJson(api("/config/set"),
+    { key: "authzen.accessRequestActor", value: true });
+  assert.ok(actOn.status === 200, "setting authzen.accessRequestActor " +
+            "answered " + actOn.status + " " + actOn.text);
+  let acted = null;
+  try {
+    const fresh = await evaluate(asked);
+    const far = ((fresh.body || {}).context || {}).access_request || {};
+    acted = await pep("POST", PREFIX + "/access/v1/access-requests", caller,
+      Object.assign({}, asked, {
+        client: { actor: { id: "an-agent-nobody-vouched-for" } },
+        denial: { expires_at: far.expires_at,
+                  binding_token: far.binding_token } }));
+  } finally {
+    await postJson(api("/config/reset"),
+                   { key: "authzen.accessRequestActor" });
+  }
+  check("with authzen.accessRequestActor on, an actor chain the caller " +
+        "cannot prove is refused", function () {
+    assert.ok(acted.status === 400,
+      "answered " + acted.status + " " + String(acted.text).slice(0, 300));
+  });
+  // THE BULK COMPANION (#1204): two items, each with its own denial, are
+  // one pending bundle whose items follow the submission's order.
+  const bulkOn = await postJson(api("/config/set"),
+    { key: "authzen.accessRequestBulk", value: true });
+  assert.ok(bulkOn.status === 200, "setting authzen.accessRequestBulk " +
+            "answered " + bulkOn.status + " " + bulkOn.text);
+  let bulk = null;
+  try {
+    const other = Object.assign({}, asked, {
+      resource: { type: "todo", id: "todo-2",
+                  properties: { ownerID: "morty@the-citadel.com" } } });
+    const one = await evaluate(asked);
+    const two = await evaluate(other);
+    const itemOf = function (question, denied) {
+      log.debug("Entering itemOf().");
+      const got = ((denied.body || {}).context || {}).access_request || {};
+      log.debug("Leaving itemOf().");
+      return { resource: question.resource, action: question.action,
+               denial: { expires_at: got.expires_at,
+                         binding_token: got.binding_token } };
+    };
+    bulk = await pep("POST", PREFIX + "/access/v1/access-requests", caller,
+      { subject: asked.subject, context: asked.context,
+        items: [itemOf(asked, one), itemOf(other, two)] });
+  } finally {
+    await postJson(api("/config/reset"),
+                   { key: "authzen.accessRequestBulk" });
+  }
+  check("with authzen.accessRequestBulk on, two items are one pending " +
+        "bundle", function () {
+    const handle = (bulk.body || {}).task || {};
+    assert.ok(bulk.status === 202 && /^arb_/.test(String(handle.id)) &&
+              handle.status === "pending" &&
+              (handle.items || []).length === 2 &&
+              handle.items[1].resource.id === "todo-2",
+      "answered " + bulk.status + " " + String(bulk.text).slice(0, 400));
   });
   log.debug("Leaving theAccessRequests().");
 }

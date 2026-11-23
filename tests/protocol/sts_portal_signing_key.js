@@ -803,8 +803,25 @@ async function test() {
             const card = cardOf(atCap.text, "jwt");
             assert.ok(card.indexOf('name="action" value="generate"') < 0,
               "the JWT card still offers Generate at the cap");
+            // Which of the card's three conditions failed, when it does: a
+            // card with neither Generate nor the note is one the page drew
+            // with no entry, no chain or self-service off (run 45236493306's
+            // mariadb mode saw it once, and the text alone could not say
+            // which).
+            const shown = atCap.json || {};
+            const jwtProfile = (shown.profiles || []).filter(function (one) {
+              return one.id === "jwt";
+            })[0] || {};
             assert.ok(/the most this service issues to one person/
-              .test(card), "the cap note is not on the card");
+              .test(card), "the cap note is not on the card: " +
+              JSON.stringify({ status: atCap.status, entry: shown.entry,
+                               issuable: shown.issuable,
+                               offered: shown.offered,
+                               maxPerPerson: shown.maxPerPerson,
+                               atCap: jwtProfile.atCap,
+                               valid: jwtProfile.held &&
+                                 jwtProfile.held.valid }) + " " +
+              card.slice(0, 300));
             assert.ok(cardOf(atCap.text, "saml")
               .indexOf('name="action" value="generate"') >= 0,
               "the cap is per profile, and the SAML card lost Generate");

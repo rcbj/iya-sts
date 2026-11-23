@@ -505,7 +505,7 @@ class AccountKeys {
       const rpRefusal = authn.rpIdProblem(base);
       if (rpRefusal) {
         log.debug("Leaving AccountKeys.enrol(). The RP ID does not fit.");
-        return refused(400, 'STS-PORTAL-0035', rpRefusal);
+        return refused(400, 'STS-PORTAL-0035', String(rpRefusal));
       }
       // WHAT WAS ASKED FOR, read before the answer can drop the pending
       // enrolment: a browser that could not run the ceremony is told about

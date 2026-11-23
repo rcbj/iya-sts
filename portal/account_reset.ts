@@ -495,7 +495,7 @@ class AccountReset {
     log.info('portal: a password reset link of "' + username + '" was ' +
              'refused by the recovery question (' + refused.code + ').');
     log.debug("Leaving AccountReset.recoveryCheck(). Refused.");
-    return { code: refused.code, why: refused.why };
+    return { code: refused.code, why: String(refused.why) };
   }
 
   /**

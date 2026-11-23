@@ -1,0 +1,6 @@
+{
+  "denialTitle": "申請存取",
+  "denialDescription": "此存取可以申請。由政策指定的核准人決定，之後應用程式會再次詢問。",
+  "taskTitle": "{status, select, pending {存取申請已提交} approved {存取申請已核准} denied {存取申請已拒絕} expired {存取申請已過期} cancelled {存取申請已取消} failed {存取申請失敗} other {存取申請}}",
+  "taskDescription": "{status, select, pending {已通知核准人。其中一人作出決定後，應用程式會再次詢問。} approved {核准人已核准此申請。應用程式會帶著該核准再次詢問。} denied {核准人已拒絕此申請。} expired {此申請在過期前無人作出決定。} cancelled {此申請已取消。} failed {此申請無法完成。請重新申請。} other {此申請的狀態為 {status}。}}"
+}

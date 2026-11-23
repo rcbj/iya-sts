@@ -83,6 +83,7 @@ request body**, so a policy can rely on them:
 | `urn:sts:xacml:authzen:application` | the application the question is scoped to (chosen with `context.application`, checked against the caller's scope) |
 | `urn:sts:xacml:authzen:supplied` | a bag naming every member the caller sent, by path: `subject.properties.department`, `context.source_ip` |
 | `urn:sts:xacml:authzen:approval-id`, `:approved-until` (a dateTime), `:approver` | only when the request carried a `context.approval` this service verified (see [Access requests and approvals](#access-requests-and-approvals)) |
+| `urn:sts:xacml:authzen:approved-entitlement` | with those, when the approved request chose an entitlement from the denial's catalog (see [Catalogs](#catalogs)) |
 
 **Subjects that are directory people.** For a `subject.type` listed in
 `authzen.resolveSubjectTypes` (default `user`), `subject.id` names a person in
@@ -926,6 +927,8 @@ assignments, each named `urn:sts:xacml:advice:access-request:<name>`, say:
 | `emergency` | `true`: emergency access is allowed (below) |
 | `context-member` | a `context` member that binds the request and the approval (repeatable); none means only subject, resource and action bind |
 | `template`, `reason` | echoed as `context.access_request.template` and `context.reason` |
+| `display-title`, `display-description` | the denial's `display`, sent as written while `authzen.accessRequestDisplay` is on (below) |
+| `entitlement` | one item of the denial's catalog, `value` or `value\|label` (repeatable, at most 32), while `authzen.accessRequestCatalogs` is on (see *Catalogs*) |
 
 An example in ALFA:
 
@@ -975,8 +978,222 @@ a JSON Schema of the optional augmentations a submission may add —
 `context.business_justification`, and `requested_access.requested_until`
 and `requested_access.emergency`. Emergency access requires the
 justification. An ordinary submission sends none of them, and the
-service does not check a submission against the schema. There is no
-hosted form, so a denial does not carry `form_url`.
+service does not check a submission against the schema. With
+`authzen.accessRequestForm` on, a denial also carries `form_url`, the
+hosted form below.
+
+### Display hints
+
+With `authzen.accessRequestDisplay` on (it is off by default), a
+requestable denial carries `access_request.display` and every Task Handle
+carries `task.display`. Each is a `title` and a `description`, the two
+names the profile's own examples use:
+
+```json
+"display": {
+  "title": "Request access",
+  "description": "This access can be requested. An approver the policy names decides, and the application asks again afterwards."
+}
+```
+
+A denial's display is the advice's `display-title` and
+`display-description` when the policy gives them, sent exactly as written.
+Otherwise it is the service's own sentence. A Task Handle's display
+describes its status (`pending`, `approved`, `denied`, `expired`,
+`cancelled` or `failed`). The service's sentences are in the language the
+request's `Accept-Language` asks for, among English, French, Spanish,
+German, Swedish, Filipino, Simplified and Traditional Chinese, Arabic and
+Hindi, and English otherwise. A callback's Task Handle carries no display,
+since nobody asked for a language.
+
+The hints are for a person. They never name an approver, a role, a group
+or a policy. A PEP may ignore them (the profile, section 11.3), and must not
+read approval into them (11.4). The service never reads them back: they
+are not part of the binding, and a submission does not echo them.
+
+### The hosted form and the ticket
+
+With `authzen.accessRequestForm` on (it is off by default), a requestable
+denial carries `form_url`. A PEP that renders for a person hands that
+link to the person the denial is about (the profile, section 16):
+
+```
+https://sts.example.com/realm/acme/portal/access-request?evaluation_id=eval_…
+```
+
+It is a page of the user portal. The person signs in and sees what the
+denial asks: for whom, what action, on what resource, and for which
+application. They add a business justification, choose how long the
+approval should last, and, where the policy allows it, ask for emergency
+access. Then they submit. The page never shows who may approve.
+
+**Only the denial's subject can use it.** The subject's `type` must be one
+of `authzen.resolveSubjectTypes`, and its `id` must be one of the signed-in
+person's names: username, DN, mail address or `urn:uuid:` subject. Anybody
+else is told the request is not about them. That is the same answer as
+for a link that names nothing.
+
+**The request it makes is the denial's own.** It is the task the PEP's
+submission would have made, for the PEP the denial was answered to. That
+PEP reads it at the status endpoint, can cancel it, and re-evaluates with
+its approval as usual. When the PEP submits the same denial, it gets that
+task back: `202`, or `201` once it is decided. That holds while the PEP
+asks for nothing more, or for the same justification, end and emergency.
+A submission that asks for something else is `duplicate_request`. If the
+PEP submitted first, the page shows that request instead of a form.
+
+**A Task Handle carries `links.ticket`** while the form is on: the same
+page with `?request=<task id>`. It shows the subject the request's
+status, and it shows nothing to anybody else. With no query, the page
+lists the requests about the signed-in person.
+
+The form works from the denial's record, so a denial the record did not
+keep (see `authzen.accessRequestMaxDenials`) has no `form_url`. **The
+form is on the portal's origin.** On a default installation that is the
+access request endpoint's origin, so a PEP's same-origin check (the
+profile, section 11.2) passes. If the portal has a listener of its own,
+add that origin to the PEP's list of trusted hosts.
+
+### Catalogs
+
+This service implements the draft [AuthZEN Access Request Catalog
+Profile 1.0](https://openid.github.io/authzen/authzen-access-request-catalog-profile-1_0.html).
+A catalog here is the policy's. With `authzen.accessRequestCatalogs` on (it
+is off by default), the advice may list the entitlements a person may ask
+for:
+
+```
+advice "urn:sts:xacml:advice:access-request" {
+    "urn:sts:xacml:advice:access-request:approver-group" = "doc-approvers"
+    "urn:sts:xacml:advice:access-request:entitlement" = "read-only|Read only"
+    "urn:sts:xacml:advice:access-request:entitlement" = "read-write|Read and write"
+}
+```
+
+The denial then carries `request_catalogs_url`, next to `request_schema_url`.
+That is `GET /access/v1/access-requests/catalogs/<evaluation_id>`, a
+Catalogs Document with one field:
+
+```json
+{
+  "fields": {
+    "/requested_access/entitlement": {
+      "endpoint": "https://sts.example.com/realm/acme/access/v1/access-requests/catalogs/eval_…/entitlements",
+      "search_param": "q"
+    }
+  }
+}
+```
+
+The Catalog Endpoint answers `{ "items": [{ "value", "label" }], "total" }`,
+and `next_cursor` while there is more. `q` matches a value or a label,
+`cursor` continues the same search, and `limit` is clamped to 50.
+
+Both endpoints answer only the caller the denial was answered to, through
+the same caller door and `AUTHZEN_PEPS`, while it is still scoped to the
+application. Anybody else gets `404`. The list is the one the policy
+computed for the denied tuple, so it never shows an entry the requester
+could not ask for.
+
+**A submission must choose one.** When the denial lists entitlements,
+`requested_access.entitlement` is required and must be one of them,
+exactly as listed. Otherwise the submission is refused `400`. The
+submission schema describes the member while the catalogs are on. The
+approvers see the choice, and the hosted form offers it as a list. At
+re-evaluation an approval that chose one adds the trusted fact
+`urn:sts:xacml:authzen:approved-entitlement`, so a policy can, say, permit
+a write only under an approval for `read-write`. The approval still
+permits nothing by itself.
+
+A denial whose record was not kept has no `request_catalogs_url`, as it
+has no `form_url`. With the catalogs off, the advice's entitlements are
+ignored: nothing is advertised, required or recorded, and the two
+endpoints answer `501`. Not built: `scope_params` (a single catalog has
+nothing to scope by), `granted`, `risk_level` and `owner`, and catalogs
+over an agent protocol.
+
+### Bulk requests
+
+This service implements the draft [AuthZEN Bulk Access Requests Profile
+1.0](https://openid.github.io/authzen/authzen-access-request-bulk-profile-1_0.html).
+With `authzen.accessRequestBulk` on (it is off by default), one submission
+may ask for several resource and action pairs. It names the `subject` and
+`context` once, and has no top-level `resource`, `action` or `denial`:
+
+```json
+{
+  "subject": { "type": "user", "id": "alice" },
+  "context": { "application": "todo-app" },
+  "items": [
+    { "resource": { "type": "document", "id": "doc-1" }, "action": { "name": "read" },
+      "denial": { "expires_at": "…", "binding_token": "eyJ…" } },
+    { "resource": { "type": "document", "id": "doc-2" }, "action": { "name": "read" },
+      "denial": { "expires_at": "…", "binding_token": "eyJ…" } }
+  ]
+}
+```
+
+**Every item carries its own denial.** This service never issues a bundle
+denial: a batch evaluation answers each item with a requestable denial of
+its own. A top-level `denial`, or an item without one, is refused
+`invalid_denial_binding`. Each item is checked exactly as a single
+submission is checked, and every item's denial must be about the same
+application. The submission may carry at most
+`authzen.accessRequestMaxBulkItems` items. An item's own
+`requested_access` is merged over the top-level one. A bulk submission
+takes no `callback`.
+
+The answer is one Task Handle, `arb_…`, whose `items` follow the
+submission's order. Each item has its own `status`, and once it is
+approved its own `result` with its own `approval`. The handle's `status`
+is `pending` while any item is. Once every item has finished it is the
+status they share, or `partial` when they finished differently. There is
+no top-level `result`: use each item's. Each item is a request of its own
+on the portal and the console, and approvers decide each one separately.
+Re-evaluate each approved item with its own `approval`; it does not reach
+another item's resource. Cancelling the bundle cancels the items still
+pending and leaves the finished ones alone. Once every item has finished,
+cancelling is `409`. `Idempotency-Key` covers the whole body.
+
+### Acting parties
+
+This service implements the draft [AuthZEN Actor Delegation Profile
+1.0](https://openid.github.io/authzen/authzen-access-request-actor-profile-1_0.html).
+With `authzen.accessRequestActor` on (it is off by default), a submission
+may say who is acting, and where the request came from:
+
+```json
+"client": {
+  "id": "renewal_assistant",
+  "actor": { "id": "renewal_assistant", "type": "ai_agent" },
+  "source": { "session_id": "session_…", "external_url": "https://tickets.example.com/T-1042" }
+}
+```
+
+**A claimed actor chain must be one the caller's own credential
+authorizes.** An AuthZEN caller is the PEP itself: a directory entry by
+its certificate, or a client by its own `client_credentials` token. So two
+chains are accepted:
+
+* one link that is the caller itself, whose `id` is its DN, client_id or
+  application identifier, and whose `issuer`, if given, is this realm's;
+* the `act` chain of the caller's own access token (as OAuth 2.0 Token
+  Exchange writes it), link for link: `client.actor.id` against the first
+  `act.sub`, each nested `act.sub` against the next, and any `issuer` or
+  `iss` given against the token's.
+
+Anything else is refused `400`, and so is a malformed actor or source: a
+link without its id, a chain deeper than 8, or an `external_url` that is
+not `https`. `external_url` is recorded and never fetched.
+
+The verified chain and the source are kept on the request, named in its
+audit row, and shown to the approvers on the portal and the console. They
+are context for the decision. Neither becomes an XACML fact, so the
+approval question and the re-evaluation are unchanged.
+`subject.properties.act` stays outside the binding, as the profile says
+today. A pending revision of the draft would bring it back in, and this
+section will change if that is adopted. While the setting is off,
+`client.actor` and `client.source` are accepted and never read.
 
 ### Submitting, polling and cancelling
 
@@ -998,7 +1215,8 @@ submission must come from the caller the denial was answered to, about the
 same tuple, while that caller is still scoped to the application.
 
 `requested_access.requested_until` can shorten an approval. Bulk submissions
-(`items`) are refused.
+(`items`) are refused unless `authzen.accessRequestBulk` is on (see *Bulk
+requests*).
 
 ### Who approves, and where
 
@@ -1217,6 +1435,12 @@ live source; this table is a copy.
 | `authzen.accessRequestRetryAfterS` | `STS_AUTHZEN_ACCESS_REQUEST_RETRY_AFTER_S` | `30` | `Retry-After` on a pending task |
 | `authzen.accessRequestMaxPending` | `STS_AUTHZEN_ACCESS_REQUEST_MAX_PENDING` | `10000` | Pending requests a realm holds before a submission is refused 503 |
 | `authzen.accessRequestMaxDenials` | `STS_AUTHZEN_ACCESS_REQUEST_MAX_DENIALS` | `100000` | Requestable denials a realm records by `evaluation_id`; past it a new one is requestable by its `binding_token` only |
+| `authzen.accessRequestDisplay` | `STS_AUTHZEN_ACCESS_REQUEST_DISPLAY` | `false` | A requestable denial carries `access_request.display` and a Task Handle `task.display` (see *Display hints*) |
+| `authzen.accessRequestForm` | `STS_AUTHZEN_ACCESS_REQUEST_FORM` | `false` | A recorded requestable denial carries `form_url`, the portal's `/portal/access-request`, and a Task Handle `links.ticket` (see *The hosted form and the ticket*) |
+| `authzen.accessRequestCatalogs` | `STS_AUTHZEN_ACCESS_REQUEST_CATALOGS` | `false` | A recorded requestable denial whose advice lists entitlements carries `request_catalogs_url`, and a submission must choose one (see *Catalogs*) |
+| `authzen.accessRequestActor` | `STS_AUTHZEN_ACCESS_REQUEST_ACTOR` | `false` | A submission's `client.actor` chain is verified against the caller's credential, and `client.source` is recorded (see *Acting parties*) |
+| `authzen.accessRequestBulk` | `STS_AUTHZEN_ACCESS_REQUEST_BULK` | `false` | A submission may carry `items`, each with its own denial, answered by one Task Handle (see *Bulk requests*) |
+| `authzen.accessRequestMaxBulkItems` | `STS_AUTHZEN_ACCESS_REQUEST_MAX_BULK_ITEMS` | `16` | The most items one bulk request may carry (2–64) |
 | `authzen.callbackAttempts` | `STS_AUTHZEN_CALLBACK_ATTEMPTS` | `5` | How many times a finished access request's callback is sent, the first included. `1` is one attempt. An application's `appAuthzenCallbackConfig` may set another bound for one URL |
 | `authzen.callbackBackoffS` | `STS_AUTHZEN_CALLBACK_BACKOFF_S` | `60` | Seconds to wait after the first failed callback; each later wait doubles, up to a day. The job runs every 60 seconds, so a shorter wait is not offered. An application's `appAuthzenCallbackConfig` may set a longer wait for one URL |
 | `authzen.externalPdp` | `STS_AUTHZEN_EXTERNAL_PDP` | `false` | Ask an external PDP before issuing an OAuth access token for a token exchange (see *Asking an external PDP*) |
@@ -1248,11 +1472,16 @@ live source; this table is a copy.
 
 None of these is advertised in the metadata:
 
-* Of the Access Request and Approval Profile: a hosted form (`form_url`)
-  and `display`, and the BULK, ACTOR and CATALOG companions. A denial
-  carries `request_schema_url`, may be submitted by `evaluation_id` or
-  by `binding_token` (which also carries `binding_hash`), and an
-  approval may carry `state`.
+* Of the Access Request and Approval Profile: of the BULK companion, a
+  bundle denial and the bulk `binding_hash` (this service issues
+  per-item denials only) and a callback on a bulk request; of the ACTOR
+  companion, approval routing by an actor and proofs of a chain
+  other than the caller's own credential; and of the CATALOG companion `scope_params`, `granted`,
+  `risk_level`, `owner` and agent-protocol catalogs. A denial carries
+  `request_schema_url` and, when switched on, `display`, `form_url` and
+  `request_catalogs_url`. It may be submitted by `evaluation_id` or
+  by `binding_token` (which also carries `binding_hash`), and an approval
+  may carry `state`.
 * Of the Callback Notifications Profile: the `partial` event and
   deployment-level event subscriptions. Retrying a notification that failed
   with a network error or an HTTP 5xx is built; see

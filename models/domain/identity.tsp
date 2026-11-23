@@ -252,6 +252,10 @@ model Credential {
   @fromAttr(#{attr: "stsPivCardUuid"})
   `pivCardUuid`?: string[];
 
+  // #2012: the certificate sign-in bindings an administrator recorded.
+  @fromAttr(#{attr: "stsCertificateBinding"})
+  `certificateBinding`?: string[];
+
   @fromAttr(#{attr: "stsWebauthnUserHandle"})
   `webauthnUserHandle`?: string;
 

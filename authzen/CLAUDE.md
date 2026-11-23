@@ -969,7 +969,70 @@ header argues each. What a maintainer needs quickly:
   address their own entry; a failure to mail is `0138` and the revocation
   stands. An emergency approval, whose approver is the door rather than a
   person, stays on the console.
-* Not built: `form_url`, `display`, BULK, ACTOR, CATALOG.
+* **`display` (#1204)** is a hint for a person, behind
+  `authzen.accessRequestDisplay` (off by default). The denial's is the
+  advice's `display-title` and `display-description` verbatim, or the
+  catalog `authzenDisplay` in the evaluation's `Accept-Language`; a Task
+  Handle's is the same catalog for its status. `handleOf()` draws it only
+  when it is handed a language list, so a callback's handle (built for
+  nobody) carries none. It is never bound, echoed or read back, and it
+  names no approver, role, group or policy.
+* **The hosted form (#1204)** is the portal page `/portal/access-request`
+  (`portal/portal_access_request.ts`, `web_access_request.ts`), behind
+  `authzen.accessRequestForm` (off by default). `form_url` names it with
+  the denial's `evaluation_id`, and only for a denial the record kept; a
+  Task Handle's `links.ticket` names it with the task's id. `formView()`
+  answers only the denial's or the task's SUBJECT (`isSubject()`: a type
+  in `authzen.resolveSubjectTypes`, an id among `approverIdentity()`'s
+  names) and 0147 otherwise, the same as for nothing. `submitByForm()`
+  opens the task through `openTask()`, the one place a PEP's submission
+  makes one too, with `requester` the denial's PEP, `origin: "form"` and
+  `formSubmittedBy`. A denial has one task (its `jti`), and the PEP's own
+  submission of it gets the form's task back unless it asks for other
+  augmentations (`sameAugmentations()`, else 0076). The draft does not
+  say how a form's input reaches the task; making the denial's own
+  submission is this service's answer.
+* **The CATALOG companion (#1204)**, behind `authzen.accessRequestCatalogs`
+  (off by default). A catalog is the POLICY'S: the advice's repeatable
+  `entitlement` (`value` or `value|label`) is `Terms.entitlements`, so it
+  is inside the binding token and the denial record, and the list is
+  scoped to the denied tuple by construction. `request_catalogs_url` only
+  for a recorded denial that lists some. The Catalogs Document and the
+  Catalog Endpoint (`catalogDenial()`) answer only the denial's own caller,
+  still scoped (`applicationOf()`), 0150 otherwise. The cursor is bound to
+  the search it continues (0151). `requestedAccess()` requires and checks
+  `requested_access.entitlement` against the denial's list (0152), for a
+  PEP's submission and the form's alike. `factsOf()` hands it to
+  `xacml_request.js` as `urn:sts:xacml:authzen:approved-entitlement`,
+  added only when one was chosen. A query string is never logged.
+* **The ACTOR companion (#1204)**, behind `authzen.accessRequestActor`
+  (off by default). `actorOf()` verifies `client.actor` against the
+  caller's own credential, which is the PEP's: one link that IS the
+  caller (its DN, client_id or identifier), or link for link the `act`
+  chain of its own access token. The bearer door carries the verified
+  token's `iss` and `act` on the caller for this. Anything else is 0154,
+  and a malformed actor or source is 0155. Section 3.2's MUST reject
+  governs its MAY retain, so nothing unverified is kept. `client.source`
+  is audit metadata only, and `external_url` is never dialled. The chain
+  is context for the approvers and the audit row, and never an XACML
+  fact. openid/authzen#756 (pending) would put `subject.properties.act`
+  into the binding; `bound()` still strips it.
+* **The BULK companion (#1204)**, behind `authzen.accessRequestBulk` (off
+  by default; off, the single model refuses `items` with its old
+  sentence). `submit()` hands a body with `items` to `submitBulk()`.
+  Every item carries its own denial, because this service issues no
+  bundle denial, so a top-level `denial` is 0158. Each item is the single
+  submission it would be, checked by `verifyOne()` (the one check a
+  single submission gets too) and `requestedAccess()`, and opened as an
+  ordinary task with `bundle` and `position`. The bundle is an index row,
+  `bundle:<digest of arb_ id>`, removed by the sweep at its `until`.
+  `bundleBody()` builds the handle from its items when it is read: 3.4's
+  aggregate, `partial` included, each item's own `result`, no top-level
+  one. `STATES` leaves `partial` out, so no task, and no callback event,
+  is ever `partial`. A callback on a bulk submission is 0160.
+* Not built: of BULK, a bundle denial and a bulk callback; of ACTOR,
+  routing by an actor; of CATALOG, `scope_params`, `granted`,
+  `risk_level`, `owner` and agent-protocol catalogs.
   `tests/authzen_access_request.js` holds it in process and
   `tests/protocol/sts_authzen.js` section 9 over HTTP.
 
@@ -1080,4 +1143,14 @@ approval's state could not be signed, and the approval stands by id
 (#1204); 0141 a portal revocation of an approval somebody else gave
 (#1203), 0142 an approval that could not be stored and 0143 approvers who
 resolve to nobody, each a task moved to `failed` (#1202), 0144 the denial
-store full (#1204).
+store full (#1204); 0146–0149 the hosted form (#1204): 0146 a denial the
+record does not hold, 0147 a person who is not the subject, 0148 a
+window that has passed, 0149 the form off; 0150–0153 the catalogs
+(#1204): 0150 a catalog call for a denial that is not the caller's, 0151 a
+cursor this endpoint did not issue, 0152 a submission's entitlement
+missing or not listed, 0153 the catalogs off; 0154–0155 the actor
+(#1204): 0154 a chain the caller's credential does not authorize, 0155 a
+malformed `client.actor` or `client.source`; 0156–0160 the bulk request
+(#1204): 0156 a top-level resource or action, 0157 items out of bounds,
+0158 a bundle denial or an item without its own, 0159 items about different
+applications, 0160 a callback.

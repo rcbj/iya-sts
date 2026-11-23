@@ -54,6 +54,8 @@
   "options.certificate": "أو تابع بشهادة عميل TLS التي قدّمها متصفحك على هذا الاتصال. لا يُكتب شيء: فحصت هذه الخدمة سلسلة الشهادة وما إذا كانت قد أُبطلت.",
   "options.certificateMfaNote": "يحتاج هذا الطلب إلى عاملين، لذا سيُطلب منك عامل ثانٍ بعد ذلك.",
   "options.certificateButton": "المتابعة بصفة {name} بشهادتك",
+  "options.certificateHandoff": "أو سجّل الدخول باستخدام بطاقة ذكية أو شهادة. يطلب منك المتصفح اختيارها، ورمز PIN الخاص بها إن وُجد.",
+  "options.certificateHandoffButton": "تسجيل الدخول ببطاقة ذكية أو شهادة",
   "selectIdp.title": "اختر كيفية تسجيل الدخول — خدمة المصادقة",
   "selectIdp.heading": "اختر كيفية تسجيل الدخول",
   "selectIdp.at": "خدمة المصادقة على <code>{base}</code>",

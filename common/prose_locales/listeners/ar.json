@@ -139,6 +139,14 @@
     "en": "1d66f74984228996",
     "text": "خدمة تسجيل الدخول وعواملها الثانية، والمحفظة، وتسجيل الدخول عبر SPNEGO والشهادة، وتسجيل الخروج."
   },
+  "listeners.applications.certificate-sign-in.label": {
+    "en": "b64346dfecab1d4d",
+    "text": "تسجيل الدخول بالشهادة"
+  },
+  "listeners.applications.certificate-sign-in.what": {
+    "en": "4eb1f17babcf76e5",
+    "text": "المستمع الذي يُسلَّم إليه تسجيل الدخول بالشهادة: الطلب الوحيد الذي يطلب بطاقة ذكية أو شهادة."
+  },
   "listeners.applications.portal.label": {
     "en": "00cf214ba77e7497",
     "text": "بوابة المستخدم"

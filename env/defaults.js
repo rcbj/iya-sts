@@ -979,19 +979,23 @@ var config = {
 
   // --- WS-Trust --------------------------------------------------------
   wstrust: {
-    tokenLifetimeMin: 60,                    // Token lifetime (minutes)
-    maxTokenLifetimeMin: 1440,               // Longest lifetime a request may ask for (minutes)
-    jwtAlgorithm: "RS256",                   // JWT signature algorithm
-    jwtCertificateHeader: "x5u",             // JWT certificate header
-    acceptClientCertificate: true,           // Accept the TLS client certificate as the requester's credential
-    acceptKerberos: true,                    // Accept a Kerberos token
-    issueKerberos: false,                    // Issue Kerberos tokens
-    encryptRequest: false,                   // Require the named elements of a request encrypted
-    acceptEncryptedElements: false,          // Accept encrypted elements no map names
-    advertiseEndpointIdentity: false,        // Advertise the encryption certificate as each port's identity
-    encryptResponse: false,                  // Encrypt the named elements of a response
-    encryptionAlgorithm: "aes256-gcm",       // Response encryption algorithm
-    keyTransportAlgorithm: "rsa-oaep-mgf1p"  // Response key transport algorithm
+    tokenLifetimeMin: 60,                         // Token lifetime (minutes)
+    maxTokenLifetimeMin: 1440,                    // Longest lifetime a request may ask for (minutes)
+    jwtAlgorithm: "RS256",                        // JWT signature algorithm
+    jwtCertificateHeader: "x5u",                  // JWT certificate header
+    acceptClientCertificate: true,                // Accept the TLS client certificate as the requester's credential
+    acceptKerberos: true,                         // Accept a Kerberos token
+    issueKerberos: false,                         // Issue Kerberos tokens
+    encryptRequest: false,                        // Require the named elements of a request encrypted
+    acceptEncryptedElements: false,               // Accept encrypted elements no map names
+    advertiseEndpointIdentity: false,             // Advertise the encryption certificate as each port's identity
+    encryptResponse: false,                       // Encrypt the named elements of a response
+    encryptionAlgorithm: "aes256-gcm",            // Response encryption algorithm
+    keyTransportAlgorithm: "rsa-oaep-mgf1p",      // Response key transport algorithm
+    signRequest: false,                           // Require a request signed
+    signResponse: false,                          // Sign a response
+    responseProtectionOrder: "sign-then-encrypt", // Response protection order
+    encryptSignature: false                       // Encrypt a response's signature
   },
 
   // --- WS-Federation ---------------------------------------------------
@@ -1004,6 +1008,8 @@ var config = {
   // --- TLS -------------------------------------------------------------
   tls: {
     trustIssuedClientCertificates: true,                                                                                                                                                                                                                                                                       // Trust TLS client certificates issued on the user portal; restart to apply
+    trustedProxyCertificates: "",                                                                                                                                                                                                                                                                              // TLS-terminating proxies' client certificates (SHA-256)
+    trustedProxyAddresses: "",                                                                                                                                                                                                                                                                                 // TLS-terminating proxies' addresses
     hostnames: "localhost,sts,sts-mock,sts.example.com",                                                                                                                                                                                                                                                       // Certificate hostnames; restart to apply
     ips: "127.0.0.1",                                                                                                                                                                                                                                                                                          // Certificate IP addresses; restart to apply
     certificateAlgorithms: "rsa",                                                                                                                                                                                                                                                                              // Server certificate algorithms; restart to apply
@@ -1026,6 +1032,13 @@ var config = {
     trustAnchorsFile: "",                                                                                                                                                                                                                                                                                      // Client certificate trust anchors file; restart to apply
     selfSignedValidityYears: 2,                                                                                                                                                                                                                                                                                // Self-signed certificate validity (years); restart to apply
     selfSignedOrganization: "iya-sts"                                                                                                                                                                                                                                                                          // Self-signed certificate organization; restart to apply
+  },
+
+  // --- TLS -------------------------------------------------------------
+  certSignIn: {
+    profiles: "",              // Certificate sign-in profiles (JSON)
+    requireRevocation: "auto", // Require a verified revocation status at certificate sign-in
+    handoff: false             // Offer a certificate sign-in on its own listener
   },
 
   // --- Listener: LDAPS -------------------------------------------------
@@ -1300,6 +1313,12 @@ var config = {
     accessRequestRetryAfterS: 30,      // Retry-After on a pending access request (seconds)
     accessRequestMaxPending: 10000,    // Pending access requests a realm holds
     accessRequestMaxDenials: 100000,   // Requestable denials a realm records
+    accessRequestDisplay: false,       // Display hints on access requests
+    accessRequestForm: false,          // Hosted form for access requests
+    accessRequestCatalogs: false,      // Catalogs for access requests
+    accessRequestActor: false,         // Acting parties on access requests
+    accessRequestBulk: false,          // Bulk access requests
+    accessRequestMaxBulkItems: 16,     // Items in one bulk access request
     callbackAttempts: 5,               // Access request callback attempts
     callbackBackoffS: 60,              // Access request callback backoff (seconds)
     externalPdp: false,                // Ask an external PDP before a token exchange.

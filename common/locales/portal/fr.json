@@ -66,6 +66,8 @@
   "nav.ciba.heading": "Demandes de connexion",
   "nav.access-requests.label": "Demandes d’accès",
   "nav.access-requests.heading": "Les demandes d’accès qui vous attendent",
+  "nav.access-request.label": "Vos demandes d’accès",
+  "nav.access-request.heading": "Vos demandes d’accès",
   "nav.device.label": "Connecter un appareil",
   "nav.device.heading": "Connecter un appareil",
   "nav.claim-sources.label": "Sources de revendications",

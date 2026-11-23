@@ -54,6 +54,8 @@
   "options.certificate": "Eller fortsätt med det TLS-klientcertifikat som din webbläsare visade upp på den här anslutningen. Inget skrivs in: tjänsten har kontrollerat certifikatets kedja och om det har återkallats.",
   "options.certificateMfaNote": "Den här begäran kräver två faktorer, så du får ange en andra efteråt.",
   "options.certificateButton": "Fortsätt som {name} med ditt certifikat",
+  "options.certificateHandoff": "Eller logga in med ett smartkort eller ett certifikat. Webbläsaren ber dig välja det, och om det har en PIN-kod ber den om den.",
+  "options.certificateHandoffButton": "Logga in med smartkort eller certifikat",
   "selectIdp.title": "Välj hur du vill logga in — autentiseringstjänst",
   "selectIdp.heading": "Välj hur du vill logga in",
   "selectIdp.at": "Autentiseringstjänst på <code>{base}</code>",

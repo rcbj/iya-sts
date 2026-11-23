@@ -12454,6 +12454,63 @@ const SETTINGS = [
                  'may name this algorithm only while response encryption ' +
                  'is on.' },
 
+  // WS-SECURITY MESSAGE INTEGRITY (#1917, with #1918's response signing).
+  // Both switches default off, so a request and a response stay as they
+  // were until an operator turns one on. Which elements must be signed are
+  // the application's own maps; the two response rows below only order
+  // what both switches together do.
+  { key: 'wstrust.signRequest', group: 'WS-Trust',
+    label: 'Require a request signed',
+    env: 'STS_WSTRUST_SIGN_REQUEST', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether a RequestSecurityToken whose AppliesTo names no ' +
+                 'application of its own must carry a WS-Security message ' +
+                 'signature. An application\'s wstrustSignRequest ' +
+                 'overrides this for a request whose AppliesTo names it, ' +
+                 'and its wstrustSignRequestElements names what else the ' +
+                 'signature must cover beside the SOAP Body. On, a request ' +
+                 'with no accepted signature, or one whose signature does ' +
+                 'not cover a named element, is a wsse:FailedCheck. ' +
+                 'Development believes a signature, as it always has.' },
+  { key: 'wstrust.signResponse', group: 'WS-Trust',
+    label: 'Sign a response',
+    env: 'STS_WSTRUST_SIGN_RESPONSE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether a RequestSecurityTokenResponse carries a ' +
+                 'wsu:Timestamp and a WS-Security message signature over ' +
+                 'it and the SOAP Body, made with this realm\'s XML ' +
+                 'signing key and naming its certificate in a ' +
+                 'BinarySecurityToken. An application\'s ' +
+                 'wstrustSignResponse overrides this, and its ' +
+                 'wstrustSignResponseElements names what the signature ' +
+                 'covers in place of the Body. A fault is sent unsigned. ' +
+                 'The WSDL\'s binding carries sp:IncludeTimestamp while ' +
+                 'this is on. On, and the signature cannot be made, the ' +
+                 'request is a fault in both modes.' },
+  { key: 'wstrust.responseProtectionOrder', group: 'WS-Trust',
+    label: 'Response protection order',
+    env: 'STS_WSTRUST_RESPONSE_PROTECTION_ORDER', type: 'enum',
+    enumValues: ['sign-then-encrypt', 'encrypt-then-sign'],
+    dflt: 'sign-then-encrypt', runtime: true,
+    description: 'The order a WS-Trust response is signed and encrypted ' +
+                 'in when both are on. `sign-then-encrypt` signs the ' +
+                 'plaintext and is WS-SecurityPolicy\'s default; ' +
+                 '`encrypt-then-sign` signs the ciphertext, and the WSDL\'s ' +
+                 'binding then carries sp:EncryptBeforeSigning. The ' +
+                 'wsse:Security header is written in the order a receiver ' +
+                 'processes it. An application\'s ' +
+                 'wstrustResponseProtectionOrder overrides this.' },
+  { key: 'wstrust.encryptSignature', group: 'WS-Trust',
+    label: 'Encrypt a response\'s signature',
+    env: 'STS_WSTRUST_ENCRYPT_SIGNATURE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether the ds:Signature of a WS-Trust response is ' +
+                 'encrypted too (WS-SecurityPolicy\'s sp:EncryptSignature), ' +
+                 'to the response\'s recipient. Read only while the ' +
+                 'response is signed and then encrypted. The WSDL\'s ' +
+                 'binding carries sp:EncryptSignature while it is on. An ' +
+                 'application\'s wstrustEncryptSignature overrides this.' },
+
   // WHO MAY START A SIGN-IN (#426, #710), the WS-Federation pair. A
   // wsignin1.0 at /wsfed is the relying party's (WS-Federation 1.2 section
   // 13.2.1); /wsfed/initiate/{rp} is this identity provider's, posting to the
@@ -12570,6 +12627,96 @@ const SETTINGS = [
                  'as it ' +
                  'was before; the portal still issues, and says the ' +
                  'listeners will not accept what it issues.' },
+
+  // #2012: CERTIFICATE SIGN-IN PROFILES, THE REVOCATION A SIGN-IN NEEDS, THE
+  // HANDOFF TO A LISTENER THAT ASKS FOR A CERTIFICATE, AND A PROXY THAT
+  // TERMINATES TLS (RFC 9440). `common/certificate_binding.ts`,
+  // `tls/certificate_handoff.ts` and `common/forwarded_client_certificate.ts`
+  // argue them; each is off or empty by default, which is the service as it
+  // was.
+  { key: 'certSignIn.profiles', group: 'TLS',
+    label: 'Certificate sign-in profiles (JSON)',
+    env: 'STS_CERT_SIGN_IN_PROFILES', type: 'string', dflt: '',
+    runtime: true,
+    description: 'A JSON array of certificate sign-in profiles for client ' +
+                 'certificates from authorities this service does not run. ' +
+                 'Each is {"id", "issuers", "keyUsage", "extendedKeyUsage", ' +
+                 '"policies", "bindings", "lowAffinity"}: issuers is the ' +
+                 'SHA-256 of each covered CA\'s SubjectPublicKeyInfo, and a ' +
+                 'certificate whose validated path holds one of them is ' +
+                 'covered by the first such profile; keyUsage bits it must ' +
+                 'all carry; extendedKeyUsage purposes, one of which it must ' +
+                 'carry; policies, one of which RFC 5280 policy processing ' +
+                 'must carry through its path (policy mappings honoured); ' +
+                 'bindings, the methods that name its account ' +
+                 '(certificate-sha256, issuer-serial, issuer-ski, ' +
+                 'spki-sha256 and card-uuid, and only with lowAffinity true ' +
+                 'the name methods upn, email, issuer-subject and subject; ' +
+                 'certificate-sha256 and issuer-serial by default). Every ' +
+                 'method is asked; two accounts, or none, sign nobody in. ' +
+                 'Bindings are stored in stsCertificateBinding on the ' +
+                 'person. EMPTY, the default, covers no certificate: an ' +
+                 'outside certificate is the entry storing it in ' +
+                 'userCertificate, or a PIV card by piv.externalIssuers, as ' +
+                 'before.' },
+  { key: 'certSignIn.requireRevocation', group: 'TLS',
+    label: 'Require a verified revocation status at certificate sign-in',
+    env: 'STS_CERT_SIGN_IN_REQUIRE_REVOCATION', type: 'enum',
+    enumValues: ['auto', 'on'], dflt: 'auto', runtime: true,
+    description: 'Whether a client certificate signs a person in only with ' +
+                 'a verified revocation status: every certificate in its ' +
+                 'path looked up and none on a list. auto, the default, ' +
+                 'requires it in product mode and leaves development to ' +
+                 'pki.revocationCheck, as before; on requires it in every ' +
+                 'mode, so a status soft-fail would accept (unknown, or not ' +
+                 'consulted) refuses the sign-in (STS-TLS-0071). It decides ' +
+                 'only sign-ins: /tls/sign-in, the sign-in screen and the ' +
+                 'certificate handoff.' },
+  { key: 'certSignIn.handoff', group: 'TLS',
+    label: 'Offer a certificate sign-in on its own listener',
+    env: 'STS_CERT_SIGN_IN_HANDOFF', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'On, the sign-in screen offers "Sign in with a smart card ' +
+                 'or certificate", which sends the browser to ' +
+                 '/authn/certificate/continue on the listener the ' +
+                 'certificate-sign-in hosted application is mapped to ' +
+                 '(listeners.applications) — a custom listener whose ' +
+                 'clientAuth asks for a certificate — and back to the ' +
+                 'screen, which continues as the certificate\'s holder. The ' +
+                 'certificate is bound to that pending sign-in and to the ' +
+                 'browser\'s sign-on session, so the listener must share the ' +
+                 'main port\'s host name or both be under ' +
+                 'authn.cookieDomain. With ' +
+                 'tls.mainPortDisableOptionalClientCertificate on, the main ' +
+                 'port then asks no connection for a ' +
+                 'certificate and the other ways in never see a prompt. Off, ' +
+                 'the default, the screen offers only the certificate on its ' +
+                 'own connection.' },
+  { key: 'tls.trustedProxyCertificates', group: 'TLS',
+    label: 'TLS-terminating proxies\' client certificates (SHA-256)',
+    env: 'STS_TLS_TRUSTED_PROXY_CERTIFICATES', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The SHA-256 fingerprints of the client certificates a ' +
+                 'proxy that terminates TLS presents when it connects here. ' +
+                 'A request on a connection presenting one of them, from an ' +
+                 'address in tls.trustedProxyAddresses, has its RFC 9440 ' +
+                 'Client-Cert and Client-Cert-Chain headers verified here ' +
+                 'against the client truststore and revocation, and that ' +
+                 'certificate stands for the handshake\'s at every door. ' +
+                 'Both settings are required; from any other sender the two ' +
+                 'headers are removed and recorded (STS-TLS-0072) and never ' +
+                 'read. EMPTY, the default, reads a certificate only off the ' +
+                 'handshake.' },
+  { key: 'tls.trustedProxyAddresses', group: 'TLS',
+    label: 'TLS-terminating proxies\' addresses',
+    env: 'STS_TLS_TRUSTED_PROXY_ADDRESSES', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The addresses or CIDR ranges a proxy in ' +
+                 'tls.trustedProxyCertificates connects from ' +
+                 '(10.0.0.0/8, fd00::/8). Both settings are required before ' +
+                 'a forwarded client certificate is read. A value that is ' +
+                 'not an address or a range is ignored and logged, never ' +
+                 'widened.' },
 
   { key: 'tls.hostnames', group: 'TLS', label: 'Certificate hostnames',
     env: 'STS_TLS_HOSTNAMES', type: 'csv',
@@ -16429,6 +16576,76 @@ const SETTINGS = [
                  'recorded, and is still requestable by its ' +
                  'binding_token; the access request job removes a record ' +
                  'a day after its window.' },
+  { key: 'authzen.accessRequestDisplay', group: 'AuthZEN',
+    label: 'Display hints on access requests',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_DISPLAY', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'The Access Request and Approval Profile\'s display ' +
+                 'hints (#1204): a requestable denial carries ' +
+                 'access_request.display and a Task Handle carries ' +
+                 'task.display, each a title and a description. The ' +
+                 'denial\'s are the advice\'s display-title and ' +
+                 'display-description, verbatim, or else the service\'s ' +
+                 'own words in the language Accept-Language asks for. ' +
+                 'They are hints for a person and never policy. Off, ' +
+                 'neither is sent.' },
+  { key: 'authzen.accessRequestForm', group: 'AuthZEN',
+    label: 'Hosted form for access requests',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_FORM', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'The Access Request and Approval Profile\'s hosted form ' +
+                 '(#1204): a requestable denial this realm recorded carries ' +
+                 'form_url, the portal page /portal/access-request, where ' +
+                 'the denial\'s subject signs in and submits the access ' +
+                 'request with a justification; the PEP that was denied ' +
+                 'gets that task back when it submits the same denial. A ' +
+                 'Task Handle carries links.ticket, the same page, where ' +
+                 'the subject sees the request\'s status. Off, neither is ' +
+                 'sent and the page makes no request.' },
+  { key: 'authzen.accessRequestCatalogs', group: 'AuthZEN',
+    label: 'Catalogs for access requests',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_CATALOGS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'The AuthZEN Access Request Catalog Profile (#1204): a ' +
+                 'recorded requestable denial whose advice lists ' +
+                 'urn:sts:xacml:advice:access-request:entitlement values ' +
+                 'carries request_catalogs_url, its Catalogs Document and ' +
+                 'Catalog Endpoint answer the caller the denial was ' +
+                 'answered to, a submission must choose one of the ' +
+                 'entitlements in requested_access.entitlement, and the ' +
+                 'approval carries it to the policy as a trusted fact. ' +
+                 'Off, the advice\'s entitlements are ignored and the two ' +
+                 'endpoints answer 501.' },
+  { key: 'authzen.accessRequestActor', group: 'AuthZEN',
+    label: 'Acting parties on access requests',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_ACTOR', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'The AuthZEN Actor Delegation Profile (#1204): an access ' +
+                 'request\'s client.actor chain is verified against the ' +
+                 'caller\'s own credential (one link that is the caller ' +
+                 'itself, or the act chain of its own access token) and ' +
+                 'refused otherwise, and client.source is recorded. Both ' +
+                 'are shown to the approvers and the audit log, and ' +
+                 'neither is a policy fact. Off, both are accepted and ' +
+                 'never read.' },
+  { key: 'authzen.accessRequestBulk', group: 'AuthZEN',
+    label: 'Bulk access requests',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_BULK', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'The AuthZEN Bulk Access Requests Profile (#1204): a ' +
+                 'submission with items, each carrying its own denial, is ' +
+                 'checked item by item as a single one is, and answers one ' +
+                 'Task Handle whose status aggregates its items (partial ' +
+                 'when they finished differently) and whose items each ' +
+                 'carry their own result. Each item is approved and ' +
+                 're-evaluated on its own. Off, items is refused as before.' },
+  { key: 'authzen.accessRequestMaxBulkItems', group: 'AuthZEN',
+    label: 'Items in one bulk access request',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_MAX_BULK_ITEMS', type: 'int',
+    dflt: 16, min: 2, max: 64, runtime: true,
+    description: 'The most items one bulk access request may carry ' +
+                 '(#1204). Each counts against ' +
+                 'authzen.accessRequestMaxPending.' },
   { key: 'authzen.callbackAttempts', group: 'AuthZEN',
     label: 'Access request callback attempts',
     env: 'STS_AUTHZEN_CALLBACK_ATTEMPTS', type: 'int',

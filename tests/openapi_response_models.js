@@ -1948,6 +1948,13 @@ function codesOnlyWhereDrawn(t, docs) {
   t.equal(JSON.stringify(Kit.stripCodes(body)),
           JSON.stringify({ ok: true, rows: [{ id: 1 }] }),
           'an act\'s answer loses a code at any depth');
+  // A refusal's Sentence is a String object (#2006): it reaches the answer
+  // as its English, never as an object of its characters (run 45236493306).
+  const Sentence = require('../common/sentence');
+  const refused = { ok: false,
+                    errors: [Sentence.say('refusals.passkey.upgradeOff')] };
+  t.equal(JSON.stringify(Kit.stripCodes(refused)), JSON.stringify(refused),
+          'a Sentence in an act\'s answer is its English, as sent');
   const found = {};
   ['admin', 'account', 'authn', 'report'].forEach(function (api) {
     const doc = docs[api];

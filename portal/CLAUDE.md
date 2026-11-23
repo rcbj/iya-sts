@@ -2250,6 +2250,20 @@ step-up (`STS-GNAP-0862`: a person named on a request is not thereby the
 owner of what it names) and reads the lowered limits back (`0866` raised,
 `0867` failing the type's schema), all before the answer is claimed.
 
+## `/portal/access-request`: A PERSON'S OWN AUTHZEN ACCESS REQUESTS (#1204)
+
+**The hosted form of an AuthZEN requestable denial (`form_url`) and a
+request's ticket (`links.ticket`)**, two `/account-api` operations
+(`portal_access_request.ts`) drawn by `web_access_request.ts`, behind
+`authzen.accessRequestForm`. A page of its own beside
+`/portal/access-requests`, never a section of it: that page is where a
+person decides somebody ELSE's request as an approver, and this one is
+where they make and follow their OWN. The query names a denial
+(`evaluation_id`) or a request (`request`), never a person; the library
+answers only the denial's or the request's subject, and the same 0147
+whether or not the thing exists. Nothing on it names who approves.
+`authzen/CLAUDE.md` has the library's half.
+
 ## `/portal/claim-sources`: CONNECTED CLAIM SOURCES (#147, 2026-09-24)
 
 The setup phase of OpenID Connect Claims Aggregation, the person's own. Every

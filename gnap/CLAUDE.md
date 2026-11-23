@@ -967,7 +967,12 @@ needs here:
   `/gnap/interaction.js` (`web_gnap_interact.ts` over
   `web_gnap_interact_pages.ts` and `web_gnap_interact_views.ts`, the
   `bundle_surface` "GNAP's interaction pages") from `/gnap-api`, in the
-  browser's language from the `gnap` catalogs #539 wrote. Errors English.
+  browser's language from the `gnap` catalogs #539 wrote. **A refusal too
+  since #2006**: `/gnap-api` answers `errors` in English with `messages`
+  beside them (`refusals.gnap.*`, declared in `models/gnap/gnap.tsp`), and a
+  `problem` view carries `headingMessage` and `detailMessage`; a library's
+  plain text (a validation detail, the rate limiter's, `LimitsForm`'s why)
+  is drawn as sent.
   **Script is required**: the shell's `<noscript>` says so.
 * **WHAT A CLIENT INSTANCE SEES DID NOT CHANGE** (#569's rule): the start
   modes' 303 and their 400 refusals (the shell now, with the code and the

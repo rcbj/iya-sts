@@ -67,6 +67,599 @@ Each operation's method, path, access and the portal page or form it is the door
 | `errors[]` | string |  |  |
 | `ok` | boolean |  |  |
 
+## GET /account-api/access-request
+
+`getAccessRequestForm`
+
+**An AuthZEN requestable denial's hosted form, a request's ticket, or your own requests**
+
+The hosted form of the AuthZEN Access Request and Approval Profile (section 16, #1204). With `evaluation_id`, the requestable denial a PEP was given, when you are its subject: what it asks, for which application, until when it can be made, and whether emergency access is allowed (`mode: denial`); or the request already made from it (`mode: task`). With `request`, that request's status, when you are its subject (`mode: task`): the Task Handle's `links.ticket`. With neither, the requests about you (`mode: mine`). Never who may approve. `enabled` is false where the realm has `authzen.accessRequestForm` off.
+
+The door of the portal's `GET /portal/access-request`.
+
+Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `evaluation_id` | query | string |  | The requestable denial's `evaluation_id`, from its `form_url`. |
+| `request` | query | string |  | An access request's id, from its `links.ticket`. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
+**200**: The answer.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `enabled` | boolean | yes |  |
+| `mine` | list |  |  |
+| `mine[].action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `mine[].application` | string | yes |  |
+| `mine[].approvedUntil` | number |  |  |
+| `mine[].createdAt` | number | yes |  |
+| `mine[].entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
+| `mine[].expiresAt` | number | yes |  |
+| `mine[].id` | string | yes |  |
+| `mine[].origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
+| `mine[].resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `mine[].status` | one of `pending`, `approved`, `denied`, `expired`, `cancelled`, `failed` | yes |  |
+| `mine[].subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `mode` | one of `denial`, `task`, `mine`, `none` | yes | `denial`: the form; `task`: a request already made, or the ticket; `mine`: the requests about you; `none`: nothing to show. |
+| `request` | object |  |  |
+| `request.action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `request.application` | string | yes |  |
+| `request.display` | object |  |  |
+| `request.display.description` | string |  |  |
+| `request.display.title` | string |  |  |
+| `request.emergency` | boolean | yes |  |
+| `request.entitlements` | list |  | The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off. |
+| `request.entitlements[].label` | string | yes |  |
+| `request.entitlements[].value` | string | yes |  |
+| `request.evaluationId` | string | yes |  |
+| `request.expiresAt` | number | yes | Until when it can be made, epoch seconds. |
+| `request.maxApprovalS` | number | yes | The longest an approval lasts, in seconds. |
+| `request.resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `request.subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `task` | object |  |  |
+| `task.action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `task.application` | string | yes |  |
+| `task.approvedUntil` | number |  |  |
+| `task.createdAt` | number | yes |  |
+| `task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
+| `task.expiresAt` | number | yes |  |
+| `task.id` | string | yes |  |
+| `task.origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
+| `task.resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `task.status` | one of `pending`, `approved`, `denied`, `expired`, `cancelled`, `failed` | yes |  |
+| `task.subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+
+**400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `errors` | list | yes |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `view` | object |  |  |
+| `view.enabled` | boolean | yes |  |
+| `view.mine` | list |  |  |
+| `view.mine[].action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mine[].application` | string | yes |  |
+| `view.mine[].approvedUntil` | number |  |  |
+| `view.mine[].createdAt` | number | yes |  |
+| `view.mine[].entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
+| `view.mine[].expiresAt` | number | yes |  |
+| `view.mine[].id` | string | yes |  |
+| `view.mine[].origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
+| `view.mine[].resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mine[].status` | one of `pending`, `approved`, `denied`, `expired`, `cancelled`, `failed` | yes |  |
+| `view.mine[].subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mode` | one of `denial`, `task`, `mine`, `none` | yes | `denial`: the form; `task`: a request already made, or the ticket; `mine`: the requests about you; `none`: nothing to show. |
+| `view.request` | object |  |  |
+| `view.request.action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.request.application` | string | yes |  |
+| `view.request.display` | object |  |  |
+| `view.request.display.description` | string |  |  |
+| `view.request.display.title` | string |  |  |
+| `view.request.emergency` | boolean | yes |  |
+| `view.request.entitlements` | list |  | The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off. |
+| `view.request.entitlements[].label` | string | yes |  |
+| `view.request.entitlements[].value` | string | yes |  |
+| `view.request.evaluationId` | string | yes |  |
+| `view.request.expiresAt` | number | yes | Until when it can be made, epoch seconds. |
+| `view.request.maxApprovalS` | number | yes | The longest an approval lasts, in seconds. |
+| `view.request.resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.request.subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task` | object |  |  |
+| `view.task.action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task.application` | string | yes |  |
+| `view.task.approvedUntil` | number |  |  |
+| `view.task.createdAt` | number | yes |  |
+| `view.task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
+| `view.task.expiresAt` | number | yes |  |
+| `view.task.id` | string | yes |  |
+| `view.task.origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
+| `view.task.resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task.status` | one of `pending`, `approved`, `denied`, `expired`, `cancelled`, `failed` | yes |  |
+| `view.task.subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+
+**401**: No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**403**: The token is for another audience or does not carry `account:manage`, or the access policy refused the person.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**404**: No such denial or request about you.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `errors` | list | yes |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `view` | object |  |  |
+| `view.enabled` | boolean | yes |  |
+| `view.mine` | list |  |  |
+| `view.mine[].action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mine[].application` | string | yes |  |
+| `view.mine[].approvedUntil` | number |  |  |
+| `view.mine[].createdAt` | number | yes |  |
+| `view.mine[].entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
+| `view.mine[].expiresAt` | number | yes |  |
+| `view.mine[].id` | string | yes |  |
+| `view.mine[].origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
+| `view.mine[].resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mine[].status` | one of `pending`, `approved`, `denied`, `expired`, `cancelled`, `failed` | yes |  |
+| `view.mine[].subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mode` | one of `denial`, `task`, `mine`, `none` | yes | `denial`: the form; `task`: a request already made, or the ticket; `mine`: the requests about you; `none`: nothing to show. |
+| `view.request` | object |  |  |
+| `view.request.action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.request.application` | string | yes |  |
+| `view.request.display` | object |  |  |
+| `view.request.display.description` | string |  |  |
+| `view.request.display.title` | string |  |  |
+| `view.request.emergency` | boolean | yes |  |
+| `view.request.entitlements` | list |  | The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off. |
+| `view.request.entitlements[].label` | string | yes |  |
+| `view.request.entitlements[].value` | string | yes |  |
+| `view.request.evaluationId` | string | yes |  |
+| `view.request.expiresAt` | number | yes | Until when it can be made, epoch seconds. |
+| `view.request.maxApprovalS` | number | yes | The longest an approval lasts, in seconds. |
+| `view.request.resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.request.subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task` | object |  |  |
+| `view.task.action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task.application` | string | yes |  |
+| `view.task.approvedUntil` | number |  |  |
+| `view.task.createdAt` | number | yes |  |
+| `view.task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
+| `view.task.expiresAt` | number | yes |  |
+| `view.task.id` | string | yes |  |
+| `view.task.origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
+| `view.task.resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task.status` | one of `pending`, `approved`, `denied`, `expired`, `cancelled`, `failed` | yes |  |
+| `view.task.subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+
+**410**: The denial's window has passed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `errors` | list | yes |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `view` | object |  |  |
+| `view.enabled` | boolean | yes |  |
+| `view.mine` | list |  |  |
+| `view.mine[].action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mine[].application` | string | yes |  |
+| `view.mine[].approvedUntil` | number |  |  |
+| `view.mine[].createdAt` | number | yes |  |
+| `view.mine[].entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
+| `view.mine[].expiresAt` | number | yes |  |
+| `view.mine[].id` | string | yes |  |
+| `view.mine[].origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
+| `view.mine[].resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mine[].status` | one of `pending`, `approved`, `denied`, `expired`, `cancelled`, `failed` | yes |  |
+| `view.mine[].subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mode` | one of `denial`, `task`, `mine`, `none` | yes | `denial`: the form; `task`: a request already made, or the ticket; `mine`: the requests about you; `none`: nothing to show. |
+| `view.request` | object |  |  |
+| `view.request.action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.request.application` | string | yes |  |
+| `view.request.display` | object |  |  |
+| `view.request.display.description` | string |  |  |
+| `view.request.display.title` | string |  |  |
+| `view.request.emergency` | boolean | yes |  |
+| `view.request.entitlements` | list |  | The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off. |
+| `view.request.entitlements[].label` | string | yes |  |
+| `view.request.entitlements[].value` | string | yes |  |
+| `view.request.evaluationId` | string | yes |  |
+| `view.request.expiresAt` | number | yes | Until when it can be made, epoch seconds. |
+| `view.request.maxApprovalS` | number | yes | The longest an approval lasts, in seconds. |
+| `view.request.resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.request.subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task` | object |  |  |
+| `view.task.action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task.application` | string | yes |  |
+| `view.task.approvedUntil` | number |  |  |
+| `view.task.createdAt` | number | yes |  |
+| `view.task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
+| `view.task.expiresAt` | number | yes |  |
+| `view.task.id` | string | yes |  |
+| `view.task.origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
+| `view.task.resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task.status` | one of `pending`, `approved`, `denied`, `expired`, `cancelled`, `failed` | yes |  |
+| `view.task.subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+
+## POST /account-api/access-request
+
+`submitAccessRequestForm`
+
+**Makes the access request a requestable denial allows, as its subject**
+
+Submits the denial's access request on the hosted form (#1204), when you are the denial's subject and its window is open. The request is the same one the PEP that was denied would make, for that PEP: it reads it, and gets it back when it submits the same denial. `business_justification` goes to the approvers; `duration` asks for an approval that lasts that many seconds at most; `emergency` asks for emergency access where the policy allows it, and needs a justification. Refused when the form is off, when the denial is not one this realm recorded or not about you, when its window has passed, and when the request was already made.
+
+The door of the portal's `POST /portal/access-request`.
+
+Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `business_justification` | string |  | Why you need the access, for the approvers. |
+| `duration` | string |  | The longest the approval should last, in seconds; empty for as long as the policy allows. |
+| `emergency` | one of `true`, `false` |  | `true` asks for emergency access, where the policy allows it. |
+| `entitlement` | string |  | One of the entitlements the denial's catalog lists, when it lists any (#1204). |
+| `evaluation_id` | string | yes | The requestable denial's `evaluation_id`. |
+
+**200**: The answer.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `go` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean |  |  |
+
+**400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `errors` | list | yes |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `view` | object |  |  |
+| `view.enabled` | boolean | yes |  |
+| `view.mine` | list |  |  |
+| `view.mine[].action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mine[].application` | string | yes |  |
+| `view.mine[].approvedUntil` | number |  |  |
+| `view.mine[].createdAt` | number | yes |  |
+| `view.mine[].entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
+| `view.mine[].expiresAt` | number | yes |  |
+| `view.mine[].id` | string | yes |  |
+| `view.mine[].origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
+| `view.mine[].resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mine[].status` | one of `pending`, `approved`, `denied`, `expired`, `cancelled`, `failed` | yes |  |
+| `view.mine[].subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mode` | one of `denial`, `task`, `mine`, `none` | yes | `denial`: the form; `task`: a request already made, or the ticket; `mine`: the requests about you; `none`: nothing to show. |
+| `view.request` | object |  |  |
+| `view.request.action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.request.application` | string | yes |  |
+| `view.request.display` | object |  |  |
+| `view.request.display.description` | string |  |  |
+| `view.request.display.title` | string |  |  |
+| `view.request.emergency` | boolean | yes |  |
+| `view.request.entitlements` | list |  | The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off. |
+| `view.request.entitlements[].label` | string | yes |  |
+| `view.request.entitlements[].value` | string | yes |  |
+| `view.request.evaluationId` | string | yes |  |
+| `view.request.expiresAt` | number | yes | Until when it can be made, epoch seconds. |
+| `view.request.maxApprovalS` | number | yes | The longest an approval lasts, in seconds. |
+| `view.request.resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.request.subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task` | object |  |  |
+| `view.task.action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task.application` | string | yes |  |
+| `view.task.approvedUntil` | number |  |  |
+| `view.task.createdAt` | number | yes |  |
+| `view.task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
+| `view.task.expiresAt` | number | yes |  |
+| `view.task.id` | string | yes |  |
+| `view.task.origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
+| `view.task.resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task.status` | one of `pending`, `approved`, `denied`, `expired`, `cancelled`, `failed` | yes |  |
+| `view.task.subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+
+**401**: No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**403**: The token is for another audience or does not carry `account:manage`, or the access policy refused the person, or the hosted form is off.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `errors` | list | yes |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `view` | object |  |  |
+| `view.enabled` | boolean | yes |  |
+| `view.mine` | list |  |  |
+| `view.mine[].action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mine[].application` | string | yes |  |
+| `view.mine[].approvedUntil` | number |  |  |
+| `view.mine[].createdAt` | number | yes |  |
+| `view.mine[].entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
+| `view.mine[].expiresAt` | number | yes |  |
+| `view.mine[].id` | string | yes |  |
+| `view.mine[].origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
+| `view.mine[].resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mine[].status` | one of `pending`, `approved`, `denied`, `expired`, `cancelled`, `failed` | yes |  |
+| `view.mine[].subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mode` | one of `denial`, `task`, `mine`, `none` | yes | `denial`: the form; `task`: a request already made, or the ticket; `mine`: the requests about you; `none`: nothing to show. |
+| `view.request` | object |  |  |
+| `view.request.action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.request.application` | string | yes |  |
+| `view.request.display` | object |  |  |
+| `view.request.display.description` | string |  |  |
+| `view.request.display.title` | string |  |  |
+| `view.request.emergency` | boolean | yes |  |
+| `view.request.entitlements` | list |  | The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off. |
+| `view.request.entitlements[].label` | string | yes |  |
+| `view.request.entitlements[].value` | string | yes |  |
+| `view.request.evaluationId` | string | yes |  |
+| `view.request.expiresAt` | number | yes | Until when it can be made, epoch seconds. |
+| `view.request.maxApprovalS` | number | yes | The longest an approval lasts, in seconds. |
+| `view.request.resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.request.subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task` | object |  |  |
+| `view.task.action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task.application` | string | yes |  |
+| `view.task.approvedUntil` | number |  |  |
+| `view.task.createdAt` | number | yes |  |
+| `view.task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
+| `view.task.expiresAt` | number | yes |  |
+| `view.task.id` | string | yes |  |
+| `view.task.origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
+| `view.task.resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task.status` | one of `pending`, `approved`, `denied`, `expired`, `cancelled`, `failed` | yes |  |
+| `view.task.subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+
+**404**: No such denial or request about you.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `errors` | list | yes |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `view` | object |  |  |
+| `view.enabled` | boolean | yes |  |
+| `view.mine` | list |  |  |
+| `view.mine[].action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mine[].application` | string | yes |  |
+| `view.mine[].approvedUntil` | number |  |  |
+| `view.mine[].createdAt` | number | yes |  |
+| `view.mine[].entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
+| `view.mine[].expiresAt` | number | yes |  |
+| `view.mine[].id` | string | yes |  |
+| `view.mine[].origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
+| `view.mine[].resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mine[].status` | one of `pending`, `approved`, `denied`, `expired`, `cancelled`, `failed` | yes |  |
+| `view.mine[].subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mode` | one of `denial`, `task`, `mine`, `none` | yes | `denial`: the form; `task`: a request already made, or the ticket; `mine`: the requests about you; `none`: nothing to show. |
+| `view.request` | object |  |  |
+| `view.request.action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.request.application` | string | yes |  |
+| `view.request.display` | object |  |  |
+| `view.request.display.description` | string |  |  |
+| `view.request.display.title` | string |  |  |
+| `view.request.emergency` | boolean | yes |  |
+| `view.request.entitlements` | list |  | The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off. |
+| `view.request.entitlements[].label` | string | yes |  |
+| `view.request.entitlements[].value` | string | yes |  |
+| `view.request.evaluationId` | string | yes |  |
+| `view.request.expiresAt` | number | yes | Until when it can be made, epoch seconds. |
+| `view.request.maxApprovalS` | number | yes | The longest an approval lasts, in seconds. |
+| `view.request.resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.request.subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task` | object |  |  |
+| `view.task.action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task.application` | string | yes |  |
+| `view.task.approvedUntil` | number |  |  |
+| `view.task.createdAt` | number | yes |  |
+| `view.task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
+| `view.task.expiresAt` | number | yes |  |
+| `view.task.id` | string | yes |  |
+| `view.task.origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
+| `view.task.resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task.status` | one of `pending`, `approved`, `denied`, `expired`, `cancelled`, `failed` | yes |  |
+| `view.task.subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+
+**409**: The access request was already made.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `errors` | list | yes |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `view` | object |  |  |
+| `view.enabled` | boolean | yes |  |
+| `view.mine` | list |  |  |
+| `view.mine[].action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mine[].application` | string | yes |  |
+| `view.mine[].approvedUntil` | number |  |  |
+| `view.mine[].createdAt` | number | yes |  |
+| `view.mine[].entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
+| `view.mine[].expiresAt` | number | yes |  |
+| `view.mine[].id` | string | yes |  |
+| `view.mine[].origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
+| `view.mine[].resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mine[].status` | one of `pending`, `approved`, `denied`, `expired`, `cancelled`, `failed` | yes |  |
+| `view.mine[].subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mode` | one of `denial`, `task`, `mine`, `none` | yes | `denial`: the form; `task`: a request already made, or the ticket; `mine`: the requests about you; `none`: nothing to show. |
+| `view.request` | object |  |  |
+| `view.request.action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.request.application` | string | yes |  |
+| `view.request.display` | object |  |  |
+| `view.request.display.description` | string |  |  |
+| `view.request.display.title` | string |  |  |
+| `view.request.emergency` | boolean | yes |  |
+| `view.request.entitlements` | list |  | The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off. |
+| `view.request.entitlements[].label` | string | yes |  |
+| `view.request.entitlements[].value` | string | yes |  |
+| `view.request.evaluationId` | string | yes |  |
+| `view.request.expiresAt` | number | yes | Until when it can be made, epoch seconds. |
+| `view.request.maxApprovalS` | number | yes | The longest an approval lasts, in seconds. |
+| `view.request.resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.request.subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task` | object |  |  |
+| `view.task.action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task.application` | string | yes |  |
+| `view.task.approvedUntil` | number |  |  |
+| `view.task.createdAt` | number | yes |  |
+| `view.task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
+| `view.task.expiresAt` | number | yes |  |
+| `view.task.id` | string | yes |  |
+| `view.task.origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
+| `view.task.resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task.status` | one of `pending`, `approved`, `denied`, `expired`, `cancelled`, `failed` | yes |  |
+| `view.task.subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+
+**410**: The denial's window has passed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `errors` | list | yes |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `view` | object |  |  |
+| `view.enabled` | boolean | yes |  |
+| `view.mine` | list |  |  |
+| `view.mine[].action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mine[].application` | string | yes |  |
+| `view.mine[].approvedUntil` | number |  |  |
+| `view.mine[].createdAt` | number | yes |  |
+| `view.mine[].entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
+| `view.mine[].expiresAt` | number | yes |  |
+| `view.mine[].id` | string | yes |  |
+| `view.mine[].origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
+| `view.mine[].resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mine[].status` | one of `pending`, `approved`, `denied`, `expired`, `cancelled`, `failed` | yes |  |
+| `view.mine[].subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mode` | one of `denial`, `task`, `mine`, `none` | yes | `denial`: the form; `task`: a request already made, or the ticket; `mine`: the requests about you; `none`: nothing to show. |
+| `view.request` | object |  |  |
+| `view.request.action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.request.application` | string | yes |  |
+| `view.request.display` | object |  |  |
+| `view.request.display.description` | string |  |  |
+| `view.request.display.title` | string |  |  |
+| `view.request.emergency` | boolean | yes |  |
+| `view.request.entitlements` | list |  | The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off. |
+| `view.request.entitlements[].label` | string | yes |  |
+| `view.request.entitlements[].value` | string | yes |  |
+| `view.request.evaluationId` | string | yes |  |
+| `view.request.expiresAt` | number | yes | Until when it can be made, epoch seconds. |
+| `view.request.maxApprovalS` | number | yes | The longest an approval lasts, in seconds. |
+| `view.request.resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.request.subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task` | object |  |  |
+| `view.task.action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task.application` | string | yes |  |
+| `view.task.approvedUntil` | number |  |  |
+| `view.task.createdAt` | number | yes |  |
+| `view.task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
+| `view.task.expiresAt` | number | yes |  |
+| `view.task.id` | string | yes |  |
+| `view.task.origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
+| `view.task.resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task.status` | one of `pending`, `approved`, `denied`, `expired`, `cancelled`, `failed` | yes |  |
+| `view.task.subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+
+**503**: The realm holds as many pending access requests as it may.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `errors` | list | yes |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `view` | object |  |  |
+| `view.enabled` | boolean | yes |  |
+| `view.mine` | list |  |  |
+| `view.mine[].action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mine[].application` | string | yes |  |
+| `view.mine[].approvedUntil` | number |  |  |
+| `view.mine[].createdAt` | number | yes |  |
+| `view.mine[].entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
+| `view.mine[].expiresAt` | number | yes |  |
+| `view.mine[].id` | string | yes |  |
+| `view.mine[].origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
+| `view.mine[].resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mine[].status` | one of `pending`, `approved`, `denied`, `expired`, `cancelled`, `failed` | yes |  |
+| `view.mine[].subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.mode` | one of `denial`, `task`, `mine`, `none` | yes | `denial`: the form; `task`: a request already made, or the ticket; `mine`: the requests about you; `none`: nothing to show. |
+| `view.request` | object |  |  |
+| `view.request.action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.request.application` | string | yes |  |
+| `view.request.display` | object |  |  |
+| `view.request.display.description` | string |  |  |
+| `view.request.display.title` | string |  |  |
+| `view.request.emergency` | boolean | yes |  |
+| `view.request.entitlements` | list |  | The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off. |
+| `view.request.entitlements[].label` | string | yes |  |
+| `view.request.entitlements[].value` | string | yes |  |
+| `view.request.evaluationId` | string | yes |  |
+| `view.request.expiresAt` | number | yes | Until when it can be made, epoch seconds. |
+| `view.request.maxApprovalS` | number | yes | The longest an approval lasts, in seconds. |
+| `view.request.resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.request.subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task` | object |  |  |
+| `view.task.action` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task.application` | string | yes |  |
+| `view.task.approvedUntil` | number |  |  |
+| `view.task.createdAt` | number | yes |  |
+| `view.task.entitlement` | string |  | The entitlement the request chose from the denial's catalog (#1204). |
+| `view.task.expiresAt` | number | yes |  |
+| `view.task.id` | string | yes |  |
+| `view.task.origin` | one of `form`, `pep` | yes | `form`: made here; `pep`: made by the application. |
+| `view.task.resource` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+| `view.task.status` | one of `pending`, `approved`, `denied`, `expired`, `cancelled`, `failed` | yes |  |
+| `view.task.subject` | any JSON | yes | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define. |
+
 ## GET /account-api/access-requests
 
 `getAccessRequests`
@@ -93,6 +686,12 @@ Scope: `account:manage`.
 | `enabled` | boolean |  |  |
 | `granted` | list |  |  |
 | `granted[].action` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `granted[].actor` | object |  |  |
+| `granted[].actor.chain` | list |  |  |
+| `granted[].actor.chain[].id` | string |  |  |
+| `granted[].actor.chain[].issuer` | string |  |  |
+| `granted[].actor.chain[].type` | string |  |  |
+| `granted[].actor.verifiedBy` | one of `caller`, `token` |  |  |
 | `granted[].application` | string, or null |  |  |
 | `granted[].approval` | object |  |  |
 | `granted[].approval.approvedAt` | string or number, or null |  |  |
@@ -124,16 +723,28 @@ Scope: `account:manage`.
 | `granted[].createdAt` | string or number, or null |  |  |
 | `granted[].decidedBy` | string |  |  |
 | `granted[].emergency` | boolean |  |  |
+| `granted[].entitlement` | string |  |  |
 | `granted[].expiresAt` | string or number, or null |  |  |
 | `granted[].finishedAt` | string or number, or null |  |  |
+| `granted[].formSubmittedBy` | string |  |  |
 | `granted[].id` | string |  |  |
 | `granted[].justification` | string |  |  |
 | `granted[].requester` | string, or null |  |  |
 | `granted[].resource` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `granted[].source` | object |  |  |
+| `granted[].source.external_url` | string |  |  |
+| `granted[].source.integration_id` | string |  |  |
+| `granted[].source.session_id` | string |  |  |
 | `granted[].status` | string |  |  |
 | `granted[].subject` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
 | `rows` | list |  |  |
 | `rows[].action` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `rows[].actor` | object |  |  |
+| `rows[].actor.chain` | list |  |  |
+| `rows[].actor.chain[].id` | string |  |  |
+| `rows[].actor.chain[].issuer` | string |  |  |
+| `rows[].actor.chain[].type` | string |  |  |
+| `rows[].actor.verifiedBy` | one of `caller`, `token` |  |  |
 | `rows[].application` | string, or null |  |  |
 | `rows[].approval` | object |  |  |
 | `rows[].approval.approvedAt` | string or number, or null |  |  |
@@ -165,12 +776,18 @@ Scope: `account:manage`.
 | `rows[].createdAt` | string or number, or null |  |  |
 | `rows[].decidedBy` | string |  |  |
 | `rows[].emergency` | boolean |  |  |
+| `rows[].entitlement` | string |  |  |
 | `rows[].expiresAt` | string or number, or null |  |  |
 | `rows[].finishedAt` | string or number, or null |  |  |
+| `rows[].formSubmittedBy` | string |  |  |
 | `rows[].id` | string |  |  |
 | `rows[].justification` | string |  |  |
 | `rows[].requester` | string, or null |  |  |
 | `rows[].resource` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `rows[].source` | object |  |  |
+| `rows[].source.external_url` | string |  |  |
+| `rows[].source.integration_id` | string |  |  |
+| `rows[].source.session_id` | string |  |  |
 | `rows[].status` | string |  |  |
 | `rows[].subject` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
 
@@ -250,6 +867,12 @@ Scope: `account:manage`.
 | `view.enabled` | boolean |  |  |
 | `view.granted` | list |  |  |
 | `view.granted[].action` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `view.granted[].actor` | object |  |  |
+| `view.granted[].actor.chain` | list |  |  |
+| `view.granted[].actor.chain[].id` | string |  |  |
+| `view.granted[].actor.chain[].issuer` | string |  |  |
+| `view.granted[].actor.chain[].type` | string |  |  |
+| `view.granted[].actor.verifiedBy` | one of `caller`, `token` |  |  |
 | `view.granted[].application` | string, or null |  |  |
 | `view.granted[].approval` | object |  |  |
 | `view.granted[].approval.approvedAt` | string or number, or null |  |  |
@@ -281,16 +904,28 @@ Scope: `account:manage`.
 | `view.granted[].createdAt` | string or number, or null |  |  |
 | `view.granted[].decidedBy` | string |  |  |
 | `view.granted[].emergency` | boolean |  |  |
+| `view.granted[].entitlement` | string |  |  |
 | `view.granted[].expiresAt` | string or number, or null |  |  |
 | `view.granted[].finishedAt` | string or number, or null |  |  |
+| `view.granted[].formSubmittedBy` | string |  |  |
 | `view.granted[].id` | string |  |  |
 | `view.granted[].justification` | string |  |  |
 | `view.granted[].requester` | string, or null |  |  |
 | `view.granted[].resource` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `view.granted[].source` | object |  |  |
+| `view.granted[].source.external_url` | string |  |  |
+| `view.granted[].source.integration_id` | string |  |  |
+| `view.granted[].source.session_id` | string |  |  |
 | `view.granted[].status` | string |  |  |
 | `view.granted[].subject` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
 | `view.rows` | list |  |  |
 | `view.rows[].action` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `view.rows[].actor` | object |  |  |
+| `view.rows[].actor.chain` | list |  |  |
+| `view.rows[].actor.chain[].id` | string |  |  |
+| `view.rows[].actor.chain[].issuer` | string |  |  |
+| `view.rows[].actor.chain[].type` | string |  |  |
+| `view.rows[].actor.verifiedBy` | one of `caller`, `token` |  |  |
 | `view.rows[].application` | string, or null |  |  |
 | `view.rows[].approval` | object |  |  |
 | `view.rows[].approval.approvedAt` | string or number, or null |  |  |
@@ -322,12 +957,18 @@ Scope: `account:manage`.
 | `view.rows[].createdAt` | string or number, or null |  |  |
 | `view.rows[].decidedBy` | string |  |  |
 | `view.rows[].emergency` | boolean |  |  |
+| `view.rows[].entitlement` | string |  |  |
 | `view.rows[].expiresAt` | string or number, or null |  |  |
 | `view.rows[].finishedAt` | string or number, or null |  |  |
+| `view.rows[].formSubmittedBy` | string |  |  |
 | `view.rows[].id` | string |  |  |
 | `view.rows[].justification` | string |  |  |
 | `view.rows[].requester` | string, or null |  |  |
 | `view.rows[].resource` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
+| `view.rows[].source` | object |  |  |
+| `view.rows[].source.external_url` | string |  |  |
+| `view.rows[].source.integration_id` | string |  |  |
+| `view.rows[].source.session_id` | string |  |  |
 | `view.rows[].status` | string |  |  |
 | `view.rows[].subject` | any JSON |  | An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define. |
 

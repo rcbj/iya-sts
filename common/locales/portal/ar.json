@@ -66,6 +66,8 @@
   "nav.ciba.heading": "طلبات تسجيل الدخول",
   "nav.access-requests.label": "طلبات الوصول",
   "nav.access-requests.heading": "طلبات الوصول بانتظارك",
+  "nav.access-request.label": "طلبات الوصول الخاصة بك",
+  "nav.access-request.heading": "طلبات الوصول الخاصة بك",
   "nav.device.label": "تسجيل دخول جهاز",
   "nav.device.heading": "تسجيل دخول جهاز",
   "nav.claim-sources.label": "مصادر المطالبات",

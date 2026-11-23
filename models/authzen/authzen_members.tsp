@@ -309,7 +309,7 @@ model TaskHandle {
 
   @member(#{ cite: "AuthZEN Access Request and Approval Profile, the task" })
   status: "pending" | "approved" | "denied" | "expired" | "cancelled" |
-    "failed";
+    "failed" | "partial";
 
   @member(#{ cite: "AuthZEN Access Request and Approval Profile, the task" })
   status_endpoint: string;
@@ -322,6 +322,92 @@ model TaskHandle {
 
   @member(#{ cite: "AuthZEN Access Request and Approval Profile, the task" })
   progress?: Record<unknown>;
+
+  /** Hints for a person (section 7.1, #1204), while
+   * `authzen.accessRequestDisplay` is on. */
+  @member(#{ cite: "AuthZEN Access Request and Approval Profile section 7.1" })
+  display?: Display;
+
+  /** A bulk request's items, positional (the BULK companion's 3.4). */
+  @member(#{ cite: "AuthZEN Bulk Access Requests Profile section 3.4" })
+  items?: TaskItem[];
+}
+
+/** One item of a bulk Task Handle: its own status and result (3.4). */
+@members(#{ id: "task-item", cite: "AuthZEN Bulk Access Requests Profile section 3.4", members: "closed" })
+model TaskItem {
+  @member(#{ cite: "AuthZEN Bulk Access Requests Profile section 3.4" })
+  resource: Record<unknown>;
+
+  @member(#{ cite: "AuthZEN Bulk Access Requests Profile section 3.4" })
+  action: Record<unknown>;
+
+  @member(#{ cite: "AuthZEN Bulk Access Requests Profile section 3.4" })
+  status: "pending" | "approved" | "denied" | "expired" | "cancelled" |
+    "failed";
+
+  /** REQUIRED once the item is approved: its own `reevaluate` result. */
+  @member(#{ cite: "AuthZEN Bulk Access Requests Profile section 3.4" })
+  result?: Record<unknown>;
+}
+
+/**
+ * The display hints (sections 5.1 and 7.1, #1204): the two names the
+ * profile's own examples use, and no others.
+ */
+@members(#{ id: "display", cite: "AuthZEN Access Request and Approval Profile section 5.1", members: "closed" })
+model Display {
+  @member(#{ cite: "AuthZEN Access Request and Approval Profile section 5.1" })
+  title?: string;
+
+  @member(#{ cite: "AuthZEN Access Request and Approval Profile section 5.1" })
+  description?: string;
+}
+
+// ---------------------------------------------------------------------------
+// THE CATALOG COMPANION (#1204): a denial's Catalogs Document and its
+// Catalog Endpoint's answer.
+// ---------------------------------------------------------------------------
+
+/** The CATALOG companion's section 6. */
+@members(#{ id: "catalogs-document", cite: "AuthZEN Access Request Catalog Profile section 6", members: "closed" })
+model CatalogsDocument {
+  /** JSON Pointer → Catalog Reference: here, the one entitlement field. */
+  @member(#{ cite: "AuthZEN Access Request Catalog Profile section 6" })
+  fields: Record<CatalogReference>;
+}
+
+/** A Catalog Reference (section 6). */
+@members(#{ id: "catalog-reference", cite: "AuthZEN Access Request Catalog Profile section 6", members: "closed" })
+model CatalogReference {
+  @member(#{ cite: "AuthZEN Access Request Catalog Profile section 6" })
+  endpoint: string;
+
+  @member(#{ cite: "AuthZEN Access Request Catalog Profile section 6" })
+  search_param?: string;
+}
+
+/** The CATALOG companion's section 8. */
+@members(#{ id: "catalog-response", cite: "AuthZEN Access Request Catalog Profile section 8", members: "closed" })
+model CatalogResponse {
+  @member(#{ cite: "AuthZEN Access Request Catalog Profile section 8" })
+  items: CatalogItem[];
+
+  @member(#{ cite: "AuthZEN Access Request Catalog Profile section 8" })
+  next_cursor?: string;
+
+  @member(#{ cite: "AuthZEN Access Request Catalog Profile section 8" })
+  total?: int32;
+}
+
+/** One Catalog Item (section 8): the value and its label, nothing else. */
+@members(#{ id: "catalog-item", cite: "AuthZEN Access Request Catalog Profile section 8", members: "closed" })
+model CatalogItem {
+  @member(#{ cite: "AuthZEN Access Request Catalog Profile section 8" })
+  value: string;
+
+  @member(#{ cite: "AuthZEN Access Request Catalog Profile section 8" })
+  label?: string;
 }
 
 /** What a registered callback is sent, once. */

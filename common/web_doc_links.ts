@@ -392,6 +392,7 @@ const PORTAL: Record<string, string> = {
   '/portal/consents': 'oauth-oidc.html#consent',
   '/portal/gnap': 'gnap.html#what-a-person-sees-portalgnap',
   '/portal/access-requests': 'authzen.html#access-requests-and-approvals',
+  '/portal/access-request': 'authzen.html#the-hosted-form-and-the-ticket',
   '/portal/email': 'mail.html',
   '/portal/pseudonyms': 'people.html#sign-in-names',
   '/portal/verify-pseudonym': 'people.html#sign-in-names',

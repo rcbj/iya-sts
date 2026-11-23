@@ -1,0 +1,6 @@
+{
+  "denialTitle": "Humiling ng access",
+  "denialDescription": "Maaaring hilingin ang access na ito. Isang tagapag-apruba na itinakda ng patakaran ang magpapasya, at pagkatapos ay magtatanong muli ang application.",
+  "taskTitle": "{status, select, pending {Naipadala ang kahilingan sa access} approved {Naaprubahan ang kahilingan sa access} denied {Tinanggihan ang kahilingan sa access} expired {Nag-expire ang kahilingan sa access} cancelled {Kinansela ang kahilingan sa access} failed {Nabigo ang kahilingan sa access} other {Kahilingan sa access}}",
+  "taskDescription": "{status, select, pending {Natanong na ang mga tagapag-apruba. Magtatanong muli ang application kapag nakapagpasya na ang isa sa kanila.} approved {Inaprubahan ng isang tagapag-apruba ang kahilingang ito. Magtatanong muli ang application dala ang pag-apruba.} denied {Tinanggihan ng isang tagapag-apruba ang kahilingang ito.} expired {Walang nagpasya sa kahilingang ito bago ito nag-expire.} cancelled {Kinansela ang kahilingang ito.} failed {Hindi makumpleto ang kahilingang ito. Humiling muli.} other {Ang kahilingang ito ay {status}.}}"
+}

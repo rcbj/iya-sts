@@ -8613,6 +8613,19 @@ const CODES = [
       'ran no ceremony to report and cannot prove (#1955).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-AUTHN-0581',
+    summary: 'A post-login activity is not asked: the module its row in ' +
+      'common/post_login_kinds.ts names could not be loaded, or does not ' +
+      'export a whole activity (its id and exposure the row\'s, and every ' +
+      'question it must answer). The other activities are still asked ' +
+      '(#2009).',
+    spec: 'Log line; nobody is asked that activity' },
+  { code: 'STS-AUTHN-0582',
+    summary: 'A post-login activity could not say whether a person is due ' +
+      'it (its answer threw), so it was not asked at that sign-in, even ' +
+      'where it may have been required. The other activities are still ' +
+      'asked. Logged at error level once per activity in a process (#2009).',
+    spec: 'Log line; the sign-in goes on without that activity' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -13351,6 +13364,36 @@ const CODES = [
       'XML Encryption key. While the application holds one, a request for ' +
       'it is encrypted to its certificate and to nothing else. Nothing is ' +
       'issued (#1668).',
+    spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
+      'section 12' },
+  { code: 'STS-WSTRUST-0084',
+    summary: 'A WS-Trust request for an application that requires a ' +
+      'signed request (wstrustSignRequest, or wstrust.signRequest) ' +
+      'carried no WS-Security message signature this service accepted. ' +
+      'Nothing is issued (#1917).',
+    spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
+      'section 12' },
+  { code: 'STS-WSTRUST-0085',
+    summary: 'A WS-Trust request did not match its application\'s ' +
+      'wstrustSignRequestElements: an expression selected nothing, or ' +
+      'selected an element the accepted signature does not reference. ' +
+      'Nothing is issued (#1917).',
+    spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
+      'section 12' },
+  { code: 'STS-WSTRUST-0086',
+    summary: 'A WS-Trust response could not be signed while response ' +
+      'signing is on (wstrustSignResponse, or wstrust.signResponse): ' +
+      'an expression of wstrustSignResponseElements matched nothing or ' +
+      'selected the wsse:Security header itself, the realm\'s XML ' +
+      'signing key has no certificate to reference, or the signature ' +
+      'failed. The token is not sent (#1917, #1918).',
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0087',
+    summary: 'A WS-Trust request\'s signing map (wstrustSignRequestElements) ' +
+      'selected more than 256 elements of it. Nothing is issued: the map ' +
+      'is held to a bound, because each selected element is a walk of ' +
+      'the request (#1917).',
     spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
       'section 12' },
   { code: 'STS-WSFED-0001',
@@ -18765,6 +18808,78 @@ const CODES = [
       'certificate (#1242).',
     spec: 'the add succeeds with warning; the handshake of the certificate ' +
       'itself verifies' },
+  { code: 'STS-TLS-0065',
+    summary: 'certSignIn.profiles is not a JSON array of well-formed ' +
+      'certificate sign-in profiles (an id, the issuers\' SubjectPublicKeyInfo ' +
+      'SHA-256s, keyUsage names, extendedKeyUsage and policy OIDs, known ' +
+      'binding methods, a name method only with lowAffinity true). A write ' +
+      'is refused; a stored value that is not one is not used, and no ' +
+      'certificate is covered by a profile (#2012).',
+    spec: 'HTTP 400 (the setting write); none (logged) when read' },
+  { code: 'STS-TLS-0066',
+    summary: 'A client certificate a certificate sign-in profile covers is ' +
+      'outside it: its keyUsage, its extendedKeyUsage, or the certificate ' +
+      'policies RFC 5280 policy processing carries through its path are ' +
+      'not the profile\'s, so it names nobody (#2012).',
+    spec: 'the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468)' },
+  { code: 'STS-TLS-0067',
+    summary: 'A client certificate\'s bindings name more than one account: ' +
+      'one method found several people, two methods found different ' +
+      'people, or the certificate is stored on one person and carries a ' +
+      'PIV card UUID another holds; it names nobody (#2012).',
+    spec: 'the outside-certificate refusal (STS-TLS-0055, STS-AUTHN-0469)' },
+  { code: 'STS-TLS-0068',
+    summary: 'A client certificate a certificate sign-in profile covers is ' +
+      'bound to nobody: none of the profile\'s binding methods found an ' +
+      'account (#2012).',
+    spec: 'the outside-certificate refusal (STS-TLS-0054, STS-AUTHN-0468)' },
+  { code: 'STS-TLS-0069',
+    summary: 'A value written to stsCertificateBinding is not a certificate ' +
+      'sign-in binding in the grammar certificate_binding.ts canonicalises ' +
+      '(certificate-sha256:, issuer-serial:, issuer-ski:, spki-sha256:, ' +
+      'issuer-subject: or subject:); nothing was written (#2012).',
+    spec: 'HTTP 400 (the directory write); LDAP constraintViolation' },
+  { code: 'STS-TLS-0070',
+    summary: 'A certificate sign-in binding written to stsCertificateBinding ' +
+      'is already held by another entry of the realm, which would make one ' +
+      'certificate name two people; nothing was written (#2012).',
+    spec: 'HTTP 400 (the directory write); LDAP constraintViolation' },
+  { code: 'STS-TLS-0071',
+    summary: 'A certificate sign-in was refused because the realm requires ' +
+      'a verified revocation status (certSignIn.requireRevocation) and the ' +
+      'status was unknown or not consulted (#2012).',
+    spec: 'HTTP 200 (GET /tls/sign-in, session.refusedOnRevocation); the ' +
+      'sign-in screen\'s STS-AUTHN-0464' },
+  { code: 'STS-TLS-0072',
+    summary: 'A request carried an RFC 9440 Client-Cert or Client-Cert-Chain ' +
+      'header from a sender that is not a trusted TLS-terminating proxy ' +
+      '(tls.trustedProxyCertificates and tls.trustedProxyAddresses), so ' +
+      'both were removed before anything read them (#2012).',
+    spec: 'none (recorded): the request goes on without them' },
+  { code: 'STS-TLS-0073',
+    summary: 'A trusted TLS-terminating proxy forwarded a Client-Cert that ' +
+      'is not an RFC 9440 byte sequence of one certificate, or whose chain ' +
+      'does not verify to the client truststore, so the request presents ' +
+      'no client certificate (#2012).',
+    spec: 'none (logged): the request goes on with no certificate' },
+  { code: 'STS-TLS-0074',
+    summary: 'A certificate sign-in handoff (/authn/certificate/continue) ' +
+      'named no live handoff: unknown, used, expired, or certSignIn.handoff ' +
+      'is off (#2012).',
+    spec: 'HTTP 400' },
+  { code: 'STS-TLS-0075',
+    summary: 'A certificate sign-in handoff arrived without the sign-on ' +
+      'session cookie of the browser that started it, so the certificate ' +
+      'was not bound to that sign-in: the listener does not share the ' +
+      'main port\'s host name and is not under authn.cookieDomain, or ' +
+      'another browser opened the link (#2012).',
+    spec: 'HTTP 403' },
+  { code: 'STS-TLS-0076',
+    summary: 'Only one of tls.trustedProxyCertificates and ' +
+      'tls.trustedProxyAddresses is set, so no forwarded client ' +
+      'certificate is read: a TLS-terminating proxy is trusted by both its ' +
+      'certificate and its address (#2012).',
+    spec: 'none (logged)' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +
@@ -20968,6 +21083,12 @@ const CODES = [
   { code: 'STS-I18N-0015',
     summary: 'POST /authn/language came from a page of another site (#1442).',
     spec: 'HTTP 403' },
+  { code: 'STS-I18N-0016',
+    summary: 'A refusal named a `refusals` catalog key the English catalog ' +
+      'does not have — a sentence a store kept under another build, or a ' +
+      'rollback — so the English it was given, or a general sentence, was ' +
+      'sent instead of the key, with no catalog message beside it (#2006).',
+    spec: 'none — a warning in the log' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',
@@ -26745,6 +26866,79 @@ const CODES = [
       'token-exchange gate is a detail tuple it answers 501 ' +
       '(STS-XPEP-0140). The next pull that can read them sends the list.',
     spec: 'none — logged; the catalogue is still sent' },
+  { code: 'STS-AUTHZEN-0146',
+    summary: 'The hosted access request form (/portal/access-request, ' +
+      '#1204) was opened or submitted with an evaluation_id this realm ' +
+      'holds no requestable denial record for: never issued, removed a ' +
+      'day after its window, or not recorded because the store was full.',
+    spec: 'the profile\'s section 16, form_url; the portal answers 404' },
+  { code: 'STS-AUTHZEN-0147',
+    summary: 'The hosted access request form or ticket was opened by ' +
+      'somebody who is not the subject of the denial or the request it ' +
+      'names (the subject\'s type is one of authzen.resolveSubjectTypes ' +
+      'and its id one of the person\'s names). The same answer as a ' +
+      'request that does not exist (#1204).',
+    spec: 'the profile\'s sections 13.1 and 13.3.3; the portal answers 404' },
+  { code: 'STS-AUTHZEN-0148',
+    summary: 'The hosted access request form was opened or submitted after ' +
+      'the requestable denial\'s window had passed (#1204).',
+    spec: 'the profile\'s section 13.2, expired_denial; the portal ' +
+      'answers 410' },
+  { code: 'STS-AUTHZEN-0149',
+    summary: 'An access request was submitted on the hosted form while ' +
+      'authzen.accessRequestForm (or the profile) is off (#1204).',
+    spec: 'none — the portal answers 403' },
+  { code: 'STS-AUTHZEN-0150',
+    summary: 'A Catalogs Document or Catalog Endpoint of the AuthZEN access ' +
+      'request catalogs (#1204) was asked for a denial this realm did not ' +
+      'record, whose advice lists no entitlements, or by a caller it was ' +
+      'not answered to or that is no longer scoped to its application.',
+    spec: 'the CATALOG companion\'s sections 7 and 11; 404 problem+json' },
+  { code: 'STS-AUTHZEN-0151',
+    summary: 'A Catalog Endpoint call carried a cursor this endpoint did ' +
+      'not issue for the same search (#1204).',
+    spec: 'the CATALOG companion\'s section 7; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0152',
+    summary: 'An access request for a denial whose catalog lists ' +
+      'entitlements carried no requested_access.entitlement, or one the ' +
+      'catalog does not list (#1204).',
+    spec: 'the CATALOG companion\'s section 10.3; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0153',
+    summary: 'The access request catalogs were called while ' +
+      'authzen.accessRequestCatalogs (or the profile) is off (#1204).',
+    spec: 'none — 501 problem+json' },
+  { code: 'STS-AUTHZEN-0154',
+    summary: 'An access request\'s client.actor named a chain the caller\'s ' +
+      'own credential does not authorize: neither one link that is the ' +
+      'caller itself nor, link for link, the act chain of its own access ' +
+      'token (#1204, the ACTOR companion).',
+    spec: 'the ACTOR companion\'s section 3.2; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0155',
+    summary: 'An access request\'s client.actor or client.source was ' +
+      'malformed: a link without its id or sub, a non-string or overlong ' +
+      'member, a chain deeper than 8, or an external_url that is not https ' +
+      '(#1204).',
+    spec: 'the ACTOR companion\'s section 3.1; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0156',
+    summary: 'A bulk access request carried a top-level resource or action ' +
+      'beside items (#1204).',
+    spec: 'the BULK companion\'s section 3.1; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0157',
+    summary: 'A bulk access request\'s items were not 1 to ' +
+      'authzen.accessRequestMaxBulkItems objects (#1204).',
+    spec: 'the BULK companion\'s section 3.2; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0158',
+    summary: 'A bulk access request carried a top-level denial, or an item ' +
+      'without its own: this service issues no bundle denial (#1204).',
+    spec: 'the BULK companion\'s section 3.3; invalid_denial_binding' },
+  { code: 'STS-AUTHZEN-0159',
+    summary: 'A bulk access request\'s items named denials about different ' +
+      'applications (#1204).',
+    spec: 'none — 400 problem+json' },
+  { code: 'STS-AUTHZEN-0160',
+    summary: 'A bulk access request carried a callback, which this service ' +
+      'does not take on a bulk request (#1204).',
+    spec: 'none — 400 problem+json' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +

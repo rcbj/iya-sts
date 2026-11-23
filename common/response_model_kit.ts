@@ -193,9 +193,20 @@ class ResponseModelKit {
   // The answer `withoutCodes()` models: the same value with every `errorCode`
   // gone, at any depth. A mark on it is not carried, so this is the last thing
   // done to a body.
+  //
+  // A VALUE WITH ITS OWN `toJSON()` IS COPIED AS IT WILL BE SENT (run
+  // 45236493306). #2006's refusal `Sentence` is a `String` object, so
+  // `typeof` says `object` and the walk below copied its enumerable members
+  // — one per character, plus its key and parameters — where JSON.stringify
+  // would have written the English. Every act refused with a Sentence then
+  // answered `errors: [{…}]`, which its model refuses (STS-API-0139, the
+  // `begin-passkey-upgrade` example's 500). A Date was emptied the same way.
   static stripCodes(body: any): any {
     if (!body || typeof body !== 'object') {
       return body;
+    }
+    if (typeof body.toJSON === 'function') {
+      return ResponseModelKit.stripCodes(body.toJSON());
     }
     if (Array.isArray(body)) {
       return body.map(ResponseModelKit.stripCodes);

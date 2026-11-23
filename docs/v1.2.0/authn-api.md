@@ -98,7 +98,24 @@ The answer names the next step; the page follows it.
 | `mfa` | A second factor, or setting one up, on the page at `location` (`step` says which: `totp`, `webauthn`, `enrol`, `email-code`, `email-link`). |
 | `password-change` | The password must be changed first, at `location`. |
 | `home-cell` | The account is held in another region: send `form` (its method, address and fields) as it is. |
-| `refused` | `errors` says why, in English. The page shows it and the sign-in can be tried again. |
+| `refused` | `errors` says why, in English, and `messages` names each sentence's message in the page's language catalogs (below). The page shows it and the sign-in can be tried again. |
+
+**A refusal is drawn in the page's language.** `errors` is always English, so
+a program reading it sees what it always saw. Beside it, `messages` has one
+entry per sentence: `{ "key": "refusals.authn.failedFor", "params": {
+"username": "alice" } }`, or `null` for a sentence that has no message, such as
+text an operator wrote. A parameter that is itself words is a message of its
+own. The page draws each message from the `refusals` catalogs, published at
+`/web/locales/refusals/<catalog>.json`, and shows the English where a catalog
+lacks one. The sign-in screen's view carries the refusal it is showing the same
+way, as `view.refusal`.
+
+```json
+{ "ok": false, "next": "refused",
+  "errors": ["Authentication failed for alice."],
+  "messages": [{ "key": "refusals.authn.failedFor",
+                 "params": { "username": "alice" } }] }
+```
 
 Refusals never carry an error code; the service records the code in its
 audit log. Sign-in attempts are rate limited exactly as they were, and a

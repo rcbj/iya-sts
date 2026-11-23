@@ -40,15 +40,24 @@ whether each is translated yet.
 > `common/locales/catalogs.json` (`machine-unreviewed`). Have the text reviewed
 > before you rely on it, and mark a catalog `reviewed` once it has been.
 
-**A refusal on a page that continues stays in English.** A wrong password on
-the sign-in screen, a validation message, an API error and a log line are
-written in English. A page in Swedish shows a refused password in English.
+**A refusal is in the page's language (#2006).** On the sign-in screens and
+every step after them, the wallet sign-in, consent, sign-out, the GNAP pages
+and the federation pages, the sentence saying why something was refused
+follows the page's language. A page in Swedish shows a refused password in
+Swedish.
 
 **The page that ends a browser flow is in the chosen language (#1326).**
 Its heading, the sentence saying what was wrong, the background and the
 diagnostic labels follow that language. A protocol value on the page (the
 `error`, the `error_description`, a URI, the `state`) is shown as it was
 sent.
+
+What a program reads stays English: an API's `errors` (the page draws the
+`messages` beside them, see [the sign-in API](authn-api.md#what-an-act-answers)),
+a protocol's `error_description`, a log line and an error code. Text an
+operator wrote, such as a policy's advice or an application's configuration
+problem, is shown as it was written. The admin console's and the user
+portal's refusals are still English.
 
 ## Which language a page is drawn in
 

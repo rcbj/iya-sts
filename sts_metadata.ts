@@ -676,8 +676,14 @@ const SPECS: Spec[] = [
               'problem type; the metadata member, jwks_uri and capability; ' +
               'request_schema_url on a requestable denial, the same ' +
               'origin\'s JSON Schema of the submission\'s optional ' +
-              'augmentations. Missing: a hosted form (form_url) and ' +
-              'display, and the BULK, ACTOR and CATALOG companions.' },
+              'augmentations; display on a requestable denial and on a ' +
+              'Task Handle, the advice\'s own words or the service\'s in ' +
+              'the language asked for, while ' +
+              'authzen.accessRequestDisplay is on; form_url, the portal\'s ' +
+              'hosted form where the denial\'s subject submits it, and ' +
+              'links.ticket, while authzen.accessRequestForm is on. ' +
+              'Missing: nothing of the base profile; each companion\'s ' +
+              'own note says what it lacks.' },
   { id: 'authzen-arap-callback',
     name: 'AuthZEN Callback Notifications Profile 1.0 (draft)',
     where: 'OpenID Foundation AuthZEN WG',
@@ -692,6 +698,51 @@ const SPECS: Spec[] = [
               'the attempt bound; an HTTP 4xx or a URL the outbound policy ' +
               'refuses is not. Missing: the partial event (BULK) and ' +
               'deployment-level event subscriptions.' },
+  { id: 'authzen-arap-catalog',
+    name: 'AuthZEN Access Request Catalog Profile 1.0 (draft)',
+    where: 'OpenID Foundation AuthZEN WG',
+    url: 'https://openid.github.io/authzen/' +
+         'authzen-access-request-catalog-profile-1_0.html',
+    coverage: 'partial: request_catalogs_url on a recorded requestable ' +
+              'denial whose policy advice lists entitlements, while ' +
+              'authzen.accessRequestCatalogs is on; the Catalogs Document ' +
+              'with its one field, requested_access.entitlement; the ' +
+              'Catalog Endpoint with q, cursor and limit, answered only to ' +
+              'the caller the denial was answered to; the value validated ' +
+              'at submission and reaching the policy as a trusted fact of ' +
+              'the approval. Missing: scope_params (one catalog has nothing ' +
+              'to scope by), granted, risk_level and owner, and the agent ' +
+              'protocol catalogs.' },
+  { id: 'authzen-arap-actor',
+    name: 'AuthZEN Actor Delegation Profile 1.0 (draft)',
+    where: 'OpenID Foundation AuthZEN WG',
+    url: 'https://openid.github.io/authzen/' +
+         'authzen-access-request-actor-profile-1_0.html',
+    coverage: 'partial: client.actor, its id, issuer and type and the ' +
+              'nested act chain, verified against the caller\'s own ' +
+              'credential (one link that is the caller itself, or the act ' +
+              'chain of its own access token, link for link) and refused ' +
+              'otherwise, while authzen.accessRequestActor is on; ' +
+              'client.source recorded as audit metadata; both shown to ' +
+              'the approvers and never a policy fact. Missing: approval ' +
+              'routing by an actor in the chain, and signed assertions or ' +
+              'deployment policies as proof of a chain.' },
+  { id: 'authzen-arap-bulk',
+    name: 'AuthZEN Bulk Access Requests Profile 1.0 (draft)',
+    where: 'OpenID Foundation AuthZEN WG',
+    url: 'https://openid.github.io/authzen/' +
+         'authzen-access-request-bulk-profile-1_0.html',
+    coverage: 'partial: items, each with its own denial checked as a ' +
+              'single submission is, from one caller about one ' +
+              'application, while authzen.accessRequestBulk is on; the ' +
+              'Task Handle\'s items with each item\'s own status and ' +
+              'result, the aggregate status with partial, no top-level ' +
+              'result; cancellation of the pending items and 409 once ' +
+              'every item finished; each item approved and re-evaluated ' +
+              'on its own; Idempotency-Key over the whole body. Missing: ' +
+              'a bundle denial and the bulk binding_hash (this service ' +
+              'issues per-item denials only), per-item callbacks and the ' +
+              'partial event.' },
   { id: 'xacmljson', name: 'JSON Profile of XACML 3.0 v1.1',
     where: 'OASIS',
     url: 'https://docs.oasis-open.org/xacml/xacml-json-http/v1.1/os/' +
@@ -2185,8 +2236,21 @@ const SPECS: Spec[] = [
               'client refreshes with a new certificate. An UNVERIFIED ' +
               'certificate still binds, as section 3 permits. Only where the ' +
               'main port is TLS (global.https), and advertised as ' +
-              'tls_client_certificate_bound_access_tokens only there. No ' +
-              'certificate is read from a proxy header.' },
+              'tls_client_certificate_bound_access_tokens only there. A ' +
+              'certificate is read from a header only as RFC 9440\'s, from ' +
+              'a TLS-terminating proxy named by its certificate and its ' +
+              'address (#2012).' },
+  { id: 'rfc9440', name: 'RFC 9440 — Client-Cert HTTP Header Field',
+    where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9440',
+    coverage: 'partial: the origin server\'s half, off by default (#2012). ' +
+              'Client-Cert and Client-Cert-Chain are read only from a ' +
+              'TLS-terminating proxy an administrator names by BOTH the ' +
+              'client certificate it connects with and its address ' +
+              '(tls.trustedProxyCertificates, tls.trustedProxyAddresses); ' +
+              'the forwarded chain is verified here to the client ' +
+              'truststore, and then stands for the handshake\'s certificate ' +
+              'at every door. From any other sender the two headers are ' +
+              'removed and recorded. This service is never the proxy.' },
   { id: 'rfc8707', name: 'RFC 8707 — Resource Indicators for OAuth 2.0',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc8707',
     coverage: 'full for the authorization code flow: `resource` is read at ' +
@@ -3582,13 +3646,20 @@ const SPECS: Spec[] = [
       'Employees and Contractors (FIPS 201-3) and SP 800-73-4',
     where: 'NIST',
     url: 'https://csrc.nist.gov/pubs/fips/201-3/final',
-    coverage: 'minimal: the four key slots as certificate profiles (PIV ' +
+    coverage: 'partial: the four key slots as certificate profiles (PIV ' +
               'Authentication 9a, Digital Signature 9c, Key Management ' +
               '9d, Card Authentication 9e, which signs nobody in by ' +
-              'default), and an outside PIV or CAC card mapped by the card ' +
+              'default); an outside PIV or CAC card mapped by the card ' +
               'UUID in its urn:uuid subjectAltName when it asserts a PIV ' +
-              'Authentication policy (off by default). No FASC-N, CHUID, ' +
-              'card management or biometrics.' },
+              'Authentication policy (off by default); section 6.2.3.1\'s ' +
+              'PKI-AUTH as certificate sign-in profiles (#2012): the ' +
+              'issuers, keyUsage, extendedKeyUsage and the policies RFC ' +
+              '5280 policy processing carries through the path, mappings ' +
+              'included, and a binding to one account by issuer and ' +
+              'serial, issuer and SKI, the key, the certificate or the card ' +
+              'UUID, with a verified revocation status where the realm ' +
+              'requires one, on a listener of its own if wanted. No FASC-N, ' +
+              'CHUID, card management or biometrics.' },
   { id: 'lamps-attestation-freshness', name: 'Requesting a Freshness Nonce ' +
       'for Attestation Evidence in Certificate Signing Requests ' +
       '(draft-ietf-lamps-attestation-freshness-08)',
@@ -4115,7 +4186,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'authzen.searchMaxCandidates, and said incomplete past it.' },
   { path: '/access/v1/access-requests', group: 'AuthZEN',
     name: 'Submit an access request',
-    specs: ['authzen-arap', 'authzen-arap-callback'],
+    specs: ['authzen-arap', 'authzen-arap-callback', 'authzen-arap-actor',
+            'authzen-arap-bulk'],
     what: 'POST a denied evaluation\'s subject, resource, action and ' +
           'context with the denial it received (its binding_token and ' +
           'expires_at, echoed unchanged); get 202 and a Task Handle, or 201 ' +
@@ -4133,12 +4205,34 @@ const ENDPOINTS: EndpointEntry[] = [
           'requested_access.requested_until and emergency, the last ' +
           'requiring the justification. Public, the same origin as ' +
           'access_request_endpoint; a requestable denial\'s ' +
-          'request_schema_url names it. No form is hosted, so no denial ' +
-          'carries form_url. Answers 501 while the API or the profile ' +
+          'request_schema_url names it. While authzen.accessRequestForm ' +
+          'is on, a denial also names form_url, a portal page. Answers ' +
+          '501 while the API or the profile ' +
           'is off. Registered before the task-status path, which would ' +
           'otherwise read "schema" as an id.' },
+  { path: '/access/v1/access-requests/catalogs/:evaluation',
+    group: 'AuthZEN',
+    name: 'An access request\'s Catalogs Document',
+    specs: ['authzen-arap-catalog'],
+    what: 'GET the Catalogs Document a requestable denial names as ' +
+          'request_catalogs_url: the one catalog-backed field, ' +
+          'requested_access.entitlement, and its Catalog Endpoint. Only ' +
+          'for a recorded denial whose policy advice lists entitlements, ' +
+          'and only to the caller it was answered to, still scoped to the ' +
+          'application. The same door and AUTHZEN_PEPS as a submission. ' +
+          'Answers 501 while authzen.accessRequestCatalogs is off.' },
+  { path: '/access/v1/access-requests/catalogs/:evaluation/entitlements',
+    group: 'AuthZEN',
+    name: 'An access request\'s entitlements catalog',
+    specs: ['authzen-arap-catalog'],
+    what: 'GET the entitlements the denial\'s policy advice lists, as ' +
+          'Catalog Items (value and label): q matches either, cursor ' +
+          'continues the same search and limit is clamped to 50. The same ' +
+          'caller as the Catalogs Document. A submission\'s ' +
+          'requested_access.entitlement must be one of them.' },
   { path: '/access/v1/access-requests/:id', group: 'AuthZEN',
-    name: 'An access request\'s task status', specs: ['authzen-arap'],
+    name: 'An access request\'s task status',
+    specs: ['authzen-arap', 'authzen-arap-bulk'],
     what: 'GET the task: its status (pending, approved, denied, expired, ' +
           'cancelled, failed), Retry-After while pending, and once approved ' +
           'the reevaluate result with the approval the PEP carries on its ' +
@@ -4146,7 +4240,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'caller that submitted it alone; to anybody else it is ' +
           'unknown_task.' },
   { path: '/access/v1/access-requests/:id/cancel', group: 'AuthZEN',
-    name: 'Cancel an access request', specs: ['authzen-arap'],
+    name: 'Cancel an access request',
+    specs: ['authzen-arap', 'authzen-arap-bulk'],
     what: 'POST, or DELETE, to cancel a pending task of the caller\'s; a ' +
           'finished one answers 409 invalid_task_state.' },
   { path: '/.well-known/authzen-configuration', group: 'AuthZEN',
@@ -5061,7 +5156,7 @@ const ENDPOINTS: EndpointEntry[] = [
   // reason to know it is here is the certificate — one anchor covers both.
   { path: '/tls/sign-in', group: 'TLS', name: 'Sign in with a client ' +
       'certificate',
-    specs: ['rfc8446', 'rfc5280', 'fips201'],
+    specs: ['rfc8446', 'rfc5280', 'fips201', 'rfc9440'],
     what: 'A VERIFIED CLIENT CERTIFICATE BECOMES A SESSION (2026-09-05), on ' +
           'this port since 2026-09-16 — it was a side effect of reaching ' +
           'either deleted TLS listener, which meant loading a diagnostic ' +
@@ -5074,7 +5169,26 @@ const ENDPOINTS: EndpointEntry[] = [
           'stored in userCertificate on exactly one entry of the realm ' +
           '(never matched by its common name), and an application\'s ' +
           'certificate (an RFC 8705 credential, not a person) are each ' +
-          'answered 200 with no session and the reason.' },
+          'answered 200 with no session and the reason. Behind a ' +
+          'TLS-terminating proxy the administrator named ' +
+          '(tls.trustedProxyCertificates and tls.trustedProxyAddresses, ' +
+          'off by default), the certificate is RFC 9440\'s Client-Cert ' +
+          'and Client-Cert-Chain, verified here as a handshake\'s would ' +
+          'be; from anybody else those headers are removed.' },
+  { path: '/authn/certificate/continue', group: 'TLS',
+    name: 'Certificate sign-in on its own listener',
+    specs: ['rfc8446', 'rfc5280', 'fips201'],
+    what: 'THE CERTIFICATE SIGN-IN HANDOFF (#2012, off by default: ' +
+          'certSignIn.handoff). The sign-in screen links here, on the ' +
+          'listener the certificate-sign-in application is mapped to — one ' +
+          'whose clientAuth asks for a certificate — so the smart card and ' +
+          'its PIN are asked for on this request alone. The certificate is ' +
+          'held to what the screen\'s own certificate door asks, bound to ' +
+          'the pending sign-in and to the browser\'s sign-on session (both ' +
+          'requests carry it), and the browser is sent back to the screen, ' +
+          'which continues as its holder. An unknown, used or expired ' +
+          'handoff is answered 400, and one arriving without the starting ' +
+          'browser\'s session 403.' },
   { path: '/tls/server-certificate', group: 'TLS', name: 'The server ' +
       'certificate (PEM)',
     specs: ['rfc5280'],
@@ -9650,11 +9764,11 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC (#572). After a wallet, rate limited on the sign-in ' +
           'bucket.' },
   { path: '/authn-api/mfa/:id/webauthn/options', group: 'Authentication',
-    name: 'Arm a passkey step\'s ceremony', specs: ['webauthn'],
+    name: 'Arm a passkey step\'s ceremony', specs: ['webauthn', 'ctap21'],
     what: 'NON-SPEC (#572). The step\'s challenge, RP ID, user and keys, ' +
           'and the passkey policy\'s options.' },
   { path: '/authn-api/mfa/:id/webauthn', group: 'Authentication',
-    name: 'Finish a passkey step', specs: ['webauthn'],
+    name: 'Finish a passkey step', specs: ['webauthn', 'ctap21'],
     what: 'NON-SPEC (#572). The ceremony\'s result, verified: a ' +
           'registration where the step enrols a key, an assertion ' +
           'otherwise — decided by the step.' },
@@ -10959,7 +11073,9 @@ const PROTOCOLS: Protocol[] = [
           'authenticated elsewhere and asked whether they may. Held to the ' +
           'OASIS conformance suite rather than to a test written here.' },
   { name: 'AuthZEN', groups: ['AuthZEN'],
-    specs: ['authzen10', 'authzen-arap', 'authzen-arap-callback'],
+    specs: ['authzen10', 'authzen-arap', 'authzen-arap-callback',
+            'authzen-arap-catalog', 'authzen-arap-actor',
+            'authzen-arap-bulk'],
     what: 'The AuthZEN Authorization API over the XACML engine: a Policy ' +
           'Enforcement Point asks one question per access and is told true ' +
           'or false, decided against the realm\'s root policy. An ADAPTER: ' +
@@ -11205,7 +11321,7 @@ const PROTOCOLS: Protocol[] = [
           'console pages because what they describe is this family.',
     sockets: 'BER over TCP 389, and TLS on 636. Neither is on the router.' },
   { name: 'PKI / X.509', groups: ['TLS'],
-    specs: ['rfc5280', 'rfc8446'],
+    specs: ['rfc5280', 'rfc8446', 'rfc9440', 'fips201'],
     what: 'The other end of a TLS and a MUTUAL-TLS connection: the ' +
           'certificate this service presents, the truststore it verifies a ' +
           'client certificate against, and what a verified one is worth — a ' +

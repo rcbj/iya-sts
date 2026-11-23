@@ -106,6 +106,11 @@ interface Caller {
   identifier: string;
   clientId: string;
   roles: string[];
+  // The bearer door's verified access token's issuer and its RFC 8693
+  // `act` chain, when it has one (#1204, the ACTOR companion's section
+  // 3.2: what the caller's credential authorizes). Absent at mTLS.
+  iss?: string;
+  act?: any;
 }
 
 // What `applicationOf()` answers.
@@ -655,9 +660,15 @@ class AuthzenCaller {
     }
     const registered = applications.forClientId(clientId);
     log.debug("Leaving AuthzenCaller.byToken(). " + clientId);
-    return { kind: 'application', name: clientId, door: 'bearer',
-             identifier: registered ? String(registered.identifier) : '',
-             clientId: clientId, roles: [] };
+    const out: Caller = {
+      kind: 'application', name: clientId, door: 'bearer',
+      identifier: registered ? String(registered.identifier) : '',
+      clientId: clientId, roles: [], iss: String(claims.iss || '') };
+    if (claims.act && typeof claims.act === 'object' &&
+        !Array.isArray(claims.act)) {
+      out.act = claims.act;
+    }
+    return out;
   }
 
   /**

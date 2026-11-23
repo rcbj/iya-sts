@@ -715,6 +715,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3dd | `certificate_trust.ts`, `signer_truststore.ts`, `crypto.js` section 18 (#1360): one validation door, paranoid PKI mode | `common/CLAUDE.md`, `tls/CLAUDE.md` |
 | 3de | `crypto_impl/algorithm_registry.js`, `signature_policy.ts` (#1368): every signature algorithm once, and which a realm signs with and accepts, per surface | `common/CLAUDE.md`, `common/crypto_impl/CLAUDE.md` |
 | 3dg | `roles.js` modes, `xacml/role_eligibility.ts`, `authn/role_selection.ts` (#1072): dynamic selectable roles, each role's own XACML eligibility policy, the role step at sign-in, the choice on the session | `common/CLAUDE.md`, `xacml/CLAUDE.md`, `authn/CLAUDE.md` |
+| 3dh | `certificate_binding.ts`, `forwarded_client_certificate.ts`, `tls/certificate_handoff.ts` (#2012): certificate sign-in profiles and their bindings, the revocation a sign-in requires, RFC 9440 from a named proxy, the certificate handoff | `common/CLAUDE.md`, `tls/CLAUDE.md`, `ldap/CLAUDE.md` |
 | 3db | `profile_photo.ts` (#719): a person's photo, kept off the entry, set on the portal or copied from a partner | `common/CLAUDE.md`, `federation/CLAUDE.md`, `ldap/CLAUDE.md`, `portal/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
@@ -836,7 +837,9 @@ human-facing page outside `/admin` and `/portal` into one, surface by surface**
   be dropped.
 * **THE BROWSER TRANSLATES** (rcbj's decision 3 on #570), in #539's order, from
   the catalogs served as static JSON under `/web`; the APIs stay
-  language-free and errors stay English.
+  language-free. **A refusal is drawn in the page's language too since
+  #2006**: an answer's `errors` stay English and its `messages` name each
+  sentence's catalog key (`common/CLAUDE.md` 3ci).
 * **A specification's endpoint is never converted** (#569's rule): its status,
   headers, body and the documents it answers — the auto-POST forms, the OP
   iframe, front-channel fan-out, the RFC 4559 exchange — stay as they are,
@@ -1253,7 +1256,8 @@ the file the row names.
 | ~~Deactivate anybody on SCIM `active: false`~~ — reversed 2026-09-17 | `scim/CLAUDE.md`, `common/CLAUDE.md` (3at), `authn/CLAUDE.md` |
 | ~~Attest a workload or a node~~ — reversed 2026-09-21 (#40); a TCP caller still is not (#166) | `spiffe/CLAUDE.md` |
 | Revoke a SPIFFE credential — the directory records who may still be ISSUED one | `spiffe/CLAUDE.md`, `ldap/CLAUDE.md` |
-| Match a client certificate from an outside CA by its common name or subject, or create an entry for one — it is the one entry storing it in `userCertificate` (#1061), or, for an outside PIV or CAC card from a configured `piv.externalIssuers` CA, the one person whose `stsPivCardUuid` holds its FIPS 201 card UUID (#1955 D8, rcbj 2026-11-20; off by default) | `common/CLAUDE.md` (3ag), `tls/CLAUDE.md`, `ldap/CLAUDE.md` |
+| Match a client certificate from an outside CA by its common name or subject, or create an entry for one — it is the one entry storing it in `userCertificate` (#1061), or, for an outside PIV or CAC card from a configured `piv.externalIssuers` CA, the one person whose `stsPivCardUuid` holds its FIPS 201 card UUID (#1955 D8, rcbj 2026-11-20; off by default), or the one account a realm's certificate sign-in profile binds it to (#2012) — by a NAME (UPN, address, subject) only under a profile an administrator opted in to with `lowAffinity` (rcbj, 2026-11-23) | `common/CLAUDE.md` (3ag, 3dh), `tls/CLAUDE.md`, `ldap/CLAUDE.md` |
+| Read a client certificate out of a header — except RFC 9440's, from a TLS-terminating proxy named by both its certificate and its address (#2012, rcbj 2026-11-23; off by default) | `common/CLAUDE.md` (3dh), `oauth-oidc/oauth2_bcp.js` (`no-certificate-header`) |
 | Issue a PIV slot certificate as hardware-bound without a verified YubiKey PIV attestation, or let a `piv-card-auth` (9e) certificate sign in by default (#1955 P2) | `common/CLAUDE.md` (`piv_attestation.ts`) |
 | Let a group grant anything BY BEING A GROUP | `admin-ui/CLAUDE.md`, `common/CLAUDE.md` |
 | Let an authenticator app be a FIRST factor | `common/CLAUDE.md` |

@@ -22,7 +22,8 @@
 // (`web_federation_surface.ts` over `web_federation_pages.ts` and
 // `web_federation_views.ts`, bundled by `build-typescript.sh`) draws it, in
 // the browser's language from the `federationPages` and `handoff` catalogs,
-// with every refusal's words English (#539's decision 6). SCRIPT IS
+// and a refusal's from the `refusals` catalogs (#2006; English, #539's
+// decision 6, until then). SCRIPT IS
 // REQUIRED (rcbj on #569): the shell's `<noscript>` says so.
 //
 // WHAT DOES NOT CHANGE: the status each page answered (a 404 is still a
@@ -51,6 +52,8 @@ import realms = require('../common/realms');
 import PageLocale = require('../common/page_locale');
 import ShellDocument = require('../common/shell_document');
 import listenerMap = require('../common/listener_map');
+// A refusal as a catalog sentence (#2006): a leaf library.
+import Sentence = require('../common/sentence');
 
 type Json = any;
 
@@ -110,20 +113,32 @@ class FederationPages {
   }
 
   /**
-   * A refusal's view: what was refused and why, English (#539's decision
-   * 6), and the relationship it is recorded on.
+   * A refusal's view: what was refused and why, and the relationship it is
+   * recorded on. `what` and `why` keep their English; where either is a
+   * catalog `Sentence` (#2006) its key rides beside it as `whatMessage` or
+   * `whyMessage`, which the page draws in its language.
    *
-   * @param what - what was refused, as text
-   * @param why - why, as text
+   * @param what - what was refused, as text or a sentence
+   * @param why - why, as text or a sentence
    * @param relationship - the relationship's id, or ''
    * @returns the view
    */
-  static refusedView(what: string, why: string,
+  static refusedView(what: string | Sentence, why: string | Sentence,
                      relationship: string): Json {
     log.debug("Entering FederationPages.refusedView().");
+    const view: Json = { kind: 'refused', what: String(what || ''),
+                         why: String(why || ''),
+                         relationship: String(relationship || '') };
+    const whatMessage = Sentence.stored(what);
+    if (whatMessage) {
+      view.whatMessage = whatMessage;
+    }
+    const whyMessage = Sentence.stored(why);
+    if (whyMessage) {
+      view.whyMessage = whyMessage;
+    }
     log.debug("Leaving FederationPages.refusedView().");
-    return { kind: 'refused', what: String(what || ''),
-             why: String(why || ''), relationship: String(relationship || '') };
+    return view;
   }
 
   /**

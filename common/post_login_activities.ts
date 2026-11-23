@@ -98,6 +98,8 @@ import realms = require('./realms');
 import errorCodes = require('./error_codes');
 import audit = require('./audit');
 import InstanceSlot = require('./instance_slot');
+// The activities there are (#2009): a leaf.
+import PostLoginKinds = require('./post_login_kinds');
 
 type Json = any;
 
@@ -111,8 +113,8 @@ const JOB = 'post-login.activity-mail';
 const EVERY_MS = 10 * 60 * 1000;
 
 // The activities an administrator may start: the post-login activities
-// there are (`post_login.ts`), one today.
-const ACTIVITIES = ['pqc-passkey-migration'];
+// there are, `post_login_kinds.ts`'s table (#2009) — one list.
+const ACTIVITIES = PostLoginKinds.ids();
 
 // The numbers a started activity is given, and their bounds.
 const LIMITS = {
@@ -886,7 +888,9 @@ class PostLoginActivities {
     // profile is the one the person's groups select. An application naming
     // a profile that excludes them is asked at the sign-in to it, which is
     // where its exclusion holds.
-    const due = postLogin.dueFor(username);
+    // THIS started activity's activity (#2009): another one due first
+    // at a sign-in is not a reason to mail nobody about this one.
+    const due = postLogin.dueFor(username, '', record.activity);
     if (!due || due.activity !== record.activity) {
       log.debug("Leaving PostLoginActivities.decide(). Not due.");
       return { verdict: 'not-due', due: null };
