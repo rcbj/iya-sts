@@ -771,6 +771,13 @@ function recordJwt(payload, signed, context) {
     // sessionsFromArtifacts().
     length: String(signed || '').length
   };
+  // WHERE A REFRESH CAME FROM (#1072): the grant the refreshed chain
+  // descends from, its refresh token's `grant_type`, stated by the issuer.
+  // Only on a refresh, so every other row is the shape it always was;
+  // `grantOfJti()` answers it in place of `refresh_token`.
+  if (issuedUnder.originGrant) {
+    record.originGrant = String(issuedUnder.originGrant);
+  }
   // On demand (#820 part 3) the bound is the cache's: every record stays in
   // the store until its own expiry, and `revokeWhere()` must still find it.
   if (!tokens.onDemandLive() && tokens.size >= MAX_TOKENS) {
@@ -4737,8 +4744,14 @@ function resolvedRoleClaims(context) {
   const username = String(ctx.username || ctx.subject || '');
   try {
     const forApplications = claimApplicationsOf(ctx);
-    // The session (#1072): its chosen dynamic roles, for the client the
-    // token is issued to as well as the applications it is for.
+    // THE SESSION'S CHOSEN DYNAMIC ROLES (#1072) ARE FOR THE APPLICATION THE
+    // SIGN-IN WAS FOR, and only for it (rcbj's decision 4): the client an
+    // OAuth token is issued to — never the resource an access token is FOR,
+    // whose own sign-in may have chosen otherwise — and, with no client,
+    // the application the caller resolved or the service provider or
+    // relying party the assertion is for, which is where a SAML or
+    // WS-Federation sign-in signed in to. `role_permissions.ts`'s
+    // narrowScope() asks the same question the same way.
     let client = null;
     try {
       client = ctx.client_id ? applications.forClientId(String(ctx.client_id))
@@ -4747,10 +4760,9 @@ function resolvedRoleClaims(context) {
       log.debug("Caught in resolvedRoleClaims(): " + ((e && e.message) || e));
       client = null;
     }
-    const chosenFor = forApplications.concat(
-      client && client.identifier &&
-      forApplications.indexOf(String(client.identifier)) < 0
-        ? [String(client.identifier)] : []);
+    const chosenFor = ctx.client_id
+      ? [String((client && client.identifier) || ctx.client_id)]
+      : (ctx.application ? [String(ctx.application)] : forApplications);
     log.debug("Leaving resolvedRoleClaims().");
     return roles.claimFor(
       username
@@ -8056,6 +8068,39 @@ function sessionAuthenticatedOfJti(jti) {
   return !record || record.sessionAuthenticated !== false;
 }
 
+// AND WHICH GRANT IT DESCENDS FROM, by the same jti (#1072): UserInfo reads
+// a session's chosen dynamic roles only for a token of a grant with a
+// browser in it, and a refresh is the grant it came from — a device or
+// CIBA token refreshed is still a device or CIBA token. '' for a jti this
+// register never saw, which reads as it always did.
+//
+// **A REFRESH WHOSE ORIGIN IS NOT RECORDED ANSWERS `refresh_token`** — a
+// row written before `originGrant` existed, or one whose refresh token
+// carried no `grant_type`. Its caller treats that as a grant with no
+// browser and carries no chosen role: such a token may descend from the
+// device grant or CIBA, and guessing "a browser" would widen what UserInfo
+// says. What it costs is a code-flow token refreshed before this change
+// answering UserInfo without its chosen role until its next refresh, and a
+// role left off is never a role granted. (The other reading — a browser
+// grant unless shown otherwise — was rejected for that reason.)
+/**
+ * Returns the grant a token descends from: the grant that issued it, or
+ * for a refresh the grant its chain began with, where that was recorded.
+ *
+ * @param jti - the token's jti
+ * @returns the grant's label, `refresh_token` for a refresh whose origin is
+ *   not recorded, or ''
+ */
+function grantOfJti(jti) {
+  log.debug("Entering grantOfJti().");
+  const record = jti ? tokens.get(jti) : null;
+  const grant = (record && record.grant) || '';
+  const out = grant === 'refresh_token' && record.originGrant
+    ? String(record.originGrant) : grant;
+  log.debug("Leaving grantOfJti(). " + (out || '(none)'));
+  return out;
+}
+
 // Revoke every token matching a predicate, and say how many. Used by the
 // console's "revoke every access token" and "revoke everything for this
 // subject" buttons, which exist because revoking one jti at a time is not how
@@ -8635,6 +8680,7 @@ module.exports = {
   holdingsOf: holdingsOf,
   sessionIdOfJti: sessionIdOfJti,
   sessionAuthenticatedOfJti: sessionAuthenticatedOfJti,
+  grantOfJti: grantOfJti,
   recordAssertion: recordAssertion,
   recordTicket: recordTicket,
   recordCredential: recordCredential,

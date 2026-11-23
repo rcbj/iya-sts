@@ -1329,7 +1329,13 @@ class WsFederation {
           { multi: AM_MULTIFACTOR }), params));
     }
     const stepUpNow = session && fresh.ok && unmet;
-    if (session && fresh.ok && !stepUpNow) {
+    // A REQUIRED DYNAMIC ROLE THE SESSION CHOSE NOTHING FOR (#1072): single
+    // sign-on carries no new choice, so the person signs in again below,
+    // where the role step is drawn; the session that comes back holds it.
+    const roleOwed = !!session && fresh.ok && !stepUpNow &&
+      typeof authn.roleChoiceOwed === 'function' &&
+      authn.roleChoiceOwed(session, realm);
+    if (session && fresh.ok && !stepUpNow && !roleOwed) {
       // SINGLE SIGN-ON JUST HAPPENED, IF THE SESSION WAS NOT MADE FOR THIS
       // REQUEST. CAEP is a vocabulary about SESSIONS and not about the protocol
       // that minted one, so a `session-presented` is as due here as it is at
@@ -1702,7 +1708,11 @@ class WsFederation {
     // party. Not carried back (it is not in INITIATE_PARAMETERS), so the
     // return lands here with the new sign-in and goes on.
     const fresh = String(query.wfresh || '') === '0';
-    if (!session || fresh) {
+    // And a required dynamic role the session chose nothing for (#1072).
+    const roleOwed = !!session && !fresh &&
+      typeof authn.roleChoiceOwed === 'function' &&
+      authn.roleChoiceOwed(session, realm);
+    if (!session || fresh || roleOwed) {
       // TO THE SIGN-IN SCREEN AND BACK TO THIS LINK, which runs again from
       // the top with a session — the switch and the reply address are asked
       // again on the way back, so turning either off in between is honoured.

@@ -797,7 +797,6 @@ function authnFields(profile) {
   Object.keys(profile.sources || {}).forEach(function (name) {
     out[name] = profile[name];
   });
-  out.profile = "default";
   log.debug("Leaving authnFields().");
   return out;
 }

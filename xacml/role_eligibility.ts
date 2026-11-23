@@ -156,6 +156,17 @@ interface EligibilityDeps {
   loadXacml(): { decidePolicy(policy: any, request: any, options?: any): any;
                  enforce(answer: any, bias?: string): any };
   request: { AuthorizationRequest: any };
+  // The application registry and the settings (#1072's follow-ups): which
+  // entry a protocol's own name for an application is, and whether dynamic
+  // roles are offered for it.
+  applications: {
+    get(identifier: string): any;
+    forClientId(clientId: string): any;
+    forAppliesTo(appliesTo: string): any;
+    forServicePrincipal(spn: string): any;
+    settingFor(identifier: string, key: string, config: any): any;
+  };
+  config: any;
 }
 
 class RoleEligibility {
@@ -202,8 +213,137 @@ class RoleEligibility {
         log.debug("Leaving loadXacml().");
         return require('./xacml');
       },
-      request: require('./xacml_request')
+      request: require('./xacml_request'),
+      applications: require('../common/applications'),
+      config: require('../common/config')
     };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE APPLICATION, BY ITS REGISTRY IDENTIFIER (#1072's follow-ups). A
+  // sign-in names its application in its protocol's own words — a
+  // client_id, a service provider's entityID, a wtrealm, a Kerberos service
+  // principal — and a role's `roleApplication`, the per-application setting
+  // and the applications a token is for are all the registry IDENTIFIER.
+  // Where the two differ, a choice was recorded under one name and looked
+  // for under the other, and dropped. So every reader here resolves the
+  // name once, the way `admin_stats.js`'s claimApplicationsOf() does: the
+  // identifier itself, then a client_id, an AppliesTo or entityID, a
+  // service principal. A name nothing registered is itself, as before.
+  // -------------------------------------------------------------------------
+  /**
+   * Resolves a protocol's name for an application to its registry
+   * identifier.
+   *
+   * @param raw - an identifier, client_id, entityID, AppliesTo, wtrealm or
+   *   service principal
+   * @returns the identifier, or `raw` trimmed where nothing registered it
+   */
+  applicationOf(raw: unknown): string {
+    const { log, applications } = this.deps;
+    const wanted = String(raw == null ? '' : raw).trim();
+    log.debug("Entering RoleEligibility.applicationOf(). " + wanted);
+    if (!wanted) {
+      log.debug("Leaving RoleEligibility.applicationOf(). None.");
+      return '';
+    }
+    let found: any = null;
+    try {
+      found = (applications.get(wanted) && { identifier: wanted }) ||
+              applications.forClientId(wanted) ||
+              applications.forAppliesTo(wanted) ||
+              applications.forServicePrincipal(wanted);
+    } catch (e) {
+      // A registry that cannot be read names no entry: the name stands as
+      // given, which is what every reader here used before.
+      log.debug("Caught in RoleEligibility.applicationOf(): " +
+                ((e && e.message) || e));
+      found = null;
+    }
+    const out = found && found.identifier ? String(found.identifier)
+                                          : wanted;
+    log.debug("Leaving RoleEligibility.applicationOf(). " + out);
+    return out;
+  }
+
+  /**
+   * Whether dynamic roles are offered and carried for an application:
+   * `roles.dynamicSelection`, with the application's
+   * `appDynamicRoleSelection` overriding it (rcbj's decision 2). With no
+   * application, the realm's setting.
+   *
+   * @param application - the application, in any of its names
+   * @returns true when on
+   */
+  selectionOn(application: unknown): boolean {
+    const { log, applications, config } = this.deps;
+    log.debug("Entering RoleEligibility.selectionOn().");
+    let on = false;
+    try {
+      on = applications.settingFor(this.applicationOf(application),
+                                   'roles.dynamicSelection', config) === true;
+    } catch (e) {
+      log.debug("Caught in RoleEligibility.selectionOn(): " +
+                ((e && e.message) || e));
+      on = false;
+    }
+    log.debug("Leaving RoleEligibility.selectionOn(). " + on);
+    return on;
+  }
+
+  // -------------------------------------------------------------------------
+  // A REQUIRED ROLE THIS PERSON WOULD HAVE TO CHOOSE (rcbj's decisions 3 and
+  // 5): every `required` dynamic role a sign-in to this application would
+  // offer them — the realm-wide ones and the application's own, each
+  // decided as the offer decides it. The role step draws the same answer
+  // (`offer()`, then `required`); this is it for a flow that cannot draw
+  // the step, which is refused where it is non-empty, and for single sign-on
+  // into an application the session chose nothing for. Not audited per
+  // role: the caller audits the refusal it makes of it.
+  //
+  // With no application, the realm-wide roles alone: a bind to the
+  // directory, a ticket-granting ticket and a certificate sign-in name no
+  // application, and a required realm-wide role is asked of every sign-in.
+  // -------------------------------------------------------------------------
+  /**
+   * Lists the required dynamic roles a person would be offered for an
+   * application.
+   *
+   * @param question - the person (`username`), the `application` in any of
+   *   its names, and the sign-in's `acr`, `amr`, `clientId` and `protocol`
+   * @returns `{ required, application, roles }`: the resolved application
+   *   and the required roles' names, `required` true where there is one
+   */
+  requiredFor(question: Omit<EligibilityQuestion, 'role'>):
+      { required: boolean; application: string; roles: string[] } {
+    const { log, roles } = this.deps;
+    const asked = question || ({} as EligibilityQuestion);
+    const application = this.applicationOf(asked.application);
+    log.debug("Entering RoleEligibility.requiredFor(). application=" +
+              (application || '(none)'));
+    const none = { required: false, application: application,
+                   roles: [] as string[] };
+    if (!String(asked.username || '').trim() ||
+        !this.selectionOn(application)) {
+      log.debug("Leaving RoleEligibility.requiredFor(). Not asked here.");
+      return none;
+    }
+    const self = this;
+    const out: string[] = [];
+    roles.dynamicRoles().filter(function (role) {
+      return role.selection === 'required' &&
+        (!role.application || role.application === application);
+    }).forEach(function (role) {
+      const answer = self.decide(Object.assign({}, asked, {
+        role: role.name, application: application, stage: 'offer' }));
+      if (answer.eligible) {
+        out.push(role.name);
+      }
+    });
+    log.debug("Leaving RoleEligibility.requiredFor(). " + out.length +
+              " required.");
+    return { required: out.length > 0, application: application,
+             roles: out };
   }
 
   // A refusal, coded, naming which failure it is.
@@ -516,7 +656,9 @@ class RoleEligibility {
                policy: String((resolved.row && resolved.row.name) || '') };
     }
     const role = resolved.role;
-    const application = String(asked.application || '');
+    // By its registry identifier (#1072's follow-ups): a client_id that is
+    // not the identifier names the same application here.
+    const application = this.applicationOf(asked.application);
     if (role.application && role.application !== application) {
       log.debug("Leaving RoleEligibility.evaluate(). Another application's.");
       return { eligible: false, code: 'STS-XACML-0320',
@@ -613,8 +755,11 @@ class RoleEligibility {
    */
   offer(question: Omit<EligibilityQuestion, 'role'>): any[] {
     const { log, roles } = this.deps;
-    const asked = question || ({} as EligibilityQuestion);
-    const application = String(asked.application || '');
+    const asked = Object.assign({}, question || {}) as EligibilityQuestion;
+    // BY ITS REGISTRY IDENTIFIER (#1072's follow-ups), as the role's own
+    // application and the token's applications are named.
+    const application = this.applicationOf(asked.application);
+    asked.application = application;
     log.debug("Entering RoleEligibility.offer(). application=" + application);
     const self = this;
     const out = [];
@@ -705,6 +850,9 @@ export = {
   installInstance: (instance: RoleEligibility): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   nameFor: slot.forward('nameFor'),
+  applicationOf: slot.forward('applicationOf'),
+  selectionOn: slot.forward('selectionOn'),
+  requiredFor: slot.forward('requiredFor'),
   setPolicy: slot.forward('setPolicy'),
   removePolicy: slot.forward('removePolicy'),
   resolve: slot.forward('resolve'),

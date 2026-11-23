@@ -2048,8 +2048,8 @@
     "text": "非规范。以 JSON 说明添加密钥推送目标可以使用什么：创建的每个字段，以及缺少它时创建是否会被拒绝——标识符和提供方始终必填，有些仅对某些提供方必填（requiredWhen）：除 file 外均需写入凭据，aws 需区域，azure 和 vault 需端点，file 需目录。它不添加任何内容：创建是 POST /admin-api/secret-destinations/add-destination。对应 GET /admin/secret-destinations/new。"
   },
   "stsmetadata.endpoints./admin-api/policies/new.what": {
-    "en": "8b0523b4a594c8c1",
-    "text": "非规范。可以创建命名策略的类型，以及对于所请求的类型，其保存的每个字段以及缺少它时保存是否会被拒绝——名称始终必填，因为没有名称的保存会被拒绝；以及省略时不会保留其值的每个字段。它不保存任何内容：命名策略是该类型在本领域尚未使用的名称下的保存操作。对应 GET /admin/policies/new。"
+    "en": "76e1013ae3d82e5b",
+    "text": "非规范。可以创建命名策略的类型，以及对于所请求的类型，其保存的每个字段以及缺少它时保存是否会被拒绝——名称始终必填，因为没有名称的保存会更改默认策略；以及保存时不接受空值的每个字段。它不保存任何内容：命名策略是该类型在本领域尚未使用的名称下的保存操作。对应 GET /admin/policies/new。"
   },
   "stsmetadata.endpoints./admin-api/applications/new.what": {
     "en": "25bf3526e817e678",

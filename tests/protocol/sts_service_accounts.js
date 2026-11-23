@@ -214,8 +214,7 @@ function refusedWith(got, code, what) {
 async function fullPolicy(api, changes) {
   log.debug("Entering fullPolicy().");
   const r = await send(api + "/policies");
-  const out = Object.assign({}, r.body.serviceAccount.defaults,
-                            { profile: "default" }, changes || {});
+  const out = Object.assign({}, r.body.serviceAccount.defaults, changes || {});
   log.debug("Leaving fullPolicy().");
   return out;
 }
@@ -432,8 +431,7 @@ async function thePolicy() {
   log.info("=== i. the policy's own rules ===");
   const api = base + "/realm/" + DEV + "/admin-api";
   const partial = await postJson(api + "/policies/save-serviceAccount-policy",
-                                 { profile: "default",
-                                   allowBrowserSignIn: true });
+                                 { allowBrowserSignIn: true });
   check("a save that leaves a field out is refused by name", function () {
     assert.strictEqual(partial.status, 400, partial.raw.slice(0, 300));
     assert.ok((partial.body.errors || []).some(function (one) {
@@ -794,7 +792,6 @@ async function testBody() {
   // accepts a named profile's precedence only, from 1 to 1000, and the
   // default profile does not store one.
   delete fields.precedence;
-  fields.profile = "default";
   fields.allowWsTrust = false;
   await ok(realmApi + "/policies/save-serviceAccount-policy", fields,
            "saved the realm's service-account policy");

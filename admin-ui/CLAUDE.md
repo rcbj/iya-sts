@@ -1236,7 +1236,8 @@ create page, and each calls out its required fields the way New user does.
   input named `profile` or `name` in a form that posts `newProfile`. The
   box stays `required`. A required empty field never reaches the submit
   handler, so the bubble is the custom validity. The same sentence is what
-  the save returns.
+  the save returns, in the reader's language from the console catalog
+  (`consoleRuntime.policyName.required`, every base locale).
 
 ### Two forms post `action=create` and only one carries it as a button
 

@@ -97,6 +97,7 @@
   "create.requiredFields": "आवश्यक: {list}। प्रत्येक लाल रंग से घिरा है और * से चिह्नित है; बाकी सभी फ़ील्ड वैकल्पिक हैं।",
   "create.nothingRequired": "इस फ़ॉर्म में कुछ भी आवश्यक नहीं है।",
   "create.requiredWhen": " &middot; आवश्यक जब {field} {values} हो",
+  "create.requiredWhenFilled": " &middot; आवश्यक जब {field} भरा हो",
   "create.yes": "हाँ",
   "create.no": "नहीं"
 }

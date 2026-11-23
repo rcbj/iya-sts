@@ -400,8 +400,7 @@ async function defaultRows() {
 async function requirement(defaults, value) {
   log.debug("Entering requirement(). " + value);
   const r = await call("POST", "/policies/save-passkey-policy",
-    Object.assign({}, defaults, { profile: "default",
-                                  allowUsernameless: true,
+    Object.assign({}, defaults, { allowUsernameless: true,
                                   postQuantumRequired: value }));
   log.debug("Leaving requirement(). " + r.status);
   return r;
