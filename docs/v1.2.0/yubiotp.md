@@ -6,7 +6,7 @@ title: YubiKey OTP
 
 A YubiKey's OTP slot, checked on this service. The format is [Yubico's published OTP](https://developers.yubico.com/OTP/OTPs_Explained.html): a modhex public identity, then one AES-128 block. The AES key stays here, so a sign-in records `amr` `otp` and never `hwk`. Nothing is sent to YubiCloud. There is no post-quantum parameter: the OTP is AES-128-ECB of one 16-byte block, and a YK-VAL signature is HMAC-SHA1.
 
-Enrolment is off until `yubiotp.offered` is on and the authentication policy allows `yubico-otp` as a second factor. Off on that row, nobody may enrol, assign or claim one. A credential already held is still checked at the one-time-code step. The settings are in [Configuration](configuration.md#yubikey-otp).
+Enrolment is off until an operator turns on both `yubiotp.offered` and the authentication policy's `yubico-otp` second-factor row. That row is off by default. Off on that row, nobody may enrol, assign or claim one, even when `yubiotp.offered` is on. A credential already held is still checked at the one-time-code step. The settings are in [Configuration](configuration.md#yubikey-otp).
 
 ## Set one up
 

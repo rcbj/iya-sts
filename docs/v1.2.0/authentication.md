@@ -11,8 +11,12 @@ is not signed in to **one sign-in service at `/authn`**. That service owns the
 Beside the password it offers three second factors: security keys as a
 [WebAuthn Level 3](https://www.w3.org/TR/webauthn-3/) relying party, an
 authenticator app ([RFC 6238](https://www.rfc-editor.org/rfc/rfc6238) TOTP),
-and single-use recovery codes. Each [trust realm](trust-realms.md) has its own
-sign-in screen, sessions and settings.
+and single-use recovery codes. A counter-based token
+([RFC 4226](https://www.rfc-editor.org/rfc/rfc4226) HOTP) and a YubiKey OTP
+are further second-factor options. Both are listed on the authentication
+policy and off until an operator turns them on. Each
+[trust realm](trust-realms.md) has its own sign-in screen, sessions and
+settings.
 
 ## Features
 
@@ -1066,6 +1070,10 @@ for.
 | holds both | the passkey, with a link to the code |
 | holds a passkey, passwordless box ticked (and the realm, and the application where it lists mechanisms, accept a passkey as a first factor) | the passwordless ceremony |
 
+A person who holds an HOTP token or a YubiKey OTP is asked for that same
+code. The sign-in treats it as a one-time code, as it does an authenticator
+app.
+
 Every passkey counts: until #1135 only a key enrolled in the `mfa` role was
 asked for after a password, and only a `primary` key answered the
 passwordless box.
@@ -1103,7 +1111,9 @@ It replaced three settings: `authn.mfaRequired` is `requireSecondFactor`
 (`if-held` or `always` — there is no "never", because a second factor a person
 holds is always asked for), and `totp.enabled` and `backupCodes.enabled` are the
 TOTP and recovery-code rows. Those two keep their settings' contract: off stops
-NEW enrolments and never a factor already held.
+NEW enrolments and never a factor already held. The same contract covers the
+*One-time code token (HOTP)* and *YubiKey OTP* rows. Both are listed and off
+until an operator turns them on.
 
 API: `GET /admin-api/policies` (the `authn` member) and `POST
 /admin-api/policies/save-authn-policy` / `reset-authn-policy`.
@@ -1118,9 +1128,9 @@ passkey policy's three sub-tabs: **Default** (the realm's own policy),
 Each named policy holds two lists and a precedence:
 
 * **the first-factor mechanisms it allows**: `password`, `password-mfa`,
-  `webauthn`, `spnego`, `wallet`, `federation`;
+  `webauthn`, `attested-hardware`, `spnego`, `wallet`, `federation`;
 * **the second factors it allows**: `password`, `securityKey`, `totp`,
-  `recoveryCode`, `emailCode`, `emailLink`, `wallet`;
+  `hotp`, `yubico-otp`, `recoveryCode`, `emailCode`, `emailLink`, `wallet`;
 * **its precedence**, a whole number from 1 to 1000 (100 when not given),
   which decides between policies named for the same sign-in. A precedence
   outside that range is refused (`STS-AUTHN-0541`).

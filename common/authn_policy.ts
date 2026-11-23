@@ -108,8 +108,9 @@ interface Mechanism {
   primary: boolean | null;       // the built-in default, or null: incapable
   secondFactor: boolean | null;
   email?: boolean;
-  // #1955 P4: a save that names no value keeps the built-in one (a
-  // mechanism added after API clients were written, so not refused).
+  // #1955 P4 and P5 (`hotp`, `yubico-otp`): a save that names no value
+  // keeps the profile's current value, so a client written before the row
+  // is not refused. Both are off by default.
   optional?: boolean;
   // Written on the mechanism's attribute in the model; set below.
   what?: string;

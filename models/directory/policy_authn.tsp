@@ -39,13 +39,14 @@ namespace IyaSts.Directory;
     #{id: "securityKey", label: "Passkey (second factor)", primary: null, secondFactor: true},
     #{id: "totp", label: "Authenticator app (TOTP)", primary: null, secondFactor: true},
     // #1955 P4: a counter-based token (RFC 4226), a YubiKey's OTP slot or a
-    // vendor's pre-provisioned token. `optional`: a save that names no value
-    // keeps the built-in one, so an API client written before it is not
-    // refused (backwards compatibility).
-    #{id: "hotp", label: "One-time code token (HOTP)", primary: null, secondFactor: true, optional: true},
-    // #1955 P5: Yubico's published modhex OTP. `optional`, as `hotp` is: a
-    // save that names no value keeps the built-in one.
-    #{id: "yubico-otp", label: "YubiKey OTP", primary: null, secondFactor: true, optional: true},
+    // vendor's pre-provisioned token. OFF BY DEFAULT, an alternative second
+    // factor an operator turns on. `optional`: a save that omits it keeps
+    // the profile's current value, so an API client written before it is
+    // not refused (backwards compatibility).
+    #{id: "hotp", label: "One-time code token (HOTP)", primary: null, secondFactor: false, optional: true},
+    // #1955 P5: Yubico's published modhex OTP. Off by default, as `hotp` is.
+    // `optional`, the same omit-save.
+    #{id: "yubico-otp", label: "YubiKey OTP", primary: null, secondFactor: false, optional: true},
     #{id: "recoveryCode", label: "Recovery code", primary: null, secondFactor: true},
     #{id: "emailCode", label: "Emailed six-digit code", primary: false, secondFactor: false, email: true},
     #{id: "emailLink", label: "Emailed sign-in link", primary: false, secondFactor: false, email: true},

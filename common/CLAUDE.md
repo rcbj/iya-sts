@@ -12870,9 +12870,11 @@ what a maintainer of this directory has to know beside them:
   install the credential, record `pskc-import` in the register and drop the
   row's secret. It registers the `hotp` and `totp` retirers when installed
   (`wire`, rule 3e's hook); a retired token is never assigned again.
-* **The authentication policy's `hotp` row is `optional`**: a save that
-  does not name it keeps the profile's current value (`authn_policy.ts`'s
-  `save()`), so an API client written before it is not refused.
+* **The authentication policy's `hotp` row is `optional` and off by
+  default**: a save that does not name it keeps the profile's current
+  value (`authn_policy.ts`'s `save()`), so an API client written before
+  it is not refused. An operator turns the row on to allow new enrolments
+  and claims.
 * **Not indexed for the users page's tiles**: `credentialTallies()` counts
   holders through `directory_queries.js`'s `ASKED_ATTRIBUTES`, and adding
   `stshotpcredential` there is a new index expression, so a schema version.
@@ -12914,7 +12916,7 @@ what a maintainer of this directory has to know beside them:
   HMAC-SHA1 are checked in every mode.
 * **Enrolment is `yubiotp.offered` and the authentication policy's
   `yubico-otp` row**, both (`YubiOtp.offered()`). The row is `optional`
-  and true by default, the same arrangement as HOTP's: a save that does
+  and off by default, the same arrangement as HOTP's: a save that does
   not name it keeps the current value. Verification of a credential
   already held is not gated. The session records credential kind
   `yubiotp`; `mfa_mechanisms.ts` maps that to the policy id `yubico-otp`.

@@ -158,9 +158,9 @@ An administrator can also clear one person's token on their row under
 | `hotp.resyncWindow` | 100 | How far ahead two consecutive codes are searched (2 to 1000). |
 | `pskc.allowPlaintextImport` | off | Lets product mode import a plaintext seed file. |
 
-The authentication policy's *One-time code token (HOTP)* row turns new
-enrolments and claims off. A person who already holds a token is still
-asked for it.
+The authentication policy's *One-time code token (HOTP)* row is off until
+an operator turns it on. While it is off, new enrolments and claims are
+refused. A person who already holds a token is still asked for it.
 
 ## What is not supported
 
