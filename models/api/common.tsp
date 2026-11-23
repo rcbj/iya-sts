@@ -1892,7 +1892,7 @@ model XacmlPepListenerTuningFields {
 
 @hoisted model WithAllowedTransportAllowedHostsEtc6 { `allowed`?: boolean; `transport`?: WithAllowHttpSkipTlsVerificationSetSkipTlsVerificationEtc4; `allowedHosts`?: (string)[]; `retries`?: numeric; `maxResponseBytes`?: numeric; `note`?: string }
 
-@hoisted model WithWalletHeadingRetryEtc8 { `wallet`?: "refused"; `heading`?: string; `retry`?: string; `checks`?: (WithOkNameDetail)[]; `verdict`?: string; `back`?: string; `backKind`?: "portal" | "screen" | "none"; `reissue`?: string }
+@hoisted model WithWalletHeadingRetryEtc8 { `wallet`?: "refused"; `heading`?: string; `headingMessage`?: RefusalMessage; `retry`?: string; `checks`?: (WithOkNameDetail)[]; `verdict`?: string; `back`?: string; `backKind`?: "portal" | "screen" | "none"; `reissue`?: string }
 
 @hoisted model WithOkErrorsErrorEtc8 { `ok`?: boolean; `errors`?: (string)[]; `messages`?: RefusalMessages; `error`?: string; `error_description`?: string; `next`?: "refused"; `challenge`?: string; `rpId`?: string; `options`?: WithRpIdUserVerificationTimeoutEtc4 }
 
@@ -1930,7 +1930,7 @@ model XacmlPepListenerTuningFields {
 
 @hoisted model WithRpAlgorithmsAttestationEtc8 { `rp`?: WithNameId; `algorithms`?: (integer)[]; `attestation`?: string; `timeout`?: numeric; `authenticatorSelection`?: WithUserVerificationResidentKeyRequireResidentKeyEtc4; `credProps`?: boolean; `minPinLength`?: boolean; `credProtect`?: {`credentialProtectionPolicy`?: string; `enforceCredentialProtectionPolicy`?: boolean}; `appidExclude`?: string; `hints`?: (string)[] }
 
-@hoisted model WithWalletKindSecondFactorEtc10 { `wallet`?: "start" | "refused"; `kind`?: string; `secondFactor`?: boolean; `heading`?: string; `retry`?: string; `checks`?: (WithOkNameDetail)[]; `verdict`?: string; `back`?: string; `backKind`?: "portal" | "screen" | "none"; `reissue`?: string }
+@hoisted model WithWalletKindSecondFactorEtc10 { `wallet`?: "start" | "refused"; `kind`?: string; `secondFactor`?: boolean; `heading`?: string; `headingMessage`?: RefusalMessage; `retry`?: string; `checks`?: (WithOkNameDetail)[]; `verdict`?: string; `back`?: string; `backKind`?: "portal" | "screen" | "none"; `reissue`?: string }
 
 @hoisted model WithHeldAuthMethodRegisteredEtc9 { `held`?: boolean; `authMethod`?: string; `registered`?: boolean; `registrationAccessTokenHeld`?: boolean; `expiresAt`?: numeric; `secrets`?: (WithIdCreatedAtExpiresAtEtc6)[]; `max`?: numeric; `defaultLifetimeDays`?: numeric; `overlapS`?: numeric }
 
@@ -2042,7 +2042,7 @@ model XacmlPepListenerTuningFields {
 
 @hoisted model WithIdStateAuthorizationServerEtc16 { `id`?: string; `state`?: string; `authorizationServer`?: NullableString; `grantEndpoint`?: NullableString; `client`?: NullableString; `proof`?: NullableString; `resourceOwner`?: NullableString; `decision`?: NullableString; `interaction`?: NullableObject100; `tokens`?: integer; `derivedFrom`?: NullableString; `createdAt`?: NullOrStringOrNumeric; `updatedAt`?: NullOrStringOrNumeric; `finalization`?: NullableObject101; `grantExpiresAt`?: NullOrStringOrNumeric; `history`?: (WithAtStateNote)[] }
 
-@hoisted model WithWalletStateKindEtc22 { `wallet`?: "wait" | "refused"; `state`?: string; `kind`?: string; `secondFactor`?: boolean; `authn`?: string; `mfa`?: string; `enrol`?: boolean; `dcRequest`?: NullableObject36; `sameDevice`?: string; `webWallet`?: string; `qr`?: string; `expiresIn`?: numeric; `pollSeconds`?: numeric; `protocol`?: string; `verifier`?: string; `back`?: string; `backKind`?: "portal" | "screen" | "none"; `heading`?: string; `retry`?: string; `checks`?: (WithOkNameDetail)[]; `verdict`?: string; `reissue`?: string }
+@hoisted model WithWalletStateKindEtc22 { `wallet`?: "wait" | "refused"; `state`?: string; `kind`?: string; `secondFactor`?: boolean; `authn`?: string; `mfa`?: string; `enrol`?: boolean; `dcRequest`?: NullableObject36; `sameDevice`?: string; `webWallet`?: string; `qr`?: string; `expiresIn`?: numeric; `pollSeconds`?: numeric; `protocol`?: string; `verifier`?: string; `back`?: string; `backKind`?: "portal" | "screen" | "none"; `heading`?: string; `headingMessage`?: RefusalMessage; `retry`?: string; `checks`?: (WithOkNameDetail)[]; `verdict`?: string; `reissue`?: string }
 
 @hoisted model WithSerialHexFamilyProfileEtc21 { `serialHex`?: string; `family`?: string; `profile`?: string; `subject`?: string; `names`?: (string)[]; `thumbprint`?: string; `keyAlg`?: string; `notBefore`?: StringOrNumeric; `notAfter`?: StringOrNumeric; `issuedAt`?: string; `requestedBy`?: NullableObject12; `via`?: string; `keySource`?: string; `replaces`?: NullableString; `certificatePem`?: string; `chainPem`?: (string)[]; `device`?: string; `attestation`?: StringOrNumericOrBooleanEtc4; `revoked`?: WithAtReasonBy2; `expired`?: boolean; `status`?: string }
 

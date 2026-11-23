@@ -36,8 +36,9 @@
 //
 // `authn/authn_api.ts` is the door — the operation table, JSON, the Origin
 // and the X-CSRF-Token bound to the `sts_session` cookie — and hands each
-// operation here. Everything these answers say is JSON; refusals are
-// English and carry no error code (codes are recorded, never sent). The
+// operation here. Everything these answers say is JSON; a refusal is
+// English in `errors` with its catalog message beside it in `messages`
+// (#2006), and carries no error code (codes are recorded, never sent). The
 // pages that were drawn here (the wait page, the QR page, every refusal)
 // are drawn in the browser by `oid4vc/web_vc_signin.ts`, and the script that
 // was served at `/authn/wallet.js` is part of the sign-in surface's bundle.
@@ -174,6 +175,8 @@ import personDid = require('./person_did');
 // The audit row an enrolment writes (#693). `app.js` loads it first, so this
 // is a cache hit and moves nothing in the require order.
 import audit = require('../common/audit');
+// A refusal as a catalog sentence (#2006): a leaf library.
+import Sentence = require('../common/sentence');
 
 const { log } = helpers;
 
@@ -497,11 +500,17 @@ class VcSignin {
   // error-code: none — the definition of this helper; every call site marks its own code first
   private refuse(res: IyaApi.AuthnAnswering<'getWalletStart' |
                    'startWalletSignIn' | 'getWalletWait' | 'walletStatus' |
-                   'answerWalletDcApi'>, status: number, why: string,
-                 view?: Json): void {
+                   'answerWalletDcApi'>, status: number,
+                 why: string | Sentence, view?: Json): void {
     const { log, authn } = this.deps;
     log.debug("Entering VcSignin.refuse(). " + status);
+    // `messages` beside `errors` where the sentence is a catalog one
+    // (#2006); a library's plain text is sent as the English it is.
     const body: Json = { ok: false, next: 'refused', errors: [String(why)] };
+    const messages = Sentence.messagesOf([why]);
+    if (messages) {
+      body.messages = messages;
+    }
     if (view) {
       body.view = Object.assign({ wallet: 'refused' }, view);
     }
@@ -530,14 +539,18 @@ class VcSignin {
              backKind: 'screen' };
   }
 
-  // A refusal's view: its heading (English, as every refusal), the way back,
-  // and anything more the caller adds.
-  private refusedView(heading: string, ctx: any, more?: Json): Json {
+  // A refusal's view: its heading, the way back, and anything more the
+  // caller adds. The heading is a catalog sentence (#2006): `heading` keeps
+  // its English and `headingMessage` its key, which the page draws in its
+  // own language.
+  private refusedView(heading: Sentence, ctx: any, more?: Json): Json {
     const { log } = this.deps;
     log.debug("Entering VcSignin.refusedView().");
     log.debug("Leaving VcSignin.refusedView().");
-    return Object.assign({ heading: heading, retry: '', checks: [],
-                           verdict: '' }, this.backOf(ctx), more || {});
+    return Object.assign({ heading: String(heading),
+                           headingMessage: heading.message(), retry: '',
+                           checks: [], verdict: '' }, this.backOf(ctx),
+                         more || {});
   }
 
   // A sign-in whose request cannot be signed or built (2026-10-12): the
@@ -550,9 +563,11 @@ class VcSignin {
     log.debug("Entering VcSignin.unbuildable().");
     errorCodes.mark(res, String((e && e.code) || 'STS-VC-0112'));
     // error-code: none — marked on the line above with the builder's code.
-    this.refuse(res, 500, 'This service cannot sign a wallet request at the ' +
-      'moment (' + String((e && e.message) || e) + '). Sign in another way.',
-      this.refusedView('A wallet request could not be made', ctx));
+    this.refuse(res, 500,
+      Sentence.say('refusals.wallet.cannotSignRequest',
+                   { reason: String((e && e.message) || e) }),
+      this.refusedView(
+        Sentence.say('refusals.wallet.heading.cannotMakeRequest'), ctx));
     log.debug("Leaving VcSignin.unbuildable().");
   }
 
@@ -561,12 +576,8 @@ class VcSignin {
     log.debug("Entering VcSignin.closed().");
     log.info('oid4vp-signin: refused because oid4vp.signIn is off.');
     errorCodes.mark(res, 'STS-VC-0052');
-    this.refuse(res, 403, 'This service can sign people in with a ' +
-      'verifiable presentation, and oid4vp.signIn is set to false. Turn it ' +
-      'on at /admin/oid4vp, or with POST /admin-api/config/set. The ' +
-      'Verifier still checks the presentations a verification asks for ' +
-      '(POST /admin-api/verifications/start); it signs nobody in.',
-      this.refusedView('Signing in with a wallet is off', ctx));
+    this.refuse(res, 403, Sentence.say('refusals.wallet.signInOff'),
+      this.refusedView(Sentence.say('refusals.wallet.heading.signInOff'), ctx));
     log.debug("Leaving VcSignin.closed().");
   }
 
@@ -577,8 +588,9 @@ class VcSignin {
     const checked = validation.checkParsed(value || {}, where, schema);
     if (!checked.ok) {
       errorCodes.mark(res, 'STS-VC-0069');
-      this.refuse(res, 400, 'Not a sign-in request: ' +
-                  String(checked.detail || ''));
+      this.refuse(res, 400,
+        Sentence.say('refusals.wallet.notSignInRequest',
+                     { detail: String(checked.detail || '') }));
       log.debug("Leaving VcSignin.parsed(). Refused.");
       return null;
     }
@@ -678,11 +690,10 @@ class VcSignin {
       enrolFor = this.personOf(req);
       if (!selfIssued || !enrolFor || query.mfa) {
         errorCodes.mark(res, 'STS-VC-0093');
-        this.refuse(res, 403, 'A self-issued key is enrolled for the person ' +
-          'who is signed in, from their own portal, and this browser holds ' +
-          'no sign-on session.',
-          this.refusedView('Sign in before enrolling a wallet',
-                           { enrol: true }));
+        this.refuse(res, 403, Sentence.say('refusals.wallet.enrolNeedsSession'),
+          this.refusedView(
+            Sentence.say('refusals.wallet.heading.signInBeforeEnrolling'),
+            { enrol: true }));
         log.debug("Leaving VcSignin.startable(). No session to enrol for.");
         return null;
       }
@@ -695,13 +706,14 @@ class VcSignin {
     if (query.did_act !== undefined && query.did_act !== '') {
       const problem = enrolFor
         ? this.deps.personDid.actProblem(enrolFor, String(query.did_act))
-        : { code: 'STS-VC-0093', error: 'A DID act is an enrolment\'s, ' +
-            'started from the portal of the person signed in here.' };
+        : { code: 'STS-VC-0093',
+            error: Sentence.say('refusals.wallet.didActNeedsEnrolment') };
       if (problem) {
         errorCodes.mark(res, problem.code);
-        this.refuse(res, 403, String(problem.error),
-          this.refusedView('That DID act cannot be started',
-                           { enrol: true }, { retry: ENROL_HOME }));
+        this.refuse(res, 403, problem.error,
+          this.refusedView(
+            Sentence.say('refusals.wallet.heading.didActNotStarted'),
+            { enrol: true }, { retry: ENROL_HOME }));
         log.debug("Leaving VcSignin.startable(). The DID act was refused.");
         return null;
       }
@@ -716,17 +728,18 @@ class VcSignin {
     }
     if (selfIssued && ctx.mfaId) {
       errorCodes.mark(res, 'STS-VC-0093');
-      this.refuse(res, 400, 'A self-issued ID is not offered as a second ' +
-        'factor.', this.refusedView('Not a second factor', ctx));
+      this.refuse(res, 400,
+        Sentence.say('refusals.wallet.selfIssuedNotSecondFactor'),
+        this.refusedView(
+          Sentence.say('refusals.wallet.heading.notSecondFactor'), ctx));
       log.debug("Leaving VcSignin.startable(). SIOPv2 as a second factor.");
       return null;
     }
     if (!enrolFor && !ctx.record) {
       errorCodes.mark(res, 'STS-VC-0053');
-      this.refuse(res, 400, 'A wallet sign-in continues a request that is ' +
-        'waiting at the sign-in screen, and this link names none — it was ' +
-        'never started, it has expired, or it has been used.',
-        this.refusedView('Nothing is waiting for this sign-in', null));
+      this.refuse(res, 400, Sentence.say('refusals.wallet.nothingWaiting'),
+        this.refusedView(
+          Sentence.say('refusals.wallet.heading.nothingWaiting'), null));
       log.debug("Leaving VcSignin.startable(). No pending record.");
       return null;
     }
@@ -804,8 +817,9 @@ class VcSignin {
     const wallet = verifier.vpWalletFor(req, String(query.wallet || ''));
     if (wallet.error) {
       errorCodes.mark(res, 'STS-VC-0033');
-      this.refuse(res, 400, String(wallet.error),
-        this.refusedView('That wallet address is not registered', ctx));
+      this.refuse(res, 400, wallet.error,
+        this.refusedView(
+          Sentence.say('refusals.wallet.heading.walletNotRegistered'), ctx));
       log.debug("Leaving VcSignin.start(). The wallet was refused.");
       return;
     }
@@ -908,10 +922,10 @@ class VcSignin {
         String(tx.signIn.mfaId || '') !== ctx.mfaId ||
         !!tx.signIn.enrol !== !!ctx.enrol) {
       errorCodes.mark(res, 'STS-VC-0056');
-      this.refuse(res, 400, 'This sign-in was never started here, or it ' +
-        'has expired. Each lives oid4vp.signInTtlS seconds.',
-        this.refusedView('No such wallet sign-in', ctx,
-          { retry: record && !ctx.enrol && !ctx.mfaId
+      this.refuse(res, 400, Sentence.say('refusals.wallet.neverStarted'),
+        this.refusedView(
+          Sentence.say('refusals.wallet.heading.noSuchSignIn'), ctx, {
+          retry: record && !ctx.enrol && !ctx.mfaId
             ? authn.WALLET_PATH + '?authn=' + encodeURIComponent(record.id)
             : '' }));
       log.debug("Leaving VcSignin.admitted(). Unknown or expired.");
@@ -924,11 +938,9 @@ class VcSignin {
                this.tagOf(tx.state) + ' was asked about by a browser that ' +
                'did not start it. Refused.');
       errorCodes.mark(res, 'STS-VC-0055');
-      this.refuse(res, 403, 'A wallet sign-in finishes only in the browser ' +
-        'that started it. If that was you, go back to that browser; ' +
-        'otherwise somebody sent you a link to their own sign-in.',
-        this.refusedView('This sign-in was started in another browser',
-                         null));
+      this.refuse(res, 403, Sentence.say('refusals.wallet.otherBrowser'),
+        this.refusedView(
+          Sentence.say('refusals.wallet.heading.otherBrowser'), null));
       log.debug("Leaving VcSignin.admitted(). Wrong browser.");
       return null;
     }
@@ -936,8 +948,9 @@ class VcSignin {
     // of a finished sign-in: `completeAuthentication()` spent it.
     if (tx.signIn.completed) {
       errorCodes.mark(res, 'STS-VC-0062');
-      this.refuse(res, 400, 'This sign-in has already been used.',
-        this.refusedView('This sign-in has already been used', ctx));
+      this.refuse(res, 400, Sentence.say('refusals.wallet.alreadyUsed'),
+        this.refusedView(
+          Sentence.say('refusals.wallet.heading.alreadyUsed'), ctx));
       log.debug("Leaving VcSignin.admitted(). Already completed.");
       return null;
     }
@@ -950,9 +963,10 @@ class VcSignin {
       if (this.personOf(req).toLowerCase() !==
           String(tx.signIn.enrol.username).toLowerCase()) {
         errorCodes.mark(res, 'STS-VC-0093');
-        this.refuse(res, 403, 'You are no longer signed in as the person ' +
-          'this enrolment was for.',
-          this.refusedView('Signed out', ctx, { retry: ENROL_HOME }));
+        this.refuse(res, 403, Sentence.say('refusals.wallet.enrolSignedOut'),
+          this.refusedView(
+            Sentence.say('refusals.wallet.heading.signedOut'), ctx,
+                           { retry: ENROL_HOME }));
         log.debug("Leaving VcSignin.admitted(). The enrolment's person " +
                   "left.");
         return null;
@@ -962,9 +976,9 @@ class VcSignin {
     }
     if (!record || (!ctx.mfaId && !authn.pendingFor(record.id))) {
       errorCodes.mark(res, 'STS-VC-0053');
-      this.refuse(res, 400, 'The request you were signing in for has ' +
-        'expired. Start again from the application.',
-        this.refusedView('Nothing to sign in to', null));
+      this.refuse(res, 400, Sentence.say('refusals.wallet.requestExpired'),
+        this.refusedView(
+          Sentence.say('refusals.wallet.heading.nothingToSignInTo'), null));
       log.debug("Leaving VcSignin.admitted(). The pending record is gone.");
       return null;
     }
@@ -1100,9 +1114,10 @@ class VcSignin {
           stsCrypto.constantTimeEquals(this.hashOf(body.response_code),
                                        tx.signIn.responseCodeHash))) {
       errorCodes.mark(res, 'STS-VC-0065');
-      this.refuse(res, 403, 'The link your wallet sent you back with does ' +
-        'not carry the code this service gave it.',
-        this.refusedView('That response code is not this sign-in\'s', ctx));
+      this.refuse(res, 403,
+        Sentence.say('refusals.wallet.responseCodeMismatch'),
+        this.refusedView(
+          Sentence.say('refusals.wallet.heading.responseCodeNotThis'), ctx));
       log.debug("Leaving VcSignin.status(). response_code mismatch.");
       return;
     }
@@ -1170,17 +1185,18 @@ class VcSignin {
                ' was posted from origin "' + posted + '", not "' + origin +
                '". Refused.');
       errorCodes.mark(res, 'STS-VC-0074');
-      this.refuse(res, 403, 'A wallet\'s answer is accepted only from the ' +
-        'page on ' + origin + ' that asked for it.',
-        this.refusedView('That answer did not come from this page', ctx));
+      this.refuse(res, 403,
+        Sentence.say('refusals.wallet.answerWrongOrigin',
+                     { origin: String(origin) }),
+        this.refusedView(
+          Sentence.say('refusals.wallet.heading.answerNotFromPage'), ctx));
       log.debug("Leaving VcSignin.dcApi(). Wrong origin.");
       return;
     }
     const response = body.response;
     if (!response || (typeof response === 'string' && !response.trim())) {
       errorCodes.mark(res, 'STS-VC-0081');
-      this.refuse(res, 400, 'Nothing came back from the browser\'s Digital ' +
-        'Credentials API. Use the same-device link instead.');
+      this.refuse(res, 400, Sentence.say('refusals.wallet.dcApiEmpty'));
       log.debug("Leaving VcSignin.dcApi(). Nothing was posted.");
       return;
     }
@@ -1190,8 +1206,9 @@ class VcSignin {
     if (!answered.ok) {
       errorCodes.mark(res, answered.errorCode);
       // error-code: none — marked on the line above with the Verifier's code
-      this.refuse(res, answered.status, String(answered.why),
-        this.refusedView('Nobody was signed in', ctx));
+      this.refuse(res, answered.status, answered.why,
+        this.refusedView(
+          Sentence.say('refusals.wallet.heading.nobodySignedIn'), ctx));
       log.debug("Leaving VcSignin.dcApi(). " + answered.errorCode);
       return;
     }
@@ -1298,8 +1315,10 @@ class VcSignin {
                             String(outcome.reason || ''), false);
       }
       errorCodes.mark(res, outcome.errorCode || 'STS-VC-0061');
-      this.refuse(res, 403, String(outcome.reason || 'Nobody was signed in.'),
-        this.refusedView('Nobody was signed in', ctx, {
+      this.refuse(res, 403, outcome.reason ||
+                  Sentence.say('refusals.wallet.nobodySignedIn'),
+        this.refusedView(
+          Sentence.say('refusals.wallet.heading.nobodySignedIn'), ctx, {
           retry: retry,
           verdict: (selfIssued ? 'selfIssued' : 'presentation') +
                    (tx.verdict.ok ? '.verified' : '.notVerified'),
@@ -1333,10 +1352,11 @@ class VcSignin {
       }
       errorCodes.mark(res, store ? 'STS-VC-0063' : 'STS-VC-0062');
       this.refuse(res, store ? 503 : 400, store
-        ? 'This sign-in could not be finished just now; try again shortly.'
-        : 'This sign-in has already been used.',
-        this.refusedView(store ? 'Try again shortly'
-                               : 'This sign-in has already been used', ctx));
+        ? Sentence.say('refusals.wallet.notFinishedTryShortly')
+        : Sentence.say('refusals.wallet.alreadyUsed'),
+        this.refusedView(store
+          ? Sentence.say('refusals.wallet.heading.tryShortly')
+          : Sentence.say('refusals.wallet.heading.alreadyUsed'), ctx));
       log.debug("Leaving VcSignin.finish(). The claim was refused.");
       return;
     }
@@ -1363,8 +1383,9 @@ class VcSignin {
       if (!done.ok) {
         errorCodes.mark(res, done.code);
         // error-code: none — marked on the line above: the library's code
-        this.refuse(res, 400, String(done.error),
-          this.refusedView('The DID was not changed', ctx));
+        this.refuse(res, 400, done.error,
+          this.refusedView(
+            Sentence.say('refusals.wallet.heading.didNotChanged'), ctx));
         log.debug("Leaving VcSignin.finish(). The DID act was refused.");
         return;
       }
@@ -1394,8 +1415,9 @@ class VcSignin {
       if (!enrolled.ok) {
         errorCodes.mark(res, enrolled.code === 'STS-VC-0179'
           ? 'STS-VC-0179' : 'STS-VC-0094');
-        this.refuse(res, 400, String(enrolled.error),
-          this.refusedView('That key was not enrolled', ctx));
+        this.refuse(res, 400, enrolled.error,
+          this.refusedView(
+            Sentence.say('refusals.wallet.heading.keyNotEnrolled'), ctx));
         log.debug("Leaving VcSignin.finish(). Enrolment refused.");
         return;
       }
@@ -1415,8 +1437,9 @@ class VcSignin {
       if (finished && finished.refused) {
         errorCodes.mark(res, finished.refused === 'policy' ? 'STS-VC-0064' :
                              'STS-VC-0084');
-        this.refuse(res, 403, String(finished.why),
-          this.refusedView('Nobody was signed in', ctx));
+        this.refuse(res, 403, finished.why,
+          this.refusedView(
+            Sentence.say('refusals.wallet.heading.nobodySignedIn'), ctx));
         log.debug("Leaving VcSignin.finish(). Second factor refused.");
         return;
       }
@@ -1450,15 +1473,18 @@ class VcSignin {
                                                       assessed);
     if (second.refused && second.onRisk) {
       errorCodes.mark(res, second.errorCode || 'STS-RISK-0016');
-      this.refuse(res, 403, 'Authentication failed.',
-        this.refusedView('Nobody was signed in', ctx));
+      this.refuse(res, 403,
+        Sentence.say('refusals.wallet.authenticationFailed'),
+        this.refusedView(
+          Sentence.say('refusals.wallet.heading.nobodySignedIn'), ctx));
       log.debug("Leaving VcSignin.finish(). Refused on risk.");
       return;
     }
     if (second.refused) {
       errorCodes.mark(res, 'STS-VC-0064');
-      this.refuse(res, 403, String(second.refused),
-        this.refusedView('The issuance policy refused this sign-in', null));
+      this.refuse(res, 403, second.refused,
+        this.refusedView(
+          Sentence.say('refusals.wallet.heading.policyRefused'), null));
       log.debug("Leaving VcSignin.finish(). Refused by policy.");
       return;
     }
@@ -1509,10 +1535,10 @@ class VcSignin {
       log.info('oid4vp-signin: the issuance policy refused a session for ' +
                username + ' after a verified presentation.');
       errorCodes.mark(res, 'STS-VC-0064');
-      this.refuse(res, 403, 'Your presentation verified. This service will ' +
-        'not start a session for this identity. That is a policy decision ' +
-        'rather than anything wrong with the credential.',
-        this.refusedView('The issuance policy refused this sign-in', null));
+      this.refuse(res, 403,
+        Sentence.say('refusals.wallet.policyRefusedVerified'),
+        this.refusedView(
+          Sentence.say('refusals.wallet.heading.policyRefused'), null));
       log.debug("Leaving VcSignin.finish(). Refused by policy.");
       return;
     }
@@ -1555,11 +1581,19 @@ class VcSignin {
               (code === 'STS-VC-0067' ? 'unhandled failure: ' : '') +
               ((e && (e.stack || e.message)) || e));
     if (!res.headersSent) {
+      // The sentence a person reads; the failure's own message (in
+      // development) is the exception's text, which is not translated.
+      const said = require('../common/mode').hidesFailureDetail()
+        ? Sentence.say('refusals.wallet.notCompleted')
+        : String((e && e.message) || e);
+      const body: Json = { ok: false, next: 'refused',
+                           errors: [String(said)] };
+      const messages = Sentence.messagesOf([said]);
+      if (messages) {
+        body.messages = messages;
+      }
       errorCodes.mark(res, code);
-      authn.answerJson(res, 500, { ok: false, next: 'refused',
-        errors: [require('../common/mode').hidesFailureDetail()
-          ? 'The sign-in could not be completed.'
-          : String((e && e.message) || e)] });
+      authn.answerJson(res, 500, body);
     }
     log.debug("Leaving VcSignin.failed().");
   }
