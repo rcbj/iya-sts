@@ -22,7 +22,8 @@
 //
 // The keys of the seed file are drawn in the run and never written down.
 // What a code from the token does at a sign-in is `tests/oath_tokens.js`'s
-// and `tests/hotp.js`', in process. The authentication policy's hotp row
+// and `tests/hotp.js`', in process, except the resynchronisation at the
+// sign-in step (e, f below). The authentication policy's hotp row
 // is off by default; this run turns it on for the assignment and puts the
 // default realm's profile back. `local: true`: this repository's
 // console and management API.
@@ -362,7 +363,176 @@ program
                                            "needs no browser)"))
   .parse(process.argv);
 
+// ---------------------------------------------------------------------------
+// THE #1955 REVIEW (PR #1996): HOTP RESYNCHRONISATION AT THE SIGN-IN STEP,
+// in a realm of its own, after the sections above:
+//   e. an HOTP token imported and assigned here (its secret drawn in the
+//      run) holds a person's second factor; they sign in with a password
+//      and reach the one-time code step; the token is pressed past
+//      hotp.window, so the single code it shows then is refused and the
+//      step stays open; the code and the next one, sent together
+//      (`code`, `code2`), resynchronise it and finish the sign-in;
+//   f. a fresh sign-in then accepts the code after those two.
+// The window settings are set in that realm only.
+// ---------------------------------------------------------------------------
+
+const authnSignin = require("./authn_signin");
+
+const H_REALM = ("hr" + RUN).toLowerCase().replace(/[^a-z0-9]/g, "")
+  .slice(0, 31);
+const H_PERSON = ("hrp" + RUN).toLowerCase().replace(/[^a-z0-9]/g, "")
+  .slice(0, 24);
+const H_PASSWORD = "Hotp-Resync-Key9!xQ";
+const H_WINDOW = 3;
+
+function hotpRealm(path) {
+  log.debug("Entering hotpRealm().");
+  log.debug("Leaving hotpRealm().");
+  return "/realm/" + H_REALM + path;
+}
+
+// RFC 4226 section 5.3: HMAC-SHA-1 over the eight-byte counter, dynamic
+// truncation, six digits — written here, never the service's own code.
+function hotpCode(secret, counter) {
+  log.debug("Entering hotpCode(). counter=" + counter);
+  const moving = Buffer.alloc(8);
+  moving.writeBigUInt64BE(BigInt(counter), 0);
+  const mac = nodeCrypto.createHmac("sha1", secret).update(moving).digest();
+  const at = mac[mac.length - 1] & 0x0f;
+  const value = ((mac[at] & 0x7f) << 24) | (mac[at + 1] << 16) |
+                (mac[at + 2] << 8) | mac[at + 3];
+  log.debug("Leaving hotpCode().");
+  return String(value % 1000000).padStart(6, "0");
+}
+
+function b64url(buf) {
+  log.debug("Entering b64url().");
+  log.debug("Leaving b64url().");
+  return Buffer.from(buf).toString("base64url");
+}
+
+async function mustDo(method, path, json, what) {
+  log.debug("Entering mustDo(). " + what);
+  const res = await send(method, path, { json: json });
+  assert.ok(res.status >= 200 && res.status < 300 && res.json &&
+            res.json.ok !== false,
+            what + ": " + res.status + " " + String(res.raw).slice(0, 300));
+  log.debug("Leaving mustDo().");
+  return res;
+}
+
+// The portal's authorization request in the realm, to the sign-in screen,
+// then the password: answers the screen's answer, at the code step.
+async function toTheCodeStep() {
+  log.debug("Entering toTheCodeStep().");
+  const rb = base + "/realm/" + H_REALM;
+  const verifier = b64url(nodeCrypto.randomBytes(32));
+  const authorize = rb + "/oauth2/authorize?" + new URLSearchParams({
+    response_type: "code", client_id: "sts-user-portal",
+    redirect_uri: rb + "/portal/callback", scope: "openid account:manage",
+    state: b64url(nodeCrypto.randomBytes(16)),
+    code_challenge: b64url(nodeCrypto.createHash("sha256").update(verifier)
+      .digest()),
+    code_challenge_method: "S256", resource: rb + "/account-api" })
+    .toString();
+  const r = await fetch(authorize, { redirect: "manual" });
+  await r.text();
+  const login = new URL(String(r.headers.get("location") || ""), rb)
+    .toString();
+  assert.ok(/\/authn\/login/.test(login),
+            "the authorization request did not reach the sign-in screen: " +
+            r.status + " " + login);
+  const answer = await authnSignin.signIn(rb, login,
+    { action: "login", username: H_PERSON, password: H_PASSWORD }, {});
+  assert.strictEqual(answer.next, "mfa",
+    "the password alone did not lead to the one-time code step: " +
+    answer.next + " " + String(answer.location || ""));
+  const opened = await authnSignin.step(answer.location,
+                                        { cookie: answer.cookie });
+  log.debug("Leaving toTheCodeStep().");
+  return opened;
+}
+
+async function hotpResyncTest() {
+  log.debug("Entering hotpResyncTest().");
+  log.info("HOTP resynchronisation at the sign-in step at " + base +
+           "/realm/" + H_REALM);
+  await mustDo("POST", "/admin-api/realms/create", { id: H_REALM,
+    domain: H_REALM + ".example.net", name: "HOTP resync " + H_REALM },
+    "the realm " + H_REALM + " could not be created");
+  await mustDo("POST", hotpRealm("/admin-api/config/set-many"),
+    { "risk.assessSignIns": false, "hotp.window": H_WINDOW },
+    "the realm's settings could not be set");
+  const got = await send("GET", hotpRealm("/admin-api/policies"));
+  const defaults = got.json && got.json.authn && got.json.authn.defaults;
+  assert.ok(defaults, "the policies answer had no defaults");
+  await mustDo("POST", hotpRealm("/admin-api/policies/save-authn-policy"),
+    Object.assign({ profile: "default" }, defaults,
+                  { hotpSecondFactor: true }),
+    "the hotp row could not be turned on");
+  const key = nodeCrypto.randomBytes(16);
+  const made = container("HR-" + RUN, key);
+  const imported = await mustDo("POST",
+    hotpRealm(OPERATION + "/import-pskc"),
+    { pskc: made.xml, preSharedKey: key.toString("hex") },
+    "the seed file was not imported");
+  await mustDo("POST", hotpRealm("/admin-api/users/create"), {
+    username: H_PERSON, invent: false, credential: "password",
+    password: H_PASSWORD,
+    attributes: { cn: "HOTP " + H_PERSON, sn: H_PERSON, givenName: "HOTP",
+                  mail: H_PERSON + "@" + H_REALM + ".example.net" } },
+    "the person was not created");
+  await mustDo("POST", hotpRealm(OPERATION + "/assign-oath"),
+    { key: imported.json.imported[0].key, username: H_PERSON },
+    "the token was not assigned");
+
+  log.info("=== e. a token out of step, resynchronised at sign-in ===");
+  const opened = await toTheCodeStep();
+  // Pressed past the window: counters 0 to H_WINDOW are the look-ahead,
+  // so the code at H_WINDOW + 5 is out of it.
+  const far = H_WINDOW + 5;
+  const single = await authnSignin.stepAct(opened, "totp",
+    { code: hotpCode(made.secret, far) });
+  const resynced = await authnSignin.stepAct(opened, "totp",
+    { code: hotpCode(made.secret, far + 1),
+      code2: hotpCode(made.secret, far + 2) },
+    { cookie: single.cookie || opened.cookie });
+  check("e. a single code past hotp.window is refused and keeps the step, " +
+        "and two consecutive codes resynchronise the token and sign in",
+        function () {
+    assert.notStrictEqual(single.next, "redirect",
+                          "a code outside the window signed in");
+    assert.ok(!/STS-[A-Z]+-\d{4}/.test(String(single.text || "")),
+              String(single.text || "").slice(0, 300));
+    assert.strictEqual(resynced.next, "redirect",
+                       "the resynchronisation did not sign in: " +
+                       resynced.status + " " +
+                       String(resynced.text || "").slice(0, 300));
+  });
+
+  log.info("=== f. the next code, at a fresh sign-in ===");
+  const again = await toTheCodeStep();
+  const next = await authnSignin.stepAct(again, "totp",
+                                         { code: hotpCode(made.secret,
+                                                          far + 3) });
+  check("f. the code after the two that resynchronised the token signs in",
+        function () {
+    assert.strictEqual(next.next, "redirect",
+                       "the code after the resynchronisation was refused: " +
+                       next.status + " " +
+                       String(next.text || "").slice(0, 300));
+  });
+  if (process.env.STS_TEST_REMOVE_REALMS === "1") {
+    await send("POST", "/admin-api/realms/remove", { json: { id: H_REALM } });
+  }
+  log.info(checks + " checks passed, the resynchronisation included.");
+  log.debug("Leaving hotpResyncTest().");
+}
+
+// ONE EXIT, after both: the sections above, then the resynchronisation.
 test().then(function () {
+  return hotpResyncTest();
+}).then(function () {
   process.exit(0);
 }, function (e) {
   log.error(e.stack || e.message);

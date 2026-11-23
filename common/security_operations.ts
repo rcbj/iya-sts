@@ -368,10 +368,14 @@ class SecurityOperations {
       // A PIV certificate enrolled for, or an escrowed key recovered of, a
       // person (#1955 P2) is a holder change too, as `/admin/pki`'s person
       // target is: the person the body names.
+      // EVERY HOLDER OF THE TOKEN, not only the one the record names (the
+      // #1955 review): a token can carry credentials of more than one
+      // person, and the act retires each one's, so it is a Security
+      // Administrator's act when any of them holds the role.
       case '/admin/hardware-tokens':
-        answer = SecurityOperations.holderChange(body.key
-          ? SecurityOperations.tokenHolder(String(body.key || ''))
-          : String(body.username || ''), hooks);
+        answer = SecurityOperations.firstHolderChange(body.key
+          ? SecurityOperations.tokenHolders(String(body.key || ''))
+          : [String(body.username || '')], hooks);
         break;
       case '/admin/pki':
         answer = String(body.target || '').trim() === 'person'
@@ -569,20 +573,43 @@ class SecurityOperations {
   }
 
   // Who holds a hardware token, by name, from the register, reached at the
-  // moment of use (it is a library that requires nothing of this file).
-  private static tokenHolder(key: string): string {
-    log.debug("Entering SecurityOperations.tokenHolder().");
-    let name = '';
+  // moment of use (it is a library that requires nothing of this file): the
+  // record's holder and the holder of every credential on it, each once.
+  private static tokenHolders(key: string): string[] {
+    log.debug("Entering SecurityOperations.tokenHolders().");
+    const names: string[] = [];
     try {
       const token = require('./hardware_tokens').byKey(key);
-      name = token ? String(token.holder || '') : '';
+      [String((token && token.holder) || '')].concat(
+        ((token && token.credentials) || []).map(function (c: any) {
+          return String((c && c.holder) || '');
+        })).forEach(function (one: string) {
+        if (one && names.indexOf(one) < 0) {
+          names.push(one);
+        }
+      });
     } catch (e) {
-      log.debug("Caught in SecurityOperations.tokenHolder(): " +
+      log.debug("Caught in SecurityOperations.tokenHolders(): " +
                 ((e && e.message) || e));
-      name = '';
     }
-    log.debug("Leaving SecurityOperations.tokenHolder().");
-    return name;
+    log.debug("Leaving SecurityOperations.tokenHolders(). " + names.length);
+    return names;
+  }
+
+  // The first of several people whose account is a Security
+  // Administrator's to act on, as `holderChange()` answers it.
+  private static firstHolderChange(names: string[], hooks: SecurityHooks):
+      SecurityChange | null {
+    log.debug("Entering SecurityOperations.firstHolderChange().");
+    for (const who of names) {
+      const one = SecurityOperations.holderChange(who, hooks);
+      if (one) {
+        log.debug("Leaving SecurityOperations.firstHolderChange(). " + who);
+        return one;
+      }
+    }
+    log.debug("Leaving SecurityOperations.firstHolderChange(). None.");
+    return null;
   }
 
   private static holderChange(who: string, hooks: SecurityHooks):

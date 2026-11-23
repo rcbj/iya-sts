@@ -57,5 +57,16 @@
 "escrowSerial": "Serial ng sertipiko",
 "escrowSubject": "Subject",
 "escrowExpires": "Mag-e-expire",
-"escrowRecover": "Bawiin ang key"
+"escrowRecover": "Bawiin ang key",
+  "sshTab": "Mga SSH certificate",
+  "sshWhat": "Ang mga OpenSSH user certificate na inisyu ng realm na ito sa tao, hanggang mag-expire ang bawat isa. Ang pag-revoke ng isa ay naglalagay nito sa KRL ng realm (GET /pki/ssh-user-krl), na binabasa ng mga server na nagtitiwala sa CA na ito.",
+  "sshSearch": "Maghanap ng tao sa tab na Mga Token para ilista dito ang kanilang mga SSH certificate.",
+  "sshNone": "Walang SSH certificate ni {who} ang may bisa.",
+  "sshSerial": "Serial",
+  "sshKey": "Key",
+  "sshPrincipals": "Mga principal",
+  "sshExpires": "Mag-e-expire",
+  "sshHardware": "nakatali sa hardware",
+  "sshRevoked": "na-revoke",
+  "sshRevoke": "I-revoke"
 }

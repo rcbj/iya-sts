@@ -554,7 +554,7 @@ on a save and off by default, so nothing changes until you set them.
 | Row | Values | What it does |
 |---|---|---|
 | `credProtect` | `none` (default), `userVerificationOptional`, `userVerificationOptionalWithCredentialIDList`, `userVerificationRequired` | The level a registration asks the key for. Level 2 (`…WithCredentialIDList`) stops anybody holding the key from finding the credential without the PIN unless this service names it. Level 3 (`userVerificationRequired`) means the key never uses the credential without the PIN or fingerprint. |
-| `enforceCredProtect` | off (default), on | On, the browser is asked to enforce the level, and a key that reports a lower level is refused (`STS-AUTHN-0559`). A key that reports nothing counts as level 1. It needs `credProtect` set: on with `none` is refused (`STS-AUTHN-0560`). |
+| `enforceCredProtect` | off (default), on | On, the browser is asked to enforce the level, and a key that reports a lower level is refused (`STS-AUTHN-0559`). A key that reports nothing counts as level 1, and so does a key whose attestation is not verified and trusted: the level is in the authenticator data, which only a trusted attestation vouches for. While it is on, an imported U2F key is refused (`STS-AUTHN-0580`), since it cannot prove a level. It needs `credProtect` set: on with `none` is refused (`STS-AUTHN-0560`). |
 
 The level a key reports is recorded on the passkey, and the person's page on
 the console shows it (**Credential protection: level 3**). Platform and synced
@@ -611,7 +611,11 @@ key handle, the public key (an uncompressed P-256 point, 65 bytes starting
   ```
 
 Nothing is verified about where the values came from: you vouch for them, and
-each import is audited (`admin.mfa.key.imported`). A wrong AppID, key handle,
+each import is audited (`admin.mfa.key.imported`). The person is told, by a
+CAEP credential-change (`create`, credential type `fido-u2f`) and their
+security notice by mail, as for every other credential an administrator
+adds. An import is refused while the person's passkey policy enforces
+`credProtect` (`STS-AUTHN-0580`). A wrong AppID, key handle,
 public key or counter is refused (`STS-AUTHN-0561` to `STS-AUTHN-0564`). The
 person's passkey policy still applies, as it does to every new passkey, and a
 key handle already held is refused as a duplicate.

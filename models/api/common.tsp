@@ -644,11 +644,13 @@ namespace IyaSts.Api.Common;
 
 @hoisted model WithMatchedFrom {`matched`?: integer; `from`?: integer}
 
-@hoisted model WithDigitsPeriod {`digits`?: numeric; `period`?: numeric}
+@hoisted model WithDigitsPeriod {`digits`?: numeric; `period`?: numeric; @js(#{`description`:"An HOTP token is held, so the page offers the two-code resynchronisation (RFC 4226 section 7.4)."}) `hotp`?: boolean}
 
 @hoisted model WithTotpWebauthn {`totp`?: boolean; `webauthn`?: boolean}
 
 @hoisted model WithMaxLengthCode {@js(#{`maxLength`:32}) `code`?: string}
+
+@hoisted model WithMaxLengthCodeCode2 {@js(#{`maxLength`:32}) `code`?: string; @js(#{`maxLength`:32,`description`:"The code the HOTP token showed next. With it, `code` and `code2` resynchronise the token (RFC 4226 section 7.4) and finish the step."}) `code2`?: string}
 
 @hoisted model WithValueDeclared {`value`?: string; `declared`?: boolean}
 

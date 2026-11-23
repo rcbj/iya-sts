@@ -715,14 +715,6 @@
     "en": "59b1734815ece664",
     "text": "partial: el atributo id-aa-attestation de una solicitud PKCS#10 (como máximo uno, exactamente un AttestationBundle, solo el certificado y las demás opciones), mediante EST, SCEP y ACME. Se verifican dos tipos de declaración: el tcg-attest-tpm-certify del TCG en la sintaxis del apéndice A.2.3 de la revisión 20, para el perfil de dispositivo (#257), y una atestación PIV de YubiKey para cada perfil (#1955), bajo 1.3.6.1.4.1.41482.3.2, con el certificado de la ranura como stmt y el certificado f9 en certs, un tipo que eligió este servicio porque el borrador no define ninguno. La extensión CRMF no se lee (aquí no hay CMP), y los demás tipos de declaración se registran, no se verifican. Frescura (sección 6.2) mediante draft-ietf-lamps-attestation-freshness sobre EST, solo para declaraciones TPM: una atestación PIV no lleva ningún nonce."
   },
-  "stsmetadata.specs.yubico-piv-attestation.coverage": {
-    "en": "244659759ede3102",
-    "text": "partial: el certificado de atestación de la ranura se verifica, a través del certificado de atestación f9, hasta las raíces PIV de Yubico (Serial 263751, y Attestation Root 1 con sus intermedios PIV para el firmware 5.7.4 y posteriores, incluidas y fijadas) o las propias de un dominio; su clave se contrasta con la de la solicitud; se leen las extensiones de firmware, número de serie, política de PIN y de toque y factor de forma, y las políticas se contrastan con las del dominio. La tarjeta en sí nunca se gestiona: no se escribe PIN, PUK ni ranura."
-  },
-  "stsmetadata.specs.fips201.coverage": {
-    "en": "322d92ba9eb36fde",
-    "text": "minimal: las cuatro ranuras de clave como perfiles de certificado (PIV Authentication 9a, Digital Signature 9c, Key Management 9d, Card Authentication 9e, que de forma predeterminada no inicia la sesión de nadie), y una tarjeta PIV o CAC externa asociada por el UUID de tarjeta de su subjectAltName urn:uuid cuando declara una política PIV Authentication (desactivado de forma predeterminada). Sin FASC-N, CHUID, gestión de tarjetas ni biometría."
-  },
   "stsmetadata.specs.lamps-attestation-freshness.coverage": {
     "en": "555e31da7393d476",
     "text": "partial: EST sobre HTTPS (sección 5.1): /nonce por GET y por POST con application/est-attestation-freshness+json, len respetado dentro de 8..64 (elevado a 16 octetos), caducidad, el nonce vacío cuando no se necesita prueba, 400 y 503, autenticado y vinculado a la CSR mediante una cookie y la entidad principal. El nonce es el qualifyingData de TPM2_Certify, comprobado como extraData de TPMS_ATTEST y gastado una sola vez. Ausentes: no se define ningún tipo reqTypeInfo (503), ni CMP (sección 4), EST sobre CoAP (5.2) y CMC (6), que este servicio no habla."
@@ -770,10 +762,6 @@
   "stsmetadata.specs.rfc9580.coverage": {
     "en": "a2930bdb8ffe747d",
     "text": "partial: lectura de una clave pública transferible, v6 y (RFC 4880) v4, verificación de una firma en texto claro por una de sus claves de firma y cifrado de un mensaje para su clave de cifrado, Los algoritmos clásicos pasan por openpgp.js. Los compuestos RFC 9980 se leen aquí (véase rfc9980). Se aceptan Ed25519, Ed448, ECDSA y ECDH sobre las curvas NIST, X25519, X448 y RSA de openpgp.minRsaBits; se rechazan DSA, ElGamal y Brainpool. Falta: firma, descifrado, un llavero, un servidor de claves."
-  },
-  "stsmetadata.specs.rfc9980.coverage": {
-    "en": "5feb46765c8bc465",
-    "text": "partial: firmas ML-DSA-65+Ed25519 y ML-DSA-87+Ed448, y cifrado ML-KEM-768+X25519 y ML-KEM-1024+X448, en el registro y cuando se usa una clave ya guardada. Un compuesto cuenta como poscuántico. openpgp.pqcOnly restringe solo el registro. Las dos mitades de una firma las verifica common/crypto_impl/openpgp_pqc.js. Falta: SLH-DSA (identificadores de algoritmo 32-34), y este servicio no genera una clave RFC 9980. openpgp.js no analiza estas claves."
   },
   "stsmetadata.specs.rfc3156.coverage": {
     "en": "aa799b14a54ace0f",
@@ -1090,14 +1078,6 @@
   "stsmetadata.endpoints./pki/revocation.what": {
     "en": "6e82cd30ac736775",
     "text": "NO ESTÁNDAR, y aun así deliberadamente aquí: una persona que apunta un cliente a estos endpoints necesita saber QUÉ SON las direcciones, y leerlas de un certificado con `openssl x509 -text` es un mal primer paso. Una fila por autoridad con su sujeto, cuántos certificados ha revocado y su CRL en ambos esquemas (http, ldap) junto a sus direcciones OCSP y caIssuers. NO CONTIENE NÚMEROS DE SERIE: la lista de lo revocado es la CRL, y una copia JSON a su lado sería una segunda respuesta a la misma pregunta: la que queda desactualizada y la que nadie firmó. Dice expresamente que este servicio PUBLICA la revocación y no puede obligar a nadie a consultarla, lo cual es cierto de toda autoridad de certificación y es la razón por la que el autor de un cliente apuntaría su pila aquí. Sin control de acceso, porque todo lo que contiene ya está dentro de cada certificado que entrega este servicio."
-  },
-  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
-    "en": "c8819f794e61f398",
-    "text": "NON-SPEC (#1955 P3): la clave de la CA de usuarios OpenSSH del dominio, publicada como línea authorized-key para que los servidores SSH confíen en ella. Sin control de acceso y `no-store`; la clave privada correspondiente de la CA nunca sale de este servicio."
-  },
-  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
-    "en": "ed928008015e78a8",
-    "text": "NON-SPEC (#1955 P3): la KRL de OpenSSH del dominio, actualizada cuando un llamante revoca un certificado o declara perdido un token de hardware. Sin control de acceso y `no-store`; los servidores SSH deben configurarse para consultarla, porque este servicio no puede obligar a una parte que confía a hacerlo."
   },
   "stsmetadata.endpoints./admin-api/xacml.what": {
     "en": "2efd1b442d450758",
@@ -2244,16 +2224,12 @@
     "text": "NON-SPEC (#1955 P4). Los tokens HOTP y TOTP que los administradores importaron de los archivos de semillas PSKC de los proveedores, sin asignar, asignados o retirados, paginados y buscables por número de serie o persona. Nunca un secreto. Refleja GET /admin/hardware-tokens (su pestaña OATH)."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "0d649147af0cbe04",
-    "text": "NON-SPEC (#1955). lost, con { key }: el token se marca como perdido, se elimina cada llave de acceso que contiene, se revoca cada certificado que contiene por keyCompromise, se envía un credential-change de CAEP por cada uno y se cierran las sesiones que iniciaron. enrol-piv, con { username, profile, csr, attestationCertificate?, attestationIssuer? }: un certificado de ranura PIV emitido para esa persona por la CA emisora de EST, verificada su atestación PIV de YubiKey y registrada la YubiKey. recover-key, con { username, serial }: la clave piv-key-management en custodia de esa persona, que la política de control de acceso solo permite a PIV_KEY_RECOVERY. Las tres acciones de la consola en esa página."
+    "en": "cdbf34a1fbdf290e",
+    "text": "NON-SPEC (#1955). lost, con { key }: el token se marca perdido, cada passkey que lleva se elimina, cada certificado que lleva se revoca por keyCompromise, se envía un credential-change de CAEP por cada uno y terminan las sesiones que iniciaron. enrol-piv, con { username, profile, csr, attestationCertificate?, attestationIssuer? }: un certificado de ranura PIV emitido a esa persona por la CA emisora de EST, con su atestación PIV de YubiKey verificada y la YubiKey registrada. recover-key, con { username, serial }: la clave piv-key-management en custodia de esa persona, que la política de control de acceso solo permite a PIV_KEY_RECOVERY, tras un inicio de sesión reciente. revoke-ssh, con { username, serial }: el certificado de usuario SSH de esa persona revocado e incluido en la KRL del dominio. Las cuatro acciones de la consola en esa página."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "b55c0cdd477d183e",
-    "text": "notifica la pérdida de un token de hardware y retira sus credenciales, emite un certificado de ranura PIV o entrega una clave en custodia"
-  },
-  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
-    "en": "1716521c9c5e119d",
-    "text": "NON-SPEC (#1955). Los certificados piv-key-management en custodia de una persona (piv.keyEscrow): número de serie, sujeto, validez y si cada uno fue revocado. Nunca una clave. Refleja GET /admin/hardware-tokens."
+    "en": "f5b724d2c79b5f74",
+    "text": "informa de la pérdida de un token de hardware y retira sus credenciales, emite un certificado de ranura PIV, entrega una clave en custodia o revoca el certificado SSH de una persona"
   },
   "stsmetadata.endpoints./admin-api/scim/clients.what": {
     "en": "3b0cd4362d8cf5fd",
@@ -4214,5 +4190,33 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "un parámetro"
+  },
+  "stsmetadata.specs.yubico-piv-attestation.coverage": {
+    "en": "244659759ede3102",
+    "text": "partial: el certificado de atestación de la ranura se verifica, a través del certificado de atestación f9, hasta las raíces PIV de Yubico (Serial 263751, y Attestation Root 1 con sus intermedios PIV para el firmware 5.7.4 y posteriores, incluidas y fijadas) o las propias de un dominio; su clave se contrasta con la de la solicitud; se leen las extensiones de firmware, número de serie, política de PIN y de toque y factor de forma, y las políticas se contrastan con las del dominio. La tarjeta en sí nunca se gestiona: no se escribe PIN, PUK ni ranura."
+  },
+  "stsmetadata.specs.fips201.coverage": {
+    "en": "322d92ba9eb36fde",
+    "text": "minimal: las cuatro ranuras de clave como perfiles de certificado (PIV Authentication 9a, Digital Signature 9c, Key Management 9d, Card Authentication 9e, que de forma predeterminada no inicia la sesión de nadie), y una tarjeta PIV o CAC externa asociada por el UUID de tarjeta de su subjectAltName urn:uuid cuando declara una política PIV Authentication (desactivado de forma predeterminada). Sin FASC-N, CHUID, gestión de tarjetas ni biometría."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/escrowed.what": {
+    "en": "1716521c9c5e119d",
+    "text": "NON-SPEC (#1955). Los certificados piv-key-management en custodia de una persona (piv.keyEscrow): número de serie, sujeto, validez y si cada uno fue revocado. Nunca una clave. Refleja GET /admin/hardware-tokens."
+  },
+  "stsmetadata.specs.rfc9980.coverage": {
+    "en": "5feb46765c8bc465",
+    "text": "partial: firmas ML-DSA-65+Ed25519 y ML-DSA-87+Ed448, y cifrado ML-KEM-768+X25519 y ML-KEM-1024+X448, en el registro y cuando se usa una clave ya guardada. Un compuesto cuenta como poscuántico. openpgp.pqcOnly restringe solo el registro. Las dos mitades de una firma las verifica common/crypto_impl/openpgp_pqc.js. Falta: SLH-DSA (identificadores de algoritmo 32-34), y este servicio no genera una clave RFC 9980. openpgp.js no analiza estas claves."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-ca/:scope.what": {
+    "en": "c6a8759e4a5e40c9",
+    "text": "NON-SPEC (#1955 P3): la clave de la CA de usuario OpenSSH propia del dominio, publicada como línea authorized-key en la que confían los servidores SSH. Con `?algorithm=ssh-mldsa-65` responde en su lugar con la autoridad ML-DSA del dominio, que OpenSSH estándar aún no puede verificar. Sin control y `no-store`, solo en el puerto principal: el agente de escucha de revocación en HTTP sin cifrar la rechaza, porque la clave es un ancla de confianza. La clave privada de la CA correspondiente nunca sale de este servicio."
+  },
+  "stsmetadata.endpoints./pki/ssh-user-krl/:scope.what": {
+    "en": "2e4cdead67408937",
+    "text": "NON-SPEC (#1955 P3): la KRL de OpenSSH propia del dominio, actualizada cuando alguien revoca un certificado o informa de la pérdida de un token de hardware. Sin control y `no-store`, solo en el puerto principal: la KRL no está firmada, así que el agente de escucha de revocación en HTTP sin cifrar la rechaza. Los servidores SSH deben configurarse para consultarla, porque este servicio no puede obligar a una parte de confianza a hacerlo."
+  },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/ssh-certificates.what": {
+    "en": "84ce6fea3694d4c0",
+    "text": "NON-SPEC (la revisión de #1955). Los certificados de usuario OpenSSH emitidos a una persona que no han vencido, con los revocados marcados: número de serie, tipo y huella de la clave, principales, validez y si una evidencia de hardware cubría la clave. Nunca una clave. Refleja GET /admin/hardware-tokens (su pestaña Certificados SSH)."
   }
 }

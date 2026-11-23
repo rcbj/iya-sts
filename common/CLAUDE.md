@@ -8350,20 +8350,40 @@ when there is none, the way `openpgp.pqcOnly` and `webauthn.pqcOnly` refuse:
 until 2026-11-23 it fell back to a classical certificate without a word.
 `pki.sshUserCaPqcAlongsideClassical` issues both certificates. The two
 switches refuse together (`STS-PKI-0296`).
-`ssh_user_ca.ts` issues only for a caller's UID or group CN, asks XACML once
-per requested principal, and records the token subject as owner of each
-serial. The Account API's issue operation requires recent authentication,
-honours `pki.personSelfService` and the existing per-person/address rate
-limits; revocation checks that same token subject and updates the KRL.
+`ssh_user_ca.ts` issues only for a caller's UID, or a group of theirs that
+`pki.sshGroupPrincipals` names (none by default, and never one named like a
+person's uid or a system account, STS-SSHCA-0002), asks XACML once per
+requested principal with its kind (`uid`/`group`), and records the token
+subject as owner of each serial. The Account API's issue operation requires
+recent authentication, honours `pki.personSelfService` and the existing
+per-person/address rate limits; revocation checks that same token subject
+and updates the KRL. The three SSH operations take `ssh:certificate` as
+well as `account:manage` (`AccountOperationRow.scopes`).
+
+**THE ISSUED SERIALS LEFT THE PKI ROW (the #1955 review):** a register of
+their own, `ssh_issued.ts` (`ssh_user_ca.issued`, per realm, on demand,
+global tier, a row expiring with its certificate), indexed by owner, key
+and revoked. Every issuance used to rewrite every serial the realm had
+issued. `pki.js` reads the register first and the row's `sshIssued` second
+for a serial, a key's certificates, a person's list and the KRL, so what was
+issued before is still listed and revocable; nothing new goes on the row. A
+revocation of a row-held serial refreshes the PKI row first.
 
 The CA key and KRL are public, `no-store` documents at
-`/pki/ssh-user-ca/{scope}` and `/pki/ssh-user-krl/{scope}`. A relying SSH
+`/pki/ssh-user-ca/{scope}` and `/pki/ssh-user-krl/{scope}`, on the main port
+only: the plain-HTTP revocation listener refuses both (STS-SSHCA-0001),
+since neither is signed by anything a reader already trusts. A relying SSH
 server must configure the first as a trusted user CA and the second as its
 revocation list; publishing either cannot make a server consult it. A lost
 hardware token retires every SSH certificate associated with its key
 fingerprint through the hardware-token retirer. Security-key evidence is
-verified against the authenticator data and configured attestation anchors;
-a stored PIV-attested certificate earns the same hardware-bound lifetime.
+verified over `authData || SHA-256(challenge)` (the challenge the caller
+gave `ssh-keygen`) through `webauthn_attestation.ts`'s `packed` verifier,
+which decides trust; an `sk-` key without a trusted attestation gets the
+software lifetime. A token is recorded only from a device serial the trusted
+attestation names. A stored PIV-attested certificate earns the same
+hardware-bound lifetime. Lifetimes are `pki.sshSoftwareLifetimeSeconds` and
+`pki.sshHardwareLifetimeSeconds`; extensions `pki.sshUserCertificateExtensions`.
 
 **WHAT REVERSED IS THE SENTENCE BELOW, and what replaced it is not a weaker
 claim.** *IT IS PER REALM* used to be argued here as: a CA shared across realms
@@ -12912,6 +12932,16 @@ One record per physical token (a YubiKey, a smart card) per realm, keyed by
 as `{ kind, ref }`. The file's header is the argument; what a maintainer of
 this directory has to know beside it:
 
+* **The #1955 review**: a certificate is filed by `sha256:<thumbprint>` with
+  its serial beside it, and `certificateEvidence()` (the TLS doors, PKINIT,
+  the sign-in snapshot, the SSH PIV match) answers only for the
+  credential's holder; rows filed by serial are read when the enrolled
+  record of that serial is the certificate presented. A token's holder is
+  its first registrant; a credential's holder may report it lost. A slot 9e
+  credential is no evidence. The x509 retirer ends the certificate's
+  sessions (`endFactorSessions` kind `certificate`), and `attested-hardware`
+  asks the register again at issuance. Under `hardwareClaims: evidence` a
+  passkey earns `hwk` only from a trusted attestation (`fidoAmr()`).
 * **A serial is recorded only from attestation**: `recordAttested()` is the
   one writer and takes an evidence source from a closed list
   (`fido-enterprise-attestation`, `piv-attestation` since P2, `vendor-import`,
@@ -13036,10 +13066,14 @@ what a maintainer of this directory has to know beside them:
   `password || otp` only when the suffix is that person's public identity
   plus 32 modhex characters, checks the password first, and spends the OTP
   only after the password succeeds.
-* **YK-VAL clients and nonces are global minted state**
-  (`yubiotp.ykvalClients`, `yubiotp.nonces`). The nonce sweep is
-  `yubiotp.nonce-sweep` in `GLOBAL_JOBS`. A client-chosen nonce has to be
-  one set for every cell. The inventory and the public-identity index stay
+* **YK-VAL clients are global minted state** (`yubiotp.ykvalClients`).
+  **A nonce is spent by a cluster claim** (`yubiotp.ykval-nonce`, in
+  `GLOBAL_CLAIM_SCOPES`) since the #1955 review: it was a read-then-write of
+  a per-process map. `yubiotp.nonces` is no longer written;
+  `yubiotp.nonce-sweep`, a per-realm cluster job (it was never in
+  `GLOBAL_JOBS`, as this said), drains what older releases wrote. A disabled
+  account's OTP is `BAD_OTP` (STS-YUBIOTP-0032), and every verify is
+  audited (`ykval.verify`). The use counter is masked to fifteen bits. The inventory and the public-identity index stay
   on the cell tier. While `yubiotp.ykval` is off the route answers
   `OPERATION_NOT_ALLOWED` and signs nothing. On, the client id and the
   HMAC-SHA1 are checked in every mode.

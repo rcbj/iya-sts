@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5990** of them, in **57** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6001** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 446
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 447
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 83
@@ -86,9 +86,10 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
 * [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 13
-* [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 35
-* [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 30
-* [PIV key attestation (`STS-PIV`)](#sts-piv) — 26
+* [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 36
+* [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 32
+* [PIV key attestation (`STS-PIV`)](#sts-piv) — 28
+* [OpenSSH user certificates (`STS-SSHCA`)](#sts-sshca) — 5
 * [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 30
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 254
@@ -1843,6 +1844,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0565` | A sign-in step was answered by a legacy U2F security key that may not answer it: the step is passwordless (a U2F key cannot verify the person), or webauthn.u2fAppIds no longer permits its AppID at this RP ID (#1955). | HTTP 200 page naming the refusal |
 | `STS-AUTHN-0566` | A write of webauthn.u2fAppIds was refused: an entry is not a U2F AppID — an absolute https URL with a host, no user name or password and no fragment, at most 2048 characters (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-AUTHN-0567` | The bootstrap password file could not be removed on a start that found a credential already held. The plaintext is left on disk. | Log line; the service still starts, and the file is left |
+| `STS-AUTHN-0580` | A legacy U2F key was not imported: the person's passkey policy enforces a CTAP 2.1 credProtect level, which an imported key ran no ceremony to report and cannot prove (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-OAUTH
 
@@ -5039,6 +5041,7 @@ Raised from: common/hotp.ts, common/credentials.ts, common/pskc.ts, common/oath_
 | `STS-OATH-0047` | A lost hardware token's OATH credential could not be retired (#1955). | — |
 | `STS-OATH-0049` | An imported OATH token that is assigned was asked to be removed; it is retired by reporting the token lost instead (#1955). | — |
 | `STS-OATH-0050` | An Account API act on a one-time code token was refused: unknown, or too many attempts in the code budget (#1955). | HTTP 400 |
+| `STS-OATH-0051` | A claim of an imported HOTP token was refused: the code it presented was already spent by another request, so it proves nothing about who holds the token (#1955). | HTTP 400 (the portal or the Account API) |
 
 ## STS-YUBIOTP
 
@@ -5078,6 +5081,8 @@ Raised from: common/yubiotp.ts, common/yubiotp_store.ts, common/credentials.ts, 
 | `STS-YUBIOTP-0028` | A lost hardware token's YubiKey OTP credential could not be retired (#1955 P5). | — |
 | `STS-YUBIOTP-0029` | A YK-VAL client id was not 1 to 16 digits, or that client already exists (#1955 P5). | — |
 | `STS-YUBIOTP-0030` | An operator asked to clear a YubiKey OTP for a person who holds none (#1955 P5). | HTTP 400 (API) or a 303 with error= |
+| `STS-YUBIOTP-0031` | A YK-VAL nonce could not be proved unused: the cluster claim it is spent under had no store to ask, so the request was not checked (#1955). | YK-VAL 2.0 BACKEND_ERROR |
+| `STS-YUBIOTP-0032` | A YK-VAL verify named a YubiKey OTP of a disabled account; it is answered as a bad OTP and nothing is spent (#1955). | YK-VAL 2.0 BAD_OTP |
 
 ## STS-PIV
 
@@ -5113,6 +5118,22 @@ Raised from: common/piv_attestation.ts, common/cert_enrollment.ts, common/piv_en
 | `STS-PIV-0032` | An outside PIV or CAC card's card UUID is in stsPivCardUuid on more than one person, so it names nobody (#1955, D8). | the outside-certificate refusal (STS-TLS-0055, STS-AUTHN-0469) |
 | `STS-PIV-0034` | A value written to stsPivCardUuid is not a card UUID in RFC 9562 form (or is the nil UUID); nothing was written (#1955, D8). | HTTP 400 (the directory write); LDAP constraintViolation |
 | `STS-PIV-0035` | A card UUID written to stsPivCardUuid is already held by another entry of the realm, which would make the card name two people; nothing was written (#1955, D8). | HTTP 400 (the directory write); LDAP constraintViolation |
+| `STS-PIV-0036` | A PIV attestation's subject names no slot, and the profile asked is a PIV slot profile or one that signs in (tls-client, tls-server-client, smartcard-logon), for which the slot is the point of the check (#1955). | HTTP 400 |
+| `STS-PIV-0037` | A PIV attestation of slot 9e, the Card Authentication key that works without a PIN, was offered for a profile other than piv-card-auth (#1955). | HTTP 400 |
+
+## STS-SSHCA
+
+**OpenSSH user certificates.** The realm's OpenSSH user certificate authority (#1955 P3): which principals a person may ask for, the security-key attestation that earns the longer lifetime, the register of issued certificates, and where the CA key and the KRL are served.
+
+Raised from: common/ssh_user_ca.ts, common/ssh_issued.ts, common/pki.js, pki/pki_service.ts, account-api/ssh_user_ca.ts, mgmt-api/hardware_tokens_api.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-SSHCA-0001` | The SSH user CA's public key or its KRL was asked for on the plain-HTTP revocation listener, where neither is served: the CA key is a trust anchor and the KRL is unsigned, so plain HTTP would let anybody on the path replace them (#1955). | HTTP 404, text/plain |
+| `STS-SSHCA-0002` | An SSH certificate principal named a group whose name is a person's uid in the realm, or a system account such as root, which a server would sign the member in as (#1955). | HTTP 403 |
+| `STS-SSHCA-0003` | An SSH security-key attestation was sent without the challenge ssh-keygen was given, which the attestation signed, so it could not be verified (#1955). | HTTP 400 |
+| `STS-SSHCA-0004` | An administrator's SSH certificate act named nobody of the realm's directory (#1955). | HTTP 404 |
+| `STS-SSHCA-0005` | A person's SSH user certificates could not be read or revoked: the register threw (#1955). | HTTP 500 or 503 |
 
 ## STS-OPENPGP
 

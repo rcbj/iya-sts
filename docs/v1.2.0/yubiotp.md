@@ -32,7 +32,7 @@ An administrator posts a CSV to `POST /admin-api/hardware-tokens/import-yubiotp`
 
 ## YK-VAL
 
-`GET` and `POST /wsapi/2.0/verify` speak [YubiKey Validation Protocol 2.0](https://developers.yubico.com/yubikey-val/Validation_Protocol_V2.0.html). The route is always registered. While `yubiotp.ykval` is off it answers `OPERATION_NOT_ALLOWED` and signs nothing. On, the client id and the HMAC-SHA1 are checked in every mode, including development. A nonce is remembered for five minutes. `sl` in an `OK` answer is `100`.
+`GET` and `POST /wsapi/2.0/verify` speak [YubiKey Validation Protocol 2.0](https://developers.yubico.com/yubikey-val/Validation_Protocol_V2.0.html). The route is always registered. While `yubiotp.ykval` is off it answers `OPERATION_NOT_ALLOWED` and signs nothing. On, the client id and the HMAC-SHA1 are checked in every mode, including development. A nonce is spent for the whole cluster, by a compare-and-set in the store, and remembered for five minutes, so a request replayed to another node is `REPLAYED_REQUEST` there too. `sl` in an `OK` answer is `100`. An OTP of a **disabled account** is answered `BAD_OTP` (`STS-YUBIOTP-0032`) and nothing is spent: a PAM or RADIUS caller does not let in somebody this service refuses at its own sign-in. **Every verify is on the audit log** (`ykval.verify`): the client id, the OTP's public identity (never the OTP) and the status, with the error code of a refusal. The use counter is read as fifteen bits, as Yubico's own validation server reads it: the top bit is a flag.
 
 `ykval-client-add` creates a client. The id is 1 to 16 digits. The HMAC key is in the answer once and is not logged.
 

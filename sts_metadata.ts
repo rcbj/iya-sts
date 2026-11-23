@@ -4643,14 +4643,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'published as an authorized-key line for SSH servers to trust. ' +
           'With `?algorithm=ssh-mldsa-65` it answers the realm\'s ML-DSA ' +
           'authority instead, which stock OpenSSH cannot verify yet. ' +
-          'Ungated and `no-store`; the corresponding CA private key never ' +
-          'leaves this service.' },
+          'Ungated and `no-store`, on the main port only: the plain-HTTP ' +
+          'revocation listener refuses it, because the key is a trust ' +
+          'anchor. The corresponding CA private key never leaves this ' +
+          'service.' },
   { path: '/pki/ssh-user-krl/:scope', group: 'PKI',
     name: 'The realm OpenSSH user key revocation list', specs: [],
     what: 'NON-SPEC (#1955 P3): the realm-scoped OpenSSH KRL, updated when ' +
           'a caller revokes a certificate or reports a hardware token lost. ' +
-          'Ungated and `no-store`; SSH servers must be configured to consult ' +
-          'it because this service cannot make a relying party do so.' },
+          'Ungated and `no-store`, on the main port only: the KRL is ' +
+          'unsigned, so the plain-HTTP revocation listener refuses it. SSH ' +
+          'servers must be configured to consult it because this service ' +
+          'cannot make a relying party do so.' },
   { path: '/admin-api/xacml', group: 'XACML',
     name: 'The XACML console page over JSON', specs: ['xacml30'],
     what: 'What GET /admin/xacml draws, as data. Ungated, like the rest of ' +
@@ -7188,7 +7192,8 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['openapi', 'rfc6030', 'yubico-piv-attestation',
           'lamps-csr-attestation'],
     effect: 'reports a hardware token lost and retires its credentials, ' +
-            'issues a PIV slot certificate, or hands over an escrowed key',
+            'issues a PIV slot certificate, hands over an escrowed key, or ' +
+            'revokes a person\'s SSH certificate',
     what: 'NON-SPEC (#1955). lost, with { key }: the token is marked lost, ' +
           'each passkey on it removed, each certificate on it revoked for ' +
           'keyCompromise, a CAEP credential-change sent for each and the ' +
@@ -7198,8 +7203,18 @@ const ENDPOINTS: EndpointEntry[] = [
           'CA, its YubiKey PIV attestation verified and the YubiKey ' +
           'recorded. recover-key, with { username, serial }: that person\'s ' +
           'escrowed piv-key-management key, which the access-control ' +
-          'policy permits only to PIV_KEY_RECOVERY. The console\'s three ' +
-          'acts on that page.' },
+          'policy permits only to PIV_KEY_RECOVERY, after a recent sign-in. ' +
+          'revoke-ssh, with { username, serial }: that person\'s SSH user ' +
+          'certificate revoked and put on the realm\'s KRL. The console\'s ' +
+          'four acts on that page.' },
+  { path: '/admin-api/hardware-tokens/ssh-certificates',
+    group: 'Management API',
+    name: 'A person\'s SSH user certificates', specs: ['openapi'],
+    what: 'NON-SPEC (the #1955 review). The OpenSSH user certificates ' +
+          'issued to a person that have not expired, revoked ones marked: ' +
+          'serial, key type and fingerprint, principals, validity and ' +
+          'whether hardware evidence covered the key. Never a key. Mirrors ' +
+          'GET /admin/hardware-tokens (its SSH certificates tab).' },
   { path: '/admin-api/hardware-tokens/escrowed', group: 'Management API',
     name: 'Escrowed PIV keys', specs: ['openapi'],
     what: 'NON-SPEC (#1955). A person\'s escrowed piv-key-management ' +

@@ -57,5 +57,16 @@
 "escrowSerial": "Certifikatets serienummer",
 "escrowSubject": "Subjekt",
 "escrowExpires": "Upphör",
-"escrowRecover": "Återställ nyckel"
+"escrowRecover": "Återställ nyckel",
+  "sshTab": "SSH-certifikat",
+  "sshWhat": "De OpenSSH-användarcertifikat som denna sfär har utfärdat till personen, tills vart och ett går ut. Att återkalla ett lägger det på sfärens KRL (GET /pki/ssh-user-krl), som de servrar som litar på denna CA läser.",
+  "sshSearch": "Sök efter en person på fliken Token för att lista deras SSH-certifikat här.",
+  "sshNone": "Inget SSH-certifikat för {who} är giltigt.",
+  "sshSerial": "Serienummer",
+  "sshKey": "Nyckel",
+  "sshPrincipals": "Principaler",
+  "sshExpires": "Går ut",
+  "sshHardware": "hårdvarubundet",
+  "sshRevoked": "återkallat",
+  "sshRevoke": "Återkalla"
 }

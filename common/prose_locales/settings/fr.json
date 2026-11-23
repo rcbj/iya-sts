@@ -3304,8 +3304,8 @@
     "text": "Ce qui donne droit à une revendication de clé matérielle"
   },
   "hardwareTokens.hardwareClaims|description": {
-    "en": "e0341e4e47f3b2f8",
-    "text": "Ce qui permet à une connexion PKINIT de revendiquer une clé liée au matériel (l'indicateur pkinit-hardware et amr hwk). `inference`, la valeur par défaut et le comportement d'avant #1955 : un certificat d'ouverture de session par carte à puce dont ce service n'a pas généré la clé, ou une preuve d'attestation enregistrée. `evidence` : seulement une clé couverte par l'attestation d'un jeton matériel. Une connexion par certificat sur TLS n'obtient hwk, et sc pour une clé sur une carte à puce, qu'à partir d'une preuve, dans les deux cas."
+    "en": "82f545cd2dea952b",
+    "text": "Ce qui permet à une connexion PKINIT de revendiquer une clé liée au matériel (l’indicateur pkinit-hardware et l’amr hwk). `inference`, la valeur par défaut et le comportement avant #1955 : un certificat de connexion par carte à puce dont ce service n’a pas généré la clé, ou une preuve d’attestation enregistrée. `evidence` : seulement une clé couverte par l’attestation d’un jeton matériel, et une clé d’accès n’obtient hwk que si son attestation a été vérifiée et est de confiance (swk sinon). Une connexion par certificat sur TLS obtient hwk, et sc pour une clé sur une carte à puce, uniquement à partir de preuves dans les deux cas, et seulement pour le titulaire du certificat."
   },
   "pskc.allowPlaintextImport|label": {
     "en": "a098f07c2a04a83b",
@@ -3315,69 +3315,13 @@
     "en": "7efe34e872e4772e",
     "text": "Si un administrateur peut importer, en mode produit, un fichier de semences PSKC (RFC 6030) dont les secrets de jetons NE sont PAS chiffrés. Désactivé par défaut : un tel fichier a été une liste de deuxièmes facteurs fonctionnels sur chaque disque et chaque boîte aux lettres qu’il a traversés, et un fournisseur peut le chiffrer sous une clé prépartagée ou un mot de passe (sections 6.1 et 6.2). Le mode développement en accepte un dans tous les cas."
   },
-  "piv.attestationAnchors|label": {
-    "en": "ebc10f6a7dcbbf58",
-    "text": "Racines d’attestation PIV (PEM)"
+  "yubiotp.allowPlaintextImport|label": {
+    "en": "b1c1ac235f98cc47",
+    "text": "Accepter les fichiers CSV d’OTP YubiKey en clair en mode produit"
   },
-  "piv.attestationAnchors|description": {
-    "en": "487e76edeb4446b9",
-    "text": "Les racines auxquelles une attestation de clé PIV de YubiKey doit se chaîner, sous forme de lot PEM. Vide, utilise les deux que publie Yubico (Yubico PIV Root CA Serial 263751, et Yubico Attestation Root 1 pour le micrologiciel 5.7.4 et ultérieur), livrées dans common/pki_piv_anchors.json et épinglées là par SHA-256, avec les intermédiaires PIV de Yubico. Un certificat indiqué ici remplace les racines livrées."
-  },
-  "piv.requireAttestation|label": {
-    "en": "4e11b0db111faccf",
-    "text": "Exiger une attestation PIV pour les profils PIV"
-  },
-  "piv.requireAttestation|description": {
-    "en": "ef38975436c5ac4f",
-    "text": "Activé, une demande de certificat piv-auth, piv-sign, piv-key-management ou piv-card-auth est refusée si elle ne porte pas une attestation PIV de YubiKey qui se vérifie (STS-PIV-0010). Une clé piv-key-management séquestrée issue d’EST /serverkeygen fait exception : c’est ce service qui l’a générée. Désactivé, la valeur par défaut, une telle demande sans attestation est émise sans preuve matérielle ; une demande qui en porte une qui ne se vérifie pas est refusée dans les deux cas."
-  },
-  "piv.pinPolicy|label": {
-    "en": "0f683a0cb1db1988",
-    "text": "Politique de PIN la plus faible qu’une clé PIV attestée peut avoir"
-  },
-  "piv.pinPolicy|description": {
-    "en": "c3f9fcec406b9806",
-    "text": "Ce que la politique de PIN de l’attestation doit être au minimum. `once` : le PIN une fois par session (le match-once d’une clé Bio compte) ; `always` : le PIN avant chaque utilisation (match-always compte). `any`, la valeur par défaut, n’impose aucune politique de PIN. Une clé dont l’attestation est plus faible est refusée (STS-PIV-0011)."
-  },
-  "piv.touchPolicy|label": {
-    "en": "a88f111c7b13657f",
-    "text": "Politique de toucher la plus faible qu’une clé PIV attestée peut avoir"
-  },
-  "piv.touchPolicy|description": {
-    "en": "d78f0d5df0256787",
-    "text": "Ce que la politique de toucher de l’attestation doit être au minimum. `cached` : un toucher, mémorisé pendant 15 secondes ; `always` : un toucher à chaque utilisation. `any`, la valeur par défaut, n’en impose aucune. Une clé dont l’attestation est plus faible est refusée (STS-PIV-0012)."
-  },
-  "piv.cardAuthSignIn|label": {
-    "en": "61b2226403ad5c61",
-    "text": "Permettre à un certificat piv-card-auth de se connecter"
-  },
-  "piv.cardAuthSignIn|description": {
-    "en": "1852da24c3fbfade",
-    "text": "Une clé piv-card-auth (emplacement 9e) fonctionne sans PIN, pour l’accès physique ; son certificat est donc refusé à la connexion TLS et à PKINIT (STS-PIV-0013), sauf si ce réglage est activé."
-  },
-  "piv.keyEscrow|label": {
-    "en": "f2efc85c3d2bac38",
-    "text": "Séquestrer les clés piv-key-management"
-  },
-  "piv.keyEscrow|description": {
-    "en": "cf9618144b67dff3",
-    "text": "Activé, EST /serverkeygen pour le profil piv-key-management conserve la clé privée générée, scellée sous la clé de chiffrement de clés, afin que son détenteur (sur le portail, après une nouvelle connexion) ou un administrateur détenant le rôle de récupération des clés PIV puisse la récupérer et déchiffrer d’anciens courriels après la perte d’une carte. Refusé là où aucune clé de chiffrement de clés n’est détenue (STS-PIV-0020). Une clé séquestrée n’est jamais une preuve matérielle. Désactivé, la valeur par défaut, /serverkeygen refuse le profil piv-key-management (STS-PIV-0021), de sorte qu’une clé 9d est générée sur la carte et conservée nulle part ailleurs."
-  },
-  "piv.externalIssuers|label": {
-    "en": "e96143ab9556db35",
-    "text": "AC émettrices PIV ou CAC externes, associées par UUID de carte (PEM)"
-  },
-  "piv.externalIssuers|description": {
-    "en": "0fb91dba2cb957d3",
-    "text": "Les AC émettrices dont les certificats de carte PIV ou CAC connectent une personne par l’UUID de carte FIPS 201 : un certificat client émis directement par l’une d’elles, affirmant une politique de piv.externalPolicyOids et portant exactement un subjectAltName urn:uuid, est associé à la seule personne dont stsPivCardUuid contient cet UUID. Jamais par son nom, et aucune entrée n’est créée. L’AC doit aussi figurer dans un magasin de confiance client, sinon la négociation la refuse d’abord. Vide, la valeur par défaut, n’associe rien."
-  },
-  "piv.externalPolicyOids|label": {
-    "en": "930c5800dfa36905",
-    "text": "Politiques PIV Authentication qu’une carte externe doit affirmer"
-  },
-  "piv.externalPolicyOids|description": {
-    "en": "2398931e8d58f5c4",
-    "text": "Les politiques de certificat dont le certificat d’une carte externe doit affirmer l’une pour être associé par son UUID de carte : par défaut id-fpki-common-authentication (la PIV Authentication de la Federal PKI Common Policy) et id-fpki-certpcy-pivi-hardware (PIV-I). Ajoutez ici les politiques matérielles propres à un émetteur de CAC."
+  "yubiotp.allowPlaintextImport|description": {
+    "en": "f409449d46d5831a",
+    "text": "Si un administrateur peut importer, en mode produit, un CSV de secrets d’OTP YubiKey (numéro de série, identité publique, identité privée, clé AES). Désactivé par défaut : le fichier est une liste de deuxièmes facteurs fonctionnels. Le mode développement en accepte un dans tous les cas. Les secrets sont scellés lorsque le fichier est accepté, et le fichier n’est pas conservé."
   },
   "openpgp.wkd|label": {
     "en": "1f05a7518c3d2275",
@@ -3411,30 +3355,6 @@
     "en": "2772763d3d363b6d",
     "text": "L'écart admis entre l'horloge de l'ordinateur signataire et celle de ce service : une preuve signée avant l'émission du défi, ou après l'instant présent, de plus que cette valeur est refusée (STS-OPENPGP-0010)."
   },
-  "openpgp.algorithms|label": {
-    "en": "6973a8aeaa30b96b",
-    "text": "Algorithmes acceptés"
-  },
-  "openpgp.algorithms|description": {
-    "en": "7bf4b57c9c6e7d1f",
-    "text": "Les algorithmes OpenPGP qu’une clé peut utiliser, par ordre de préférence. Les composites RFC 9980 d’abord : ML-DSA-65+Ed25519 et ML-DSA-87+Ed448 signent, ML-KEM-768+X25519 et ML-KEM-1024+X448 chiffrent. Puis les noms classiques : ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa sur nistP256, nistP384 et nistP521, rsaSign et rsaEncryptSign, x25519, x448, ecdh sur curve25519Legacy et les mêmes courbes NIST, et rsaEncrypt. Un nom absent de cette liste est refusé à l’enregistrement et à la vérification (STS-OPENPGP-0004). SLH-DSA n’est pas implémenté. La valeur par défaut nomme chacun d’eux."
-  },
-  "openpgp.pqcOnly|label": {
-    "en": "d3ff53ec011bbf1f",
-    "text": "N’enregistrer que des clés post-quantiques"
-  },
-  "openpgp.pqcOnly|description": {
-    "en": "a42ec597602f45d5",
-    "text": "Activé, une clé nouvellement enregistrée doit utiliser un algorithme post-quantique nommé par openpgp.algorithms : ML-DSA-65+Ed25519 ou ML-DSA-87+Ed448 pour la clé de signature, et ML-KEM-768+X25519 ou ML-KEM-1024+X448 lorsqu’elle a une clé de chiffrement. Cela ne restreint que l’enregistrement : une clé classique déjà enregistrée se vérifie encore et reçoit encore le courrier. Ne peut pas être activé en même temps qu’openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Désactivé par défaut."
-  },
-  "openpgp.pqcAlongsideClassical|label": {
-    "en": "57f71c1990eb46d9",
-    "text": "Clé post-quantique à côté d’une clé classique"
-  },
-  "openpgp.pqcAlongsideClassical|description": {
-    "en": "2b5f6cf2a07130e5",
-    "text": "Activé, une clé nouvellement enregistrée doit porter à la fois un algorithme post-quantique et un algorithme classique distinct. Un nom composite tel que ML-DSA-65+Ed25519 compte uniquement comme post-quantique, donc la moitié classique est une autre clé, par exemple une sous-clé Ed25519 ou X25519 à côté. Une clé déjà enregistrée est laissée telle quelle. Ne peut pas être activé en même temps qu’openpgp.pqcOnly (STS-OPENPGP-0027). Désactivé par défaut."
-  },
   "openpgp.minRsaBits|label": {
     "en": "f3dc9f85de143630",
     "text": "Plus petite clé OpenPGP RSA"
@@ -3442,14 +3362,6 @@
   "openpgp.minRsaBits|description": {
     "en": "cd16018c848ce538",
     "text": "La clé RSA la plus courte, principale ou sous-clé, qu'un enregistrement OpenPGP accepte. Ed25519, Ed448, ECDSA et ECDH sur P-256, P-384 et P-521, X25519 et X448, ainsi que les composites RFC 9980 ML-DSA-65+Ed25519, ML-DSA-87+Ed448, ML-KEM-768+X25519 et ML-KEM-1024+X448 sont acceptés lorsque openpgp.algorithms les nomme. DSA, ElGamal, les courbes Brainpool et SLH-DSA ne le sont jamais (STS-OPENPGP-0004)."
-  },
-  "yubiotp.allowPlaintextImport|label": {
-    "en": "b1c1ac235f98cc47",
-    "text": "Accepter les fichiers CSV d’OTP YubiKey en clair en mode produit"
-  },
-  "yubiotp.allowPlaintextImport|description": {
-    "en": "f409449d46d5831a",
-    "text": "Si un administrateur peut importer, en mode produit, un CSV de secrets d’OTP YubiKey (numéro de série, identité publique, identité privée, clé AES). Désactivé par défaut : le fichier est une liste de deuxièmes facteurs fonctionnels. Le mode développement en accepte un dans tous les cas. Les secrets sont scellés lorsque le fichier est accepté, et le fichier n’est pas conservé."
   },
   "devices.complianceFeedMaxReports|label": {
     "en": "799c2a2c58036bec",
@@ -4019,30 +3931,6 @@
     "en": "a28c6bc9859fc3aa",
     "text": "La clé post-quantique qu’une autorité de certification construite par ce service porte À CÔTÉ de sa clé classique, dans les extensions non critiques subjectAltPublicKeyInfo, altSignatureAlgorithm et altSignatureValue de l’ITU-T X.509 (2019) clause 9.8 — un certificat hybride. **DÉSACTIVÉ (`none`) PAR DÉFAUT** (rcbj, 2026-09-26) : un certificat hybride est trop volumineux ou trop inhabituel pour un certain nombre de produits — libest refuse toute réponse d’enrôlement de plus de 4 Ko, ce que dépasse chaque feuille hybride — la valeur par défaut est donc la hiérarchie d’origine, chaque cas d’usage et chaque signature avec sa propre paire de clés classique. Définissez une valeur et chaque autorité construite ensuite signe deux fois chaque certificat qu’elle émet : de façon classique dans les champs ordinaires, que lit tout validateur, et avec cette clé sur le preTBSCertificate, que lit un validateur compatible hybride. Ce service en est un : un certificat émis par une autorité détenant une clé alternative DOIT porter une signature alternative valide pour être vérifié ici (STS-PKI-0201, STS-PKI-0202), si bien que la signature classique seule ne permet jamais de passer outre. ML-DSA-87 (FIPS 204, catégorie 5) est la valeur recommandée, car une autorité survit aux clés qu’elle certifie. La valeur est lue à la PROCHAINE construction d’un niveau ; une hiérarchie conserve ce avec quoi elle a été construite. SLH-DSA (FIPS 205) est proposé pour une ancre fondée sur le hachage et coûte des SECONDES par signature, c’est-à-dire par certificat émis. AVERTISSEMENT : avec `none`, les autorités sont uniquement classiques, et leurs certificats peuvent être falsifiés par un attaquant disposant d’une capacité quantique."
   },
-  "pki.sshUserCaAlgorithms|label": {
-    "en": "1fa9bf9eedbabd99",
-    "text": "Algorithmes de l’AC utilisateur SSH"
-  },
-  "pki.sshUserCaAlgorithms|description": {
-    "en": "5c4c22c2ab500fd4",
-    "text": "Les algorithmes que l’autorité de certification des utilisateurs SSH peut utiliser, par ordre de préférence. ssh-mldsa-65 est ML-DSA-65 (FIPS 204) sous un nom de transport que ce service définit, car OpenSSH n’en définit aucun : la clé publique et la signature sont brutes, sous la forme qu’utilise ssh-ed25519. La ligne OpenSSH TrustedUserCAKeys que ce service publie reste le premier algorithme classique de cette liste, ou ssh-ed25519 lorsque la liste ne nomme que ssh-mldsa-65. Un pair qui ne comprend pas ML-DSA continue de faire confiance à cette ligne. La clé de l’autorité ML-DSA est publiée à GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65 ; OpenSSH standard ne sait pas encore vérifier un certificat ML-DSA. ssh-rsa (SHA-1) n’est pas proposé. L’autorité ML-DSA n’est créée que si cet environnement d’exécution peut générer la clé ; sinon les certificats restent classiques (STS-PKI-0290 est enregistré et l’autorité classique répond toujours), sauf si pki.sshUserCaPqcOnly est activé."
-  },
-  "pki.sshUserCaPqcOnly|label": {
-    "en": "74aae1308361ba58",
-    "text": "Les certificats utilisateur SSH sont uniquement post-quantiques"
-  },
-  "pki.sshUserCaPqcOnly|description": {
-    "en": "dcbf21b3230dcf07",
-    "text": "Activé, un nouveau certificat utilisateur SSH est signé par l’autorité ML-DSA et par rien d’autre. OpenSSH standard ne sait pas encore vérifier un certificat ML-DSA : seul un serveur SSH conçu pour vérifier ssh-mldsa-65, et qui fait confiance à la clé publiée à GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65, accepte ces certificats. La ligne par défaut à ce chemin reste la clé classique. Lorsque le domaine n’a pas d’autorité ML-DSA (cet environnement d’exécution ne sait pas générer ML-DSA, ou ssh-mldsa-65 n’est pas dans pki.sshUserCaAlgorithms), la demande est refusée (STS-PKI-0297) au lieu de recevoir un certificat classique. Les certificats classiques déjà émis restent vérifiables. Ne peut pas être activé en même temps que pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Désactivé par défaut."
-  },
-  "pki.sshUserCaPqcAlongsideClassical|label": {
-    "en": "c3201f8841200c32",
-    "text": "Les certificats utilisateur SSH portent aussi un certificat post-quantique"
-  },
-  "pki.sshUserCaPqcAlongsideClassical|description": {
-    "en": "b38eab63ec092b6c",
-    "text": "Activé, un nouveau certificat utilisateur SSH est émis deux fois lorsque l’autorité ML-DSA existe : le certificat classique, celui qu’utilise un client OpenSSH, et un certificat ML-DSA à côté. Ne peut pas être activé en même temps que pki.sshUserCaPqcOnly (STS-PKI-0296). Désactivé par défaut. Un composite n’est pas une notion qu’OpenSSH a ; le certificat classique et le certificat ML-DSA sont deux signatures, pas une signature hybride."
-  },
   "pki.organisation|label": {
     "en": "163fd96758a3b8b3",
     "text": "Nom d’organisation par défaut (O=)"
@@ -4434,22 +4322,6 @@
   "pki.paranoidPkinit|description": {
     "en": "4cd0d308a974fcbd",
     "text": "Cas d’usage `pkinit` : le certificat client d’une AS-REQ RFC 4556. Le contrôle était déjà complet (chemin vers les AC d’identité du domaine, validité avec krb5.clockSkew, id-pkinit-KPClientAuth ou l’EKU de carte à puce Microsoft, révocation) ; le mode paranoïaque en fait un appel unique de la porte, de sorte que c’est le même code que pour tout autre cas d’usage. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
-  },
-  "pki.paranoidPivAttestation|label": {
-    "en": "e645d02c49d2f9bf",
-    "text": "Paranoïaque : une chaîne d’attestation de clé PIV de YubiKey"
-  },
-  "pki.paranoidPivAttestation|description": {
-    "en": "fdb7c0eb631758ea",
-    "text": "Cas d’usage `piv-attestation` (#1955) : le certificat d’attestation de l’emplacement et le certificat d’attestation f9 d’un enregistrement PIV. Le mode paranoïaque vérifie la fenêtre de validité à l’instant présent, le chemin vers piv.attestationAnchors et la révocation lorsque la chaîne désigne une liste. Désactivé, ce seul cas d’usage effectue la vérification du chemin sans les vérifications des champs, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivé en mode produit, c’est journalisé une fois (STS-PKI-0239) et affiché en rouge sur /admin/pki/trust."
-  },
-  "pki.paranoidPivCard|label": {
-    "en": "4078a93e7117d6f9",
-    "text": "Paranoïaque : une carte PIV ou CAC externe associée par UUID de carte"
-  },
-  "pki.paranoidPivCard|description": {
-    "en": "d4d5fb070575e1c6",
-    "text": "Cas d’usage `piv-card` (#1955) : un certificat client d’une AC émettrice de piv.externalIssuers, associé par son UUID de carte. Le mode paranoïaque vérifie keyUsage digitalSignature et la fenêtre de validité du certificat final en plus de la vérification de l’émetteur à un saut. Désactivé, ce seul cas d’usage n’effectue que la vérification de l’émetteur, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivé en mode produit, c’est journalisé une fois (STS-PKI-0239) et affiché en rouge sur /admin/pki/trust."
   },
   "pki.paranoidEnrollmentCredential|label": {
     "en": "ce5c0d1996e12403",
@@ -9855,14 +9727,6 @@
     "en": "d19a9234253beccc",
     "text": "Le groupe de l’annuaire dont les membres détiennent le rôle intégré XACML_USER, qu’exigent les trois endpoints XACML proprement dits — GET /xacml, POST /xacml/pdp et GET /xacml/policies. Un appelant présentant un certificat client que ce service a VÉRIFIÉ est quelqu’un qu’il peut nommer ; l’appartenance à ce groupe est ce qui en fait quelqu’un qu’il laisse entrer, et les deux sont séparés pour la même raison que pour roles.remotePepGroup ci-dessus : un certificat prouve une identité et un groupe accorde une permission. C’EST UN SECOND GROUPE ET NON LE MÊME : REMOTE_PEPS donne accès aux trois endpoints /xacml/pep, qui distribuent les documents avec lesquels ce service applique son propre contrôle d’accès, et un seul groupe accordant les deux ferait qu’admettre un appelant sur l’interface XACML proprement dite l’admettrait silencieusement sur ceux-là. Le définir à la chaîne vide signifie que PERSONNE ne détient le rôle, ce qui ferme ces trois endpoints à tout appelant ; c’est le moyen de retirer l’interface XACML sans désactiver xacml.enabled et perdre avec lui les PEP intégrés d’émission et d’accès."
   },
-  "roles.pivKeyRecoveryGroup|label": {
-    "en": "2f231e1e99785dc6",
-    "text": "Groupe accordant le rôle PIV_KEY_RECOVERY"
-  },
-  "roles.pivKeyRecoveryGroup|description": {
-    "en": "801616eea12559a5",
-    "text": "Le groupe de l’annuaire dont les membres détiennent le rôle intégré PIV_KEY_RECOVERY (#1955), que la politique de contrôle d’accès exige, en plus d’Admin Write, pour récupérer la clé piv-key-management séquestrée d’une autre personne (piv.keyEscrow). Cette clé déchiffre le courrier de la personne : personne ne détient donc le rôle tant qu’un administrateur ne l’a pas ajouté au groupe. Vide, ne permet à personne de récupérer la clé d’une autre personne ; le détenteur récupère la sienne sur le portail."
-  },
   "roles.authzenPepGroup|label": {
     "en": "8dacfdf5504e732a",
     "text": "Groupe accordant le rôle AUTHZEN_PEPS"
@@ -13098,5 +12962,173 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Pour l’écouteur du débogueur de protocoles uniquement : http.http2MaxConcurrentStreams. -1, la valeur par défaut, suit http.http2MaxConcurrentStreams ; toute autre valeur ne s’applique qu’à cet écouteur. Combien de requêtes une connexion HTTP/2 peut avoir ouvertes simultanément (SETTINGS_MAX_CONCURRENT_STREAMS) ; un flux au-delà est refusé jusqu’à ce qu’un autre se termine. 100, la valeur par défaut, est la plus petite valeur que recommande la RFC 9113 ; celle de node est illimitée, ce qui permettrait à une seule connexion de porter le travail de milliers. Elle borne le travail d’une connexion comme http.maxConnections borne les connexions. Une nouvelle connexion suit un changement immédiatement, et la nouvelle valeur est envoyée à une connexion ouverte."
+  },
+  "piv.attestationAnchors|label": {
+    "en": "ebc10f6a7dcbbf58",
+    "text": "Racines d’attestation PIV (PEM)"
+  },
+  "piv.attestationAnchors|description": {
+    "en": "487e76edeb4446b9",
+    "text": "Les racines auxquelles une attestation de clé PIV de YubiKey doit se chaîner, sous forme de lot PEM. Vide, utilise les deux que publie Yubico (Yubico PIV Root CA Serial 263751, et Yubico Attestation Root 1 pour le micrologiciel 5.7.4 et ultérieur), livrées dans common/pki_piv_anchors.json et épinglées là par SHA-256, avec les intermédiaires PIV de Yubico. Un certificat indiqué ici remplace les racines livrées."
+  },
+  "piv.requireAttestation|label": {
+    "en": "4e11b0db111faccf",
+    "text": "Exiger une attestation PIV pour les profils PIV"
+  },
+  "piv.requireAttestation|description": {
+    "en": "ef38975436c5ac4f",
+    "text": "Activé, une demande de certificat piv-auth, piv-sign, piv-key-management ou piv-card-auth est refusée si elle ne porte pas une attestation PIV de YubiKey qui se vérifie (STS-PIV-0010). Une clé piv-key-management séquestrée issue d’EST /serverkeygen fait exception : c’est ce service qui l’a générée. Désactivé, la valeur par défaut, une telle demande sans attestation est émise sans preuve matérielle ; une demande qui en porte une qui ne se vérifie pas est refusée dans les deux cas."
+  },
+  "piv.pinPolicy|label": {
+    "en": "0f683a0cb1db1988",
+    "text": "Politique de PIN la plus faible qu’une clé PIV attestée peut avoir"
+  },
+  "piv.pinPolicy|description": {
+    "en": "c3f9fcec406b9806",
+    "text": "Ce que la politique de PIN de l’attestation doit être au minimum. `once` : le PIN une fois par session (le match-once d’une clé Bio compte) ; `always` : le PIN avant chaque utilisation (match-always compte). `any`, la valeur par défaut, n’impose aucune politique de PIN. Une clé dont l’attestation est plus faible est refusée (STS-PIV-0011)."
+  },
+  "piv.touchPolicy|label": {
+    "en": "a88f111c7b13657f",
+    "text": "Politique de toucher la plus faible qu’une clé PIV attestée peut avoir"
+  },
+  "piv.touchPolicy|description": {
+    "en": "d78f0d5df0256787",
+    "text": "Ce que la politique de toucher de l’attestation doit être au minimum. `cached` : un toucher, mémorisé pendant 15 secondes ; `always` : un toucher à chaque utilisation. `any`, la valeur par défaut, n’en impose aucune. Une clé dont l’attestation est plus faible est refusée (STS-PIV-0012)."
+  },
+  "piv.cardAuthSignIn|label": {
+    "en": "61b2226403ad5c61",
+    "text": "Permettre à un certificat piv-card-auth de se connecter"
+  },
+  "piv.cardAuthSignIn|description": {
+    "en": "e9e37c8e6becb7ee",
+    "text": "Une clé piv-card-auth (emplacement 9e) fonctionne sans PIN, pour l’accès physique ; son certificat est donc refusé à la connexion TLS et à PKINIT (STS-PIV-0013), sauf si ce réglage est activé. Une clé de l’emplacement 9e n’est certifiée que sous piv-card-auth (STS-PIV-0037) et n’obtient jamais hwk ni sc."
+  },
+  "piv.keyEscrow|label": {
+    "en": "f2efc85c3d2bac38",
+    "text": "Séquestrer les clés piv-key-management"
+  },
+  "piv.keyEscrow|description": {
+    "en": "cf9618144b67dff3",
+    "text": "Activé, EST /serverkeygen pour le profil piv-key-management conserve la clé privée générée, scellée sous la clé de chiffrement de clés, afin que son détenteur (sur le portail, après une nouvelle connexion) ou un administrateur détenant le rôle de récupération des clés PIV puisse la récupérer et déchiffrer d’anciens courriels après la perte d’une carte. Refusé là où aucune clé de chiffrement de clés n’est détenue (STS-PIV-0020). Une clé séquestrée n’est jamais une preuve matérielle. Désactivé, la valeur par défaut, /serverkeygen refuse le profil piv-key-management (STS-PIV-0021), de sorte qu’une clé 9d est générée sur la carte et conservée nulle part ailleurs."
+  },
+  "piv.externalIssuers|label": {
+    "en": "e96143ab9556db35",
+    "text": "AC émettrices PIV ou CAC externes, associées par UUID de carte (PEM)"
+  },
+  "piv.externalIssuers|description": {
+    "en": "0fb91dba2cb957d3",
+    "text": "Les AC émettrices dont les certificats de carte PIV ou CAC connectent une personne par l’UUID de carte FIPS 201 : un certificat client émis directement par l’une d’elles, affirmant une politique de piv.externalPolicyOids et portant exactement un subjectAltName urn:uuid, est associé à la seule personne dont stsPivCardUuid contient cet UUID. Jamais par son nom, et aucune entrée n’est créée. L’AC doit aussi figurer dans un magasin de confiance client, sinon la négociation la refuse d’abord. Vide, la valeur par défaut, n’associe rien."
+  },
+  "piv.externalPolicyOids|label": {
+    "en": "930c5800dfa36905",
+    "text": "Politiques PIV Authentication qu’une carte externe doit affirmer"
+  },
+  "piv.externalPolicyOids|description": {
+    "en": "2398931e8d58f5c4",
+    "text": "Les politiques de certificat dont le certificat d’une carte externe doit affirmer l’une pour être associé par son UUID de carte : par défaut id-fpki-common-authentication (la PIV Authentication de la Federal PKI Common Policy) et id-fpki-certpcy-pivi-hardware (PIV-I). Ajoutez ici les politiques matérielles propres à un émetteur de CAC."
+  },
+  "pki.paranoidPivAttestation|label": {
+    "en": "e645d02c49d2f9bf",
+    "text": "Paranoïaque : une chaîne d’attestation de clé PIV de YubiKey"
+  },
+  "pki.paranoidPivAttestation|description": {
+    "en": "fdb7c0eb631758ea",
+    "text": "Cas d’usage `piv-attestation` (#1955) : le certificat d’attestation de l’emplacement et le certificat d’attestation f9 d’un enregistrement PIV. Le mode paranoïaque vérifie la fenêtre de validité à l’instant présent, le chemin vers piv.attestationAnchors et la révocation lorsque la chaîne désigne une liste. Désactivé, ce seul cas d’usage effectue la vérification du chemin sans les vérifications des champs, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivé en mode produit, c’est journalisé une fois (STS-PKI-0239) et affiché en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidPivCard|label": {
+    "en": "4078a93e7117d6f9",
+    "text": "Paranoïaque : une carte PIV ou CAC externe associée par UUID de carte"
+  },
+  "pki.paranoidPivCard|description": {
+    "en": "d4d5fb070575e1c6",
+    "text": "Cas d’usage `piv-card` (#1955) : un certificat client d’une AC émettrice de piv.externalIssuers, associé par son UUID de carte. Le mode paranoïaque vérifie keyUsage digitalSignature et la fenêtre de validité du certificat final en plus de la vérification de l’émetteur à un saut. Désactivé, ce seul cas d’usage n’effectue que la vérification de l’émetteur, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivé en mode produit, c’est journalisé une fois (STS-PKI-0239) et affiché en rouge sur /admin/pki/trust."
+  },
+  "roles.pivKeyRecoveryGroup|label": {
+    "en": "2f231e1e99785dc6",
+    "text": "Groupe accordant le rôle PIV_KEY_RECOVERY"
+  },
+  "roles.pivKeyRecoveryGroup|description": {
+    "en": "801616eea12559a5",
+    "text": "Le groupe de l’annuaire dont les membres détiennent le rôle intégré PIV_KEY_RECOVERY (#1955), que la politique de contrôle d’accès exige, en plus d’Admin Write, pour récupérer la clé piv-key-management séquestrée d’une autre personne (piv.keyEscrow). Cette clé déchiffre le courrier de la personne : personne ne détient donc le rôle tant qu’un administrateur ne l’a pas ajouté au groupe. Vide, ne permet à personne de récupérer la clé d’une autre personne ; le détenteur récupère la sienne sur le portail."
+  },
+  "openpgp.algorithms|label": {
+    "en": "6973a8aeaa30b96b",
+    "text": "Algorithmes acceptés"
+  },
+  "openpgp.algorithms|description": {
+    "en": "7bf4b57c9c6e7d1f",
+    "text": "Les algorithmes OpenPGP qu’une clé peut utiliser, par ordre de préférence. Les composites RFC 9980 d’abord : ML-DSA-65+Ed25519 et ML-DSA-87+Ed448 signent, ML-KEM-768+X25519 et ML-KEM-1024+X448 chiffrent. Puis les noms classiques : ed25519, ed448, eddsaLegacy/ed25519Legacy, ecdsa sur nistP256, nistP384 et nistP521, rsaSign et rsaEncryptSign, x25519, x448, ecdh sur curve25519Legacy et les mêmes courbes NIST, et rsaEncrypt. Un nom absent de cette liste est refusé à l’enregistrement et à la vérification (STS-OPENPGP-0004). SLH-DSA n’est pas implémenté. La valeur par défaut nomme chacun d’eux."
+  },
+  "openpgp.pqcOnly|label": {
+    "en": "d3ff53ec011bbf1f",
+    "text": "N’enregistrer que des clés post-quantiques"
+  },
+  "openpgp.pqcOnly|description": {
+    "en": "a42ec597602f45d5",
+    "text": "Activé, une clé nouvellement enregistrée doit utiliser un algorithme post-quantique nommé par openpgp.algorithms : ML-DSA-65+Ed25519 ou ML-DSA-87+Ed448 pour la clé de signature, et ML-KEM-768+X25519 ou ML-KEM-1024+X448 lorsqu’elle a une clé de chiffrement. Cela ne restreint que l’enregistrement : une clé classique déjà enregistrée se vérifie encore et reçoit encore le courrier. Ne peut pas être activé en même temps qu’openpgp.pqcAlongsideClassical (STS-OPENPGP-0027). Désactivé par défaut."
+  },
+  "openpgp.pqcAlongsideClassical|label": {
+    "en": "57f71c1990eb46d9",
+    "text": "Clé post-quantique à côté d’une clé classique"
+  },
+  "openpgp.pqcAlongsideClassical|description": {
+    "en": "2b5f6cf2a07130e5",
+    "text": "Activé, une clé nouvellement enregistrée doit porter à la fois un algorithme post-quantique et un algorithme classique distinct. Un nom composite tel que ML-DSA-65+Ed25519 compte uniquement comme post-quantique, donc la moitié classique est une autre clé, par exemple une sous-clé Ed25519 ou X25519 à côté. Une clé déjà enregistrée est laissée telle quelle. Ne peut pas être activé en même temps qu’openpgp.pqcOnly (STS-OPENPGP-0027). Désactivé par défaut."
+  },
+  "pki.sshUserCaAlgorithms|label": {
+    "en": "1fa9bf9eedbabd99",
+    "text": "Algorithmes de l’AC utilisateur SSH"
+  },
+  "pki.sshUserCaAlgorithms|description": {
+    "en": "5c4c22c2ab500fd4",
+    "text": "Les algorithmes que l’autorité de certification des utilisateurs SSH peut utiliser, par ordre de préférence. ssh-mldsa-65 est ML-DSA-65 (FIPS 204) sous un nom de transport que ce service définit, car OpenSSH n’en définit aucun : la clé publique et la signature sont brutes, sous la forme qu’utilise ssh-ed25519. La ligne OpenSSH TrustedUserCAKeys que ce service publie reste le premier algorithme classique de cette liste, ou ssh-ed25519 lorsque la liste ne nomme que ssh-mldsa-65. Un pair qui ne comprend pas ML-DSA continue de faire confiance à cette ligne. La clé de l’autorité ML-DSA est publiée à GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65 ; OpenSSH standard ne sait pas encore vérifier un certificat ML-DSA. ssh-rsa (SHA-1) n’est pas proposé. L’autorité ML-DSA n’est créée que si cet environnement d’exécution peut générer la clé ; sinon les certificats restent classiques (STS-PKI-0290 est enregistré et l’autorité classique répond toujours), sauf si pki.sshUserCaPqcOnly est activé."
+  },
+  "pki.sshUserCaPqcOnly|label": {
+    "en": "74aae1308361ba58",
+    "text": "Les certificats utilisateur SSH sont uniquement post-quantiques"
+  },
+  "pki.sshUserCaPqcOnly|description": {
+    "en": "dcbf21b3230dcf07",
+    "text": "Activé, un nouveau certificat utilisateur SSH est signé par l’autorité ML-DSA et par rien d’autre. OpenSSH standard ne sait pas encore vérifier un certificat ML-DSA : seul un serveur SSH conçu pour vérifier ssh-mldsa-65, et qui fait confiance à la clé publiée à GET /pki/ssh-user-ca/{scope}?algorithm=ssh-mldsa-65, accepte ces certificats. La ligne par défaut à ce chemin reste la clé classique. Lorsque le domaine n’a pas d’autorité ML-DSA (cet environnement d’exécution ne sait pas générer ML-DSA, ou ssh-mldsa-65 n’est pas dans pki.sshUserCaAlgorithms), la demande est refusée (STS-PKI-0297) au lieu de recevoir un certificat classique. Les certificats classiques déjà émis restent vérifiables. Ne peut pas être activé en même temps que pki.sshUserCaPqcAlongsideClassical (STS-PKI-0296). Désactivé par défaut."
+  },
+  "pki.sshUserCaPqcAlongsideClassical|label": {
+    "en": "c3201f8841200c32",
+    "text": "Les certificats utilisateur SSH portent aussi un certificat post-quantique"
+  },
+  "pki.sshUserCaPqcAlongsideClassical|description": {
+    "en": "b38eab63ec092b6c",
+    "text": "Activé, un nouveau certificat utilisateur SSH est émis deux fois lorsque l’autorité ML-DSA existe : le certificat classique, celui qu’utilise un client OpenSSH, et un certificat ML-DSA à côté. Ne peut pas être activé en même temps que pki.sshUserCaPqcOnly (STS-PKI-0296). Désactivé par défaut. Un composite n’est pas une notion qu’OpenSSH a ; le certificat classique et le certificat ML-DSA sont deux signatures, pas une signature hybride."
+  },
+  "pki.sshSoftwareLifetimeSeconds|label": {
+    "en": "e65480d5e0de0ff6",
+    "text": "Certificat utilisateur SSH le plus long sans preuve matérielle (s)"
+  },
+  "pki.sshSoftwareLifetimeSeconds|description": {
+    "en": "45980657cb573f83",
+    "text": "La durée de vie la plus longue, en secondes, avec laquelle un certificat utilisateur SSH peut être émis pour une clé qu’aucune preuve matérielle vérifiée ne couvre : une clé ordinaire, ou une clé de sécurité sk- envoyée sans attestation de confiance. La demande peut demander moins. Cinq minutes par défaut."
+  },
+  "pki.sshHardwareLifetimeSeconds|label": {
+    "en": "58130ddb50b2cf1b",
+    "text": "Certificat utilisateur SSH le plus long avec preuve matérielle (s)"
+  },
+  "pki.sshHardwareLifetimeSeconds|description": {
+    "en": "93fab84d44ca2078",
+    "text": "La durée de vie la plus longue, en secondes, avec laquelle un certificat utilisateur SSH peut être émis pour une clé qu’une preuve matérielle vérifiée couvre : une clé de sécurité sk- dont l’attestation est vérifiée et de confiance, ou une clé qu’un certificat PIV attesté certifie. La demande peut demander moins. Une heure par défaut, qui est aussi le maximum."
+  },
+  "pki.sshUserCertificateExtensions|label": {
+    "en": "7bd63846ccd81f4e",
+    "text": "Extensions d’un certificat utilisateur SSH"
+  },
+  "pki.sshUserCertificateExtensions|description": {
+    "en": "66d53e3e95faddca",
+    "text": "Les extensions de certificat OpenSSH (PROTOCOL.certkeys) qu’un nouveau certificat utilisateur SSH porte, séparées par des virgules. Par défaut, le jeu de ssh-keygen ; un certificat sans extension permet à son titulaire de se connecter sans terminal, redirection ni fichier rc. no-touch-required peut être ajouté. Un nom qu’OpenSSH ne définit pas est ignoré."
+  },
+  "pki.sshGroupPrincipals|label": {
+    "en": "92bc72613cff7a8d",
+    "text": "Groupes dont les noms peuvent être des principaux SSH"
+  },
+  "pki.sshGroupPrincipals|description": {
+    "en": "401372878bd26042",
+    "text": "Les groupes de l’annuaire dont un membre peut demander le nom commun comme principal d’un certificat SSH, séparés par des virgules, chacun toujours décidé par la politique de contrôle d’accès (ressource ssh-user-ca, action issue-ssh-principal). Vide, la valeur par défaut, signifie aucun : un certificat ne nomme que l’uid de la personne, car un groupe n’accorde rien du seul fait d’être un groupe. Un groupe dont le nom est l’uid d’une personne ou un compte système comme root est refusé quoi qu’il en soit."
   }
 }

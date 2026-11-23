@@ -282,6 +282,7 @@ const ISSUANCE_ATTRIBUTE = {
   // On the RESOURCE: the single SSH user-certificate principal whose
   // issuance is being decided (#1955 P3).
   SSH_PRINCIPAL: 'urn:sts:xacml:ssh-principal',
+  SSH_PRINCIPAL_KIND: 'urn:sts:xacml:ssh-principal-kind',
   // On the ACTION: what is done to the object — `read`, or the management
   // API action's own name (`add-member`, `remove-owner`, ...).
   ADMIN_ACTION: 'urn:sts:xacml:admin-action',

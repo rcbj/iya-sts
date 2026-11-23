@@ -367,7 +367,13 @@ const GLOBAL_MINTED = {
   // A YK-VAL nonce is chosen by the client and is valid at every cell that
   // answers the endpoint. A replay set per cell would accept it once per
   // cell. A row is a client id and a nonce — the OTP is not stored.
-  'yubiotp.nonces': 'YK-VAL nonces already accepted'
+  'yubiotp.nonces': 'YK-VAL nonces already accepted',
+  // THE SSH CERTIFICATES A REALM ISSUED (the #1955 review; they were on the
+  // global PKI row until then): one KRL per realm, published by every cell,
+  // so a certificate issued in one cell and revoked in another must be on
+  // every cell's KRL. A row is a serial, a key fingerprint, two times and
+  // the owner's urn:uuid subject — what the PKI row held, globally.
+  'ssh_user_ca.issued': 'the SSH user certificates a realm issued'
 };
 
 // Cell-tier: minted here, or somebody's. Listed rather than defaulted — see
@@ -580,8 +586,13 @@ const GLOBAL_RUN_SCOPE = 'scheduler.run.global';
 // (`sts_pki_distribution_points`: "jose.crl is named by certificates of two
 // different authorities"), where the `cluster` mode, one database, did not.
 const PKI_BUILD_SCOPE = 'pki.build';
+// A YK-VAL NONCE (the #1955 review, `common/yubiotp_store.ts`): chosen by
+// the client and valid at every cell that answers the endpoint, so the
+// claim that spends it is the whole service's, `yubiotp.nonces`' reason.
+const YKVAL_NONCE_SCOPE = 'yubiotp.ykval-nonce';
 // The claim scopes kept in the global tier.
-const GLOBAL_CLAIM_SCOPES = [GLOBAL_RUN_SCOPE, PKI_BUILD_SCOPE];
+const GLOBAL_CLAIM_SCOPES = [GLOBAL_RUN_SCOPE, PKI_BUILD_SCOPE,
+                             YKVAL_NONCE_SCOPE];
 
 /**
  * Tells whether a scheduler job's work is the global tier's.

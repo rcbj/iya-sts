@@ -154,7 +154,55 @@ class HardwareTokensPage {
       '<h2 data-tab="enrol">' + t.html('consoleHardwareTokens.enrolTab') +
       '</h2>' + WebKit.frame(self.enrolForm(t, v, c)) +
       '<h2 data-tab="escrow">' + t.html('consoleHardwareTokens.escrowTab') +
-      '</h2>' + WebKit.frame(self.escrowList(t, v, c));
+      '</h2>' + WebKit.frame(self.escrowList(t, v, c)) +
+      '<h2 data-tab="ssh">' + t.html('consoleHardwareTokens.sshTab') +
+      '</h2>' + WebKit.frame(self.sshList(t, v, c));
+  }
+
+  /**
+   * A person's SSH user certificates, when the search names a person (the
+   * #1955 review): each revocable, which puts it on the realm's KRL.
+   *
+   * @param t - the translator
+   * @param v - the view
+   * @param c - the render context
+   * @returns the HTML
+   */
+  static sshList(t: Json, v: Json, c: Json): string {
+    const esc = WebKit.esc;
+    const rows: Json[] = v.sshCertificates || [];
+    const lead = WebKit.note(t.html('consoleHardwareTokens.sshWhat'));
+    if (!v.q) {
+      return lead + WebKit.note(t.html('consoleHardwareTokens.sshSearch'));
+    }
+    if (!rows.length) {
+      return lead + WebKit.note(t.html('consoleHardwareTokens.sshNone',
+                                       { who: v.q }));
+    }
+    return lead + '<table class="grid"><thead><tr><th>' +
+      t.html('consoleHardwareTokens.sshSerial') + '</th><th>' +
+      t.html('consoleHardwareTokens.sshKey') + '</th><th>' +
+      t.html('consoleHardwareTokens.sshPrincipals') + '</th><th>' +
+      t.html('consoleHardwareTokens.sshExpires') + '</th><th></th></tr>' +
+      '</thead><tbody>' + rows.map(function (r: Json): string {
+        return '<tr><td><code>' + esc(r.serialHex) + '</code>' +
+          (r.authority === 'ssh-mldsa-65' ? ' <small>ML-DSA</small>' : '') +
+          '</td><td>' + esc(r.keyType) + '<br><small><code>' +
+          esc(r.keyFingerprint) + '</code></small>' +
+          (r.hardwareBound ? ' <small>' +
+            t.html('consoleHardwareTokens.sshHardware') + '</small>' : '') +
+          '</td><td>' + esc((r.principals || []).join(', ')) + '</td><td>' +
+          esc(r.notAfter) + (r.revoked ? ' <strong>' +
+            t.html('consoleHardwareTokens.sshRevoked') + '</strong>' : '') +
+          '</td><td>' + (c.write && !r.revoked
+            ? '<form method="post" action="' + PAGE + '" class="inline">' +
+              '<input type="hidden" name="action" value="revoke-ssh">' +
+              '<input type="hidden" name="username" value="' + esc(v.q) +
+              '"><input type="hidden" name="serial" value="' +
+              esc(r.serialHex) + '"><button class="danger" type="submit">' +
+              t.html('consoleHardwareTokens.sshRevoke') + '</button></form>'
+            : '') + '</td></tr>';
+      }).join('') + '</tbody></table>';
   }
 
   /**

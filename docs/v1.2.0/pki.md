@@ -91,7 +91,12 @@ Each realm also has an OpenSSH user CA. It is separate from the X.509
 hierarchy above: its public key is
 `GET /pki/ssh-user-ca/{scope}`, and its OpenSSH KRL is
 `GET /pki/ssh-user-krl/{scope}`. Use `default` for the default realm or the
-realm's id for another realm. Both endpoints are public and `no-store`.
+realm's id for another realm. Both endpoints are public and `no-store`, and
+**both are served over HTTPS on the main port only**. The plain-HTTP
+revocation listener (`pki.httpPort`) refuses them (`STS-SSHCA-0001`): the CA
+key is the trust anchor itself and the KRL is unsigned, so over plain HTTP
+anybody on the path could replace either. Fetch them with TLS and check the
+service's certificate.
 
 Configure SSH servers to trust the returned public key with
 `TrustedUserCAKeys`, and to read the KRL with `RevokedKeys`. The KRL must be
@@ -154,17 +159,63 @@ verifying.
 classical certificate and an ML-DSA certificate beside it, as two
 certificates. The two switches cannot both be on (`STS-PKI-0296`).
 
-The Account API issues a short-lived certificate for a caller's own UID or
-group common names, after a separate access-policy decision for every
-principal. Issuance requires recent authentication and is governed by
-`pki.personSelfService` and the existing PKI self-service rate limits. An
-OpenSSH security key must include verifiable attestation to qualify for the
-longer hardware-bound lifetime. The request and response schemas are in
-`GET /admin-api/account-api`.
+The Account API issues a short-lived certificate for a caller's own UID,
+after a separate access-policy decision for every principal. Issuance
+requires recent authentication and is governed by `pki.personSelfService`
+and the existing PKI self-service rate limits. The request and response
+schemas are in `GET /admin-api/account-api`.
+
+- **A group is not a principal by default.** A group common name may be
+  asked for only when `pki.sshGroupPrincipals` names that group and the
+  person is a member, and the access-control policy still decides it. The
+  policy is told whether each principal is the person's uid or a group
+  (`urn:sts:xacml:ssh-principal-kind`, `uid` or `group`). A group whose name
+  is a person's uid in the realm, or a system account such as `root`, is
+  never a principal (`STS-SSHCA-0002`), because a server that maps
+  principals to accounts would sign the member in as that account.
+- **Lifetimes.** A key with no verified hardware evidence gets at most
+  `pki.sshSoftwareLifetimeSeconds` (300 by default); a key with verified
+  evidence gets at most `pki.sshHardwareLifetimeSeconds` (3600 by default,
+  also the most).
+- **Security keys (`sk-ssh-ed25519@openssh.com`,
+  `sk-ecdsa-sha2-nistp256@openssh.com`).** Generate the key with a
+  challenge and keep the attestation:
+  `ssh-keygen -t ed25519-sk -O challenge=challenge.bin
+  -O write-attestation=attestation.bin`. Send both files, base64, as
+  `attestation` and `attestationChallenge`. The service checks the
+  attestation's signature over the authenticator data and SHA-256 of the
+  challenge, then hands it to the WebAuthn attestation verifier, so the
+  realm's `webauthn.attestationTrustAnchors` and the FIDO Metadata Service
+  decide whether it is trusted, as for a passkey. A trusted attestation earns
+  the longer lifetime. An attestation sent without its challenge is refused
+  (`STS-SSHCA-0003`). An `sk-` key sent with no attestation, or with one that
+  verifies and is not trusted, is issued the shorter lifetime. A hardware
+  token is recorded only when the trusted attestation names a device serial.
+- **Extensions.** Every certificate carries the extensions
+  `pki.sshUserCertificateExtensions` lists, by default `ssh-keygen`'s own
+  set (`permit-X11-forwarding`, `permit-agent-forwarding`,
+  `permit-port-forwarding`, `permit-pty`, `permit-user-rc`). Without
+  `permit-pty` a server opens no terminal for the certificate.
+- **The ML-DSA certificate.** With `pki.sshUserCaPqcAlongsideClassical` on,
+  the answer carries `pqcCertificate` and `pqcSerialHex` beside the classical
+  `certificate`. Both are revoked the same way.
+- **Listing and revoking.** `GET /account-api/ssh/certificates` lists the
+  caller's certificates that have not expired. An administrator sees a
+  person's on **Directory → Hardware tokens → SSH certificates** (search for
+  the person on the Tokens tab), or with
+  `GET /admin-api/hardware-tokens/ssh-certificates?username=...`, and
+  revokes one there or with `POST /admin-api/hardware-tokens/revoke-ssh` and
+  `{ "username": "...", "serial": "..." }`. A revoked certificate is on the
+  KRL until it expires.
 
 A browserless SSH client can use the RFC 8628 device flow: its public OAuth
-client must declare `account:manage` and the device-code grant, then request
-the realm's `/account-api` as its RFC 8707 `resource`. The person reviews that
+client must declare `ssh:certificate` (or `account:manage`) and the
+device-code grant, then request the realm's `/account-api` as its RFC 8707
+`resource`. **`ssh:certificate` is accepted by the three SSH certificate
+operations only**, so a token with it can list, issue and revoke the
+person's SSH certificates and nothing else of their account. Declare it as a
+delegated permission grant of `urn:sts:account-api:ssh:certificate` on
+`sts-account-api`, as `account:manage` is declared. The person reviews that
 resource on the portal before approving; the resulting token is usable only
 for the Account API.
 
@@ -1916,7 +1967,7 @@ is checked — see
 ### The SSH user CA
 
 The algorithms [OpenSSH user certificates](#openssh-user-certificates) are
-signed with. All three are per realm and take effect while the service is
+signed with, and what a certificate may say. All seven are per realm and take effect while the service is
 running, on **Protocols → PKI** (`/admin/pki`).
 
 | Setting | Environment variable | Default | Runtime? | What it does |
@@ -1924,6 +1975,10 @@ running, on **Protocols → PKI** (`/admin/pki`).
 | `pki.sshUserCaAlgorithms` | `STS_PKI_SSH_USER_CA_ALGORITHMS` | `ssh-mldsa-65,ssh-ed25519,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521,rsa-sha2-256,rsa-sha2-512` | yes | Which algorithms the SSH user CA may sign with, in preference order. Each name is a checkbox and an order number. The published `TrustedUserCAKeys` line is the first classical name, or `ssh-ed25519` when the list names only `ssh-mldsa-65`. `ssh-mldsa-65` is a second authority and is left off that line. `ssh-rsa` (SHA-1) is absent. |
 | `pki.sshUserCaPqcOnly` | `STS_PKI_SSH_USER_CA_PQC_ONLY` | `false` | yes | A new certificate is signed by the ML-DSA authority only. Stock OpenSSH cannot verify it yet. Without an ML-DSA authority the request is refused (`STS-PKI-0297`). The default published line stays classical; the ML-DSA key is at `?algorithm=ssh-mldsa-65`. Cannot be on while `pki.sshUserCaPqcAlongsideClassical` is on (`STS-PKI-0296`). |
 | `pki.sshUserCaPqcAlongsideClassical` | `STS_PKI_SSH_USER_CA_PQC_ALONGSIDE_CLASSICAL` | `false` | yes | A new certificate is issued twice when the ML-DSA authority exists: the classical certificate and an ML-DSA certificate beside it. Cannot be on while `pki.sshUserCaPqcOnly` is on (`STS-PKI-0296`). |
+| `pki.sshSoftwareLifetimeSeconds` | `STS_PKI_SSH_SOFTWARE_LIFETIME_SECONDS` | `300` | yes | The longest lifetime, in seconds, an SSH user certificate may be issued with for a key no verified hardware evidence covers: a plain key, or an sk- security key sent without a trusted attestation. The request may ask for less. Five minutes by default. |
+| `pki.sshHardwareLifetimeSeconds` | `STS_PKI_SSH_HARDWARE_LIFETIME_SECONDS` | `3600` | yes | The longest lifetime, in seconds, an SSH user certificate may be issued with for a key verified hardware evidence covers: an sk- security key whose attestation verified and is trusted, or a key an attested PIV certificate certifies. The request may ask for less. One hour by default, which is also the most. |
+| `pki.sshUserCertificateExtensions` | `STS_PKI_SSH_USER_CERTIFICATE_EXTENSIONS` | `permit-X11-forwarding,permit-agent-forwarding,permit-port-forwarding,permit-pty,permit-user-rc` | yes | The OpenSSH certificate extensions (PROTOCOL.certkeys) a new SSH user certificate carries, comma-separated. The default is ssh-keygen's own set; a certificate with none lets its holder sign in without a terminal, forwarding or rc file. no-touch-required may be added too. A name OpenSSH does not define is dropped. |
+| `pki.sshGroupPrincipals` | `STS_PKI_SSH_GROUP_PRINCIPALS` | *(empty)* | yes | The directory groups whose common names a member may ask for as an SSH certificate principal, comma-separated, each still decided by the access-control policy (resource ssh-user-ca, action issue-ssh-principal). Empty, the default, is none: a certificate names only the person's uid, since a group grants nothing by being a group. A group whose name is a person's uid, or a system account such as root, is refused whatever this says. |
 
 Settings this page discusses that are not `pki.*`: the twelve
 `*CertificateHeader` settings ([above](#a-signed-token-names-its-certificate-chain)),

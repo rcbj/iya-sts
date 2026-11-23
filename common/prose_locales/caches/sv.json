@@ -1786,5 +1786,21 @@
   "caches.remaining.disowned": {
     "en": "0e9453a606f40a73",
     "text": "inaktuell: credentialet har frånsagts"
+  },
+  "caches.store.ssh_user_ca.issued.title": {
+    "en": "d075b5ec478b0ed7",
+    "text": "Utfärdade SSH-användarcertifikat"
+  },
+  "caches.store.ssh_user_ca.issued.description": {
+    "en": "75dbc5d0d0bd9054",
+    "text": "En rad per OpenSSH-användarcertifikat som denna sfärs SSH-användar-CA utfärdat, efter serienummer: vems det är (urn:uuid), nyckelns fingeravtryck, dess principaler, dess livslängd och om det återkallats. Aldrig en nyckel."
+  },
+  "caches.store.ssh_user_ca.issued.bound": {
+    "en": "36fc38da0e0699e8",
+    "text": "De rader en process håller är en cache på 5 000 per sfär; en rad lämnar lagret när dess certifikat går ut."
+  },
+  "caches.store.ssh_user_ca.issued.lifetime": {
+    "en": "fdcbaa82a4ac533d",
+    "text": "Tills certifikatet går ut."
   }
 }

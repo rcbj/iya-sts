@@ -1015,6 +1015,18 @@ Scope: `admin:read`.
 | `piv.profiles[]` | string |  |  |
 | `piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
 | `q` | string | yes |  |
+| `sshCertificates` | list | yes | The SSH user certificates of the person `q` names that have not expired, revoked ones marked; empty for a serial, nobody, or no search. |
+| `sshCertificates[].authority` | string | yes | `classical`, or `ssh-mldsa-65` for a certificate the ML-DSA authority signed. |
+| `sshCertificates[].hardwareBound` | boolean | yes | Whether verified hardware evidence covered the key. |
+| `sshCertificates[].issuedAt` | string | yes |  |
+| `sshCertificates[].keyFingerprint` | string | yes | The certified key's SHA256 fingerprint. |
+| `sshCertificates[].keyType` | string | yes | The certified key's OpenSSH type. |
+| `sshCertificates[].notAfter` | string | yes |  |
+| `sshCertificates[].principals` | list | yes |  |
+| `sshCertificates[].principals[]` | string |  |  |
+| `sshCertificates[].revoked` | boolean | yes |  |
+| `sshCertificates[].revokedAt` | string | yes | When it was revoked; empty for one that was not. |
+| `sshCertificates[].serialHex` | string | yes | The serial, lower-case hex: what `revokeUserSshCertificate` names. |
 | `status` | string | yes |  |
 | `tokens` | list | yes |  |
 | `tokens[].attested` | boolean | yes |  |
@@ -1636,6 +1648,16 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `ok` | boolean |  |  |
 
+**401**: The caller signed in longer ago than account.recentAuthMinutes allows for a recovery (RFC 9470 `insufficient_user_authentication`, with `max_age`): sign in again and resend.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
 **403**: The access-control policy did not permit the recovery.
 
 | Member | Type | Required | What it is |
@@ -1791,6 +1813,108 @@ Scope: `admin:write`.
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `ok` | boolean |  |  |
+
+## POST /admin-api/hardware-tokens/revoke-ssh
+
+`revokeUserSshCertificate`
+
+**Revoke a person's SSH user certificate**
+
+Revokes the SSH user certificate `serial` of `username` and rebuilds the realm's OpenSSH KRL, which lists it until it expires. The serial must be that person's. 404 for nobody of that name or a serial that is not theirs. Acting on a Security Administrator's certificate needs admin:security.
+
+**Mirrors** `POST /admin/hardware-tokens` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `serial` | string | yes | The certificate's serial, hex. |
+| `username` | string | yes | The person whose certificate it is. |
+
+**200**: The certificate is revoked.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+| `serialHex` | string | yes |  |
+
+**400**: The request was refused.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**404**: Nobody of that name, or no certificate of theirs with that serial.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**503**: The revocation could not be recorded.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+## GET /admin-api/hardware-tokens/ssh-certificates
+
+`getUserSshCertificates`
+
+**A person's SSH user certificates**
+
+The SSH user certificates issued to `username` that have not expired, newest first, revoked ones marked: serial, key type and fingerprint, principals, validity, whether hardware evidence covered the key, and which authority signed it. Never a key; revoking one is `revokeUserSshCertificate`.
+
+**Mirrors** `GET /admin/hardware-tokens` on the admin console.
+
+Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `username` | query | string | yes | The person whose SSH certificates to list. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**200**: The certificates.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `certificates` | list | yes |  |
+| `certificates[].authority` | string | yes | `classical`, or `ssh-mldsa-65` for a certificate the ML-DSA authority signed. |
+| `certificates[].hardwareBound` | boolean | yes | Whether verified hardware evidence covered the key. |
+| `certificates[].issuedAt` | string | yes |  |
+| `certificates[].keyFingerprint` | string | yes | The certified key's SHA256 fingerprint. |
+| `certificates[].keyType` | string | yes | The certified key's OpenSSH type. |
+| `certificates[].notAfter` | string | yes |  |
+| `certificates[].principals` | list | yes |  |
+| `certificates[].principals[]` | string |  |  |
+| `certificates[].revoked` | boolean | yes |  |
+| `certificates[].revokedAt` | string | yes | When it was revoked; empty for one that was not. |
+| `certificates[].serialHex` | string | yes | The serial, lower-case hex: what `revokeUserSshCertificate` names. |
+| `username` | string | yes |  |
 
 ## POST /admin-api/hardware-tokens/ykval-client-add
 

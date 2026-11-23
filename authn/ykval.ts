@@ -14,6 +14,15 @@
 // The signature is computed in common/yubiotp.ts. This file decides the
 // status and writes text/plain. A code is marked on the response and is
 // never written into the body.
+//
+// **EVERY VERIFY IS AUDITED** (`ykval.verify`, the #1955 review): the
+// client, the OTP's public identity (never the OTP), the person it named
+// and the status, with the code of a refusal. **A DISABLED ACCOUNT'S OTP IS
+// BAD_OTP** (rule 3at, STS-YUBIOTP-0032): a PAM or RADIUS caller must not
+// let in a person this service would refuse at its own sign-in, and the
+// status says nothing more than a wrong OTP would. **THE NONCE IS SPENT BY
+// A CLUSTER CLAIM** (`yubiotp_store.rememberNonceAsync()`), so a request
+// replayed to another node is REPLAYED_REQUEST there too.
 
 import querystring = require('querystring');
 import helpers = require('../common/helpers');
@@ -103,11 +112,49 @@ class Ykval {
    */
   static verify(params: Json): Promise<Json> {
     log.debug("Entering Ykval.verify().");
+    const fields = params || {};
+    return Ykval.decide(fields).then(function (answer: Json): Json {
+      Ykval.recordAudit(fields, answer);
+      log.debug("Leaving Ykval.verify(). " + String(answer.status));
+      return answer;
+    });
+  }
+
+  // One audit row per verify (header). Never throws: the answer stands.
+  private static recordAudit(params: Json, answer: Json): void {
+    log.debug("Entering Ykval.recordAudit().");
+    try {
+      const otp = String((params && params.otp) || '');
+      const parsed = otp ? require('../common/yubiotp').parse(otp) : null;
+      const code = String((answer && answer.code) || '');
+      require('../common/audit').audit(Object.assign({
+        category: 'authentication', action: 'ykval.verify',
+        protocol: 'YK-VAL 2.0', channel: 'http',
+        actor: 'ykval:' + String((params && params.id) || '').slice(0, 64),
+        target: String((answer && answer.username) || ''),
+        outcome: answer && answer.status === 'OK' ? 'success' : 'refused',
+        summary: 'YK-VAL verify for client ' +
+                 String((params && params.id) || '?').slice(0, 64) +
+                 ': ' + String((answer && answer.status) || '?'),
+        detail: { status: String((answer && answer.status) || ''),
+                  publicId: parsed && parsed.publicId
+                    ? String(parsed.publicId) : '' }
+      }, code ? { errorCode: code } : {}));
+    } catch (e) {
+      log.debug("Caught in Ykval.recordAudit(): " + ((e && e.message) || e));
+      // The verdict is the caller's either way; a lost row is logged here.
+    }
+    log.debug("Leaving Ykval.recordAudit().");
+  }
+
+  // The decision itself (verify()'s, before the audit row).
+  private static decide(params: Json): Promise<Json> {
+    log.debug("Entering Ykval.decide().");
     const yubi = require('../common/yubiotp');
     const store = require('../common/yubiotp_store');
     const fields = params || {};
     if (!yubi.ykvalEnabled()) {
-      log.debug("Leaving Ykval.verify(). Off.");
+      log.debug("Leaving Ykval.decide(). Off.");
       return Promise.resolve({
         status: 'OPERATION_NOT_ALLOWED', code: 'STS-YUBIOTP-0012', key: '',
         fields: { status: 'OPERATION_NOT_ALLOWED' } });
@@ -118,32 +165,42 @@ class Ykval {
     const h = String(fields.h || '');
     if (!id || !otp || !nonce || !h) {
       const key = id ? store.clientKey(id) : '';
-      log.debug("Leaving Ykval.verify(). Missing.");
+      log.debug("Leaving Ykval.decide(). Missing.");
       return Promise.resolve(Ykval.signed({
         status: 'MISSING_PARAMETER', code: 'STS-YUBIOTP-0013', key: key,
         otp: otp, nonce: nonce }));
     }
     const key = store.clientKey(id);
     if (!key) {
-      log.debug("Leaving Ykval.verify(). No client.");
+      log.debug("Leaving Ykval.decide(). No client.");
       return Promise.resolve({
         status: 'NO_SUCH_CLIENT', code: 'STS-YUBIOTP-0015', key: '',
         fields: { status: 'NO_SUCH_CLIENT' } });
     }
     if (!yubi.signatureOk(key, fields)) {
-      log.debug("Leaving Ykval.verify(). Bad signature.");
+      log.debug("Leaving Ykval.decide(). Bad signature.");
       return Promise.resolve({
         status: 'BAD_SIGNATURE', code: 'STS-YUBIOTP-0014', key: '',
         fields: { status: 'BAD_SIGNATURE' } });
     }
     const YubiOtp = yubi.YubiOtp;
-    if (!YubiOtp.NONCE_RE.test(nonce) || !store.rememberNonce(id, nonce).ok) {
-      log.debug("Leaving Ykval.verify(). Nonce.");
+    if (!YubiOtp.NONCE_RE.test(nonce)) {
+      log.debug("Leaving Ykval.decide(). Nonce.");
       return Promise.resolve(Ykval.signed({
         status: 'REPLAYED_REQUEST', code: 'STS-YUBIOTP-0016', key: key,
         otp: otp, nonce: nonce }));
     }
-    return Ykval.checkOtp(store, otp, nonce, key);
+    log.debug("Leaving Ykval.decide(). The nonce is spent next.");
+    return store.rememberNonceAsync(id, nonce).then(function (spent: Json) {
+      if (!spent || !spent.ok) {
+        const backend = !!spent && spent.reason === 'store';
+        return Ykval.signed({
+          status: backend ? 'BACKEND_ERROR' : 'REPLAYED_REQUEST',
+          code: backend ? 'STS-YUBIOTP-0031' : 'STS-YUBIOTP-0016',
+          key: key, otp: otp, nonce: nonce });
+      }
+      return Ykval.checkOtp(store, otp, nonce, key);
+    });
   }
 
   // The OTP, after the client and the nonce have been accepted.
@@ -159,14 +216,32 @@ class Ykval {
         status: 'BAD_OTP', code: 'STS-YUBIOTP-0017', key: key,
         otp: otp, nonce: nonce }));
     }
+    // A DISABLED ACCOUNT (rule 3at, header): BAD_OTP, and the counter is not
+    // spent, since no OTP of theirs is accepted.
+    let disabled = false;
+    try {
+      disabled = require('../common/account_state')
+        .isDisabled(String(row.username));
+    } catch (e) {
+      log.debug("Caught in Ykval.checkOtp(): " + ((e && e.message) || e));
+      // A state that cannot be read is not a lock this door may invent; the
+      // sign-in screen reads it the same way.
+      disabled = false;
+    }
+    if (disabled) {
+      log.debug("Leaving Ykval.checkOtp(). A disabled account.");
+      return Promise.resolve(Object.assign(Ykval.signed({
+        status: 'BAD_OTP', code: 'STS-YUBIOTP-0032', key: key,
+        otp: otp, nonce: nonce }), { username: String(row.username) }));
+    }
     return require('../common/credentials')
       .verifyYubiOtpAsync(row.username, otp)
       .then(function (verdict) {
         if (verdict && verdict.ok) {
           log.debug("Leaving Ykval.checkOtp(). OK.");
-          return Ykval.signed({
+          return Object.assign(Ykval.signed({
             status: 'OK', code: '', key: key, otp: otp, nonce: nonce,
-            extra: { sl: '100' } });
+            extra: { sl: '100' } }), { username: String(row.username) });
         }
         const replay = verdict && verdict.reason === 'replay';
         const backend = verdict && (verdict.reason === 'store' ||
@@ -176,8 +251,9 @@ class Ykval {
         const code = replay ? 'STS-YUBIOTP-0018'
           : (backend ? 'STS-YUBIOTP-0027' : 'STS-YUBIOTP-0017');
         log.debug("Leaving Ykval.checkOtp(). " + status + ".");
-        return Ykval.signed({ status: status, code: code, key: key,
-                               otp: otp, nonce: nonce });
+        return Object.assign(Ykval.signed({ status: status, code: code,
+          key: key, otp: otp, nonce: nonce }),
+          { username: String(row.username) });
       }, function (e) {
         log.error(errorCodes.tag('STS-YUBIOTP-0027') +
                   'ykval: the OTP check threw: ' + ((e && e.message) || e));

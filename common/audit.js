@@ -720,6 +720,10 @@ const ACTIONS = [
     label: 'A YK-VAL client was created' },
   { action: 'yubiotp.client-remove', category: 'directory',
     label: 'A YK-VAL client was removed' },
+  // EVERY YK-VAL VERIFY (the #1955 review), `authn/ykval.ts`: the client,
+  // the OTP's public identity and the status, with the code of a refusal.
+  { action: 'ykval.verify', category: 'authentication',
+    label: 'A YK-VAL client asked whether a YubiKey OTP is good' },
   // AN ESCROWED PIV KEY RECOVERED (#1955 P2, D7), by its holder or by an
   // administrator the access-control policy let; a refusal is the same row
   // with its code. `common/piv_enrolment.ts` writes it.

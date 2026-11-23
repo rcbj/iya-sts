@@ -89,6 +89,13 @@ function nonce() {
 function checkVectors(t) {
   log.debug("Entering checkVectors().");
   t.log.info('=== 1. the published block and the published HMAC ===');
+  // THE #1955 REVIEW: the use counter is fifteen bits; bit 15 is Yubico's
+  // flag (libyubikey's yubikey_counter() is `ctr & 0x7FFF`).
+  t.equal(yubiotp.composite(0x8001, 2), 258,
+          'the use counter\'s top bit (a flag) is not counted: 0x8001 is ' +
+          'use 1');
+  t.equal(yubiotp.composite(0x7fff, 255), 0x7fff * 256 + 255,
+          'and fifteen bits of it are');
   const block = crypto.yubiotpDecrypt(YUBICO_KEY, YUBICO_CIPHER);
   t.check(block.ok && block.fields.privateId === '8792ebfe26cc' &&
           block.fields.use === 19 && block.fields.session === 17 &&
@@ -219,8 +226,9 @@ async function checkPerson(t) {
   return { name: name, secret: secret };
 }
 
-async function checkYkval(t, secret) {
+async function checkYkval(t, enrolled) {
   log.debug("Entering checkYkval().");
+  const secret = enrolled.secret;
   t.log.info('=== 4. YK-VAL 2.0 ===');
   config.setOverride('yubiotp.ykval', true);
   const id = String(100000 + nodeCrypto.randomBytes(2).readUInt16BE(0));
@@ -249,6 +257,35 @@ async function checkYkval(t, secret) {
           bad.code === 'STS-YUBIOTP-0014' && bad.key === '',
           'a bad HMAC is BAD_SIGNATURE and unsigned',
           bad.status + ' ' + bad.code + ' key=' + (bad.key ? 'set' : ''));
+  // THE #1955 REVIEW: the nonce spent for the cluster, a disabled account,
+  // and an audit row for every verify.
+  const resent = await ykval.verify(params);
+  t.check(resent.status === 'REPLAYED_REQUEST' &&
+          resent.code === 'STS-YUBIOTP-0016',
+          'the same signed request again is REPLAYED_REQUEST (a cluster ' +
+          'claim, not a process\'s map)', resent.status + ' ' + resent.code);
+  const accountState = require('../common/account_state');
+  accountState.setDisabled(enrolled.name, true, { actor: 'test' });
+  try {
+    const lockedParams = { id: id, otp: yubiotp.otpFor(secret, 3, 0),
+                           nonce: nonce() };
+    lockedParams.h = yubiotp.sign(added.key, lockedParams);
+    const locked = await ykval.verify(lockedParams);
+    t.check(locked.status === 'BAD_OTP' &&
+            locked.code === 'STS-YUBIOTP-0032',
+            'A DISABLED ACCOUNT\'S OTP IS BAD_OTP (rule 3at), not OK',
+            locked.status + ' ' + locked.code);
+  } finally {
+    accountState.setDisabled(enrolled.name, false, { actor: 'test' });
+  }
+  const rows = require('../common/audit').list().filter(function (r) {
+    return r.action === 'ykval.verify';
+  });
+  t.check(rows.some(function (r) {
+    return r.errorCode === 'STS-YUBIOTP-0032';
+  }) && rows.some(function (r) {
+    return r.outcome === 'success';
+  }), 'each verify is audited, a refusal with its code');
   log.debug("Leaving checkYkval().");
 }
 
@@ -305,7 +342,7 @@ async function run(t) {
     checkVectors(t);
     checkOpen(t);
     const enrolled = await checkPerson(t);
-    await checkYkval(t, enrolled.secret);
+    await checkYkval(t, enrolled);
   } finally {
     config.clearOverride('yubiotp.offered');
     config.clearOverride('yubiotp.ykval');

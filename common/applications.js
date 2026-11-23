@@ -17650,7 +17650,11 @@ const API_PERMISSIONS = Object.freeze({
                           '/admin-api/pep-audit (REMOTE_PEPS)']]) }),
   'sts-account-api': Object.freeze({ base: 'urn:sts:account-api:',
     permissions: Object.freeze([
-      ['account:manage', 'The person\'s own account, through /account-api']
+      ['account:manage', 'The person\'s own account, through /account-api'],
+      // The #1955 review: an SSH command line's narrower grant, taken only
+      // by the SSH certificate operations.
+      ['ssh:certificate', 'The person\'s SSH user certificates, through ' +
+                          '/account-api/ssh/certificates']
     ]) }),
   'sts-report-api': Object.freeze({ base: 'urn:sts:report-api:',
     permissions: Object.freeze([

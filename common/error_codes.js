@@ -407,6 +407,15 @@ const SUBSYSTEMS = [
           'the four PIV slot profiles, the escrow of piv-key-management ' +
           'keys, and the mapping of an outside PIV or CAC card by its card ' +
           'UUID.' },
+  { id: 'SSHCA', label: 'OpenSSH user certificates',
+    where: 'common/ssh_user_ca.ts, common/ssh_issued.ts, common/pki.js, ' +
+           'pki/pki_service.ts, account-api/ssh_user_ca.ts, ' +
+           'mgmt-api/hardware_tokens_api.ts',
+    what: 'The realm\'s OpenSSH user certificate authority (#1955 P3): ' +
+          'which principals a person may ask for, the security-key ' +
+          'attestation that earns the longer lifetime, the register of ' +
+          'issued certificates, and where the CA key and the KRL are ' +
+          'served.' },
   { id: 'OPENPGP', label: 'OpenPGP keys and mail encryption',
     where: 'common/openpgp_keys.ts, common/crypto.js (section 19), ' +
            'portal/account_openpgp.ts, mgmt-api/openpgp_api.ts',
@@ -8598,6 +8607,12 @@ const CODES = [
     summary: 'The bootstrap password file could not be removed on a start ' +
       'that found a credential already held. The plaintext is left on disk.',
     spec: 'Log line; the service still starts, and the file is left' },
+  { code: 'STS-AUTHN-0580',
+    summary: 'A legacy U2F key was not imported: the person\'s passkey ' +
+      'policy enforces a CTAP 2.1 credProtect level, which an imported key ' +
+      'ran no ceremony to report and cannot prove (#1955).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -23288,6 +23303,11 @@ const CODES = [
     summary: 'An Account API act on a one-time code token was refused: ' +
       'unknown, or too many attempts in the code budget (#1955).',
     spec: 'HTTP 400' },
+  { code: 'STS-OATH-0051',
+    summary: 'A claim of an imported HOTP token was refused: the code it ' +
+      'presented was already spent by another request, so it proves ' +
+      'nothing about who holds the token (#1955).',
+    spec: 'HTTP 400 (the portal or the Account API)' },
   // ===== YUBIOTP ===========================================================
   { code: 'STS-YUBIOTP-0001',
     summary: 'A YubiKey OTP was not 32 to 48 even modhex characters, or ' +
@@ -23415,6 +23435,15 @@ const CODES = [
     summary: 'An operator asked to clear a YubiKey OTP for a person who ' +
       'holds none (#1955 P5).',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-YUBIOTP-0031',
+    summary: 'A YK-VAL nonce could not be proved unused: the cluster claim ' +
+      'it is spent under had no store to ask, so the request was not ' +
+      'checked (#1955).',
+    spec: 'YK-VAL 2.0 BACKEND_ERROR' },
+  { code: 'STS-YUBIOTP-0032',
+    summary: 'A YK-VAL verify named a YubiKey OTP of a disabled account; ' +
+      'it is answered as a bad OTP and nothing is spent (#1955).',
+    spec: 'YK-VAL 2.0 BAD_OTP' },
   // ===== PIV ===============================================================
   { code: 'STS-PIV-0001',
     summary: 'A shipped PIV attestation certificate ' +
@@ -23546,6 +23575,42 @@ const CODES = [
       'another entry of the realm, which would make the card name two ' +
       'people; nothing was written (#1955, D8).',
     spec: 'HTTP 400 (the directory write); LDAP constraintViolation' },
+  { code: 'STS-PIV-0036',
+    summary: 'A PIV attestation\'s subject names no slot, and the profile ' +
+      'asked is a PIV slot profile or one that signs in (tls-client, ' +
+      'tls-server-client, smartcard-logon), for which the slot is the ' +
+      'point of the check (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-PIV-0037',
+    summary: 'A PIV attestation of slot 9e, the Card Authentication key that ' +
+      'works without a PIN, was offered for a profile other than ' +
+      'piv-card-auth (#1955).',
+    spec: 'HTTP 400' },
+  // ===== SSHCA =============================================================
+  { code: 'STS-SSHCA-0001',
+    summary: 'The SSH user CA\'s public key or its KRL was asked for on the ' +
+      'plain-HTTP revocation listener, where neither is served: the CA key ' +
+      'is a trust anchor and the KRL is unsigned, so plain HTTP would let ' +
+      'anybody on the path replace them (#1955).',
+    spec: 'HTTP 404, text/plain' },
+  { code: 'STS-SSHCA-0002',
+    summary: 'An SSH certificate principal named a group whose name is a ' +
+      'person\'s uid in the realm, or a system account such as root, which ' +
+      'a server would sign the member in as (#1955).',
+    spec: 'HTTP 403' },
+  { code: 'STS-SSHCA-0003',
+    summary: 'An SSH security-key attestation was sent without the ' +
+      'challenge ssh-keygen was given, which the attestation signed, so ' +
+      'it could not be verified (#1955).',
+    spec: 'HTTP 400' },
+  { code: 'STS-SSHCA-0004',
+    summary: 'An administrator\'s SSH certificate act named nobody of the ' +
+      'realm\'s directory (#1955).',
+    spec: 'HTTP 404' },
+  { code: 'STS-SSHCA-0005',
+    summary: 'A person\'s SSH user certificates could not be read or ' +
+      'revoked: the register threw (#1955).',
+    spec: 'HTTP 500 or 503' },
   // ===== OPENPGP ===========================================================
   { code: 'STS-OPENPGP-0001',
     summary: 'An OpenPGP public key offered for registration did not ' +

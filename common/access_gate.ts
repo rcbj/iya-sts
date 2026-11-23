@@ -297,6 +297,9 @@ interface AccessRequest {
   accessRequestObject?: AccessRequestObject | null;
   // The one SSH certificate principal being considered (#1955 P3).
   sshPrincipal?: string;
+  // And whether it is the person's uid or a group's name (the #1955
+  // review).
+  sshPrincipalKind?: string;
   context?: Record<string, unknown>;
   [key: string]: unknown;
 }

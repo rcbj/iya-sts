@@ -4013,8 +4013,35 @@ class Credentials {
     // ceremony that ran — a door that ran none (an import) is held to no
     // level it was never asked for. `undefined` is "not asked"; null is
     // "asked, reported nothing".
+    // WHILE THE LEVEL IS ENFORCED IT MUST BE PROVEN (the #1955 review):
+    // the level is in the authenticator data, which only a TRUSTED
+    // attestation vouches for — under `none` it is the browser's word — so
+    // an unattested report counts as none (level 1), and the rule refuses
+    // it. And an imported U2F key ran no ceremony, reported no level and
+    // can prove none, so an import is refused while the rule is enforced.
+    const credRule = this.deps.passkeyPolicy.credProtectRule(
+      this.deps.passkeyPolicy.profileFor(name));
+    if (credRule.enforce && given.appid) {
+      log.info('credentials: a U2F key was NOT imported for ' + name +
+               ': the passkey policy enforces credProtect level ' +
+               credRule.level + ', which an imported key cannot prove.');
+      log.debug("Leaving Credentials.addKey(). An import under an " +
+                "enforced credProtect.");
+      return coded('STS-AUTHN-0580', { ok: false, reason: 'cred-protect',
+               errors: ['This person\'s passkey policy enforces CTAP 2.1 ' +
+                        'credential protection (credProtect level ' +
+                        credRule.level + '), and an imported U2F key ' +
+                        'cannot prove its level. Register a security key ' +
+                        'instead.'] });
+    }
     if (given.credProtect !== undefined) {
       facts.credProtect = given.credProtect;
+      const att = given.attestation || {};
+      if (credRule.enforce &&
+          !(att.verified === true && att.trusted === true)) {
+        facts.credProtect = null;
+        facts.credProtectUnattested = true;
+      }
     }
     // AN UPGRADE (#939): the classical passkey it upgrades, looked up NOW
     // among this person's keys — the entry as it is at the write, not as
@@ -6889,6 +6916,15 @@ class Credentials {
         log.debug("Leaving Credentials.installImportedOath(). Store.");
         return coded('STS-OATH-0006', { ok: false, errors: ['The token\'s ' +
           'counter could not be recorded just now. Try again.'] });
+      }
+      // A CLAIM WHOSE CODE THE STORE IS ALREADY PAST IS REFUSED (the #1955
+      // review): the code the person typed was spent by another request,
+      // so it proves nothing about who holds the token now.
+      if (!answer.ok && t.claim === true) {
+        log.debug("Leaving Credentials.installImportedOath(). Behind.");
+        return coded('STS-OATH-0051', { ok: false, errors: ['That code was ' +
+          'already used. Press the token for a new code and claim it ' +
+          'again.'] });
       }
       if (!answer.ok) {
         record.counter = Math.max(record.counter,
