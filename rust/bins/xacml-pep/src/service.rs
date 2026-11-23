@@ -191,7 +191,11 @@ impl Pep {
     /// GET is a DECISION — the PIP asked at the PDP, the enforcement counted
     /// and reported on the heartbeat — and a HEAD is what a monitor or a
     /// link checker sends without meaning one; it stays the generic 404, as
-    /// every other method this handler does not answer.
+    /// every other method this handler does not answer. **Not for the
+    /// Search and Access Request paths either** (#1205): a GET of one of
+    /// them is 501, and rewriting HEAD to GET would tell a monitor the edge
+    /// answers a profile it does not hold. Those HEADs stay 404, and the
+    /// body is still stripped.
     pub async fn handle(
         self: Arc<Self>,
         mut request: Request<Body>,
@@ -199,7 +203,8 @@ impl Pep {
         if request.method() != Method::HEAD {
             return self.answer(request).await;
         }
-        if request.uri().path() != "/protected" {
+        let path = request.uri().path().to_string();
+        if path != "/protected" && !authzen::head_is_absent(&path) {
             *request.method_mut() = Method::GET;
         }
         let response = self.answer(request).await;
@@ -251,6 +256,16 @@ impl Pep {
                         PDP answer on the HTTPS listener."
                 }),
             );
+        }
+        // Search and the Access Request profile, before admission and
+        // before a body is read (#1205). A turned-off edge still says the
+        // API is off. The CRL-only listener has already answered 404.
+        if let Some(reply) = authzen::refused_here(method.as_str(), &path) {
+            let catalogue = self.sync.catalogue();
+            if let Some(off) = self.authzen_off(&catalogue) {
+                return reply_response(&off);
+            }
+            return reply_response(&reply);
         }
         if method == Method::POST
             && (path == authzen::EVALUATION_PATH
@@ -450,8 +465,10 @@ impl Pep {
                     POST /notify, GET /healthcheck, GET /crl/<name> for its \
                     own credential's lists, and the AuthZEN edge PDP: POST \
                     /access/v1/evaluation, POST /access/v1/evaluations and \
-                    GET /.well-known/authzen-configuration. HEAD is answered \
-                    for each GET but /protected."
+                    GET /.well-known/authzen-configuration. The Search APIs, \
+                    the Access Request profile and a token-exchange binding \
+                    tuple are the service's. HEAD is answered for each GET \
+                    but /protected and those service-only paths."
             }),
         )
     }
@@ -1265,6 +1282,12 @@ mod tests {
         assert_eq!(status, StatusCode::OK, "{}", body);
         let said: Value = serde_json::from_str(&body).unwrap();
         assert_eq!(said["policy_decision_point"], "https://pep.example:9443");
+        assert_eq!(
+            said["supported_obligations"],
+            json!(["step-up", "notification", "session_termination", "custom"])
+        );
+        assert!(said.get("signed_metadata").is_none());
+        assert!(said.get("access_request_endpoint").is_none());
         let read = read_answer("getAuthzenConfiguration", 200, &said);
         assert!(matches!(read, Some(Ok(()))), "{:?}", read);
         let (_, _, body) = answer(
@@ -1284,6 +1307,82 @@ mod tests {
             https,
         );
         assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    /// Search and the Access Request profile are the service's (#1205).
+    /// A ready edge answers 501 without admission. HEAD, and the methods
+    /// the profile does not define, stay 404. A cold edge says it is not
+    /// ready before it says the path is the service's.
+    #[test]
+    fn search_and_access_requests_are_the_services() {
+        let pep = a_ready_pep();
+        let https = Transport {
+            https: true,
+            ..Transport::default()
+        };
+        let searches = [
+            "/access/v1/search/subject",
+            "/access/v1/search/resource",
+            "/access/v1/search/action",
+        ];
+        for path in searches {
+            let (status, body) = ask(&pep, Method::POST, path, https.clone());
+            assert_eq!(status, StatusCode::NOT_IMPLEMENTED, "{}", path);
+            assert!(body.contains("Search APIs"), "{}: {}", path, body);
+            assert!(!body.contains("STS-XPEP"), "{}", body);
+            let (status, _) = ask(&pep, Method::GET, path, https.clone());
+            assert_eq!(status, StatusCode::NOT_FOUND, "GET {}", path);
+            let (status, _) = ask(&pep, Method::HEAD, path, https.clone());
+            assert_eq!(status, StatusCode::NOT_FOUND, "HEAD {}", path);
+        }
+        let access = [
+            (Method::POST, "/access/v1/access-requests"),
+            (Method::GET, "/access/v1/access-requests/schema"),
+            (Method::GET, "/access/v1/access-requests/task-1"),
+            (Method::POST, "/access/v1/access-requests/task-1/cancel"),
+            (Method::DELETE, "/access/v1/access-requests/task-1/cancel"),
+        ];
+        for (method, path) in access {
+            let (status, body) = ask(&pep, method.clone(), path, https.clone());
+            assert_eq!(
+                status,
+                StatusCode::NOT_IMPLEMENTED,
+                "{} {}",
+                method,
+                path
+            );
+            assert!(body.contains("approval store"), "{}: {}", path, body);
+            assert!(!body.contains("STS-XPEP"), "{}", body);
+        }
+        let absent = [
+            (Method::GET, "/access/v1/access-requests"),
+            (Method::POST, "/access/v1/access-requests/schema"),
+            (Method::POST, "/access/v1/access-requests/task-1"),
+            (Method::GET, "/access/v1/access-requests/task-1/cancel"),
+            (Method::HEAD, "/access/v1/access-requests/task-1"),
+            (Method::HEAD, "/access/v1/access-requests/schema"),
+        ];
+        for (method, path) in absent {
+            let (status, _) = ask(&pep, method.clone(), path, https.clone());
+            assert_eq!(status, StatusCode::NOT_FOUND, "{} {}", method, path);
+        }
+        let cold = a_pep();
+        let (status, body) = ask(
+            &cold,
+            Method::POST,
+            "/access/v1/search/subject",
+            https.clone(),
+        );
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert!(body.contains("not yet pulled"), "{}", body);
+        let crl = Transport {
+            crl_only: true,
+            ..Transport::default()
+        };
+        let (status, body) =
+            ask(&pep, Method::POST, "/access/v1/access-requests", crl);
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(body.contains("CRL"), "{}", body);
     }
 
     /// ADMISSION ASKS THE LISTENER THE REQUEST ARRIVED ON (#1830): the

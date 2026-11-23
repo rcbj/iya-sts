@@ -393,6 +393,8 @@ op `getPolicies`(`responses/200/content/application~1json/schema`: `PolicySet`,
   @js(#{`minimum`:1,`maximum`:1000}) `maxEvaluations`: int64;
   @js(#{`minimum`:1024,`maximum`:5242880}) `maxBodyBytes`: int64;
   `returnReasons`: boolean;
+  @js(#{`description`:"The realm's authzen.obligationsProfile. Absent on an older catalogue means on."})
+  `obligationsProfile`: boolean;
 }
 
 @component model `AuthzenCatalogue` {

@@ -1333,6 +1333,14 @@ POST /access/v1/evaluations                a batch
 GET  /.well-known/authzen-configuration    its metadata
 ```
 
+The Search APIs (`POST /access/v1/search/subject`, `resource` and `action`)
+and the Access Request profile (`POST /access/v1/access-requests`, its schema,
+a task, and cancel) answer `501`. The service holds the directory and the
+approval store; this edge does not. Those answers use the evaluation error
+object, require no admission, and are not named in the metadata. A method the
+profile does not define, and `HEAD` of any of them, stays `404`. A
+token-exchange binding tuple on an evaluation is `501` for that item.
+
 **A request is mapped exactly as the service maps it.** What a property of a
 request means is the realm's AuthZEN attribute catalogue, and the container
 pulls it from `GET /xacml/pep/authzen-catalogue` beside the policies, on the
@@ -1340,12 +1348,16 @@ same poll, with its own sync token — the same credential and the same
 `REMOTE_PEPS` role as the policy pull. The pull also carries the realm's
 AuthZEN settings that change the mapping or the answer
 (`authzen.enabled`, `authzen.resolveSubjectTypes`, `authzen.batchEnabled`,
-`authzen.maxEvaluations`, `authzen.maxBodyBytes`, `authzen.returnReasons`), so
-switching one on the service switches it here at the next poll. The
-identifiers, the value rules, the refusals and their statuses, the batch's
-three semantics and bounds, `X-Request-ID` and the fail-closed result are the
-service's: `true` only on a Permit carrying nothing it cannot discharge
-(`urn:sts:xacml:obligation:log` is the one it can), whatever `PEP_BIAS` says.
+`authzen.maxEvaluations`, `authzen.maxBodyBytes`, `authzen.returnReasons`,
+`authzen.obligationsProfile`), so switching one on the service switches it
+here at the next poll. The identifiers, the value rules, the refusals and
+their statuses, the batch's three semantics and bounds, `X-Request-ID` and
+the fail-closed result are the service's: `true` only on a Permit carrying
+nothing it cannot discharge, or a Permit whose obligations were handed
+because the caller declared every type in `context.supported_obligations`
+and the realm's obligations profile is on (`urn:sts:xacml:obligation:log` is
+the one the PDP discharges itself), whatever `PEP_BIAS` says.
+`context.approval` is recognized and not used.
 It decides against the root policy it pulled, and asks the service's PIP
 (`POST /xacml/pip`) about a subject whose type the realm resolves, as
 `/protected` does.
@@ -1563,9 +1575,11 @@ them.
 | The PIP answers from the directory in process | The PIP is the service's `POST /xacml/pip`, asked over the network; if that fails the subject's attributes are an empty bag, as for `/protected` |
 | One `authzen.decision` row per evaluation in the audit log, and a row on `/admin/xacml/monitor` | A log line per evaluation with the same content, never a property value or an id the caller sent; `GET /` counts the answers. The same content reaches the service's audit log a few seconds later as an `authzen.remote.decision` row ([below](#its-decisions-in-the-services-audit-log)); nothing reaches the monitor |
 | `reason_admin` is the service's sentence | It is this container's; the decision and the code are the same |
-| The three Search APIs (`/access/v1/search/*`) | Not served. The metadata does not list them |
-| The Obligations Profile: an obligation is handed in `context.obligations` when the PEP declares its type in `context.supported_obligations` | Not implemented. A Permit carrying any obligation but `urn:sts:xacml:obligation:log` answers `false`; `context.supported_obligations` is an undeclared member |
-| `signed_metadata` in the metadata document | Not sent; the edge PDP holds no signing key of the realm's |
+| The three Search APIs (`/access/v1/search/*`) | `501`. The metadata does not list them. The service holds the directory and the catalogues |
+| The Obligations Profile: an obligation is handed in `context.obligations` when the PEP declares its type in `context.supported_obligations` | Handed the same way, while `authzen.obligationsProfile` is on. The metadata then lists `supported_obligations`. Without the declaration a Permit that carries any other obligation answers `false` |
+| `context.approval` on an evaluation | Recognized and not used. The decision is made without it. The access-request endpoints are `501`; the edge holds no approval store |
+| The OAuth token-exchange binding's tuples | `501` for that evaluation, or for that batch item. A lone scope or an audience whose action is not a gate stays an ordinary evaluation. Not advertised |
+| `signed_metadata` in the metadata document | Omitted. The edge holds no signing key of the realm's, and republishing the service's JWT would name the wrong issuer |
 | An evaluation about an application that enforces [fine-grained authorization](fga.md) is decided against that application's own policy ([AuthZEN](authzen.md#applications-with-their-own-policy)) | Not decided here: forwarded to the service, which decides it ([above](#applications-that-enforce-fine-grained-authorization-forwarded)). It costs a round trip, needs the PEP's entry to hold `AUTHZEN_PEPS` with the application in its scope, and follows a switch of enforcement from the next poll |
 
 `GET /`'s `authzen` block says what it holds: the catalogue's token, its rows,
@@ -2730,7 +2744,7 @@ generated from the model in `models/pep/` and kept in the repository under
 | Document | What it describes |
 |---|---|
 | `pep-service.json` | The PEP's own endpoints: `GET /`, `GET /healthcheck`, `GET /protected`, `POST /notify` and `GET /crl/{name}` |
-| `pep-authzen.json` | The AuthZEN edge PDP: `POST /access/v1/evaluation`, `POST /access/v1/evaluations` and `GET /.well-known/authzen-configuration` |
+| `pep-authzen.json` | The AuthZEN edge PDP: `POST /access/v1/evaluation`, `POST /access/v1/evaluations`, `GET /.well-known/authzen-configuration`, and the Search and Access Request paths it answers `501` |
 | `pep-proxy.json` | The paths the reverse proxy reserves for itself, under `/.iya-pep/`, and how every configured route answers. The routes themselves are not listed: your configuration decides them |
 | `pep-control-plane.json` | What this service serves the PEP: registration, the heartbeat, the pulls, a listener's certificate, the reverse proxy's validation endpoints, and the PIP |
 

@@ -497,6 +497,9 @@ fn the_api_listener_errors_are_its_two_shapes() {
     );
     let authzen = production(include_str!("authzen.rs"));
     // `status: 200`, or the shorthand `status,` of `Reply::error()`.
+    // The binding 501 is the second: `reply_of` builds it without
+    // `Reply::error`, because `evaluate_one` already logged
+    // STS-XPEP-0140 (#1205).
     let literal =
         Regex::new(r"Reply \{\s*status(?::\s*([a-z0-9_]+))?\s*,").unwrap();
     let mut variable = 0;
@@ -507,7 +510,10 @@ fn the_api_listener_errors_are_its_two_shapes() {
             Some(other) => panic!("an AuthZEN reply of status {}", other),
         }
     }
-    assert_eq!(variable, 1, "Reply::error() alone sets a status");
+    assert_eq!(
+        variable, 2,
+        "Reply::error() and the binding 501 alone set a status"
+    );
 }
 
 // ===== THE STANDARD, CHECKED ==============================================

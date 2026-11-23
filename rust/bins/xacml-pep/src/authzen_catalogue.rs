@@ -19,8 +19,9 @@
 //! would let a caller name the roles of the subject it asks about. Refused:
 //! all of `urn:sts:xacml:` (case-insensitively), subject-id, resource-id,
 //! action-id and the three current-time attributes, `context.application`,
-//! the context members the token-exchange binding reads (#1181), and a bare
-//! LDAP-shaped name in any subject category.
+//! `context.supported_obligations`, `context.approval`, the context members
+//! the token-exchange binding reads (#1181), and a bare LDAP-shaped name in
+//! any subject category.
 //!
 //! `xacml-pep/authzen_cases.json` holds this file and the service's to the
 //! same cases (`tests/authzen_map.js` S, and this file's own test).
@@ -53,14 +54,22 @@ pub struct Problem {
 /// The four objects an AuthZEN request carries properties on.
 pub const OBJECTS: [&str; 4] = ["subject", "resource", "action", "context"];
 
-/// The context members the adapter reads itself.
-pub const RESERVED_CONTEXT: [&str; 1] = ["application"];
+/// The context members the adapter reads itself, in the service model's
+/// order (`models/authzen/authzen.tsp`'s `Context`): the obligations a PEP
+/// declares it can carry out (#1177), an access request's approval (#1180),
+/// and the caller's application. A row may not name one. The approval is
+/// recognized and then not used: this edge holds no approval store, so it
+/// is not written as a trusted fact.
+pub const RESERVED_CONTEXT: [&str; 3] =
+    ["supported_obligations", "approval", "application"];
 
 /// The context members the service's OAuth token-exchange binding reads by
 /// fixed rules (#1181), which a row may add to but never override: refused
 /// at the write there, so refused here too, and a pulled catalogue never
-/// carries one. This container does not implement the binding; a request
-/// naming one of them here is an undeclared property.
+/// carries one. This edge does not answer the binding. A request that names
+/// one of these, or that is one of the binding's tuples, is 501
+/// (`STS-XPEP-0140`) before it is read, so the caller is not told it is an
+/// undeclared property (`STS-AUTHZEN-0004`).
 pub const BINDING_CONTEXT: [&str; 11] = [
     "client_id",
     "acr",
@@ -326,9 +335,10 @@ pub fn parse(value: &Value) -> Result<Row, Problem> {
         return Err(Problem {
             code: "STS-AUTHZEN-0011",
             problem: format!(
-                "context.{} is read by the adapter to choose the caller's \
-                 application, and the application a policy sees is the \
-                 trusted urn:sts:xacml:authzen:application",
+                "context.{} is read by the adapter itself (the caller's \
+                 application, the obligations the PEP can carry out, or an \
+                 access request's approval), never sent to the policy as a \
+                 property",
                 segments[0]
             ),
         });
