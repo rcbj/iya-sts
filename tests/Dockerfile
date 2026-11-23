@@ -111,6 +111,11 @@
 #                        of tests/protocol/sts_uma.js (#1196): a thin command
 #                        line over it, tests/tools/keycloak-uma-driver, built
 #                        in the `uma-java` stage exactly as jscep's is.
+#   wss4j-ws-security-dom 4.0.3  Apache-2.0. Apache WSS4J's DOM
+#                        WS-Security engine, the independent peer a WS-Trust
+#                        message this service signs or encrypts is held to
+#                        (#1917, #1918): tests/tools/wss4j-driver, built in
+#                        the `wss4j-java` stage exactly as jscep's is.
 #
 # NOTHING OF THEIRS IS VENDORED: each is fetched from its publisher at build
 # time, each archive is held to a sha256 here, and a GitHub archive of a
@@ -275,6 +280,13 @@ FROM maven:3.9.16-eclipse-temurin-21-noble AS uma-java
 COPY tests/tools/keycloak-uma-driver /usr/src/keycloak-uma-driver
 RUN /usr/src/keycloak-uma-driver/build.sh /usr/src/keycloak-uma-driver \
       /out/keycloak-uma
+
+# APACHE WSS4J, THROUGH ITS DRIVER (#1917, #1918): see the header and
+# tests/tools/wss4j-driver/build.sh — jscep's arrangement, a stage of its
+# own so that neither rebuilds the other.
+FROM maven:3.9.16-eclipse-temurin-21-noble AS wss4j-java
+COPY tests/tools/wss4j-driver /usr/src/wss4j-driver
+RUN /usr/src/wss4j-driver/build.sh /usr/src/wss4j-driver /out/wss4j
 
 # THE SECOND SCIM HARNESS, COMPILED IN A STAGE OF ITS OWN (#206).
 # scim2/test-suite is Go, and a Go toolchain in the runner image would be
@@ -689,6 +701,10 @@ COPY --from=uma-java /out/keycloak-uma /opt/uma-clients/keycloak
 RUN ln -s /opt/uma-clients/keycloak/keycloak-uma-driver \
       /usr/local/bin/keycloak-uma-driver \
  && (keycloak-uma-driver 2>&1 | head -1)
+# Apache WSS4J (#1917, #1918): its driver, runtime and licences.
+COPY --from=wss4j-java /out/wss4j /opt/wss-clients/wss4j
+RUN ln -s /opt/wss-clients/wss4j/wss4j-driver /usr/local/bin/wss4j-driver \
+ && (wss4j-driver 2>&1 | head -1)
 
 # The repository. The root .dockerignore decides what is in it — see the header
 # — and the guard is what a context missing the suite says instead of failing

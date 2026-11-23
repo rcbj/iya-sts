@@ -1327,6 +1327,30 @@
     "en": "0462e40dda10b491",
     "text": "EIN XPATH-AUSDRUCK, DER DAS ZERTIFIKATELEMENT AUSWÄHLT, AN DAS EINE WS-TRUST-ANTWORT VERSCHLÜSSELT WIRD: ein ds:X509Certificate oder ein BinarySecurityToken, dessen ValueType auf #X509v3 endet. Dieselbe Teilmenge wie die Elementzuordnungen. Ist er gesetzt und wählt nichts aus, oder wählt er ein Element, das keines dieser beiden ist, gibt es keinen Empfänger, und die nächste Quelle wird nicht versucht. Ein ausgewähltes Zertifikatelement, dessen Text kein Zertifikat ist, ist ein Fehler der abgeschlossenen Verschlüsselung, und die nächste Quelle wird nicht versucht. Ist er nicht gesetzt, ist der Empfänger das erste Zertifikatelement des Signierers, das die WS-Security-Signatur der Anfrage nennt — das BinarySecurityToken, auf das die Referenz dieser Signatur zeigt, oder ein ds:X509Certificate im KeyInfo dieser Signatur. Ein Thumbprint, ein Subject Key Identifier oder ein Aussteller und eine Seriennummer ist kein Zertifikatelement."
   },
+  "applications.schema.attributes.wstrustSignRequest.what": {
+    "en": "c6e7e2b383b3c121",
+    "text": "TRUE oder FALSE: verlangen, dass eine Anfrage, deren AppliesTo diese Anwendung ist, eine WS-Security-Nachrichtensignatur trägt; ersetzt wstrust.signRequest. An, ist eine Anfrage ohne akzeptierte Signatur ein FailedCheck, und jedes Element, das wstrustSignRequestElements auswählt, muss von dieser Signatur abgedeckt sein. Der Entwicklungsmodus glaubt einer Signatur, wie er es immer getan hat, und misst die Zuordnung dennoch an dem, was diese Signatur referenziert."
+  },
+  "applications.schema.attributes.wstrustSignRequestElements.what": {
+    "en": "e532921147503182",
+    "text": "DIE ELEMENTE EINER WS-TRUST-ANFRAGE, DIE SIGNIERT SEIN MÜSSEN, je ein Ausdruck in XPath 1.0, in der Teilmenge von wstrustEncryptRequestElements. Jeder Ausdruck muss mindestens ein Element auswählen, und jedes Element, das er auswählt, muss eines sein, das die akzeptierte WS-Security-Signatur der Anfrage referenziert, oder in einem solchen liegen; andernfalls ist die Anfrage ein FailedCheck. Leer: der SOAP Body, den eine Signatur immer abdeckt. Wird nur gelesen, solange wstrustSignRequest (oder wstrust.signRequest) eingeschaltet ist."
+  },
+  "applications.schema.attributes.wstrustSignResponse.what": {
+    "en": "c3c370b774dafc63",
+    "text": "TRUE oder FALSE: eine WS-Trust-Antwort für diese Anwendung mit einer WS-Security-Nachrichtensignatur signieren; ersetzt wstrust.signResponse. Die Antwort trägt in ihrem wsse:Security-Header einen wsu:Timestamp und eine ds:Signature, erstellt mit dem XML-Signaturschlüssel dieses Vertrauensbereichs und mit Verweis auf dessen Zertifikat über ein BinarySecurityToken; die Signatur deckt den Timestamp und die Elemente von wstrustSignResponseElements ab. Ein Fehler wird unsigniert gesendet. Eingeschaltet, und die Signatur lässt sich nicht erstellen, ist die Anfrage in beiden Modi ein Fehler."
+  },
+  "applications.schema.attributes.wstrustSignResponseElements.what": {
+    "en": "ede8d6da5ff09808",
+    "text": "DIE ELEMENTE EINER WS-TRUST-ANTWORT, DIE IHRE SIGNATUR NEBEN DEM wsu:Timestamp ABDECKT, je ein Ausdruck in XPath 1.0, in der Teilmenge von wstrustEncryptResponseElements. Leer: der SOAP Body. Ein Element ohne wsu:Id erhält eine. Ein Ausdruck, der nichts trifft, oder einer, der den wsse:Security-Header selbst auswählt, ist ein Fehler."
+  },
+  "applications.schema.attributes.wstrustResponseProtectionOrder.what": {
+    "en": "ea20b5eba3587695",
+    "text": "Die Reihenfolge, in der eine WS-Trust-Antwort für diese Anwendung signiert und verschlüsselt wird, wenn beides eingeschaltet ist; ersetzt wstrust.responseProtectionOrder: sign-then-encrypt (die Digests der Signatur gelten dem Klartext, der Standard von WS-SecurityPolicy) oder encrypt-then-sign (sie gelten dem Geheimtext). Der wsse:Security-Header wird in der Reihenfolge geschrieben, in der ein Empfänger ihn verarbeitet."
+  },
+  "applications.schema.attributes.wstrustEncryptSignature.what": {
+    "en": "05bb26087cc96574",
+    "text": "TRUE oder FALSE: auch die ds:Signature einer WS-Trust-Antwort für diese Anwendung verschlüsseln (sp:EncryptSignature von WS-SecurityPolicy); ersetzt wstrust.encryptSignature. Wird nur gelesen, solange die Antwort sowohl signiert als auch verschlüsselt wird, zuerst signiert; die Signatur wird für den Empfänger der Antwort verschlüsselt."
+  },
   "applications.schema.attributes.wstrustDecryptionCertificate.what": {
     "en": "b00a63a9bafc49ad",
     "text": "DAS ZERTIFIKAT, AN DAS EINE WS-TRUST-ANFRAGE FÜR DIESE ANWENDUNG VERSCHLÜSSELT WIRD, PEM. Solange es gesetzt ist, wird eine Anfrage für diese Anwendung mit seinem privaten Schlüssel entschlüsselt und nicht mit dem des Realms, und eine an den Schlüssel des Realms verschlüsselte Anfrage für sie ist ein FailedCheck. Öffentlich: Die Anwendungsseite und GET /admin-api/applications geben es heraus."
