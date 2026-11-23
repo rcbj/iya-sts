@@ -614,3 +614,114 @@ test().then(function () {
   log.error(e.stack || e.message);
   process.exit(1);
 });
+
+// ---------------------------------------------------------------------------
+// THE #1955 REVIEW (PR #1996), APPENDED: A DISABLED ACCOUNT'S OTP. The job
+// above is untouched; this section runs beside it in a realm of its own
+// (its settings are that realm's, so the two cannot see each other's), and
+// the process waits for it before it exits:
+//   e. an OTP of a person whose account is then disabled is BAD_OTP,
+//      signed, with no error code (rule 3at); enabled again, the next OTP
+//      is OK.
+// ---------------------------------------------------------------------------
+
+const D_REALM = ("y5d" + STAMP).slice(0, 31);
+const D_PERSON = ("otd" + STAMP).slice(0, 24);
+
+function disabledPath(path) {
+  log.debug("Entering disabledPath().");
+  log.debug("Leaving disabledPath().");
+  return "/realm/" + D_REALM + path;
+}
+
+async function mustAnswer(method, path, json, what) {
+  log.debug("Entering mustAnswer(). " + what);
+  const res = await send(method, path, { json: json });
+  assert.ok(res.status >= 200 && res.status < 300 && res.json &&
+            res.json.ok !== false,
+            what + ": " + res.status + " " + String(res.raw).slice(0, 300));
+  log.debug("Leaving mustAnswer().");
+  return res;
+}
+
+async function disabledTest() {
+  log.debug("Entering disabledTest().");
+  log.info("a disabled account's OTP at " + base + "/realm/" + D_REALM);
+  await mustAnswer("POST", "/admin-api/realms/create", { id: D_REALM,
+    domain: D_REALM + ".example.net", name: "YK-VAL review " + D_REALM },
+    "the realm " + D_REALM + " could not be created");
+  const flags = {};
+  SETTINGS.forEach(function (key) {
+    flags[key] = true;
+  });
+  await mustAnswer("POST", disabledPath("/admin-api/config/set-many"), flags,
+                   "the YubiKey OTP settings could not be turned on");
+  const got = await send("GET", disabledPath("/admin-api/policies"));
+  const defaults = got.json && got.json.authn && got.json.authn.defaults;
+  assert.ok(defaults, "the policies answer had no defaults");
+  await mustAnswer("POST", disabledPath("/admin-api/policies/" +
+    "save-authn-policy"), Object.assign({ profile: "default" }, defaults,
+    { yubicoOtpSecondFactor: true }), "the yubico-otp row stayed off");
+  const secret = makeSecret("Y5D-" + STAMP);
+  await mustAnswer("POST", disabledPath(OPERATION + "/import-yubiotp"),
+    { csv: "serial,public id,private id,aes key\n" +
+      [secret.serial, secret.publicId, secret.p, secret.k].join(",") },
+    "the CSV was not imported");
+  await mustAnswer("POST", disabledPath("/admin-api/users/create"), {
+    username: D_PERSON, invent: false, credential: "password",
+    password: PASSWORD,
+    attributes: { cn: "Yubi " + D_PERSON, sn: D_PERSON, givenName: "Yubi",
+                  mail: D_PERSON + "@" + D_REALM + ".example.net" } },
+    "the person was not created");
+  await mustAnswer("POST", disabledPath(OPERATION + "/assign-yubiotp"),
+    { serial: secret.serial, username: D_PERSON, otp: otpFor(secret, 1, 1) },
+    "the token was not assigned");
+  const id = clientId();
+  const added = await mustAnswer("POST",
+    disabledPath(OPERATION + "/ykval-client-add"), { id: id },
+    "the YK-VAL client was not added");
+  const key = added.json.key;
+  const ask = async function (use) {
+    log.debug("Entering disabledTest() ask().");
+    const params = { id: id, otp: otpFor(secret, use, 1), nonce: nonce() };
+    params.h = sign(key, params);
+    const qs = querystring.stringify(params);
+    log.debug("Leaving disabledTest() ask().");
+    return send("GET", disabledPath("/wsapi/2.0/verify?" + qs),
+                { accept: "text/plain" });
+  };
+  await mustAnswer("POST", disabledPath("/admin-api/users/disable"),
+                   { user: D_PERSON, reason: "review" },
+                   "the person was not disabled");
+  const locked = await ask(2);
+  await mustAnswer("POST", disabledPath("/admin-api/users/enable"),
+                   { user: D_PERSON }, "the person was not enabled again");
+  const open = await ask(3);
+  check("e. a disabled account's OTP is BAD_OTP, signed and code-free, " +
+        "and once enabled again the next OTP is OK", function () {
+    const fields = assertAnswer(locked, "BAD_OTP");
+    assert.strictEqual(fields.h, sign(key, fields));
+    const after = assertAnswer(open, "OK");
+    assert.strictEqual(after.h, sign(key, after));
+  });
+  if (process.env.STS_TEST_REMOVE_REALMS === "1") {
+    await send("POST", "/admin-api/realms/remove", { json: { id: D_REALM } });
+  }
+  log.debug("Leaving disabledTest().");
+}
+
+// THE PROCESS WAITS FOR THIS SECTION: the job above ends with
+// process.exit(), which would cut it short, so its exit is held until the
+// section settles, and a failure here turns a success into exit code 1.
+const disabledDone = disabledTest().then(function () {
+  return 0;
+}, function (e) {
+  log.error("FAILED in the #1955 review section: " + (e.stack || e.message));
+  return 1;
+});
+const exitAfterReview = process.exit.bind(process);
+process.exit = function (code) {
+  disabledDone.then(function (mine) {
+    exitAfterReview(Number(code) || mine);
+  });
+};
