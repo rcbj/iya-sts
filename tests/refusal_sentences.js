@@ -234,8 +234,9 @@ async function run(t) {
           'literal', problems.slice(0, 40).join('\n'));
 
   // E.
-  const named = new RegExp('(?:\\bt\\.(?:html|text)|\\bSentence\\.say|' +
-    '\\.refusal)\\(\\s*\'refusals\\.([a-zA-Z0-9_.-]+)\'', 'g');
+  // Any literal `'refusals.…'`: a key is named by `Sentence.say(`, a
+  // runtime's `refusal(` and a message object's `key:` alike.
+  const named = /'refusals\.([a-zA-Z0-9_.-]+)'/g;
   const used = {};
   sourceFiles().forEach(function (file) {
     const body = fs.readFileSync(file, 'utf8');

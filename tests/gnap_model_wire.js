@@ -663,8 +663,10 @@ function firstDifference(a, b, where) {
     }
   }
   log.debug("Leaving firstDifference().");
-  return where + ': ' + JSON.stringify(b).slice(0, 300) + ' where ' +
-    JSON.stringify(a).slice(0, 300) + ' was recorded';
+  // `String()`: a member on one side only is `undefined` on the other,
+  // which `JSON.stringify()` answers with no string at all.
+  return where + ': ' + String(JSON.stringify(b)).slice(0, 300) +
+    ' where ' + String(JSON.stringify(a)).slice(0, 300) + ' was recorded';
 }
 
 function run(t) {
