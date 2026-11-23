@@ -1327,6 +1327,30 @@
     "en": "0462e40dda10b491",
     "text": "UNA EXPRESIÓN XPATH QUE SELECCIONA EL ELEMENTO DE CERTIFICADO PARA EL QUE SE CIFRA UNA RESPUESTA WS-TRUST: un ds:X509Certificate o un BinarySecurityToken cuyo ValueType termina en #X509v3. El mismo subconjunto que los mapas de elementos. Cuando está definida y no selecciona nada, o selecciona un elemento que no es uno de esos dos, no hay destinatario y no se prueba la fuente siguiente. Un elemento de certificado seleccionado cuyo texto no es un certificado es una falta de cifrado completado, y no se prueba la fuente siguiente. Cuando no está definida, el destinatario es el primer elemento de certificado del firmante que nombra la firma WS-Security de la solicitud — el BinarySecurityToken al que apunta la referencia de esa firma, o un ds:X509Certificate en el KeyInfo de esa firma. Una huella, un Subject Key Identifier o un emisor y un número de serie no es un elemento de certificado."
   },
+  "applications.schema.attributes.wstrustSignRequest.what": {
+    "en": "c6e7e2b383b3c121",
+    "text": "TRUE o FALSE: exigir que una solicitud cuyo AppliesTo es esta aplicación lleve una firma de mensaje WS-Security, reemplazando wstrust.signRequest. Activado, una solicitud sin una firma aceptada es un FailedCheck, y cada elemento que selecciona wstrustSignRequestElements debe estar cubierto por esa firma. El modo de desarrollo cree una firma, como siempre ha hecho, y aun así contrasta el mapa con lo que esa firma referencia."
+  },
+  "applications.schema.attributes.wstrustSignRequestElements.what": {
+    "en": "e532921147503182",
+    "text": "LOS ELEMENTOS DE UNA SOLICITUD WS-TRUST QUE DEBEN ESTAR FIRMADOS, una expresión XPath 1.0 cada uno, en el subconjunto de wstrustEncryptRequestElements. Cada expresión debe seleccionar al menos un elemento, y cada elemento que selecciona debe ser uno que la firma WS-Security aceptada de la solicitud referencia, o estar dentro de uno; si no, la solicitud es un FailedCheck. Vacío, el SOAP Body, que una firma siempre cubre. Solo se lee mientras wstrustSignRequest (o wstrust.signRequest) está activado."
+  },
+  "applications.schema.attributes.wstrustSignResponse.what": {
+    "en": "c3c370b774dafc63",
+    "text": "TRUE o FALSE: firmar una respuesta WS-Trust para esta aplicación con una firma de mensaje WS-Security, prevaleciendo sobre wstrust.signResponse. La respuesta lleva un wsu:Timestamp y una ds:Signature en su cabecera wsse:Security, hecha con la clave de firma XML de este dominio y que referencia su certificado mediante un BinarySecurityToken; la firma cubre el Timestamp y los elementos de wstrustSignResponseElements. Una falta se envía sin firmar. Activado, y si la firma no puede hacerse, la solicitud es una falta en ambos modos."
+  },
+  "applications.schema.attributes.wstrustSignResponseElements.what": {
+    "en": "ede8d6da5ff09808",
+    "text": "LOS ELEMENTOS DE UNA RESPUESTA WS-TRUST QUE CUBRE SU FIRMA además del wsu:Timestamp, una expresión XPath 1.0 cada uno, en el subconjunto de wstrustEncryptResponseElements. Vacío, el SOAP Body. A un elemento sin wsu:Id se le asigna uno. Una expresión que no coincide con nada, o una que selecciona la propia cabecera wsse:Security, es una falta."
+  },
+  "applications.schema.attributes.wstrustResponseProtectionOrder.what": {
+    "en": "ea20b5eba3587695",
+    "text": "El orden en que se firma y se cifra una respuesta WS-Trust para esta aplicación cuando ambos están activados, prevaleciendo sobre wstrust.responseProtectionOrder: sign-then-encrypt (los resúmenes de la firma son del texto en claro, el valor predeterminado de WS-SecurityPolicy) o encrypt-then-sign (son del texto cifrado). La cabecera wsse:Security se escribe en el orden en que un receptor la procesa."
+  },
+  "applications.schema.attributes.wstrustEncryptSignature.what": {
+    "en": "05bb26087cc96574",
+    "text": "TRUE o FALSE: cifrar también la ds:Signature de una respuesta WS-Trust para esta aplicación (sp:EncryptSignature de WS-SecurityPolicy), prevaleciendo sobre wstrust.encryptSignature. Solo se lee mientras la respuesta está firmada y cifrada a la vez, firmada primero; la firma se cifra para el destinatario de la respuesta."
+  },
   "applications.schema.attributes.wstrustDecryptionCertificate.what": {
     "en": "b00a63a9bafc49ad",
     "text": "EL CERTIFICADO AL QUE SE CIFRA UNA SOLICITUD WS-TRUST PARA ESTA APLICACIÓN, PEM. Mientras está definido, una solicitud para esta aplicación se descifra con su clave privada y no con la del dominio, y una solicitud para ella cifrada a la clave del dominio es un FailedCheck. Público: la página de la aplicación y GET /admin-api/applications lo entregan."

@@ -5983,6 +5983,38 @@
     "en": "ffc141f1ac37ec59",
     "text": "WS-Trust 回應的一次性內容金鑰如何封裝到接收方的 RSA 公開金鑰。`rsa-oaep` 是 XML Encryption 1.1 的 RSA-OAEP，使用 SHA-256 與 MGF1-SHA-256；`rsa-oaep-mgf1p` 是基於 SHA-1 的 OAEP。憑證為 EC 的接收方無論此項如何設定，都透過 ECDH-ES 金鑰協議加密。應用程式的 wstrustKeyTransportAlgorithm 覆蓋此項。`rsa-1_5` 是 RSAES-PKCS1-v1_5，已經破損，之所以提供是因為已部署的請求方可能不接受其他演算法。警告：rsa-1_5 僅用於開發模式——在產品模式中，讀取此項以及應用程式的 wstrustKeyTransportAlgorithm 時會忽略它（改用 rsa-oaep-mgf1p，記錄一次，STS-CORE-0106），並且拒絕設定它（STS-CORE-0103、STS-REG-0193）。wst:EncryptWith 元素僅在回應加密開啟時可以點名此演算法。"
   },
+  "wstrust.signRequest|label": {
+    "en": "ee6db27fb290a51c",
+    "text": "要求請求已簽章"
+  },
+  "wstrust.signRequest|description": {
+    "en": "3155eaca9d1a8680",
+    "text": "AppliesTo 未點名自身應用程式的 RequestSecurityToken 是否必須攜帶 WS-Security 訊息簽章。對於 AppliesTo 點名某應用程式的請求，該應用程式的 wstrustSignRequest 覆蓋此設定，其 wstrustSignRequestElements 點名簽章除 SOAP Body 之外還必須涵蓋的內容。開啟時，沒有被接受簽章的請求，或其簽章未涵蓋某個被點名元素的請求，為 wsse:FailedCheck。開發模式一如既往地相信簽章。"
+  },
+  "wstrust.signResponse|label": {
+    "en": "9eb9dbebd82abfea",
+    "text": "為回應簽章"
+  },
+  "wstrust.signResponse|description": {
+    "en": "3a78c4fc80cc38a7",
+    "text": "RequestSecurityTokenResponse 是否攜帶 wsu:Timestamp 以及涵蓋它與 SOAP Body 的 WS-Security 訊息簽章，該簽章以此領域的 XML 簽章金鑰產生，並在 BinarySecurityToken 中指名其憑證。應用程式的 wstrustSignResponse 覆蓋此項，其 wstrustSignResponseElements 點名簽章代替 Body 所涵蓋的內容。故障以未簽章形式傳送。此項開啟時，WSDL 的繫結攜帶 sp:IncludeTimestamp。開啟時，若無法產生簽章，該請求在兩種模式下都是故障。"
+  },
+  "wstrust.responseProtectionOrder|label": {
+    "en": "55a63069d07b808c",
+    "text": "回應保護順序"
+  },
+  "wstrust.responseProtectionOrder|description": {
+    "en": "0c8e29e5ac06276d",
+    "text": "兩者都開啟時，WS-Trust 回應簽章與加密的順序。`sign-then-encrypt` 對明文簽章，是 WS-SecurityPolicy 的預設；`encrypt-then-sign` 對密文簽章，此時 WSDL 的繫結攜帶 sp:EncryptBeforeSigning。wsse:Security 標頭依接收方處理它的順序寫入。應用程式的 wstrustResponseProtectionOrder 覆蓋此項。"
+  },
+  "wstrust.encryptSignature|label": {
+    "en": "98953d7bb9c3dc42",
+    "text": "加密回應的簽章"
+  },
+  "wstrust.encryptSignature|description": {
+    "en": "32f9389b65f0eb67",
+    "text": "WS-Trust 回應的 ds:Signature 是否也被加密（WS-SecurityPolicy 的 sp:EncryptSignature），加密給回應的接收方。僅在回應先簽章後加密時讀取。此項開啟時，WSDL 的繫結攜帶 sp:EncryptSignature。應用程式的 wstrustEncryptSignature 覆蓋此項。"
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "由身分識別提供者發起的登入"

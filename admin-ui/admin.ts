@@ -4587,6 +4587,21 @@ class AdminConsole {
       '.fg-protos{display:flex;flex-wrap:wrap;gap:.3em 1em;margin:.4em 0 1em}' +
       '.fg-proto{font-weight:400;white-space:nowrap}' +
       '.fg-view{align-items:center;gap:.8em}' +
+      // THE WS-TRUST XPATH BUILDER (#1917, `web_wstrust_protection.ts`): the
+      // sample's element tree as nested lists of names, the elements the
+      // expression matches marked in amber and the one clicked outlined, so
+      // a match is never told by colour alone.
+      '.wsp-presets td{vertical-align:middle}' +
+      '.wsp-sample{width:100%;font-family:monospace;font-size:.85em}' +
+      '.wsp-tree{max-height:28em;overflow:auto;margin:.4em 0}' +
+      '.wsp-tree ul{list-style:none;margin:0;padding-left:1.2em}' +
+      '.wsp-tree ul.wsp-root{padding-left:0}' +
+      '.wsp-el{font-family:monospace;font-size:.85em;padding:.05em .4em;' +
+      'margin:.1em 0}' +
+      '.wsp-el.wsp-match{background:#fff8c5;border-color:#9a6700}' +
+      '.wsp-el.wsp-match::after{content:" \\2713"}' +
+      '.wsp-el.wsp-chosen{outline:2px solid #0969da}' +
+      '.wsp-expression{width:100%;font-family:monospace}' +
       // A SUB-TAB'S SIMPLE / ADVANCED SWITCH (#500, `WebKit.viewSwitch()`):
       // while Simplified is ticked the form's advanced cells, and a headed
       // section holding only those, are not drawn; they stay in the form,

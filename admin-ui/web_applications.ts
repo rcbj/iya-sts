@@ -25,6 +25,7 @@ import SettingsForms = require('./web_settings');
 import GroupsPage = require('./web_groups');
 import AuditPage = require('./web_audit');
 import DocLinks = require('../common/web_doc_links');
+import WsTrustProtection = require('./web_wstrust_protection');
 
 type Json = any;
 
@@ -2023,6 +2024,13 @@ class ApplicationsPage {
           ? kit.note(t.html(
               'consoleApplications.a2.primaryNameFolded'))
           : '') +
+        // MESSAGE PROTECTION (#1917): the eight Body / Header boxes, inside
+        // this form so the one Save stores the maps they rewrite. They post
+        // nothing themselves (`web_wstrust_protection.ts`).
+        (group.id === 'wstrust'
+          ? WsTrustProtection.frame(values, drawn,
+                                    '/admin/applications/edit', t)
+          : '') +
         kit.fieldGridOf(drawn, config.groups, values,
                            { redraw: '/admin/applications/edit',
                              showSet: true, protocols: config.protocols,
@@ -2159,12 +2167,19 @@ class ApplicationsPage {
         ? ''
         : DocLinks.consoleHtml(
             DocLinks.forConsoleTab('cfg-' + group.id), t);
+      // THE XPATH BUILDER (#1917), under the WS-Trust form whose five XPath
+      // fields it adds to. Outside the form, and it posts nothing anyway.
+      const xpathBuilder = group.id === 'wstrust'
+        ? WsTrustProtection.builder(drawn.map(function (one) {
+            return one.attribute;
+          }), t)
+        : '';
       return '<div class="subpanel" id="cfg-' + kit.esc(group.id) + '">' +
         cfgDocs +
         launchCard + observedFlows +
         (group.id === 'saml' ? samlPanels :
           (fieldsFirst ? fieldForm + sections : sections + fieldForm)) +
-        passkeyCard + '</div>';
+        xpathBuilder + passkeyCard + '</div>';
     }).join('');
     const bar = '<nav class="tabbar subbar" aria-label="' +
       t.html('consoleApplications.a2.tabConfig') + '">' +

@@ -13366,6 +13366,36 @@ const CODES = [
       'issued (#1668).',
     spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
       'section 12' },
+  { code: 'STS-WSTRUST-0084',
+    summary: 'A WS-Trust request for an application that requires a ' +
+      'signed request (wstrustSignRequest, or wstrust.signRequest) ' +
+      'carried no WS-Security message signature this service accepted. ' +
+      'Nothing is issued (#1917).',
+    spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
+      'section 12' },
+  { code: 'STS-WSTRUST-0085',
+    summary: 'A WS-Trust request did not match its application\'s ' +
+      'wstrustSignRequestElements: an expression selected nothing, or ' +
+      'selected an element the accepted signature does not reference. ' +
+      'Nothing is issued (#1917).',
+    spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
+      'section 12' },
+  { code: 'STS-WSTRUST-0086',
+    summary: 'A WS-Trust response could not be signed while response ' +
+      'signing is on (wstrustSignResponse, or wstrust.signResponse): ' +
+      'an expression of wstrustSignResponseElements matched nothing or ' +
+      'selected the wsse:Security header itself, the realm\'s XML ' +
+      'signing key has no certificate to reference, or the signature ' +
+      'failed. The token is not sent (#1917, #1918).',
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
+  { code: 'STS-WSTRUST-0087',
+    summary: 'A WS-Trust request\'s signing map (wstrustSignRequestElements) ' +
+      'selected more than 256 elements of it. Nothing is issued: the map ' +
+      'is held to a bound, because each selected element is a walk of ' +
+      'the request (#1917).',
+    spec: 'SOAP Fault wsse:FailedCheck (HTTP 500), WS-Security 1.1 ' +
+      'section 12' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +

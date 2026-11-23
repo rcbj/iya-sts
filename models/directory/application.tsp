@@ -2591,6 +2591,64 @@ model Application {
     what: "AN XPATH EXPRESSION SELECTING THE CERTIFICATE ELEMENT A WS-TRUST RESPONSE IS ENCRYPTED TO: a ds:X509Certificate or a BinarySecurityToken whose ValueType ends in #X509v3. The same subset as the element maps. When it is set and it selects nothing, or it selects an element that is not one of those two, there is no recipient and the next source is not tried. A selected certificate element whose text is not a certificate is a completed-encryption fault, and the next source is not tried. When it is unset the recipient is the first signer certificate element the request's WS-Security signature names — the BinarySecurityToken that signature's reference points at, or a ds:X509Certificate in that signature's KeyInfo. A thumbprint, a Subject Key Identifier or an issuer and serial is not a certificate element."
   })
   wstrustResponseRecipientXPath?: string;
+  // WS-SECURITY MESSAGE INTEGRITY, PER APPLICATION (#1917, with #1918's
+  // response signing). The switches override the service-wide settings;
+  // the maps are this application's alone, in the XPath subset of the
+  // encryption maps. The console's Body and Header checkboxes write fixed
+  // expressions into these maps and the encryption ones, and store nothing
+  // of their own.
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    from: "by hand",
+    families: #["wstrust"],
+    overrides: "wstrust.signRequest",
+    what: "TRUE or FALSE: require a request whose AppliesTo is this application to carry a WS-Security message signature, overriding wstrust.signRequest. On, a request with no accepted signature is a FailedCheck, and every element wstrustSignRequestElements selects must be covered by that signature. Development believes a signature, as it always has, and still holds the map to what that signature references."
+  })
+  wstrustSignRequest?: string;
+  @attr(#{
+    editable: "multi",
+    kind: "multi",
+    from: "by hand",
+    families: #["wstrust"],
+    what: "THE ELEMENTS OF A WS-TRUST REQUEST THAT MUST BE SIGNED, one XPath 1.0 expression each, in the subset of wstrustEncryptRequestElements. Each expression must select at least one element, and every element it selects must be one the request's accepted WS-Security signature references, or inside one; otherwise the request is a FailedCheck. Empty, the SOAP Body, which a signature always covers. Read only while wstrustSignRequest (or wstrust.signRequest) is on."
+  })
+  wstrustSignRequestElements?: string[];
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    from: "by hand",
+    families: #["wstrust"],
+    overrides: "wstrust.signResponse",
+    what: "TRUE or FALSE: sign a WS-Trust response for this application with a WS-Security message signature, overriding wstrust.signResponse. The response carries a wsu:Timestamp and a ds:Signature in its wsse:Security header, made with this realm's XML signing key and referencing its certificate through a BinarySecurityToken; the signature covers the Timestamp and the elements of wstrustSignResponseElements. A fault is sent unsigned. On, and the signature cannot be made, the request is a fault in both modes."
+  })
+  wstrustSignResponse?: string;
+  @attr(#{
+    editable: "multi",
+    kind: "multi",
+    from: "by hand",
+    families: #["wstrust"],
+    what: "THE ELEMENTS OF A WS-TRUST RESPONSE ITS SIGNATURE COVERS beside the wsu:Timestamp, one XPath 1.0 expression each, in the subset of wstrustEncryptResponseElements. Empty, the SOAP Body. An element with no wsu:Id is given one. An expression that matches nothing, or one that selects the wsse:Security header itself, is a fault."
+  })
+  wstrustSignResponseElements?: string[];
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    from: "by hand",
+    families: #["wstrust"],
+    overrides: "wstrust.responseProtectionOrder",
+    what: "The order a WS-Trust response for this application is signed and encrypted in while both are on, overriding wstrust.responseProtectionOrder: sign-then-encrypt (the signature's digests are of the plaintext, WS-SecurityPolicy's default) or encrypt-then-sign (they are of the ciphertext). The wsse:Security header is written in the order a receiver processes it."
+  })
+  wstrustResponseProtectionOrder?: string;
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    from: "by hand",
+    families: #["wstrust"],
+    overrides: "wstrust.encryptSignature",
+    what: "TRUE or FALSE: encrypt the ds:Signature of a WS-Trust response for this application as well (WS-SecurityPolicy's sp:EncryptSignature), overriding wstrust.encryptSignature. Read only while the response is both signed and encrypted, signed first; the signature is encrypted to the response's recipient."
+  })
+  wstrustEncryptSignature?: string;
   // THE APPLICATION'S OWN DECRYPTION KEY PAIR (#1668, rcbj's request of
   // 2026-11-19): what a request for this application may be encrypted TO,
   // in place of the realm's XML Encryption certificate. Written only by
