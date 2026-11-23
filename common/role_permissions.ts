@@ -871,16 +871,20 @@ class RolePermissions {
     }
     const ctx = context || {};
     // THE SESSION'S CHOSEN DYNAMIC ROLES (#1072), for the client the token
-    // is issued to: `context.sessionId`, where the issuance has a session.
+    // is issued to and nothing else — the application its sign-in was for,
+    // as `admin_stats.js`'s resolvedRoleClaims() reads it: never the
+    // resource the token is for. `context.sessionId`, where the issuance
+    // has a session; the client_id itself where no entry registers it.
     let clientApp = '';
     if (ctx.sessionId && ctx.clientId) {
       try {
         const found = this.deps.applications.forClientId(String(ctx.clientId));
-        clientApp = found && found.identifier ? String(found.identifier) : '';
+        clientApp = found && found.identifier ? String(found.identifier)
+                                              : String(ctx.clientId);
       } catch (e) {
         log.debug("Caught in RolePermissions.narrowScope(): " +
                   ((e && e.message) || e));
-        clientApp = '';
+        clientApp = String(ctx.clientId);
       }
     }
     const held = this.heldRoles(ctx.sessionId

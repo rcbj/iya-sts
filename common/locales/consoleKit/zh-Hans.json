@@ -97,6 +97,7 @@
   "create.requiredFields": "必填：{list}。每项都以红色框出并标有 *；其他字段均为可选。",
   "create.nothingRequired": "此表单没有必填项。",
   "create.requiredWhen": " &middot; 当 {field} 为 {values} 时必填",
+  "create.requiredWhenFilled": " &middot; 当填写了 {field} 时必填",
   "create.yes": "是",
   "create.no": "否"
 }

@@ -32,8 +32,9 @@
 //      the name and every field the save refuses without, while a field the
 //      save keeps the value in force for (`hashAlgorithm`) is optional — and
 //      the save agrees: refused without a required field, saved without the
-//      optional one, and refused with no name at all ("A name is required.")
-//      without writing the default.
+//      optional one, and refused with a name given empty or a new policy
+//      with none ("A name is required.") without writing the default; a
+//      save that leaves the name out edits the default, as in 1.0.0.
 //   E. The drawn pages: a required field is outlined, starred and says
 //      "required" (`fg-required`), an optional one is not, and the HTML
 //      `required` attribute is on exactly the required fields. A field
@@ -481,9 +482,10 @@ async function namedPolicy(t) {
   const unnamed = await Promise.resolve(adminActions.policiesAction({
     action: 'save-password-policy', newProfile: '1', profile: '   '
   }, CTX));
-  const omitted = await Promise.resolve(adminActions.policiesAction({
-    action: 'save-password-policy', minLength: 21
-  }, CTX));
+  const unnamedNew = await Promise.resolve(adminActions.policiesAction(
+    Object.assign({}, passwordPolicy.DEFAULTS, {
+      action: 'save-password-policy', newProfile: '1', minLength: 23 }),
+    CTX));
   const spaces = await Promise.resolve(adminActions.policiesAction({
     action: 'save-password-policy', profile: '   ', minLength: 22
   }, CTX));
@@ -495,24 +497,36 @@ async function namedPolicy(t) {
     return !!answer && answer.ok === false &&
       (answer.errors || []).indexOf('A name is required.') >= 0;
   };
-  t.check(saysName(unnamed) && saysName(omitted) && saysName(spaces) &&
+  t.check(saysName(unnamed) && saysName(unnamedNew) && saysName(spaces) &&
           saysName(nulled) &&
           afterBlank.minLength === beforeDefault.minLength &&
           afterBlank.stored === beforeDefault.stored,
-          'D5. a save with no name is refused and the default is unchanged',
+          'D5. a name given empty or null, and a new policy with none, are ' +
+          'refused, and the default is unchanged',
           JSON.stringify({ unnamed: unnamed && unnamed.errors,
-                           omitted: omitted && omitted.errors,
+                           unnamedNew: unnamedNew && unnamedNew.errors,
                            spaces: spaces && spaces.errors,
                            nulled: nulled && nulled.errors,
                            before: beforeDefault.minLength,
                            after: afterBlank.minLength,
                            stored: afterBlank.stored }));
+  // BACKWARDS COMPATIBLE (rcbj's directive since 1.0.0): a save that leaves
+  // `profile` out edits the default, as a 1.0.0 caller expects.
+  const omitted = await Promise.resolve(adminActions.policiesAction(
+    Object.assign({}, passwordPolicy.DEFAULTS, {
+      action: 'save-password-policy', minLength: 14 }), CTX));
+  const wroteOmitted = passwordPolicy.read('default');
+  t.check(!!(omitted && omitted.ok) && wroteOmitted.name === 'default' &&
+          wroteOmitted.minLength === 14,
+          'D5a. a save with profile left out still saves the default',
+          JSON.stringify(omitted && omitted.errors));
   const trimmed = await Promise.resolve(adminActions.policiesAction(
     Object.assign({}, passwordPolicy.DEFAULTS, {
       action: 'save-password-policy', profile: ' default ' }), CTX));
   const wrote = passwordPolicy.read('default');
   t.check(!!(trimmed && trimmed.ok) && wrote.name === 'default' &&
-          wrote.stored === true,
+          wrote.stored === true && wrote.minLength ===
+            passwordPolicy.DEFAULTS.minLength,
           'D5b. a name that trims to default still saves the default',
           JSON.stringify(trimmed && trimmed.errors));
   const blankAuthn = await Promise.resolve(adminActions.policiesAction({
@@ -521,8 +535,13 @@ async function namedPolicy(t) {
   const missingAuthn = await Promise.resolve(adminActions.policiesAction({
     action: 'save-named-authn-policy'
   }, CTX));
-  t.check(saysName(blankAuthn) && saysName(missingAuthn),
-          'D5c. a named authentication policy with no name is refused',
+  const authnCode = function (answer) {
+    return !!answer && answer.ok === false &&
+      require('../common/error_codes').codeOf(answer) === 'STS-AUTHN-0532';
+  };
+  t.check(authnCode(blankAuthn) && authnCode(missingAuthn),
+          'D5c. a named authentication policy with no name is refused ' +
+          'with its own code, STS-AUTHN-0532, as it always was',
           JSON.stringify({ blank: blankAuthn && blankAuthn.errors,
                            missing: missingAuthn && missingAuthn.errors }));
   const malformed = await Promise.resolve(adminActions.policiesAction({
@@ -650,6 +669,152 @@ function drawn(t) {
   log.debug("Leaving drawn().");
 }
 
+// D8. EVERY KIND WITH NAMED POLICIES (#1132's follow-ups): a field New
+// policy marks required is one the kind's save refuses EMPTY, and a field
+// it leaves unmarked that a save must still send is one the save takes
+// empty — the passkey policy's sign-in hints and enterprise serial
+// attribute, the attribute policy's required attributes. Each save is a
+// named profile of its own, made from the default as it stands.
+async function everyPolicyKind(t) {
+  log.debug("Entering everyPolicyKind().");
+  const policyKinds = require('../admin-core/policy_kinds');
+  const answer = adminViews.newPolicyJson({});
+  let n = 0;
+  for (const listed of answer.kinds) {
+    if (listed.id === 'authn') {
+      continue;
+    }
+    const kind = policyKinds.list().filter(function (one) {
+      return one.id === listed.id;
+    })[0];
+    const module = kind.module;
+    const action = 'save-' + kind.id.replace(/[A-Z]/g, function (c) {
+      return '-' + c.toLowerCase();
+    }) + '-policy';
+    const known = policyKinds.forAction(action) ? action
+      : policyKinds.actions().filter(function (one) {
+        return policyKinds.forAction(one) &&
+               policyKinds.forAction(one).kind.id === kind.id &&
+               policyKinds.forAction(one).verb === 'save';
+      })[0];
+    const current = module.read(module.DEFAULT_PROFILE) || {};
+    const base = {};
+    (module.FIELDS || []).forEach(function (field) {
+      const value = current[field.key];
+      base[field.key] = Array.isArray(value) ? value.join(', ')
+        : value === undefined || value === null ? '' : String(value);
+    });
+    const fields = adminViews.newPolicyJson({ kind: kind.id }).createFields;
+    const optional = {};
+    (module.FIELDS || []).forEach(function (field) {
+      optional[field.key] = !!field.optional;
+    });
+    const save = function (body) {
+      log.debug("Entering save(). " + kind.id);
+      n += 1;
+      log.debug("Leaving save().");
+      return Promise.resolve(adminActions.policiesAction(Object.assign(
+        { action: known, profile: 'cf-' + kind.id.toLowerCase() + '-' +
+          RUN + '-' + n }, body), CTX));
+    };
+    const control = await save(base);
+    t.check(!!(control && control.ok),
+            'D8. (a control: a named ' + kind.id + ' policy saves from the ' +
+            'default as it stands)', JSON.stringify(control && control.errors));
+    if (!control || !control.ok) {
+      continue;
+    }
+    const wrong = [];
+    for (const one of fields) {
+      if (!Object.prototype.hasOwnProperty.call(base, one.name) ||
+          optional[one.name]) {
+        continue;
+      }
+      const emptied = Object.assign({}, base);
+      emptied[one.name] = '';
+      const result = await save(emptied);
+      const accepted = !!(result && result.ok);
+      if (one.required === accepted) {
+        wrong.push(one.name + (one.required ? ' (marked, saved empty)'
+                                            : ' (unmarked, refused empty)'));
+      }
+    }
+    t.check(wrong.length === 0,
+            'D8. ' + kind.id + ': a field is marked required exactly when ' +
+            'its save refuses it empty', wrong.join('; '));
+  }
+  const requiredOf = function (kindId) {
+    log.debug("Entering requiredOf(). " + kindId);
+    log.debug("Leaving requiredOf().");
+    return adminViews.newPolicyJson({ kind: kindId }).createFields
+      .filter(function (one) {
+        return one.required;
+      }).map(function (one) {
+        return one.name;
+      });
+  };
+  const passkey = requiredOf('passkey');
+  const attributes = requiredOf('attributes');
+  t.check(passkey.indexOf('signInHints') < 0 &&
+          passkey.indexOf('enterpriseSerialAttribute') < 0 &&
+          attributes.indexOf('requiredAttributes') < 0,
+          'D9. the passkey policy\'s sign-in hints and enterprise serial ' +
+          'attribute, and the attribute policy\'s required attributes, are ' +
+          'not marked required', JSON.stringify({ passkey: passkey,
+                                                  attributes: attributes }));
+  log.debug("Leaving everyPolicyKind().");
+}
+
+// E4. NEW USER'S SERVICE-ACCOUNT FIELDS (#1132's follow-ups): the owners
+// required while the box is ticked, the destination and the secret's name
+// each once the other holds anything — and the create agrees.
+async function serviceAccountFields(t) {
+  log.debug("Entering serviceAccountFields().");
+  const WebKit = require('../admin-ui/web_kit');
+  const served = adminViews.newUserJson({ query: {} }).createFields;
+  const rows = WebKit.createRows(served.filter(function (one) {
+    return ['owners', 'destination', 'secretName'].indexOf(one.name) >= 0;
+  }), {});
+  const cell = function (html, name) {
+    log.debug("Entering cell(). " + name);
+    const at = html.indexOf('id="fgc-new-' + name + '"');
+    log.debug("Leaving cell().");
+    return at < 0 ? '' : html.slice(at, html.indexOf('</div>', at));
+  };
+  const outlined = function (html, name) {
+    log.debug("Entering outlined(). " + name);
+    log.debug("Leaving outlined().");
+    return /class="fg-cell fg-required"/.test(cell(html, name));
+  };
+  const ticked = WebKit.createFields(rows, { serviceAccount: 'true' });
+  const unticked = WebKit.createFields(rows, {});
+  const half = WebKit.createFields(rows, { destination: 'cn=dest' });
+  t.check(outlined(ticked, 'owners') && !outlined(unticked, 'owners') &&
+          outlined(half, 'secretName') && !outlined(half, 'destination') &&
+          !outlined(unticked, 'secretName'),
+          'E4. the owners are outlined with the box ticked, and the ' +
+          'secret\'s name once a destination is given');
+  const fresh = 'cf-sa-' + RUN;
+  const owner = 'cf-sa-owner-' + RUN;
+  await Promise.resolve(adminActions.usersAction({
+    action: 'create', credential: 'none', username: owner }, CTX));
+  const noOwner = await Promise.resolve(adminActions.usersAction({
+    action: 'create', credential: 'none', username: fresh,
+    serviceAccount: 'true' }, CTX));
+  const halfDest = await Promise.resolve(adminActions.usersAction({
+    action: 'create', credential: 'none', username: fresh + '-b',
+    serviceAccount: 'true', owners: owner,
+    destination: 'cn=dest' }, CTX));
+  const codeOf = require('../common/error_codes').codeOf;
+  t.check(!!noOwner && noOwner.ok === false && !!halfDest &&
+          halfDest.ok === false && codeOf(halfDest) === 'STS-SVCACCT-0026',
+          'E4. and the create refuses a service account with no owner, and ' +
+          'half a destination', JSON.stringify({
+            noOwner: noOwner && noOwner.errors,
+            halfDest: halfDest && halfDest.errors }));
+  log.debug("Leaving serviceAccountFields().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const realm = realms.create({ id: 'cf-' + RUN,
@@ -660,7 +825,9 @@ async function run(t) {
       await requiredWhen(t);
       answersCarryTheTable(t);
       await namedPolicy(t);
+      await everyPolicyKind(t);
       policyNameBubble(t);
+      await serviceAccountFields(t);
       drawn(t);
     });
   } finally {

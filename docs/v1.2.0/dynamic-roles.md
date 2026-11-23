@@ -173,14 +173,36 @@ The new choice replaces the session's choice for that application only.
 A dynamic role is never assumed. Sign-ins and grants that cannot show the
 step never carry a dynamically selected role:
 
-- the password grant, token exchange, the JWT and SAML assertion grants,
-  device and CIBA flows;
+- the password grant, token exchange (Native SSO included), the JWT and SAML
+  assertion grants, the device grant and CIBA, and a refresh token that
+  descends from one of them;
 - WS-Trust, Kerberos and LDAP;
 - federated, wallet, SPNEGO and certificate sign-ins.
 
-Where a **required** role applies to the person, the federated, wallet,
-SPNEGO and certificate sign-ins are refused (`STS-XACML-0329`), with a
-message sending the person to the sign-in screen.
+Where the application would **require** a role of the person (a `required`
+role the person is eligible for, with the feature on for that application),
+each of them is refused, because the person cannot choose there:
+
+| Flow | Refusal |
+|---|---|
+| The password grant, token exchange, the JWT and SAML assertion grants, the device grant, CIBA | `access_denied` at the token endpoint (`STS-XACML-0332`) |
+| WS-Trust | `wst:RequestFailed` (`STS-XACML-0332`) |
+| Kerberos: a service ticket, or a ticket-granting ticket | `KDC_ERR_POLICY` (`STS-XACML-0332`) |
+| An LDAP simple or SASL EXTERNAL bind | `unwillingToPerform` (`STS-XACML-0332`) |
+| Federated, wallet, SPNEGO and certificate sign-ins | the session is not started (`STS-XACML-0329`), with a message sending the person to the sign-in screen |
+
+A flow that names no application — an LDAP bind, a ticket-granting ticket, a
+certificate sign-in at `/tls/sign-in` — is asked about the realm-wide
+required roles only. A refresh token is not refused: the grant it descends
+from was.
+
+**Single sign-on is not a way round a required role.** When a browser asks
+an application that would require a role of the person, and the session
+chose nothing for that application (it was signed in for another one, or at
+a door that names none, such as a certificate), the person is sent to sign
+in again, and the role step is shown. A request that forbids asking
+(`prompt=none`, `IsPassive`) is answered `interaction_required` or
+`NoPassive` (`STS-XACML-0333`).
 
 ## Administering dynamic roles
 
@@ -209,11 +231,19 @@ person's attributes.
 
 The realm setting `roles.dynamicSelection` (on by default) and an
 application's `appDynamicRoleSelection` turn the feature off for the realm or
-for one application. When it is off, nothing is offered and no token carries
-a dynamically selected role.
+for one application. When it is off, nothing is offered, nothing is required,
+and no token carries a dynamically selected role, including one a session
+chose while it was on.
+
+An application is named by its registry identifier wherever a choice is
+recorded or read, so a client whose `client_id` (or a service provider whose
+entityID) differs from its identifier is offered its own roles and carries
+what was chosen for it. A choice applies to tokens issued to the
+application the sign-in was for: an access token a client asks for another
+resource carries the client's choice, never one made for that resource.
 
 ## Related
 
 - [XACML 3.0 and ALFA](xacml.md)
 - [Authorization overview](authorization.md)
-- [Error codes](error-codes.md) (`STS-XACML-0303` to `STS-XACML-0330`)
+- [Error codes](error-codes.md) (`STS-XACML-0303` to `STS-XACML-0330`, `STS-XACML-0332` and `STS-XACML-0333`)

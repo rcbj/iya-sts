@@ -3729,6 +3729,23 @@ async function answerAsReq(request, fast) {
       });
     }
   }
+  // A REQUIRED DYNAMIC ROLE (#1072, rcbj's decision 5): a KDC has no
+  // sign-in screen to choose one on. A service ticket is for its service's
+  // application; a ticket-granting ticket names none, and is asked about the
+  // realm-wide required roles. KDC_ERR_POLICY, as the policy's refusal.
+  const asRoleRefusal = require('../authn/role_selection').noBrowserRefusal({
+    username: body.cname.name.join('/'),
+    application: isTgtRequest(body.sname) ? ''
+      : ((body.sname || {}).name || []).join('/') + '@' + asRealm,
+    protocol: 'Kerberos' });
+  if (asRoleRefusal) {
+    log.debug("Leaving answerAsReq(). A required dynamic role.");
+    return errorReply(12, {
+      errorCode: 'STS-XACML-0332',
+      crealm: body.realm, cname: body.cname, sname: body.sname,
+      eText: asRoleRefusal.why
+    });
+  }
 
   // Issue. The session key is fresh per ticket; both copies of it — the one in
   // the ticket for the service and the one in the enc-part for the client —
@@ -4895,6 +4912,21 @@ async function answerTgsReq(request, state) {
       errorCode: 'STS-KRB-0039',
       cname: ticketPart.cname, realm: answeringRealm, sname: body.sname,
       eText: kerberosRoleAnswer.why });
+  }
+  // A REQUIRED DYNAMIC ROLE (#1072), for a service ticket this realm's
+  // person asks for: the application is the service's.
+  const tgsRoleRefusal = !presenterAcross && !isTgtRequest(body.sname)
+    ? require('../authn/role_selection').noBrowserRefusal({
+      username: presenterName,
+      application: serviceName + '@' + answeringRealm,
+      protocol: 'Kerberos' })
+    : null;
+  if (tgsRoleRefusal) {
+    log.debug("Leaving answerTgsReq(). A required dynamic role.");
+    return errorReply(12, { crealm: ticketPart.crealm,
+      errorCode: 'STS-XACML-0332',
+      cname: ticketPart.cname, realm: answeringRealm, sname: body.sname,
+      eText: tgsRoleRefusal.why });
   }
 
   // THE CROSS-REALM PATH (#430): a ticket issued from a TGT another realm

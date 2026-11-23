@@ -4224,7 +4224,11 @@ post-login activity, on the post-login hold's pattern (`startSessionHere()`):
   `required` role is offered (rcbj's decision 3), and otherwise starts the
   session at once with no role (`finishRoles(…, [])`). A door that cannot
   draw it is refused for a required role (STS-XACML-0329) and otherwise
-  starts with none.
+  starts with none — a door that names no application (the certificate's)
+  about the realm-wide required roles (`requiredFor()`).
+* **Single sign-on into an application that would require a role**, on a
+  session that chose nothing for it, is not answered from the session:
+  `roleChoiceOwed()` is the browser protocols' force-login (STS-XACML-0333).
 * **The step holds the OFFER** — the server's own list — and `rolesAct()`
   checks the ticked names against it and the policies again
   (`role_selection.ts`'s `validateChoice()`: 0325–0328). `mfaStepFor()`

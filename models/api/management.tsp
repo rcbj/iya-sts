@@ -1890,6 +1890,7 @@ namespace IyaSts.Api.Management {
       `^sessionAuthenticated$`:#{`type`:"boolean"},
       `^grantId$`:#{`type`:"string"},
       `^grantRefresh$`:#{`type`:"boolean"},
+      `^originGrant$`:#{`type`:"string"},
       `^order$`:#{`type`:"integer"},
       `^revocationReach$`:#{`type`:"string"},
       `^expiresAt$`:#{`type`:"number"},
@@ -38456,7 +38457,7 @@ op `setOwnerProtected`(@js(#{`examples`:#[#{`kind`:"role",`name`:"staff",`protec
   #{
     `operationId`:"getNewPolicyForm",
     `summary`:"The kinds a named policy may be made of, and which of a kind's fields a save requires",
-    `description`:"Every kind whose profiles may be named, in `kinds`, and — with `kind` — that kind's create fields in `createFields`, each with `required`: the name (`profile`, or `name` for the authentication policy) always, since a save with no name is refused; the precedence and the description never; and each of the kind's own fields unless the save keeps the value in force when it is left out. **It saves nothing**: a named policy is made by the kind's save act with a name the realm does not hold yet, `POST /admin-api/policies/save-<kind>-policy` (`save-named-authn-policy` for the authentication policy).\n\n**Mirrors** `GET /admin/policies/new` on the admin console.",
+    `description`:"Every kind whose profiles may be named, in `kinds`, and — with `kind` — that kind's create fields in `createFields`, each with `required`: the name (`profile`, or `name` for the authentication policy) always, since a save with no name edits the DEFAULT policy; the precedence and the description never; and each of the kind's own fields the save refuses empty — one whose value is kept in force when it is left out, or that the save takes empty, is not required. **It saves nothing**: a named policy is made by the kind's save act with a name the realm does not hold yet, `POST /admin-api/policies/save-<kind>-policy` (`save-named-authn-policy` for the authentication policy).\n\n**Mirrors** `GET /admin/policies/new` on the admin console.",
     `tags`:#["Policies"],
     `responses`:#{
       `200`:#{
@@ -38882,7 +38883,7 @@ op `savePasswordPolicy`(@js(#{
   }) `requestBody/content/application~1json/schema`: {
     @js(#{
       `pattern`:"^(default|[a-z0-9][a-z0-9-]{0,63})$",
-      `description`:"Which profile: `default`, or a named profile (lower-case letters, digits and hyphens), which is created by its first save. A save that omits it is refused; send `default` to edit the default profile."
+      `description`:"Which profile: `default`, or a named profile (lower-case letters, digits and hyphens), which is created by its first save. Left out, the save edits the default profile; given empty, or null, it is refused."
     }) `profile`?: string;
     @js(#{`description`:"What the profile is for, for the next person. Optional."}) `description`?: string;
     `precedence`?: IntegerFrom1To1000OrString;
@@ -39620,7 +39621,7 @@ op `saveServiceAccountPolicy`(@js(#{
   }) `requestBody/content/application~1json/schema`: {
     @js(#{
       `pattern`:"^(default|[a-z0-9][a-z0-9-]{0,63})$",
-      `description`:"Which profile: `default`, or a named profile (lower-case letters, digits and hyphens), which is created by its first save. A save that omits it is refused; send `default` to edit the default profile."
+      `description`:"Which profile: `default`, or a named profile (lower-case letters, digits and hyphens), which is created by its first save. Left out, the save edits the default profile; given empty, or null, it is refused."
     }) `profile`?: string;
     @js(#{`description`:"What the profile is for, for the next person. Optional."}) `description`?: string;
     `precedence`?: IntegerFrom1To1000OrString;
@@ -39789,7 +39790,7 @@ op `savePasskeyPolicy`(@js(#{
   }) `requestBody/content/application~1json/schema`: {
     @js(#{
       `pattern`:"^(default|[a-z0-9][a-z0-9-]{0,63})$",
-      `description`:"Which profile: `default`, or a named profile (lower-case letters, digits and hyphens), which is created by its first save. A save that omits it is refused; send `default` to edit the default profile."
+      `description`:"Which profile: `default`, or a named profile (lower-case letters, digits and hyphens), which is created by its first save. Left out, the save edits the default profile; given empty, or null, it is refused."
     }) `profile`?: string;
     @js(#{`description`:"What the profile is for, for the next person. Optional."}) `description`?: string;
     `precedence`?: IntegerFrom1To1000OrString;
@@ -39999,7 +40000,7 @@ op `saveLocalePolicy`(@js(#{
   }) `requestBody/content/application~1json/schema`: {
     @js(#{
       `pattern`:"^(default|[a-z0-9][a-z0-9-]{0,63})$",
-      `description`:"Which profile: `default`, or a named profile (lower-case letters, digits and hyphens), which is created by its first save. A save that omits it is refused; send `default` to edit the default profile."
+      `description`:"Which profile: `default`, or a named profile (lower-case letters, digits and hyphens), which is created by its first save. Left out, the save edits the default profile; given empty, or null, it is refused."
     }) `profile`?: string;
     @js(#{`description`:"What the profile is for, for the next person. Optional."}) `description`?: string;
     `precedence`?: IntegerFrom1To1000OrString;
@@ -40079,7 +40080,7 @@ op `saveAttributesPolicy`(@js(#{
   }) `requestBody/content/application~1json/schema`: {
     @js(#{
       `pattern`:"^(default|[a-z0-9][a-z0-9-]{0,63})$",
-      `description`:"Which profile: `default`, or a named profile (lower-case letters, digits and hyphens), which is created by its first save. A save that omits it is refused; send `default` to edit the default profile."
+      `description`:"Which profile: `default`, or a named profile (lower-case letters, digits and hyphens), which is created by its first save. Left out, the save edits the default profile; given empty, or null, it is refused."
     }) `profile`?: string;
     @js(#{`description`:"What the profile is for, for the next person. Optional."}) `description`?: string;
     `precedence`?: IntegerFrom1To1000OrString;
@@ -40343,7 +40344,7 @@ op `savePostLoginPolicy`(@js(#{
   }) `requestBody/content/application~1json/schema`: {
     @js(#{
       `pattern`:"^(default|[a-z0-9][a-z0-9-]{0,63})$",
-      `description`:"Which profile: `default`, or a named profile (lower-case letters, digits and hyphens), which is created by its first save. A save that omits it is refused; send `default` to edit the default profile."
+      `description`:"Which profile: `default`, or a named profile (lower-case letters, digits and hyphens), which is created by its first save. Left out, the save edits the default profile; given empty, or null, it is refused."
     }) `profile`?: string;
     @js(#{`description`:"What the profile is for, for the next person. Optional."}) `description`?: string;
     `precedence`?: IntegerFrom1To1000OrString;
