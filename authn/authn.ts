@@ -13931,6 +13931,24 @@ class Authn {
     return body;
   }
 
+    /**
+   * A view's own refusal as an answer carries it (#2006): `{ errors,
+   * messages }` where the sentence is a catalog message, so the page draws
+   * it in its language; null for text, which the page draws as it is.
+   *
+   * @param value - the sentence, a `Sentence` or text
+   * @returns the refusal, or null
+   */
+  viewRefusal(value: unknown): any {
+    const { log } = this.deps;
+    log.debug("Entering Authn.viewRefusal().");
+    const out = Sentence.is(value)
+      ? { errors: [String(value)], messages: Sentence.messagesOf([value]) }
+      : null;
+    log.debug("Leaving Authn.viewRefusal().");
+    return out;
+  }
+
   /**
    * Refuses an act at a second-factor step; the page draws it.
    *
@@ -17177,18 +17195,16 @@ class Authn {
     const phrhAsked = String((step.authn || {}).phishingClass || '') ===
                       'phrh' && mode === 'get' && !pqRefusal;
     let hardwareKnown = known;
-    let hardwareRefusal: { code: string, why: string } | null = null;
+        let hardwareRefusal: { code: string, why: string | Sentence } | null =
+      null;
     if (phrhAsked) {
       const leaf = require('../common/phishing_resistance');
       hardwareKnown = known.filter(function (one) {
         return leaf.storedKeyEarnsHardware(one);
       });
       if (known.length && !hardwareKnown.length) {
-        hardwareRefusal = { code: 'STS-AUTHN-0459',
-          why: 'This sign-in asks for a hardware-protected ' +
-               'phishing-resistant passkey, and none of the passkeys held ' +
-               'for this step can earn it. A synced passkey, or one whose ' +
-               'attestation is not trusted, is not enough.' };
+                hardwareRefusal = { code: 'STS-AUTHN-0459',
+          why: Sentence.say('refusals.authn.hardwarePasskeyNone') };
       }
     }
     const offered = hardwareRefusal ? [] : hardwareKnown;
@@ -17272,6 +17288,11 @@ class Authn {
       // retry's words to say, and nothing to offer after a failure.
       retrying: !!step.classicalOnly &&
         !(step.clientRule && step.clientRule.narrowed) } : null;
+        // The page's own refusal, and the same sentence as an answer carries
+    // it (#2006), so the page draws it in its language.
+    const problem = this.rpIdProblem(base) ||
+                    (pqRefusal ? pqRefusal.why : '') ||
+                    (hardwareRefusal ? hardwareRefusal.why : '') || '';
     const out = {
       mode: mode, passwordless: passwordless,
       choices: choosing ? offered.map(function (one) {
@@ -17283,9 +17304,8 @@ class Authn {
       // In product mode an RP ID that does not fit is said on the page as
       // well as refused at the act: a ceremony drawn under a refusal would
       // be a browser prompt whose answer is thrown away.
-      problem: String(this.rpIdProblem(base) ||
-                      (pqRefusal ? pqRefusal.why : '') ||
-                      (hardwareRefusal ? hardwareRefusal.why : '') || ''),
+            problem: String(problem),
+      problemRefusal: this.viewRefusal(problem),
       // NO POST-QUANTUM KEY WHERE ONE IS REQUIRED (#718): the refusal the
       // ceremony would end in, said before it runs.
       // These facts are an answer of `/authn-api`, so each refusal's code is
@@ -17405,7 +17425,8 @@ class Authn {
       lane), { id: String(held.userHandle || '') });
     const out = {
       mode: mode, passwordless: !!step.passwordless, choices: [],
-      chosen: null, problem: String(this.rpIdProblem(base) || ''),
+            chosen: null, problem: String(this.rpIdProblem(base) || ''),
+      problemRefusal: this.viewRefusal(this.rpIdProblem(base)),
       postQuantumRefused: null, hardwareRefused: null,
       postQuantumHelp: null, postQuantumAllowCredentials: '',
       fallback: fallback, rpId: rpId, widened: !!options.rpId,
@@ -17881,14 +17902,12 @@ class Authn {
     }
     const restricted: string[] = Array.isArray(record.allowedMechanisms)
       ? record.allowedMechanisms : [];
-    const why = record.lockedUsername
-      ? 'Linking an account signs in with its password, so a passkey on ' +
-        'its own is not offered here.'
+        const why = record.lockedUsername
+      ? Sentence.say('refusals.authn.linkNoPasskeyAlone')
       : (!this.deps.authnPolicy.allows('passkey', 'primary')
-        ? 'This realm\'s authentication policy does not accept a passkey ' +
-          'as a first factor.'
+        ? Sentence.say('refusals.policy.passkeyNotFirstFactorShort')
         : (restricted.length && restricted.indexOf('webauthn') < 0
-          ? 'This application does not allow a passkey sign-in.' : ''));
+          ? Sentence.say('refusals.authn.applicationNoPasskey') : ''));
     log.debug("Leaving Authn.passkeyOffered(). " + (why ? 'No.' : 'Yes.'));
     return why ? errorCodes.mark({ ok: false, why: why }, 'STS-AUTHN-0301')
                : { ok: true };
@@ -18278,17 +18297,23 @@ class Authn {
       // product-mode enrolment refusals (STS-AUTHN-0024, 0206) — carries a
       // `why` and no `failed`. Reading `failed.join()` off one answered 500
       // until 2026-09-21, which hid both refusals behind an error page.
-      const failed = Array.isArray(verdict.failed) && verdict.failed.length
-        ? verdict.failed : [String(verdict.why || 'refused')];
+            const failed = Array.isArray(verdict.failed) && verdict.failed.length
+        ? verdict.failed : [verdict.why || 'refused'];
       this.noteRefusedAuthentication(step, step.username, 'webauthn',
         errorCodes.codeOf(verdict) ||
         webauthnPolicy.failureCodeFor(verdict),
         'assertion-did-not-verify');
       log.debug("Leaving Authn.finishWebauthn(). Refused: " +
                 failed.join('; '));
+            // ONE SENTENCE THAT IS A CATALOG MESSAGE (a policy's refusal, the
+      // attestation's, a counter that did not increase) is placed as itself,
+      // so the page translates it too (#2006); a verifier's list of checks
+      // is joined as data.
       return this.stepRefused(res,
                Sentence.say('refusals.authn.secondFactorCheckFailed',
-                            { checks: failed.join('; ') }));
+                            { checks: failed.length === 1 &&
+                                Sentence.is(failed[0])
+                              ? failed[0] : failed.join('; ') }));
     }
 
     pendingMfa.delete(String(body.mfa_id));
@@ -20301,10 +20326,8 @@ class Authn {
                      'NOT enrolled for "' + step.username + '" at the ' +
                      'sign-in screen.');
             verdict = errorCodes.mark({ ok: false,
-                        why: 'This service is in product mode, where a ' +
-                             'passkey that signs in on its own is added ' +
-                             'at /portal/keys after signing in, never at ' +
-                             'the sign-in screen.' },
+                        why: Sentence.say(
+                          'refusals.authn.productNoPrimaryKey') },
                         'STS-AUTHN-0206');
           } else if (!mode.autoCreates() &&
                      !this.knownPerson(step.username)) {
@@ -20313,10 +20336,9 @@ class Authn {
                      'directory entry for them and enrolling would create ' +
                      'one.');
             verdict = errorCodes.mark({ ok: false,
-                        why: 'This service is in product mode, where a ' +
-                             'passkey can only be registered for ' +
-                             'somebody who already exists. Create the ' +
-                             'person first.' }, 'STS-AUTHN-0024');
+                        why: Sentence.say(
+                          'refusals.authn.productNoSuchPerson') },
+                        'STS-AUTHN-0024');
           } else {
             // THE ENTRY FIRST, AND THE ORDER IS NOW LOAD-BEARING RATHER THAN
             // TIDY. `credentials.addKey()` writes an ATTRIBUTE ON THE
@@ -20601,7 +20623,8 @@ class Authn {
                   'security key "' + step.username + '" registered threw: ' +
                   (e && e.stack ? e.stack : e));
         errorCodes.mark(res, 'STS-AUTHN-0068');
-        self.stepRefused(res, 'The passkey could not be recorded. Try again.');
+        self.stepRefused(res,
+          Sentence.say('refusals.authn.passkeyNotRecorded'));
       });
       log.debug("Leaving Authn.mfaWebauthnAct(). Writing the registration.");
       return undefined;
@@ -20659,8 +20682,8 @@ class Authn {
                 'security-key assertion for "' + step.username + '" threw: ' +
                 (e && e.stack ? e.stack : e));
       errorCodes.mark(res, 'STS-AUTHN-0182');
-      self.stepRefused(res, 'The second factor could not be checked. Try ' +
-                            'again.');
+      self.stepRefused(res,
+        Sentence.say('refusals.authn.secondFactorUncheckedAgain'));
     });
     log.debug("Leaving Authn.mfaWebauthnAct(). Spending the assertion.");
     return undefined;

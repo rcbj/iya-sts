@@ -34,6 +34,7 @@
 // ---------------------------------------------------------------------------
 
 import WebAuthnLogin = require('./web_authn_login');
+import WebSaid = require('../common/web_said');
 import WebQr = require('../common/web_qr');
 
 type Json = any;
@@ -293,7 +294,10 @@ class WebAuthnMfa {
         ? t.html('authn.webauthn.subPasswordless',
                  { name: String(v.username) })
         : t.html('authn.webauthn.subSecond', { name: String(v.username) })) +
-      '</p>' + WebAuthnMfa.error(ctx, w.problem) +
+            // The step's own refusal in the page's language where it carried
+      // its catalog message (#2006, `problemRefusal`).
+      '</p>' + WebAuthnMfa.error(ctx, (w.problemRefusal &&
+        WebSaid.saidWith(t, w.problemRefusal)) || w.problem) +
       // NO POST-QUANTUM PASSKEY WHERE ONE IS REQUIRED (#946): the panel —
       // what the application requires, and where to add one — under the
       // refusal's own sentence.
