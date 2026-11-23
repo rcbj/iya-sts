@@ -423,7 +423,7 @@ const REQUIREMENTS = [
           'what a request carried and what was believed of it.' },
 
   { id: 'no-certificate-header', section: '2.6', level: 'MUST NOT',
-    appliesTo: 'authorization server', enforced: 'always',
+    appliesTo: 'authorization server', enforced: 'deployment',
     title: 'Never read a client certificate out of a header',
     note: 'A proxy that terminates mTLS forwards the certificate in a ' +
           'header — X-Client-Cert, X-Forwarded-Client-Cert, ' +

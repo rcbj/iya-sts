@@ -13664,9 +13664,9 @@ function pivCardHolders(uuid) {
 //   * `upn` — a `userPrincipalName`, compared ignoring case;
 //   * `mail` — an address, `peopleByMail()`'s lookup.
 //
-// FOUND AS A CARD UUID IS (`pivCardHolders()`): a windowed process asks the
-// store's `certificatebinding` index (a key the codec derives, so no schema
-// moves), and the resident entries are walked. People only — a binding signs
+// A windowed process asks the store's `certificatebinding` index alone (a
+// key the codec derives, so no schema moves; a person is always windowed,
+// #349); only a process with no window walks its entries. People only — a binding signs
 // a person in. At most three are answered: the caller asks whether there is
 // exactly one.
 // ---------------------------------------------------------------------------
@@ -13720,8 +13720,17 @@ function certificateBindingHolders(kind, value) {
   };
   const asked = windowedFind('byAttribute', ['certificatebinding', key, 3],
                              holds);
-  (asked || []).forEach(add);
-  (asked ? eachResidentEntry : eachEntryInRealm)(function (entry) {
+  if (asked) {
+    // A PERSON IS ALWAYS WINDOWED (#349, `peopleByMail()`'s rule), so the
+    // store's index is the whole answer and nothing is walked on a sign-in
+    // (the #2012 review: no full scans).
+    asked.forEach(add);
+    const indexed = Array.from(found.values());
+    log.debug('Leaving certificateBindingHolders(). ' + indexed.length +
+              ', asked.');
+    return indexed;
+  }
+  eachEntryInRealm(function (entry) {
     if (holds(entry)) {
       add(entry);
     }

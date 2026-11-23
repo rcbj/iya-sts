@@ -5762,7 +5762,10 @@ function certificateRefusal(socket, mode, revocation, identity) {
       .revocationRefusal(revocation);
   } catch (e) {
     log.debug('Caught in certificateRefusal(): ' + ((e && e.message) || e));
-    unverified = '';
+    // FAIL CLOSED (the #2012 review): a check that could not answer is a
+    // status nobody verified.
+    unverified = 'the revocation requirement could not be asked (' +
+      String((e && e.message) || e) + ')';
   }
   if (unverified) {
     log.info(errorCodes.tag('STS-TLS-0071') + 'tls: a verified client ' +
@@ -8065,6 +8068,11 @@ module.exports = {
   // tests/x509_limbo.js, which holds the main port's posture to x509-limbo.
   holdToPathRules: holdToPathRules,
   anchorCertificates: anchorCertificates,
+  // #2012: a certificate a TLS-terminating proxy forwarded is held to what the
+  // listener the proxy reached holds a handshake's to — its own `ca` list and
+  // #212's curve guard (common/forwarded_client_certificate.ts).
+  caPemsFor: caPemsFor,
+  refusedCurveKey: refusedCurveKey,
   holdConnectionsOn: holdConnectionsOn,
   settledRequest: settledRequest
 };

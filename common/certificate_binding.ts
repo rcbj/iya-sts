@@ -146,6 +146,9 @@ interface CertificateBindingDeps {
   // Certificate enrollment, whose directory slot answers who holds a value
   // (header).
   loadEnrollment: () => Json;
+  // Whether every stored userPrincipalName carries its index key (the
+  // second backfill walk, `persistence/granting_index_backfill.js`).
+  upnKeysComplete: () => boolean;
 }
 
 /**
@@ -184,6 +187,10 @@ class CertificateBinding {
       errorCodes: errorCodes, mode: mode, now: Date.now,
       loadEnrollment: function (): Json {
         return require('./cert_enrollment');
+      },
+      upnKeysComplete: function (): boolean {
+        return require('../persistence/granting_index_backfill')
+          .keysComplete() === true;
       }
     };
   }
@@ -329,6 +336,40 @@ class CertificateBinding {
   }
 
   /**
+   * Why a profile names one of this service's own authorities, or '': a
+   * certificate this service issued is an identity by #1061's other rule
+   * (`identityOf()`'s `issuedHere`) and never reaches a profile, so such a
+   * profile would cover nothing and say nothing (the #2012 review).
+   *
+   * @param list - the profiles, well formed
+   * @returns the problem, or ''
+   */
+  static heldIssuerProblem(list: Json[]): string {
+    helpers.log.debug("Entering CertificateBinding.heldIssuerProblem().");
+    let held: string[] = [];
+    try {
+      held = require('./revocation_status').heldCertificates()
+        .map(function (one: Json): string {
+          return String(stsCrypto.certificateFacts(one).spkiSha256 || '');
+        }).filter(Boolean);
+    } catch (e) {
+      helpers.log.debug("Caught in CertificateBinding.heldIssuerProblem(): " +
+                        ((e && e.message) || e));
+      held = [];
+    }
+    const named = list.filter(function (one: Json): boolean {
+      return (one.issuers || []).some(function (v: unknown): boolean {
+        return held.indexOf(CertificateBinding.hex64(v)) >= 0;
+      });
+    })[0];
+    helpers.log.debug("Leaving CertificateBinding.heldIssuerProblem(). " +
+                      (named ? 'Named.' : 'None.'));
+    return named ? 'profile "' + named.id + '" names one of this service\'s ' +
+      'own certificate authorities, whose certificates are identities by ' +
+      'their urn:sts names and never reach a profile' : '';
+  }
+
+  /**
    * The rule `config.addWriteRule()` asks of every write of
    * `certSignIn.profiles`.
    *
@@ -355,8 +396,11 @@ class CertificateBinding {
                         ((e && e.message) || e));
       list = undefined;
     }
-    const problem = list === undefined ? 'it is not JSON'
+    let problem = list === undefined ? 'it is not JSON'
       : CertificateBinding.profilesProblem(list);
+    if (!problem) {
+      problem = CertificateBinding.heldIssuerProblem(list as Json[]);
+    }
     helpers.log.debug("Leaving CertificateBinding.writeRule(). " +
                       (problem ? 'Refused.' : 'Taken.'));
     return problem
@@ -444,6 +488,50 @@ class CertificateBinding {
     }
     log.debug("Leaving CertificateBinding.factsOf().");
     return facts;
+  }
+
+  /**
+   * The longest prefix of a presented chain whose every certificate signed
+   * the one below it, from the leaf up. A link that does not verify, or
+   * that OpenSSL cannot verify (a key it does not read), ends the path.
+   *
+   * @param leaf - the leaf's DER
+   * @param chain - the DER above it, issuer first
+   * @returns the verified certificates above the leaf, in order
+   */
+  signedPath(leaf: Buffer, chain: Buffer[]): Buffer[] {
+    const { log, stsCrypto: c } = this.deps;
+    log.debug("Entering CertificateBinding.signedPath(). " + chain.length);
+    const out: Buffer[] = [];
+    let below: Json = null;
+    try {
+      below = c.parseCertificate(leaf);
+    } catch (e) {
+      log.debug("Caught in CertificateBinding.signedPath(): " +
+                ((e && e.message) || e));
+      below = null;
+    }
+    for (let i = 0; below && i < chain.length; i++) {
+      let above: Json = null;
+      let signed = false;
+      try {
+        above = c.parseCertificate(chain[i]);
+        signed = c.certificateSignedWith(below, above.publicKey) === true;
+      } catch (e) {
+        log.debug("Caught in CertificateBinding.signedPath(): " +
+                  ((e && e.message) || e));
+        signed = false;
+      }
+      if (!signed) {
+        log.debug("Leaving CertificateBinding.signedPath(). Link " + i +
+                  " did not sign the one below it.");
+        return out;
+      }
+      out.push(Buffer.from(chain[i]));
+      below = above;
+    }
+    log.debug("Leaving CertificateBinding.signedPath(). " + out.length + ".");
+    return out;
   }
 
   /**
@@ -701,6 +789,14 @@ class CertificateBinding {
         return m ? m[1].toLowerCase() : '';
       }).filter(Boolean);
       out = uuids.length === 1 ? { kind: 'card', value: uuids[0] } : null;
+    } else if (method === 'upn' && !this.deps.upnKeysComplete()) {
+      // NOT YET (the #2012 review): an entry written before #2012 carries no
+      // `upn:` key until the backfill reaches it, so a duplicate UPN there
+      // could make an ambiguous name look unique. Nobody matches by UPN
+      // until the walk's mark is seen.
+      this.deps.log.info('certificate_binding: the upn binding is not asked ' +
+                         'until the directory index backfill has finished.');
+      out = null;
     } else if (method === 'upn') {
       const names = (san.upn || []).map(function (u: string): string {
         return String(u).trim().toLowerCase();
@@ -764,9 +860,16 @@ class CertificateBinding {
    * @param realmId - the realm asked, for the sentences
    * @returns null or the answer
    */
-  identityOf(leaf: Buffer, chain: Buffer[], realmId: string): Json {
+  identityOf(leaf: Buffer, presented: Buffer[], realmId: string): Json {
     const { log, errorCodes: codes } = this.deps;
     log.debug("Entering CertificateBinding.identityOf().");
+    // ONLY WHAT SIGNED (the #2012 review): the chain a socket reports is
+    // node's issuer linkage, matched by name and key identifier and never
+    // signature-checked, so a client could append a certificate naming a
+    // trusted CA's subject over a profile CA's key. Coverage, the issuer of
+    // an issuer-scoped binding and the policy path are read from the prefix
+    // whose every link really signed the one below it.
+    const chain = this.signedPath(leaf, presented);
     const profile = this.profileFor(chain);
     if (!profile) {
       log.debug("Leaving CertificateBinding.identityOf(). No profile.");
@@ -887,6 +990,26 @@ class CertificateBinding {
     const lowOnly = one.methods.every(function (m: string): boolean {
       return LOW_AFFINITY.indexOf(m) >= 0;
     });
+    // NEVER A FALLBACK FROM A FAILED HIGH-AFFINITY METHOD (rcbj's decision
+    // 1 on #2012, the review): where the profile enables one, a person found
+    // by names alone is refused. Names then only corroborate — and a name
+    // naming somebody else is still a disagreement, above.
+    const highEnabled = profile.bindings.some(function (m: string): boolean {
+      return HIGH_AFFINITY.indexOf(m) >= 0;
+    });
+    if (lowOnly && highEnabled) {
+      log.info(codes.tag('STS-TLS-0068') + 'certificate_binding: a client ' +
+               'certificate under the "' + profile.id + '" profile matched ' +
+               'by name only (' + one.methods.join(', ') + '), and the ' +
+               'profile\'s high-affinity bindings matched nobody.');
+      log.debug("Leaving CertificateBinding.resolveIn(). Names only.");
+      return { error: 'NOT_STORED',
+               why: 'the certificate is covered by the "' + profile.id +
+                    '" certificate sign-in profile, its high-affinity ' +
+                    'bindings name nobody, and a name (' +
+                    one.methods.join(', ') + ') is never a fallback from ' +
+                    'them' };
+    }
     log.debug("Leaving CertificateBinding.resolveIn(). " +
               String(one.holder.id) + ".");
     return { accepted: true, stored: true,

@@ -26,17 +26,27 @@
 //      emailProtection, which the leaf does not carry, signs nobody in.
 //   D. LOW AFFINITY WITHOUT OPTING IN: a profile naming `upn` without
 //      `lowAffinity` is refused when written (STS-TLS-0065).
+//   B3. TWO METHODS, TWO PEOPLE: issuer-serial on alice and the leaf's key
+//      (spki-sha256) on bob sign nobody in (STORED_TWICE).
 //   E. RFC 9440: from the named proxy (its certificate and an address range
 //      holding every address), the forwarded leaf signs alice in; the same
-//      headers on a connection presenting no certificate sign nobody in; and
-//      from the proxy's certificate outside the address range the headers
-//      are removed and the proxy's own certificate, stored on nobody, is what
+//      headers on a connection presenting no certificate sign nobody in;
+//      from the proxy, a leaf whose root the truststore does not hold, and
+//      bytes that are not a certificate, present no certificate; and from
+//      the proxy's certificate outside the address range the headers are
+//      removed and the proxy's own certificate, stored on nobody, is what
 //      the door sees.
+//   F. REVOCATION REQUIRED: with certSignIn.requireRevocation on and
+//      revocation not consulted (pki.revocationCheck off), the bound leaf
+//      signs nobody in.
 //
 // NOT CARRIED, and why: the certificate handoff to a second listener needs a
-// custom listener bound by the stack (owed with the listener jobs), and a
-// policy-mapped Federal PKI path is held in process, where the chain can
-// carry certificate policies this minting tool does not write.
+// custom listener bound by the stack (owed with the listener jobs); a
+// policy-mapped Federal PKI path, a forged intermediate sent after the leaf,
+// a profile mixing high- and low-affinity methods (a UPN in the leaf) and a
+// serverAuth-only forwarded leaf all need certificate fields this minting
+// tool does not write, and are held in process (tests/certificate_binding.js
+// sections 3, 4 and 6).
 //
 // OWNED HERE (local: true): this repository's own doors.
 // ---------------------------------------------------------------------------
@@ -201,6 +211,24 @@ async function test() {
     assert.ok(twice.status >= 400, twice.status + " " + twice.text);
     assert.ok(!/STS-[A-Z]+-\d{4}/.test(twice.text), twice.text);
   });
+  const keyBinding = "spki-sha256:" + spkiSha256(card.leaf.pem);
+  await K.ok(rb + "/admin-api/users/add-attribute", { user: bob,
+    attribute: "stsCertificateBinding", value: keyBinding },
+    "bound the leaf's key to " + bob);
+  await K.set(realm, "certSignIn.profiles", JSON.stringify([Object.assign(
+    {}, profile, { bindings: ["issuer-serial", "spki-sha256"] })]));
+  const split = await settled(rb + "/tls/sign-in", { tls: tls });
+  check("B3. two methods naming different people sign nobody in " +
+        "(STORED_TWICE)", function () {
+    assert.ok(!started(split), split.text.slice(0, 300));
+    assert.strictEqual(split.json && split.json.session &&
+                       split.json.session.refusedAsStored, "STORED_TWICE",
+                       split.text.slice(0, 300));
+  });
+  await K.ok(rb + "/admin-api/users/remove-attribute", { user: bob,
+    attribute: "stsCertificateBinding", value: keyBinding },
+    "took the key binding off " + bob);
+  await K.set(realm, "certSignIn.profiles", JSON.stringify([profile]));
 
   log.info("=== C. outside the profile ===");
   await K.set(realm, "certSignIn.profiles", JSON.stringify([Object.assign(
@@ -250,6 +278,30 @@ async function test() {
                 direct.json.clientCertificate.presented),
               direct.text.slice(0, 300));
   });
+  const unheld = await anchors.mint({ subject: "CN=unheld " + K.STAMP +
+                                      ",O=nobody's",
+                                      rootSubject: "CN=unheld Root " +
+                                        K.STAMP });
+  const strange = await settled(rb + "/tls/sign-in", { tls: proxyTls,
+    headers: { "client-cert": ":" + derOf(unheld.leaf.pem)
+      .toString("base64") + ":", "client-cert-chain": ":" +
+      derOf(unheld.issuing.pem).toString("base64") + ":" } });
+  check("E2-ii. from the proxy, a leaf whose root the truststore does not " +
+        "hold presents no certificate", function () {
+    assert.ok(!started(strange), strange.text.slice(0, 300));
+    assert.ok(!(strange.json && strange.json.clientCertificate &&
+                strange.json.clientCertificate.presented),
+              strange.text.slice(0, 300));
+  });
+  const garbled = await settled(rb + "/tls/sign-in", { tls: proxyTls,
+    headers: { "client-cert": ":bm90IGEgY2VydGlmaWNhdGU=:" } });
+  check("E2-iii. from the proxy, bytes that are not a certificate present " +
+        "no certificate", function () {
+    assert.ok(!started(garbled), garbled.text.slice(0, 300));
+    assert.ok(!(garbled.json && garbled.json.clientCertificate &&
+                garbled.json.clientCertificate.presented),
+              garbled.text.slice(0, 300));
+  });
   await K.set(realm, "tls.trustedProxyAddresses", "192.0.2.0/24");
   const elsewhere = await settled(rb + "/tls/sign-in", { tls: proxyTls,
                                                           headers: forwarded });
@@ -261,6 +313,23 @@ async function test() {
                        elsewhere.json.session.refusedAsStored, "NOT_STORED",
                        elsewhere.text.slice(0, 300));
   });
+  await K.unset(realm, "tls.trustedProxyAddresses");
+  await K.unset(realm, "tls.trustedProxyCertificates");
+
+  log.info("=== F. a verified revocation status required ===");
+  await K.set(realm, "certSignIn.requireRevocation", "on");
+  await K.set(realm, "pki.revocationCheck", "off");
+  const unchecked = await settled(rb + "/tls/sign-in", { tls: tls });
+  check("F1. with revocation not consulted and a verified status required, " +
+        "the bound leaf signs nobody in", function () {
+    assert.ok(!started(unchecked), unchecked.text.slice(0, 300));
+    const session = (unchecked.json && unchecked.json.session) || {};
+    assert.ok(session.refusedOnRevocation === true &&
+              session.revocationRequired === true,
+              unchecked.text.slice(0, 300));
+  });
+  await K.unset(realm, "pki.revocationCheck");
+  await K.unset(realm, "certSignIn.requireRevocation");
   log.debug("Leaving test().");
 }
 

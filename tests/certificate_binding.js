@@ -140,10 +140,13 @@ async function leaf(issuer, o) {
   const ext = [
     kit.extension('2.5.29.15', true, new asn1js.BitString({
       valueHex: new Uint8Array([0x80]).buffer, unusedBits: 7 }).toBER(false)),
-    kit.extension('2.5.29.37', false, oidSequence([CLIENT_AUTH])),
-    policies(o.policies || [P_AGENCY]),
-    names(o.upn || '', o.email || '')
+    kit.extension('2.5.29.37', false, oidSequence(o.eku || [CLIENT_AUTH])),
+    policies(o.policies || [P_AGENCY])
   ];
+  // An empty subjectAltName is malformed (RFC 5280 4.2.1.6): none at all.
+  if (o.upn || o.email) {
+    ext.push(names(o.upn || '', o.email || ''));
+  }
   if (o.ski !== false) {
     ext.push(kit.extension('2.5.29.14', false, new asn1js.OctetString({
       valueHex: ab(nodeCrypto.randomBytes(20)) }).toBER(false)));
@@ -282,6 +285,21 @@ async function checkProfile(t, h) {
   t.check(/extendedKeyUsage/.test(eku.profileRefusal(eku.profileFor(chain),
                                                     jane.der, chain)),
           '3f. a profile asking another purpose refuses it');
+  // A FORGED LINK (the #2012 review): a certificate carrying the agency CA's
+  // subject over another key, sent after the leaf. Only what signed counts,
+  // so the path ends at the leaf and no profile covers it.
+  const forgedPair = await kit.keyPair('ec');
+  const forged = await kit.certificate({
+    subject: [['2.5.4.3', 'Test Agency CA ' + RUN]],
+    publicKey: forgedPair.crypto.publicKey,
+    signingKey: forgedPair.crypto.privateKey, ca: true });
+  t.equal(b.signedPath(jane.der, [forged.der, h.root.der]).length, 0,
+          '3h. a link that did not sign the leaf ends the path');
+  t.check(b.identityOf(jane.der, [forged.der, h.root.der], 'default') ===
+          null, '3i. a forged intermediate cannot bring a certificate under ' +
+          'a profile');
+  t.equal(b.signedPath(jane.der, chain).length, 2,
+          '3j. the real path verifies link by link');
   const outside = b.identityOf(card.der, chain, 'default');
   t.check(outside && outside.error === 'NOT_STORED' && outside.outsideProfile,
           '3g. a covered certificate outside its profile names nobody',
@@ -339,10 +357,31 @@ async function checkBindings(t, h, p) {
   const low = boundOver({ 'certSignIn.profiles': JSON.stringify([
     Object.assign({}, p.profile, { bindings: ['issuer-serial', 'upn'],
                                    lowAffinity: true })]) }, upnDir);
-  const byName = low.identityOf(second.der, p.chain, 'default');
+  t.equal(low.identityOf(second.der, p.chain, 'default').error, 'NOT_STORED',
+          '4g. a name is never a fallback: where the profile also names a ' +
+          'high-affinity method, a UPN match alone signs nobody in');
+  const namesOnly = boundOver({ 'certSignIn.profiles': JSON.stringify([
+    Object.assign({}, p.profile, { bindings: ['upn'], lowAffinity: true })]) },
+    upnDir);
+  const byName = namesOnly.identityOf(second.der, p.chain, 'default');
   t.check(byName.accepted && byName.username === 'jane' && byName.lowAffinity,
-          '4g. under an opted-in low-affinity profile the unique UPN binds',
+          '4g-ii. under a names-only opted-in profile the unique UPN binds',
           JSON.stringify(byName));
+  const pending = new binding.CertificateBinding(Object.assign(
+    binding.CertificateBinding.defaultDeps(), {
+      config: { value: function (key) {
+        return key === 'certSignIn.profiles' ? JSON.stringify([Object.assign(
+          {}, p.profile, { bindings: ['upn'], lowAffinity: true })]) : '';
+      } },
+      loadEnrollment: function () {
+        return upnDir;
+      },
+      upnKeysComplete: function () {
+        return false;
+      } }));
+  t.equal(pending.identityOf(second.der, p.chain, 'default').error,
+          'NOT_STORED', '4g-iii. until the index backfill has finished, ' +
+          'upn matches nobody');
   // Renewal: a new certificate over the same key.
   const renewed = await leaf(h.intermediate, { pair: p.jane.pair,
                                                upn: 'jane@agency.test' });
@@ -447,6 +486,20 @@ async function checkForwarded(t, h, p) {
     .raw.equals(h.intermediate.der) && view.remoteAddress === '10.9.1.2',
           '6h. the request\'s view answers the forwarded certificate and the ' +
           'real socket for the rest');
+  const stranger = await kit.root('Stranger ' + RUN, 'ec');
+  const strangeLeaf = await leaf(stranger, {});
+  t.check(!(await both.verify({ leaf: strangeLeaf.der, chain: [] })).ok,
+          '6g-ii. a forwarded certificate from a root the truststore does not ' +
+          'hold is refused');
+  const serverOnly = await leaf(h.intermediate, { eku: ['1.3.6.1.5.5.7.3.1'] });
+  const serverVerdict = await both.verify({ leaf: serverOnly.der,
+                                            chain: [h.intermediate.der] });
+  t.check(!serverVerdict.ok && /TLS client/.test(serverVerdict.why),
+          '6g-iii. a serverAuth-only leaf is refused as a TLS client ' +
+          'certificate', JSON.stringify(serverVerdict));
+  t.check(!!forwarded.parse({ 'client-cert': ':AAAA:',
+                              'client-cert-chain': ':%%%:' }).problem,
+          '6g-iv. malformed bytes in the chain are refused');
   const none = forwarded.viewOf(socketOf(proxy.der, '10.9.1.2'), [], 'x');
   t.check(none.authorized === false && !none.getPeerCertificate().raw,
           '6i. a request from the proxy with no usable Client-Cert presents ' +

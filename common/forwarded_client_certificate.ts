@@ -64,6 +64,7 @@ import stsCrypto = require('./crypto');
 import errorCodes = require('./error_codes');
 import audit = require('./audit');
 import clientAddress = require('./client_address');
+import CertificateTrust = require('./certificate_trust');
 
 type Json = any;
 
@@ -82,9 +83,13 @@ interface ForwardedClientCertificateDeps {
   errorCodes: typeof errorCodes;
   audit: typeof audit;
   clientAddress: typeof clientAddress;
+  trust: typeof CertificateTrust;
   now: () => number;
-  // The client truststore's anchors, as X509Certificate objects (header).
-  anchors: () => Json[];
+  // The anchors of the listener a socket arrived on, as X509Certificate
+  // objects (header).
+  anchors: (socket: Json) => Json[];
+  // #212's curve guard: why a certificate's key is refused, or ''.
+  curveProblem: (cert: Json) => string;
 }
 
 /**
@@ -118,9 +123,22 @@ class ForwardedClientCertificate {
     return {
       log: helpers.log, config: config, pki: pki, stsCrypto: stsCrypto,
       errorCodes: errorCodes, audit: audit, clientAddress: clientAddress,
-      now: Date.now,
-      anchors: function (): Json[] {
-        return require('../tls/tls_server').anchorCertificates();
+      trust: CertificateTrust, now: Date.now,
+      anchors: function (socket: Json): Json[] {
+        const tlsServer = require('../tls/tls_server');
+        if (socket && socket.server &&
+            typeof tlsServer.caPemsFor === 'function') {
+          return tlsServer.caPemsFor(socket.server)
+            .map(function (pem: string): Json {
+              return stsCrypto.parseCertificate(pem);
+            });
+        }
+        return tlsServer.anchorCertificates();
+      },
+      curveProblem: function (cert: Json): string {
+        const tlsServer = require('../tls/tls_server');
+        return typeof tlsServer.refusedCurveKey === 'function'
+          ? String(tlsServer.refusedCurveKey(cert) || '') : '';
       }
     };
   }
@@ -282,19 +300,25 @@ class ForwardedClientCertificate {
   }
 
   /**
-   * Verifies what the proxy forwarded to the client truststore: `{ ok,
-   * path }`, `path` the X509Certificate objects leaf first and the anchor
-   * last, or `{ ok: false, why }`.
+   * Verifies what the proxy forwarded as the listener it reached verifies a
+   * handshake's certificate (the #2012 review): the path to THAT listener's
+   * `ca` list through the #1360 door for `tls-client`, the leaf's keyUsage
+   * and extendedKeyUsage (clientAuth) always, the path rules and — under
+   * paranoid PKI mode — the fields `holdPeer()` asks of a handshake, and
+   * #212's curve guard on every certificate of the path. `{ ok, path }`,
+   * `path` the X509Certificate objects leaf first and the anchor last, or
+   * `{ ok: false, why }`.
    *
    * @param parsed - `parse()`'s answer
+   * @param socket - the real socket the proxy connected on
    * @returns a promise of the verdict
    */
-  async verify(parsed: Json): Promise<Json> {
-    const { log, pki: p, stsCrypto: c } = this.deps;
+  async verify(parsed: Json, socket?: Json): Promise<Json> {
+    const { log, pki: p, stsCrypto: c, trust } = this.deps;
     log.debug("Entering ForwardedClientCertificate.verify().");
     let anchors: Json[] = [];
     try {
-      anchors = (this.deps.anchors() || []).map(function (one: Json): Json {
+      anchors = (this.deps.anchors(socket) || []).map(function (one: Json) {
         return p.certificateFromDer(Buffer.from(one.raw));
       }).filter(Boolean);
     } catch (e) {
@@ -302,18 +326,20 @@ class ForwardedClientCertificate {
                 ((e && e.message) || e));
       anchors = [];
     }
-    const built = await p.verifyPathToAnchors(parsed.leaf, parsed.chain,
+    const refuse = function (why: string): Json {
+      log.debug("Leaving ForwardedClientCertificate.verify(). " + why);
+      return { ok: false, why: why };
+    };
+    const built = await trust.path('tls-client', parsed.leaf, parsed.chain,
       anchors, { now: this.deps.now() });
     if (!built.ok) {
-      log.debug("Leaving ForwardedClientCertificate.verify(). " +
-                String(built.check || 'refused'));
-      return { ok: false, why: 'its chain does not verify to the client ' +
-                               'truststore: ' + String(built.reason || '') };
+      return refuse('its chain does not verify to the listener\'s client ' +
+                    'truststore: ' + String(built.reason || ''));
     }
     let path: Json[] = [];
     try {
       path = (built.chain || []).map(function (one: Json): Json {
-        return c.parseCertificate(Buffer.from(one.der));
+        return c.parseCertificate(Buffer.from(one.der || one.raw || one));
       });
     } catch (e) {
       log.debug("Caught in ForwardedClientCertificate.verify(): " +
@@ -321,8 +347,30 @@ class ForwardedClientCertificate {
       path = [];
     }
     if (!path.length) {
-      log.debug("Leaving ForwardedClientCertificate.verify(). Unreadable.");
-      return { ok: false, why: 'its certificates cannot be read' };
+      return refuse('its certificates cannot be read');
+    }
+    const purpose = trust.purpose('tls-client');
+    let field: Json = null;
+    try {
+      field = c.certificateFieldProblem(path[0], Object.assign({},
+        purpose.leaf, { role: 'leaf', now: this.deps.now() }));
+    } catch (e) {
+      log.debug("Caught in ForwardedClientCertificate.verify(): " +
+                ((e && e.message) || e));
+      field = { why: 'its leaf cannot be read' };
+    }
+    if (field) {
+      return refuse('it is not a TLS client certificate: ' +
+                    String(field.why || field.check || ''));
+    }
+    const curve = path.map(this.deps.curveProblem).filter(Boolean)[0];
+    if (curve) {
+      return refuse('a certificate of its path has ' + curve);
+    }
+    const held = trust.holdPeer('tls-client',
+      ForwardedClientCertificate.legacyOf(path, true), {});
+    if (!held.ok) {
+      return refuse(String(held.why || 'the path rules refused it'));
     }
     log.debug("Leaving ForwardedClientCertificate.verify(). " + path.length +
               " certificate(s).");
@@ -486,8 +534,18 @@ class ForwardedClientCertificate {
       const parsed = ForwardedClientCertificate.parse(headers);
       delete headers[CERT_HEADER];
       delete headers[CHAIN_HEADER];
+      const real = req.socket;
       const finish = function (path: Json[], why: string): void {
-        req.socket = ForwardedClientCertificate.viewOf(req.socket, path, why);
+        // DEFINED, NOT ASSIGNED (the #2012 review): an HTTP/2 request's
+        // `socket` is a getter with no setter, and an assignment throws in
+        // strict mode; an own property shadows it for this request alone.
+        const view = ForwardedClientCertificate.viewOf(real, path, why);
+        Object.defineProperty(req, 'socket', { value: view,
+                                               configurable: true,
+                                               writable: true });
+        Object.defineProperty(req, 'connection', { value: view,
+                                                   configurable: true,
+                                                   writable: true });
         req.forwardedClientCertificate = { presented: path.length > 0,
                                            why: why };
         next();
@@ -501,7 +559,7 @@ class ForwardedClientCertificate {
         finish([], parsed.problem || '');
         return;
       }
-      self.verify(parsed).then(function (verdict: Json) {
+      self.verify(parsed, real).then(function (verdict: Json) {
         if (!verdict.ok) {
           log.info(codes.tag('STS-TLS-0073') + 'forwarded_client_' +
                    'certificate: the client certificate the trusted proxy ' +

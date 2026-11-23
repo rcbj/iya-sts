@@ -469,7 +469,7 @@ most 32 profiles, and each list in a profile at most 32 values.
 | Member | Required | What it is |
 |---|---|---|
 | `id` | yes | Lower-case letters, digits and hyphens, at most 64; unique in the array. It appears in the log and in every refusal. |
-| `issuers` | yes | The CAs the profile covers: the SHA-256 of each CA's DER SubjectPublicKeyInfo, 64 hexadecimal digits (colons and a `sha256:` prefix are accepted). Because it names the CA's **key**, a CA certificate renewed under the same key is still covered. Name a root, and every CA under it is covered. |
+| `issuers` | yes | The CAs the profile covers: the SHA-256 of each CA's DER SubjectPublicKeyInfo, 64 hexadecimal digits (colons and a `sha256:` prefix are accepted). Because it names the CA's **key**, a CA certificate renewed under the same key is still covered. Name a root, and every CA under it is covered. Only a CA whose signature over the certificate below it verifies counts: a certificate a client merely sends along does not. This service's own CAs are refused here, since the certificates they issue are identities by their own rules. |
 | `keyUsage` | no | keyUsage bits the leaf must **all** carry: `digitalSignature`, `nonRepudiation`, `keyEncipherment`, `dataEncipherment`, `keyAgreement`, `keyCertSign`, `cRLSign`, `encipherOnly`, `decipherOnly`. |
 | `extendedKeyUsage` | no | Purposes as dotted OIDs, **one** of which the leaf must carry, such as `1.3.6.1.5.5.7.3.2` (clientAuth). |
 | `policies` | no | Certificate policies as dotted OIDs. RFC 5280 section 6.1 policy processing runs over the validated path with these as the initial policy set and an explicit policy required, so the path must carry one of them down to the leaf. Policy mappings are honoured: an agency policy mapped to one of these through a bridge counts. |
@@ -511,7 +511,8 @@ agency's issuing CA, not the root the profile names.
 agree.** The certificate signs in the one person they all found. It signs
 nobody in when:
 
-* no method finds anybody (`STS-TLS-0068` in the log; the door answers
+* no method finds anybody, or only a name does where the profile names a
+  high-affinity method too (`STS-TLS-0068` in the log; the door answers
   `NOT_STORED`: `STS-TLS-0054` at `/tls/sign-in`, `STS-AUTHN-0468` on the
   screen);
 * one method finds two people, or two methods find different people
@@ -688,9 +689,20 @@ CA the profile covers equally. With `"lowAffinity": true`:
   their UPN, address or subject into a certificate. A profile that names a
   root or a bridge covers every CA under it. Name the issuing CAs you trust to
   assign those names, not the root above them.
-* **A high-affinity method beside a name does not make the name safer.** A
-  method that finds nobody is skipped, so a certificate that only the name
-  matches still signs in.
+* **A name is never a fallback.** On a profile that also names a
+  high-affinity method, a certificate that only a name matches signs nobody
+  in: the names then only corroborate the high-affinity match, and a name
+  naming somebody else is still a disagreement. A name signs a certificate in
+  by itself only on a profile whose `bindings` are names alone.
+* **`upn`, `email` and `subject` are not issuer-scoped.** They match the name
+  wherever in the directory it is held, whichever covered CA wrote it; use
+  `issuer-subject` to tie a subject to one CA.
+* **`email` trusts `mail` as written.** The directory does not prove that a
+  person controls the address in their `mail`, so an administrator or a sync
+  that writes `mail` decides who an `email` binding signs in.
+* **`upn` waits for the index.** On a store kept in a database, a
+  `userPrincipalName` written before this version is indexed by a one-time
+  background walk; until it finishes, the `upn` method matches nobody.
 * **The directory decides who a name is.** Changing a person's `mail` or
   `userPrincipalName` changes which certificates sign them in, and so does
   giving that name to somebody else. An address two people hold signs nobody
@@ -807,9 +819,17 @@ What the service does with it:
 
 * **The proxy's own certificate must verify** against the client truststore,
   so add its CA there. The listener the proxy connects to must ask for a
-  certificate (the main port does, unless you turned that off).
-* **The forwarded certificate is verified here**, to the client truststore
-  with every path rule. Revocation, the profiles and the identity rules then
+  certificate. The main port does unless
+  `tls.mainPortDisableOptionalClientCertificate` is on; with it on (as with
+  the certificate handoff above), give the proxy a custom listener of its own
+  whose `clientAuth` is `optional` or `required`, and map to it the
+  applications the proxy serves.
+* **The forwarded certificate is verified here** as the listener the proxy
+  reached verifies a handshake's: to that listener's client truststore with
+  every path rule, as a TLS client certificate (its keyUsage and an
+  extendedKeyUsage of clientAuth where it has one), on a NIST curve where its
+  key is EC, and under paranoid PKI mode with the fields a handshake is held
+  to. Revocation, the profiles and the identity rules then
   apply to it exactly as to a handshake's certificate, at every door.
 * **A request from the proxy with no `Client-Cert`, or with one that does not
   verify, presents no certificate** (`STS-TLS-0073` in the log for the
