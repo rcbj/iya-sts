@@ -26745,6 +26745,79 @@ const CODES = [
       'token-exchange gate is a detail tuple it answers 501 ' +
       '(STS-XPEP-0140). The next pull that can read them sends the list.',
     spec: 'none — logged; the catalogue is still sent' },
+  { code: 'STS-AUTHZEN-0146',
+    summary: 'The hosted access request form (/portal/access-request, ' +
+      '#1204) was opened or submitted with an evaluation_id this realm ' +
+      'holds no requestable denial record for: never issued, removed a ' +
+      'day after its window, or not recorded because the store was full.',
+    spec: 'the profile\'s section 16, form_url; the portal answers 404' },
+  { code: 'STS-AUTHZEN-0147',
+    summary: 'The hosted access request form or ticket was opened by ' +
+      'somebody who is not the subject of the denial or the request it ' +
+      'names (the subject\'s type is one of authzen.resolveSubjectTypes ' +
+      'and its id one of the person\'s names). The same answer as a ' +
+      'request that does not exist (#1204).',
+    spec: 'the profile\'s sections 13.1 and 13.3.3; the portal answers 404' },
+  { code: 'STS-AUTHZEN-0148',
+    summary: 'The hosted access request form was opened or submitted after ' +
+      'the requestable denial\'s window had passed (#1204).',
+    spec: 'the profile\'s section 13.2, expired_denial; the portal ' +
+      'answers 410' },
+  { code: 'STS-AUTHZEN-0149',
+    summary: 'An access request was submitted on the hosted form while ' +
+      'authzen.accessRequestForm (or the profile) is off (#1204).',
+    spec: 'none — the portal answers 403' },
+  { code: 'STS-AUTHZEN-0150',
+    summary: 'A Catalogs Document or Catalog Endpoint of the AuthZEN access ' +
+      'request catalogs (#1204) was asked for a denial this realm did not ' +
+      'record, whose advice lists no entitlements, or by a caller it was ' +
+      'not answered to or that is no longer scoped to its application.',
+    spec: 'the CATALOG companion\'s sections 7 and 11; 404 problem+json' },
+  { code: 'STS-AUTHZEN-0151',
+    summary: 'A Catalog Endpoint call carried a cursor this endpoint did ' +
+      'not issue for the same search (#1204).',
+    spec: 'the CATALOG companion\'s section 7; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0152',
+    summary: 'An access request for a denial whose catalog lists ' +
+      'entitlements carried no requested_access.entitlement, or one the ' +
+      'catalog does not list (#1204).',
+    spec: 'the CATALOG companion\'s section 10.3; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0153',
+    summary: 'The access request catalogs were called while ' +
+      'authzen.accessRequestCatalogs (or the profile) is off (#1204).',
+    spec: 'none — 501 problem+json' },
+  { code: 'STS-AUTHZEN-0154',
+    summary: 'An access request\'s client.actor named a chain the caller\'s ' +
+      'own credential does not authorize: neither one link that is the ' +
+      'caller itself nor, link for link, the act chain of its own access ' +
+      'token (#1204, the ACTOR companion).',
+    spec: 'the ACTOR companion\'s section 3.2; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0155',
+    summary: 'An access request\'s client.actor or client.source was ' +
+      'malformed: a link without its id or sub, a non-string or overlong ' +
+      'member, a chain deeper than 8, or an external_url that is not https ' +
+      '(#1204).',
+    spec: 'the ACTOR companion\'s section 3.1; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0156',
+    summary: 'A bulk access request carried a top-level resource or action ' +
+      'beside items (#1204).',
+    spec: 'the BULK companion\'s section 3.1; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0157',
+    summary: 'A bulk access request\'s items were not 1 to ' +
+      'authzen.accessRequestMaxBulkItems objects (#1204).',
+    spec: 'the BULK companion\'s section 3.2; 400 problem+json' },
+  { code: 'STS-AUTHZEN-0158',
+    summary: 'A bulk access request carried a top-level denial, or an item ' +
+      'without its own: this service issues no bundle denial (#1204).',
+    spec: 'the BULK companion\'s section 3.3; invalid_denial_binding' },
+  { code: 'STS-AUTHZEN-0159',
+    summary: 'A bulk access request\'s items named denials about different ' +
+      'applications (#1204).',
+    spec: 'none — 400 problem+json' },
+  { code: 'STS-AUTHZEN-0160',
+    summary: 'A bulk access request carried a callback, which this service ' +
+      'does not take on a bulk request (#1204).',
+    spec: 'none — 400 problem+json' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +

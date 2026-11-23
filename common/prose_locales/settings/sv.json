@@ -8395,6 +8395,54 @@
     "en": "698617c5a3485120",
     "text": "Det högsta antalet begärbara avslag som en sfär registrerar per evaluation_id (#1204). Därutöver registreras inte ett nytt avslag, och det kan fortfarande begäras med sitt binding_token; jobbet för åtkomstbegäranden tar bort en post en dag efter dess fönster."
   },
+  "authzen.accessRequestDisplay|label": {
+    "en": "2e4d23a3bbd81b74",
+    "text": "Visningstips för åtkomstbegäranden"
+  },
+  "authzen.accessRequestDisplay|description": {
+    "en": "b9fd6a2d08cb3736",
+    "text": "Access Request and Approval-profilens visningstips (#1204): ett begärbart avslag bär access_request.display och ett Task Handle bär task.display, var och en med en titel och en beskrivning. Avslagets är advicens display-title och display-description, ordagrant, annars tjänstens egna ord på det språk som Accept-Language ber om. De är tips för en människa och aldrig policy. Av: inget av dem skickas."
+  },
+  "authzen.accessRequestForm|label": {
+    "en": "2e34659783fbd924",
+    "text": "Värdat formulär för åtkomstbegäranden"
+  },
+  "authzen.accessRequestForm|description": {
+    "en": "37c92b9ca48d6f87",
+    "text": "Access Request and Approval-profilens värdade formulär (#1204): ett begärbart avslag som den här sfären har registrerat bär form_url, portalsidan /portal/access-request, där avslagets subjekt loggar in och skickar åtkomstbegäran med en motivering; den nekade PEP:en får tillbaka den uppgiften när den skickar samma avslag. Ett Task Handle bär links.ticket, samma sida, där subjektet ser begärans status. Av: inget skickas och sidan gör ingen begäran."
+  },
+  "authzen.accessRequestCatalogs|label": {
+    "en": "ccb71d0eb2d2512b",
+    "text": "Kataloger för åtkomstbegäranden"
+  },
+  "authzen.accessRequestCatalogs|description": {
+    "en": "1f38cbb80e80bafc",
+    "text": "AuthZEN Access Request Catalog-profilen (#1204): ett registrerat begärbart avslag vars advice listar värden urn:sts:xacml:advice:access-request:entitlement bär request_catalogs_url, dess Catalogs Document och Catalog Endpoint svarar den anropare som avslaget gavs till, en begäran måste välja en av behörigheterna i requested_access.entitlement, och godkännandet för den till policyn som ett betrott faktum. Av: advicens behörigheter ignoreras och de två slutpunkterna svarar 501."
+  },
+  "authzen.accessRequestActor|label": {
+    "en": "746cf58e932ffdab",
+    "text": "Agerande parter i åtkomstbegäranden"
+  },
+  "authzen.accessRequestActor|description": {
+    "en": "2ad9ec45c4e1ebfe",
+    "text": "AuthZEN Actor Delegation-profilen (#1204): en åtkomstbegärans client.actor-kedja verifieras mot anroparens egna autentiseringsuppgift (en länk som är anroparen själv, eller act-kedjan i dess egen åtkomsttoken) och nekas annars, och client.source registreras. Båda visas för godkännarna och i granskningsloggen, och ingen av dem är ett policyfaktum. Av: båda godtas och läses aldrig."
+  },
+  "authzen.accessRequestBulk|label": {
+    "en": "626b8aa6d7729f4b",
+    "text": "Åtkomstbegäranden i klump"
+  },
+  "authzen.accessRequestBulk|description": {
+    "en": "8abb7e835c531ac9",
+    "text": "AuthZEN Bulk Access Requests-profilen (#1204): en inlämning med items, var och en med sitt eget avslag, kontrolleras post för post som en enskild, och besvaras med ett Task Handle vars status sammanfattar posterna (partial när de slutade olika) och vars poster var och en bär sitt eget resultat. Varje post godkänns och omprövas för sig. Av: items nekas som tidigare."
+  },
+  "authzen.accessRequestMaxBulkItems|label": {
+    "en": "bed33a03d68efa71",
+    "text": "Poster i en åtkomstbegäran i klump"
+  },
+  "authzen.accessRequestMaxBulkItems|description": {
+    "en": "9a1f15e576f964cb",
+    "text": "Det största antalet poster en åtkomstbegäran i klump får ha (#1204). Var och en räknas mot authzen.accessRequestMaxPending."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

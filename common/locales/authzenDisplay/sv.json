@@ -1,0 +1,6 @@
+{
+  "denialTitle": "Begär åtkomst",
+  "denialDescription": "Den här åtkomsten kan begäras. En godkännare som policyn anger beslutar, och sedan frågar programmet igen.",
+  "taskTitle": "{status, select, pending {Åtkomstbegäran skickad} approved {Åtkomstbegäran godkänd} denied {Åtkomstbegäran nekad} expired {Åtkomstbegäran har gått ut} cancelled {Åtkomstbegäran avbruten} failed {Åtkomstbegäran misslyckades} other {Åtkomstbegäran}}",
+  "taskDescription": "{status, select, pending {Godkännarna har tillfrågats. Programmet frågar igen när någon av dem har beslutat.} approved {En godkännare godkände begäran. Programmet frågar igen och visar godkännandet.} denied {En godkännare nekade begäran.} expired {Ingen beslutade om begäran innan den gick ut.} cancelled {Begäran avbröts.} failed {Begäran kunde inte slutföras. Begär igen.} other {Begäran är {status}.}}"
+}

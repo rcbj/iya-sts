@@ -363,6 +363,9 @@ const VOCABULARY = Object.freeze({
   AUTHZEN_APPROVAL_ID: 'urn:sts:xacml:authzen:approval-id',
   AUTHZEN_APPROVED_UNTIL: 'urn:sts:xacml:authzen:approved-until',
   AUTHZEN_APPROVER: 'urn:sts:xacml:authzen:approver',
+  // The catalog item the approved request chose (#1204, the CATALOG
+  // companion), present only when it chose one.
+  AUTHZEN_APPROVED_ENTITLEMENT: 'urn:sts:xacml:authzen:approved-entitlement',
   // THE FACTS OF A FINE-GRAINED AUTHORIZATION QUESTION (#564): one RFC 9396
   // authorization detail, asked of the policy of the RESOURCE application
   // that declares its type. Written by `xacml/fga_map.ts` alone, through
@@ -1318,7 +1321,8 @@ class AuthorizationRequest {
   //                       trusted, from the authenticated caller
   //   supplied            the paths of every member the caller sent
   //   approval            a VERIFIED approval (#1180), { approvalId,
-  //                       approvedUntil, approver }, or null
+  //                       approvedUntil, approver, approvedEntitlement },
+  //                       or null
   //   attributes          [{ category, attributeId, dataType, values }],
   //                       each a catalogue row's, the values lexical
   // The subject's id is XACML's own subject-id, the action's name its
@@ -1356,6 +1360,10 @@ class AuthorizationRequest {
       this.environment(V.AUTHZEN_APPROVED_UNTIL, one(approval.approvedUntil),
                        model.TYPE.DATETIME);
       this.environment(V.AUTHZEN_APPROVER, one(approval.approver));
+      if (approval.approvedEntitlement) {
+        this.environment(V.AUTHZEN_APPROVED_ENTITLEMENT,
+                         one(approval.approvedEntitlement));
+      }
     }
     const self = this;
     (Array.isArray(given.attributes) ? given.attributes : [])

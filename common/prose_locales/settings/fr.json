@@ -8395,6 +8395,54 @@
     "en": "698617c5a3485120",
     "text": "Le nombre maximal de refus susceptibles de demande qu’un domaine enregistre par evaluation_id (#1204). Au-delà, un nouveau refus n’est pas enregistré et reste demandable par son binding_token ; la tâche des demandes d’accès supprime un enregistrement un jour après sa fenêtre."
   },
+  "authzen.accessRequestDisplay|label": {
+    "en": "2e4d23a3bbd81b74",
+    "text": "Indications d’affichage des demandes d’accès"
+  },
+  "authzen.accessRequestDisplay|description": {
+    "en": "b9fd6a2d08cb3736",
+    "text": "Les indications d’affichage du profil Access Request and Approval (#1204) : un refus demandable porte access_request.display et un Task Handle porte task.display, chacun avec un titre et une description. Ceux du refus sont le display-title et le display-description de l’advice, tels quels, ou sinon les propres mots du service dans la langue que demande Accept-Language. Ce sont des indications destinées à une personne, jamais une politique. Désactivé, aucun n’est envoyé."
+  },
+  "authzen.accessRequestForm|label": {
+    "en": "2e34659783fbd924",
+    "text": "Formulaire hébergé des demandes d’accès"
+  },
+  "authzen.accessRequestForm|description": {
+    "en": "37c92b9ca48d6f87",
+    "text": "Le formulaire hébergé du profil Access Request and Approval (#1204) : un refus demandable que ce domaine a enregistré porte form_url, la page du portail /portal/access-request, où le sujet du refus se connecte et soumet la demande d’accès avec une justification ; le PEP qui a été refusé récupère cette tâche lorsqu’il soumet le même refus. Un Task Handle porte links.ticket, la même page, où le sujet voit l’état de la demande. Désactivé, aucun n’est envoyé et la page ne crée aucune demande."
+  },
+  "authzen.accessRequestCatalogs|label": {
+    "en": "ccb71d0eb2d2512b",
+    "text": "Catalogues des demandes d’accès"
+  },
+  "authzen.accessRequestCatalogs|description": {
+    "en": "1f38cbb80e80bafc",
+    "text": "Le profil AuthZEN Access Request Catalog (#1204) : un refus demandable enregistré dont l’advice énumère des valeurs urn:sts:xacml:advice:access-request:entitlement porte request_catalogs_url, son Catalogs Document et son Catalog Endpoint répondent à l’appelant à qui le refus a été répondu, une soumission doit choisir l’un des droits dans requested_access.entitlement, et l’approbation le transmet à la politique comme fait de confiance. Désactivé, les droits de l’advice sont ignorés et les deux points de terminaison répondent 501."
+  },
+  "authzen.accessRequestActor|label": {
+    "en": "746cf58e932ffdab",
+    "text": "Parties agissantes des demandes d’accès"
+  },
+  "authzen.accessRequestActor|description": {
+    "en": "2ad9ec45c4e1ebfe",
+    "text": "Le profil AuthZEN Actor Delegation (#1204) : la chaîne client.actor d’une demande d’accès est vérifiée par rapport au propre justificatif de l’appelant (un maillon qui est l’appelant lui-même, ou la chaîne act de son propre jeton d’accès) et refusée sinon, et client.source est enregistré. Les deux sont montrés aux approbateurs et au journal d’audit, et aucun n’est un fait de politique. Désactivé, les deux sont acceptés et jamais lus."
+  },
+  "authzen.accessRequestBulk|label": {
+    "en": "626b8aa6d7729f4b",
+    "text": "Demandes d’accès groupées"
+  },
+  "authzen.accessRequestBulk|description": {
+    "en": "8abb7e835c531ac9",
+    "text": "Le profil AuthZEN Bulk Access Requests (#1204) : une soumission avec items, chacun portant son propre refus, est vérifiée élément par élément comme une soumission unique, et répond un seul Task Handle dont l’état agrège ses éléments (partial quand ils ont abouti différemment) et dont chaque élément porte son propre résultat. Chaque élément est approuvé et réévalué seul. Désactivé, items est refusé comme avant."
+  },
+  "authzen.accessRequestMaxBulkItems|label": {
+    "en": "bed33a03d68efa71",
+    "text": "Éléments d’une demande d’accès groupée"
+  },
+  "authzen.accessRequestMaxBulkItems|description": {
+    "en": "9a1f15e576f964cb",
+    "text": "Le nombre maximal d’éléments d’une demande d’accès groupée (#1204). Chacun compte dans authzen.accessRequestMaxPending."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

@@ -8395,6 +8395,54 @@
     "en": "698617c5a3485120",
     "text": "一个领域按 evaluation_id 记录的可申请拒绝的最大数量（#1204）。超过后，新的拒绝不会被记录，但仍可凭其 binding_token 申请；访问请求作业会在记录的时间窗口结束一天后将其删除。"
   },
+  "authzen.accessRequestDisplay|label": {
+    "en": "2e4d23a3bbd81b74",
+    "text": "访问申请的显示提示"
+  },
+  "authzen.accessRequestDisplay|description": {
+    "en": "b9fd6a2d08cb3736",
+    "text": "Access Request and Approval 配置文件的显示提示（#1204）：可申请的拒绝携带 access_request.display，Task Handle 携带 task.display，各含一个标题和一段描述。拒绝的提示是 advice 的 display-title 和 display-description，原样使用；否则是服务自己的措辞，使用 Accept-Language 所要求的语言。它们是给人看的提示，绝不是策略。关闭时两者都不发送。"
+  },
+  "authzen.accessRequestForm|label": {
+    "en": "2e34659783fbd924",
+    "text": "访问申请的托管表单"
+  },
+  "authzen.accessRequestForm|description": {
+    "en": "37c92b9ca48d6f87",
+    "text": "Access Request and Approval 配置文件的托管表单（#1204）：本领域记录的可申请拒绝携带 form_url，即门户页面 /portal/access-request，拒绝的主体在该页登录并附上理由提交访问申请；被拒绝的 PEP 提交同一拒绝时会取回该任务。Task Handle 携带 links.ticket，即同一页面，主体可在其中查看申请状态。关闭时两者都不发送，该页面也不发起申请。"
+  },
+  "authzen.accessRequestCatalogs|label": {
+    "en": "ccb71d0eb2d2512b",
+    "text": "访问申请的目录"
+  },
+  "authzen.accessRequestCatalogs|description": {
+    "en": "1f38cbb80e80bafc",
+    "text": "AuthZEN Access Request Catalog 配置文件（#1204）：advice 列出 urn:sts:xacml:advice:access-request:entitlement 值的已记录可申请拒绝携带 request_catalogs_url，其 Catalogs Document 和 Catalog Endpoint 只答复该拒绝所答复的调用方，提交必须在 requested_access.entitlement 中选择其中一项权限，批准会将其作为可信事实带给策略。关闭时忽略 advice 的权限，两个端点返回 501。"
+  },
+  "authzen.accessRequestActor|label": {
+    "en": "746cf58e932ffdab",
+    "text": "访问申请中的代理方"
+  },
+  "authzen.accessRequestActor|description": {
+    "en": "2ad9ec45c4e1ebfe",
+    "text": "AuthZEN Actor Delegation 配置文件（#1204）：访问申请的 client.actor 链依据调用方自己的凭据校验（即调用方本身这一环，或其自身访问令牌的 act 链），否则拒绝；client.source 会被记录。两者都展示给审批人并写入审计日志，均不作为策略事实。关闭时两者都被接受但从不读取。"
+  },
+  "authzen.accessRequestBulk|label": {
+    "en": "626b8aa6d7729f4b",
+    "text": "批量访问申请"
+  },
+  "authzen.accessRequestBulk|description": {
+    "en": "8abb7e835c531ac9",
+    "text": "AuthZEN Bulk Access Requests 配置文件（#1204）：带 items 的提交（每一项都带自己的拒绝）会像单个提交一样逐项检查，并返回一个 Task Handle，其状态汇总各项（各项结局不同时为 partial），每一项都带有自己的结果。每一项单独审批、单独重新评估。关闭时 items 照旧被拒绝。"
+  },
+  "authzen.accessRequestMaxBulkItems|label": {
+    "en": "bed33a03d68efa71",
+    "text": "一个批量访问申请中的项数"
+  },
+  "authzen.accessRequestMaxBulkItems|description": {
+    "en": "9a1f15e576f964cb",
+    "text": "一个批量访问申请最多可携带的项数（#1204）。每一项都计入 authzen.accessRequestMaxPending。"
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

@@ -209,6 +209,7 @@ using IyaSts.Api.Common;
     #{`name`:"Devices"},
     #{`name`:"Sign-in requests"},
     #{`name`:"Access requests"},
+    #{`name`:"Request access"},
     #{`name`:"Sign in a device"},
     #{`name`:"Claim sources"},
     #{`name`:"Connected accounts"},
@@ -5847,6 +5848,214 @@ op `decideAccessRequest`(`requestBody/content/application~1json/schema`: {
     `description`:"A refusal or a failure, in English. No error code is ever in it."
   }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
+
+@endpoint("/account-api/access-request",
+  "get",
+  #{
+    `operationId`:"getAccessRequestForm",
+    `tags`:#["Request access"],
+    `summary`:"An AuthZEN requestable denial's hosted form, a request's ticket, or your own requests",
+    `description`:"The hosted form of the AuthZEN Access Request and Approval Profile (section 16, #1204). With `evaluation_id`, the requestable denial a PEP was given, when you are its subject: what it asks, for which application, until when it can be made, and whether emergency access is allowed (`mode: denial`); or the request already made from it (`mode: task`). With `request`, that request's status, when you are its subject (`mode: task`): the Task Handle's `links.ticket`. With neither, the requests about you (`mode: mine`). Never who may approve. `enabled` is false where the realm has `authzen.accessRequestForm` off.\n\nThe door of the portal's `GET /portal/access-request`.",
+    `parameters`:#[
+      #{
+        `name`:"evaluation_id",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The requestable denial's `evaluation_id`, from its `form_url`.",
+        `example`:"eval_EXAMPLE"
+      },
+      #{
+        `name`:"request",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"An access request's id, from its `links.ticket`.",
+        `example`:"arq_EXAMPLE"
+      }
+    ],
+    `responses`:#{
+      `200`:#{
+        `description`:"The answer.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The request did not validate, or was refused: `{ ok: false, errors: [...] }`.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"The token is for another audience or does not carry `account:manage`, or the access policy refused the person.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"No such denial or request about you.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `410`:#{
+        `description`:"The denial's window has passed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`portal`:#["account:manage"]}],
+    `x-access`:"person",
+    `x-mirrors`:"GET /portal/access-request"
+  })
+op `getAccessRequestForm`(@js(#{`maxLength`:128,`pattern`:"^[A-Za-z0-9_-]*$"}) `parameters/0/schema`: string,
+  @js(#{`maxLength`:128,`pattern`:"^[A-Za-z0-9_-]*$"}) `parameters/1/schema`: string,
+  `responses/200/content/application~1json/schema`: AccessRequestFormView,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorAccessRequestFormView,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorAccessRequestFormView,
+  `responses/410/content/application~1json/schema`: WithOkErrorsErrorAccessRequestFormView,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
+  
+
+@endpoint("/account-api/access-request",
+  "post",
+  #{
+    `operationId`:"submitAccessRequestForm",
+    `tags`:#["Request access"],
+    `summary`:"Makes the access request a requestable denial allows, as its subject",
+    `description`:"Submits the denial's access request on the hosted form (#1204), when you are the denial's subject and its window is open. The request is the same one the PEP that was denied would make, for that PEP: it reads it, and gets it back when it submits the same denial. `business_justification` goes to the approvers; `duration` asks for an approval that lasts that many seconds at most; `emergency` asks for emergency access where the policy allows it, and needs a justification. Refused when the form is off, when the denial is not one this realm recorded or not about you, when its window has passed, and when the request was already made.\n\nThe door of the portal's `POST /portal/access-request`.",
+    `parameters`:#[
+
+    ],
+    `responses`:#{
+      `200`:#{
+        `description`:"The answer.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The request did not validate, or was refused: `{ ok: false, errors: [...] }`.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"The token is for another audience or does not carry `account:manage`, or the access policy refused the person, or the hosted form is off.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"No such denial or request about you.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `409`:#{
+        `description`:"The access request was already made.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `503`:#{
+        `description`:"The realm holds as many pending access requests as it may.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `410`:#{
+        `description`:"The denial's window has passed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`portal`:#["account:manage"]}],
+    `x-access`:"person",
+    `x-mirrors`:"POST /portal/access-request",
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`evaluation_id`:"eval_EXAMPLE",`business_justification`:"Preparing the quarterly report."}}}}
+  })
+op `submitAccessRequestForm`(`requestBody/content/application~1json/schema`: {
+    @js(#{
+      `minLength`:1,
+      `maxLength`:128,
+      `pattern`:"^[A-Za-z0-9_-]+$",
+      `description`:"The requestable denial's `evaluation_id`."
+    }) `evaluation_id`: string;
+    @js(#{
+      `maxLength`:1024,
+      `description`:"Why you need the access, for the approvers."
+    }) `business_justification`?: string;
+    @js(#{
+      `maxLength`:12,
+      `pattern`:"^[0-9]*$",
+      `description`:"The longest the approval should last, in seconds; empty for as long as the policy allows."
+    }) `duration`?: string;
+    @js(#{`description`:"`true` asks for emergency access, where the policy allows it."}) `emergency`?: "true" | "false";
+    @js(#{
+      `maxLength`:128,
+      `description`:"One of the entitlements the denial's catalog lists, when it lists any (#1204)."
+    }) `entitlement`?: string
+  },
+  `responses/200/content/application~1json/schema`: WithOkMessageGo,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorAccessRequestFormView,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/403/content/application~1json/schema`: WithOkErrorsErrorAccessRequestFormView,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorAccessRequestFormView,
+  `responses/409/content/application~1json/schema`: WithOkErrorsErrorAccessRequestFormView,
+  `responses/410/content/application~1json/schema`: WithOkErrorsErrorAccessRequestFormView,
+  `responses/503/content/application~1json/schema`: WithOkErrorsErrorAccessRequestFormView,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
+  
+
+/** `/portal/access-request`'s view (#1204). */
+@hoisted model AccessRequestFormView {
+  `enabled`: boolean;
+  @js(#{`description`:"`denial`: the form; `task`: a request already made, or the ticket; `mine`: the requests about you; `none`: nothing to show."}) `mode`: "denial" | "task" | "mine" | "none";
+  `request`?: AccessRequestFormRequest;
+  `task`?: AccessRequestFormTask;
+  `mine`?: (AccessRequestFormTask)[]
+}
+
+/** The denial the form is for: what it asks, never who approves. */
+@hoisted model AccessRequestFormRequest {
+  `evaluationId`: string;
+  @js(#{ `x-free-form`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define.", `description`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define." }) `subject`: unknown;
+  @js(#{ `x-free-form`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define.", `description`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define." }) `action`: unknown;
+  @js(#{ `x-free-form`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define.", `description`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define." }) `resource`: unknown;
+  `application`: string;
+  @js(#{`description`:"Until when it can be made, epoch seconds."}) `expiresAt`: numeric;
+  `emergency`: boolean;
+  @js(#{`description`:"The longest an approval lasts, in seconds."}) `maxApprovalS`: numeric;
+  @js(#{`description`:"The entitlements the denial's catalog lists (#1204), one of which the request must choose; empty when it lists none or the catalogs are off."}) `entitlements`?: ({ `value`: string; `label`: string })[];
+  `display`?: { `title`?: string; `description`?: string }
+}
+
+/** A request about you: its status and what it asks. */
+@hoisted model AccessRequestFormTask {
+  `id`: string;
+  `status`: "pending" | "approved" | "denied" | "expired" | "cancelled" | "failed";
+  @js(#{`description`:"`form`: made here; `pep`: made by the application."}) `origin`: "form" | "pep";
+  @js(#{ `x-free-form`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define.", `description`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define." }) `subject`: unknown;
+  @js(#{ `x-free-form`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define.", `description`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define." }) `action`: unknown;
+  @js(#{ `x-free-form`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define.", `description`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` are the caller's to define." }) `resource`: unknown;
+  `application`: string;
+  `createdAt`: numeric;
+  `expiresAt`: numeric;
+  `approvedUntil`?: numeric;
+  @js(#{`description`:"The entitlement the request chose from the denial's catalog (#1204)."}) `entitlement`?: string
+}
+
+/** A refusal that draws the page. */
+@hoisted model WithOkErrorsErrorAccessRequestFormView { `ok`: boolean; `errors`: (string)[]; `error`?: string; `view`?: AccessRequestFormView }
+
 
 @endpoint("/account-api/device",
   "get",

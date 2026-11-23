@@ -8395,6 +8395,54 @@
     "en": "698617c5a3485120",
     "text": "एक रेल्म evaluation_id के अनुसार अधिकतम कितनी अनुरोध-योग्य अस्वीकृतियाँ दर्ज करता है (#1204)। इसके बाद नई अस्वीकृति दर्ज नहीं होती, और वह अपने binding_token से अब भी अनुरोध-योग्य रहती है; एक्सेस अनुरोध जॉब किसी रिकॉर्ड को उसकी अवधि के एक दिन बाद हटा देता है।"
   },
+  "authzen.accessRequestDisplay|label": {
+    "en": "2e4d23a3bbd81b74",
+    "text": "एक्सेस अनुरोधों पर प्रदर्शन संकेत"
+  },
+  "authzen.accessRequestDisplay|description": {
+    "en": "b9fd6a2d08cb3736",
+    "text": "Access Request and Approval प्रोफ़ाइल के प्रदर्शन संकेत (#1204): अनुरोध-योग्य अस्वीकृति access_request.display और Task Handle task.display रखता है, प्रत्येक में एक शीर्षक और एक विवरण। अस्वीकृति के संकेत advice के display-title और display-description हैं, शब्दशः, अन्यथा सेवा के अपने शब्द उस भाषा में जो Accept-Language माँगता है। ये किसी व्यक्ति के लिए संकेत हैं, कभी नीति नहीं। बंद होने पर कोई भी नहीं भेजा जाता।"
+  },
+  "authzen.accessRequestForm|label": {
+    "en": "2e34659783fbd924",
+    "text": "एक्सेस अनुरोधों के लिए होस्ट किया गया फ़ॉर्म"
+  },
+  "authzen.accessRequestForm|description": {
+    "en": "37c92b9ca48d6f87",
+    "text": "Access Request and Approval प्रोफ़ाइल का होस्ट किया गया फ़ॉर्म (#1204): इस realm द्वारा दर्ज अनुरोध-योग्य अस्वीकृति form_url रखती है, पोर्टल पृष्ठ /portal/access-request, जहाँ अस्वीकृति का विषय साइन इन करके औचित्य के साथ एक्सेस अनुरोध सबमिट करता है; अस्वीकृत PEP वही अस्वीकृति सबमिट करने पर वह कार्य वापस पाता है। Task Handle links.ticket रखता है, वही पृष्ठ, जहाँ विषय अनुरोध की स्थिति देखता है। बंद होने पर कोई भी नहीं भेजा जाता और पृष्ठ कोई अनुरोध नहीं बनाता।"
+  },
+  "authzen.accessRequestCatalogs|label": {
+    "en": "ccb71d0eb2d2512b",
+    "text": "एक्सेस अनुरोधों के लिए कैटलॉग"
+  },
+  "authzen.accessRequestCatalogs|description": {
+    "en": "1f38cbb80e80bafc",
+    "text": "AuthZEN Access Request Catalog प्रोफ़ाइल (#1204): दर्ज अनुरोध-योग्य अस्वीकृति, जिसका advice urn:sts:xacml:advice:access-request:entitlement मान सूचीबद्ध करता है, request_catalogs_url रखती है, उसका Catalogs Document और Catalog Endpoint उसी कॉलर को उत्तर देते हैं जिसे अस्वीकृति दी गई थी, सबमिशन को requested_access.entitlement में किसी एक अधिकार को चुनना होता है, और अनुमोदन उसे विश्वसनीय तथ्य के रूप में नीति तक ले जाता है। बंद होने पर advice के अधिकार अनदेखे होते हैं और दोनों endpoint 501 देते हैं।"
+  },
+  "authzen.accessRequestActor|label": {
+    "en": "746cf58e932ffdab",
+    "text": "एक्सेस अनुरोधों में कार्य करने वाले पक्ष"
+  },
+  "authzen.accessRequestActor|description": {
+    "en": "2ad9ec45c4e1ebfe",
+    "text": "AuthZEN Actor Delegation प्रोफ़ाइल (#1204): एक्सेस अनुरोध की client.actor श्रृंखला कॉलर के अपने क्रेडेंशियल के विरुद्ध जाँची जाती है (एक कड़ी जो स्वयं कॉलर है, या उसके अपने एक्सेस टोकन की act श्रृंखला) और अन्यथा अस्वीकार की जाती है, और client.source दर्ज किया जाता है। दोनों अनुमोदकों को और ऑडिट लॉग में दिखाए जाते हैं, और कोई भी नीति का तथ्य नहीं है। बंद होने पर दोनों स्वीकार किए जाते हैं और कभी पढ़े नहीं जाते।"
+  },
+  "authzen.accessRequestBulk|label": {
+    "en": "626b8aa6d7729f4b",
+    "text": "थोक एक्सेस अनुरोध"
+  },
+  "authzen.accessRequestBulk|description": {
+    "en": "8abb7e835c531ac9",
+    "text": "AuthZEN Bulk Access Requests प्रोफ़ाइल (#1204): items वाला सबमिशन, जिसमें हर item अपनी अस्वीकृति रखता है, एक-एक item करके वैसे ही जाँचा जाता है जैसे एकल सबमिशन, और एक Task Handle देता है जिसकी स्थिति उसके items को जोड़ती है (अलग-अलग परिणाम होने पर partial) और जिसका हर item अपना परिणाम रखता है। हर item अलग से स्वीकृत और फिर से मूल्यांकित होता है। बंद होने पर items पहले की तरह अस्वीकार होता है।"
+  },
+  "authzen.accessRequestMaxBulkItems|label": {
+    "en": "bed33a03d68efa71",
+    "text": "एक थोक एक्सेस अनुरोध में items"
+  },
+  "authzen.accessRequestMaxBulkItems|description": {
+    "en": "9a1f15e576f964cb",
+    "text": "एक थोक एक्सेस अनुरोध में अधिकतम कितने items हो सकते हैं (#1204)। हर एक authzen.accessRequestMaxPending में गिना जाता है।"
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

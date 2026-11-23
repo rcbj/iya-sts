@@ -100,12 +100,24 @@
     "text": "partial: واجهة Access Evaluation API (القسم 6)، يقررها محرك XACML مقابل سياسة الجذر لنطاق الثقة عبر فهرس سمات لكل نطاق ثقة، مع X-Request-ID وتحدي القسم 11.3، وواجهة Access Evaluations API (القسم 7) بدلالاتها الثلاث، وبيانات PDP الوصفية (القسم 9) في شكليها كليهما بما في ذلك signed_metadata، ومسودة Obligations Profile لـ PEP يصرّح بالأنواع، وواجهات Search API الثلاث (القسم 8) على أشخاص هذه الخدمة وتطبيقاتها وواجهاتها وعلاقات التفويض وإجراءات السياسة، مرقَّمة الصفحات وغير متعدية. الناقص: الالتزامات لكل نتيجة في بحث، وملف OAuth، وهو ما زال مسودة."
   },
   "stsmetadata.specs.authzen-arap.coverage": {
-    "en": "6be544a62f94329b",
-    "text": "partial: الرفض القابل للطلب (context.access_request وevaluation_id وevaluated_at وreason) حيث تضع سياسة النطاق علامة على Deny باستخدام نصيحة access-request، مربوطًا بالقيمة عبر binding_token يوقعه هذا النطاق (مطالبات مضمنة وbinding_hash) وبالمرجع من سجل الرفض؛ والطلب مع Idempotency-Key و201 أو 202 وTask Handle؛ ونقطة نهاية حالة المهمة مع Retry-After؛ والإلغاء عبر POST أو DELETE؛ والحالات الست؛ ووضع الإكمال reevaluate، وapproval.id المحلول في حالة موثوقة، وapproval.state الصادر والمتحقق منه مع بقاء البحث مطلوبًا، ووصول الموافقة إلى السياسة كحقائق موثوقة؛ وnext_action والأسباب الخمسة؛ وكل نوع مشكلة؛ وعضو البيانات الوصفية وjwks_uri والقدرة؛ وrequest_schema_url على الرفض القابل للطلب، أي مخطط JSON Schema من الأصل نفسه لإضافات الطلب الاختيارية. الناقص: نموذج مستضاف (form_url) وdisplay، والمرافقات BULK وACTOR وCATALOG."
+    "en": "196f261782bb4038",
+    "text": "partial: الرفض القابل للطلب (context.access_request وevaluation_id وevaluated_at وreason) حيث تضع سياسة النطاق علامة على Deny باستخدام نصيحة access-request، مربوطًا بالقيمة عبر binding_token يوقعه هذا النطاق (مطالبات مضمنة وbinding_hash) وبالمرجع من سجل الرفض؛ والطلب مع Idempotency-Key و201 أو 202 وTask Handle؛ ونقطة نهاية حالة المهمة مع Retry-After؛ والإلغاء عبر POST أو DELETE؛ والحالات الست؛ ووضع الإكمال reevaluate، وapproval.id المحلول في حالة موثوقة، وapproval.state الصادر والمتحقق منه مع بقاء البحث مطلوبًا، ووصول الموافقة إلى السياسة كحقائق موثوقة؛ وnext_action والأسباب الخمسة؛ وكل نوع مشكلة؛ وعضو البيانات الوصفية وjwks_uri والقدرة؛ وrequest_schema_url على الرفض القابل للطلب، أي مخطط JSON Schema من الأصل نفسه لإضافات الطلب الاختيارية؛ وdisplay على الرفض القابل للطلب وعلى Task Handle، بكلمات الـ advice نفسها أو بكلمات الخدمة باللغة المطلوبة، ما دام authzen.accessRequestDisplay مفعّلًا؛ وform_url، النموذج المستضاف في البوابة الذي يقدّم فيه صاحب الرفض الطلب، وlinks.ticket، ما دام authzen.accessRequestForm مفعّلًا. الناقص: لا شيء من الملف الأساسي؛ وتذكر ملاحظة كل مرافق ما ينقصه."
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
     "en": "ca5109eae0e95b17",
     "text": "partial: استدعاء التقديم (endpoint وstate وevents)، وتقييد نقطة النهاية بعناوين URL التي سجّلها المسؤول لـ PEP الطالب، واستدعاء للإشعار فقط لكل حدث نهائي مطلوب، تُصادَق عليه برمز JWT قصير يوقّعه نطاق الثقة هذا، تحت السياسة الصادرة. يُعاد محاولة خطأ الشبكة أو انتهاء المهلة أو HTTP 5xx حتى حد المحاولات؛ ولا يُعاد HTTP 4xx أو عنوان ترفضه السياسة الصادرة. الناقص: الحدث الجزئي (BULK) واشتراكات الأحداث على مستوى النشر."
+  },
+  "stsmetadata.specs.authzen-arap-catalog.coverage": {
+    "en": "10acf494ad5f24ef",
+    "text": "partial: request_catalogs_url على رفض قابل للطلب مسجَّل يسرد advice السياسة فيه استحقاقات، ما دام authzen.accessRequestCatalogs مفعّلًا؛ وCatalogs Document بحقله الوحيد requested_access.entitlement؛ وCatalog Endpoint مع q وcursor وlimit، ولا يجيب إلا المستدعي الذي أُجيب بالرفض؛ والقيمة التي يُتحقق منها عند التقديم وتصل إلى السياسة حقيقةً موثوقة من الموافقة. الناقص: scope_params (فهرس واحد لا شيء يُقيَّد به)، وgranted وrisk_level وowner، والفهارس عبر بروتوكول الوكلاء."
+  },
+  "stsmetadata.specs.authzen-arap-actor.coverage": {
+    "en": "3b5295559cb3ed65",
+    "text": "partial: client.actor، ومعرّفه وissuer وtype وسلسلة act المتداخلة، يُتحقق منها مقابل بيانات اعتماد المستدعي نفسه (حلقة هي المستدعي نفسه، أو سلسلة act في رمز الوصول الخاص به، حلقةً حلقة) وتُرفض خلاف ذلك، ما دام authzen.accessRequestActor مفعّلًا؛ وclient.source مسجَّل بيانات تدقيق؛ ويُعرض كلاهما على المعتمدين ولا يكون أبدًا حقيقةً في السياسة. الناقص: توجيه الموافقة بحسب فاعل في السلسلة، والتأكيدات الموقّعة أو سياسات النشر دليلًا على سلسلة."
+  },
+  "stsmetadata.specs.authzen-arap-bulk.coverage": {
+    "en": "928b93533d6878b2",
+    "text": "partial: items، يحمل كلٌّ منها رفضه الخاص ويُفحص كما يُفحص التقديم المفرد، من مستدعٍ واحد عن تطبيق واحد، ما دام authzen.accessRequestBulk مفعّلًا؛ وitems في Task Handle بحالة كل بند ونتيجته الخاصتين، والحالة المجمّعة مع partial، ولا نتيجة في المستوى الأعلى؛ وإلغاء البنود المنتظرة و409 بعد انتهاء البنود كلها؛ وكل بند يُوافق عليه ويُعاد تقييمه وحده؛ وIdempotency-Key على الجسم كله. الناقص: رفض مجمّع وbinding_hash المجمّع (لا تصدر هذه الخدمة إلا رفضًا لكل بند)، والاستدعاءات لكل بند، وحدث partial."
   },
   "stsmetadata.specs.xacmljson.coverage": {
     "en": "033abdbeee1f8a7f",
@@ -880,8 +892,16 @@
     "text": "أرسِل POST لموضوع تقييم مرفوض ومورده وإجرائه وسياقه مع الرفض الذي تلقاه (binding_token وexpires_at، يُعادان بلا تغيير)؛ لتحصل على 202 ومقبض مهمة Task Handle، أو على 201 مع النتيجة حين يُقرَّر فورًا (وصول طارئ تسمح به السياسة). لا يُطلب إلا رفض Deny وسمته سياسة نطاق الثقة بالنصيحة urn:sts:xacml:advice:access-request. باب المستدعي نفسه وAUTHZEN_PEPS كما في التقييم؛ يُحترَم Idempotency-Key لكل مستدعٍ؛ واستدعاء راجع فقط إلى URL مسجَّل للمستدعي. كل رفض بصيغة problem+json."
   },
   "stsmetadata.endpoints./access/v1/access-requests/schema.what": {
-    "en": "ec6a3b36123f646a",
-    "text": "GET لمخطط JSON Schema (draft 2020-12) للإضافات التي يجوز أن يضيفها الطلب: context.business_justification، وrequested_access.requested_until وemergency، والأخير يتطلب المبرر. عام، من الأصل نفسه لـ access_request_endpoint؛ ويشير إليه request_schema_url في الرفض القابل للطلب. لا يُستضاف أي نموذج، لذا لا يحمل أي رفض form_url. يجيب 501 ما دامت الواجهة أو الملف التعريفي معطلين. يُسجَّل قبل مسار حالة المهمة، الذي كان سيقرأ \"schema\" معرّفًا لولا ذلك."
+    "en": "fb06abe45104accd",
+    "text": "GET لمخطط JSON Schema (draft 2020-12) للإضافات التي يجوز أن يضيفها الطلب: context.business_justification، وrequested_access.requested_until وemergency، والأخير يتطلب المبرر. عام، من الأصل نفسه لـ access_request_endpoint؛ ويشير إليه request_schema_url في الرفض القابل للطلب. ما دام authzen.accessRequestForm مفعّلًا، يسمّي الرفض أيضًا form_url، وهي صفحة في البوابة. يجيب 501 ما دامت الواجهة أو الملف التعريفي معطلين. يُسجَّل قبل مسار حالة المهمة، الذي كان سيقرأ \"schema\" معرّفًا لولا ذلك."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/catalogs/:evaluation.what": {
+    "en": "85bf86a2b7ad419f",
+    "text": "GET لـ Catalogs Document الذي يسمّيه الرفض القابل للطلب request_catalogs_url: الحقل الوحيد المدعوم بفهرس، requested_access.entitlement، ونقطة Catalog Endpoint الخاصة به. فقط لرفض مسجَّل يسرد advice السياسة فيه استحقاقات، وفقط للمستدعي الذي أُجيب به، ما دام مقيّدًا بالتطبيق. الباب نفسه وAUTHZEN_PEPS كما في التقديم. يجيب 501 ما دام authzen.accessRequestCatalogs معطّلًا."
+  },
+  "stsmetadata.endpoints./access/v1/access-requests/catalogs/:evaluation/entitlements.what": {
+    "en": "307d85d64e66c5d4",
+    "text": "GET للاستحقاقات التي يسردها advice سياسة الرفض، بوصفها Catalog Items (value وlabel): يطابق q أيًّا منهما، ويواصل cursor البحث نفسه، ويُحدّ limit بـ 50. المستدعي نفسه كما في Catalogs Document. يجب أن يكون requested_access.entitlement في الطلب واحدًا منها."
   },
   "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
     "en": "264083b977756230",

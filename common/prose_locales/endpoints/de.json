@@ -99,6 +99,14 @@
     "en": "e39be1976aa651db",
     "text": "Das Einreichungsschema einer Zugriffsanfrage"
   },
+  "endpoints.route./access/v1/access-requests/catalogs/:evaluation.name": {
+    "en": "c633cd939009e41d",
+    "text": "Das Catalogs Document einer Zugriffsanfrage"
+  },
+  "endpoints.route./access/v1/access-requests/catalogs/:evaluation/entitlements.name": {
+    "en": "2fc2571728b32fa3",
+    "text": "Der Berechtigungskatalog einer Zugriffsanfrage"
+  },
   "endpoints.route./access/v1/access-requests/:id.name": {
     "en": "c8bcbb33d07cfb8f",
     "text": "Der Aufgabenstatus eines Zugriffsantrags"

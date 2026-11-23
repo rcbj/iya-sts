@@ -8395,6 +8395,54 @@
     "en": "698617c5a3485120",
     "text": "Die Höchstzahl anforderbarer Ablehnungen, die ein Realm nach evaluation_id speichert (#1204). Darüber hinaus wird eine neue Ablehnung nicht gespeichert und bleibt über ihr binding_token anforderbar; der Zugriffsanfrage-Job entfernt einen Eintrag einen Tag nach seinem Zeitfenster."
   },
+  "authzen.accessRequestDisplay|label": {
+    "en": "2e4d23a3bbd81b74",
+    "text": "Anzeigehinweise bei Zugriffsanfragen"
+  },
+  "authzen.accessRequestDisplay|description": {
+    "en": "b9fd6a2d08cb3736",
+    "text": "Die Anzeigehinweise des Access Request and Approval Profile (#1204): Eine anforderbare Ablehnung trägt access_request.display und ein Task Handle trägt task.display, jeweils mit Titel und Beschreibung. Die der Ablehnung sind display-title und display-description des Advice, wörtlich, sonst die eigenen Worte des Dienstes in der Sprache, die Accept-Language verlangt. Es sind Hinweise für einen Menschen und niemals Richtlinie. Aus: Keiner wird gesendet."
+  },
+  "authzen.accessRequestForm|label": {
+    "en": "2e34659783fbd924",
+    "text": "Gehostetes Formular für Zugriffsanfragen"
+  },
+  "authzen.accessRequestForm|description": {
+    "en": "37c92b9ca48d6f87",
+    "text": "Das gehostete Formular des Access Request and Approval Profile (#1204): Eine anforderbare Ablehnung, die dieser Bereich aufgezeichnet hat, trägt form_url, die Portalseite /portal/access-request, auf der sich das Subjekt der Ablehnung anmeldet und die Zugriffsanfrage mit einer Begründung einreicht; der abgelehnte PEP erhält diese Aufgabe zurück, wenn er dieselbe Ablehnung einreicht. Ein Task Handle trägt links.ticket, dieselbe Seite, auf der das Subjekt den Status der Anfrage sieht. Aus: Keines wird gesendet, und die Seite stellt keine Anfrage."
+  },
+  "authzen.accessRequestCatalogs|label": {
+    "en": "ccb71d0eb2d2512b",
+    "text": "Kataloge für Zugriffsanfragen"
+  },
+  "authzen.accessRequestCatalogs|description": {
+    "en": "1f38cbb80e80bafc",
+    "text": "Das AuthZEN Access Request Catalog Profile (#1204): Eine aufgezeichnete anforderbare Ablehnung, deren Advice Werte urn:sts:xacml:advice:access-request:entitlement aufführt, trägt request_catalogs_url, ihr Catalogs Document und ihr Catalog Endpoint antworten dem Aufrufer, dem die Ablehnung geantwortet wurde, eine Einreichung muss eine der Berechtigungen in requested_access.entitlement wählen, und die Genehmigung bringt sie als vertrauenswürdige Tatsache zur Richtlinie. Aus: Die Berechtigungen des Advice werden ignoriert und die beiden Endpunkte antworten 501."
+  },
+  "authzen.accessRequestActor|label": {
+    "en": "746cf58e932ffdab",
+    "text": "Handelnde Parteien bei Zugriffsanfragen"
+  },
+  "authzen.accessRequestActor|description": {
+    "en": "2ad9ec45c4e1ebfe",
+    "text": "Das AuthZEN Actor Delegation Profile (#1204): Die client.actor-Kette einer Zugriffsanfrage wird gegen den eigenen Berechtigungsnachweis des Aufrufers geprüft (ein Glied, das der Aufrufer selbst ist, oder die act-Kette seines eigenen Zugriffstokens) und sonst abgelehnt, und client.source wird aufgezeichnet. Beide werden den Genehmigern und dem Audit-Log gezeigt, und keines ist eine Richtlinientatsache. Aus: Beide werden angenommen und nie gelesen."
+  },
+  "authzen.accessRequestBulk|label": {
+    "en": "626b8aa6d7729f4b",
+    "text": "Sammel-Zugriffsanfragen"
+  },
+  "authzen.accessRequestBulk|description": {
+    "en": "8abb7e835c531ac9",
+    "text": "Das AuthZEN Bulk Access Requests Profile (#1204): Eine Einreichung mit items, jedes mit seiner eigenen Ablehnung, wird Element für Element wie eine einzelne geprüft und beantwortet ein Task Handle, dessen Status seine Elemente zusammenfasst (partial, wenn sie verschieden geendet haben) und dessen Elemente jeweils ihr eigenes Ergebnis tragen. Jedes Element wird für sich genehmigt und neu bewertet. Aus: items wird wie bisher abgelehnt."
+  },
+  "authzen.accessRequestMaxBulkItems|label": {
+    "en": "bed33a03d68efa71",
+    "text": "Elemente einer Sammel-Zugriffsanfrage"
+  },
+  "authzen.accessRequestMaxBulkItems|description": {
+    "en": "9a1f15e576f964cb",
+    "text": "Die meisten Elemente, die eine Sammel-Zugriffsanfrage tragen darf (#1204). Jedes zählt gegen authzen.accessRequestMaxPending."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

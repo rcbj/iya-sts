@@ -16429,6 +16429,76 @@ const SETTINGS = [
                  'recorded, and is still requestable by its ' +
                  'binding_token; the access request job removes a record ' +
                  'a day after its window.' },
+  { key: 'authzen.accessRequestDisplay', group: 'AuthZEN',
+    label: 'Display hints on access requests',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_DISPLAY', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'The Access Request and Approval Profile\'s display ' +
+                 'hints (#1204): a requestable denial carries ' +
+                 'access_request.display and a Task Handle carries ' +
+                 'task.display, each a title and a description. The ' +
+                 'denial\'s are the advice\'s display-title and ' +
+                 'display-description, verbatim, or else the service\'s ' +
+                 'own words in the language Accept-Language asks for. ' +
+                 'They are hints for a person and never policy. Off, ' +
+                 'neither is sent.' },
+  { key: 'authzen.accessRequestForm', group: 'AuthZEN',
+    label: 'Hosted form for access requests',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_FORM', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'The Access Request and Approval Profile\'s hosted form ' +
+                 '(#1204): a requestable denial this realm recorded carries ' +
+                 'form_url, the portal page /portal/access-request, where ' +
+                 'the denial\'s subject signs in and submits the access ' +
+                 'request with a justification; the PEP that was denied ' +
+                 'gets that task back when it submits the same denial. A ' +
+                 'Task Handle carries links.ticket, the same page, where ' +
+                 'the subject sees the request\'s status. Off, neither is ' +
+                 'sent and the page makes no request.' },
+  { key: 'authzen.accessRequestCatalogs', group: 'AuthZEN',
+    label: 'Catalogs for access requests',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_CATALOGS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'The AuthZEN Access Request Catalog Profile (#1204): a ' +
+                 'recorded requestable denial whose advice lists ' +
+                 'urn:sts:xacml:advice:access-request:entitlement values ' +
+                 'carries request_catalogs_url, its Catalogs Document and ' +
+                 'Catalog Endpoint answer the caller the denial was ' +
+                 'answered to, a submission must choose one of the ' +
+                 'entitlements in requested_access.entitlement, and the ' +
+                 'approval carries it to the policy as a trusted fact. ' +
+                 'Off, the advice\'s entitlements are ignored and the two ' +
+                 'endpoints answer 501.' },
+  { key: 'authzen.accessRequestActor', group: 'AuthZEN',
+    label: 'Acting parties on access requests',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_ACTOR', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'The AuthZEN Actor Delegation Profile (#1204): an access ' +
+                 'request\'s client.actor chain is verified against the ' +
+                 'caller\'s own credential (one link that is the caller ' +
+                 'itself, or the act chain of its own access token) and ' +
+                 'refused otherwise, and client.source is recorded. Both ' +
+                 'are shown to the approvers and the audit log, and ' +
+                 'neither is a policy fact. Off, both are accepted and ' +
+                 'never read.' },
+  { key: 'authzen.accessRequestBulk', group: 'AuthZEN',
+    label: 'Bulk access requests',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_BULK', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'The AuthZEN Bulk Access Requests Profile (#1204): a ' +
+                 'submission with items, each carrying its own denial, is ' +
+                 'checked item by item as a single one is, and answers one ' +
+                 'Task Handle whose status aggregates its items (partial ' +
+                 'when they finished differently) and whose items each ' +
+                 'carry their own result. Each item is approved and ' +
+                 're-evaluated on its own. Off, items is refused as before.' },
+  { key: 'authzen.accessRequestMaxBulkItems', group: 'AuthZEN',
+    label: 'Items in one bulk access request',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_MAX_BULK_ITEMS', type: 'int',
+    dflt: 16, min: 2, max: 64, runtime: true,
+    description: 'The most items one bulk access request may carry ' +
+                 '(#1204). Each counts against ' +
+                 'authzen.accessRequestMaxPending.' },
   { key: 'authzen.callbackAttempts', group: 'AuthZEN',
     label: 'Access request callback attempts',
     env: 'STS_AUTHZEN_CALLBACK_ATTEMPTS', type: 'int',

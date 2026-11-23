@@ -8395,6 +8395,54 @@
     "en": "698617c5a3485120",
     "text": "El número máximo de denegaciones solicitables que un dominio registra por evaluation_id (#1204). Por encima de él, una denegación nueva no se registra y sigue siendo solicitable por su binding_token; el trabajo de solicitudes de acceso elimina un registro un día después de su ventana."
   },
+  "authzen.accessRequestDisplay|label": {
+    "en": "2e4d23a3bbd81b74",
+    "text": "Indicaciones de presentación en las solicitudes de acceso"
+  },
+  "authzen.accessRequestDisplay|description": {
+    "en": "b9fd6a2d08cb3736",
+    "text": "Las indicaciones de presentación del perfil Access Request and Approval (#1204): una denegación solicitable lleva access_request.display y un Task Handle lleva task.display, cada uno con un título y una descripción. Los de la denegación son el display-title y el display-description del advice, literalmente, o si no las propias palabras del servicio en el idioma que pide Accept-Language. Son indicaciones para una persona y nunca política. Desactivado, no se envía ninguno."
+  },
+  "authzen.accessRequestForm|label": {
+    "en": "2e34659783fbd924",
+    "text": "Formulario alojado para solicitudes de acceso"
+  },
+  "authzen.accessRequestForm|description": {
+    "en": "37c92b9ca48d6f87",
+    "text": "El formulario alojado del perfil Access Request and Approval (#1204): una denegación solicitable que este dominio registró lleva form_url, la página del portal /portal/access-request, donde el sujeto de la denegación inicia sesión y envía la solicitud de acceso con una justificación; el PEP denegado recupera esa tarea cuando envía la misma denegación. Un Task Handle lleva links.ticket, la misma página, donde el sujeto ve el estado de la solicitud. Desactivado, no se envía ninguno y la página no crea ninguna solicitud."
+  },
+  "authzen.accessRequestCatalogs|label": {
+    "en": "ccb71d0eb2d2512b",
+    "text": "Catálogos para solicitudes de acceso"
+  },
+  "authzen.accessRequestCatalogs|description": {
+    "en": "1f38cbb80e80bafc",
+    "text": "El perfil AuthZEN Access Request Catalog (#1204): una denegación solicitable registrada cuyo advice enumera valores urn:sts:xacml:advice:access-request:entitlement lleva request_catalogs_url, su Catalogs Document y su Catalog Endpoint responden al llamador al que se respondió la denegación, una solicitud debe elegir uno de los derechos en requested_access.entitlement, y la aprobación lo lleva a la política como hecho de confianza. Desactivado, los derechos del advice se ignoran y los dos puntos de conexión responden 501."
+  },
+  "authzen.accessRequestActor|label": {
+    "en": "746cf58e932ffdab",
+    "text": "Partes que actúan en las solicitudes de acceso"
+  },
+  "authzen.accessRequestActor|description": {
+    "en": "2ad9ec45c4e1ebfe",
+    "text": "El perfil AuthZEN Actor Delegation (#1204): la cadena client.actor de una solicitud de acceso se verifica con la propia credencial del llamador (un eslabón que es el propio llamador, o la cadena act de su propio token de acceso) y se rechaza en otro caso, y client.source se registra. Ambos se muestran a los aprobadores y al registro de auditoría, y ninguno es un hecho de la política. Desactivado, ambos se aceptan y nunca se leen."
+  },
+  "authzen.accessRequestBulk|label": {
+    "en": "626b8aa6d7729f4b",
+    "text": "Solicitudes de acceso en bloque"
+  },
+  "authzen.accessRequestBulk|description": {
+    "en": "8abb7e835c531ac9",
+    "text": "El perfil AuthZEN Bulk Access Requests (#1204): una solicitud con items, cada uno con su propia denegación, se comprueba elemento a elemento como una solicitud única, y responde un solo Task Handle cuyo estado agrega sus elementos (partial cuando terminaron de forma distinta) y cuyos elementos llevan cada uno su propio resultado. Cada elemento se aprueba y se reevalúa por separado. Desactivado, items se rechaza como antes."
+  },
+  "authzen.accessRequestMaxBulkItems|label": {
+    "en": "bed33a03d68efa71",
+    "text": "Elementos de una solicitud de acceso en bloque"
+  },
+  "authzen.accessRequestMaxBulkItems|description": {
+    "en": "9a1f15e576f964cb",
+    "text": "El máximo de elementos que puede llevar una solicitud de acceso en bloque (#1204). Cada uno cuenta para authzen.accessRequestMaxPending."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

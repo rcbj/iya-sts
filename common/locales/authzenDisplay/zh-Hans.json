@@ -1,0 +1,6 @@
+{
+  "denialTitle": "申请访问",
+  "denialDescription": "此访问可以申请。由策略指定的审批人决定，之后应用程序会再次询问。",
+  "taskTitle": "{status, select, pending {访问申请已提交} approved {访问申请已批准} denied {访问申请已拒绝} expired {访问申请已过期} cancelled {访问申请已取消} failed {访问申请失败} other {访问申请}}",
+  "taskDescription": "{status, select, pending {已通知审批人。其中一人作出决定后，应用程序会再次询问。} approved {审批人已批准此申请。应用程序会携带该批准再次询问。} denied {审批人已拒绝此申请。} expired {此申请在过期前无人作出决定。} cancelled {此申请已取消。} failed {此申请无法完成。请重新申请。} other {此申请的状态为 {status}。}}"
+}

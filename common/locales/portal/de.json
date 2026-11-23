@@ -66,6 +66,8 @@
   "nav.ciba.heading": "Anmeldeanfragen",
   "nav.access-requests.label": "Zugriffsanfragen",
   "nav.access-requests.heading": "Zugriffsanfragen, die auf Sie warten",
+  "nav.access-request.label": "Ihre Zugriffsanfragen",
+  "nav.access-request.heading": "Ihre Zugriffsanfragen",
   "nav.device.label": "Ein Gerät anmelden",
   "nav.device.heading": "Ein Gerät anmelden",
   "nav.claim-sources.label": "Claim-Quellen",

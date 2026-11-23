@@ -8,6 +8,8 @@
   "resource": "على",
   "application": "التطبيق",
   "requester": "طلبه",
+  "entitlement": "الوصول المطلوب",
+  "actor": "تصرّف عنه",
   "waits": "ينتظر حتى {when}.",
   "approve": "موافقة",
   "deny": "رفض",

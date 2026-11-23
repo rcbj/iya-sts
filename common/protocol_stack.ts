@@ -576,6 +576,11 @@ class ProtocolStack {
     this.build('portal/portal_access_requests',
                require('../portal/portal_access_requests'),
                'PortalAccessRequests');
+    // #1204: /portal/access-request, an AuthZEN denial's hosted form and a
+    // request's ticket. The same lazy reach as the approvers' page.
+    this.build('portal/portal_access_request',
+               require('../portal/portal_access_request'),
+               'PortalAccessRequest');
     // #150: /portal/device, where a person enters a device's user code.
     this.build('portal/portal_device', require('../portal/portal_device'),
                'PortalDevice');

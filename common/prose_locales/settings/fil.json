@@ -8395,6 +8395,54 @@
     "en": "698617c5a3485120",
     "text": "Ang pinakamaraming hinihiling na pagtanggi na itinatala ng isang realm ayon sa evaluation_id (#1204). Lampas dito, hindi naitatala ang bagong pagtanggi, at maaari pa rin itong hilingin gamit ang binding_token nito; inaalis ng job ng mga kahilingan sa access ang isang tala isang araw matapos ang window nito."
   },
+  "authzen.accessRequestDisplay|label": {
+    "en": "2e4d23a3bbd81b74",
+    "text": "Mga pahiwatig sa pagpapakita ng mga kahilingan sa access"
+  },
+  "authzen.accessRequestDisplay|description": {
+    "en": "b9fd6a2d08cb3736",
+    "text": "Ang mga pahiwatig sa pagpapakita ng Access Request and Approval Profile (#1204): ang isang pagtangging maaaring hilingin ay may access_request.display at ang isang Task Handle ay may task.display, bawat isa ay may pamagat at paglalarawan. Ang sa pagtanggi ay ang display-title at display-description ng advice, nang eksakto, o kung wala ay ang sariling salita ng serbisyo sa wikang hinihingi ng Accept-Language. Mga pahiwatig ito para sa isang tao at hindi kailanman patakaran. Kapag naka-off, walang ipinapadala."
+  },
+  "authzen.accessRequestForm|label": {
+    "en": "2e34659783fbd924",
+    "text": "Naka-host na form para sa mga kahilingan sa access"
+  },
+  "authzen.accessRequestForm|description": {
+    "en": "37c92b9ca48d6f87",
+    "text": "Ang naka-host na form ng Access Request and Approval Profile (#1204): ang isang pagtangging maaaring hilingin na naitala ng realm na ito ay may form_url, ang pahina ng portal na /portal/access-request, kung saan nagsa-sign in ang subject ng pagtanggi at isinusumite ang kahilingan sa access na may katwiran; makukuha muli ng tinanggihang PEP ang gawaing iyon kapag isinumite nito ang parehong pagtanggi. Ang isang Task Handle ay may links.ticket, ang parehong pahina, kung saan nakikita ng subject ang katayuan ng kahilingan. Kapag naka-off, walang ipinapadala at walang kahilingang ginagawa ang pahina."
+  },
+  "authzen.accessRequestCatalogs|label": {
+    "en": "ccb71d0eb2d2512b",
+    "text": "Mga catalog para sa mga kahilingan sa access"
+  },
+  "authzen.accessRequestCatalogs|description": {
+    "en": "1f38cbb80e80bafc",
+    "text": "Ang AuthZEN Access Request Catalog Profile (#1204): ang isang naitalang pagtangging maaaring hilingin na ang advice ay naglilista ng mga halagang urn:sts:xacml:advice:access-request:entitlement ay may request_catalogs_url, sumasagot ang Catalogs Document at Catalog Endpoint nito sa tumawag na sinagot ng pagtanggi, kailangang pumili ang isang pagsusumite ng isa sa mga entitlement sa requested_access.entitlement, at dinadala ito ng pag-apruba sa patakaran bilang pinagkakatiwalaang katotohanan. Kapag naka-off, binabalewala ang mga entitlement ng advice at sumasagot ng 501 ang dalawang endpoint."
+  },
+  "authzen.accessRequestActor|label": {
+    "en": "746cf58e932ffdab",
+    "text": "Mga kumikilos na partido sa mga kahilingan sa access"
+  },
+  "authzen.accessRequestActor|description": {
+    "en": "2ad9ec45c4e1ebfe",
+    "text": "Ang AuthZEN Actor Delegation Profile (#1204): sinusuri ang client.actor chain ng isang kahilingan sa access laban sa sariling credential ng tumatawag (isang link na ang tumatawag mismo, o ang act chain ng sarili nitong access token) at tinatanggihan kung hindi, at itinatala ang client.source. Parehong ipinapakita sa mga tagapag-apruba at sa audit log, at wala sa mga ito ang katotohanan ng patakaran. Kapag naka-off, parehong tinatanggap at hindi kailanman binabasa."
+  },
+  "authzen.accessRequestBulk|label": {
+    "en": "626b8aa6d7729f4b",
+    "text": "Maramihang kahilingan sa access"
+  },
+  "authzen.accessRequestBulk|description": {
+    "en": "8abb7e835c531ac9",
+    "text": "Ang AuthZEN Bulk Access Requests Profile (#1204): ang isang pagsusumite na may items, bawat isa ay may sariling pagtanggi, ay sinusuri isa-isa gaya ng iisang pagsusumite, at sumasagot ng iisang Task Handle na ang katayuan ay pinagsasama ang mga item nito (partial kapag magkakaiba ang kinalabasan) at ang bawat item ay may sariling resulta. Ang bawat item ay inaaprubahan at muling sinusuri nang hiwalay. Kapag naka-off, tinatanggihan ang items gaya ng dati."
+  },
+  "authzen.accessRequestMaxBulkItems|label": {
+    "en": "bed33a03d68efa71",
+    "text": "Mga item sa isang maramihang kahilingan sa access"
+  },
+  "authzen.accessRequestMaxBulkItems|description": {
+    "en": "9a1f15e576f964cb",
+    "text": "Ang pinakamaraming item na maaaring dalhin ng isang maramihang kahilingan sa access (#1204). Ang bawat isa ay binibilang sa authzen.accessRequestMaxPending."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

@@ -106,7 +106,9 @@
 // `requested_access.emergency`, and that emergency requires the
 // justification. None of them is required on an ordinary submission,
 // and the schema is not a second validator. This service hosts no
-// form, so `form_url` is never issued. `display` is still not built.
+// form of its own there: see THE HOSTED FORM below for `form_url`.
+// `display` (#1204) is a hint for a person, never bound or read back: see
+// THE DISPLAY HINTS below.
 //
 // THE TASK is a row of the per-realm store `authzen.accessRequests`:
 // `pending`, then exactly once one of `approved`, `denied`, `expired`,
@@ -157,6 +159,26 @@ const CAPABILITY = 'urn:openid:authzen:capability:access-request';
 // Express would read "schema" as a task id.
 const REQUESTS_PATH = '/access/v1/access-requests';
 const SCHEMA_PATH = REQUESTS_PATH + '/schema';
+// THE HOSTED FORM AND THE TICKET (#1204): a portal page, so the person
+// signs in there and the page is the portal's static surface.
+const FORM_PATH = '/portal/access-request';
+// The most of a person's own requests the page lists.
+const MAX_MINE = 50;
+// THE CATALOG COMPANION (#1204): a denial's Catalogs Document, and the one
+// catalog under it, the entitlements the policy's advice lists.
+const CATALOGS_PATH = REQUESTS_PATH + '/catalogs';
+const ENTITLEMENT_POINTER = '/requested_access/entitlement';
+// THE BULK COMPANION (#1204): a bundle's id prefix and its index key.
+const BUNDLE_PREFIX = 'arb_';
+const BUNDLE_KEY = 'bundle:';
+// THE ACTOR COMPANION (#1204): the deepest actor chain read, and the
+// longest of its identifiers.
+const MAX_ACT_DEPTH = 8;
+const MAX_URL = 2048;
+// A Catalog Endpoint page's default and largest size (the draft's section
+// 7: the endpoint MAY clamp `limit`).
+const CATALOG_PAGE = 20;
+const CATALOG_PAGE_MAX = 50;
 
 // The access-control question (`common/access_gate.ts`).
 const GATE_RESOURCE = 'authzen-access-request';
@@ -170,7 +192,12 @@ const GATE_REVOKE_ACTION = 'revoke-access-request';
 // The lifecycle, the first status the only one that is not terminal, and
 // the CALLBACK companion's event names, which are the terminal statuses:
 // the model's Task Handle (`models/authzen/authzen_members.tsp`, #1579).
-const STATES = Object.freeze(authzenModel.valuesOf('task-handle', 'status'));
+// `partial` is a BULK Task Handle's aggregate only (#1204): no single
+// task is ever partial, so it is neither a task's status nor an event.
+const STATES = Object.freeze(authzenModel.valuesOf('task-handle', 'status')
+  .filter(function (one: string): boolean {
+    return one !== 'partial';
+  }));
 const EVENTS = Object.freeze(STATES.slice(1));
 
 // The context members that are the profile's machinery, never part of the
@@ -271,6 +298,15 @@ interface Terms {
   contextMembers: string[];
   template: string;
   reason: string;
+  // The advice's own display text (#1204), sent verbatim while
+  // `authzen.accessRequestDisplay` is on. Present only when the advice
+  // gives it, so a binding_token's terms are unchanged otherwise.
+  displayTitle?: string;
+  displayDescription?: string;
+  // The entitlements the advice lists (#1204, the CATALOG companion),
+  // `{ value, label }`. Present only when the advice names any, so a
+  // binding_token's terms are unchanged otherwise.
+  entitlements?: { value: string; label: string }[];
 }
 
 // An approver, as the two doors name one.
@@ -313,6 +349,7 @@ interface AccessRequestDeps {
   loadFedHttp(): any;
   loadScheduler(): any;
   loadAccessPep(): any;
+  loadI18n(): any;
 }
 
 /**
@@ -397,7 +434,9 @@ class AccessRequests {
       loadMailUses: lazy('loadMailUses', '../common/mail_uses'),
       loadFedHttp: lazy('loadFedHttp', '../federation/federation_http'),
       loadScheduler: lazy('loadScheduler', '../cluster/scheduler'),
-      loadAccessPep: lazy('loadAccessPep', '../xacml/xacml_access_pep')
+      loadAccessPep: lazy('loadAccessPep', '../xacml/xacml_access_pep'),
+      // The catalogs `display` is drawn from (#1204). A leaf.
+      loadI18n: lazy('loadI18n', '../common/i18n')
     };
   }
 
@@ -414,6 +453,137 @@ class AccessRequests {
     log.debug("Entering AccessRequests.enabled().");
     log.debug("Leaving AccessRequests.enabled().");
     return config.value('authzen.accessRequests') !== false;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE DISPLAY HINTS (#1204; the profile's sections 5.1, 7.1 and 11.11).
+  // Hints for a person, never policy (13.4): nothing reads them back, they
+  // are not bound and a submission never echoes them. They name no
+  // approver, role, group, policy or tuple (19, and 13.3.3).
+  // -------------------------------------------------------------------------
+  /**
+   * Whether the display hints are sent (`authzen.accessRequestDisplay`).
+   *
+   * @returns true when on
+   */
+  displays(): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering AccessRequests.displays().");
+    log.debug("Leaving AccessRequests.displays().");
+    return config.value('authzen.accessRequestDisplay') === true;
+  }
+
+  /**
+   * The languages a request's `Accept-Language` asks for, best first.
+   *
+   * @param req - the request, or nothing
+   * @returns canonical tags
+   */
+  languagesOf(req: Req | null | undefined): string[] {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.languagesOf().");
+    const header = req && req.headers
+      ? req.headers['accept-language'] : '';
+    if (!header) {
+      log.debug("Leaving AccessRequests.languagesOf(). None asked.");
+      return [];
+    }
+    let out: string[] = [];
+    try {
+      out = this.deps.loadI18n().acceptLanguage(String(header));
+    } catch (e) {
+      // A header that cannot be read asks for nothing: English.
+      log.debug("Caught in AccessRequests.languagesOf(): " +
+                ((e && e.message) || e));
+      out = [];
+    }
+    log.debug("Leaving AccessRequests.languagesOf(). " + out.join(' '));
+    return out;
+  }
+
+  /**
+   * A translator for those languages, English when nothing answers.
+   *
+   * @param languages - canonical tags, best first
+   * @returns the translator, or null when none can be built
+   */
+  private translatorFor(languages: string[]): Json {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.translatorFor().");
+    let out: Json = null;
+    try {
+      out = this.deps.loadI18n().translator(languages || []);
+    } catch (e) {
+      // No catalog: no display. The hints are optional (5.1, 7.1).
+      log.debug("Caught in AccessRequests.translatorFor(): " +
+                ((e && e.message) || e));
+      out = null;
+    }
+    log.debug("Leaving AccessRequests.translatorFor(). " + !!out);
+    return out;
+  }
+
+  /**
+   * A requestable denial's `display`: the advice's own text when it gave
+   * any, else the service's, in the asked language.
+   *
+   * @param terms - the advice's terms
+   * @param languages - the evaluation request's languages
+   * @returns `{ title, description }`, or null when off
+   */
+  denialDisplay(terms: Terms, languages: string[]): Json | null {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.denialDisplay().");
+    if (!self.displays()) {
+      log.debug("Leaving AccessRequests.denialDisplay(). Off.");
+      return null;
+    }
+    const t = (terms.displayTitle && terms.displayDescription)
+      ? null : self.translatorFor(languages);
+    const title = terms.displayTitle ||
+      (t ? String(t.text('authzenDisplay.denialTitle')) : '');
+    const description = terms.displayDescription ||
+      (t ? String(t.text('authzenDisplay.denialDescription')) : '');
+    const out: Json = {};
+    if (title) {
+      out.title = title;
+    }
+    if (description) {
+      out.description = description;
+    }
+    log.debug("Leaving AccessRequests.denialDisplay().");
+    return Object.keys(out).length ? out : null;
+  }
+
+  /**
+   * A Task Handle's `display`, for its status, in the asked language.
+   *
+   * @param status - the task's status
+   * @param languages - the caller's languages
+   * @returns `{ title, description }`, or null when off
+   */
+  taskDisplay(status: string, languages: string[]): Json | null {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.taskDisplay(). " + status);
+    if (!self.displays() || STATES.indexOf(status) < 0) {
+      log.debug("Leaving AccessRequests.taskDisplay(). Off.");
+      return null;
+    }
+    const t = self.translatorFor(languages);
+    if (!t) {
+      log.debug("Leaving AccessRequests.taskDisplay(). No catalog.");
+      return null;
+    }
+    const out = {
+      title: String(t.text('authzenDisplay.taskTitle',
+                           { status: status })),
+      description: String(t.text('authzenDisplay.taskDescription',
+                                 { status: status }))
+    };
+    log.debug("Leaving AccessRequests.taskDisplay().");
+    return out;
   }
 
   // An integer setting, read directly (never `|| n`, the root CLAUDE.md's
@@ -639,6 +809,28 @@ class AccessRequests {
           out.template = out.template || text.slice(0, 128);
         } else if (name === 'reason') {
           out.reason = out.reason || text.slice(0, 128);
+        } else if (name === 'display-title') {
+          // The policy author's words (#1204): kept as written, cut,
+          // never translated.
+          out.displayTitle = out.displayTitle || text.slice(0, 256);
+        } else if (name === 'display-description') {
+          out.displayDescription = out.displayDescription ||
+            text.slice(0, MAX_TEXT);
+        } else if (name === 'entitlement') {
+          // `value` or `value|label` (#1204): one catalog item.
+          const cut = text.indexOf('|');
+          const value = (cut < 0 ? text : text.slice(0, cut)).trim()
+            .slice(0, MAX_ID);
+          const label = (cut < 0 ? '' : text.slice(cut + 1)).trim()
+            .slice(0, 256) || value;
+          const list = out.entitlements || [];
+          if (value && list.length < MAX_LIST &&
+              !list.some(function (one) {
+                return one.value === value;
+              })) {
+            list.push({ value: value, label: label });
+          }
+          out.entitlements = list;
         }
       });
     });
@@ -767,7 +959,9 @@ class AccessRequests {
                               expiresAt: expiresAt };
       deferred.push(pending);
       const later = self.denialFrom(evaluationId, now, expiresAt, base,
-                                    terms, '');
+                                    terms, '', { languages:
+                                      self.languagesOf(req),
+                                      recorded: self.denialRoom() });
       pending.denial = later;
       log.debug("Leaving AccessRequests.requestableDenial(). Its token is " +
                 "signed off the event loop.");
@@ -787,9 +981,12 @@ class AccessRequests {
       log.debug("Leaving AccessRequests.requestableDenial(). Not signed.");
       return null;
     }
-    self.recordSigned(record, token, now, lifetime, expiresAt);
+    const recorded = self.recordSigned(record, token, now, lifetime,
+                                       expiresAt);
     log.debug("Leaving AccessRequests.requestableDenial().");
-    return self.denialFrom(evaluationId, now, expiresAt, base, terms, token);
+    return self.denialFrom(evaluationId, now, expiresAt, base, terms, token,
+                           { languages: self.languagesOf(req),
+                             recorded: recorded });
   }
 
   // Records a requestable denial once its binding token is signed, with the
@@ -798,7 +995,7 @@ class AccessRequests {
   // `signDeferredDenials()` (#1955 P8 follow-up), so a deferred denial is
   // recorded exactly as one signed in place.
   private recordSigned(record: Json, token: string, now: number,
-                       lifetime: number, expiresAt: string): void {
+                       lifetime: number, expiresAt: string): boolean {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering AccessRequests.recordSigned().");
@@ -821,21 +1018,57 @@ class AccessRequests {
       exp: exp,
       keepUntil: deadline + SKEW_S + RETENTION_S
     });
-    self.recordDenial(full);
-    log.debug("Leaving AccessRequests.recordSigned().");
+    const recorded = self.recordDenial(full);
+    log.debug("Leaving AccessRequests.recordSigned(). " + recorded);
+    return recorded;
+  }
+
+  // Whether the denial store has room for one more record (the 0144 cap):
+  // what a denial whose token is signed later (#1955 P8) is answered on,
+  // corrected by `signDeferredDenials()` if the record was not kept.
+  private denialRoom(): boolean {
+    const { log, denials } = this.deps;
+    log.debug("Entering AccessRequests.denialRoom().");
+    const cap = this.seconds('authzen.accessRequestMaxDenials');
+    const held = typeof denials.size === 'number' ? denials.size : 0;
+    log.debug("Leaving AccessRequests.denialRoom().");
+    return !(cap > 0 && held >= cap);
   }
 
   // The context members of a requestable denial, around its binding token.
+  // `extras` (#1204): the request's languages, for `display`, and whether
+  // the denial is recorded, which `form_url` and `request_catalogs_url`
+  // work from.
   private denialFrom(evaluationId: string, now: number, expiresAt: string,
-                     base: string, terms: Terms, token: string): Json {
+                     base: string, terms: Terms, token: string,
+                     extras?: Json): Json {
+    const self = this;
     const { log } = this.deps;
     log.debug("Entering AccessRequests.denialFrom().");
+    const more: Json = extras || {};
     const accessRequest: Json = { expires_at: expiresAt,
                                   endpoint: base + REQUESTS_PATH,
                                   request_schema_url: base + SCHEMA_PATH,
                                   binding_token: token };
     if (terms.template) {
       accessRequest.template = terms.template;
+    }
+    const display = self.denialDisplay(terms, more.languages || []);
+    if (display) {
+      accessRequest.display = display;
+    }
+    // THE HOSTED FORM (#1204) works from the denial's record, so a denial
+    // the record could not keep (the 0144 cap) names no form.
+    if (more.recorded && self.formOn()) {
+      accessRequest.form_url = self.formUrlOf(base, evaluationId);
+    }
+    // THE CATALOG COMPANION (#1204, its section 5): only for a recorded
+    // denial whose advice lists entitlements; `request_schema_url`, which
+    // the draft requires beside it, is always present.
+    if (more.recorded && self.catalogsOn() &&
+        (terms.entitlements || []).length) {
+      accessRequest.request_catalogs_url = base + CATALOGS_PATH + '/' +
+        encodeURIComponent(evaluationId);
     }
     log.debug("Leaving AccessRequests.denialFrom().");
     return { evaluation_id: evaluationId, evaluated_at: instant(now * 1000),
@@ -877,8 +1110,14 @@ class AccessRequests {
       }
       if (token) {
         one.denial.access_request.binding_token = token;
-        self.recordSigned(one.record, token, one.now, one.lifetime,
-                          one.expiresAt);
+        const recorded = self.recordSigned(one.record, token, one.now,
+                                           one.lifetime, one.expiresAt);
+        // The record was not kept after all (#1204): no form and no
+        // catalogs work without it.
+        if (!recorded) {
+          delete one.denial.access_request.form_url;
+          delete one.denial.access_request.request_catalogs_url;
+        }
       } else {
         unsigned.push(String(one.denial.evaluation_id));
       }
@@ -914,7 +1153,8 @@ class AccessRequests {
     // status's phrase (RFC 9457 section 4.2.1), and "Bad request" would
     // tell the caller the body was wrong when it was never read.
     const untitled = status >= 500 ? 'Server error'
-      : status === 415 ? 'Unsupported media type' : 'Bad request';
+      : status === 415 ? 'Unsupported media type'
+        : status === 404 ? 'Not found' : 'Bad request';
     const body: Json = {
       type: named ? named.uri : 'about:blank',
       title: named ? named.title : untitled,
@@ -1233,9 +1473,11 @@ class AccessRequests {
    * disclose to a caller not authorized for them.
    *
    * @param task - the row
+   * @param languages - the caller's languages, for `display` (#1204);
+   *   absent where nobody asked, as on a callback, and then no display
    * @returns the handle
    */
-  handleOf(task: Json): Json {
+  handleOf(task: Json, languages?: string[]): Json {
     const { log } = this.deps;
     log.debug("Entering AccessRequests.handleOf().");
     const out: Json = {
@@ -1250,6 +1492,17 @@ class AccessRequests {
       out.progress = { current_step: 1, total_steps: 1,
                        step_name: 'approval' };
     }
+    const display = languages ? this.taskDisplay(task.status, languages)
+      : null;
+    if (display) {
+      out.display = display;
+    }
+    // THE TICKET (sections 7.1 and 11.11, #1204): where the subject sees
+    // the request, while the hosted form is on.
+    if (this.formOn()) {
+      out.links = Object.assign(out.links || {},
+                                { ticket: this.ticketUrlOf(task) });
+    }
     log.debug("Leaving AccessRequests.handleOf().");
     return out;
   }
@@ -1259,13 +1512,14 @@ class AccessRequests {
    * once it is approved (the profile: REQUIRED then).
    *
    * @param task - the row
+   * @param languages - the caller's languages, for `display`
    * @returns `{ task, result? }`
    */
-  bodyOf(task: Json): Json {
+  bodyOf(task: Json, languages?: string[]): Json {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering AccessRequests.bodyOf().");
-    const out: Json = { task: self.handleOf(task) };
+    const out: Json = { task: self.handleOf(task, languages || []) };
     if (task.status === 'approved' && task.approval) {
       const approval: Json = { id: task.approval.id,
                                approved_at: instant(
@@ -1353,7 +1607,7 @@ class AccessRequests {
   // still requestable by its binding_token; an evaluation_id-only
   // submission of it is then unknown (0073). The full store is logged when
   // it fills and when it has room again, never once per denial.
-  private recordDenial(record: Json): void {
+  private recordDenial(record: Json): boolean {
     const { log, errorCodes, denials, audit } = this.deps;
     log.debug("Entering AccessRequests.recordDenial().");
     const id = String(record.evaluationId);
@@ -1379,7 +1633,7 @@ class AccessRequests {
                               'until the job removes old ones.' });
       }
       log.debug("Leaving AccessRequests.recordDenial(). Full.");
-      return;
+      return false;
     }
     if (denialsFull.delete(realm)) {
       log.info('authzen: the requestable denial store has room again; ' +
@@ -1390,13 +1644,16 @@ class AccessRequests {
     } catch (e) {
       log.debug("Caught in AccessRequests.recordDenial(): " +
                 ((e && e.message) || e));
+      log.debug("Leaving AccessRequests.recordDenial(). Not written.");
       log.error(errorCodes.tag('STS-AUTHZEN-0139') + 'authzen: the ' +
                 'requestable denial ' + record.evaluationId + ' could not ' +
                 'be recorded, so an evaluation_id-only submission of it ' +
                 'cannot be resolved; the binding_token is still issued: ' +
                 ((e && e.message) || e));
+      return false;
     }
     log.debug("Leaving AccessRequests.recordDenial().");
+    return true;
   }
 
   // The denial named by an evaluation_id, in the shape `submit()` reads off
@@ -1434,39 +1691,38 @@ class AccessRequests {
   // THE SUBMISSION (the profile's section on it).
   // -------------------------------------------------------------------------
   /**
-   * Answers one submission: the binding verified, the task made (or found
-   * again by its Idempotency-Key or its binding token), and the approvers
-   * mailed. Writes the response.
+   * Verifies one submission's shape, denial binding, freshness, tuple and
+   * the caller's scope, without consuming anything (#1204: a bulk
+   * submission's every item is checked by this, as a single one is).
    *
-   * @param req - the request
-   * @param res - the response
-   * @param caller - the admitted caller, `{ name, kind, identifier }`
-   * @param body - the parsed body, or undefined when it was not JSON
+   * @param req - the request, for the base
+   * @param caller - the admitted caller
+   * @param body - the submission, or one bulk item made into one
    * @param scope - `(caller, application)` → the caller's scope check
+   * @returns `{ bound, scoped, base }`, or `{ refusal }`
    */
-  submit(req: Req, res: Res, caller: Json, body: unknown,
-         scope: (caller: Json, application: string) => Json): void {
+  private verifyOne(req: Req, caller: Json, body: unknown,
+                    scope: (caller: Json, application: string) => Json):
+    Json {
     const self = this;
-    const { log, helpers } = this.deps;
-    log.debug("Entering AccessRequests.submit().");
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.verifyOne().");
+    const no = AccessRequests.refusal;
     // THE SHAPE IS THE MODEL'S (#1579): `AccessRequestSubmission` — the
     // members it takes, BULK's refused, the denied tuple's three objects.
     // `denial`, `requested_access` and `callback` are read at their own
     // places below, between the checks that need state.
     const shape = authzenModel.read('access-request', body);
     if (shape) {
-      self.problem(res, 400, '', shape.code, shape.message);
-      log.debug("Leaving AccessRequests.submit(). " + shape.code);
-      return;
+      log.debug("Leaving AccessRequests.verifyOne(). " + shape.code);
+      return no(400, '', shape.code, shape.message);
     }
     const given: Json = body;
     const denial = given.denial;
     const unbound = authzenModel.field('access-request', 'denial', denial);
     if (unbound) {
-      self.problem(res, 400, 'not_requestable', unbound.code,
-                   unbound.message);
-      log.debug("Leaving AccessRequests.submit(). No denial.");
-      return;
+      log.debug("Leaving AccessRequests.verifyOne(). No denial.");
+      return no(400, 'not_requestable', unbound.code, unbound.message);
     }
     const base = self.baseOf(req);
     // THE TOKEN IS AUTHORITATIVE WHEN IT IS PRESENT. evaluation_id is a
@@ -1476,57 +1732,52 @@ class AccessRequests {
     if (denial.binding_token) {
       bound = self.verifyBinding(String(denial.binding_token), base);
       if (!bound) {
-        self.problem(res, 400, 'invalid_denial_binding', 'STS-AUTHZEN-0073',
-                     'denial.binding_token is not one this realm issued ' +
-                     'for this endpoint.');
-        log.debug("Leaving AccessRequests.submit(). Did not verify.");
-        return;
+        log.debug("Leaving AccessRequests.verifyOne(). Did not verify.");
+        return no(400, 'invalid_denial_binding', 'STS-AUTHZEN-0073',
+                  'denial.binding_token is not one this realm issued ' +
+                  'for this endpoint.');
       }
       if (denial.evaluation_id !== undefined &&
           String(denial.evaluation_id) !== String(bound.evaluation_id || '')) {
-        self.problem(res, 400, 'invalid_denial_binding', 'STS-AUTHZEN-0074',
-                     'denial.evaluation_id is not the evaluation the ' +
-                     'binding_token names.');
-        log.debug("Leaving AccessRequests.submit(). evaluation_id differs.");
-        return;
+        log.debug("Leaving AccessRequests.verifyOne(). evaluation_id " +
+                  "differs.");
+        return no(400, 'invalid_denial_binding', 'STS-AUTHZEN-0074',
+                  'denial.evaluation_id is not the evaluation the ' +
+                  'binding_token names.');
       }
     } else {
       bound = self.denialByEvaluation(String(denial.evaluation_id || ''),
                                       base);
       if (!bound) {
-        self.problem(res, 400, 'invalid_denial_binding', 'STS-AUTHZEN-0073',
-                     'denial.evaluation_id names no requestable denial this ' +
-                     'realm issued for this endpoint.');
-        log.debug("Leaving AccessRequests.submit(). No such denial.");
-        return;
+        log.debug("Leaving AccessRequests.verifyOne(). No such denial.");
+        return no(400, 'invalid_denial_binding', 'STS-AUTHZEN-0073',
+                  'denial.evaluation_id names no requestable denial this ' +
+                  'realm issued for this endpoint.');
       }
     }
     const now = self.nowS();
     const echoed = Date.parse(String(denial.expires_at || ''));
     if (String(denial.expires_at || '') !== String(bound.denial_expires_at)) {
-      self.problem(res, 400, 'invalid_denial_binding', 'STS-AUTHZEN-0074',
-                   'denial.expires_at is not the value the denial carried; ' +
-                   'echo it unchanged.');
-      log.debug("Leaving AccessRequests.submit(). expires_at differs.");
-      return;
+      log.debug("Leaving AccessRequests.verifyOne(). expires_at differs.");
+      return no(400, 'invalid_denial_binding', 'STS-AUTHZEN-0074',
+                'denial.expires_at is not the value the denial carried; ' +
+                'echo it unchanged.');
     }
     const deadline = Math.min(Number(bound.exp) || 0,
                               Math.floor(echoed / 1000) || 0);
     if (!(deadline > 0) || now > deadline + SKEW_S) {
-      self.problem(res, 410, 'expired_denial', 'STS-AUTHZEN-0075',
-                   'The requestable denial expired at ' +
-                   String(denial.expires_at) + '; evaluate again for a ' +
-                   'fresh one.');
-      log.debug("Leaving AccessRequests.submit(). Expired.");
-      return;
+      log.debug("Leaving AccessRequests.verifyOne(). Expired.");
+      return no(410, 'expired_denial', 'STS-AUTHZEN-0075',
+                'The requestable denial expired at ' +
+                String(denial.expires_at) + '; evaluate again for a ' +
+                'fresh one.');
     }
     const mismatch = self.bindingMismatch(bound, given, caller.name);
     if (mismatch) {
-      self.problem(res, 400, 'invalid_denial_binding', 'STS-AUTHZEN-0074',
-                   'The request does not match the denial it names: ' +
-                   mismatch + '.');
-      log.debug("Leaving AccessRequests.submit(). " + mismatch);
-      return;
+      log.debug("Leaving AccessRequests.verifyOne(). " + mismatch);
+      return no(400, 'invalid_denial_binding', 'STS-AUTHZEN-0074',
+                'The request does not match the denial it names: ' +
+                mismatch + '.');
     }
     // A token that proved the tuple by hash and carried no inline claims:
     // the task's tuple is the submission's, now that the hash matched.
@@ -1542,12 +1793,60 @@ class AccessRequests {
     // the denial and the submission ends the request here.
     const scoped = scope(caller, String(bound.application || ''));
     if (!scoped.application) {
-      self.problem(res, 403, '', 'STS-AUTHZEN-0077', 'This caller may no ' +
-                   'longer ask about the application "' +
-                   String(bound.application).slice(0, 120) + '".');
-      log.debug("Leaving AccessRequests.submit(). Out of scope.");
+      log.debug("Leaving AccessRequests.verifyOne(). Out of scope.");
+      return no(403, '', 'STS-AUTHZEN-0077', 'This caller may no longer ' +
+                'ask about the application "' +
+                String(bound.application).slice(0, 120) + '".');
+    }
+    log.debug("Leaving AccessRequests.verifyOne().");
+    return { bound: bound, scoped: scoped, base: base };
+  }
+
+  // A refusal `verifyOne()` hands back, written by its caller.
+  private static refusal(status: number, type: string, code: string,
+                         detail: string): Json {
+    log.debug("Entering AccessRequests.refusal(). " + code);
+    log.debug("Leaving AccessRequests.refusal().");
+    return { refusal: { status: status, type: type, code: code,
+                        detail: detail } };
+  }
+
+  /**
+   * Answers one submission: the binding verified, the task made (or found
+   * again by its Idempotency-Key or its binding token), and the approvers
+   * mailed. Writes the response.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param caller - the admitted caller, `{ name, kind, identifier }`
+   * @param body - the parsed body, or undefined when it was not JSON
+   * @param scope - `(caller, application)` → the caller's scope check
+   */
+  submit(req: Req, res: Res, caller: Json, body: unknown,
+         scope: (caller: Json, application: string) => Json): void {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.submit().");
+    // THE BULK COMPANION (#1204): `items`, while it is on, is a bundle of
+    // single submissions; off, the single model refuses `items` as before.
+    if (isObject(body) && (body as Json).items !== undefined &&
+        self.bulkOn()) {
+      self.submitBulk(req, res, caller, body as Json, scope);
+      log.debug("Leaving AccessRequests.submit(). A bulk submission.");
       return;
     }
+    const one = self.verifyOne(req, caller, body, scope);
+    if (one.refusal) {
+      // error-code: none — verifyOne()'s own code, carried on its refusal.
+      self.problem(res, one.refusal.status, one.refusal.type,
+                   one.refusal.code, one.refusal.detail);
+      log.debug("Leaving AccessRequests.submit(). " + one.refusal.code);
+      return;
+    }
+    const given: Json = body;
+    const bound: Json = one.bound;
+    const scoped: Json = one.scoped;
+    const base: string = one.base;
     // IDEMPOTENCY, scoped to the authenticated caller (the profile's
     // SHOULD), compared over the canonical body.
     const key = String(req.headers['idempotency-key'] || '').slice(0, 256);
@@ -1558,12 +1857,17 @@ class AccessRequests {
                   self.recalled('jti', String(bound.jti || ''));
     if (again) {
       const earlier = self.task(String(again.task));
-      if (earlier && again.fingerprint === fingerprint &&
+      // A TASK THE SUBJECT MADE ON THE HOSTED FORM (#1204) is this denial's
+      // one task: its PEP gets it back, unless it asks for something else.
+      const formMade = !!earlier && earlier.origin === 'form' &&
+        self.sameAugmentations(earlier, given);
+      if (earlier && (again.fingerprint === fingerprint || formMade) &&
           earlier.requester === caller.name) {
         res.status(earlier.status === 'pending' ? 202 : 201)
            .type('application/json').set('Cache-Control', 'no-store')
            .set('Location', self.handleOf(earlier).status_endpoint)
-           .send(JSON.stringify(self.bodyOf(earlier), null, 2));
+           .send(JSON.stringify(self.bodyOf(earlier,
+             self.languagesOf(req)), null, 2));
         log.debug("Leaving AccessRequests.submit(). The same request.");
         return;
       }
@@ -1586,6 +1890,14 @@ class AccessRequests {
       log.debug("Leaving AccessRequests.submit(). A callback refused.");
       return;
     }
+    // THE ACTOR COMPANION (#1204): a claimed chain verified against the
+    // caller's own credential, or refused; `client.source` as recorded.
+    const acting = self.actorOf(given.client, caller, base);
+    if (acting.problem) {
+      self.problem(res, 400, '', acting.code, acting.problem);
+      log.debug("Leaving AccessRequests.submit(). " + acting.code);
+      return;
+    }
     if (self.pendingCount() >=
         self.seconds('authzen.accessRequestMaxPending')) {
       self.problem(res, 503, '', 'STS-AUTHZEN-0078', 'This realm holds as ' +
@@ -1594,18 +1906,53 @@ class AccessRequests {
       log.debug("Leaving AccessRequests.submit(). Full.");
       return;
     }
-    const task: Json = {
-      id: 'arq_' + helpers.randomId(24),
-      status: 'pending',
-      realm: String(self.deps.realms.currentId() || ''),
-      base: base,
-      requester: caller.name,
-      requesterKind: caller.kind,
+    const task = self.openTask({
+      base: base, requester: caller.name, requesterKind: caller.kind,
       client: isObject(given.client)
         ? { id: String(given.client.id || '').slice(0, MAX_ID),
             name: String(given.client.name || '').slice(0, MAX_TEXT) }
         : null,
-      application: scoped.application,
+      application: scoped.application, bound: bound, asked: asked,
+      callback: callback.value, key: key, fingerprint: fingerprint,
+      actor: caller.name, origin: 'pep', formSubmittedBy: '',
+      acting: acting.actor, source: acting.source });
+    res.status(task.status === 'pending' ? 202 : 201)
+       .type('application/json').set('Cache-Control', 'no-store')
+       .set('Location', self.handleOf(task).status_endpoint)
+       .send(JSON.stringify(self.bodyOf(task, self.languagesOf(req)), null,
+                            2));
+    log.debug("Leaving AccessRequests.submit(). " + task.id + " " +
+              task.status);
+  }
+
+  /**
+   * Opens a task for a verified denial: the row, its indexes, the audit
+   * row, emergency access where it applies, and the approvers' mail. The
+   * one place a task is made, for a PEP's submission and the hosted
+   * form's (#1204) alike.
+   *
+   * @param spec - `{ base, requester, requesterKind, client, application,
+   *   bound, asked, callback, key, fingerprint, actor, origin,
+   *   formSubmittedBy }`
+   * @returns the task
+   */
+  private openTask(spec: Json): Json {
+    const self = this;
+    const { log, helpers } = this.deps;
+    log.debug("Entering AccessRequests.openTask(). " + spec.origin);
+    const now = self.nowS();
+    const bound = spec.bound;
+    const asked = spec.asked;
+    const key = String(spec.key || '');
+    const task: Json = {
+      id: 'arq_' + helpers.randomId(24),
+      status: 'pending',
+      realm: String(self.deps.realms.currentId() || ''),
+      base: spec.base,
+      requester: spec.requester,
+      requesterKind: spec.requesterKind,
+      client: spec.client || null,
+      application: spec.application,
       evaluationId: String(bound.evaluation_id || ''),
       subject: bound.subject,
       resource: bound.resource,
@@ -1616,7 +1963,9 @@ class AccessRequests {
       requestedUntil: asked.until,
       emergency: asked.emergency,
       justification: asked.justification,
-      callback: callback.value,
+      // The catalog item the request chose (#1204), '' when none.
+      entitlement: String(asked.entitlement || ''),
+      callback: spec.callback || null,
       createdAt: now,
       expiresAt: now + self.seconds('authzen.accessRequestLifetimeS'),
       keepUntil: now + self.seconds('authzen.accessRequestLifetimeS') +
@@ -1625,30 +1974,57 @@ class AccessRequests {
       decidedBy: '',
       idempotency: null
     };
-    const indexRow = { fingerprint: fingerprint };
+    // Where the request was made: `pep`, or `form` with the person who
+    // submitted it there (#1204), for the audit row and the console.
+    if (spec.origin === 'form') {
+      task.origin = 'form';
+      task.formSubmittedBy = String(spec.formSubmittedBy || '');
+    }
+    // THE VERIFIED ACTOR CHAIN AND THE SOURCE (#1204, the ACTOR
+    // companion), context for the approvers and the audit, never a fact.
+    if (spec.acting) {
+      task.actor = spec.acting;
+    }
+    // ONE ITEM OF A BULK REQUEST (#1204): its bundle and its position.
+    if (spec.bundle) {
+      task.bundle = String(spec.bundle);
+      task.position = Number(spec.position) || 0;
+    }
+    if (spec.source) {
+      task.source = spec.source;
+    }
+    const indexRow: Json = { fingerprint: spec.fingerprint };
     if (key) {
-      const indexKey = 'idem:' + stsCrypto.credentialDigest(caller.name +
-                                                            '\n' + key);
+      const indexKey = 'idem:' + stsCrypto.credentialDigest(
+        spec.requester + '\n' + key);
       task.idempotency = { key: indexKey, row: Object.assign(
         { task: task.id }, indexRow) };
     }
     self.save(task);
     if (key) {
-      self.remember('idem', caller.name + '\n' + key, task.id, indexRow,
+      self.remember('idem', spec.requester + '\n' + key, task.id, indexRow,
                     task.keepUntil);
     }
     self.remember('jti', String(bound.jti || ''), task.id, indexRow,
                   Number(bound.exp) + SKEW_S);
     self.deps.audit.audit({
       action: 'authzen.access-request.submitted',
-      actor: caller.name,
+      actor: spec.actor,
       protocol: 'AuthZEN',
       detail: 'The access request ' + task.id + ' was submitted for a ' +
         String(task.subject.type || '') + ' to ' +
         String(task.action.name || '') + ' a ' +
         String(task.resource.type || '') + ', application "' +
         task.application + '"' + (task.emergency ? ', as an emergency' : '') +
-        (key ? ', with an Idempotency-Key' : '') + '.'
+        (task.entitlement ? ', for the entitlement "' +
+          String(task.entitlement).slice(0, 128) + '"' : '') +
+        (task.actor ? ', acted for by ' + (task.actor.chain || [])
+          .map(function (one: Json) {
+            return String(one.id).slice(0, 128);
+          }).join(' for ') : '') +
+        (key ? ', with an Idempotency-Key' : '') +
+        (task.origin === 'form' ? ', by its subject on the hosted form, ' +
+          'for the PEP ' + String(task.requester) : '') + '.'
     });
     // EMERGENCY ACCESS (the profile's `requested_access.emergency`, a
     // request signal and never an override): only where the policy's own
@@ -1661,12 +2037,1155 @@ class AccessRequests {
                    String(task.justification).slice(0, 200));
     }
     self.mailApprovers(task);
-    res.status(task.status === 'pending' ? 202 : 201)
+    log.debug("Leaving AccessRequests.openTask(). " + task.id);
+    return task;
+  }
+
+  /**
+   * Whether a PEP's submission asks for what the hosted form already asked
+   * (#1204): nothing at all, or the same justification, end and emergency.
+   *
+   * @param task - the form's task
+   * @param given - the PEP's submission
+   * @returns true when it asks for nothing else
+   */
+  private sameAugmentations(task: Json, given: Json): boolean {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.sameAugmentations().");
+    const context: Json = isObject(given.context) ? given.context : {};
+    if (given.requested_access === undefined &&
+        context.business_justification === undefined) {
+      log.debug("Leaving AccessRequests.sameAugmentations(). Nothing asked.");
+      return true;
+    }
+    const asked = self.requestedAccess(given, task.terms || {});
+    const out = !asked.problem &&
+      Number(asked.until || 0) === Number(task.requestedUntil || 0) &&
+      !!asked.emergency === !!task.emergency &&
+      String(asked.justification || '') ===
+        String(task.justification || '') &&
+      String(asked.entitlement || '') === String(task.entitlement || '');
+    log.debug("Leaving AccessRequests.sameAugmentations(). " + out);
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE BULK COMPANION (#1204). This service issues no bundle denial — a
+  // batch evaluation answers each item with a requestable denial of its own
+  // — so every item carries its own `denial` (its section 3.1) and a
+  // top-level one is bundle binding material it never issued. Each item is
+  // checked exactly as a single submission is (`verifyOne()`, with the
+  // top-level subject and context), and becomes an ordinary task: approvers
+  // decide it alone, and its approval verifies alone (section 3.6). The
+  // bundle is an index row holding the items' ids in order; its Task
+  // Handle is built from them whenever it is read (section 3.4). A
+  // callback on a bulk submission is refused: the CALLBACK companion's
+  // `partial` event is not built.
+  // -------------------------------------------------------------------------
+  /**
+   * Whether `items` is read (`authzen.accessRequestBulk`).
+   *
+   * @returns true when it and the profile are on
+   */
+  bulkOn(): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering AccessRequests.bulkOn().");
+    log.debug("Leaving AccessRequests.bulkOn().");
+    return this.enabled() &&
+      config.value('authzen.accessRequestBulk') === true;
+  }
+
+  /**
+   * Answers a bulk submission: every item verified, then every item a
+   * task, then the bundle's Task Handle.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param caller - the admitted caller
+   * @param given - the submission, with `items`
+   * @param scope - `(caller, application)` → the caller's scope check
+   */
+  private submitBulk(req: Req, res: Res, caller: Json, given: Json,
+                     scope: (caller: Json, application: string) => Json):
+    void {
+    const self = this;
+    const { log, helpers, index } = this.deps;
+    log.debug("Entering AccessRequests.submitBulk().");
+    const most = self.seconds('authzen.accessRequestMaxBulkItems');
+    const items: Json[] = Array.isArray(given.items) ? given.items : [];
+    if (!Array.isArray(given.items) || !items.length || items.length > most ||
+        !items.every(isObject)) {
+      self.problem(res, 400, '', 'STS-AUTHZEN-0157', 'items must hold ' +
+                   'from 1 to ' + most + ' objects, each with resource, ' +
+                   'action and its own denial.');
+      log.debug("Leaving AccessRequests.submitBulk(). Bad items.");
+      return;
+    }
+    if (given.resource !== undefined || given.action !== undefined) {
+      self.problem(res, 400, '', 'STS-AUTHZEN-0156', 'With items, the ' +
+                   'top-level resource and action are omitted (the BULK ' +
+                   'companion\'s section 3.1).');
+      log.debug("Leaving AccessRequests.submitBulk(). A top-level tuple.");
+      return;
+    }
+    if (given.denial !== undefined ||
+        !items.every(function (one: Json): boolean {
+          return one.denial !== undefined;
+        })) {
+      self.problem(res, 400, 'invalid_denial_binding', 'STS-AUTHZEN-0158',
+                   'Every item carries its own denial: this service issues ' +
+                   'no bundle denial, so a top-level denial binds nothing.');
+      log.debug("Leaving AccessRequests.submitBulk(). A bundle denial.");
+      return;
+    }
+    if (given.callback !== undefined) {
+      self.problem(res, 400, '', 'STS-AUTHZEN-0160', 'A bulk submission ' +
+                   'takes no callback; poll the bundle\'s status endpoint.');
+      log.debug("Leaving AccessRequests.submitBulk(). A callback.");
+      return;
+    }
+    // IDEMPOTENCY OVER THE WHOLE BODY (section 3.1), per caller, first: a
+    // retry finds its bundle before its items' denials read as used.
+    const key = String(req.headers['idempotency-key'] || '').slice(0, 256);
+    const fingerprint = stsCrypto.digest('sha256',
+      AccessRequests.canonical(given), 'base64url');
+    const again = key ? self.recalled('idem', caller.name + '\n' + key)
+      : null;
+    if (again) {
+      const earlier = self.bundleOf(String(again.task));
+      if (earlier && again.fingerprint === fingerprint &&
+          earlier.row.requester === caller.name) {
+        self.sendBundle(res, earlier, self.languagesOf(req));
+        log.debug("Leaving AccessRequests.submitBulk(). The same bundle.");
+        return;
+      }
+      self.problem(res, 409, 'duplicate_request', 'STS-AUTHZEN-0076',
+                   'This Idempotency-Key was already used for a request ' +
+                   'whose body differs.');
+      log.debug("Leaving AccessRequests.submitBulk(). A duplicate.");
+      return;
+    }
+    // EACH ITEM, AS A SINGLE SUBMISSION WOULD BE CHECKED, before anything
+    // is made.
+    const top: Json = isObject(given.requested_access)
+      ? given.requested_access : {};
+    const checked: Json[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const merged: Json = Object.assign({}, top,
+        isObject(item.requested_access) ? item.requested_access : {});
+      const single: Json = {
+        subject: given.subject, resource: item.resource,
+        action: item.action, denial: item.denial };
+      if (given.context !== undefined) {
+        single.context = given.context;
+      }
+      if (Object.keys(merged).length) {
+        single.requested_access = merged;
+      }
+      const one = self.verifyOne(req, caller, single, scope);
+      if (one.refusal) {
+        // error-code: none — verifyOne()'s own code, carried on its refusal.
+        self.problem(res, one.refusal.status, one.refusal.type,
+                     one.refusal.code, 'items[' + i + ']: ' +
+                     one.refusal.detail);
+        log.debug("Leaving AccessRequests.submitBulk(). Item " + i + ".");
+        return;
+      }
+      if (checked.length &&
+          one.scoped.application !== checked[0].scoped.application) {
+        self.problem(res, 400, '', 'STS-AUTHZEN-0159', 'items[' + i + ']\'s ' +
+                     'denial is about another application: one bulk ' +
+                     'request is one application\'s.');
+        log.debug("Leaving AccessRequests.submitBulk(). Mixed.");
+        return;
+      }
+      const jti = String(one.bound.jti || '');
+      if (self.recalled('jti', jti) ||
+          checked.some(function (done: Json): boolean {
+            return String(done.bound.jti || '') === jti;
+          })) {
+        self.problem(res, 409, 'duplicate_request', 'STS-AUTHZEN-0076',
+                     'items[' + i + ']\'s denial was already requested.');
+        log.debug("Leaving AccessRequests.submitBulk(). Item " + i +
+                  " requested.");
+        return;
+      }
+      const asked = self.requestedAccess(single, one.bound.terms || {});
+      if (asked.problem) {
+        // error-code: none — requestedAccess()'s own code.
+        self.problem(res, 400, '', asked.code, 'items[' + i + ']: ' +
+                     asked.problem);
+        log.debug("Leaving AccessRequests.submitBulk(). " + asked.code);
+        return;
+      }
+      checked.push({ bound: one.bound, scoped: one.scoped, base: one.base,
+                     asked: asked });
+    }
+    const acting = self.actorOf(given.client, caller, checked[0].base);
+    if (acting.problem) {
+      // error-code: none — actorOf()'s own code.
+      self.problem(res, 400, '', acting.code, acting.problem);
+      log.debug("Leaving AccessRequests.submitBulk(). " + acting.code);
+      return;
+    }
+    if (self.pendingCount() + checked.length >
+        self.seconds('authzen.accessRequestMaxPending')) {
+      self.problem(res, 503, '', 'STS-AUTHZEN-0078', 'This realm holds as ' +
+                   'many pending access requests as it may ' +
+                   '(authzen.accessRequestMaxPending); try again later.');
+      log.debug("Leaving AccessRequests.submitBulk(). Full.");
+      return;
+    }
+    const id = BUNDLE_PREFIX + helpers.randomId(24);
+    const client = isObject(given.client)
+      ? { id: String(given.client.id || '').slice(0, MAX_ID),
+          name: String(given.client.name || '').slice(0, MAX_TEXT) }
+      : null;
+    const ids = checked.map(function (one: Json, i: number): string {
+      return String(self.openTask({
+        base: one.base, requester: caller.name, requesterKind: caller.kind,
+        client: client, application: one.scoped.application,
+        bound: one.bound, asked: one.asked, callback: null, key: '',
+        fingerprint: fingerprint, actor: caller.name, origin: 'pep',
+        formSubmittedBy: '', acting: acting.actor, source: acting.source,
+        bundle: id, position: i }).id);
+    });
+    const now = self.nowS();
+    const until = now + self.seconds('authzen.accessRequestLifetimeS') +
+      self.seconds('authzen.accessRequestMaxApprovalS') + RETENTION_S;
+    index.set(BUNDLE_KEY + stsCrypto.credentialDigest(id),
+              { id: id, tasks: ids, requester: caller.name,
+                base: checked[0].base, createdAt: now, until: until });
+    if (key) {
+      self.remember('idem', caller.name + '\n' + key, id,
+                    { fingerprint: fingerprint }, until);
+    }
+    self.deps.audit.audit({
+      action: 'authzen.access-request.submitted',
+      actor: caller.name,
+      protocol: 'AuthZEN',
+      detail: 'The bulk access request ' + id + ' was submitted with ' +
+        ids.length + ' item(s): ' + ids.join(', ') + '.'
+    });
+    self.sendBundle(res, self.bundleOf(id), self.languagesOf(req));
+    log.debug("Leaving AccessRequests.submitBulk(). " + id);
+  }
+
+  /**
+   * A bundle and its items, or null when there is none (or it is gone).
+   *
+   * @param id - the bundle's id
+   * @returns `{ row, tasks }`
+   */
+  bundleOf(id: string): Json {
+    const self = this;
+    const { log, index } = this.deps;
+    log.debug("Entering AccessRequests.bundleOf().");
+    if (String(id || '').indexOf(BUNDLE_PREFIX) !== 0) {
+      log.debug("Leaving AccessRequests.bundleOf(). Not a bundle.");
+      return null;
+    }
+    const row = index.get(BUNDLE_KEY + stsCrypto.credentialDigest(
+      String(id).slice(0, MAX_ID)));
+    if (!row || Number(row.until) <= self.nowS()) {
+      log.debug("Leaving AccessRequests.bundleOf(). None.");
+      return null;
+    }
+    const tasks = (row.tasks || []).map(function (one: string): Json {
+      return self.task(String(one));
+    });
+    log.debug("Leaving AccessRequests.bundleOf(). " + tasks.length);
+    return { row: row, tasks: tasks };
+  }
+
+  /**
+   * A bundle's Task Handle and body (section 3.4): the aggregate status,
+   * and each item's resource, action, status and, once approved, its own
+   * result. No top-level result.
+   *
+   * @param bundle - `bundleOf()`'s answer
+   * @param languages - the caller's languages
+   * @returns `{ task }`
+   */
+  bundleBody(bundle: Json, languages: string[]): Json {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.bundleBody().");
+    const tasks: Json[] = bundle.tasks;
+    const statuses = tasks.map(function (one: Json): string {
+      return one ? String(one.status) : 'expired';
+    });
+    const distinct = statuses.filter(function (one: string, i: number) {
+      return statuses.indexOf(one) === i;
+    });
+    const status = statuses.indexOf('pending') >= 0 ? 'pending'
+      : distinct.length === 1 ? distinct[0] : 'partial';
+    const items = tasks.map(function (one: Json, i: number): Json {
+      if (!one) {
+        return { resource: {}, action: {}, status: statuses[i] };
+      }
+      const item: Json = { resource: one.resource, action: one.action,
+                           status: String(one.status) };
+      const result = self.bodyOf(one).result;
+      if (result) {
+        item.result = result;
+      }
+      return item;
+    });
+    const ends = tasks.map(function (one: Json): number {
+      return one ? Number(one.status === 'pending' ? one.expiresAt
+                                                   : one.keepUntil) : 0;
+    });
+    const endpoint = String(bundle.row.base) + REQUESTS_PATH + '/' +
+      String(bundle.row.id);
+    const handle: Json = { id: String(bundle.row.id), status: status,
+                           status_endpoint: endpoint,
+                           expires_at: instant(Math.max.apply(null,
+                             ends.concat([0])) * 1000),
+                           items: items };
+    if (status === 'pending') {
+      handle.links = { cancel: endpoint + '/cancel' };
+    }
+    const display = self.taskDisplay(status, languages || []);
+    if (display) {
+      handle.display = display;
+    }
+    const out = { task: handle };
+    authzenModel.hold('task-response', out, 'a bulk access request');
+    log.debug("Leaving AccessRequests.bundleBody(). " + status);
+    return out;
+  }
+
+  // Writes a bundle's answer: 202 while any item is pending, 201 once all
+  // are finished.
+  private sendBundle(res: Res, bundle: Json, languages: string[]): void {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.sendBundle().");
+    const body = this.bundleBody(bundle, languages);
+    res.status(body.task.status === 'pending' ? 202 : 201)
        .type('application/json').set('Cache-Control', 'no-store')
-       .set('Location', self.handleOf(task).status_endpoint)
-       .send(JSON.stringify(self.bodyOf(task), null, 2));
-    log.debug("Leaving AccessRequests.submit(). " + task.id + " " +
-              task.status);
+       .set('Location', body.task.status_endpoint)
+       .send(JSON.stringify(body, null, 2));
+    log.debug("Leaving AccessRequests.sendBundle().");
+  }
+
+  // The bundle a caller may read, or null with unknown_task written.
+  private callersBundle(res: Res, caller: Json, id: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.callersBundle().");
+    const bundle = this.bundleOf(id);
+    if (!bundle || bundle.row.requester !== caller.name) {
+      this.problem(res, 404, 'unknown_task', 'STS-AUTHZEN-0080',
+                   'There is no such task for this caller.');
+      log.debug("Leaving AccessRequests.callersBundle(). Unknown.");
+      return null;
+    }
+    log.debug("Leaving AccessRequests.callersBundle().");
+    return bundle;
+  }
+
+  /**
+   * A bundle's status endpoint.
+   *
+   * @param res - the response
+   * @param caller - the admitted caller
+   * @param id - the bundle's id
+   */
+  private bundleStatus(res: Res, caller: Json, id: string): void {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.bundleStatus().");
+    const bundle = self.callersBundle(res, caller, id);
+    if (!bundle) {
+      log.debug("Leaving AccessRequests.bundleStatus(). Refused.");
+      return;
+    }
+    const body = self.bundleBody(bundle, self.languagesOf((res as Json).req));
+    if (body.task.status === 'pending') {
+      res.set('Retry-After',
+              String(self.seconds('authzen.accessRequestRetryAfterS')));
+    }
+    res.status(200).type('application/json').set('Cache-Control', 'no-store')
+       .send(JSON.stringify(body, null, 2));
+    log.debug("Leaving AccessRequests.bundleStatus(). " + body.task.status);
+  }
+
+  /**
+   * A bundle's cancellation (section 3.6): every pending item cancelled,
+   * the finished ones left; 409 when none was pending.
+   *
+   * @param res - the response
+   * @param caller - the admitted caller
+   * @param id - the bundle's id
+   * @param body - the optional `{ reason }`
+   */
+  private bundleCancel(res: Res, caller: Json, id: string,
+                       body: unknown): void {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.bundleCancel().");
+    const bundle = self.callersBundle(res, caller, id);
+    if (!bundle) {
+      log.debug("Leaving AccessRequests.bundleCancel(). Refused.");
+      return;
+    }
+    const given: Json = isObject(body) ? body : {};
+    let cancelled = 0;
+    bundle.tasks.forEach(function (one: Json) {
+      if (one && one.status === 'pending' &&
+          self.finish(one, 'cancelled', {
+            actor: caller.name,
+            why: 'with its bulk request ' + id + ', by the requesting PEP' +
+              (given.reason ? ' (' + String(given.reason).slice(0, 64) + ')'
+                            : '') })) {
+        cancelled += 1;
+      }
+    });
+    if (!cancelled) {
+      self.problem(res, 409, 'invalid_task_state', 'STS-AUTHZEN-0082',
+                   'Every item of this request has already finished.');
+      log.debug("Leaving AccessRequests.bundleCancel(). Finished.");
+      return;
+    }
+    const answer = self.bundleBody(self.bundleOf(id),
+                                   self.languagesOf((res as Json).req));
+    res.status(200).type('application/json').set('Cache-Control', 'no-store')
+       .send(JSON.stringify(answer, null, 2));
+    log.debug("Leaving AccessRequests.bundleCancel(). " + cancelled);
+  }
+
+  // -------------------------------------------------------------------------
+  // THE ACTOR COMPANION (#1204). An AuthZEN caller is the PEP itself — a
+  // directory entry by its certificate, or a client by its own
+  // client_credentials token (`authzen_caller.ts`) — so a credential here
+  // can authorize two chains (its section 3.2): one link that is the
+  // caller itself, or, link for link, the `act` chain of the caller's own
+  // RFC 8693 token. Any other claimed chain is refused (0153): the MUST
+  // governs the MAY of the same section, so nothing unverified is kept.
+  // `client.source` has no verification in the draft and is audit-only.
+  // Neither is ever an XACML fact: the approval question is unchanged.
+  // `subject.properties.act` stays out of the binding (`bound()`), the
+  // base profile's rule today; openid/authzen#756 would change that.
+  // -------------------------------------------------------------------------
+  /**
+   * Whether `client.actor` and `client.source` are read
+   * (`authzen.accessRequestActor`).
+   *
+   * @returns true when it and the profile are on
+   */
+  actorOn(): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering AccessRequests.actorOn().");
+    log.debug("Leaving AccessRequests.actorOn().");
+    return this.enabled() &&
+      config.value('authzen.accessRequestActor') === true;
+  }
+
+  /**
+   * The links of an actor chain, immediate actor first: `{ id, issuer,
+   * type }` each, from `client.actor`'s `id`/`issuer`/`type` and then the
+   * nested `act`'s `sub`/`iss`/`sub_profile`; or a sentence when its shape
+   * is wrong.
+   *
+   * @param actor - `client.actor`
+   * @returns `{ links }` or `{ problem }`
+   */
+  private actorLinks(actor: unknown): Json {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.actorLinks().");
+    const links: Json[] = [];
+    // A hot path of one walk: no Entering/Leaving pair.
+    const text = function (value: unknown, most: number): string | null {
+      if (value === undefined) {
+        return '';
+      }
+      return typeof value === 'string' && value.length <= most
+        ? value : null;
+    };
+    let at: unknown = actor;
+    let depth = 0;
+    while (at !== undefined) {
+      if (!isObject(at) || depth >= MAX_ACT_DEPTH) {
+        log.debug("Leaving AccessRequests.actorLinks(). Not a chain.");
+        return { problem: 'client.actor must be an object, its act ' +
+                          'nested objects, at most ' + MAX_ACT_DEPTH +
+                          ' deep.' };
+      }
+      const one: Json = at;
+      const id = text(depth ? one.sub : one.id, 256);
+      const issuer = text(depth ? one.iss : one.issuer, MAX_URL);
+      const type = text(depth ? one.sub_profile : one.type, 64);
+      if (!id || issuer === null || type === null) {
+        log.debug("Leaving AccessRequests.actorLinks(). A bad link.");
+        return { problem: 'Every link of client.actor needs a string ' +
+                          (depth ? 'sub' : 'id') + ', and its ' +
+                          (depth ? 'iss and sub_profile' :
+                                   'issuer and type') +
+                          ', when present, must be short strings.' };
+      }
+      const link: Json = { id: id };
+      if (issuer) {
+        link.issuer = issuer;
+      }
+      if (type) {
+        link.type = type;
+      }
+      links.push(link);
+      at = one.act;
+      depth += 1;
+    }
+    log.debug("Leaving AccessRequests.actorLinks(). " + links.length);
+    return { links: links };
+  }
+
+  /**
+   * Reads and verifies `client.actor`, and reads `client.source` (the
+   * ACTOR companion's sections 3.1 and 3.2).
+   *
+   * @param client - the submission's `client`
+   * @param caller - the admitted caller
+   * @param base - this realm's base, its issuer for a self link
+   * @returns `{ actor, source }` (each null when absent or off), or
+   *   `{ problem, code }`
+   */
+  actorOf(client: unknown, caller: Json, base: string): Json {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.actorOf().");
+    if (!self.actorOn() || !isObject(client)) {
+      log.debug("Leaving AccessRequests.actorOf(). Not read.");
+      return { actor: null, source: null };
+    }
+    const given: Json = client;
+    let source: Json = null;
+    if (given.source !== undefined) {
+      const s: Json = given.source;
+      const fine = isObject(s) &&
+        ['session_id', 'integration_id'].every(function (name: string) {
+          return s[name] === undefined ||
+            (typeof s[name] === 'string' && s[name].length <= 256);
+        }) &&
+        (s.external_url === undefined ||
+         (typeof s.external_url === 'string' &&
+          s.external_url.length <= MAX_URL &&
+          /^https:\/\/[^\s/?#]+/i.test(s.external_url)));
+      if (!fine) {
+        log.debug("Leaving AccessRequests.actorOf(). A bad source.");
+        return { problem: 'client.source must be an object whose ' +
+                          'session_id and integration_id are short ' +
+                          'strings and whose external_url is an https ' +
+                          'URL.', code: 'STS-AUTHZEN-0155' };
+      }
+      source = {};
+      ['session_id', 'external_url', 'integration_id'].forEach(
+        function (name: string) {
+          if (s[name]) {
+            source[name] = String(s[name]);
+          }
+        });
+      if (!Object.keys(source).length) {
+        source = null;
+      }
+    }
+    if (given.actor === undefined) {
+      log.debug("Leaving AccessRequests.actorOf(). No actor.");
+      return { actor: null, source: source };
+    }
+    const read = self.actorLinks(given.actor);
+    if (read.problem) {
+      log.debug("Leaving AccessRequests.actorOf(). A bad chain.");
+      return { problem: read.problem, code: 'STS-AUTHZEN-0155' };
+    }
+    const links: Json[] = read.links;
+    const own = [caller.name, caller.clientId, caller.identifier]
+      .filter(Boolean).map(String);
+    const issuers = [String(base || ''), String(caller.iss || '')]
+      .filter(Boolean);
+    // 1. ONE LINK THAT IS THE CALLER ITSELF.
+    const itself = links.length === 1 &&
+      own.indexOf(String(links[0].id)) >= 0 &&
+      (!links[0].issuer || issuers.indexOf(String(links[0].issuer)) >= 0);
+    // 2. THE CALLER'S OWN TOKEN'S `act` CHAIN, LINK FOR LINK.
+    let carried = false;
+    if (!itself && isObject(caller.act)) {
+      const chain: Json[] = [];
+      let at: Json = caller.act;
+      while (isObject(at) && chain.length <= MAX_ACT_DEPTH) {
+        chain.push(at);
+        at = at.act;
+      }
+      carried = chain.length === links.length &&
+        links.every(function (link: Json, i: number) {
+          const token = chain[i];
+          const iss = String(token.iss || caller.iss || '');
+          return String(token.sub || '') === String(link.id) &&
+            (!link.issuer || String(link.issuer) === iss);
+        });
+    }
+    if (!itself && !carried) {
+      log.debug("Leaving AccessRequests.actorOf(). Not authorized.");
+      return { problem: 'The caller\'s credential does not authorize the ' +
+                        'actor chain in client.actor.',
+               code: 'STS-AUTHZEN-0154' };
+    }
+    log.debug("Leaving AccessRequests.actorOf(). " + links.length +
+              " link(s), " + (itself ? 'the caller itself' : 'its token'));
+    return { actor: { chain: links,
+                      verifiedBy: itself ? 'caller' : 'token' },
+             source: source };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE CATALOG COMPANION (#1204). A catalog here is the POLICY'S: the
+  // entitlements the access-request advice lists for the denied tuple, so
+  // it is scoped to the original Subject, Resource and Action by
+  // construction (its sections 7 and 11). The Catalogs Document and the
+  // Catalog Endpoint answer only the caller the denial was answered to,
+  // while it is still scoped to the application; anybody else is told
+  // nothing (0149). A query string is never logged (section 13).
+  // -------------------------------------------------------------------------
+  /**
+   * Whether the catalogs answer (`authzen.accessRequestCatalogs`).
+   *
+   * @returns true when it and the profile are on
+   */
+  catalogsOn(): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering AccessRequests.catalogsOn().");
+    log.debug("Leaving AccessRequests.catalogsOn().");
+    return this.enabled() &&
+      config.value('authzen.accessRequestCatalogs') === true;
+  }
+
+  /**
+   * The recorded denial a catalog call names, for its own caller, or null
+   * with the refusal written.
+   *
+   * @param res - the response
+   * @param caller - the admitted caller
+   * @param evaluationId - the denial's id, from the path
+   * @param scope - `(caller, application)` → the caller's scope check
+   * @returns the record, or null
+   */
+  private catalogDenial(res: Res, caller: Json, evaluationId: string,
+                        scope: (caller: Json, application: string) => Json):
+    Json | null {
+    const self = this;
+    const { log, denials } = this.deps;
+    log.debug("Entering AccessRequests.catalogDenial().");
+    if (!self.catalogsOn()) {
+      self.problem(res, 501, '', 'STS-AUTHZEN-0153', 'The access request ' +
+                   'catalogs are turned off in this realm ' +
+                   '(authzen.accessRequestCatalogs).');
+      log.debug("Leaving AccessRequests.catalogDenial(). Off.");
+      return null;
+    }
+    const id = String(evaluationId || '').slice(0, MAX_ID);
+    const row = id ? denials.get(id) : null;
+    const ok = !!row && Number(row.keepUntil) > self.nowS() &&
+      String(row.caller) === String(caller.name) &&
+      ((row.terms || {}).entitlements || []).length > 0 &&
+      !!scope(caller, String(row.application || '')).application;
+    if (!ok) {
+      self.problem(res, 404, '', 'STS-AUTHZEN-0150', 'There is no catalog ' +
+                   'for this caller under that denial.');
+      log.debug("Leaving AccessRequests.catalogDenial(). Unknown.");
+      return null;
+    }
+    log.debug("Leaving AccessRequests.catalogDenial().");
+    return row;
+  }
+
+  /**
+   * Answers a denial's Catalogs Document (the CATALOG companion's
+   * section 6): the one catalog-backed field and its endpoint.
+   *
+   * @param req - the request, for the base
+   * @param res - the response
+   * @param caller - the admitted caller
+   * @param evaluationId - the denial's id
+   * @param scope - the caller's scope check
+   */
+  catalogsDocument(req: Req, res: Res, caller: Json, evaluationId: string,
+                   scope: (caller: Json, application: string) => Json):
+    void {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.catalogsDocument().");
+    const row = self.catalogDenial(res, caller, evaluationId, scope);
+    if (!row) {
+      log.debug("Leaving AccessRequests.catalogsDocument(). Refused.");
+      return;
+    }
+    const fields: Json = {};
+    fields[ENTITLEMENT_POINTER] = {
+      endpoint: self.baseOf(req) + CATALOGS_PATH + '/' +
+        encodeURIComponent(String(row.evaluationId)) + '/entitlements',
+      search_param: 'q'
+    };
+    const body = authzenModel.held('catalogs-document', { fields: fields },
+                                   'the Catalogs Document');
+    res.status(200).type('application/json').set('Cache-Control', 'no-store')
+       .send(JSON.stringify(body, null, 2));
+    log.debug("Leaving AccessRequests.catalogsDocument().");
+  }
+
+  /**
+   * Answers the entitlements Catalog Endpoint (the CATALOG companion's
+   * sections 7 and 8): the denial's items matching `q`, a page at a time.
+   *
+   * @param req - the request, for `q`, `cursor` and `limit`
+   * @param res - the response
+   * @param caller - the admitted caller
+   * @param evaluationId - the denial's id
+   * @param scope - the caller's scope check
+   */
+  catalogItems(req: Req, res: Res, caller: Json, evaluationId: string,
+               scope: (caller: Json, application: string) => Json): void {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.catalogItems().");
+    const row = self.catalogDenial(res, caller, evaluationId, scope);
+    if (!row) {
+      log.debug("Leaving AccessRequests.catalogItems(). Refused.");
+      return;
+    }
+    // A hot path of one read: no Entering/Leaving pair.
+    const first = function (value: unknown): string {
+      return String((Array.isArray(value) ? value[0] : value) || '');
+    };
+    const query: Json = req.query || {};
+    const q = first(query.q).trim().toLowerCase().slice(0, 256);
+    const asked = Math.floor(Number(first(query.limit)) || 0);
+    const limit = asked > 0 ? Math.min(asked, CATALOG_PAGE_MAX)
+      : CATALOG_PAGE;
+    const tag = stsCrypto.digest('sha256', q, 'base64url').slice(0, 16);
+    let offset = 0;
+    const cursor = first(query.cursor);
+    if (cursor) {
+      let read: Json = null;
+      try {
+        read = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+      } catch (e) {
+        log.debug("Caught in AccessRequests.catalogItems(): " +
+                  ((e && e.message) || e));
+        read = null;
+      }
+      if (!isObject(read) || read.q !== tag ||
+          !Number.isInteger(read.o) || read.o < 0) {
+        self.problem(res, 400, '', 'STS-AUTHZEN-0151', 'cursor is not one ' +
+                     'this Catalog Endpoint issued for this search.');
+        log.debug("Leaving AccessRequests.catalogItems(). A bad cursor.");
+        return;
+      }
+      offset = read.o;
+    }
+    const matching = ((row.terms || {}).entitlements || []).filter(
+      function (one: Json) {
+        return !q || String(one.value).toLowerCase().indexOf(q) >= 0 ||
+          String(one.label).toLowerCase().indexOf(q) >= 0;
+      });
+    const page = matching.slice(offset, offset + limit).map(
+      function (one: Json) {
+        return { value: String(one.value), label: String(one.label) };
+      });
+    const body: Json = { items: page, total: matching.length };
+    if (offset + limit < matching.length) {
+      body.next_cursor = Buffer.from(JSON.stringify(
+        { o: offset + limit, q: tag }), 'utf8').toString('base64url');
+    }
+    res.status(200).type('application/json').set('Cache-Control', 'no-store')
+       .send(JSON.stringify(authzenModel.held('catalog-response', body,
+         'the Catalog Endpoint'), null, 2));
+    log.debug("Leaving AccessRequests.catalogItems(). " + page.length);
+  }
+
+  // -------------------------------------------------------------------------
+  // THE HOSTED FORM AND THE TICKET (#1204; the profile's sections 16, 7.1
+  // and 11.11). `form_url` is the portal page `/portal/access-request`
+  // with the denial's `evaluation_id`; the subject signs in there and
+  // submits the denial's access request themselves. The task is the one a
+  // PEP's own submission would make — the recorded tuple, application and
+  // terms, `requester` the PEP the denial was answered to — so that PEP
+  // reads it, cancels it and re-evaluates with its approval, and gets it
+  // back when it submits the same denial (`sameAugmentations()`). The draft
+  // does not say how what the person gives reaches the task; making the
+  // denial's own submission is this service's answer. `links.ticket` is
+  // the same page with the task's id. Nothing on either names an approver
+  // (section 19). Only the denial's SUBJECT is answered, the same refusal
+  // (0146) whether or not the thing exists.
+  // -------------------------------------------------------------------------
+  /**
+   * Whether the hosted form is on (`authzen.accessRequestForm`).
+   *
+   * @returns true when it and the profile are on
+   */
+  formOn(): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering AccessRequests.formOn().");
+    log.debug("Leaving AccessRequests.formOn().");
+    return this.enabled() &&
+      config.value('authzen.accessRequestForm') === true;
+  }
+
+  /**
+   * The portal's base for a base of this realm's PDP: the same origin on a
+   * default install, the portal's listener where it has one.
+   *
+   * @param base - this realm's base, the prefix included
+   * @returns the portal's base, the prefix included
+   */
+  private portalBaseOf(base: string): string {
+    const { log, helpers } = this.deps;
+    log.debug("Entering AccessRequests.portalBaseOf().");
+    let out = String(base || '');
+    try {
+      out = String(helpers.rebaseTo(out, 'portal') || out);
+    } catch (e) {
+      // The PDP's own base: the page answers there too.
+      log.debug("Caught in AccessRequests.portalBaseOf(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving AccessRequests.portalBaseOf().");
+    return out;
+  }
+
+  /**
+   * A requestable denial's `form_url`.
+   *
+   * @param base - this realm's base
+   * @param evaluationId - the denial's id
+   * @returns the URL
+   */
+  formUrlOf(base: string, evaluationId: string): string {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.formUrlOf().");
+    log.debug("Leaving AccessRequests.formUrlOf().");
+    return this.portalBaseOf(base) + FORM_PATH + '?evaluation_id=' +
+      encodeURIComponent(evaluationId);
+  }
+
+  /**
+   * A Task Handle's `links.ticket`.
+   *
+   * @param task - the row
+   * @returns the URL
+   */
+  ticketUrlOf(task: Json): string {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.ticketUrlOf().");
+    log.debug("Leaving AccessRequests.ticketUrlOf().");
+    return this.portalBaseOf(String(task.base || '')) + FORM_PATH +
+      '?request=' + encodeURIComponent(String(task.id));
+  }
+
+  /**
+   * Whether a person is the subject a denial or a task names: its type one
+   * of `authzen.resolveSubjectTypes`, its id one of the person's names.
+   *
+   * @param username - the signed-in person
+   * @param subject - the bound subject
+   * @returns true when it is them
+   */
+  private isSubject(username: string, subject: Json): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering AccessRequests.isSubject().");
+    const raw = config.value('authzen.resolveSubjectTypes');
+    const types = (Array.isArray(raw) ? raw : String(raw || '').split(','))
+      .map(function (one: unknown) {
+        return String(one).trim();
+      }).filter(Boolean);
+    const given: Json = isObject(subject) ? subject : {};
+    if (types.indexOf(String(given.type || '')) < 0) {
+      log.debug("Leaving AccessRequests.isSubject(). Not a person's type.");
+      return false;
+    }
+    const id = String(given.id == null ? '' : given.id).trim().toLowerCase();
+    const out = !!id &&
+      this.approverIdentity(username).identity.indexOf(id) >= 0;
+    log.debug("Leaving AccessRequests.isSubject(). " + out);
+    return out;
+  }
+
+  /**
+   * What the form shows of a recorded denial: what it asks, and what the
+   * person may add. Never who approves.
+   *
+   * @param row - the denial's record
+   * @returns the view's `request`
+   */
+  private formRequestOf(row: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.formRequestOf().");
+    const terms: Json = row.terms || {};
+    const until = Math.min(Number(row.exp) || 0,
+      Math.floor(Date.parse(String(row.denialExpiresAt || '')) / 1000) || 0);
+    const out: Json = {
+      evaluationId: String(row.evaluationId),
+      subject: row.subject || {},
+      action: row.action || {},
+      resource: row.resource || {},
+      application: String(row.application || ''),
+      expiresAt: until,
+      emergency: terms.emergency === true,
+      entitlements: this.catalogsOn()
+        ? (terms.entitlements || []).map(function (one: Json) {
+          return { value: String(one.value), label: String(one.label) };
+        }) : [],
+      maxApprovalS: Number(terms.maxSeconds) > 0
+        ? Math.min(Number(terms.maxSeconds),
+                   this.seconds('authzen.accessRequestMaxApprovalS'))
+        : this.seconds('authzen.accessRequestMaxApprovalS')
+    };
+    // The advice's own words only: the page is translated in the browser,
+    // and the service's sentence is the browser's heading there.
+    if (this.displays() && (terms.displayTitle || terms.displayDescription)) {
+      out.display = {};
+      if (terms.displayTitle) {
+        out.display.title = String(terms.displayTitle);
+      }
+      if (terms.displayDescription) {
+        out.display.description = String(terms.displayDescription);
+      }
+    }
+    log.debug("Leaving AccessRequests.formRequestOf().");
+    return out;
+  }
+
+  /**
+   * What the page shows of a task: its status and what it asks.
+   *
+   * @param task - the row
+   * @returns the view's `task`
+   */
+  private formTaskOf(task: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.formTaskOf().");
+    const out: Json = {
+      id: String(task.id),
+      status: String(task.status),
+      origin: task.origin === 'form' ? 'form' : 'pep',
+      subject: task.subject || {},
+      action: task.action || {},
+      resource: task.resource || {},
+      application: String(task.application || ''),
+      createdAt: Number(task.createdAt) || 0,
+      expiresAt: Number(task.expiresAt) || 0
+    };
+    if (task.status === 'approved' && task.approval &&
+        !task.approval.revoked) {
+      out.approvedUntil = Number(task.approval.approvedUntil) || 0;
+    }
+    if (task.entitlement) {
+      out.entitlement = String(task.entitlement);
+    }
+    log.debug("Leaving AccessRequests.formTaskOf().");
+    return out;
+  }
+
+  /**
+   * The requests whose subject is this person, newest first, through the
+   * subject index — never a walk of the store.
+   *
+   * @param username - the signed-in person
+   * @returns the rows
+   */
+  private mineOf(username: string): Json[] {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.mineOf().");
+    const seen = new Set<string>();
+    const out: Json[] = [];
+    self.approverIdentity(username).identity.forEach(function (name: string) {
+      self.idsUnder(AccessRequests.subjectKey(name)).forEach(
+        function (id: string) {
+          if (seen.has(id)) {
+            return;
+          }
+          seen.add(id);
+          const task = self.task(id);
+          if (task && Number(task.keepUntil) > self.nowS() &&
+              self.isSubject(username, task.subject)) {
+            out.push(self.formTaskOf(task));
+          }
+        });
+    });
+    out.sort(function (a: Json, b: Json) {
+      return b.createdAt - a.createdAt;
+    });
+    log.debug("Leaving AccessRequests.mineOf(). " + out.length);
+    return out.slice(0, MAX_MINE);
+  }
+
+  /**
+   * The page's answer: the form for a denial (`evaluationId`), the ticket
+   * for a request (`request`), or the person's own requests (neither).
+   *
+   * @param username - the signed-in person
+   * @param asked - `{ evaluationId, request }`
+   * @returns `{ view }`, or `{ refusal: { status, code, message }, view }`
+   */
+  formView(username: string, asked: Json): Json {
+    const self = this;
+    const { log, denials } = this.deps;
+    log.debug("Entering AccessRequests.formView().");
+    const view: Json = { enabled: self.formOn(), mode: 'mine' };
+    const refuse = function (status: number, code: string,
+                             message: string): Json {
+      log.debug("Entering refuse(). " + code);
+      log.debug("Leaving refuse().");
+      return { refusal: { status: status, code: code, message: message },
+               view: { enabled: view.enabled, mode: 'none' } };
+    };
+    if (!view.enabled) {
+      log.debug("Leaving AccessRequests.formView(). Off.");
+      return { view: { enabled: false, mode: 'none' } };
+    }
+    const evaluationId = String((asked || {}).evaluationId || '')
+      .slice(0, MAX_ID);
+    const requestId = String((asked || {}).request || '').slice(0, MAX_ID);
+    if (requestId) {
+      const task = self.task(requestId);
+      if (!task || Number(task.keepUntil) <= self.nowS() ||
+          !self.isSubject(username, task.subject)) {
+        log.debug("Leaving AccessRequests.formView(). Not theirs.");
+        return refuse(404, 'STS-AUTHZEN-0147', 'There is no access ' +
+                      'request about you with that id.');
+      }
+      view.mode = 'task';
+      view.task = self.formTaskOf(task);
+      log.debug("Leaving AccessRequests.formView(). The ticket.");
+      return { view: view };
+    }
+    if (!evaluationId) {
+      view.mine = self.mineOf(username);
+      log.debug("Leaving AccessRequests.formView(). Their requests.");
+      return { view: view };
+    }
+    const row = denials.get(evaluationId);
+    if (!row || Number(row.keepUntil) <= self.nowS()) {
+      log.debug("Leaving AccessRequests.formView(). No such denial.");
+      return refuse(404, 'STS-AUTHZEN-0146', 'This link names no access ' +
+                    'request that can be made here. Ask the application ' +
+                    'again for a new one.');
+    }
+    if (!self.isSubject(username, row.subject)) {
+      log.debug("Leaving AccessRequests.formView(). Not their denial.");
+      return refuse(404, 'STS-AUTHZEN-0147', 'This access request is not ' +
+                    'about you, so you cannot make it.');
+    }
+    const again = self.recalled('jti', String(row.jti || ''));
+    const earlier = again ? self.task(String(again.task)) : null;
+    if (earlier) {
+      view.mode = 'task';
+      view.task = self.formTaskOf(earlier);
+      log.debug("Leaving AccessRequests.formView(). Already made.");
+      return { view: view };
+    }
+    const request = self.formRequestOf(row);
+    if (!(request.expiresAt > 0) ||
+        self.nowS() > request.expiresAt + SKEW_S) {
+      log.debug("Leaving AccessRequests.formView(). Expired.");
+      return refuse(410, 'STS-AUTHZEN-0148', 'This access request can no ' +
+                    'longer be made: its link has expired. Ask the ' +
+                    'application again for a new one.');
+    }
+    view.mode = 'denial';
+    view.request = request;
+    log.debug("Leaving AccessRequests.formView(). The form.");
+    return { view: view };
+  }
+
+  /**
+   * The person submits the access request a recorded denial allows, on
+   * the hosted form.
+   *
+   * @param username - the signed-in person
+   * @param given - `{ evaluationId, justification, durationS, emergency }`
+   * @returns `{ ok, task }`, or `{ ok: false, status, code, error, view }`
+   */
+  submitByForm(username: string, given: Json): Json {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.submitByForm().");
+    const refuse = function (status: number, code: string, error: string,
+                             view: Json): Json {
+      log.debug("Entering refuse(). " + code);
+      log.debug("Leaving refuse().");
+      return { ok: false, status: status, code: code, error: error,
+               view: view || { enabled: self.formOn(), mode: 'none' } };
+    };
+    if (!self.formOn()) {
+      log.debug("Leaving AccessRequests.submitByForm(). Off.");
+      return refuse(403, 'STS-AUTHZEN-0149', 'Access requests cannot be ' +
+                    'made here: the hosted form is turned off.', null);
+    }
+    const shown = self.formView(username,
+      { evaluationId: String((given || {}).evaluationId || '') });
+    if (shown.refusal) {
+      log.debug("Leaving AccessRequests.submitByForm(). " +
+                shown.refusal.code);
+      return refuse(shown.refusal.status, shown.refusal.code,
+                    shown.refusal.message, shown.view);
+    }
+    if (shown.view.mode !== 'denial') {
+      log.debug("Leaving AccessRequests.submitByForm(). Already made.");
+      return refuse(409, 'STS-AUTHZEN-0076', 'This access request was ' +
+                    'already made.', shown.view);
+    }
+    const row = self.deps.denials.get(shown.view.request.evaluationId);
+    const bound = self.denialByEvaluation(String(row.evaluationId),
+                                          String(row.base || ''));
+    if (!bound) {
+      log.debug("Leaving AccessRequests.submitByForm(). Gone.");
+      return refuse(404, 'STS-AUTHZEN-0146', 'This link names no access ' +
+                    'request that can be made here.', null);
+    }
+    // THE SAME READER AS A PEP'S SUBMISSION: the schema's augmentations,
+    // built from the form's fields.
+    const durationS = Math.floor(Number((given || {}).durationS) || 0);
+    const augmented: Json = { context: {}, requested_access: {} };
+    const justification = String((given || {}).justification || '').trim();
+    if (justification) {
+      augmented.context.business_justification = justification;
+    }
+    if (durationS > 0) {
+      augmented.requested_access.requested_until =
+        instant((self.nowS() + durationS) * 1000);
+    }
+    if ((given || {}).emergency === true) {
+      augmented.requested_access.emergency = true;
+    }
+    if ((given || {}).entitlement) {
+      augmented.requested_access.entitlement =
+        String((given || {}).entitlement);
+    }
+    const asked = self.requestedAccess(augmented, bound.terms || {});
+    if (asked.problem) {
+      log.debug("Leaving AccessRequests.submitByForm(). " + asked.code);
+      return refuse(400, asked.code, asked.problem, shown.view);
+    }
+    if (self.pendingCount() >=
+        self.seconds('authzen.accessRequestMaxPending')) {
+      log.debug("Leaving AccessRequests.submitByForm(). Full.");
+      return refuse(503, 'STS-AUTHZEN-0078', 'This realm holds as many ' +
+                    'pending access requests as it may; try again later.',
+                    shown.view);
+    }
+    const task = self.openTask({
+      base: String(row.base || ''), requester: String(bound.caller || ''),
+      requesterKind: '', client: null,
+      application: String(bound.application || ''), bound: bound,
+      asked: asked, callback: null, key: '',
+      fingerprint: stsCrypto.digest('sha256',
+        AccessRequests.canonical({ form: augmented,
+                                   evaluation_id: row.evaluationId }),
+        'base64url'),
+      actor: username, origin: 'form', formSubmittedBy: username });
+    log.debug("Leaving AccessRequests.submitByForm(). " + task.id);
+    return { ok: true, task: task };
   }
 
   /**
@@ -1766,7 +3285,7 @@ class AccessRequests {
    * @param id - the document's own URL
    * @returns the schema
    */
-  static submissionSchema(id: string): Json {
+  static submissionSchema(id: string, catalogs?: boolean): Json {
     log.debug("Entering AccessRequests.submissionSchema().");
     const justification: Json = {
       type: 'string',
@@ -1835,6 +3354,20 @@ class AccessRequests {
         }
       }]
     };
+    // THE CATALOG'S FIELD (#1204), described while the catalogs answer:
+    // its values are the Catalog Endpoint's, so the schema says only its
+    // shape (the CATALOG companion's section 6: the schema defines the
+    // data, the Catalogs Document where it comes from).
+    if (catalogs) {
+      out.properties.requested_access.properties.entitlement = {
+        type: 'string',
+        minLength: 1,
+        maxLength: MAX_ID,
+        description: 'Required when the denial names ' +
+                     'request_catalogs_url: one of the values its ' +
+                     'Catalog Endpoint lists, exactly as listed.'
+      };
+    }
     log.debug("Leaving AccessRequests.submissionSchema().");
     return out;
   }
@@ -1890,9 +3423,31 @@ class AccessRequests {
                         'in context.business_justification.',
                code: 'STS-AUTHZEN-0083' };
     }
+    // THE CATALOG'S VALUE, VALIDATED WHEN THE SUBMISSION ARRIVES (the
+    // CATALOG companion's section 10.3): one of the denial's own
+    // entitlements, required when it lists any. Off, the advice's list is
+    // ignored, and so is the member.
+    let entitlement = '';
+    const listed: Json[] = this.catalogsOn()
+      ? (terms.entitlements || []) : [];
+    if (listed.length) {
+      const chosen = asked.entitlement;
+      const known = typeof chosen === 'string' &&
+        listed.some(function (one: Json) {
+          return one.value === chosen;
+        });
+      if (!known) {
+        log.debug("Leaving AccessRequests.requestedAccess(). No " +
+                  "entitlement.");
+        return { problem: 'requested_access.entitlement must be one of the ' +
+                          'values the denial\'s catalog lists.',
+                 code: 'STS-AUTHZEN-0152' };
+      }
+      entitlement = String(chosen);
+    }
     log.debug("Leaving AccessRequests.requestedAccess().");
     return { until: until, emergency: emergency,
-             justification: justification };
+             justification: justification, entitlement: entitlement };
   }
 
   // -------------------------------------------------------------------------
@@ -2482,6 +4037,11 @@ class AccessRequests {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering AccessRequests.status().");
+    if (String(id || '').indexOf(BUNDLE_PREFIX) === 0) {
+      self.bundleStatus(res, caller, String(id));
+      log.debug("Leaving AccessRequests.status(). A bundle.");
+      return;
+    }
     const task = self.callersTask(res, caller, id);
     if (!task) {
       log.debug("Leaving AccessRequests.status(). Refused.");
@@ -2492,7 +4052,8 @@ class AccessRequests {
               String(self.seconds('authzen.accessRequestRetryAfterS')));
     }
     res.status(200).type('application/json').set('Cache-Control', 'no-store')
-       .send(JSON.stringify(self.bodyOf(task), null, 2));
+       .send(JSON.stringify(self.bodyOf(task,
+         self.languagesOf((res as Json).req)), null, 2));
     log.debug("Leaving AccessRequests.status(). " + task.status);
   }
 
@@ -2509,6 +4070,11 @@ class AccessRequests {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering AccessRequests.cancel().");
+    if (String(id || '').indexOf(BUNDLE_PREFIX) === 0) {
+      self.bundleCancel(res, caller, String(id), body);
+      log.debug("Leaving AccessRequests.cancel(). A bundle.");
+      return;
+    }
     const task = self.callersTask(res, caller, id);
     if (!task) {
       log.debug("Leaving AccessRequests.cancel(). Refused.");
@@ -2527,7 +4093,8 @@ class AccessRequests {
         ? ' (' + String(given.reason).slice(0, 64) + ')' : '') });
     res.status(200).type('application/json').set('Cache-Control', 'no-store')
        .send(JSON.stringify(authzenModel.held('task-response',
-         { task: self.handleOf(task) }, 'the cancellation'), null, 2));
+         { task: self.handleOf(task, self.languagesOf((res as Json).req)) },
+         'the cancellation'), null, 2));
     log.debug("Leaving AccessRequests.cancel().");
   }
 
@@ -3098,7 +4665,21 @@ class AccessRequests {
     log.debug("Entering AccessRequests.viewOf().");
     const approval = task.approval || null;
     log.debug("Leaving AccessRequests.viewOf().");
-    return {
+    // Made on the hosted form (#1204): by whom, for the console.
+    const form: Json = task.origin === 'form'
+      ? { formSubmittedBy: String(task.formSubmittedBy || '') } : {};
+    // The catalog item it chose (#1204), for the approver.
+    if (task.entitlement) {
+      form.entitlement = String(task.entitlement);
+    }
+    // Who acted, and where it came from (#1204, the ACTOR companion).
+    if (task.actor) {
+      form.actor = task.actor;
+    }
+    if (task.source) {
+      form.source = task.source;
+    }
+    return Object.assign({
       id: task.id, status: task.status, requester: task.requester,
       client: task.client, application: task.application,
       subject: task.subject, action: task.action, resource: task.resource,
@@ -3130,7 +4711,7 @@ class AccessRequests {
                                                       : 'STS-AUTHZEN-0091')) };
           })
       } : null
-    };
+    }, form);
   }
 
   /**
@@ -3549,9 +5130,12 @@ class AccessRequests {
     }
     const approval = verdict.task.approval;
     log.debug("Leaving AccessRequests.factsOf().");
+    // The entitlement the approved request chose (#1204), a fourth
+    // trusted fact; '' (and so absent) when it chose none.
     return { approvalId: approval.id,
              approvedUntil: instant(Number(approval.approvedUntil) * 1000),
-             approver: String(approval.approver || '') };
+             approver: String(approval.approver || ''),
+             approvedEntitlement: String(verdict.task.entitlement || '') };
   }
 
   /**
@@ -3936,6 +5520,19 @@ export = {
   cancel: slot.forward('cancel'),
   problem: slot.forward('problem'),
   task: slot.forward('task'),
+  handleOf: slot.forward('handleOf'),
+  formOn: slot.forward('formOn'),
+  formView: slot.forward('formView'),
+  submitByForm: slot.forward('submitByForm'),
+  FORM_PATH: FORM_PATH,
+  actorOn: slot.forward('actorOn'),
+  bulkOn: slot.forward('bulkOn'),
+  bundleOf: slot.forward('bundleOf'),
+  actorOf: slot.forward('actorOf'),
+  CATALOGS_PATH: CATALOGS_PATH,
+  catalogsOn: slot.forward('catalogsOn'),
+  catalogsDocument: slot.forward('catalogsDocument'),
+  catalogItems: slot.forward('catalogItems'),
   verify: slot.forward('verify'),
   decide: slot.forward('decide'),
   cancelByAdministrator: slot.forward('cancelByAdministrator'),
