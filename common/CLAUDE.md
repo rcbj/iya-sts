@@ -10819,6 +10819,26 @@ hourly `signing.retire` ran during it). The displaced serial is now kept in
 cluster merge already keeps: `good` until it expires, `revoked` once something
 revokes it, never unknown. `tests/signing_rotation.js` section J.
 
+### And a certificate that is still current is not replaced at all (2026-11-23)
+
+The paragraph above described `certifyKeySet()` re-issuing the RSA key's two
+certificates and every curve key's on EVERY call, over keys that had not
+changed. It is called for every new generation, and the hourly
+`signing.rotate` mints a `next` key for any unit that lacks one — the
+post-quantum units, made after its first run, lack one at the next hour. So
+at the first full hour of every product service those slots took new
+fingerprints, and the console's keys page, drawn before it, linked seven
+certificates `/admin/crypto-metadata` no longer held (`sts_admin_console`,
+GitHub Actions run 45189343764, every mode with a store; it had done the same
+at 10:00 in the run before, outside the crawl). Now
+`heldCertificateIsCurrent()` keeps a plain slot's record when it is over the
+same `kid` and SubjectPublicKeyInfo, signed by the Issuing CA the branch holds
+now on a branch that chains to the Root, unpinned, unexpired and not revoked —
+the question `certifyPqKeys()` always asked. A new key, a rebuilt branch, a
+reissued authority and a revoked certificate over a live key still re-certify.
+The verdict's `unchanged` and the closing log line count what was kept.
+`tests/signing_certificate_stability.js`.
+
 ### And its `x5u` keeps answering until it expires (2026-10-13, #318)
 
 #185 kept the serial and not the certificate, so `/pki/chain/{scope}/{sha256}.pem`

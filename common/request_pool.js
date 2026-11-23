@@ -3433,9 +3433,16 @@ function receivePublishedKeys(entry, published) {
     // the worker is told, because a broadcast skips the publisher.
     const kept = keystore.withHeldMembers(published.blob, heldBlob);
     keystore.adoptShared(realmId, kept);
+    // THE GENERATION, AND WHETHER IT IS A ROTATION (2026-11-23): the line
+    // used to say neither, so an hourly `signing.rotate` minting a `next`
+    // key read the same as a store's arbitration (GitHub Actions run
+    // 45189343764 had both and could not tell them apart).
     log.info('request_pool: the "' + realmId + '" realm\'s key set was ' +
              'confirmed by the store through worker ' + (entry && entry.pid) +
-             '; every process here now uses it.');
+             ' (generation ' + keystore.generationOf(heldBlob) + ' -> ' +
+             keystore.generationOf(published.blob) +
+             (newer ? ', a new generation of the set held' : '') +
+             '); every process here now uses it.');
     broadcastKeys(realmId, kept, entry);
     if (kept !== published.blob) {
       sendKeys(entry, realmId);
