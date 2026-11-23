@@ -62,20 +62,32 @@ STS_URL="${STS_URL%/}"
 # whole diagnosis.
 #
 # node rather than curl, because this suite already requires node and requires
-# curl nowhere; `rejectUnauthorized: false` because this service regenerates
-# its certificate and the Root above it on every start in development mode, so
-# nothing can have an anchor for it yet — the question here is whether the port
-# answers, not whether it is trusted.
+# curl nowhere. VERIFIED (#1954's follow-up): this service regenerates its
+# certificate and the Root above it on every start in development mode, so
+# nothing holds an anchor before it answers, and the probe asks
+# tests/tools/trust.js's anchorsFor() for one — the known roots, or else the
+# service Root its plain-HTTP revocation listener publishes — exactly as the
+# launchers' token tool does. A chain that does not verify answers "TLS"
+# rather than "000", so the diagnosis below does not read it as a closed port.
 probe()
 {
-  node -e '
+  # LOG_LEVEL=fatal: trust.js logs with bunyan on standard output, which is
+  # where this probe's answer goes.
+  LOG_LEVEL=fatal node -e '
+    var trust = require(require("path").resolve("tests/tools/trust.js"));
     var url = new URL(process.argv[1]);
     var m = url.protocol === "https:" ? require("https") : require("http");
-    var req = m.get({ host: url.hostname, port: url.port, path: url.pathname,
-                      rejectUnauthorized: false, timeout: 5000 },
-      function (res) { process.stdout.write(String(res.statusCode)); process.exit(0); });
-    req.on("error", function () { process.stdout.write("000"); process.exit(0); });
-    req.on("timeout", function () { req.destroy(); process.stdout.write("000"); process.exit(0); });
+    var done = function (code) { process.stdout.write(code); process.exit(0); };
+    trust.anchorsFor(url.href).then(function (ca) {
+      var req = m.get({ host: url.hostname, port: url.port, path: url.pathname,
+                        ca: ca, timeout: 5000 },
+        function (res) { done(String(res.statusCode)); });
+      req.on("error", function (e) {
+        done(/CERT|SELF_SIGNED|ALTNAME|UNABLE_TO/.test(String(e && e.code))
+          ? "TLS" : "000");
+      });
+      req.on("timeout", function () { req.destroy(); done("000"); });
+    }, function () { done("000"); });
   ' "$1" 2> /dev/null
 }
 

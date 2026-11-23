@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5978** of them, in **57** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5980** of them, in **57** subsystems.
 
 ## Where a code appears
 
@@ -52,8 +52,8 @@ is an ordinary outcome.
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 21
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 112
-* [Worker pools (`STS-WORKER`)](#sts-worker) — 56
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 115
+* [Worker pools (`STS-WORKER`)](#sts-worker) — 57
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 116
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
@@ -338,8 +338,9 @@ Raised from: common/request_pool.js, common/request_worker.ts, common/service_st
 | `STS-WORKER-0052` | A request worker revoked something a refresh token rests on (a session, a token, a refresh family, a grant or an account) after the answer's headers had gone, so the front process could not file it for the refresh grant's wait before the client saw the answer (the review of #879). The revocation stands; a refresh routed to a worker that has not applied it may be answered until the workers converge. Logged at the first and every hundredth. | Nothing: the request is answered as it was |
 | `STS-WORKER-0053` | A dispatched request or operation was refused because its request worker had not caught up with the writes answered before it within workers.readBarrierTimeoutMs; answering from what that worker held could have been wrong. The worker's STS-STORE-0039 line says where its change pull's time went. | HTTP 503 (Retry-After: 5), plain text; an LDAP operation LDAP_UNAVAILABLE, a Kerberos message KDC_ERR_SVC_UNAVAILABLE |
 | `STS-WORKER-0054` | A request the front process answers itself was refused because that process had not caught up with the change log within workers.readBarrierTimeoutMs; answering from its own copy could have been wrong. | HTTP 503 (Retry-After: 5), plain text |
-| `STS-WORKER-0055` | A request worker reported that its change-log pull waited on its own flush past workers.readBarrierTimeoutMs (STS-STORE-0176), so the front process retired it — nothing more routed to it, then drained — and forks a replacement into its slot when it exits. A pool that is stopping or has given up keeps the worker, and the line says why. | — |
+| `STS-WORKER-0055` | A request worker reported that its change-log pull waited on its own flush past workers.readBarrierTimeoutMs (STS-STORE-0176), so the front process retired it — nothing more routed to it, then drained, waiting for its own flush to settle — and forks a replacement into its slot when it exits. A pool that is stopping or has given up keeps the worker, and the line says why. | — |
 | `STS-WORKER-0056` | A request worker retired because its change-log pull was wedged (STS-WORKER-0055) did not finish draining within 8000 ms and was ended; its replacement follows as for any worker that exits. | — |
+| `STS-WORKER-0057` | A request worker was ended, or exited, with its own flush still out past ten times workers.readBarrierTimeoutMs after it began (5 minutes by default): the flush was given up on, and the writes in it may not have reached the store. A flush that settles before then is waited for. | Log line |
 
 ## STS-STORE
 
@@ -463,7 +464,8 @@ Raised from: persistence/.
 | `STS-STORE-0173` | A background build of an index the store was owed (#876, #882) — CREATE INDEX CONCURRENTLY on PostgreSQL, an in-place ALTER on MariaDB — failed. The service goes on without the index, by a slower plan; the next start tries again, or the owner runs the upgrade script. | none — the store opens without it |
 | `STS-STORE-0174` | A realm another process changed could not be applied in this one: the realm registry refused the replicated update. This process keeps the realm as it was until a later change applies, and does not write its copy back over the store. | none — logged; the request that wrote it was already answered |
 | `STS-STORE-0175` | A minted row another process wrote could not be merged into the copy this process holds (the store's merge threw), so the arriving row replaced the held copy, as it did before such rows were merged. | none — logged |
-| `STS-STORE-0176` | A change-log apply of a directory entry waited for this process's own flush of that entry past workers.readBarrierTimeoutMs and the flush had not settled. The pull fails before its position moves, so the row is read again and never dropped; a request worker asks the front process to replace it (STS-WORKER-0055). Reported once a flush; a read barrier's STS-STORE-0039 line names the wait while it lasts. | — |
+| `STS-STORE-0176` | A change-log apply of a directory entry waited for this process's own flush of that entry past workers.readBarrierTimeoutMs and the flush had not settled. The pull fails before its position moves, so the row is read again and never dropped; a request worker asks the front process to replace it only once the flush is stuck (STS-STORE-0177). Reported once a flush; a read barrier's STS-STORE-0039 line names the wait while it lasts. | — |
+| `STS-STORE-0177` | A request worker's own flush has been out four times workers.readBarrierTimeoutMs (2 minutes by default), so the worker asks the front process to replace it (STS-WORKER-0055). Its drain waits for that flush to settle until ten times the bound after it began, so a flush that is only slow keeps its writes. | Log line |
 
 ## STS-CLUSTER
 

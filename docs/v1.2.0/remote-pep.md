@@ -190,12 +190,13 @@ with the files from the tool:
 ```bash
 docker run -d --name remote-pep-3 --hostname remote-pep-3 \
   --env-file ./remote-pep-3/pep.env \
-  -v "$PWD/remote-pep-3:/certs:ro" -p 9444:9443 iyasec/iya-sts-xacml-pep
+  -v "$PWD/remote-pep-3:/certs:ro" -p 127.0.0.1:9444:9443 iyasec/iya-sts-xacml-pep
 ```
 
 or `docker compose -f docker-compose.pep.yml up -d` in that directory. That
 file publishes the decision API on the host's 9444 and the reverse proxy on
-9543.
+9543, both on `127.0.0.1` only; edit its `ports:` lines when another host has
+to reach them.
 
 A `--cluster` run writes one compose for every member whose `--out` sits in
 the same directory, then starts it:
@@ -205,8 +206,15 @@ docker compose -f docker-compose.pep-cluster.yml up -d --no-build --pull never
 ```
 
 That is the command the tool runs. It starts the members, the load balancer
-and the companion (`companion-<cluster>`, hostname `companion`,
-`127.0.0.1:9700`). It does not start the identity service. Set
+and the companion (`companion-<cluster>`, hostname `companion`). The
+companion publishes no host port: it is reached only as the reverse proxy's
+upstream, `http://companion:9700` on the cluster network, because that route
+takes the person from identity headers the proxy sets, and a port on the host
+would let any local process set them. It verifies the identity service's
+certificate against the `--ca` anchor, which the tool copies to
+`pep-cluster-service-ca.pem` beside the compose and mounts as
+`COMPANION_STS_CA_FILE`; without `--ca` it verifies against the roots in its
+image. It does not start the identity service. Set
 `STS_COMPANION_IMAGE` when the companion image is not `iya-sts-companion`,
 `XACML_PEP_IMAGE` for the PEP image, and `PEP_LB_IMAGE` for HAProxy.
 

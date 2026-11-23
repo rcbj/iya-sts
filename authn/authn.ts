@@ -1066,6 +1066,14 @@ const INITIATING_ENTITIES = ['admin', 'user', 'policy', 'system'];
  * recent after it.
  */
 const MAX_SESSION_EVENTS = 20;
+// HOW MANY OF A BATCH'S SESSION READS ARE OUT AT ONCE (#1951, #780's
+// follow-up). `accountSessionsKeptAsync()` read every session a batch of
+// account sets lists with one Promise.all, so a batch of sets listing a few
+// thousand sessions put a few thousand reads on the store's read pool at
+// once — and that pool also serves every request beside the job. Four, as
+// the directory window asks a long list's pages (`PAGES_AT_ONCE`): enough
+// to overlap round trips, and a bound that leaves the pool to the requests.
+const ACCOUNT_SESSION_READS_AT_ONCE = 4;
 
 // The screen itself. Unchanged from the one that used to be rendered inside the
 // authorization endpoint, in everything a person or a test can see: the same
@@ -2460,14 +2468,20 @@ class Authn {
       return out;
     }
     const realmId = realms.currentId();
-    const reads = await Promise.all(unique.map(function (sid) {
-      return sessionWindow.readAsync(realmId, sid).catch(function (e) {
-        // A read that threw is a read that failed: kept, never ended.
-        log.debug("Caught in Authn.accountSessionsKeptAsync(): " +
-                  ((e && e.message) || e));
-        return { ok: false, error: true };
+    const reads: any[] = new Array(unique.length);
+    const indexed = unique.map(function (sid, i) {
+      return { sid: sid, i: i };
+    });
+    await helpers.inParallel(indexed, ACCOUNT_SESSION_READS_AT_ONCE,
+      async function (one) {
+        reads[one.i] = await sessionWindow.readAsync(realmId, one.sid)
+          .catch(function (e) {
+            // A read that threw is a read that failed: kept, never ended.
+            log.debug("Caught in Authn.accountSessionsKeptAsync(): " +
+                      ((e && e.message) || e));
+            return { ok: false, error: true };
+          });
       });
-    }));
     unique.forEach(function (sid, i) {
       const read: any = reads[i] || { ok: false, error: true };
       if (read.error) {
