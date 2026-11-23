@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5970** of them, in **57** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5974** of them, in **57** subsystems.
 
 ## Where a code appears
 
@@ -58,7 +58,7 @@ is an ordinary outcome.
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 198
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 283
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 285
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
@@ -89,7 +89,7 @@ is an ordinary outcome.
 * [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 35
 * [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 30
 * [PIV key attestation (`STS-PIV`)](#sts-piv) — 26
-* [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 28
+* [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 30
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 252
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 137
@@ -1136,6 +1136,8 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0294` | An SSH user certificate request (#1955 P3) had no UID, named a principal the access policy refused, or its hardware evidence could not be verified or recorded. | The account API refuses the request |
 | `STS-PKI-0295` | A person requested SSH user certificates (#1955 P3) too often and the shared rate limiter refused it. | The account API refuses the request with HTTP 429 |
 | `STS-PKI-0296` | A write turned on pki.sshUserCaPqcOnly and pki.sshUserCaPqcAlongsideClassical together. One narrows a new certificate to the ML-DSA authority; the other issues a classical certificate and an ML-DSA certificate. They cannot both be on. | The console and the management API refuse the write |
+| `STS-PKI-0297` | An SSH user certificate was asked for while pki.sshUserCaPqcOnly is on, and the realm has no ML-DSA SSH user CA: this runtime cannot generate ML-DSA, ssh-mldsa-65 is not in pki.sshUserCaAlgorithms, or the authority could not be made. No classical certificate is issued in its place. | The account API refuses the request with HTTP 503 |
+| `STS-PKI-0298` | A public SSH user CA request named an algorithm other than ssh-mldsa-65, or asked for the ML-DSA authority of a realm that has none. | GET /pki/ssh-user-ca/{scope} answers 400 or 404 |
 
 ## STS-ENROLL
 
@@ -5142,6 +5144,8 @@ Raised from: common/openpgp_keys.ts, common/crypto.js (section 19), portal/accou
 | `STS-OPENPGP-0026` | A post-quantum OpenPGP key (RFC 9980), or a proof signed with one, could not have its ML-DSA half checked on this runtime, so the key was not stored and the proof was not accepted. The EdDSA half alone is not enough. | HTTP 400 (the page with the sentence) |
 | `STS-OPENPGP-0027` | A write turned on openpgp.pqcOnly and openpgp.pqcAlongsideClassical together. Post-quantum only accepts a post-quantum key; alongside requires a post-quantum key and a separate classical one. The write was refused. | HTTP 400 (the settings write) |
 | `STS-OPENPGP-0028` | An S/MIME message to an ML-KEM certificate could not be built: this runtime cannot encapsulate (ML-KEM needs OpenSSL 3.5). The message was not sent under a classical algorithm instead. | the mail send; STS-MAIL-0243 carries the sentence |
+| `STS-OPENPGP-0029` | The proof of possession offered with an OpenPGP key carries more than one signature. A proof is signed once, by one key, so that the signer and the creation time judged are the signature that verified. | HTTP 400 (the page with the sentence) |
+| `STS-OPENPGP-0030` | A person's mail address changed and the OpenPGP key whose user ids name only the former address could not be retired from their entry, or an S/MIME choice whose certificate does not name the new address could not be put back to none. Mail is still not encrypted to either for the new address: a key or certificate is used only for an address it names. | none (a log line; the directory write that changed the address is unaffected) |
 
 ## STS-SVCACCT
 

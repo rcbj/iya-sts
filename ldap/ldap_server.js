@@ -28229,6 +28229,27 @@ function noteAccountChange(kind, dn, before, after, options) {
                ' changed and its former address could not be told: ' +
                ((e && e.message) || e));
     }
+    // AND WHAT WAS BOUND TO THE FORMER ADDRESS IS RETIRED (#1955 P6): an
+    // OpenPGP key no valid user id of which names the new address, and an
+    // S/MIME choice whose certificate does not name it
+    // (`common/openpgp_keys.ts`, `addressChanged()`). After the notice
+    // above, which is still encrypted to the key that names the former
+    // address; and in a promise job, so its own writes come after this
+    // one rather than inside it. Required here rather than named: the
+    // module is already loaded (it takes its directory slot from this
+    // one), so the require is a cache hit.
+    const changedName = canonicalUsernameOfDn(dn);
+    const changedRealm = realmFor(dn);
+    realms.run(changedRealm, function () {
+      Promise.resolve().then(function () {
+        return require('../common/openpgp_keys').addressChanged(
+          changedName, mailBefore, mailAfter);
+      }).catch(function (e) {
+        log.error(errorCodes.tag('STS-OPENPGP-0030') + 'ldap: the address ' +
+                  'of ' + dn + ' changed and what was bound to the former ' +
+                  'one could not be retired: ' + ((e && e.message) || e));
+      });
+    });
   }
   if (!accountObserver && !accountListeners.length) {
     log.debug('Leaving noteAccountChange(). Nobody is observing.');
