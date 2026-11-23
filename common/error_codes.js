@@ -26610,6 +26610,28 @@ const CODES = [
       'by evaluation_id; it is still requestable by its binding_token ' +
       '(#1204). Logged when the store fills, not per denial.',
     spec: 'none — logged and audited once' },
+  { code: 'STS-AUTHZEN-0145',
+    summary: 'The hosted access request form (/portal/access-request, ' +
+      '#1204) was opened or submitted with an evaluation_id this realm ' +
+      'holds no requestable denial record for: never issued, removed a ' +
+      'day after its window, or not recorded because the store was full.',
+    spec: 'the profile\'s section 16, form_url; the portal answers 404' },
+  { code: 'STS-AUTHZEN-0146',
+    summary: 'The hosted access request form or ticket was opened by ' +
+      'somebody who is not the subject of the denial or the request it ' +
+      'names (the subject\'s type is one of authzen.resolveSubjectTypes ' +
+      'and its id one of the person\'s names). The same answer as a ' +
+      'request that does not exist (#1204).',
+    spec: 'the profile\'s sections 13.1 and 13.3.3; the portal answers 404' },
+  { code: 'STS-AUTHZEN-0147',
+    summary: 'The hosted access request form was opened or submitted after ' +
+      'the requestable denial\'s window had passed (#1204).',
+    spec: 'the profile\'s section 13.2, expired_denial; the portal ' +
+      'answers 410' },
+  { code: 'STS-AUTHZEN-0148',
+    summary: 'An access request was submitted on the hosted form while ' +
+      'authzen.accessRequestForm (or the profile) is off (#1204).',
+    spec: 'none — the portal answers 403' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +

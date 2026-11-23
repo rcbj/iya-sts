@@ -8531,6 +8531,14 @@
     "en": "b9fd6a2d08cb3736",
     "text": "Die Anzeigehinweise des Access Request and Approval Profile (#1204): Eine anforderbare Ablehnung trägt access_request.display und ein Task Handle trägt task.display, jeweils mit Titel und Beschreibung. Die der Ablehnung sind display-title und display-description des Advice, wörtlich, sonst die eigenen Worte des Dienstes in der Sprache, die Accept-Language verlangt. Es sind Hinweise für einen Menschen und niemals Richtlinie. Aus: Keiner wird gesendet."
   },
+  "authzen.accessRequestForm|label": {
+    "en": "2e34659783fbd924",
+    "text": "Gehostetes Formular für Zugriffsanfragen"
+  },
+  "authzen.accessRequestForm|description": {
+    "en": "37c92b9ca48d6f87",
+    "text": "Das gehostete Formular des Access Request and Approval Profile (#1204): Eine anforderbare Ablehnung, die dieser Bereich aufgezeichnet hat, trägt form_url, die Portalseite /portal/access-request, auf der sich das Subjekt der Ablehnung anmeldet und die Zugriffsanfrage mit einer Begründung einreicht; der abgelehnte PEP erhält diese Aufgabe zurück, wenn er dieselbe Ablehnung einreicht. Ein Task Handle trägt links.ticket, dieselbe Seite, auf der das Subjekt den Status der Anfrage sieht. Aus: Keines wird gesendet, und die Seite stellt keine Anfrage."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

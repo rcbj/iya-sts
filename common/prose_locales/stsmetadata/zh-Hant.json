@@ -100,8 +100,8 @@
     "text": "partial：存取評估 API（第 6 節），由 XACML 引擎依據領域根原則、透過每個領域的屬性目錄作出決定，支援 X-Request-ID 與第 11.3 節的挑戰；存取批次評估 API（第 7 節）及其三種語意；PDP 中繼資料（第 9 節）的兩種形式，包括 signed_metadata；供宣告類型之 PEP 使用的 Obligations Profile 草案；以及針對本服務自有的人員、應用程式、API、委派關係與原則動作的三個搜尋 API（第 8 節），分頁且不具傳遞性。尚缺：搜尋中逐結果的 obligations，以及仍為草案的 OAuth 設定檔。"
   },
   "stsmetadata.specs.authzen-arap.coverage": {
-    "en": "9813738c58fb614e",
-    "text": "partial：可申請的拒絕（context.access_request、evaluation_id、evaluated_at、reason），即領域政策以 access-request 建議標記的 Deny，透過本領域簽署的 binding_token 依值綁定（內嵌宣告與 binding_hash），並透過拒絕記錄依參照綁定；帶 Idempotency-Key 的提交、201 或 202 及 Task Handle；帶 Retry-After 的任務狀態端點；以 POST 或 DELETE 取消；六種狀態；reevaluate 完成模式、在受信任狀態中解析的 approval.id、簽發並驗證的 approval.state（仍須查找），以及以受信任事實送達政策的核准；next_action 與五種原因；每種問題類型；中繼資料成員、jwks_uri 與能力；可申請拒絕上的 request_schema_url，即同源的提交選用補充內容的 JSON Schema；在 authzen.accessRequestDisplay 開啟時，可申請拒絕與 Task Handle 上的 display，使用 advice 自己的措辭或服務以所請求語言給出的措辭。缺少：託管表單（form_url），以及 BULK、ACTOR 與 CATALOG 配套規範。"
+    "en": "7c0be5a951c32677",
+    "text": "partial：可申請的拒絕（context.access_request、evaluation_id、evaluated_at、reason），即領域政策以 access-request 建議標記的 Deny，透過本領域簽署的 binding_token 依值綁定（內嵌宣告與 binding_hash），並透過拒絕記錄依參照綁定；帶 Idempotency-Key 的提交、201 或 202 及 Task Handle；帶 Retry-After 的任務狀態端點；以 POST 或 DELETE 取消；六種狀態；reevaluate 完成模式、在受信任狀態中解析的 approval.id、簽發並驗證的 approval.state（仍須查找），以及以受信任事實送達政策的核准；next_action 與五種原因；每種問題類型；中繼資料成員、jwks_uri 與能力；可申請拒絕上的 request_schema_url，即同源的提交選用補充內容的 JSON Schema；在 authzen.accessRequestDisplay 開啟時，可申請拒絕與 Task Handle 上的 display，使用 advice 自己的措辭或服務以所請求語言給出的措辭。在 authzen.accessRequestForm 開啟時，提供 form_url（拒絕的主體在其中提交申請的入口網站託管表單）與 links.ticket。缺少：BULK、ACTOR 與 CATALOG 配套規範。"
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
     "en": "ca5109eae0e95b17",
@@ -892,8 +892,8 @@
     "text": "提交一個被拒絕的評估的主體、資源、動作與內容，並附上其收到的拒絕（其 binding_token 與 expires_at，原樣回傳）；得到 202 與 Task Handle，或在立即作出決定時（原則允許的緊急存取）得到 201 及結果。只有被領域原則以 advice urn:sts:xacml:advice:access-request 標記的 Deny 才可請求。與評估相同的呼叫端入口與 AUTHZEN_PEPS；依呼叫端遵守 Idempotency-Key；回呼僅發往為該呼叫端註冊的 URL。每次拒絕都是 problem+json。"
   },
   "stsmetadata.endpoints./access/v1/access-requests/schema.what": {
-    "en": "ec6a3b36123f646a",
-    "text": "GET 提交可加入的補充內容的 JSON Schema（draft 2020-12）：context.business_justification，以及 requested_access.requested_until 和 emergency，後者須附理由。公開，與 access_request_endpoint 同源；可申請拒絕的 request_schema_url 指向它。不託管任何表單，因此任何拒絕都不帶 form_url。API 或該設定檔關閉時回應 501。在任務狀態路徑之前註冊，否則後者會把「schema」當作 id。"
+    "en": "fb06abe45104accd",
+    "text": "GET 提交可加入的補充內容的 JSON Schema（draft 2020-12）：context.business_justification，以及 requested_access.requested_until 和 emergency，後者須附理由。公開，與 access_request_endpoint 同源；可申請拒絕的 request_schema_url 指向它。在 authzen.accessRequestForm 開啟時，拒絕還會指明 form_url，即一個入口網站頁面。API 或該設定檔關閉時回應 501。在任務狀態路徑之前註冊，否則後者會把「schema」當作 id。"
   },
   "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
     "en": "264083b977756230",

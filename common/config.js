@@ -16384,6 +16384,19 @@ const SETTINGS = [
                  'own words in the language Accept-Language asks for. ' +
                  'They are hints for a person and never policy. Off, ' +
                  'neither is sent.' },
+  { key: 'authzen.accessRequestForm', group: 'AuthZEN',
+    label: 'Hosted form for access requests',
+    env: 'STS_AUTHZEN_ACCESS_REQUEST_FORM', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'The Access Request and Approval Profile\'s hosted form ' +
+                 '(#1204): a requestable denial this realm recorded carries ' +
+                 'form_url, the portal page /portal/access-request, where ' +
+                 'the denial\'s subject signs in and submits the access ' +
+                 'request with a justification; the PEP that was denied ' +
+                 'gets that task back when it submits the same denial. A ' +
+                 'Task Handle carries links.ticket, the same page, where ' +
+                 'the subject sees the request\'s status. Off, neither is ' +
+                 'sent and the page makes no request.' },
   { key: 'authzen.callbackAttempts', group: 'AuthZEN',
     label: 'Access request callback attempts',
     env: 'STS_AUTHZEN_CALLBACK_ATTEMPTS', type: 'int',

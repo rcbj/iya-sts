@@ -106,8 +106,9 @@
 // `requested_access.emergency`, and that emergency requires the
 // justification. None of them is required on an ordinary submission,
 // and the schema is not a second validator. This service hosts no
-// form, so `form_url` is never issued. `display` (#1204) is a hint for a
-// person, never bound or read back: see THE DISPLAY HINTS below.
+// form of its own there: see THE HOSTED FORM below for `form_url`.
+// `display` (#1204) is a hint for a person, never bound or read back: see
+// THE DISPLAY HINTS below.
 //
 // THE TASK is a row of the per-realm store `authzen.accessRequests`:
 // `pending`, then exactly once one of `approved`, `denied`, `expired`,
@@ -158,6 +159,11 @@ const CAPABILITY = 'urn:openid:authzen:capability:access-request';
 // Express would read "schema" as a task id.
 const REQUESTS_PATH = '/access/v1/access-requests';
 const SCHEMA_PATH = REQUESTS_PATH + '/schema';
+// THE HOSTED FORM AND THE TICKET (#1204): a portal page, so the person
+// signs in there and the page is the portal's static surface.
+const FORM_PATH = '/portal/access-request';
+// The most of a person's own requests the page lists.
+const MAX_MINE = 50;
 
 // The access-control question (`common/access_gate.ts`).
 const GATE_RESOURCE = 'authzen-access-request';
@@ -913,7 +919,7 @@ class AccessRequests {
     }
     const deadline = Math.min(exp,
       Math.floor(Date.parse(expiresAt) / 1000) || exp);
-    self.recordDenial({
+    const recorded = self.recordDenial({
       evaluationId: evaluationId,
       jti: jti,
       subject: subject,
@@ -943,6 +949,11 @@ class AccessRequests {
     const display = self.denialDisplay(terms, self.languagesOf(req));
     if (display) {
       accessRequest.display = display;
+    }
+    // THE HOSTED FORM (#1204) works from the denial's record, so a denial
+    // the record could not keep (the 0144 cap) names no form.
+    if (recorded && self.formOn()) {
+      accessRequest.form_url = self.formUrlOf(base, evaluationId);
     }
     log.debug("Leaving AccessRequests.requestableDenial().");
     return { evaluation_id: evaluationId, evaluated_at: instant(now * 1000),
@@ -1319,6 +1330,12 @@ class AccessRequests {
     if (display) {
       out.display = display;
     }
+    // THE TICKET (sections 7.1 and 11.11, #1204): where the subject sees
+    // the request, while the hosted form is on.
+    if (this.formOn()) {
+      out.links = Object.assign(out.links || {},
+                                { ticket: this.ticketUrlOf(task) });
+    }
     log.debug("Leaving AccessRequests.handleOf().");
     return out;
   }
@@ -1423,7 +1440,7 @@ class AccessRequests {
   // still requestable by its binding_token; an evaluation_id-only
   // submission of it is then unknown (0073). The full store is logged when
   // it fills and when it has room again, never once per denial.
-  private recordDenial(record: Json): void {
+  private recordDenial(record: Json): boolean {
     const { log, errorCodes, denials, audit } = this.deps;
     log.debug("Entering AccessRequests.recordDenial().");
     const id = String(record.evaluationId);
@@ -1449,7 +1466,7 @@ class AccessRequests {
                               'until the job removes old ones.' });
       }
       log.debug("Leaving AccessRequests.recordDenial(). Full.");
-      return;
+      return false;
     }
     if (denialsFull.delete(realm)) {
       log.info('authzen: the requestable denial store has room again; ' +
@@ -1460,13 +1477,16 @@ class AccessRequests {
     } catch (e) {
       log.debug("Caught in AccessRequests.recordDenial(): " +
                 ((e && e.message) || e));
+      log.debug("Leaving AccessRequests.recordDenial(). Not written.");
       log.error(errorCodes.tag('STS-AUTHZEN-0139') + 'authzen: the ' +
                 'requestable denial ' + record.evaluationId + ' could not ' +
                 'be recorded, so an evaluation_id-only submission of it ' +
                 'cannot be resolved; the binding_token is still issued: ' +
                 ((e && e.message) || e));
+      return false;
     }
     log.debug("Leaving AccessRequests.recordDenial().");
+    return true;
   }
 
   // The denial named by an evaluation_id, in the shape `submit()` reads off
@@ -1517,7 +1537,7 @@ class AccessRequests {
   submit(req: Req, res: Res, caller: Json, body: unknown,
          scope: (caller: Json, application: string) => Json): void {
     const self = this;
-    const { log, helpers } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering AccessRequests.submit().");
     // THE SHAPE IS THE MODEL'S (#1579): `AccessRequestSubmission` — the
     // members it takes, BULK's refused, the denied tuple's three objects.
@@ -1628,7 +1648,11 @@ class AccessRequests {
                   self.recalled('jti', String(bound.jti || ''));
     if (again) {
       const earlier = self.task(String(again.task));
-      if (earlier && again.fingerprint === fingerprint &&
+      // A TASK THE SUBJECT MADE ON THE HOSTED FORM (#1204) is this denial's
+      // one task: its PEP gets it back, unless it asks for something else.
+      const formMade = !!earlier && earlier.origin === 'form' &&
+        self.sameAugmentations(earlier, given);
+      if (earlier && (again.fingerprint === fingerprint || formMade) &&
           earlier.requester === caller.name) {
         res.status(earlier.status === 'pending' ? 202 : 201)
            .type('application/json').set('Cache-Control', 'no-store')
@@ -1665,18 +1689,52 @@ class AccessRequests {
       log.debug("Leaving AccessRequests.submit(). Full.");
       return;
     }
-    const task: Json = {
-      id: 'arq_' + helpers.randomId(24),
-      status: 'pending',
-      realm: String(self.deps.realms.currentId() || ''),
-      base: base,
-      requester: caller.name,
-      requesterKind: caller.kind,
+    const task = self.openTask({
+      base: base, requester: caller.name, requesterKind: caller.kind,
       client: isObject(given.client)
         ? { id: String(given.client.id || '').slice(0, MAX_ID),
             name: String(given.client.name || '').slice(0, MAX_TEXT) }
         : null,
-      application: scoped.application,
+      application: scoped.application, bound: bound, asked: asked,
+      callback: callback.value, key: key, fingerprint: fingerprint,
+      actor: caller.name, origin: 'pep', formSubmittedBy: '' });
+    res.status(task.status === 'pending' ? 202 : 201)
+       .type('application/json').set('Cache-Control', 'no-store')
+       .set('Location', self.handleOf(task).status_endpoint)
+       .send(JSON.stringify(self.bodyOf(task, self.languagesOf(req)), null,
+                            2));
+    log.debug("Leaving AccessRequests.submit(). " + task.id + " " +
+              task.status);
+  }
+
+  /**
+   * Opens a task for a verified denial: the row, its indexes, the audit
+   * row, emergency access where it applies, and the approvers' mail. The
+   * one place a task is made, for a PEP's submission and the hosted
+   * form's (#1204) alike.
+   *
+   * @param spec - `{ base, requester, requesterKind, client, application,
+   *   bound, asked, callback, key, fingerprint, actor, origin,
+   *   formSubmittedBy }`
+   * @returns the task
+   */
+  private openTask(spec: Json): Json {
+    const self = this;
+    const { log, helpers } = this.deps;
+    log.debug("Entering AccessRequests.openTask(). " + spec.origin);
+    const now = self.nowS();
+    const bound = spec.bound;
+    const asked = spec.asked;
+    const key = String(spec.key || '');
+    const task: Json = {
+      id: 'arq_' + helpers.randomId(24),
+      status: 'pending',
+      realm: String(self.deps.realms.currentId() || ''),
+      base: spec.base,
+      requester: spec.requester,
+      requesterKind: spec.requesterKind,
+      client: spec.client || null,
+      application: spec.application,
       evaluationId: String(bound.evaluation_id || ''),
       subject: bound.subject,
       resource: bound.resource,
@@ -1687,7 +1745,7 @@ class AccessRequests {
       requestedUntil: asked.until,
       emergency: asked.emergency,
       justification: asked.justification,
-      callback: callback.value,
+      callback: spec.callback || null,
       createdAt: now,
       expiresAt: now + self.seconds('authzen.accessRequestLifetimeS'),
       keepUntil: now + self.seconds('authzen.accessRequestLifetimeS') +
@@ -1696,30 +1754,38 @@ class AccessRequests {
       decidedBy: '',
       idempotency: null
     };
-    const indexRow = { fingerprint: fingerprint };
+    // Where the request was made: `pep`, or `form` with the person who
+    // submitted it there (#1204), for the audit row and the console.
+    if (spec.origin === 'form') {
+      task.origin = 'form';
+      task.formSubmittedBy = String(spec.formSubmittedBy || '');
+    }
+    const indexRow: Json = { fingerprint: spec.fingerprint };
     if (key) {
-      const indexKey = 'idem:' + stsCrypto.credentialDigest(caller.name +
-                                                            '\n' + key);
+      const indexKey = 'idem:' + stsCrypto.credentialDigest(
+        spec.requester + '\n' + key);
       task.idempotency = { key: indexKey, row: Object.assign(
         { task: task.id }, indexRow) };
     }
     self.save(task);
     if (key) {
-      self.remember('idem', caller.name + '\n' + key, task.id, indexRow,
+      self.remember('idem', spec.requester + '\n' + key, task.id, indexRow,
                     task.keepUntil);
     }
     self.remember('jti', String(bound.jti || ''), task.id, indexRow,
                   Number(bound.exp) + SKEW_S);
     self.deps.audit.audit({
       action: 'authzen.access-request.submitted',
-      actor: caller.name,
+      actor: spec.actor,
       protocol: 'AuthZEN',
       detail: 'The access request ' + task.id + ' was submitted for a ' +
         String(task.subject.type || '') + ' to ' +
         String(task.action.name || '') + ' a ' +
         String(task.resource.type || '') + ', application "' +
         task.application + '"' + (task.emergency ? ', as an emergency' : '') +
-        (key ? ', with an Idempotency-Key' : '') + '.'
+        (key ? ', with an Idempotency-Key' : '') +
+        (task.origin === 'form' ? ', by its subject on the hosted form, ' +
+          'for the PEP ' + String(task.requester) : '') + '.'
     });
     // EMERGENCY ACCESS (the profile's `requested_access.emergency`, a
     // request signal and never an override): only where the policy's own
@@ -1732,13 +1798,410 @@ class AccessRequests {
                    String(task.justification).slice(0, 200));
     }
     self.mailApprovers(task);
-    res.status(task.status === 'pending' ? 202 : 201)
-       .type('application/json').set('Cache-Control', 'no-store')
-       .set('Location', self.handleOf(task).status_endpoint)
-       .send(JSON.stringify(self.bodyOf(task, self.languagesOf(req)), null,
-                            2));
-    log.debug("Leaving AccessRequests.submit(). " + task.id + " " +
-              task.status);
+    log.debug("Leaving AccessRequests.openTask(). " + task.id);
+    return task;
+  }
+
+  /**
+   * Whether a PEP's submission asks for what the hosted form already asked
+   * (#1204): nothing at all, or the same justification, end and emergency.
+   *
+   * @param task - the form's task
+   * @param given - the PEP's submission
+   * @returns true when it asks for nothing else
+   */
+  private sameAugmentations(task: Json, given: Json): boolean {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.sameAugmentations().");
+    const context: Json = isObject(given.context) ? given.context : {};
+    if (given.requested_access === undefined &&
+        context.business_justification === undefined) {
+      log.debug("Leaving AccessRequests.sameAugmentations(). Nothing asked.");
+      return true;
+    }
+    const asked = self.requestedAccess(given, task.terms || {});
+    const out = !asked.problem &&
+      Number(asked.until || 0) === Number(task.requestedUntil || 0) &&
+      !!asked.emergency === !!task.emergency &&
+      String(asked.justification || '') === String(task.justification || '');
+    log.debug("Leaving AccessRequests.sameAugmentations(). " + out);
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE HOSTED FORM AND THE TICKET (#1204; the profile's sections 16, 7.1
+  // and 11.11). `form_url` is the portal page `/portal/access-request`
+  // with the denial's `evaluation_id`; the subject signs in there and
+  // submits the denial's access request themselves. The task is the one a
+  // PEP's own submission would make — the recorded tuple, application and
+  // terms, `requester` the PEP the denial was answered to — so that PEP
+  // reads it, cancels it and re-evaluates with its approval, and gets it
+  // back when it submits the same denial (`sameAugmentations()`). The draft
+  // does not say how what the person gives reaches the task; making the
+  // denial's own submission is this service's answer. `links.ticket` is
+  // the same page with the task's id. Nothing on either names an approver
+  // (section 19). Only the denial's SUBJECT is answered, the same refusal
+  // (0146) whether or not the thing exists.
+  // -------------------------------------------------------------------------
+  /**
+   * Whether the hosted form is on (`authzen.accessRequestForm`).
+   *
+   * @returns true when it and the profile are on
+   */
+  formOn(): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering AccessRequests.formOn().");
+    log.debug("Leaving AccessRequests.formOn().");
+    return this.enabled() &&
+      config.value('authzen.accessRequestForm') === true;
+  }
+
+  /**
+   * The portal's base for a base of this realm's PDP: the same origin on a
+   * default install, the portal's listener where it has one.
+   *
+   * @param base - this realm's base, the prefix included
+   * @returns the portal's base, the prefix included
+   */
+  private portalBaseOf(base: string): string {
+    const { log, helpers } = this.deps;
+    log.debug("Entering AccessRequests.portalBaseOf().");
+    let out = String(base || '');
+    try {
+      out = String(helpers.rebaseTo(out, 'portal') || out);
+    } catch (e) {
+      // The PDP's own base: the page answers there too.
+      log.debug("Caught in AccessRequests.portalBaseOf(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving AccessRequests.portalBaseOf().");
+    return out;
+  }
+
+  /**
+   * A requestable denial's `form_url`.
+   *
+   * @param base - this realm's base
+   * @param evaluationId - the denial's id
+   * @returns the URL
+   */
+  formUrlOf(base: string, evaluationId: string): string {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.formUrlOf().");
+    log.debug("Leaving AccessRequests.formUrlOf().");
+    return this.portalBaseOf(base) + FORM_PATH + '?evaluation_id=' +
+      encodeURIComponent(evaluationId);
+  }
+
+  /**
+   * A Task Handle's `links.ticket`.
+   *
+   * @param task - the row
+   * @returns the URL
+   */
+  ticketUrlOf(task: Json): string {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.ticketUrlOf().");
+    log.debug("Leaving AccessRequests.ticketUrlOf().");
+    return this.portalBaseOf(String(task.base || '')) + FORM_PATH +
+      '?request=' + encodeURIComponent(String(task.id));
+  }
+
+  /**
+   * Whether a person is the subject a denial or a task names: its type one
+   * of `authzen.resolveSubjectTypes`, its id one of the person's names.
+   *
+   * @param username - the signed-in person
+   * @param subject - the bound subject
+   * @returns true when it is them
+   */
+  private isSubject(username: string, subject: Json): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering AccessRequests.isSubject().");
+    const raw = config.value('authzen.resolveSubjectTypes');
+    const types = (Array.isArray(raw) ? raw : String(raw || '').split(','))
+      .map(function (one: unknown) {
+        return String(one).trim();
+      }).filter(Boolean);
+    const given: Json = isObject(subject) ? subject : {};
+    if (types.indexOf(String(given.type || '')) < 0) {
+      log.debug("Leaving AccessRequests.isSubject(). Not a person's type.");
+      return false;
+    }
+    const id = String(given.id == null ? '' : given.id).trim().toLowerCase();
+    const out = !!id &&
+      this.approverIdentity(username).identity.indexOf(id) >= 0;
+    log.debug("Leaving AccessRequests.isSubject(). " + out);
+    return out;
+  }
+
+  /**
+   * What the form shows of a recorded denial: what it asks, and what the
+   * person may add. Never who approves.
+   *
+   * @param row - the denial's record
+   * @returns the view's `request`
+   */
+  private formRequestOf(row: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.formRequestOf().");
+    const terms: Json = row.terms || {};
+    const until = Math.min(Number(row.exp) || 0,
+      Math.floor(Date.parse(String(row.denialExpiresAt || '')) / 1000) || 0);
+    const out: Json = {
+      evaluationId: String(row.evaluationId),
+      subject: row.subject || {},
+      action: row.action || {},
+      resource: row.resource || {},
+      application: String(row.application || ''),
+      expiresAt: until,
+      emergency: terms.emergency === true,
+      maxApprovalS: Number(terms.maxSeconds) > 0
+        ? Math.min(Number(terms.maxSeconds),
+                   this.seconds('authzen.accessRequestMaxApprovalS'))
+        : this.seconds('authzen.accessRequestMaxApprovalS')
+    };
+    // The advice's own words only: the page is translated in the browser,
+    // and the service's sentence is the browser's heading there.
+    if (this.displays() && (terms.displayTitle || terms.displayDescription)) {
+      out.display = {};
+      if (terms.displayTitle) {
+        out.display.title = String(terms.displayTitle);
+      }
+      if (terms.displayDescription) {
+        out.display.description = String(terms.displayDescription);
+      }
+    }
+    log.debug("Leaving AccessRequests.formRequestOf().");
+    return out;
+  }
+
+  /**
+   * What the page shows of a task: its status and what it asks.
+   *
+   * @param task - the row
+   * @returns the view's `task`
+   */
+  private formTaskOf(task: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.formTaskOf().");
+    const out: Json = {
+      id: String(task.id),
+      status: String(task.status),
+      origin: task.origin === 'form' ? 'form' : 'pep',
+      subject: task.subject || {},
+      action: task.action || {},
+      resource: task.resource || {},
+      application: String(task.application || ''),
+      createdAt: Number(task.createdAt) || 0,
+      expiresAt: Number(task.expiresAt) || 0
+    };
+    if (task.status === 'approved' && task.approval &&
+        !task.approval.revoked) {
+      out.approvedUntil = Number(task.approval.approvedUntil) || 0;
+    }
+    log.debug("Leaving AccessRequests.formTaskOf().");
+    return out;
+  }
+
+  /**
+   * The requests whose subject is this person, newest first, through the
+   * subject index — never a walk of the store.
+   *
+   * @param username - the signed-in person
+   * @returns the rows
+   */
+  private mineOf(username: string): Json[] {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.mineOf().");
+    const seen = new Set<string>();
+    const out: Json[] = [];
+    self.approverIdentity(username).identity.forEach(function (name: string) {
+      self.idsUnder(AccessRequests.subjectKey(name)).forEach(
+        function (id: string) {
+          if (seen.has(id)) {
+            return;
+          }
+          seen.add(id);
+          const task = self.task(id);
+          if (task && Number(task.keepUntil) > self.nowS() &&
+              self.isSubject(username, task.subject)) {
+            out.push(self.formTaskOf(task));
+          }
+        });
+    });
+    out.sort(function (a: Json, b: Json) {
+      return b.createdAt - a.createdAt;
+    });
+    log.debug("Leaving AccessRequests.mineOf(). " + out.length);
+    return out.slice(0, MAX_MINE);
+  }
+
+  /**
+   * The page's answer: the form for a denial (`evaluationId`), the ticket
+   * for a request (`request`), or the person's own requests (neither).
+   *
+   * @param username - the signed-in person
+   * @param asked - `{ evaluationId, request }`
+   * @returns `{ view }`, or `{ refusal: { status, code, message }, view }`
+   */
+  formView(username: string, asked: Json): Json {
+    const self = this;
+    const { log, denials } = this.deps;
+    log.debug("Entering AccessRequests.formView().");
+    const view: Json = { enabled: self.formOn(), mode: 'mine' };
+    const refuse = function (status: number, code: string,
+                             message: string): Json {
+      log.debug("Entering refuse(). " + code);
+      log.debug("Leaving refuse().");
+      return { refusal: { status: status, code: code, message: message },
+               view: { enabled: view.enabled, mode: 'none' } };
+    };
+    if (!view.enabled) {
+      log.debug("Leaving AccessRequests.formView(). Off.");
+      return { view: { enabled: false, mode: 'none' } };
+    }
+    const evaluationId = String((asked || {}).evaluationId || '')
+      .slice(0, MAX_ID);
+    const requestId = String((asked || {}).request || '').slice(0, MAX_ID);
+    if (requestId) {
+      const task = self.task(requestId);
+      if (!task || Number(task.keepUntil) <= self.nowS() ||
+          !self.isSubject(username, task.subject)) {
+        log.debug("Leaving AccessRequests.formView(). Not theirs.");
+        return refuse(404, 'STS-AUTHZEN-0146', 'There is no access ' +
+                      'request about you with that id.');
+      }
+      view.mode = 'task';
+      view.task = self.formTaskOf(task);
+      log.debug("Leaving AccessRequests.formView(). The ticket.");
+      return { view: view };
+    }
+    if (!evaluationId) {
+      view.mine = self.mineOf(username);
+      log.debug("Leaving AccessRequests.formView(). Their requests.");
+      return { view: view };
+    }
+    const row = denials.get(evaluationId);
+    if (!row || Number(row.keepUntil) <= self.nowS()) {
+      log.debug("Leaving AccessRequests.formView(). No such denial.");
+      return refuse(404, 'STS-AUTHZEN-0145', 'This link names no access ' +
+                    'request that can be made here. Ask the application ' +
+                    'again for a new one.');
+    }
+    if (!self.isSubject(username, row.subject)) {
+      log.debug("Leaving AccessRequests.formView(). Not their denial.");
+      return refuse(404, 'STS-AUTHZEN-0146', 'This access request is not ' +
+                    'about you, so you cannot make it.');
+    }
+    const again = self.recalled('jti', String(row.jti || ''));
+    const earlier = again ? self.task(String(again.task)) : null;
+    if (earlier) {
+      view.mode = 'task';
+      view.task = self.formTaskOf(earlier);
+      log.debug("Leaving AccessRequests.formView(). Already made.");
+      return { view: view };
+    }
+    const request = self.formRequestOf(row);
+    if (!(request.expiresAt > 0) ||
+        self.nowS() > request.expiresAt + SKEW_S) {
+      log.debug("Leaving AccessRequests.formView(). Expired.");
+      return refuse(410, 'STS-AUTHZEN-0147', 'This access request can no ' +
+                    'longer be made: its link has expired. Ask the ' +
+                    'application again for a new one.');
+    }
+    view.mode = 'denial';
+    view.request = request;
+    log.debug("Leaving AccessRequests.formView(). The form.");
+    return { view: view };
+  }
+
+  /**
+   * The person submits the access request a recorded denial allows, on
+   * the hosted form.
+   *
+   * @param username - the signed-in person
+   * @param given - `{ evaluationId, justification, durationS, emergency }`
+   * @returns `{ ok, task }`, or `{ ok: false, status, code, error, view }`
+   */
+  submitByForm(username: string, given: Json): Json {
+    const self = this;
+    const { log } = this.deps;
+    log.debug("Entering AccessRequests.submitByForm().");
+    const refuse = function (status: number, code: string, error: string,
+                             view: Json): Json {
+      log.debug("Entering refuse(). " + code);
+      log.debug("Leaving refuse().");
+      return { ok: false, status: status, code: code, error: error,
+               view: view || { enabled: self.formOn(), mode: 'none' } };
+    };
+    if (!self.formOn()) {
+      log.debug("Leaving AccessRequests.submitByForm(). Off.");
+      return refuse(403, 'STS-AUTHZEN-0148', 'Access requests cannot be ' +
+                    'made here: the hosted form is turned off.', null);
+    }
+    const shown = self.formView(username,
+      { evaluationId: String((given || {}).evaluationId || '') });
+    if (shown.refusal) {
+      log.debug("Leaving AccessRequests.submitByForm(). " +
+                shown.refusal.code);
+      return refuse(shown.refusal.status, shown.refusal.code,
+                    shown.refusal.message, shown.view);
+    }
+    if (shown.view.mode !== 'denial') {
+      log.debug("Leaving AccessRequests.submitByForm(). Already made.");
+      return refuse(409, 'STS-AUTHZEN-0076', 'This access request was ' +
+                    'already made.', shown.view);
+    }
+    const row = self.deps.denials.get(shown.view.request.evaluationId);
+    const bound = self.denialByEvaluation(String(row.evaluationId),
+                                          String(row.base || ''));
+    if (!bound) {
+      log.debug("Leaving AccessRequests.submitByForm(). Gone.");
+      return refuse(404, 'STS-AUTHZEN-0145', 'This link names no access ' +
+                    'request that can be made here.', null);
+    }
+    // THE SAME READER AS A PEP'S SUBMISSION: the schema's augmentations,
+    // built from the form's fields.
+    const durationS = Math.floor(Number((given || {}).durationS) || 0);
+    const augmented: Json = { context: {}, requested_access: {} };
+    const justification = String((given || {}).justification || '').trim();
+    if (justification) {
+      augmented.context.business_justification = justification;
+    }
+    if (durationS > 0) {
+      augmented.requested_access.requested_until =
+        instant((self.nowS() + durationS) * 1000);
+    }
+    if ((given || {}).emergency === true) {
+      augmented.requested_access.emergency = true;
+    }
+    const asked = self.requestedAccess(augmented, bound.terms || {});
+    if (asked.problem) {
+      log.debug("Leaving AccessRequests.submitByForm(). " + asked.code);
+      return refuse(400, asked.code, asked.problem, shown.view);
+    }
+    if (self.pendingCount() >=
+        self.seconds('authzen.accessRequestMaxPending')) {
+      log.debug("Leaving AccessRequests.submitByForm(). Full.");
+      return refuse(503, 'STS-AUTHZEN-0078', 'This realm holds as many ' +
+                    'pending access requests as it may; try again later.',
+                    shown.view);
+    }
+    const task = self.openTask({
+      base: String(row.base || ''), requester: String(bound.caller || ''),
+      requesterKind: '', client: null,
+      application: String(bound.application || ''), bound: bound,
+      asked: asked, callback: null, key: '',
+      fingerprint: stsCrypto.digest('sha256',
+        AccessRequests.canonical({ form: augmented,
+                                   evaluation_id: row.evaluationId }),
+        'base64url'),
+      actor: username, origin: 'form', formSubmittedBy: username });
+    log.debug("Leaving AccessRequests.submitByForm(). " + task.id);
+    return { ok: true, task: task };
   }
 
   /**
@@ -3116,7 +3579,10 @@ class AccessRequests {
     log.debug("Entering AccessRequests.viewOf().");
     const approval = task.approval || null;
     log.debug("Leaving AccessRequests.viewOf().");
-    return {
+    // Made on the hosted form (#1204): by whom, for the console.
+    const form = task.origin === 'form'
+      ? { formSubmittedBy: String(task.formSubmittedBy || '') } : {};
+    return Object.assign({
       id: task.id, status: task.status, requester: task.requester,
       client: task.client, application: task.application,
       subject: task.subject, action: task.action, resource: task.resource,
@@ -3148,7 +3614,7 @@ class AccessRequests {
                                                       : 'STS-AUTHZEN-0091')) };
           })
       } : null
-    };
+    }, form);
   }
 
   /**
@@ -3954,6 +4420,10 @@ export = {
   problem: slot.forward('problem'),
   task: slot.forward('task'),
   handleOf: slot.forward('handleOf'),
+  formOn: slot.forward('formOn'),
+  formView: slot.forward('formView'),
+  submitByForm: slot.forward('submitByForm'),
+  FORM_PATH: FORM_PATH,
   verify: slot.forward('verify'),
   decide: slot.forward('decide'),
   cancelByAdministrator: slot.forward('cancelByAdministrator'),

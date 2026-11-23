@@ -8531,6 +8531,14 @@
     "en": "b9fd6a2d08cb3736",
     "text": "Access Request and Approval 設定檔的顯示提示（#1204）：可申請的拒絕帶有 access_request.display，Task Handle 帶有 task.display，各含一個標題和一段描述。拒絕的提示是 advice 的 display-title 和 display-description，原樣使用；否則是服務自己的措辭，使用 Accept-Language 所要求的語言。它們是給人看的提示，絕不是政策。關閉時兩者都不傳送。"
   },
+  "authzen.accessRequestForm|label": {
+    "en": "2e34659783fbd924",
+    "text": "存取申請的託管表單"
+  },
+  "authzen.accessRequestForm|description": {
+    "en": "37c92b9ca48d6f87",
+    "text": "Access Request and Approval 設定檔的託管表單（#1204）：本領域記錄的可申請拒絕帶有 form_url，即入口網站頁面 /portal/access-request，拒絕的主體在該頁登入並附上理由提交存取申請；被拒絕的 PEP 提交同一拒絕時會取回該工作。Task Handle 帶有 links.ticket，即同一頁面，主體可在其中查看申請狀態。關閉時兩者都不傳送，該頁面也不發起申請。"
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

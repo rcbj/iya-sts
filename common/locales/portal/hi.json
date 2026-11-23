@@ -66,6 +66,8 @@
   "nav.ciba.heading": "साइन-इन अनुरोध",
   "nav.access-requests.label": "पहुँच अनुरोध",
   "nav.access-requests.heading": "आपकी प्रतीक्षा कर रहे पहुँच अनुरोध",
+  "nav.access-request.label": "आपके पहुँच अनुरोध",
+  "nav.access-request.heading": "आपके पहुँच अनुरोध",
   "nav.device.label": "किसी डिवाइस को साइन इन करें",
   "nav.device.heading": "किसी डिवाइस को साइन इन करें",
   "nav.claim-sources.label": "क्लेम स्रोत",

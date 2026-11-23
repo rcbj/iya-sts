@@ -8531,6 +8531,14 @@
     "en": "b9fd6a2d08cb3736",
     "text": "Access Request and Approval-profilens visningstips (#1204): ett begärbart avslag bär access_request.display och ett Task Handle bär task.display, var och en med en titel och en beskrivning. Avslagets är advicens display-title och display-description, ordagrant, annars tjänstens egna ord på det språk som Accept-Language ber om. De är tips för en människa och aldrig policy. Av: inget av dem skickas."
   },
+  "authzen.accessRequestForm|label": {
+    "en": "2e34659783fbd924",
+    "text": "Värdat formulär för åtkomstbegäranden"
+  },
+  "authzen.accessRequestForm|description": {
+    "en": "37c92b9ca48d6f87",
+    "text": "Access Request and Approval-profilens värdade formulär (#1204): ett begärbart avslag som den här sfären har registrerat bär form_url, portalsidan /portal/access-request, där avslagets subjekt loggar in och skickar åtkomstbegäran med en motivering; den nekade PEP:en får tillbaka den uppgiften när den skickar samma avslag. Ett Task Handle bär links.ticket, samma sida, där subjektet ser begärans status. Av: inget skickas och sidan gör ingen begäran."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

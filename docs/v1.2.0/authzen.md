@@ -976,8 +976,9 @@ a JSON Schema of the optional augmentations a submission may add —
 `context.business_justification`, and `requested_access.requested_until`
 and `requested_access.emergency`. Emergency access requires the
 justification. An ordinary submission sends none of them, and the
-service does not check a submission against the schema. There is no
-hosted form, so a denial does not carry `form_url`.
+service does not check a submission against the schema. With
+`authzen.accessRequestForm` on, a denial also carries `form_url`, the
+hosted form below.
 
 ### Display hints
 
@@ -1007,6 +1008,49 @@ The hints are for a person. They never name an approver, a role, a group
 or a policy. A PEP may ignore them (the profile, section 11.3), and must not
 read approval into them (11.4). The service never reads them back: they
 are not part of the binding, and a submission does not echo them.
+
+### The hosted form and the ticket
+
+With `authzen.accessRequestForm` on (it is off by default), a requestable
+denial carries `form_url`. A PEP that renders for a person hands that
+link to the person the denial is about (the profile, section 16):
+
+```
+https://sts.example.com/realm/acme/portal/access-request?evaluation_id=eval_…
+```
+
+It is a page of the user portal. The person signs in and sees what the
+denial asks: for whom, what action, on what resource, and for which
+application. They add a business justification, choose how long the
+approval should last, and, where the policy allows it, ask for emergency
+access. Then they submit. The page never shows who may approve.
+
+**Only the denial's subject can use it.** The subject's `type` must be one
+of `authzen.resolveSubjectTypes`, and its `id` must be one of the signed-in
+person's names: username, DN, mail address or `urn:uuid:` subject. Anybody
+else is told the request is not about them. That is the same answer as
+for a link that names nothing.
+
+**The request it makes is the denial's own.** It is the task the PEP's
+submission would have made, for the PEP the denial was answered to. That
+PEP reads it at the status endpoint, can cancel it, and re-evaluates with
+its approval as usual. When the PEP submits the same denial, it gets that
+task back: `202`, or `201` once it is decided. That holds while the PEP
+asks for nothing more, or for the same justification, end and emergency.
+A submission that asks for something else is `duplicate_request`. If the
+PEP submitted first, the page shows that request instead of a form.
+
+**A Task Handle carries `links.ticket`** while the form is on: the same
+page with `?request=<task id>`. It shows the subject the request's
+status, and it shows nothing to anybody else. With no query, the page
+lists the requests about the signed-in person.
+
+The form works from the denial's record, so a denial the record did not
+keep (see `authzen.accessRequestMaxDenials`) has no `form_url`. **The
+form is on the portal's origin.** On a default installation that is the
+access request endpoint's origin, so a PEP's same-origin check (the
+profile, section 11.2) passes. If the portal has a listener of its own,
+add that origin to the PEP's list of trusted hosts.
 
 ### Submitting, polling and cancelling
 
@@ -1248,6 +1292,7 @@ live source; this table is a copy.
 | `authzen.accessRequestMaxPending` | `STS_AUTHZEN_ACCESS_REQUEST_MAX_PENDING` | `10000` | Pending requests a realm holds before a submission is refused 503 |
 | `authzen.accessRequestMaxDenials` | `STS_AUTHZEN_ACCESS_REQUEST_MAX_DENIALS` | `100000` | Requestable denials a realm records by `evaluation_id`; past it a new one is requestable by its `binding_token` only |
 | `authzen.accessRequestDisplay` | `STS_AUTHZEN_ACCESS_REQUEST_DISPLAY` | `false` | A requestable denial carries `access_request.display` and a Task Handle `task.display` (see *Display hints*) |
+| `authzen.accessRequestForm` | `STS_AUTHZEN_ACCESS_REQUEST_FORM` | `false` | A recorded requestable denial carries `form_url`, the portal's `/portal/access-request`, and a Task Handle `links.ticket` (see *The hosted form and the ticket*) |
 | `authzen.callbackAttempts` | `STS_AUTHZEN_CALLBACK_ATTEMPTS` | `5` | How many times a finished access request's callback is sent, the first included. `1` is one attempt. An application's `appAuthzenCallbackConfig` may set another bound for one URL |
 | `authzen.callbackBackoffS` | `STS_AUTHZEN_CALLBACK_BACKOFF_S` | `60` | Seconds to wait after the first failed callback; each later wait doubles, up to a day. The job runs every 60 seconds, so a shorter wait is not offered. An application's `appAuthzenCallbackConfig` may set a longer wait for one URL |
 | `authzen.externalPdp` | `STS_AUTHZEN_EXTERNAL_PDP` | `false` | Ask an external PDP before issuing an OAuth access token for a token exchange (see *Asking an external PDP*) |
@@ -1279,11 +1324,11 @@ live source; this table is a copy.
 
 None of these is advertised in the metadata:
 
-* Of the Access Request and Approval Profile: a hosted form (`form_url`),
-  and the BULK, ACTOR and CATALOG companions. A denial carries
-  `request_schema_url` and, when switched on, `display`. It may be
-  submitted by `evaluation_id` or by `binding_token` (which also carries
-  `binding_hash`), and an approval may carry `state`.
+* Of the Access Request and Approval Profile: the BULK, ACTOR and CATALOG
+  companions. A denial carries `request_schema_url` and, when switched
+  on, `display` and `form_url`. It may be submitted by `evaluation_id` or
+  by `binding_token` (which also carries `binding_hash`), and an approval
+  may carry `state`.
 * Of the Callback Notifications Profile: the `partial` event and
   deployment-level event subscriptions. Retrying a notification that failed
   with a network error or an HTTP 5xx is built; see

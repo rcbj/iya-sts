@@ -8531,6 +8531,14 @@
     "en": "b9fd6a2d08cb3736",
     "text": "Access Request and Approval प्रोफ़ाइल के प्रदर्शन संकेत (#1204): अनुरोध-योग्य अस्वीकृति access_request.display और Task Handle task.display रखता है, प्रत्येक में एक शीर्षक और एक विवरण। अस्वीकृति के संकेत advice के display-title और display-description हैं, शब्दशः, अन्यथा सेवा के अपने शब्द उस भाषा में जो Accept-Language माँगता है। ये किसी व्यक्ति के लिए संकेत हैं, कभी नीति नहीं। बंद होने पर कोई भी नहीं भेजा जाता।"
   },
+  "authzen.accessRequestForm|label": {
+    "en": "2e34659783fbd924",
+    "text": "एक्सेस अनुरोधों के लिए होस्ट किया गया फ़ॉर्म"
+  },
+  "authzen.accessRequestForm|description": {
+    "en": "37c92b9ca48d6f87",
+    "text": "Access Request and Approval प्रोफ़ाइल का होस्ट किया गया फ़ॉर्म (#1204): इस realm द्वारा दर्ज अनुरोध-योग्य अस्वीकृति form_url रखती है, पोर्टल पृष्ठ /portal/access-request, जहाँ अस्वीकृति का विषय साइन इन करके औचित्य के साथ एक्सेस अनुरोध सबमिट करता है; अस्वीकृत PEP वही अस्वीकृति सबमिट करने पर वह कार्य वापस पाता है। Task Handle links.ticket रखता है, वही पृष्ठ, जहाँ विषय अनुरोध की स्थिति देखता है। बंद होने पर कोई भी नहीं भेजा जाता और पृष्ठ कोई अनुरोध नहीं बनाता।"
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

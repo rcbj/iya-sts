@@ -10161,7 +10161,8 @@ namespace IyaSts.Api.Management {
     `decidedBy`?: string;
     `approval`?: SharedModel506_approval_h2186;
     `approvers`?: WithRolesGroupsOwners;
-    `callbackDelivery`?: NullableAuthzenCallbackDelivery
+    `callbackDelivery`?: NullableAuthzenCallbackDelivery;
+    @js(#{`description`:"The person who made the request on the hosted form (#1204), when it was made there."}) `formSubmittedBy`?: string
   }
 
 @component model `WithOkMessageErrors178` {

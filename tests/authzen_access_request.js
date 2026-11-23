@@ -74,6 +74,13 @@
 //      service's own words in the asked language, or the advice's
 //      display-title and display-description verbatim, and a Task Handle's
 //      follows its status; a handle built for a callback carries none.
+//   W. THE HOSTED FORM (#1204): no form_url by default; on, a recorded
+//      denial names the portal page, only its subject may use it, it is
+//      refused emergency access without a justification, the PEP gets the
+//      form's task back for the same denial (409 for other augmentations),
+//      a Task Handle names links.ticket, the ticket shows only the subject,
+//      the page lists their requests and draws a real submit button, and
+//      off it is refused 0148.
 //   O. OFF: authzen.accessRequests off answers 501, the schema too, and
 //      no denial is requestable.
 // ---------------------------------------------------------------------------
@@ -1693,6 +1700,161 @@ async function childBody() {
           'carries no display', JSON.stringify(callbackHandle));
   inRealm(function () {
     config.clearOverride('authzen.accessRequestDisplay');
+  });
+
+  // -------------------------------------------------------------------------
+  // W. THE HOSTED FORM AND THE TICKET (#1204): off by default; on, a
+  // recorded denial names form_url on the portal, its subject (and only
+  // its subject) submits it there, the PEP gets that task back for the same
+  // denial, and a Task Handle names links.ticket.
+  // -------------------------------------------------------------------------
+  const formPages = require(ROOT + '/portal/web_access_request');
+  const portalForm = require(ROOT + '/portal/portal_access_request');
+  r = await request(port, 'POST', EVAL, pepCred, evaluation());
+  t.check(r.status === 200 &&
+          !(((r.json || {}).context || {}).access_request || {}).form_url,
+          'W1. by default a requestable denial carries no form_url',
+          brief(r));
+  inRealm(function () {
+    config.setOverride('authzen.accessRequestForm', true);
+  });
+  r = await request(port, 'POST', EVAL, pepCred, evaluation());
+  const formDenied = r.json || {};
+  const formEval = String((formDenied.context || {}).evaluation_id || '');
+  const formAr = (formDenied.context || {}).access_request || {};
+  t.check(r.status === 200 && formEval &&
+          formAr.form_url === own + '/portal/access-request?evaluation_id=' +
+            encodeURIComponent(formEval),
+          'W2. on, a recorded denial names form_url, the portal page on the ' +
+          'access request endpoint\'s origin', brief(r));
+  const formAs = function (who, asked) {
+    log.debug("Entering formAs().");
+    log.debug("Leaving formAs().");
+    return inRealm(function () {
+      return requests.formView(who, asked);
+    });
+  };
+  const submitAs = function (who, given) {
+    log.debug("Entering submitAs().");
+    log.debug("Leaving submitAs().");
+    return inRealm(function () {
+      return requests.submitByForm(who, given);
+    });
+  };
+  let fv = formAs('azcarol', { evaluationId: formEval });
+  t.check(fv.refusal && fv.refusal.code === 'STS-AUTHZEN-0146' &&
+          fv.refusal.status === 404 && !fv.view.request,
+          'W3. somebody who is not the denial\'s subject is refused 0146 ' +
+          'and shown nothing of it', JSON.stringify(fv));
+  fv = formAs('azalice', { evaluationId: 'eval_nosuchdenial' });
+  t.check(fv.refusal && fv.refusal.code === 'STS-AUTHZEN-0145',
+          'W4. an evaluation_id this realm did not record is 0145',
+          JSON.stringify(fv));
+  fv = formAs('azalice', { evaluationId: formEval });
+  const formReq = (fv.view || {}).request || {};
+  t.check(!fv.refusal && fv.view.mode === 'denial' &&
+          formReq.application === 'todo-app' && formReq.emergency === true &&
+          (formReq.resource || {}).id === 'doc-1' && formReq.expiresAt > 0 &&
+          !/azapprovers|azbob/.test(JSON.stringify(fv)),
+          'W5. the subject is shown what the denial asks, never who ' +
+          'approves', JSON.stringify(fv));
+  let sub = submitAs('azalice', { evaluationId: formEval,
+                                  justification: '', emergency: true });
+  t.check(!sub.ok && sub.code === 'STS-AUTHZEN-0083',
+          'W6. emergency access without a justification is refused, as on ' +
+          'a PEP\'s submission', JSON.stringify(sub));
+  sub = submitAs('azalice', { evaluationId: formEval,
+                              justification: 'Quarterly report',
+                              durationS: 3600, emergency: false });
+  const formTask = (sub.task || {});
+  t.check(sub.ok && formTask.status === 'pending' &&
+          formTask.origin === 'form' &&
+          formTask.formSubmittedBy === 'azalice' &&
+          formTask.justification === 'Quarterly report' &&
+          formTask.evaluationId === formEval,
+          'W7. the subject submits the denial\'s access request on the form',
+          JSON.stringify(sub && { ok: sub.ok, code: sub.code,
+                                  error: sub.error,
+                                  status: formTask.status }));
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(formDenied));
+  const pepGot = (r.json || {}).task || {};
+  t.check(r.status === 202 && pepGot.id === formTask.id &&
+          formTask.requester && inRealm(function () {
+            return requests.task(formTask.id).requester;
+          }) === formTask.requester,
+          'W8. the PEP that was denied gets the form\'s task back when it ' +
+          'submits the same denial', brief(r));
+  r = await request(port, 'POST', SUBMIT, pepCred, submission(formDenied, {
+    context: { application: 'todo-app',
+               business_justification: 'Something else' } }));
+  t.check(r.status === 409 && problemOf(r) ===
+            'urn:openid:authzen:access-request:error:duplicate_request',
+          'W9. and duplicate_request when it asks for something else',
+          brief(r));
+  r = await request(port, 'GET', SUBMIT + '/' + formTask.id, pepCred);
+  const ticketed = ((r.json || {}).task || {}).links || {};
+  t.check(r.status === 200 && ticketed.ticket === own +
+            '/portal/access-request?request=' + formTask.id &&
+          ticketed.cancel,
+          'W10. a Task Handle names links.ticket while the form is on',
+          brief(r));
+  fv = formAs('azalice', { request: formTask.id });
+  const fvOther = formAs('azcarol', { request: formTask.id });
+  t.check(!fv.refusal && fv.view.mode === 'task' &&
+          fv.view.task.id === formTask.id && fv.view.task.origin === 'form' &&
+          fvOther.refusal && fvOther.refusal.code === 'STS-AUTHZEN-0146',
+          'W11. the ticket shows the subject the request, and nobody else',
+          JSON.stringify(fv) + ' / ' + JSON.stringify(fvOther));
+  fv = formAs('azalice', {});
+  const again2 = formAs('azalice', { evaluationId: formEval });
+  t.check(!fv.refusal && fv.view.mode === 'mine' &&
+          (fv.view.mine || []).some(function (row) {
+            return row.id === formTask.id;
+          }) && again2.view && again2.view.mode === 'task' &&
+          again2.view.task.id === formTask.id,
+          'W12. the page lists the requests about the person, and a denial ' +
+          'already requested shows its request', JSON.stringify(fv));
+  sub = submitAs('azalice', { evaluationId: formEval, justification: 'x' });
+  t.check(!sub.ok && sub.code === 'STS-AUTHZEN-0076',
+          'W13. a denial already requested cannot be requested again',
+          JSON.stringify(sub));
+  const formHtml = formPages.render({ enabled: true, mode: 'denial',
+    request: Object.assign({}, formReq,
+                           { display: { title: 'Ask your <manager>' } }) },
+    { t: fakeT });
+  const ticketHtml = formPages.render(Object.assign({}, fv.view,
+    { mode: 'task', task: fv.view.mine[0] }), { t: fakeT });
+  t.check(formHtml.indexOf('access-request-submit') >= 0 &&
+          formHtml.indexOf('name="evaluation_id"') >= 0 &&
+          formHtml.indexOf('access-request-emergency') >= 0 &&
+          formHtml.indexOf('Ask your &lt;manager&gt;') >= 0 &&
+          ticketHtml.indexOf('access-request-status') >= 0 &&
+          ticketHtml.indexOf('access-request-submit') < 0,
+          'W14. the page draws the form with a real submit button, the ' +
+          'policy\'s words escaped, and the ticket without one',
+          formHtml.slice(0, 300));
+  const formBody = ModelZod.body('account', 'submitAccessRequestForm')
+    .safeParse({ evaluation_id: formEval, business_justification: 'why',
+                 duration: '3600', emergency: 'true' });
+  const formQuery = ModelZod.query('account', 'getAccessRequestForm')
+    .safeParse({ evaluation_id: 'eval_<script>' });
+  t.check(formBody.success && !formQuery.success &&
+          typeof portalForm.accountOperations === 'function',
+          'W15. the account API reads the form\'s fields and refuses a ' +
+          'query that is not an id', JSON.stringify(formQuery.error || ''));
+  inRealm(function () {
+    config.setOverride('authzen.accessRequestForm', false);
+  });
+  sub = submitAs('azalice', { evaluationId: formEval, justification: 'x' });
+  fv = formAs('azalice', {});
+  r = await request(port, 'GET', SUBMIT + '/' + formTask.id, pepCred);
+  t.check(!sub.ok && sub.code === 'STS-AUTHZEN-0148' &&
+          fv.view.enabled === false &&
+          !(((r.json || {}).task || {}).links || {}).ticket,
+          'W16. off, the form is refused 0148 and no handle names a ticket',
+          JSON.stringify(sub) + ' / ' + brief(r));
+  inRealm(function () {
+    config.clearOverride('authzen.accessRequestForm');
   });
 
   // -------------------------------------------------------------------------

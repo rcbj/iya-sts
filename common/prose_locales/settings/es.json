@@ -8531,6 +8531,14 @@
     "en": "b9fd6a2d08cb3736",
     "text": "Las indicaciones de presentación del perfil Access Request and Approval (#1204): una denegación solicitable lleva access_request.display y un Task Handle lleva task.display, cada uno con un título y una descripción. Los de la denegación son el display-title y el display-description del advice, literalmente, o si no las propias palabras del servicio en el idioma que pide Accept-Language. Son indicaciones para una persona y nunca política. Desactivado, no se envía ninguno."
   },
+  "authzen.accessRequestForm|label": {
+    "en": "2e34659783fbd924",
+    "text": "Formulario alojado para solicitudes de acceso"
+  },
+  "authzen.accessRequestForm|description": {
+    "en": "37c92b9ca48d6f87",
+    "text": "El formulario alojado del perfil Access Request and Approval (#1204): una denegación solicitable que este dominio registró lleva form_url, la página del portal /portal/access-request, donde el sujeto de la denegación inicia sesión y envía la solicitud de acceso con una justificación; el PEP denegado recupera esa tarea cuando envía la misma denegación. Un Task Handle lleva links.ticket, la misma página, donde el sujeto ve el estado de la solicitud. Desactivado, no se envía ninguno y la página no crea ninguna solicitud."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

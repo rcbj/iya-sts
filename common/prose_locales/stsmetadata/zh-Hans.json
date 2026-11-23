@@ -100,8 +100,8 @@
     "text": "partial：访问评估 API（第 6 节），由 XACML 引擎依据领域根策略、通过每个领域的属性目录作出决定，支持 X-Request-ID 和第 11.3 节的质询；访问批量评估 API（第 7 节）及其三种语义；PDP 元数据（第 9 节）的两种形式，包括 signed_metadata；面向声明了类型的 PEP 的 Obligations Profile 草案；以及针对本服务自有的人员、应用程序、API、委托关系和策略操作的三个搜索 API（第 8 节），分页且不具传递性。缺失：搜索中逐结果的 obligations，以及仍为草案的 OAuth 配置文件。"
   },
   "stsmetadata.specs.authzen-arap.coverage": {
-    "en": "9813738c58fb614e",
-    "text": "partial：可申请的拒绝（context.access_request、evaluation_id、evaluated_at、reason），即领域策略用 access-request 建议标记的 Deny，通过本领域签名的 binding_token 按值绑定（内联声明和 binding_hash），并通过拒绝记录按引用绑定；带 Idempotency-Key 的提交、201 或 202 以及 Task Handle；带 Retry-After 的任务状态端点；通过 POST 或 DELETE 取消；六种状态；reevaluate 完成模式、在可信状态中解析的 approval.id、签发并验证的 approval.state（仍需查找），以及以可信事实到达策略的批准；next_action 和五种原因；每种问题类型；元数据成员、jwks_uri 和能力；可申请拒绝上的 request_schema_url，即同源的提交可选补充内容的 JSON Schema；在 authzen.accessRequestDisplay 开启时，可申请拒绝和 Task Handle 上的 display，使用 advice 自己的措辞或服务以所请求语言给出的措辞。缺少：托管表单（form_url），以及 BULK、ACTOR 和 CATALOG 配套规范。"
+    "en": "7c0be5a951c32677",
+    "text": "partial：可申请的拒绝（context.access_request、evaluation_id、evaluated_at、reason），即领域策略用 access-request 建议标记的 Deny，通过本领域签名的 binding_token 按值绑定（内联声明和 binding_hash），并通过拒绝记录按引用绑定；带 Idempotency-Key 的提交、201 或 202 以及 Task Handle；带 Retry-After 的任务状态端点；通过 POST 或 DELETE 取消；六种状态；reevaluate 完成模式、在可信状态中解析的 approval.id、签发并验证的 approval.state（仍需查找），以及以可信事实到达策略的批准；next_action 和五种原因；每种问题类型；元数据成员、jwks_uri 和能力；可申请拒绝上的 request_schema_url，即同源的提交可选补充内容的 JSON Schema；在 authzen.accessRequestDisplay 开启时，可申请拒绝和 Task Handle 上的 display，使用 advice 自己的措辞或服务以所请求语言给出的措辞。在 authzen.accessRequestForm 开启时，提供 form_url（拒绝的主体在其中提交申请的门户托管表单）和 links.ticket。缺少：BULK、ACTOR 和 CATALOG 配套规范。"
   },
   "stsmetadata.specs.authzen-arap-callback.coverage": {
     "en": "ca5109eae0e95b17",
@@ -892,8 +892,8 @@
     "text": "提交一个被拒绝的评估的主体、资源、操作和上下文，并附上其收到的拒绝（其 binding_token 和 expires_at，原样回传）；得到 202 和 Task Handle，或在立即作出决定时（策略允许的紧急访问）得到 201 及结果。只有被领域策略以 advice urn:sts:xacml:advice:access-request 标记的 Deny 才可请求。与评估相同的调用方入口和 AUTHZEN_PEPS；按调用方遵守 Idempotency-Key；回调仅发往为该调用方注册的 URL。每次拒绝都是 problem+json。"
   },
   "stsmetadata.endpoints./access/v1/access-requests/schema.what": {
-    "en": "ec6a3b36123f646a",
-    "text": "GET 提交可添加的补充内容的 JSON Schema（draft 2020-12）：context.business_justification，以及 requested_access.requested_until 和 emergency，后者要求提供理由。公开，与 access_request_endpoint 同源；可申请拒绝的 request_schema_url 指向它。不托管任何表单，因此任何拒绝都不带 form_url。API 或该配置文件关闭时返回 501。在任务状态路径之前注册，否则后者会把“schema”当作 id。"
+    "en": "fb06abe45104accd",
+    "text": "GET 提交可添加的补充内容的 JSON Schema（draft 2020-12）：context.business_justification，以及 requested_access.requested_until 和 emergency，后者要求提供理由。公开，与 access_request_endpoint 同源；可申请拒绝的 request_schema_url 指向它。在 authzen.accessRequestForm 开启时，拒绝还会指明 form_url，即一个门户页面。API 或该配置文件关闭时返回 501。在任务状态路径之前注册，否则后者会把“schema”当作 id。"
   },
   "stsmetadata.endpoints./access/v1/access-requests/:id.what": {
     "en": "264083b977756230",

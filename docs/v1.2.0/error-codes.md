@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5983** of them, in **57** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5987** of them, in **57** subsystems.
 
 ## Where a code appears
 
@@ -93,7 +93,7 @@ is an ordinary outcome.
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 252
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 140
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 121
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 125
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 301
@@ -5742,6 +5742,10 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0142` | An AuthZEN access request's approval could not be stored, so the task moved to failed rather than to approved (#1202). The failed callback is sent where it was asked for. | the approver's refusal; the task status failed |
 | `STS-AUTHZEN-0143` | A pending AuthZEN access request moved to failed because the approvers its advice names (configured static roles, groups, the application's owners) resolve to nobody but its subject (#1202). A computed or dynamic role, or a directory that cannot be read, is never taken for nobody. Noticed by the authzen.access-requests job. | the task status failed |
 | `STS-AUTHZEN-0144` | The requestable denial store of a realm is full (authzen.accessRequestMaxDenials), so a new denial is not recorded by evaluation_id; it is still requestable by its binding_token (#1204). Logged when the store fills, not per denial. | none — logged and audited once |
+| `STS-AUTHZEN-0145` | The hosted access request form (/portal/access-request, #1204) was opened or submitted with an evaluation_id this realm holds no requestable denial record for: never issued, removed a day after its window, or not recorded because the store was full. | the profile's section 16, form_url; the portal answers 404 |
+| `STS-AUTHZEN-0146` | The hosted access request form or ticket was opened by somebody who is not the subject of the denial or the request it names (the subject's type is one of authzen.resolveSubjectTypes and its id one of the person's names). The same answer as a request that does not exist (#1204). | the profile's sections 13.1 and 13.3.3; the portal answers 404 |
+| `STS-AUTHZEN-0147` | The hosted access request form was opened or submitted after the requestable denial's window had passed (#1204). | the profile's section 13.2, expired_denial; the portal answers 410 |
+| `STS-AUTHZEN-0148` | An access request was submitted on the hosted form while authzen.accessRequestForm (or the profile) is off (#1204). | none — the portal answers 403 |
 
 ## STS-FGA
 

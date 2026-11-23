@@ -758,6 +758,58 @@ async function theAccessRequests() {
       "answered " + shownTask.status + " " +
       String(shownTask.text).slice(0, 400));
   });
+  // THE HOSTED FORM (#1204): off by default; on, a recorded denial names
+  // form_url on the portal, a Task Handle names links.ticket, and the
+  // form's account API operation takes nobody's word for who is asking.
+  check("by default a requestable denial carries no form_url", function () {
+    assert.ok(!ar.form_url, String(ar.form_url));
+  });
+  const formOn = await postJson(api("/config/set"),
+    { key: "authzen.accessRequestForm", value: true });
+  assert.ok(formOn.status === 200, "setting authzen.accessRequestForm " +
+            "answered " + formOn.status + " " + formOn.text);
+  let formDenial = null;
+  let formTask = null;
+  let formApi = null;
+  try {
+    formDenial = await evaluate(asked);
+    formTask = await pep("GET", String(task.status_endpoint), caller);
+    formApi = await fetchJson(base + PREFIX + "/account-api/access-request" +
+                              "?evaluation_id=" + encodeURIComponent(String(
+                                ((formDenial.body || {}).context || {})
+                                  .evaluation_id || "")),
+                              { headers: { Authorization: "" } });
+  } finally {
+    await postJson(api("/config/reset"),
+                   { key: "authzen.accessRequestForm" });
+  }
+  const formCtx = (formDenial.body || {}).context || {};
+  check("with authzen.accessRequestForm on, the denial names form_url, " +
+        "the portal page", function () {
+    const url = new URL(String((formCtx.access_request || {}).form_url));
+    assert.ok(formDenial.status === 200 &&
+              url.pathname === PREFIX + "/portal/access-request" &&
+              url.searchParams.get("evaluation_id") ===
+                formCtx.evaluation_id &&
+              url.origin === new URL(String(
+                formCtx.access_request.endpoint)).origin,
+      "answered " + formDenial.status + " " +
+      String(formDenial.text).slice(0, 400));
+  });
+  check("and the Task Handle names links.ticket", function () {
+    const links = ((formTask.body || {}).task || {}).links || {};
+    const url = new URL(String(links.ticket));
+    assert.ok(formTask.status === 200 &&
+              url.pathname === PREFIX + "/portal/access-request" &&
+              url.searchParams.get("request") === task.id,
+      "answered " + formTask.status + " " +
+      String(formTask.text).slice(0, 400));
+  });
+  check("the form's account API operation needs the person's own token",
+        function () {
+    assert.ok(formApi.status === 401 || formApi.status === 403,
+      "answered " + formApi.status + " " + String(formApi.text).slice(0, 300));
+  });
   log.debug("Leaving theAccessRequests().");
 }
 

@@ -8531,6 +8531,14 @@
     "en": "b9fd6a2d08cb3736",
     "text": "Les indications d’affichage du profil Access Request and Approval (#1204) : un refus demandable porte access_request.display et un Task Handle porte task.display, chacun avec un titre et une description. Ceux du refus sont le display-title et le display-description de l’advice, tels quels, ou sinon les propres mots du service dans la langue que demande Accept-Language. Ce sont des indications destinées à une personne, jamais une politique. Désactivé, aucun n’est envoyé."
   },
+  "authzen.accessRequestForm|label": {
+    "en": "2e34659783fbd924",
+    "text": "Formulaire hébergé des demandes d’accès"
+  },
+  "authzen.accessRequestForm|description": {
+    "en": "37c92b9ca48d6f87",
+    "text": "Le formulaire hébergé du profil Access Request and Approval (#1204) : un refus demandable que ce domaine a enregistré porte form_url, la page du portail /portal/access-request, où le sujet du refus se connecte et soumet la demande d’accès avec une justification ; le PEP qui a été refusé récupère cette tâche lorsqu’il soumet le même refus. Un Task Handle porte links.ticket, la même page, où le sujet voit l’état de la demande. Désactivé, aucun n’est envoyé et la page ne crée aucune demande."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

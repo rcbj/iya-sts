@@ -8531,6 +8531,14 @@
     "en": "b9fd6a2d08cb3736",
     "text": "تلميحات العرض في ملف Access Request and Approval (#1204): يحمل الرفض القابل للطلب access_request.display ويحمل Task Handle الحقل task.display، ولكل منهما عنوان ووصف. تلميحات الرفض هي display-title وdisplay-description من الـ advice حرفيًا، وإلا فهي كلمات الخدمة نفسها باللغة التي يطلبها Accept-Language. إنها تلميحات لشخص وليست سياسة أبدًا. عند الإيقاف لا يُرسل أي منهما."
   },
+  "authzen.accessRequestForm|label": {
+    "en": "2e34659783fbd924",
+    "text": "النموذج المستضاف لطلبات الوصول"
+  },
+  "authzen.accessRequestForm|description": {
+    "en": "37c92b9ca48d6f87",
+    "text": "النموذج المستضاف في ملف Access Request and Approval (#1204): يحمل الرفض القابل للطلب الذي سجّله هذا النطاق form_url، وهي صفحة البوابة /portal/access-request، حيث يسجّل صاحب الرفض الدخول ويقدّم طلب الوصول مع مبرّر؛ ويستعيد الـ PEP المرفوض تلك المهمة عندما يقدّم الرفض نفسه. يحمل Task Handle الحقل links.ticket، وهو الصفحة نفسها، حيث يرى صاحب الطلب حالته. عند الإيقاف لا يُرسل أي منهما ولا تُنشئ الصفحة أي طلب."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

@@ -545,6 +545,12 @@ const NAV = [
       // named, never as its subject. Drawn by `portal_access_requests.ts`.
       { path: BASE + '/access-requests', label: 'Access requests',
         heading: 'Access requests waiting for you' },
+      // REQUEST ACCESS (#1204), beside the approvers' page and never part
+      // of it: the person's OWN requests — an AuthZEN denial's hosted form
+      // (`form_url`) and a request's ticket (`links.ticket`). Drawn by
+      // `portal_access_request.ts`.
+      { path: BASE + '/access-request', label: 'Your access requests',
+        heading: 'Your access requests' },
       // SIGN IN A DEVICE (#150, 2026-09-26), for CIBA's reason: the code a
       // television or a command line shows is typed here, and an approval
       // signs this person in on it (RFC 8628). Drawn by `portal_device.ts`.

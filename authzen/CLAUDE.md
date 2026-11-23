@@ -977,7 +977,22 @@ header argues each. What a maintainer needs quickly:
   when it is handed a language list, so a callback's handle (built for
   nobody) carries none. It is never bound, echoed or read back, and it
   names no approver, role, group or policy.
-* Not built: `form_url`, BULK, ACTOR, CATALOG.
+* **The hosted form (#1204)** is the portal page `/portal/access-request`
+  (`portal/portal_access_request.ts`, `web_access_request.ts`), behind
+  `authzen.accessRequestForm` (off by default). `form_url` names it with
+  the denial's `evaluation_id`, and only for a denial the record kept; a
+  Task Handle's `links.ticket` names it with the task's id. `formView()`
+  answers only the denial's or the task's SUBJECT (`isSubject()`: a type
+  in `authzen.resolveSubjectTypes`, an id among `approverIdentity()`'s
+  names) and 0146 otherwise, the same as for nothing. `submitByForm()`
+  opens the task through `openTask()`, the one place a PEP's submission
+  makes one too, with `requester` the denial's PEP, `origin: "form"` and
+  `formSubmittedBy`. A denial has one task (its `jti`), and the PEP's own
+  submission of it gets the form's task back unless it asks for other
+  augmentations (`sameAugmentations()`, else 0076). The draft does not
+  say how a form's input reaches the task; making the denial's own
+  submission is this service's answer.
+* Not built: BULK, ACTOR, CATALOG.
   `tests/authzen_access_request.js` holds it in process and
   `tests/protocol/sts_authzen.js` section 9 over HTTP.
 
@@ -1088,4 +1103,6 @@ approval's state could not be signed, and the approval stands by id
 (#1204); 0141 a portal revocation of an approval somebody else gave
 (#1203), 0142 an approval that could not be stored and 0143 approvers who
 resolve to nobody, each a task moved to `failed` (#1202), 0144 the denial
-store full (#1204).
+store full (#1204); 0145–0148 the hosted form (#1204): 0145 a denial the
+record does not hold, 0146 a person who is not the subject, 0147 a
+window that has passed, 0148 the form off.

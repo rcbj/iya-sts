@@ -8531,6 +8531,14 @@
     "en": "b9fd6a2d08cb3736",
     "text": "Ang mga pahiwatig sa pagpapakita ng Access Request and Approval Profile (#1204): ang isang pagtangging maaaring hilingin ay may access_request.display at ang isang Task Handle ay may task.display, bawat isa ay may pamagat at paglalarawan. Ang sa pagtanggi ay ang display-title at display-description ng advice, nang eksakto, o kung wala ay ang sariling salita ng serbisyo sa wikang hinihingi ng Accept-Language. Mga pahiwatig ito para sa isang tao at hindi kailanman patakaran. Kapag naka-off, walang ipinapadala."
   },
+  "authzen.accessRequestForm|label": {
+    "en": "2e34659783fbd924",
+    "text": "Naka-host na form para sa mga kahilingan sa access"
+  },
+  "authzen.accessRequestForm|description": {
+    "en": "37c92b9ca48d6f87",
+    "text": "Ang naka-host na form ng Access Request and Approval Profile (#1204): ang isang pagtangging maaaring hilingin na naitala ng realm na ito ay may form_url, ang pahina ng portal na /portal/access-request, kung saan nagsa-sign in ang subject ng pagtanggi at isinusumite ang kahilingan sa access na may katwiran; makukuha muli ng tinanggihang PEP ang gawaing iyon kapag isinumite nito ang parehong pagtanggi. Ang isang Task Handle ay may links.ticket, ang parehong pahina, kung saan nakikita ng subject ang katayuan ng kahilingan. Kapag naka-off, walang ipinapadala at walang kahilingang ginagawa ang pahina."
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

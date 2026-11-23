@@ -8531,6 +8531,14 @@
     "en": "b9fd6a2d08cb3736",
     "text": "Access Request and Approval 配置文件的显示提示（#1204）：可申请的拒绝携带 access_request.display，Task Handle 携带 task.display，各含一个标题和一段描述。拒绝的提示是 advice 的 display-title 和 display-description，原样使用；否则是服务自己的措辞，使用 Accept-Language 所要求的语言。它们是给人看的提示，绝不是策略。关闭时两者都不发送。"
   },
+  "authzen.accessRequestForm|label": {
+    "en": "2e34659783fbd924",
+    "text": "访问申请的托管表单"
+  },
+  "authzen.accessRequestForm|description": {
+    "en": "37c92b9ca48d6f87",
+    "text": "Access Request and Approval 配置文件的托管表单（#1204）：本领域记录的可申请拒绝携带 form_url，即门户页面 /portal/access-request，拒绝的主体在该页登录并附上理由提交访问申请；被拒绝的 PEP 提交同一拒绝时会取回该任务。Task Handle 携带 links.ticket，即同一页面，主体可在其中查看申请状态。关闭时两者都不发送，该页面也不发起申请。"
+  },
   "authzen.callbackAttempts|label": {
     "en": "386af3a6b939029e",
     "text": "Access request callback attempts"

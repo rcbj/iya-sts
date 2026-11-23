@@ -181,6 +181,11 @@ const PROVIDERS: Array<() => Json> = [
   function () {
     return require('../portal/portal_access_requests');
   },
+  // #1204: /portal/access-request, an AuthZEN denial's hosted form and a
+  // request's ticket, beside the approvers' page.
+  function () {
+    return require('../portal/portal_access_request');
+  },
   function () {
     return require('../portal/portal_device');
   },

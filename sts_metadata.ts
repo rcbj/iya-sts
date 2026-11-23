@@ -679,8 +679,10 @@ const SPECS: Spec[] = [
               'augmentations; display on a requestable denial and on a ' +
               'Task Handle, the advice\'s own words or the service\'s in ' +
               'the language asked for, while ' +
-              'authzen.accessRequestDisplay is on. Missing: a hosted form ' +
-              '(form_url), and the BULK, ACTOR and CATALOG companions.' },
+              'authzen.accessRequestDisplay is on; form_url, the portal\'s ' +
+              'hosted form where the denial\'s subject submits it, and ' +
+              'links.ticket, while authzen.accessRequestForm is on. ' +
+              'Missing: the BULK, ACTOR and CATALOG companions.' },
   { id: 'authzen-arap-callback',
     name: 'AuthZEN Callback Notifications Profile 1.0 (draft)',
     where: 'OpenID Foundation AuthZEN WG',
@@ -4136,8 +4138,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'requested_access.requested_until and emergency, the last ' +
           'requiring the justification. Public, the same origin as ' +
           'access_request_endpoint; a requestable denial\'s ' +
-          'request_schema_url names it. No form is hosted, so no denial ' +
-          'carries form_url. Answers 501 while the API or the profile ' +
+          'request_schema_url names it. While authzen.accessRequestForm ' +
+          'is on, a denial also names form_url, a portal page. Answers ' +
+          '501 while the API or the profile ' +
           'is off. Registered before the task-status path, which would ' +
           'otherwise read "schema" as an id.' },
   { path: '/access/v1/access-requests/:id', group: 'AuthZEN',
