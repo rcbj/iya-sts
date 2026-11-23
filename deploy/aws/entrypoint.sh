@@ -20,7 +20,7 @@
 #
 # Config (env vars):
 #   TF_STACK     environment | global | foundation | spiffe-realm
-#                | suite-callbacks                               (environment)
+#                | suite-callbacks | pep-cluster                 (environment)
 #   TF_ENV       the environment's name, 2-12 [a-z0-9]           (dev)
 #   TF_CELL      a MULTI-CELL environment's cell, e.g. `euw1`: one cell's
 #                environment, spiffe-realm or suite-callbacks stack. Unset
@@ -34,6 +34,7 @@
 #   TF_CELL_PARALLEL    how many cells a multi-cell apply or destroy runs
 #                at once, after the primary (#367)                      (6)
 #   TF_REALM     spiffe-realm only: the realm id, or `default`
+#   TF_PEP_CLUSTER  pep-cluster only: the cluster's name (#1284)      (aws)
 #   TF_ACTION    init | validate | plan | apply | destroy | output
 #                | output-json | ecr-password                                  (plan)
 #   AWS_REGION   the HOME region: the state bucket, the image repository
@@ -254,6 +255,19 @@ case "${TF_STACK}" in
     STATE_KEY="environment/${TF_ENV}/certificate.tfstate"
     export TF_VAR_environment="${TF_ENV}"
     ;;
+  pep-cluster)
+    # A REMOTE XACML PEP CLUSTER (#1284, deploy/aws/pep-cluster/): one state
+    # per (environment, cluster), under `environment/` for the reason
+    # spiffe-realm's is, and destroyed before the environment for the same
+    # reason too (destroy_dependent_stacks, below). The name goes into an S3
+    # key, so its grammar is checked here.
+    : "${TF_PEP_CLUSTER:=aws}"
+    [[ "${TF_PEP_CLUSTER}" =~ ^[a-z0-9][a-z0-9-]{0,11}$ ]] || \
+      die "TF_STACK=pep-cluster needs TF_PEP_CLUSTER, 1-12 [a-z0-9-]; got '${TF_PEP_CLUSTER}'."
+    TF_DIR=/workspace/deploy/aws/pep-cluster
+    STATE_KEY="environment/${TF_ENV}/pep-cluster/${TF_PEP_CLUSTER}.tfstate"
+    export TF_VAR_environment="${TF_ENV}" TF_VAR_cluster="${TF_PEP_CLUSTER}"
+    ;;
   suite-callbacks)
     # The suite's callback task for one run (deploy/aws/suite-callbacks/),
     # created and destroyed by run-suite.sh around each run.
@@ -261,7 +275,7 @@ case "${TF_STACK}" in
     STATE_KEY="environment/${TF_ENV}/suite-callbacks.tfstate"
     export TF_VAR_environment="${TF_ENV}"
     ;;
-  *) die "unknown TF_STACK='${TF_STACK}' (environment | global | foundation | certificate | spiffe-realm | suite-callbacks)." ;;
+  *) die "unknown TF_STACK='${TF_STACK}' (environment | global | foundation | certificate | spiffe-realm | suite-callbacks | pep-cluster)." ;;
 esac
 
 # A STACK BUILT ON ONE CELL (#98) is that cell's: its state is under the
@@ -269,7 +283,7 @@ esac
 if [ -n "${MULTI_CELL}" ];
 then
   case "${TF_STACK}" in
-    spiffe-realm|suite-callbacks|certificate)
+    spiffe-realm|suite-callbacks|certificate|pep-cluster)
       [ -n "${TF_CELL:-}" ] || \
         die "${TF_ENV} is multi-cell (${CELLS[*]}): TF_STACK=${TF_STACK} needs TF_CELL, the cell whose load balancer it is for."
       STATE_KEY="environment/${TF_ENV}/${TF_CELL}/${STATE_KEY#"environment/${TF_ENV}/"}"
@@ -402,6 +416,17 @@ destroy_dependent_stacks() {
         IYA_STS_DEPLOYER_ROLE_ARN= TF_DATA_DIR= TF_STACK=spiffe-realm \
           TF_CELL="${cell}" TF_REALM="${realm}" TF_ACTION=destroy "$0" || \
           die "the spiffe-realm stack for '${realm}' would not destroy, so '${TF_ENV}' was left alone. Fix that stack and run this again."
+        ;;
+      "${prefix}pep-cluster/"*.tfstate)
+        # A REMOTE PEP CLUSTER (#1284): its services sit in the environment's
+        # ECS cluster and its rules on the environment's two groups, so it
+        # comes down first, as spiffe-realm's does. TF_DATA_DIR cleared (#372).
+        pep="${key#"${prefix}"pep-cluster/}"
+        pep="${pep%.tfstate}"
+        say "dependent stack first: pep-cluster/${pep}"
+        IYA_STS_DEPLOYER_ROLE_ARN= TF_DATA_DIR= TF_STACK=pep-cluster \
+          TF_CELL="${cell}" TF_PEP_CLUSTER="${pep}" TF_ACTION=destroy "$0" || \
+          die "the pep-cluster stack '${pep}' would not destroy, so '${TF_ENV}' was left alone. Fix that stack and run this again."
         ;;
       "${prefix}suite-callbacks.tfstate")
         say "dependent stack first: suite-callbacks"

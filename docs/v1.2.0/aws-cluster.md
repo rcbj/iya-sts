@@ -400,6 +400,107 @@ The nine `sts_cells_*` jobs check, over HTTP:
   bind are refused, and `fail-open` lets a session held at `cella` be
   refreshed.
 
+## A remote PEP cluster
+
+`deploy/aws/pep-cluster/` runs the [remote XACML PEP](remote-pep.md) as a
+service beside an environment: the PEP image on Fargate, behind the
+environment's own load balancer, reached at the environment's direct name
+(`direct_hostname`, or `public_hostname` without CloudFront). The members
+register with the service, pull its policy, and decide locally. Nothing
+in the service changes.
+
+```
+clients (allowed CIDRs) ─9443─▶ NLB ─round robin──────▶ aws-pep-1 | aws-pep-2
+                        ─9543─▶     ─sticky by address─▶ (reverse proxy)
+nodes ─9451, 9452──────────────▶     ─one member each──▶ (the PDP's nudge)
+members ─443───────────────────▶     ──────────────────▶ the service
+```
+
+| Port on the load balancer | What it carries | Who may reach it |
+|---|---|---|
+| 9443 | the decision API and the AuthZEN edge PDP, round robin | the environment's `allowed_cidrs` |
+| 9543 | the reverse proxy, sticky by client address ([why](remote-pep.md#the-load-balancer-must-keep-a-browser-on-one-instance)) | the environment's `allowed_cidrs` |
+| 9450 + n | member n's own 9443, for the service's nudge | the nodes only |
+
+TLS passes through. Each member serves the listener pair its realm issued
+it, so a client trusts the service's Root, and an AuthZEN caller's client
+certificate reaches the member.
+
+### Choosing how the members authenticate
+
+`PEP_MODE` picks one of the two arrangements in
+[One certificate per instance, or one shared](remote-pep.md#one-certificate-per-instance-or-one-shared):
+
+| `PEP_MODE` | Members | Rows on the console | The nudge |
+|---|---|---|---|
+| `per-instance` (the default) | `PEP_COUNT` services of one task each, `<cluster>-pep-1` to `-<n>`, each with its own entry, key and listener pair | one per member | reaches every member |
+| `shared` | one service of `PEP_COUNT` tasks, `<cluster>-pep`, sharing one entry, key and pair. `PEP_AUTOSCALING_MAX` above the count scales it by CPU | one | reaches one task. The rest pick a change up on their poll |
+
+Autoscaling needs `foundation/` applied by an administrator first, for the
+deployer's Application Auto Scaling permissions.
+
+### The keys never pass through Terraform
+
+Each member's private keys live in a Secrets Manager secret,
+`iya-sts/<env>/pep/<cluster>/<member>`, sealed under the project key.
+`provision.sh` writes them. It generates the assertion key on the machine
+it runs on and sends the service only a certificate request. The Terraform
+stack names the secret, and ECS hands its values to the container when the
+task starts. No key is in the Terraform state, the task definition or git.
+
+### Building one
+
+The realm issues a member's HTTPS listener pair only after the member has
+registered, so provisioning is two passes around one apply:
+
+```bash
+IMAGE=<account>.dkr.ecr.us-west-2.amazonaws.com/iya-sts:<tag>   # the service image the environment runs
+
+# 1. Entries, keys and the service's PEP cluster `aws`. No listener pairs yet.
+deploy/aws/pep-cluster/provision.sh --env=testidp \
+  --host=direct.test-idp.iyasec.io --image="$IMAGE" --count=2
+
+# 2. The members. They start, register and pull, with no HTTPS listener yet.
+TF_STACK=pep-cluster PEP_COUNT=2 IMAGE_TAG=<tag> \
+  deploy/aws/terraform-local.sh testidp apply
+
+# 3. The listener pairs. Each member is redeployed with its pair.
+deploy/aws/pep-cluster/provision.sh --env=testidp \
+  --host=direct.test-idp.iyasec.io --image="$IMAGE" --count=2
+```
+
+The PEP image is `pep-<tag>` in the project's repository (`PEP_IMAGE`
+names another, such as `iyasec/iya-sts-xacml-pep:1.1.0`). `PEP_REALM`
+registers the members to a realm rather than the default realm. Pass the
+same `--realm` to `provision.sh`. `PEP_CLUSTER` (and `--cluster`) names
+the cluster, `aws` by default. Every pass is safe to run again.
+
+The stack needs an environment with a public name. The members reach the
+service, and the nodes reach the members, at the name the VPC resolves to
+the load balancer's private addresses.
+
+### Checking it
+
+```bash
+curl -s --cacert service-root.pem https://direct.test-idp.iyasec.io:9443/healthcheck
+```
+
+The console's **XACML → Remote PEPs** tab lists each member once it has
+registered, and **PEP clusters → aws** lists the cluster's members.
+`aws logs tail /iya-sts/containers --log-stream-name-prefix testidp-pep-aws`
+shows the members' logs.
+
+### Removing it
+
+```bash
+TF_STACK=pep-cluster deploy/aws/terraform-local.sh testidp destroy
+deploy/aws/pep-cluster/provision.sh --env=testidp --remove   # the secrets
+```
+
+Destroying the environment destroys its PEP clusters first. The secrets
+and the members' entries in the service stay until you remove them, as
+[Removing one](remote-pep.md#removing-one) describes.
+
 ## Reading the logs
 
 ```bash

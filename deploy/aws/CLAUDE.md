@@ -11,11 +11,12 @@ Dockerfile removes this directory from the image.
 | `environment/` | per run | VPC, NLB (443, 636, the plain-HTTP CRL/OCSP port on 80, and TCP 88 for the KDC — the same in every environment since 2026-09-21), and with `public_hostname` a CNAME (`dns.tf`) — and the public certificate's ARN, READ from `certificate/`'s state, since 2026-10-01, RDS primary + replica, secrets, ECS cluster, task and execution roles, the ECS infrastructure role, with `mail_ses_domain` an SES identity and its DKIM records (`mail.tf`, #311), three services — each task with an EBS volume for risk dataset uploads (#214) | the deployer role |
 | `certificate/` | **kept across destroys** | **the public ACM certificate (2026-10-01, rcbj)**: the exportable certificate the nodes present, its DNS validation records — one state per environment (`environment/<env>/certificate.tfstate`) and per cell (`environment/<env>/<cell>/certificate.tfstate`). Applied before every environment apply, NEVER destroyed with the environment, and its first apply ADOPTS an existing certificate rather than requesting one (*The public certificate is kept*, below) | the deployer role, through `entrypoint.sh` |
 | `spiffe-realm/` | per realm | one additional realm's SPIRE Server API on an existing environment's NLB: one listener, one target group with the nodes registered BY ADDRESS, and the security-group rules. The Workload API is not published (#324). State at `environment/<env>/spiffe-realm/<realm>.tfstate` (*A realm's SPIFFE ports*, below) | the deployer role |
+| `pep-cluster/` | per cluster | **a remote XACML PEP cluster (#1284)** on an existing environment's NLB: an ECS service per member (or one shared service), the decision, proxy and per-member notify listeners and target groups, a security group, an execution role of its own; the keys come from Secrets Manager secrets `provision.sh` writes, never from this state. State at `environment/<env>/pep-cluster/<cluster>.tfstate`, destroyed before its environment (*A remote PEP cluster*, below) | the deployer role; `provision.sh` by a person |
 | `environment/envs/<env>.tfvars` | per environment | what a named environment sets differently; `entrypoint.sh` passes it when it exists. `dev` and `ci` have none | the deployer role |
 | `environment/envs/<env>.cells.tfvars.json` | per environment | **a multi-cell environment's cells (#98)**: each cell's region, jurisdiction and VPC CIDR, which cell holds the global database's writer, and (since #367) each jurisdiction's pinned countries. Its presence is what makes an environment multi-cell; `testidpna` (two cells) and `globalidp` (six, the target test case) are the two there are | the deployer role |
 | `environment/envs/<env>.conversion.tfvars.json` | per conversion | **a single-region environment converted into this one's cells (#98)**: which old environment, each converted cell's source snapshot and the copy it restores from, and the carry-over secret. Laid over the cells file by `entrypoint.sh` ONLY with `TF_CONVERT=1` (*Converting a single-region environment into cells*, below); `testidpna`'s converts `testidp` | the deployer role |
 | `convert-to-cells.sh` | per conversion | the conversion's runbook: checks (read only, the default), `--carry-secrets`, `--copy-snapshot`, and the `terraform-local.sh` commands in order — never an apply or a destroy itself | a person |
-| `*/tests/render.tftest.hcl` | — | **offline renders (#367)** of `foundation/`, `global/`, `environment/` and `certificate/`, and (#695) `suite-callbacks/`: `terraform test` with nothing asked of AWS — the region rule, the mesh, the DNS tree (*What was checked*, below) | a person, after changing a stack |
+| `*/tests/render.tftest.hcl` | — | **offline renders (#367)** of `foundation/`, `global/`, `environment/` and `certificate/`, (#695) `suite-callbacks/` and (#1284) `pep-cluster/`: `terraform test` with nothing asked of AWS — the region rule, the mesh, the DNS tree (*What was checked*, below) | a person, after changing a stack |
 | `global/` | per multi-cell environment | the global tier of a multi-cell environment (#98): the global PostgreSQL writer and a cross-region read replica per other cell, the global secrets and their replicas, the peering mesh and the inter-cell name associations — state at `environment/<env>/global.tfstate` (*Cells*, below) | the deployer role, through `entrypoint.sh` |
 | `schema-init/` | per image | a `postgres:18` image that applies `postgres/schema.sql` as the RDS master user | built by CI |
 | `cert-init/` | per image | an `aws-cli` image that exports the public ACM certificate into the task before the node starts, so the NODE presents it (only where `public_hostname` is set) | built by CI |
@@ -1672,6 +1673,84 @@ which realms an environment was given, and a dependent that will not destroy
 stops the environment's destroy instead of being discovered afterwards. It
 runs while the environment still EXISTS, which this stack requires: it reads
 the environment's remote state and finds the load balancer by name.
+
+## A remote PEP cluster: `pep-cluster/` (#1284, 2026-11-23)
+
+**The remote XACML PEP as a plain scaled service, and nothing new in the
+service.** #676 concluded the PEP needs no clustering mechanism (instances
+share nothing and converge on the PDP on their own), so this is the PEP
+image on Fargate behind the environment's own NLB. The service's *PEP
+cluster* (shared configuration, `create-pep-cluster`) is used as it is:
+`provision.sh` creates one of the stack's name and adds the members.
+`docs/v1.2.0/aws-cluster.md`, *A remote PEP cluster*, is the user's half.
+
+**A stack of its own, on the `spiffe-realm/` pattern**: it reads the
+environment's state and looks up the NLB, its two security groups and the
+public subnets by name, adds listeners, target groups and rules, and owns
+nothing the environment made. So `dev` and `ci` render exactly what they
+did, and `entrypoint.sh`'s `destroy_dependent_stacks` destroys every
+`environment/<env>/pep-cluster/*.tfstate` before the environment, for the
+DependencyViolation reason that function's header gives.
+
+**NO PRIVATE KEY IN ANY STATE.** The issue's rule. Each member's secret,
+`<secret path>/pep/<cluster>/<member>`, is created and written by
+`provision.sh`; the stack reads it with `aws_secretsmanager_secret`, which
+returns metadata only, and the task definition carries `valueFrom`
+references to four of its JSON members. The container's own `sh -c` writes
+them to `/run/pep` and execs `xacml-pep`. The task has an execution role of
+its own (no task role: the PEP calls no AWS API), so no node can be handed
+a PEP's key and no PEP a node's database password. `assertion_cert` is a
+fifth member the task never reads: it is what makes `register-remote-pep.js`
+idempotent across runs (it certifies a key only when the certificate in
+`--out` is not already valid on the entry).
+
+**TWO PROVISIONING PASSES AROUND ONE APPLY**, because the realm issues a
+listener pair only to a PEP that has registered (`docs/v1.2.0/remote-pep.md`,
+*An HTTPS listener*). Until the second pass a member has no 9443, so:
+* **no container health check** — the image's own reports a pairless PEP
+  unhealthy (accurately), and ECS would replace an essential container on
+  that before the pair could ever be issued;
+* **`health_check_grace_seconds`, 900 by default**, keeps ECS from replacing
+  it on the NLB's failing checks for that long. The second pass forces a new
+  deployment of each member it issued a pair to.
+
+**THE NUDGE GOES THROUGH THE LOAD BALANCER, ON A PORT PER MEMBER**
+(`notify_port_base + n`, the nodes' security group the only source). A
+Fargate task's address changes on every start, `hostname` is not available
+in awsvpc mode, and the deployer role has no Cloud Map grant, so there is
+no per-task name; a target group per member is a stable name (the NLB's
+direct name, which the member's certificate carries through `--https-dns`)
+that reaches exactly one member. `shared` has one, which reaches one task —
+the cost that table in remote-pep.md states. **Nodes egress only 443
+otherwise**, so the stack adds the nodes' egress rule on each notify port.
+
+**THE DIRECT NAME, AND SO A PUBLIC NAME, IS REQUIRED.** Members dial
+`https://<direct_hostname>/…` and nodes dial the notify ports at the same
+name, and inside the VPC that name resolves to the NLB's PRIVATE addresses
+(`environment/dns.tf` `inside`, `cloudfront.tf` `direct_inside`), which is
+what lets every rule name a security group instead of an address. An
+environment without `public_hostname` has no such record, its NLB's own
+name resolves to public addresses, and the traffic would arrive from the
+task's public IP; the stack refuses it by precondition rather than build
+that. The node certificate names the direct host (`certificate/`), so the
+members verify the service with the system anchors; `provision.sh --ca`
+puts an anchor in the secret for an environment that has none.
+
+**The proxy's target group health-checks 9443, not 9543**: the proxy
+listener answers only once a route exists, and a member with no route is
+still live. Its affinity is `source_ip` (TLS passes through, so nothing
+else is visible to the NLB). The decision API is round robin.
+
+**`autoscaling_max` needs `foundation/` re-applied** (`EcsServiceAutoScaling`
+and the `ecs.application-autoscaling` service-linked role in
+`iam_deployer.tf`). Application Auto Scaling owns the desired count of a
+shared service, so `ignore_changes = [desired_count]`; a changed
+`instance_count` then reaches a running shared service only through
+`update-service`.
+
+**What has no test**: `provision.sh` against a live environment is checked
+by hand (*What was checked*); `tests/render.tftest.hcl` holds the stack's
+shapes offline.
 
 ## The deployer's permissions, and how to extend them
 

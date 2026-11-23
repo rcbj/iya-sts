@@ -1244,6 +1244,14 @@ your load balancer's health checks rather than on the console. If a change has
 to arrive faster, lower `PEP_POLL_INTERVAL_MS`: an unchanged policy answers the
 poll with `304`, so that costs the service very little.
 
+### On AWS
+
+`deploy/aws/pep-cluster/` runs either arrangement on ECS Fargate behind an
+environment's load balancer: a service of one task per member, or one
+shared service that may autoscale. The keys come from AWS Secrets Manager,
+and the load balancer keeps the reverse proxy sticky. See
+[A remote PEP cluster](aws-cluster.md#a-remote-pep-cluster).
+
 ### What more instances cost the service
 
 **Polling costs almost nothing per instance**: one conditional request every

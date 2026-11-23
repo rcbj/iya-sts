@@ -643,6 +643,8 @@ data "aws_iam_policy_document" "deploy_edge" {
       values = [
         "elasticloadbalancing.amazonaws.com", "ecs.amazonaws.com",
         "rds.amazonaws.com",
+        # A shared remote PEP cluster's autoscaling (#1284).
+        "ecs.application-autoscaling.amazonaws.com",
       ]
     }
   }
@@ -909,6 +911,28 @@ data "aws_iam_policy_document" "deploy_compute" {
       variable = "ecs:cluster"
       values   = [for p in local.rarn.ecs : "${p}:cluster/${var.name}-*"]
     }
+  }
+
+  # A SHARED REMOTE PEP CLUSTER THAT AUTOSCALES (#1284, pep-cluster/'s
+  # `autoscaling_max`): a scalable target on one of the project's ECS
+  # services, and a target-tracking policy on it. Application Auto Scaling's
+  # scalable-target ARNs are generated, not named, so the resource cannot be
+  # narrowed by name; what it can scale is still only what EcsOnlyProjectNamed
+  # lets this role create. Its alarms are made by its own service-linked role
+  # (ServiceLinkedRolesForElbEcsRds).
+  statement {
+    sid = "EcsServiceAutoScaling"
+    actions = [
+      "application-autoscaling:RegisterScalableTarget",
+      "application-autoscaling:DeregisterScalableTarget",
+      "application-autoscaling:PutScalingPolicy",
+      "application-autoscaling:DeleteScalingPolicy",
+      "application-autoscaling:Describe*",
+      "application-autoscaling:TagResource",
+      "application-autoscaling:UntagResource",
+      "application-autoscaling:ListTagsForResource",
+    ]
+    resources = ["*"]
   }
 
   statement {
