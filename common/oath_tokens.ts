@@ -140,6 +140,12 @@ cacheRegistry.register({
   }
 });
 
+// THE ASSIGNMENT'S COMPARE-AND-SET (`assign()`): a cluster claim per row,
+// held for a day — long past any assignment, and the row's own status says
+// `assigned` from then on.
+const ASSIGN_SCOPE = 'oath_tokens.assign';
+const ASSIGN_TTL_MS = 24 * 60 * 60 * 1000;
+
 interface OathTokensDeps {
   log: typeof helpers.log;
   helpers: typeof helpers;
@@ -149,6 +155,7 @@ interface OathTokensDeps {
   // Reached at the moment of use (header).
   loadCredentials: () => Json;
   loadHardwareTokens: () => Json;
+  loadClaims: () => Json;
   loadPskc: () => Json;
   loadHotp: () => Json;
   loadTotp: () => Json;
@@ -191,6 +198,9 @@ class OathTokens {
       },
       loadHardwareTokens: function (): Json {
         return require('./hardware_tokens');
+      },
+      loadClaims: function (): Json {
+        return require('../cluster/cluster_claims');
       },
       loadPskc: function (): Json {
         return require('./pskc');
@@ -548,13 +558,47 @@ class OathTokens {
       return this.refuse('STS-OATH-0045', 'The token\'s secret cannot be ' +
         'read by this service, so it cannot be assigned.');
     }
+    // THE ROW IS TAKEN BY COMPARE-AND-SET FIRST (the #1955 review): a claim
+    // in the store, once for the cluster, before anything is installed, so
+    // two assignments — two administrators, an administrator and a claim,
+    // two nodes — cannot both install the token's secret on two people. The
+    // row's `unassigned` above was a read; this is the write that decides.
+    // A loser is told the token is taken; a winner that fails to install
+    // releases the claim so the token can be assigned again.
+    const taken = await this.deps.loadClaims().claim({
+      scope: ASSIGN_SCOPE, value: key, ttlMs: ASSIGN_TTL_MS });
+    if (!taken || !taken.ok) {
+      const store = !!taken && taken.reason === 'store';
+      log.debug("Leaving OathTokens.assign(). " +
+                (store ? 'No store.' : 'Taken by another assignment.'));
+      return store
+        ? this.refuse('STS-OATH-0006', 'The token could not be reserved ' +
+            'just now. Try again.')
+        : this.refuse('STS-OATH-0041', 'Token ' + key + ' is being ' +
+            'assigned to somebody else, so it cannot be assigned.');
+    }
+    const fresh = await this.rowOf(key);
+    if (!fresh || fresh.status !== 'unassigned') {
+      log.debug("Leaving OathTokens.assign(). Assigned since the read.");
+      return this.refuse('STS-OATH-0041', 'Token ' + key + ' was assigned ' +
+        'by another request just now, so it cannot be assigned.');
+    }
     const installed = await this.deps.loadCredentials().installImportedOath(
       username, { key: key, kind: row.kind, secret: secret,
                   algorithm: row.algorithm, digits: row.digits,
                   counter: s.counter === undefined ? row.counter : s.counter,
                   lastCounter: s.lastCounter, period: row.period,
-                  vendor: row.vendor, serial: row.serial, model: row.model });
+                  vendor: row.vendor, serial: row.serial, model: row.model,
+                  // A claim's code must be the one that is spent: a store
+                  // already past it means another request spent it.
+                  claim: s.via === 'claim' });
     if (!installed || !installed.ok) {
+      try {
+        await this.deps.loadClaims().release(taken.handle);
+      } catch (e) {
+        log.debug("Caught in OathTokens.assign(): " + ((e && e.message) || e));
+        // The reservation expires on its own (ASSIGN_TTL_MS).
+      }
       log.debug("Leaving OathTokens.assign(). Not installed.");
       return installed;
     }

@@ -23231,6 +23231,11 @@ const CODES = [
     summary: 'An Account API act on a one-time code token was refused: ' +
       'unknown, or too many attempts in the code budget (#1955).',
     spec: 'HTTP 400' },
+  { code: 'STS-OATH-0051',
+    summary: 'A claim of an imported HOTP token was refused: the code it ' +
+      'presented was already spent by another request, so it proves ' +
+      'nothing about who holds the token (#1955).',
+    spec: 'HTTP 400 (the portal or the Account API)' },
   // ===== YUBIOTP ===========================================================
   { code: 'STS-YUBIOTP-0001',
     summary: 'A YubiKey OTP was not 32 to 48 even modhex characters, or ' +
@@ -23358,6 +23363,15 @@ const CODES = [
     summary: 'An operator asked to clear a YubiKey OTP for a person who ' +
       'holds none (#1955 P5).',
     spec: 'HTTP 400 (API) or a 303 with error=' },
+  { code: 'STS-YUBIOTP-0031',
+    summary: 'A YK-VAL nonce could not be proved unused: the cluster claim ' +
+      'it is spent under had no store to ask, so the request was not ' +
+      'checked (#1955).',
+    spec: 'YK-VAL 2.0 BACKEND_ERROR' },
+  { code: 'STS-YUBIOTP-0032',
+    summary: 'A YK-VAL verify named a YubiKey OTP of a disabled account; ' +
+      'it is answered as a bad OTP and nothing is spent (#1955).',
+    spec: 'YK-VAL 2.0 BAD_OTP' },
   // ===== PIV ===============================================================
   { code: 'STS-PIV-0001',
     summary: 'A shipped PIV attestation certificate ' +

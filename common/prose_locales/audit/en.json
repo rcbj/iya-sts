@@ -147,6 +147,7 @@
   "audit.actions.yubiotp.remove.label": "An unassigned YubiKey OTP was removed from the inventory",
   "audit.actions.yubiotp.client-add.label": "A YK-VAL client was created",
   "audit.actions.yubiotp.client-remove.label": "A YK-VAL client was removed",
+  "audit.actions.ykval.verify.label": "A YK-VAL client asked whether a YubiKey OTP is good",
   "audit.actions.piv-escrow.recover.label": "An escrowed PIV key-management key was recovered",
   "audit.actions.openpgp.challenge.label": "An OpenPGP key registration challenge was issued",
   "audit.actions.openpgp.key-registered.label": "An OpenPGP key was registered on a proof of possession",

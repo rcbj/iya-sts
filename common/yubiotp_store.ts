@@ -32,11 +32,17 @@
 // token is not assigned again.
 //
 // **YK-VAL CLIENTS** are operator configuration: an id and an HMAC-SHA1 key,
-// sealed, the same in every cell. **NONCES** are global minted state: a
-// client chooses the nonce, and a replay set per cell would accept it once
-// per cell. They expire at the read (five minutes) and the cluster job
-// `yubiotp.nonce-sweep` (in `GLOBAL_JOBS`, so one cell sweeps the shared
-// map) drops the expired ones and the oldest past ten thousand.
+// sealed, the same in every cell. **A NONCE IS SPENT BY A CLUSTER CLAIM**
+// (`cluster/cluster_claims`, scope `yubiotp.ykval-nonce`, five minutes),
+// since the #1955 review: a compare-and-set in the store, so two nodes or
+// two workers given one request cannot both accept it. It was a
+// read-then-write of a per-process map until then, and a replay sent to a
+// second process was answered OK. The claim's own purge job drops the
+// spent ones. `yubiotp.nonces` is no longer written; the cluster job
+// `yubiotp.nonce-sweep` — a per-REALM job (`scope: 'realm'`), not one in
+// `GLOBAL_JOBS` as this header said until the review — still drops the
+// rows a service before the review wrote there, the expired ones and the
+// oldest past ten thousand, so an upgraded store drains.
 //
 // No table is added. Each store is a `realms.map()` at its declaration.
 // A LIBRARY (rule 3): it registers no route.
@@ -54,6 +60,8 @@ type Json = any;
 const NONCE_MS = 5 * 60 * 1000;
 const NONCE_CAP = 10000;
 const NONCE_JOB = 'yubiotp.nonce-sweep';
+// The cluster claim a YK-VAL nonce is spent under (header).
+const NONCE_SCOPE = 'yubiotp.ykval-nonce';
 
 const inventory = realms.map({
   persist: 'yubiotp.inventory',
@@ -128,6 +136,7 @@ interface YubiStoreDeps {
   loadHardwareTokens: () => Json;
   loadYubi: () => Json;
   loadKeystore: () => Json;
+  loadClaims: () => Json;
 }
 
 /**
@@ -170,6 +179,9 @@ class YubiOtpStore {
       },
       loadKeystore: function (): Json {
         return require('./keystore');
+      },
+      loadClaims: function (): Json {
+        return require('../cluster/cluster_claims');
       }
     };
   }
@@ -688,25 +700,43 @@ class YubiOtpStore {
   }
 
   /**
-   * Records a nonce. A repeat inside five minutes is a replay.
+   * Spends a nonce for the whole cluster (header). A repeat inside five
+   * minutes is a replay; a store that cannot say is a refusal too.
    *
    * @param clientId - the client
    * @param nonce - the nonce
-   * @returns `{ ok: true }` or `{ ok: false, reason: 'replay' }`
+   * @returns a promise of `{ ok: true }`, or a refusal with `reason`
+   *   `replay` or `store`
    */
-  rememberNonce(clientId: string, nonce: string): Json {
+  async rememberNonceAsync(clientId: string, nonce: string): Promise<Json> {
     const { log } = this.deps;
-    log.debug("Entering YubiOtpStore.rememberNonce().");
+    log.debug("Entering YubiOtpStore.rememberNonceAsync().");
     const key = String(clientId) + '\n' + String(nonce);
+    // A nonce a service before the review remembered in the map is still a
+    // replay until it would have expired.
     const held = nonces.get(key);
-    const now = this.deps.now();
-    if (held && (now - Number(held.at || 0)) < NONCE_MS) {
-      log.debug("Leaving YubiOtpStore.rememberNonce(). Replay.");
-      return this.refuse('STS-YUBIOTP-0016', 'That nonce was used recently.');
+    if (held && (this.deps.now() - Number(held.at || 0)) < NONCE_MS) {
+      log.debug("Leaving YubiOtpStore.rememberNonceAsync(). Replay (map).");
+      return this.refuse('STS-YUBIOTP-0016', 'That nonce was used recently.',
+                         { reason: 'replay' });
     }
-    nonces.set(key, { at: now, client: String(clientId) });
-    log.debug("Leaving YubiOtpStore.rememberNonce(). Remembered.");
-    return { ok: true };
+    const spent = await this.deps.loadClaims().claim({
+      scope: NONCE_SCOPE, value: key, ttlMs: NONCE_MS });
+    if (spent && spent.ok) {
+      log.debug("Leaving YubiOtpStore.rememberNonceAsync(). Spent.");
+      return { ok: true };
+    }
+    if (spent && spent.reason === 'used') {
+      log.debug("Leaving YubiOtpStore.rememberNonceAsync(). Replay.");
+      return this.refuse('STS-YUBIOTP-0016', 'That nonce was used recently.',
+                         { reason: 'replay' });
+    }
+    log.error(this.deps.errorCodes.tag('STS-YUBIOTP-0031') + 'yubiotp: a ' +
+              'YK-VAL nonce could not be proved unused: ' +
+              String((spent && spent.why) || 'no answer'));
+    log.debug("Leaving YubiOtpStore.rememberNonceAsync(). No store.");
+    return this.refuse('STS-YUBIOTP-0031', 'The nonce could not be proved ' +
+                       'unused just now.', { reason: 'store' });
   }
 
   /**
@@ -778,6 +808,6 @@ export = {
   addClient: slot.forward('addClient'),
   clientKey: slot.forward('clientKey'),
   removeClient: slot.forward('removeClient'),
-  rememberNonce: slot.forward('rememberNonce'),
+  rememberNonceAsync: slot.forward('rememberNonceAsync'),
   sweepNonces: slot.forward('sweepNonces')
 };

@@ -1364,7 +1364,7 @@ op `getStep`(`parameters/0/schema`: SignInId,
     `operationId`:"checkCode",
     `tags`:#["Sign-in"],
     `summary`:"Checks a one-time code from an authenticator app",
-    `description`:"RFC 6238, checked in every mode and rate limited by identity and address; a refused code keeps the step.\n\nThe door of the sign-in surface's `POST /authn/totp`.\n\nSent with `Content-Type: application/json`, an `Origin` of this service and `X-CSRF-Token` — the `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
+    `description`:"RFC 6238, checked in every mode and rate limited by identity and address; a refused code keeps the step. With `code2` as well, the two are consecutive codes of the person's HOTP token, which resynchronise it (RFC 4226 section 7.4) and finish the step, behind the same budget.\n\nThe door of the sign-in surface's `POST /authn/totp`.\n\nSent with `Content-Type: application/json`, an `Origin` of this service and `X-CSRF-Token` — the `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
     `parameters`:#[
       #{
         `name`:"id",
@@ -1414,7 +1414,7 @@ op `getStep`(`parameters/0/schema`: SignInId,
   })
 op `checkCode`(`parameters/0/schema`: SignInId,
   `parameters/1/schema`: string,
-  `requestBody/content/application~1json/schema`: WithMaxLengthCode,
+  `requestBody/content/application~1json/schema`: WithMaxLengthCodeCode2,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
   }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,

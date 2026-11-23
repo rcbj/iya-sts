@@ -2458,5 +2458,9 @@
   "audit.actions.piv-escrow.recover.label": {
     "en": "0cad829ec7cafc72",
     "text": "एक एस्क्रो की गई PIV कुंजी-प्रबंधन कुंजी पुनर्प्राप्त की गई"
+  },
+  "audit.actions.ykval.verify.label": {
+    "en": "75090a0d0937732e",
+    "text": "एक YK-VAL क्लाइंट ने पूछा कि कोई YubiKey OTP मान्य है या नहीं"
   }
 }

@@ -13769,7 +13769,10 @@ class Authn {
       const digits = Math.max((detail && detail.digits) || 0,
                               (token && token.digits) || 0) || 6;
       view.totp = { digits: digits,
-                    period: (detail && detail.period) || 30 };
+                    period: (detail && detail.period) || 30,
+                    // An HOTP token is held, so the page offers its
+                    // two-code resynchronisation (the #1955 review).
+                    hotp: !!token };
     } else if (page === 'password') {
       view.amr = this.firstAmrOf(step).concat(['pwd']);
     } else if (page === 'backup-code') {
@@ -19430,8 +19433,18 @@ class Authn {
     }
     let verdict: any = null;
     try {
-      verdict = await credentials.verifyTotpAsync(step.username,
-                                                  String(body.code || ''));
+      // TWO CODES ARE A RESYNCHRONISATION (the #1955 review), RFC 4226
+      // section 7.4: an HOTP token pressed past the look-ahead window is
+      // found again from two consecutive codes over the resync window, both
+      // spent, behind the same code budget as one code. Offered here as
+      // well as on the portal, because somebody whose only second factor is
+      // that token cannot reach the portal to resynchronise it.
+      verdict = body && body.code2
+        ? await credentials.resyncHotpAsync(step.username,
+                                            String(body.code || ''),
+                                            String(body.code2 || ''))
+        : await credentials.verifyTotpAsync(step.username,
+                                            String(body.code || ''));
     } catch (e) {
       log.error(errorCodes.tag('STS-AUTHN-0182') + 'authn: checking a ' +
                 'one-time code for "' + step.username + '" threw: ' +

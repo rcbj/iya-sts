@@ -2458,5 +2458,9 @@
   "audit.actions.piv-escrow.recover.label": {
     "en": "0cad829ec7cafc72",
     "text": "استُرد مفتاح مودَع لإدارة مفاتيح PIV"
+  },
+  "audit.actions.ykval.verify.label": {
+    "en": "75090a0d0937732e",
+    "text": "سأل عميل YK-VAL عما إذا كانت كلمة مرور YubiKey لمرة واحدة صالحة"
   }
 }

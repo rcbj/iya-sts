@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5978** of them, in **57** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5981** of them, in **57** subsystems.
 
 ## Where a code appears
 
@@ -86,8 +86,8 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
 * [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 13
-* [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 35
-* [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 30
+* [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 36
+* [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 32
 * [PIV key attestation (`STS-PIV`)](#sts-piv) — 28
 * [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 28
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
@@ -5032,6 +5032,7 @@ Raised from: common/hotp.ts, common/credentials.ts, common/pskc.ts, common/oath_
 | `STS-OATH-0047` | A lost hardware token's OATH credential could not be retired (#1955). | — |
 | `STS-OATH-0049` | An imported OATH token that is assigned was asked to be removed; it is retired by reporting the token lost instead (#1955). | — |
 | `STS-OATH-0050` | An Account API act on a one-time code token was refused: unknown, or too many attempts in the code budget (#1955). | HTTP 400 |
+| `STS-OATH-0051` | A claim of an imported HOTP token was refused: the code it presented was already spent by another request, so it proves nothing about who holds the token (#1955). | HTTP 400 (the portal or the Account API) |
 
 ## STS-YUBIOTP
 
@@ -5071,6 +5072,8 @@ Raised from: common/yubiotp.ts, common/yubiotp_store.ts, common/credentials.ts, 
 | `STS-YUBIOTP-0028` | A lost hardware token's YubiKey OTP credential could not be retired (#1955 P5). | — |
 | `STS-YUBIOTP-0029` | A YK-VAL client id was not 1 to 16 digits, or that client already exists (#1955 P5). | — |
 | `STS-YUBIOTP-0030` | An operator asked to clear a YubiKey OTP for a person who holds none (#1955 P5). | HTTP 400 (API) or a 303 with error= |
+| `STS-YUBIOTP-0031` | A YK-VAL nonce could not be proved unused: the cluster claim it is spent under had no store to ask, so the request was not checked (#1955). | YK-VAL 2.0 BACKEND_ERROR |
+| `STS-YUBIOTP-0032` | A YK-VAL verify named a YubiKey OTP of a disabled account; it is answered as a bad OTP and nothing is spent (#1955). | YK-VAL 2.0 BAD_OTP |
 
 ## STS-PIV
 

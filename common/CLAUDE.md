@@ -12917,10 +12917,14 @@ what a maintainer of this directory has to know beside them:
   `password || otp` only when the suffix is that person's public identity
   plus 32 modhex characters, checks the password first, and spends the OTP
   only after the password succeeds.
-* **YK-VAL clients and nonces are global minted state**
-  (`yubiotp.ykvalClients`, `yubiotp.nonces`). The nonce sweep is
-  `yubiotp.nonce-sweep` in `GLOBAL_JOBS`. A client-chosen nonce has to be
-  one set for every cell. The inventory and the public-identity index stay
+* **YK-VAL clients are global minted state** (`yubiotp.ykvalClients`).
+  **A nonce is spent by a cluster claim** (`yubiotp.ykval-nonce`, in
+  `GLOBAL_CLAIM_SCOPES`) since the #1955 review: it was a read-then-write of
+  a per-process map. `yubiotp.nonces` is no longer written;
+  `yubiotp.nonce-sweep`, a per-realm cluster job (it was never in
+  `GLOBAL_JOBS`, as this said), drains what older releases wrote. A disabled
+  account's OTP is `BAD_OTP` (STS-YUBIOTP-0032), and every verify is
+  audited (`ykval.verify`). The use counter is masked to fifteen bits. The inventory and the public-identity index stay
   on the cell tier. While `yubiotp.ykval` is off the route answers
   `OPERATION_NOT_ALLOWED` and signs nothing. On, the client id and the
   HMAC-SHA1 are checked in every mode.

@@ -2458,5 +2458,9 @@
   "audit.actions.piv-escrow.recover.label": {
     "en": "0cad829ec7cafc72",
     "text": "Se recuperó una clave PIV de gestión de claves en custodia"
+  },
+  "audit.actions.ykval.verify.label": {
+    "en": "75090a0d0937732e",
+    "text": "Un cliente YK-VAL preguntó si un OTP de YubiKey es válido"
   }
 }

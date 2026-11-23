@@ -2458,5 +2458,9 @@
   "audit.actions.piv-escrow.recover.label": {
     "en": "0cad829ec7cafc72",
     "text": "Nabawi ang isang naka-escrow na PIV key-management key"
+  },
+  "audit.actions.ykval.verify.label": {
+    "en": "75090a0d0937732e",
+    "text": "Nagtanong ang isang YK-VAL client kung wasto ang isang YubiKey OTP"
   }
 }

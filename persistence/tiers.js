@@ -580,8 +580,13 @@ const GLOBAL_RUN_SCOPE = 'scheduler.run.global';
 // (`sts_pki_distribution_points`: "jose.crl is named by certificates of two
 // different authorities"), where the `cluster` mode, one database, did not.
 const PKI_BUILD_SCOPE = 'pki.build';
+// A YK-VAL NONCE (the #1955 review, `common/yubiotp_store.ts`): chosen by
+// the client and valid at every cell that answers the endpoint, so the
+// claim that spends it is the whole service's, `yubiotp.nonces`' reason.
+const YKVAL_NONCE_SCOPE = 'yubiotp.ykval-nonce';
 // The claim scopes kept in the global tier.
-const GLOBAL_CLAIM_SCOPES = [GLOBAL_RUN_SCOPE, PKI_BUILD_SCOPE];
+const GLOBAL_CLAIM_SCOPES = [GLOBAL_RUN_SCOPE, PKI_BUILD_SCOPE,
+                             YKVAL_NONCE_SCOPE];
 
 /**
  * Tells whether a scheduler job's work is the global tier's.

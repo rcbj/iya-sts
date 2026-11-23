@@ -6824,6 +6824,15 @@ class Credentials {
         return coded('STS-OATH-0006', { ok: false, errors: ['The token\'s ' +
           'counter could not be recorded just now. Try again.'] });
       }
+      // A CLAIM WHOSE CODE THE STORE IS ALREADY PAST IS REFUSED (the #1955
+      // review): the code the person typed was spent by another request,
+      // so it proves nothing about who holds the token now.
+      if (!answer.ok && t.claim === true) {
+        log.debug("Leaving Credentials.installImportedOath(). Behind.");
+        return coded('STS-OATH-0051', { ok: false, errors: ['That code was ' +
+          'already used. Press the token for a new code and claim it ' +
+          'again.'] });
+      }
       if (!answer.ok) {
         record.counter = Math.max(record.counter,
                                   Number(answer.highest || 0));

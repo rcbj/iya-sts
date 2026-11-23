@@ -231,10 +231,16 @@ class YubiOtp {
    * @param session - the session-use counter
    * @returns the composite
    */
+  // THE USE COUNTER IS FIFTEEN BITS (the #1955 review). Its top bit is a
+  // flag — Yubico's libyubikey reads the counter as `ctr & 0x7FFF` and the
+  // flag as `ctr & 0x8000` (the OTP was triggered with Caps Lock) — so it is
+  // masked off before the counter is compared: counted in, one flagged OTP
+  // would have been 32768 uses ahead of every later one, and each of those
+  // refused as a replay.
   composite(use: number, session: number): number {
     const { log } = this.deps;
     log.debug("Entering YubiOtp.composite().");
-    const out = (Math.floor(Number(use)) & 0xffff) * 256 +
+    const out = (Math.floor(Number(use)) & 0x7fff) * 256 +
                 (Math.floor(Number(session)) & 0xff);
     log.debug("Leaving YubiOtp.composite().");
     return out;
@@ -293,7 +299,8 @@ class YubiOtp {
               fields.session + '.');
     return { ok: true, fields: {
       publicId: parsed.publicId, privateId: fields.privateId,
-      use: fields.use, session: fields.session, composite: composite } };
+      use: Math.floor(Number(fields.use)) & 0x7fff, session: fields.session,
+      composite: composite } };
   }
 
   /**

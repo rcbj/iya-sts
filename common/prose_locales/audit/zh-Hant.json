@@ -2458,5 +2458,9 @@
   "audit.actions.piv-escrow.recover.label": {
     "en": "0cad829ec7cafc72",
     "text": "已復原一把託管的 PIV 金鑰管理金鑰"
+  },
+  "audit.actions.ykval.verify.label": {
+    "en": "75090a0d0937732e",
+    "text": "一個 YK-VAL 用戶端詢問了某個 YubiKey OTP 是否有效"
   }
 }

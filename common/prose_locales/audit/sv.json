@@ -2458,5 +2458,9 @@
   "audit.actions.piv-escrow.recover.label": {
     "en": "0cad829ec7cafc72",
     "text": "En deponerad PIV-nyckelhanteringsnyckel återställdes"
+  },
+  "audit.actions.ykval.verify.label": {
+    "en": "75090a0d0937732e",
+    "text": "En YK-VAL-klient frågade om ett YubiKey-OTP är giltigt"
   }
 }
