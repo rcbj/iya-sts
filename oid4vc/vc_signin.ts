@@ -518,6 +518,31 @@ class VcSignin {
     log.debug("Leaving VcSignin.refuse().");
   }
 
+  // A sentence a store kept as its message (`Sentence.stored()`): the
+  // Verifier's outcome is a transaction-store row, which keeps a sentence's
+  // English and, beside it, its `{ key, params }`. Said again from the key,
+  // a parameter that was a sentence said again too; null for no message.
+  static revived(message: any): Sentence | null {
+    helpers.log.debug("Entering VcSignin.revived().");
+    if (!message || typeof message !== 'object' ||
+        typeof message.key !== 'string' ||
+        message.key.indexOf('refusals.') !== 0) {
+      helpers.log.debug("Leaving VcSignin.revived(). No message.");
+      return null;
+    }
+    const params: Record<string, string | number | Sentence> = {};
+    const given = message.params && typeof message.params === 'object'
+      ? message.params : {};
+    Object.keys(given).forEach(function (name) {
+      const value = given[name];
+      params[name] = value && typeof value === 'object'
+        ? (VcSignin.revived(value) || '')
+        : (typeof value === 'number' ? value : String(value));
+    });
+    helpers.log.debug("Leaving VcSignin.revived().");
+    return Sentence.say(message.key, params);
+  }
+
   // The way back to the screen the person came from, for a refusal's view:
   // the sign-in screen of the pending record, the portal for an enrolment,
   // or nothing where nothing is waiting.
@@ -1315,7 +1340,8 @@ class VcSignin {
                             String(outcome.reason || ''), false);
       }
       errorCodes.mark(res, outcome.errorCode || 'STS-VC-0061');
-      this.refuse(res, 403, outcome.reason ||
+      this.refuse(res, 403, VcSignin.revived(outcome.reasonMessage) ||
+                  outcome.reason ||
                   Sentence.say('refusals.wallet.nobodySignedIn'),
         this.refusedView(
           Sentence.say('refusals.wallet.heading.nobodySignedIn'), ctx, {
