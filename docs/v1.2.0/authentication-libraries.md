@@ -182,20 +182,22 @@ Central. Add one to a Maven build:
 <dependency>
   <groupId>com.iyasec</groupId>
   <artifactId>gnap-caep-risc</artifactId>
-  <version>0.1.0</version>
+  <version>0.1.2</version>
 </dependency>
 ```
 
-or to a Gradle build with `implementation("com.iyasec:gnap-caep-risc:0.1.0")`.
+or to a Gradle build with `implementation("com.iyasec:gnap-caep-risc:0.1.2")`.
+The *Version* column below is the latest release on Maven Central when this
+page was written; the artifact's own page always shows the current one.
 Each repository builds the library module (`library/`), which is the
 published artifact, and the demo module (`demo/`), which is not published.
 
-| Artifact | Protocol | Repository | Documentation |
-|---|---|---|---|
-| [`gnap-caep-risc`](https://central.sonatype.com/artifact/com.iyasec/gnap-caep-risc) | GNAP | [rcbj/gnap-caep-risc-java](https://github.com/rcbj/gnap-caep-risc-java) | [README](https://github.com/rcbj/gnap-caep-risc-java/blob/main/README.md) |
-| [`oidc-caep-risc`](https://central.sonatype.com/artifact/com.iyasec/oidc-caep-risc) | OpenID Connect | [rcbj/oidc-caep-risc-java](https://github.com/rcbj/oidc-caep-risc-java) | [README](https://github.com/rcbj/oidc-caep-risc-java/blob/main/README.md) |
-| [`saml2-sp`](https://central.sonatype.com/artifact/com.iyasec/saml2-sp) | SAML 2.0 | [rcbj/saml2-sp-java](https://github.com/rcbj/saml2-sp-java) | [README](https://github.com/rcbj/saml2-sp-java/blob/main/README.md) |
-| [`wsfed-caep`](https://central.sonatype.com/artifact/com.iyasec/wsfed-caep) | WS-Federation | [rcbj/wsfed-caep-java](https://github.com/rcbj/wsfed-caep-java) | [README](https://github.com/rcbj/wsfed-caep-java/blob/main/README.md) |
+| Artifact | Version | Protocol | Repository | Documentation |
+|---|---|---|---|---|
+| [`gnap-caep-risc`](https://central.sonatype.com/artifact/com.iyasec/gnap-caep-risc) | 0.1.2 | GNAP | [rcbj/gnap-caep-risc-java](https://github.com/rcbj/gnap-caep-risc-java) | [README](https://github.com/rcbj/gnap-caep-risc-java/blob/main/README.md) |
+| [`oidc-caep-risc`](https://central.sonatype.com/artifact/com.iyasec/oidc-caep-risc) | 0.2.1 | OpenID Connect | [rcbj/oidc-caep-risc-java](https://github.com/rcbj/oidc-caep-risc-java) | [README](https://github.com/rcbj/oidc-caep-risc-java/blob/main/README.md) |
+| [`saml2-sp`](https://central.sonatype.com/artifact/com.iyasec/saml2-sp) | 0.1.2 | SAML 2.0 | [rcbj/saml2-sp-java](https://github.com/rcbj/saml2-sp-java) | [README](https://github.com/rcbj/saml2-sp-java/blob/main/README.md) |
+| [`wsfed-caep`](https://central.sonatype.com/artifact/com.iyasec/wsfed-caep) | 0.1.3 | WS-Federation | [rcbj/wsfed-caep-java](https://github.com/rcbj/wsfed-caep-java) | [README](https://github.com/rcbj/wsfed-caep-java/blob/main/README.md) |
 
 ### Rust
 
