@@ -271,7 +271,7 @@ class WebAuthnLogin {
         (c.refused ? kit.note('<span id="certificate-handoff-refused">' +
                               WebAuthnLogin.esc(String(c.refused)) +
                               '</span>') : '') +
-        '<a id="kc-certificate-handoff" class="button secondary" href="' +
+        '<a id="kc-certificate-handoff" class="fedbtn" href="' +
         WebAuthnLogin.esc(String(c.handoff)) + '">' +
         t.html('authn.options.certificateHandoffButton') + '</a></div>';
     }

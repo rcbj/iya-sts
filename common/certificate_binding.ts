@@ -815,9 +815,24 @@ class CertificateBinding {
       if (!key) {
         return;
       }
-      const holders = self.holdersOf(key).filter(function (h: Json) {
-        return h && (h.kind === 'person' ||
-                     (key.kind === 'stored' && h.kind === 'application'));
+      // `certificate-sha256` is the certificate in `userCertificate` (#1061)
+      // OR the same digest stored as a binding: one method, both asked.
+      const keys = key.kind === 'stored'
+        ? [key, { kind: 'binding', value: 'certificate-sha256:' + key.value }]
+        : [key];
+      const seen = new Set<string>();
+      const holders = ([] as Json[]).concat(...keys.map(function (k: Json) {
+        return self.holdersOf(k).filter(function (h: Json) {
+          return h && (h.kind === 'person' ||
+                       (k.kind === 'stored' && h.kind === 'application'));
+        });
+      })).filter(function (h: Json) {
+        const dn = String(h.dn || '').toLowerCase();
+        if (seen.has(dn)) {
+          return false;
+        }
+        seen.add(dn);
+        return true;
       });
       if (holders.length > 1) {
         ambiguous.push(method);

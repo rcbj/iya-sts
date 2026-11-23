@@ -356,6 +356,15 @@ async function checkBindings(t, h, p) {
   t.equal(boundOver(values, renewDir).identityOf(renewed.der, p.chain,
                                                  'default').username,
           'jane', '4i. and spki-sha256 carries over under the same key');
+  const byDigest = directoryStub();
+  byDigest.hold('binding', 'certificate-sha256:' +
+                stsCrypto.digest('sha256', p.jane.der, 'hex'), 'jane');
+  const digestOnly = boundOver({ 'certSignIn.profiles': JSON.stringify([
+    Object.assign({}, p.profile, { bindings: ['certificate-sha256'] })]) },
+    byDigest);
+  t.equal(digestOnly.identityOf(p.jane.der, p.chain, 'default').username,
+          'jane', '4j. certificate-sha256 finds a stored binding as well as ' +
+          'userCertificate');
   log.debug("Leaving checkBindings().");
 }
 

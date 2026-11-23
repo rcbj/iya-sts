@@ -405,6 +405,16 @@ remote PEP endpoints, Shared Signals, WS-Trust and LDAP SASL EXTERNAL.
 * The match is by the SHA-256 of the certificate's DER, looked up in an index,
   so it costs the same with a million people as with ten.
 
+This is the rule for a certificate **no certificate sign-in profile covers**,
+and for an outside PIV or CAC card the `piv.externalIssuers` card-UUID mapping
+([Hardware tokens](hardware-tokens.md#outside-piv-and-cac-cards)) answers
+beside it. A realm that sets `certSignIn.profiles` decides for the CAs those
+profiles name: what a covered certificate must carry, and which bindings
+(issuer and serial, the key, the card UUID, and only where an administrator
+opts in, a name) say whose it is. A covered certificate is answered by its
+profile alone. See
+[Smart-card and certificate sign-in](configure-tls.md#smart-card-and-certificate-sign-in).
+
 **Storing one.** Store the leaf (only the leaf — its issuing authority goes in
 the truststore) on the person's or the application's entry:
 
@@ -592,8 +602,12 @@ the recorded identity and the request are what get refused. See [PKI](pki.md).
   `global.trustedProxies` empty, no caller's `X-Forwarded-*` headers are
   believed: the client's address is the connection's, and the scheme and host
   are the request's own. Set it to your proxy's addresses. Monitoring → TLS connection
-  shows what a request carried and what was believed. A client certificate cannot cross such
-  a proxy.
+  shows what a request carried and what was believed. A client certificate
+  crosses such a proxy only as RFC 9440's `Client-Cert` and `Client-Cert-Chain`
+  headers, and only from a proxy named by both `tls.trustedProxyCertificates`
+  and `tls.trustedProxyAddresses`; the certificate is verified here against the
+  client truststore. From any other sender the headers are removed. See
+  [A TLS-terminating proxy in front of certificate sign-in](configure-tls.md#a-tls-terminating-proxy-in-front-of-certificate-sign-in).
 * **L4 load balancer with TLS passthrough** — the supported front for client
   certificates: `global.proxyProtocol=v2` reads a HAProxy PROXY protocol v2
   header before TLS on every TCP listener (the main port, LDAP 389 and LDAPS
@@ -657,6 +671,11 @@ refusal of an application's certificate — is the same in both modes. See
 | `tls.signatureAlgorithms` | `STS_TLS_SIGALGS` | OpenSSL's list without DSA and SHA-224, brainpool omitted by policy | no | The signature schemes signed with, accepted, and asked for in a CertificateRequest; empty means OpenSSL's. |
 | `tls.trustAnchorsFile` | `STS_TLS_TRUST_ANCHORS_FILE` | *(empty)* | no | A PEM file of CA certificates client certificates are verified against, loaded at startup; unreadable or empty is fatal. |
 | `tls.trustIssuedClientCertificates` | `STS_TLS_TRUST_ISSUED_CLIENT_CERTIFICATES` | `true` | no | Add this service's Root to the client truststore, so a certificate a person issued on the portal signs them in. |
+| `certSignIn.profiles` | `STS_CERT_SIGN_IN_PROFILES` | *(empty)* | yes | The realm's certificate sign-in profiles, a JSON array: which outside CAs they cover, what a covered certificate must carry, and which bindings name its account ([Smart-card and certificate sign-in](configure-tls.md#smart-card-and-certificate-sign-in)). Empty covers nothing. |
+| `certSignIn.requireRevocation` | `STS_CERT_SIGN_IN_REQUIRE_REVOCATION` | `auto` | yes | `on` refuses a certificate sign-in whose revocation status is unknown or was not consulted, in every mode; `auto` does so in product mode only. |
+| `certSignIn.handoff` | `STS_CERT_SIGN_IN_HANDOFF` | `false` | yes | Offer **Sign in with a smart card or certificate** on the sign-in screen, on the listener the `certificate-sign-in` application is mapped to. |
+| `tls.trustedProxyCertificates` | `STS_TLS_TRUSTED_PROXY_CERTIFICATES` | *(empty)* | yes | The SHA-256 fingerprints of the client certificates of TLS-terminating proxies whose RFC 9440 `Client-Cert` headers are read. |
+| `tls.trustedProxyAddresses` | `STS_TLS_TRUSTED_PROXY_ADDRESSES` | *(empty)* | yes | The addresses or CIDR ranges those proxies connect from; both settings are required. |
 | `tls.selfSignedKeyBits` | `STS_TLS_SELF_SIGNED_KEY_BITS` | `2048` (`3072` in product) | no | The RSA key size of the listener certificate made at startup. |
 | `tls.selfSignedValidityYears` | `STS_TLS_SELF_SIGNED_YEARS` | `2` | no | How long that certificate is valid. |
 | `tls.selfSignedOrganization` | `STS_TLS_SELF_SIGNED_ORGANIZATION` | `iya-sts` | no | The O= of its subject. |
