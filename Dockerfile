@@ -186,11 +186,15 @@ RUN STS_IN_IMAGE_BUILD=1 ./build-typescript.sh --strip \
 # `icap-clamav/`, the adapter's own container (`docker-compose.yml` builds it
 # from that directory). The service names some of them in a message and
 # reads none of them.
+# `sdk/` (#2141) is the optional SDKs' manifests and lockfile: the
+# `dependencies` stage installs them into /opt/sts-sdk, which the final stage
+# copies, so the tree needs no second copy.
 RUN rm -rf ./tests ./xacml-pep ./README.md ./SECURITY.md ./docker-compose.yml ./Dockerfile \
            ./.github ./docs ./docker-compose-run-tests.yml ./deploy \
            ./build-typescript.sh ./rust ./companion \
            ./run-tests.sh ./run-coverage.sh ./run-jsdoc.sh \
-           ./docker-npm-test.sh ./docker-compose-quick.yml ./CONTRIBUTING.md ./icap-clamav
+           ./docker-npm-test.sh ./docker-compose-quick.yml ./CONTRIBUTING.md ./icap-clamav \
+           ./sdk
 
 # ---------------------------------------------------------------------------
 # THE SERVICE'S node_modules, THE SECRET-STORE SDKs AND BOTH SBOMs, MADE HERE
@@ -259,11 +263,32 @@ RUN npm ci --omit=dev && npm cache clean --force \
 # same way. So the SDK is installed into a prefix that has no opinion about
 # that package.json, and `NODE_PATH` (the final stage) is what makes
 # `require('node-vault')` find it.
-RUN mkdir -p /opt/sts-sdk \
-    && cd /opt/sts-sdk \
-    && npm init -y > /dev/null \
-    && npm install --omit=dev node-vault \
-    && npm cache clean --force
+#
+# **AND THAT PREFIX HAS A LOCKFILE OF ITS OWN SINCE #2141 (2026-11-24, ASVS
+# 5.0.0 15.2.4).** Until then it was `npm init -y` and a bare `npm install
+# node-vault`: whatever version the registry answered that day, with every
+# package's install scripts run. It is now `sdk/` in the repository, named for
+# the prefix it becomes, copied here whole: `sdk/package.json` declares one
+# npm WORKSPACE per optional SDK (`sdk/packages/sts-sdk-<name>/`, each
+# pinning its package to an exact version) and `sdk/package-lock.json` pins
+# everything beneath them. ONE lockfile and a workspace each, rather than one
+# lockfile per group, because a build names packages, not groups, and `npm
+# ci --workspace=…` installs exactly the named workspaces' trees from the one
+# lockfile and nothing else. `sdk/select.js` turns the names into those
+# arguments, and refuses a name with no workspace or a version the lockfile
+# does not hold, so an SDK that is not pinned is never installed.
+#
+# `--ignore-scripts` as in the `typescript` stage: node-vault has no install
+# script; of the pinned trees only pkcs11js (below), oracledb (a check that
+# prints a message), protobufjs (a check of its own CLI) and usocket (dbus-
+# next's optional native socket, which it falls back from) have one, and only
+# pkcs11js's builds anything the service loads.
+#
+# To move a pin: edit the version in `sdk/packages/sts-sdk-<name>/package.json`
+# and run `npm install --package-lock-only --ignore-scripts` in `sdk/`. A new
+# optional SDK is a new workspace directory and the same command;
+# tests/sdk_lockfile.js holds every optional peer of package.json to one.
+COPY sdk/ /opt/sts-sdk/
 # ---------------------------------------------------------------------------
 # A CLOUD SDK AND A DATABASE CA, FOR AN IMAGE THAT RUNS IN A CLOUD (2026-09-15).
 #
@@ -279,7 +304,10 @@ RUN mkdir -p /opt/sts-sdk \
 #
 # * `STS_CLOUD_SDKS` — space-separated package names, installed into the same
 #   prefix as node-vault (npm's peer rule above applies to them too). Empty by
-#   default, so the image every other launcher builds is unchanged.
+#   default, so the image every other launcher builds is unchanged. Each name
+#   is a workspace in `sdk/` and is installed at the version its lockfile pins
+#   (#2141); a `name@version` is accepted when the pinned version satisfies it,
+#   and anything else fails the build.
 # * `STS_DATABASE_CA_URL` — a PEM bundle fetched into
 #   /opt/sts-sdk/database-ca.pem. Node reads it through `NODE_EXTRA_CA_CERTS`,
 #   which the deployment sets; this service has no CA-file setting of its own
@@ -306,12 +334,16 @@ RUN if printf '%s\n' ${STS_CLOUD_SDKS} | grep -q '^pkcs11js\(@.*\)\?$'; \
            --no-install-recommends python3 make g++ \
       && rm -rf /var/lib/apt/lists/*; \
     fi \
-    && if [ -n "${STS_CLOUD_SDKS}" ]; \
+    && cd /opt/sts-sdk \
+    && workspaces="$(node select.js ${STS_CLOUD_SDKS})" \
+    && npm ci --omit=dev --ignore-scripts ${workspaces} \
+    && if printf '%s\n' ${STS_CLOUD_SDKS} | grep -q '^pkcs11js\(@.*\)\?$'; \
     then \
-      cd /opt/sts-sdk \
-      && npm install --omit=dev ${STS_CLOUD_SDKS} \
-      && npm cache clean --force; \
+      npm rebuild pkcs11js; \
     fi \
+    && npm cache clean --force \
+    && node select.js --prune ${STS_CLOUD_SDKS} \
+    && rm -f select.js \
     && if [ -n "${STS_DATABASE_CA_URL}" ]; \
     then \
       node -e "fetch(process.argv[1]).then(function (r) { \
@@ -495,6 +527,13 @@ COPY --from=debugger /debugger/ ./debugger/embedded/
 # (tests/tools/release-number.js). It must be M.N.O exactly or this RUN fails
 # (STS-CORE-0175); empty, the default, the release is VERSION's as before.
 #
+# STS_BUILD_KEY (#2142) is sixteen random bytes drawn here, once per build:
+# the opaque key the static surfaces' cached files are addressed by
+# (`version.buildKey()`), the same on every node and worker of this image and
+# different in the next one, which — unlike the build identifier it replaces
+# there — names neither the commit nor the build instant to whoever fetches
+# a page.
+#
 # `cat` afterwards so the record is in the build log: when somebody asks which
 # build an image is, the answer is in the log of the build that made it as well
 # as in the image.
@@ -505,6 +544,7 @@ ARG STS_VERSION_RELEASE=
 RUN GIT_COMMIT="${GIT_COMMIT}" STS_RELEASE="${STS_RELEASE}" \
     BUILD_NUMBER="${BUILD_NUMBER}" \
     STS_VERSION_RELEASE="${STS_VERSION_RELEASE}" \
+    STS_BUILD_KEY="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')" \
     node common/version.js --stamp . && cat version.json
 # OCI metadata, read by ghcr.io and Docker Hub (2026-10-02). `source` is what
 # LINKS the published package (ghcr.io/rcbj/iya-sts, pushed by

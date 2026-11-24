@@ -609,12 +609,15 @@ class Home {
     const { mode } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Home.frontView().");
+    // Empty where the build may not be shown (#2142): the front page is
+    // anybody's.
+    const shown = mode.publishesBuildDetail();
     const out = {
       name: 'IYA STS',
       // The number is what a bug report quotes; `build` is its provenance
       // (the instant, the commit, stamped or computed), the tooltip.
-      version: String(VERSION),
-      build: BUILD_INFO,
+      version: shown ? String(VERSION) : '',
+      build: shown ? BUILD_INFO : '',
       mode: {
         verifiesCredentials: !!mode.verifiesCredentials(),
         // True in both modes since 2026-09-06; carried rather than assumed,

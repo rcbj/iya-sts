@@ -259,6 +259,7 @@ const VCI_FORMATS = Array.from(new Set(
 import vpConfig = require('./vc_verifier_config');
 // A refusal as a catalog sentence (#2006): a leaf library.
 import Sentence = require('../common/sentence');
+import truststores = require('../common/truststores');
 // `oid4vp.presentationRequestTtlS` since 2026-09-12; the constant is its
 // default. Read once per request BUILT, and the transaction carries the expiry
 // it was given.
@@ -708,7 +709,7 @@ class VcVerifier {
   private trustedIssuerKeys() {
     const { log, config, errorCodes } = this.deps;
     log.debug("Entering VcVerifier.trustedIssuerKeys().");
-    const text = String(config.value('oid4vp.trustedIssuerCertificates') || '');
+    const text = truststores.configuredPems('vc-issuer').join('\n');
     const blocks = text.match(
       /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
     const out = [];
@@ -792,7 +793,7 @@ class VcVerifier {
                                    publicJwk: any }[] {
     const { log, config, errorCodes } = this.deps;
     log.debug("Entering VcVerifier.trustedIssuerPqKeys().");
-    const text = String(config.value('oid4vp.trustedIssuerCertificates') || '');
+    const text = truststores.configuredPems('vc-issuer').join('\n');
     const blocks = text.match(
       /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
     const out: any[] = [];
@@ -1538,8 +1539,8 @@ class VcVerifier {
   private mdocAnchors(): string {
     const { log, config } = this.deps;
     log.debug("Entering VcVerifier.mdocAnchors().");
-    const configured = String(config.value('oid4vp.mdocTrustAnchors') ||
-                              '');
+    const configured = truststores.configuredPems('vc-issuer-mdoc')
+      .join('\n');
     const authority = require('./mdoc_authority');
     const own = String(authority.currentPem() || '');
     let out = configured;

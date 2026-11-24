@@ -868,6 +868,27 @@ function vaultTls() {
            where: { cert: certPath, key: keyPath, ca: caPath } };
 }
 
+// A push destination's TLS options: `outbound-secret-push`'s truststores where
+// it is assigned (#2118), the destination's own CAs beside them; unassigned,
+// node's store and those CAs as before. The registry is required lazily: this
+// module is loaded long before it.
+function secretPushTls(OutboundTls, target) {
+  log.debug("Entering secretPushTls().");
+  const truststores = require('./truststores');
+  if (truststores.namesFor('outbound-secret-push').assigned) {
+    const own = String(target.caCertificates || '').match(
+      /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) || [];
+    const assigned = OutboundTls.optionsFor('outbound-secret-push',
+                                            { extraPems: own });
+    if (!assigned.problem) {
+      log.debug("Leaving secretPushTls(). Assigned.");
+      return assigned;
+    }
+  }
+  log.debug("Leaving secretPushTls().");
+  return OutboundTls.verifiedOptions(target.caCertificates || null);
+}
+
 // Where the `cert` auth method is mounted, as a path segment. Leading and
 // trailing slashes are forgiven because `-path=cert/` is how the CLI prints
 // one; anything outside a path's own alphabet — `..`, a query, a space — is
@@ -4857,7 +4878,7 @@ function vaultRequest(target, method, path, body) {
       text ? { 'Content-Type': 'application/json',
                'Content-Length': Buffer.byteLength(text) } : {}),
     timeout: 10000
-  }, OutboundTls.verifiedOptions(target.caCertificates || null));
+  }, secretPushTls(OutboundTls, target));
   log.debug("Leaving vaultRequest(). Sent.");
   return new Promise(function (resolve, reject) {
     const req = https.request(url, options, function (res) {

@@ -27,6 +27,9 @@ import WebMessages = require('../common/web_messages');
 import DocLinks = require('../common/web_doc_links');
 import WebAnnouncements = require('../common/web_announcements');
 import WebFooter = require('../common/web_footer');
+// A refusal's catalog message in the page's language (#2006), where the API
+// names one: the act budget's (#2167).
+import WebSaid = require('../common/web_said');
 
 const CLIENT_ID = 'sts-report';
 const SCOPE = 'openid profile email offline_access report:use report:admin';
@@ -885,6 +888,18 @@ function pagerHtml(t: any, path: string, pg: any, held?: boolean): string {
         '</option>';
     }).join('') + '</select></label>');
   return '<div class="pager">' + out.join('') + '</div>';
+}
+
+// What a refusal says: its catalog message in the page's language where it
+// carries one (`messages`, #2006), its `error_description` otherwise, then
+// its `error`; '' for no answer at all.
+function refusalSaid(t: any, json: any): string {
+  if (!json) {
+    return '';
+  }
+  const messages = Array.isArray(json.messages) ? json.messages : [];
+  return WebSaid.sentence(t, messages[0]) ||
+    String(json.error_description || json.error || '');
 }
 
 function problemHtml(t: any, text: string): string {
@@ -2690,8 +2705,7 @@ class ReportRuntime extends SpaClient {
       return;
     }
     if (answer.status !== 200 || !answer.bytes) {
-      this.flash('err', (answer.json && (answer.json.error_description ||
-        answer.json.error)) ||
+      this.flash('err', refusalSaid(this.t, answer.json) ||
         this.t.text('report.downloadFailed',
           { status: String(answer.status || '') }));
       return;
@@ -2746,8 +2760,8 @@ class ReportRuntime extends SpaClient {
       return;
     }
     // A refusal keeps the form on the page and says why above it.
-    this.flash('err', (answer.json && (answer.json.error_description ||
-      answer.json.error)) || this.t.text('report.error'));
+    this.flash('err', refusalSaid(this.t, answer.json) ||
+      this.t.text('report.error'));
   }
 
   /**

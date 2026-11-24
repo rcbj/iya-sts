@@ -139,11 +139,12 @@ import clusterClaims = require('../cluster/cluster_claims');
 // cycle and moves no route.
 import fedHttp = require('../federation/federation_http');
 // Which build is calling, in RFC 9110 product form — the rule every outbound
-// requester in this service follows. Built once: the version cannot change.
+// requester in this service follows. Asked per fetch since #2142: product
+// leaves the build out (`mode.publishesBuildDetail()`).
 import version = require('../common/version');
 // SAML's vocabularies (#1579). A leaf.
 import SamlModel = require('./saml_model');
-const USER_AGENT = version.userAgent('saml-sp-metadata');
+import truststores = require('../common/truststores');
 
 // What parse() answers. It answers rather than throws; see that method.
 interface ParsedMetadata {
@@ -875,7 +876,8 @@ class SpMetadata {
     const options: any = {
       headers: { accept: 'application/samlmetadata+xml, application/xml, ' +
                          'text/xml',
-                 'user-agent': USER_AGENT },
+                 'user-agent': version.userAgent('saml-sp-metadata',
+                   mode.publishesBuildDetail()) },
       rejectUnauthorized: !policy || policy.rejectUnauthorized
     };
     if (policy && policy.ca) {
@@ -1560,7 +1562,13 @@ class SpMetadata {
     const { config } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering SpMetadata.realmAnchorValues().");
-    const raw = config.value('saml2.metadataTrustAnchors');
+    // Assigned truststores (#2118) answer as base64 DER, the setting's own
+    // form; unassigned, the setting is read exactly as before.
+    const assigned = truststores.namesFor('saml-metadata-signer').assigned;
+    const raw = assigned ? truststores.configuredPems('saml-metadata-signer')
+      .map(function (pem: string) {
+        return pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+      }) : config.value('saml2.metadataTrustAnchors');
     const list = (Array.isArray(raw) ? raw : String(raw || '').split(','))
       .map(function (one) {
         return String(one).trim();

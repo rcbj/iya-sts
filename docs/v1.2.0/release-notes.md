@@ -38,6 +38,45 @@ the sign-in again and carries on. The API answers 401 with RFC 9470's
 client credentials is not asked. A script that uses a person's token for
 these acts must sign that person in again when it gets the 401. Development
 mode does not ask, since `account.recentAuthMinutes` is 0 there.
+### HSTS can be preloaded
+
+A new setting, `security.hstsPreload` (off by default), adds `preload` to
+the `Strict-Transport-Security` header product mode sends, so the domain
+can be submitted to the browsers' HSTS preload list (ASVS 5.0.0 3.7.4). It
+is sent only while `security.hstsIncludeSubDomains` is on; with that off
+the header carries no `preload`, `/admin/mode` says so and the log records
+`STS-CORE-0181`. Preloading binds the whole registrable domain and takes
+months to undo: see [Preloading](tls.md#preloading).
+
+**Upgrading.** Nothing changes until the setting is turned on.
+### Behaviour change: a signed-in person's own budgets on the account and report APIs
+
+In product mode a signed-in caller now has a budget of its own, counted by
+the access token's subject rather than by address (ASVS 5.0.0 2.4.2):
+
+- **`/account-api`**: every change to the person's own account (every
+  operation that takes a token and is not a `GET`: profile edits,
+  credentials enrolled or removed, consents withdrawn, device changes)
+  counts against `account.writesPerSubject` in `account.writeWindowS`, 300
+  in ten minutes by default.
+- **`/report-api`**: an ad hoc query or preview, a job queued, a saved
+  definition run and a result downloaded count against
+  `report.actsPerSubject` in `report.actWindowS`, 240 in ten minutes by
+  default.
+
+Past it the act is refused with HTTP 429 and `Retry-After` until the window
+passes (`STS-ACCOUNT-0024`, `STS-REPORT-0062`); reads, other people and
+other callers are not affected. The refusal carries `messages`, and the
+portal and the reports page draw it in their own language. Until 1.2.0 these
+acts were bounded only by the per-address ceiling,
+`security.requestsPerAddressPerMinute`. Both budgets are off (0) in
+development mode, as that ceiling is.
+
+**Upgrading.** Nothing to run. The defaults are far above what a person
+does; a program that writes to a person's account or runs reports for one
+subject faster than that should spread its work out or have the setting
+raised. See [Account API](account-api.md#what-an-answer-looks-like) and
+[Reports](reporting.md#errors).
 
 ### Behaviour change: CSV exports neutralise spreadsheet formulas
 
@@ -51,6 +90,30 @@ Until 1.2.0 a report's CSV quoted only per RFC 4180, and the passkey
 export did not catch a leading NUL. A program that reads these files and
 compared a text cell starting with one of those characters byte for byte
 now sees the quote in front. See [Reporting](reporting.md#formats).
+### Changed: the image's optional SDKs come from a lockfile
+
+The Vault client every image carries, and the SDKs the `STS_CLOUD_SDKS` build
+argument adds, were installed with a bare `npm install`: the newest version the
+registry had that day, with install scripts on. They are now pinned in the
+repository's `sdk/` directory, one npm workspace per SDK, and installed from
+`sdk/package-lock.json` with `npm ci --ignore-scripts` (ASVS 5.0.0 15.2.4).
+`STS_CLOUD_SDKS` takes the same package names as before. A name the lockfile
+does not pin, or a `name@version` whose version it does not hold, now fails the
+build instead of installing something unpinned; to move a pin, change it in
+`sdk/packages/` and run `npm install --package-lock-only --ignore-scripts` in
+`sdk/`.
+### Changed: product mode keeps the build to administrators
+
+In product mode the page footer no longer shows the version and its build
+line, the sign-in (`/authn-api`) and portal (`/account-api`) OpenAPI documents
+give `info.version` as `1`, the front page's, portal's and reports' answers
+carry an empty version, and the User-Agent of the requests this service makes
+to partners is `sts (<component>)` without `/<version>` (ASVS 5.0.0 13.4.6).
+The console and `/admin-api` show the build as before, and development mode is
+unchanged. A page's cached files are now keyed by a random key the image build
+draws rather than by the build instant and commit. The new setting
+`security.publishBuildInfo` (`auto`, `on`, `off`; environment
+`STS_SECURITY_PUBLISH_BUILD_INFO`) puts the build back everywhere with `on`.
 
 ### Behaviour change: an uploaded sign-in logo loses its metadata
 
@@ -72,6 +135,43 @@ is an ICC colour profile.
 **Upgrading.** Nothing to run. A logo uploaded before 1.2.0 is served as it
 was stored, metadata included, until it is uploaded again; upload it again
 to clean it. See [Sign-in appearance](sign-in-appearance.md#the-logo).
+### Fixed: an LDAP substring filter cannot stall the directory
+
+An LDAP search's substring assertion (`(cn=*smith*)`) is matched in one
+linear pass instead of by a regular expression, which a filter such as
+`(cn=*a*a*a*...*b)` against a long value made backtrack for a very long time
+(ASVS 5.0.0 1.3.12, #2137). Ordinary filters match exactly what they matched
+before; a value holding a line break is now matched across it, as RFC 4517
+asks. A search whose substring assertion holds more than 32 components is
+refused with adminLimitExceeded (11), recorded as `STS-LDAP-0226`. See
+[LDAP](ldap.md#how-a-filter-value-is-matched).
+### Fixed: federated sign-ins no longer pile up cookies
+
+In product mode each federated sign-in sets a cookie that binds it to the
+browser that started it (`sts_fed_flow_…`). Until 1.2.0 none was ever
+cleared, so a person who started many sign-ins within ten minutes could fill
+their Cookie header until the service answered 431 (ASVS 5.0.0 4.2.5,
+#2139). The cookie is now cleared by the partner's answer, whether it signs
+the person in or is refused, and one browser holds at most eight: a ninth
+start clears the oldest. Nothing to configure; a cookie set by an earlier
+build still binds its sign-in.
+### New: named truststores
+
+Every place the service checks a signature, a certificate chain or the
+certificate of a server it connects to is now a **use case** that trusts a
+list of named **truststores**: node's default store (`system`), this
+service's Root, the shipped vendor roots, the signer and client-certificate
+truststores, what each older anchor or CA setting names, SPIFFE trust domain
+bundles, and truststores you create. Protocols → PKI trust gains
+**Truststores**, **Use cases** and **System truststore** tabs, and
+`/admin-api/truststores` is the same controls. **Nothing changes on upgrade**:
+each use case's default list names exactly what it trusted before, and every
+older setting and page keeps working. A use case's truststores are consulted
+in development as well as product mode; paranoid PKI mode decides only what
+is checked. Two defects are fixed on the way: a CA file named for an outbound
+family or the SMTP relay no longer drops the signer truststore under paranoid
+PKI mode, and PKINIT can be given an outside smart-card CA. New refusals:
+`STS-PKI-0300` to `0307`. See [Truststores](truststores.md).
 
 ### Behaviour change: S/MIME mail is authenticated encryption
 
@@ -91,6 +191,16 @@ For a recipient whose mail client cannot read AuthEnvelopedData, set
 `STS_MAIL_SMIME_CONTENT_ENCRYPTION`) to send exactly what 1.1 sent. While it
 is `aes256-cbc` in product mode, `/admin/mode` reports ASVS 5.0.0 11.3.3 as
 not met. See [OpenPGP and S/MIME](openpgp.md#encrypted-mail).
+### New: PKINIT checks Microsoft's paChecksum2
+
+The KDC now checks MS-PKCA's `paChecksum2` — the request body's SHA-256,
+SHA-384 or SHA-512 — whenever a PKINIT client sends one, beside RFC 4556's
+SHA-1 `paChecksum`, which stays required. A mismatch is refused
+(`STS-KRB-0261`), and so is one over SHA-1 in product mode or over an
+unlisted digest (`STS-KRB-0260`). The new setting
+`krb5.pkinitRequirePaChecksum2` (off by default, because MIT Kerberos does
+not send one) refuses a request without it (`STS-KRB-0262`). See
+[Kerberos](kerberos.md).
 
 ### New: WS-Trust message integrity, and signed answers
 

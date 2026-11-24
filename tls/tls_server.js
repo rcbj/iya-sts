@@ -2452,6 +2452,38 @@ function listenerFileAnchors(file) {
   return listenerFileCache.get(file);
 }
 
+// ---------------------------------------------------------------------------
+// THE `tls-client` USE CASE, WHERE IT IS ASSIGNED (#2118).
+//
+// Unassigned, a listener trusts what it always did — the client truststore,
+// its own file where it names one, and the service Root where
+// `trustIssuedClientCertificates` says so — and `common/truststores.ts`'s
+// default list for `tls-client` describes exactly that. Assigned, it trusts
+// what the assignment resolves to, beside its own file where it names one: a
+// listener's file is that listener's, and stays its own override. Required
+// lazily and answered null on any failure, `issuedClientCertificateAnchor()`'s
+// reason: a truststore must never be the thing that fails to build.
+// ---------------------------------------------------------------------------
+function assignedClientCa(policy) {
+  log.debug("Entering assignedClientCa().");
+  let out = null;
+  try {
+    const truststores = require('../common/truststores');
+    if (truststores.namesFor('tls-client').assigned) {
+      const resolved = truststores.resolve('tls-client',
+        { expandSystem: true });
+      out = resolved.anchors.concat(resolved.intermediates)
+        .concat(policy && policy.trustAnchorsFile
+          ? listenerFileAnchors(policy.trustAnchorsFile) : []);
+    }
+  } catch (e) {
+    log.debug("Caught in assignedClientCa(): " + ((e && e.message) || e));
+    out = null;
+  }
+  log.debug("Leaving assignedClientCa(). " + (out ? out.length : 'default'));
+  return out;
+}
+
 function secureContextOptions(policy) {
   log.debug('Entering secureContextOptions(). anchors=' + anchors.length);
   log.debug('Leaving secureContextOptions().');
@@ -2472,7 +2504,7 @@ function secureContextOptions(policy) {
     // listener shares (/admin/tls/trust), the anchors of its OWN file where it
     // names one — replacing the service's file anchors for it — and the
     // service Root where its trustIssuedClientCertificates says so.
-    ca: anchors.filter(function (anchor) {
+    ca: assignedClientCa(policy) || anchors.filter(function (anchor) {
       return !(policy && policy.trustAnchorsFile) || anchor.source !== 'file';
     }).map(function (anchor) { return anchor.pem; })
       .concat(policy && policy.trustAnchorsFile
@@ -7927,6 +7959,9 @@ module.exports = {
   // (ou=trustAnchors) and calls the reload when another process changes it.
   setTrustAnchorStore: setTrustAnchorStore,
   reloadStoredAnchors: reloadStoredAnchors,
+  // Re-applies every listener's truststore (#2118): a named truststore or
+  // an assignment `tls-client` resolves through changed.
+  applyTruststores: applyAnchors,
   // The main HTTPS listener is created in server.js and registers here so that
   // a truststore change reaches it too — see the block above
   // trustClientCertificatesOn().

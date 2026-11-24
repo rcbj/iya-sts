@@ -275,6 +275,22 @@
     "en": "99c8adf052996759",
     "text": "Depuis combien de minutes, au plus, quelqu’un doit s’être connecté pour modifier la façon dont une personne se connecte. Sur le portail : ses seconds facteurs, codes de récupération, clés d’accès, mots de passe d’application, certificats, clés de signature, identifiants auto-émis, adresse e-mail ou une offre de justificatif pour le portefeuille, ainsi que la fermeture de ses autres sessions ; elle doit d’abord se reconnecter. Pour un administrateur : modifier le mot de passe, le second facteur, la clé d’accès, les codes de récupération, l’adresse e-mail ou les mots de passe d’application d’une personne via la console ou /admin-api, qui répond par insufficient_user_authentication de la RFC 9470. Il en va de même lorsqu'un administrateur accorde ou retire un rôle, crée, modifie ou supprime un domaine de confiance, agit sur la PKI, les clés de signature, la clé de chiffrement des clés ou les destinations de transmission des secrets, ou modifie un paramètre quel qu'il soit (#2161). 0 signifie que ce n’est pas demandé, valeur par défaut en développement. Le mode produit utilise 15 par défaut."
   },
+  "account.writesPerSubject|label": {
+    "en": "90cb891002b3f2f1",
+    "text": "Modifications du compte par personne et par fenêtre"
+  },
+  "account.writesPerSubject|description": {
+    "en": "4a4d877797b1c467",
+    "text": "Combien de modifications une personne connectée peut apporter à son propre compte via /account-api (le portail) dans une fenêtre de account.writeWindowS : modifications du profil, identifiants enregistrés ou supprimés, consentements retirés, modifications d'appareils. Compté par le sujet du jeton, non par adresse, de sorte que les personnes derrière une même adresse ne le partagent pas. Au-delà, une modification est refusée avec 429 et Retry-After jusqu'à la fin de la fenêtre ; la lecture du compte continue. 0 signifie aucune limite, la valeur par défaut en développement. Le mode produit vaut 300 par défaut."
+  },
+  "account.writeWindowS|label": {
+    "en": "b5b3a8ffb257226e",
+    "text": "Fenêtre des modifications du compte (secondes)"
+  },
+  "account.writeWindowS|description": {
+    "en": "738a3bd11ca86499",
+    "text": "La fenêtre dans laquelle account.writesPerSubject est compté, en secondes. Une fenêtre fixe, comme toute limite de débit ici."
+  },
   "persistence.allowDefaultDatabasePassword|label": {
     "en": "24634837693652d6",
     "text": "Autoriser un mot de passe de base par défaut en mode produit"
@@ -346,6 +362,22 @@
   "security.hstsIncludeSubDomains|description": {
     "en": "26b0298f1a2bd460",
     "text": "Ajoute includeSubDomains à Strict-Transport-Security, afin que les navigateurs utilisent HTTPS pour tous les sous-domaines du nom d’hôte de ce service. Activé par défaut en mode produit. Désactivez-le si un sous-domaine doit encore répondre en HTTP simple."
+  },
+  "security.publishBuildInfo|label": {
+    "en": "854e975db3ad3f56",
+    "text": "Montrer la build exacte aux personnes qui ne sont pas administrateurs"
+  },
+  "security.publishBuildInfo|description": {
+    "en": "7ee4c3866d1b407a",
+    "text": "Indique si la version exacte, le numéro de build, la date de build et le commit apparaissent là où une personne autre qu’un administrateur peut les lire : le pied de page de chaque page, les API de connexion, du portail et des rapports et leurs documents OpenAPI, et le User-Agent des requêtes que ce service envoie aux partenaires. auto, la valeur par défaut, les montre en mode développement et les masque en mode produit, où les documents donnent à la place la version propre de l’API et le User-Agent n’est que le nom du produit ; on et off l’imposent dans les deux modes. La console et l’API de gestion montrent toujours la build."
+  },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "Demander l'inscription sur la liste de préchargement HSTS"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "Ajoute preload à Strict-Transport-Security, que seul le mode produit envoie, afin que le nom d'hôte puisse être soumis à la liste de préchargement des navigateurs sur hstspreload.org. Le préchargement engage tout le domaine enregistrable et chaque sous-domaine à utiliser HTTPS dans tous les navigateurs, et quitter la liste prend des mois. Envoyé seulement tant que Appliquer HSTS aux sous-domaines est activé."
   },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
@@ -7859,6 +7891,14 @@
     "en": "77b517dda5eb4231",
     "text": "Indique si une requête PKINIT doit porter un jeton de fraîcheur RFC 8070 — un jeton que ce KDC a émis dans KDC_ERR_PREAUTH_REQUIRED dans la limite du décalage d’horloge. C’est ce qui empêche qu’un AuthPack signé à l’avance sur une carte à puce empruntée soit utilisé plus tard. MIT Kerberos 1.17 et versions ultérieures, ainsi que Heimdal, en envoient un lorsqu’on le leur demande. AVERTISSEMENT : désactivé, une requête PKINIT n’est soumise qu’à son propre horodatage et au contrôle anti-rejeu."
   },
+  "krb5.pkinitRequirePaChecksum2|label": {
+    "en": "b537d343a181f8ff",
+    "text": "PKINIT exige paChecksum2"
+  },
+  "krb5.pkinitRequirePaChecksum2|description": {
+    "en": "09dc40308cf18597",
+    "text": "Indique si une requête PKINIT doit porter le paChecksum2 de Microsoft (MS-PKCA section 2.2.3) — le SHA-256, SHA-384 ou SHA-512 du corps de la requête, à côté du paChecksum SHA-1 qu'exige la RFC 4556. Un paChecksum2 envoyé est vérifié dans tous les cas, et un paChecksum2 en SHA-1 est refusé en mode produit. Désactivé par défaut, car MIT Kerberos n'en envoie pas ; Windows 11 et Windows Server 2022 23H2 et versions ultérieures en envoient. Activé, un client qui n'en envoie pas — PKINIT anonyme compris — est refusé avec KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED."
+  },
   "krb5.pkinitLegacyKdf|label": {
     "en": "45d1284fa60afa2b",
     "text": "PKINIT accepte la dérivation de clé propre à RFC 4556"
@@ -12466,6 +12506,22 @@
   "report.maxConcurrentPerSubject|description": {
     "en": "525965a5866fed18",
     "text": "Combien de tâches de rapport une personne peut avoir en cours à la fois."
+  },
+  "report.actsPerSubject|label": {
+    "en": "c2fd1d4d02b9a6b1",
+    "text": "Exécutions et téléchargements de rapports par personne et par fenêtre"
+  },
+  "report.actsPerSubject|description": {
+    "en": "e49f26690bd91e46",
+    "text": "Combien d'actions coûteuses un appelant de la Reports API peut effectuer dans une fenêtre de report.actWindowS : une requête ou un aperçu ad hoc, une tâche mise en file, une définition enregistrée exécutée, un résultat téléchargé. Compté par le sujet du jeton, non par adresse. Au-delà, une telle action est refusée avec 429 et Retry-After jusqu'à la fin de la fenêtre ; les listes et les définitions restent lisibles. 0 signifie aucune limite, la valeur par défaut en développement. Le mode produit vaut 240 par défaut."
+  },
+  "report.actWindowS|label": {
+    "en": "3e27ff3046206690",
+    "text": "Fenêtre des actions de rapport (secondes)"
+  },
+  "report.actWindowS|description": {
+    "en": "03466784e84b1e2b",
+    "text": "La fenêtre dans laquelle report.actsPerSubject est compté, en secondes. Une fenêtre fixe, comme toute limite de débit ici."
   },
   "report.artifactRetentionS|label": {
     "en": "ae014cb5ae4ea837",
