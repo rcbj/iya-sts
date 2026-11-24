@@ -20181,16 +20181,34 @@ function hsmRefOf(text) {
 // classical key. When this runtime cannot check ML-DSA, the key is refused
 // (STS-OPENPGP-0026) rather than stored on the EdDSA half alone.
 //
-// **S/MIME IS pkijs'S EnvelopedData, ON NODE'S WEB CRYPTO** — the engine
-// `installPkijsWebCrypto()` hands pkijs for CRLs. AES-256-CBC content
-// encryption (RFC 8551 section 2.7, RFC 3565), the key under RSAES-OAEP with
-// SHA-256 (RFC 8017, RFC 4055) for an RSA certificate and under
-// dhSinglePass-stdDH-sha256kdf with AES-256 key wrap (RFC 5753) for an EC
-// one. **Not AES-GCM**: RFC 5083 puts an authenticated cipher in
-// AuthEnvelopedData, and pkijs writes GCM into an EnvelopedData, which a
-// conforming reader may refuse; CBC in EnvelopedData is what every mail
-// client reads, and a message here carries nothing a reader would trust
-// for being unforgeable (DKIM signs the outer message).
+// **S/MIME IS AuthEnvelopedData UNDER AES-256-GCM (#2124, rcbj's decision
+// of 2026-11-24, ASVS 5.0.0 11.3.3)**: RFC 5083's content type
+// (id-ct-authEnvelopedData, `smime-type=authEnveloped-data`) with RFC
+// 5084's id-aes256-GCM, a 12-octet nonce and a 16-octet ICV, which RFC 8551
+// section 2.7 makes S/MIME 4.0's MUST. There are no authAttrs (the content
+// is id-data, so RFC 5083 asks for none), and the GCM AAD is therefore
+// empty. The key goes under RSAES-OAEP with SHA-256 (RFC 8017, RFC 4055)
+// for an RSA certificate and under dhSinglePass-stdDH-sha256kdf with
+// AES-256 key wrap (RFC 5753) for an EC one; an ML-KEM certificate takes a
+// KEMRecipientInfo (RFC 9629, which names AuthEnvelopedData as one of its
+// three homes; the AuthEnvelopedData version stays 0 whatever the
+// recipients are).
+//
+// **pkijs HAS NO AuthEnvelopedData**, and its EnvelopedData writes GCM into
+// an EnvelopedData, which a conforming reader may refuse. So the content
+// is sealed here with node's `aes-256-gcm` and the AuthEnvelopedData is
+// written with asn1js; pkijs is asked only for the RSA and EC
+// RecipientInfos, through `EnvelopedData.encrypt()` handed an engine whose
+// `generateKey()` answers OUR content key and whose AES-GCM `encrypt()`
+// writes nothing (`smimeClassicalRecipients()`). Reusing pkijs's recipient
+// code keeps the RSA-OAEP and the RFC 5753 KDF the very code the CBC path
+// has always run, rather than a second copy of them.
+//
+// **`mail.smimeContentEncryption` `aes256-cbc` is the way back**: pkijs's
+// EnvelopedData under AES-256-CBC (RFC 3565), `smime-type=enveloped-data`,
+// exactly what was sent before 1.2.0, for a recipient whose mail client
+// cannot read AuthEnvelopedData. It has no integrity protection, and
+// `/admin/mode` says so in product (`mode.js` `smimeCbcWaivers()`).
 // ===========================================================================
 
 /** @type {typeof import('./crypto_impl/openpgp_engine.js')} */
@@ -20757,7 +20775,8 @@ const SMIME_CURVES = { '1.2.840.10045.3.1.7': 'P-256',
 // keyEncipherment when key usage is present. RFC 9629 carries it in CMS
 // as KEMRecipientInfo inside OtherRecipientInfo (id-ori-kem is .13.3, not
 // the .13.1 other-recipient arc). ML-KEM-512 wraps with AES-128; 768 and
-// 1024 wrap with AES-256. The content cipher stays AES-256-CBC.
+// 1024 wrap with AES-256. The content cipher is the classical recipients'
+// (#2124): AES-256-GCM in AuthEnvelopedData unless the setting says CBC.
 const SMIME_KEM = {
   '2.16.840.1.101.3.4.4.1': {
     name: 'ML-KEM-512', publicBytes: 800, cipherBytes: 768,
@@ -20780,6 +20799,19 @@ const SMIME_HKDF_SHA256 = '1.2.840.113549.1.9.16.3.28';
 const SMIME_AES256_CBC = '2.16.840.1.101.3.4.1.42';
 const SMIME_ID_DATA = '1.2.840.113549.1.7.1';
 const SMIME_ID_ENVELOPED = '1.2.840.113549.1.7.3';
+// RFC 5083 id-ct-authEnvelopedData, RFC 5084 id-aes256-GCM (#2124).
+const SMIME_ID_AUTH_ENVELOPED = '1.2.840.113549.1.9.16.1.23';
+const SMIME_AES256_GCM = '2.16.840.1.101.3.4.1.46';
+// RFC 5084 section 3.2 recommends a 12-octet nonce; the ICV is the full 16
+// octets, which GCMParameters must then name (its DEFAULT is 12).
+const SMIME_GCM_NONCE_BYTES = 12;
+const SMIME_GCM_ICV_BYTES = 16;
+/**
+ * The content encryptions `mail.smimeContentEncryption` may name, the
+ * default first (#2124).
+ */
+const SMIME_CONTENT_ENCRYPTIONS = Object.freeze(['aes256-gcm',
+                                                 'aes256-cbc']);
 
 /**
  * The certificates a `userSMIMECertificate` value holds: RFC 2798 section
@@ -21982,35 +22014,159 @@ function smimeKemContentInfo(ori, iv, ciphertext) {
 }
 
 /**
+ * The content encryption a name asks for (#2124): `aes256-cbc` when that is
+ * what it says, and `aes256-gcm` for anything else, absent included. The
+ * authenticated one is what an unknown or missing name gets, so a value
+ * nobody meant can never be the one without integrity protection.
+ *
+ * @param name - `mail.smimeContentEncryption`'s value, or omitted
+ * @returns 'aes256-gcm' or 'aes256-cbc'
+ */
+function smimeContentEncryption(name) {
+  log.debug("Entering smimeContentEncryption().");
+  const cbc = String(name || '').trim().toLowerCase() === 'aes256-cbc';
+  log.debug("Leaving smimeContentEncryption().");
+  return cbc ? 'aes256-cbc' : 'aes256-gcm';
+}
+
+/**
+ * The `smime-type` parameter of `application/pkcs7-mime` for what
+ * `smimeEnvelope()` writes under a content encryption (RFC 8551 section
+ * 3.2.2): `authEnveloped-data` for AuthEnvelopedData, `enveloped-data` for
+ * EnvelopedData. Here so the MIME label and the CMS content type are
+ * decided by the one normaliser and cannot disagree.
+ *
+ * @param name - the content encryption, as `smimeContentEncryption()` reads
+ * @returns the parameter's value
+ */
+function smimeTypeFor(name) {
+  log.debug("Entering smimeTypeFor().");
+  const type = smimeContentEncryption(name) === 'aes256-cbc'
+    ? 'enveloped-data' : 'authEnveloped-data';
+  log.debug("Leaving smimeTypeFor(). " + type);
+  return type;
+}
+
+/**
+ * Seals the content with AES-256-GCM (RFC 5084): no additional
+ * authenticated data, because an AuthEnvelopedData here has no authAttrs
+ * (RFC 5083 section 2.1: the AAD is the DER of authAttrs when present, and
+ * nothing otherwise).
+ *
+ * @param plain - the content octets
+ * @param cek - the 32-octet content-encryption key
+ * @param nonce - the 12-octet nonce
+ * @returns `{ ciphertext, tag }`, the tag SMIME_GCM_ICV_BYTES long
+ */
+function smimeGcmSeal(plain, cek, nonce) {
+  log.debug("Entering smimeGcmSeal().");
+  const cipher = nodeCrypto.createCipheriv('aes-256-gcm', Buffer.from(cek),
+    Buffer.from(nonce), { authTagLength: SMIME_GCM_ICV_BYTES });
+  const ciphertext = Buffer.concat([cipher.update(Buffer.from(plain)),
+                                    cipher.final()]);
+  const tag = cipher.getAuthTag();
+  log.debug("Leaving smimeGcmSeal().");
+  return { ciphertext: ciphertext, tag: tag };
+}
+
+/**
+ * ContentInfo of an AuthEnvelopedData (RFC 5083 section 2.1), DER-ready:
+ *
+ *   AuthEnvelopedData ::= SEQUENCE {
+ *     version CMSVersion,                 -- always 0
+ *     recipientInfos RecipientInfos,      -- SET OF, as EnvelopedData's
+ *     authEncryptedContentInfo EncryptedContentInfo,
+ *     mac MessageAuthenticationCode }     -- the GCM tag
+ *
+ * with no originatorInfo, authAttrs or unauthAttrs. The content algorithm
+ * is id-aes256-GCM with GCMParameters { aes-nonce, aes-ICVlen 16 } (RFC
+ * 5084 section 3.2), and the ciphertext WITHOUT the tag is the IMPLICIT
+ * context-0 OCTET STRING.
+ *
+ * @param recipients - the RecipientInfo blocks (asn1js)
+ * @param nonce - the 12-octet nonce
+ * @param sealed - `smimeGcmSeal()`'s answer
+ * @returns the asn1js ContentInfo
+ */
+function smimeAuthContentInfo(recipients, nonce, sealed) {
+  log.debug("Entering smimeAuthContentInfo().");
+  const encrypted = new asn1js.OctetString({
+    valueHex: smimeAsn1View(sealed.ciphertext)
+  });
+  encrypted.idBlock.tagClass = 3;
+  encrypted.idBlock.tagNumber = 0;
+  const encryptedContent = new asn1js.Sequence({
+    value: [
+      new asn1js.ObjectIdentifier({ value: SMIME_ID_DATA }),
+      new asn1js.Sequence({
+        value: [
+          new asn1js.ObjectIdentifier({ value: SMIME_AES256_GCM }),
+          new asn1js.Sequence({
+            value: [
+              new asn1js.OctetString({ valueHex: smimeAsn1View(nonce) }),
+              new asn1js.Integer({ value: SMIME_GCM_ICV_BYTES })
+            ]
+          })
+        ]
+      }),
+      encrypted
+    ]
+  });
+  const authEnveloped = new asn1js.Sequence({
+    value: [
+      new asn1js.Integer({ value: 0 }),
+      new asn1js.Set({ value: recipients }),
+      encryptedContent,
+      new asn1js.OctetString({ valueHex: smimeAsn1View(sealed.tag) })
+    ]
+  });
+  log.debug("Leaving smimeAuthContentInfo().");
+  return new asn1js.Sequence({
+    value: [
+      new asn1js.ObjectIdentifier({ value: SMIME_ID_AUTH_ENVELOPED }),
+      new asn1js.Constructed({
+        idBlock: { tagClass: 3, tagNumber: 0 },
+        value: [authEnveloped]
+      })
+    ]
+  });
+}
+
+/**
  * Builds the KEM envelope from a shared secret that is already in hand.
  * Production obtains that secret from encapsulate. A test passes a fixed
  * one, because a runtime without ML-KEM cannot encapsulate and must still
  * be able to check the wrap and the DER. `share.cek` and `share.iv`, when
- * set, are that test's content key; production leaves them unset.
+ * set, are that test's content key and its IV (16 octets for CBC) or nonce
+ * (12 octets for GCM); production leaves them unset.
  *
  * @param mimeBytes - the inner MIME entity
  * @param certificate - the pkijs certificate
  * @param row - the SMIME_KEM row
  * @param kemOid - the certificate's key oid
  * @param share - `{ cipherText, sharedSecret, cek?, iv? }`
+ * @param contentEncryption - 'aes256-gcm' (the default: AuthEnvelopedData)
+ *   or 'aes256-cbc' (EnvelopedData version 3), as
+ *   `smimeContentEncryption()` reads it
  * @returns the ContentInfo DER
  */
-function smimeKemAssemble(mimeBytes, certificate, row, kemOid, share) {
+function smimeKemAssemble(mimeBytes, certificate, row, kemOid, share,
+                          contentEncryption) {
   log.debug("Entering smimeKemAssemble().");
+  const gcm = smimeContentEncryption(contentEncryption) === 'aes256-gcm';
+  const ivBytes = gcm ? SMIME_GCM_NONCE_BYTES : 16;
   const cek = share.cek ? Buffer.from(share.cek) : nodeCrypto.randomBytes(32);
-  const iv = share.iv ? Buffer.from(share.iv) : nodeCrypto.randomBytes(16);
+  const iv = share.iv ? Buffer.from(share.iv)
+    : nodeCrypto.randomBytes(ivBytes);
   const kemct = Buffer.from(share.cipherText);
   const shared = Buffer.from(share.sharedSecret);
-  if (cek.length !== 32 || iv.length !== 16 || shared.length !== 32 ||
+  if (cek.length !== 32 || iv.length !== ivBytes || shared.length !== 32 ||
       kemct.length !== row.cipherBytes) {
     log.debug("Leaving smimeKemAssemble(). Sizes.");
     throw new Error(row.name + ' needs a 32-octet shared secret, a ' +
       row.cipherBytes + '-octet ciphertext, a 32-octet content key and ' +
-      'a 16-octet IV');
+      'a ' + ivBytes + '-octet ' + (gcm ? 'nonce' : 'IV'));
   }
-  const cipher = nodeCrypto.createCipheriv('aes-256-cbc', cek, iv);
-  const body = Buffer.concat([cipher.update(Buffer.from(mimeBytes)),
-                              cipher.final()]);
   const wrapped = smimeKemWrap(shared, row.wrapOid, row.kekBytes, cek);
   const ori = smimeOtherRecipient({
     issuer: certificate.issuer.toSchema(),
@@ -22018,7 +22174,17 @@ function smimeKemAssemble(mimeBytes, certificate, row, kemOid, share) {
     kemOid: kemOid, kemct: kemct, kekBytes: row.kekBytes,
     wrapOid: row.wrapOid, encryptedKey: wrapped.wrapped
   });
-  const out = smimeDer(smimeKemContentInfo(ori, iv, body));
+  let info;
+  if (gcm) {
+    info = smimeAuthContentInfo([ori], iv,
+                                smimeGcmSeal(mimeBytes, cek, iv));
+  } else {
+    const cipher = nodeCrypto.createCipheriv('aes-256-cbc', cek, iv);
+    const body = Buffer.concat([cipher.update(Buffer.from(mimeBytes)),
+                                cipher.final()]);
+    info = smimeKemContentInfo(ori, iv, body);
+  }
+  const out = smimeDer(info);
   log.debug("Leaving smimeKemAssemble(). " + out.length + " bytes.");
   return out;
 }
@@ -22032,9 +22198,11 @@ function smimeKemAssemble(mimeBytes, certificate, row, kemOid, share) {
  * @param certificate - the pkijs certificate
  * @param row - the SMIME_KEM row
  * @param kemOid - the certificate's key oid
+ * @param contentEncryption - as `smimeKemAssemble()` takes it
  * @returns a promise of the DER
  */
-async function smimeKemEnvelope(mimeBytes, certificate, row, kemOid) {
+async function smimeKemEnvelope(mimeBytes, certificate, row, kemOid,
+                                contentEncryption) {
   log.debug("Entering smimeKemEnvelope(). " + row.name);
   const raw = smimeKemPublic(certificate, row);
   let share;
@@ -22051,7 +22219,7 @@ async function smimeKemEnvelope(mimeBytes, certificate, row, kemOid) {
   }
   const out = smimeKemAssemble(mimeBytes, certificate, row, kemOid, {
     cipherText: share.cipherText, sharedSecret: share.sharedSecret
-  });
+  }, contentEncryption);
   log.debug("Leaving smimeKemEnvelope().");
   return out;
 }
@@ -22088,19 +22256,77 @@ function smimeKemAvailable() {
 }
 
 /**
- * Encrypts a MIME entity to an S/MIME recipient certificate: a CMS
- * ContentInfo holding an EnvelopedData (the header), DER. An ML-KEM
- * certificate takes RFC 9629's KEMRecipientInfo. RSA and EC stay on
- * pkijs's RSA-OAEP and ECDH path. The content cipher is AES-256-CBC
- * either way.
+ * The RSA or EC RecipientInfo for one certificate, carrying `cek`, built by
+ * pkijs (the header: pkijs has no AuthEnvelopedData, and its recipient code
+ * is the code the CBC path runs). `EnvelopedData.encrypt()` makes its own
+ * session key and encrypts the content with it; it is handed an engine
+ * whose AES-GCM `generateKey()` answers `cek` instead (the ECDH ephemeral
+ * pair is still generated) and whose AES-GCM `encrypt()`
+ * writes nothing, so pkijs never encrypts anything under this key but the
+ * key itself, to the recipient. Every other call (RSA-OAEP, ECDH, the RFC
+ * 5753 KDF, AES key wrap) goes to the real engine untouched.
+ *
+ * @param pkijs - the pkijs module
+ * @param certificate - the pkijs certificate (RSA or EC)
+ * @param cek - the 32-octet content-encryption key
+ * @returns a promise of the RecipientInfo blocks (asn1js)
+ */
+async function smimeClassicalRecipients(pkijs, certificate, cek) {
+  log.debug("Entering smimeClassicalRecipients().");
+  installPkijsWebCrypto(pkijs);
+  const engine = /** @type {any} */ (pkijs.getCrypto(true));
+  // `any`: an engine whose prototype is the real one, so every method it
+  // does not override runs as the real engine's, `this` included.
+  const keyed = /** @type {any} */ (Object.create(engine));
+  // Only the CONTENT key is ours: the EC recipient's ephemeral ECDH pair
+  // is generated by the same call, and must stay the real engine's.
+  keyed.generateKey = function (algorithm, extractable, usages) {
+    if (algorithm && algorithm.name === 'AES-GCM') {
+      return engine.importKey('raw', new Uint8Array(Buffer.from(cek)),
+                              { name: 'AES-GCM' }, true, ['encrypt']);
+    }
+    return engine.generateKey(algorithm, extractable, usages);
+  };
+  keyed.encrypt = function (algorithm, key, data) {
+    if (algorithm && algorithm.name === 'AES-GCM') {
+      return Promise.resolve(new ArrayBuffer(0));
+    }
+    return engine.encrypt(algorithm, key, data);
+  };
+  const enveloped = new pkijs.EnvelopedData();
+  enveloped.addRecipientByCertificate(certificate, {
+    oaepHashAlgorithm: 'SHA-256', kdfAlgorithm: 'SHA-256',
+    kekEncryptionLength: 256 });
+  await enveloped.encrypt(/** @type {any} */ ({ name: 'AES-GCM',
+                                               length: 256 }),
+                          new ArrayBuffer(0), keyed);
+  const out = enveloped.recipientInfos.map(function (one) {
+    return one.toSchema();
+  });
+  log.debug("Leaving smimeClassicalRecipients(). " + out.length);
+  return out;
+}
+
+/**
+ * Encrypts a MIME entity to an S/MIME recipient certificate (the header),
+ * DER. By default a CMS ContentInfo holding an AuthEnvelopedData under
+ * AES-256-GCM (RFC 5083, RFC 5084; `smime-type=authEnveloped-data`);
+ * `aes256-cbc` asks for the EnvelopedData under AES-256-CBC that was sent
+ * before #2124 (`smime-type=enveloped-data`), which has no integrity
+ * protection. `smimeTypeFor()` names the MIME parameter for either. An
+ * ML-KEM certificate takes RFC 9629's KEMRecipientInfo; RSA and EC take
+ * pkijs's RSA-OAEP and ECDH RecipientInfos.
  *
  * @param mimeBytes - the inner MIME entity, headers and body
  * @param certificateDer - the recipient's certificate
  *   (`smimeRecipientCertificate()`'s `der`)
+ * @param contentEncryption - `mail.smimeContentEncryption`: 'aes256-gcm'
+ *   (the default, absent included) or 'aes256-cbc'
  * @returns a promise of the DER
  */
-async function smimeEnvelope(mimeBytes, certificateDer) {
+async function smimeEnvelope(mimeBytes, certificateDer, contentEncryption) {
   log.debug("Entering smimeEnvelope().");
+  const chosen = smimeContentEncryption(contentEncryption);
   const pkijs = require('pkijs');
   const certificate = pkijs.Certificate.fromBER(
     new Uint8Array(Buffer.from(certificateDer)));
@@ -22108,8 +22334,22 @@ async function smimeEnvelope(mimeBytes, certificateDer) {
     certificate.subjectPublicKeyInfo.algorithm.algorithmId);
   const kem = SMIME_KEM[oid];
   if (kem) {
-    const out = await smimeKemEnvelope(mimeBytes, certificate, kem, oid);
-    log.debug("Leaving smimeEnvelope(). " + out.length + " bytes, ML-KEM.");
+    const out = await smimeKemEnvelope(mimeBytes, certificate, kem, oid,
+                                       chosen);
+    log.debug("Leaving smimeEnvelope(). " + out.length + " bytes, ML-KEM, " +
+              chosen + ".");
+    return out;
+  }
+  if (chosen === 'aes256-gcm') {
+    const cek = nodeCrypto.randomBytes(32);
+    const nonce = nodeCrypto.randomBytes(SMIME_GCM_NONCE_BYTES);
+    const recipients = await smimeClassicalRecipients(pkijs, certificate,
+                                                      cek);
+    const out = smimeDer(smimeAuthContentInfo(recipients, nonce,
+      smimeGcmSeal(mimeBytes, cek, nonce)));
+    cek.fill(0);
+    log.debug("Leaving smimeEnvelope(). " + out.length + " bytes, " +
+              "AuthEnvelopedData.");
     return out;
   }
   installPkijsWebCrypto(pkijs);
@@ -22123,9 +22363,10 @@ async function smimeEnvelope(mimeBytes, certificateDer) {
                                                length: 256 }),
                           new Uint8Array(Buffer.from(mimeBytes)).buffer);
   const info = new pkijs.ContentInfo({
-    contentType: '1.2.840.113549.1.7.3', content: enveloped.toSchema() });
+    contentType: SMIME_ID_ENVELOPED, content: enveloped.toSchema() });
   const out = Buffer.from(info.toSchema().toBER(false));
-  log.debug("Leaving smimeEnvelope(). " + out.length + " bytes.");
+  log.debug("Leaving smimeEnvelope(). " + out.length + " bytes, " +
+            "EnvelopedData (CBC).");
   return out;
 }
 
@@ -22161,6 +22402,9 @@ module.exports = {
   smimeRecipientCertificate: smimeRecipientCertificate,
   smimeCertificatesOf: smimeCertificatesOf,
   smimeEnvelope: smimeEnvelope,
+  SMIME_CONTENT_ENCRYPTIONS: SMIME_CONTENT_ENCRYPTIONS,
+  smimeContentEncryption: smimeContentEncryption,
+  smimeTypeFor: smimeTypeFor,
   smimeKemWrap: smimeKemWrap,
   smimeKemAssemble: smimeKemAssemble,
   // --- section 19: keys in a hardware security module (#1955) ---

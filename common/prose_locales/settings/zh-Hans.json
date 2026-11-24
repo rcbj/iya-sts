@@ -12323,6 +12323,14 @@
     "en": "895bdb616e169134",
     "text": "按模板 ID 指定的邮件（password-reset、account-activation、sign-in-code、sign-in-link、credential-compromised 以及“监控 → 邮件”列表中的其他模板），这些邮件只以加密方式发送——按本人在门户上的选择，以 PGP/MIME 加密至其 OpenPGP 密钥或以 S/MIME 加密至其证书。两者都未选择的人不会收到该邮件（STS-MAIL-0240），发起该邮件的用途会像对待任何未发送邮件一样说明这一点。留空（默认）表示不要求加密；无论哪种情况，都会遵循个人的选择。"
   },
+  "mail.smimeContentEncryption|label": {
+    "en": "04776ccf8787181b",
+    "text": "S/MIME 内容加密"
+  },
+  "mail.smimeContentEncryption|description": {
+    "en": "fb3309ac8f290326",
+    "text": "加密到某人 S/MIME 证书的邮件如何加密。aes256-gcm（默认值）发送 AES-256-GCM 下的 RFC 5083 AuthEnvelopedData（smime-type=authEnveloped-data，RFC 8551），读者可以确认其未被篡改。aes256-cbc 发送 1.2.0 之前所发送的 AES-256-CBC 下的 EnvelopedData（smime-type=enveloped-data），供邮件客户端无法读取 AuthEnvelopedData 的收件人使用。警告：CBC 没有完整性保护，在产品模式下只要此项为 aes256-cbc，就不满足 ASVS 5.0.0 要求 11.3.3，/admin/mode 会报告这一点。"
+  },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",
     "text": "自助密码重置"

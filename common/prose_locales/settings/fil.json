@@ -12323,6 +12323,14 @@
     "en": "895bdb616e169134",
     "text": "Ang mga mensahe, ayon sa template id (password-reset, account-activation, sign-in-code, sign-in-link, credential-compromised at ang iba pa sa listahan ng Monitoring → Mail), na ipinapadala lang nang naka-encrypt — PGP/MIME sa OpenPGP key ng tao o S/MIME sa kanyang certificate, ayon sa pinili niya sa portal. Ang taong walang pinili sa dalawa ay hindi padadalhan nito (STS-MAIL-0240), at sinasabi iyon ng gamit na humiling nito, gaya ng sa anumang mensaheng hindi naipadala. Kapag walang laman, ang default, walang hinihingi; iginagalang ang pinili ng tao alinman ang kaso."
   },
+  "mail.smimeContentEncryption|label": {
+    "en": "04776ccf8787181b",
+    "text": "Pag-encrypt ng nilalaman ng S/MIME"
+  },
+  "mail.smimeContentEncryption|description": {
+    "en": "fb3309ac8f290326",
+    "text": "Kung paano ine-encrypt ang mail na naka-encrypt sa S/MIME certificate ng isang tao. Ang aes256-gcm, ang default, ay nagpapadala ng RFC 5083 AuthEnvelopedData sa ilalim ng AES-256-GCM (smime-type=authEnveloped-data, RFC 8551), na kayang tiyakin ng mambabasa na hindi ito binago. Ang aes256-cbc ay nagpapadala ng EnvelopedData sa ilalim ng AES-256-CBC na ipinapadala bago ang 1.2.0 (smime-type=enveloped-data), para sa tatanggap na hindi kayang basahin ng mail client ang AuthEnvelopedData. BABALA: walang proteksyon sa integridad ang CBC, at habang aes256-cbc ito sa product mode, hindi natutugunan ang kinakailangang 11.3.3 ng ASVS 5.0.0, na iniuulat ng /admin/mode."
+  },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",
     "text": "Self-service password reset"

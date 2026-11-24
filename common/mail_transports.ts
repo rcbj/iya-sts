@@ -72,6 +72,8 @@ interface OutMessage {
   lang: string;
   // #1955 P6: `{ kind: 'openpgp', armoredKey }` or `{ kind: 'smime',
   // certificate (base64 DER) }`, with `outerSubject`; absent is cleartext.
+  // An S/MIME one may carry `contentEncryption` (#2124), the realm's
+  // `mail.smimeContentEncryption` read at the attempt; absent is GCM.
   encryption?: Json;
 }
 
@@ -297,7 +299,12 @@ class MailTransports {
   //     application/octet-stream part holding the ASCII-armored OpenPGP
   //     message, both 7bit.
   //   * S/MIME (RFC 8551 section 3.3): application/pkcs7-mime;
-  //     smime-type=enveloped-data, base64 of the CMS EnvelopedData.
+  //     smime-type=authEnveloped-data, base64 of the CMS AuthEnvelopedData
+  //     under AES-256-GCM (#2124, ASVS 5.0.0 11.3.3) — or, where
+  //     `mail.smimeContentEncryption` is `aes256-cbc`, smime-type=
+  //     enveloped-data and the CBC EnvelopedData sent before 1.2.0. The
+  //     parameter is `crypto.smimeTypeFor()`'s, so it names what
+  //     `smimeEnvelope()` wrote under the same reading of the setting.
   //
   // Both built with nodemailer's MimeNode, file and URL access disabled as
   // the composer above is. A failure to encrypt is final (STS-MAIL-0243):
@@ -376,10 +383,12 @@ class MailTransports {
           .setContent(armored.replace(/\r?\n/g, '\r\n'));
       } else if (message.encryption.kind === 'smime') {
         const envelope = this.deps.smimeEnvelope || crypto.smimeEnvelope;
+        const content = crypto.smimeContentEncryption(
+          message.encryption.contentEncryption);
         const der = await envelope(body, Buffer.from(String(
-          message.encryption.certificate || ''), 'base64'));
-        outer = new MimeNode('application/pkcs7-mime; ' +
-          'smime-type=enveloped-data; name="smime.p7m"', options);
+          message.encryption.certificate || ''), 'base64'), content);
+        outer = new MimeNode('application/pkcs7-mime; smime-type=' +
+          crypto.smimeTypeFor(content) + '; name="smime.p7m"', options);
         outer.setHeader(headers);
         outer.setHeader('Content-Disposition',
                         'attachment; filename="smime.p7m"');

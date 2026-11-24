@@ -3906,13 +3906,25 @@ async function reportScheduleWork(ctx: any): Promise<any> {
     }
     // THE OWNER'S OWN QUESTION, TO THE POLICY (#1030): the roles the owner
     // holds now, and `run` on this definition.
+    // A report over an administrators' source (#2126) is asked of the
+    // owner's roles too, and refused under STS-REPORT-0061 with the
+    // source named in the note.
     const rightsOf = rights.ownerMayRun(def);
     if (!rightsOf.ok) {
       def.lastSlot = slot;
-      reportNoteFailure(def, 'The owner can no longer run reports.');
+      reportNoteFailure(def, rightsOf.code === 'STS-REPORT-0061'
+        ? String(rightsOf.description)
+        : 'The owner can no longer run reports.');
       stores.putDefinition(def);
-      log.warn(errorCodes.tag('STS-REPORT-0028') +
-        'report: a schedule was skipped because its owner lost report:use.');
+      if (rightsOf.code === 'STS-REPORT-0061') {
+        log.warn(errorCodes.tag('STS-REPORT-0061') +
+          'report: a schedule was skipped because its owner does not hold ' +
+          'REPORT_ADMIN, which its source needs.');
+      } else {
+        log.warn(errorCodes.tag('STS-REPORT-0028') +
+          'report: a schedule was skipped because its owner lost ' +
+          'report:use.');
+      }
       continue;
     }
     if (await reportOwnerDisabled(String(def.ownerKind || 'user'),

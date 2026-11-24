@@ -8,8 +8,11 @@
 // ---------------------------------------------------------------------------
 // S/MIME TO AN ML-KEM CERTIFICATE (RFC 9629, RFC 9935).
 //
-// The content cipher stays AES-256-CBC. The recipient is KEMRecipientInfo
-// inside an implicit [4] OtherRecipientInfo. A runtime that cannot
+// The recipient is KEMRecipientInfo inside an implicit [4]
+// OtherRecipientInfo. Checks 6-11 build the CBC EnvelopedData that
+// `mail.smimeContentEncryption` `aes256-cbc` asks for; the default,
+// AES-256-GCM in an AuthEnvelopedData (#2124), is
+// `tests/smime_auth_enveloped.js`'s. A runtime that cannot
 // encapsulate refuses rather than writing a classical envelope. The wrap
 // and the DER are checked here with a fixed shared secret, so this file
 // never calls encapsulate.
@@ -92,7 +95,7 @@ function run(t) {
   const envelope = crypto.smimeKemAssemble(mime, cert, row, KEM_OID, {
     cipherText: Buffer.alloc(1088, 0x5a), sharedSecret: shared,
     cek: cek, iv: iv
-  });
+  }, 'aes256-cbc');
   t.equal(envelope[0], 0x30, '6. the envelope is a ContentInfo');
   t.check(envelope.indexOf(Buffer.from([0x02, 0x01, 0x03])) >= 0,
           '7. EnvelopedData version is 3');

@@ -115,6 +115,8 @@ interface AccessQuestion {
   // A report definition or job (#1030): `common/access_gate.ts`.
   reportObject?: {
     kind: string; owner: string; groups?: string[]; person: string;
+    // The source a report reads, and those for administrators (#2126).
+    sources?: string[]; adminSources?: string[];
   } | null;
   // An AuthZEN access request being decided (#1180):
   // `common/access_gate.ts`.
@@ -432,6 +434,18 @@ class XacmlAccessPep {
         .resource(ATTRIBUTE.REPORT_SHARED_GROUP,
                   (row.groups || []).map(String))
         .subject(ATTRIBUTE.OWNER_SUBJECT, [String(row.person || '')]);
+      // THE SOURCE A REPORT READS (#2126, ASVS 5.0.0 8.2.3), on the
+      // question asked before it is defined, run or downloaded: the first
+      // and third rules permit one the catalog marks for administrators
+      // only to REPORT_ADMIN. Sent only when given, so a plain read of a
+      // row carries neither and is decided as before.
+      if (Array.isArray(row.sources) && row.sources.length) {
+        req.resource(ATTRIBUTE.REPORT_SOURCE, row.sources.map(String));
+      }
+      if (Array.isArray(row.adminSources) && row.adminSources.length) {
+        req.resource(ATTRIBUTE.REPORT_ADMIN_SOURCE,
+                     row.adminSources.map(String));
+      }
     }
     // THE ACCESS REQUEST RULE'S QUESTION (#1180): the request's tuple and
     // who asked it on the resource, who the approver is and whether the

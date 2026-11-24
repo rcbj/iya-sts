@@ -388,7 +388,16 @@ function filterRowsHtml(t: any, fieldOptions: string, leaves: any[],
 
 function queryFormHtml(t: any, sources: any[], document: any): string {
   const doc = document || {};
-  const current = String(doc.source || (sources[0] && sources[0].id) || '');
+  // A SOURCE FOR REPORT ADMINISTRATORS (#2126): the API says per source
+  // whether this caller may query it (`usable`). The default is the first
+  // one they may; one they may not is offered disabled and named for
+  // whom it is — still drawn selected when a saved definition names it, so
+  // its owner sees what it was, and the run is refused (STS-REPORT-0061).
+  const usable = sources.filter(function (src: any): boolean {
+    return src.usable !== false;
+  });
+  const first = usable[0] || sources[0];
+  const current = String(doc.source || (first && first.id) || '');
   let fields: any[] = [];
   sources.forEach(function (src: any): void {
     if (src.id === current) {
@@ -401,9 +410,12 @@ function queryFormHtml(t: any, sources: any[], document: any): string {
   const selected = Array.isArray(doc.select) && doc.select.length && !counted ?
     doc.select : null;
   const options = sources.map(function (src: any): string {
+    const closed = src.usable === false;
     return '<option value="' + esc(src.id) + '"' +
-      (src.id === current ? ' selected' : '') + '>' + esc(src.id) +
-      '</option>';
+      (src.id === current ? ' selected' : '') +
+      (closed && src.id !== current ? ' disabled' : '') + '>' +
+      esc(src.id) + (closed ? ' (' + esc(t.text('report.adminOnlySource')) +
+        ')' : '') + '</option>';
   }).join('');
   const checks = fields.map(function (field: any): string {
     const on = selected ? selected.indexOf(field.id) >= 0 : true;
@@ -1959,11 +1971,18 @@ class ReportRuntime extends SpaClient {
         answer.json.error_description));
       return;
     }
+    const t = this.t;
+    // A source the caller may not query (#2126) is still listed, its page
+    // still reachable, and named for whom it is instead of a New query
+    // link that would be refused.
     const rows = answer.json.sources.map(function (src: any): string[] {
       return ['<a href="' + esc(BASE + '/sources/' + src.id) + '">' +
         esc(src.id) + '</a>',
-        '<a href="' + esc(BASE + '/query?source=' + src.id) + '">' +
-        esc(src.id) + '</a>'];
+        src.usable === false
+          ? '<span class="sub">' + esc(t.text('report.adminOnlySource')) +
+            '</span>'
+          : '<a href="' + esc(BASE + '/query?source=' + src.id) + '">' +
+            esc(src.id) + '</a>'];
     });
     const body = rows.length ? tableHtml([
       esc(this.t.text('report.source')),
@@ -2020,6 +2039,10 @@ class ReportRuntime extends SpaClient {
     });
     const kept = src.retention ? '<p class="sub">' +
       esc(src.retention) + '</p>' : '';
+    // FOR REPORT ADMINISTRATORS (#2126): said on the source's page, and
+    // the New query link left out for a caller who may not use it.
+    const adminNote = src.adminOnly ? '<p class="sub">' +
+      esc(t.text('report.adminOnlyNote')) + '</p>' : '';
     const indexedNote = anyIndexed ? '<p class="sub">' +
       esc(t.text('report.indexedNote')) + '</p>' : '';
     // PREDEFINED QUERIES (#1110): each a link to New Query with its
@@ -2034,9 +2057,11 @@ class ReportRuntime extends SpaClient {
           encodeURIComponent(String(one.id))) + '">' +
           esc(String(one.name)) + '</a></li>';
       }).join('') + '</ul>' : '';
-    this.paint('<p><a href="' + esc(BASE + '/query?source=' + src.id) +
-      '">' + esc(this.t.text('report.newQuery')) + '</a></p>' +
-      '<h2>' + esc(src.id) + '</h2>' + kept + indexedNote + presetList +
+    this.paint((src.usable === false ? '' : '<p><a href="' +
+      esc(BASE + '/query?source=' + src.id) + '">' +
+      esc(this.t.text('report.newQuery')) + '</a></p>') +
+      '<h2>' + esc(src.id) + '</h2>' + kept + adminNote + indexedNote +
+      presetList +
       tableHtml([
         esc(this.t.text('report.fields')),
         esc(this.t.text('report.type')),

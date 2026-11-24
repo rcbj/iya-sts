@@ -683,6 +683,18 @@
     "en": "b8bdc8b82bb08a9e",
     "text": "केवल AES-GCM प्रदान या स्वीकार किया जाता है, और जहाँ क्लाइंट कोई enc नाम नहीं लेता वहाँ वही उपयोग होता है, जब तक crypto.allowCbcJwe चालू न हो।"
   },
+  "mode.requirements.smime-authenticated-encryption.what": {
+    "en": "e4e548f216488a28",
+    "text": "S/MIME मेल प्रमाणीकृत एन्क्रिप्शन है"
+  },
+  "mode.requirements.smime-authenticated-encryption.development": {
+    "en": "6d1da1e7b21d186d",
+    "text": "S/MIME प्रमाणपत्र के लिए एन्क्रिप्ट किया गया मेल AES-256-GCM के अंतर्गत AuthEnvelopedData होता है, जब तक कि mail.smimeContentEncryption aes256-cbc न हो; तब AES-256-CBC के अंतर्गत बिना अखंडता सुरक्षा वाला EnvelopedData भेजा जाता है। किसी भी स्थिति में कुछ सूचित नहीं किया जाता।"
+  },
+  "mode.requirements.smime-authenticated-encryption.product": {
+    "en": "58e070998a057f5e",
+    "text": "वही, और जब तक mail.smimeContentEncryption aes256-cbc है, यह पंक्ति ASVS 5.0.0 11.3.3 को पूरा न हुआ बताती है।"
+  },
   "mode.requirements.unscoped-people.what": {
     "en": "313033517d6bf954",
     "text": "SCIM और Shared Signals पर व्यक्ति को भूमिका चाहिए"
