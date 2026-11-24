@@ -55,53 +55,63 @@
 // certificate issued before #2050, whose text this store never kept, is
 // still on its holder's entry.
 //
-// **THE STORE IS AUTHORITATIVE; THE ENTRY IS ITS PROJECTION.** The entry is
-// what a person HOLDS, the store is what the CA must PUBLISH: the KRL, a
-// key's certificates (`ofKey()`, the lost-key retirement) and revocation
-// all ask the store, never the entry. On a conflict the store wins: a value
-// whose serial the store holds revoked, expired, for somebody else or not at
-// all is removed, and a live certificate the store holds for the person and
-// the entry lacks is written back. So a value written to the attribute by
-// hand, through LDAP or the attribute editor, is dropped at the next
-// reconcile of that person, and deleting one revokes nothing (a revocation
-// is the CA's act: `/account-api/ssh/certificates/revoke`, the console,
-// `/admin-api/hardware-tokens/revoke-ssh`, a lost key).
+// **THE ENTRY IS THE MASTER; THIS STORE IS ITS INDEX** (rcbj, 2026-11-23:
+// "Be consistent. The user objects need to contain the master copy of the
+// credential data."). The entry says what a person HOLDS; this store is
+// the index the CA needs to PUBLISH and to act: the KRL (which lists
+// revoked certificates, no longer on any entry), a key's certificates
+// (`ofKey()`, the lost-key retirement) and a serial's owner at a
+// revocation. It is kept right by the one change-driven mechanism every
+// credential kind shares, `common/entry_observer.ts`: every write of a
+// person's entry, by any door, hands this module the attribute's values
+// before and after for that one entry (`entryChanged()`, below).
 //
-// `entry` on the row is where that projection stands: `held` (on the entry,
-// or owed there), `gone` (off it, for good), or absent (a row written
-// before #2050). A row `held` is indexed `e:1`, and its store expiry is
-// ENTRY_GRACE_MS past its `notAfter`, so the job below sees it expire and
-// takes it off the entry before the store's purge takes the row; once
-// `gone` it expires with its certificate, as every row did.
+//   * **A VALUE REMOVED FROM THE ENTRY IS A REVOCATION.** Whoever removed
+//     it — the console, `/admin-api`, an `ldapmodify`, a person's entry
+//     deleted — the certificate is revoked through the CA's own path
+//     (`pki.revokeSshUserCertificateAsync()`, which calls `markRevoked()`
+//     and rebuilds the KRL), and the act is audited with the writer.
+//   * **A REVOCATION IS PERMANENT, AND ONLY THE CA ISSUES.** A value
+//     written onto an entry by any door but issuance is checked against
+//     this index: one whose serial this realm never issued, issued to
+//     somebody else, revoked or expired, or whose value is not what the CA
+//     issued, is taken off the entry again and audited (STS-SSHCA-0009). A
+//     revoked certificate is never un-revoked, and a certificate cannot be
+//     invented by writing the entry.
+//   * **THE ORDER IS THE ENTRY FIRST, THEN THE INDEX**, as for every kind.
+//     Issuance (`record()`) writes the certificate onto the holder's entry
+//     and then its row here; a revocation (`markRevoked()`) takes it off the
+//     entry and then marks the row. While this module writes the entry
+//     itself its handler is told the write is its own and does nothing.
 //
-//   * **ISSUANCE** (`record()`): the rows are kept `held`, made durable, and
-//     only then written onto the holder's entry. A write that fails leaves
-//     the row `held`, and the job writes it.
-//   * **REVOCATION** (`markRevoked()`: a person's own, an administrator's,
-//     every certificate of a lost key through `pki.revokeSshUserKeyAsync()`)
-//     takes the value off the entry first, then rewrites the row revoked
-//     and `gone` — or still `held` where the entry could not be written, so
-//     the job takes it off. A revoked row stays in the store until its
-//     certificate expires, as it always did, because the KRL lists it.
-//   * **EXPIRY**: the job below.
+// `entry` on the row is where the entry stands: `held` (on it), `pending`
+// (owed to it: the entry write failed, or the row predates #2050), `gone`
+// (off it, for good), or absent (a row written before #2050). A `held` or
+// `pending` row is indexed `e:1`, and its store expiry is ENTRY_GRACE_MS
+// past its `notAfter`, so the job below sees it expire and takes it off the
+// entry before the store's purge takes the row; once `gone` it expires with
+// its certificate, as every row did. A revoked row stays until its
+// certificate expires, because the KRL lists it.
 //
 // **THE JOB, `ssh-user-ca.entries`**: a CLUSTER job per realm every five
 // minutes (`cluster/CLAUDE.md`, *The scheduler*), its body in a request
-// worker (#408). Each run reconciles every person the `e:1` index names —
-// a bounded question: a certificate lives an hour at most
-// (`pki.sshHardwareLifetimeSeconds`' ceiling), so the index holds about an
-// hour's issuance — and marks `gone` what it took off. Its first run in a
-// process also BACKFILLS (backwards compatibility from 1.0.0 on): every
-// live row written before #2050 (no `entry`) and every live certificate
-// still on the realm's PKI row from before the #1955 review (`sshIssued`,
-// copied into this store with its revocation, so the KRL's union is
-// unchanged) is marked `held`, and the reconcile that follows writes it
-// onto its holder's entry. Idempotent: a row already marked is skipped, a
-// serial already here is not copied twice, and a value already on the
-// entry is not written again. The walk is of this store, never of the
-// directory, and the store holds an hour of certificates; after an hour of
-// this build nothing it would find is live, so a later process's walk finds
-// nothing to do. No SQL schema change: the marker is a field of the row.
+// worker (#408). It is not what keeps the index right — the observer is —
+// but it does the two things no write announces: a `pending` row written
+// onto its entry, and an expired certificate taken off (not a revocation:
+// it no longer authenticates anybody). It reads the `e:1` index only, a
+// bounded question: a certificate lives an hour at most
+// (`pki.sshHardwareLifetimeSeconds`' ceiling). Its first run in a process
+// also BACKFILLS (backwards compatibility from 1.0.0 on): every live row
+// written before #2050 (no `entry`) and every live certificate still on the
+// realm's PKI row from before the #1955 review (`sshIssued`, copied into
+// this store with its revocation, so the KRL's union is unchanged) is
+// marked `pending`, and the same run writes it onto its holder's entry.
+// Idempotent: a row already marked is skipped, a serial already here is not
+// copied twice, and a value already on the entry is not written again. The
+// walk is of this store, never of the directory, and the store holds an
+// hour of certificates. No SQL schema change: the marker is a field of the
+// row. There is no rebuild of this index from the entries: a revoked
+// certificate is on no entry and the KRL still needs it.
 //
 // **THE DIRECTORY IS A SLOT, `setDirectory()`, filled by
 // `ldap/ldap_server.js` (rule 3e).** This module is built at the
@@ -114,17 +124,19 @@
 // (dn, values) }`: one person's values found by subject off the event loop,
 // and that one attribute replaced in place — and is validated whole
 // (STS-SSHCA-0006). Empty, nothing is written onto an entry and every row
-// stays `held`, so the first run after it is filled writes them.
+// is `pending`, so the first run after it is filled writes them.
 //
 // **IN CELLS** the register is the global tier's and a person's entry is in
 // their home cell, so the job runs in every cell (it is not one of
 // `persistence/tiers.js`' GLOBAL_JOBS) and each cell brings in step only
 // the entries it holds; a row is marked `gone` only by a process that saw
-// the entry (`project()`).
+// the entry (`project()`), and the observer runs only in the process
+// that wrote the entry, which is the cell that holds it.
 //
 // A LIBRARY (rule 3): it registers no route. It requires `realms`,
-// `helpers`, `cache_registry` and `error_codes`; the persistence layer, the
-// PKI row (`pki.js`) and the scheduler are reached at the moment of use.
+// `helpers`, `cache_registry`, `error_codes` and `entry_observer`; the
+// persistence layer, the PKI row (`pki.js`), the audit log and the
+// scheduler are reached at the moment of use.
 // ===========================================================================
 
 import helpers = require('./helpers');
@@ -132,6 +144,7 @@ import InstanceSlot = require('./instance_slot');
 import realms = require('./realms');
 import cacheRegistry = require('./cache_registry');
 import errorCodes = require('./error_codes');
+import entryObserver = require('./entry_observer');
 
 type Json = any;
 
@@ -172,7 +185,7 @@ const issued = realms.map({
     if (row.revokedAt) {
       out.push('r:1');
     }
-    if (row.entry === 'held') {
+    if (row.entry === 'held' || row.entry === 'pending') {
       out.push('e:1');
     }
     return out;
@@ -187,7 +200,8 @@ const issued = realms.map({
       return null;
     }
     // Still on its holder's entry: kept until the job takes it off (header).
-    return row.entry === 'held' ? at + ENTRY_GRACE_MS : at;
+    return row.entry === 'held' || row.entry === 'pending'
+      ? at + ENTRY_GRACE_MS : at;
   }
 });
 
@@ -253,6 +267,9 @@ class SshIssued {
   private directory: SshEntryDirectory | null = null;
   // The realms whose backfill this process has finished (header).
   private backfilled: Record<string, boolean> = {};
+  // How many entry writes of this module's own are in progress (header):
+  // the observer is told of them synchronously, inside the write.
+  private selfWrites = 0;
 
   /**
    * Builds the register over its dependencies.
@@ -461,10 +478,13 @@ class SshIssued {
     }
     let written = false;
     try {
+      this.selfWrites += 1;
       written = dir.write(String(found.dn), after) === true;
     } catch (e) {
       log.debug("Caught in SshIssued.project(): " + ((e && e.message) || e));
       written = false;
+    } finally {
+      this.selfWrites -= 1;
     }
     if (!written) {
       log.warn(codes.tag('STS-SSHCA-0007') + 'ssh user CA: the entry ' +
@@ -563,23 +583,35 @@ class SshIssued {
       (rows || []).forEach(function (row: Json): void {
         const key = SshIssued.keyOf(row && row.serialHex);
         if (key) {
-          // HELD until it is on the entry, then for as long as it is
-          // (header): the job writes it where the write below cannot.
-          const kept = Object.assign({}, row, { serialHex: key,
-                                                entry: 'held' });
-          issued.set(key, kept);
           const owner = String(row.ownerSubject || '');
-          if (owner) {
-            (byOwner[owner] = byOwner[owner] || []).push(kept);
-          }
+          (byOwner[owner] = byOwner[owner] || []).push(
+            Object.assign({}, row, { serialHex: key }));
         }
       });
+      // THE ENTRY FIRST (header): the holder's entry names the certificate,
+      // then its row is written here, `held` where the entry took it and
+      // `pending` where it did not, so the job writes it.
+      const states: Record<string, string> = {};
+      for (const owner of Object.keys(byOwner)) {
+        states[owner] = await this.project(owner, byOwner[owner], [], true);
+      }
+      Object.keys(byOwner).forEach(function (owner: string): void {
+        byOwner[owner].forEach(function (row: Json): void {
+          issued.set(row.serialHex, Object.assign({}, row, {
+            entry: !owner ? 'gone'
+              : (states[owner] === 'done' ? 'held' : 'pending') }));
+        });
+      });
       const kept = await this.settle();
-      // ON THE HOLDER'S ENTRY ONLY ONCE THE STORE KEPT IT (header): an entry
-      // never names a certificate the CA could not revoke.
-      if (kept) {
+      // AN INDEX THAT DID NOT KEEP IT: the certificate is not handed out,
+      // so it leaves the entry again — as the CA's own act, not a
+      // revocation, since nobody ever held it.
+      if (!kept) {
         for (const owner of Object.keys(byOwner)) {
-          await this.project(owner, byOwner[owner], [], true);
+          await this.project(owner, [], byOwner[owner].map(
+            function (row: Json): string {
+              return String(row.serialHex);
+            }), true);
         }
       }
       log.debug("Leaving SshIssued.record(). " + kept);
@@ -704,7 +736,7 @@ class SshIssued {
         continue;
       }
       issued.set(key, Object.assign({}, one, {
-        serialHex: key, entry: one.revokedAt ? 'gone' : 'held'
+        serialHex: key, entry: one.revokedAt ? 'gone' : 'pending'
       }));
       copied += 1;
     }
@@ -719,7 +751,7 @@ class SshIssued {
       const key = SshIssued.keyOf(row.serialHex);
       if (key) {
         issued.set(key, Object.assign({}, row, {
-          entry: row.revokedAt ? 'gone' : 'held'
+          entry: row.revokedAt ? 'gone' : 'pending'
         }));
         marked += 1;
       }
@@ -761,7 +793,7 @@ class SshIssued {
           }
         }
         const held = await this.rowsOf('e:1', function (row: Json): boolean {
-          return row.entry === 'held';
+          return row.entry === 'held' || row.entry === 'pending';
         });
         const byOwner: Record<string, Json[]> = {};
         held.forEach(function (row: Json): void {
@@ -769,31 +801,43 @@ class SshIssued {
           (byOwner[owner] = byOwner[owner] || []).push(row);
         });
         const done: Json[] = [];
+        const placed: Json[] = [];
         for (const owner of Object.keys(byOwner)) {
           const rows = byOwner[owner];
-          const live = rows.filter(function (row: Json): boolean {
-            return !row.revokedAt && SshIssued.live(row, now);
+          // A PENDING ROW IS WRITTEN onto its entry; a held one is already
+          // there (the observer keeps the rest in step, header).
+          const owed = rows.filter(function (row: Json): boolean {
+            return row.entry === 'pending' && !row.revokedAt &&
+              SshIssued.live(row, now);
           });
+          // AN EXPIRED (or revoked) ONE IS TAKEN OFF, as the CA's act.
           const dead = rows.filter(function (row: Json): boolean {
-            return live.indexOf(row) < 0;
+            return !!row.revokedAt || !SshIssued.live(row, now);
           });
+          if (!owed.length && !dead.length) {
+            continue;
+          }
           out.people += 1;
-          // Everything this person holds that the store does not name live
-          // goes (header): the reconcile is the whole of their values.
-          const state = await this.project(owner, live,
+          const state = await this.project(owner, owed,
             dead.map(function (row: Json): string {
               return String(row.serialHex);
-            }), false);
-          if (state === 'done') {
+            }), true);
+          if (state === 'done' || !owner) {
             Array.prototype.push.apply(done, dead);
+            Array.prototype.push.apply(placed, owed);
           }
         }
         done.forEach(function (row: Json): void {
           issued.set(SshIssued.keyOf(row.serialHex),
                      Object.assign({}, row, { entry: 'gone' }));
         });
+        placed.forEach(function (row: Json): void {
+          issued.set(SshIssued.keyOf(row.serialHex),
+                     Object.assign({}, row, { entry: 'held' }));
+        });
         out.removed = done.length;
-        out.ok = done.length ? await this.settle() : true;
+        out.placed = placed.length;
+        out.ok = done.length + placed.length ? await this.settle() : true;
       } catch (e) {
         log.error(codes.tag('STS-SSHCA-0008') + 'ssh user CA: the entries ' +
                   'job could not bring the entries of realm "' +
@@ -811,6 +855,164 @@ class SshIssued {
   }
 
   /**
+   * THE OBSERVER'S HANDLER (header): a person's `stsSshUserCertificate`
+   * changed by a write of their entry. A write of this module's own is
+   * ignored. Of any other door's, a value removed is a revocation and a
+   * value added or changed is checked against this index and taken off
+   * again unless it is what the CA issued that person and is still live.
+   * The store is asked in a promise job, after the write has returned.
+   *
+   * @param change - the observer's change (`entry_observer.ts`)
+   * @returns the promise of the work, or null when there was none
+   */
+  entryChanged(change: Json): Promise<Json> | null {
+    const { log } = this.deps;
+    log.debug("Entering SshIssued.entryChanged().");
+    if (this.selfWrites > 0) {
+      log.debug("Leaving SshIssued.entryChanged(). Our own write.");
+      return null;
+    }
+    const c = change || {};
+    const before: Record<string, string> = {};
+    (c.before || []).forEach(function (value: string): void {
+      const read = SshIssued.readEntryValue(value);
+      if (read) {
+        before[read.serialHex] = String(value);
+      }
+    });
+    const after: Record<string, string> = {};
+    const unreadable: string[] = [];
+    (c.after || []).forEach(function (value: string): void {
+      const read = SshIssued.readEntryValue(value);
+      if (read) {
+        after[read.serialHex] = String(value);
+      } else {
+        unreadable.push(String(value));
+      }
+    });
+    const removed = Object.keys(before).filter(function (serial: string) {
+      return after[serial] === undefined;
+    });
+    const added = Object.keys(after).filter(function (serial: string) {
+      return before[serial] !== after[serial];
+    });
+    if (!removed.length && !added.length && !unreadable.length) {
+      log.debug("Leaving SshIssued.entryChanged(). Nothing of ours moved.");
+      return null;
+    }
+    const work = Promise.resolve().then(() => {
+      return this.within(String(c.realm || ''), async (): Promise<Json> => {
+        const revoked = await this.revokeRemoved(c, removed);
+        const refused = c.deleted ? 0
+          : await this.refuseAdded(c, added, after, unreadable.length > 0);
+        return { revoked: revoked, refused: refused };
+      });
+    }).catch(function (e: Json): Json {
+      log.error(errorCodes.tag('STS-SSHCA-0010') + 'ssh user CA: a write of ' +
+                String(c.dn || '') + ' could not be applied to the ' +
+                'register: ' + ((e && e.message) || e));
+      return { revoked: 0, refused: 0, failed: true };
+    });
+    log.debug("Leaving SshIssued.entryChanged(). " + removed.length +
+              " removed, " + added.length + " added.");
+    return work;
+  }
+
+  // A VALUE REMOVED IS A REVOCATION (header), through the CA's own path, and
+  // audited with the writer. A certificate already revoked, expired or not
+  // this realm's needs nothing.
+  private async revokeRemoved(c: Json, serials: string[]): Promise<number> {
+    const { log } = this.deps;
+    log.debug("Entering SshIssued.revokeRemoved(). " + serials.length);
+    let revoked = 0;
+    for (const serial of serials) {
+      const row = await this.get(String(c.realm || ''), serial);
+      if (!row || row.revokedAt || !SshIssued.live(row, Date.now()) ||
+          (c.subject && String(row.ownerSubject) !== String(c.subject))) {
+        continue;
+      }
+      const answer = await require('./pki').revokeSshUserCertificateAsync(
+        String(c.realm || ''), serial, String(row.ownerSubject || ''));
+      const marked = await this.get(String(c.realm || ''), serial);
+      const ok = !!(marked && marked.revokedAt);
+      if (ok) {
+        revoked += 1;
+      } else {
+        log.error(errorCodes.tag('STS-SSHCA-0010') + 'ssh user CA: ' +
+                  'certificate ' + serial + ' was removed from ' + c.dn +
+                  ' and its revocation could not be recorded.');
+      }
+      require('./audit').record(Object.assign({
+        category: 'authentication', action: 'ssh-user-ca.revoke',
+        actor: String(c.actor || c.door || 'directory'),
+        target: String(c.username || ''),
+        outcome: ok ? 'success' : 'failure',
+        summary: 'An SSH user certificate of ' + String(c.username || '') +
+                 (ok ? ' was revoked: it was removed from their entry'
+                     : ' was removed from their entry and could not be ' +
+                       'revoked'),
+        detail: { serialHex: serial, via: 'entry', door: String(c.door || ''),
+                  krl: !!(answer && answer.ok) }
+      }, ok ? {} : { errorCode: 'STS-SSHCA-0010' }));
+    }
+    log.debug("Leaving SshIssued.revokeRemoved(). " + revoked);
+    return revoked;
+  }
+
+  // ONLY THE CA ISSUES, AND A REVOCATION IS PERMANENT (header): a value
+  // written by another door stands only when it is exactly what the CA
+  // issued this person and is still live. Everything else is taken off the
+  // entry again (a value it rewrote is put back as issued) and audited.
+  private async refuseAdded(c: Json, serials: string[],
+                            after: Record<string, string>,
+                            unreadable: boolean): Promise<number> {
+    const { log } = this.deps;
+    log.debug("Entering SshIssued.refuseAdded(). " + serials.length);
+    const restore: Json[] = [];
+    const drop: string[] = [];
+    for (const serial of serials) {
+      const row = await this.get(String(c.realm || ''), serial);
+      const issuedTo = !!row && !!c.subject &&
+        String(row.ownerSubject) === String(c.subject);
+      const standing = issuedTo && !row.revokedAt &&
+        SshIssued.live(row, Date.now());
+      if (standing && after[serial] === SshIssued.entryValueOf(row)) {
+        continue;
+      }
+      if (standing) {
+        restore.push(row);
+      } else {
+        drop.push(serial);
+      }
+      require('./audit').record({
+        category: 'authentication', action: 'ssh-user-ca.entry-refused',
+        actor: String(c.actor || c.door || 'directory'),
+        target: String(c.username || ''), outcome: 'refused',
+        errorCode: 'STS-SSHCA-0009',
+        summary: 'An SSH user certificate written onto the entry of ' +
+                 String(c.username || '') + ' was refused: ' +
+                 (!row ? 'this realm never issued it'
+                   : (!issuedTo ? 'it was issued to somebody else'
+                     : (row.revokedAt ? 'it is revoked'
+                       : (standing ? 'it is not what the CA issued'
+                         : 'it has expired')))),
+        detail: { serialHex: serial, door: String(c.door || '') }
+      });
+    }
+    if (restore.length || drop.length || unreadable) {
+      log.warn(errorCodes.tag('STS-SSHCA-0009') + 'ssh user CA: ' +
+               (restore.length + drop.length) + ' SSH user certificate ' +
+               'value(s) written onto ' + c.dn + ' by ' +
+               String(c.actor || c.door || 'a directory write') + ' were ' +
+               'not what the CA issued; the entry was put back.');
+      await this.project(String(c.subject || ''), restore, drop, true);
+    }
+    log.debug("Leaving SshIssued.refuseAdded(). " +
+              (restore.length + drop.length));
+    return restore.length + drop.length;
+  }
+
+  /**
    * Registers the entries job (header) with the scheduler.
    *
    * @param schedulerInstance - the cluster scheduler
@@ -825,11 +1027,11 @@ class SshIssued {
     }
     scheduler.register({
       id: ENTRIES_JOB, title: 'SSH user certificates on entries',
-      describe: 'Takes each realm\'s expired and revoked SSH user ' +
-        'certificates off their holders\' entries (stsSshUserCertificate), ' +
-        'writes back a live one an entry lacks, and on its first run in a ' +
-        'process copies the certificates issued before they were kept on ' +
-        'entries onto their holders.',
+      describe: 'Writes onto their holders\' entries ' +
+        '(stsSshUserCertificate) the SSH user certificates whose entry ' +
+        'write failed at issuance, takes expired ones off, and on its ' +
+        'first run in a process copies the certificates issued before they ' +
+        'were kept on entries onto their holders.',
       owner: 'common/ssh_issued.ts', kind: 'cluster', scope: 'realm',
       everyMs: function (): number {
         return ENTRIES_EVERY_MS;
@@ -940,7 +1142,14 @@ class SshIssued {
 const slot = new InstanceSlot<SshIssued>(
   'common/ssh_issued',
   () => new SshIssued(SshIssued.defaultDeps()),
-  null,
+  // THE OBSERVER'S HANDLER (header), registered with the instance.
+  function (instance: SshIssued): void {
+    entryObserver.register(ATTRIBUTE, {
+      changed: function (change: Json): void {
+        instance.entryChanged(change);
+      }
+    });
+  },
   helpers.log);
 
 slot.buildNowUnlessDeferred();
@@ -961,6 +1170,7 @@ export = {
   installedDirectory: slot.forward('installedDirectory'),
   leaveEntry: slot.forward('leaveEntry'),
   reconcileEntries: slot.forward('reconcileEntries'),
+  entryChanged: slot.forward('entryChanged'),
   installInstance: (instance: SshIssued): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   record: slot.forward('record'),

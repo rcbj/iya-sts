@@ -668,8 +668,8 @@
     "text": "SSH-Benutzerzertifikate auf Einträgen"
   },
   "sched.jobs.ssh-user-ca.entries.describe": {
-    "en": "312afdd863ef16cd",
-    "text": "Nimmt die abgelaufenen und gesperrten SSH-Benutzerzertifikate jedes Bereichs von den Einträgen ihrer Inhaber (stsSshUserCertificate), schreibt ein gültiges zurück, das einem Eintrag fehlt, und kopiert bei seinem ersten Lauf in einem Prozess die Zertifikate, die ausgestellt wurden, bevor sie auf Einträgen geführt wurden, auf ihre Inhaber."
+    "en": "5bc74370f72a746d",
+    "text": "Schreibt die SSH-Benutzerzertifikate, deren Schreiben auf den Eintrag bei der Ausstellung fehlschlug, auf die Einträge ihrer Inhaber (stsSshUserCertificate), nimmt abgelaufene herunter und kopiert bei seinem ersten Lauf in einem Prozess die Zertifikate, die ausgestellt wurden, bevor sie auf Einträgen geführt wurden, auf ihre Inhaber."
   },
   "sched.jobs.ssh-user-ca.krl.title": {
     "en": "9694f71884ac8e1b",

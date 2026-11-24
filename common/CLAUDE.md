@@ -8409,14 +8409,22 @@ certificates are mapped to the person).** A person's live certificates are
 in `stsSshUserCertificate` (OID 1000), one JSON value each with the
 OpenSSH text, written at issuance once the register kept the row, taken
 off at revocation (a person's, an administrator's, a lost key's through
-`revokeSshUserKeyAsync()`) and at expiry. **The register is authoritative
-and the entry its projection**: the KRL, `ofKey()` and revocation never
-read the entry, and the `ssh-user-ca.entries` job (cluster, per realm, five
-minutes, in every cell) reconciles each person the register's `e:1` index
-names — expired and revoked off, a lost live one back, a value it does not
-hold dropped. A row's `entry` marker (`held`/`gone`) is the projection's
-state, and a `held` row outlives its certificate by a day so the job sees it
-expire. Its first run in a process is the BACKFILL (from 1.0.0 on): rows
+`revokeSshUserKeyAsync()`) and at expiry. **The entry is the master and
+the register its index** (rcbj: "Be consistent. The user objects need to
+contain the master copy of the credential data."), kept right by
+`entry_observer.ts`: every write of a person's entry, through
+`noteAccountChange()`, hands the attribute's values before and after to
+`ssh_issued.entryChanged()`. A value removed by another door IS a
+revocation (the CA's path, audited with the writer); a value added or
+changed that is not exactly what the CA issued that person, live and
+unrevoked, is taken off again (STS-SSHCA-0009) — a revocation is
+permanent and only the CA issues. The entry first, then the index, as for
+every kind; the module's own writes are flagged and ignored by its
+handler. The `ssh-user-ca.entries` job (cluster, per realm, five minutes,
+in every cell) writes `pending` rows onto their entries and takes expired
+ones off. A row's `entry` marker (`held`/`pending`/`gone`) is the entry's
+state, and a `held` or `pending` row outlives its certificate by a day so
+the job sees it expire. Its first run in a process is the BACKFILL (from 1.0.0 on): rows
 written before #2050 and the PKI row's `sshIssued` members, copied into the
 register with their revocation, are marked and then projected; idempotent,
 and bounded because a certificate lives an hour at most. The directory is a
@@ -8426,12 +8434,15 @@ require the other way would drag the `/admin/ldap/*` pages forward. A
 process that does not hold the person's entry (another cell's) answers
 `absent` and marks nothing `gone`. `userSMIMECertificate` is declared on
 the person by the same change and read through `Credential.smimeCertificate`
-(`openpgp_keys.ts`'s `person()`); `DomainMap.valuesOf()` reads an attribute
+(`openpgp_keys.ts`'s `person()`), and its observer handler takes off a
+value that holds no certificate (STS-OPENPGP-0034); `DomainMap.valuesOf()` reads an attribute
 under its RFC 4522 `;binary` spelling first and its plain one after. Both
 are listed beside the stored certificates in `GET /admin-api/users/
 certificates` (`smimeCertificates`, `sshCertificates`) and on the person's
 console page. STS-SSHCA-0006 (a partial slot), 0007 (an entry not brought
-in step), 0008 (the job could not read or record).
+in step), 0008 (the job could not read or record), 0009 (a value refused),
+0010 (a removal's revocation failed); STS-LDAP-0224/0225 (a handler
+refused, a handler threw).
 
 The CA key and KRL are public, `no-store` documents at
 `/pki/ssh-user-ca/{scope}` and `/pki/ssh-user-krl/{scope}`, on the main port

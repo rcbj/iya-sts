@@ -668,8 +668,8 @@
     "text": "項目上的 SSH 使用者憑證"
   },
   "sched.jobs.ssh-user-ca.entries.describe": {
-    "en": "312afdd863ef16cd",
-    "text": "將每個領域已過期和已撤銷的 SSH 使用者憑證從其持有人的項目（stsSshUserCertificate）上移除，寫回項目缺少的有效憑證，並在一個程序中首次執行時，把在憑證保存到項目之前簽發的憑證複製到其持有人上。"
+    "en": "5bc74370f72a746d",
+    "text": "把簽發時未能寫入項目的 SSH 使用者憑證寫到其持有人的項目（stsSshUserCertificate）上，移除已過期的憑證，並在一個程序中首次執行時，把在憑證保存到項目之前簽發的憑證複製到其持有人上。"
   },
   "sched.jobs.ssh-user-ca.krl.title": {
     "en": "9694f71884ac8e1b",

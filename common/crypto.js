@@ -22150,6 +22150,7 @@ module.exports = {
   zBase32: zBase32,
   wkdHash: wkdHash,
   smimeRecipientCertificate: smimeRecipientCertificate,
+  smimeCertificatesOf: smimeCertificatesOf,
   smimeEnvelope: smimeEnvelope,
   smimeKemWrap: smimeKemWrap,
   smimeKemAssemble: smimeKemAssemble,

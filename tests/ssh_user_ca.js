@@ -450,7 +450,8 @@ async function checkEntries(t) {
                                         row('e2', 2000)]),
           '9c. two certificates issued');
   t.equal(serialsOn(ana), 'e1,e2',
-          '9d. both are on the holder\'s entry once the store kept them');
+          '9d. both are on the holder\'s entry, the master, written ' +
+          'before the index');
   const first = register.readEntryValue(ana.values[0]);
   t.check(/^ssh-ed25519-cert-v01@openssh\.com /.test(first.certificate) &&
           first.principals[0] === 'ana' && first.authority === 'classical',
@@ -467,10 +468,57 @@ async function checkEntries(t) {
           JSON.stringify(swept));
   t.check(await register.record(realm, [row('e3', 600000)]),
           '9i. another issued');
-  ana.values = ['{"not":"ours"}'];
-  await register.reconcileEntries(realm, now);
-  t.equal(serialsOn(ana), 'e3', '9j. the job writes back a live one the ' +
-          'entry lost and drops a value the register does not hold');
+  // A FOREIGN WRITE: the entry is the master, so a value REMOVED by another
+  // door (an ldapmodify, say) is a revocation, which the KRL lists.
+  const e3 = ana.values.filter(function (one) {
+    return register.readEntryValue(one).serialHex === 'e3';
+  })[0];
+  ana.values = ana.values.filter(function (one) {
+    return one !== e3;
+  });
+  const removal = await register.entryChanged({ realm: realm,
+    subject: 'urn:uuid:ent-ana', username: 'ana', dn: ana.dn,
+    actor: 'ldap:cn=admin', door: 'ldap modify', before: [e3], after: [] });
+  const gone = await register.get(realm, 'e3');
+  t.check(removal && removal.revoked === 1 && gone && !!gone.revokedAt &&
+          (await register.revoked(realm, now)).some(function (one) {
+            return one.serialHex === 'e3';
+          }), '9j. a certificate removed from the entry is revoked, and ' +
+          'is on the KRL\'s question', JSON.stringify(removal));
+  // A REVOCATION IS PERMANENT: written back, it is refused and taken off.
+  ana.values = ana.values.concat([e3]);
+  const back = await register.entryChanged({ realm: realm,
+    subject: 'urn:uuid:ent-ana', username: 'ana', dn: ana.dn,
+    actor: 'ldap:cn=admin', door: 'ldap modify', before: [], after: [e3] });
+  t.check(back && back.refused === 1 && serialsOn(ana) === '' &&
+          !!(await register.get(realm, 'e3')).revokedAt,
+          '9k. a revoked certificate written back onto the entry is ' +
+          'refused, and stays revoked', JSON.stringify(back));
+  // ONLY THE CA ISSUES: an invented serial is refused the same way.
+  const invented = JSON.stringify({ serialHex: 'ff99', keyType: 'ssh-ed25519',
+    keyFingerprint: 'SHA256:x', principals: ['root'], issuedAt: '',
+    notAfter: new Date(now + 600000).toISOString(), authority: 'classical' });
+  ana.values = [invented];
+  const made = await register.entryChanged({ realm: realm,
+    subject: 'urn:uuid:ent-ana', username: 'ana', dn: ana.dn,
+    actor: 'ldap:cn=admin', door: 'ldap modify', before: [],
+    after: [invented] });
+  t.check(made && made.refused === 1 && serialsOn(ana) === '' &&
+          !(await register.get(realm, 'ff99')),
+          '9l. a certificate the CA never issued, written onto the entry, ' +
+          'is refused and makes no index row', JSON.stringify(made));
+  // AND THE ONE OBSERVER HANDS IT OVER: the handler is registered for the
+  // attribute, with S/MIME's beside it.
+  require('../common/openpgp_keys');
+  const observer = require('../common/entry_observer');
+  t.check(observer.registered().indexOf('stsSshUserCertificate') >= 0 &&
+          observer.registered().indexOf('userSMIMECertificate') >= 0 &&
+          observer.entryChanged({ kind: 'updated', dn: ana.dn,
+            realm: realm, subject: 'urn:uuid:ent-ana',
+            before: { stssshusercertificate: [] },
+            after: { stssshusercertificate: [] } }).length === 0,
+          '9m. the entry observer holds both handlers, and tells nobody of ' +
+          'a write that moved neither', JSON.stringify(observer.registered()));
   // THE BACKFILL: the PKI row's certificates from before the #1955 review,
   // through an instance whose legacy reader is a stub.
   const legacy = [row('f1', 600000), row('f2', 600000,
@@ -485,13 +533,13 @@ async function checkEntries(t) {
     }));
   old.setDirectory(dir);
   const filled = await old.reconcileEntries(realm, now);
-  t.check(filled.ok && filled.copied === 2 && serialsOn(ana) === 'e3,f1',
-          '9k. the backfill copies the live PKI-row certificates into the ' +
+  t.check(filled.ok && filled.copied === 2 && serialsOn(ana) === 'f1',
+          '9n. the backfill copies the live PKI-row certificates into the ' +
           'register and the unrevoked one onto its holder',
           JSON.stringify(filled) + ' ' + serialsOn(ana));
   t.check((await register.revoked(realm, now)).some(function (one) {
     return one.serialHex === 'f2';
-  }), '9l. a copied revocation is still on the KRL\'s question');
+  }), '9o. a copied revocation is still on the KRL\'s question');
   const writes = dir.writes.length;
   const again = new register.SshIssued(Object.assign(
     register.SshIssued.defaultDeps(), {
@@ -504,17 +552,82 @@ async function checkEntries(t) {
   again.setDirectory(dir);
   const twice = await again.reconcileEntries(realm, now);
   t.check(twice.ok && twice.copied === 0 && twice.marked === 0 &&
-          dir.writes.length === writes && serialsOn(ana) === 'e3,f1',
-          '9m. a second backfill copies nothing and writes no entry',
+          dir.writes.length === writes && serialsOn(ana) === 'f1',
+          '9p. a second backfill copies nothing and writes no entry',
           JSON.stringify(twice));
   const DomainMap = require('../common/domain_map');
   t.equal((DomainMap.fieldOf('Credential', 'smimeCertificate', {
     'userSMIMECertificate;binary': ['A'], userSMIMECertificate: ['B']
-  }) || []).join(','), 'A,B', '9n. S/MIME certificates are read through ' +
+  }) || []).join(','), 'A,B', '9q. S/MIME certificates are read through ' +
           'the concept, under both RFC 4522 spellings');
   register.setDirectory(before);
   register.forgetForTests();
   log.debug('Leaving checkEntries().');
+}
+
+// Gives the promise jobs a handler started time to finish.
+async function settled(test) {
+  log.debug('Entering settled().');
+  for (let i = 0; i < 200; i++) {
+    if (await test()) {
+      log.debug('Leaving settled(). Held.');
+      return true;
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 10);
+    });
+  }
+  log.debug('Leaving settled(). Never held.');
+  return false;
+}
+
+// THROUGH THE REAL DIRECTORY (#2050): a write of the person's entry by
+// another door — `writePerson()`, the console's and SCIM's replace, which
+// reaches `noteAccountChange()` as an LDAP modify does — is handed to the
+// register by the entry observer: removing the certificate revokes it, and
+// writing it back is refused.
+async function checkDirectoryWrites(t) {
+  log.debug('Entering checkDirectoryWrites().');
+  const ldap = require('../ldap/ldap_server');
+  const register = require('../common/ssh_issued');
+  const realm = require('../common/realms').currentId();
+  const name = 'ssh-obs-' + Date.now().toString(36);
+  ldap.createUser(name, { invent: false, attributes: {} });
+  const entry = ldap.existingUserEntry(name);
+  const uuid = String(((entry && entry.attributes.entryuuid) || [])[0] || '');
+  const serial = (0x7a000000 + (Date.now() % 0xffffff)).toString(16);
+  const now = Date.now();
+  t.check(!!uuid && await register.record(realm, [{ serialHex: serial,
+    keyType: 'ssh-ed25519', keyFingerprint: 'SHA256:obs',
+    ownerSubject: 'urn:uuid:' + uuid, principals: [name],
+    issuedAt: new Date(now).toISOString(),
+    notAfter: new Date(now + 600000).toISOString(), caMember: 'sshUserCa',
+    certificate: 'ssh-ed25519-cert-v01@openssh.com AAAAobs' }]),
+    'precondition: a certificate issued to a person of the directory');
+  const held = (ldap.existingUserEntry(name).attributes
+    .stssshusercertificate || []).slice();
+  t.equal(held.length, 1, '10a. it is on their entry in the directory');
+  const view = ldap.objectFor(name);
+  const without = Object.assign({}, view.entry.attributes || view.entry);
+  Object.keys(without).forEach(function (key) {
+    if (key.toLowerCase() === 'stssshusercertificate') {
+      delete without[key];
+    }
+  });
+  const wrote = ldap.writePerson(view.dn, without);
+  t.check(wrote && wrote.ok !== false && await settled(async function () {
+    const row = await register.get(realm, serial);
+    return !!(row && row.revokedAt);
+  }), '10b. a directory write that removes it revokes it', JSON.stringify(
+    await register.get(realm, serial)));
+  const back = Object.assign({}, without, { stsSshUserCertificate: held });
+  ldap.writePerson(view.dn, back);
+  t.check(await settled(async function () {
+    return !(ldap.existingUserEntry(name).attributes
+      .stssshusercertificate || []).length;
+  }), '10c. written back by a directory write, it is refused and taken ' +
+      'off again: a revocation is permanent');
+  log.debug('Leaving checkDirectoryWrites().');
 }
 
 async function run(t) {
@@ -525,6 +638,7 @@ async function run(t) {
   await checkPublication(t);
   await checkRegister(t);
   await checkEntries(t);
+  await checkDirectoryWrites(t);
   log.debug('Leaving run().');
 }
 
