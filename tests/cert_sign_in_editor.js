@@ -299,6 +299,16 @@ async function run(t) {
           result.indexOf('stsCertificateBinding') >= 0,
           'E5. each derived value not held is an Add through ' +
           'users/add-attribute');
+  // #2096: the table is drawn after the page, so its forms carry the
+  // realm's prefix themselves; without it a realm's Add posted to the
+  // default realm's /admin/users.
+  const inRealm = Editors.derivedBindings(t2, 'jane', derived, [],
+                                          '/realm/acme');
+  t.check((inRealm.match(/action="\/realm\/acme\/admin\/users"/g) ||
+           []).length === 3 && !/action="\/admin\/users"/.test(inRealm) &&
+          /action="\/admin\/users"/.test(result),
+          'E6. in a realm the derived Adds post to the realm\'s ' +
+          '/admin/users, and in the default realm to /admin/users');
 
   t.log.info('=== F. the other editors round-trip ===');
   const listeners = '[{"id":"cards","port":9443,"publicBaseUrl":' +

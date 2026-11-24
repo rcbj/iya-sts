@@ -1211,10 +1211,19 @@ class CertSignInEditors {
    * @param user - the person
    * @param answer - the inspection's answer
    * @param held - the values the person holds
+   * @param prefix - optional; the console's realm prefix (`/realm/<id>`),
+   *   which the Add forms' action carries
    * @returns the HTML
    */
   static derivedBindings(t: Json, user: string, answer: Json,
-                         held: string[]): string {
+                         held: string[], prefix?: string): string {
+    // A FORM DRAWN AFTER THE PAGE (#2096): `ConsoleRuntime.draw()` puts the
+    // realm's prefix on every root-relative action it draws
+    // (`WebPage.realmLinks()`), and this table is drawn later, by
+    // `wirePerson()`. An action without the prefix is one the console does
+    // not claim in a trust realm, so the browser posted it to the DEFAULT
+    // realm's /admin/users and nothing was added.
+    const action = String(prefix || '') + '/admin/users';
     if (!answer || answer.ok !== true) {
       return '<div class="err">' + kit.esc(((answer && answer.errors) ||
         []).join(' ') || t.text(K + 'problem.inspect')) + '</div>';
@@ -1226,7 +1235,8 @@ class CertSignInEditors {
       return '<tr><td><code>' + kit.esc(b.method) + '</code></td><td>' +
         '<code>' + kit.esc(b.value) + '</code></td><td>' + (has
           ? '<span class="sub">' + t.html(K + 'person.held') + '</span>'
-          : '<form method="post" action="/admin/users" class="inline">' +
+          : '<form method="post" action="' + kit.esc(action) +
+            '" class="inline">' +
             '<input type="hidden" name="action" value="add-attribute">' +
             '<input type="hidden" name="user" value="' + kit.esc(user) +
             '"><input type="hidden" name="from" value="user">' +
@@ -1259,11 +1269,13 @@ class CertSignInEditors {
    * @param changed - called when the reader changes a value
    * @param api - `(method, path, body) => Promise<{ status, json }>`, the
    *   runtime's `apiJson()`
+   * @param prefix - optional; the console's realm prefix, for a form drawn
+   *   after the page (`derivedBindings()`)
    * @returns nothing
    */
   static wire(env: Json, t: Json, changed: () => void,
               api: (method: string, path: string, body?: Json) =>
-                Promise<Json>): void {
+                Promise<Json>, prefix?: string): void {
     const doc = env && env.document;
     // A stand-in document (a test's) may offer only part of the DOM.
     if (!doc || typeof doc.querySelectorAll !== 'function' ||
@@ -1291,7 +1303,7 @@ class CertSignInEditors {
     }
     const people = doc.querySelectorAll('[data-cert-binding]');
     for (let i = 0; i < people.length; i++) {
-      CertSignInEditors.wirePerson(people[i], t, api);
+      CertSignInEditors.wirePerson(people[i], t, api, prefix);
     }
   }
 
@@ -1604,9 +1616,10 @@ class CertSignInEditors {
    * @param root - the person's binding editor
    * @param t - the page's translator
    * @param api - the runtime's `apiJson()`
+   * @param prefix - optional; the console's realm prefix
    * @returns nothing
    */
-  static wirePerson(root: Json, t: Json, api: Json): void {
+  static wirePerson(root: Json, t: Json, api: Json, prefix?: string): void {
     const user = String(root.getAttribute('data-cert-binding') || '');
     const area = root.querySelector('[data-cb-pem]');
     const file = root.querySelector('[data-cb-pem-file]');
@@ -1640,10 +1653,10 @@ class CertSignInEditors {
         { pem: String(area.value || ''), bindings: true }))
         .then(function (answer: Json) {
           WebSafeDom.render(result, CertSignInEditors.derivedBindings(t,
-            user, answer && answer.json, held));
+            user, answer && answer.json, held, prefix));
         }, function () {
           WebSafeDom.render(result, CertSignInEditors.derivedBindings(t,
-            user, null, held));
+            user, null, held, prefix));
         });
     });
   }
