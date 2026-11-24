@@ -10,6 +10,8 @@ more than one family needs it, not because it felt general.
 | `xml_model.ts` | **AN XML FAMILY'S MODEL, AS THE CODE READS IT (#1579).** The one reader of the facts `models/lib/saml_lib.mjs` writes — a vocabulary's terms, a message's attributes and children in their order, a parameter set — over one or more generated files merged (`saml.json`; `ws.json` with `saml.json`, so an RSTR's assertion is held to SAML's own model). `term()`, `terms()`, `read()`, the writers' order (`attributes()`, `children()`, which throw on a part the model does not name) and `hold()`, which logs a gap under the family's code and answers the document unchanged; a fragment whose prefixes its document declares is held with them (`declarations`). `saml/saml_model.ts` and `ws-trust/ws_model.ts` are its instances. A leaf. |
 | `xml_format.ts` | **A DOCUMENT THIS SERVICE BUILT, INDENTED FOR A PERSON (rcbj, 2026-11-13).** `XmlFormat.indent(xml, log)`: one element a line, two spaces deeper than its parent, an element holding only text kept on its line and the text untouched. For documents this service writes with `Html.esc()`'d values and no comments, CDATA or mixed content (the WSDL); a caller's XML is parsed with xmldom instead. A static utility class. |
 | `subject_urn.ts` | **THE NAMES A LEAF GIVES ITS HOLDER, DEFINED ONCE (#1827, 2026-11-16).** `SubjectUrn`: the one table of `urn:sts:<form>:` prefixes (person, sa, application, federation, cell, device), `forPerson()`, `forHolder()`, `parse()` (bare or `URI:`), `namesIn()`, `namesPerson()`, `isServiceAccountForm()`, `sameHolder()`. A static utility class and a leaf (`bunyan`, `config`). See *3df*. |
+| `csv_cell.ts` | **`CsvCell.of()`, EVERY CSV CELL THIS SERVICE WRITES (#2138).** A string whose first character is `=`, `+`, `-`, `@`, tab, CR or NUL gets a single quote in front (OWASP's CSV injection guidance, ASVS 5.0.0 1.2.10), then RFC 4180 quoting. A JavaScript number or bigint is never prefixed, so a negative count stays a number; the string `-5` is prefixed. Used by `report/formats.ts` and `passkey_report.ts`'s export; a new CSV writer uses it too. A static utility class. |
+| `image_metadata.ts` | **`ImageMetadata.stripped()`, A PUBLISHED IMAGE WITHOUT ITS METADATA (#2140).** The JPEG and PNG writers `profile_photo.ts` had (#719), moved here so the sign-in logo (`branding.ts`) uses them too, and a WebP writer for the logo. Each walks the container and keeps the listed segments or chunks; one it cannot walk answers null and the caller refuses. A JPEG ends at its FIRST end marker since #2140 (the last kept an appended MPF image and its EXIF), and an APP2 is kept only as an ICC profile. A library with no route, requiring only `helpers`, so 6a-brand and 6a-photo each require it without moving anything. A static utility class. |
 | `html.ts` | **`Html.esc()`, THE FIRST STATIC UTILITY CLASS (#50).** The HTML escaper converted modules use; unconverted ones keep their own until they are converted. |
 | `heap_collector.ts` | **A FULL GARBAGE COLLECTION OF THE ISOLATE THAT ASKS (#611, 2026-10-13)** — `HeapCollector.collect(log)`, run by Monitoring → Node Health in the front process and, asked over the pool's channel, in each worker thread. `gc` is obtained WITHOUT `--expose-gc` (rcbj: the command line, `process_memory.ts`'s re-exec and the pool's `Worker` flags are untouched): the flag is set for the one `vm.runInNewContext('gc')` that hands it back and CLEARED at once, or every context and worker thread made later would carry a global `gc`; a process started with the flag keeps its own. The figures are `v8.getHeapStatistics()`'s, the isolate's own, and the pause is the call's time. A static utility class over node's `v8` and `vm` only, its logger an argument; it never throws. `tests/heap_collector.js`. |
 | `config_file.js` | The one place that decides what `CONFIG_FILE` means. Requires nothing at all. |
@@ -1491,7 +1493,15 @@ value written through either door verifies through either door. In
 **everything decidable without computing scrypt is decided in the first** — the
 reserved refusal, development mode, a missing name, a missing store, a store
 that threw, nobody by that name, a stored form this service did not write — and
-those are the overwhelming majority of refusals, none of which costs 68ms. An
+those are the overwhelming majority of refusals, none of which NEEDS 68ms. **But
+since #2136 the ones that would name an account by their speed pay for a
+derivation anyway** (ASVS 5.0.0 6.3.8): nobody by that name, an unreadable
+stored form, a disabled account and a service account at a closed door are
+marked `decoy` in product, and both doors verify the presented password against
+`crypto.decoyPasswordHash()` — one hash per spec per process, at the policy's
+current parameters, matching no password — and discard the result, on the
+thread each door uses for a real comparison. The refusal and its code do not
+change. `tests/password_unknown_name_cost.js` counts the calls. An
 async door with its own copy of those seven refusals is exactly the shape that
 file exists to prevent: `verify()` is the one place a presented password is
 checked, and two copies of "when do we say no" would eventually say it in two
@@ -1559,7 +1569,11 @@ screen, per realm, and decided six questions on it (D1–D6, on the ticket).
   2048 pixels), at most `branding.logoMaxBytes`, with alternative text. It
   is kept in `realms.map({ persist: 'branding.assets' })` — per realm at the
   declaration, replicated by the change log, a global store in cells
-  (`persistence/tiers.js`), not sealed because a logo is public — and served
+  (`persistence/tiers.js`), not sealed because a logo is public — **cleaned
+  of its metadata first** (#2140: `image_metadata.ts`, the photo's writers
+  plus WebP; the stored sha256, sides and size are the cleaned bytes', and a
+  file that cannot be walked is refused, STS-AUTHN-0624; logos stored
+  before it are served as stored, and nothing cleans them) — and served
   at `/web/branding/logo` with the type its bytes are, `nosniff`, a
   sandboxing CSP through `app.contentSecurityPolicy()` (#1337) and an ETag. **Under `/web` on purpose**: the sign-in pages,
   the front door and the portal draw it, and they may be on different
@@ -16108,7 +16122,7 @@ specification's endpoint is never converted**.
 | Module | What it is |
 |---|---|
 | `web_page.ts` (`WebPage`) | The base of every runtime, client or not: `basesOf()`/`attribute()` read the shell's `data-sts-*`; `prefixAt(pathname, base)` the realm prefix; `queryOf()`; `url(path)` — this origin and prefix, or the base of the listener that answers the path (#472); `publicJson(method, path, body)` → `{ status, json, res }` with `json` null for a body that is not JSON; `realmLinks(html, prefix)`, `app.js`'s `withRealmLinks()` in the browser; `formFields(form, submitter)` — a form as an operation's JSON, the pressed button included and `csrf_token` left out; `targetFragment()`; `saveBase64()`. The console's and the portal's copies of each were deleted and both inherit these. |
-| `web_spa_client.ts` (`SpaClient extends WebPage`) | The OAuth client half the console and the portal share (#568), moved from `admin-ui/` unchanged: PKCE, the non-extractable DPoP key and proofs, the token endpoint, PAR where the realm requires it — **the push carries no DPoP proof**, since one would bind the code to a key the callback's page load does not hold — and a JARM answer opened and checked **first** in both runtimes' `finishSignIn()`. A public surface does not use it. **Since #561** it also holds what one account per tab needs in both runtimes: the tab's `{ sub, username }` in sessionStorage under the runtime's `accountKey` (`storedAccount()`, `keepAccount()`, `readAccounts()`, which removes it when the list is off) and the `login_hint` a sign-in sends from it (`hintFor()`); the IDENTITY requests are sent for — `identitySignal()`, one AbortController per identity, passed to `tokenRequest()`'s fetch, and `endIdentity()`, which aborts it and moves `identity` on so an answer under the old one is not kept; `discardClient()` (tokens, subject, DPoP key, nonce, metadata); `answerIsFor()`, the one subject check the console's popup made and every switch makes; and the change signal (`listenForAccounts()`, `announceAccounts()`; a read on a message that answers off keeps the list in hand, since off is also what a dropped request reads as — #731). All inert with `authn.multipleAccounts` off: nothing is kept, so nothing is hinted. `admin-ui/CLAUDE.md` 8c-iv argues it. |
+| `web_spa_client.ts` (`SpaClient extends WebPage`) | The OAuth client half the console and the portal share (#568), moved from `admin-ui/` unchanged: PKCE, the non-extractable DPoP key and proofs, the token endpoint, PAR where the realm requires it — **the push carries no DPoP proof**, since one would bind the code to a key the callback's page load does not hold — and a JARM answer opened and checked **first** in both runtimes' `finishSignIn()`. A public surface does not use it. **Since #561** it also holds what one account per tab needs in both runtimes: the tab's `{ sub, username }` in sessionStorage under the runtime's `accountKey` (`storedAccount()`, `keepAccount()`, `readAccounts()`, which removes it when the list is off) and the `login_hint` a sign-in sends from it (`hintFor()`); the IDENTITY requests are sent for — `identitySignal()`, one AbortController per identity, passed to `tokenRequest()`'s fetch, and `endIdentity()`, which aborts it and moves `identity` on so an answer under the old one is not kept; `discardClient()` (tokens, subject, DPoP key, nonce, metadata); `answerIsFor()`, the one subject check the console's popup made and every switch makes; and the change signal (`listenForAccounts()`, `announceAccounts()`; a read on a message that answers off keeps the list in hand, since off is also what a dropped request reads as — #731). All inert with `authn.multipleAccounts` off: nothing is kept, so nothing is hinted. `admin-ui/CLAUDE.md` 8c-iv argues it. **Since #2143 it is also asked FIRST** (ASVS 5.0.0 3.7.5): each runtime's `start()` calls `SpaClient.webCryptoMissing(env)` — `crypto`, `getRandomValues` and every `crypto.subtle` call a sign-in makes (`WEBCRYPTO_CALLS`) — before it wires or draws anything, and where something is missing (a page on plain HTTP has no `crypto.subtle`) draws the namespace's `noWebCrypto.title`/`noWebCrypto.text` (`consoleRuntime`, `portal`, `report`) through its own problem drawing and starts no sign-in, where it used to throw at `generateKey()` and leave the page blank. `noWebCryptoWords()` loads the words with `WebI18n`, since no API locale is had before a sign-in, and falls back to English; `tests/spa_webcrypto_missing.js`. |
 | `web_messages.ts` | The formatter and translator (#539 phase 5), moved from `admin-ui/`. |
 | `web_locale.ts` (`WebLocale`) | Pure language code: `canonical()`, `partsOf()`, `acceptLanguage()`, `uiLocales()`, `preferences(inputs)` (#539's order from `{ uiLocales, own, chooser, acceptLanguage }`), `chainFor()`/`negotiate(prefs, lastResort, parts)` against a list of catalog parts, `catalogParts(index.catalogs)`, `safeReturn()`, and `chooserHtml(t, offered, parts, returnTo)`. **`i18n.ts` and `page_locale.ts` hand their work to it** (keeping their names and log lines), so the server and a browser negotiate with one copy; `tests/web_foundation.js` B holds the browser's negotiation over the SERVED index to the server's, and the chooser to the one drawn by hand before. |
 | `web_i18n.ts` (`WebI18n`) | The browser's translator: `load({ uiLocales, own })` fetches `/web/locales/catalogs.json`, negotiates (the chooser's choice from `data-sts-lang` — the cookie is HttpOnly — the browser's from `navigator.languages`, the policy's default from `data-sts-locale-default`), fetches each namespace's catalog along the chain, builds a `WebTranslator`, sets it as the default, and marks `<html lang dir>`. `include(ns)` (#561) adds a namespace for the next `load()`, so the words of a control the service turns on are fetched only then. `chooser(t, returnTo)` draws the chooser; `choose(lang, returnTo)` and `onSubmit(event, then)` SEND it to `POST /authn/language` (unchanged; it sets the cookie and a signed-in person's `preferredLanguage`) with `redirect: 'manual'`, and the page is drawn again. |
@@ -16573,7 +16587,8 @@ what a maintainer must not undo:
   `paging.nextFrom`), at most `LIST_SCAN` entries a request, `complete:
   false` when that stopped a page short; `page` without `from` reads from the
   start. The export reads on to `EXPORT_LIMIT` rows and quotes a CSV cell a
-  spreadsheet would read as a formula.
+  spreadsheet would read as a formula (`csv_cell.ts` since #2138, which
+  added a leading NUL to the leads this export's own escape knew).
 * **#941's attestation certificate is counted** by `attestationFacetOf()`:
   the leaf of `attestation.algorithms` (a compound statement's members, and
   the anchor only when the statement carried no certificate), as
@@ -17240,8 +17255,10 @@ to it could undo.
 * **THE SERVER STRIPS, EVEN THOUGH THE BROWSER ALREADY DID.** The browser's canvas
   drops metadata from what the portal sends. A partner's copy and a direct call
   to `/account-api/photo` have no browser in the way, and the address is public.
-  There is no image library here: `strippedJpeg()` and `strippedPng()` walk
-  segments and keep what is listed. WebP is refused rather than kept uncleaned.
+  There is no image library here: `image_metadata.ts`'s `strippedJpeg()` and
+  `strippedPng()` (this module's until #2140, shared with the logo since)
+  walk segments and keep what is listed. WebP is refused for a photo; that
+  module can clean one now (the logo's), but nobody asked for WebP photos.
   **So nothing here decodes pixels**, and an image that decodes badly is the
   viewer's to fail on. The `sandbox` policy and `nosniff` are what stand between
   that and anything else.

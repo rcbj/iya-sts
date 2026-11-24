@@ -82,7 +82,7 @@ and `docs/v1.2.0/configuration.md`.
 | `openapi.ts` | `GET /report-api/openapi.json`. Every released route, built from the catalog that is loaded. |
 | `query.ts` | Validates one JSON document and decides sync or async. It sends no HTTP response. The document's SHAPE is `models/api/report.tsp`'s `QueryDocument` and `Filter*` forms, checked through `ModelZod` (#1579); the catalog, the field types, parameters, the filter's depth and the size caps are checked here, and every refusal keeps its code and sentence. |
 | `limits.ts` | The caps, read when asked. `Limits.fixed` is what a test passes. |
-| `formats.ts` | JSON, RFC 4180 CSV, and a PDF 1.4 file in Helvetica WinAnsi. A PDF cell wraps within its column, up to 256 bytes, and a row is as tall as its tallest cell (#993); the file's header argues the pagination. |
+| `formats.ts` | JSON, RFC 4180 CSV (each cell through `common/csv_cell.ts`, which puts a single quote before a string a spreadsheet would read as a formula, #2138), and a PDF 1.4 file in Helvetica WinAnsi. A PDF cell wraps within its column, up to 256 bytes, and a row is as tall as its tallest cell (#993); the file's header argues the pagination. |
 | `rows.ts`, `sources.ts`, `executor.ts` | Reading one source, bounded, and writing the artifact. |
 | `passkey_history.ts` | The `passkeyHistory` source's projection (#1109): one stored day of `passkey_report.history` into a row per `scope`. A library; reaches `common/passkey_report` lazily. |
 | `rights.ts` | The caller as held ∩ carried, and every question about the API, a definition or a job put to `common/access_gate.ts`. It decides nothing (#1030). |

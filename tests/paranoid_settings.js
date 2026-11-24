@@ -144,7 +144,17 @@ module.exports = {
     // B. THE DEFAULTS, AND `auto` PER MODE.
     t.log.info('B. the defaults');
     t.equal(defaults.pki.paranoid, 'auto', 'B. env/defaults.js: auto');
-    t.equal(config.value('pki.paranoid'), 'auto', 'B. config.value(): auto');
+    // AGAINST ITS SOURCE (#2155): every packaged appconfig file forces
+    // `pki.paranoid` off (rcbj, 2026-11-10; env/test.js says why), and in
+    // the runner's one process an earlier test may already have loaded the
+    // stack under one, which `delete process.env.CONFIG_FILE` above cannot
+    // undo. The default is the row's and env/defaults.js's; what
+    // `config.value()` reads is that default only where nothing layers it.
+    const paranoidSource = config.sourceOf('pki.paranoid');
+    t.equal(config.value('pki.paranoid'),
+            paranoidSource === 'appconfig' ? 'off' : 'auto',
+            'B. config.value(): auto, or the appconfig layer\'s off (' +
+            paranoidSource + ')');
     trust.PURPOSES.forEach(function (one) {
       const row = settingKeys.filter(function (s) {
         return s.key === one.setting;
@@ -159,8 +169,14 @@ module.exports = {
               'B. ' + one.setting + ' has its environment variable',
               row && row.env);
     });
-    t.equal(trust.inForce().inForce, false, 'B. auto is off in development');
-    await withSettings({ 'global.mode': 'product' }, async () => {
+    // What `auto` means is asked with `auto` in force, whatever an appconfig
+    // layer says (#2155).
+    await withSettings({ 'pki.paranoid': 'auto' }, async () => {
+      t.equal(trust.inForce().inForce, false,
+              'B. auto is off in development');
+    });
+    await withSettings({ 'global.mode': 'product', 'pki.paranoid': 'auto' },
+                       async () => {
       t.equal(trust.inForce().inForce, true, 'B. auto is on in product');
       await withSettings({ 'pki.paranoid': 'off' }, async () => {
         t.equal(trust.inForce().inForce, false,
