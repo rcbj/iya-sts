@@ -11,6 +11,11 @@
   "by.administratorConsoleLogout": "Un administrador (la consola de administración, /admin/logout)",
   "act.credentialCompromised": "credencial marcada como comprometida",
   "act.accountDisabled": "cuenta desactivada",
+  "signIn.kind": "{kind, select, new-device {un dispositivo o navegador no visto antes} new-country {un país no visto antes} anonymiser {una red de anonimización como Tor} after-refusals {contraseñas rechazadas justo antes} unusual {un nivel de riesgo inusual para esta cuenta} other {{kind}}}",
+  "signIn.method": "{kind, select, password {una contraseña} webauthn {una clave de acceso o llave de seguridad} fido {una clave de acceso o llave de seguridad} federation {otro proveedor de identidad} kerberos {Kerberos} x509 {un certificado} totp {una aplicación de autenticación} backup-code {un código de recuperación} wallet {una billetera digital} yubico-otp {un YubiKey OTP} ssh {una clave SSH} other {otro método}}",
+  "signIn.device": "{browser} en {os}",
+  "signIn.deviceUnknown": "un navegador o dispositivo que no se identificó",
+  "signIn.placeUnknown": "desconocido",
   "rights.access": "acceso",
   "address.none": "(ninguna)"
 }

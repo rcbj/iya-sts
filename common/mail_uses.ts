@@ -30,7 +30,10 @@
 //      sessions ended by an administrator, password changed or reset, a
 //      credential marked compromised, recovery started, the address changed
 //      (to the OLD address). When the SERVICE did it (risk scoring), the
-//      realm's Admin Write roster is told as well.
+//      realm's Admin Write roster is told as well. Since #2162 also a
+//      SIGN-IN THAT SUCCEEDED LOOKING UNUSUAL and a RUN OF REFUSED
+//      PASSWORDS, each at most once in `mail.signInAlertWindowS` per kind
+//      (`signInAlert()`, `refusedAttempts()`).
 //   5. **AN ACCESS REQUEST WAITING FOR ITS OWNER** (#432 phase 6), a
 //      notification a person may decline: a GNAP grant a client asked for
 //      while they were not there, waiting on /portal/ciba.
@@ -79,6 +82,15 @@ type Json = any;
 const RESET_PATH = '/portal/reset-password';
 const ACTIVATE_PATH = '/portal/activate';
 const VERIFY_PATH = '/portal/verify-email';
+// Where a sign-in alert sends the person (#2162): their recent sign-ins,
+// where "This wasn't me" signs every session out.
+const SIGN_INS_PATH = '/portal/sign-ins';
+
+// THE KINDS OF UNUSUAL SIGN-IN A PERSON IS TOLD OF (#2162), each told at
+// most once in `mail.signInAlertWindowS`. `risk/risk_engine.ts` decides
+// which a sign-in shows.
+const SIGN_IN_ALERT_KINDS = ['new-device', 'new-country', 'anonymiser',
+                             'after-refusals', 'unusual'];
 
 // The one sentence the forgot-password form answers, whatever happened.
 const RESET_ANSWER = 'If that names an account here with an email address ' +
@@ -1148,6 +1160,144 @@ class MailUses {
     return out;
   }
 
+  // -------------------------------------------------------------------------
+  // 4c. A SIGN-IN THAT SUCCEEDED LOOKING UNUSUAL, AND A RUN OF REFUSED
+  // PASSWORDS (#2162, ASVS 5.0.0 6.3.5). Security notices: a person cannot
+  // decline them, an operator can (`mail.signInAlerts`). Each kind is told
+  // at most once in `mail.signInAlertWindowS` — the outbox is the record
+  // (`mail.queuedWithin()`), so the window is the cluster's and survives a
+  // restart for as long as `mail.retentionS` keeps the row. Never throws:
+  // the sign-in has already happened.
+  // -------------------------------------------------------------------------
+  private signInAlertsOn(): boolean {
+    const { log, config, mail } = this.deps;
+    log.debug("Entering MailUses.signInAlertsOn().");
+    const on = !!config.value('mail.signInAlerts') &&
+      !!config.value('mail.securityNotices') && mail.available();
+    log.debug("Leaving MailUses.signInAlertsOn(). " + on);
+    return on;
+  }
+
+  /**
+   * Tells a person that a sign-in to their account succeeded looking
+   * unusual: when, roughly where, with what browser or device, by which
+   * method, what was unusual, and a link to their recent sign-ins, where
+   * saying it was not them signs every session out.
+   *
+   * A kind already told in `mail.signInAlertWindowS` is left out, and
+   * nothing is sent when every kind was.
+   *
+   * @param username - the person
+   * @param facts - `kinds` (of SIGN_IN_ALERT_KINDS), `at` (ms), `city`,
+   *   `subdivision`, `country`, `browser`, `os`, `method` (the credential
+   *   kind)
+   * @returns what `send()` answered, or `{ ok: false, skipped }`
+   */
+  signInAlert(username: string, facts: Json): Json {
+    const { log, config, mail } = this.deps;
+    log.debug("Entering MailUses.signInAlert(). " + username);
+    const f = facts || {};
+    let out: Json = { ok: false, skipped: 'off' };
+    try {
+      if (!username || !this.signInAlertsOn()) {
+        log.debug("Leaving MailUses.signInAlert(). Off or nobody.");
+        return out;
+      }
+      const windowS = Number(config.value('mail.signInAlertWindowS'));
+      const kinds = (Array.isArray(f.kinds) ? f.kinds : [])
+        .map(String).filter(function (k: string, i: number, all: string[]) {
+          return SIGN_IN_ALERT_KINDS.indexOf(k) >= 0 && all.indexOf(k) === i;
+        });
+      const fresh = kinds.filter(function (k: string): boolean {
+        return !mail.queuedWithin(username, 'sign-in-alert', 'kind:' + k,
+                                  windowS);
+      });
+      if (!fresh.length) {
+        log.debug("Leaving MailUses.signInAlert(). Told already.");
+        return { ok: false, skipped: kinds.length ? 'told in the window'
+                                                  : 'nothing unusual' };
+      }
+      const place = [f.city, f.subdivision, f.country].map(function (v) {
+        return String(v || '').trim();
+      }).filter(Boolean).join(', ');
+      const browser = String(f.browser || '').trim();
+      const os = String(f.os || '').trim();
+      out = mail.send({
+        username: username, template: 'sign-in-alert',
+        values: {
+          username: username,
+          when: { date: Number(f.at) || this.deps.now() },
+          place: place || MailUses.said('signIn.placeUnknown'),
+          device: browser || os
+            ? MailUses.said('signIn.device', { browser: browser || '?',
+                                                os: os || '?' })
+            : MailUses.said('signIn.deviceUnknown'),
+          method: MailUses.said('signIn.method',
+                                { kind: String(f.method || 'other') }),
+          what: { list: fresh.map(function (k: string): Json {
+            return MailUses.said('signIn.kind', { kind: k });
+          }) }
+        },
+        links: { link: SIGN_INS_PATH },
+        // EACH KIND IS A KEY: the message is about every fresh kind, so a
+        // later sign-in showing any of them in the window finds it.
+        dedupKey: 'kind:' + fresh[0],
+        dedupAlso: fresh.slice(1).map(function (k: string): string {
+          return 'kind:' + k;
+        }),
+        dedupWindowS: windowS,
+        via: 'a sign-in alert', actor: '' });
+    } catch (e) {
+      log.debug("Caught in MailUses.signInAlert(): " + ((e && e.message) ||
+                                                         e));
+      log.warn(this.deps.errorCodes.tag('STS-MAIL-0031') + 'mail: a ' +
+               'sign-in alert for ' + username + ' could not be queued: ' +
+               ((e && e.message) || e));
+    }
+    log.debug("Leaving MailUses.signInAlert().");
+    return out;
+  }
+
+  /**
+   * Tells a person that passwords were refused for their account enough
+   * times to reach the sign-in limit, whether or not anybody then signed
+   * in; at most once in `mail.signInAlertWindowS`.
+   *
+   * @param username - the person
+   * @param facts - `count` (refusals) and `minutes` (the window they were
+   *   counted in)
+   * @returns what `send()` answered, or `{ ok: false, skipped }`
+   */
+  refusedAttempts(username: string, facts: Json): Json {
+    const { log, config, mail } = this.deps;
+    log.debug("Entering MailUses.refusedAttempts(). " + username);
+    const f = facts || {};
+    let out: Json = { ok: false, skipped: 'off' };
+    try {
+      if (!username || !this.signInAlertsOn()) {
+        log.debug("Leaving MailUses.refusedAttempts(). Off or nobody.");
+        return out;
+      }
+      out = mail.send({
+        username: username, template: 'sign-in-refusals',
+        values: { username: username, when: this.instant(),
+                  count: String(Number(f.count) || 0),
+                  minutes: String(Number(f.minutes) || 0) },
+        links: { link: SIGN_INS_PATH },
+        dedupKey: 'refusals',
+        dedupWindowS: Number(config.value('mail.signInAlertWindowS')),
+        via: 'a sign-in alert', actor: '' });
+    } catch (e) {
+      log.debug("Caught in MailUses.refusedAttempts(): " +
+                ((e && e.message) || e));
+      log.warn(this.deps.errorCodes.tag('STS-MAIL-0031') + 'mail: the ' +
+               'refused-attempts notice for ' + username + ' could not be ' +
+               'queued: ' + ((e && e.message) || e));
+    }
+    log.debug("Leaving MailUses.refusedAttempts().");
+    return out;
+  }
+
   // An account was disabled (`common/account_state.ts`), by `by`.
   /**
    * Sends the account-disabled notice.
@@ -1256,6 +1406,9 @@ export = {
   fromAccountSignal: slot.forward('fromAccountSignal'),
   accountDisabled: slot.forward('accountDisabled'),
   sessionsEnded: slot.forward('sessionsEnded'),
+  signInAlert: slot.forward('signInAlert'),
+  refusedAttempts: slot.forward('refusedAttempts'),
+  SIGN_IN_ALERT_KINDS: SIGN_IN_ALERT_KINDS,
   addressChanged: slot.forward('addressChanged'),
   accessRequested: slot.forward('accessRequested'),
   authzenAccessRequested: slot.forward('authzenAccessRequested'),

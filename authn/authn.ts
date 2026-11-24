@@ -9164,9 +9164,12 @@ class Authn {
       if (multiAccount) {
         this.enrolInAccountSet(extra.request, res, again, defaultFound);
       }
+      // `assessment` and `username` (#2162): the sign-in succeeded, and
+      // the engine tells the person if it looked unusual.
       this.settleRisk(risk, { decision: riskDecision, sessionId: again.id,
                               context: extra.risk &&
-                                       extra.risk.sessionContext });
+                                       extra.risk.sessionContext,
+                              assessment: extra.risk, username: username });
       log.debug("Leaving Authn.startSessionHere(). " + username +
                 " re-authenticated on " +
                 "session " + again.id + ".");
@@ -9570,9 +9573,11 @@ class Authn {
       // function is given. See the note in dropSession() for why the observer
       // needs one at all.
       req: (res && res.req) || null });
+    // `assessment` and `username` (#2162), as for a re-authentication.
     this.settleRisk(risk, { decision: riskDecision, sessionId: sessionId,
                             context: extra.risk &&
-                                     extra.risk.sessionContext });
+                                     extra.risk.sessionContext,
+                            assessment: extra.risk, username: username });
     this.assessRisk(session, firstEvent, via, extra);
     // THE SESSION THIS RESPONSE STARTED (#94), for afterSignIn(): the
     // attribute sources read at sign-in are read between here and the

@@ -1791,7 +1791,10 @@ var config = {
     resetRequiresBackupCode: true,        // Self-service reset needs a recovery code
     verificationTtlMinutes: 1440,         // Address verification link lifetime (minutes)
     securityNotices: true,                // Security notices
-    notifyAdministrators: true            // Tell administrators of system acts
+    notifyAdministrators: true,           // Tell administrators of system acts
+    signInAlerts: true,                   // Sign-in alerts
+    signInAlertLevel: "MEDIUM",           // Sign-in alert level
+    signInAlertWindowS: 86400             // Sign-in alert window (seconds)
   },
 
   // --- Reporting -------------------------------------------------------

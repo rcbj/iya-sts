@@ -396,6 +396,38 @@ A session's risk is not fixed at sign-in:
 Both update the person's standing, so a change is answered by `risk-response`
 as any other is.
 
+### The person is told of an unusual sign-in
+
+When a sign-in **succeeds** and looks unusual, the person is mailed at the
+address on their entry (#2162). A sign-in looks unusual when it
+shows one of these:
+
+- a device or browser they have not signed in from before (`new-device`,
+  `unregistered-device`)
+- a country they have not signed in from before. This needs as much history
+  as `risk.minimumHistory` asks, and an address with no country is never new.
+- an anonymising network: a Tor exit, the reputation list, or the operator's
+  deny list
+- refused passwords for them just before (`account-failures`)
+- a level of MEDIUM or higher with none of the above
+
+It must also reach `mail.signInAlertLevel`, which is MEDIUM by default. The
+message gives the time and roughly where it came from (city and country, from
+the location dataset where one is loaded). It also gives the browser and
+operating system, the method, and what looked unusual. It links to **Recent
+sign-ins**, where **This wasn't me** signs every session out. Each kind is told
+at most once in `mail.signInAlertWindowS`, which is a day by default.
+
+**A run of refused passwords is told too**, whether or not anybody then signs
+in. The count is the sign-in limit's own: `security.rateLimitPerIdentity`
+refusals in `security.rateLimitWindowS`. The person is told at most once in
+`mail.signInAlertWindowS`.
+
+Both are security notices. `mail.signInAlerts` turns them off for a realm.
+Nothing is sent without a mail transport or while `mail.securityNotices` is
+off. A live session assessed again is not a sign-in and is never told. In
+product mode the link needs `global.publicBaseUrl`, as every mailed link does.
+
 ### What people say about their own sign-ins
 
 Each person sees their own assessed sign-ins on the user portal, at

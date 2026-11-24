@@ -12379,6 +12379,30 @@
     "en": "bd3ae7ff26663b42",
     "text": "Lorsque le SERVICE, et non une personne, marque un identifiant comme compromis ou désactive un compte (évaluation des risques), envoyer aussi un courriel à chaque membre de la liste Admin Write du domaine qui possède une adresse."
   },
+  "mail.signInAlerts|label": {
+    "en": "26ac39330238a669",
+    "text": "Alertes de connexion"
+  },
+  "mail.signInAlerts|description": {
+    "en": "2b1f4ddc3568a493",
+    "text": "Prévenir une personne lorsqu’une connexion à son compte réussit en paraissant inhabituelle — un appareil ou un navigateur, ou un pays, depuis lequel elle ne s’est jamais connectée, un réseau d’anonymisation tel que Tor, des mots de passe refusés juste avant, ou un niveau de risque égal ou supérieur à mail.signInAlertLevel — avec quand, à peu près où, avec quoi et comment, et un lien vers ses connexions récentes ; et lorsque des mots de passe sont refusés pour son compte autant de fois que la limite de connexion le permet (security.rateLimitPerIdentity en security.rateLimitWindowS), que quelqu’un se connecte ensuite ou non. Rien n’est envoyé tant que les avis de sécurité sont désactivés ou qu’aucun transport n’est configuré."
+  },
+  "mail.signInAlertLevel|label": {
+    "en": "68c0f4fbb242ea3a",
+    "text": "Niveau des alertes de connexion"
+  },
+  "mail.signInAlertLevel|description": {
+    "en": "edc21510e7997c0d",
+    "text": "Le niveau de risque le plus bas qu’une connexion réussie doit atteindre pour être signalée à la personne. À LOW, un nouvel appareil ou pays est signalé quel que soit son score ; à MEDIUM, la valeur par défaut, une connexion que le moteur de risque juge inhabituelle ; à HIGH, seulement une connexion qu’il juge très probablement pas celle de la personne. Une connexion que personne n’a assez d’historique pour évaluer n’est signalée que pour ce qu’elle montre : un réseau d’anonymisation ou des mots de passe refusés."
+  },
+  "mail.signInAlertWindowS|label": {
+    "en": "4c8ef34d536096a7",
+    "text": "Fenêtre des alertes de connexion (secondes)"
+  },
+  "mail.signInAlertWindowS|description": {
+    "en": "29547122992cacaf",
+    "text": "Pendant combien de temps un type d’alerte de connexion — un nouvel appareil, un nouveau pays, un réseau d’anonymisation, des mots de passe refusés — n’est signalé qu’une fois à une personne. La boîte d’envoi en est la trace, de sorte qu’une fenêtre plus longue que mail.retentionS ne dure que cette durée."
+  },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",
     "text": "Plafond de lignes d’un rapport synchrone"

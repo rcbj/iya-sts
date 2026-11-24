@@ -50,6 +50,16 @@
       "text": "Sinimulan ng {{by}} ang recovery ng account na {{username}} noong {{when}}.\n\nKung hindi ikaw ito o isang taong hiningan mo ng tulong, makipag-ugnayan ngayon sa namamahala ng iyong account.\n",
       "html": "<p>Sinimulan ng {{by}} ang recovery ng account na <strong>{{username}}</strong> noong {{when}}.</p><p>Kung hindi ikaw ito o isang taong hiningan mo ng tulong, makipag-ugnayan ngayon sa namamahala ng iyong account.</p>"
     },
+    "sign-in-alert": {
+      "subject": "Isang kakaibang pag-sign in sa inyong {{service}} account",
+      "text": "May nag-sign in sa account na {{username}} noong {{when}}, at mukha itong kakaiba: {{what}}.\n\nSaan, humigit-kumulang: {{place}}\nGamit ang: {{device}}\nPaano: {{method}}\n\nKung kayo ito, wala kayong kailangang gawin. Kung hindi, buksan ang inyong mga kamakailang pag-sign in at sabihin ito roon, na magsa-sign out sa lahat ng inyong session, saka palitan ang inyong password:\n\n{{link}}\n",
+      "html": "<p>May nag-sign in sa account na <strong>{{username}}</strong> noong {{when}}, at mukha itong kakaiba: {{what}}.</p><p>Saan, humigit-kumulang: {{place}}</p><p>Gamit ang: {{device}}</p><p>Paano: {{method}}</p><p>Kung kayo ito, wala kayong kailangang gawin. Kung hindi, <a href=\"{{link}}\">buksan ang inyong mga kamakailang pag-sign in</a> at sabihin ito roon, na magsa-sign out sa lahat ng inyong session, saka palitan ang inyong password.</p>"
+    },
+    "sign-in-refusals": {
+      "subject": "Mga tinanggihang pagtatangkang mag-sign in sa inyong {{service}} account",
+      "text": "{{count}} pagtatangkang mag-sign in sa account na {{username}} gamit ang maling password ang tinanggihan sa loob ng {{minutes}} minuto bago ang {{when}}.\n\nKung kayo ito, wala kayong kailangang gawin. Kung hindi, maaaring may sumusubok na hulaan ang inyong password: mag-sign in, suriin ang inyong mga kamakailang pag-sign in, at palitan ang inyong password kung maaaring alam ito ng iba.\n\n{{link}}\n",
+      "html": "<p>{{count}} pagtatangkang mag-sign in sa account na <strong>{{username}}</strong> gamit ang maling password ang tinanggihan sa loob ng {{minutes}} minuto bago ang {{when}}.</p><p>Kung kayo ito, wala kayong kailangang gawin. Kung hindi, maaaring may sumusubok na hulaan ang inyong password: mag-sign in, <a href=\"{{link}}\">suriin ang inyong mga kamakailang pag-sign in</a>, at palitan ang inyong password kung maaaring alam ito ng iba.</p>"
+    },
     "address-changed": {
       "subject": "Napalitan ang email address ng iyong account sa {{service}}",
       "text": "Napalitan ang email address ng account na {{username}} noong {{when}}, at {{address}} na ito ngayon. Ipinadala ang mensaheng ito sa dating address nito.\n\nKung hindi mo ito inaasahan, makipag-ugnayan ngayon sa namamahala ng iyong account.\n",

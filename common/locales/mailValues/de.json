@@ -11,6 +11,11 @@
   "by.administratorConsoleLogout": "ein Administrator (die Administratorkonsole unter /admin/logout)",
   "act.credentialCompromised": "Anmeldedaten als kompromittiert markiert",
   "act.accountDisabled": "Konto deaktiviert",
+  "signIn.kind": "{kind, select, new-device {ein bisher nicht gesehenes Gerät oder ein Browser} new-country {ein bisher nicht gesehenes Land} anonymiser {ein Anonymisierungsnetz wie Tor} after-refusals {kurz zuvor abgelehnte Passwörter} unusual {eine für dieses Konto ungewöhnliche Risikostufe} other {{kind}}}",
+  "signIn.method": "{kind, select, password {ein Passwort} webauthn {ein Passkey oder Sicherheitsschlüssel} fido {ein Passkey oder Sicherheitsschlüssel} federation {ein anderer Identitätsanbieter} kerberos {Kerberos} x509 {ein Zertifikat} totp {eine Authenticator-App} backup-code {ein Wiederherstellungscode} wallet {eine digitale Brieftasche} yubico-otp {ein YubiKey OTP} ssh {ein SSH-Schlüssel} other {eine andere Methode}}",
+  "signIn.device": "{browser} unter {os}",
+  "signIn.deviceUnknown": "ein Browser oder Gerät, das sich nicht zu erkennen gab",
+  "signIn.placeUnknown": "unbekannt",
   "rights.access": "Zugriff",
   "address.none": "(keine)"
 }

@@ -241,6 +241,45 @@ const BUILT_IN: TemplateSpec[] = [
           'started at {{when}} by {{by}}.</p><p>If this was not you or ' +
           'somebody you asked, contact whoever manages your account ' +
           'now.</p>' },
+  // #2162 (ASVS 5.0.0 6.3.5): a sign-in that succeeded looking unusual, and
+  // a run of refused passwords. The link is the person's recent sign-ins,
+  // where saying a sign-in was not them signs every session out.
+  { id: 'sign-in-alert', category: 'security',
+    title: 'An unusual sign-in to your account',
+    values: ['username', 'when', 'place', 'device', 'method', 'what'],
+    links: ['link'],
+    subject: 'An unusual sign-in to your {{service}} account',
+    text: 'Somebody signed in to the account {{username}} at {{when}}, and ' +
+          'it looked unusual: {{what}}.\n\nWhere, approximately: ' +
+          '{{place}}\nWith: {{device}}\nHow: {{method}}\n\nIf this was ' +
+          'you, there is nothing to do. If it was not, open your recent ' +
+          'sign-ins and say so there, which signs every session of yours ' +
+          'out, then change your password:\n\n{{link}}\n',
+    html: '<p>Somebody signed in to the account <strong>{{username}}' +
+          '</strong> at {{when}}, and it looked unusual: {{what}}.</p>' +
+          '<p>Where, approximately: {{place}}</p><p>With: {{device}}</p>' +
+          '<p>How: {{method}}</p><p>If this was you, there is nothing to ' +
+          'do. If it was not, <a href="{{link}}">open your recent ' +
+          'sign-ins</a> and say so there, which signs every session of ' +
+          'yours out, then change your password.</p>' },
+  { id: 'sign-in-refusals', category: 'security',
+    title: 'Refused sign-in attempts on your account',
+    values: ['username', 'when', 'count', 'minutes'],
+    links: ['link'],
+    subject: 'Refused sign-in attempts on your {{service}} account',
+    text: '{{count}} attempts to sign in to the account {{username}} with ' +
+          'a wrong password were refused in the {{minutes}} minute(s) ' +
+          'before {{when}}.\n\nIf this was you, there is nothing to do. ' +
+          'If it was not, somebody may be trying to guess your password: ' +
+          'sign in, review your recent sign-ins, and change your password ' +
+          'if it might be known.\n\n{{link}}\n',
+    html: '<p>{{count}} attempts to sign in to the account <strong>' +
+          '{{username}}</strong> with a wrong password were refused in the ' +
+          '{{minutes}} minute(s) before {{when}}.</p><p>If this was you, ' +
+          'there is nothing to do. If it was not, somebody may be trying to ' +
+          'guess your password: sign in, <a href="{{link}}">review your ' +
+          'recent sign-ins</a>, and change your password if it might be ' +
+          'known.</p>' },
   { id: 'address-changed', category: 'security',
     title: 'Your address was changed',
     values: ['username', 'when', 'address'],

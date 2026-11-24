@@ -247,7 +247,7 @@ when it is saved. It is never sent on its own.
 
 | Category | Messages | May be declined |
 |---|---|---|
-| Security notices | disabled, sessions ended, password changed, compromised, recovery started, address changed, a sign-in code or link (#64), a refused reset | **no** |
+| Security notices | disabled, sessions ended, password changed, compromised, recovery started, address changed, an unusual sign-in, refused sign-in attempts, a sign-in code or link (#64), a refused reset | **no** |
 | Links somebody asked for | reset, activation, verification, test | **no** |
 | Notifications | a finished report, an access request waiting on the portal, a started post-login activity's reminder | yes, on `/portal/email` |
 
@@ -327,6 +327,16 @@ next sign-in.
 *the service* acted, for example when risk scoring disabled an account or
 marked a credential compromised, every member of the realm's Admin Write roster
 who has an address is told as well (`mail.notifyAdministrators`).
+
+**An unusual sign-in, and a run of refused passwords** (#2162), are security
+notices too, `mail.signInAlerts`. A sign-in that succeeds looking unusual is
+told with when, roughly where, with what and how, and a link to the person's
+recent sign-ins. Unusual means a new device, a new country, an anonymising
+network, refused passwords just before, or a risk level at or above
+`mail.signInAlertLevel`. As many refused passwords as the sign-in limit allows
+are told whether or not anybody signs in. Each kind is told at most once in
+`mail.signInAlertWindowS`. See
+[Risk scoring](risk-scoring.md#the-person-is-told-of-an-unusual-sign-in).
 
 ## Encrypted mail
 

@@ -11,6 +11,11 @@
   "by.administratorConsoleLogout": "管理员（管理控制台 /admin/logout）",
   "act.credentialCompromised": "凭据被标记为已泄露",
   "act.accountDisabled": "帐户已停用",
+  "signIn.kind": "{kind, select, new-device {以前未见过的设备或浏览器} new-country {以前未见过的国家} anonymiser {Tor 等匿名网络} after-refusals {此前刚被拒绝的密码} unusual {对此账户而言异常的风险级别} other {{kind}}}",
+  "signIn.method": "{kind, select, password {密码} webauthn {通行密钥或安全密钥} fido {通行密钥或安全密钥} federation {其他身份提供方} kerberos {Kerberos} x509 {证书} totp {身份验证器应用} backup-code {恢复码} wallet {数字钱包} yubico-otp {YubiKey OTP} ssh {SSH 密钥} other {其他方式}}",
+  "signIn.device": "{os} 上的 {browser}",
+  "signIn.deviceUnknown": "未表明身份的浏览器或设备",
+  "signIn.placeUnknown": "未知",
   "rights.access": "访问",
   "address.none": "（无）"
 }

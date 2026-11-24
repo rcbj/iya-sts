@@ -12379,6 +12379,30 @@
     "en": "bd3ae7ff26663b42",
     "text": "Kapag ang SERBISYO, hindi isang tao, ang nagmarka ng credential bilang compromised o nag-disable ng account (risk scoring), padalhan din ng mail ang bawat member ng Admin Write roster ng realm na may address."
   },
+  "mail.signInAlerts|label": {
+    "en": "26ac39330238a669",
+    "text": "Mga alerto sa pag-sign in"
+  },
+  "mail.signInAlerts|description": {
+    "en": "2b1f4ddc3568a493",
+    "text": "Abisuhan ang isang tao kapag nagtagumpay ang isang pag-sign in sa kanyang account na mukhang kakaiba — isang device o browser, o isang bansa, na hindi pa niya pinag-sign in-an, isang network na nagtatago ng pagkakakilanlan gaya ng Tor, mga password na tinanggihan bago nito, o antas ng panganib na katumbas o higit sa mail.signInAlertLevel — kasama kung kailan, humigit-kumulang saan, gamit ang ano at paano, at isang link sa kanyang mga kamakailang pag-sign in; at kapag tinanggihan ang mga password para sa kanyang account nang kasindami ng pinapayagan ng limitasyon sa pag-sign in (security.rateLimitPerIdentity sa loob ng security.rateLimitWindowS), may mag-sign in man pagkatapos o wala. Walang ipinapadala habang naka-off ang mga abiso sa seguridad o walang naka-configure na transport."
+  },
+  "mail.signInAlertLevel|label": {
+    "en": "68c0f4fbb242ea3a",
+    "text": "Antas ng alerto sa pag-sign in"
+  },
+  "mail.signInAlertLevel|description": {
+    "en": "edc21510e7997c0d",
+    "text": "Ang pinakamababang antas ng panganib na dapat maabot ng isang matagumpay na pag-sign in para maabisuhan ang tao. Sa LOW, inaabiso ang bagong device o bansa anuman ang marka nito; sa MEDIUM, ang default, ang pag-sign in na itinuturing ng risk engine na kakaiba; sa HIGH, iyon lamang na itinuturing nitong malamang na hindi sa tao. Ang pag-sign in na walang sapat na kasaysayan para markahan ay inaabiso lamang dahil sa ipinapakita nito: isang network na nagtatago ng pagkakakilanlan o mga tinanggihang password."
+  },
+  "mail.signInAlertWindowS|label": {
+    "en": "4c8ef34d536096a7",
+    "text": "Window ng alerto sa pag-sign in (segundo)"
+  },
+  "mail.signInAlertWindowS|description": {
+    "en": "29547122992cacaf",
+    "text": "Gaano katagal inaabiso nang hindi hihigit sa isang beses sa isang tao ang isang uri ng alerto sa pag-sign in — bagong device, bagong bansa, network na nagtatago ng pagkakakilanlan, mga tinanggihang password. Ang outbox ang talaan, kaya ang window na mas mahaba sa mail.retentionS ay tumatagal lamang nang ganoon."
+  },
   "report.syncMaxRows|label": {
     "en": "77fdb27c30eb4bf8",
     "text": "Cap ng row ng synchronous na report"

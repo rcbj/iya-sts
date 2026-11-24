@@ -50,6 +50,16 @@
       "text": "Die Wiederherstellung des Kontos {{username}} wurde um {{when}} von {{by}} gestartet.\n\nWenn das weder Sie waren noch jemand, den Sie darum gebeten haben, wenden Sie sich umgehend an die Person, die Ihr Konto verwaltet.\n",
       "html": "<p>Die Wiederherstellung des Kontos <strong>{{username}}</strong> wurde um {{when}} von {{by}} gestartet.</p><p>Wenn das weder Sie waren noch jemand, den Sie darum gebeten haben, wenden Sie sich umgehend an die Person, die Ihr Konto verwaltet.</p>"
     },
+    "sign-in-alert": {
+      "subject": "Eine ungewöhnliche Anmeldung bei Ihrem {{service}}-Konto",
+      "text": "Jemand hat sich am {{when}} beim Konto {{username}} angemeldet, und es wirkte ungewöhnlich: {{what}}.\n\nWo, ungefähr: {{place}}\nWomit: {{device}}\nWie: {{method}}\n\nWenn Sie das waren, ist nichts zu tun. Andernfalls öffnen Sie Ihre letzten Anmeldungen und sagen Sie es dort – damit werden alle Ihre Sitzungen beendet – und ändern Sie dann Ihr Passwort:\n\n{{link}}\n",
+      "html": "<p>Jemand hat sich am {{when}} beim Konto <strong>{{username}}</strong> angemeldet, und es wirkte ungewöhnlich: {{what}}.</p><p>Wo, ungefähr: {{place}}</p><p>Womit: {{device}}</p><p>Wie: {{method}}</p><p>Wenn Sie das waren, ist nichts zu tun. Andernfalls <a href=\"{{link}}\">öffnen Sie Ihre letzten Anmeldungen</a> und sagen Sie es dort – damit werden alle Ihre Sitzungen beendet – und ändern Sie dann Ihr Passwort.</p>"
+    },
+    "sign-in-refusals": {
+      "subject": "Abgelehnte Anmeldeversuche bei Ihrem {{service}}-Konto",
+      "text": "{{count}} Versuche, sich mit einem falschen Passwort beim Konto {{username}} anzumelden, wurden in den {{minutes}} Minute(n) vor {{when}} abgelehnt.\n\nWenn Sie das waren, ist nichts zu tun. Andernfalls versucht vielleicht jemand, Ihr Passwort zu erraten: Melden Sie sich an, prüfen Sie Ihre letzten Anmeldungen und ändern Sie Ihr Passwort, falls es bekannt sein könnte.\n\n{{link}}\n",
+      "html": "<p>{{count}} Versuche, sich mit einem falschen Passwort beim Konto <strong>{{username}}</strong> anzumelden, wurden in den {{minutes}} Minute(n) vor {{when}} abgelehnt.</p><p>Wenn Sie das waren, ist nichts zu tun. Andernfalls versucht vielleicht jemand, Ihr Passwort zu erraten: Melden Sie sich an, <a href=\"{{link}}\">prüfen Sie Ihre letzten Anmeldungen</a> und ändern Sie Ihr Passwort, falls es bekannt sein könnte.</p>"
+    },
     "address-changed": {
       "subject": "Die E-Mail-Adresse Ihres Kontos für {{service}} wurde geändert",
       "text": "Die E-Mail-Adresse des Kontos {{username}} wurde um {{when}} zu {{address}} geändert. Diese Nachricht ging an die Adresse, die es zuvor hatte.\n\nWenn Sie dies nicht erwartet haben, wenden Sie sich umgehend an die Person, die Ihr Konto verwaltet.\n",

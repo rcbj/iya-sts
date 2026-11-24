@@ -11,6 +11,11 @@
   "by.administratorConsoleLogout": "en administratör (administrationskonsolen, /admin/logout)",
   "act.credentialCompromised": "autentiseringsuppgift markerad som komprometterad",
   "act.accountDisabled": "kontot inaktiverat",
+  "signIn.kind": "{kind, select, new-device {en enhet eller webbläsare som inte setts förut} new-country {ett land som inte setts förut} anonymiser {ett anonymiseringsnätverk som Tor} after-refusals {nekade lösenord strax innan} unusual {en risknivå som är ovanlig för kontot} other {{kind}}}",
+  "signIn.method": "{kind, select, password {ett lösenord} webauthn {en passkey eller säkerhetsnyckel} fido {en passkey eller säkerhetsnyckel} federation {en annan identitetsleverantör} kerberos {Kerberos} x509 {ett certifikat} totp {en autentiseringsapp} backup-code {en återställningskod} wallet {en digital plånbok} yubico-otp {en YubiKey OTP} ssh {en SSH-nyckel} other {en annan metod}}",
+  "signIn.device": "{browser} på {os}",
+  "signIn.deviceUnknown": "en webbläsare eller enhet som inte angav vad den var",
+  "signIn.placeUnknown": "okänt",
   "rights.access": "åtkomst",
   "address.none": "(ingen)"
 }

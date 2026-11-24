@@ -11,6 +11,11 @@
   "by.administratorConsoleLogout": "管理員（管理主控台 /admin/logout）",
   "act.credentialCompromised": "認證資料被標示為已外洩",
   "act.accountDisabled": "帳戶已停用",
+  "signIn.kind": "{kind, select, new-device {以前未見過的裝置或瀏覽器} new-country {以前未見過的國家} anonymiser {Tor 等匿名網路} after-refusals {此前剛被拒絕的密碼} unusual {對此帳戶而言異常的風險等級} other {{kind}}}",
+  "signIn.method": "{kind, select, password {密碼} webauthn {通行密鑰或安全金鑰} fido {通行密鑰或安全金鑰} federation {其他身分識別提供者} kerberos {Kerberos} x509 {憑證} totp {驗證器應用程式} backup-code {復原碼} wallet {數位錢包} yubico-otp {YubiKey OTP} ssh {SSH 金鑰} other {其他方式}}",
+  "signIn.device": "{os} 上的 {browser}",
+  "signIn.deviceUnknown": "未表明身分的瀏覽器或裝置",
+  "signIn.placeUnknown": "未知",
   "rights.access": "存取",
   "address.none": "（無）"
 }
