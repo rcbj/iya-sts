@@ -1,0 +1,23 @@
+{
+  "what": "The cases every embedded PEP package's engine is held to (iya-sts #1206, #2024). Written by rust/crates/sts-xacml/tests/pep_corpus.rs from the engine the service runs; never edited by hand. README.md is the format and the comparison rules.",
+  "format": 1,
+  "version": 1,
+  "sha256": "d28672aefda0f4c4d6135afce21ac32030b66f4502043d5ebc6f17351d31cc91",
+  "now": "2026-01-01T00:00:00Z",
+  "cases": {
+    "oasis": 449,
+    "enforcement": 1
+  },
+  "sources": {
+    "oasis": "xacml/conformance/mandatory (Apache-2.0; xacml/conformance/PROVENANCE.md)",
+    "enforcement": "xacml-pep/enforcement_cases.json"
+  },
+  "excluded": {
+    "IIC003": "the policy is invalid and must be refused: static validation is the service's, at deploy, and a PEP is only ever sent policies that passed it",
+    "IIC012": "the policy is invalid and must be refused: static validation is the service's, at deploy, and a PEP is only ever sent policies that passed it",
+    "IIC014": "the policy is invalid and must be refused: static validation is the service's, at deploy, and a PEP is only ever sent policies that passed it",
+    "IIC332": "the policy is invalid and must be refused: static validation is the service's, at deploy, and a PEP is only ever sent policies that passed it",
+    "IIC335": "the policy is invalid and must be refused: static validation is the service's, at deploy, and a PEP is only ever sent policies that passed it",
+    "IIE003": "a recorded failure of the reference engine (xacml/conformance/MANIFEST.js): no answer to hold a package to"
+  }
+}

@@ -1,0 +1,120 @@
+{
+  "name": "IID312",
+  "source": "oasis-mandatory",
+  "policies": [
+    {
+      "policyId": "urn:oasis:names:tc:xacml:2.0:conformance-test:IID312:policy",
+      "kind": "Policy",
+      "version": "1.0",
+      "isRoot": true,
+      "document": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n<Policy xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" \n\t\txmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" \n\t\tPolicyId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IID312:policy\" \n\t\tRuleCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:rule-combining-algorithm:ordered-permit-overrides\" \n\t\tVersion=\"1.0\" \n\t\t>\n    <Description>\n        Policy for Conformance Test IID312.\n        Purpose: Case: Permit: RuleCombiningAlgorithm Ordered PermitOverrides\n        This test in conjunction with IID311 demonstrates that the ordered-permit-overrides at the Rule level takes the first rule that matches.\n    </Description>\n    <Target/>\n    <Rule Effect=\"Deny\" RuleId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IID009:rule1\">\n        <Description>\n            A subject whose name is J. Hibbert may not\n            read Bart Simpson's medical record.  NOTAPPLICABLE\n        </Description>\n        <Target>\n            <AnyOf>\n                <AllOf>\n                    <Match MatchId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\">\n                        <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">J. Hibbert</AttributeValue>\n                        <AttributeDesignator AttributeId=\"urn:oasis:names:tc:xacml:1.0:subject:subject-id\" Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"/>\n                    </Match>\n                </AllOf>\n            </AnyOf>\n        </Target>\n    </Rule>\n    \n   \t<!--  Order (position in this file) of this policy is different than in IID312 - this one comes first, so its Obligations should be seen in Response -->\n    <Rule Effect=\"Permit\" RuleId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IID312:rule5\">\n        <Description>\n            A subject who is at least 5 years older than Bart\n            Simpson may read Bart Simpson's medical record. PERMIT.\n        </Description>\n        <Condition>\n\t\t  <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:integer-greater-than-or-equal\">\n            <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:integer-subtract\">\n                <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:integer-one-and-only\">\n                    <AttributeDesignator AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:age\" Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" DataType=\"http://www.w3.org/2001/XMLSchema#integer\" MustBePresent=\"false\"/>\n                </Apply>\n                <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:integer-one-and-only\">\n                    <AttributeDesignator AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:bart-simpson-age\" Category=\"urn:oasis:names:tc:xacml:3.0:attribute-category:environment\" DataType=\"http://www.w3.org/2001/XMLSchema#integer\" MustBePresent=\"false\"/>\n                </Apply>\n            </Apply>\n            <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#integer\">5</AttributeValue>\n\t\t  </Apply>\n        </Condition>\n    \t<ObligationExpressions>\n\t        <ObligationExpression FulfillOn=\"Permit\" ObligationId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IID312:obligation-2\">\n\t            <AttributeAssignmentExpression AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IID312:assignment2\">\n\t                <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">assignment2</AttributeValue>\n\t            </AttributeAssignmentExpression>\n\t        </ObligationExpression>\n        </ObligationExpressions>\n        <AdviceExpressions>\n\t        <AdviceExpression AppliesTo=\"Permit\" AdviceId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IID312:Advice-2\">\n\t            <AttributeAssignmentExpression AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IID312:assignment2\">\n\t                <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">assignment1</AttributeValue>\n\t            </AttributeAssignmentExpression>\n\t        </AdviceExpression>\n\t    </AdviceExpressions>\n    </Rule> \n    \n    \n    \n    \n    \n    <Rule Effect=\"Permit\" RuleId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IID312:rule2\">\n        <Description>\n            A subject who is at least 5 years older than Bart\n            Simpson may read Bart Simpson's medical record. PERMIT.\n        </Description>\n        <Condition>\n\t\t  <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:integer-greater-than-or-equal\">\n            <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:integer-subtract\">\n                <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:integer-one-and-only\">\n                    <AttributeDesignator AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:age\" Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" DataType=\"http://www.w3.org/2001/XMLSchema#integer\" MustBePresent=\"false\"/>\n                </Apply>\n                <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:integer-one-and-only\">\n                    <AttributeDesignator AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:bart-simpson-age\" Category=\"urn:oasis:names:tc:xacml:3.0:attribute-category:environment\" DataType=\"http://www.w3.org/2001/XMLSchema#integer\" MustBePresent=\"false\"/>\n                </Apply>\n            </Apply>\n            <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#integer\">5</AttributeValue>\n\t\t  </Apply>\n        </Condition>\n    \t<ObligationExpressions>\n\t        <ObligationExpression FulfillOn=\"Permit\" ObligationId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IID312:obligation-1\">\n\t            <AttributeAssignmentExpression AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IID312:assignment1\">\n\t                <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">assignment1</AttributeValue>\n\t            </AttributeAssignmentExpression>\n\t        </ObligationExpression>\n        </ObligationExpressions>\n        <AdviceExpressions>\n\t        <AdviceExpression AppliesTo=\"Permit\" AdviceId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IID312:Advice-1\">\n\t            <AttributeAssignmentExpression AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IID312:assignment1\">\n\t                <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">assignment1</AttributeValue>\n\t            </AttributeAssignmentExpression>\n\t        </AdviceExpression>\n\t    </AdviceExpressions>\n    </Rule>\n    \n    <Rule Effect=\"Deny\" RuleId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IID312:rule3\">\n        <Description>\n            A subject whose \"bogus\" attribute is \"Zaphod Beedlebrox\" may not\n            read Bart Simpson's medical record.  INDETERMINATE.\n        </Description>\n        <Condition>\n\t\t  <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\">\n            <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:string-one-and-only\">\n                <AttributeDesignator AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:bogus\" Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"/>\n            </Apply>\n            <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">Zaphod Beedlebrox</AttributeValue>\n\t\t  </Apply>\n        </Condition>\n    </Rule>\n    \n    <Rule Effect=\"Deny\" RuleId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IID312:rule4\">\n        <Description>\n            A subject whose name is Julius Hibbert\n            may not read Bart Simpson's medical record. DENY.\n        </Description>\n        <Target>\n            <AnyOf>\n                <AllOf>\n                    <Match MatchId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\">\n                        <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">Julius Hibbert</AttributeValue>\n                        <AttributeDesignator AttributeId=\"urn:oasis:names:tc:xacml:1.0:subject:subject-id\" Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"/>\n                    </Match>\n                </AllOf>\n            </AnyOf>\n        </Target>\n    </Rule>\n    \n    \n</Policy>\n"
+    }
+  ],
+  "request": {
+    "returnPolicyIdList": false,
+    "combinedDecision": false,
+    "categories": [
+      {
+        "category": "urn:oasis:names:tc:xacml:1.0:subject-category:access-subject",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:subject:subject-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "Julius Hibbert"
+              }
+            ]
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:age",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#integer",
+                "value": "45"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:resource",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:resource:resource-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#anyURI",
+                "value": "http://medico.com/record/patient/BartSimpson"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:action",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:action:action-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "read"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:environment",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:bart-simpson-age",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#integer",
+                "value": "10"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "decision": "Permit",
+    "obligations": [
+      {
+        "id": "urn:oasis:names:tc:xacml:2.0:conformance-test:IID312:obligation-2",
+        "assignments": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:IID312:assignment2",
+            "dataType": "http://www.w3.org/2001/XMLSchema#string",
+            "value": "assignment2"
+          }
+        ]
+      }
+    ],
+    "advice": [
+      {
+        "id": "urn:oasis:names:tc:xacml:2.0:conformance-test:IID312:Advice-2",
+        "assignments": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:IID312:assignment2",
+            "dataType": "http://www.w3.org/2001/XMLSchema#string",
+            "value": "assignment1"
+          }
+        ]
+      }
+    ]
+  }
+}

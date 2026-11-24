@@ -119,6 +119,7 @@ own licences. `REUSE.toml` declares each of them in machine-readable form and
 | Path | From | Licence |
 |---|---|---|
 | `xacml/conformance/` | The OASIS XACML 3.0 conformance test suite, taken from [`authzforce/core`](https://github.com/authzforce/core). `xacml/conformance/PROVENANCE.md` records the full chain — OASIS XACML TC, then AT&T (April 2014, MIT), then AuthzForce — together with the one link in that chain that public sources do not establish. Its own `LICENSE` file sits beside it. | Apache-2.0 |
+| `xacml/pep-corpus/oasis/` | The embedded PEP corpus's cases (#2024): the OASIS suite's mandatory cases above, converted by `rust/crates/sts-xacml/tests/pep_corpus.rs` (the policies verbatim, the request as attributes, the expected answer the reference engine's). A modified form of the suite, so under its licence; `xacml/pep-corpus/README.md` says what changed. The manifest, `enforcement.json` and the README beside them are MIT, so the MIT `iya-pep-<lang>` packages can vendor the whole corpus. | Apache-2.0 (cases), MIT (the rest) |
 | `spiffe/protos/` | The SPIRE API SDK's protobuf definitions, the SPIFFE Workload API and the SPIFFE Broker API, copied verbatim. | Apache-2.0 |
 | `common/crypto_impl/contexts/credentials_v1.json`, `credentials_v2.json` | The W3C Verifiable Credentials JSON-LD contexts. | W3C Software and Document License |
 | `admin-ui/natural_earth/` | Country outlines derived from Natural Earth's 1:50m Admin 0 – Countries by `tests/tools/natural-earth.js`. | Public domain |

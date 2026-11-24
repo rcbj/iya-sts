@@ -2107,6 +2107,14 @@
     "en": "3d081a5b28f53bd6",
     "text": "Posponer una actividad posterior al inicio de sesión"
   },
+  "endpoints.route./authn-api/mfa/:id/post-login/mail.name": {
+    "en": "07e532c277a3f57e",
+    "text": "Registrar una clave de cifrado de correo poscuántica"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/piv.name": {
+    "en": "e0733b33f8ee2cb8",
+    "text": "Volver a emitir un certificado PIV que pide una actividad posterior al inicio de sesión"
+  },
   "endpoints.route./authn-api/mfa/:id/roles.name": {
     "en": "77d2211c8b1e2d93",
     "text": "Elegir los roles dinámicos de este inicio de sesión"

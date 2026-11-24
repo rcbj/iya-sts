@@ -3387,6 +3387,14 @@
     "en": "b1be682232332278",
     "text": "NON-SPEC (#1096). Pour le snoozeDays du profil ; refusé une fois le délai accordé écoulé. La session retenue démarre."
   },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/mail.what": {
+    "en": "5d4392dc0f98e868",
+    "text": "NON-SPEC (#2009 P2). L’activité pqc-mail-encryption : un défi et une clé OpenPGP, ou un certificat S/MIME, dont la clé de chiffrement est ML-KEM ; la session retenue démarre une fois la clé enregistrée."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/piv.what": {
+    "en": "5f17fc65239bfbc0",
+    "text": "NON-SPEC (#2009 P3). L’activité piv-reissue : la demande de certificat d’un emplacement et son attestation, auxquelles répond le certificat réémis ; la session retenue démarre une fois celui-ci écrit."
+  },
   "stsmetadata.endpoints./authn-api/mfa/:id/roles.what": {
     "en": "26fc9f7a66659a20",
     "text": "HORS SPÉCIFICATION (#1072). Le choix de l’étape des rôles, confronté à l’offre de l’étape et à la politique d’éligibilité de chaque rôle ; la session suspendue démarre avec ce choix."

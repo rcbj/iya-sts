@@ -1,0 +1,170 @@
+{
+  "name": "IIIA340",
+  "source": "oasis-mandatory",
+  "policies": [
+    {
+      "policyId": "urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:policy",
+      "kind": "Policy",
+      "version": "1.0",
+      "isRoot": true,
+      "document": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n<Policy xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" PolicyId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:policy\" RuleCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:rule-combining-algorithm:deny-overrides\" Version=\"1.0\" >\n    <Description>\n        Policy for Conformance Test IIIA340.\n        Purpose: Test returned Attributes, Obligations and Advice with NaN, INF and -INF special double values\n    </Description>\n    <Target/>\n    <Rule Effect=\"Permit\" RuleId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIC001:rule\">\n        <Description>\n            Julius Hibbert may access all records.\n        </Description>\n        <Condition>\n\t\t  <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:string-equal\">\n\t\t  <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:string-one-and-only\" >\n               <AttributeDesignator AttributeId=\"urn:oasis:names:tc:xacml:1.0:subject:subject-id\" Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" DataType=\"http://www.w3.org/2001/XMLSchema#string\" MustBePresent=\"false\"/>\n\t\t  </Apply>\n               <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">Julius Hibbert</AttributeValue>\n\t\t  </Apply>\n        </Condition>\n    </Rule>\n    \n    \n    <ObligationExpressions>\n        <ObligationExpression FulfillOn=\"Permit\" ObligationId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:obligation-1\">\n            <AttributeAssignmentExpression AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:assignment1\">\n                <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">assignment1</AttributeValue>\n            </AttributeAssignmentExpression>\n            <AttributeAssignmentExpression AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:NaN\">\n                <AttributeDesignator\n                \tCategory=\"urn:oasis:names:tc:xacml:3.0:attribute-category:environment\"\n                \tAttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:NaN\"\n                \tDataType=\"http://www.w3.org/2001/XMLSchema#double\"\n                \tMustBePresent=\"true\"/>\n            </AttributeAssignmentExpression>\n            <AttributeAssignmentExpression AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:INF\">\n                <AttributeDesignator\n                \tCategory=\"urn:oasis:names:tc:xacml:3.0:attribute-category:environment\"\n                \tAttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:INF\"\n                \tDataType=\"http://www.w3.org/2001/XMLSchema#double\"\n                \tMustBePresent=\"true\"/>\n            </AttributeAssignmentExpression>\n            <AttributeAssignmentExpression AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:NegativeINF\">\n                <AttributeDesignator\n                \tCategory=\"urn:oasis:names:tc:xacml:3.0:attribute-category:environment\"\n                \tAttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:NegativeINF\"\n                \tDataType=\"http://www.w3.org/2001/XMLSchema#double\"\n                \tMustBePresent=\"true\"/>\n            </AttributeAssignmentExpression>\n        </ObligationExpression>\n    </ObligationExpressions>\n\n     \n    <AdviceExpressions>\n        <AdviceExpression AppliesTo=\"Permit\" AdviceId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:Advice-1\">\n            <AttributeAssignmentExpression AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:assignment1\">\n                <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#string\">assignment1</AttributeValue>\n            </AttributeAssignmentExpression>\n            <AttributeAssignmentExpression AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:NaN\">\n                <AttributeDesignator\n                \tCategory=\"urn:oasis:names:tc:xacml:3.0:attribute-category:environment\"\n                \tAttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:NaN\"\n                \tDataType=\"http://www.w3.org/2001/XMLSchema#double\"\n                \tMustBePresent=\"true\"/>\n            </AttributeAssignmentExpression>\n            <AttributeAssignmentExpression AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:INF\">\n                <AttributeDesignator\n                \tCategory=\"urn:oasis:names:tc:xacml:3.0:attribute-category:environment\"\n                \tAttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:INF\"\n                \tDataType=\"http://www.w3.org/2001/XMLSchema#double\"\n                \tMustBePresent=\"true\"/>\n            </AttributeAssignmentExpression>\n            <AttributeAssignmentExpression AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:NegativeINF\">\n                <AttributeDesignator\n                \tCategory=\"urn:oasis:names:tc:xacml:3.0:attribute-category:environment\"\n                \tAttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:NegativeINF\"\n                \tDataType=\"http://www.w3.org/2001/XMLSchema#double\"\n                \tMustBePresent=\"true\"/>\n            </AttributeAssignmentExpression>\n        </AdviceExpression>\n    </AdviceExpressions>\n\n    \n</Policy>\n\n\n\n\n"
+    }
+  ],
+  "request": {
+    "returnPolicyIdList": false,
+    "combinedDecision": false,
+    "categories": [
+      {
+        "category": "urn:oasis:names:tc:xacml:1.0:subject-category:access-subject",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:subject:subject-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "Julius Hibbert"
+              }
+            ]
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:age",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#integer",
+                "value": "45"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:resource",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:resource:resource-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#anyURI",
+                "value": "http://medico.com/record/patient/BartSimpson"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:action",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:action:action-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "read"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:environment",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:NaN",
+            "includeInResult": true,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#double",
+                "value": "NaN"
+              }
+            ]
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:INF",
+            "includeInResult": true,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#double",
+                "value": "INF"
+              }
+            ]
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:NegativeINF",
+            "includeInResult": true,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#double",
+                "value": "-INF"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "decision": "Permit",
+    "obligations": [
+      {
+        "id": "urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:obligation-1",
+        "assignments": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:assignment1",
+            "dataType": "http://www.w3.org/2001/XMLSchema#string",
+            "value": "assignment1"
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:NaN",
+            "dataType": "http://www.w3.org/2001/XMLSchema#double",
+            "value": "NaN"
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:INF",
+            "dataType": "http://www.w3.org/2001/XMLSchema#double",
+            "value": "INF"
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:NegativeINF",
+            "dataType": "http://www.w3.org/2001/XMLSchema#double",
+            "value": "-INF"
+          }
+        ]
+      }
+    ],
+    "advice": [
+      {
+        "id": "urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:Advice-1",
+        "assignments": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:assignment1",
+            "dataType": "http://www.w3.org/2001/XMLSchema#string",
+            "value": "assignment1"
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:NaN",
+            "dataType": "http://www.w3.org/2001/XMLSchema#double",
+            "value": "NaN"
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:INF",
+            "dataType": "http://www.w3.org/2001/XMLSchema#double",
+            "value": "INF"
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:IIIA340:NegativeINF",
+            "dataType": "http://www.w3.org/2001/XMLSchema#double",
+            "value": "-INF"
+          }
+        ]
+      }
+    ]
+  }
+}
