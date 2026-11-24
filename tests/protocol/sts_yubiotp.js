@@ -17,6 +17,10 @@
 //   c. a CSV made in the run is imported and assigned; the confirmation
 //      OTP is spent; no answer carries the AES key, the private id or an
 //      error code;
+//   c2. (#2071) GET /admin-api/hardware-tokens/yubiotp lists the token:
+//      unassigned after the import, assigned to the person after the
+//      assignment, by serial and by the person (read off their entry),
+//      filtered by status, and no answer carries a key or an error code;
 //   d. a YK-VAL client created here: a missing parameter, an unknown
 //      client and a bad HMAC; a fresh OTP is OK with sl=100 and a
 //      signature this client checks; the same OTP is REPLAYED_OTP; the
@@ -435,6 +439,8 @@ async function test() {
         password: PASSWORD,
         attributes: { cn: "Yubi " + PERSON, sn: PERSON, givenName: "Yubi",
                       mail: PERSON + "@" + DOMAIN } } });
+    const listedBefore = await send("GET",
+      realmPath(OPERATION + "/yubiotp?status=unassigned"));
     const confirming = otpFor(secret, 1, 1);
     const assigned = await send("POST",
       realmPath(OPERATION + "/assign-yubiotp"), { json: {
@@ -465,6 +471,56 @@ async function test() {
       [secret.k, secret.p].forEach(function (needle) {
         assert.ok(text.indexOf(needle) < 0,
                   "an answer carried a secret");
+      });
+      assert.ok(codeFree(text), text.slice(0, 400));
+    });
+
+    log.info("=== c2. the inventory listed (#2071) ===");
+    const bySerial = await send("GET",
+      realmPath(OPERATION + "/yubiotp?q=" +
+                encodeURIComponent(secret.serial)));
+    const byPerson = await send("GET",
+      realmPath(OPERATION + "/yubiotp?q=" + encodeURIComponent(PERSON)));
+    const unassignedNow = await send("GET",
+      realmPath(OPERATION + "/yubiotp?status=unassigned"));
+    const everything = await send("GET",
+      realmPath(OPERATION + "/yubiotp?per=5&page=1"));
+    const badStatus = await send("GET",
+      realmPath(OPERATION + "/yubiotp?status=lost"));
+    check("the inventory lists the token unassigned, then assigned to the " +
+          "person by serial and off the person's entry, filtered and " +
+          "paged, with no key and no error code", function () {
+      const rowOf = function (res) {
+        assert.strictEqual(res.status, 200, res.raw.slice(0, 300));
+        return (res.json.tokens || []).filter(function (r) {
+          return r.serial === secret.serial;
+        })[0] || null;
+      };
+      const before = rowOf(listedBefore);
+      assert.ok(before && before.status === "unassigned" &&
+                before.holder === "" && before.publicId === secret.publicId,
+                "the import was not listed unassigned: " + listedBefore.raw);
+      const one = rowOf(bySerial);
+      assert.ok(one && one.status === "assigned" && one.holder === PERSON,
+                "the serial's row: " + bySerial.raw.slice(0, 300));
+      assert.strictEqual(bySerial.json.tokens.length, 1, bySerial.raw);
+      const theirs = rowOf(byPerson);
+      assert.ok(theirs && theirs.status === "assigned" &&
+                theirs.holder === PERSON && theirs.assignedAt,
+                "the person's entry did not list it: " +
+                byPerson.raw.slice(0, 300));
+      assert.ok(!rowOf(unassignedNow), "an assigned token was listed " +
+                "under unassigned");
+      assert.ok(everything.json.paging && everything.json.paging.perPage ===
+                5 && everything.json.paging.page === 1 &&
+                everything.json.capped === false, everything.raw);
+      assert.strictEqual(badStatus.status, 400, "a status the operation " +
+                         "does not declare was not refused: " +
+                         badStatus.raw.slice(0, 200));
+      const text = listedBefore.raw + bySerial.raw + byPerson.raw +
+        unassignedNow.raw + everything.raw;
+      [secret.k, secret.p].forEach(function (needle) {
+        assert.ok(text.indexOf(needle) < 0, "a list carried a secret");
       });
       assert.ok(codeFree(text), text.slice(0, 400));
     });

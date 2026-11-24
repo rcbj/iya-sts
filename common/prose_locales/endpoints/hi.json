@@ -1315,6 +1315,10 @@
     "en": "009f323198517782",
     "text": "आयात किए गए OATH टोकन"
   },
+  "endpoints.route./admin-api/hardware-tokens/yubiotp.name": {
+    "en": "038eb465fd8d6235",
+    "text": "आयात किए गए YubiKey OTP"
+  },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
     "en": "33209f967f070175",
     "text": "हार्डवेयर टोकन क्रियाएँ"

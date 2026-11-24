@@ -1439,6 +1439,92 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `ok` | boolean |  |  |
 
+## POST /admin-api/hardware-tokens/issue-ssh
+
+`issueUserSshCertificate`
+
+**Issue an SSH user certificate to a person (#2071)**
+
+An administrator certifies one OpenSSH public key for the person `username` names, through the same core the person's own `POST /account-api/ssh/certificates` uses: the principals are that person's uid, or groups of theirs the realm offers as principals (pki.sshGroupPrincipals), each a separate decision of the access-control policy about THEM; none given is their uid. A security key's attestation, with the challenge ssh-keygen was given, earns the longer lifetime; any other key the shorter one (pki.sshSoftwareLifetimeSeconds). The certificate is written onto the person's entry (`stsSshUserCertificate`, the master copy) and recorded in the realm's register before it is answered, and the audit row names the administrator. The certificate is public; it is answered once here and listed, without the line, by `getUserSshCertificates`. 404 for nobody of that name, 403 for a principal the policy refuses or a group that cannot be one, 400 for a key or lifetime that is refused, 503 when the realm has no SSH user CA or the certificate could not be recorded. Acting on a Security Administrator's account needs admin:security.
+
+**Mirrors** `POST /admin/hardware-tokens` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `attestation` | string |  | Base64 of the OpenSSH security-key attestation file (`ssh-keygen -O write-attestation=`), for an `sk-*` key. |
+| `attestationChallenge` | string |  | Base64 of the challenge ssh-keygen was given (`-O challenge=`), which the attestation signed; required with `attestation`. |
+| `lifetimeS` | integer, or string |  | Certificate lifetime in seconds, or the console's text of one; empty or absent is pki.sshSoftwareLifetimeSeconds. At most that for an ordinary key, and pki.sshHardwareLifetimeSeconds with verified hardware evidence. |
+| `principals` | list, or string |  |  |
+| `principals[]` | string |  |  |
+| `publicKey` | string | yes | One OpenSSH public key line; certificate keys and authorized-key options are not accepted. |
+| `username` | string | yes | The person the certificate is issued to. |
+
+**200**: The certificate, issued and written onto the person's entry.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `certificate` | string | yes | The OpenSSH user certificate, in authorized-key format. |
+| `hardwareBound` | boolean | yes | Whether verified hardware evidence covered the key. |
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+| `pqcCertificate` | string |  | The ML-DSA certificate issued beside the classical one, where pki.sshUserCaPqcAlongsideClassical is on. |
+| `pqcSerialHex` | string |  |  |
+| `serialHex` | string | yes | The serial, lower-case hex: what `revokeUserSshCertificate` names. |
+| `username` | string | yes | Who it was issued to. |
+| `validAfter` | integer | yes | Seconds since the epoch. |
+| `validBefore` | integer | yes | Seconds since the epoch. |
+
+**400**: The key, the principals or the lifetime was refused; nothing was issued.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**403**: A principal the policy refused, or a group that cannot be one.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**404**: Nobody of that name in this realm's directory.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**503**: The realm has no SSH user CA, or the certificate could not be recorded.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
 ## POST /admin-api/hardware-tokens/lost
 
 `reportHardwareTokenLost`
@@ -2002,6 +2088,54 @@ Scope: `admin:write`.
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `ok` | boolean |  |  |
+
+## GET /admin-api/hardware-tokens/yubiotp
+
+`getYubiOtpTokens`
+
+**The realm's imported YubiKey OTPs (#2071)**
+
+Directory → Hardware tokens' YubiKey OTP tab: `tokens`, one page of the YubiKey OTPs administrators imported from a CSV — serial, public identity, status (`unassigned`, `assigned`, `retired`) and who holds it — newest first, with `paging`. `q` naming a person answers the tokens on THEIR ENTRY (`stsYubiOtpToken`, the master copy), which is what a person's YubiKey OTP sub-tab lists; no search walks the directory. `capped` as `getHardwareTokens` has it. No key is ever in this answer.
+
+**Mirrors** `GET /admin/hardware-tokens` on the admin console.
+
+Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `q` | query | string |  | A serial, matched exactly, or a username for the YubiKey OTPs on that person's entry; empty for every token. |
+| `status` | query | one of empty, `unassigned`, `assigned`, `retired` |  | `unassigned`, `assigned` or `retired`; empty for all three. |
+| `page` | query | integer |  | Which page; a page past the end answers the last one. |
+| `per` | query | integer |  | Rows per page, 50 by default and at most 300. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**200**: The page of tokens.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `capped` | boolean | yes |  |
+| `paging` | object | yes |  |
+| `paging.firstRow` | integer |  |  |
+| `paging.lastRow` | integer |  |  |
+| `paging.noun` | string |  |  |
+| `paging.page` | integer |  |  |
+| `paging.pages` | integer |  |  |
+| `paging.param` | string |  |  |
+| `paging.perPage` | integer |  |  |
+| `paging.total` | integer |  |  |
+| `q` | string | yes |  |
+| `status` | string | yes |  |
+| `tokens` | list | yes |  |
+| `tokens[].assignedAt` | string | yes |  |
+| `tokens[].holder` | string | yes | Who it is assigned to, by username; empty while unassigned. |
+| `tokens[].importedAt` | string | yes |  |
+| `tokens[].publicId` | string | yes | The modhex public identity the key types first. |
+| `tokens[].retiredAt` | string | yes |  |
+| `tokens[].serial` | string | yes | The serial printed on the YubiKey: what `assignYubiOtp` and `removeYubiOtp` name. |
+| `tokens[].status` | string | yes | `unassigned`, `assigned` or `retired` (its hardware token was reported lost, or its holder gave it up). |
 
 ## GET /admin-api/openpgp
 

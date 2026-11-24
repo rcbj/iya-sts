@@ -10675,9 +10675,13 @@ const PROTOCOL_SETTINGS_PAGES = [
           'the 44 characters a YubiKey types are decrypted with the slot\'s ' +
           'AES-128 key, which this service holds, and the counters checked ' +
           'so a code is accepted once. Nothing is sent to YubiCloud. A ' +
-          'person enrols a slot on <code>/portal/mfa</code>, or an ' +
-          'administrator imports a batch and assigns one on <a ' +
-          'href="/admin/hardware-tokens">Directory → Hardware tokens</a>.',
+          'person enrols a slot on <code>/portal/mfa</code>. An ' +
+          'administrator imports a batch of YubiKeys from a CSV on the ' +
+          'YubiKey OTP tab of <a href="/admin/hardware-tokens#hardware-' +
+          'tokens-tab-yubiotp">Directory → Hardware tokens</a>, which ' +
+          'lists them and assigns one; a person\'s own YubiKey OTP ' +
+          'sub-tab on Directory → Users lists theirs and assigns one by ' +
+          'serial, or the person claims it on the portal.',
     also: ['<strong>THE AES KEY STAYS ON THIS SERVICE, SO THE SIGN-IN IS ' +
            '<code>amr otp</code> AND NEVER <code>hwk</code>.</strong> ' +
            'Holding the key that checks a code is what lets a copy of it ' +
@@ -10733,8 +10737,10 @@ const PROTOCOL_SETTINGS_PAGES = [
           'trusts through <code>TrustedUserCAKeys</code>. The public key ' +
           'is <code>GET /pki/ssh-user-ca/{scope}</code> and its key ' +
           'revocation list <code>GET /pki/ssh-user-krl/{scope}</code>. A ' +
-          'person\'s certificates, and revoking one, are the SSH tab of <a ' +
-          'href="/admin/hardware-tokens">Directory → Hardware tokens</a>.',
+          'person\'s certificates — issuing one for them, listing them ' +
+          'and revoking one — are the SSH tab of <a ' +
+          'href="/admin/hardware-tokens">Directory → Hardware tokens</a> ' +
+          'and the person\'s own SSH sub-tab on Directory → Users.',
     also: ['<strong>OPENSSH DEFINES NO POST-QUANTUM SIGNATURE.</strong> ' +
            '<code>ssh-mldsa-65</code> is this service\'s own wire name, a ' +
            'second authority published at the same path with ' +

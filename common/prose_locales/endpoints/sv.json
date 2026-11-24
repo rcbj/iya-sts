@@ -1315,6 +1315,10 @@
     "en": "009f323198517782",
     "text": "Importerade OATH-tokens"
   },
+  "endpoints.route./admin-api/hardware-tokens/yubiotp.name": {
+    "en": "038eb465fd8d6235",
+    "text": "Importerade YubiKey OTP"
+  },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
     "en": "33209f967f070175",
     "text": "Åtgärder för maskinvarutokens"

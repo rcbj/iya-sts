@@ -2299,13 +2299,17 @@
     "en": "f149352fa2ac36d0",
     "text": "NON-SPEC (#1955 P4). رموز HOTP وTOTP التي استوردها المسؤولون من ملفات بذور PSKC للمورّدين، غير مُسنَدة أو مُسنَدة أو مُوقَفة، مقسّمة إلى صفحات وقابلة للبحث بالرقم التسلسلي أو الشخص. ليست سرًّا أبدًا. تطابق GET /admin/hardware-tokens (علامة تبويب OATH فيها)."
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/yubiotp.what": {
+    "en": "6c6508ca58d1ea8d",
+    "text": "NON-SPEC (#2071). رموز YubiKey OTP التي استوردها المسؤولون من ملف CSV، غير مُسندة أو مُسندة أو موقوفة، مقسّمة إلى صفحات وقابلة للبحث بالرقم التسلسلي أو بالشخص؛ وتُقرأ رموز الشخص من إدخاله، وهو النسخة الرئيسية. لا يتضمن مفتاحًا أبدًا. يعكس GET /admin/hardware-tokens (علامة التبويب YubiKey OTP فيه)."
+  },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "cdbf34a1fbdf290e",
-    "text": "NON-SPEC (#1955). lost، مع { key }: يُعلَّم الرمز مفقودًا، ويُزال كل مفتاح مرور عليه، وتُبطَل كل شهادة عليه بسبب keyCompromise، ويُرسل CAEP credential-change لكل منها وتُنهى الجلسات التي سجّلت دخولها. enrol-piv، مع { username, profile, csr, attestationCertificate?, attestationIssuer? }: شهادة فتحة PIV تصدر لذلك الشخص عبر جهة الإصدار في EST، مع التحقق من إثبات YubiKey PIV وتسجيل الـ YubiKey. recover-key، مع { username, serial }: مفتاح piv-key-management المودَع لذلك الشخص، الذي لا تسمح به سياسة التحكم في الوصول إلا لـ PIV_KEY_RECOVERY، بعد تسجيل دخول حديث. revoke-ssh، مع { username, serial }: إبطال شهادة مستخدم SSH لذلك الشخص ووضعها في قائمة KRL للنطاق. الإجراءات الأربعة لوحدة التحكم في تلك الصفحة."
+    "en": "ecf18182e65d8f0a",
+    "text": "NON-SPEC (#1955). lost، مع { key }: يُعلَّم الرمز مفقودًا، ويُزال كل مفتاح مرور عليه، وتُبطَل كل شهادة عليه بسبب keyCompromise، ويُرسل CAEP credential-change لكل منها وتُنهى الجلسات التي سجّلت دخولها. enrol-piv، مع { username, profile, csr, attestationCertificate?, attestationIssuer? }: شهادة فتحة PIV تصدر لذلك الشخص عبر جهة الإصدار في EST، مع التحقق من إثبات YubiKey PIV وتسجيل الـ YubiKey. recover-key، مع { username, serial }: مفتاح piv-key-management المودَع لذلك الشخص، الذي لا تسمح به سياسة التحكم في الوصول إلا لـ PIV_KEY_RECOVERY، بعد تسجيل دخول حديث. revoke-ssh، مع { username, serial }: إبطال شهادة مستخدم SSH لذلك الشخص ووضعها في قائمة KRL للنطاق. issue-ssh، مع { username, publicKey, principals?, lifetimeS? }: إصدار شهادة مستخدم SSH لذلك الشخص، تُكتب في إدخاله أولًا (#2071). الإجراءات الخمسة لوحدة التحكم في تلك الصفحة."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "f5b724d2c79b5f74",
-    "text": "يبلّغ عن فقدان رمز عتادي ويسحب بيانات اعتماده، أو يصدر شهادة فتحة PIV، أو يسلّم مفتاحًا مودَعًا، أو يبطل شهادة SSH لشخص"
+    "en": "38d7254e0ab72a00",
+    "text": "يبلّغ عن فقدان رمز عتادي ويسحب بيانات اعتماده، أو يصدر شهادة فتحة PIV، أو يسلّم مفتاحًا مودَعًا، أو يصدر شهادة SSH لشخص أو يبطلها"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/ssh-certificates.what": {
     "en": "84ce6fea3694d4c0",

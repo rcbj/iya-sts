@@ -2299,13 +2299,17 @@
     "en": "f149352fa2ac36d0",
     "text": "NON-SPEC (#1955 P4). Les jetons HOTP et TOTP que les administrateurs ont importés depuis les fichiers de semences PSKC des fournisseurs, non attribués, attribués ou retirés, paginés et recherchés par numéro de série ou personne. Jamais un secret. Reflète GET /admin/hardware-tokens (son onglet OATH)."
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/yubiotp.what": {
+    "en": "6c6508ca58d1ea8d",
+    "text": "NON-SPEC (#2071). Les YubiKey OTP que les administrateurs ont importés d’un CSV, non attribués, attribués ou retirés, paginés et recherchés par numéro de série ou par personne ; ceux d’une personne sont lus sur son entrée, la copie maîtresse. Jamais une clé. Reflète GET /admin/hardware-tokens (son onglet YubiKey OTP)."
+  },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "cdbf34a1fbdf290e",
-    "text": "NON-SPEC (#1955). lost, avec { key } : le jeton est marqué perdu, chaque clé d’accès qu’il porte retirée, chaque certificat qu’il porte révoqué pour keyCompromise, un credential-change CAEP envoyé pour chacun et les sessions qu’ils ont ouvertes terminées. enrol-piv, avec { username, profile, csr, attestationCertificate?, attestationIssuer? } : un certificat d’emplacement PIV émis à cette personne par l’AC émettrice EST, son attestation PIV YubiKey vérifiée et la YubiKey enregistrée. recover-key, avec { username, serial } : la clé piv-key-management séquestrée de cette personne, que la politique de contrôle d’accès n’autorise qu’à PIV_KEY_RECOVERY, après une connexion récente. revoke-ssh, avec { username, serial } : le certificat utilisateur SSH de cette personne révoqué et inscrit dans la KRL du domaine. Les quatre actions de la console sur cette page."
+    "en": "ecf18182e65d8f0a",
+    "text": "NON-SPEC (#1955). lost, avec { key } : le jeton est marqué perdu, chaque clé d’accès qu’il porte retirée, chaque certificat qu’il porte révoqué pour keyCompromise, un credential-change CAEP envoyé pour chacun et les sessions qu’ils ont ouvertes terminées. enrol-piv, avec { username, profile, csr, attestationCertificate?, attestationIssuer? } : un certificat d’emplacement PIV émis à cette personne par l’AC émettrice EST, son attestation PIV YubiKey vérifiée et la YubiKey enregistrée. recover-key, avec { username, serial } : la clé piv-key-management séquestrée de cette personne, que la politique de contrôle d’accès n’autorise qu’à PIV_KEY_RECOVERY, après une connexion récente. revoke-ssh, avec { username, serial } : le certificat utilisateur SSH de cette personne révoqué et inscrit dans la KRL du domaine. issue-ssh, avec { username, publicKey, principals?, lifetimeS? } : un certificat utilisateur SSH émis pour cette personne, écrit d’abord sur son entrée (#2071). Les cinq actions de la console sur cette page."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "f5b724d2c79b5f74",
-    "text": "signale un jeton matériel perdu et retire ses identifiants, émet un certificat d’emplacement PIV, remet une clé séquestrée, ou révoque le certificat SSH d’une personne"
+    "en": "38d7254e0ab72a00",
+    "text": "signale un jeton matériel perdu et retire ses identifiants, émet un certificat d’emplacement PIV, remet une clé séquestrée, ou émet ou révoque le certificat SSH d’une personne"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/ssh-certificates.what": {
     "en": "84ce6fea3694d4c0",
