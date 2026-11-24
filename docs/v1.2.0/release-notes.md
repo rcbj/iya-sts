@@ -20,8 +20,11 @@ too. Each has a realm setting beside it (`wstrust.signRequest`,
 `wstrust.encryptSignature`), all off by default. The WSDL's binding carries
 `sp:IncludeTimestamp` while the realm signs its answers. On the
 application's WS-Trust tab, **Body** and **Header** checkboxes write the
-common expressions into the four encryption and signing maps, and an
+common expressions into the four encryption and signing maps, replacing
+what a map held and putting it back when the last box is unticked, and an
 **XPath builder** writes one for an element clicked in a sample message.
+Putting a map to use turns its switch on, and giving it back turns the
+switch back.
 The tab has a simplified and an advanced view, the advanced one in General,
 Message encryption and Message signing sections, each split into request
 and response processing. Each field that holds XPath expressions has a
