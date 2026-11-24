@@ -1491,7 +1491,15 @@ value written through either door verifies through either door. In
 **everything decidable without computing scrypt is decided in the first** — the
 reserved refusal, development mode, a missing name, a missing store, a store
 that threw, nobody by that name, a stored form this service did not write — and
-those are the overwhelming majority of refusals, none of which costs 68ms. An
+those are the overwhelming majority of refusals, none of which NEEDS 68ms. **But
+since #2136 the ones that would name an account by their speed pay for a
+derivation anyway** (ASVS 5.0.0 6.3.8): nobody by that name, an unreadable
+stored form, a disabled account and a service account at a closed door are
+marked `decoy` in product, and both doors verify the presented password against
+`crypto.decoyPasswordHash()` — one hash per spec per process, at the policy's
+current parameters, matching no password — and discard the result, on the
+thread each door uses for a real comparison. The refusal and its code do not
+change. `tests/password_unknown_name_cost.js` counts the calls. An
 async door with its own copy of those seven refusals is exactly the shape that
 file exists to prevent: `verify()` is the one place a presented password is
 checked, and two copies of "when do we say no" would eventually say it in two
