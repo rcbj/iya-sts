@@ -12528,10 +12528,21 @@ is exactly what it was. The headers of the three files argue them in full.
 * **A PROFILE MAY SAY `smartCard: true`** (#2031): the certificates it
   covers sign in under the authentication policy's smart card row
   (`identityOf()` answers `smartCard`). Absent is false.
-* **WHAT HAS NO TEST**: a real handshake through a profile, the handoff over
-  two real listeners, and a real TLS-terminating proxy. `tests/certificate_binding.js`
-  holds the logic in process over certificates made at run time; nothing has
-  been tried with a physical YubiKey.
+* **A MULTI-VALUED RDN IS A SET** (#2081): `canonicalDn()` trims each
+  attribute and sorts an RDN's attributes, so `openssl -nameopt RFC2253`'s
+  `UID=12345+CN=SMITH.JANE` matches node's `CN=SMITH.JANE + UID=12345`. The
+  form before #2081, `legacyCanonicalDn()`, is asked as well by the two DN
+  methods wherever it differs, so a value stored then still matches.
+  `ldap/person_editor.ts`'s `comparable()` canonicalises a binding before an
+  edit compares it, so a value is removed by the text it was added with.
+* **WHAT HAS NO TEST**: a real TLS-terminating proxy, and a physical
+  YubiKey (rcbj's, by hand). `tests/certificate_binding.js` holds the logic
+  in process over certificates made at run time, section 9 every binding
+  method; `tests/protocol/sts_cert_sign_in_profiles.js` every stored method
+  over a real handshake (G), each with the account disabled, renewal (H)
+  and an expired leaf (I), the values worked out by openssl as
+  `docs/v1.2.0/configure-tls.md` says; `tests/protocol/sts_cert_handoff.js`
+  the handoff over two real listeners.
 
 ## 3ag. `cert_enrollment.ts`: ACME, EST AND SCEP ISSUE THROUGH ONE CORE (2026-09-13)
 
