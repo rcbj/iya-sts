@@ -61,8 +61,14 @@ function childMain() {
     const OpenPgpPage = require(ROOT + '/admin-ui/web_openpgp');
     const drawer = require(ROOT + '/tests/tools/console_page.js')
       .consolePage(ROOT);
+    const config = require(ROOT + '/common/config');
     const NAME = 'pts-erin';
     ldap.createUser(NAME, { invent: false });
+    // A PIV PROFILE EST MAY ISSUE, so the enrolment form is drawn rather
+    // than the note that says no profile is allowed.
+    const profiles = String(config.text('est.allowedProfiles') || '');
+    config.setOverride('est.allowedProfiles',
+                       (profiles ? profiles + ',' : '') + 'piv-auth');
 
     // --- A. composed, and six sub-tabs ----------------------------------
     const page = WebPages.pageFor('/admin/users');
@@ -161,19 +167,26 @@ function childMain() {
             'the same body');
 
     // --- D. read-only -----------------------------------------------------
-    const UsersPage = require(ROOT + '/admin-ui/web_users');
-    const readOnly = UsersPage.detail(WebKit.context({ user: NAME }, false),
-                                      drawn.json);
-    const tabsOf = function (whole, id) {
-      const start = whole.indexOf('id="' + id + '"');
-      const next = whole.indexOf('<div class="subpanel', start + 1);
-      return start < 0 ? '' : whole.slice(start, next < 0 ? whole.length
-                                                          : next);
-    };
-    t.check(ids.every(function (id) {
-      return tabsOf(readOnly, id).indexOf('<form method="post"') < 0;
+    // Each sub-tab's own function, for a reader who may not write; the
+    // one-time code token and YubiKey OTP blocks are the users page's, and
+    // are passed empty here.
+    const reader = WebKit.context({ user: NAME }, false);
+    const j = drawn.json || {};
+    const drawnRead = [
+      HardwareTokensPage.personTokens(reader.t, j.personTokens, reader, NAME),
+      HardwareTokensPage.personOath(reader.t, j.personOath, reader, NAME, ''),
+      HardwareTokensPage.personYubi(reader.t, reader, NAME, ''),
+      HardwareTokensPage.personPiv(reader.t, j.personTokens, reader, NAME),
+      HardwareTokensPage.personSsh(reader.t, j.personTokens, reader, NAME),
+      OpenPgpPage.personPanel(reader.t, j.personOpenpgp, false)
+    ];
+    t.check(drawnRead.every(function (one) {
+      return one.length > 0 && one.indexOf('<form method="post"') < 0;
     }),
-            'D1. a reader who may not write gets no form on any sub-tab');
+            'D1. a reader who may not write gets no form on any sub-tab',
+            drawnRead.map(function (one) {
+              return one.indexOf('<form method="post"');
+            }).join(','));
     fs.writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);
   })().catch(function (e) {

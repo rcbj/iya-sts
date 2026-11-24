@@ -3004,7 +3004,10 @@ const USER_TAB_IDS = ['utab-overview', 'utab-authentications',
 // `tests/person_fields.js` now holds every sub-tab the page draws to this
 // list.
 const USER_SUB_TAB_IDS = ['ucred-factors', 'ucred-password', 'ucred-service',
-  'ucred-keys', 'ucred-self-issued', 'ucred-kerberos'].concat(
+  'ucred-keys', 'ucred-self-issued', 'ucred-kerberos',
+  // A person's token and key sub-tabs (#2052).
+  'ucred-hardware-tokens', 'ucred-oath-tokens', 'ucred-yubiotp',
+  'ucred-piv', 'ucred-ssh', 'ucred-openpgp'].concat(
   personEditor.FIELD_GROUPS.map(function (group) {
   return 'ufg-' + group.id;
 }));
