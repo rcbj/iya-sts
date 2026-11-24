@@ -270,28 +270,28 @@ function page(t, sum) {
   const drawer = Object.create(adminModule.AdminConsole.prototype);
   drawer.deps = adminModule.AdminConsole.defaultDeps();
   drawer.peerClustersNow = null;
-  const none = drawer.otherCellsBlock();
-  t.check(none.html === '' && none.json === null,
-          'B1. single-cell mode draws no section');
+  // #2112 moved the drawing into the browser: the console answers
+  // `otherCellsJson()` and `admin-ui/web_cluster_status.ts` draws it.
+  const none = drawer.otherCellsJson();
+  t.check(none === null, 'B1. single-cell mode answers no section');
   drawer.peerClustersNow = { at: 1, rows: [
     { cell: 'cac1', jurisdiction: 'ca', reachable: true, answeredMs: 211,
       summary: sum },
     { cell: 'euw1', jurisdiction: 'eu', reachable: false,
       error: 'connect ETIMEDOUT' }] };
-  const drawn = drawer.otherCellsBlock();
-  t.check(/Cell <code>cac1<\/code>/.test(drawn.html) &&
-          drawn.html.indexOf('node-a') > 0 &&
-          drawn.html.indexOf('restarted 1 time(s)') > 0 &&
-          drawn.html.indexOf('Request workers') > 0,
+  const json = drawer.otherCellsJson();
+  const WebKit = require('../admin-ui/web_kit');
+  const ClusterStatusPage = require('../admin-ui/web_cluster_status');
+  const html = ClusterStatusPage.otherCells(json, WebKit.context({}, true).t);
+  t.check(/cac1/.test(html) && html.indexOf('node-a') > 0 &&
+          /restarted 1 time/.test(html) &&
+          html.indexOf('Request workers') > 0,
           'B2. an answering cell is drawn with its members, their restarts ' +
-          'and its pools', drawn.html.slice(0, 200));
-  t.check(/Cell <code>euw1<\/code>/.test(drawn.html) &&
-          drawn.html.indexOf('did not answer') > 0 &&
-          drawn.html.indexOf('ETIMEDOUT') > 0,
+          'and its pools', html.slice(0, 400));
+  t.check(/euw1/.test(html) && html.indexOf('ETIMEDOUT') > 0,
           'B3. a cell that did not answer is drawn as unreachable, with why — ' +
-          'never dropped');
-  t.check(drawn.json && drawn.json.cells.length === 2 &&
-          drawn.json.askedAt === 1,
+          'never dropped', html.slice(0, 400));
+  t.check(json && json.cells.length === 2 && json.askedAt === 1,
           'B4. and the API carries the same answers (rule 7)');
   log.debug("Leaving page().");
 }
