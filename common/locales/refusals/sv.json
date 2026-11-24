@@ -112,6 +112,7 @@
   "authn.postLoginOtherActivityPasskey": "Det här steget begär en annan aktivitet efter inloggning, inte en nyckel för inloggning.",
   "authn.postLoginOtherActivityMail": "Det här steget begär en annan aktivitet efter inloggning, inte en nyckel för e-postkryptering.",
   "authn.postLoginOtherActivityPiv": "Det här steget begär en annan aktivitet efter inloggning, inte ett PIV-certifikat.",
+  "authn.postLoginPivSlotsOpen": "Registrera först ett nytt certifikat för plats(erna) {slots}.",
   "authn.postLoginOverdueHere": "Innan du kan logga in på det här sättet måste du registrera en postkvantnyckel, och den tillåtna tiden har gått ut. Logga in på den här tjänstens inloggningsskärm, där du ombeds registrera den.",
   "authn.postLoginStepHeld": "Du måste slutföra ett steg efter inloggningen. Börja om begäran från programmet som skickade dig hit.",
   "authn.postQuantumOnlyStep": "Det här steget registrerar bara en postkvantnyckel; en klassisk kan inte skapas här.",

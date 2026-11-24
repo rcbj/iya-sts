@@ -13057,10 +13057,11 @@ class Authn {
     }
     if (open.length) {
       errorCodes.mark(res, 'STS-AUTHN-0622');
-      this.stepRefused(res, 'Enrol a new certificate for slot(s) ' +
-        open.map(function (one: any) {
-          return one.slot;
-        }).join(', ') + ' first.');
+      this.stepRefused(res,
+        Sentence.say('refusals.authn.postLoginPivSlotsOpen', {
+          slots: open.map(function (one: any) {
+            return one.slot;
+          }).join(', ') }));
       log.debug("Leaving Authn.postLoginPivAct(). Slots still open.");
       return;
     }

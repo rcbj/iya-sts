@@ -112,6 +112,7 @@
   "authn.postLoginOtherActivityPasskey": "此步驟要求的是另一項登入後活動，而不是通行金鑰。",
   "authn.postLoginOtherActivityMail": "此步驟要求的是另一項登入後活動，而不是郵件加密金鑰。",
   "authn.postLoginOtherActivityPiv": "此步驟要求的是另一項登入後活動，而不是 PIV 憑證。",
+  "authn.postLoginPivSlotsOpen": "請先為插槽 {slots} 註冊新憑證。",
   "authn.postLoginOverdueHere": "在使用這種方式登入之前，您必須註冊一個後量子密碼金鑰，而允許的時間已過。請在本服務的登入畫面登入，系統會在那裡要求您註冊。",
   "authn.postLoginStepHeld": "您必須完成登入後的一個步驟。請從將您導向此處的應用程式重新開始要求。",
   "authn.postQuantumOnlyStep": "此步驟只註冊後量子密碼金鑰；此處無法建立傳統密碼金鑰。",

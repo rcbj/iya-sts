@@ -112,6 +112,7 @@
   "authn.postLoginOtherActivityPasskey": "Cette étape demande une autre activité après la connexion, pas une clé d’accès.",
   "authn.postLoginOtherActivityMail": "Cette étape demande une autre activité après la connexion, pas une clé de chiffrement du courrier.",
   "authn.postLoginOtherActivityPiv": "Cette étape demande une autre activité après la connexion, pas un certificat PIV.",
+  "authn.postLoginPivSlotsOpen": "Inscrivez d’abord un nouveau certificat pour le ou les emplacements {slots}.",
   "authn.postLoginOverdueHere": "Avant de pouvoir vous connecter de cette façon, vous devez enregistrer une clé d’accès post-quantique, et le délai accordé est écoulé. Connectez-vous sur l’écran de connexion de ce service, où il vous sera demandé de l’enregistrer.",
   "authn.postLoginStepHeld": "Vous devez terminer une étape après la connexion. Recommencez la demande depuis l’application qui vous a envoyé ici.",
   "authn.postQuantumOnlyStep": "Cette étape enregistre uniquement une clé d’accès post-quantique ; une clé classique ne peut pas être créée ici.",

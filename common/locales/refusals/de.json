@@ -112,6 +112,7 @@
   "authn.postLoginOtherActivityPasskey": "Dieser Schritt verlangt eine andere Aktivität nach der Anmeldung, keinen Passkey.",
   "authn.postLoginOtherActivityMail": "Dieser Schritt verlangt eine andere Aktivität nach der Anmeldung, keinen Schlüssel für die Mail-Verschlüsselung.",
   "authn.postLoginOtherActivityPiv": "Dieser Schritt verlangt eine andere Aktivität nach der Anmeldung, kein PIV-Zertifikat.",
+  "authn.postLoginPivSlotsOpen": "Stellen Sie zuerst ein neues Zertifikat für Slot(s) {slots} aus.",
   "authn.postLoginOverdueHere": "Bevor Sie sich auf diese Weise anmelden können, müssen Sie einen Post-Quanten-Passkey registrieren, und die dafür erlaubte Zeit ist verstrichen. Melden Sie sich auf dem Anmeldebildschirm dieses Dienstes an, wo Sie gebeten werden, ihn zu registrieren.",
   "authn.postLoginStepHeld": "Sie müssen nach der Anmeldung einen Schritt abschließen. Starten Sie die Anfrage erneut in der Anwendung, die Sie hierher geschickt hat.",
   "authn.postQuantumOnlyStep": "Dieser Schritt registriert nur einen Post-Quanten-Passkey; ein klassischer kann hier nicht erstellt werden.",
