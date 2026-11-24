@@ -325,7 +325,9 @@ certificate the request sent first.
 to enrol new slot certificates through the same form when a classical CA
 signed theirs and the realm's EST Issuing CA is now post-quantum, or when
 one is about to expire. The old certificate is revoked (`superseded`) the
-first time the new one is used to sign in.
+first time the new one is used to sign in. To reach card holders who rarely
+sign in, [start the activity](post-login-activities.md#starting-an-activity)
+for their groups: they are mailed a reminder to sign in and renew.
 
 The certificate issued for a profile is signed by that profile's issuing
 CA. The key in the slot is the subject's. A YubiKey 5 attests a classical

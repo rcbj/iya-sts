@@ -15,8 +15,8 @@
 // a key is, is the double's), the claims and a clock.
 //
 //   A. The table: `pqc-mail-encryption` is a row, exposed `decrypt-later`,
-//      loads whole, and is asked before the passkey migration; it is not
-//      startable until P4.
+//      loads whole, and is asked before the passkey migration; it is
+//      startable since P4 (#2009), with its own reminder.
 //   B. Due: a classical OpenPGP key, a classical S/MIME certificate, no
 //      encryption under `invite` and `require` (and not under `leave`).
 //   C. Not due: a post-quantum OpenPGP key or an ML-KEM certificate; no
@@ -277,8 +277,9 @@ async function run(t) {
   t.equal(Kinds.problemWith(row, realMail.kind), '',
     'and its module answers as a whole activity');
   t.check(Kinds.ids().indexOf(MAIL) >= 0 &&
-          Kinds.startableIds().indexOf(MAIL) < 0,
-    'it is asked at a sign-in and not yet startable (P4)');
+          Kinds.startableIds().indexOf(MAIL) >= 0 &&
+          Kinds.templateOf(MAIL) === 'post-login-reminder-mail-encryption',
+    'it is asked at a sign-in, and since P4 startable with its own reminder');
   t.check(Kinds.exposureRank('decrypt-later') < Kinds.exposureRank('forgery'),
     'and it is asked before the passkey migration (forgery)');
 

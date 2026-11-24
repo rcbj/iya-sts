@@ -45,8 +45,9 @@
 // (`post_login_policy.ts`) stays what it was — the rules a started activity
 // follows: who it reaches, the allotted time, the role. Where the two must
 // be told apart in prose, this one is the STARTED activity and its record is
-// a `StartedActivity`; its `activity` field names which activity (today
-// `pqc-passkey-migration`).
+// a `StartedActivity`; its `activity` field names which activity
+// (`pqc-passkey-migration`, and since #2009's P4 `pqc-mail-encryption` or
+// `piv-reissue`).
 //
 // GROUPS, SEVERAL, CHOSEN BY SEARCH (#1123). A started activity names a list
 // of groups (`groups`, their DNs, at most `MAX_GROUPS`), and its population
@@ -114,8 +115,11 @@ const EVERY_MS = 10 * 60 * 1000;
 
 // The activities an administrator may start: the post-login activities
 // there are that the table marks startable, `post_login_kinds.ts`'s table
-// (#2009) — one list. The mail-encryption activity (P2) is asked at a
-// sign-in and not yet started: its mail and report words are P4's.
+// (#2009) — one list. Since #2009's P4 that is every activity: the passkey
+// migration, the mail-encryption migration and the PIV re-issue, each
+// mailed with its own reminder (`PostLoginKinds.templateOf()`) and reported
+// under its own id. A started activity stored before P4 names the passkey
+// migration and is read exactly as it was.
 const ACTIVITIES = PostLoginKinds.startableIds();
 
 // The numbers a started activity is given, and their bounds.
@@ -573,6 +577,25 @@ class PostLoginActivities {
                 ((e && e.message) || e));
       activityOn = false;
     }
+    // WHICH ACTIVITIES THE POLICY ITSELF ASKS ANYBODY (#2009 P4): each
+    // activity's own switch, read off the profiles by the row its table
+    // names. `activityEnabled` stays the passkey migration's answer, which is
+    // what it always meant.
+    const enabledActivities: string[] = [];
+    ACTIVITIES.forEach(function (one: string): void {
+      try {
+        if (require('./post_login_policy').anyEnabled(
+          function (profile: Json): boolean {
+            return PostLoginKinds.switchedOnIn(one, profile);
+          }) === true) {
+          enabledActivities.push(one);
+        }
+      } catch (e) {
+        // A policy that cannot be read asks nobody; the page says so.
+        log.debug("Caught in PostLoginActivities.view(): " +
+                  ((e && e.message) || e));
+      }
+    });
     const iso = function (ms: number): string | null {
       return ms > 0 ? new Date(ms).toISOString() : null;
     };
@@ -585,6 +608,7 @@ class PostLoginActivities {
                             { groups: { max: MAX_GROUPS } }),
       mailAvailable: mailOn,
       activityEnabled: activityOn,
+      enabledActivities: enabledActivities,
       groupChooser: this.groupChooser(query),
       started: this.list().map(function (one: StartedActivity): Json {
         const run = self.runOf(one.id);
@@ -966,8 +990,10 @@ class PostLoginActivities {
         continue;
       }
       const before = postLogin.stateOf(username, record.activity);
+      // THE ACTIVITY'S OWN REMINDER (#2009 P4): `postLoginReminder()`
+      // picks the template the activity's row names.
       const sent = uses.postLoginReminder(username, {
-        started: record.id,
+        started: record.id, activity: record.activity,
         mails: before.mailedBy === record.id ? Number(before.mails) || 0
                                              : 0,
         actor: record.startedBy
@@ -1122,7 +1148,9 @@ class PostLoginActivities {
       title: 'Post-login activity mail',
       describe: 'Mails the people a running post-login activity reaches ' +
                 '(#1111) a reminder to sign in, where the activity then ' +
-                'asks them to register a post-quantum passkey. Reads one ' +
+                'asks them to do it: register a post-quantum passkey, a ' +
+                'post-quantum mail-encryption key, or a new PIV ' +
+                'certificate, each activity with its own message. Reads one ' +
                 'slice of each started activity\'s population (the realm, ' +
                 'or the union of its groups) after a cursor per run, mails ' +
                 'only the people the activity is due for, never inside the ' +

@@ -119,6 +119,16 @@
       "subject": "Testmeddelande från {{service}}",
       "text": "Det här är ett testmeddelande, skickat {{when}} via transporten {{transport}} på begäran av {{username}}.\n",
       "html": "<p>Det här är ett testmeddelande, skickat {{when}} via transporten {{transport}} på begäran av <strong>{{username}}</strong>.</p>"
+    },
+    "post-login-reminder-mail-encryption": {
+      "subject": "Registrera en postkvantnyckel för e-postkryptering hos {{service}}",
+      "text": "{{service}} ber {{username}} att registrera en ny nyckel för att kryptera e-post som använder postkvantkryptografi (ML-KEM): en OpenPGP-nyckel eller ett S/MIME-certifikat. E-post som i dag krypteras till en klassisk nyckel kan läsas så snart den nyckeln knäcks.\n\nLogga in här, så ombeds du registrera den direkt efter inloggningen:\n\n{{signin}}\n\nLänken öppnar bara inloggningssidan. Den loggar inte in dig och innehåller inget om ditt konto. Om du inte väntade dig det här meddelandet kan du bortse från det eller fråga den som hanterar ditt konto.\n",
+      "html": "<p>{{service}} ber <strong>{{username}}</strong> att registrera en ny nyckel för att kryptera e-post som använder postkvantkryptografi (ML-KEM): en OpenPGP-nyckel eller ett S/MIME-certifikat. E-post som i dag krypteras till en klassisk nyckel kan läsas så snart den nyckeln knäcks.</p><p><a href=\"{{signin}}\">Logga in</a>, så ombeds du registrera den direkt efter inloggningen.</p><p>Länken öppnar bara inloggningssidan. Den loggar inte in dig och innehåller inget om ditt konto. Om du inte väntade dig det här meddelandet kan du bortse från det eller fråga den som hanterar ditt konto.</p>"
+    },
+    "post-login-reminder-piv-reissue": {
+      "subject": "Förnya ditt PIV-certifikat hos {{service}}",
+      "text": "{{service}} ber {{username}} att skaffa ett nytt certifikat till det PIV-smartkort eller den säkerhetsnyckel som används vid inloggning: det som finns där signerades med en klassisk algoritm eller går snart ut. Ha kortet till hands och ett verktyg som skapar en certifikatbegäran från det, till exempel ykman.\n\nLogga in här, så ombeds du skaffa det direkt efter inloggningen:\n\n{{signin}}\n\nLänken öppnar bara inloggningssidan. Den loggar inte in dig och innehåller inget om ditt konto. Om du inte väntade dig det här meddelandet kan du bortse från det eller fråga den som hanterar ditt konto.\n",
+      "html": "<p>{{service}} ber <strong>{{username}}</strong> att skaffa ett nytt certifikat till det PIV-smartkort eller den säkerhetsnyckel som används vid inloggning: det som finns där signerades med en klassisk algoritm eller går snart ut. Ha kortet till hands och ett verktyg som skapar en certifikatbegäran från det, till exempel ykman.</p><p><a href=\"{{signin}}\">Logga in</a>, så ombeds du skaffa det direkt efter inloggningen.</p><p>Länken öppnar bara inloggningssidan. Den loggar inte in dig och innehåller inget om ditt konto. Om du inte väntade dig det här meddelandet kan du bortse från det eller fråga den som hanterar ditt konto.</p>"
     }
   },
   "layout": {

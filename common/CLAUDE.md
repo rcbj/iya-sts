@@ -16698,8 +16698,8 @@ rcbj: post-login activities for the other credentials a token carries
   stays a one-value enum meaning the passkey migration (design X2: each new
   activity gets a BLOCK of rows with its own switch, so a profile saved
   before reads it as off — backwards compatibility, no migration). The
-  report's filter (`report/catalog.ts`) is still its own copy until P4:
-  that module requires nothing of this service.
+  report's filter (`report/catalog.ts`) reads it too since P4, which made
+  the table a leaf on bunyan alone (below).
 * **A closed table read lazily, not a hook** (rule 3e, failed both ways
   round in the header). A row names the module that answers for its
   activity; one that is not whole is not asked, and the others are.
@@ -16734,9 +16734,8 @@ D1, D3, D4). What reaches outside it:
   written before the block is neither refused nor switches it off. A
   profile saved before reads it as off. The `activity` row stays one value.
 * **STARTABLE IS A COLUMN OF THE TABLE** (`post_login_kinds.ts`'s
-  `startable`, `startableIds()`): the started activities' `ACTIVITIES` is
-  the passkey migration alone until P4 gives the others their mail and
-  report words.
+  `startable`, `startableIds()`): every activity since P4, which gave the
+  others their mail and report words (below).
 * **D3's SECOND SLOT IS `openpgp_keys.ts`'s**: `register()` takes
   `requirePostQuantum` (STS-OPENPGP-0033, asked before the proof) and
   `keepClassicalDays`; the replaced classical key goes to
@@ -16793,6 +16792,51 @@ design X5). What reaches outside it:
   'superseded', …, { entry })`, so only the person's own) and deletes the
   row, a failure keeps it for the next sign-in (STS-PIV-0038), and another
   person using the serial revokes nothing (STS-PIV-0039).
+
+### 3ct, continued: started activities, mail and report per activity (#2009 P4, 2026-11-23)
+
+Design X6. Nothing new decides anything: the table grew three columns and
+three readers read them.
+
+* **THE TABLE IS A LEAF THAT REQUIRES NOTHING OF THE SERVICE.**
+  `post_login_kinds.ts` logs through bunyan directly (`model_tables.ts`'s
+  arrangement) where it required `helpers`, so `report/catalog.ts` — which
+  requires only bunyan — reads `PostLoginKinds.ids()` for the `activity`
+  enumeration instead of keeping a copy. A require of `helpers` from the
+  catalog would have loaded the configuration and the key set into every
+  reader of a field list; a generated list would have been a second copy.
+  `tests/post_login_started_kinds.js` A reads the source and fails on any
+  other require.
+* **`startable` is true for all three**, so `ACTIVITIES`, the console's
+  chooser and the model's enum (`startPostLoginActivity`'s `activity`,
+  `models/api/management.tsp`) are the three. A stored started activity
+  names its activity already and needed no migration; a start naming none
+  is the passkey migration (`ACTIVITIES[0]`), as before. The duplicate rule
+  (0492) is per activity, so two activities may run for one group.
+* **`template`: ONE MESSAGE PER ACTIVITY, NOT A SENTENCE IN ONE.** X6 said
+  `post-login-reminder` carries the activity's own sentence. A value
+  dropped into one template is not translated per language (a template's
+  values are data), and a realm's rewording of the passkey reminder would
+  then speak for the other two. So the passkey migration keeps
+  `post-login-reminder` (its id, every realm's rewording and every delivery
+  row naming it unchanged) and the others are
+  `post-login-reminder-mail-encryption` and
+  `post-login-reminder-piv-reissue`, notifications like it, in every
+  catalog and the three overlays. `mail_uses.ts`'s `postLoginReminder()`
+  picks by `facts.activity` (`templateOf()`), and the job passes it.
+* **`policySwitch`** names each activity's switch (`enabled`,
+  `mailEnabled`, `pivEnabled`), so the view answers `enabledActivities`
+  through `post_login_policy.anyEnabled()` without loading an activity's
+  module; `activityEnabled` keeps meaning the passkey migration's.
+* **THE REPORT'S FALLBACK DEADLINE IS THE ROW'S ACTIVITY'S.** A row with no
+  stamped profile took `graceDays` from `forPerson()`, which is the passkey
+  block's; `report/sources.ts` asks `post_login.timingOf(activity, rules)`
+  (the activity's own `timing()`) per person and activity. Two presets
+  (`progress-mail-encryption`, `progress-piv-reissue`) follow the first,
+  which keeps its id and its passkey filter.
+* **No new code, no schema step, no setting.** Nothing new refuses: an
+  activity outside the three is the schema's (STS-API-0009) over the API and
+  0490 in process, as an unknown one always was.
 
 ## 3cx. `policy_selection.ts`: WHAT A NAMED POLICY COVERS NAMES IT, AND ONE RANKING FOR EVERY KIND (#1235, 2026-10-30)
 

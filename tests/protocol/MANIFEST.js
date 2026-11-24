@@ -1418,6 +1418,14 @@ const JOBS = [
   // paused, resumed and ended. `local: true`: this repository's console and
   // management API.
   { file: 'sts_post_login_activities.js', browser: false },
+  // EVERY POST-LOGIN ACTIVITY STARTED OVER /admin-api (#2009 P4): in a
+  // realm of its own, the view offering all three, `pqc-mail-encryption`
+  // and `piv-reissue` started for a group made here, refused twice for the
+  // same people (0492), paused, resumed and ended; the passkey migration
+  // beside them for the same group; an activity outside the three refused
+  // by the schema. What each reminder says is in process
+  // (`tests/post_login_started_kinds.js`).
+  { file: 'sts_post_login_started_kinds.js', browser: false, local: true },
   // DIRECTORY → HARDWARE TOKENS (#1955 P1): the console page's shell, the
   // two operations in the document and the gate, the view's paging and
   // filters, and the lost-key act's refusals. The register's behaviour

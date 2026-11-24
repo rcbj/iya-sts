@@ -13259,7 +13259,7 @@ op `deleteRiskDatasetVersion`(@js(#{`examples`:#[#{`dataset`:"asn",`version`:"20
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getMail`(@js(#{`examples`:#["password-reset"]}) `parameters/0/schema`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "reset-refused-attempt" | "layout" | "test-message",
+op `getMail`(@js(#{`examples`:#["password-reset"]}) `parameters/0/schema`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message",
   @js(#{`examples`:#["fr"]}) `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `realm`?: string;
@@ -13405,7 +13405,7 @@ op `saveMailTemplate`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: {
-    @js(#{`description`:"The message id."}) `template`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "reset-refused-attempt" | "layout" | "test-message";
+    @js(#{`description`:"The message id."}) `template`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message";
     @js(#{`description`:"A BCP 47 tag."}) `lang`: string;
     @js(#{`description`:"One line."}) `subject`: string;
     @js(#{`description`:"The text part."}) `text`: string;
@@ -13441,7 +13441,7 @@ op `saveMailTemplate`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `resetMailTemplate`(@js(#{`examples`:#[#{`template`:"test-message",`lang`:"de"}]}) `requestBody/content/application~1json/schema`: {
-    @js(#{`description`:"The message id."}) `template`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "reset-refused-attempt" | "layout" | "test-message";
+    @js(#{`description`:"The message id."}) `template`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message";
     @js(#{`description`:"A BCP 47 tag."}) `lang`: string
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors9`,
@@ -47748,7 +47748,7 @@ op `getEscrowedPivKeys`(@js(#{`maxLength`:256,`examples`:#["alice"]}) `parameter
   #{
     `operationId`:"getPostLoginActivities",
     `summary`:"Started post-login activities in this realm (#1111)",
-    `description`:"Everything Directory → Post-login activities draws: `started`, every post-login activity started in the realm, newest first — `id`, `activity`, `groups` (their DNs; empty for the whole realm), `intervalDays`, `maxMails`, `perRun`, `state` (`running`, `paused`, `ended`), who started and last changed it and when — each with `run`, what its scheduler job has done (`passes` over the population, `read`, `mailed`, `notDue`, `heldBack`, `refused`, `lastRunAt`, `lastSummary`); the `activities` an administrator may start, the `limits` of the numbers and of `groups`, whether a mail transport is `mailAvailable`, whether any post-login profile is `activityEnabled` (the POLICY asking anybody by itself; a running started activity asks its own people at sign-in whatever it says, #1126), the job and how often it runs; and `groupChooser`, the start form's group search (#1123): `chosen` (the `groups` asked, each resolved — `found` false for a name this realm does not have) and `pane`, one page of the groups whose cn or DN contains `groupq`, 20 from `groupfrom` (a stale offset is clamped to the first page), the chosen ones left out (`total`, `matched`, `from`, `shown`: each `dn` and `cn`). The search reads the directory's group index, never its people. Who was mailed and where each person stands is the reports application's postLoginProgress source, not this operation.\n\n**Mirrors** `GET /admin/post-login-activities` on the admin console.",
+    `description`:"Everything Directory → Post-login activities draws: `started`, every post-login activity started in the realm, newest first — `id`, `activity`, `groups` (their DNs; empty for the whole realm), `intervalDays`, `maxMails`, `perRun`, `state` (`running`, `paused`, `ended`), who started and last changed it and when — each with `run`, what its scheduler job has done (`passes` over the population, `read`, `mailed`, `notDue`, `heldBack`, `refused`, `lastRunAt`, `lastSummary`); the `activities` an administrator may start (`pqc-passkey-migration`, `pqc-mail-encryption`, `piv-reissue`; #2009), the `limits` of the numbers and of `groups`, whether a mail transport is `mailAvailable`, whether any post-login profile is `activityEnabled` for the passkey migration (the POLICY asking anybody by itself; a running started activity asks its own people at sign-in whatever it says, #1126) and `enabledActivities`, every activity some profile's own switch turns on, the job and how often it runs; and `groupChooser`, the start form's group search (#1123): `chosen` (the `groups` asked, each resolved — `found` false for a name this realm does not have) and `pane`, one page of the groups whose cn or DN contains `groupq`, 20 from `groupfrom` (a stale offset is clamped to the first page), the chosen ones left out (`total`, `matched`, `from`, `shown`: each `dn` and `cn`). The search reads the directory's group index, never its people. Who was mailed and where each person stands is the reports application's postLoginProgress source, not this operation.\n\n**Mirrors** `GET /admin/post-login-activities` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -47801,6 +47801,7 @@ op `getPostLoginActivities`(@js(#{`maxLength`:256,`examples`:#["staff"]}) `param
     };
     `mailAvailable`?: boolean;
     `activityEnabled`?: boolean;
+    `enabledActivities`?: (string)[];
     `groupChooser`?: {
       `search`?: string;
       `chosen`?: ({
@@ -47855,7 +47856,7 @@ op `getPostLoginActivities`(@js(#{`maxLength`:256,`examples`:#["staff"]}) `param
   #{
     `operationId`:"startPostLoginActivity",
     `summary`:"Start a post-login activity",
-    `description`:"Starts a post-login activity in this realm. AT SIGN-IN, from now, each person it reaches is asked to do it (#1126), under the rules of the post-login profile that reaches them — even where that profile is off, unless it is a NAMED profile that is off, which excludes them. BY MAIL, from the next run of the scheduler job `post-login.activity-mail` (every few minutes, or Run now on Monitoring → Scheduler) each person the activity is DUE for — it reaches them, the realm can make the passkey, they have not done it — is mailed at the address on their entry a reminder to sign in, at most `maxMails` times and never twice inside `intervalDays`. The mail's one link opens the sign-in page; it carries no credential, and the post-login activity does the registration. `groups` narrows the people to the members of those groups: their UNION, a person in two of them read and mailed once; none means everybody in the realm. A group this realm does not have is refused (STS-AUTHN-0530); a second started activity for the same activity and the same groups is refused (STS-AUTHN-0492); bad values are STS-AUTHN-0490.\n\n**Mirrors** `POST /admin/post-login-activities` on the admin console.",
+    `description`:"Starts a post-login activity in this realm. AT SIGN-IN, from now, each person it reaches is asked to do it (#1126), under the rules of the post-login profile that reaches them — even where that profile is off, unless it is a NAMED profile that is off, which excludes them. BY MAIL, from the next run of the scheduler job `post-login.activity-mail` (every few minutes, or Run now on Monitoring → Scheduler) each person the activity is DUE for — it reaches them, the realm can make what it asks for, they have not done it — is mailed at the address on their entry a reminder to sign in, at most `maxMails` times and never twice inside `intervalDays`. `activity` is which one (#2009): `pqc-passkey-migration` (an ML-DSA passkey, the default), `pqc-mail-encryption` (an ML-KEM OpenPGP key or S/MIME certificate) or `piv-reissue` (a new PIV slot certificate from a post-quantum issuer, or before one expires), each mailed with its own message and asked under its own block of the post-login profile's rules. The mail's one link opens the sign-in page; it carries no credential, and the post-login activity does the work. `groups` narrows the people to the members of those groups: their UNION, a person in two of them read and mailed once; none means everybody in the realm. A group this realm does not have is refused (STS-AUTHN-0530); a second started activity for the same activity and the same groups is refused (STS-AUTHN-0492); bad values are STS-AUTHN-0490.\n\n**Mirrors** `POST /admin/post-login-activities` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -47884,7 +47885,7 @@ op `startPostLoginActivity`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: {
-    @js(#{`description`:"The post-login activity."}) `activity`?: "pqc-passkey-migration";
+    @js(#{`description`:"The post-login activity: `pqc-passkey-migration` (a post-quantum passkey, the default), `pqc-mail-encryption` (a post-quantum mail-encryption key: OpenPGP or S/MIME) or `piv-reissue` (a new PIV slot certificate, #2009)."}) `activity`?: "pqc-passkey-migration" | "pqc-mail-encryption" | "piv-reissue";
     @js(#{
       `maxItems`:50,
       `description`:"Groups' cns or DNs, the people being the union of their members; empty or absent for everybody in the realm."

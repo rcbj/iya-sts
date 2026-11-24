@@ -119,6 +119,16 @@
       "subject": "Message de test de {{service}}",
       "text": "Ceci est un message de test, envoyé le {{when}} par le transport {{transport}} à la demande de {{username}}.\n",
       "html": "<p>Ceci est un message de test, envoyé le {{when}} par le transport {{transport}} à la demande de <strong>{{username}}</strong>.</p>"
+    },
+    "post-login-reminder-mail-encryption": {
+      "subject": "Enregistrez une clé de chiffrement post-quantique pour vos e-mails {{service}}",
+      "text": "{{service}} demande à {{username}} d’enregistrer une nouvelle clé de chiffrement des e-mails qui utilise la cryptographie post-quantique (ML-KEM) : une clé OpenPGP ou un certificat S/MIME. Les e-mails chiffrés aujourd’hui avec une clé classique pourront être lus dès que cette clé sera cassée.\n\nConnectez-vous ici, et il vous sera demandé de l’enregistrer juste après la connexion :\n\n{{signin}}\n\nLe lien ouvre seulement la page de connexion. Il ne vous connecte pas et ne contient rien sur votre compte. Si vous n’attendiez pas ce message, ignorez-le ou adressez-vous à la personne qui gère votre compte.\n",
+      "html": "<p>{{service}} demande à <strong>{{username}}</strong> d’enregistrer une nouvelle clé de chiffrement des e-mails qui utilise la cryptographie post-quantique (ML-KEM) : une clé OpenPGP ou un certificat S/MIME. Les e-mails chiffrés aujourd’hui avec une clé classique pourront être lus dès que cette clé sera cassée.</p><p><a href=\"{{signin}}\">Connectez-vous</a>, et il vous sera demandé de l’enregistrer juste après la connexion.</p><p>Le lien ouvre seulement la page de connexion. Il ne vous connecte pas et ne contient rien sur votre compte. Si vous n’attendiez pas ce message, ignorez-le ou adressez-vous à la personne qui gère votre compte.</p>"
+    },
+    "post-login-reminder-piv-reissue": {
+      "subject": "Renouvelez votre certificat PIV pour {{service}}",
+      "text": "{{service}} demande à {{username}} d’inscrire un nouveau certificat pour la carte à puce PIV ou la clé de sécurité avec laquelle il se connecte : celui qu’elle contient a été signé avec un algorithme classique, ou expire bientôt. Ayez la carte sur vous, et un outil qui en tire une demande de certificat, comme ykman.\n\nConnectez-vous ici, et il vous sera demandé de l’inscrire juste après la connexion :\n\n{{signin}}\n\nLe lien ouvre seulement la page de connexion. Il ne vous connecte pas et ne contient rien sur votre compte. Si vous n’attendiez pas ce message, ignorez-le ou adressez-vous à la personne qui gère votre compte.\n",
+      "html": "<p>{{service}} demande à <strong>{{username}}</strong> d’inscrire un nouveau certificat pour la carte à puce PIV ou la clé de sécurité avec laquelle il se connecte : celui qu’elle contient a été signé avec un algorithme classique, ou expire bientôt. Ayez la carte sur vous, et un outil qui en tire une demande de certificat, comme ykman.</p><p><a href=\"{{signin}}\">Connectez-vous</a>, et il vous sera demandé de l’inscrire juste après la connexion.</p><p>Le lien ouvre seulement la page de connexion. Il ne vous connecte pas et ne contient rien sur votre compte. Si vous n’attendiez pas ce message, ignorez-le ou adressez-vous à la personne qui gère votre compte.</p>"
     }
   },
   "layout": {

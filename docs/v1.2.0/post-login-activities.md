@@ -278,9 +278,12 @@ Where each person stands is a report, not a console page. Open the reports
 application (`/report`) and choose the `postLoginProgress` source: one row
 per person and activity, with when they were first asked, how often they
 were asked and skipped, whether they did it, when the allotted time ends, and
-whether it already has. Its page offers three predefined queries — progress
-by activity, the people past their grace period, and the people who skipped
-most. See [Reports](reporting.md#postloginprogress) for every field.
+whether it already has. Filter on `activity` to follow one activity:
+`pqc-passkey-migration`, `pqc-mail-encryption` or `piv-reissue`. Its page
+offers five predefined queries — the passkey migration's progress (named
+*Progress by activity*, as it always was), the mail-encryption migration's
+progress, the PIV re-issue's progress, the people past their grace period,
+and the people who skipped most. See [Reports](reporting.md#postloginprogress) for every field.
 Two more sources follow the passkeys themselves:
 [`passkeyHistory`](reporting.md#passkeyhistory), the share of people
 holding an ML-DSA passkey day by day, and
@@ -301,14 +304,31 @@ runs:
   person signs in, so somebody who rarely signs in may not be asked before a
   deadline; the reminders bring them to the sign-in.
 
+**Every activity can be started.** The passkey migration, the
+mail-encryption migration and the PIV re-issue each run as their own started
+activity, with their own reminder:
+
+| Activity | What its people are asked at sign-in | Its reminder says |
+|---|---|---|
+| `pqc-passkey-migration` (the default) | to register an ML-DSA passkey | *Register a post-quantum passkey* |
+| `pqc-mail-encryption` | to register an ML-KEM OpenPGP key or S/MIME certificate | *Register a post-quantum mail-encryption key* |
+| `piv-reissue` | to enrol a new PIV slot certificate | *Renew your PIV certificate* |
+
+A started activity created before this release names the passkey migration
+and goes on exactly as it was; a start that names no activity is the
+passkey migration too.
+
 **The rules come from the policy.** For each person, the profile the policy
 selects for them on **Directory → Policies** — the named profile of lowest
 precedence among those the application and their groups name, else
-`default` — supplies the snooze, the allotted
-time, the method, what a person with no passkey is asked, the
-attestation and the fallback. The started activity only switches it on.
+`default` — supplies the rules of the activity's own block: for the passkey
+migration the snooze, the allotted time, the method, what a person with no
+passkey is asked, the attestation and the fallback; for the mail-encryption
+migration its `mail…` rows; for the PIV re-issue its `piv…` rows. The
+started activity only switches that block on.
 
-**Excluding still works.** A named profile with `enabled` off that reaches a
+**Excluding still works.** A named profile with the activity's own switch
+off (`enabled`, `mailEnabled` or `pivEnabled`) that reaches a
 person (at a lower precedence than any profile that would switch it on) keeps
 them out of every started activity, as it keeps them out of the policy. One a
 group names keeps its members out of the mails too; one an application names
@@ -330,7 +350,7 @@ Then fill in the form and press **Start**:
 
 | Field | What it means |
 |---|---|
-| Activity | The post-login activity: `pqc-passkey-migration`. |
+| Activity | The post-login activity: the post-quantum passkey (`pqc-passkey-migration`), post-quantum mail encryption (`pqc-mail-encryption`) or the PIV certificate re-issue (`piv-reissue`). The form says under the choice what each asks. |
 | Days between reminders | No person is mailed twice within this many days (1–365, default 7), whichever started activity sent the last mail. |
 | Most mails per person | The most this started activity sends one person (1–20, default 3). |
 | People read per run | How many people one run reads (1–20000, default 1000). |
@@ -339,8 +359,9 @@ A scheduler job, `post-login.activity-mail`, runs about every ten minutes in
 a realm with a started activity running (Run now on **Monitoring →
 Scheduler** starts it at once). Each run reads the next slice of the
 activity's people and mails those it is due for: the activity reaches them
-and no named profile switched off excludes them, the realm can make the
-passkey, and they have not done it.
+and no named profile switched off excludes them, the realm can make what
+the activity asks for (an ML-DSA passkey, an ML-KEM key, a certificate from
+its EST Issuing CA), and they have not done it.
 When it reaches the end of the people it starts again from the beginning;
 that next pass sends the reminders.
 
@@ -357,7 +378,8 @@ that next pass sends the reminders.
   activity's place. **Resume** carries on from there. **End** stops both for
   good. Only one may run at a time for
   the same activity and the same groups (in any order), or for the same
-  activity across the whole realm.
+  activity across the whole realm. Different activities may run for the
+  same groups at once: each has its own mails and its own count.
 
 The **Activities** tab lists every activity started in the realm, with its
 groups, its numbers, its state and what its runs have done.
@@ -366,7 +388,9 @@ The same controls are on the management API:
 `GET /admin-api/post-login-activities` (with `groupq`, `groupfrom` and
 `groups` it also answers the group search the page draws), and
 `POST /admin-api/post-login-activities/start`, `/pause`, `/resume` and `/end`
-(the bodies are in `GET /admin-api/openapi.json`). The start takes `groups`,
+(the bodies are in `GET /admin-api/openapi.json`). The view lists the
+`activities` that may be started and `enabledActivities`, the ones some
+profile's own switch turns on by itself. The start takes `activity` and `groups`,
 a list of group names or DNs; a group the realm does not have is refused by
 name (STS-AUTHN-0530) and nothing is started. Starting, pausing and ending
 need Admin Write.
@@ -374,6 +398,11 @@ need Admin Write.
 ```json
 { "activity": "pqc-passkey-migration", "groups": ["engineering", "finance"],
   "intervalDays": 7, "maxMails": 3 }
+```
+
+```json
+{ "activity": "piv-reissue", "groups": ["piv-holders", "contractors"],
+  "intervalDays": 7, "maxMails": 4 }
 ```
 
 **Who was asked and mailed, and when, is a report.** The person's progress

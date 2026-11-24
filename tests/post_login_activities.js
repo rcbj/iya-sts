@@ -801,8 +801,9 @@ function childMain() {
     r = await call(port, 'GET', '/report-api/catalog/postLoginProgress',
                    reporter);
     note(r.status === 200 && r.json && r.json.source &&
-         (r.json.source.presets || []).length === 3,
-         'B16. /report-api publishes the source and its three presets',
+         (r.json.source.presets || []).length === 5,
+         'B16. /report-api publishes the source and its five presets ' +
+         '(one per activity since #2009 P4)',
          brief(r));
     r = await call(port, 'POST', '/report-api/queries', reporter, {
       source: 'postLoginProgress',

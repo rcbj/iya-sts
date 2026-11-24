@@ -692,12 +692,15 @@ one reads the rows a page at a time under the usual time limits.
 
 The profile and allotted time on a row are the ones that applied when
 the row was last written, so a report shows which profile asked a person
-without the directory being asked again for every row.
+without the directory being asked again for every row. A row written
+without them takes the allotted time of its own activity's block
+(`graceDays`, `mailGraceDays` or `pivGraceDays`) from the profile the
+person's groups select now.
 
 | Field | Type | Meaning | Filter | Sort | Group |
 |---|---|---|---|---|---|
 | `username` | string | The person's uid. | yes | yes | no |
-| `activity` | string | The post-login activity: `pqc-passkey-migration`. | yes | yes | yes |
+| `activity` | string | The post-login activity: `pqc-passkey-migration` (a post-quantum passkey), `pqc-mail-encryption` (a post-quantum OpenPGP key or S/MIME certificate) or `piv-reissue` (a new PIV slot certificate). Filter on it to report one activity; the filter offers the three. | yes | yes | yes |
 | `profile` | string | The post-login profile that reached the person (`default`, or a named profile), as recorded when they were asked; a row recorded without one shows the profile their groups select now (no application is known outside a sign-in). | yes | yes | yes |
 | `role` | string | Retired (#1135): a passkey has no role, so a row written since is empty. A row written before keeps the role it was asked for then, `primary` or `mfa`. | yes | yes | yes |
 | `progress` | string | Where the person stands, the first that holds: `done`, `past-grace`, `snoozed`, `asked`, `mailed`. | yes | yes | yes |
@@ -715,13 +718,15 @@ without the directory being asked again for every row.
 | `firstMailedAt` | timestamp | When that started activity's first mail went. | yes | yes | no |
 | `lastMailedAt` | timestamp | When the last reminder mail went. | yes | yes | no |
 
-Three **predefined queries** come with it. The source's page lists them; each
+Five **predefined queries** come with it. The source's page lists them; each
 opens New Query with its query filled in, and nothing runs until you press
 Run. Save it to keep your own copy as a definition.
 
 | Predefined query | What it asks |
 |---|---|
 | Progress by activity | How many people of the post-quantum passkey migration are at each `progress`. |
+| Progress of the mail-encryption migration | The same for `pqc-mail-encryption`. |
+| Progress of the PIV re-issue | The same for `piv-reissue`. |
 | People past their grace period | Everybody whose `graceEnded` is true, the earliest deadline first. |
 | People who skipped most | Everybody who skipped at least once, the most skips first. |
 

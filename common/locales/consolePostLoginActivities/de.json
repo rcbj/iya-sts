@@ -39,5 +39,11 @@
   "groupsFull": "{max} Gruppen sind gewählt, so viele, wie eine Aktivität höchstens nennen darf.",
   "startNote": "Mit dem Start werden die Personen, die sie erreicht, ab ihrer nächsten Anmeldung gebeten; der Versand beginnt beim nächsten Lauf des Auftrags. Eine Person, die die Aktivität bereits erledigt hat, die der Bereich nicht bitten kann oder die ein ausgeschaltetes benanntes Post-Login-Profil ausschließt, wird weder gebeten noch angeschrieben.",
   "startButton": "Starten",
-  "readOnly": "Das Starten, Pausieren und Beenden einer Post-Login-Aktivität erfordert Admin Write."
+  "readOnly": "Das Starten, Pausieren und Beenden einer Post-Login-Aktivität erfordert Admin Write.",
+  "activityName.passkey": "Post-Quanten-Passkey",
+  "activityName.mail": "Post-Quanten-E-Mail-Verschlüsselung",
+  "activityName.piv": "PIV-Zertifikat neu ausstellen",
+  "activityWhat.passkey": "eine Person mit einem klassischen Passkey oder keinem wird gebeten, einen ML-DSA-Passkey zu registrieren, nach den Passkey-Zeilen des Post-Login-Profils.",
+  "activityWhat.mail": "eine Person, deren E-Mails an einen klassischen OpenPGP-Schlüssel oder ein klassisches S/MIME-Zertifikat verschlüsselt werden, wird gebeten, einen ML-KEM-Schlüssel zu registrieren, nach dem E-Mail-Verschlüsselungsblock des Profils.",
+  "activityWhat.piv": "eine Person mit einem PIV-Slot-Zertifikat aus diesem Bereich wird gebeten, ein neues zu beantragen, wenn ein klassischer Aussteller es signiert hat oder es bald abläuft, nach dem PIV-Block des Profils."
 }

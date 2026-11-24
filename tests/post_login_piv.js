@@ -17,7 +17,7 @@
 // enrolment form and the clock.
 //
 //   A. The table: `piv-reissue` is a row, exposed `forgery`, loads whole,
-//      and is not startable until P4.
+//      and is startable since P4 (#2009), with its own reminder.
 //   B. Due: a classically-signed certificate under a post-quantum EST CA
 //      (`classical-issuer`); one expiring within `pivRenewDays`
 //      (`expiring`); the trigger rows narrowing which.
@@ -232,8 +232,9 @@ async function run(t) {
   t.equal(Kinds.problemWith(row, realPiv.kind), '',
     'and its module answers as a whole activity');
   t.check(Kinds.ids().indexOf(PIV) >= 0 &&
-          Kinds.startableIds().indexOf(PIV) < 0,
-    'it is asked at a sign-in and not yet startable (P4)');
+          Kinds.startableIds().indexOf(PIV) >= 0 &&
+          Kinds.templateOf(PIV) === 'post-login-reminder-piv-reissue',
+    'it is asked at a sign-in, and since P4 startable with its own reminder');
   t.check(!pqc.ofSignature(pems.classical) &&
           ['pq', 'composite'].indexOf((pqc.ofSignature(pems.pq) || {}).kind)
             >= 0,

@@ -39,5 +39,11 @@
   "groupsFull": "Hay {max} grupos elegidos, el máximo que puede nombrar una actividad.",
   "startNote": "Al iniciarla se pide a las personas a las que llega desde su próximo inicio de sesión; los envíos empiezan en la próxima ejecución de la tarea. A quien ya hizo la actividad, a quien el ámbito no puede pedírsela, o a quien excluye un perfil con nombre desactivado, no se le pide ni se le escribe.",
   "startButton": "Iniciar",
-  "readOnly": "Iniciar, pausar y terminar una actividad posterior al inicio de sesión requiere Admin Write."
+  "readOnly": "Iniciar, pausar y terminar una actividad posterior al inicio de sesión requiere Admin Write.",
+  "activityName.passkey": "Llave de acceso poscuántica",
+  "activityName.mail": "Cifrado de correo poscuántico",
+  "activityName.piv": "Reemisión de certificado PIV",
+  "activityWhat.passkey": "a quien tiene una llave de acceso clásica, o ninguna, se le pide registrar una llave de acceso ML-DSA, según las filas de llaves de acceso del perfil posterior al inicio de sesión.",
+  "activityWhat.mail": "a quien recibe el correo cifrado con una clave OpenPGP o un certificado S/MIME clásicos se le pide registrar uno ML-KEM, según el bloque de cifrado de correo del perfil.",
+  "activityWhat.piv": "a quien tiene un certificado de ranura PIV emitido por este reino se le pide inscribir uno nuevo cuando lo firmó un emisor clásico o vence pronto, según el bloque PIV del perfil."
 }

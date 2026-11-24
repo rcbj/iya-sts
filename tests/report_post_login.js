@@ -78,8 +78,10 @@ function catalogChecks(t) {
   const presets = src.presets || [];
   t.equal(presets.map(function (p) {
     return p.id;
-  }).join(','), 'progress-by-activity,past-grace-period,skipped-most',
-    'the three predefined queries');
+  }).join(','), 'progress-by-activity,progress-mail-encryption,' +
+    'progress-piv-reissue,past-grace-period,skipped-most',
+    'the predefined queries: the first unchanged, one per activity since ' +
+    '#2009 P4, then the two across activities');
   presets.forEach(function (p) {
     const asked = ask(p.document);
     t.equal(asked.ok, true, p.id + ' validates', asked.description);
@@ -299,7 +301,7 @@ function published(t) {
   const OpenApi = require('../report/openapi');
   const catalog = new Catalog();
   const pub = api.publicSource(catalog.source('postLoginProgress'));
-  t.equal((pub.presets || []).length, 3, 'the API publishes the presets');
+  t.equal((pub.presets || []).length, 5, 'the API publishes the presets');
   t.equal(api.publicSource(catalog.source('users')).presets.length, 0,
     'and an empty list for a source with none');
   const spec = OpenApi.document(catalog);
