@@ -6519,8 +6519,8 @@ Raised from: portal/.
 | `STS-PORTAL-0634` | POST /account-api/photo in a realm whose profilePhoto.selfService is off (#719). | HTTP 403 JSON |
 | `STS-PORTAL-0635` | A profile photo was not saved in product mode: its address would be built on a Host header, because global.publicBaseUrl is not set (#719). | HTTP 409 JSON |
 | `STS-PORTAL-0636` | GET /web/photo/{id} answered 404: no such photo, its person was deleted, or their account is disabled (#719). | HTTP 404 |
-| `STS-PORTAL-0638` | A person set a new password from a reset link and their other sessions could not be ended; the password is set (#2123, ASVS 5.0.0 7.4.3). | — |
 | `STS-PORTAL-0637` | A password reset or an authenticator app setup was done and recorded, and its failure count could not be cleared (ASVS 5.0.0 2.3.3). | — |
+| `STS-PORTAL-0638` | A person set a new password from a reset link and their other sessions could not be ended; the password is set (#2123, ASVS 5.0.0 7.4.3). | — |
 
 ## STS-ACCOUNT
 
