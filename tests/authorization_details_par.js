@@ -46,14 +46,28 @@ async function child() {
     server.listen(0, '127.0.0.1', r);
   });
   const port = server.address().port;
-  const authorize = function (details) {
-    const q = new URLSearchParams({ client_id: CLIENT, response_type: 'code',
-      redirect_uri: REDIRECT, scope: 'openid', state: 's1',
-      code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
-      code_challenge_method: 'S256' });
-    if (details) {
+  const PARAMS = { client_id: CLIENT, response_type: 'code',
+    redirect_uri: REDIRECT, scope: 'openid', state: 's1',
+    code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+    code_challenge_method: 'S256' };
+  // An unsigned request object (RFC 9101 by value), which development
+  // accepts: its authorization_details is a JSON array, not a string.
+  const unsigned = function (claims) {
+    const b64 = function (o) {
+      return Buffer.from(JSON.stringify(o)).toString('base64url');
+    };
+    return b64({ alg: 'none', typ: 'oauth-authz-req+jwt' }) + '.' +
+           b64(claims) + '.';
+  };
+  const authorize = function (details, byValue) {
+    const q = new URLSearchParams(PARAMS);
+    if (details && !byValue) {
       q.set('authorization_details',
             JSON.stringify([{ type: 'payment_initiation' }]));
+    }
+    if (byValue) {
+      q.set('request', unsigned(Object.assign({}, PARAMS,
+        { authorization_details: [{ type: 'payment_initiation' }] })));
     }
     return new Promise(function (resolve, reject) {
       http.get({ host: '127.0.0.1', port: port,
@@ -77,12 +91,15 @@ async function child() {
   config.setOverride(SETTING, 'true');
   const onDetails = await authorize(true);
   const onPlain = await authorize(false);
+  const onByValue = await authorize(true, true);
   config.clearOverride(SETTING);
   server.close();
   process.stdout.write('RESULT ' + JSON.stringify({
     off: { status: offDetails.status, named: named(offDetails) },
     on: { status: onDetails.status, named: named(onDetails) },
-    plain: { status: onPlain.status, named: named(onPlain) } }) + '\n');
+    plain: { status: onPlain.status, named: named(onPlain) },
+    byValue: { status: onByValue.status, named: named(onByValue),
+               body: onByValue.body.slice(0, 300) } }) + '\n');
   log.debug("Leaving child().");
 }
 
@@ -126,5 +143,9 @@ module.exports = {
             JSON.stringify(got.on));
     t.check(!got.plain.named, 'on, a request with no authorization_details ' +
             'is not refused for it', JSON.stringify(got.plain));
+    t.check(got.byValue.status === 400 && got.byValue.named,
+            'on, authorization_details inside a request object passed by ' +
+            'value is refused too: it travels in the browser as well',
+            JSON.stringify(got.byValue));
   }
 };

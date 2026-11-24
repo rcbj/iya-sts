@@ -12069,8 +12069,14 @@ class OAuth2Server {
     }
     // ASVS 5.0.0 10.4.15 (#2185): rich authorization details only in a
     // pushed request, where the realm says so.
+    // `req.query` is the EFFECTIVE request here: a request object passed by
+    // value (RFC 9101) has already replaced it (authorizeWithClient()), and
+    // there `authorization_details` is a JSON array rather than a string.
+    const details = (req.query || {}).authorization_details;
+    const carriesDetails = details !== undefined && details !== null &&
+      (typeof details === 'string' ? details.trim() !== '' : true);
     if (!pushed && config.value('oauth2.authorizationDetailsRequirePar') &&
-        String((req.query || {}).authorization_details || '').trim()) {
+        carriesDetails) {
       oauthMonitor.record(clientId, 'par.required_refused',
                         { error: 'invalid_request' });
       log.debug("Leaving OAuth2Server.pushedRequestPolicyRefusal(). " +
