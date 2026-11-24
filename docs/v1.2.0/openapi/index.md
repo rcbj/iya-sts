@@ -15,7 +15,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 |---|---|---|
 | [Management API](admin-api.html) | `/admin-api` | 764 |
 | [Admin console operations](admin-console-api.html) | `/admin-api/console` | 20 |
-| [Account API](account-api.html) | `/account-api` | 89 |
+| [Account API](account-api.html) | `/account-api` | 90 |
 | [Sign-in API](authn-api.html) | `/authn-api` | 49 |
 | [Report API](report-api.html) | `/report-api` | 23 |
 {% endraw %}

@@ -200,6 +200,11 @@ schemas are in `GET /admin-api/account-api`.
 - **The ML-DSA certificate.** With `pki.sshUserCaPqcAlongsideClassical` on,
   the answer carries `pqcCertificate` and `pqcSerialHex` beside the classical
   `certificate`. Both are revoked the same way.
+- **On the portal.** **Tokens and keys → SSH user certificates**
+  (`/portal/tokens-and-keys#tk-ssh`) lists your certificates, issues one
+  for a public key line you paste (the principals default to your uid; the
+  lifetime is optional) and revokes one, over the three operations below.
+  The certificate is shown once, on the tab that issued it.
 - **Listing and revoking.** `GET /account-api/ssh/certificates` lists the
   caller's certificates that have not expired. An administrator sees a
   person's on **Directory → Hardware tokens → SSH certificates** (search for

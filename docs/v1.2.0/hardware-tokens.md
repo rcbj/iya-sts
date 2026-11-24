@@ -87,6 +87,19 @@ under that serial.
 - **People** see their own tokens on the portal's **Security keys** page
   (`/portal/tokens`, under *How I sign in*). The page draws from
   `GET /account-api/tokens`.
+- The portal's **Tokens and keys** page (`/portal/tokens-and-keys`, also
+  under *How I sign in*) has a tab per kind a person registers: **Hardware
+  tokens**, **OATH tokens**, **YubiKey OTP**, **PIV**, **SSH user
+  certificates**, and **OpenPGP and S/MIME** — the same names and order as
+  the Credentials sub-tabs of a person's page in the console. Each tab is
+  the card of the page that already had it (Security keys, Authenticator
+  app, OpenPGP and mail encryption), and a form on it is answered on its
+  tab. The SSH tab lists your SSH user certificates, issues one for an
+  OpenSSH public key you paste and revokes one, over
+  `/account-api/ssh/certificates` (see [PKI](pki.md#openssh-user-certificates)).
+  The page draws from `GET /account-api/tokens-and-keys` and asks
+  `GET /account-api/mfa`, `GET /account-api/openpgp` and
+  `GET /account-api/ssh/certificates` for the other tabs.
 - **Administrators** see the realm's tokens under **Directory → Hardware
   tokens** (`/admin/hardware-tokens`). The list can be filtered by status
   and searched by serial or by person. Where the store is read on demand,
