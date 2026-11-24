@@ -78,12 +78,17 @@
 // clientAuth alone and are refused KDC_ERR_INCONSISTENT_KEY_PURPOSE here.
 //
 // **HARDWARE-BOUND** (rcbj's other answer): the KDC cannot see a smart card.
-// What it can see is that the certificate is the SMARTCARD-LOGON profile
-// (id-ms-kp-sc-logon) and that this service did NOT generate its key (EST's
-// /serverkeygen records `keySource: 'server'`). Only then does the ticket
-// say `pkinit-hardware`, which `spnego_authn.ts` turns into `hwk`; every
-// other PKINIT ticket says `pkinit` and becomes `swk`, as `/tls/sign-in`
-// says of a certificate. Neither is a password, so neither is `pwd`.
+// It earns `pkinit-hardware`, which `spnego_authn.ts` turns into `hwk`, in
+// two ways. FROM EVIDENCE (#1955): a key an active hardware token's
+// attestation covers is hardware whatever its EKU, and a smart card's
+// evidence earns `pkinit-smartcard` (`sc`) beside it. BY INFERENCE, while
+// `hardwareTokens.hardwareClaims` is `inference` (the default): the
+// certificate is the SMARTCARD-LOGON profile (id-ms-kp-sc-logon) and this
+// service did NOT generate its key (EST's /serverkeygen records `keySource:
+// 'server'`). Every other PKINIT ticket says `pkinit` and becomes `swk`, as
+// `/tls/sign-in` says of a certificate. Neither is a password, so neither is
+// `pwd`. A PIV card authentication (9e) key is never evidence, and is
+// refused unless the authentication policy lets it sign in (#2031).
 //
 // ---------------------------------------------------------------------------
 // POST-QUANTUM. No post-quantum PKINIT is standardised. Where it would go is
