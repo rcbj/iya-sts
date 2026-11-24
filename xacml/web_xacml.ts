@@ -4777,6 +4777,14 @@ class XacmlPage {
       line(t.html('consoleXacml.pepPage.th.protocolVersion'),
            code(row.protocolVersion),
            'consoleXacml.tip.overview.protocolVersion') +
+      // WHAT IT PULLS (#2027): the repository, or its application's scope.
+      line(t.html('consoleXacml.pepPage.th.pullScope'),
+           row.pullScope === 'bound-application'
+             ? t.html('consoleXacml.pepPage.pullScope.boundApplication')
+             : row.pullScope === 'repository'
+             ? t.html('consoleXacml.pepPage.pullScope.repository')
+             : code(''),
+           'consoleXacml.tip.overview.pullScope') +
       line(t.html('consoleXacml.pepPage.th.syncToken'),
            code(row.syncToken), 'consoleXacml.tip.overview.syncToken') +
       line(t.html('consoleXacml.th.notify'), self.pepNotify(t, row),

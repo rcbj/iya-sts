@@ -1081,5 +1081,9 @@
   "tip.overview.kind": "容器指 xacml-pep 映像；內嵌式指位於應用程式驗證程式庫中的 PEP。兩者皆未說明的 PEP 視為容器。",
   "tip.overview.mode": "Central：PEP 向本服務的 AuthZEN 評估端點詢問每個決策。Local：它擷取其應用程式的原則並在處理程序內決策。",
   "tip.overview.protocolVersion": "其套件使用的 PEP 通訊協定版本。本服務會拒絕不支援的版本。",
-  "tip.overview.policyEvents": "PEP 最近一次回報其應用程式 Shared Signals 串流的情況：能否傳遞 pep-policies-changed。"
+  "tip.overview.policyEvents": "PEP 最近一次回報其應用程式 Shared Signals 串流的情況：能否傳遞 pep-policies-changed。",
+  "pepPage.th.pullScope": "擷取",
+  "pepPage.pullScope.repository": "存放庫：除保留原則外的所有已啟用原則",
+  "pepPage.pullScope.boundApplication": "僅其應用程式的原則：應用程式自身的原則或領域的根原則，以及其參照的原則",
+  "tip.overview.pullScope": "PEP 最近一次擷取的原則。local 模式的內嵌式 PEP 只擷取其應用程式的原則；範圍變更會以 xacml.pep.scope 記錄在稽核記錄中。"
 }

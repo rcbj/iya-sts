@@ -958,7 +958,28 @@
         "type": "object",
         "properties": {
           "syncToken": {
-            "type": "string"
+            "type": "string",
+            "description": "The token of what this answer sends: the repository's, or with scope=bound-application the scope's own, which a change outside the application's policies does not move."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "bound-application"
+            ],
+            "description": "Present with scope=bound-application (#2027): the scope answered."
+          },
+          "application": {
+            "type": "string",
+            "description": "With scope=bound-application: the application the PEP is bound to."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "application",
+              "root",
+              "none"
+            ],
+            "description": "With scope=bound-application: where the root row came from. application: the application's own policy (it enforces fine-grained authorization); root: the realm root; none: neither, so the set is empty."
           },
           "root": {
             "anyOf": [
@@ -980,7 +1001,7 @@
             "items": {
               "$ref": "#/components/schemas/PolicyRow"
             },
-            "description": "Every enabled policy but those withheld."
+            "description": "Every enabled policy but those withheld; with scope=bound-application, the application's own policy (or the realm root) marked isRoot, and its reference closure."
           },
           "withheld": {
             "type": "array",
@@ -2905,6 +2926,19 @@
             }
           },
           {
+            "name": "scope",
+            "in": "query",
+            "required": false,
+            "description": "repository (the default): every enabled policy but those withheld. bound-application (#2027): a registered embedded PEP in local mode, bound to the application it registered for, is sent that application's own policy (when it enforces fine-grained authorization; otherwise the realm root) and the reference closure, with a token of its own; anybody else is 403 STS-XACML-0343. Any other value is 400 STS-XACML-0344.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "repository",
+                "bound-application"
+              ]
+            }
+          },
+          {
             "name": "pep",
             "in": "query",
             "required": false,
@@ -2943,7 +2977,7 @@
             }
           },
           "400": {
-            "description": "A control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",
+            "description": "An unknown scope (STS-XACML-0344): invalid_request. Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2975,7 +3009,7 @@
             }
           },
           "403": {
-            "description": "The gate.",
+            "description": "The gate; or scope=bound-application from a caller that is not a registered, bound, local embedded PEP (STS-XACML-0343): access_denied.",
             "content": {
               "application/json": {
                 "schema": {

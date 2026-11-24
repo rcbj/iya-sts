@@ -55,7 +55,7 @@ Do not edit it by hand.
 | [Signer trust anchor](#signer-trust-anchor) | `SignerTrustAnchor` | ou=signerTrustAnchors | 5 |
 | [SPIFFE](#spiffe) | `Spiffe` | ou=spiffe | 30 |
 | [Trust anchor](#trust-anchor) | `TrustAnchor` | ou=trustAnchors | 3 |
-| [XACML policy enforcement point](#xacml-policy-enforcement-point) | `XacmlPep` | ou=peps | 31 |
+| [XACML policy enforcement point](#xacml-policy-enforcement-point) | `XacmlPep` | ou=peps | 32 |
 | [XACML policy enforcement point cluster](#xacml-policy-enforcement-point-cluster) | `XacmlPepCluster` | ou=pepClusters | 5 |
 | [XACML policy](#xacml-policy) | `XacmlPolicy` | ou=policies | 12 |
 
@@ -1375,6 +1375,7 @@ Recorded in `../xacml/xacml_pep_registry`.
 | `xacmlPepPolicyEvents` | one | this service | `1.3.6.1.4.1.67607.1.1.1104` | Whether the stream of the application an embedded remote PEP is embedded in can carry the pep-policies-changed event, as the PEP last reported on a heartbeat (#2026): none (the host has no signal stream, so the PEP polls), requested, excluded (the application's ssfEvents leaves it out) or down. Empty until reported. |
 | `xacmlPepProtocolVersion` | one | this service | `1.3.6.1.4.1.67607.1.1.1103` | The PEP protocol version the remote PEP's package speaks, as it said on its registration or last heartbeat (#2026). This service supports version 1 and refuses any other, so a library that falls behind is visible rather than silently wrong. Empty for a PEP that sends none (the container). |
 | `xacmlPepProxy` | one | this service | `1.3.6.1.4.1.67607.1.1.752` | The reverse-proxy configuration the remote PEP pulls from GET /xacml/pep/proxy (#1760): one JSON document — enabled, the upstream application's base URL, the public base URL a browser reaches the proxy at, the timeouts and the ordered route table, each route with its path, methods, authentication mechanisms, the application in the realm's registry it fronts, and XACML resource and action. Written by the set-pep-proxy action of the console and the management API, validated whole there and again when the pull is built, so a value an ldapmodify wrote that does not validate is pulled as configured: false. Kept across a registration and a heartbeat; removed with the row. |
+| `xacmlPepPullScope` | one | this service | `1.3.6.1.4.1.67607.1.1.1105` | What the remote PEP last pulled from GET /xacml/pep/policies (#2027): repository, every enabled policy but those withheld (the container's pull), or bound-application, a local embedded PEP's: its application's own policy, or the realm root, and the reference closure. Kept across a registration; a change is audited as xacml.pep.scope. Empty until it pulls. |
 | `xacmlPepRefused` | one | this service | `1.3.6.1.4.1.67607.1.1.733` | How many it REFUSED, including Permits refused for an obligation it could not discharge (section 7.2). |
 | `xacmlPepRegisteredAt` | one | this service | `1.3.6.1.4.1.67607.1.1.734` | When this PEP first registered. Kept across a re-registration, because a component that restarts hourly is a fact worth seeing and an entry whose age reset on every restart could never show it. |
 | `xacmlPepResource` | one | this service | `1.3.6.1.4.1.67607.1.1.735` | What the remote PEP says it is guarding. Free text from the PEP, shown as its own claim about itself. |

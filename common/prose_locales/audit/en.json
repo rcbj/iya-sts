@@ -302,6 +302,7 @@
   "audit.actions.xacml.pep.certificate.label": "A remote PEP was issued an HTTPS listener certificate",
   "audit.actions.xacml.pep.credential.label": "A remote PEP's assertion key was certified from its request",
   "audit.actions.xacml.pep.binding.label": "An embedded remote PEP was bound to its application, or unbound",
+  "audit.actions.xacml.pep.scope.label": "A remote PEP began pulling another policy scope",
   "audit.actions.xacml.pip.query.label": "A remote PEP asked the PIP for a subject's attributes",
   "audit.actions.saml2.request.signature.label": "A SAML 2.0 service provider's request signature was checked",
   "audit.actions.gnap.grant.request.label": "A GNAP grant was requested",

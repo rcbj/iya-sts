@@ -1081,5 +1081,9 @@
   "tip.overview.kind": "Ang container ay ang image na xacml-pep; ang naka-embed ay isang PEP sa loob ng authentication library ng isang application. Ang PEP na walang sinasabi ay container.",
   "tip.overview.mode": "Central: itinatanong ng PEP ang bawat desisyon sa AuthZEN evaluation endpoint ng serbisyong ito. Local: kinukuha nito ang mga patakaran ng application nito at nagpapasya sa loob ng proseso.",
   "tip.overview.protocolVersion": "Ang bersyon ng protocol ng PEP na sinasalita ng package nito. Tinatanggihan ng serbisyong ito ang bersyong hindi nito sinusuportahan.",
-  "tip.overview.policyEvents": "Ang huling iniulat ng PEP tungkol sa Shared Signals stream ng application nito: kung kaya nitong dalhin ang pep-policies-changed."
+  "tip.overview.policyEvents": "Ang huling iniulat ng PEP tungkol sa Shared Signals stream ng application nito: kung kaya nitong dalhin ang pep-policies-changed.",
+  "pepPage.th.pullScope": "Kinukuha",
+  "pepPage.pullScope.repository": "ang repository: bawat naka-enable na patakaran maliban sa mga ipinagkait",
+  "pepPage.pullScope.boundApplication": "ang mga patakaran lang ng application nito: ang sariling patakaran ng application, o ang root ng realm, at ang mga tinutukoy nito",
+  "tip.overview.pullScope": "Kung aling mga patakaran ang huling kinuha ng PEP. Ang naka-embed na PEP sa local mode ay kumukuha lang ng sa application nito; ang pagbabago ng saklaw ay nasa audit log bilang xacml.pep.scope."
 }

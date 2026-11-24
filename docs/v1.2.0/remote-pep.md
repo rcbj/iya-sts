@@ -2837,6 +2837,14 @@ The *Remote PEPs* list and the PEP's page show the kind, application, mode, prot
 
 **In `central` mode** the PEP asks `POST /access/v1/evaluation` and `/evaluations` on its own `authzen:evaluate` token. Its binding admits it as if it held `AUTHZEN_PEPS`, scoped to its bound application and no other: a `context.application` naming another is refused (403), and none named means the bound one. It needs no AuthZEN group membership.
 
+**In `local` mode** the PEP pulls `GET /xacml/pep/policies?scope=bound-application` ([#2027](https://github.com/rcbj/iya-sts/issues/2027)) and decides in process. It is sent:
+
+- its application's own fine-grained authorization policy, as the root, when the application enforces fine-grained authorization; otherwise the realm's root policy;
+- every policy that one references, transitively;
+- nothing else: never another application's policy, and never the access or issuance policy.
+
+The answer has a token of its own, so `If-None-Match` answers `304` until something the PEP holds changes; a change elsewhere in the realm does not move it. Only a registered embedded PEP in `local` mode, bound to the application it registered for, is answered; anybody else is refused (403, `STS-XACML-0343`), and a scope other than `repository` or `bound-application` is 400 (`STS-XACML-0344`). The PEP's page says which scope it pulls, and a change of scope is audited as `xacml.pep.scope`.
+
 ## See also
 
 - [Authorization overview](authorization.md) — every authorization decision this service makes, and where each is documented

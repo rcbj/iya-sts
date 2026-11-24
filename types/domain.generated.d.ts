@@ -1230,6 +1230,7 @@ declare namespace IyaDomain {
     mode?: string;
     protocolVersion?: number;
     policyEvents?: string;
+    pullScope?: string;
     description?: string[];
   }
 

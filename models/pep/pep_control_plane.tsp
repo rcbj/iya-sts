@@ -357,10 +357,17 @@ op `postHeartbeat`(`requestBody/content/application~1json/schema`: `HeartbeatReq
 }
 
 @component model `PolicySet` {
+  @js(#{`description`:"The token of what this answer sends: the repository's, or with scope=bound-application the scope's own, which a change outside the application's policies does not move."})
   `syncToken`: string;
+  @js(#{`description`:"Present with scope=bound-application (#2027): the scope answered."})
+  `scope`?: "bound-application";
+  @js(#{`description`:"With scope=bound-application: the application the PEP is bound to."})
+  `application`?: string;
+  @js(#{`description`:"With scope=bound-application: where the root row came from. application: the application's own policy (it enforces fine-grained authorization); root: the realm root; none: neither, so the set is empty."})
+  `source`?: "application" | "root" | "none";
   @js(#{`description`:"The root policy's name. Not read by the PEP, which uses isRoot."}) `root`: string | null;
   @js(#{`description`:"Only when root is null."}) `rootNote`?: string;
-  @js(#{`description`:"Every enabled policy but those withheld."}) `policies`: `PolicyRow`[];
+  @js(#{`description`:"Every enabled policy but those withheld; with scope=bound-application, the application's own policy (or the realm root) marked isRoot, and its reference closure."}) `policies`: `PolicyRow`[];
   @js(#{`description`:"Names withheld from PEPs: the access and issuance policies and every policy an application owns."})
   `withheld`: string[];
   `note`: string;
@@ -373,14 +380,15 @@ op `postHeartbeat`(`requestBody/content/application~1json/schema`: `HeartbeatReq
   `parameters`:#[
     #{`name`:"since",`in`:"query",`required`:false,`description`:"The token held; equal to the current one answers 304.",`schema`:#{`type`:"string"}},
     #{`name`:"If-None-Match",`in`:"header",`required`:false,`description`:"The ETag held; a match (weak comparison, a list, or *) answers 304.",`schema`:#{`type`:"string"}},
+    #{`name`:"scope",`in`:"query",`required`:false,`description`:"repository (the default): every enabled policy but those withheld. bound-application (#2027): a registered embedded PEP in local mode, bound to the application it registered for, is sent that application's own policy (when it enforces fine-grained authorization; otherwise the realm root) and the reference closure, with a token of its own; anybody else is 403 STS-XACML-0343. Any other value is 400 STS-XACML-0344.",`schema`:#{`type`:"string",`enum`:#["repository","bound-application"]}},
     #{`name`:"pep",`in`:"query",`required`:false,`description`:"The register name, read only when no certificate was presented; with one, the certificate's name (as register's) is the row whose last-seen time a pull touches, whatever this says.",`schema`:#{`type`:"string"}}
   ],
   `responses`:#{
     `200`:#{`description`:"The policies. ETag: \"<syncToken>\".",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `304`:#{`description`:"Unchanged. ETag.",`headers`:#{`ETag`:#{`schema`:#{`type`:"string"}}}},
-    `400`:#{`description`:"A control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"An unknown scope (STS-XACML-0344): invalid_request. Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
-    `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
+    `403`:#{`description`:"The gate; or scope=bound-application from a caller that is not a registered, bound, local embedded PEP (STS-XACML-0343): access_denied.",`content`:#{`application/json`:#{`schema`:null}}},
     `429`:#{`description`:"Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
     `501`:#{`description`:"XACML or remote PEPs off.",`content`:#{`application/json`:#{`schema`:null}}}
   }

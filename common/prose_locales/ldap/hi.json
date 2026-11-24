@@ -2167,6 +2167,10 @@
     "en": "6dc388f78e803fc6",
     "text": "क्या उस एप्लिकेशन की स्ट्रीम, जिसमें एम्बेडेड रिमोट PEP एम्बेडेड है, pep-policies-changed इवेंट ले जा सकती है, जैसा PEP ने अपनी अंतिम हार्टबीट में बताया (#2026): none (होस्ट की कोई सिग्नल स्ट्रीम नहीं है, इसलिए PEP समय-समय पर पूछता है), requested, excluded (एप्लिकेशन का ssfEvents इसे बाहर रखता है) या down। रिपोर्ट होने तक खाली।"
   },
+  "xacmlPeps.schema.attributes.xacmlPepPullScope.what": {
+    "en": "92d4dbcdbbf1467d",
+    "text": "रिमोट PEP ने GET /xacml/pep/policies से आख़िरी बार क्या खींचा (#2027): repository, रोकी गई नीतियों को छोड़कर हर सक्षम नीति (कंटेनर का खींचना), या bound-application, local मोड के एम्बेडेड PEP का: उसके एप्लिकेशन की अपनी नीति, या रियल्म की रूट नीति, और उसके संदर्भों का समापन। पुनः पंजीकरण पर रखा जाता है; परिवर्तन xacml.pep.scope के रूप में ऑडिट होता है। खींचने तक खाली।"
+  },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "PEP ने पंजीकरण करते समय अपने बारे में जो कुछ कहा।"

@@ -1874,6 +1874,122 @@ class XacmlSurface {
    * @param given - the name the caller sent, read only with no certificate
    * @returns the folded name, '' when none is usable
    */
+  // -------------------------------------------------------------------------
+  // THE PULL SCOPED TO THE BOUND APPLICATION (#2027, part of #1206; rcbj's
+  // D3 (b)): `GET /xacml/pep/policies?scope=bound-application`.
+  //
+  // ANSWERED ONLY TO A REGISTERED, BOUND, EMBEDDED PEP IN `local` MODE —
+  // the caller's own row (`pepNameOf()`: the token's or certificate's name,
+  // never `?pep=` with one) says kind embedded and mode local, and the
+  // application it registered for is the one its entry is bound to NOW
+  // (`xacml_pep_binding.ts`). Anybody else is 403 STS-XACML-0343: this
+  // answer carries an application's own policy, which every other pull
+  // withholds, so it goes to that application's PEP and nobody else — not a
+  // container, not a central PEP (which holds no policy), not a PEP whose
+  // binding was moved since it registered.
+  //
+  // WHAT IT SENDS is `PepRegistry.boundPull()`'s: the application's own
+  // policy when it enforces fine-grained authorization, else the realm
+  // root, and the reference closure; never another application's policy
+  // nor the access or issuance policies. Its token is the scope's own, with
+  // the same ETag, `?since=` and `If-None-Match` 304 as the repository
+  // pull, so a change elsewhere in the realm does not move it.
+  // -------------------------------------------------------------------------
+  /**
+   * Answers a local embedded PEP's pull scoped to its bound application.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param identity - the caller the gate admitted
+   */
+  scopedPull(req: Req, res: Res, identity: CallerIdentity): void {
+    const self = this;
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.scopedPull().');
+    const name = self.pepNameOf(identity, String(req.query.pep || ''));
+    const row = name ? peps.read(name) : null;
+    const bound = row && row.kind === 'embedded'
+      ? PepBinding.shared().of(name) : '';
+    if (!row || row.kind !== 'embedded' || row.mode !== 'local' || !bound ||
+        bound !== row.registeredApplication) {
+      const why = !row
+        ? 'No remote PEP is registered as "' + String(name).slice(0, 120) +
+          '". The pull scoped to an application is a registered local ' +
+          'embedded PEP\'s; register first.'
+        : row.kind !== 'embedded'
+        ? '"' + name + '" registered as a container, which pulls the ' +
+          'repository (no scope).'
+        : row.mode !== 'local'
+        ? '"' + name + '" registered in ' + (row.mode || 'no') + ' mode, ' +
+          'which asks this service for every decision and holds no policy.'
+        : '"' + name + '" registered for "' + row.registeredApplication +
+          '" and its entry is bound to ' + (bound ? '"' + bound + '"'
+                                                  : 'no application') +
+          '; it registers again for the application it is bound to.';
+      log.info('xacml: a scoped policy pull was refused: ' + why);
+      errorCodes.mark(res, 'STS-XACML-0343');
+      self.fail(res, 403, 'access_denied', why);
+      log.debug('Leaving XacmlSurface.scopedPull(). Refused.');
+      return;
+    }
+    self.notePull(name, 'bound-application');
+    const pulled = peps.boundPull(bound);
+    if (self.unchanged(req, pulled.token)) {
+      res.status(304)
+         .set('Cache-Control', 'no-store')
+         .set('ETag', '"' + pulled.token + '"')
+         .end();
+      log.debug('Leaving XacmlSurface.scopedPull(). Unchanged.');
+      return;
+    }
+    res.status(200).type('application/json').set('Cache-Control', 'no-store')
+       .set('ETag', '"' + pulled.token + '"')
+       .send(JSON.stringify({
+         syncToken: pulled.token,
+         scope: 'bound-application',
+         application: bound,
+         source: pulled.source,
+         root: pulled.root,
+         rootNote: pulled.root ? undefined
+           : 'The application decides with no policy of its own and this ' +
+             'realm has no root policy, so a PEP loading this decides ' +
+             'NotApplicable to everything, which its bias turns into a ' +
+             'refusal.',
+         policies: pulled.policies,
+         withheld: pulled.withheld,
+         note: (pulled.source === 'application'
+           ? 'The application\'s own policy, as the root, and every ' +
+             'policy it references, transitively.'
+           : 'The application enforces no fine-grained authorization of ' +
+             'its own, so this is the realm root and every policy it ' +
+             'references, transitively.') +
+           ' Never another application\'s policy, and never the access ' +
+           'or issuance policy.'
+       }, null, 2));
+    log.debug('Leaving XacmlSurface.scopedPull(). ' +
+              pulled.policies.length + ' policy(ies) for ' + bound);
+  }
+
+  // A PULL TOUCHES ITS PEP'S ROW, as it always did, and now says WHAT IT
+  // PULLED (#2027): the scope is written on the row when it changes, with
+  // one `xacml.pep.scope` audit row, so a PEP polling every few seconds is
+  // one row on the log and not one a poll.
+  notePull(name: string, scope: string): void {
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.notePull(). ' + name + ' ' + scope);
+    const before = peps.read(name);
+    const was = before ? String(before.pullScope || '') : '';
+    peps.heartbeat(name, was === scope ? {} : { pullScope: scope });
+    if (before && was !== scope) {
+      audit.audit({ action: 'xacml.pep.scope', actor: name,
+                    target: name, protocol: 'XACML',
+                    detail: 'Remote PEP "' + name + '" pulls the ' + scope +
+                            ' policy scope' + (was ? ' (it pulled ' + was +
+                            ')' : '') + '.' });
+    }
+    log.debug('Leaving XacmlSurface.notePull().');
+  }
+
   /**
    * Reads what a registration or heartbeat says the PEP is (#2026), against
    * the application its entry is bound to, and answers the refusal when it
@@ -3175,6 +3291,24 @@ class XacmlSurface {
                   'refused.');
         return;
       }
+      // THE SCOPE (#2027): none, or `repository`, is the pull below as it
+      // always was; `bound-application` is a local embedded PEP's, answered
+      // by `scopedPull()`; anything else is refused.
+      const scope = String(req.query.scope || '');
+      if (scope === 'bound-application') {
+        self.scopedPull(req, res, access.identity);
+        log.debug('Leaving GET /xacml/pep/policies. Scoped.');
+        return;
+      }
+      if (scope && scope !== 'repository') {
+        log.debug('Leaving GET /xacml/pep/policies. An unknown scope.');
+        errorCodes.mark(res, 'STS-XACML-0344');
+        self.fail(res, 400, 'invalid_request', 'scope is repository (or ' +
+                  'absent), every enabled policy but those withheld, or ' +
+                  'bound-application, a local embedded PEP\'s own ' +
+                  'application\'s policies.');
+        return;
+      }
       const token = peps.syncToken();
       // A PEP that reports the name it registered under gets its `lastSeen`
       // moved by a PULL as well as by a heartbeat, because a PEP that is
@@ -3194,7 +3328,7 @@ class XacmlSurface {
       const asName = self.pepNameOf(access.identity,
                                     String(req.query.pep || ''));
       if (asName && peps.read(asName)) {
-        peps.heartbeat(asName, {});
+        self.notePull(asName, 'repository');
       }
       if (self.unchanged(req, token)) {
         // 304 AND NOT 200 WITH A FLAG, because a PEP polling every few seconds

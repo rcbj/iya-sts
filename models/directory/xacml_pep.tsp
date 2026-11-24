@@ -184,6 +184,11 @@ model XacmlPep {
   })
   xacmlPepPolicyEvents?: string;
   @attr(#{
+    kind: "single",
+    what: "What the remote PEP last pulled from GET /xacml/pep/policies (#2027): repository, every enabled policy but those withheld (the container's pull), or bound-application, a local embedded PEP's: its application's own policy, or the realm root, and the reference closure. Kept across a registration; a change is audited as xacml.pep.scope. Empty until it pulls."
+  })
+  xacmlPepPullScope?: string;
+  @attr(#{
     what: "Whatever the PEP said about itself when it registered."
   })
   description?: (string)[];

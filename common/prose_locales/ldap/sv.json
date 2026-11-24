@@ -2167,6 +2167,10 @@
     "en": "6dc388f78e803fc6",
     "text": "Om strömmen för programmet som en inbäddad fjärr-PEP är inbäddad i kan bära händelsen pep-policies-changed, enligt PEP:ens senaste hjärtslag (#2026): none (värden har ingen signalström, så PEP:en hämtar regelbundet), requested, excluded (programmets ssfEvents utesluter den) eller down. Tomt tills det har rapporterats."
   },
+  "xacmlPeps.schema.attributes.xacmlPepPullScope.what": {
+    "en": "92d4dbcdbbf1467d",
+    "text": "Vad fjärr-PEP:en senast hämtade från GET /xacml/pep/policies (#2027): repository, varje aktiverad policy utom de undanhållna (containerns hämtning), eller bound-application, en inbäddad PEP:s i läget local: programmets egen policy, eller sfärens rot, och höljet av dess referenser. Behålls vid en ny registrering; ett byte granskas som xacml.pep.scope. Tomt tills den har hämtat."
+  },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Vad PEP:en än sade om sig själv när den registrerade sig."

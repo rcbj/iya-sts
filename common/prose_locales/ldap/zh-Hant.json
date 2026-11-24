@@ -2167,6 +2167,10 @@
     "en": "6dc388f78e803fc6",
     "text": "內嵌式遠端 PEP 所在應用程式的串流能否傳遞 pep-policies-changed 事件，以 PEP 最近一次活動訊號回報為準（#2026）：none（主機沒有訊號串流，因此 PEP 輪詢）、requested、excluded（應用程式的 ssfEvents 將其排除）或 down。回報之前為空。"
   },
+  "xacmlPeps.schema.attributes.xacmlPepPullScope.what": {
+    "en": "92d4dbcdbbf1467d",
+    "text": "遠端 PEP 最近一次從 GET /xacml/pep/policies 擷取的內容（#2027）：repository，即除保留原則外的所有已啟用原則（容器的擷取）；或 bound-application，即 local 模式內嵌式 PEP 的擷取：其應用程式自身的原則或領域的根原則，以及其參照閉包。重新註冊時保留；變更以 xacml.pep.scope 稽核。擷取之前為空。"
+  },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "PEP 註冊時對自己所做的任何說明。"

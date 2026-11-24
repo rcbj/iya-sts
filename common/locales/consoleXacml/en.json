@@ -1081,5 +1081,9 @@
   "tip.overview.kind": "Container is the xacml-pep image; embedded is a PEP inside an application’s authentication library. A PEP that says neither is a container.",
   "tip.overview.mode": "Central: the PEP asks this service’s AuthZEN evaluation endpoint for every decision. Local: it pulls its application’s policies and decides in process.",
   "tip.overview.protocolVersion": "The PEP protocol version its package speaks. This service refuses a version it does not support.",
-  "tip.overview.policyEvents": "What the PEP last reported about its application’s Shared Signals stream: whether it can carry pep-policies-changed."
+  "tip.overview.policyEvents": "What the PEP last reported about its application’s Shared Signals stream: whether it can carry pep-policies-changed.",
+  "pepPage.th.pullScope": "Pulls",
+  "pepPage.pullScope.repository": "the repository: every enabled policy but those withheld",
+  "pepPage.pullScope.boundApplication": "its application’s policies only: the application’s own policy, or the realm root, and what it references",
+  "tip.overview.pullScope": "Which policies the PEP last pulled. A local embedded PEP pulls only its application’s; a change of scope is on the audit log as xacml.pep.scope."
 }

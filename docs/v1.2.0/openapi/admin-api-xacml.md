@@ -7168,6 +7168,7 @@ Scope: `admin:read`.
 | `peps[].proxyRoutes[].route` | string |  |  |
 | `peps[].proxyRoutes[].usable` | boolean |  |  |
 | `peps[].proxyRoutes[].why` | string, or null |  |  |
+| `peps[].pullScope` | one of empty, `repository`, `bound-application` |  | What the PEP last pulled from GET /xacml/pep/policies (#2027): repository (every enabled policy but those withheld) or bound-application (a local embedded PEP's: its application's own policy, or the realm root, and the reference closure); empty until it pulled. |
 | `peps[].refused` | number, or null |  |  |
 | `peps[].registeredApplication` | string |  | The application an embedded PEP registered as embedded in (#2026), which had to be its binding (`application`); empty for a container. |
 | `peps[].registeredAt` | string |  |  |

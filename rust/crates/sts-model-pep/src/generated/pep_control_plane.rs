@@ -891,17 +891,46 @@ pub mod components {
         pub document: String,
     }
 
+    /// With scope=bound-application: where the root row came from. application: the
+    /// application's own policy (it enforces fine-grained authorization); root: the
+    /// realm root; none: neither, so the set is empty.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+    pub enum PolicySetSource {
+        #[serde(rename = "application")]
+        Application,
+        #[serde(rename = "root")]
+        Root,
+        #[serde(rename = "none")]
+        None,
+    }
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct PolicySet {
+        /// The token of what this answer sends: the repository's, or with
+        /// scope=bound-application the scope's own, which a change outside the
+        /// application's policies does not move.
         #[serde(rename = "syncToken")]
         pub sync_token: String,
+        /// Present with scope=bound-application (#2027): the scope answered.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub scope: Option<String>,
+        /// With scope=bound-application: the application the PEP is bound to.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub application: Option<String>,
+        /// With scope=bound-application: where the root row came from. application:
+        /// the application's own policy (it enforces fine-grained authorization);
+        /// root: the realm root; none: neither, so the set is empty.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub source: Option<PolicySetSource>,
         /// The root policy's name. Not read by the PEP, which uses isRoot.
         pub root: Option<String>,
         /// Only when root is null.
         #[serde(rename = "rootNote", default, skip_serializing_if = "Option::is_none")]
         pub root_note: Option<String>,
-        /// Every enabled policy but those withheld.
+        /// Every enabled policy but those withheld; with scope=bound-application,
+        /// the application's own policy (or the realm root) marked isRoot, and its
+        /// reference closure.
         pub policies: Vec<crate::pep_control_plane::components::PolicyRow>,
         /// Names withheld from PEPs: the access and issuance policies and every
         /// policy an application owns.
@@ -1602,11 +1631,21 @@ pub mod get_policies {
     pub const PATH: &str = "/xacml/pep/policies";
     pub const OPERATION_ID: &str = "getPolicies";
 
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+    pub enum QueryScope {
+        #[serde(rename = "repository")]
+        Repository,
+        #[serde(rename = "bound-application")]
+        BoundApplication,
+    }
+
     #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     pub struct Query {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub since: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub scope: Option<QueryScope>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub pep: Option<String>,
     }

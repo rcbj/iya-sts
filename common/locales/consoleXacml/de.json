@@ -1081,5 +1081,9 @@
   "tip.overview.kind": "Container ist das Image xacml-pep; eingebettet ist ein PEP in der Authentifizierungsbibliothek einer Anwendung. Ein PEP, der keines von beiden angibt, ist ein Container.",
   "tip.overview.mode": "Central: der PEP erfragt jede Entscheidung beim AuthZEN-Auswertungsendpunkt dieses Dienstes. Local: er lädt die Richtlinien seiner Anwendung und entscheidet im Prozess.",
   "tip.overview.protocolVersion": "Die PEP-Protokollversion, die sein Paket spricht. Dieser Dienst lehnt eine nicht unterstützte Version ab.",
-  "tip.overview.policyEvents": "Was der PEP zuletzt über den Shared-Signals-Stream seiner Anwendung gemeldet hat: ob er pep-policies-changed übertragen kann."
+  "tip.overview.policyEvents": "Was der PEP zuletzt über den Shared-Signals-Stream seiner Anwendung gemeldet hat: ob er pep-policies-changed übertragen kann.",
+  "pepPage.th.pullScope": "Lädt",
+  "pepPage.pullScope.repository": "das Repository: jede aktivierte Richtlinie außer den zurückgehaltenen",
+  "pepPage.pullScope.boundApplication": "nur die Richtlinien seiner Anwendung: die eigene Richtlinie der Anwendung oder die Wurzel des Bereichs und was sie referenziert",
+  "tip.overview.pullScope": "Welche Richtlinien der PEP zuletzt geladen hat. Ein eingebetteter PEP im Modus local lädt nur die seiner Anwendung; ein Wechsel des Umfangs steht im Audit-Protokoll als xacml.pep.scope."
 }

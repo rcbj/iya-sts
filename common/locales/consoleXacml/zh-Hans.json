@@ -1081,5 +1081,9 @@
   "tip.overview.kind": "容器指 xacml-pep 镜像；嵌入式指位于应用身份验证库中的 PEP。两者都未说明的 PEP 视为容器。",
   "tip.overview.mode": "Central：PEP 向本服务的 AuthZEN 评估端点询问每个决策。Local：它拉取其应用的策略并在进程内决策。",
   "tip.overview.protocolVersion": "其软件包使用的 PEP 协议版本。本服务拒绝不支持的版本。",
-  "tip.overview.policyEvents": "PEP 最近一次报告的其应用 Shared Signals 流的情况：能否传递 pep-policies-changed。"
+  "tip.overview.policyEvents": "PEP 最近一次报告的其应用 Shared Signals 流的情况：能否传递 pep-policies-changed。",
+  "pepPage.th.pullScope": "拉取",
+  "pepPage.pullScope.repository": "存储库：除保留策略外的所有已启用策略",
+  "pepPage.pullScope.boundApplication": "仅其应用的策略：应用自身的策略或领域的根策略，以及其引用的策略",
+  "tip.overview.pullScope": "PEP 最近一次拉取的策略。local 模式的嵌入式 PEP 只拉取其应用的策略；范围变更会以 xacml.pep.scope 记录在审计日志中。"
 }

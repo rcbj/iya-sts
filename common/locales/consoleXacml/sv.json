@@ -1081,5 +1081,9 @@
   "tip.overview.kind": "Container är avbildningen xacml-pep; inbäddad är en PEP i ett programs autentiseringsbibliotek. En PEP som inte anger något är en container.",
   "tip.overview.mode": "Central: PEP:en frågar den här tjänstens AuthZEN-utvärderingsslutpunkt om varje beslut. Local: den hämtar programmets policyer och beslutar i processen.",
   "tip.overview.protocolVersion": "PEP-protokollversionen som dess paket talar. Den här tjänsten avvisar en version som den inte stöder.",
-  "tip.overview.policyEvents": "Vad PEP:en senast rapporterade om programmets Shared Signals-ström: om den kan bära pep-policies-changed."
+  "tip.overview.policyEvents": "Vad PEP:en senast rapporterade om programmets Shared Signals-ström: om den kan bära pep-policies-changed.",
+  "pepPage.th.pullScope": "Hämtar",
+  "pepPage.pullScope.repository": "förrådet: varje aktiverad policy utom de undanhållna",
+  "pepPage.pullScope.boundApplication": "bara programmets policyer: programmets egen policy, eller sfärens rot, och det den refererar till",
+  "tip.overview.pullScope": "Vilka policyer PEP:en senast hämtade. En inbäddad PEP i läget local hämtar bara sitt programs; ett byte av omfång finns i granskningsloggen som xacml.pep.scope."
 }

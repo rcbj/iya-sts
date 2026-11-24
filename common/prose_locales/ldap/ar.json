@@ -2167,6 +2167,10 @@
     "en": "6dc388f78e803fc6",
     "text": "هل يستطيع تدفق التطبيق المضمَّن فيه الـPEP البعيد حمل حدث pep-policies-changed، كما أبلغ الـPEP في آخر نبضة (#2026): none (ليس للمضيف تدفق إشارات، لذا يستعلم الـPEP دوريًا)، أو requested، أو excluded (يستبعده ssfEvents الخاص بالتطبيق)، أو down. فارغ حتى يُبلَّغ."
   },
+  "xacmlPeps.schema.attributes.xacmlPepPullScope.what": {
+    "en": "92d4dbcdbbf1467d",
+    "text": "ما جلبه الـPEP البعيد آخر مرة من GET /xacml/pep/policies (#2027): repository، أي كل سياسة مفعّلة عدا المحجوبة (جلب الحاوية)، أو bound-application، أي جلب PEP مضمَّن في الوضع local: السياسة الخاصة بتطبيقه، أو جذر النطاق، وإغلاق مراجعها. يُحتفظ به عند إعادة التسجيل؛ ويُدقَّق التغيير باسم xacml.pep.scope. فارغ حتى يجلب."
+  },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "ما قاله PEP عن نفسه عندما سجّل."

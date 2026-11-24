@@ -2167,6 +2167,10 @@
     "en": "6dc388f78e803fc6",
     "text": "Ob der Stream der Anwendung, in die ein eingebetteter Remote-PEP eingebettet ist, das Ereignis pep-policies-changed übertragen kann, wie der PEP es zuletzt in einem Heartbeat gemeldet hat (#2026): none (der Host hat keinen Signal-Stream, daher fragt der PEP regelmäßig ab), requested, excluded (ssfEvents der Anwendung schließt es aus) oder down. Leer, bis es gemeldet wurde."
   },
+  "xacmlPeps.schema.attributes.xacmlPepPullScope.what": {
+    "en": "92d4dbcdbbf1467d",
+    "text": "Was der Remote-PEP zuletzt von GET /xacml/pep/policies geladen hat (#2027): repository, jede aktivierte Richtlinie außer den zurückgehaltenen (die Abfrage des Containers), oder bound-application, die eines eingebetteten PEP im Modus local: die eigene Richtlinie seiner Anwendung oder die Wurzel des Bereichs und der Abschluss ihrer Referenzen. Bleibt bei einer erneuten Registrierung erhalten; ein Wechsel wird als xacml.pep.scope protokolliert. Leer, bis er geladen hat."
+  },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Was der PEP beim Registrieren über sich selbst gesagt hat."

@@ -2167,6 +2167,10 @@
     "en": "6dc388f78e803fc6",
     "text": "Si el flujo de la aplicación en la que está integrado un PEP remoto puede transportar el evento pep-policies-changed, según lo informó el PEP en su último latido (#2026): none (el host no tiene flujo de señales, así que el PEP consulta periódicamente), requested, excluded (el ssfEvents de la aplicación lo excluye) o down. Vacío hasta que se informe."
   },
+  "xacmlPeps.schema.attributes.xacmlPepPullScope.what": {
+    "en": "92d4dbcdbbf1467d",
+    "text": "Lo que el PEP remoto descargó por última vez de GET /xacml/pep/policies (#2027): repository, todas las políticas habilitadas salvo las retenidas (la descarga del contenedor), o bound-application, la de un PEP integrado en modo local: la política propia de su aplicación, o la raíz del dominio, y el cierre de sus referencias. Se conserva al volver a registrarse; un cambio se audita como xacml.pep.scope. Vacío hasta que descarga."
+  },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Lo que el PEP dijo de sí mismo cuando se registró."

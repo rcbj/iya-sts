@@ -107,6 +107,10 @@ model XacmlPep {
   @fromAttr(#{attr: "xacmlPepPolicyEvents"})
   `policyEvents`?: string;
 
+  // #2027: what it last pulled.
+  @fromAttr(#{attr: "xacmlPepPullScope"})
+  `pullScope`?: string;
+
   @fromAttr(#{attr: "description"})
   `description`?: string[];
 }

@@ -1211,6 +1211,10 @@
     "en": "a254d6c56c6f82ac",
     "text": "嵌入式遠端 PEP 已繫結至其應用程式，或已解除繫結"
   },
+  "audit.actions.xacml.pep.scope.label": {
+    "en": "d5d114c61ca80cc2",
+    "text": "遠端 PEP 開始擷取另一個原則範圍"
+  },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
     "text": "遠端 PEP 向 PIP 查詢主體的屬性"

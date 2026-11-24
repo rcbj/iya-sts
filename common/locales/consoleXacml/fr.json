@@ -1081,5 +1081,9 @@
   "tip.overview.kind": "Conteneur désigne l’image xacml-pep ; intégré désigne un PEP dans la bibliothèque d’authentification d’une application. Un PEP qui n’indique ni l’un ni l’autre est un conteneur.",
   "tip.overview.mode": "Central : le PEP demande chaque décision au point de terminaison d’évaluation AuthZEN de ce service. Local : il récupère les politiques de son application et décide dans le processus.",
   "tip.overview.protocolVersion": "La version du protocole PEP que parle son paquet. Ce service refuse une version qu’il ne prend pas en charge.",
-  "tip.overview.policyEvents": "Ce que le PEP a signalé en dernier sur le flux Shared Signals de son application : s’il peut transporter pep-policies-changed."
+  "tip.overview.policyEvents": "Ce que le PEP a signalé en dernier sur le flux Shared Signals de son application : s’il peut transporter pep-policies-changed.",
+  "pepPage.th.pullScope": "Récupère",
+  "pepPage.pullScope.repository": "le référentiel : toutes les politiques activées sauf celles retenues",
+  "pepPage.pullScope.boundApplication": "seulement les politiques de son application : la politique propre de l’application, ou la racine du domaine, et ce qu’elle référence",
+  "tip.overview.pullScope": "Les politiques que le PEP a récupérées en dernier. Un PEP intégré en mode local ne récupère que celles de son application ; un changement de portée figure dans le journal d’audit sous xacml.pep.scope."
 }

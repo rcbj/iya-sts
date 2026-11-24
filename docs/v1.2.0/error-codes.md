@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6085** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6088** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -92,7 +92,7 @@ is an ordinary outcome.
 * [OpenSSH user certificates (`STS-SSHCA`)](#sts-sshca) — 11
 * [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 34
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 263
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 266
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 140
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 137
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
@@ -5555,6 +5555,9 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0340` | A remote PEP sent a protocolVersion this service does not support (the supported set is 1), or an embedded PEP sent none (#2026). Nothing was recorded; the PEP's package must be upgraded. | POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 400 invalid_request |
 | `STS-XACML-0341` | A remote PEP sent mode with kind container (or no kind, which is container): central and local are an embedded PEP's modes (#2026). Nothing was recorded. | POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 400 invalid_request |
 | `STS-XACML-0342` | A remote PEP sent a kind that is neither container nor embedded, or registered as embedded with a mode that is neither central nor local, or a policyEvents report outside none, requested, excluded and down (#2026). Nothing was recorded. | POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 400 invalid_request |
+| `STS-XACML-0343` | GET /xacml/pep/policies?scope=bound-application was asked by a caller that is not a registered embedded PEP in local mode bound to the application it registered for (#2027): the pull scoped to an application, which carries that application's own policy, is answered to that application's local PEP and nobody else. Nothing was sent. | GET /xacml/pep/policies: HTTP 403 access_denied |
+| `STS-XACML-0344` | GET /xacml/pep/policies named a scope this service does not have: repository (or none) and bound-application are the two (#2027). | GET /xacml/pep/policies: HTTP 400 invalid_request |
+| `STS-XACML-0345` | Whether an application enforces fine-grained authorization could not be read while building its local PEP's scoped pull (#2027), so the PEP was sent the realm root and its closure, which is what AuthZEN decides the application by when it cannot read it either. Logged. | none (a log line; the pull is answered) |
 
 ## STS-XPEP
 

@@ -25667,6 +25667,25 @@ const CODES = [
       'requested, excluded and down (#2026). Nothing was recorded.',
     spec: 'POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 400 ' +
       'invalid_request' },
+  { code: 'STS-XACML-0343',
+    summary: 'GET /xacml/pep/policies?scope=bound-application was asked by ' +
+      'a caller that is not a registered embedded PEP in local mode bound ' +
+      'to the application it registered for (#2027): the pull scoped to ' +
+      'an application, which carries that application\'s own policy, is ' +
+      'answered to that application\'s local PEP and nobody else. Nothing ' +
+      'was sent.',
+    spec: 'GET /xacml/pep/policies: HTTP 403 access_denied' },
+  { code: 'STS-XACML-0344',
+    summary: 'GET /xacml/pep/policies named a scope this service does not ' +
+      'have: repository (or none) and bound-application are the two (#2027).',
+    spec: 'GET /xacml/pep/policies: HTTP 400 invalid_request' },
+  { code: 'STS-XACML-0345',
+    summary: 'Whether an application enforces fine-grained authorization ' +
+      'could not be read while building its local PEP\'s scoped pull ' +
+      '(#2027), so the PEP was sent the realm root and its closure, which ' +
+      'is what AuthZEN decides the application by when it cannot read it ' +
+      'either. Logged.',
+    spec: 'none (a log line; the pull is answered)' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +

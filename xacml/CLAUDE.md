@@ -1464,6 +1464,54 @@ carry `pep-policies-changed`).
 `tests/xacml_pep_embedded.js` holds it in process;
 `tests/protocol/sts_xacml_pep_embedded.js` over the wire.
 
+## A local embedded PEP pulls only its application's policies (#2027)
+
+**Part of #1206 (work item 4; rcbj's D3 (b)).** `GET
+/xacml/pep/policies?scope=bound-application` is a `local` embedded PEP's
+pull; no scope, or `repository`, is the pull as it always was, and any
+other scope is 400 `STS-XACML-0344`.
+
+* **ANSWERED ONLY TO A REGISTERED, BOUND, EMBEDDED PEP IN `local` MODE**
+  (`xacml.ts`'s `scopedPull()`): the caller's own row (`pepNameOf()`, the
+  token's or the certificate's name) says `embedded` and `local`, and the
+  application it registered for is the one its entry is bound to now.
+  Anybody else is 403 `STS-XACML-0343`: a container, a `central` PEP (which
+  holds no policy), a PEP never registered, one whose binding moved since it
+  registered. The answer carries an application's own policy, which every
+  other pull withholds.
+* **WHAT IS SENT is `PepRegistry.boundPull()`**: the application's own
+  policy, as the one row marked `isRoot`, when the application ENFORCES
+  fine-grained authorization and its policy is enabled; otherwise the realm
+  root. **Enforcement, not ownership, decides**, because every application
+  created owns a policy and AuthZEN decides a non-enforcing one by the root
+  (`decideAccess()`, #564 P4): a local PEP holding the policy the service
+  does not use would decide differently from a central one. Then the
+  REFERENCE CLOSURE, transitively, among the enabled policies nobody owns:
+  never another application's or a role's policy, never the access or
+  issuance policy (by name, the repository pull's rule). A reference to
+  anything else is left unresolved, which is Indeterminate at the PEP as
+  here. **One difference from the service, accepted**: `decideAccess()`
+  decides an application's own policy with no repository, so a reference
+  inside it is unresolved here and resolved at a local PEP holding the
+  closure. `source` says which entry was sent (`application`, `root`,
+  `none`).
+* **ITS OWN TOKEN**, a digest of exactly what it sends (the scope, the
+  application, the source, each row's name, document and root mark), with
+  the same ETag, `?since=` and `If-None-Match` 304. A change outside the
+  closure, or to another application's policy, does not move it. **A local
+  embedded PEP's row is CURRENT against this token**, not the repository's
+  (`expectedToken()`, one digest per scope per read), and its heartbeat
+  answers this token.
+* **WHAT IT PULLS IS ON THE ROW**: `xacmlPepPullScope` (OID 1105),
+  `repository` or `bound-application`, written by the pull's own
+  `heartbeat()` when it CHANGES and kept across a registration, with one
+  `xacml.pep.scope` audit row per change, so a PEP polling every few seconds
+  is one row. `pullScope` on `/admin-api/xacml/peps` and the PEP page's
+  *Pulls* line.
+
+`tests/xacml_pep_scope.js` holds `boundPull()` in process;
+`tests/protocol/sts_xacml_pep_scope.js` the door over the wire.
+
 ## A heartbeat writes the entry only when something durable changed (#1882)
 
 **rcbj: "not every PEP heartbeat needs a directory write".** Until

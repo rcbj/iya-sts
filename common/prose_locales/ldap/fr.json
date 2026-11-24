@@ -2167,6 +2167,10 @@
     "en": "6dc388f78e803fc6",
     "text": "Si le flux de l’application dans laquelle un PEP distant intégré est intégré peut transporter l’événement pep-policies-changed, tel que le PEP l’a signalé lors de son dernier battement de cœur (#2026) : none (l’hôte n’a pas de flux de signaux, le PEP interroge donc périodiquement), requested, excluded (le ssfEvents de l’application l’exclut) ou down. Vide tant que rien n’a été signalé."
   },
+  "xacmlPeps.schema.attributes.xacmlPepPullScope.what": {
+    "en": "92d4dbcdbbf1467d",
+    "text": "Ce que le PEP distant a récupéré en dernier depuis GET /xacml/pep/policies (#2027) : repository, toutes les politiques activées sauf celles retenues (la récupération du conteneur), ou bound-application, celle d’un PEP intégré en mode local : la politique propre de son application, ou la racine du domaine, et la fermeture de ses références. Conservé lors d’un réenregistrement ; un changement est audité sous xacml.pep.scope. Vide tant qu’il n’a rien récupéré."
+  },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Ce que le PEP a dit de lui-même lors de son enregistrement."

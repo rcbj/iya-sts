@@ -813,6 +813,7 @@
   "xacmlPepPolicyEvents": 1104,
   "xacmlPepProtocolVersion": 1103,
   "xacmlPepProxy": 752,
+  "xacmlPepPullScope": 1105,
   "xacmlPepRefused": 733,
   "xacmlPepRegisteredAt": 734,
   "xacmlPepResource": 735,

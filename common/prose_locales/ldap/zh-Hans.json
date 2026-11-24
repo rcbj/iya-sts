@@ -2167,6 +2167,10 @@
     "en": "6dc388f78e803fc6",
     "text": "嵌入式远程 PEP 所在应用的流能否传递 pep-policies-changed 事件，以 PEP 最近一次心跳报告为准（#2026）：none（主机没有信号流，因此 PEP 轮询）、requested、excluded（应用的 ssfEvents 将其排除）或 down。在报告之前为空。"
   },
+  "xacmlPeps.schema.attributes.xacmlPepPullScope.what": {
+    "en": "92d4dbcdbbf1467d",
+    "text": "远程 PEP 最近一次从 GET /xacml/pep/policies 拉取的内容（#2027）：repository，即除保留策略外的所有已启用策略（容器的拉取）；或 bound-application，即 local 模式嵌入式 PEP 的拉取：其应用自身的策略或领域的根策略，以及其引用闭包。重新注册时保留；变更以 xacml.pep.scope 审计。拉取之前为空。"
+  },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "PEP 注册时关于自身所说的任何内容。"

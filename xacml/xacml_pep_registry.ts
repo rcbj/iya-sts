@@ -227,6 +227,9 @@ interface PepRow {
   mode: string;
   protocolVersion: number | null;
   policyEvents: string;
+  // WHAT THE PEP LAST PULLED (#2027): `repository` (every enabled policy,
+  // the container's pull) or `bound-application`; '' until it pulled.
+  pullScope: string;
   current: boolean;
   stale: boolean;
 }
@@ -351,7 +354,26 @@ interface PolicyRepository {
   root(): { name: string } | null;
   all(): Array<{ name: string; document: string; enabled: boolean;
                  application?: string | null;
-                 role?: string | null }>;
+                 role?: string | null;
+                 // What a scoped pull (#2027) sends of a row, beside the
+                 // document.
+                 id?: string | null; kind?: string; version?: string;
+                 combiningAlgId?: string; description?: string;
+                 orphanedAt?: string | null }>;
+}
+
+// WHAT A PULL SCOPED TO THE BOUND APPLICATION SENDS (#2027): the rows in
+// `GET /xacml/pep/policies`' shape, the one marked root (the application's
+// own policy, or the realm root when it decides with none), where it came
+// from, and the scope's own token.
+interface BoundPull {
+  scope: string;
+  application: string;
+  source: 'application' | 'root' | 'none';
+  root: string | null;
+  policies: Array<Record<string, unknown>>;
+  withheld: string[];
+  token: string;
 }
 
 interface PepRegistryDeps {
@@ -376,6 +398,11 @@ interface PepRegistryDeps {
   // reads, and this process's newest, journalled or not.
   liveness: LivenessStore;
   latest: LivenessStore;
+  // A SCOPED PULL'S TWO QUESTIONS (#2027), optional so a test's own deps
+  // that predate them answer none: whether an application enforces
+  // fine-grained authorization, and the PolicyIds a document references.
+  enforcesFga?(application: string): boolean;
+  referencesOf?(document: string): string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -532,8 +559,56 @@ class PepRegistry {
         return crypto.digest('sha256', text, 'base64');
       },
       liveness: liveness as LivenessStore,
-      latest: latest as LivenessStore
+      latest: latest as LivenessStore,
+      enforcesFga: function (application: string): boolean {
+        helpers.log.debug("Entering enforcesFga(). " + application);
+        // Lazily: the registry is loaded long before the applications
+        // registry is asked anything.
+        const enforcing = require('../common/applications')
+          .applicationsEnforcingFga() || [];
+        const out = enforcing.indexOf(application) >= 0;
+        helpers.log.debug("Leaving enforcesFga(). " + out);
+        return out;
+      },
+      referencesOf: function (document: string): string[] {
+        helpers.log.debug("Entering referencesOf().");
+        const out = PepRegistry.referencesIn(
+          require('./xacml_xml').parsePolicy(document));
+        helpers.log.debug("Leaving referencesOf(). " + out.length);
+        return out;
+      }
     };
+  }
+
+  // Every PolicyIdReference and PolicySetIdReference in a parsed document,
+  // at any depth, by its PolicyId, in document order and without repeats.
+  static referencesIn(node: any): string[] {
+    helpers.log.debug("Entering PepRegistry.referencesIn().");
+    const out: string[] = [];
+    // A model is a tree, but a walk that met a cycle must still end.
+    const seen = new WeakSet();
+    const walk = function (one: any): void {
+      if (!one || typeof one !== 'object' || seen.has(one)) {
+        return;
+      }
+      seen.add(one);
+      if (Array.isArray(one)) {
+        one.forEach(walk);
+        return;
+      }
+      if ((one.kind === 'PolicyIdReference' ||
+           one.kind === 'PolicySetIdReference') &&
+          typeof one.ref === 'string' && one.ref &&
+          out.indexOf(one.ref) < 0) {
+        out.push(one.ref);
+      }
+      Object.keys(one).forEach(function (key) {
+        walk(one[key]);
+      });
+    };
+    walk(node);
+    helpers.log.debug("Leaving PepRegistry.referencesIn(). " + out.length);
+    return out;
   }
 
   // STATIC, BECAUSE THE SLOT IS FILLED BEFORE THE ROOT BUILDS THE INSTANCE
@@ -782,6 +857,165 @@ class PepRegistry {
                      .replace(/=+$/, '');
     log.debug('Leaving PepRegistry.syncToken(). ' + digest);
     return digest;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE PULL SCOPED TO THE BOUND APPLICATION (#2027, part of #1206; rcbj's
+  // D3 (b)). A `local` embedded PEP decides in process and holds ONLY what
+  // its application is decided with:
+  //
+  //   * THE APPLICATION'S OWN POLICY, withheld from every other pull, when
+  //     the application ENFORCES fine-grained authorization
+  //     (`appFgaEnforced`) and its policy is enabled. That is the rule
+  //     AuthZEN decides the application by (`decideAccess()`, #564 P4): an
+  //     application that does not enforce is decided by the realm root even
+  //     though it owns a policy (every application created gets one), so a
+  //     local PEP holding the policy the service does not use would decide
+  //     differently from a central one. An application that owns none
+  //     decides by the root for the same reason;
+  //   * otherwise THE REALM ROOT;
+  //   * and from either, its REFERENCE CLOSURE: every PolicyIdReference
+  //     and PolicySetIdReference followed, transitively, among the enabled
+  //     policies nobody owns. Never another application's policy or a
+  //     role's (an owned policy is never a reference target, the store's
+  //     rule), and never the access or issuance policy, which the
+  //     repository pull withholds by name for its reason (*This service's
+  //     own policies are never pushed*). A reference that resolves to none
+  //     of these is left unresolved, which the PEP evaluates as
+  //     Indeterminate, as the service's PDP does.
+  //
+  // THE ENTRY IS SENT AS THE ROOT (`isRoot`), the one row the package
+  // evaluates; the closure rows are what its references reach.
+  //
+  // ITS TOKEN IS A DIGEST OF EXACTLY WHAT IT SENDS (*The sync token is a
+  // digest of what would be SENT*, per scope): the scope, the application,
+  // where the entry came from, and every row's name, document and root
+  // mark. A change to a policy outside the closure, or to another
+  // application's, does not move it.
+  // -------------------------------------------------------------------------
+  /**
+   * What `GET /xacml/pep/policies?scope=bound-application` sends a PEP
+   * bound to an application, and its token.
+   *
+   * @param application - the application the PEP is bound to
+   * @returns the rows, the root's name, where it came from and the token
+   */
+  boundPull(application: string): BoundPull {
+    const { log, config, store, sha256Base64 } = this.deps;
+    log.debug('Entering PepRegistry.boundPull(). ' + application);
+    const internal = [config.value('xacml.accessPolicy') || 'access-control',
+                      config.value('xacml.issuancePolicy') || 'role-issuance']
+      .map(function (one) {
+        return String(one).toLowerCase();
+      });
+    const rows = store.all().slice().sort(function (a, b) {
+      return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0);
+    });
+    let enforcing = false;
+    try {
+      enforcing = typeof this.deps.enforcesFga === 'function' &&
+        this.deps.enforcesFga(application);
+    } catch (e) {
+      // A registry that cannot be read is an application decided by the
+      // root, which is what AuthZEN decides it by when it cannot read it
+      // either; the log says so.
+      log.debug('Caught in PepRegistry.boundPull(): ' +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-XACML-0345') + 'xacml: whether "' +
+               application + '" enforces fine-grained authorization could ' +
+               'not be read, so its PEP is sent the realm root: ' +
+               ((e && e.message) || e));
+      enforcing = false;
+    }
+    const own = enforcing ? rows.filter(function (row) {
+      return row.enabled && row.application === application &&
+        !row.orphanedAt;
+    })[0] || null : null;
+    const candidates: Record<string, any> = {};
+    rows.forEach(function (row) {
+      if (row.enabled && row.id && !row.application && !row.role &&
+          internal.indexOf(String(row.name).toLowerCase()) < 0 &&
+          !Object.prototype.hasOwnProperty.call(candidates, row.id)) {
+        candidates[row.id] = row;
+      }
+    });
+    const rootRow = store.root();
+    const rootFull = rootRow && internal.indexOf(
+      String(rootRow.name).toLowerCase()) < 0
+      ? rows.filter(function (row) {
+          return row.name === rootRow.name;
+        })[0] || null
+      : null;
+    const entry: any = own || rootFull;
+    const sent: any[] = [];
+    if (entry) {
+      const queue: any[] = [entry];
+      const seen: string[] = [entry.name];
+      while (queue.length) {
+        const row = queue.shift();
+        sent.push(row);
+        let refs: string[] = [];
+        try {
+          refs = typeof this.deps.referencesOf === 'function'
+            ? this.deps.referencesOf(String(row.document || '')) : [];
+        } catch (e) {
+          // A document that does not parse references nothing here; the
+          // PEP refuses it again and the console shows why.
+          log.debug('Caught in PepRegistry.boundPull(): ' +
+                    ((e && e.message) || e));
+          refs = [];
+        }
+        refs.forEach(function (ref) {
+          const target = Object.prototype.hasOwnProperty.call(candidates,
+                                                              ref)
+            ? candidates[ref] : null;
+          if (target && seen.indexOf(target.name) < 0) {
+            seen.push(target.name);
+            queue.push(target);
+          }
+        });
+      }
+    }
+    const policies = sent.map(function (row) {
+      return { name: row.name, policyId: row.id, kind: row.kind,
+               version: row.version, combiningAlgId: row.combiningAlgId,
+               isRoot: row === entry, description: row.description,
+               document: row.document };
+    });
+    const source: 'application' | 'root' | 'none' =
+      own ? 'application' : (entry ? 'root' : 'none');
+    const parts = policies.map(function (one) {
+      return one.name + ' ' + (one.isRoot ? 'root ' : '') + one.document;
+    }).sort();
+    parts.unshift('bound-application ' + application + ' ' + source);
+    const token = sha256Base64(parts.join('\n'))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    log.debug('Leaving PepRegistry.boundPull(). ' + source + ', ' +
+              policies.length + ' policy(ies).');
+    return { scope: 'bound-application', application: application,
+             source: source, root: entry ? entry.name : null,
+             policies: policies, withheld: internal.slice(), token: token };
+  }
+
+  // THE TOKEN A PEP'S ROW IS COMPARED WITH (#2027): a `local` embedded
+  // PEP's is its scope's, every other PEP's the repository's.
+  private expectedToken(kind: string, mode: string, application: string,
+                        cache: Record<string, string>): string {
+    const { log } = this.deps;
+    log.debug('Entering PepRegistry.expectedToken().');
+    if (kind !== 'embedded' || mode !== 'local' || !application) {
+      if (!Object.prototype.hasOwnProperty.call(cache, '')) {
+        cache[''] = this.syncToken();
+      }
+      log.debug('Leaving PepRegistry.expectedToken(). The repository\'s.');
+      return cache[''];
+    }
+    const key = 'app ' + application;
+    if (!Object.prototype.hasOwnProperty.call(cache, key)) {
+      cache[key] = this.boundPull(application).token;
+    }
+    log.debug('Leaving PepRegistry.expectedToken(). The scope\'s.');
+    return cache[key];
   }
 
   // -------------------------------------------------------------------------
@@ -1386,7 +1620,10 @@ class PepRegistry {
   private entryRows(): PepRow[] {
     const { log } = this.deps;
     log.debug('Entering PepRegistry.entryRows().');
-    const current = this.syncToken();
+    const self = this;
+    // Each row is compared with the token of what IT pulls (#2027): one
+    // digest per scope asked, whatever the number of rows.
+    const tokens: Record<string, string> = {};
     const now = Date.now();
     const stale = this.staleAfterS() * 1000;
     const rows = directory.allPeps().map(function (entry): PepRow {
@@ -1432,11 +1669,14 @@ class PepRegistry {
         protocolVersion: typeof pep.protocolVersion === 'number'
           ? pep.protocolVersion : null,
         policyEvents: pep.policyEvents || '',
+        pullScope: pep.pullScope || '',
         // DERIVED, not stored, and both of them for the same reason: a
         // stored "current" would be a second copy of a comparison, and it
         // would be wrong the moment somebody edited a policy without this row
         // being rewritten.
-        current: !!token && token === current,
+        current: !!token && token === self.expectedToken(
+          pep.kind === 'embedded' ? 'embedded' : 'container',
+          pep.mode || '', pep.application || '', tokens),
         stale: !(seenAt > 0) || (now - seenAt) > stale
       };
     });
@@ -1603,6 +1843,12 @@ class PepRegistry {
       kind: given.kind, application: given.application, mode: given.mode,
       protocolVersion: given.protocolVersion, policyEvents: ''
     });
+    // WHAT IT PULLS IS KEPT (#2027): a PEP that restarts pulls the same
+    // scope, and keeping it keeps the audit row for a CHANGE of scope from
+    // being written on every restart.
+    if (existing && existing.pullScope) {
+      attributes.xacmlPepPullScope = existing.pullScope;
+    }
     // THE SIGNAL HEALTH IS NOT KEPT across a registration: a PEP registers
     // when its process starts, so the last snapshot describes receivers that
     // no longer exist. The next heartbeat reports the new ones.
@@ -1777,6 +2023,16 @@ class PepRegistry {
       policyEvents: said.policyEvents === undefined
         ? existing.policyEvents : said.policyEvents
     });
+    // WHAT IT PULLS (#2027), from the pull's own heartbeat; absent keeps.
+    const scope = said.pullScope === undefined ? existing.pullScope
+      : String(said.pullScope || '');
+    if (scope) {
+      (attributes as Record<string, unknown>).xacmlPepPullScope = scope;
+    } else {
+      delete (attributes as Record<string, unknown>).xacmlPepPullScope;
+    }
+    // What it pulls decides the token it is told is current (#2027).
+    const attrs = attributes as Record<string, unknown>;
     // NOTHING DURABLE CHANGED (#1882): no entry write, no audit row, no
     // directory change-log row. The record is held here and journalled
     // when `journalNow()` says so.
@@ -1802,7 +2058,9 @@ class PepRegistry {
       }
       log.debug('Leaving PepRegistry.heartbeat(). Nothing durable changed; ' +
                 (journalled ? 'journalled.' : 'held.'));
-      return { ok: true, name: name, current: this.syncToken() };
+      return { ok: true, name: name, current: this.expectedToken(
+        String(attrs.xacmlPepKind || ''), String(attrs.xacmlPepMode || ''),
+        String(attrs.xacmlPepApplication || ''), {}) };
     }
     const written = directory.writePep(name, attributes);
     log.debug('Leaving PepRegistry.heartbeat(). ' +
@@ -1810,7 +2068,9 @@ class PepRegistry {
     if (written) {
       // The entry is the newest record now, as after a registration.
       latest.delete(name);
-      return { ok: true, name: name, current: this.syncToken() };
+      return { ok: true, name: name, current: this.expectedToken(
+        String(attrs.xacmlPepKind || ''), String(attrs.xacmlPepMode || ''),
+        String(attrs.xacmlPepApplication || ''), {}) };
     }
     return errorCodes.mark({ ok: false, status: 507, why: 'The directory ' +
                              'refused the entry.' }, 'STS-XACML-0027');
@@ -2179,6 +2439,10 @@ class PepRegistry {
       attributes.xacmlPepListenersInUse =
         JSON.stringify(row.listenersInUse);
     }
+    // What it pulls (#2027), only once it has pulled.
+    if (row.pullScope) {
+      attributes.xacmlPepPullScope = row.pullScope;
+    }
     // An embedded PEP's identity (#2026), only when there is one.
     PepRegistry.identityAttributes(attributes, {
       kind: row.kind, application: row.registeredApplication,
@@ -2300,6 +2564,8 @@ export = {
   // An embedded PEP's identity (#2026): the one reading of kind,
   // application, mode, protocol version and the stream's report.
   identityOf: PepRegistry.identityOf,
+  // The pull scoped to a bound application (#2027).
+  boundPull: slot.forward('boundPull'),
   PROTOCOL_VERSIONS: PROTOCOL_VERSIONS,
   recordNotify: slot.forward('recordNotify'),
   setEnabled: slot.forward('setEnabled'),

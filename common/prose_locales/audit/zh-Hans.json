@@ -1211,6 +1211,10 @@
     "en": "a254d6c56c6f82ac",
     "text": "嵌入式远程 PEP 已绑定到其应用程序，或已解除绑定"
   },
+  "audit.actions.xacml.pep.scope.label": {
+    "en": "d5d114c61ca80cc2",
+    "text": "远程 PEP 开始拉取另一个策略范围"
+  },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
     "text": "远程 PEP 向 PIP 查询某主体的属性"

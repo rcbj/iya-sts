@@ -1081,5 +1081,9 @@
   "tip.overview.kind": "الحاوية هي صورة xacml-pep؛ والمضمَّن هو PEP داخل مكتبة المصادقة الخاصة بتطبيق. الـPEP الذي لا يذكر أيًّا منهما حاوية.",
   "tip.overview.mode": "Central: يسأل الـPEP نقطة تقييم AuthZEN في هذه الخدمة عن كل قرار. Local: يجلب سياسات تطبيقه ويقرر داخل العملية.",
   "tip.overview.protocolVersion": "إصدار بروتوكول PEP الذي تتحدثه حزمته. ترفض هذه الخدمة الإصدار الذي لا تدعمه.",
-  "tip.overview.policyEvents": "آخر ما أبلغ عنه الـPEP بشأن تدفق Shared Signals الخاص بتطبيقه: هل يمكنه حمل pep-policies-changed."
+  "tip.overview.policyEvents": "آخر ما أبلغ عنه الـPEP بشأن تدفق Shared Signals الخاص بتطبيقه: هل يمكنه حمل pep-policies-changed.",
+  "pepPage.th.pullScope": "يجلب",
+  "pepPage.pullScope.repository": "المستودع: كل سياسة مفعّلة عدا المحجوبة",
+  "pepPage.pullScope.boundApplication": "سياسات تطبيقه فقط: السياسة الخاصة بالتطبيق، أو جذر النطاق، وما تشير إليه",
+  "tip.overview.pullScope": "السياسات التي جلبها الـPEP آخر مرة. الـPEP المضمَّن في الوضع local لا يجلب إلا سياسات تطبيقه؛ ويُسجَّل تغيير النطاق في سجل التدقيق باسم xacml.pep.scope."
 }
