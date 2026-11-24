@@ -3,11 +3,11 @@
 #
 # ---------------------------------------------------------------------------
 # AN OFFLINE RENDER OF THIS STACK (#1284): `terraform test` with every AWS
-# data source mocked and the environment's state overridden, so nothing is
-# read from or made in AWS and no credential is needed. It holds the two
-# credential arrangements' shapes, that no key reaches the task definition
-# except as a Secrets Manager reference, the per-member notify port, the
-# proxy's affinity, and the refusals.
+# data source mocked, so nothing is read from or made in AWS and no
+# credential is needed. It holds the standalone environment's shape — its
+# own network with private members behind one NAT, an ALB with the regional
+# WAF in front of it and a sticky proxy, no key in a task definition, the
+# optional nudge, the companion sidecar — and the refusals.
 #
 #   terraform -chdir=deploy/aws/pep-cluster init -backend=false
 #   terraform -chdir=deploy/aws/pep-cluster test
@@ -21,20 +21,20 @@ mock_provider "aws" {
   mock_data "aws_partition" {
     defaults = { partition = "aws" }
   }
+  mock_data "aws_availability_zones" {
+    defaults = { names = ["us-west-2b", "us-west-2a", "us-west-2c"] }
+  }
   mock_data "aws_ecr_repository" {
     defaults = {
       repository_url = "111122223333.dkr.ecr.us-west-2.amazonaws.com/iya-sts"
       arn            = "arn:aws:ecr:us-west-2:111122223333:repository/iya-sts"
     }
   }
-  mock_data "aws_lb" {
-    defaults = { vpc_id = "vpc-1", arn = "arn:aws:elasticloadbalancing:us-west-2:111122223333:loadbalancer/net/iya-sts-testidp/1" }
+  mock_data "aws_cloudwatch_log_group" {
+    defaults = { name = "/iya-sts/containers", arn = "arn:aws:logs:us-west-2:111122223333:log-group:/iya-sts/containers" }
   }
-  mock_data "aws_subnets" {
-    defaults = { ids = ["subnet-c", "subnet-a", "subnet-b"] }
-  }
-  mock_data "aws_vpc_security_group_rules" {
-    defaults = { ids = [] }
+  mock_data "aws_route53_zone" {
+    defaults = { zone_id = "Z1" }
   }
   mock_data "aws_iam_policy_document" {
     defaults = { json = "{}" }
@@ -46,178 +46,155 @@ mock_provider "aws" {
     defaults = { arn = "arn:aws:kms:us-west-2:111122223333:key/k" }
   }
   mock_data "aws_secretsmanager_secret" {
-    defaults = { arn = "arn:aws:secretsmanager:us-west-2:111122223333:secret:iya-sts/testidp/pep/aws/m-AbCdEf" }
+    defaults = { arn = "arn:aws:secretsmanager:us-west-2:111122223333:secret:iya-sts/testpep/pep/aws/m-AbCdEf" }
   }
 }
 
-override_data {
-  target = data.terraform_remote_state.environment
-  values = { outputs = {
-    public_hostname     = "test-idp.example.test"
-    direct_hostname     = "direct.test-idp.example.test"
-    image_tag           = "abc123def456"
-    container_log_group = "/iya-sts/containers"
-    ecs_cluster         = "iya-sts-testidp"
-  } }
+# The real provider knows a certificate's validation names at plan; the mock
+# does not, and the validation records are keyed by them.
+override_resource {
+  target          = aws_acm_certificate.public
+  override_during = plan
+  values = {
+    arn = "arn:aws:acm:us-west-2:111122223333:certificate/c"
+    domain_validation_options = [{
+      domain_name           = "test-pep.example.test"
+      resource_record_name  = "_x.test-pep.example.test."
+      resource_record_type  = "CNAME"
+      resource_record_value = "_y.acm-validations.aws."
+    }]
+  }
 }
 
 variables {
-  environment = "testidp"
+  environment      = "testpep"
+  idp_url          = "https://test-idp.example.test/"
+  public_hostname  = "test-pep.example.test"
+  public_zone_name = "example.test"
+  allowed_cidrs    = ["203.0.113.4/32"]
+  image_tag        = "abc123def456"
 }
 
-run "per_instance_is_one_service_and_one_notify_port_per_member" {
+run "a_network_of_its_own_with_private_members" {
   command = plan
 
+  assert {
+    condition     = aws_vpc.main.cidr_block == "10.60.0.0/16" && length(aws_subnet.private) == 2 && length(aws_subnet.public) == 2
+    error_message = "its own VPC, two zones, public and private subnets"
+  }
+  assert {
+    condition     = alltrue([for s in aws_ecs_service.member : !s.network_configuration[0].assign_public_ip])
+    error_message = "the members have no public address"
+  }
   assert {
     condition     = keys(aws_ecs_service.member) == ["aws-pep-1", "aws-pep-2"]
     error_message = "two members by default, named <cluster>-pep-<n>"
   }
   assert {
-    condition     = alltrue([for s in aws_ecs_service.member : s.desired_count == 1])
-    error_message = "a per-instance member is one task"
+    condition     = aws_ecs_cluster.main.name == "iya-sts-testpep"
+    error_message = "an ECS cluster of its own"
   }
+}
+
+run "the_waf_is_in_front_of_the_alb" {
+  command = plan
+
+  assert {
+    condition     = aws_lb.main.load_balancer_type == "application"
+    error_message = "WAF attaches to an ALB, never an NLB"
+  }
+  assert {
+    condition     = aws_wafv2_web_acl.main.scope == "REGIONAL" && length(aws_wafv2_web_acl.main.default_action[0].block) == 1
+    error_message = "a regional ACL that blocks what no rule allows"
+  }
+  assert {
+    condition = toset([for r in aws_wafv2_web_acl.main.rule : r.name]) == toset([
+      "aws-ip-reputation", "aws-known-bad-inputs", "aws-common", "rate-per-address", "allowed",
+    ])
+    error_message = "the three managed groups, the rate limit and the allowlist"
+  }
+  assert {
+    condition     = one([for r in aws_wafv2_web_acl.main.rule : r.priority if r.name == "allowed"]) > max([for r in aws_wafv2_web_acl.main.rule : r.priority if r.name != "allowed"]...)
+    error_message = "an allowed address is still held to every managed group: the allow comes last"
+  }
+  assert {
+    condition     = aws_wafv2_ip_set.allowed.addresses == toset(["203.0.113.4/32"])
+    error_message = "the allowlist is allowed_cidrs"
+  }
+}
+
+run "one_public_certificate_and_a_sticky_proxy" {
+  command = plan
+
+  assert {
+    condition     = aws_acm_certificate.public.domain_name == "test-pep.example.test"
+    error_message = "the browser sees one public certificate"
+  }
+  assert {
+    condition     = aws_lb_target_group.proxy.stickiness[0].type == "lb_cookie" && aws_lb_target_group.proxy.stickiness[0].enabled
+    error_message = "a browser stays on one member, by the load balancer's cookie"
+  }
+  assert {
+    condition     = aws_lb_target_group.proxy.port == 9543 && aws_lb_target_group.proxy.protocol == "HTTPS" && aws_lb_target_group.proxy.health_check[0].port == "9443"
+    error_message = "the proxy re-encrypted to 9543, health-checked on 9443"
+  }
+  assert {
+    condition     = aws_lb_listener.decision[0].port == 9443 && aws_lb_target_group.decision[0].port == 9443
+    error_message = "the decision API on 9443"
+  }
+}
+
+run "the_members_pull_from_the_idp_and_hold_no_key" {
+  command = plan
+
+  assert {
+    condition = alltrue([
+      for t in aws_ecs_task_definition.member :
+      one([for e in jsondecode(t.container_definitions)[0].environment : e.value if e.name == "PEP_PDP_URL"]) == "https://test-idp.example.test"
+    ])
+    error_message = "the identity service at its public URL"
+  }
+  assert {
+    condition = alltrue([
+      for t in aws_ecs_task_definition.member :
+      !strcontains(t.container_definitions, "PRIVATE KEY") && length(jsondecode(t.container_definitions)[0].secrets) == 4
+    ])
+    error_message = "the keys arrive as Secrets Manager references only"
+  }
+  assert {
+    condition = alltrue([
+      for t in aws_ecs_task_definition.member :
+      length([for e in jsondecode(t.container_definitions)[0].environment : e if e.name == "PEP_NOTIFY_URL"]) == 0
+    ])
+    error_message = "with no notify_cidrs nothing advertises a nudge port"
+  }
+  assert {
+    condition     = length(aws_lb_listener.notify) == 0
+    error_message = "with no notify_cidrs there is no notify listener"
+  }
+}
+
+run "the_nudge_when_the_idp_has_fixed_addresses" {
+  command = plan
+
+  variables {
+    notify_cidrs = ["198.51.100.7/32"]
+  }
+
   assert {
     condition     = { for k, l in aws_lb_listener.notify : k => l.port } == { "aws-pep-1" = 9451, "aws-pep-2" = 9452 }
-    error_message = "each member's nudge has a load-balancer port of its own"
+    error_message = "each member's nudge has a port of its own"
   }
-  assert {
-    condition = alltrue([
-      for k, t in aws_ecs_task_definition.member :
-      one([for e in jsondecode(t.container_definitions)[0].environment : e.value if e.name == "PEP_NOTIFY_URL"]) ==
-      "https://test-idp.example.test:${aws_lb_listener.notify[k].port}/notify"
-    ])
-    error_message = "a member's notify URL is the public name (the load balancer inside the VPC) on its own notify port"
-  }
-  assert {
-    condition = alltrue([
-      for k, t in aws_ecs_task_definition.member :
-      one([for e in jsondecode(t.container_definitions)[0].environment : e.value if e.name == "PEP_NAME"]) == k
-    ])
-    error_message = "PEP_NAME is the member's name, which provision.sh registers"
-  }
-  assert {
-    condition = alltrue([
-      for t in aws_ecs_task_definition.member :
-      one([for e in jsondecode(t.container_definitions)[0].environment : e.value if e.name == "PEP_PDP_URL"]) ==
-      "https://test-idp.example.test"
-    ])
-    error_message = "the PDP URL is the public name, the token endpoint's resource, with no prefix for the default realm"
-  }
-  assert {
-    condition = alltrue([
-      for t in aws_ecs_task_definition.member : length(jsondecode(t.container_definitions)[0].secrets) == 4
-    ])
-    error_message = "the four values arrive as Secrets Manager references"
-  }
-  assert {
-    condition     = jsondecode(aws_ecs_task_definition.member["aws-pep-1"].container_definitions)[0].image == "111122223333.dkr.ecr.us-west-2.amazonaws.com/iya-sts:pep-abc123def456"
-    error_message = "the PEP image is pep-<the environment's tag> by default"
-  }
-}
-
-run "no_key_material_in_the_task_definition" {
-  command = plan
-
-  assert {
-    condition = alltrue([
-      for t in aws_ecs_task_definition.member :
-      !strcontains(t.container_definitions, "PRIVATE KEY") && !strcontains(t.container_definitions, "BEGIN CERTIFICATE")
-    ])
-    error_message = "nothing PEM is written into a task definition (or this state)"
-  }
-}
-
-run "the_proxy_is_sticky_and_the_decision_api_is_not" {
-  command = plan
-
-  assert {
-    condition     = aws_lb_target_group.client["proxy"].stickiness[0].enabled && aws_lb_target_group.client["proxy"].stickiness[0].type == "source_ip"
-    error_message = "the reverse proxy keeps a browser on one member"
-  }
-  assert {
-    condition     = !aws_lb_target_group.client["decision"].stickiness[0].enabled
-    error_message = "the decision API is round robin"
-  }
-  assert {
-    condition     = aws_lb_target_group.client["proxy"].health_check[0].port == "9443"
-    error_message = "the proxy's group asks the member's 9443 /healthcheck, live before any route exists"
-  }
-}
-
-run "shared_is_one_service_of_n_tasks" {
-  command = plan
-
-  variables {
-    credential_mode = "shared"
-    instance_count  = 3
-  }
-
-  assert {
-    condition     = keys(aws_ecs_service.member) == ["aws-pep"] && aws_ecs_service.member["aws-pep"].desired_count == 3
-    error_message = "one member name, three tasks"
-  }
-  assert {
-    condition     = length(aws_appautoscaling_target.shared) == 0
-    error_message = "no autoscaling unless autoscaling_max is above the count"
-  }
-}
-
-run "shared_autoscales_when_asked" {
-  command = plan
-
-  variables {
-    credential_mode = "shared"
-    instance_count  = 2
-    autoscaling_max = 6
-  }
-
-  assert {
-    condition     = aws_appautoscaling_target.shared[0].min_capacity == 2 && aws_appautoscaling_target.shared[0].max_capacity == 6
-    error_message = "the count is the floor, autoscaling_max the ceiling"
-  }
-}
-
-run "a_realm_prefixes_the_pdp_url" {
-  command = plan
-
-  variables {
-    realm = "acme"
-  }
-
   assert {
     condition = one([
-      for e in jsondecode(aws_ecs_task_definition.member["aws-pep-1"].container_definitions)[0].environment :
-      e.value if e.name == "PEP_PDP_URL"
-    ]) == "https://test-idp.example.test/realm/acme"
-    error_message = "a realm's members pull from its prefix"
+      for e in jsondecode(aws_ecs_task_definition.member["aws-pep-2"].container_definitions)[0].environment :
+      e.value if e.name == "PEP_NOTIFY_URL"
+    ]) == "https://test-pep.example.test:9452/notify"
+    error_message = "a member advertises its own notify port at the public name"
   }
-}
-
-run "autoscaling_is_refused_per_instance" {
-  command = plan
-
-  variables {
-    autoscaling_max = 4
-  }
-
-  expect_failures = [aws_security_group.pep]
-}
-
-run "the_clients_are_told_the_direct_name" {
-  command = plan
-
   assert {
-    condition     = output.decision_url == "https://direct.test-idp.example.test:9443" && output.proxy_url == "https://direct.test-idp.example.test:9543"
-    error_message = "outside the VPC the public name may be CloudFront, which carries 443 only"
-  }
-}
-
-run "no_companion_by_default" {
-  command = plan
-
-  assert {
-    condition     = alltrue([for t in aws_ecs_task_definition.member : length(jsondecode(t.container_definitions)) == 1])
-    error_message = "a member is the PEP alone unless the companion is asked for"
+    condition     = contains(keys(aws_vpc_security_group_ingress_rule.alb), "9451-198.51.100.7/32") && !contains(keys(aws_vpc_security_group_ingress_rule.alb), "9451-203.0.113.4/32")
+    error_message = "the notify ports admit the identity service only"
   }
 }
 
@@ -240,16 +217,8 @@ run "the_companion_is_a_sidecar_no_rule_admits" {
     error_message = "a stopped companion does not stop the member"
   }
   assert {
-    condition     = jsondecode(aws_ecs_task_definition.member["aws-pep-1"].container_definitions)[1].image == "111122223333.dkr.ecr.us-west-2.amazonaws.com/iya-sts:companion-abc123def456"
-    error_message = "the companion image is companion-<tag>"
-  }
-  assert {
-    condition     = !contains([for r in aws_vpc_security_group_ingress_rule.pep_from_nlb : r.from_port], 9700)
+    condition     = !contains([for r in aws_vpc_security_group_ingress_rule.pep_from_alb : r.from_port], 9700)
     error_message = "no rule admits the companion's port"
-  }
-  assert {
-    condition     = aws_ecs_task_definition.member["aws-pep-1"].cpu == "512" && aws_ecs_task_definition.member["aws-pep-1"].memory == "1024"
-    error_message = "the task grows to hold the second process"
   }
   assert {
     condition     = output.companion_upstream == "http://127.0.0.1:9700"
@@ -257,12 +226,40 @@ run "the_companion_is_a_sidecar_no_rule_admits" {
   }
 }
 
-run "a_port_the_environment_uses_is_refused" {
+run "shared_autoscales_when_asked" {
   command = plan
 
   variables {
-    decision_port = 636
+    credential_mode = "shared"
+    instance_count  = 2
+    autoscaling_max = 6
   }
 
-  expect_failures = [aws_security_group.pep]
+  assert {
+    condition     = keys(aws_ecs_service.member) == ["aws-pep"] && aws_appautoscaling_target.shared[0].max_capacity == 6
+    error_message = "one member name, two to six tasks"
+  }
+}
+
+run "a_realm_prefixes_the_pdp_url" {
+  command = plan
+
+  variables {
+    realm = "acme"
+  }
+
+  assert {
+    condition     = output.pdp_url == "https://test-idp.example.test/realm/acme"
+    error_message = "a realm's members pull from its prefix"
+  }
+}
+
+run "autoscaling_is_refused_per_instance" {
+  command = plan
+
+  variables {
+    autoscaling_max = 4
+  }
+
+  expect_failures = [aws_ecs_service.member]
 }

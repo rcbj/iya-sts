@@ -1434,6 +1434,40 @@ data "aws_iam_policy_document" "deploy_cloudfront" {
     ]
   }
 
+  # A REGIONAL WEB ACL ON A LOAD BALANCER (#1284, pep-cluster/waf.tf): the
+  # remote PEP cluster's ALB, in every permitted region, by the same name
+  # prefix. The managed rule groups it names are AWS's, read through
+  # wafv2:CreateWebACL/UpdateWebACL on the ACL itself.
+  statement {
+    sid = "WafRegionalOnlyThisProjectsNames"
+    actions = [
+      "wafv2:CreateIPSet", "wafv2:GetIPSet", "wafv2:UpdateIPSet",
+      "wafv2:DeleteIPSet", "wafv2:CreateWebACL", "wafv2:GetWebACL",
+      "wafv2:UpdateWebACL", "wafv2:DeleteWebACL", "wafv2:TagResource",
+      "wafv2:UntagResource", "wafv2:ListTagsForResource",
+      "wafv2:AssociateWebACL", "wafv2:DisassociateWebACL",
+      "wafv2:GetWebACLForResource",
+    ]
+    resources = flatten([
+      for r in local.regions : [
+        "arn:${local.partition}:wafv2:${r}:${local.account_id}:regional/ipset/${var.name}-*",
+        "arn:${local.partition}:wafv2:${r}:${local.account_id}:regional/webacl/${var.name}-*",
+        "arn:${local.partition}:wafv2:${r}::managedruleset/*",
+        "arn:${local.partition}:elasticloadbalancing:${r}:${local.account_id}:loadbalancer/app/${var.name}-*",
+      ]
+    ])
+  }
+
+  # Associating an ACL also asks the load balancer.
+  statement {
+    sid     = "AlbSetWebAcl"
+    actions = ["elasticloadbalancing:SetWebAcl"]
+    resources = [
+      for r in local.regions :
+      "arn:${local.partition}:elasticloadbalancing:${r}:${local.account_id}:loadbalancer/app/${var.name}-*"
+    ]
+  }
+
   # CloudFront asks the CALLER to be able to read and write the log bucket's
   # ACL when a distribution is told to log there.
   dynamic "statement" {

@@ -1246,10 +1246,10 @@ poll with `304`, so that costs the service very little.
 
 ### On AWS
 
-`deploy/aws/pep-cluster/` runs either arrangement on ECS Fargate behind an
-environment's load balancer: a service of one task per member, or one
-shared service that may autoscale. The keys come from AWS Secrets Manager,
-and the load balancer keeps the reverse proxy sticky. See
+`deploy/aws/pep-cluster/` builds a cluster as an AWS environment of its
+own: an Application Load Balancer with AWS WAF in front of it, the members
+on ECS Fargate in private subnets, their keys from AWS Secrets Manager,
+and the reverse proxy kept sticky by the load balancer's cookie. See
 [A remote PEP cluster](aws-cluster.md#a-remote-pep-cluster).
 
 ### What more instances cost the service

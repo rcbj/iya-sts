@@ -2,13 +2,7 @@
 # SPDX-License-Identifier: BUSL-1.1
 
 variable "aws_region" {
-  description = "The environment's region (a cell's region in a multi-cell environment)."
-  type        = string
-  default     = "us-west-2"
-}
-
-variable "state_region" {
-  description = "The state bucket's region."
+  description = "The region the PEP environment is built in."
   type        = string
   default     = "us-west-2"
 }
@@ -20,22 +14,25 @@ variable "name" {
 }
 
 variable "environment" {
-  description = "The environment this cluster stands on (TF_ENV)."
+  description = <<-EOT
+    The PEP ENVIRONMENT's own name (TF_ENV), e.g. `testpep`. It is not the
+    name of the iya-sts environment the members pull from: this stack reads
+    nothing of that one, and reaches it only at `idp_url`, as any customer's
+    deployment would.
+  EOT
   type        = string
-}
 
-variable "cell" {
-  description = "The cell whose load balancer this cluster is on, in a multi-cell environment (#98). Empty for a single-region one."
-  type        = string
-  default     = ""
+  validation {
+    condition     = can(regex("^[a-z0-9]{2,12}$", var.environment))
+    error_message = "environment is 2-12 characters of [a-z0-9]."
+  }
 }
 
 variable "cluster" {
   description = <<-EOT
     The cluster's name. It is the PEP cluster's name in the service
     (`create-pep-cluster`), the prefix of every member's PEP_NAME and part of
-    the state key, so it follows a realm id's grammar and is kept short:
-    a member is `<cluster>-pep-<n>`.
+    the state key: a member is `<cluster>-pep-<n>`.
   EOT
   type        = string
   default     = "aws"
@@ -46,10 +43,45 @@ variable "cluster" {
   }
 }
 
+variable "idp_url" {
+  description = <<-EOT
+    The identity service the members register with and pull from: its public
+    base URL, as every other client of it uses (`https://test-idp.iyasec.io`).
+    It must be the service's `publicBaseUrl`, because the token endpoint takes
+    only that as a resource (RFC 8707). The service has to admit this
+    environment's egress address (output `egress_ip`).
+  EOT
+  type        = string
+}
+
 variable "realm" {
   description = "The trust realm the members register to and pull from. Empty is the default realm."
   type        = string
   default     = ""
+}
+
+variable "public_hostname" {
+  description = "The name the cluster is reached at: an alias record to its load balancer and the name on its public certificate."
+  type        = string
+}
+
+variable "public_zone_name" {
+  description = "The public Route 53 zone `public_hostname` is written in."
+  type        = string
+}
+
+variable "allowed_cidrs" {
+  description = <<-EOT
+    Who may reach the cluster. The load balancer's security group admits them
+    on its listeners and the WAF's allowlist rule admits them and nobody else.
+  EOT
+  type        = list(string)
+}
+
+variable "waf_rate_limit" {
+  description = "Requests per five minutes one address may send before the WAF blocks it."
+  type        = number
+  default     = 2000
 }
 
 variable "credential_mode" {
@@ -57,11 +89,9 @@ variable "credential_mode" {
     docs/v1.2.0/remote-pep.md, *One certificate per instance, or one shared*:
       per-instance  one entry and one assertion key per member, a fixed count
                     (`instance_count` ECS services of one task each). Every
-                    member is its own row on the console and is nudged on its
-                    own notify port.
+                    member is its own row on the console.
       shared        one entry and one key for every task of ONE ECS service,
-                    which may autoscale (`autoscaling_max`). One row, and the
-                    nudge reaches one task; the rest converge on their poll.
+                    which may autoscale (`autoscaling_max`). One row.
   EOT
   type        = string
   default     = "per-instance"
@@ -87,9 +117,8 @@ variable "autoscaling_max" {
   description = <<-EOT
     shared only: the most tasks Application Auto Scaling may run, by average
     CPU (`autoscaling_cpu_target`). 0, the default, or anything not above
-    instance_count, is no autoscaling. NEEDS foundation/ re-applied by an
-    administrator first: the deployer's application-autoscaling grant
-    (deploy/aws/CLAUDE.md, *A remote PEP cluster*).
+    instance_count, is no autoscaling. Needs foundation/ re-applied by an
+    administrator first (the deployer's application-autoscaling grant).
   EOT
   type        = number
   default     = 0
@@ -102,9 +131,8 @@ variable "autoscaling_cpu_target" {
 }
 
 variable "image_tag" {
-  description = "The PEP image's tag in the project repository is `pep-<image_tag>`. Empty: the environment's own image tag."
+  description = "The PEP image is `pep-<image_tag>` in the project repository (and the companion `companion-<image_tag>`)."
   type        = string
-  default     = ""
 }
 
 variable "pep_image" {
@@ -125,25 +153,47 @@ variable "task_memory" {
   default     = 512
 }
 
+variable "vpc_cidr" {
+  description = "The environment's VPC. Its own, peered with nothing."
+  type        = string
+  default     = "10.60.0.0/16"
+}
+
+variable "publish_decision_api" {
+  description = <<-EOT
+    Publish the decision API and the AuthZEN edge PDP (the members' 9443) on
+    the load balancer's `decision_port`, behind the same WAF. The load
+    balancer ends TLS, so an AuthZEN caller that authenticates with a client
+    certificate cannot do so through it; one that uses the pulled caller list
+    by token, or a call from inside the VPC, can.
+  EOT
+  type        = bool
+  default     = true
+}
+
 variable "decision_port" {
-  description = "The load balancer port for the decision API and AuthZEN edge PDP (the PEP's 9443). Round robin."
+  description = "The load balancer port for the decision API."
   type        = number
   default     = 9443
 }
 
-variable "proxy_port" {
-  description = "The load balancer port for the reverse proxy (the PEP's 9543). Sticky by client address."
-  type        = number
-  default     = 9543
+variable "notify_cidrs" {
+  description = <<-EOT
+    The identity service's EGRESS addresses, when it has fixed ones. With
+    any, each member gets a notify listener of its own on the load balancer
+    (notify_port_base + n) admitting only these, and advertises it, so a
+    policy change nudges every member. EMPTY, the default: no notify
+    listener, and provision.sh stops nudging each member's row, so the
+    members converge on `poll_interval_ms`. An iya-sts environment's nodes
+    leave from task addresses that change on every start, so testidp has no
+    such address to give.
+  EOT
+  type        = list(string)
+  default     = []
 }
 
 variable "notify_port_base" {
-  description = <<-EOT
-    A member's notify port on the load balancer is notify_port_base + n
-    (per-instance; the shared service has one, notify_port_base + 1). Only
-    the nodes may reach these ports: they carry the PDP's nudge to ONE
-    member's 9443.
-  EOT
+  description = "A member's notify port on the load balancer is notify_port_base + n (with notify_cidrs)."
   type        = number
   default     = 9450
 }
@@ -173,15 +223,14 @@ variable "extra_environment" {
 }
 
 variable "companion" {
-  description = <<-EOF2
+  description = <<-EOT
     Run the development companion (companion/) beside each member, as a
     second container in the member's task, so the cluster's reverse proxy
     has `/pep-app` to protect: register the route with upstream
     `http://127.0.0.1:9700` (provision.sh --pep-app). A demonstration, off
-    by default. It listens on the task's own loopback only as far as any
-    caller is concerned: no security group admits 9700, so nothing but the
-    member beside it can send it the identity headers it trusts.
-  EOF2
+    by default. No security group admits 9700, so nothing but the member
+    beside it can send it the identity headers it trusts.
+  EOT
   type        = bool
   default     = false
 }
@@ -190,4 +239,10 @@ variable "companion_image" {
   description = "A whole image reference for the companion, in place of the project repository's `companion-<image_tag>`."
   type        = string
   default     = ""
+}
+
+variable "tags" {
+  description = "Tags on everything, beside the provider's defaults."
+  type        = map(string)
+  default     = {}
 }

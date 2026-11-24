@@ -13,25 +13,30 @@
 # remote PEP* gives it.
 #
 #   1. utilities/register-remote-pep.js, run from the SERVICE IMAGE on this
-#      machine: the entry, the remote PEPs group, the service account, the
-#      assertion key (generated here; the service gets only a PKCS #10
-#      request), and — once the member has registered — its HTTPS listener
-#      pair, naming the public name and the load balancer's direct name
-#      (main.tf, *TWO NAMES*). It is idempotent: the
-#      member's secret seeds its --out, so a key already certified is not
-#      certified again and a pair already issued is not reissued.
+#      machine against the identity service at --idp-url: the entry, the
+#      remote PEPs group, the service account, the assertion key (generated
+#      here; the service gets only a PKCS #10 request), and — once the member
+#      has registered — its HTTPS listener pair, naming the PEP environment's
+#      public name. It is idempotent: the member's secret seeds its --out, so
+#      a key already certified is not certified again and a pair already
+#      issued is not reissued.
 #   2. The member's secret, `<secret path>/pep/<cluster>/<member>`, sealed
 #      under the project key, holding five JSON members: assertion_key,
 #      assertion_cert, https_cert, https_key, service_ca. Written only when
 #      it changed. The working directory is mode 700 and removed on exit.
 #   3. The service's PEP cluster (`create-pep-cluster`,
 #      `add-pep-cluster-member`), so the members share one configuration.
-#   4. When a pair was issued in this run and the member's ECS service
+#   4. WITHOUT --nudge, nudging stopped on each member's row
+#      (`xacml/disable-pep`): the PEP environment's load balancer admits the
+#      identity service's nudge only from `notify_cidrs`, and with none the
+#      members converge on their poll. A member that has not registered yet
+#      has no row; the second pass stops it.
+#   5. When a pair was issued in this run and the member's ECS service
 #      exists, a new deployment of it, so the tasks start with the pair.
-#   5. With --pep-app, the companion's `/pep-app` on the cluster's reverse
+#   6. With --pep-app, the companion's `/pep-app` on the cluster's reverse
 #      proxy (the utility's step 8, asked once, with the first member):
 #      the role `pep-app`, the confidential client `pep-app` with its
-#      callback at the load balancer's 9543, global consent for its four
+#      callback at https://<pep host>/.iya-pep/callback, consent for its four
 #      scopes, and one session route to `http://127.0.0.1:9700` — each
 #      member's own companion sidecar (the stack's `companion = true`).
 #      THE CLIENT SECRET IS WITHHELD: the utility prints a new one once, and
@@ -44,14 +49,19 @@
 #   terraform-local.sh … apply  the members start, register, poll
 #   provision.sh …            the pairs; each member redeployed with its pair
 #
-#   deploy/aws/pep-cluster/provision.sh --env=testidp \
-#     --host=test-idp.iyasec.io --direct-host=direct.test-idp.iyasec.io \
-#     --image=<service image> [--count=2] [--pep-app]
-#   deploy/aws/pep-cluster/provision.sh --env=testidp --remove   # the secrets
+#   deploy/aws/pep-cluster/provision.sh --env=testpep \
+#     --idp-url=https://test-idp.iyasec.io --idp-env=testidp \
+#     --pep-host=test-pep.iyasec.io --image=<service image> \
+#     [--count=2] [--pep-app] [--nudge]
+#   deploy/aws/pep-cluster/provision.sh --env=testpep --remove   # the secrets
 #
-# Needs docker, the aws CLI (credentials for the account), curl and jq. The
-# service image is the one the environment runs (it ships the utility and
-# its npm dependencies); pass it with --image.
+# --env is the PEP ENVIRONMENT (its secrets, its ECS cluster); --idp-url the
+# identity service, at its publicBaseUrl; --idp-env the iya-sts environment
+# whose seeded management client this borrows
+# (`iya-sts/<idp-env>/admin-api-client-secret`) — or name a file holding
+# another client's secret with ADMIN_API_CLIENT_SECRET_FILE. Needs docker,
+# the aws CLI, curl and jq. The service image ships the utility and its npm
+# dependencies; pass it with --image.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -63,19 +73,19 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 . "${REPO_ROOT}/tests/tools/host-platform.sh"
 
 ENV_NAME=""
-HOST=""
-DIRECT_HOST=""
+IDP_URL=""
+IDP_ENV=""
+PEP_HOST=""
+NUDGE=0
 CLUSTER="aws"
 MODE="per-instance"
 COUNT=2
 REALM=""
-CELL=""
 IMAGE=""
 REGION="${AWS_REGION:-us-west-2}"
 NAME="iya-sts"
 REMOVE=0
 PEP_APP=0
-PROXY_PORT=9543
 CA_FILE=""
 
 say() { echo "==> [pep-cluster/${ENV_NAME}/${CLUSTER}] $*" >&2; }
@@ -84,20 +94,20 @@ die() { echo "provision.sh: $*" >&2; exit 1; }
 for a in "$@"; do
   case "${a}" in
     --env=*) ENV_NAME="${a#*=}" ;;
-    --host=*) HOST="${a#*=}" ;;
-    --direct-host=*) DIRECT_HOST="${a#*=}" ;;
+    --idp-url=*) IDP_URL="${a#*=}" ;;
+    --idp-env=*) IDP_ENV="${a#*=}" ;;
+    --pep-host=*) PEP_HOST="${a#*=}" ;;
+    --nudge) NUDGE=1 ;;
     --cluster=*) CLUSTER="${a#*=}" ;;
     --mode=*) MODE="${a#*=}" ;;
     --count=*) COUNT="${a#*=}" ;;
     --realm=*) REALM="${a#*=}" ;;
-    --cell=*) CELL="${a#*=}" ;;
     --image=*) IMAGE="${a#*=}" ;;
     --region=*) REGION="${a#*=}" ;;
     --ca=*) CA_FILE="${a#*=}" ;;
     --remove) REMOVE=1 ;;
     --pep-app) PEP_APP=1 ;;
-    --proxy-port=*) PROXY_PORT="${a#*=}" ;;
-    -h|--help) sed -n '8,56p' "$0"; exit 0 ;;
+    -h|--help) sed -n '8,66p' "$0"; exit 0 ;;
     *) die "unknown argument '${a}' (--help)." ;;
   esac
 done
@@ -112,16 +122,9 @@ for c in aws jq curl docker; do
   hash "${c}" 2>/dev/null || die "needs ${c}."
 done
 
-if [ -n "${CELL}" ];
-then
-  SECRET_PATH="${NAME}/${ENV_NAME}/${CELL}"
-  KMS_ALIAS="alias/${NAME}-cell-${CELL}"
-  ECS_PREFIX="${NAME}-${ENV_NAME}-${CELL}"
-else
-  SECRET_PATH="${NAME}/${ENV_NAME}"
-  KMS_ALIAS="alias/${NAME}"
-  ECS_PREFIX="${NAME}-${ENV_NAME}"
-fi
+SECRET_PATH="${NAME}/${ENV_NAME}"
+KMS_ALIAS="alias/${NAME}"
+ECS_PREFIX="${NAME}-${ENV_NAME}"
 
 # The members, named exactly as the stack names them (main.tf, `members`).
 MEMBERS=()
@@ -155,10 +158,13 @@ then
   exit 0
 fi
 
-[ -n "${HOST}" ] || die "--host is the environment's public_hostname (terraform output public_hostname): the token endpoint's resource, and what the VPC resolves to the load balancer."
-[ -n "${IMAGE}" ] || die "--image is the service image the environment runs (it ships register-remote-pep.js)."
+[ -n "${IDP_URL}" ] || die "--idp-url is the identity service's publicBaseUrl (https://test-idp.iyasec.io): the token endpoint takes only that as a resource."
+[ -n "${PEP_HOST}" ] || die "--pep-host is the PEP environment's public_hostname: its listener certificates name it, and with --pep-app it is the callback's origin."
+[ -n "${IMAGE}" ] || die "--image is the service image (it ships register-remote-pep.js)."
+[ -n "${IDP_ENV}" ] || [ -n "${ADMIN_API_CLIENT_SECRET_FILE:-}" ] ||
+  die "--idp-env names the iya-sts environment whose management client to use, or set ADMIN_API_CLIENT_SECRET_FILE."
 
-URL="https://${HOST}"
+URL="${IDP_URL%/}"
 PDP_URL="${URL}${REALM:+/realm/${REALM}}"
 
 # THE WORKING DIRECTORY: private, and gone however this exits. Under the
@@ -169,11 +175,17 @@ WORK="$(mktemp -d "${BASE}/pep-provision.XXXXXX")"
 chmod 700 "${WORK}"
 trap 'rm -rf "${WORK}"' EXIT
 
-# The seeded management API client's secret (environment/secrets.tf): the
-# utility mints its own token with it, and so does step 3 below.
-aws secretsmanager get-secret-value --region "${REGION}" \
-  --secret-id "${SECRET_PATH}/admin-api-client-secret" \
-  --query SecretString --output text > "${WORK}/client-secret"
+# The management API client's secret: the identity environment's seeded
+# `sts-api-client` (environment/secrets.tf), or a file of the caller's. The
+# utility mints its own token with it, and so do steps 3 and 4 below.
+if [ -n "${ADMIN_API_CLIENT_SECRET_FILE:-}" ];
+then
+  cp "${ADMIN_API_CLIENT_SECRET_FILE}" "${WORK}/client-secret"
+else
+  aws secretsmanager get-secret-value --region "${REGION}" \
+    --secret-id "${NAME}/${IDP_ENV}/admin-api-client-secret" \
+    --query SecretString --output text > "${WORK}/client-secret"
+fi
 chmod 600 "${WORK}/client-secret"
 
 CURL_CA=()
@@ -255,7 +267,7 @@ for m in "${MEMBERS[@]}"; do
   then
     APP_ARGS=(--cluster="${CLUSTER}" --create-cluster --pep-app
               --upstream="http://127.0.0.1:9700"
-              --public-base="https://${DIRECT_HOST:-${HOST}}:${PROXY_PORT}")
+              --public-base="https://${PEP_HOST}")
   fi
   docker run --rm "${HOST_USER_ARGS[@]}" \
     -v "$(hostPath "${WORK}"):/work" \
@@ -263,8 +275,7 @@ for m in "${MEMBERS[@]}"; do
     -e HOME=/work -e REGISTER_PEP_NO_START=1 \
     --entrypoint node "${IMAGE}" utilities/register-remote-pep.js \
     --url="${URL}" ${REALM:+--realm="${REALM}"} --name="${m}" \
-    --out="/work/${m}" --pdp-url="${PDP_URL}" --https-dns="${HOST}" \
-    ${DIRECT_HOST:+--https-dns="${DIRECT_HOST}"} \
+    --out="/work/${m}" --pdp-url="${PDP_URL}" --https-dns="${PEP_HOST}" \
     ${CA_FILE:+--ca=/work/service-ca.pem} "${APP_ARGS[@]}" |
     sed -E 's/(Client secret for "[^"]*" \(shown once\): ).*/\1[withheld by provision.sh: the PEP receives it on its pull]/' >&2 ||
     die "register-remote-pep.js failed for ${m}; nothing of it was stored."
@@ -328,7 +339,26 @@ for m in "${MEMBERS[@]}"; do
   say "PEP cluster ${CLUSTER}: ${m} joined"
 done
 
-# --- 4. A member that has just been given its pair starts again with it ----
+# --- 4. Nudging stopped, unless the load balancer admits the nudge ---------
+# `xacml/disable-pep` is the console's Stop nudging: the member keeps
+# enforcing and converges on its own poll. Asked every run, so a member that
+# registered since the last one is covered; one with no row yet is said.
+if [ "${NUDGE}" = "0" ];
+then
+  for m in "${MEMBERS[@]}"; do
+    answer="$(api -H 'Content-Type: application/json' \
+      -d "$(jq -n --arg m "${m}" '{name: $m}')" "${API}/xacml/disable-pep")"
+    if jq -e '.ok' >/dev/null <<<"${answer}";
+    then
+      say "${m}: nudging stopped; it converges on its poll"
+    else
+      say "${m}: nudging not stopped yet ($(jq -r '.why // "no answer"' <<<"${answer}"))." \
+          "Run this again once it has registered."
+    fi
+  done
+fi
+
+# --- 5. A member that has just been given its pair starts again with it ----
 for m in "${REDEPLOY[@]}"; do
   svc="${ECS_PREFIX}-pep-${m}"
   if aws ecs describe-services --region "${REGION}" --cluster "${ECS_PREFIX}" \
