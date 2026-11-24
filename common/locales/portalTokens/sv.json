@@ -77,6 +77,6 @@
   "tk.ssh.lifetime": "Livslängd i sekunder (valfritt)",
   "tk.ssh.issue": "Utfärda certifikat",
   "tk.ssh.issuedHeading": "Ditt nya SSH-certifikat",
-  "tk.ssh.issuedWhat": "Spara det bredvid din nyckel som <key>-cert.pub. Det visas bara nu.",
+  "tk.ssh.issuedWhat": "Spara det bredvid din publika nyckel, med samma namn som slutar på -cert.pub. Det visas bara nu.",
   "tk.ssh.pqcWhat": "Postkvantcertifikatet som utfärdades bredvid, för en server som verifierar ssh-mldsa-65:"
 }

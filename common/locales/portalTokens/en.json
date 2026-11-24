@@ -77,6 +77,6 @@
   "tk.ssh.lifetime": "Lifetime in seconds (optional)",
   "tk.ssh.issue": "Issue certificate",
   "tk.ssh.issuedHeading": "Your new SSH certificate",
-  "tk.ssh.issuedWhat": "Save it beside your key as <key>-cert.pub. It is shown only now.",
+  "tk.ssh.issuedWhat": "Save it beside your public key, under the same name ending in -cert.pub. It is shown only now.",
   "tk.ssh.pqcWhat": "The post-quantum certificate issued beside it, for a server that verifies ssh-mldsa-65:"
 }

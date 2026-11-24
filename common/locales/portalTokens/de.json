@@ -77,6 +77,6 @@
   "tk.ssh.lifetime": "Gültigkeit in Sekunden (optional)",
   "tk.ssh.issue": "Zertifikat ausstellen",
   "tk.ssh.issuedHeading": "Ihr neues SSH-Zertifikat",
-  "tk.ssh.issuedWhat": "Speichern Sie es neben Ihrem Schlüssel als <key>-cert.pub. Es wird nur jetzt angezeigt.",
+  "tk.ssh.issuedWhat": "Speichern Sie es neben Ihrem öffentlichen Schlüssel, unter demselben Namen mit der Endung -cert.pub. Es wird nur jetzt angezeigt.",
   "tk.ssh.pqcWhat": "Das daneben ausgestellte Post-Quanten-Zertifikat, für einen Server, der ssh-mldsa-65 prüft:"
 }

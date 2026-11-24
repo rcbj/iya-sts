@@ -77,6 +77,6 @@
   "tk.ssh.lifetime": "Duración en segundos (opcional)",
   "tk.ssh.issue": "Emitir certificado",
   "tk.ssh.issuedHeading": "Su nuevo certificado SSH",
-  "tk.ssh.issuedWhat": "Guárdelo junto a su clave como <key>-cert.pub. Solo se muestra ahora.",
+  "tk.ssh.issuedWhat": "Guárdelo junto a su clave pública, con el mismo nombre terminado en -cert.pub. Solo se muestra ahora.",
   "tk.ssh.pqcWhat": "El certificado poscuántico emitido junto a él, para un servidor que verifica ssh-mldsa-65:"
 }

@@ -77,6 +77,6 @@
   "tk.ssh.lifetime": "有效期秒数（可选）",
   "tk.ssh.issue": "签发证书",
   "tk.ssh.issuedHeading": "您的新 SSH 证书",
-  "tk.ssh.issuedWhat": "将其以 <key>-cert.pub 保存在密钥旁边。它只在此时显示。",
+  "tk.ssh.issuedWhat": "将其保存在公钥旁边，名称相同并以 -cert.pub 结尾。它只在此时显示。",
   "tk.ssh.pqcWhat": "同时签发的后量子证书，供验证 ssh-mldsa-65 的服务器使用："
 }

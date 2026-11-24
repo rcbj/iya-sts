@@ -77,6 +77,6 @@
   "tk.ssh.lifetime": "Durée en secondes (facultatif)",
   "tk.ssh.issue": "Émettre le certificat",
   "tk.ssh.issuedHeading": "Votre nouveau certificat SSH",
-  "tk.ssh.issuedWhat": "Enregistrez-le à côté de votre clé sous <key>-cert.pub. Il n’est affiché que maintenant.",
+  "tk.ssh.issuedWhat": "Enregistrez-le à côté de votre clé publique, sous le même nom terminé par -cert.pub. Il n’est affiché que maintenant.",
   "tk.ssh.pqcWhat": "Le certificat post-quantique émis à côté, pour un serveur qui vérifie ssh-mldsa-65 :"
 }
