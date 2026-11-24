@@ -220,8 +220,8 @@ cacheRegistry.register({
   maxEntries: function (): number {
     return HELD;
   },
-  bound: 'The rows a process holds are a cache of 5,000 per realm; a row ' +
-    'leaves the store when its certificate expires.',
+  bound: 'Enforced: the rows a process holds are an on-demand window of ' +
+    '5,000 per realm; a row leaves the store when its certificate expires.',
   lifetime: function (): string {
     return 'Until the certificate expires.';
   },

@@ -21,7 +21,8 @@
 //   C. The wrapper, through the route table: both refusals on a route with
 //      and without declared parameters, and a declared value still passing.
 //   D. Every `x-sts-` name in the service's source is accepted.
-//   E. The console asks an operation only what it declares.
+//   E. The console asks an operation only what it declares; C checks every
+//      operation a console page composes against the route table.
 // ===========================================================================
 
 const childProcess = require('child_process');
@@ -171,6 +172,48 @@ function childMain() {
         });
       });
       return drift;
+    })();
+    // WHAT A PAGE COMPOSES IS ASKED BY THE NAMES ITS OPERATION DECLARES
+    // (run 45371668724): the users drill asked
+    // `/admin-api/hardware-tokens/oath` for `oq`, the central page's own
+    // name, where the operation takes `q`. Every drill answered 400 on its
+    // OATH tokens sub-tab, and the crawl that saw it did so only when that
+    // answer happened to arrive last.
+    report.rows.composedNames = (function () {
+      const pages = require(ROOT_DIR + '/admin-ui/web_pages');
+      const WebPages = pages.WebPages || pages;
+      const problems = [];
+      WebPages.PAGES.forEach(function (page) {
+        if (!page.compose) {
+          return;
+        }
+        const query = {};
+        Object.keys(page.composeWhen || {}).forEach(function (member) {
+          page.composeWhen[member].forEach(function (name) {
+            query[name] = 'x';
+          });
+        });
+        WebPages.composeRequests(page, query).forEach(function (one) {
+          const bare = String(one.operation).split('?')[0];
+          const route = api.ROUTES.filter(function (entry) {
+            return entry.method === 'GET' && entry.path === bare;
+          })[0];
+          if (!route) {
+            problems.push(page.path + ' composes ' + bare +
+                          ', which is no GET row');
+            return;
+          }
+          Object.keys(one.params).forEach(function (name) {
+            const has = (route.parameters || []).some(function (p) {
+              return p.in === 'query' && p.name === name;
+            });
+            if (!has) {
+              problems.push(page.path + ' asks ' + bare + ' for ' + name);
+            }
+          });
+        });
+      });
+      return problems;
     })();
     report.rows.queryNames = api.operationSummaries('all')
       .filter(function (row) {
@@ -362,6 +405,9 @@ function wrapper(t) {
           'every operation declares DPoP and cell');
   t.equal(JSON.stringify(r.queryNames), '[]',
           'every GET row of the console table names its query');
+  t.equal(JSON.stringify(r.composedNames), '[]',
+          'every operation a console page composes is asked only what ' +
+          'it declares');
   log.debug("Leaving wrapper().");
 }
 

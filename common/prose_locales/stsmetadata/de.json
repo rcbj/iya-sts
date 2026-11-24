@@ -1703,6 +1703,10 @@
     "en": "2aecb981d7ca88ee",
     "text": "KEINE SPEZIFIKATION. Die eigene Fassung der Konsole (#454): apply-profile, generate-keys, generate-alt-keys und use-key füllen das Zertifikatsformular aus einem Profil, einem frischen Schlüsselpaar oder einem gespeicherten und schreiben nichts. Die Ausstellung, zu der sie führen, ist POST /admin-api/pki/issue-certificate."
   },
+  "stsmetadata.endpoints./admin-api/console/certificates/:action.what": {
+    "en": "2956cd8c671bb4fe",
+    "text": "KEINE SPEZIFIKATION. Eigene Operation der Konsole (#2080): inspect liest die übergebenen PEM-Zertifikate — Subjekt, SHA-256, SHA-256 der SubjectPublicKeyInfo — für den Editor der Zertifikatsanmeldeprofile, die PEM-Listen von PIV und den Bindungseditor einer Person und antwortet mit bindings mit den stsCertificateBinding-Werten, über die das erste gefunden wird. Es schreibt und behält nichts; wozu es führt, ist POST /admin-api/config/set oder /admin-api/users/add-attribute."
+  },
   "stsmetadata.endpoints./admin-api/console/applications/:action.what": {
     "en": "4c43b5b63d2a5381",
     "text": "KEINE SPEZIFIKATION. Die eigene Fassung der Konsole (#454): generate-secret prägt ein Client Secret für ein Formular, das gerade übermittelt werden soll, und schreibt nichts. Das Anlegen ist POST /admin-api/applications/create."

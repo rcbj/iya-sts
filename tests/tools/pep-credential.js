@@ -744,7 +744,13 @@ async function mint(opts) {
   let crls = null;
   if (host) {
     await rootList.publish(root);
-    await issuingList.publish(issuing);
+    // TWO STATES A TEST ASKS FOR (#2089): `revokeLeaf`, the Issuing CA's
+    // list naming the leaf; `crlMissing`, that list never published, so
+    // its address answers 404 and the leaf's status cannot be established.
+    if (!options.crlMissing) {
+      await issuingList.publish(issuing, options.revokeLeaf
+        ? { revoked: [leaf.serialHex] } : {});
+    }
   } else if (options.crlBase) {
     // Fresh for as long as the leaf lives, because nothing re-signs them: the
     // container serving them has no key.

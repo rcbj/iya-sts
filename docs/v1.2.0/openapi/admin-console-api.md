@@ -407,6 +407,104 @@ Scope: `admin:console`.
 | `resourceMetadataImport.dialsInternalAddresses` | boolean |  |  |
 | `resourceMetadataImport.wellKnown` | string |  |  |
 
+## POST /admin-api/console/certificates/inspect
+
+`inspectCertificates`
+
+**Read the certificates in a PEM text, for certificate sign-in's editors**
+
+A form helper that writes and keeps nothing (#2080). Answers, for each PEM certificate in `pem`, its subject, issuer, serial, validity, SHA-256 and the SHA-256 of its SubjectPublicKeyInfo — what a certificate sign-in profile's `issuers` (`certSignIn.profiles`) names a CA by — so the console's editors for that setting, `piv.externalIssuers`, `piv.attestationAnchors` and a person's `stsCertificateBinding` show what a certificate is and never compute a digest in the browser. With `bindings: true` it also answers the `stsCertificateBinding` values the FIRST certificate is found by — `spki-sha256`, and `issuer-serial` and `issuer-ski` from its issuer, the first of the other certificates or the client truststore's anchors whose key verifies its signature — in the grammar the directory stores. What the editors lead to is a management operation: `POST /admin-api/config/set` for a setting, `POST /admin-api/users/add-attribute` for a binding.
+
+At most 262144 characters and 64 certificates; a text with none, or a block that is not a certificate, is refused (400, STS-ADMIN-0953, STS-ADMIN-0954).
+
+**Mirrors** `GET /admin/piv` on the admin console.
+
+Scope: `admin:console`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `bindings` | boolean |  | Also answer the first certificate's `stsCertificateBinding` values. |
+| `pem` | string | yes | One or more PEM certificates; text around them is ignored. The first is the one `bindings` asks about, and the others are the candidates for its issuer. |
+
+**200**: Each certificate as it reads, the first one's issuer and its binding values.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `bindings` | list |  | With `bindings: true`, the values of `stsCertificateBinding` the first certificate is found by: `spki-sha256`, and `issuer-serial` and `issuer-ski` where its issuer was found. Empty otherwise. |
+| `bindings[].method` | one of `spki-sha256`, `issuer-serial`, `issuer-ski` | yes |  |
+| `bindings[].value` | string | yes |  |
+| `certificates` | list |  |  |
+| `certificates[]` | object |  | One certificate of the text handed in, as it reads. |
+| `certificates[].ca` | boolean | yes | Whether basicConstraints says it is a CA. |
+| `certificates[].cardUuids` | list | yes | Its `urn:uuid:` subjectAltNames: a FIPS 201 card UUID. |
+| `certificates[].cardUuids[]` | string |  |  |
+| `certificates[].extendedKeyUsage` | list | yes |  |
+| `certificates[].extendedKeyUsage[]` | string |  |  |
+| `certificates[].fingerprint256` | string | yes | The SHA-256 of the DER in the colon form `openssl x509 -fingerprint -sha256` prints. |
+| `certificates[].issuer` | string | yes |  |
+| `certificates[].keyUsage` | list | yes |  |
+| `certificates[].keyUsage[]` | string |  |  |
+| `certificates[].notAfter` | string | yes |  |
+| `certificates[].notBefore` | string | yes |  |
+| `certificates[].pem` | string | yes | The PEM block, as it was found in the text. |
+| `certificates[].selfIssued` | boolean | yes |  |
+| `certificates[].serialHex` | string | yes | The serial number, lower-case hex. |
+| `certificates[].sha256` | string | yes | The SHA-256 of the DER, lower-case hex: what `certificate-sha256` binds and `tls.trustedProxyCertificates` pins. |
+| `certificates[].ski` | string | yes | Its subjectKeyIdentifier, lower-case hex, or empty. |
+| `certificates[].spkiSha256` | string | yes | The SHA-256 of its SubjectPublicKeyInfo, lower-case hex: what a certificate sign-in profile's `issuers` names a CA by, and what `spki-sha256` binds. Empty where the key could not be read. |
+| `certificates[].subject` | string | yes |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `issuer` | object, or null |  | The certificate that issued the first one, or null where none of the others handed in and no client trust anchor verifies its signature. |
+| `issuer.from` | one of `bundle`, `truststore` | yes | `bundle` (handed in) or `truststore` (a client trust anchor). |
+| `issuer.spkiSha256` | string | yes |  |
+| `issuer.subject` | string | yes |  |
+| `ok` | boolean | yes |  |
+
+**400**: The text was refused; `errors` says why.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `bindings` | list |  | With `bindings: true`, the values of `stsCertificateBinding` the first certificate is found by: `spki-sha256`, and `issuer-serial` and `issuer-ski` where its issuer was found. Empty otherwise. |
+| `bindings[].method` | one of `spki-sha256`, `issuer-serial`, `issuer-ski` | yes |  |
+| `bindings[].value` | string | yes |  |
+| `certificates` | list |  |  |
+| `certificates[]` | object |  | One certificate of the text handed in, as it reads. |
+| `certificates[].ca` | boolean | yes | Whether basicConstraints says it is a CA. |
+| `certificates[].cardUuids` | list | yes | Its `urn:uuid:` subjectAltNames: a FIPS 201 card UUID. |
+| `certificates[].cardUuids[]` | string |  |  |
+| `certificates[].extendedKeyUsage` | list | yes |  |
+| `certificates[].extendedKeyUsage[]` | string |  |  |
+| `certificates[].fingerprint256` | string | yes | The SHA-256 of the DER in the colon form `openssl x509 -fingerprint -sha256` prints. |
+| `certificates[].issuer` | string | yes |  |
+| `certificates[].keyUsage` | list | yes |  |
+| `certificates[].keyUsage[]` | string |  |  |
+| `certificates[].notAfter` | string | yes |  |
+| `certificates[].notBefore` | string | yes |  |
+| `certificates[].pem` | string | yes | The PEM block, as it was found in the text. |
+| `certificates[].selfIssued` | boolean | yes |  |
+| `certificates[].serialHex` | string | yes | The serial number, lower-case hex. |
+| `certificates[].sha256` | string | yes | The SHA-256 of the DER, lower-case hex: what `certificate-sha256` binds and `tls.trustedProxyCertificates` pins. |
+| `certificates[].ski` | string | yes | Its subjectKeyIdentifier, lower-case hex, or empty. |
+| `certificates[].spkiSha256` | string | yes | The SHA-256 of its SubjectPublicKeyInfo, lower-case hex: what a certificate sign-in profile's `issuers` names a CA by, and what `spki-sha256` binds. Empty where the key could not be read. |
+| `certificates[].subject` | string | yes |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `issuer` | object, or null |  | The certificate that issued the first one, or null where none of the others handed in and no client trust anchor verifies its signature. |
+| `issuer.from` | one of `bundle`, `truststore` | yes | `bundle` (handed in) or `truststore` (a client trust anchor). |
+| `issuer.spkiSha256` | string | yes |  |
+| `issuer.subject` | string | yes |  |
+| `ok` | boolean | yes |  |
+
 ## GET /admin-api/console/dashboard
 
 `getConsoleDashboard`

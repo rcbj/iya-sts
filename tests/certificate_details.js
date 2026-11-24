@@ -294,7 +294,83 @@ async function inProcess(t) {
   t.check(JSON.stringify(list).indexOf('PRIVATE KEY') < 0 &&
           JSON.stringify(rootView).indexOf('PRIVATE KEY') < 0,
           'no private key is anywhere in the list or the details');
+  await otherNodesListener(t, views, details, errorCodes);
   log.debug("Leaving inProcess().");
+}
+
+// ---------------------------------------------------------------------------
+// C2. ANOTHER CLUSTER NODE'S LISTENER LEAF (2026-11-24, GitHub Actions run
+// 45326782254's `cluster` mode): `/admin/crypto-metadata` drawn by node A
+// linked A's own listener certificate, the details view was answered by node
+// B, and B refused it STS-ADMIN-0641 — B holds only its own listener row.
+// The other node's leaf comes off the membership (#248's
+// `listenerCertificatesOfLiveNodes()`), and a miss reads the membership once
+// more before it is a refusal, because a request worker's last read may
+// predate the other node's re-issued leaf. A stand-in cluster module hands
+// the leaf over only once `refreshState()` has run, which is that case.
+// ---------------------------------------------------------------------------
+async function otherNodesListener(t, views, details, errorCodes) {
+  log.debug("Entering otherNodesListener().");
+  t.log.info('=== C2. another cluster node\'s listener certificate ===');
+  const leaf = await selfSigned([{ name: 'CN', value: 'sts-lb' },
+                                 { name: 'O', value: 'node-a' }]);
+  const leafFp = details.fingerprintOf(leaf);
+  const b64 = leaf.replace(/-----(BEGIN|END) CERTIFICATE-----/g, '')
+    .replace(/\s+/g, '');
+  const membership = { enabled: true, read: false, reads: 0 };
+  const cluster = {
+    enabled: function () {
+      log.debug("Entering enabled().");
+      log.debug("Leaving enabled().");
+      return membership.enabled;
+    },
+    refreshState: function () {
+      log.debug("Entering refreshState().");
+      membership.read = true;
+      membership.reads += 1;
+      log.debug("Leaving refreshState().");
+      return Promise.resolve({ nodes: [] });
+    },
+    listenerCertificatesOfLiveNodes: function () {
+      log.debug("Entering listenerCertificatesOfLiveNodes().");
+      log.debug("Leaving listenerCertificatesOfLiveNodes().");
+      return membership.read ? [b64] : [];
+    }
+  };
+  const nodeB = new views.CertificateViews(Object.assign(
+    views.CertificateViews.defaultDeps(), {
+      loadCluster: function () {
+        return cluster;
+      }
+    }));
+  const seen = await nodeB.detailsView(null, leafFp);
+  t.check(seen.ok && membership.reads === 1 &&
+          seen.appearances.some(function (one) {
+            return one.where === 'tls' && /another cluster node/.test(
+              one.label);
+          }),
+          'ANOTHER NODE\'S LISTENER LEAF OPENS HERE: not in the state this ' +
+          'process last read, found once the membership was read again, and ' +
+          'said to be another cluster node\'s',
+          JSON.stringify(seen.appearances || seen.errors || seen));
+  const listed = nodeB.listView({ query: { per: '500' } });
+  t.check(listed.certificates.some(function (one) {
+    return one.fingerprint === leafFp;
+  }), 'and the list holds it, from the state already read');
+  const before = membership.reads;
+  const unknown = await nodeB.detailsView(null, 'f'.repeat(64));
+  t.check(!unknown.ok && errorCodes.codeOf(unknown) === 'STS-ADMIN-0641' &&
+          membership.reads === before + 1,
+          'a fingerprint no node presents is still refused, after one ' +
+          'more read of the membership');
+  membership.enabled = false;
+  membership.read = false;
+  const alone = await nodeB.detailsView(null, leafFp);
+  t.check(!alone.ok && errorCodes.codeOf(alone) === 'STS-ADMIN-0641' &&
+          membership.reads === before + 1,
+          'with no cluster nothing is read, and nothing but this ' +
+          'process\'s own certificates opens');
+  log.debug("Leaving otherNodesListener().");
 }
 
 // ---------------------------------------------------------------------------

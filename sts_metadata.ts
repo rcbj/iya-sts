@@ -5919,6 +5919,17 @@ const ENDPOINTS: EndpointEntry[] = [
           'certificate form from a profile, a fresh key pair or a stored ' +
           'one, and write nothing. The issue they lead to is POST ' +
           '/admin-api/pki/issue-certificate.' },
+  { path: '/admin-api/console/certificates/:action',
+    group: 'Admin console API',
+    name: 'Certificate sign-in\'s certificate reader',
+    specs: ['rfc5280'],
+    what: 'NON-SPEC. The console\'s own (#2080): inspect reads the PEM ' +
+          'certificates handed in — subject, SHA-256, SubjectPublicKeyInfo ' +
+          'SHA-256 — for the certificate sign-in profile editor, the PIV ' +
+          'PEM lists and a person\'s binding editor, and with bindings ' +
+          'answers the stsCertificateBinding values the first one is found ' +
+          'by. It writes and keeps nothing; what it leads to is POST ' +
+          '/admin-api/config/set or /admin-api/users/add-attribute.' },
   { path: '/admin-api/console/applications/:action',
     group: 'Admin console API',
     name: 'The new application form\'s helper',

@@ -51,6 +51,14 @@
 //      does, and not past a new one.
 //   I. AN EXPIRED LEAF (#2081), bound to alice, signs nobody in: the
 //      handshake does not verify it.
+//   J. REVOCATION IN DEVELOPMENT (#2089): a leaf its CA's CRL lists is
+//      refused on revocation; one whose CRL cannot be fetched signs in
+//      under `auto` (soft fail) and not under `on`; a status verified good
+//      meets `on`.
+//   K. PRODUCT MODE (#2089): in a product-mode realm, under the default
+//      `auto`, the good chain is accepted (the screen offers to continue as
+//      its holder), and the listed and the unfetchable leaves are refused
+//      on revocation.
 //
 // The handoff to a second listener is `sts_cert_handoff.js` (#2081), an
 // exclusive job of its own. NOT CARRIED, and why: a policy-mapped Federal
@@ -68,10 +76,11 @@ const https = require("https");
 const nodeCrypto = require("crypto");
 const { execFileSync } = require("child_process");
 const anchors = require("../tools/pep-credential.js");
+const authnSignin = require("./authn_signin");
 const K = require("./oauth_wire_kit.js").kit("sts_cert_sign_in_profiles");
 const log = K.log;
 
-const FLOOR = 40;
+const FLOOR = 48;
 const added = [];
 
 function check(what, fn) {
@@ -108,6 +117,7 @@ function tlsCall(method, url, o) {
         }
         log.debug("Leaving tlsCall(). " + res.statusCode);
         resolve({ status: res.statusCode, json: json, text: text,
+                  location: String(res.headers.location || ""),
                   setCookies: [].concat(res.headers["set-cookie"] || []) });
       });
     });
@@ -382,6 +392,11 @@ async function test() {
                                  serialBinding: binding });
   await renewals(realm, rb, { alice: alice, card: card, profile: profile });
   await expired(realm, rb, { alice: alice, card: card, profile: profile });
+  const revocation = await revocationCards();
+  await revocationInDevelopment(realm, rb, { alice: alice, card: card,
+                                             profile: profile },
+                                revocation);
+  await productMode(revocation, { card: card, profile: profile });
   log.debug("Leaving test().");
 }
 
@@ -611,6 +626,216 @@ async function expired(realm, rb, o) {
     attribute: "stsCertificateBinding", value: value },
     "took the expired certificate's binding off alice");
   log.debug("Leaving expired().");
+}
+
+// ---------------------------------------------------------------------------
+// TWO MORE OUTSIDE CHAINS FOR REVOCATION (#2089), each of its own so that no
+// list the service has already fetched and kept answers for it: one whose
+// Issuing CA's CRL lists the leaf (`revokeLeaf`), and one whose Issuing CA's
+// CRL is never published, so its address answers 404 and the leaf's status
+// cannot be established (`crlMissing`). Their Roots join the truststore, and
+// are removed with the others at the end.
+// ---------------------------------------------------------------------------
+async function revocationCards() {
+  log.debug("Entering revocationCards().");
+  const revoked = await anchors.mint({ revokeLeaf: true,
+    subject: "CN=REVOKED.JANE." + K.STAMP + ",O=outside authority",
+    rootSubject: "CN=revoked Root " + K.STAMP });
+  const missing = await anchors.mint({ crlMissing: true,
+    subject: "CN=UNLISTED.JANE." + K.STAMP + ",O=outside authority",
+    rootSubject: "CN=unlisted Root " + K.STAMP });
+  for (const one of [revoked, missing]) {
+    const installed = await anchors.trustRecorded(K.base, one.anchorPem,
+                                                  added);
+    assert.ok(installed.ok, "an outside Root was not admitted: " +
+              String(installed.why || installed.status));
+  }
+  log.debug("Leaving revocationCards().");
+  return { revoked: revoked, missing: missing };
+}
+
+function serialBindingOf(credential) {
+  log.debug("Entering serialBindingOf().");
+  log.debug("Leaving serialBindingOf().");
+  return "issuer-serial:" + opensslSpki(credential.issuing.pem) + ":" +
+    String(credential.leaf.serialHex).toLowerCase();
+}
+
+// The one profile covering the first chain and both revocation chains.
+function coveringAll(o, r) {
+  log.debug("Entering coveringAll().");
+  log.debug("Leaving coveringAll().");
+  return JSON.stringify([Object.assign({}, o.profile, {
+    issuers: [opensslSpki(o.card.anchorPem), opensslSpki(r.revoked.anchorPem),
+              opensslSpki(r.missing.anchorPem)] })]);
+}
+
+function asTls(credential) {
+  log.debug("Entering asTls().");
+  log.debug("Leaving asTls().");
+  return { cert: credential.certPem, key: credential.keyPem };
+}
+
+function refusedOnRevocation(r) {
+  log.debug("Entering refusedOnRevocation().");
+  const session = (r.json && r.json.session) || {};
+  log.debug("Leaving refusedOnRevocation().");
+  return !started(r) && session.refusedOnRevocation === true;
+}
+
+// ---------------------------------------------------------------------------
+// J. REVOCATION, END TO END, IN DEVELOPMENT MODE (#2089). Each leaf is bound
+// to alice by its own issuer and serial, so only its status decides:
+//
+//   * listed on its CA's CRL, it signs nobody in, refused on revocation,
+//     whatever certSignIn.requireRevocation says;
+//   * its CRL unavailable, it signs alice in under `auto` (development
+//     leaves an unknown status to pki.revocationCheck's soft fail, as
+//     documented) and signs nobody in under `on` (STS-TLS-0071);
+//   * the first chain, whose CRL is served and empty, signs alice in under
+//     `on`: the requirement is met by a status verified good.
+// ---------------------------------------------------------------------------
+async function revocationInDevelopment(realm, rb, o, r) {
+  log.debug("Entering revocationInDevelopment().");
+  log.info("=== J. revocation, in development mode ===");
+  await K.set(realm, "certSignIn.profiles", coveringAll(o, r));
+  for (const one of [r.revoked, r.missing]) {
+    await K.ok(rb + "/admin-api/users/add-attribute", { user: o.alice,
+      attribute: "stsCertificateBinding", value: serialBindingOf(one) },
+      "bound " + one.leaf.subject + " to alice");
+  }
+  const revoked = await settled(rb + "/tls/sign-in",
+                                { tls: asTls(r.revoked) });
+  check("J1. a leaf its CA's CRL lists, bound to alice, signs nobody in: " +
+        "refused on revocation", function () {
+    assert.ok(refusedOnRevocation(revoked), revoked.text.slice(0, 400));
+  });
+  const soft = await settled(rb + "/tls/sign-in", { tls: asTls(r.missing) });
+  check("J2. a leaf whose CRL cannot be fetched signs alice in under " +
+        "certSignIn.requireRevocation auto in development (the revocation " +
+        "policy's soft fail)", function () {
+    assert.ok(started(soft), soft.text.slice(0, 400));
+  });
+  await K.set(realm, "certSignIn.requireRevocation", "on");
+  const hard = await settled(rb + "/tls/sign-in", { tls: asTls(r.missing) });
+  check("J3. under certSignIn.requireRevocation on, the same leaf signs " +
+        "nobody in: no verified status (STS-TLS-0071)", function () {
+    assert.ok(refusedOnRevocation(hard), hard.text.slice(0, 400));
+    assert.strictEqual(hard.json.session.revocationRequired, true,
+                       hard.text.slice(0, 400));
+  });
+  const good = await settled(rb + "/tls/sign-in", { tls: asTls(o.card) });
+  check("J4. under on, the first chain, its CRL served and empty, signs " +
+        "alice in: a status verified good meets the requirement",
+        function () {
+    assert.ok(started(good), good.text.slice(0, 400));
+  });
+  const stillRevoked = await settled(rb + "/tls/sign-in",
+                                     { tls: asTls(r.revoked) });
+  check("J5. and the listed leaf is refused on revocation under on too",
+        function () {
+    assert.ok(refusedOnRevocation(stillRevoked),
+              stillRevoked.text.slice(0, 400));
+  });
+  await K.unset(realm, "certSignIn.requireRevocation");
+  for (const one of [r.revoked, r.missing]) {
+    await K.ok(rb + "/admin-api/users/remove-attribute", { user: o.alice,
+      attribute: "stsCertificateBinding", value: serialBindingOf(one) },
+      "took " + one.leaf.subject + " off alice");
+  }
+  await K.set(realm, "certSignIn.profiles", JSON.stringify([o.profile]));
+  log.debug("Leaving revocationInDevelopment().");
+}
+
+// The sign-in screen's certificate offer for a connection presenting `tls`
+// (#2089): an authorization request with no certificate, the screen's shell
+// and its view over connections presenting it. `{ name }` when the
+// certificate passed the profile, the binding and revocation.
+async function screenOffer(rb, client, redirectUri, tls) {
+  log.debug("Entering screenOffer().");
+  const verifier = nodeCrypto.randomBytes(32).toString("base64url");
+  const r = await tlsCall("GET", rb + "/oauth2/authorize?" +
+    new URLSearchParams({ response_type: "code", client_id: client,
+      redirect_uri: redirectUri, scope: "openid", state: "s", nonce: "n",
+      code_challenge: nodeCrypto.createHash("sha256").update(verifier)
+        .digest("base64url"),
+      code_challenge_method: "S256" }).toString());
+  const location = new URL(String(r.location || ""), rb).toString();
+  const id = authnSignin.pendingIdOf(location);
+  const shell = await tlsCall("GET", location, { tls: tls });
+  const cookie = shell.setCookies.map(function (one) {
+    return one.split(";")[0];
+  }).join("; ");
+  const view = await tlsCall("GET", rb + "/authn-api/pending/" +
+    encodeURIComponent(id), { tls: tls, headers: { cookie: cookie } });
+  log.debug("Leaving screenOffer().");
+  return (view.json && view.json.view && view.json.view.certificate) ||
+    { status: view.status, location: location };
+}
+
+// ---------------------------------------------------------------------------
+// K. PRODUCT MODE (#2089): a second throwaway realm, created in product
+// mode, where certSignIn.requireRevocation's default, `auto`, REQUIRES a
+// verified status. The person, the profile and the three bindings are its
+// own. A browser's certificate sign-in in product asks for a second factor
+// too (rcbj, 2026-11-09), so a sign-in that passes every certificate check
+// answers that, not a session: what is asserted is that the certificate
+// was accepted as carol for the good chain (no refusal on revocation or as
+// stored, and the sign-in screen offering to continue as her), and refused
+// on revocation for the other two.
+// ---------------------------------------------------------------------------
+async function productMode(r, o) {
+  log.debug("Entering productMode().");
+  log.info("=== K. product mode ===");
+  const realm = await K.realm("certprodk", "product");
+  const rb = K.rb(realm);
+  const carol = "cpk-" + K.STAMP;
+  await K.ok(rb + "/admin-api/users/create", { username: carol,
+    invent: false, credential: "none", attributes: { cn: carol,
+      givenName: carol, sn: carol, mail: carol + "@cpk.example.test" } },
+    "created " + carol);
+  await K.set(realm, "certSignIn.profiles", coveringAll(o, r));
+  for (const one of [o.card, r.revoked, r.missing]) {
+    await K.ok(rb + "/admin-api/users/add-attribute", { user: carol,
+      attribute: "stsCertificateBinding", value: serialBindingOf(one) },
+      "bound " + one.leaf.subject + " to carol");
+  }
+  const good = await settled(rb + "/tls/sign-in", { tls: asTls(o.card) });
+  const goodSession = (good.json && good.json.session) || {};
+  const client = "cpkc-" + K.STAMP;
+  await K.app(realm, client, { oauthClientId: [client],
+    oauthRedirectUri: ["https://rp.cpk.example.test/cb"],
+    oauthTokenEndpointAuthMethod: "none",
+    oauthGrantType: ["authorization_code"], oauthAllowedScope: ["openid"] });
+  const offer = await screenOffer(rb, client,
+                                  "https://rp.cpk.example.test/cb",
+                                  asTls(o.card));
+  check("K1. in product, the chain whose CRL is served and empty is " +
+        "accepted as carol: /tls/sign-in is neither refused on revocation " +
+        "nor as stored (it asks for the second factor product requires), " +
+        "and the sign-in screen offers to continue as carol", function () {
+    assert.strictEqual(good.json && good.json.revocation &&
+                       good.json.revocation.status, "good",
+                       good.text.slice(0, 400));
+    assert.ok(!goodSession.refusedOnRevocation &&
+              !goodSession.refusedAsStored && !goodSession.refusedAsIdentity,
+              good.text.slice(0, 400));
+    assert.strictEqual(offer.name, carol, JSON.stringify(offer));
+  });
+  const missing = await settled(rb + "/tls/sign-in",
+                                { tls: asTls(r.missing) });
+  check("K2. in product, under the default auto, a leaf whose CRL cannot " +
+        "be fetched signs nobody in: a verified status is required",
+        function () {
+    assert.ok(refusedOnRevocation(missing), missing.text.slice(0, 400));
+  });
+  const revoked = await settled(rb + "/tls/sign-in",
+                                { tls: asTls(r.revoked) });
+  check("K3. in product, a leaf its CA's CRL lists signs nobody in",
+        function () {
+    assert.ok(refusedOnRevocation(revoked), revoked.text.slice(0, 400));
+  });
+  log.debug("Leaving productMode().");
 }
 
 async function guarded() {

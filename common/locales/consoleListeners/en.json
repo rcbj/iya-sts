@@ -79,5 +79,7 @@
   "applicationsText": "Where each hosted application is: the listeners that answer it, and the one its URLs — its issuer, metadata, redirects and mailed links — are built on.",
   "tabDefaults": "Service-wide defaults",
   "defaultsNote": "What every TLS listener inherits unless its own tab or definition says otherwise.",
+  "tabCertSignIn": "Certificate sign-in",
+  "certSignInNote": "Certificate sign-in profiles, the revocation a sign-in needs, the handoff to a custom listener that asks for a certificate, and a TLS-terminating proxy in front of one. The same settings are on Protocols → PIV.",
   "customTabNote": "Set in the listener's definition, on the Custom listeners tab."
 }

@@ -399,7 +399,7 @@ carries the same as `directoryCountedAt` and `directoryCountsKeptFor`.
 | **Authentication attempts** | every attempt by this person in the audit log, across every application and protocol: credentials accepted and refused — at the sign-in screen, the token endpoint (password grant, RFC 7523, RFC 7522), WS-Trust, Kerberos, LDAP, a TLS client certificate and SPNEGO — sessions refused, and an existing session presented to an application for single sign-on (method *existing session*), ten a page by default |
 | **Sessions & tokens** | each sign-on session with the tokens issued on it, the tokens on no session, and the assertions, tickets and credentials; and a line counting the authentications that started no session and issued nothing (a TLS client certificate on a request, an LDAP bind, a SCIM or SPIFFE caller's credential), each of which is on Authentication attempts. Each table shows ten rows a page and the session blocks five, with the usual pager; the rows-per-page box changes both |
 | **Attributes** | their attributes as typed fields, one sub-tab per group — Name, Contact, Organization, Address, Identity, Policies, Custom, Other — each with its own **Save**, and the address on Contact |
-| **Credentials** | sub-tabs for second factors, the password controls, signing key pairs and Kerberos, then one per token and key kind: Hardware tokens, OATH tokens, YubiKey OTP, PIV, SSH user certificates, and OpenPGP and S/MIME |
+| **Credentials** | sub-tabs for second factors, the password controls, signing key pairs and Kerberos, then one per token and key kind: Hardware tokens, OATH tokens, YubiKey OTP, PIV, Certificate sign-in (the person's `stsCertificateBinding` values, derived from their certificate), SSH user certificates, and OpenPGP and S/MIME |
 | **Federation links** | the partners' subjects that sign them in |
 | **Directory entry** | the LDAP object, every attribute, and *Change one attribute by name* |
 | **Sign out** | sign them out of everything, or revoke their tokens and nothing else |
@@ -2299,6 +2299,19 @@ escrow and SSH tabs, and **Directory → OpenPGP keys** (`/admin/openpgp`) one
 person's key. Each page is mirrored by `GET /admin-api/<page>`
 (`/hardware-tokens-settings`, `/piv`, `/yubiotp`, `/oath-tokens`,
 `/ssh-user-ca`, `/openpgp-settings`).
+
+**PIV also draws the *Certificate sign-in* group** (#2080) — the profiles,
+`certSignIn.requireRevocation`, the handoff and the TLS-terminating proxy —
+which Server configuration → Listeners draws too, on a tab of its own. Six
+settings that hold a structure as text are drawn as forms wherever their
+group is: `certSignIn.profiles` one card per profile, its issuers picked from
+the client truststore with each CA's SubjectPublicKeyInfo SHA-256 shown;
+`listeners.custom` and `listeners.realm` one card per listener;
+`listeners.applications` a row per application; `piv.externalIssuers` and
+`piv.attestationAnchors` a list of certificates by subject and SHA-256. Each
+form writes the same value into the box under *As JSON*, and Save posts it as
+before. What a certificate says is read by the console's own
+`POST /admin-api/console/certificates/inspect`, which writes nothing.
 
 ### XACML — `/admin/xacml`
 

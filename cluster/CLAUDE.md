@@ -185,6 +185,14 @@ computation, so the beat stays a lookup; the cost is a few kilobytes on each
 row (an ML-DSA leaf is about seven), and a new node's key reaches the other
 nodes' documents at most a heartbeat late.
 
+**The certificate details view reads them too (2026-11-24, run
+45326782254's `cluster` mode).** `/admin/crypto-metadata` drawn by node A
+linked A's own leaf; the details view landed on node B, which holds only its
+own listener row (the row carries the private key), and answered 404
+STS-ADMIN-0641. `admin-core/certificate_views.ts` adds every live node's
+leaf as an authority, and a fingerprint it does not find waits for one
+`refreshState()` before it is refused.
+
 **THE LAST LISTENER CERTIFICATE ANNOUNCED IS THE SERVICE'S, NOT A ROW OF THIS
 TABLE (#264).** `tls-certificate-changed` at restart compares with a
 fingerprint kept in the shared minted store (`tls.listenerAnnounced`), not

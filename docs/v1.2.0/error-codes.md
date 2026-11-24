@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6071** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6074** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -97,7 +97,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 137
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 301
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 304
 * [Management API (`STS-API`)](#sts-api) — 97
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
@@ -6274,6 +6274,9 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0950` | An application's WS-Trust decryption key pair was asked to be issued, uploaded or removed and the realm's registry holds no such application, or a remove found no key pair on it, or an uploaded certificate is already another application's. Nothing was written (#1668). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0951` | An operator's import of a legacy U2F security key named nobody (#1955). | HTTP 400 (API) |
 | `STS-ADMIN-0952` | An operator's import of a legacy U2F security key was refused; the inner code says why — the AppID, the key handle, the public key, the counter, or the writer's own rules (#1955). | HTTP 400 (API) |
+| `STS-ADMIN-0953` | A certificate handed to the console's certificate inspection helper (POST /admin-api/console/certificates/inspect) held no PEM certificate, or more text or more certificates than it reads. Nothing is kept (#2080). | HTTP 400 { ok: false, errors } (Admin Console API) |
+| `STS-ADMIN-0954` | A PEM block handed to the console's certificate inspection helper could not be read as an X.509 certificate. Nothing is kept (#2080). | HTTP 400 { ok: false, errors } (Admin Console API) |
+| `STS-ADMIN-0955` | The console's certificate inspection helper was asked for an action it does not have; the refusal names the one it has (#2080). | HTTP 400 { ok: false, errors } (Admin Console API) |
 
 ## STS-API
 

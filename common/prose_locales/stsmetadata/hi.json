@@ -1703,6 +1703,10 @@
     "en": "2aecb981d7ca88ee",
     "text": "गैर-विनिर्देश। कंसोल का अपना (#454): apply-profile, generate-keys, generate-alt-keys और use-key प्रमाणपत्र फ़ॉर्म को एक प्रोफ़ाइल, एक नई कुंजी जोड़ी या संग्रहीत जोड़ी से भरते हैं, और कुछ नहीं लिखते। जिस जारी करने तक वे ले जाते हैं वह POST /admin-api/pki/issue-certificate है।"
   },
+  "stsmetadata.endpoints./admin-api/console/certificates/:action.what": {
+    "en": "2956cd8c671bb4fe",
+    "text": "गैर-विनिर्देश। कंसोल का अपना (#2080): inspect सौंपे गए PEM प्रमाणपत्र पढ़ता है — विषय, SHA-256, SubjectPublicKeyInfo का SHA-256 — प्रमाणपत्र साइन-इन प्रोफ़ाइल एडिटर, PIV की PEM सूचियों और किसी व्यक्ति के बाइंडिंग एडिटर के लिए, और bindings के साथ वे stsCertificateBinding मान बताता है जिनसे पहला प्रमाणपत्र मिलता है। यह कुछ नहीं लिखता और कुछ नहीं रखता; यह POST /admin-api/config/set या /admin-api/users/add-attribute तक ले जाता है।"
+  },
   "stsmetadata.endpoints./admin-api/console/applications/:action.what": {
     "en": "4c43b5b63d2a5381",
     "text": "गैर-विनिर्देश। कंसोल का अपना (#454): generate-secret जमा होने वाले फ़ॉर्म के लिए एक क्लाइंट सीक्रेट जारी करता है और कुछ नहीं लिखता। निर्माण POST /admin-api/applications/create है।"

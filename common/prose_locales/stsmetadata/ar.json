@@ -1703,6 +1703,10 @@
     "en": "2aecb981d7ca88ee",
     "text": "خارج المواصفة. ما يخص وحدة التحكم (#454): تملأ apply-profile وgenerate-keys وgenerate-alt-keys وuse-key نموذج الشهادة من ملف تعريف أو زوج مفاتيح جديد أو زوج مخزَّن، ولا تكتب شيئًا. الإصدار الذي تؤدّي إليه هو POST /admin-api/pki/issue-certificate."
   },
+  "stsmetadata.endpoints./admin-api/console/certificates/:action.what": {
+    "en": "2956cd8c671bb4fe",
+    "text": "خارج المواصفة. ما يخص وحدة التحكم (#2080): تقرأ inspect شهادات PEM المقدَّمة — الموضوع وSHA-256 وSHA-256 لـ SubjectPublicKeyInfo — لمحرر ملفات تعريف تسجيل الدخول بالشهادة وقوائم PEM في PIV ومحرر ارتباطات الشخص، ومع bindings تجيب بقيم stsCertificateBinding التي يُعثر بها على الأولى. لا تكتب شيئًا ولا تحتفظ بشيء؛ وما تؤدي إليه هو POST /admin-api/config/set أو /admin-api/users/add-attribute."
+  },
   "stsmetadata.endpoints./admin-api/console/applications/:action.what": {
     "en": "4c43b5b63d2a5381",
     "text": "خارج المواصفة. ما يخص وحدة التحكم (#454): يسُكّ generate-secret سر عميل لنموذج على وشك الإرسال ولا يكتب شيئًا. الإنشاء هو POST /admin-api/applications/create."

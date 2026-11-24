@@ -32,14 +32,18 @@
 //      was refused and offers a fresh link, the act signing nobody in; and,
 //      with `certSignIn.handoff` off, no link offered.
 //
+//   D. the deployment the requirements describe (#2089): with
+//      `tls.mainPortDisableOptionalClientCertificate` on (a process setting,
+//      put back at the end), a certificate offered on the main port never
+//      arrives there, a password sign-in completes, and the card still signs
+//      in through the handoff listener.
+//
 // NOT carried, and why: the browser's own certificate chooser and PIN prompt
-// are the operating system's (rcbj tests those with a physical card); that
-// the main port then asks no connection for a certificate is
-// `tls.mainPortDisableOptionalClientCertificate`, a process-wide setting
-// held by `sts_listener_tls_policy.js`.
+// are the operating system's (rcbj tests those with a physical card).
 //
 // EXCLUSIVE: the realm listener's port is the stack's one port for a realm
-// listener, which `sts_realm_listener.js` binds too. In the `cells` mode a
+// listener, which `sts_realm_listener.js` binds too, and section D changes
+// how the main port answers every connection. In the `cells` mode a
 // custom listener is refused (STS-CORE-0148), and that refusal is all this
 // job asserts there.
 //
@@ -54,7 +58,7 @@ const authnSignin = require("./authn_signin");
 const K = require("./oauth_wire_kit.js").kit("sts_cert_handoff");
 const log = K.log;
 
-const FLOOR = 9;
+const FLOOR = 12;
 const PORT = Number(process.env.STS_TEST_REALM_LISTENER_PORT || 8099);
 const LISTENER = "hand" + K.STAMP.slice(-8);
 const RP = "https://rp.handoff.example.test";
@@ -205,6 +209,32 @@ async function listenerApi(rb, what, value) {
   return r;
 }
 
+// The stack's one realm-listener port may still be held by a realm another
+// job left behind: `sts_realm_listener.js` leaves its realm (and listener)
+// in place by design, and every node binds every listener, so a second
+// listener on the port is refused. Free it first, as that job does.
+async function freePort() {
+  log.debug("Entering freePort().");
+  const listed = await K.send(K.base + "/admin-api/realms", {
+    method: "GET" });
+  const rows = (listed.json && listed.json.realms) || [];
+  for (const row of rows) {
+    const holds = (row.listeners || []).some(function (one) {
+      return Number(one.port) === PORT;
+    });
+    if (holds) {
+      const at = K.base + "/realm/" + row.id + "/admin-api/listeners/";
+      const unmapped = await K.send(at + "set-applications",
+                                    { json: { value: "" } });
+      const unbound = await K.send(at + "set-listeners",
+                                   { json: { value: "" } });
+      log.info("freed port " + PORT + " from realm " + row.id + ": " +
+               unmapped.status + " " + unbound.status);
+    }
+  }
+  log.debug("Leaving freePort().");
+}
+
 async function test() {
   log.debug("Entering test().");
   const realm = await K.realm("handoff");
@@ -250,6 +280,7 @@ async function test() {
       String(card.leaf.serialHex).toLowerCase() },
     "bound the leaf to " + alice);
 
+  await freePort();
   const ownBase = "https://" + SERVICE_HOST + ":" + PORT;
   const defined = await listenerApi(rb, "set-listeners", [{ id: LISTENER,
     port: PORT, publicBaseUrl: ownBase, clientAuth: "optional" }]);
@@ -376,6 +407,95 @@ async function walk(s) {
   log.debug("Leaving walk().");
 }
 
+// Whether a certificate offered on a connection to the MAIN port arrived:
+// the management API's description of that very connection, asked over it
+// (`sts_listener_tls_policy.js`'s `presented()`). Asked again for up to ten
+// seconds until `wanted`, because the setting is applied per process and a
+// cluster's other node hears the write a moment later.
+async function presentedOnMain(tls, wanted) {
+  log.debug("Entering presentedOnMain().");
+  const deadline = Date.now() + 10000;
+  let view = {};
+  do {
+    const r = await settled("GET", K.base + "/admin-api/tls-connection",
+                            { tls: tls });
+    assert.strictEqual(r.status, 200, "GET /admin-api/tls-connection: " +
+                       r.status + " " + r.text.slice(0, 200));
+    view = (r.json && r.json.clientCertificate) || {};
+    if (view.presented === wanted) {
+      break;
+    }
+    await K.sleep(250);
+  } while (Date.now() < deadline);
+  log.debug("Leaving presentedOnMain(). " + view.presented);
+  return view;
+}
+
+// ---------------------------------------------------------------------------
+// D. THE DEPLOYMENT THE REQUIREMENTS DESCRIBE (#2089): the main port asks
+// no connection for a certificate
+// (`tls.mainPortDisableOptionalClientCertificate`, a process setting, put
+// back in `guarded()`), so a browser with a card in
+// the reader is never prompted while it signs in another way, and the card
+// is asked for on the handoff listener alone:
+//
+//   D1. a certificate offered on the main port never arrives there (no
+//       CertificateRequest is sent);
+//   D2. a password sign-in completes, and the client gets its code;
+//   D3. the card still signs alice in through the handoff listener.
+// ---------------------------------------------------------------------------
+async function noPromptOnMain(s) {
+  log.debug("Entering noPromptOnMain().");
+  log.info("=== D. the main port asks for no certificate ===");
+  const before = await presentedOnMain(s.tls, true);
+  await K.setProcess("tls.mainPortDisableOptionalClientCertificate", true);
+  s.mainPortTouched = true;
+  const after = await presentedOnMain(s.tls, false);
+  check("D1. with tls.mainPortDisableOptionalClientCertificate on, a " +
+        "certificate offered on the main port never arrives: no " +
+        "CertificateRequest, so no browser prompt", function () {
+    assert.strictEqual(before.presented, true, JSON.stringify(before));
+    assert.strictEqual(after.presented, false, JSON.stringify(after));
+  });
+  const who = "chp-" + K.STAMP;
+  const password = "Pw-" + nodeCrypto.randomBytes(9).toString("base64url");
+  await K.person(s.realm, who, password);
+  const b = K.browser();
+  const verifier = nodeCrypto.randomBytes(32).toString("base64url");
+  const first = await b.go(s.rb + "/oauth2/authorize?" +
+    new URLSearchParams({ response_type: "code", client_id: s.client,
+      redirect_uri: RP + "/cb", scope: "openid", state: "s2", nonce: "n2",
+      code_challenge: nodeCrypto.createHash("sha256").update(verifier)
+        .digest("base64url"),
+      code_challenge_method: "S256" }).toString());
+  const signedIn = await K.signIn(s.realm, b, first, who, password);
+  check("D2. a password sign-in completes on the main port, and the client " +
+        "gets its code", function () {
+    assert.ok((signedIn.status === 302 || signedIn.status === 303) &&
+              String(signedIn.location || "").indexOf(RP + "/cb?") === 0 &&
+              /[?&]code=/.test(String(signedIn.location)),
+              K.shown(signedIn));
+  });
+  await K.set(s.realm, "certSignIn.handoff", true);
+  const at = await authz(s.rb, s.client);
+  const offered = await screen(s.rb, at, "");
+  const href = String((offered.view.certificate || {}).handoff || "");
+  const there = href ? await settled("GET", href, { tls: s.tls,
+    headers: { cookie: offered.cookie } }) : { status: 0, text: "" };
+  const back = await screen(s.rb, at, offered.cookie);
+  const done = await act(s.rb, at, back);
+  check("D3. and the card still signs alice in through the handoff " +
+        "listener", function () {
+    assert.ok(href, JSON.stringify(offered.view.certificate));
+    assert.strictEqual(there.status, 303, there.text.slice(0, 300));
+    assert.strictEqual((back.view.certificate || {}).name, s.alice,
+                       JSON.stringify(back.view.certificate));
+    assert.strictEqual(done.json && done.json.next, "redirect",
+                       done.text.slice(0, 300));
+  });
+  log.debug("Leaving noPromptOnMain().");
+}
+
 async function guarded() {
   log.debug("Entering guarded().");
   let failure = null;
@@ -384,11 +504,20 @@ async function guarded() {
     s = await test();
     if (s) {
       await walk(s);
+      await noPromptOnMain(s);
     }
   } catch (e) {
     log.debug("Caught in guarded(): " + ((e && e.message) || e));
     // Rethrown after the listener and the anchor are removed.
     failure = e;
+  }
+  if (s && s.mainPortTouched) {
+    const reset = await K.send(K.base + "/admin-api/config/reset", { json: {
+      key: "tls.mainPortDisableOptionalClientCertificate" } });
+    if (reset.status !== 200) {
+      log.warn("Could not reset the main port's certificate request: " +
+               reset.status + " " + reset.text.slice(0, 200));
+    }
   }
   if (s) {
     // The mapping first: a listener a mapping names cannot be removed.
@@ -403,4 +532,5 @@ async function guarded() {
   log.debug("Leaving guarded().");
 }
 
-K.main(guarded, FLOOR);
+// The cells mode runs one check, the refusal; the floor is the other modes'.
+K.main(guarded, cellsMode() ? 1 : FLOOR);

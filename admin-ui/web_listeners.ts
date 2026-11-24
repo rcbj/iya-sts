@@ -22,6 +22,7 @@
 
 import kit = require('./web_kit');
 import SettingsForms = require('./web_settings');
+import CertSignInEditors = require('./web_cert_sign_in');
 import DocLinks = require('../common/web_doc_links');
 
 type Json = any;
@@ -144,9 +145,14 @@ class ListenersPage {
         t.html('consoleListeners.defTls') + ' ' +
         t.html('consoleListeners.defAnswers', { whose: whose }) + '</p>',
         t.text('consoleListeners.defLabel')) +
-      '<form method="post" action="/admin/listeners"><div class="formrow">' +
+      // AS FORM FIELDS (#2080): an editor over the box, which still carries
+      // the value the Save posts (`web_cert_sign_in.ts`).
+      '<form method="post" action="/admin/listeners">' +
+      CertSignInEditors.place('listeners', 'listeners-definitions', t, true) +
+      '<div class="formrow">' +
       '<input type="hidden" name="action" value="set-listeners">' +
-      '<textarea name="value" rows="10" cols="90" spellcheck="false">' +
+      '<textarea name="value" id="listeners-definitions" rows="10" ' +
+      'cols="90" spellcheck="false">' +
       kit.esc(pretty(d.listeners || '')) + '</textarea></div>' +
       '<div class="formrow"><button>' +
       t.html('consoleListeners.saveListeners') + '</button></div>' +
@@ -163,9 +169,13 @@ class ListenersPage {
             kit.esc(d.serviceApplications || '{}') + '</code>. ') +
         t.html('consoleListeners.mapIssuer') + '</p>',
         t.text('consoleListeners.mapLabel')) +
-      '<form method="post" action="/admin/listeners"><div class="formrow">' +
+      '<form method="post" action="/admin/listeners">' +
+      CertSignInEditors.place('applications', 'listeners-applications', t,
+                              true) +
+      '<div class="formrow">' +
       '<input type="hidden" name="action" value="set-applications">' +
-      '<textarea name="value" rows="10" cols="90" spellcheck="false">' +
+      '<textarea name="value" id="listeners-applications" rows="10" ' +
+      'cols="90" spellcheck="false">' +
       kit.esc(pretty(d.applications || '')) + '</textarea></div>' +
       '<div class="formrow"><label><input type="checkbox" name="confirm" ' +
       'value="true"> ' + t.html('consoleListeners.confirmOff') +
@@ -331,6 +341,13 @@ class ListenersPage {
           '</p>', t.text('consoleListeners.headWhichOn')) +
           kit.frame(self.mappingTable(json.applications || [], t)) +
           settings(['Custom listeners']) },
+      // CERTIFICATE SIGN-IN (#2080), a group of its own: the profiles, the
+      // handoff to a custom listener and the proxy in front of one. Also
+      // drawn on Protocols → PIV.
+      { id: 'tab-cert-sign-in',
+        label: t.text('consoleListeners.tabCertSignIn'),
+        html: kit.note(t.html('consoleListeners.certSignInNote')) +
+              settings(['Certificate sign-in']) },
       { id: 'tab-defaults', label: t.text('consoleListeners.tabDefaults'),
         html: kit.note(t.html('consoleListeners.defaultsNote')) +
               settings(['Listeners', 'HTTP connections', 'TLS']) }
