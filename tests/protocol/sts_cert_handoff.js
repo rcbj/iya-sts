@@ -209,6 +209,32 @@ async function listenerApi(rb, what, value) {
   return r;
 }
 
+// The stack's one realm-listener port may still be held by a realm another
+// job left behind: `sts_realm_listener.js` leaves its realm (and listener)
+// in place by design, and every node binds every listener, so a second
+// listener on the port is refused. Free it first, as that job does.
+async function freePort() {
+  log.debug("Entering freePort().");
+  const listed = await K.send(K.base + "/admin-api/realms", {
+    method: "GET" });
+  const rows = (listed.json && listed.json.realms) || [];
+  for (const row of rows) {
+    const holds = (row.listeners || []).some(function (one) {
+      return Number(one.port) === PORT;
+    });
+    if (holds) {
+      const at = K.base + "/realm/" + row.id + "/admin-api/listeners/";
+      const unmapped = await K.send(at + "set-applications",
+                                    { json: { value: "" } });
+      const unbound = await K.send(at + "set-listeners",
+                                   { json: { value: "" } });
+      log.info("freed port " + PORT + " from realm " + row.id + ": " +
+               unmapped.status + " " + unbound.status);
+    }
+  }
+  log.debug("Leaving freePort().");
+}
+
 async function test() {
   log.debug("Entering test().");
   const realm = await K.realm("handoff");
@@ -254,6 +280,7 @@ async function test() {
       String(card.leaf.serialHex).toLowerCase() },
     "bound the leaf to " + alice);
 
+  await freePort();
   const ownBase = "https://" + SERVICE_HOST + ":" + PORT;
   const defined = await listenerApi(rb, "set-listeners", [{ id: LISTENER,
     port: PORT, publicBaseUrl: ownBase, clientAuth: "optional" }]);
@@ -505,4 +532,5 @@ async function guarded() {
   log.debug("Leaving guarded().");
 }
 
-K.main(guarded, FLOOR);
+// The cells mode runs one check, the refusal; the floor is the other modes'.
+K.main(guarded, cellsMode() ? 1 : FLOOR);
