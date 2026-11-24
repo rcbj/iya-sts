@@ -20,6 +20,7 @@
 // ---------------------------------------------------------------------------
 
 import kit = require('./web_kit');
+import SettingsForms = require('./web_settings');
 import ApplicationsPage = require('./web_applications');
 import GroupsPage = require('./web_groups');
 import TokensPage = require('./web_tokens');
@@ -294,6 +295,10 @@ class UsersPage {
                                            1000))),
         max: String(json.directoryCountsKeptFor) }))
       : '';
+    // TABS (#2070), the Directory pages' shape (`WebPages.PROTOCOL_TABS`):
+    // the tiles and the notes about them are Metadata, the list is a tab
+    // headed by the page's own name, and the `Profile photos` settings
+    // SETTING_HOMES homes here are the Settings tab.
     const inner = '<div class="tiles">' +
         tiles.filter(function (one) {
           return one[0] !== null && one[0] !== undefined;
@@ -353,6 +358,8 @@ class UsersPage {
       '<a href="/admin/cert-issuance#cert-spiffe-overview">' +
       'SPIFFE</a>.') +
       kit.warn(t.html('consoleUsers.body.oneRow')) +
+
+      '<h2 data-tab="people">' + t.html('console.nav.users') + '</h2>' +
 
       // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the list has
       // no heading, so everything below the tiles and their notes — the
@@ -506,7 +513,13 @@ class UsersPage {
           limit: String(json.scanLimit),
           people: String(json.directoryPeople) }))) +
       kit.note(t.html('consoleUsers.body.inMemory',
-                      { keeps: json.registryKeeps })));
+                      { keeps: json.registryKeeps }))) +
+
+      // Its own `<h2 data-tab="settings">`, the Settings tab.
+      (json.settings
+        ? SettingsForms.forms(json.settings, '/admin/users', undefined,
+                              ctx.t)
+        : '');
 
     return inner;
   }

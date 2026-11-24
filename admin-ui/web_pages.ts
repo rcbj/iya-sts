@@ -349,8 +349,10 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/tls': [],
   '/admin/tls/trust': ['anchors', 'add'],
   // DIRECTORY (rcbj, 2026-10-12): the pages with more than one section. A
-  // page with one (Users, Every entry, The directory service) is left as
-  // it is; Policies draws tabs of its own, Metadata first.
+  // page with one (Every entry, The directory service) is left as
+  // it is; Policies draws tabs of its own, Metadata first. Users is tabbed
+  // since #2070: the tiles, the people, the `Profile photos` settings.
+  '/admin/users': ['people', 'settings'],
   '/admin/groups': ['groups', 'create', 'settings'],
   '/admin/roles': ['roles', 'create', 'member', 'authorizes', 'requiring',
                    'preview', 'settings'],
@@ -1469,9 +1471,8 @@ const PAGES: WebPage[] = [
   // THE CLUSTER PAGE WAS NEVER CONVERTED (#446), so Platform → Cluster
   // answered "not a console page" and its settings were drawn nowhere;
   // `tests/setting_homes_drawn.js` found it (#2049). Its settings and
-  // prose are drawn here; its status block (members, leases, other cells)
-  // is still drawn by the console in node only, and has no browser
-  // renderer in `web_protocol_settings.ts` yet.
+  // prose are drawn here, and since #2070 its status block (members,
+  // leases, other cells) too, by `web_cluster_status.ts`.
   { path: '/admin/cluster', title: 'Cluster',
     operation: '/admin-api/cluster',
     render: ProtocolSettingsPage.render },

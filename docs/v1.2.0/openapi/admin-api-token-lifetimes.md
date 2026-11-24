@@ -71,6 +71,70 @@ Scope: `admin:read`.
 | `lifetimes.idTokenTtlS` | number |  |  |
 | `lifetimes.refreshTokenTtlS` | number |  |  |
 | `now` | number |  |  |
+| `otherSettings` | object |  | The rest of the `OAuth 2.0 / OIDC per-client` group, which this page draws as an ordinary settings form: the page's settings block with the rows of `settings` left out. |
+| `otherSettings.context` | object |  |  |
+| `otherSettings.context.configFile` | string, or null |  |  |
+| `otherSettings.context.defaultsFile` | string |  |  |
+| `otherSettings.context.inRealm` | boolean |  |  |
+| `otherSettings.context.persistenceMode` | string |  |  |
+| `otherSettings.context.persistsAppconfig` | boolean |  |  |
+| `otherSettings.context.persistsRealms` | boolean |  |  |
+| `otherSettings.context.realmId` | string |  |  |
+| `otherSettings.editableCount` | integer |  | How many of them can be changed while the service runs. |
+| `otherSettings.groups` | list |  | In the order `config.js` declares them. |
+| `otherSettings.groups[]` | object |  | One group's settings. |
+| `otherSettings.groups[].group` | string |  |  |
+| `otherSettings.groups[].settings` | list |  |  |
+| `otherSettings.groups[].settings[]` | object |  | One setting: what it is, what it is set to, and where that came from. |
+| `otherSettings.groups[].settings[].appconfigPath` | string |  |  |
+| `otherSettings.groups[].settings[].csvValueNotes` | map |  | Present beside `csvValues` where the setting describes each value: the value mapped to one sentence. |
+| `otherSettings.groups[].settings[].csvValueNotes.{key}` | string |  |  |
+| `otherSettings.groups[].settings[].csvValues` | list |  | Present on a `csv` setting whose entries must each be one of these; absent on an open list. |
+| `otherSettings.groups[].settings[].csvValues[]` | string |  |  |
+| `otherSettings.groups[].settings[].default` | list, or string, or number, or boolean, or null |  |  |
+| `otherSettings.groups[].settings[].default[]` | string, or number, or boolean |  |  |
+| `otherSettings.groups[].settings[].description` | string |  | What it does and why the default is the default. |
+| `otherSettings.groups[].settings[].editRefusal` | string |  | Why this row cannot be edited from the realm the reader is in: `realms.maxCount` while a realm other than the default is ambient. Absent on every row of the default realm's answer. |
+| `otherSettings.groups[].settings[].editable` | boolean |  | Whether POST /config/set will take it from the realm this answer was read in. False means either the value was consumed at startup or `editRefusal` is set. It is refused rather than accepted, because an accepted change that does nothing reads as having worked. |
+| `otherSettings.groups[].settings[].enumValues` | list |  | Present on `enum` settings only. |
+| `otherSettings.groups[].settings[].enumValues[]` | string |  |  |
+| `otherSettings.groups[].settings[].env` | string |  | Its environment variable. |
+| `otherSettings.groups[].settings[].group` | string |  | The protocol it belongs to, and the console's section heading. |
+| `otherSettings.groups[].settings[].key` | string |  | The dot path, which is BOTH the name every operation here takes and the path in the appconfig file. `oid4vci.batchSize` is `appconfig.oid4vci.batchSize`. |
+| `otherSettings.groups[].settings[].label` | string |  |  |
+| `otherSettings.groups[].settings[].masked` | boolean |  | Present, true, when a sensitive value here was replaced. |
+| `otherSettings.groups[].settings[].max` | number |  | The highest value it will take. |
+| `otherSettings.groups[].settings[].min` | number |  | The lowest value POST /config/set will take, on an int setting that declares one. |
+| `otherSettings.groups[].settings[].ordered` | boolean |  | Present, true, on a `csv` setting whose order is a preference: the first value is the most preferred. |
+| `otherSettings.groups[].settings[].overridden` | boolean |  | Whether a runtime override is in force. Equal to `source === "override"`, and reported separately so a caller can filter without matching a string. |
+| `otherSettings.groups[].settings[].realmSettable` | boolean |  | Whether a trust realm may hold its own value for it. |
+| `otherSettings.groups[].settings[].restartReason` | string |  | Why it is not editable, when the value was consumed at startup. |
+| `otherSettings.groups[].settings[].selectAll` | object |  | Present on an `ordered` setting whose select-all is narrowed by other settings. `onlyWhileOn`: the values are selected only while that setting is on. `aloneWhileOn`: while that setting is on, only the values are selected. `canBeOn` is false where this mode never lets that setting be on. |
+| `otherSettings.groups[].settings[].selectAll.aloneWhileOn` | list |  |  |
+| `otherSettings.groups[].settings[].selectAll.aloneWhileOn[].canBeOn` | object |  | Nested deeper than this page draws. |
+| `otherSettings.groups[].settings[].selectAll.aloneWhileOn[].on` | object |  | Nested deeper than this page draws. |
+| `otherSettings.groups[].settings[].selectAll.aloneWhileOn[].setting` | object |  | Nested deeper than this page draws. |
+| `otherSettings.groups[].settings[].selectAll.aloneWhileOn[].values` | object |  | Nested deeper than this page draws. |
+| `otherSettings.groups[].settings[].selectAll.onlyWhileOn` | list |  |  |
+| `otherSettings.groups[].settings[].selectAll.onlyWhileOn[].canBeOn` | object |  | Nested deeper than this page draws. |
+| `otherSettings.groups[].settings[].selectAll.onlyWhileOn[].on` | object |  | Nested deeper than this page draws. |
+| `otherSettings.groups[].settings[].selectAll.onlyWhileOn[].setting` | object |  | Nested deeper than this page draws. |
+| `otherSettings.groups[].settings[].selectAll.onlyWhileOn[].values` | object |  | Nested deeper than this page draws. |
+| `otherSettings.groups[].settings[].source` | one of `realm`, `override`, `env`, `env-legacy`, `appconfig`, `defaults`, `default` |  | Where the effective value came from, highest first: this trust realm's own value; a runtime override set through this API or the console; the setting's own environment variable; a legacy variable (no row has one since #523); the appconfig file CONFIG_FILE names; `env/defaults.js`, the DEFAULT appconfig file that one is unioned on top of. `default` is the row's own built-in default, the floor beneath both files: for a DERIVED setting it is a function of a neighbouring setting; for any other it means `env/defaults.js` lacks the setting (an env/ directory older than the image, which the start warns of as STS-CORE-0177). Only a setting with no default and no value anywhere stops this service from STARTING. |
+| `otherSettings.groups[].settings[].step` | number |  | The value must be a MULTIPLE of this, counted from `min`. The four token lifetimes use 30. |
+| `otherSettings.groups[].settings[].text` | string |  | The same value on one line: what the console shows in its input and what the environment variable would carry. |
+| `otherSettings.groups[].settings[].type` | string |  | How a value posted for it is coerced and checked: one of `config.js`'s types (string, int, port, bool, csv, enum, color). |
+| `otherSettings.groups[].settings[].value` | list, or string, or number, or boolean, or null |  |  |
+| `otherSettings.groups[].settings[].value[]` | string, or number, or boolean |  |  |
+| `otherSettings.overridden` | list |  | The keys on this page with a runtime override in force. |
+| `otherSettings.overridden[]` | string |  |  |
+| `otherSettings.page` | string |  |  |
+| `otherSettings.setWith` | string |  | The operation that writes them. |
+| `otherSettings.settingCount` | integer |  |  |
+| `otherSettings.sharedWith` | map |  | A group drawn on another page as well, and those pages. |
+| `otherSettings.sharedWith.{key}` | list |  |  |
+| `otherSettings.sharedWith.{key}[].label` | string, or null |  |  |
+| `otherSettings.sharedWith.{key}[].path` | string |  |  |
 | `overridable` | list |  |  |
 | `overridable[].attribute` | string |  |  |
 | `overridable[].setting` | string |  |  |

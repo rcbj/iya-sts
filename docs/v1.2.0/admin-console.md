@@ -380,6 +380,14 @@ A request that was *refused* records nothing, so this is a list of identities
 that got somewhere, not of names that were tried. Applications are never listed
 here — they are on [Applications](applications.md).
 
+**The page is drawn as tabs.** **Metadata** holds the tiles and the notes
+about them, **Users** the list and the Create a user box, and **Settings**
+holds the [Profile photos](configuration.md#profile-photos)
+settings: whether a person may set their own photo on the portal, whether a
+federation partner's photo is copied, and the size and pixel limits. They are
+answered as `settings` on `GET /admin-api/users` and saved through
+`POST /admin-api/config/set-many`.
+
 **The tiles count the realm's whole directory; the list is capped.** The
 list reads at most the first 5,000 directory people (`credentials.factorScanLimit`)
 and adds everybody this service has seen, so the footer's *known in total* is
@@ -2036,6 +2044,15 @@ from `POST /admin-api/config/set-many` in one way: they **refuse** a key that is
 not one of the four, so a misspelling fails loudly.
 `POST /admin-api/token-lifetimes/defaults` restores the four without disturbing
 any other setting.
+
+**The rest of the per-client group is drawn under the lifetimes.** Three
+settings share the lifetimes' group and are not lifetimes:
+`oauth2.refreshTokenMaxChainS` (how long a chain of refresh tokens may last
+from the first one), `oauth2.consentAlwaysForPublicClients` and
+`oauth2.maxAuthAgeS`. They are an ordinary settings form on this page, saved
+through `POST /admin-api/config/set-many` like every other page's, and
+`GET /admin-api/token-lifetimes` answers them as `otherSettings`. They are not
+taken by `POST /admin-api/token-lifetimes/set`.
 
 ### Claims — `/admin/claims`, `/admin/userinfo-claims`, `/admin/saml-attributes`
 
