@@ -1077,6 +1077,57 @@ an outsider, an application on its own rows and on a person's, a
 withdrawn role, and `permitReportSharing: no` — and its section F holds
 the console administrators below.
 
+### Sources for report administrators (#2126, 2026-11-24)
+
+The rows above are definitions and jobs; what a report READS was nobody's
+question, so any REPORT_USE holder could report over the audit ring and who
+holds which credential — what `/admin/audit` keeps behind Admin Read (the
+ASVS 5.0.0 Level 2 rescore, 8.2.3). rcbj's decision: `auditEvents`,
+`authActivity` and `credentialHolders` need REPORT_ADMIN.
+
+* **The rule is DATA in the catalog**: `adminOnly(source(...))` marks the
+  three, `Catalog.adminOnly(id)` reads it. Nothing in `rights.ts` names a
+  source.
+* **`rights.sourceRefusal(who, action, object, source)` asks twice**: the
+  catalog's mark against the caller's roles, then the PDP with the source on
+  the question (`reportObject.sources` / `adminSources`, sent as
+  `urn:sts:xacml:report-source` and `urn:sts:xacml:report-admin-source`);
+  the access-control document's first and third rules permit a question
+  carrying an administrators' source only to REPORT_ADMIN, and its
+  `reportAdminSources` parameter lets a realm add sources (`xacml/CLAUDE.md`).
+  The code check is not redundant: a realm whose `access-control` override
+  predates the rule keeps it, and `xacml.enforceAccess` may be off. Either
+  refusal is STS-REPORT-0061, 403 `forbidden`.
+* **Where it is asked**: `reportAcceptQuery()` (ad hoc query, preview, job,
+  a saved definition's run — `run`, on the row for a definition and as the
+  caller's own `kind: query` otherwise), `reportCreateDefinition()`
+  (`write`, the POSTED document's source, so an owner may move an old
+  definition off the source), `reportServeResult()` (`read` on the job, so a
+  shared member may not download an administrator's audit result), and
+  `ownerMayRun()` for the schedule (the note names the source; the slot is
+  consumed). **Never on a plain read**: `canSee()` carries no source, so a
+  definition saved before the rule stays visible to its owner (the
+  backwards-compatibility requirement) and is refused only when used. The
+  runner does not re-ask for a job already queued — it never asked roles
+  (only `reportOwnerDisabled()`), and a job queued before an upgrade runs
+  once.
+* **The seam**: `installOwnerCheck()`'s answer may carry `roles`; when it
+  does the source is asked of them, otherwise the seam answers whole.
+* **The catalog answer** carries `adminOnly` and, for the caller,
+  `usable` (`rights.sourceUsable()`, one PDP question per source); the page
+  names an unusable source *Report administrators only*, leaves out its New
+  query link, and disables it in the source select unless a saved document
+  names it.
+* **An application holding REPORT_ADMIN** passes: the rule is the role, not
+  the kind. `passkeyCeremonies` also reads the audit ring and is NOT marked;
+  the decision named three sources.
+
+`tests/report_query.js` (`adminSources()`, G1–G17: the marks, the published
+answer, both checks, the PDP asked directly, the schedule through the seam)
+and `tests/report_access_policy.js` section G (over HTTP: each source
+refused and permitted, the catalog answer, a definition saved before, a
+shared member's run and download, `reportAdminSources`) hold it.
+
 ### Console administrators (#1038, 2026-10-27)
 
 rcbj: "The admin user for the default domain should have /report access in

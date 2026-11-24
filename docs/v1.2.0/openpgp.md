@@ -185,14 +185,28 @@ On the same page, under **Encrypted mail**, a person chooses:
 - **Do not encrypt my mail** (the default);
 - **Encrypt with my OpenPGP key** — PGP/MIME (RFC 3156): `multipart/encrypted`
   with the message encrypted to the key's encryption subkey;
-- **Encrypt with my S/MIME certificate** — S/MIME (RFC 8551):
-  `application/pkcs7-mime; smime-type=enveloped-data`, a CMS EnvelopedData with
-  AES-256-CBC content encryption. An RSA certificate takes the content key
-  under RSA-OAEP (SHA-256). An EC certificate takes it under ECDH (P-256,
-  P-384, P-521). An ML-KEM certificate (RFC 9935) takes it as a
-  KEMRecipientInfo (RFC 9629), with HKDF-SHA-256 and AES key wrap. The content
-  cipher stays AES-256-CBC. A runtime that cannot encapsulate does not send
-  the message under RSA or ECDH instead.
+- **Encrypt with my S/MIME certificate** — S/MIME 4.0 (RFC 8551):
+  `application/pkcs7-mime; smime-type=authEnveloped-data`, a CMS
+  AuthEnvelopedData (RFC 5083) with AES-256-GCM content encryption (RFC 5084:
+  a 12-octet nonce and a 16-octet authentication tag), so the recipient's
+  mail client can tell that nobody changed the message on the way. An RSA
+  certificate takes the content key under RSA-OAEP (SHA-256). An EC
+  certificate takes it under ECDH (P-256, P-384, P-521). An ML-KEM
+  certificate (RFC 9935) takes it as a KEMRecipientInfo (RFC 9629), with
+  HKDF-SHA-256 and AES key wrap, in the same AuthEnvelopedData. A runtime
+  that cannot encapsulate does not send the message under RSA or ECDH
+  instead.
+
+  **A mail client that cannot read AuthEnvelopedData.** `openssl cms
+  -decrypt` opens it from OpenSSL 3.0 on; an older client may not. For a
+  recipient whose client cannot, set
+  `mail.smimeContentEncryption` to `aes256-cbc`: mail then goes out as
+  `smime-type=enveloped-data`, a CMS EnvelopedData under AES-256-CBC, which
+  is what every message was before 1.2.0. CBC has no integrity protection,
+  so while the setting is `aes256-cbc` in product mode, **Server
+  configuration → Mode** (`/admin/mode`) reports ASVS 5.0.0 requirement
+  11.3.3 as not met. The setting is a realm's, and it is read when each
+  message is sent, so a change applies to retries of mail already queued.
 
 The S/MIME certificate is the person's `userSMIMECertificate`. They can set
 it on the same page (a PEM certificate that can receive S/MIME now and names

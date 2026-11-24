@@ -683,6 +683,18 @@
     "en": "b8bdc8b82bb08a9e",
     "text": "AES-GCM lang ang iniaalok o tinatanggap, at ito ang ginagamit kapag walang enc na pinangalanan ang client, maliban kung naka-on ang crypto.allowCbcJwe."
   },
+  "mode.requirements.smime-authenticated-encryption.what": {
+    "en": "e4e548f216488a28",
+    "text": "Authenticated encryption ang S/MIME mail"
+  },
+  "mode.requirements.smime-authenticated-encryption.development": {
+    "en": "6d1da1e7b21d186d",
+    "text": "Ang mail na naka-encrypt sa isang S/MIME certificate ay AuthEnvelopedData sa ilalim ng AES-256-GCM, maliban kung aes256-cbc ang mail.smimeContentEncryption, na nagpapadala ng EnvelopedData sa ilalim ng AES-256-CBC na walang proteksyon sa integridad. Walang iniuulat sa alinmang kaso."
+  },
+  "mode.requirements.smime-authenticated-encryption.product": {
+    "en": "58e070998a057f5e",
+    "text": "Pareho, at habang aes256-cbc ang mail.smimeContentEncryption, iniuulat ng row na ito na hindi natutugunan ang ASVS 5.0.0 11.3.3."
+  },
   "mode.requirements.unscoped-people.what": {
     "en": "313033517d6bf954",
     "text": "Kailangan ng tungkulin ang tao sa SCIM at Shared Signals"

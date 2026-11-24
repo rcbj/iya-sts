@@ -860,6 +860,23 @@ function undeclaredScopeWaivers() {
       level: 'MUST', setting: 'oauth2.undeclaredClientScopes' }];
 }
 
+// S/MIME MAIL WITHOUT INTEGRITY PROTECTION (#2124, ASVS 5.0.0 11.3.3):
+// `mail.smimeContentEncryption` `aes256-cbc` sends the CBC EnvelopedData a
+// reader cannot tell was changed, for a recipient whose mail client cannot
+// read AuthEnvelopedData. Carried on the `smime-authenticated-encryption`
+// row as data, in product, so it shows until an operator moves the setting
+// back. The value is the ambient realm's, as `report()` is.
+function smimeCbcWaivers() {
+  log.debug("Entering smimeCbcWaivers().");
+  const value = String(config.value('mail.smimeContentEncryption') ||
+                       'aes256-gcm');
+  log.debug("Leaving smimeCbcWaivers(). " + value);
+  return value !== 'aes256-cbc' ? [] : [
+    { requirement: 'authenticated-mail-encryption',
+      section: 'ASVS 5.0.0 11.3.3', level: 'MUST',
+      setting: 'mail.smimeContentEncryption' }];
+}
+
 // THE AUDIT LOG NOT APPEND-ONLY HERE (#1616, ASVS 5.0.0 16.4.2): the
 // database role this service connects as can change `sts_audit`, as the
 // last probe of the table found (`persistence/audit_store.js`). Carried on
@@ -3527,6 +3544,18 @@ const REQUIREMENTS = [
     product: 'Only AES-GCM is offered or accepted, and it is used where a ' +
              'client names no enc, unless crypto.allowCbcJwe is on.',
     where: 'common/crypto.js, common/applications.js' },
+  // #2124 (ASVS 5.0.0 11.3.3). The same in both modes; what product adds is
+  // the report, carried on this row by `smimeCbcWaivers()`.
+  { id: 'smime-authenticated-encryption',
+    what: 'S/MIME mail is authenticated encryption',
+    development: 'Mail encrypted to an S/MIME certificate is an ' +
+                 'AuthEnvelopedData under AES-256-GCM, unless ' +
+                 'mail.smimeContentEncryption is aes256-cbc, which sends ' +
+                 'an EnvelopedData under AES-256-CBC with no integrity ' +
+                 'protection. Nothing is reported either way.',
+    product: 'The same, and while mail.smimeContentEncryption is ' +
+             'aes256-cbc this row reports ASVS 5.0.0 11.3.3 as not met.',
+    where: 'common/crypto.js, common/mail_transports.ts' },
   // #1473 (ASVS 5.0.0 8.2.1, 8.2.2).
   { id: 'unscoped-people',
     what: 'A person needs a role at SCIM and Shared Signals',
@@ -4922,6 +4951,7 @@ function report() {
   const certificate = product ? certificateWaivers() : [];
   const scopes = product ? undeclaredScopeWaivers() : [];
   const auditLog = auditAppendOnlyWaivers();
+  const smime = product ? smimeCbcWaivers() : [];
   return {
     mode: current(),
     isProduct: product,
@@ -4935,7 +4965,10 @@ function report() {
             : row.id === 'declared-scopes' && scopes.length
               ? { waived: scopes }
               : row.id === 'audit-append-only' && auditLog.length
-                ? { waived: auditLog } : {};
+                ? { waived: auditLog }
+                : row.id === 'smime-authenticated-encryption' &&
+                    smime.length
+                  ? { waived: smime } : {};
       return Object.assign({ inForce: product ? row.product :
                                       row.development },
                            row, extra);
@@ -5129,6 +5162,7 @@ module.exports = {
   certificateWaivers: certificateWaivers,
   prefixesCookies: prefixesCookies,
   accessEnforcementWaivers: accessEnforcementWaivers,
+  smimeCbcWaivers: smimeCbcWaivers,
   issuesUnsignedAssertions: issuesUnsignedAssertions,
   servesWithoutSecurityHeader: servesWithoutSecurityHeader,
   allowsValue: allowsValue,

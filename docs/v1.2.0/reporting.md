@@ -80,6 +80,35 @@ asked for every definition and every job:
   holds. It may save definitions, run them, queue queries and download
   its own results.
 
+**Three sources are for report administrators.** `auditEvents`,
+`authActivity` and `credentialHolders` hold who did what, from where, and
+who holds which credential, which the console keeps behind Admin Read, so a
+report over one of them needs `REPORT_ADMIN` (since 1.2.0, #2126):
+
+- A caller holding only `REPORT_USE` is refused `forbidden` (HTTP 403,
+  `STS-REPORT-0061`) a query, a job or a saved definition over one, a run of
+  a definition that uses one — their own, or one shared with them — and the
+  download of a result read from one.
+- A scheduled run of such a definition is skipped, and the occurrence
+  consumed, while its owner does not hold `REPORT_ADMIN`. The definition's
+  failures say "The owner does not hold REPORT_ADMIN, which a report over
+  auditEvents needs."
+- The catalog marks the three sources `adminOnly`, and says for each source
+  whether you may use it (`usable`). The page names them *Report
+  administrators only* and does not offer them on New Query to a caller who
+  may not use them.
+- The access-control policy decides it too: the source travels in the
+  request, and the built-in rules permit an administrators' source only to
+  a subject holding `REPORT_ADMIN`. The policy's `reportAdminSources`
+  parameter adds sources of a realm's own choosing; it cannot open the three.
+
+**A definition saved before 1.2.0** by a report user over one of these
+sources does not disappear: its owner still sees it, may give it another
+source or delete it, and its run and its schedule are refused with
+`STS-REPORT-0061` until a report administrator owns it or the owner is given
+`REPORT_ADMIN`. An application holding `REPORT_ADMIN` may use them for its own
+definitions.
+
 A definition or a job you may not see is answered as not found. A job id
 in a URL is not permission to read it. The same token is required for the
 result as for the query that created the job. A realm that wants
@@ -463,6 +492,9 @@ Non-browser doors are outside the policy.
 
 ### `auditEvents`
 
+For report administrators only (`adminOnly`): see
+[Who can open it](#who-can-open-it).
+
 The audit rings still held by the service's processes, newest first,
 each capped by `audit.maxEvents` (5000 unless an operator set another
 cap). Every process keeps its own ring, and a report waits for the
@@ -479,6 +511,8 @@ warehouse of sign-ins.
 | `actor` | string | The account name on the audit row. | yes | yes | no |
 
 ### `authActivity`
+
+For report administrators only (`adminOnly`).
 
 Sign-in attempts still in that same ring: `authentication`,
 `authentication.refused`, `session.refuse` and `session.refused`.
@@ -542,6 +576,8 @@ entries, which is what `users` reads.
 | `enabled` | boolean | Whether the source is enabled. | yes | yes | yes |
 
 ### `credentialHolders`
+
+For report administrators only (`adminOnly`).
 
 Who holds which authentication credential, as the directory is now: one
 row per credential — a passkey, an authenticator app, an enrolled
@@ -1269,7 +1305,7 @@ is recorded and logged. It is not in the body.
 | `invalid_dpop_proof` | 401 | A DPoP-bound token sent as Bearer, or a proof this service refused. |
 | `invalid_token` | 403 | The token is not audienced to this realm's `/report-api`. |
 | `insufficient_scope` | 403 | The token lacks `report:use` or `report:admin`. |
-| `forbidden` | 403 | The token names no person, or this account may not use reports here. |
+| `forbidden` | 403 | The token names no person, or this account may not use reports here, or the report's source is for report administrators and the caller does not hold `REPORT_ADMIN` (`STS-REPORT-0061`). |
 | `not_found` | 404 | No such definition, including one you may not see. |
 | `job_not_found` | 404 | No such job, including one you may not see. An unknown API path is answered the same way. |
 | `job_not_ready` | 409 | The result was asked for before the job completed. |
@@ -1287,6 +1323,9 @@ What to check when a schedule does nothing:
   value and the next pass can run.
 - "The owner can no longer run reports" means `report:use` was lost.
   That occurrence was consumed.
+- "The owner does not hold REPORT_ADMIN, which a report over … needs"
+  means the definition reads a source for report administrators and its
+  owner is not one. That occurrence was consumed.
 - "The owner's account is disabled." means the person who owns the
   definition was disabled. Their schedules do not run until the account is
   enabled again, and a job they had already queued fails as `forbidden`.

@@ -221,6 +221,12 @@ namespace IyaSts.Api.Report {
     @js(#{
       `description`:"True for a source read from the directory (users, credentialHolders): a filter on it has to name a field whose `indexed` list holds the operator — a leaf of an and, or every arm of an or — or it is refused as invalid_query; the other fields narrow an indexed read."
     }) `anchored`?: boolean;
+    @js(#{
+      `description`:"True for a source only a report administrator may query (#2126): auditEvents, authActivity and credentialHolders. A caller without REPORT_ADMIN is refused a query, a job, a definition saved or run, and a result downloaded over it, as forbidden (HTTP 403)."
+    }) `adminOnly`?: boolean;
+    @js(#{
+      `description`:"Whether this caller may query the source: false where a query of it would be refused for its source (#2126), so the page disables it. Absent where the answer is not about a caller."
+    }) `usable`?: boolean;
     `bounded`?: boolean;
     `retention`?: string;
     `paging`?: "limit";

@@ -361,6 +361,16 @@ which the rule excludes, so it reaches only what it defined.
 `permitReportSharing: no` builds the document without the rule. A realm
 writes its own reading into an override ([Reports](reporting.md#who-can-open-it)).
 
+Before a report is defined, run or downloaded, the question also carries the
+source it reads, as `urn:sts:xacml:report-source`, and — for `auditEvents`,
+`authActivity` and `credentialHolders`, which the report catalog marks for
+administrators — as `urn:sts:xacml:report-admin-source` too. Both the first
+and the third rule permit a question carrying an administrators' source only
+to a subject holding `REPORT_ADMIN`, and the parameter `reportAdminSources`
+(empty by default) names further sources the policy treats the same way.
+The report API also checks the catalog's mark itself, so an override written
+before 1.2.0 does not open them.
+
 ### The remote PEPs' PDP side
 
 A remote PEP holds its own copy of the engine and decides in its own process.

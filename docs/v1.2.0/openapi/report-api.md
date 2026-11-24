@@ -130,6 +130,7 @@ Scope: `report:use`, `report:admin`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `sources` | list |  |  |
+| `sources[].adminOnly` | boolean |  | True for a source only a report administrator may query (#2126): auditEvents, authActivity and credentialHolders. A caller without REPORT_ADMIN is refused a query, a job, a definition saved or run, and a result downloaded over it, as forbidden (HTTP 403). |
 | `sources[].anchored` | boolean |  | True for a source read from the directory (users, credentialHolders): a filter on it has to name a field whose `indexed` list holds the operator — a leaf of an and, or every arm of an or — or it is refused as invalid_query; the other fields narrow an indexed read. |
 | `sources[].bounded` | boolean |  |  |
 | `sources[].fields` | list |  |  |
@@ -193,6 +194,7 @@ Scope: `report:use`, `report:admin`.
 | `sources[].relationships` | list |  |  |
 | `sources[].relationships[]` | string |  |  |
 | `sources[].retention` | string |  |  |
+| `sources[].usable` | boolean |  | Whether this caller may query the source: false where a query of it would be refused for its source (#2126), so the page disables it. Absent where the answer is not about a caller. |
 
 **401**: invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.
 
@@ -231,6 +233,7 @@ Scope: `report:use`, `report:admin`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `source` | object |  |  |
+| `source.adminOnly` | boolean |  | True for a source only a report administrator may query (#2126): auditEvents, authActivity and credentialHolders. A caller without REPORT_ADMIN is refused a query, a job, a definition saved or run, and a result downloaded over it, as forbidden (HTTP 403). |
 | `source.anchored` | boolean |  | True for a source read from the directory (users, credentialHolders): a filter on it has to name a field whose `indexed` list holds the operator — a leaf of an and, or every arm of an or — or it is refused as invalid_query; the other fields narrow an indexed read. |
 | `source.bounded` | boolean |  |  |
 | `source.fields` | list |  |  |
@@ -294,6 +297,7 @@ Scope: `report:use`, `report:admin`.
 | `source.relationships` | list |  |  |
 | `source.relationships[]` | string |  |  |
 | `source.retention` | string |  |  |
+| `source.usable` | boolean |  | Whether this caller may query the source: false where a query of it would be refused for its source (#2126), so the page disables it. Absent where the answer is not about a caller. |
 
 **401**: invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.
 

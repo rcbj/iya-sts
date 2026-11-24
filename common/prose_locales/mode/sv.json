@@ -683,6 +683,18 @@
     "en": "b8bdc8b82bb08a9e",
     "text": "Endast AES-GCM erbjuds eller godtas, och det används när en klient inte namnger enc, om inte crypto.allowCbcJwe är på."
   },
+  "mode.requirements.smime-authenticated-encryption.what": {
+    "en": "e4e548f216488a28",
+    "text": "S/MIME-e-post är autentiserad kryptering"
+  },
+  "mode.requirements.smime-authenticated-encryption.development": {
+    "en": "6d1da1e7b21d186d",
+    "text": "E-post som krypteras till ett S/MIME-certifikat är en AuthEnvelopedData under AES-256-GCM, om inte mail.smimeContentEncryption är aes256-cbc, vilket skickar en EnvelopedData under AES-256-CBC utan integritetsskydd. Ingenting rapporteras i något av fallen."
+  },
+  "mode.requirements.smime-authenticated-encryption.product": {
+    "en": "58e070998a057f5e",
+    "text": "Samma sak, och så länge mail.smimeContentEncryption är aes256-cbc rapporterar den här raden att ASVS 5.0.0 11.3.3 inte är uppfyllt."
+  },
   "mode.requirements.unscoped-people.what": {
     "en": "313033517d6bf954",
     "text": "En person behöver en roll för SCIM och Shared Signals"
