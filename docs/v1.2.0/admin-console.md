@@ -399,7 +399,7 @@ carries the same as `directoryCountedAt` and `directoryCountsKeptFor`.
 | **Authentication attempts** | every attempt by this person in the audit log, across every application and protocol: credentials accepted and refused — at the sign-in screen, the token endpoint (password grant, RFC 7523, RFC 7522), WS-Trust, Kerberos, LDAP, a TLS client certificate and SPNEGO — sessions refused, and an existing session presented to an application for single sign-on (method *existing session*), ten a page by default |
 | **Sessions & tokens** | each sign-on session with the tokens issued on it, the tokens on no session, and the assertions, tickets and credentials; and a line counting the authentications that started no session and issued nothing (a TLS client certificate on a request, an LDAP bind, a SCIM or SPIFFE caller's credential), each of which is on Authentication attempts. Each table shows ten rows a page and the session blocks five, with the usual pager; the rows-per-page box changes both |
 | **Attributes** | their attributes as typed fields, one sub-tab per group — Name, Contact, Organization, Address, Identity, Policies, Custom, Other — each with its own **Save**, and the address on Contact |
-| **Credentials** | sub-tabs for second factors, the password controls, signing key pairs and Kerberos |
+| **Credentials** | sub-tabs for second factors, the password controls, signing key pairs and Kerberos, then one per token and key kind: Hardware tokens, OATH tokens, YubiKey OTP, PIV, SSH user certificates, and OpenPGP and S/MIME |
 | **Federation links** | the partners' subjects that sign them in |
 | **Directory entry** | the LDAP object, every attribute, and *Change one attribute by name* |
 | **Sign out** | sign them out of everything, or revoke their tokens and nothing else |
@@ -796,6 +796,22 @@ of Admin Write. Each control is an action on `POST /admin/users` and on
 Stored certificates, message-signing certificates and TLS client certificates
 are the Key pairs sub-tab. Self-issued IDs, with the published DIDs, are the
 sub-tab after it.
+
+The token and key sub-tabs (#2052) are the central Directory pages with the
+person fixed, drawn by the same code and posting to the same `/admin-api`
+operations, and an answer comes back to the sub-tab:
+
+| Sub-tab | What it holds | The central page |
+|---|---|---|
+| **Hardware tokens** | the person's tokens, each with **Report lost** | Directory → Hardware tokens, Tokens tab |
+| **OATH tokens** | the OATH tokens assigned to them, **Assign** by token key, and their one-time code token with **Clear** | the OATH tab |
+| **YubiKey OTP** | their YubiKey OTP with **Clear**, and **Assign** an imported YubiKey by serial | `POST /admin-api/hardware-tokens/assign-yubiotp` |
+| **PIV** | the enrolment form for them, and their escrowed keys with **Recover key** | the Enrol PIV and Escrowed keys tabs |
+| **SSH user certificates** | their certificates, each with **Revoke** | the SSH tab |
+| **OpenPGP and S/MIME** | their key, its Web Key Directory publication, their mail encryption and S/MIME certificate, and registering a key | Directory → OpenPGP keys |
+
+The one-time code token and the YubiKey OTP moved there from **Second
+factors**. The central pages stay as they were.
 
 Every one of them sends Shared Signals to the streams that asked: a CAEP
 `credential-change` for each credential created, updated or removed, a RISC
