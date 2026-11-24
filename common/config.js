@@ -1525,9 +1525,13 @@ const SETTINGS = [
                  'administrator: changing a person\'s password, second ' +
                  'factor, passkey, recovery codes, email address or app ' +
                  'passwords through the console or /admin-api, which ' +
-                 'answers RFC 9470\'s insufficient_user_authentication. 0 ' +
-                 'means it is not asked, which is the development default. ' +
-                 'Product mode defaults to 15.' },
+                 'answers RFC 9470\'s insufficient_user_authentication. The ' +
+                 'same applies to an administrator granting or removing a ' +
+                 'role, creating, changing or removing a trust realm, ' +
+                 'acting on the PKI, the signing keys, the key-encryption ' +
+                 'key or the secret push destinations, and changing any ' +
+                 'setting (#2161). 0 means it is not asked, which is the ' +
+                 'development default. Product mode defaults to 15.' },
 
   { key: 'persistence.allowDefaultDatabasePassword', group: 'Persistence',
     label: 'Allow a default database password in product mode',
