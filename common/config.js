@@ -8661,7 +8661,9 @@ const SETTINGS = [
                  '/portal/signing-key in a security.rateLimitWindowS window. ' +
                  'Generating a key pair is hundreds of milliseconds of CPU ' +
                  'on the thread every protocol here is answered on, which is ' +
-                 'why it is limited at all.' },
+                 'why it is limited at all. Counted per realm: the same ' +
+                 'username in another realm is another person with a budget ' +
+                 'of their own.' },
 
   { key: 'pki.personSelfServicePerAddress', group: 'PKI',
     label: 'Self-issued key pairs one address may ask for per window',
@@ -8671,7 +8673,9 @@ const SETTINGS = [
                  'behind it. It is its own row because a deployment whose ' +
                  'people reach it through one NAT or proxy shares one ' +
                  'address, and five for an entire office is a different ' +
-                 'number from five for one person.' },
+                 'number from five for one person. Counted per realm: ' +
+                 'issuances in one realm spend nothing of another realm\'s ' +
+                 'budget, so the number a realm sets governs only its own.' },
 
   // A PERSON'S TLS CLIENT CERTIFICATES (2026-09-13), issued on
   // /portal/signing-key — `common/tls_client_certificates.js`. The cap counts

@@ -4136,16 +4136,16 @@
     "text": "Paires de clés auto-émises qu’une personne peut demander par fenêtre"
   },
   "pki.personSelfServicePerIdentity|description": {
-    "en": "6e1c2730f816df42",
-    "text": "Nombre de fois qu’une personne peut appuyer sur Generate dans /portal/signing-key au cours d’une fenêtre security.rateLimitWindowS. Générer une paire de clés coûte des centaines de millisecondes de CPU sur le fil d’exécution qui répond à tous les protocoles ici, et c’est pourquoi c’est limité."
+    "en": "8395545b6fa2f69c",
+    "text": "Nombre de fois qu’une personne peut appuyer sur Generate dans /portal/signing-key au cours d’une fenêtre security.rateLimitWindowS. Générer une paire de clés coûte des centaines de millisecondes de CPU sur le fil d’exécution qui répond à tous les protocoles ici, et c’est pourquoi c’est limité. Compté par realm : le même nom d’utilisateur dans un autre realm est une autre personne, avec son propre quota."
   },
   "pki.personSelfServicePerAddress|label": {
     "en": "a28779785d0daa13",
     "text": "Paires de clés auto-émises qu’une adresse peut demander par fenêtre"
   },
   "pki.personSelfServicePerAddress|description": {
-    "en": "d9ea8bbca2155dce",
-    "text": "La même limite, comptée par ADRESSE client pour tous ceux qui se trouvent derrière. C’est une ligne distincte parce qu’un déploiement dont les utilisateurs passent par un même NAT ou proxy partage une seule adresse, et cinq pour tout un bureau n’est pas le même nombre que cinq pour une personne."
+    "en": "8e71583151b79b18",
+    "text": "La même limite, comptée par ADRESSE client pour tous ceux qui se trouvent derrière. C’est une ligne distincte parce qu’un déploiement dont les utilisateurs passent par un même NAT ou proxy partage une seule adresse, et cinq pour tout un bureau n’est pas le même nombre que cinq pour une personne. Compté par realm : les émissions d’un realm n’entament en rien le quota d’un autre, si bien que le nombre fixé par un realm ne régit que les siennes."
   },
   "pki.personTlsClientCertificateMax|label": {
     "en": "a79f25756d5b332f",

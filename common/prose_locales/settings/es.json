@@ -4136,16 +4136,16 @@
     "text": "Pares de claves autoemitidos que una persona puede pedir por ventana"
   },
   "pki.personSelfServicePerIdentity|description": {
-    "en": "6e1c2730f816df42",
-    "text": "Cuántas veces puede una persona pulsar Generate en /portal/signing-key en una ventana de security.rateLimitWindowS. Generar un par de claves supone cientos de milisegundos de CPU en el hilo en el que se responde a todos los protocolos de aquí, y por eso se limita."
+    "en": "8395545b6fa2f69c",
+    "text": "Cuántas veces puede una persona pulsar Generate en /portal/signing-key en una ventana de security.rateLimitWindowS. Generar un par de claves supone cientos de milisegundos de CPU en el hilo en el que se responde a todos los protocolos de aquí, y por eso se limita. Se cuenta por realm: el mismo nombre de usuario en otro realm es otra persona con un cupo propio."
   },
   "pki.personSelfServicePerAddress|label": {
     "en": "a28779785d0daa13",
     "text": "Pares de claves autoemitidos que una dirección puede pedir por ventana"
   },
   "pki.personSelfServicePerAddress|description": {
-    "en": "d9ea8bbca2155dce",
-    "text": "El mismo límite contado por DIRECCIÓN de cliente, sumando a todos los que están detrás de ella. Es una fila propia porque en una implementación cuyas personas llegan a través de un mismo NAT o proxy comparten una dirección, y cinco para una oficina entera es un número distinto de cinco para una persona."
+    "en": "8e71583151b79b18",
+    "text": "El mismo límite contado por DIRECCIÓN de cliente, sumando a todos los que están detrás de ella. Es una fila propia porque en una implementación cuyas personas llegan a través de un mismo NAT o proxy comparten una dirección, y cinco para una oficina entera es un número distinto de cinco para una persona. Se cuenta por realm: las emisiones de un realm no gastan nada del cupo de otro, así que el número que fija un realm rige solo las suyas."
   },
   "pki.personTlsClientCertificateMax|label": {
     "en": "a79f25756d5b332f",
