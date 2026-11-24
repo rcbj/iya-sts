@@ -18911,6 +18911,12 @@ const CODES = [
       'certificate is read: a TLS-terminating proxy is trusted by both its ' +
       'certificate and its address (#2012).',
     spec: 'none (logged)' },
+  { code: 'STS-TLS-0077',
+    summary: 'A write of tls.trustedProxyCertificates was refused: an entry ' +
+      'is neither the SHA-256 of a certificate (64 hex digits, colons and ' +
+      'a sha256: prefix allowed) nor spki: followed by the SHA-256 of a ' +
+      'SubjectPublicKeyInfo in the same form (#2012).',
+    spec: '' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +

@@ -807,7 +807,18 @@ sent with it), but only from a proxy named by **both** of these:
 * `tls.trustedProxyCertificates`: the SHA-256 fingerprint of the client
   certificate the **proxy** presents when it connects to the service
   (`openssl x509 -in proxy.pem -noout -fingerprint -sha256`; colons and a
-  `sha256:` prefix are accepted);
+  `sha256:` prefix are accepted). Such a pin stops matching when the proxy's
+  certificate is renewed. To pin the proxy's **key** instead, write `spki:`
+  and the SHA-256 of its SubjectPublicKeyInfo in the same hex form; a
+  certificate renewed under the same key still matches:
+
+  ```bash
+  openssl x509 -in proxy.pem -noout -pubkey | openssl pkey -pubin \
+    -outform DER | openssl dgst -sha256 -hex    # write as spki:<that hex>
+  ```
+
+  Both kinds may be listed together. An entry that is neither is refused
+  when it is written (`STS-TLS-0077`);
 * `tls.trustedProxyAddresses`: the addresses or CIDR ranges it connects from.
 
 ```bash

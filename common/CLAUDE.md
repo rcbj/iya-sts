@@ -12430,7 +12430,17 @@ is exactly what it was. The headers of the three files argue them in full.
   only from a proxy named by BOTH `tls.trustedProxyCertificates` (the SHA-256
   of the client certificate it connects with, which must have verified) AND
   `tls.trustedProxyAddresses`; one without the other trusts nobody
-  (STS-TLS-0076). The forwarded chain is verified HERE to the client
+  (STS-TLS-0076). **A pin may name the KEY** (#2012, rcbj 2026-11-23: "accept
+  both"): `spki:<hex>` is the SHA-256 of the certificate's SubjectPublicKeyInfo,
+  read off its DER through `crypto.certificateSpkiDer()`, so a proxy
+  certificate renewed under the same key keeps matching; a bare value is the
+  whole certificate's DER hash, as before, in the same hex form (colons, a
+  `sha256:` prefix). `pinOf()` is the one reading, shared with
+  `certificate_pins.ts`'s inventory row (an SPKI pin is listed `spki:<hex>`,
+  `(key)` after its place). A malformed entry is refused at the WRITE by the
+  module's write rule (`STS-TLS-0077`) and skipped, as always, where it was
+  already stored or came from the environment — a write rule, not a type
+  check, so a stored value that predates the rule is not re-judged. The forwarded chain is verified HERE to the client
   truststore (`pki.verifyPathToAnchors()`), and the request's `req.socket` is
   replaced, for that request, by a Proxy over the real socket whose
   `authorized`, `getPeerCertificate()` and `getPeerX509Certificate()` answer

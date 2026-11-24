@@ -6248,8 +6248,8 @@
     "text": "终止 TLS 的代理的客户端证书（SHA-256）"
   },
   "tls.trustedProxyCertificates|description": {
-    "en": "5ebd0abc01f9dfdf",
-    "text": "终止 TLS 的代理连接到此处时出示的客户端证书的 SHA-256 指纹。对于出示其中之一的连接上、来自 tls.trustedProxyAddresses 中某个地址的请求，其 RFC 9440 标头 Client-Cert 和 Client-Cert-Chain 会在此处对照客户端信任库和吊销状态进行验证，该证书在每道门上都代替握手中的证书。两个设置都是必需的；来自任何其他发送方时，这两个标头会被移除并记录（STS-TLS-0072），且从不读取。为空（默认值）时只从握手中读取证书。"
+    "en": "16cfd6503c70990f",
+    "text": "终止 TLS 的代理连接到此处时出示的客户端证书的 SHA-256 指纹。以十六进制书写（允许冒号和 sha256: 前缀）。在同一十六进制值前加 spki: 则改为固定证书 SubjectPublicKeyInfo 的 SHA-256，使用同一密钥续期后该固定值仍然有效；格式错误的条目会被拒绝（STS-TLS-0077）。对于出示其中之一的连接上、来自 tls.trustedProxyAddresses 中某个地址的请求，其 RFC 9440 标头 Client-Cert 和 Client-Cert-Chain 会在此处对照客户端信任库和吊销状态进行验证，该证书在每道门上都代替握手中的证书。两个设置都是必需的；来自任何其他发送方时，这两个标头会被移除并记录（STS-TLS-0072），且从不读取。为空（默认值）时只从握手中读取证书。"
   },
   "tls.trustedProxyAddresses|label": {
     "en": "4bc0cf2135bd81af",
