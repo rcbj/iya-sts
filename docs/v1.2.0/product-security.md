@@ -187,8 +187,15 @@ single sign-on consent switches `saml2.ssoConsent`, `saml11.ssoConsent` and
   app passwords, exporting or importing a person, or deleting one, through the
   console or `/admin-api` must have signed in within
   the same time: the console asks them to sign in again and carries on, and the
-  API answers RFC 9470's `insufficient_user_authentication`. A program using the
-  API with its own credentials is not asked.
+  API answers RFC 9470's `insufficient_user_authentication`. **Since #2161 the
+  same holds for** granting or removing a role (an administrator role
+  included), creating, changing or removing a trust realm, every PKI act (a
+  CA, an Intermediate, a certificate, a revocation, the signer truststore),
+  rotating, exporting or emergency-replacing the signing keys, the data keys
+  and the key-encryption key, the TLS client truststore, the secret push
+  destinations, the krbtgt key and a person's keytab, every setting (the mode
+  among them) and every change only a Security Administrator may make. A
+  program using the API with its own credentials is not asked.
 * **Clearing a lost factor needs a reason.** An administrator removing a
   person's authenticator app, passkeys, recovery codes or emailed factor must say
   how the person's identity was verified. It is kept on the audit row.

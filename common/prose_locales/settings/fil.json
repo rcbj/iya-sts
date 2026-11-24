@@ -272,8 +272,8 @@
     "text": "Gaano kabago dapat ang sign-in para sa sensitibong pagbabago (min)"
   },
   "account.recentAuthMinutes|description": {
-    "en": "4bfb2112a9f37a5d",
-    "text": "Gaano kabago, sa minuto, dapat nakapag-sign in ang isang tao para baguhin kung paano nagsa-sign in ang isang tao. Sa portal: ang kaniyang mga second factor, recovery code, passkey, app password, certificate, signing key, self-issued ID, email address o isang wallet credential offer, at ang pagtatapos ng iba pa niyang session; papapag-sign in muna siya. Para sa administrator: ang pagpapalit ng password, second factor, passkey, recovery code, email address o app password ng isang tao sa console o sa /admin-api, na sumasagot ng insufficient_user_authentication ng RFC 9470. Ang 0 ay hindi hinihingi, ang default sa development. 15 ang default ng product mode."
+    "en": "99c8adf052996759",
+    "text": "Gaano kabago, sa minuto, dapat nakapag-sign in ang isang tao para baguhin kung paano nagsa-sign in ang isang tao. Sa portal: ang kaniyang mga second factor, recovery code, passkey, app password, certificate, signing key, self-issued ID, email address o isang wallet credential offer, at ang pagtatapos ng iba pa niyang session; papapag-sign in muna siya. Para sa administrator: ang pagpapalit ng password, second factor, passkey, recovery code, email address o app password ng isang tao sa console o sa /admin-api, na sumasagot ng insufficient_user_authentication ng RFC 9470. Ganoon din kapag ang isang administrator ay nagbibigay o nag-aalis ng role, gumagawa, nagbabago o nag-aalis ng trust realm, kumikilos sa PKI, sa mga signing key, sa key-encryption key o sa mga destinasyon ng pagpapadala ng sikreto, o nagbabago ng anumang setting (#2161). Ang 0 ay hindi hinihingi, ang default sa development. 15 ang default ng product mode."
   },
   "persistence.allowDefaultDatabasePassword|label": {
     "en": "24634837693652d6",

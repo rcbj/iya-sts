@@ -272,8 +272,8 @@
     "text": "Hur nyligen inloggningen måste ha skett för en känslig ändring (min)"
   },
   "account.recentAuthMinutes|description": {
-    "en": "4bfb2112a9f37a5d",
-    "text": "Hur nyligen, i minuter, någon måste ha loggat in för att ändra hur en person loggar in. På portalen: personens andra faktorer, återställningskoder, nycklar, applösenord, certifikat, signeringsnycklar, självutfärdade ID:n, e-postadress eller ett erbjudande om en plånboksbehörighet, samt att avsluta personens övriga sessioner; personen skickas till inloggning först. För en administratör: att ändra en persons lösenord, andra faktor, nyckel, återställningskoder, e-postadress eller applösenord via konsolen eller /admin-api, som svarar med insufficient_user_authentication enligt RFC 9470. 0 betyder att det inte krävs, standardvärdet i utveckling. Produktläget använder 15 som standard."
+    "en": "99c8adf052996759",
+    "text": "Hur nyligen, i minuter, någon måste ha loggat in för att ändra hur en person loggar in. På portalen: personens andra faktorer, återställningskoder, nycklar, applösenord, certifikat, signeringsnycklar, självutfärdade ID:n, e-postadress eller ett erbjudande om en plånboksbehörighet, samt att avsluta personens övriga sessioner; personen skickas till inloggning först. För en administratör: att ändra en persons lösenord, andra faktor, nyckel, återställningskoder, e-postadress eller applösenord via konsolen eller /admin-api, som svarar med insufficient_user_authentication enligt RFC 9470. Detsamma gäller när en administratör tilldelar eller tar bort en roll, skapar, ändrar eller tar bort en förtroendesfär, agerar på PKI:n, signeringsnycklarna, nyckelkrypteringsnyckeln eller målen för utskick av hemligheter, eller ändrar någon inställning (#2161). 0 betyder att det inte krävs, standardvärdet i utveckling. Produktläget använder 15 som standard."
   },
   "persistence.allowDefaultDatabasePassword|label": {
     "en": "24634837693652d6",
