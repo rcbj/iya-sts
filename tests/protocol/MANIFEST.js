@@ -1443,6 +1443,14 @@ const JOBS = [
   // three settings put back on the realm this job created. The policy
   // row is tests/yubiotp.js, in process.
   { file: 'sts_yubiotp.js', browser: false, local: true },
+  // YUBIKEY OTP THROUGH pam_yubico (#2061, umbrella #2055): Yubico's PAM
+  // module in the client lab, driven by pamtester, asks /wsapi/2.0/verify
+  // about OTPs Yubico's reference generator (ykgenerate) makes for a token
+  // imported from a CSV made at run time: signed in, a replay, a forged
+  // OTP and a wrong client key refused, the token on the entry (ldapsearch)
+  // and, reported lost on the portal, refused and off it. `clientLab: true`.
+  { file: 'sts_yubiotp_pam.js', browser: false, local: true,
+    clientLab: true },
   // A YUBIKEY PIV KEY ATTESTATION OVER EST (#1955 P2), in a throwaway realm:
   // an attested request recorded as a hardware token, an attestation of
   // another key and of another slot refused, enrol-piv on /admin-api, and
@@ -3391,6 +3399,9 @@ const LOCAL_HELPERS = [
   // certs-only, csrattrs and multipart parsers, and a KEM template CSR.
   // Node built-ins only; nothing from est/ or common/cert_enrollment.js.
   'est_client.js',
+  // The client lab's agent (#2056): its clients and virtual cards driven by
+  // a job, files in and out.
+  'client_lab.js',
   // SCEP's independent client (RFC 8894): node-forge for the PKCS#10, the
   // self-signed signer and the envelope, forge.asn1 and node's crypto for the
   // SignedData and the CertRep. Nothing from scep/ or cert_enrollment.js.
