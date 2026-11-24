@@ -22,6 +22,11 @@
 #   IMAGE_TAG=<tag> deploy/azure/terraform-local.sh globalidp apply   # 3 regions
 #   TF_CELL=zcnc IMAGE_TAG=<tag> deploy/azure/terraform-local.sh testidpna plan
 #   TF_STACK=foundation deploy/azure/terraform-local.sh dev apply     # administrator
+#   TF_STACK=pep-cluster IMAGE_TAG=<tag> [PEP_CLUSTER=azure] [PEP_MODE=…] \
+#     [PEP_COUNT=2] [PEP_AUTOSCALE_MAX=n] [PEP_COMPANION=true] \
+#     deploy/azure/terraform-local.sh testpep apply   # a remote PEP cluster
+#     (#1284): pep-cluster/provision.sh first, and again after; the second
+#     pass writes pep-cluster/anchors/<env>.crt, handed over here
 #
 # CREDENTIALS: your Azure CLI login (`az login`, in $AZURE_CONFIG_DIR or
 # ~/.azure), handed to the container as a tar through a private env file, as
@@ -122,7 +127,7 @@ printf 'AZURE_CONFIG_B64=%s\n' "$(tar -czf - -C "${AZ_DIR}" "${AZ_FILES[@]}" | b
   > "${CREDS_ENV_FILE}"
 
 TF_VARS=()
-if [ "${TF_STACK}" = "environment" ] && { [ "${TF_ACTION}" = "plan" ] || [ "${TF_ACTION}" = "apply" ] || [ "${TF_ACTION}" = "import" ]; };
+if { [ "${TF_STACK}" = "environment" ] || [ "${TF_STACK}" = "pep-cluster" ]; } && { [ "${TF_ACTION}" = "plan" ] || [ "${TF_ACTION}" = "apply" ] || [ "${TF_ACTION}" = "import" ]; };
 then
   [ -n "${IMAGE_TAG:-}" ] || { echo "ERROR: ${TF_ACTION} needs IMAGE_TAG." >&2; exit 1; }
   if [ -z "${ALLOWED_CIDR:-}" ];
@@ -140,6 +145,30 @@ then
   # value from this environment and it is in no process's argument list.
   [ -z "${TF_VAR_bootstrap_admin_username:-}" ] ||
     TF_VARS+=(-e TF_VAR_bootstrap_admin_username)
+fi
+
+# A REMOTE PEP CLUSTER (#1284, deploy/azure/pep-cluster/): its knobs, each
+# passed only when set, and the identity service's Root that provision.sh's
+# second pass wrote — a PUBLIC certificate, handed over as a variable because
+# `*.pem` and the anchors directory stay out of the image's context.
+if [ "${TF_STACK}" = "pep-cluster" ];
+then
+  TF_VARS+=(-e "TF_PEP_CLUSTER=${PEP_CLUSTER:-azure}")
+  [ -z "${PEP_MODE:-}" ] || TF_VARS+=(-e "TF_VAR_credential_mode=${PEP_MODE}")
+  [ -z "${PEP_COUNT:-}" ] || TF_VARS+=(-e "TF_VAR_instance_count=${PEP_COUNT}")
+  [ -z "${PEP_REALM:-}" ] || TF_VARS+=(-e "TF_VAR_realm=${PEP_REALM}")
+  [ -z "${PEP_AUTOSCALE_MAX:-}" ] || TF_VARS+=(-e "TF_VAR_autoscale_max=${PEP_AUTOSCALE_MAX}")
+  [ -z "${PEP_IMAGE:-}" ] || TF_VARS+=(-e "TF_VAR_pep_image=${PEP_IMAGE}")
+  [ -z "${PEP_COMPANION:-}" ] || TF_VARS+=(-e "TF_VAR_companion=${PEP_COMPANION}")
+  [ -z "${PEP_IDP_URL:-}" ] || TF_VARS+=(-e "TF_VAR_idp_url=${PEP_IDP_URL}")
+  anchor="${PEP_MEMBER_ANCHOR:-${REPO_ROOT}/deploy/azure/pep-cluster/anchors/${TF_ENV}.crt}"
+  if [ -s "${anchor}" ];
+  then
+    export TF_VAR_member_trust_anchor
+    TF_VAR_member_trust_anchor="$(cat "${anchor}")"
+    TF_VARS+=(-e TF_VAR_member_trust_anchor)
+    echo "==> The gateway will trust the members' listener pairs under ${anchor}" >&2
+  fi
 fi
 
 for v in TF_CLI_ARGS TF_CLI_ARGS_plan TF_CLI_ARGS_apply TF_CLI_ARGS_destroy TF_IMPORT_ADDRESS TF_IMPORT_ID \

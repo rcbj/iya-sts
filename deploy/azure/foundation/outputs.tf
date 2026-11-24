@@ -71,3 +71,16 @@ output "deployer_role" {
   description = "The deployer's custom role."
   value       = azurerm_role_definition.deployer.name
 }
+
+output "pep_environments" {
+  description = "Each remote PEP environment (#1284): its resource group, its vault and its two identities' client ids."
+  value = {
+    for k, v in var.pep_environments : k => {
+      resource_group    = azurerm_resource_group.pep[k].name
+      vault             = azurerm_key_vault.pep[k].name
+      members_client_id = azurerm_user_assigned_identity.pep_members[k].client_id
+      gateway_identity  = azurerm_user_assigned_identity.pep_gateway[k].id
+      public_hostname   = v.public_hostname
+    }
+  }
+}

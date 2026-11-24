@@ -59,6 +59,11 @@ ISSUER="${STS_CERT_ISSUER:-false}"
 RENEW_DAYS="${STS_ACME_RENEW_DAYS:-30}"
 ACME_SERVER="${STS_ACME_SERVER:-https://acme-v02.api.letsencrypt.org/directory}"
 ATTEMPTS="${STS_CERT_WAIT_ATTEMPTS:-40}"
+# THE KEY'S TYPE (#1284): ec256 for the nodes, which serve it themselves; a
+# remote PEP cluster's gateway certificate asks for rsa2048, because it is
+# imported into Application Gateway, which takes RSA listener certificates
+# (deploy/azure/pep-cluster/gateway.tf).
+KEY_TYPE="${STS_ACME_KEY_TYPE:-ec256}"
 # Who the key is handed to (#254): the uid:gid the service image runs as.
 OWNER="${STS_TLS_OWNER:-10001:10001}"
 # EVERY NAME THE CERTIFICATE MUST CARRY: the host name, and in a cell its
@@ -171,7 +176,7 @@ AZURE_POLLING_INTERVAL="${AZURE_POLLING_INTERVAL:-10}" \
   lego --accept-tos "${email_args[@]}" \
     --server "${ACME_SERVER}" \
     --path "${work}/lego" \
-    --key-type ec256 \
+    --key-type "${KEY_TYPE}" \
     --dns azuredns \
     "${domain_args[@]}" \
     run

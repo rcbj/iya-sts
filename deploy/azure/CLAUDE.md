@@ -32,9 +32,10 @@ is most likely to need a change.
 | Path | Lifetime | What it is | Applied by |
 |---|---|---|---|
 | `bootstrap-state.sh` | once | the state resource group, the account `iyaststate<subscription>` (shared keys off, versioned, soft delete) and its `tfstate` container | an administrator |
-| `foundation/` | long-lived | per region (`modules/region`): a key vault with the two customer-managed keys, a disk-encryption set per key, the PostgreSQL key identity, a Log Analytics workspace and its syslog rule. Once: the registry (Premium, geo-replicated), **the public zone `azure.iyasec.io`**, and the deployer's custom role. **Per environment, and per cell:** a resource group with *Allowed locations* on it, the nodes' managed identity, the Key Vault its secrets and certificate are in, and every grant. **The key-encryption key** (`kek.tf`, #391): one per environment, and a multi-region environment's global vault for it | an administrator |
+| `foundation/` | long-lived | **per remote PEP environment (#1284, `pep_units.tf`): a resource group, two identities, a vault with the gateway's placeholder certificate**; per region (`modules/region`): a key vault with the two customer-managed keys, a disk-encryption set per key, the PostgreSQL key identity, a Log Analytics workspace and its syslog rule. Once: the registry (Premium, geo-replicated), **the public zone `azure.iyasec.io`**, and the deployer's custom role. **Per environment, and per cell:** a resource group with *Allowed locations* on it, the nodes' managed identity, the Key Vault its secrets and certificate are in, and every grant. **The key-encryption key** (`kek.tf`, #391): one per environment, and a multi-region environment's global vault for it | an administrator |
 | `dns-delegation/` | once | the NS record `azure.iyasec.io` in **the Route 53 zone `iyasec.io`** | an administrator with AWS **and** Azure credentials |
 | `environment/` | per run | one environment, or one CELL of a multi-region one: VNet, security groups, Standard Load Balancer, PostgreSQL primary + replica behind a private endpoint, secrets, three zonal scale sets of one VM each, the public record | the deployer |
+| `pep-cluster/` | per PEP environment | **a remote XACML PEP cluster as an environment of its own (#1284)**: its own VNet, a NAT gateway (the one egress address), Application Gateway WAF_v2 with a WAF policy, a scale set per member (or one shared, autoscaled), the A record; keys in the foundation's PEP vault, written by `provision.sh`, never in state (*A remote PEP cluster*, below) | the deployer; `provision.sh` by a person |
 | `global/` | per run | a multi-region environment's global tier and joins: the global writer and a replica per other cell, the VNet peering mesh, the shared secrets in every cell's vault, Traffic Manager | the deployer |
 | `environment/envs/<env>.tfvars` | per environment | what a named environment sets differently; `dev` and `ci` have none | the deployer |
 | `environment/envs/<env>.cells.tfvars.json` | per environment | a multi-region environment's cells, pinned countries, primary cell **and public name**, read by the foundation, every cell and `global/` | — |
@@ -439,6 +440,143 @@ This is AWS's Route 53 tree, in the Azure DNS zone (`global/routing.tf`):
 
 **Performance** routing is by the region the endpoint is in, which is what
 AWS's latency records do.
+
+## A remote PEP cluster: `pep-cluster/` (#1284, 2026-11-23)
+
+**AWS's `deploy/aws/pep-cluster/`, built from Azure's parts:** the remote
+XACML PEP as a scaled service in an environment of its own, behind
+Application Gateway WAF_v2. `deploy/aws/CLAUDE.md`, *A remote PEP cluster*,
+is the design and its reasons (rcbj's: an environment of its own, not
+chained to the iya-sts environment, and "the full aws waf in front of its
+load balancer"). This section records what Azure made different.
+
+**WRITTEN AND CHECKED STATICALLY ONLY (2026-11-23):** nothing was applied,
+no image was built and no plan ran against Azure. The checks were:
+
+* `terraform fmt -check`, `init -backend=false` and `validate` in
+  `pep-cluster/`, `foundation/` and `environment/`;
+* `terraform test` against a mocked azurerm: `pep-cluster/tests` (12 runs),
+  `foundation/tests` (2, one new: `a_pep_environment`), `environment/tests`
+  (16, after the `STS_HTTPS` change);
+* `bash -n` on `provision.sh`, both launchers and the three shell templates
+  rendered with sample values (no shellcheck on this machine).
+
+**AN ENVIRONMENT OF ITS OWN, AND NOT A UNIT.** A PEP environment is a row of
+the foundation's `pep_environments` (`foundation/pep_units.tf`), never of
+`environments`: a unit is given a key-encryption key, database-key grants
+and a node identity that reads database passwords, and a PEP environment
+needs none of them. It gets a resource group (`iya-sts-<env>`, the
+deployer's role and *Allowed locations* on it), two identities (`-members`,
+`-gateway`), a vault `mp<env>-<hash>` (the units' reasons: a vault's name is
+global and soft-deleted) and the grants that tie them together. The stack
+finds all of it by name, reads no state, and reaches the identity service at
+`idp_url`. A name in both maps is refused (`check`): both would claim the
+same group. State: `pep-cluster/<env>/<cluster>.tfstate`.
+
+**WHAT EACH AWS PIECE BECAME:**
+
+| AWS | Azure | Why |
+|---|---|---|
+| ALB + regional WAF | **Application Gateway WAF_v2** + a WAF policy | Azure's WAF attaches to Application Gateway, Front Door or Application Gateway for Containers, never to a Standard Load Balancer. Front Door is global; Application Gateway is the regional reverse proxy, which is what the ALB is |
+| ACM certificate | the vault's **`gateway` CERTIFICATE**: Key Vault's own self-signed placeholder (the foundation's), then **member 1's ACME certificate**, imported as its next version | Azure has no free certificate an Application Gateway can present, and the gateway reads its certificate when it is CREATED. The placeholder's key is made inside Key Vault, so it is in no state |
+| NAT gateway + EIP | a **NAT gateway** with one static address, regional | AWS's: one address to admit |
+| Fargate service per member | a **Flexible scale set of ONE VM** per member, or one of N (shared); Ubuntu 24.04 and Docker, as the nodes | the nodes' reasons (`environment/nodes.tf`) |
+| ECS `secrets` | `pep-secrets.sh`: the VM's identity reads the member's ONE secret into `/run/pep` (a tmpfs) at every start | nothing secret in custom data, a unit file or the state |
+| ECS deployment | `provision.sh` **restarts a member's VMs** after writing its pair | a reboot re-reads the secret |
+| Application Auto Scaling | **Azure Monitor autoscale** on the shared scale set | the deployer's role gains `Microsoft.Insights/autoscaleSettings/*` |
+| the companion as a sidecar container | a second container on the VM, **both on the host's network**; 9700 is the VM's loopback-reachable port, and no rule admits it | one upstream, `http://127.0.0.1:9700`, is each member's own; `--network container:` would tie the companion's life to every PEP restart |
+
+**THE GATEWAY VERIFIES EACH MEMBER'S PAIR; AWS'S ALB DOES NOT.** Application
+Gateway v2 refuses an HTTPS backend whose chain does not reach a well-known
+root or one it was given, and checks the host name. The realm's listener
+pairs chain to the identity service's own Root and name `public_hostname`
+(`provision.sh --pep-host`). So the Root is `member_trust_anchor`, which
+`provision.sh`'s second pass writes to `pep-cluster/anchors/<env>.crt` (the
+last certificate of a pair's chain) and `terraform-local.sh` hands over: **one
+apply more than AWS**, after the second pass (`gateway_trusts_members` says
+which state it is in). It is a file passed as a variable because `*.pem` is
+in both `.dockerignore` and `.gitignore`, and an anchor is a fact of one
+deployment; `anchors/` keeps only its `.gitignore`.
+
+**THE WAF'S ALLOWLIST IS A NEGATED BLOCK, NOT AN ALLOW.** Application Gateway
+runs CUSTOM rules before MANAGED ones, and a custom allow ends evaluation, so
+AWS's "allow allowed_cidrs, default block" would exempt every allowed address
+from OWASP. Here: custom 1 blocks what is NOT in `allowed_cidrs` (and
+`notify_cidrs`); custom 2 is a per-address rate limit; then OWASP CRS 3.2 and
+the bot manager set 1.0, in Prevention; the default allows what passed all of
+them, which is the same posture. Request bodies are inspected up to
+`waf_body_limit_kb` (128) and refused above it.
+
+**THE CERTIFICATE ISSUER IS MEMBER 1** (`pep-cert.service`): node-init's
+`cert.sh`, unchanged but for `STS_ACME_KEY_TYPE` (`rsa2048` here; `ec256`, the
+nodes' default, is unchanged), keeps its PEM bundle in the vault's `tls`
+secret exactly as an iya-sts node-a does; `gateway-cert.sh` builds a PFX and
+imports it as the `gateway` certificate's next version when its `x5t`
+differs. The gateway names the version-less secret and follows within four
+hours. A failure is not the member's: `pep-member` only `Wants` it. **A SHARED
+scale set's VMs are alike, so every one issues**; cert.sh issues only when the
+bundle is missing or near expiry, but N VMs started at once on a fresh
+environment can each spend one of Let's Encrypt's five a week — start a shared
+environment at one VM if that matters.
+
+**THE NUDGE.** An Azure iya-sts environment HAS a fixed egress address (its
+load balancer's outbound rule), so unlike testidp on AWS it can be named in
+`notify_cidrs`: each member then gets `notify_port_base + n` on the gateway,
+its own backend pool, and the address in both the gateway's security group
+and the WAF's allowlist. Without it, `provision.sh` calls
+`xacml/disable-pep` and the members poll.
+
+**WHAT WAS NOT PORTED, AND WHY:**
+
+* **The disks' customer-managed key and Azure Monitor.** The members' disks
+  use platform-managed encryption — nothing secret is on them (the keys are
+  on a tmpfs) — and their logs stay in journald (`--log-driver=journald`,
+  tag `pep/<env>/<member>`): the region's disk-encryption set and data
+  collection rule are found by a region code this stack would have to repeat
+  as a fourth copy of `region_codes`.
+* **AuthZEN callers by mutual TLS through the gateway**: it ends TLS, as the
+  ALB does.
+
+**What to look at first on the first apply:**
+
+* **Application Gateway reading the `gateway` certificate** through its
+  identity at create time — the RBAC grant's propagation (the foundation's
+  90-second wait), and whether the placeholder's `exportable` key is enough.
+* **`gateway-cert.sh`'s import** of a PFX with no password into a certificate
+  first made by the `Self` issuer: Key Vault should accept a different
+  issuer's certificate as the next version; the policy in the request is
+  `exportable`, RSA 2048, `application/x-pkcs12`.
+* **The `trusted_root_certificate` as base64 of the PEM** (the provider's
+  `data`): if the gateway refuses it, give it the DER instead.
+* **Orchestrated scale sets in Application Gateway backend pools**
+  (`application_gateway_backend_address_pool_ids` on a Flexible scale set's
+  NIC): supported by the API; check the members appear in the pools.
+* **The probe on 9443 for the proxy's 9543 backend** (a v2 probe's `port`).
+* **The members' NSG**: the gateway's probes and forwards come from its
+  subnet; check nothing else is needed for v2's instances.
+* **`az vmss list-instances` on a Flexible scale set** in `provision.sh`'s
+  restart step.
+* **An `AuthorizationFailed`**: add the action to `foundation/iam_deployer.tf`
+  and re-apply the foundation, as for an environment.
+
+**Running it** (NOT YET RUN):
+
+```bash
+# once: the foundation, with testpep in pep_environments (its default)
+TF_STACK=foundation deploy/azure/terraform-local.sh dev apply           # administrator
+# the images: the service, init-<tag>, and pep-<tag> and companion-<tag>
+docker build -t $R:pep-<tag> -f xacml-pep/Dockerfile .
+docker build -t $R:companion-<tag> companion/
+P="--env=testpep --idp-url=https://test-idp.azure.iyasec.io --idp-env=testidp \
+   --pep-host=test-pep.azure.iyasec.io --image=$R:<tag> --count=2 --pep-app"
+deploy/azure/pep-cluster/provision.sh $P                                  # 1
+TF_STACK=pep-cluster IMAGE_TAG=<tag> deploy/azure/terraform-local.sh testpep apply   # 2
+IMAGE_TAG=<tag> ALLOWED_CIDR=<you>,<egress_ip> deploy/azure/terraform-local.sh testidp apply  # 3
+deploy/azure/pep-cluster/provision.sh $P                                  # 4: pairs, anchor
+TF_STACK=pep-cluster IMAGE_TAG=<tag> deploy/azure/terraform-local.sh testpep apply   # 5: trust
+TF_STACK=pep-cluster deploy/azure/terraform-local.sh testpep destroy
+deploy/azure/pep-cluster/provision.sh --env=testpep --remove
+```
 
 ## What was not ported, and why
 
