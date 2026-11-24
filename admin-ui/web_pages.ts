@@ -358,8 +358,9 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/devices': ['devices', 'register'],
   // #1955 P1: the register's list; P4: imported OATH tokens;
   // P2: PIV enrolment and escrowed keys; the #1955 review: a person's SSH
-  // user certificates.
-  '/admin/hardware-tokens': ['tokens', 'oath', 'enrol', 'escrow', 'ssh'],
+  // user certificates; #2071: imported YubiKey OTPs.
+  '/admin/hardware-tokens': ['tokens', 'oath', 'yubiotp', 'enrol', 'escrow',
+                             'ssh'],
   // #1955 P6: the person, the registration, the directory.
   '/admin/openpgp': ['person', 'register', 'directory'],
   '/admin/attribute-sources': ['sources', 'add', 'person', 'settings'],
@@ -917,11 +918,17 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/hardware-tokens',
     // #1955 P4: the OATH tab, always asked, under names of its own so its
     // filter and pager move its list and not the register's.
-    compose: { oath: '/admin-api/hardware-tokens/oath' },
-    composeWhen: { oath: ['oq', 'ostatus', 'opage', 'per'] },
+    // #2071: the YubiKey OTP tab, the same way under `yq`, `ystatus` and
+    // `ypage`.
+    compose: { oath: '/admin-api/hardware-tokens/oath',
+               yubiotp: '/admin-api/hardware-tokens/yubiotp' },
+    composeWhen: { oath: ['oq', 'ostatus', 'opage', 'per'],
+                   yubiotp: ['yq', 'ystatus', 'ypage', 'per'] },
     composeParams: { oath: { oq: 'q', ostatus: 'status', opage: 'page',
-                             per: 'per' } },
-    composeAlways: ['oath'],
+                             per: 'per' },
+                     yubiotp: { yq: 'q', ystatus: 'status', ypage: 'page',
+                                per: 'per' } },
+    composeAlways: ['oath', 'yubiotp'],
     render: HardwareTokensPage.render },
   // #1955 P6: Directory → OpenPGP keys, one person's OpenPGP key, its Web
   // Key Directory publication and their mail encryption.
@@ -1197,19 +1204,24 @@ const PAGES: WebPage[] = [
     compose: {
       personTokens: '/admin-api/hardware-tokens',
       personOath: '/admin-api/hardware-tokens/oath',
+      // #2071: the YubiKey OTPs on the person's entry.
+      personYubi: '/admin-api/hardware-tokens/yubiotp',
       personOpenpgp: '/admin-api/openpgp'
     },
     composeWhen: {
       personTokens: ['user'],
       personOath: ['user'],
+      personYubi: ['user'],
       personOpenpgp: ['user']
     },
     composeParams: {
       personTokens: { user: 'q' },
       personOath: { user: 'q' },
+      personYubi: { user: 'q' },
       personOpenpgp: { user: 'user' }
     },
-    composeKeep: ['personTokens', 'personOath', 'personOpenpgp'],
+    composeKeep: ['personTokens', 'personOath', 'personYubi',
+                  'personOpenpgp'],
     drill: {
       param: 'user',
       sample: function (list: Json): string | null {

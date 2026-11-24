@@ -441,6 +441,35 @@ class TokenEntries {
   }
 
   /**
+   * One person's values of one attribute, read off their entry (the master
+   * copy) with the directory asked asynchronously — what the console's and
+   * the API's per-person token lists read (#2071), so a windowed process
+   * does not block on the entry.
+   *
+   * @param who - a username, a subject or a bare entryUUID
+   * @param attribute - one of ATTRIBUTES
+   * @returns a promise of the values, [] for nobody
+   */
+  async valuesOfAsync(who: string, attribute: string): Promise<Json[]> {
+    const { log } = this.deps;
+    log.debug("Entering TokenEntries.valuesOfAsync().");
+    TokenEntries.check(attribute);
+    let found: Json = null;
+    try {
+      found = this.directory && who
+        ? await this.directory.locateAsync(String(who)) : null;
+    } catch (e) {
+      log.debug("Caught in TokenEntries.valuesOfAsync(): " +
+                ((e && e.message) || e));
+      found = null;
+    }
+    const out = (((found && found.values) || {})[attribute.toLowerCase()] ||
+                 []).map(TokenEntries.read).filter(Boolean);
+    log.debug("Leaving TokenEntries.valuesOfAsync(). " + out.length);
+    return out;
+  }
+
+  /**
    * Every person holding one attribute, with its values read back: what a
    * rebuild of an index reads (header).
    *
@@ -751,6 +780,7 @@ export = {
   project: slot.forward('project'),
   projectAsync: slot.forward('projectAsync'),
   valuesOf: slot.forward('valuesOf'),
+  valuesOfAsync: slot.forward('valuesOfAsync'),
   holdersOf: slot.forward('holdersOf'),
   syncEntries: slot.forward('syncEntries'),
   rebuildIndexes: slot.forward('rebuildIndexes'),

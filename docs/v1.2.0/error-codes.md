@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6076** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6078** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -87,9 +87,9 @@ is an ordinary outcome.
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
 * [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 17
 * [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 36
-* [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 34
+* [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 35
 * [PIV key attestation (`STS-PIV`)](#sts-piv) — 30
-* [OpenSSH user certificates (`STS-SSHCA`)](#sts-sshca) — 10
+* [OpenSSH user certificates (`STS-SSHCA`)](#sts-sshca) — 11
 * [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 34
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 258
@@ -5125,6 +5125,7 @@ Raised from: common/yubiotp.ts, common/yubiotp_store.ts, common/credentials.ts, 
 | `STS-YUBIOTP-0032` | A YK-VAL verify named a YubiKey OTP of a disabled account; it is answered as a bad OTP and nothing is spent (#1955). | YK-VAL 2.0 BAD_OTP |
 | `STS-YUBIOTP-0033` | A YK-VAL verify request's otp is not in a YubiKey OTP's format (32 to 48 modhex characters); it is BAD_OTP before any client is looked up, the reference server's order (#2094). | YK-VAL 2.0 BAD_OTP |
 | `STS-YUBIOTP-0034` | A YK-VAL verify request's nonce is not 16 to 40 letters and digits; it is MISSING_PARAMETER before any client is looked up, the reference server's order (#2094). | YK-VAL 2.0 MISSING_PARAMETER |
+| `STS-YUBIOTP-0035` | The imported YubiKey OTP inventory could not be listed for Directory → Hardware tokens or GET /admin-api/hardware-tokens/yubiotp: the store or the person's entry threw (#2071). | HTTP 500 |
 
 ## STS-PIV
 
@@ -5183,6 +5184,7 @@ Raised from: common/ssh_user_ca.ts, common/ssh_issued.ts, common/pki.js, pki/pki
 | `STS-SSHCA-0008` | The ssh-user-ca.entries job could not read the register of issued SSH user certificates, or record what it found, so no entry was brought in step this run; the next run tries again (#2050). | none — logged |
 | `STS-SSHCA-0009` | An SSH user certificate written onto a person's entry by a door other than the CA was refused and taken off again: its serial was never issued by this realm, was issued to somebody else, was revoked (a revocation is permanent) or has expired, or the value differs from what the CA issued. Audited with the writer (#2050). | none — audited |
 | `STS-SSHCA-0010` | An SSH user certificate was removed from its holder's entry, which revokes it, and the revocation could not be recorded or the KRL rebuilt; the entry no longer names it and the next KRL build tries again (#2050). | none — logged |
+| `STS-SSHCA-0011` | An administrator's issuance of a person's SSH user certificate (POST /admin-api/hardware-tokens/issue-ssh) threw rather than issuing or refusing; nothing was answered as issued (#2071). | HTTP 500 |
 
 ## STS-OPENPGP
 

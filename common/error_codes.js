@@ -23710,6 +23710,11 @@ const CODES = [
       'and digits; it is MISSING_PARAMETER before any client is looked ' +
       'up, the reference server\'s order (#2094).',
     spec: 'YK-VAL 2.0 MISSING_PARAMETER' },
+  { code: 'STS-YUBIOTP-0035',
+    summary: 'The imported YubiKey OTP inventory could not be listed for ' +
+      'Directory → Hardware tokens or GET /admin-api/hardware-tokens/' +
+      'yubiotp: the store or the person\'s entry threw (#2071).',
+    spec: 'HTTP 500' },
   // ===== PIV ===============================================================
   { code: 'STS-PIV-0001',
     summary: 'A shipped PIV attestation certificate ' +
@@ -23922,6 +23927,12 @@ const CODES = [
       'KRL rebuilt; the entry no longer names it and the next KRL build ' +
       'tries again (#2050).',
     spec: 'none — logged' },
+  { code: 'STS-SSHCA-0011',
+    summary: 'An administrator\'s issuance of a person\'s SSH user ' +
+      'certificate (POST /admin-api/hardware-tokens/issue-ssh) threw ' +
+      'rather than issuing or refusing; nothing was answered as issued ' +
+      '(#2071).',
+    spec: 'HTTP 500' },
   // ===== OPENPGP ===========================================================
   { code: 'STS-OPENPGP-0001',
     summary: 'An OpenPGP public key offered for registration did not ' +

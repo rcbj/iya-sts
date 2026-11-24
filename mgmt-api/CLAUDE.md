@@ -2998,6 +2998,27 @@ the console's Enrol PIV and Escrowed keys tabs draw. A recovered key is the
 one answer of this resource that carries a private key; `sendJson()` sends
 `no-store` on every answer.
 
+**#2071 adds the two operations the console's tabs lacked** (rule 7 read
+the other way: an operation with no read beside it, and a control with no
+operation). `GET /admin-api/hardware-tokens/yubiotp` (`getYubiOtpTokens`,
+composed under `yq`, `ystatus`, `ypage` for the YubiKey OTP tab and with
+`q` the person for their sub-tab) is `yubiotp_store.list()`: a serial read
+by its key, `status` by the inventory's `st:` index, a username's tokens
+read off THEIR ENTRY (`stsYubiOtpToken`, `token_entries.valuesOfAsync()`),
+never a walk of the directory; the unnarrowed list of an on-demand store
+is its newest thousand and says `capped`. `issue-ssh` (`{ username,
+publicKey, principals?, lifetimeS?, attestation?, attestationChallenge? }`,
+`issueUserSshCertificate`) is `ssh_user_ca.adminIssue()`, which runs the
+person's own `issue()` — the principals theirs, each the policy's question
+about them, the entry written first through the register — with the
+administrator as the audit row's actor (the token's subject, or
+`audit.currentActor()`). It is not behind `pki.personSelfService` or the
+portal's rate limit, which are the self-service door's. 404 nobody
+(STS-SSHCA-0004), 403 a refused principal or group, 400 a refused key or
+lifetime, 503 no CA or not recorded, 500 a throw (STS-SSHCA-0011); a
+failed list is STS-YUBIOTP-0035. Acting on a Security Administrator is
+`admin:security` by the body's `username`, as `revoke-ssh` is.
+
 ## `/admin-api/post-login-activities` — DIRECTORY → POST-LOGIN ACTIVITIES (#1111, 2026-10-28; #1123)
 
 `mgmt-api/post_login_activities_api.ts`, spread into the table as the

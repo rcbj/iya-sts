@@ -58,6 +58,12 @@ import cacheRegistry = require('./cache_registry');
 type Json = any;
 
 const NONCE_MS = 5 * 60 * 1000;
+// THE LIST (#2071): at most this many rows a page, and the newest this many
+// rows of an on-demand store when nothing narrows it (`oath_tokens.ts`'s
+// bounds, for the same reason).
+const MAX_PAGE = 500;
+const NEWEST_CAP = 1000;
+const STATUSES = ['unassigned', 'assigned', 'retired'];
 const NONCE_CAP = 10000;
 const NONCE_JOB = 'yubiotp.nonce-sweep';
 // The cluster claim a YK-VAL nonce is spent under (header).
@@ -631,6 +637,125 @@ class YubiOtpStore {
     return { ok: true };
   }
 
+  // -------------------------------------------------------------------------
+  // THE LIST, PAGED (#2071): Directory → Hardware tokens' YubiKey OTP tab and
+  // `GET /admin-api/hardware-tokens/yubiotp`. Never a key: a row is what
+  // `entryValueOf()` puts on an entry, its holder beside it.
+  //
+  // **No walk of the directory, and no walk of a store that is not held
+  // here.** `q` is a serial (one row, read by its key) or a username, whose
+  // tokens are read off THEIR ENTRY — `stsYubiOtpToken`, the master copy
+  // (#2051) — never by scanning the inventory for a holder. `status` alone
+  // is the inventory's `st:` index. Nothing narrowing it is the newest
+  // `NEWEST_CAP` rows of an on-demand store, and `capped` says so; a
+  // process whose inventory is held in full (the memory store, or one
+  // window) pages what it holds.
+  // -------------------------------------------------------------------------
+  /**
+   * A page of the realm's YubiKey OTP inventory.
+   *
+   * @param opts - `offset`, `limit`, `status`, `q`
+   * @returns a promise of `{ ok, tokens, total, offset, limit, capped }`
+   */
+  async list(opts?: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering YubiOtpStore.list().");
+    const o = opts || {};
+    const limit = Math.max(1, Math.min(MAX_PAGE, Number(o.limit) || 25));
+    const offset = Math.max(0, Number(o.offset) || 0);
+    const status = STATUSES.indexOf(String(o.status || '')) >= 0
+      ? String(o.status) : '';
+    const q = String(o.q || '').trim().slice(0, 256);
+    let rows: Json[] = [];
+    let capped = false;
+    let total: number | null = null;
+    if (q) {
+      const seen: Record<string, boolean> = {};
+      const row = await this.rowAsync(q);
+      if (row) {
+        rows.push(YubiOtpStore.listView(q, row, String(row.holder || '')));
+        seen[q] = true;
+      }
+      const entries = require('./token_entries');
+      const held: Json[] = await entries.valuesOfAsync(q,
+        entries.ATTRIBUTES.yubiotp);
+      held.forEach(function (value: Json): void {
+        const serial = String((value && value.serial) || '');
+        if (serial && !seen[serial]) {
+          seen[serial] = true;
+          rows.push(YubiOtpStore.listView(serial, value, q));
+        }
+      });
+    } else if (status) {
+      let found: Json[] = [];
+      try {
+        found = await inventory.lookupEntriesAsync('st:' + status);
+      } catch (e) {
+        log.debug("Caught in YubiOtpStore.list(): " +
+                  ((e && e.message) || e));
+        // The store cannot be asked: what this process holds.
+        found = inventory.lookup('st:' + status).map(function (k: Json) {
+          return { key: k, value: inventory.get(k) };
+        });
+      }
+      rows = (found || []).filter(function (r: Json): boolean {
+        return !!(r && r.value);
+      }).map(function (r: Json): Json {
+        return YubiOtpStore.listView(String(r.key), r.value,
+                                     String(r.value.holder || ''));
+      });
+    } else if (inventory.onDemandLive()) {
+      const newest = await inventory.newestAsync(NEWEST_CAP);
+      rows = (newest || []).map(function (r: Json): Json {
+        return YubiOtpStore.listView(String(r.key), r.value,
+                                     String((r.value && r.value.holder) ||
+                                            ''));
+      });
+      total = await inventory.countAsync();
+      capped = total !== null && total > rows.length;
+    } else {
+      inventory.forEach(function (value: Json, key: Json): void {
+        rows.push(YubiOtpStore.listView(String(key), value,
+                                        String((value && value.holder) ||
+                                               '')));
+      });
+    }
+    if (status) {
+      rows = rows.filter(function (r: Json): boolean {
+        return r.status === status;
+      });
+    }
+    rows.sort(function (a: Json, b: Json): number {
+      return String(b.importedAt).localeCompare(String(a.importedAt));
+    });
+    log.debug("Leaving YubiOtpStore.list(). " + rows.length + " row(s).");
+    return { ok: true, tokens: rows.slice(offset, offset + limit),
+             total: total !== null && !status && !q ? total : rows.length,
+             offset: offset, limit: limit, capped: capped };
+  }
+
+  /**
+   * One token as the list draws it: never its key.
+   *
+   * @param serial - the serial
+   * @param row - an inventory row or an entry's value
+   * @param holder - who holds it, by username; empty for nobody
+   * @returns the row
+   */
+  static listView(serial: string, row: Json, holder: string): Json {
+    helpers.log.debug("Entering YubiOtpStore.listView().");
+    const r = row || {};
+    helpers.log.debug("Leaving YubiOtpStore.listView().");
+    return {
+      serial: String(serial), publicId: String(r.publicId || ''),
+      status: String(r.status || 'unassigned'),
+      holder: String(holder || ''),
+      importedAt: String(r.importedAt || ''),
+      assignedAt: String(r.assignedAt || ''),
+      retiredAt: String(r.retiredAt || '')
+    };
+  }
+
   /**
    * Creates a YK-VAL client and returns its HMAC key once.
    *
@@ -1038,6 +1163,8 @@ export = {
   indexPublicId: slot.forward('indexPublicId'),
   dropPublicId: slot.forward('dropPublicId'),
   importCsv: slot.forward('importCsv'),
+  list: slot.forward('list'),
+  listView: YubiOtpStore.listView,
   assign: slot.forward('assign'),
   claim: slot.forward('claim'),
   remove: slot.forward('remove'),

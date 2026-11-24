@@ -128,5 +128,9 @@
   "piv.keyWarn": "Det här är personens privata dekrypteringsnyckel. Den visas en gång, och återställningen står i granskningsloggen. Lämna över den som du skulle lämna över kortet.",
   "piv.privateKey": "Privat nyckel",
   "piv.certificate": "Certifikat",
-  "piv.import": "Skriv det till YubiKey-platsen med: ykman piv certificates import SLOT cert.pem"
+  "piv.import": "Skriv det till YubiKey-platsen med: ykman piv certificates import SLOT cert.pem",
+  "once.sshCertificate": "SSH-användarcertifikat",
+  "ssh.certificate": "Certifikat",
+  "ssh.pqc": "ML-DSA-certifikat",
+  "ssh.install": "Spara det bredvid den privata nyckeln, under nyckelfilens namn med -cert.pub på slutet, så visar ssh upp det med nyckeln."
 }

@@ -2299,13 +2299,17 @@
     "en": "f149352fa2ac36d0",
     "text": "NON-SPEC (#1955 P4)。管理员从供应商 PSKC 种子文件导入的 HOTP 和 TOTP 令牌，包括未分配、已分配或已停用的，可分页并按序列号或人员搜索。绝不包含密钥。对应 GET /admin/hardware-tokens（其 OATH 标签页）。"
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/yubiotp.what": {
+    "en": "6c6508ca58d1ea8d",
+    "text": "NON-SPEC (#2071)。管理员从 CSV 导入的 YubiKey OTP，未分配、已分配或已停用，分页并可按序列号或人员搜索；某人的令牌从其条目（主副本）读取。从不包含密钥。对应 GET /admin/hardware-tokens（其 YubiKey OTP 选项卡）。"
+  },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "cdbf34a1fbdf290e",
-    "text": "NON-SPEC（#1955）。lost，带 { key }：令牌被标记为丢失，其上的每个通行密钥被移除，其上的每张证书因 keyCompromise 被吊销，为每项发送 CAEP credential-change，并结束它们登录的会话。enrol-piv，带 { username, profile, csr, attestationCertificate?, attestationIssuer? }：通过 EST 签发 CA 为此人签发 PIV 槽证书，验证其 YubiKey PIV 证明并记录该 YubiKey。recover-key，带 { username, serial }：此人托管的 piv-key-management 密钥，访问控制策略只允许 PIV_KEY_RECOVERY 在近期登录后取得。revoke-ssh，带 { username, serial }：吊销此人的 SSH 用户证书并将其列入领域的 KRL。该页面上控制台的四个操作。"
+    "en": "ecf18182e65d8f0a",
+    "text": "NON-SPEC（#1955）。lost，带 { key }：令牌被标记为丢失，其上的每个通行密钥被移除，其上的每张证书因 keyCompromise 被吊销，为每项发送 CAEP credential-change，并结束它们登录的会话。enrol-piv，带 { username, profile, csr, attestationCertificate?, attestationIssuer? }：通过 EST 签发 CA 为此人签发 PIV 槽证书，验证其 YubiKey PIV 证明并记录该 YubiKey。recover-key，带 { username, serial }：此人托管的 piv-key-management 密钥，访问控制策略只允许 PIV_KEY_RECOVERY 在近期登录后取得。revoke-ssh，带 { username, serial }：吊销此人的 SSH 用户证书并将其列入领域的 KRL。issue-ssh，带 { username, publicKey, principals?, lifetimeS? }：为此人签发 SSH 用户证书，先写入其条目（#2071）。该页面上控制台的五个操作。"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "f5b724d2c79b5f74",
-    "text": "报告硬件令牌丢失并撤销其凭据、签发 PIV 槽证书、交出托管密钥，或吊销某人的 SSH 证书"
+    "en": "38d7254e0ab72a00",
+    "text": "报告硬件令牌丢失并撤销其凭据、签发 PIV 槽证书、交出托管密钥，或签发或吊销某人的 SSH 证书"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/ssh-certificates.what": {
     "en": "84ce6fea3694d4c0",

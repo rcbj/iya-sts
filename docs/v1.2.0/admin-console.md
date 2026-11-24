@@ -1241,19 +1241,20 @@ walks through both. [Applications](applications.md) documents the page,
 The registers of what people carry, filed under Directory because each is
 somebody's; the mechanisms' settings are six Protocols pages
 ([below](#protocols-pages-worth-explaining)).
-**Directory → Hardware tokens** has five tabs after Metadata:
+**Directory → Hardware tokens** has six tabs after Metadata:
 
 | Tab | What it holds | API |
 |---|---|---|
 | **Hardware tokens** | every token the realm recorded from an attestation, by status, searched by serial or person, with **Report lost** | `GET /admin-api/hardware-tokens`, `POST …/lost` |
 | **OATH tokens** | the inventory of imported PSKC tokens, the import form, **Assign** on an unassigned one and **Remove** on one not assigned | `GET …/oath`, `POST …/import-pskc`, `assign-oath`, `remove-oath` |
+| **YubiKey OTP** | the inventory of imported YubiKey OTPs, searched by serial or person, the CSV import form, **Assign** (a person and one OTP) on an unassigned one and **Remove** on one not assigned | `GET …/yubiotp`, `POST …/import-yubiotp`, `assign-yubiotp`, `remove-yubiotp` |
 | **Enrol PIV** | the PIV enrolment form for a named person: the slot profile, the request and the two attestation certificates | `POST …/enrol-piv` |
 | **Escrowed keys** | a person's escrowed `piv-key-management` certificates, each with **Recover key** | `GET …/escrowed`, `POST …/recover-key` |
-| **SSH certificates** | a person's SSH user certificates, each with **Revoke** | `GET …/ssh-certificates`, `POST …/revoke-ssh` |
+| **SSH certificates** | a person's SSH user certificates, each with **Revoke**, and the **Issue a certificate** form: a person, one public key, principals and a lifetime | `GET …/ssh-certificates`, `POST …/revoke-ssh`, `POST …/issue-ssh` |
 
-YubiKey OTP has no tab: a batch is imported with
-`POST /admin-api/hardware-tokens/import-yubiotp` and assigned on the person's
-YubiKey OTP sub-tab. **Directory → OpenPGP keys** shows one person's OpenPGP
+The person's YubiKey OTP sub-tab lists the imported YubiKey OTPs on their
+entry and assigns one by serial; their SSH sub-tab lists their certificates
+and issues one with the person fixed. **Directory → OpenPGP keys** shows one person's OpenPGP
 key, its Web Key Directory publication, their S/MIME certificate and their
 mail encryption, and registers a key from a challenge they signed. Both
 pages' per-person halves are also the person's Credentials sub-tabs

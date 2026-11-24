@@ -75,7 +75,7 @@ function childMain() {
     const asked = WebPages.composeRequests(page, { user: NAME });
     const byMember = {};
     asked.forEach(function (one) { byMember[one.member] = one; });
-    t.check(asked.length === 3 &&
+    t.check(asked.length === 4 &&
             byMember.personTokens &&
             byMember.personTokens.operation === '/admin-api/hardware-tokens' &&
             byMember.personTokens.params.q === NAME &&
@@ -83,10 +83,14 @@ function childMain() {
             byMember.personOath.operation ===
               '/admin-api/hardware-tokens/oath' &&
             byMember.personOath.params.q === NAME &&
+            byMember.personYubi &&
+            byMember.personYubi.operation ===
+              '/admin-api/hardware-tokens/yubiotp' &&
+            byMember.personYubi.params.q === NAME &&
             byMember.personOpenpgp &&
             byMember.personOpenpgp.operation === '/admin-api/openpgp' &&
             byMember.personOpenpgp.params.user === NAME,
-            'A1. the drill asks the three central operations for the person',
+            'A1. the drill asks the four central operations for the person',
             JSON.stringify(asked));
     t.check(WebPages.composeRequests(page, {}).length === 0,
             'A2. and the list of people asks none of them');
@@ -130,6 +134,16 @@ function childMain() {
             piv.indexOf(fixed) >= 0 && piv.indexOf('id="hwt-user"') < 0,
             'B2. PIV enrolment posts to the central page with the person ' +
             'fixed (no person box)', piv.slice(0, 600));
+    const ssh = panel('ucred-ssh');
+    t.check(ssh.indexOf('value="issue-ssh"') >= 0 &&
+            ssh.indexOf('action="/admin/hardware-tokens"') >= 0 &&
+            ssh.indexOf(fixed) >= 0 && ssh.indexOf('id="hwt-ssh-user"') < 0,
+            'B5. SSH issues to the person on the central page\'s operation ' +
+            '(#2071), with the person fixed', ssh.slice(0, 600));
+    t.check(drawn.json && drawn.json.personYubi &&
+            Array.isArray(drawn.json.personYubi.tokens),
+            'B6. the YubiKey OTP sub-tab is drawn from the composed list ' +
+            '(#2071)', JSON.stringify(Object.keys(drawn.json || {})));
     t.check(oath.indexOf('value="assign-oath"') >= 0 &&
             oath.indexOf(fixed) >= 0 &&
             yubi.indexOf('value="assign-yubiotp"') >= 0 &&
@@ -175,7 +189,8 @@ function childMain() {
     const drawnRead = [
       HardwareTokensPage.personTokens(reader.t, j.personTokens, reader, NAME),
       HardwareTokensPage.personOath(reader.t, j.personOath, reader, NAME, ''),
-      HardwareTokensPage.personYubi(reader.t, reader, NAME, ''),
+      HardwareTokensPage.personYubi(reader.t, j.personYubi, reader, NAME,
+                                    ''),
       HardwareTokensPage.personPiv(reader.t, j.personTokens, reader, NAME),
       HardwareTokensPage.personSsh(reader.t, j.personTokens, reader, NAME),
       OpenPgpPage.personPanel(reader.t, j.personOpenpgp, false)
