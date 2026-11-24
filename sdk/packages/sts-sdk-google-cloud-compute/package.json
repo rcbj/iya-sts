@@ -1,0 +1,10 @@
+{
+  "name": "sts-sdk-google-cloud-compute",
+  "version": "0.0.0",
+  "private": true,
+  "license": "BUSL-1.1",
+  "description": "Pins @google-cloud/compute for the image prefix /opt/sts-sdk (Dockerfile).",
+  "dependencies": {
+    "@google-cloud/compute": "7.10.0"
+  }
+}

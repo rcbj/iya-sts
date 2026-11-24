@@ -87,6 +87,8 @@ var config = {
     allowUnscopedPeople: false,                                                                                                        // Let a person reach SCIM and Shared Signals with no role
     passwordContextWords: "",                                                                                                          // Words a password may not contain
     outboundAllowedHosts: "",                                                                                                          // Hosts this service may dial
+    publishBuildInfo: "auto",                                                                                                          // Show the exact build to people who are not administrators
+    hstsPreload: false,                                                                                                                // Ask to be on the HSTS preload list
     rateLimitWindowS: 60,                                                                                                              // Rate-limit window (seconds)
     rateLimitPerIdentity: 5,                                                                                                           // Attempts per identity per window
     rateLimitPerAddress: 20,                                                                                                           // Attempts per address per window
@@ -174,7 +176,7 @@ var config = {
     clientSecretOverlapS: 604800,                  // Keep a rotated client secret working for (seconds)
     clientSecretsMax: 5,                           // Client secrets an application may hold
     clientSecretExpiryWarningDays: 14,             // Warn about an expiring client secret this many days ahead
-    clientSecretLifetimeDays: 0,                   // Client secret lifetime (days)
+    clientSecretLifetimeDays: 365,                 // Client secret lifetime (days)
     registeredClientIdPrefix: "sts-client-",       // Dynamically registered client_id prefix
     registeredClientIdBytes: 8,                    // Dynamically registered client_id random bytes
     registeredSecretBytes: 48,                     // Dynamically registered secret random bytes
@@ -318,6 +320,11 @@ var config = {
     atprotoPlcDirectory: "https://plc.directory",                            // PLC directory for Bluesky sign-ins
     encryptionKeyGraceS: 86400,                                              // Previous encryption key kept for (seconds)
     clientCertificateRenewDays: 30                                           // Renew a FAPI client certificate this many days before it expires
+  },
+
+  // --- Web security ----------------------------------------------------
+  account: {
+    writeWindowS: 600  // Account write window (seconds)
   },
 
   // --- Persistence -----------------------------------------------------
@@ -1240,6 +1247,7 @@ var config = {
     krbtgtRotationIntervalDays: 180,                       // Rotate the krbtgt key every (days)
     pkinit: true,                                          // PKINIT (certificate pre-authentication)
     pkinitRequireFreshness: true,                          // PKINIT requires a freshness token
+    pkinitRequirePaChecksum2: false,                       // PKINIT requires paChecksum2
     pkinitLegacyKdf: false,                                // PKINIT accepts RFC 4556's own key derivation
     pkinitKdcKeyAlgorithm: "ec-p256",                      // PKINIT KDC key algorithm
     anonymousPkinit: true,                                 // Anonymous PKINIT (FAST armor)
@@ -1808,6 +1816,7 @@ var config = {
     pdfMaxPages: 100,           // PDF report page cap
     maxConcurrentPerRealm: 2,   // Report jobs running per realm
     maxConcurrentPerSubject: 1, // Report jobs running per person
+    actWindowS: 600,            // Report act window (seconds)
     artifactRetentionS: 86400,  // How long a report result is kept (seconds)
     jobRetentionS: 604800       // How long a report job row is kept (seconds)
   },

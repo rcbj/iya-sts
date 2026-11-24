@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6090** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6107** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -51,14 +51,14 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 21
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 112
+* [Service core (`STS-CORE`)](#sts-core) — 113
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 58
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 116
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 202
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 286
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 294
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
@@ -70,8 +70,8 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
 * [Federation (`STS-FED`)](#sts-fed) — 228
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 259
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 179
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 262
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 180
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 35
@@ -97,15 +97,15 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 137
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 304
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 306
 * [Management API (`STS-API`)](#sts-api) — 97
 * [User portal (`STS-PORTAL`)](#sts-portal) — 123
-* [Account API (`STS-ACCOUNT`)](#sts-account) — 23
+* [Account API (`STS-ACCOUNT`)](#sts-account) — 24
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 16
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 191
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 29
-* [Reporting (`STS-REPORT`)](#sts-report) — 60
+* [Reporting (`STS-REPORT`)](#sts-report) — 61
 * [Audit export (`STS-AUDIT`)](#sts-audit) — 21
 
 ## STS-HTTP
@@ -276,6 +276,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0178` | One or more settings in env/defaults.js hold a value that is not the image's default. The file's value is used, as before the upgrade; a defaults file copied from an earlier release pins every default changed since. The warning names each setting and the file. | none — a warning logged at startup; nothing is refused |
 | `STS-CORE-0179` | env/defaults.js is present and could not be loaded (it does not parse, or throws), so the service refused to start. A missing file is not this: the image's own defaults are used (STS-CORE-0177). | — |
 | `STS-CORE-0180` | A store could not forget what it held for a trust realm this process never defined and the store no longer lists (#1938); it is asked again at the next realm read. | — |
+| `STS-CORE-0181` | security.hstsPreload is on while security.hstsIncludeSubDomains is off, so Strict-Transport-Security is sent without preload: the HSTS preload list accepts a host only when its header covers every subdomain (#2165). Logged when this starts; /admin/mode shows it on the strict-transport-security row. Turn on security.hstsIncludeSubDomains, or turn off security.hstsPreload. | none — a warning; the header is still sent, without preload |
 
 ## STS-WORKER
 
@@ -1147,6 +1148,14 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0297` | An SSH user certificate was asked for while pki.sshUserCaPqcOnly is on, and the realm has no ML-DSA SSH user CA: this runtime cannot generate ML-DSA, ssh-mldsa-65 is not in pki.sshUserCaAlgorithms, or the authority could not be made. No classical certificate is issued in its place. | The account API refuses the request with HTTP 503 |
 | `STS-PKI-0298` | A public SSH user CA request named an algorithm other than ssh-mldsa-65, or asked for the ML-DSA authority of a realm that has none. | GET /pki/ssh-user-ca/{scope} answers 400 or 404 |
 | `STS-PKI-0299` | A realm's SSH user KRL was built but its cache could not be persisted (#2092); the list built is answered and the next build makes it again. | Nothing: GET /pki/ssh-user-krl/{scope} answers the KRL |
+| `STS-PKI-0300` | The named truststores' directory half is not installed in this process (#2118): a partial slot was refused, or a write was asked of a process with no directory. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0301` | A truststore name resolves to nothing in the realm (#2118): no built-in, view, setting, SPIFFE bundle or named truststore has it, or the named truststore holds no such certificate. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors}; at a validation, the use case's own refusal |
+| `STS-PKI-0302` | A service-wide use case was assigned a truststore a realm other than the default defines (#2118, D2): a handshake, an outbound dial and the database carry no realm. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0303` | A truststore assignment names no use case this service has, one that is not assigned truststores (pins, its own hierarchy, an admission rule), or no truststore at all (#2118). | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0304` | A SPIFFE use case was assigned a truststore that is not a SPIFFE bundle, or another use case a SPIFFE bundle (#2118, D5). | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0305` | A new truststore's name is not 1 to 63 lower-case letters, digits and hyphens, is a built-in name, or is taken in the realm (#2118). | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0306` | A named truststore is full: 64 per realm, 32 anchors or 64 intermediates per truststore, or the directory itself (#2118). | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0307` | A named truststore a use case of the realm still trusts was asked to be deleted (#2118); the assignment is changed first. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-ENROLL
 
@@ -3482,6 +3491,9 @@ Raised from: kerberos/.
 | `STS-KRB-0257` | A person whose password must be changed asked for a ticket, in product (ASVS 5.0.0 6.4.1). | KDC_ERR_KEY_EXPIRED |
 | `STS-KRB-0258` | GET /authn/spnego was asked to withhold the AP-REP (?mutual=off) where the test controls are closed (#896). | none (RFC 4120 section 3.2.5; a development test control) |
 | `STS-KRB-0259` | An AS-REQ or TGS-REQ changed the store and the commit of that change failed, so it was answered KDC_ERR_SVC_UNAVAILABLE instead of its reply; the change is retried (GitHub run #569). | KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9 |
+| `STS-KRB-0260` | A PKINIT PKAuthenticator carried an MS-PKCA paChecksum2 over an algorithm this KDC does not accept: one MS-PKCA does not list, or SHA-1 in product mode without crypto.allowLegacyHashes (#2125). | MS-PKCA section 2.2.3, RFC 4556 section 3.2.3: KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79) |
+| `STS-KRB-0261` | A PKINIT PKAuthenticator carried an MS-PKCA paChecksum2 that is not the digest of the KDC-REQ-BODY under the algorithm it names (#2125). | MS-PKCA section 2.2.3: KRB_AP_ERR_MODIFIED (41) |
+| `STS-KRB-0262` | A PKINIT PKAuthenticator carried no MS-PKCA paChecksum2, which krb5.pkinitRequirePaChecksum2 requires (#2125). | MS-PKCA section 2.2.3, RFC 4556 section 3.2.3: KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79) |
 
 ## STS-LDAP
 
@@ -3670,6 +3682,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0223` | An LDAP operation's handler threw after the cluster read barrier it waited for (active-active), where the socket's own handling can no longer catch it: the client is answered operationsError (1) rather than left without a result (run #510). | RFC 4511 section 4.1.9 |
 | `STS-LDAP-0224` | A handler for a person's credential attribute was refused by the entry observer: the attribute is not one of the five it observes, or the handler offers no changed(); that attribute's index is not kept in step with the entries (#2050, #2051). | none — logged |
 | `STS-LDAP-0225` | The handler of a person's credential attribute threw on a write of their entry; the write stands, and the index of that attribute may be behind the entry until its job catches it up (#2050, #2051). | none — logged |
+| `STS-LDAP-0226` | An LDAP search was refused before it read any entry: one of its substring assertions held more components (initial, any, final) than the limit of 32 (#2137). | LDAP adminLimitExceeded (11) |
 
 ## STS-ATTR
 
@@ -6286,6 +6299,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0953` | A certificate handed to the console's certificate inspection helper (POST /admin-api/console/certificates/inspect) held no PEM certificate, or more text or more certificates than it reads. Nothing is kept (#2080). | HTTP 400 { ok: false, errors } (Admin Console API) |
 | `STS-ADMIN-0954` | A PEM block handed to the console's certificate inspection helper could not be read as an X.509 certificate. Nothing is kept (#2080). | HTTP 400 { ok: false, errors } (Admin Console API) |
 | `STS-ADMIN-0955` | The console's certificate inspection helper was asked for an action it does not have; the refusal names the one it has (#2080). | HTTP 400 { ok: false, errors } (Admin Console API) |
+| `STS-ADMIN-0956` | /admin-api/truststores was asked for an action it does not have; the refusal names the seven it has (#2118). | HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0957` | A named truststore write was not made and the truststore registry gave no code of its own for why: the directory carried out nothing (#2118). | HTTP 400 with {ok:false, errors} |
 
 ## STS-API
 
@@ -6556,6 +6571,7 @@ Raised from: account-api/.
 | `STS-ACCOUNT-0021` | A query parameter of an /account-api request held a value its declared type does not, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
 | `STS-ACCOUNT-0022` | An /account-api request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
 | `STS-ACCOUNT-0023` | A token was refused because the person it names no longer exists. | HTTP 401 |
+| `STS-ACCOUNT-0024` | A signed-in person made more writes to their own account (profile edits, credentials enrolled or removed, consents withdrawn, device changes: every act of /account-api that is not a GET) than account.writesPerSubject allows in an account.writeWindowS window, counted by the token's subject; further writes are refused until the window passes, and reads go on (#2167, ASVS 5.0.0 2.4.2). | HTTP 429 { ok: false, errors, messages } with Retry-After |
 
 ## STS-LOGOUT
 
@@ -6904,6 +6920,7 @@ Raised from: report/.
 | `STS-REPORT-0059` | A token was refused because the person it names no longer exists. | HTTP 401 |
 | `STS-REPORT-0060` | A stored report definition no longer holds to the Reports API model (a filter naming a parameter longer than 64 characters, saved before #1579 bounded it), so it is answered without its document and parameters, and a run of it is refused for its query. | recorded |
 | `STS-REPORT-0061` | A report over a source for report administrators only (auditEvents, authActivity, credentialHolders: the catalog marks them adminOnly) was refused because the caller — or, for a scheduled run, the definition's owner — does not hold REPORT_ADMIN, or the access-control policy refused the source: a query, a job, a definition saved or run, or a result downloaded (#2126, ASVS 5.0.0 8.2.3). A definition saved before stays visible to its owner. | forbidden (HTTP 403); recorded for a scheduled run, whose occurrence is consumed |
+| `STS-REPORT-0062` | A caller of the Reports API made more expensive acts (an ad hoc query or preview, a job queued, a saved definition run, a result downloaded) than report.actsPerSubject allows in a report.actWindowS window, counted by the token's subject; further acts are refused until the window passes, and the other operations go on (#2167, ASVS 5.0.0 2.4.2). | too_many_requests (HTTP 429) with Retry-After |
 
 ## STS-AUDIT
 

@@ -62,6 +62,7 @@ import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 import stsCrypto = require('../common/crypto');
 import agentPath = require('./spiffe_agent_path');
+import truststores = require('../common/truststores');
 
 type NodeAttestationContext =
   import('../types/spiffe-attestation').NodeAttestationContext;
@@ -378,7 +379,8 @@ class X509popAttestor {
     const status = rpc.status;
     // THE CONFIGURATION, checked as SPIRE checks it at Configure.
     const mode = String(config.value('spiffe.x509popMode') || 'external_pki');
-    const bundleText = String(config.value('spiffe.x509popCaBundle') || '');
+    const bundleText = truststores
+      .configuredPems('spiffe-attestation-x509pop').join('\n');
     const groupText = String(config.value('spiffe.x509popGroupTemplate') ||
                              '');
     const allowedRaw = config.value('spiffe.x509popAllowedGroups');

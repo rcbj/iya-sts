@@ -174,10 +174,10 @@ const { URL } = url;
 // makes that log worth reading. RFC 9110 product form; see common/version.js,
 // which owns the one copy of the product token.
 //
-// Built once at require time rather than per request: the version cannot
-// change while the process runs, and computing it per call would read a file
-// on every federated sign-in.
-const USER_AGENT = version.userAgent('federation');
+// Built per request since #2142, by `defaultDeps()`'s `userAgent` getter:
+// product leaves the build out (`mode.publishesBuildDetail()`), and the mode
+// is per realm and runtime-settable. The version itself is read once and
+// cached by common/version.js, so no file is read per sign-in.
 
 // THE ATTRIBUTES THAT MAY HOLD A URL THIS SERVICE WILL DIAL. See the header —
 // this list is the mechanism, not a convenience. A new name here is a new
@@ -403,7 +403,15 @@ class FederationHttp {
       errorCodes: errorCodes,
       http: http,
       https: https,
-      userAgent: USER_AGENT,
+      // ASKED PER REQUEST (#2142): product leaves the build out, and the
+      // mode is per realm and may change while the process runs.
+      get userAgent(): string {
+        helpers.log.debug("Entering FederationHttp.defaultDeps().userAgent.");
+        const out = version.userAgent('federation',
+          mode.publishesBuildDetail());
+        helpers.log.debug("Leaving FederationHttp.defaultDeps().userAgent.");
+        return out;
+      },
       dns: dns,
       net: net,
       mode: mode

@@ -22482,7 +22482,8 @@ class OAuth2Server {
       client_id: clientId,
       client_id_issued_at: issuedAt,
       client_secret: secret,
-      // `oauth2.clientSecretLifetimeDays`; 0 = never, the default.
+      // `oauth2.clientSecretLifetimeDays`: 365 days by default since
+      // ASVS 5.0.0 13.3.4 (#2178); 0 = never.
       client_secret_expires_at: self.registeredSecretExpiry(issuedAt),
       registration_access_token: token,
       registration_client_uri: base + '/oauth2/register/' + clientId

@@ -1285,13 +1285,23 @@ nothing, so it carries the same framing clauses as every other page.
   text) carries a narrower policy: no `style-src` and no `img-src`, with
   `frame-ancestors` and `base-uri` kept. Only HTML pages keep the base
   policy's inline styles and `data:` images, which some of them use.
+- **`Cross-Origin-Resource-Policy: same-site`** on every response, so
+  another site cannot embed what this service answers in a page of its own.
+  `same-site` rather than `same-origin`, because this host's other listeners
+  are other origins of the same site. Profile photos and the realm's sign-in
+  logo are `cross-origin`, because mail clients and relying parties show
+  them (#2181).
+- **`Cross-Origin-Opener-Policy: same-origin`** on every HTML page except
+  the ones a relying party may open in a popup of its own: the authorization
+  endpoint, the sign-in and consent screens, the SAML, WS-Federation, GNAP
+  and federation pages, the identity-provider-initiated launch, sign-out and
+  the OP iframe. On those, COOP would cut the popup off from the window that
+  opened it, and the relying party would never get its answer (#2181).
 - **The console, the user portal and the reports application** answer
   `Cross-Origin-Opener-Policy: same-origin-allow-popups` and
   `Cross-Origin-Resource-Policy: same-origin`.
-  - `same-origin-allow-popups` rather than `same-origin`, so the console's
-    re-authentication window keeps working.
-  - The sign-in screens carry neither header, because a relying party may
-    open one in a popup.
+  `same-origin-allow-popups` rather than `same-origin` keeps the console's
+  re-authentication window working.
 - **No page of the console, the user portal or the reports application
   allows an inline style:** their policy is `style-src 'self'`. Their styles
   are stylesheet rules, and their charts are SVG, so a `style=""` attribute

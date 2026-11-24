@@ -1,0 +1,10 @@
+{
+  "name": "sts-sdk-google-cloud-secret-manager",
+  "version": "0.0.0",
+  "private": true,
+  "license": "BUSL-1.1",
+  "description": "Pins @google-cloud/secret-manager for the image prefix /opt/sts-sdk (Dockerfile).",
+  "dependencies": {
+    "@google-cloud/secret-manager": "8.0.0"
+  }
+}

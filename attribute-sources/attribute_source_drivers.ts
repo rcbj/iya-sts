@@ -52,6 +52,7 @@ import helpers = require('../common/helpers');
 import errorCodes = require('../common/error_codes');
 import OutboundTls = require('../common/outbound_tls');
 import secrets = require('../common/secrets');
+import truststores = require('../common/truststores');
 
 type Json = Record<string, any>;
 
@@ -241,8 +242,16 @@ class AttributeSourceDrivers {
     const password = await readSecret({ realm: realmId, id: source.id,
       provider: source.passwordProvider, ref: source.passwordRef,
       field: source.passwordField });
-    const tls = Object.assign(OutboundTls.verifiedOptions(ca.trim() || null,
-      { systemRoots: !!source.trustPublicRoots }),
+    // `outbound-attribute-source`'s truststores where it is assigned and the
+    // source trusts more than its own CA (#2118); the source's own beside.
+    const assigned = source.trustPublicRoots &&
+      truststores.namesFor('outbound-attribute-source').assigned ?
+      OutboundTls.optionsFor('outbound-attribute-source', { extraPems:
+        ca.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g)
+        || [] }) : null;
+    const tls = Object.assign(assigned && !assigned.problem ? assigned :
+      OutboundTls.verifiedOptions(ca.trim() || null,
+                                  { systemRoots: !!source.trustPublicRoots }),
                               { servername: String(source.serverName ||
                                                    source.host) });
     const connection: Json = {

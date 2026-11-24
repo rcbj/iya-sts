@@ -283,32 +283,130 @@ class OutboundTls {
       return { ok: true, why: '', errorCode: '', rejectUnauthorized: false,
                skipped: true };
     }
-    const file = String(config.value(family.caFileKey) || '');
-    const signers = OutboundTls.signerAnchors();
-    if (!file) {
-      log.debug("Leaving OutboundTls.tlsVerdict(). Node's store.");
-      const none: TlsVerdict = { ok: true, why: '', errorCode: '',
-        rejectUnauthorized: true, skipped: false,
-        checkServerIdentity: OutboundTls.checkServerIdentity };
-      if (signers.length) {
-        none.ca = tls.rootCertificates.concat(signers);
-      }
-      return none;
-    }
-    const pems = OutboundTls.caFilePems(file);
-    if (typeof pems === 'string') {
+    // WHAT THE FAMILY'S USE CASE TRUSTS (#2118): unassigned, node's store and
+    // the family's CA file, exactly as before; assigned, its truststores.
+    // Under paranoid PKI mode the realm's signer truststore is added either
+    // way — until #2118 a family that named a CA file lost it, which was the
+    // defect the inventory found.
+    const useCase = OutboundTls.useCaseOf(family);
+    const resolved = OutboundTls.truststores().caFor(useCase,
+      { context: { purpose: 'tls-server-outbound' } });
+    if (resolved.problems.length) {
+      const why = resolved.problems[0].why;
       log.warn(errorCodes.tag(CA_FILE_CODE) + 'outbound: ' + family.what +
-               ' to ' + origin + ' was not sent: ' + pems);
-      log.debug("Leaving OutboundTls.tlsVerdict(). The CA file is unusable.");
+               ' to ' + origin + ' was not sent: ' + why);
+      log.debug("Leaving OutboundTls.tlsVerdict(). A store is unusable.");
       return { ok: false, errorCode: CA_FILE_CODE, rejectUnauthorized: true,
-               skipped: false,
-               why: family.caFileKey + ' names "' + file + '", and ' + pems };
+               skipped: false, why: why };
     }
-    log.debug("Leaving OutboundTls.tlsVerdict(). " + pems.length +
-              " CA certificate(s) beside node's store.");
-    return { ok: true, why: '', errorCode: '', rejectUnauthorized: true,
-             ca: tls.rootCertificates.concat(pems), skipped: false,
-             checkServerIdentity: OutboundTls.checkServerIdentity };
+    const ca = OutboundTls.withSigners(resolved);
+    log.debug("Leaving OutboundTls.tlsVerdict(). " +
+              (ca ? ca.length + ' CA certificate(s)' : 'Node\'s store') + ".");
+    const verdict: TlsVerdict = { ok: true, why: '', errorCode: '',
+      rejectUnauthorized: true, skipped: false,
+      checkServerIdentity: OutboundTls.checkServerIdentity };
+    if (ca) {
+      verdict.ca = ca;
+    }
+    return verdict;
+  }
+
+  // The outbound use case a family is (#2118), by its CA file setting, which
+  // names the family uniquely.
+  private static useCaseOf(family: OutboundFamily): string {
+    helpers.log.debug("Entering OutboundTls.useCaseOf().");
+    const byFile: { [key: string]: string } = {
+      'federation.outboundCaFile': 'outbound-federation',
+      'ssf.pushCaFile': 'outbound-ssf',
+      'gnap.pushCaFile': 'outbound-gnap',
+      'xacml.pepNotifyCaFile': 'outbound-xacml-pep',
+      'auditExport.caFile': 'outbound-audit'
+    };
+    helpers.log.debug("Leaving OutboundTls.useCaseOf().");
+    return (family as any).useCase || byFile[family.caFileKey] ||
+      'outbound-federation';
+  }
+
+  // The truststores registry, required lazily: it requires this module's
+  // file reader at call time, and the order of the two is nobody's business.
+  private static truststores(): any {
+    helpers.log.debug("Entering OutboundTls.truststores().");
+    helpers.log.debug("Leaving OutboundTls.truststores().");
+    return require('./truststores');
+  }
+
+  // A resolution's `ca`, with the realm's signer truststore beside it under
+  // paranoid PKI mode where node's store is in the list (#1360's rule, kept);
+  // undefined where node's store alone is meant.
+  private static withSigners(resolved: any): string[] | undefined {
+    helpers.log.debug("Entering OutboundTls.withSigners().");
+    const signers = resolved.ca === undefined || resolved.names
+      .indexOf('system') >= 0 ? OutboundTls.signerAnchors() : [];
+    let ca: string[] | undefined = resolved.ca;
+    if (signers.length) {
+      ca = (ca || OutboundTls.truststores().Truststores.systemPems())
+        .concat(signers);
+    }
+    helpers.log.debug("Leaving OutboundTls.withSigners().");
+    return ca;
+  }
+
+  /**
+   * For a dialer whose own CA REPLACES node's store (the kubelet, the
+   * Kubernetes API, the external AuthZEN PDP): null where its use case is
+   * unassigned, so the dialer keeps its own setting exactly as before;
+   * otherwise what the assignment resolves to, as one PEM bundle, or
+   * undefined for node's store (#2118).
+   *
+   * @param useCaseId - the outbound use case
+   * @returns null, `{ ca }`, or `{ problem }`
+   */
+  static assignedCa(useCaseId: string): any {
+    const log = helpers.log;
+    log.debug("Entering OutboundTls.assignedCa(). " + useCaseId);
+    const registry = OutboundTls.truststores();
+    if (!registry.namesFor(useCaseId).assigned) {
+      log.debug("Leaving OutboundTls.assignedCa(). Unassigned.");
+      return null;
+    }
+    const options = OutboundTls.optionsFor(useCaseId);
+    log.debug("Leaving OutboundTls.assignedCa().");
+    return options.problem ? { problem: options.problem } :
+      { ca: options.ca ? options.ca.join('\n') : undefined };
+  }
+
+  /**
+   * Builds the options for a verified outbound connection of one outbound use
+   * case (#2118): verification on, the RFC 9525 host check, and what the use
+   * case's truststores hold as `ca` — node's store unchanged where the list
+   * is `system` alone.
+   *
+   * @param useCaseId - the outbound use case
+   * @param options - `{ extraPems }`: an entry's own CA certificates (a SCIM
+   *   client, a secret destination, an attribute source), added
+   * @returns the TLS options, or `{ problem }` where a store named cannot be
+   *   used — a legacy CA file that will not read refuses the connection, as
+   *   it always did
+   */
+  static optionsFor(useCaseId: string, options?: { extraPems?: string[] }):
+      any {
+    const log = helpers.log;
+    log.debug("Entering OutboundTls.optionsFor(). " + useCaseId);
+    const resolved = OutboundTls.truststores().caFor(useCaseId,
+      { extraPems: (options && options.extraPems) || [],
+        context: { purpose: 'tls-server-outbound' } });
+    if (resolved.problems.length) {
+      log.debug("Leaving OutboundTls.optionsFor(). A store is unusable.");
+      return { problem: resolved.problems[0] };
+    }
+    const out: any = { rejectUnauthorized: true,
+                       checkServerIdentity: OutboundTls.checkServerIdentity };
+    const ca = OutboundTls.withSigners(resolved);
+    if (ca) {
+      out.ca = ca;
+    }
+    log.debug("Leaving OutboundTls.optionsFor().");
+    return out;
   }
 
   // -------------------------------------------------------------------------

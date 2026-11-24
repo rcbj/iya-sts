@@ -100,6 +100,7 @@ import passkeyPolicy = require('../common/passkey_policy');
 // The ambient realm's name, which the passkey policy may append to rp.name
 // (#533). A leaf here: `config` and `helpers` already require it.
 import realms = require('../common/realms');
+import truststores = require('../common/truststores');
 
 // JOSE spelling -> COSE identifier, INVERTED from the verifier's own table
 // rather than written out. That table is what decides whether a signature can
@@ -448,8 +449,10 @@ class WebauthnPolicy {
     const out = {
       configured: configured,
       policy: policy,
-      trustAnchorsPem: String(config.value('webauthn.attestationTrustAnchors')
-                              || ''),
+      // What `webauthn-attestation`'s truststores hold, or unassigned what
+      // webauthn.attestationTrustAnchors names (#2118).
+      trustAnchorsPem: truststores.configuredPems('webauthn-attestation')
+        .join('\n'),
       allowedAaguids: allowedAaguids,
       minCertificationLevel: minCertificationLevel,
       requireFips: requireFips,

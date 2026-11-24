@@ -1087,7 +1087,10 @@ class Branding {
       const etag = '"' + String(record.sha256).slice(0, 32) + '"';
       const asked = req.query && typeof req.query.v === 'string'
         ? req.query.v : '';
+      // `cross-origin` (#2181): a mail client and a relying party's own page
+      // show the realm's logo, and every other response is `same-site`.
       res.set('ETag', etag)
+         .set('Cross-Origin-Resource-Policy', 'cross-origin')
          .set('X-Content-Type-Options', 'nosniff')
          .set('Content-Security-Policy',
               app.contentSecurityPolicy(LOGO_POLICY))

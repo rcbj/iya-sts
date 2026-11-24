@@ -312,6 +312,7 @@
   "gnap.requestNotCompleted": "अनुरोध पूरा नहीं किया जा सका।",
   "gnap.tooManyCodes": "यहाँ से बहुत अधिक कोड आज़माए जा चुके हैं। {detail}",
   "gnap.wrongOrigin": "यह कार्रवाई इस सेवा के किसी पृष्ठ द्वारा भेजी जाती है: अनुरोध में {carried, select, none {कोई Origin नहीं} other {कोई दूसरा मूल}} था।",
+  "limits.tooManyActs": "आपने थोड़े समय में यह बहुत बार किया है। {seconds} सेकंड प्रतीक्षा करें और फिर से प्रयास करें।",
   "logout.accountNotSignedIn": "वह खाता अब इस ब्राउज़र में साइन इन नहीं है। फिर से चुनें।",
   "logout.accountsOff": "यह विश्वास क्षेत्र प्रति ब्राउज़र कई साइन इन किए गए खाते नहीं रखता (authn.multipleAccounts बंद है), इसलिए चुनने के लिए कोई खाता नहीं है।",
   "logout.chooseAccount": "एक खाता चुनें, या सभी खाते।",
