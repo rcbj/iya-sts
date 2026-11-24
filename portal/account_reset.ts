@@ -113,6 +113,10 @@ interface AccountResetDeps {
   passkeyPolicy: typeof passkeyPolicy;
   breachedPasswords(): Json;
   accountSignals(): Json;
+  // The sign-out model and the identity key it is asked with (#2123):
+  // required lazily, `logout/logout` being built long after this module.
+  logout(): Json;
+  stats(): Json;
 }
 
 /**
@@ -149,8 +153,44 @@ class AccountReset {
         helpers.log.debug("Entering accountSignals().");
         helpers.log.debug("Leaving accountSignals().");
         return require('../ssf/account_signals');
+      },
+      logout: function logout(): Json {
+        helpers.log.debug("Entering logout().");
+        helpers.log.debug("Leaving logout().");
+        return require('../logout/logout');
+      },
+      stats: function stats(): Json {
+        helpers.log.debug("Entering stats().");
+        helpers.log.debug("Leaving stats().");
+        return require('../common/admin_stats');
       }
     };
+  }
+
+  // Every session of the person ended, as a sign-out everywhere; the count,
+  // or 0 where none could be (said once, STS-PORTAL-0638).
+  private endEverySession(username: string): number {
+    const { log } = this.deps;
+    log.debug("Entering AccountReset.endEverySession().");
+    try {
+      const result = this.deps.logout().terminate(
+        this.deps.stats().identityKeyOf(username), [], {
+          actor: username, channel: 'portal', initiatingEntity: 'user',
+          by: 'a new password set from a password reset link (the portal)'
+        });
+      const count = ((result && result.terminated) || []).length;
+      log.debug("Leaving AccountReset.endEverySession(). " + count + ".");
+      return count;
+    } catch (e) {
+      log.debug("Caught in AccountReset.endEverySession(): " +
+                ((e && e.message) || e));
+      log.warn(require('../common/error_codes').tag('STS-PORTAL-0638') +
+               'portal: ' + username +
+               ' set a new password from a reset link, and their other ' +
+               'sessions could not be ended: ' + ((e && e.message) || e));
+      log.debug("Leaving AccountReset.endEverySession(). Failed.");
+      return 0;
+    }
   }
 
   // WHERE A "SIGN IN" LINK GOES (#32): drawn in the realm the person belongs
@@ -452,7 +492,14 @@ class AccountReset {
       reasonUser: 'You chose a new password.' });
     log.info('portal: ' + username + ' set a new password from a reset ' +
              'link; the link is spent.');
-    log.debug("Leaving AccountReset.spend(). Set.");
+    // EVERY SESSION ENDS (#2123, ASVS 5.0.0 7.4.3; rcbj 2026-11-24): a reset
+    // most often follows a password somebody else may know, and a session
+    // they opened with it must not outlive the new one. The same act an
+    // administrator's reset does (`admin_actions.ts`'s `signOutEverywhere()`),
+    // attributed to the person. Nothing undoes the reset if it fails: the
+    // password is set, and the failure is said (STS-PORTAL-0638).
+    const ended = this.endEverySession(username);
+    log.debug("Leaving AccountReset.spend(). Set; " + ended + " ended.");
     // THE DONE CARD, drawn from this view in place: nobody is signed in, and
     // the link is spent, so its GET would now only refuse. `/portal` and not
     // the sign-in screen, for `finishActivation()`'s reason: `/authn/login`

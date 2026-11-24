@@ -495,6 +495,7 @@
   "resetDone.heading": "Su contraseña está establecida",
   "resetDone.ok": "Este enlace de restablecimiento ya se usó y no volverá a funcionar.",
   "resetDone.next": "Inicie sesión con su contraseña nueva. Si su cuenta tiene un segundo factor, se le pedirá como siempre.",
+  "resetDone.signedOut": "Se cerraron todas las sesiones que tenía, en cualquier dispositivo, de modo que nadie que conociera su contraseña anterior sigue con la sesión iniciada.",
   "signedOut.title": "Sesión cerrada",
   "signedOut.heading": "Cerró sesión",
   "signedOut.noSession": "No había ninguna sesión del portal en este navegador que terminar.",

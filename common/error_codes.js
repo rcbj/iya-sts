@@ -30221,6 +30221,11 @@ const CODES = [
       'recorded, and its failure count could not be cleared (ASVS 5.0.0 ' +
       '2.3.3).',
     spec: '' },
+  { code: 'STS-PORTAL-0638',
+    summary: 'A person set a new password from a reset link and their ' +
+      'other sessions could not be ended; the password is set (#2123, ' +
+      'ASVS 5.0.0 7.4.3).',
+    spec: '' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },
