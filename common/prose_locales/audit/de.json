@@ -627,6 +627,22 @@
     "en": "663072a33ce1e178",
     "text": "Das S/MIME-Zertifikat einer Person wurde festgelegt oder entfernt"
   },
+  "audit.actions.openpgp.classical-kept.label": {
+    "en": "88853e0422aaf987",
+    "text": "Ein klassischer OpenPGP-Schlüssel wurde neben dem Post-Quanten-Schlüssel behalten, der ihn ersetzt"
+  },
+  "audit.actions.openpgp.classical-retired.label": {
+    "en": "dd04754fc94b2d49",
+    "text": "Ein behaltener klassischer OpenPGP-Schlüssel wurde entfernt"
+  },
+  "audit.actions.piv.reissued.label": {
+    "en": "c91e03d452110e24",
+    "text": "Ein PIV-Zertifikat wurde nach der Anmeldung neu ausgestellt"
+  },
+  "audit.actions.piv.superseded.label": {
+    "en": "8b80ee2d97b80d29",
+    "text": "Ein PIV-Zertifikat wurde widerrufen, nachdem sich sein Ersatz angemeldet hatte"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "Einem Gerät wurde ein Schlüssel hinzugefügt"

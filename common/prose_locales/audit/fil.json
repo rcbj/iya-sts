@@ -627,6 +627,22 @@
     "en": "663072a33ce1e178",
     "text": "Naitakda o naalis ang S/MIME certificate ng isang tao"
   },
+  "audit.actions.openpgp.classical-kept.label": {
+    "en": "88853e0422aaf987",
+    "text": "Isang klasikong OpenPGP key ang itinabi sa tabi ng post-quantum key na pumalit dito"
+  },
+  "audit.actions.openpgp.classical-retired.label": {
+    "en": "dd04754fc94b2d49",
+    "text": "Tinanggal ang isang itinabing klasikong OpenPGP key"
+  },
+  "audit.actions.piv.reissued.label": {
+    "en": "c91e03d452110e24",
+    "text": "Muling inisyu ang isang PIV certificate pagkatapos mag-sign in"
+  },
+  "audit.actions.piv.superseded.label": {
+    "en": "8b80ee2d97b80d29",
+    "text": "Binawi ang isang PIV certificate nang gamitin sa pag-sign in ang kapalit nito"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "May key na idinagdag sa isang device"

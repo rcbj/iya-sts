@@ -627,6 +627,22 @@
     "en": "663072a33ce1e178",
     "text": "某人的 S/MIME 证书已设置或删除"
   },
+  "audit.actions.openpgp.classical-kept.label": {
+    "en": "88853e0422aaf987",
+    "text": "一个经典 OpenPGP 密钥被保留在取代它的后量子密钥旁边"
+  },
+  "audit.actions.openpgp.classical-retired.label": {
+    "en": "dd04754fc94b2d49",
+    "text": "一个保留的经典 OpenPGP 密钥已被删除"
+  },
+  "audit.actions.piv.reissued.label": {
+    "en": "c91e03d452110e24",
+    "text": "登录后重新签发了一个 PIV 证书"
+  },
+  "audit.actions.piv.superseded.label": {
+    "en": "8b80ee2d97b80d29",
+    "text": "一个 PIV 证书在其替代证书用于登录后被吊销"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "向设备添加了一个密钥"

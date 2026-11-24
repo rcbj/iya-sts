@@ -121,6 +121,10 @@ variable "public_dns" {
     wildcard. What it adds is health checks, which have no name to scope by
     (iam_deployer.tf, `Route53HealthChecks`).
 
+    `test-pep.iyasec.io` is `testpep`'s, the remote PEP cluster that is an
+    environment of its own (#1284, pep-cluster/): an alias to its ALB and
+    its certificate's validation record.
+
     `global-idp.iyasec.io` is `globalidp`'s, the six-region test case
     (#367, 2026-09-30): a name of its own, so it stands beside testidp or
     testidpna rather than taking their name in turn.
@@ -130,6 +134,7 @@ variable "public_dns" {
     "iyasec.io" = [
       "test-idp.iyasec.io", "*.test-idp.iyasec.io",
       "global-idp.iyasec.io", "*.global-idp.iyasec.io",
+      "test-pep.iyasec.io", "*.test-pep.iyasec.io",
     ]
   }
 }

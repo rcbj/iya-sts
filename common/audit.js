@@ -746,6 +746,19 @@ const ACTIONS = [
     label: 'How mail to a person is encrypted was changed' },
   { action: 'openpgp.smime-certificate', category: 'directory',
     label: 'A person\'s S/MIME certificate was set or removed' },
+  // THE CLASSICAL OpenPGP KEY KEPT BESIDE A POST-QUANTUM ONE (#2009 P2),
+  // written by `common/openpgp_keys.ts`.
+  { action: 'openpgp.classical-kept', category: 'directory',
+    label: 'A classical OpenPGP key was kept beside the post-quantum key ' +
+           'that replaced it' },
+  { action: 'openpgp.classical-retired', category: 'directory',
+    label: 'A kept classical OpenPGP key was removed' },
+  // THE PIV RE-ISSUE POST-LOGIN ACTIVITY (#2009 P3), written by
+  // `common/post_login_piv.ts`.
+  { action: 'piv.reissued', category: 'directory',
+    label: 'A PIV certificate was re-issued after signing in' },
+  { action: 'piv.superseded', category: 'directory',
+    label: 'A PIV certificate was revoked once its replacement signed in' },
   { action: 'device.key-add', category: 'directory',
     label: 'A key was added to a device' },
   { action: 'device.key-remove', category: 'directory',

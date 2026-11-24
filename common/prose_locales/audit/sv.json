@@ -627,6 +627,22 @@
     "en": "663072a33ce1e178",
     "text": "En persons S/MIME-certifikat angavs eller togs bort"
   },
+  "audit.actions.openpgp.classical-kept.label": {
+    "en": "88853e0422aaf987",
+    "text": "En klassisk OpenPGP-nyckel behölls bredvid postkvantnyckeln som ersatte den"
+  },
+  "audit.actions.openpgp.classical-retired.label": {
+    "en": "dd04754fc94b2d49",
+    "text": "En behållen klassisk OpenPGP-nyckel togs bort"
+  },
+  "audit.actions.piv.reissued.label": {
+    "en": "c91e03d452110e24",
+    "text": "Ett PIV-certifikat utfärdades om efter inloggning"
+  },
+  "audit.actions.piv.superseded.label": {
+    "en": "8b80ee2d97b80d29",
+    "text": "Ett PIV-certifikat återkallades när dess ersättare användes för inloggning"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "En nyckel lades till på en enhet"

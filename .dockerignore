@@ -229,3 +229,9 @@ utilities
 # launchers run with the image's copy of the tree, MOCK_STS_DIR).
 !utilities/register-remote-pep.js
 !utilities/pep-assertion-request.js
+
+# models/generated/ is written by the image build itself (build-typescript.sh
+# runs models/tools/generate.mjs). A host copy, from a run of the generator or
+# common/model_emit.js, could carry a file the model no longer generates into
+# the image, so the build context never includes one (2026-11-23).
+models/generated/

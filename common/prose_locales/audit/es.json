@@ -627,6 +627,22 @@
     "en": "663072a33ce1e178",
     "text": "Se estableció o eliminó el certificado S/MIME de una persona"
   },
+  "audit.actions.openpgp.classical-kept.label": {
+    "en": "88853e0422aaf987",
+    "text": "Se conservó una clave OpenPGP clásica junto a la clave poscuántica que la sustituyó"
+  },
+  "audit.actions.openpgp.classical-retired.label": {
+    "en": "dd04754fc94b2d49",
+    "text": "Se eliminó una clave OpenPGP clásica conservada"
+  },
+  "audit.actions.piv.reissued.label": {
+    "en": "c91e03d452110e24",
+    "text": "Se volvió a emitir un certificado PIV tras el inicio de sesión"
+  },
+  "audit.actions.piv.superseded.label": {
+    "en": "8b80ee2d97b80d29",
+    "text": "Se revocó un certificado PIV cuando su sustituto se usó para iniciar sesión"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "Se agregó una clave a un dispositivo"

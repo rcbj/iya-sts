@@ -627,6 +627,22 @@
     "en": "663072a33ce1e178",
     "text": "किसी व्यक्ति का S/MIME प्रमाणपत्र सेट किया गया या हटाया गया"
   },
+  "audit.actions.openpgp.classical-kept.label": {
+    "en": "88853e0422aaf987",
+    "text": "एक क्लासिकल OpenPGP कुंजी को उसकी जगह लेने वाली पोस्ट-क्वांटम कुंजी के साथ रखा गया"
+  },
+  "audit.actions.openpgp.classical-retired.label": {
+    "en": "dd04754fc94b2d49",
+    "text": "रखी गई एक क्लासिकल OpenPGP कुंजी हटाई गई"
+  },
+  "audit.actions.piv.reissued.label": {
+    "en": "c91e03d452110e24",
+    "text": "साइन इन के बाद एक PIV प्रमाणपत्र फिर से जारी किया गया"
+  },
+  "audit.actions.piv.superseded.label": {
+    "en": "8b80ee2d97b80d29",
+    "text": "एक PIV प्रमाणपत्र रद्द किया गया जब उसके प्रतिस्थापन से साइन इन हुआ"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "एक उपकरण में एक कुंजी जोड़ी गई"

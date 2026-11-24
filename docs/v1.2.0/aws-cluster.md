@@ -400,6 +400,149 @@ The nine `sts_cells_*` jobs check, over HTTP:
   bind are refused, and `fail-open` lets a session held at `cella` be
   refreshed.
 
+## A remote PEP cluster
+
+`deploy/aws/pep-cluster/` builds a [remote XACML PEP](remote-pep.md)
+cluster as an environment of its own: a VPC, an Application Load
+Balancer with AWS WAF in front of it, and the PEP image on ECS Fargate.
+It shares nothing with the iya-sts environment it pulls from. The members
+reach the identity service at its public URL, as any other client does.
+
+```
+browser ─443──▶ WAF ▶ ALB (public certificate) ─sticky cookie─▶ aws-pep-1 | aws-pep-2
+app     ─9443─▶ WAF ▶ ALB                       ─round robin───▶ (decision API, AuthZEN)
+members ─443──▶ NAT gateway (one fixed address) ───────────────▶ https://test-idp.iyasec.io
+```
+
+- **The WAF** blocks addresses on AWS's IP reputation list, known bad
+  inputs and the core rule set. It rate-limits each address
+  (`waf_rate_limit`, per five minutes). It admits only `allowed_cidrs` and
+  blocks everything else.
+- **The load balancer ends TLS** with a public ACM certificate for
+  `public_hostname`. A browser always sees that one certificate, whichever
+  member answers. A cookie keeps a browser on one member for its session
+  ([why](remote-pep.md#the-load-balancer-must-keep-a-browser-on-one-instance)).
+  Because the load balancer ends TLS, an AuthZEN caller that authenticates
+  with a client certificate cannot do so through it.
+- **The members are in private subnets** and leave through one NAT
+  gateway. Its address (output `egress_ip`) is the one address the
+  identity service has to admit.
+
+### Choosing how the members authenticate
+
+`PEP_MODE` picks one of the two arrangements in
+[One certificate per instance, or one shared](remote-pep.md#one-certificate-per-instance-or-one-shared):
+
+| `PEP_MODE` | Members | Rows on the console |
+|---|---|---|
+| `per-instance` (the default) | `PEP_COUNT` services of one task each, `<cluster>-pep-1` to `-<n>`, each with its own entry, key and listener pair | one per member |
+| `shared` | one service of `PEP_COUNT` tasks, `<cluster>-pep`, sharing one entry, key and pair. `PEP_AUTOSCALING_MAX` above the count scales it by CPU | one |
+
+Autoscaling needs `foundation/` applied by an administrator first, for the
+deployer's Application Auto Scaling permissions.
+
+### The nudge
+
+The identity service nudges a PEP by calling it. Here that call has to
+pass the load balancer, which admits only the addresses it is given.
+
+- **With `notify_cidrs`** (the identity service's own egress addresses),
+  each member gets a notify port of its own on the load balancer
+  (9450 + n). A policy change then nudges every member.
+- **Without it** (the default), there is no notify port. `provision.sh`
+  turns nudging off on each member's row, and the members pick a change up
+  on their poll (`poll_interval_ms`, 15 seconds; an unchanged policy
+  answers `304`). An iya-sts environment's nodes leave from addresses that
+  change with every task, so `testidp` has none to give.
+
+### The keys never pass through Terraform
+
+Each member's private keys live in a Secrets Manager secret,
+`iya-sts/<pep env>/pep/<cluster>/<member>`, sealed under the project key.
+`provision.sh` writes them. It generates the assertion key on the machine
+it runs on and sends the identity service only a certificate request. The
+Terraform stack names the secret, and ECS hands its values to the
+container when the task starts. No key is in the Terraform state, the task
+definition or git.
+
+### Building one
+
+The PEP environment is `testpep`: its values are in
+`deploy/aws/pep-cluster/envs/testpep.tfvars` (`test-pep.iyasec.io`, two
+members, the companion). The realm issues a member's HTTPS listener pair
+only after the member has registered, so provisioning is two passes around
+the apply:
+
+```bash
+IMAGE=<account>.dkr.ecr.us-west-2.amazonaws.com/iya-sts:<tag>   # the service image (it ships the utility)
+P="--env=testpep --idp-url=https://test-idp.iyasec.io --idp-env=testidp \
+   --pep-host=test-pep.iyasec.io --image=$IMAGE --count=2 --pep-app"
+
+# 1. Entries, keys, the service's PEP cluster `aws` and its /pep-app route.
+deploy/aws/pep-cluster/provision.sh $P
+
+# 2. The environment. Images pep-<tag> and companion-<tag> in the project's repository.
+TF_STACK=pep-cluster IMAGE_TAG=<tag> deploy/aws/terraform-local.sh testpep apply
+
+# 3. Admit the PEP environment's egress_ip at the identity service.
+IMAGE_TAG=<tag> ALLOWED_CIDR=<your ip>/32,<egress_ip>/32 \
+  deploy/aws/terraform-local.sh testidp apply
+
+# 4. The listener pairs, and nudging stopped on the new rows.
+deploy/aws/pep-cluster/provision.sh $P
+```
+
+`--idp-env` names the iya-sts environment whose seeded management client
+`provision.sh` uses; `ADMIN_API_CLIENT_SECRET_FILE` names another client's
+secret instead. `PEP_REALM` (and `--realm`) registers the members to a
+realm rather than the default realm. `PEP_CLUSTER` (and `--cluster`) names
+the cluster, `aws` by default. Every pass is safe to run again. Building
+it as the deployer role needs `foundation/` re-applied first, for the
+regional WAF and the `test-pep.iyasec.io` name.
+
+### The demonstration application behind the reverse proxy
+
+`companion = true` (on in `testpep`, or `PEP_COMPANION=true`) runs the
+companion's `/pep-app` beside each member, and `provision.sh --pep-app`
+registers it: the `pep-app` role, the confidential client `pep-app` with
+its callback at `https://<pep host>/.iya-pep/callback`, its consent, and
+one session route to `http://127.0.0.1:9700`.
+
+- **Each member reaches its own companion** at `127.0.0.1:9700`, inside
+  its task. No security group admits 9700. The companion takes the person
+  from the identity headers the proxy sets, so nothing else may reach it.
+- **The client secret is not shown.** The utility prints a new one once.
+  `provision.sh` replaces it in that line, because the PEP receives the
+  secret on its own pull.
+- **Sign in** at `https://test-pep.iyasec.io/pep-app/protected`. The person
+  needs the `pep-app` role, which is created with no holders: grant it on
+  the console (Directory → Roles). A request with no session that is not
+  from a browser is answered 401.
+
+### Checking it
+
+```bash
+curl -s https://test-pep.iyasec.io:9443/ | jq '.registration | {name, authenticated}'
+```
+
+Repeat it: the answer alternates between the members. The console's
+**XACML → Remote PEPs** tab lists each member once it has registered, and
+**PEP clusters → aws** lists the cluster's members.
+`aws logs tail /iya-sts/containers --log-stream-name-prefix testpep-aws`
+shows the members' logs.
+
+### Removing it
+
+```bash
+TF_STACK=pep-cluster deploy/aws/terraform-local.sh testpep destroy
+deploy/aws/pep-cluster/provision.sh --env=testpep --remove   # the secrets
+```
+
+Destroying the iya-sts environment does not touch it. The secrets and the
+members' entries in the identity service stay until you remove them, as
+[Removing one](remote-pep.md#removing-one) describes; take `egress_ip` out
+of the identity service's `ALLOWED_CIDR` too.
+
 ## Reading the logs
 
 ```bash

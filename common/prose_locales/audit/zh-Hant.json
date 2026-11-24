@@ -627,6 +627,22 @@
     "en": "663072a33ce1e178",
     "text": "某人的 S/MIME 憑證已設定或移除"
   },
+  "audit.actions.openpgp.classical-kept.label": {
+    "en": "88853e0422aaf987",
+    "text": "一個傳統 OpenPGP 金鑰被保留在取代它的後量子金鑰旁邊"
+  },
+  "audit.actions.openpgp.classical-retired.label": {
+    "en": "dd04754fc94b2d49",
+    "text": "一個保留的傳統 OpenPGP 金鑰已被移除"
+  },
+  "audit.actions.piv.reissued.label": {
+    "en": "c91e03d452110e24",
+    "text": "登入後重新簽發了一個 PIV 憑證"
+  },
+  "audit.actions.piv.superseded.label": {
+    "en": "8b80ee2d97b80d29",
+    "text": "一個 PIV 憑證在其替代憑證用於登入後被撤銷"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "金鑰被新增到裝置"

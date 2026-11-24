@@ -627,6 +627,22 @@
     "en": "663072a33ce1e178",
     "text": "عُيّنت شهادة S/MIME لشخص أو أُزيلت"
   },
+  "audit.actions.openpgp.classical-kept.label": {
+    "en": "88853e0422aaf987",
+    "text": "احتُفظ بمفتاح OpenPGP تقليدي بجانب مفتاح ما بعد الكم الذي حلّ محله"
+  },
+  "audit.actions.openpgp.classical-retired.label": {
+    "en": "dd04754fc94b2d49",
+    "text": "أُزيل مفتاح OpenPGP تقليدي محتفظ به"
+  },
+  "audit.actions.piv.reissued.label": {
+    "en": "c91e03d452110e24",
+    "text": "أُعيد إصدار شهادة PIV بعد تسجيل الدخول"
+  },
+  "audit.actions.piv.superseded.label": {
+    "en": "8b80ee2d97b80d29",
+    "text": "أُلغيت شهادة PIV بعدما استُخدمت بديلتها لتسجيل الدخول"
+  },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
     "text": "أُضيف مفتاح إلى جهاز"
