@@ -3027,6 +3027,14 @@
     "en": "b4af599a6caff599",
     "text": "RFC 8705-halvan av raden ovan, vid samma ytor: en uppvisad åtkomsttoken måste bära `cnf[\"x5t#S256\"]` och anslutningen måste bära det certifikatet. **Det kräver att huvudporten är bunden som HTTPS** (global.https), och felsökarens lyssnare började BE OM ett klientcertifikat 2026-09-15 så att en bunden token över huvud taget kan visas upp där — det efterfrågas, krävs aldrig. En token som tjänsten inte utfärdat hålls till samma regel: bindningen den bär kontrolleras även om själva token inte kan verifieras."
   },
+  "oauth2.accessTokenRequireSenderConstraint|label": {
+    "en": "545727cb62da6732",
+    "text": "Utfärda endast avsändarbundna åtkomsttoken"
+  },
+  "oauth2.accessTokenRequireSenderConstraint|description": {
+    "en": "24f1fba61fc8e5d2",
+    "text": "AV SOM STANDARD, och tänkt att förbli av om inte varje klient i realmen kan binda sina token (ASVS 5.0.0 10.3.5 och 10.4.14, #2183). På utfärdar tokenslutpunkten en åtkomsttoken endast till en begäran som binder den: ett DPoP-bevis (RFC 9449) eller anslutningens klientcertifikat (RFC 8705), vilket som helst, för varje grant. Auktoriseringsslutpunkten avvisar en response_type som skulle utfärda en token i webbläsaren (implicit och hybrid `token`), som aldrig skulle kunna bindas. En klient som skickar ingetdera avvisas med invalid_dpop_proof som namnger denna inställning. De två raderna ovan avvisar en obunden token vid resurserna; denna vägrar att utfärda den."
+  },
   "oauth2.openRegistration|label": {
     "en": "5cd1778292c7697a",
     "text": "Öppen dynamisk klientregistrering (produktionsläge)"

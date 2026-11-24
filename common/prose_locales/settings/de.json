@@ -3027,6 +3027,14 @@
     "en": "b4af599a6caff599",
     "text": "Die Hälfte nach RFC 8705 der Zeile darüber, an denselben Oberflächen: Ein vorgelegtes Zugriffstoken muss `cnf[\"x5t#S256\"]` tragen, und die Verbindung muss dieses Zertifikat tragen. **Der Hauptport muss als HTTPS gebunden sein** (global.https), und der Listener des Debuggers hat am 2026-09-15 begonnen, ein Client-Zertifikat ANZUFORDERN, damit ein gebundenes Token dort überhaupt vorgelegt werden kann — angefordert, niemals verlangt. Ein Token, das dieser Dienst nicht ausgestellt hat, unterliegt derselben Regel: Die Bindung, die es trägt, wird geprüft, auch wenn das Token selbst nicht verifiziert werden kann."
   },
+  "oauth2.accessTokenRequireSenderConstraint|label": {
+    "en": "545727cb62da6732",
+    "text": "Nur absendergebundene Zugriffstoken ausstellen"
+  },
+  "oauth2.accessTokenRequireSenderConstraint|description": {
+    "en": "24f1fba61fc8e5d2",
+    "text": "STANDARDMÄSSIG AUS, und so gedacht, sofern nicht jeder Client des Realms seine Token binden kann (ASVS 5.0.0 10.3.5 und 10.4.14, #2183). Eingeschaltet stellt der Token-Endpunkt ein Zugriffstoken nur einer Anfrage aus, die es bindet: ein DPoP-Nachweis (RFC 9449) oder das Client-Zertifikat der Verbindung (RFC 8705), eines von beiden, für jeden Grant. Der Autorisierungsendpunkt lehnt einen response_type ab, der ein Token im Browser ausstellen würde (implizites und hybrides `token`), das nie gebunden werden könnte. Ein Client, der keines von beiden sendet, wird mit invalid_dpop_proof unter Nennung dieser Einstellung abgelehnt. Die beiden Zeilen oben lehnen ein ungebundenes Token an den Ressourcen ab; diese lehnt es ab, es auszustellen."
+  },
   "oauth2.openRegistration|label": {
     "en": "5cd1778292c7697a",
     "text": "Offene dynamische Client-Registrierung (Produktmodus)"

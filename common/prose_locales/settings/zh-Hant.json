@@ -3027,6 +3027,14 @@
     "en": "b4af599a6caff599",
     "text": "上一列的 RFC 8705 版本，適用於相同的介面：出示的存取權杖必須帶有 `cnf[\"x5t#S256\"]`，連線必須帶有該憑證。**它需要主連接埠以 HTTPS 繫結**（global.https），而偵錯工具的接聽程式自 2026-09-15 起開始「索取」用戶端憑證，讓繫結的權杖得以在那裡出示——只是索取，從不強制要求。不是本服務簽發的權杖也受相同規則約束：即使權杖本身無法驗證，其所帶的繫結仍會被檢查。"
   },
+  "oauth2.accessTokenRequireSenderConstraint|label": {
+    "en": "545727cb62da6732",
+    "text": "僅簽發寄件者約束的存取權杖"
+  },
+  "oauth2.accessTokenRequireSenderConstraint|description": {
+    "en": "24f1fba61fc8e5d2",
+    "text": "預設關閉，除非該領域的每個用戶端都能綁定其權杖，否則應保持關閉（ASVS 5.0.0 10.3.5 與 10.4.14，#2183）。開啟後，權杖端點只向能綁定權杖的請求簽發存取權杖：DPoP 證明（RFC 9449）或連線的用戶端憑證（RFC 8705），二者任一，適用於每種授權類型。授權端點拒絕會在瀏覽器中簽發權杖的 response_type（隱含與混合 `token`），因為這種權杖永遠無法綁定。兩者都不傳送的用戶端會以 invalid_dpop_proof 被拒，並指明此設定。上面兩列在資源處拒絕未綁定的權杖；這一列拒絕簽發它。"
+  },
   "oauth2.openRegistration|label": {
     "en": "5cd1778292c7697a",
     "text": "開放動態用戶端註冊（產品模式）"
