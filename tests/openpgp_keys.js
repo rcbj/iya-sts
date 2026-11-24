@@ -426,9 +426,11 @@ async function checkMail(t, made) {
       const smime = keys.encryptionFor(ALICE);
       const m = split(await composer.compose(message(Object.assign({},
         smime, { outerSubject: 'A message from P6' }))));
-      t.check(/Content-Type: application\/pkcs7-mime;\s+smime-type=enveloped-data/
+      // #2124: AuthEnvelopedData under AES-256-GCM by default.
+      t.check(/Content-Type: application\/pkcs7-mime;\s+smime-type=authEnveloped-data/
         .test(m.head) && /^Subject: A message from P6$/m.test(m.head),
-              '4f. ' + kind + ': application/pkcs7-mime enveloped-data');
+              '4f. ' + kind + ': application/pkcs7-mime ' +
+              'authEnveloped-data');
       const der = Buffer.from(m.body.replace(/\s+/g, ''), 'base64');
       let opened = '';
       try {

@@ -683,6 +683,18 @@
     "en": "b8bdc8b82bb08a9e",
     "text": "لا يُعرَض ولا يُقبل إلا AES-GCM، ويُستخدم حيث لا يسمّي العميل enc، ما لم يكن crypto.allowCbcJwe مفعّلًا."
   },
+  "mode.requirements.smime-authenticated-encryption.what": {
+    "en": "e4e548f216488a28",
+    "text": "بريد S/MIME تشفير مصادَق عليه"
+  },
+  "mode.requirements.smime-authenticated-encryption.development": {
+    "en": "6d1da1e7b21d186d",
+    "text": "البريد المشفّر إلى شهادة S/MIME هو AuthEnvelopedData تحت AES-256-GCM، ما لم تكن قيمة mail.smimeContentEncryption هي aes256-cbc، فحينها يُرسل EnvelopedData تحت AES-256-CBC بلا حماية للسلامة. لا يُبلَّغ عن شيء في الحالتين."
+  },
+  "mode.requirements.smime-authenticated-encryption.product": {
+    "en": "58e070998a057f5e",
+    "text": "الأمر نفسه، وما دامت قيمة mail.smimeContentEncryption هي aes256-cbc يبلّغ هذا الصف بأن ASVS 5.0.0 11.3.3 غير مستوفى."
+  },
   "mode.requirements.unscoped-people.what": {
     "en": "313033517d6bf954",
     "text": "يحتاج الشخص إلى دور عند SCIM وShared Signals"

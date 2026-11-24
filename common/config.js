@@ -22160,6 +22160,26 @@ const SETTINGS = [
                  'says so as it does for any message not sent. Empty, the ' +
                  'default, requires none; whatever a person chose is ' +
                  'honoured either way.' },
+  // #2124 (rcbj, 2026-11-24; ASVS 5.0.0 11.3.3): S/MIME mail is RFC 5083
+  // AuthEnvelopedData under AES-256-GCM; CBC is the way back for a reader
+  // that cannot open it, and `mode.js` reports it in product. Read at each
+  // send attempt (`mail.ts` `attempt()`), so it is runtime.
+  { key: 'mail.smimeContentEncryption', group: 'Mail',
+    label: 'S/MIME content encryption',
+    env: 'STS_MAIL_SMIME_CONTENT_ENCRYPTION', type: 'enum',
+    enumValues: ['aes256-gcm', 'aes256-cbc'], dflt: 'aes256-gcm',
+    runtime: true,
+    description: 'How mail encrypted to a person\'s S/MIME certificate is ' +
+                 'encrypted. aes256-gcm, the default, sends an RFC 5083 ' +
+                 'AuthEnvelopedData under AES-256-GCM ' +
+                 '(smime-type=authEnveloped-data, RFC 8551), which a ' +
+                 'reader can tell has not been changed. aes256-cbc sends ' +
+                 'the EnvelopedData under AES-256-CBC that was sent before ' +
+                 '1.2.0 (smime-type=enveloped-data), for a recipient whose ' +
+                 'mail client cannot read AuthEnvelopedData. WARNING: CBC ' +
+                 'has no integrity protection, and while this is ' +
+                 'aes256-cbc in product mode ASVS 5.0.0 requirement 11.3.3 ' +
+                 'is not met, which /admin/mode reports.' },
 
   { key: 'mail.selfServiceReset', group: 'Mail',
     label: 'Self-service password reset',
