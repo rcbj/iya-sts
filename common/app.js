@@ -1079,6 +1079,8 @@ const POPUP_PATH_PREFIXES = ['/oauth2/authorize', '/oauth2/autopost',
   '/saml2', '/saml11', '/wsfed', '/gnap', '/federation', '/launch',
   '/logout', '/tls/sign-in'];
 
+// A HOT PATH: asked by `writeHead()` for every HTML response, so no
+// Entering/Leaving pair, which would put two debug lines on every page served.
 /**
  * Tells whether a path is one a relying party may open in a popup of its own
  * (#2181): such a document carries no Cross-Origin-Opener-Policy.
@@ -1087,14 +1089,11 @@ const POPUP_PATH_PREFIXES = ['/oauth2/authorize', '/oauth2/autopost',
  * @returns true for the authorization and sign-in path
  */
 function opensInRelyingPartyPopup(path) {
-  log.debug("Entering opensInRelyingPartyPopup().");
   const p = String(path || '');
-  const found = POPUP_PATH_PREFIXES.some(function (prefix) {
+  return POPUP_PATH_PREFIXES.some(function (prefix) {
     return p === prefix || p.indexOf(prefix + '/') === 0 ||
            p.indexOf(prefix + '?') === 0;
   });
-  log.debug("Leaving opensInRelyingPartyPopup(). " + found);
-  return found;
 }
 
 app.use(function (req, res, next) {
