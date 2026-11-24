@@ -1967,6 +1967,18 @@
     "en": "d4fe53d89f2efabd",
     "text": "授予或撤銷管理主控台的存取權"
   },
+  "stsmetadata.endpoints./admin-api/approvals.what": {
+    "en": "05bc5b064dc1cb51",
+    "text": "NON-SPEC (#2166, ASVS 5.0.0 2.3.5)。GET /admin/approvals 繪製的內容：此領域中雙人審批（admin.dualControl，預設關閉）是否開啟並生效、它暫緩的操作表，以及每項為第二位管理員而暫緩的管理員操作，待決的在前；?id= 指定其中一項。對應 GET /admin/approvals。"
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.what": {
+    "en": "75553c5b96c9b91a",
+    "text": "NON-SPEC (#2166)。approve、refuse 和 withdraw，帶 { id, reason }。核准和拒絕由另一位持有該操作所需權限的不同人員進行；核准要求近期登入，並透過該操作自身的處理程式以提出者的操作身分執行所儲存的操作。撤回由提出者進行。對應 POST /admin/approvals。"
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.effect": {
+    "en": "5b4de3044247c233",
+    "text": "執行、拒絕或撤回一項被暫緩的管理員操作"
+  },
   "stsmetadata.endpoints./admin-api/sessions.what": {
     "en": "2976ee13b64681f9",
     "text": "非規格端點。本服務目前持有的每個工作階段，涵蓋具有工作階段的三個協定，可依 ?q= 與 ?protocol= 篩選，並以 ?page= 與 ?per= 分頁。它是與 /admin-api/logout「分開」的資源，而非其一種形狀：那一個回答「alice 仍登入了什麼」，以單一身分為鍵涵蓋十一個系列，而這一個回答「到底有誰登入了」，其中沒有特定使用者。兩者都讀取 logout/logout.ts，也就是何謂有效工作階段的唯一模型。每一列都攜帶撤銷所需的 key 與 id、GET /admin-api/tokens?session= 所需的 sessionId，以及說明其 expiresAt 是由三種計算方式中哪一種產生的 expiryRule——其中 0 表示「不會到期」，而不是紀元時間。對應 GET /admin/sessions。"

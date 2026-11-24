@@ -1967,6 +1967,18 @@
     "en": "d4fe53d89f2efabd",
     "text": "tilldelar eller återkallar åtkomst till administrationskonsolen"
   },
+  "stsmetadata.endpoints./admin-api/approvals.what": {
+    "en": "05bc5b064dc1cb51",
+    "text": "NON-SPEC (#2166, ASVS 5.0.0 2.3.5). Vad GET /admin/approvals ritar: om tvåpersonsgodkännande (admin.dualControl, av som standard) är på och i kraft i den här sfären, tabellen över åtgärder det håller kvar och varje administratörsåtgärd som hålls kvar för en andra administratör, väntande först; ?id= namnger en. Speglar GET /admin/approvals."
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.what": {
+    "en": "75553c5b96c9b91a",
+    "text": "NON-SPEC (#2166). approve, refuse och withdraw, med { id, reason }. Att godkänna och avslå är en andra, annan persons med den behörighet åtgärden behöver; ett godkännande kräver en nylig inloggning och kör den lagrade åtgärden genom dess egen hanterare som den begärandes åtgärd. Att dra tillbaka är den begärandes. Speglar POST /admin/approvals."
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.effect": {
+    "en": "5b4de3044247c233",
+    "text": "kör, avslår eller drar tillbaka en kvarhållen administratörsåtgärd"
+  },
   "stsmetadata.endpoints./admin-api/sessions.what": {
     "en": "2976ee13b64681f9",
     "text": "ICKE-SPEC. Varje session som den här tjänsten håller just nu, över de tre protokoll som har en, filtrerad med ?q= och ?protocol= och sidindelad med ?page= och ?per=. Det är en SEPARAT resurs från /admin-api/logout snarare än en form av den: den besvarar \"vad är alice fortfarande inloggad i\", nycklad på en identitet över elva familjer, och den här besvarar \"vem är inloggad över huvud taget\", som inte har någon användare i sig. Båda läser logout/logout.ts, den enda modellen av vad en levande session är. Varje rad bär den nyckel och det id som återkallelsen tar, det sessionId som GET /admin-api/tokens?session= tar, och en expiryRule som anger vilken av de tre beräkningarna som gav dess expiresAt — där 0 betyder INGEN UTGÅNG och inte epoken. Speglar GET /admin/sessions."

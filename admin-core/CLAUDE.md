@@ -11,6 +11,7 @@ neither of them owns.** Two files arrived on 2026-09-12 out of
 | `certificate_views.ts` | **which certificates a details view may open, and the view** | the catalogue and `detailsView()` / `listView()`, read by `/admin/pki`, `/admin/crypto-metadata` and `GET /admin-api/certificates` — see the section at the foot |
 | `protocol_endpoints.ts` | **which endpoints each Protocols page lists** | the page-to-route table and `forPage()`, read by `admin.respond()` and `admin_api.js`'s `sendJson()` — see the section at the foot |
 | `policy_transfer.ts` | **a realm's policies, out and back in, signed** (#1713) | `exportPolicies()`, `inspect()`, `importPolicies()`, answered by `admin_actions.ts`'s `policyTransferAction()` — see the section at the foot |
+| `dual_control.ts` | **two-person approval of high-risk acts** (#2166) | `HELD`, the one table of held `/admin-api` operations, the per-realm store of held acts, the decisions, the expiry job — see the section at the foot |
 | `create_forms.ts` | **which fields each directory create takes, and which it refuses without** (#1132) | `CreateForms.fieldsOf()`, answered as `createFields` by every `GET /admin-api/<object>/new` — see the section at the foot |
 
 **Read each file's own header first.** They carry the argument at length: what
@@ -730,3 +731,46 @@ one, owes a row here, and that test fails otherwise.
 * **A library (rule 3)**: it requires `helpers` alone, so any module may
   require it without moving a route or closing a cycle.
 
+## `dual_control.ts`: two-person approval (#2166, ASVS 5.0.0 2.3.5)
+
+rcbj's decision of 2026-11-24: built, OFF by default behind
+`admin.dualControl` (a realm's setting). The design comment is on #2166; the
+file's header argues each point. What a maintainer needs quickly:
+
+* **`HELD` is the one place an act is made high-risk**: a row per
+  `/admin-api` operationId, with a `when(body)` predicate where only some
+  bodies are (an administrator role, a CA certificate, the setting turned
+  off) and an `alsoIn(body)` where another realm's own setting also holds it
+  (a realm removed, a realm's setting written from outside). Adding an action
+  is one row; `tests/dual_control.js` I holds every row to a management API
+  POST that mirrors a console page.
+* **The choke point is `mgmt-api/admin_api.ts`'s POST wrapper**
+  (`holdForSecondAdministrator()`), after the gate and the request schema and
+  before the handler. The static console sends every form there, so parity
+  holds by construction. A held act is answered 202 with `approval.id` and a
+  `Location`; each held operation's model has that 202 (`DualControlHeld`).
+* **The approval REPLAYS the stored operation through its own handler**
+  (`replayHeld()`): the body re-checked against the schema, the caller the
+  requester (whose authority is re-checked with `effectiveRoles()` first),
+  the `authTime` the approver's — every held act is one #2161 puts under the
+  recent-sign-in rule, so the approval asks it (`signInTooOld()`) and the
+  replay carries what it verified. A replay carries `__dualControlReplay` and
+  is never held again.
+* **The single-administrator rule: the act PROCEEDS** (`STS-ADMIN-0962`, or
+  `0963` where the open development API names nobody) when fewer than two
+  people could decide it. Refusing the setting instead would test the roster
+  once and could later hold every act — the off switch included — for ever.
+  The lone-administrator door it leaves (revoking the others) is a row: a
+  revoke leaving fewer than two holders is held. A Security Administrator
+  counts as an approver only while also holding Admin Write, because the
+  decision operation is a write at the gate. `/admin/mode` draws `state()`.
+* **The patterns are #1180's, not its module**: a `realms.map()` store
+  declared here (`dualControl.requests`, GLOBAL tier, minted rows, so no
+  table), a pending index row, the deadline at every read, the realm-scope
+  cluster job `admin.dual-control` as the only periodic work, an
+  `InstanceSlot` built by the root at 18i-ii. Generalising
+  `authzen_access_request.ts` was rejected: its task, binding and callback
+  semantics are the AuthZEN profile's.
+* **Not held, and recorded only**: a person removed from an administrator
+  group over LDAP or SCIM, or deleted. Those doors name no administrator to
+  hold the act for.

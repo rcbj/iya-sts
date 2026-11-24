@@ -1039,6 +1039,14 @@
     "en": "de7f185fcea232a6",
     "text": "व्यवस्थापक भूमिका क्रियाएँ"
   },
+  "endpoints.route./admin-api/approvals.name": {
+    "en": "0405f4b67edd2784",
+    "text": "लंबित अनुमोदन"
+  },
+  "endpoints.route./admin-api/approvals/:action.name": {
+    "en": "c00eefb987efe9e3",
+    "text": "लंबित अनुमोदन के निर्णय"
+  },
   "endpoints.route./admin-api/sessions.name": {
     "en": "366487a11e4c5380",
     "text": "सक्रिय सत्र"

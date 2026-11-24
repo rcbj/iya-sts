@@ -29167,6 +29167,74 @@ const CODES = [
       'action it does not have; the refusal names the one it has ' +
       '(#2080).',
     spec: 'HTTP 400 { ok: false, errors } (Admin Console API)' },
+  { code: 'STS-ADMIN-0956',
+    summary: 'A decision on a held administrator act (two-person approval, ' +
+      '#2166) named no act this realm holds, or an action POST ' +
+      '/admin-api/approvals does not have.',
+    spec: 'HTTP 404 (or 400 for an unknown action) { ok: false, errors }' },
+  { code: 'STS-ADMIN-0957',
+    summary: 'The administrator who asked for a held act tried to approve or ' +
+      'refuse it themselves; a second, different administrator must ' +
+      '(#2166).',
+    spec: 'HTTP 403 { ok: false, errors }' },
+  { code: 'STS-ADMIN-0958',
+    summary: 'A held administrator act was approved or refused by a caller ' +
+      'that is not a person: an application\'s token, or nobody where ' +
+      'the management API is open (#2166).',
+    spec: 'HTTP 403 { ok: false, errors }' },
+  { code: 'STS-ADMIN-0959',
+    summary: 'A held administrator act was approved or refused by a person ' +
+      'whose token does not carry the authority the act needs (Admin ' +
+      'Write, or Security Administrator for a security change) ' +
+      '(#2166).',
+    spec: 'HTTP 403 { ok: false, errors }' },
+  { code: 'STS-ADMIN-0960',
+    summary: 'A held administrator act was approved, refused or withdrawn ' +
+      'after it expired (admin.dualControlLifetimeHours); it is never ' +
+      'run (#2166).',
+    spec: 'HTTP 409 { ok: false, errors }' },
+  { code: 'STS-ADMIN-0961',
+    summary: 'A high-risk administrator act was neither held nor run: the ' +
+      'realm already holds the most acts awaiting a second ' +
+      'administrator it keeps (#2166).',
+    spec: 'HTTP 400 { ok: false, errors }' },
+  { code: 'STS-ADMIN-0962',
+    summary: 'A high-risk administrator act ran without a second ' +
+      'administrator, though two-person approval is on: nobody but ' +
+      'its requester holds the authority it needs, and the act runs ' +
+      'rather than locking the realm out (#2166). Recorded, not ' +
+      'refused.',
+    spec: 'none (an audit row; the act\'s own answer)' },
+  { code: 'STS-ADMIN-0963',
+    summary: 'A high-risk administrator act ran without a second ' +
+      'administrator, though two-person approval is on: the ' +
+      'management API is open (adminApi.authRequired off, development ' +
+      'only) and names no administrator (#2166). Recorded, not ' +
+      'refused.',
+    spec: 'none (an audit row; the act\'s own answer)' },
+  { code: 'STS-ADMIN-0964',
+    summary: 'A held administrator act was approved, refused or withdrawn ' +
+      'after it had already been decided or withdrawn (#2166).',
+    spec: 'HTTP 409 { ok: false, errors }' },
+  { code: 'STS-ADMIN-0965',
+    summary: 'A held administrator act was approved, and not run: the ' +
+      'administrator who asked for it no longer holds the authority ' +
+      'it needs (#2166).',
+    spec: 'HTTP 409 { ok: false, errors }' },
+  { code: 'STS-ADMIN-0966',
+    summary: 'A held administrator act was approved and run, and the act ' +
+      'itself was refused when it ran against the state as it is now; ' +
+      'its own answer is `result` (#2166).',
+    spec: 'HTTP 409 { ok: false, errors, result }' },
+  { code: 'STS-ADMIN-0967',
+    summary: 'Somebody other than the administrator who asked for a held act ' +
+      'tried to withdraw it; they may refuse it instead (#2166).',
+    spec: 'HTTP 403 { ok: false, errors }' },
+  { code: 'STS-ADMIN-0968',
+    summary: 'The two-person approval expiry job (admin.dual-control) failed ' +
+      'in a realm; the job reports the run failed and a read still ' +
+      'applies each deadline (#2166).',
+    spec: 'none (logged; the scheduler\'s run row)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

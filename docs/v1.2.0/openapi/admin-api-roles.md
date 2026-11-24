@@ -379,6 +379,33 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `role` | string |  |  |
 
+**202**: Two-person approval is on and this act is one it holds (#2166): nothing was done yet. `approval` is the held request — its `id`, and the time it expires — and `Location` names it at GET /admin-api/approvals. A second administrator approves or refuses it with POST /admin-api/approvals/{action}.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `approval` | object | yes | An administrator act held for a second administrator (#2166), as the console and the API show it. A body member that names a private key or a password is shown as `(withheld)`. |
+| `approval.action` | string |  | The operation's action, the last segment of its path. |
+| `approval.authority` | string | yes | The role the act needs, which whoever decides it must hold too: `ADMIN_WRITE` or `SECURITY_ADMIN`. |
+| `approval.body` | any JSON |  | The held operation's own request body, as its schema passed it: its shape is that operation's, and any of twenty-six operations may be held. The held operation's own request body, as its schema passed it: its shape is that operation's, and any of twenty-six operations may be held. |
+| `approval.createdAt` | string |  |  |
+| `approval.decidedAt` | string |  |  |
+| `approval.decidedBy` | string |  | Who decided it, or withdrew it. |
+| `approval.expiresAt` | string |  |  |
+| `approval.id` | string | yes | The held act's id, `dc_` and 22 characters. |
+| `approval.operationId` | string | yes | The /admin-api operation that was asked for. |
+| `approval.outcome` | object |  | How the act answered when it ran. |
+| `approval.outcome.errors` | list |  |  |
+| `approval.outcome.errors[]` | string |  |  |
+| `approval.outcome.ok` | boolean |  |  |
+| `approval.outcome.status` | integer |  |  |
+| `approval.reason` | string |  |  |
+| `approval.requester` | string | yes | Who asked for it. |
+| `approval.status` | one of `pending`, `approved`, `done`, `failed`, `refused`, `withdrawn`, `expired` | yes | `pending` until somebody decides it; then `done` (approved and run), `failed` (approved, and the act was refused when it ran, or its requester no longer held the authority), `refused`, `withdrawn` or `expired`. |
+| `approval.what` | string |  | What it does, in a sentence. |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pending` | boolean | yes | Always true: the act waits for a second administrator. |
+
 **400**: The operation was refused; `errors` says why and nothing changed.
 
 | Member | Type | Required | What it is |
@@ -436,6 +463,33 @@ Scope: `admin:write`.
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 | `role` | string |  |  |
+
+**202**: Two-person approval is on and this act is one it holds (#2166): nothing was done yet. `approval` is the held request — its `id`, and the time it expires — and `Location` names it at GET /admin-api/approvals. A second administrator approves or refuses it with POST /admin-api/approvals/{action}.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `approval` | object | yes | An administrator act held for a second administrator (#2166), as the console and the API show it. A body member that names a private key or a password is shown as `(withheld)`. |
+| `approval.action` | string |  | The operation's action, the last segment of its path. |
+| `approval.authority` | string | yes | The role the act needs, which whoever decides it must hold too: `ADMIN_WRITE` or `SECURITY_ADMIN`. |
+| `approval.body` | any JSON |  | The held operation's own request body, as its schema passed it: its shape is that operation's, and any of twenty-six operations may be held. The held operation's own request body, as its schema passed it: its shape is that operation's, and any of twenty-six operations may be held. |
+| `approval.createdAt` | string |  |  |
+| `approval.decidedAt` | string |  |  |
+| `approval.decidedBy` | string |  | Who decided it, or withdrew it. |
+| `approval.expiresAt` | string |  |  |
+| `approval.id` | string | yes | The held act's id, `dc_` and 22 characters. |
+| `approval.operationId` | string | yes | The /admin-api operation that was asked for. |
+| `approval.outcome` | object |  | How the act answered when it ran. |
+| `approval.outcome.errors` | list |  |  |
+| `approval.outcome.errors[]` | string |  |  |
+| `approval.outcome.ok` | boolean |  |  |
+| `approval.outcome.status` | integer |  |  |
+| `approval.reason` | string |  |  |
+| `approval.requester` | string | yes | Who asked for it. |
+| `approval.status` | one of `pending`, `approved`, `done`, `failed`, `refused`, `withdrawn`, `expired` | yes | `pending` until somebody decides it; then `done` (approved and run), `failed` (approved, and the act was refused when it ran, or its requester no longer held the authority), `refused`, `withdrawn` or `expired`. |
+| `approval.what` | string |  | What it does, in a sentence. |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pending` | boolean | yes | Always true: the act waits for a second administrator. |
 
 **400**: The operation was refused; `errors` says why and nothing changed.
 

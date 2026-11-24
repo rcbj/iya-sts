@@ -1967,6 +1967,18 @@
     "en": "d4fe53d89f2efabd",
     "text": "concede o revoca el acceso a la consola de administración"
   },
+  "stsmetadata.endpoints./admin-api/approvals.what": {
+    "en": "05bc5b064dc1cb51",
+    "text": "NON-SPEC (#2166, ASVS 5.0.0 2.3.5). Lo que dibuja GET /admin/approvals: si la aprobación de dos personas (admin.dualControl, desactivada por defecto) está activada y en vigor en este dominio, la tabla de actos que retiene y cada acto de administración retenido para un segundo administrador, primero los pendientes; ?id= nombra uno. Refleja GET /admin/approvals."
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.what": {
+    "en": "75553c5b96c9b91a",
+    "text": "NON-SPEC (#2166). approve, refuse y withdraw, con { id, reason }. Aprobar y rechazar corresponden a una segunda persona, distinta, con la autoridad que el acto necesita; una aprobación pide un inicio de sesión reciente y ejecuta la operación guardada por su propio manejador como acto de quien la pidió. Retirar corresponde a quien la pidió. Refleja POST /admin/approvals."
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.effect": {
+    "en": "5b4de3044247c233",
+    "text": "ejecuta, rechaza o retira un acto de administración retenido"
+  },
   "stsmetadata.endpoints./admin-api/sessions.what": {
     "en": "2976ee13b64681f9",
     "text": "NO ESTÁNDAR. Cada sesión que este servicio mantiene en este momento, en los tres protocolos que tienen una, filtrada por ?q= y ?protocol= y paginada con ?page= y ?per=. Es un recurso SEPARADO de /admin-api/logout y no una forma de él: aquel responde \"en qué sigue teniendo sesión alice\", con una identidad como clave a través de once familias, y este responde \"quién tiene sesión iniciada\", sin ningún usuario en la pregunta. Ambos leen logout/logout.ts, el único modelo de qué es una sesión activa. Cada fila lleva la clave y el id que toma la revocación, el sessionId que toma GET /admin-api/tokens?session= y una expiryRule que indica cuál de las tres aritméticas produjo su expiresAt, donde 0 significa SIN CADUCIDAD y no la época. Refleja GET /admin/sessions."

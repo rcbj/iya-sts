@@ -6534,6 +6534,23 @@ const ENDPOINTS: EndpointEntry[] = [
           'entry is refused and nothing is written, so that a person ' +
           'created later under that name inherits nothing. Mirrors POST ' +
           '/admin/rbac.' },
+  { path: '/admin-api/approvals', group: 'Management API',
+    name: 'Pending approvals', specs: ['openapi'],
+    what: 'NON-SPEC (#2166, ASVS 5.0.0 2.3.5). What GET /admin/approvals ' +
+          'draws: whether two-person approval (admin.dualControl, off by ' +
+          'default) is on and in force in this realm, the table of acts ' +
+          'it holds, and every administrator act held for a second ' +
+          'administrator, pending ones first; ?id= names one. Mirrors GET ' +
+          '/admin/approvals.' },
+  { path: '/admin-api/approvals/:action', group: 'Management API',
+    name: 'Pending approval decisions', specs: ['openapi'],
+    effect: 'runs, refuses or withdraws a held administrator act',
+    what: 'NON-SPEC (#2166). approve, refuse and withdraw, with { id, ' +
+          'reason }. Approve and refuse are a second, different person\'s ' +
+          'holding the authority the act needs; an approval asks for a ' +
+          'recent sign-in and runs the stored operation through its own ' +
+          'handler as the requester\'s act. Withdraw is the requester\'s. ' +
+          'Mirrors POST /admin/approvals.' },
   { path: '/admin-api/sessions', group: 'Management API', name: 'Live sessions',
     specs: ['openapi', 'oidc', 'rfc4120', 'rfc4511'],
     what: 'NON-SPEC. Every session this service is holding right now, across ' +

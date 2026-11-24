@@ -1039,6 +1039,14 @@
     "en": "de7f185fcea232a6",
     "text": "Aktionen für Admin-Rollen"
   },
+  "endpoints.route./admin-api/approvals.name": {
+    "en": "0405f4b67edd2784",
+    "text": "Ausstehende Freigaben"
+  },
+  "endpoints.route./admin-api/approvals/:action.name": {
+    "en": "c00eefb987efe9e3",
+    "text": "Entscheidungen über ausstehende Freigaben"
+  },
   "endpoints.route./admin-api/sessions.name": {
     "en": "366487a11e4c5380",
     "text": "Aktive Sitzungen"

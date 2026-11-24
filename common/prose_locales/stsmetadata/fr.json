@@ -1967,6 +1967,18 @@
     "en": "d4fe53d89f2efabd",
     "text": "accorde ou révoque l’accès à la console d’administration"
   },
+  "stsmetadata.endpoints./admin-api/approvals.what": {
+    "en": "05bc5b064dc1cb51",
+    "text": "NON-SPEC (#2166, ASVS 5.0.0 2.3.5). Ce que dessine GET /admin/approvals : si l'approbation à deux personnes (admin.dualControl, désactivée par défaut) est activée et en vigueur dans ce domaine, la table des actes qu'elle retient, et chaque acte d'administration retenu pour un second administrateur, ceux en attente d'abord ; ?id= en désigne un. Reflète GET /admin/approvals."
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.what": {
+    "en": "75553c5b96c9b91a",
+    "text": "NON-SPEC (#2166). approve, refuse et withdraw, avec { id, reason }. Approuver et refuser reviennent à une seconde personne, différente, détenant l'autorité dont l'acte a besoin ; une approbation demande une connexion récente et exécute l'opération stockée par son propre gestionnaire comme l'acte du demandeur. Retirer revient au demandeur. Reflète POST /admin/approvals."
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.effect": {
+    "en": "5b4de3044247c233",
+    "text": "exécute, refuse ou retire un acte d'administration retenu"
+  },
   "stsmetadata.endpoints./admin-api/sessions.what": {
     "en": "2976ee13b64681f9",
     "text": "NON-SPEC. Chaque session que ce service détient en ce moment, dans les trois protocoles qui en ont, filtrées par ?q= et ?protocol= et paginées avec ?page= et ?per=. C’est une ressource DISTINCTE de /admin-api/logout plutôt qu’une forme de celle-ci : l’une répond à « à quoi alice est-elle encore connectée », indexée sur une identité dans onze familles, et celle-ci répond à « qui est connecté », ce qui n’implique aucun utilisateur. Les deux lisent logout/logout.ts, l’unique modèle de ce qu’est une session active. Chaque ligne porte la clé et l’identifiant que prend la révocation, le sessionId que prend GET /admin-api/tokens?session=, et un expiryRule indiquant lequel des trois calculs a produit son expiresAt — où 0 signifie AUCUNE EXPIRATION et non l’époque. Reflète GET /admin/sessions."

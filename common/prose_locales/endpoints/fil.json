@@ -1039,6 +1039,14 @@
     "en": "de7f185fcea232a6",
     "text": "Mga action sa admin role"
   },
+  "endpoints.route./admin-api/approvals.name": {
+    "en": "0405f4b67edd2784",
+    "text": "Mga nakabinbing pag-apruba"
+  },
+  "endpoints.route./admin-api/approvals/:action.name": {
+    "en": "c00eefb987efe9e3",
+    "text": "Mga desisyon sa nakabinbing pag-apruba"
+  },
   "endpoints.route./admin-api/sessions.name": {
     "en": "366487a11e4c5380",
     "text": "Mga live session"

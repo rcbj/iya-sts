@@ -1967,6 +1967,18 @@
     "en": "d4fe53d89f2efabd",
     "text": "nagbibigay o nagre-revoke ng access sa admin console"
   },
+  "stsmetadata.endpoints./admin-api/approvals.what": {
+    "en": "05bc5b064dc1cb51",
+    "text": "NON-SPEC (#2166, ASVS 5.0.0 2.3.5). Ang iginuguhit ng GET /admin/approvals: kung naka-on at may bisa ang pag-apruba ng dalawang tao (admin.dualControl, naka-off bilang default) sa realm na ito, ang talaan ng mga aksyong hinahawakan nito, at bawat aksyon ng administrator na hinawakan para sa ikalawang administrator, nauuna ang mga nakabinbin; ang ?id= ay tumutukoy sa isa. Sinasalamin ang GET /admin/approvals."
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.what": {
+    "en": "75553c5b96c9b91a",
+    "text": "NON-SPEC (#2166). approve, refuse at withdraw, na may { id, reason }. Ang pag-apruba at pagtanggi ay sa ikalawang, ibang taong may awtoridad na kailangan ng aksyon; ang pag-apruba ay humihingi ng kamakailang pag-sign in at pinapatakbo ang nakaimbak na operasyon sa sarili nitong handler bilang aksyon ng humiling. Ang pagbawi ay sa humiling. Sinasalamin ang POST /admin/approvals."
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.effect": {
+    "en": "5b4de3044247c233",
+    "text": "pinapatakbo, tinatanggihan o binabawi ang isang hinawakang aksyon ng administrator"
+  },
   "stsmetadata.endpoints./admin-api/sessions.what": {
     "en": "2976ee13b64681f9",
     "text": "NON-SPEC. Bawat session na hawak ng serbisyong ito ngayon, sa tatlong protocol na may session, sinasala ng ?q= at ?protocol= at naka-page gamit ang ?page= at ?per=. HIWALAY itong resource mula sa /admin-api/logout at hindi hugis nito: sinasagot niyon ang \"saan pa naka-sign in si alice\", naka-key sa iisang identity sa labing-isang family, at sinasagot nito ang \"sino ang naka-sign in\", na walang user. Parehong binabasa ang logout/logout.ts, ang nag-iisang model ng kung ano ang live na session. Bawat row ay may dalang key at id na tinatanggap ng revoke, ang sessionId na tinatanggap ng GET /admin-api/tokens?session=, at isang expiryRule na nagsasabi kung alin sa tatlong aritmetika ang gumawa ng expiresAt nito — kung saan ang 0 ay nangangahulugang WALANG EXPIRY at hindi ang epoch. Sinasalamin ang GET /admin/sessions."

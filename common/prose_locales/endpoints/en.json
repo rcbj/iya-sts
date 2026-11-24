@@ -259,6 +259,8 @@
   "endpoints.route./admin-api/mfa/:action.name": "Clear a second factor",
   "endpoints.route./admin-api/rbac.name": "Admin console roles",
   "endpoints.route./admin-api/rbac/:action.name": "Admin role actions",
+  "endpoints.route./admin-api/approvals.name": "Pending approvals",
+  "endpoints.route./admin-api/approvals/:action.name": "Pending approval decisions",
   "endpoints.route./admin-api/sessions.name": "Live sessions",
   "endpoints.route./admin-api/sessions/:action.name": "Live sessions: end one",
   "endpoints.route./admin-api/tokens.name": "Issued tokens, assertions and tickets, grouped by issuance",

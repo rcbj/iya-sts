@@ -10795,6 +10795,36 @@ const SETTINGS = [
                  'Administrators, over every realm; a realm\'s own group ' +
                  'confines its members to that realm.' },
 
+  // TWO-PERSON APPROVAL (#2166, ASVS 5.0.0 2.3.5; rcbj's decision of
+  // 2026-11-24: built, and off by default). A realm's own setting: the
+  // default realm's holds the service's acts, a realm's its own.
+  // `admin-core/dual_control.ts` argues it.
+  { key: 'admin.dualControl', group: 'Admin console',
+    label: 'Two-person approval for high-risk acts',
+    env: 'STS_ADMIN_DUAL_CONTROL', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'On, a high-risk administrator act is not done when the ' +
+                 'first administrator asks: deleting a realm, granting an ' +
+                 'administrator role, re-keying or revoking a CA, ' +
+                 'replacing a trust anchor, rotating, importing or ' +
+                 'retiring a signing key, rotating the key-encryption key, ' +
+                 'and turning this setting off. It is held on Pending ' +
+                 'approvals until a second, different administrator ' +
+                 'holding the same authority approves it, when it runs as ' +
+                 'the first one\'s act, or refuses it. When fewer than two ' +
+                 'people could decide an act, it runs at once and the ' +
+                 'audit log says nobody approved it, so a realm can never ' +
+                 'be locked out. Off, the default, every act runs when its ' +
+                 'administrator asks.' },
+  { key: 'admin.dualControlLifetimeHours', group: 'Admin console',
+    label: 'How long a held act waits for a second administrator (hours)',
+    env: 'STS_ADMIN_DUAL_CONTROL_LIFETIME_HOURS', type: 'int', dflt: 24,
+    min: 1, max: 168,
+    runtime: true,
+    description: 'How long an act held for two-person approval waits for a ' +
+                 'decision. After it, the act has expired and is never ' +
+                 'run; its requester asks again.' },
+
   // -------------------------------------------------------------------------
   // THE MANAGEMENT API'S OWN GATE (2026-09-09), which is a different question
   // from the console's two roles above.

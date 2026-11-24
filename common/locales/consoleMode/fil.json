@@ -30,5 +30,16 @@
   "waivedBy": "INALIS SA REALM NA ITO NG ISANG ADMINISTRATOR: <code>{requirement}</code> ({section}, isang {level}), dahil naka-on ang <code>{setting}</code>. Nananatiling ipinapatupad ang lahat ng iba pang kinakailangan ng BCP.",
   "requirementNotMet": "HINDI NATUTUGUNAN DITO: <code>{requirement}</code> ({section}), dahil sa <code>{setting}</code>.",
   "waivedPerApplication": "BAWAT APPLICATION: ginagamit lang ng isang application ang mga response type na ito kapag nakalista sa <code>{attribute}</code> nito ang hinihingi nito, itinakda ng isang administrator o ng may-ari ng application. Ang isang client na nagrerehistro ng sarili ay makakapag-enable lang ng pinangalanan ng <code>{setting}</code>: {value}.",
-  "waivedPerApplicationNone": "BAWAT APPLICATION: ginagamit lang ng isang application ang mga response type na ito kapag nakalista sa <code>{attribute}</code> nito ang hinihingi nito, itinakda ng isang administrator o ng may-ari ng application. Ang isang client na nagrerehistro ng sarili ay walang maaaring i-enable, dahil walang laman ang <code>{setting}</code>."
+  "waivedPerApplicationNone": "BAWAT APPLICATION: ginagamit lang ng isang application ang mga response type na ito kapag nakalista sa <code>{attribute}</code> nito ang hinihingi nito, itinakda ng isang administrator o ng may-ari ng application. Ang isang client na nagrerehistro ng sarili ay walang maaaring i-enable, dahil walang laman ang <code>{setting}</code>.",
+  "dualHeading": "Pag-apruba ng dalawang tao",
+  "dualLead": "Kung naghihintay sa ikalawang administrator ang mga mataas-na-panganib na aksyon ng administrator sa realm na ito (<code>admin.dualControl</code>). Setting ito ng realm sa alinmang mode, hindi pagkakaiba ng mode; narito ito dahil sinasagot ng pahinang ito kung may bisa ito.",
+  "dualInForce": "May bisa: ang hinawakang aksyon ay naghihintay sa ikalawang administrator.",
+  "dualOnNotInForce": "Naka-on, ngunit walang bisa para sa bawat awtoridad.",
+  "dualOff": "Naka-off.",
+  "dualThAuthority": "Awtoridad",
+  "dualThHolders": "Mga taong maaaring magpasya",
+  "dualThInForce": "May bisa",
+  "dualYes": "oo",
+  "dualNo": "hindi",
+  "dualLink": "Mga nakabinbing pag-apruba ({n, plural, =1 {isang aksyong naghihintay} other {# aksyong naghihintay}})"
 }

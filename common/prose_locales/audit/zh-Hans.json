@@ -1183,6 +1183,38 @@
     "en": "d4a30614c3be855a",
     "text": "AuthZEN 可申请拒绝存储已满"
   },
+  "audit.actions.admin.dual-control.held.label": {
+    "en": "7cc67cb1bbf268e1",
+    "text": "一项管理员操作被暂缓，等待第二位管理员"
+  },
+  "audit.actions.admin.dual-control.approved.label": {
+    "en": "ddb1032144ecf35e",
+    "text": "一项被暂缓的管理员操作已获批准并执行"
+  },
+  "audit.actions.admin.dual-control.refused.label": {
+    "en": "5a53ff10f9622a39",
+    "text": "一项被暂缓的管理员操作被拒绝"
+  },
+  "audit.actions.admin.dual-control.withdrawn.label": {
+    "en": "9b6ed37500304f9f",
+    "text": "一项被暂缓的管理员操作被其提出者撤回"
+  },
+  "audit.actions.admin.dual-control.expired.label": {
+    "en": "888e41b9c4b293a3",
+    "text": "一项被暂缓的管理员操作未获决定而过期"
+  },
+  "audit.actions.admin.dual-control.failed.label": {
+    "en": "fef1ae7e35badadb",
+    "text": "一项被暂缓的管理员操作已获批准但未执行"
+  },
+  "audit.actions.admin.dual-control.decision-refused.label": {
+    "en": "74145b531210f993",
+    "text": "有人被拒绝对一项被暂缓的管理员操作作出决定"
+  },
+  "audit.actions.admin.dual-control.proceeded.label": {
+    "en": "8b49f4c16e88c707",
+    "text": "一项高风险管理员操作在没有第二位管理员的情况下执行"
+  },
   "audit.actions.xacml.issuance.refused.label": {
     "en": "f1b5bcbea74861a0",
     "text": "签发 PEP 拒绝让本服务铸造某项内容"

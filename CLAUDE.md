@@ -550,6 +550,7 @@ preference; this table says what the constraint is and the named file says why.
 | 18g | `admin-ui/caches_admin` | 18a's placement and 18a's reason (#74). | `admin-ui/CLAUDE.md` |
 | 18h | `admin-ui/vc_status_admin` | 18a's placement and 18a's reason, after `oid4vc/vc_status`. | `admin-ui/CLAUDE.md` |
 | 18i | `admin-ui/scheduler_admin` | 18a's placement and 18a's reason (#49); the page asks the scheduler when drawn, so a job registered later still appears. | `cluster/CLAUDE.md` |
+| 18i-ii | `admin-core/dual_control` | After the scheduler, whose expiry job it registers when built (#2166); before `mgmt-api/admin_api` (19), which requires it in the ordinary direction. A library, no route; the roster and role permissions reached lazily. | `admin-core/CLAUDE.md` |
 | 18i-report | `report/report_app`, `report/report_api` | After the scheduler is in hand (the module registers its six jobs at load), and after `oauth2` and `authn` (the API's lazy dependencies). The two paths collide with nothing. | `report/CLAUDE.md` |
 | 18j | `risk/risk_store`, `risk_datasets`, `risk_failures`, `risk_upload`, `risk_engine`, then `admin-ui/risk_admin` | 18a's placement and reason (#62): libraries, then the page, after the scheduler. **Nothing requires the libraries earlier** — they are reached lazily. | `risk/CLAUDE.md` |
 | 18j-iii | `common/attestation_revocation` | Inside 18j, after `risk/risk_datasets` (#256). A library: registers scheduler jobs, no route; reached lazily. | `common/CLAUDE.md` (3cf) |

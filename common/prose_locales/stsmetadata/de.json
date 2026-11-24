@@ -1967,6 +1967,18 @@
     "en": "d4fe53d89f2efabd",
     "text": "gewährt oder widerruft den Zugang zur Administrationskonsole"
   },
+  "stsmetadata.endpoints./admin-api/approvals.what": {
+    "en": "05bc5b064dc1cb51",
+    "text": "NON-SPEC (#2166, ASVS 5.0.0 2.3.5). Was GET /admin/approvals zeichnet: ob die Vier-Augen-Freigabe (admin.dualControl, standardmäßig aus) in diesem Bereich an und in Kraft ist, die Tabelle der Aktionen, die sie zurückhält, und jede für einen zweiten Administrator zurückgehaltene Administratoraktion, ausstehende zuerst; ?id= nennt eine. Spiegelt GET /admin/approvals."
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.what": {
+    "en": "75553c5b96c9b91a",
+    "text": "NON-SPEC (#2166). approve, refuse und withdraw, mit { id, reason }. Freigeben und Ablehnen sind Sache einer zweiten, anderen Person mit der Berechtigung, die die Aktion braucht; eine Freigabe verlangt eine kürzliche Anmeldung und führt die gespeicherte Operation über ihren eigenen Handler als Aktion des Anforderers aus. Zurückziehen ist Sache des Anforderers. Spiegelt POST /admin/approvals."
+  },
+  "stsmetadata.endpoints./admin-api/approvals/:action.effect": {
+    "en": "5b4de3044247c233",
+    "text": "führt eine zurückgehaltene Administratoraktion aus, lehnt sie ab oder zieht sie zurück"
+  },
   "stsmetadata.endpoints./admin-api/sessions.what": {
     "en": "2976ee13b64681f9",
     "text": "KEINE SPEZIFIKATION. Jede Sitzung, die dieser Dienst gerade hält, über die drei Protokolle, die eine haben, gefiltert mit ?q= und ?protocol= und seitenweise mit ?page= und ?per=. Sie ist eine EIGENE Ressource neben /admin-api/logout und keine Form davon: jene antwortet „wobei alice noch angemeldet ist“, bezogen auf eine Identität über elf Familien, und diese antwortet „wer überhaupt angemeldet ist“, und darin kommt kein Benutzer vor. Beide lesen logout/logout.ts, das eine Modell dessen, was eine laufende Sitzung ist. Jede Zeile trägt den Schlüssel und die id, die revoke nimmt, die sessionId, die GET /admin-api/tokens?session= nimmt, und eine expiryRule, die sagt, welche der drei Rechenarten ihr expiresAt erzeugt hat — wobei 0 KEINEN ABLAUF bedeutet und nicht die Epoche. Spiegelt GET /admin/sessions."

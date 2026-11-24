@@ -5319,6 +5319,22 @@
     "en": "296a8d5721391215",
     "text": "cn för den katalogrupp vars medlemmar är säkerhetsadministratörer: endast de får ändra en policy under Katalog → Policyer, ange en policy för ett program, en grupp eller en person, tilldela den här rollen eller agera på kontot för en person som har den. Admin Write ensamt får inte det. ROLLEN INNEFATTAR ADMIN READ och inget annat, så den kan innehas av någon som annars inte är administratör. Standardområdets grupp är tjänstens säkerhetsadministratörer, över alla områden; ett områdes egen grupp begränsar sina medlemmar till det området."
   },
+  "admin.dualControl|label": {
+    "en": "fdc2c7868f03b109",
+    "text": "Tvåpersonsgodkännande för högriskåtgärder"
+  },
+  "admin.dualControl|description": {
+    "en": "f45748a3e6863b70",
+    "text": "På utförs inte en högriskåtgärd av en administratör när den första administratören begär den: att ta bort en sfär, ge en administratörsroll, byta nyckel för eller återkalla en CA, ersätta ett förtroendeankare, rotera, importera eller avveckla en signeringsnyckel, rotera nyckelkrypteringsnyckeln och slå av den här inställningen. Den hålls kvar under Väntande godkännanden tills en andra, annan administratör med samma behörighet godkänner den — då körs den som den förstas åtgärd — eller avslår den. När färre än två personer skulle kunna besluta om en åtgärd körs den direkt och granskningsloggen anger att ingen godkände den, så att en sfär aldrig kan låsas ute. Av, standardvärdet, körs varje åtgärd när dess administratör begär den."
+  },
+  "admin.dualControlLifetimeHours|label": {
+    "en": "9ec729e89e186298",
+    "text": "Hur länge en kvarhållen åtgärd väntar på en andra administratör (timmar)"
+  },
+  "admin.dualControlLifetimeHours|description": {
+    "en": "44df058d90d6cfe9",
+    "text": "Hur länge en åtgärd som hålls kvar för tvåpersonsgodkännande väntar på ett beslut. Därefter har åtgärden löpt ut och körs aldrig; den som begärde den frågar igen."
+  },
   "adminApi.authRequired|label": {
     "en": "6339e51c0e23a87b",
     "text": "Kräv en åtkomsttoken på /admin-api"

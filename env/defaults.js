@@ -105,6 +105,8 @@ var config = {
     readGroup: "admin-read",         // Admin Read role
     writeGroup: "admin-write",       // Admin Write role
     securityGroup: "security-admin", // Security Administrator role
+    dualControl: false,              // Two-person approval for high-risk acts
+    dualControlLifetimeHours: 24,    // How long a held act waits for a second administrator (hours)
     openWhenEmpty: true              // Open until the bootstrap administrator signs in
   },
 

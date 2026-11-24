@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6088** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6101** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -97,7 +97,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 137
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 304
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 317
 * [Management API (`STS-API`)](#sts-api) — 97
 * [User portal (`STS-PORTAL`)](#sts-portal) — 123
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
@@ -6284,6 +6284,19 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0953` | A certificate handed to the console's certificate inspection helper (POST /admin-api/console/certificates/inspect) held no PEM certificate, or more text or more certificates than it reads. Nothing is kept (#2080). | HTTP 400 { ok: false, errors } (Admin Console API) |
 | `STS-ADMIN-0954` | A PEM block handed to the console's certificate inspection helper could not be read as an X.509 certificate. Nothing is kept (#2080). | HTTP 400 { ok: false, errors } (Admin Console API) |
 | `STS-ADMIN-0955` | The console's certificate inspection helper was asked for an action it does not have; the refusal names the one it has (#2080). | HTTP 400 { ok: false, errors } (Admin Console API) |
+| `STS-ADMIN-0956` | A decision on a held administrator act (two-person approval, #2166) named no act this realm holds, or an action POST /admin-api/approvals does not have. | HTTP 404 (or 400 for an unknown action) { ok: false, errors } |
+| `STS-ADMIN-0957` | The administrator who asked for a held act tried to approve or refuse it themselves; a second, different administrator must (#2166). | HTTP 403 { ok: false, errors } |
+| `STS-ADMIN-0958` | A held administrator act was approved or refused by a caller that is not a person: an application's token, or nobody where the management API is open (#2166). | HTTP 403 { ok: false, errors } |
+| `STS-ADMIN-0959` | A held administrator act was approved or refused by a person whose token does not carry the authority the act needs (Admin Write, or Security Administrator for a security change) (#2166). | HTTP 403 { ok: false, errors } |
+| `STS-ADMIN-0960` | A held administrator act was approved, refused or withdrawn after it expired (admin.dualControlLifetimeHours); it is never run (#2166). | HTTP 409 { ok: false, errors } |
+| `STS-ADMIN-0961` | A high-risk administrator act was neither held nor run: the realm already holds the most acts awaiting a second administrator it keeps (#2166). | HTTP 400 { ok: false, errors } |
+| `STS-ADMIN-0962` | A high-risk administrator act ran without a second administrator, though two-person approval is on: nobody but its requester holds the authority it needs, and the act runs rather than locking the realm out (#2166). Recorded, not refused. | none (an audit row; the act's own answer) |
+| `STS-ADMIN-0963` | A high-risk administrator act ran without a second administrator, though two-person approval is on: the management API is open (adminApi.authRequired off, development only) and names no administrator (#2166). Recorded, not refused. | none (an audit row; the act's own answer) |
+| `STS-ADMIN-0964` | A held administrator act was approved, refused or withdrawn after it had already been decided or withdrawn (#2166). | HTTP 409 { ok: false, errors } |
+| `STS-ADMIN-0965` | A held administrator act was approved, and not run: the administrator who asked for it no longer holds the authority it needs (#2166). | HTTP 409 { ok: false, errors } |
+| `STS-ADMIN-0966` | A held administrator act was approved and run, and the act itself was refused when it ran against the state as it is now; its own answer is `result` (#2166). | HTTP 409 { ok: false, errors, result } |
+| `STS-ADMIN-0967` | Somebody other than the administrator who asked for a held act tried to withdraw it; they may refuse it instead (#2166). | HTTP 403 { ok: false, errors } |
+| `STS-ADMIN-0968` | The two-person approval expiry job (admin.dual-control) failed in a realm; the job reports the run failed and a read still applies each deadline (#2166). | none (logged; the scheduler's run row) |
 
 ## STS-API
 

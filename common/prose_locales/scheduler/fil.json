@@ -1,4 +1,12 @@
 {
+  "sched.jobs.admin.dual-control.title": {
+    "en": "4a848357fc83f6c6",
+    "text": "Pag-expire ng mga pag-apruba ng dalawang tao"
+  },
+  "sched.jobs.admin.dual-control.describe": {
+    "en": "523fe645f50f570b",
+    "text": "Inililipat sa expired ang bawat aksyon ng administrator na hinawakan para sa ikalawang administrator (#2166) na lumampas na sa takdang oras, isinusulat ang hilera nito sa audit, inaalis ang natapos na isang linggo matapos itong matapos, at inaayos ang listahan ng mga nakabinbin. Ang pagbasa mismo ang naglalapat ng takdang oras, kaya ito ang tala at ang paglilinis, hindi kailanman ang nagpapasya."
+  },
   "sched.jobs.attribute-sources.refresh.title": {
     "en": "f3af7a728e869ac5",
     "text": "Mga attribute source: nakaiskedyul na refresh"
