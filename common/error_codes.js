@@ -22477,6 +22477,14 @@ const CODES = [
   { code: 'STS-GNAP-0605',
     summary: 'A GNAP push interaction finish timed out.',
     spec: '' },
+  { code: 'STS-GNAP-0606',
+    summary: 'A GNAP push interaction finish URI is not one the outbound ' +
+      'policy will dial: federation.outbound is off, its host is not in ' +
+      'security.outboundAllowedHosts, or (in product mode) the name ' +
+      'resolves to a loopback, private, link-local or reserved address ' +
+      '(ASVS 5.0.0 1.3.6). Refused at the grant request, and nothing is ' +
+      'sent at the push.',
+    spec: 'invalid_interaction (HTTP 400) at the grant request' },
   { code: 'STS-GNAP-0650',
     summary: 'A GNAP monitor event is not in gnap_monitor.js\'s vocabulary ' +
       'and was not counted — a programming error.',

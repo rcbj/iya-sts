@@ -344,8 +344,8 @@
     "text": "Abschlüsse eines GNAP-Push, Push-Zustellungen von SSF, die Back-Channels der Föderation und Anstöße des XACML-PEP beachten ihre Einstellungen …SkipTlsVerification (Prüfung aus, bei jeder Anfrage gewarnt) und ihre Einstellungen …AllowHttp (Klartext-http an jeden Host). Auch spiffe.k8sSkipKubeletVerification von SPIRE wird beachtet."
   },
   "mode.requirements.outbound-tls.product": {
-    "en": "247dae79affdfe65",
-    "text": "Jede Einstellung …SkipTlsVerification und spiffe.k8sSkipKubeletVerification wird IGNORIERT — einmal mit ihrem Code protokolliert — und beim Schreiben über /admin und /admin-api abgelehnt (STS-CORE-0103); eine private CA wird über die …CaFile der Familie mit eingeschalteter Prüfung erreicht. Klartext-http wird für SSF, die Föderation und XACML abgelehnt, was auch immer …AllowHttp sagt, und für einen Abschluss eines GNAP-Push nur an eine Loopback-Adresse erlaubt (RFC 9635 Abschnitt 2.5.2.1)."
+    "en": "32e402ebc2350105",
+    "text": "Jede Einstellung …SkipTlsVerification und spiffe.k8sSkipKubeletVerification wird IGNORIERT — einmal mit ihrem Code protokolliert — und beim Schreiben über /admin und /admin-api abgelehnt (STS-CORE-0103); eine private CA wird über die …CaFile der Familie mit eingeschalteter Prüfung erreicht. Klartext-http wird für SSF, die Föderation und XACML abgelehnt, was auch immer …AllowHttp sagt, und für einen Abschluss eines GNAP-Push nur an eine Loopback-Adresse erlaubt (RFC 9635 Abschnitt 2.5.2.1) — was die Regeln für ausgehende Adressen ablehnen, sodass kein Push über Klartext-http zugestellt wird (#1614)."
   },
   "mode.requirements.deliberate-defects.what": {
     "en": "055db67685f19f36",

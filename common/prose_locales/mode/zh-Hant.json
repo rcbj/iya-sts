@@ -344,8 +344,8 @@
     "text": "GNAP 推送完成、SSF 推送遞送、聯合的後端通道以及 XACML PEP 通知，會依循其 …SkipTlsVerification 設定（關閉驗證，每次請求都發出警告）與其 …AllowHttp 設定（對任何主機使用純 http）。SPIRE 的 spiffe.k8sSkipKubeletVerification 也同樣依循。"
   },
   "mode.requirements.outbound-tls.product": {
-    "en": "247dae79affdfe65",
-    "text": "每個 …SkipTlsVerification 設定以及 spiffe.k8sSkipKubeletVerification 都會被「忽略」——以其代碼記錄一次——並在透過 /admin 與 /admin-api 寫入時被拒絕（STS-CORE-0103）；私人 CA 透過該系列的 …CaFile 在開啟驗證的情況下連線。無論 …AllowHttp 如何設定，SSF、聯合與 XACML 都會拒絕純 http，而 GNAP 推送完成只允許對回送位址使用（RFC 9635 第 2.5.2.1 節）。"
+    "en": "32e402ebc2350105",
+    "text": "每個 …SkipTlsVerification 設定以及 spiffe.k8sSkipKubeletVerification 都會被「忽略」——以其代碼記錄一次——並在透過 /admin 與 /admin-api 寫入時被拒絕（STS-CORE-0103）；私人 CA 透過該系列的 …CaFile 在開啟驗證的情況下連線。無論 …AllowHttp 如何設定，SSF、聯合與 XACML 都會拒絕純 http，而 GNAP 推送完成只允許對回送位址使用（RFC 9635 第 2.5.2.1 節）——而出站位址規則會拒絕回送位址，因此不會遞送任何純 http 推送（#1614）。"
   },
   "mode.requirements.deliberate-defects.what": {
     "en": "055db67685f19f36",

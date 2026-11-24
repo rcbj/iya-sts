@@ -344,8 +344,8 @@
     "text": "Las finalizaciones push de GNAP, las entregas push de SSF, los canales posteriores de la federación y los avisos a PEP de XACML respetan sus ajustes …SkipTlsVerification (verificación desactivada, con advertencia en cada solicitud) y sus ajustes …AllowHttp (http simple a cualquier host). También se respeta spiffe.k8sSkipKubeletVerification de SPIRE."
   },
   "mode.requirements.outbound-tls.product": {
-    "en": "247dae79affdfe65",
-    "text": "Todo ajuste …SkipTlsVerification, y spiffe.k8sSkipKubeletVerification, se IGNORA — registrado una vez con su código — y se rechaza al escribirse mediante /admin y /admin-api (STS-CORE-0103); a una CA privada se llega mediante el …CaFile de la familia con la verificación activada. El http simple se rechaza para SSF, la federación y XACML diga lo que diga …AllowHttp, y se permite para una finalización push de GNAP solo hacia una dirección loopback (RFC 9635 sección 2.5.2.1)."
+    "en": "32e402ebc2350105",
+    "text": "Todo ajuste …SkipTlsVerification, y spiffe.k8sSkipKubeletVerification, se IGNORA — registrado una vez con su código — y se rechaza al escribirse mediante /admin y /admin-api (STS-CORE-0103); a una CA privada se llega mediante el …CaFile de la familia con la verificación activada. El http simple se rechaza para SSF, la federación y XACML diga lo que diga …AllowHttp, y se permite para una finalización push de GNAP solo hacia una dirección loopback (RFC 9635 sección 2.5.2.1) — lo que las reglas de direcciones salientes rechazan, de modo que no se entrega ningún push por http simple (#1614)."
   },
   "mode.requirements.deliberate-defects.what": {
     "en": "055db67685f19f36",

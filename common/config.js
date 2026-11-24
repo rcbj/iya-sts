@@ -10475,8 +10475,10 @@ const SETTINGS = [
                  'releases before 1.2.0 gave — the identity scopes, ' +
                  'offline_access (refresh tokens outliving the session) ' +
                  'and this realm\'s OpenID4VCI credential scopes; the 1.1.0 ' +
-                 'upgrade script stores it in each realm that had an ' +
-                 'application, and /admin/mode warns while it is in force. ' +
+                 'upgrade script stores it once, in the default realm, ' +
+                 'which every realm without a value of its own falls back ' +
+                 'to, when the store held any application; /admin/mode ' +
+                 'warns while it is in force. ' +
                  'Development mode issues any scope a client asks for ' +
                  'whatever this says; this service\'s protected scopes ' +
                  'always need a declaration. (#1589)' },
