@@ -41,8 +41,12 @@
 //      is opened; and the opened answer must carry the issued token.
 //   B. THE PRESETS REFUSED: for each request map and box, a client that
 //      leaves out what the box asks for is refused with the fault the
-//      service documents (STS-WSTRUST-0075 for encryption, 0085 for
-//      signing), and ciphertext where no map names it is 0075 too.
+//      service documents (STS-WSTRUST-0075 for encryption, 0040, 0084 and
+//      0085 for signing), and ciphertext where no map names it is 0080. A
+//      ciphertext that will not open (a key wrapped with OAEP over SHA-1)
+//      is refused with that reason, 0075, the Body as the header, never as
+//      a part altered after it was signed; a part that really was altered
+//      still is (0045).
 //   C. CUSTOM EXPRESSIONS, ONE FIELD AT A TIME: for each of the five
 //      fields, expressions naming single elements — a header block, an
 //      element inside the RST, an element of the RSTR — met by a WSS4J
@@ -662,7 +666,39 @@ async function childBody() {
         'wstrustEncryptRequestElements', false, true) },
       sign: presetParts(true, false, false),
       encrypt: presetParts(false, true, true), keyTransport: 'rsa-oaep-mgf1p',
-      code: 'STS-WSTRUST-0075' },
+      code: 'STS-WSTRUST-0075', says: /OAEP over SHA-1/ },
+    // A BODY THAT WILL NOT OPEN IS REFUSED FOR THAT (rcbj, 2026-11-24): the
+    // signature over its plaintext cannot be checked, and was refused as a
+    // part altered after it was signed (STS-WSTRUST-0045).
+    { what: 'Encrypt request Body ticked, the Body signed and then ' +
+            'encrypted with its key wrapped with OAEP over SHA-1: the ' +
+            'reason is the key, not an altered part',
+      maps: { wstrustEncryptRequestElements: presets(
+        'wstrustEncryptRequestElements', true, false) },
+      sign: presetParts(true, false, false),
+      encrypt: presetParts(true, false, true), keyTransport: 'rsa-oaep-mgf1p',
+      code: 'STS-WSTRUST-0075', says: /would not open[\s\S]*OAEP over SHA-1/,
+      saysNot: /altered/ },
+    { what: 'Encrypt request Body and Header ticked, both wrapped with OAEP ' +
+            'over SHA-1: the same reason',
+      maps: { wstrustEncryptRequestElements: presets(
+        'wstrustEncryptRequestElements', true, true) },
+      sign: presetParts(true, false, false),
+      encrypt: presetParts(true, true, true), keyTransport: 'rsa-oaep-mgf1p',
+      code: 'STS-WSTRUST-0075', says: /would not open[\s\S]*OAEP over SHA-1/,
+      saysNot: /altered/ },
+    // AND A PART REALLY ALTERED IS STILL SAID TO BE: the Body opens, the
+    // signed wsa:To was changed on the way.
+    { what: 'Encrypt request Body ticked, the Body opens, and a signed ' +
+            'header altered after it was signed is still STS-WSTRUST-0045',
+      maps: { wstrustEncryptRequestElements: presets(
+        'wstrustEncryptRequestElements', true, false) },
+      sign: [{ local: 'Body' }, { local: 'To', ns: WSA }],
+      encrypt: presetParts(true, false, true),
+      tamper: function (xml) {
+        return xml.replace(BASE + '/sts</wsa:To>', BASE + '/x</wsa:To>');
+      },
+      code: 'STS-WSTRUST-0045', says: /altered/ },
     { what: 'Sign request Header ticked, the header blocks not signed',
       maps: { wstrustSignRequestElements: presets(
         'wstrustSignRequestElements', false, true) },
@@ -687,9 +723,15 @@ async function childBody() {
     for (let i = 0; i < refusals.length; i++) {
       const one = refusals[i];
       configure(one.maps);
-      const r = built[i] && built[i].ok
-        ? await ask(soap, String(built[i].xml))
+      const sent = built[i] && built[i].ok
+        ? (one.tamper ? one.tamper(String(built[i].xml))
+                      : String(built[i].xml)) : '';
+      const r = sent ? await ask(soap, sent)
         : { status: 0, body: JSON.stringify(built[i]) };
+      if (one.tamper && sent === String(built[i].xml)) {
+        r.status = 0;
+        r.body = 'the tamper changed nothing';
+      }
       // The SOAP fault each code is documented to carry.
       const product = one.code === 'STS-WSTRUST-0084'
         ? /FailedCheck|FailedAuthentication/
@@ -698,7 +740,11 @@ async function childBody() {
       t.check(r.status === 500 && (r.errorCode === one.code ||
                 (one.code === 'STS-WSTRUST-0084' &&
                  /FailedAuthentication/.test(String(r.body)))) &&
-              product.test(String(r.body)),
+              (one.code === 'STS-WSTRUST-0045'
+                ? /FailedAuthentication/.test(String(r.body))
+                : product.test(String(r.body))) &&
+              (!one.says || one.says.test(String(r.body))) &&
+              (!one.saysNot || !one.saysNot.test(String(r.body))),
               'B. SOAP ' + soap + ': ' + one.what + ' is ' + one.code,
               brief(r));
     }

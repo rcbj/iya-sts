@@ -308,20 +308,38 @@ export = class WsEncryption {
    */
   static openedCopy(doc): any {
     log.debug("Entering WsEncryption.openedCopy().");
+    const tried = WsEncryption.openedCopyOrWhy(doc);
+    log.debug("Leaving WsEncryption.openedCopy(). " + !!tried.copy);
+    return tried.copy;
+  }
+
+  /**
+   * A copy of the request with every ciphertext opened, or why it could not
+   * be (#2046): the fault opening it gave, so a signature made over the
+   * plaintext that therefore cannot be checked is refused for that, and
+   * not as a part altered after it was signed.
+   *
+   * @param doc - the request as it arrived
+   * @returns `{ copy }`, or `{ copy: null, refused }` with the fault (null
+   *   for a document that would not round-trip)
+   */
+  static openedCopyOrWhy(doc): any {
+    log.debug("Entering WsEncryption.openedCopyOrWhy().");
     let copy;
     try {
       copy = new DOMParser().parseFromString(
         new XMLSerializer().serializeToString(doc), 'text/xml');
     } catch (e) {
-      log.debug("Caught in WsEncryption.openedCopy(): " +
+      log.debug("Caught in WsEncryption.openedCopyOrWhy(): " +
                 ((e && e.message) || e));
       // A document that will not round-trip has no other reading.
-      log.debug("Leaving WsEncryption.openedCopy(). Unreadable.");
-      return null;
+      log.debug("Leaving WsEncryption.openedCopyOrWhy(). Unreadable.");
+      return { copy: null, refused: null };
     }
     const opened = WsEncryption.decryptAll(copy);
-    log.debug("Leaving WsEncryption.openedCopy(). " + opened.ok);
-    return opened.ok ? copy : null;
+    log.debug("Leaving WsEncryption.openedCopyOrWhy(). " + opened.ok);
+    return opened.ok ? { copy: copy, refused: null }
+                     : { copy: null, refused: opened };
   }
 
   /**
