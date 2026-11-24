@@ -424,6 +424,7 @@ const PORTAL: Record<string, string> = {
   '/portal/wallet': 'oid4vci.html',
   '/portal/devices': 'devices.html',
   '/portal/tokens': 'hardware-tokens.html',
+  '/portal/tokens-and-keys': 'hardware-tokens.html#seeing-them',
   '/portal/openpgp': 'openpgp.html',
   '/portal/ciba': 'configure-oidc-flows.html',
   '/portal/device': 'configure-oidc-flows.html',
