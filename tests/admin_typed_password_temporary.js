@@ -29,7 +29,7 @@
 //   F. DEVELOPMENT, LDAP: an administrator's modify sets no `pwdReset`.
 //
 // The keytab reset's half (#2160: it neither sets nor clears the flag, and
-// product refuses it while a change is owed, STS-ADMIN-0956) is in
+// product refuses it while a change is owed, STS-ADMIN-0969) is in
 // `tests/kerberos_person_keytab.js`, which already drives that door.
 // ===========================================================================
 

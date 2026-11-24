@@ -495,7 +495,7 @@ refused.
     They are not asked to change it at their next sign-in, because that would
     end the keytab. **Since 1.2.0 (#2160) it no longer cancels a change they
     already owe**: in product mode, a reset for somebody who must change
-    their password is refused (`STS-ADMIN-0956`) and changes nothing, because
+    their password is refused (`STS-ADMIN-0969`) and changes nothing, because
     the KDC refuses a password that must be changed, so the keytab would not
     work. They sign in and choose their own password first. The same act
     over the API is

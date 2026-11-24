@@ -24,7 +24,7 @@ password; and development mode.
 
 **Reset password and download keytab** no longer cancels a change the
 person already owes. In product mode it is refused for such a person
-(`STS-ADMIN-0956`) and changes nothing, because the KDC would refuse the
+(`STS-ADMIN-0969`) and changes nothing, because the KDC would refuse the
 keytab. It still does not make the person change the password it sets,
 because that would end the keytab.
 

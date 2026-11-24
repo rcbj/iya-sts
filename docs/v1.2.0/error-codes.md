@@ -6284,7 +6284,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0953` | A certificate handed to the console's certificate inspection helper (POST /admin-api/console/certificates/inspect) held no PEM certificate, or more text or more certificates than it reads. Nothing is kept (#2080). | HTTP 400 { ok: false, errors } (Admin Console API) |
 | `STS-ADMIN-0954` | A PEM block handed to the console's certificate inspection helper could not be read as an X.509 certificate. Nothing is kept (#2080). | HTTP 400 { ok: false, errors } (Admin Console API) |
 | `STS-ADMIN-0955` | The console's certificate inspection helper was asked for an action it does not have; the refusal names the one it has (#2080). | HTTP 400 { ok: false, errors } (Admin Console API) |
-| `STS-ADMIN-0956` | A password reset for a Kerberos keytab was refused because the person must change their password at their next sign-in (pwdReset), where passwords are verified: the KDC refuses that password, so the keytab would not work, and the reset no longer clears the forced change (#2160). Nothing was changed. | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0969` | A password reset for a Kerberos keytab was refused because the person must change their password at their next sign-in (pwdReset), where passwords are verified: the KDC refuses that password, so the keytab would not work, and the reset no longer clears the forced change (#2160). Nothing was changed. | HTTP 400 (API) or a 303 with error= |
 
 ## STS-API
 

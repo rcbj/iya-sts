@@ -29167,7 +29167,7 @@ const CODES = [
       'action it does not have; the refusal names the one it has ' +
       '(#2080).',
     spec: 'HTTP 400 { ok: false, errors } (Admin Console API)' },
-  { code: 'STS-ADMIN-0956',
+  { code: 'STS-ADMIN-0969',
     summary: 'A password reset for a Kerberos keytab was refused because the ' +
       'person must change their password at their next sign-in (pwdReset), ' +
       'where passwords are verified: the KDC refuses that password, so the ' +

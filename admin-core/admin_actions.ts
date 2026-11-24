@@ -13174,7 +13174,7 @@ class AdminActions {
   //      administrator, into a long-term one the administrator knows. So
   //      `pwdReset` is left as it stands. In product, a reset for somebody
   //      who still owes the change is REFUSED in step 1, before anything
-  //      changes (STS-ADMIN-0956), because the keytab would not work: they
+  //      changes (STS-ADMIN-0969), because the keytab would not work: they
   //      change their password at the sign-in screen first. Development
   //      neither checks the flag at the KDC nor refuses here.
   //
@@ -13212,7 +13212,7 @@ class AdminActions {
         credentials.passwordResetRequired(who)) {
       log.debug("Leaving AdminActions.resetPersonKeytab(). A password change " +
                 "is owed first.");
-      return this.refused('STS-ADMIN-0956', { ok: false, errors: [
+      return this.refused('STS-ADMIN-0969', { ok: false, errors: [
         who + ' must change their password at their next sign-in, and the ' +
         'KDC refuses a password that must be changed, so a keytab made now ' +
         'would not work. A keytab reset no longer clears that. Ask them to ' +

@@ -586,10 +586,10 @@ function productAssertions(t, r) {
   // #2160: the reset neither sets nor clears `pwdReset`. In product it is
   // refused while a change is owed, so the job clears the flag first (the
   // person's own change), and the reset does not set it again.
-  t.check(r.owed && !r.owed.ok && r.owed.codeOf === 'STS-ADMIN-0956' &&
+  t.check(r.owed && !r.owed.ok && r.owed.codeOf === 'STS-ADMIN-0969' &&
           r.owedUnchanged,
           'a keytab reset for somebody who must change their password is ' +
-          'refused STS-ADMIN-0956, and nothing changed',
+          'refused STS-ADMIN-0969, and nothing changed',
           JSON.stringify(r.owed));
   t.check(r.forcedAfterTyped === false,
           'the reset does not make them change it at their next sign-in ' +
