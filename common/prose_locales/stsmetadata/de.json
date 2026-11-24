@@ -2299,13 +2299,17 @@
     "en": "f149352fa2ac36d0",
     "text": "NON-SPEC (#1955 P4). Die HOTP- und TOTP-Token, die Administratoren aus PSKC-Seed-Dateien von Herstellern importiert haben, nicht zugewiesen, zugewiesen oder außer Betrieb, seitenweise und nach Seriennummer oder Person durchsuchbar. Nie ein Geheimnis. Entspricht GET /admin/hardware-tokens (seinem OATH-Tab)."
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/yubiotp.what": {
+    "en": "6c6508ca58d1ea8d",
+    "text": "NON-SPEC (#2071). Die YubiKey-OTPs, die Administratoren aus einer CSV importiert haben, nicht zugewiesen, zugewiesen oder außer Betrieb, seitenweise und nach Seriennummer oder Person durchsuchbar; die einer Person werden aus ihrem Eintrag gelesen, der Hauptkopie. Nie ein Schlüssel. Spiegelt GET /admin/hardware-tokens (seinen Reiter YubiKey OTP)."
+  },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "cdbf34a1fbdf290e",
-    "text": "NON-SPEC (#1955). lost, mit { key }: das Token wird als verloren markiert, jeder Passkey darauf entfernt, jedes Zertifikat darauf wegen keyCompromise widerrufen, für jedes ein CAEP credential-change gesendet und die damit angemeldeten Sitzungen beendet. enrol-piv, mit { username, profile, csr, attestationCertificate?, attestationIssuer? }: ein PIV-Slot-Zertifikat für diese Person über die EST-Issuing-CA, dessen YubiKey-PIV-Attestierung geprüft und der YubiKey aufgezeichnet. recover-key, mit { username, serial }: der hinterlegte piv-key-management-Schlüssel dieser Person, den die Zugriffsrichtlinie nur PIV_KEY_RECOVERY erlaubt, nach einer kürzlichen Anmeldung. revoke-ssh, mit { username, serial }: das SSH-Benutzerzertifikat dieser Person widerrufen und auf die KRL des Realms gesetzt. Die vier Aktionen der Konsole auf dieser Seite."
+    "en": "ecf18182e65d8f0a",
+    "text": "NON-SPEC (#1955). lost, mit { key }: das Token wird als verloren markiert, jeder Passkey darauf entfernt, jedes Zertifikat darauf wegen keyCompromise widerrufen, für jedes ein CAEP credential-change gesendet und die damit angemeldeten Sitzungen beendet. enrol-piv, mit { username, profile, csr, attestationCertificate?, attestationIssuer? }: ein PIV-Slot-Zertifikat für diese Person über die EST-Issuing-CA, dessen YubiKey-PIV-Attestierung geprüft und der YubiKey aufgezeichnet. recover-key, mit { username, serial }: der hinterlegte piv-key-management-Schlüssel dieser Person, den die Zugriffsrichtlinie nur PIV_KEY_RECOVERY erlaubt, nach einer kürzlichen Anmeldung. revoke-ssh, mit { username, serial }: das SSH-Benutzerzertifikat dieser Person widerrufen und auf die KRL des Realms gesetzt. issue-ssh, mit { username, publicKey, principals?, lifetimeS? }: ein SSH-Benutzerzertifikat für diese Person ausgestellt, zuerst auf ihren Eintrag geschrieben (#2071). Die fünf Aktionen der Konsole auf dieser Seite."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "f5b724d2c79b5f74",
-    "text": "meldet ein Hardware-Token als verloren und zieht seine Anmeldedaten zurück, stellt ein PIV-Slot-Zertifikat aus, gibt einen hinterlegten Schlüssel heraus oder widerruft das SSH-Zertifikat einer Person"
+    "en": "38d7254e0ab72a00",
+    "text": "meldet ein Hardware-Token als verloren und zieht seine Anmeldedaten zurück, stellt ein PIV-Slot-Zertifikat aus, gibt einen hinterlegten Schlüssel heraus oder stellt das SSH-Zertifikat einer Person aus oder widerruft es"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/ssh-certificates.what": {
     "en": "84ce6fea3694d4c0",

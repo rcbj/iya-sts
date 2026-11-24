@@ -26,17 +26,33 @@ Run it once with the key inserted. It programs the first OTP slot. Touch the key
 
 ## Import a batch
 
-An administrator posts a CSV to `POST /admin-api/hardware-tokens/import-yubiotp`; the console has no import form for it. The columns are the serial, the modhex public identity, the private identity in hexadecimal, and the AES key in hexadecimal. In product mode a file in the clear is refused unless `yubiotp.allowPlaintextImport` is on. Each row is kept unassigned, and the secret is sealed.
+An administrator imports a CSV on the **YubiKey OTP** tab of **Directory → Hardware tokens**, or posts it to `POST /admin-api/hardware-tokens/import-yubiotp`. The columns are the serial, the modhex public identity, the private identity in hexadecimal, and the AES key in hexadecimal. In product mode a file in the clear is refused unless `yubiotp.allowPlaintextImport` is on. Each row is kept unassigned, and the secret is sealed.
 
-`assign-yubiotp` gives a serial to a person and spends one OTP. In the console it is **Assign** on the **YubiKey OTP** sub-tab of the person's Credentials (Directory → Users). The person can do the same from `/portal/mfa`, or the YubiKey OTP tab of Tokens and keys, with the serial and one touch (`yubiotp-claim`). An assigned token is retired by reporting the hardware token lost, which also takes the secret off the entry.
+`assign-yubiotp` gives a serial to a person and spends one OTP. In the console it is **Assign** on an unassigned row of that tab, or on the **YubiKey OTP** sub-tab of the person's Credentials (Directory → Users); **Remove** on a row that is not assigned is `remove-yubiotp`. The person can do the same from `/portal/mfa`, or the YubiKey OTP tab of Tokens and keys, with the serial and one touch (`yubiotp-claim`). An assigned token is retired by reporting the hardware token lost, which also takes the secret off the entry.
 
 ## On the person's entry
+
+`GET /admin-api/hardware-tokens/yubiotp` lists the inventory, newest first and paged (`page`, `per`), filtered by `status` (`unassigned`, `assigned`, `retired`) and searched by `q`: a serial, matched exactly, or a username, whose YubiKey OTPs are read off their entry. That is what the tab draws, and what the person's sub-tab draws with the person named. No answer carries a key. With nothing to narrow it, a store read on demand answers its newest thousand rows and says so in `capped`.
 
 An assigned YubiKey is on its holder's entry, in `stsYubiOtpToken`: one JSON value with its serial, public identity, status, and when it was imported and assigned. Never the AES key, which is sealed in the person's YubiKey OTP credential. The entry is the master copy; the inventory and the public-identity index YK-VAL answers from are derived from it ([Hardware tokens](hardware-tokens.md#on-the-persons-directory-entry)). Removing the value by another door — the attribute editor, `/admin-api`, SCIM, an `ldapmodify` — retires the token: its credential is removed, its public identity is dropped, it is never assigned again, and the audit row (`yubiotp.retire`) names who removed it. Adding or changing a value is refused and put back (`STS-HWTOKEN-0017`). A row nobody has been assigned stays in the inventory, its secret sealed, until it is assigned or claimed.
 
 ## YK-VAL
 
 `GET` and `POST /wsapi/2.0/verify` speak [YubiKey Validation Protocol 2.0](https://developers.yubico.com/yubikey-val/Validation_Protocol_V2.0.html). The route is always registered. While `yubiotp.ykval` is off it answers `OPERATION_NOT_ALLOWED` and signs nothing. On, the client id and the HMAC-SHA1 are checked in every mode, including development. A nonce is spent for the whole cluster, by a compare-and-set in the store, and remembered for five minutes, so a request replayed to another node is `REPLAYED_REQUEST` there too. `sl` in an `OK` answer is `100`. An OTP of a **disabled account** is answered `BAD_OTP` (`STS-YUBIOTP-0032`) and nothing is spent: a PAM or RADIUS caller does not let in somebody this service refuses at its own sign-in. **Every verify is on the audit log** (`ykval.verify`): the client id, the OTP's public identity (never the OTP) and the status, with the error code of a refusal. The use counter is read as fifteen bits, as Yubico's own validation server reads it: the top bit is a flag.
+
+A refusal is decided in the order of Yubico's own validation server (`yubikey-val`), since the protocol names no order:
+
+| Check | Status |
+|---|---|
+| no `nonce` | `MISSING_PARAMETER` |
+| `otp` not 32 to 48 modhex characters | `BAD_OTP` (`STS-YUBIOTP-0033`) |
+| no `id` | `MISSING_PARAMETER` |
+| `nonce` not 16 to 40 letters and digits | `MISSING_PARAMETER` (`STS-YUBIOTP-0034`) |
+| no client with that `id` | `NO_SUCH_CLIENT`, unsigned |
+| no `h` | `MISSING_PARAMETER` |
+| `h` does not match | `BAD_SIGNATURE`, unsigned |
+
+So an unknown client with a malformed OTP is `BAD_OTP`, and an unknown client with a well-formed OTP is `NO_SUCH_CLIENT` whether it signed the request or not. The protocol makes `h` optional; this service requires it from every client. A refusal before the client lookup is signed when the `id` names a client, and unsigned otherwise.
 
 `ykval-client-add` creates a client. The id is 1 to 16 digits. The HMAC key is in the answer once and is not logged.
 

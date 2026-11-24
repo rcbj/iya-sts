@@ -659,6 +659,11 @@ main();
 //   i. an administrator lists them (GET /admin-api/hardware-tokens/
 //      ssh-certificates) and revokes one (POST .../revoke-ssh), which the
 //      KRL then names;
+//   k. (#2071) an administrator issues one (POST .../issue-ssh): the
+//      principals default to the person's uid, the certificate is the
+//      person's (their list and their entry name it, it verifies under the
+//      realm CA) and the audit row names the administrator; nobody of that
+//      name is 404 and a group principal 403, neither with an error code;
 //   j. a token holding only ssh:certificate lists the person's
 //      certificates and is refused 403 by another account API operation.
 //      It is a password-grant token of a client this section registers,
@@ -933,6 +938,74 @@ async function reviewTest() {
     assert.ok(!(offEntry.body.sshCertificates || []).some(function (one) {
       return one.serialHex === issued.json.serialHex;
     }), offEntry.raw.slice(0, 300));
+  });
+
+  log.info("=== k. the administrator issues (#2071) ===");
+  const adminMaterial = ed25519Material();
+  const adminIssued = await postJson(rb +
+    "/admin-api/hardware-tokens/issue-ssh",
+    { username: R_OWNER, publicKey: adminMaterial.line });
+  const adminNobody = await postJson(rb +
+    "/admin-api/hardware-tokens/issue-ssh",
+    { username: "nobody-" + STAMP, publicKey: adminMaterial.line });
+  const adminGroup = await postJson(rb +
+    "/admin-api/hardware-tokens/issue-ssh",
+    { username: R_OWNER, publicKey: adminMaterial.line,
+      principals: R_OWNER + "," + R_GROUP });
+  const listedForAdmin = await send(rb + "/admin-api/hardware-tokens/" +
+    "ssh-certificates?username=" + encodeURIComponent(R_OWNER));
+  const onTheirEntry = await send(rb + "/admin-api/users/certificates?" +
+    "user=" + encodeURIComponent(R_OWNER));
+  const theirOwn = await owner.api("GET", "/account-api/ssh/certificates");
+  const caLine = await send(rb + "/pki/ssh-user-ca/" + R_REALM);
+  const auditRows = await send(rb + "/admin-api/audit?action=" +
+    "ssh-user-ca.issue&per=50");
+  check("k. an administrator issues the person a certificate for their " +
+        "uid, which their own list and their entry name and the realm CA " +
+        "signed; nobody is 404 and a group 403, with no error code",
+        function () {
+    assert.strictEqual(adminIssued.status, 200,
+                       adminIssued.raw.slice(0, 300));
+    const body = adminIssued.body;
+    assert.ok(body.ok && body.username === R_OWNER &&
+              /^[0-9a-f]+$/.test(body.serialHex), adminIssued.raw);
+    const cert = parseCert(body.certificate);
+    assert.deepStrictEqual(cert.principals, [R_OWNER]);
+    assert.strictEqual(cert.certType, CERT_TYPE);
+    const ca = String(caLine.raw || "").trim().split(/\s+/);
+    const caBlob = Buffer.from(ca[1], "base64");
+    assert.ok(cert.caBlob.equals(caBlob), "another CA signed it");
+    assert.ok(verifySignature(cert.signed, ed25519Raw(caBlob),
+                              cert.signature),
+              "the certificate does not verify under the realm's CA");
+    assert.strictEqual(adminNobody.status, 404,
+                       adminNobody.raw.slice(0, 200));
+    assert.ok(codeFree(adminNobody.raw), adminNobody.raw.slice(0, 200));
+    assert.strictEqual(adminGroup.status, 403, adminGroup.raw.slice(0, 200));
+    assert.ok(codeFree(adminGroup.raw), adminGroup.raw.slice(0, 200));
+    const has = function (rows) {
+      return (rows || []).some(function (one) {
+        return one.serialHex === body.serialHex;
+      });
+    };
+    assert.ok(has(listedForAdmin.body.certificates),
+              listedForAdmin.raw.slice(0, 300));
+    assert.ok(has(theirOwn.json.certificates), theirOwn.text.slice(0, 300));
+    const held = (onTheirEntry.body.sshCertificates || []).filter(
+      function (one) {
+        return one.serialHex === body.serialHex;
+      })[0];
+    assert.ok(held && held.certificate === body.certificate,
+              onTheirEntry.raw.slice(0, 300));
+    assert.strictEqual(auditRows.status, 200, auditRows.raw.slice(0, 200));
+    const row = ((auditRows.body && auditRows.body.events) || []).filter(
+      function (one) {
+        return one.target === R_OWNER && one.outcome === "success" &&
+          one.detail && one.detail.serialHex === body.serialHex;
+      })[0];
+    assert.ok(row && row.actor && row.actor !== R_OWNER,
+              "the audit row does not name the administrator: " +
+              auditRows.raw.slice(0, 400));
   });
 
   log.info("=== j. the ssh:certificate scope ===");

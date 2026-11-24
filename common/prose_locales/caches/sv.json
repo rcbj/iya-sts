@@ -1796,8 +1796,8 @@
     "text": "En rad per OpenSSH-användarcertifikat som denna sfärs SSH-användar-CA utfärdat, efter serienummer: vems det är (urn:uuid), nyckelns fingeravtryck, dess principaler, dess livslängd och om det återkallats. Aldrig en nyckel."
   },
   "caches.store.ssh_user_ca.issued.bound": {
-    "en": "36fc38da0e0699e8",
-    "text": "De rader en process håller är en cache på 5 000 per sfär; en rad lämnar lagret när dess certifikat går ut."
+    "en": "e9eaf8f07040a227",
+    "text": "Upprätthålls: raderna en process håller är ett fönster på 5 000 per realm som fylls vid behov; en rad lämnar lagret när dess certifikat går ut."
   },
   "caches.store.ssh_user_ca.issued.lifetime": {
     "en": "fdcbaa82a4ac533d",

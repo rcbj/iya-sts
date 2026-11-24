@@ -4860,8 +4860,8 @@
     "text": "Edad máxima de autenticación (s)"
   },
   "oauth2.maxAuthAgeS|description": {
-    "en": "5a37fced9d4d040e",
-    "text": "Cuánto tiempo hace que un cliente fue autenticado, en segundos, antes de que una solicitud de autorización deba autenticar de nuevo, aunque la solicitud no envíe max_age. 0, el valor predeterminado, no añade un límite propio, así que un cliente ordinario no cambia. Se lee en cada solicitud de autorización: no reescribe una sesión ya almacenada. La consola de administración (sts-admin-console), el portal de usuario (sts-user-portal) y la aplicación de informes (sts-report) llevan cada uno su propio valor y toman el más corto entre ese valor y authn.sessionLifetimeS, de modo que aumentar este ajuste o la vigencia de la sesión nunca alarga esos tres, y disminuir authn.sessionLifetimeS sigue acortándolos. La sustitución por cliente es oauthMaxAuthAgeS. No es una vigencia de token y no está en /admin/token-lifetimes (#825)."
+    "en": "163792a8531f4514",
+    "text": "Cuánto tiempo hace que un cliente fue autenticado, en segundos, antes de que una solicitud de autorización deba autenticar de nuevo, aunque la solicitud no envíe max_age. 0, el valor predeterminado, no añade un límite propio, así que un cliente ordinario no cambia. Se lee en cada solicitud de autorización: no reescribe una sesión ya almacenada. La consola de administración (sts-admin-console), el portal de usuario (sts-user-portal) y la aplicación de informes (sts-report) llevan cada uno su propio valor y toman el más corto entre ese valor y authn.sessionLifetimeS, de modo que aumentar este ajuste o la vigencia de la sesión nunca alarga esos tres, y disminuir authn.sessionLifetimeS sigue acortándolos. La sustitución por cliente es oauthMaxAuthAgeS. No es una vigencia de token: /admin/token-lifetimes la muestra debajo de las vigencias, con el resto de su grupo (#825, #2070)."
   },
   "oauth2.expiredTokenRetentionS|label": {
     "en": "4466b89054d69c81",

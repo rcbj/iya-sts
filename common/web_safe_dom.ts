@@ -18,6 +18,23 @@
 // `tests/web_safe_dom.js` fails on an `.innerHTML =` assignment outside this
 // file.
 //
+// AND IT IS WHERE A PAGE IN A TRUST REALM GETS THE REALM'S PREFIX (#2098).
+// The renderers draw root-relative addresses (`/admin/users`), and a page
+// drawn whole had them prefixed by `WebPage.realmLinks()`; markup drawn
+// LATER — a redrawn list, a search's results, a table an inspection
+// answered — went in without it, so in a realm a form posted natively to
+// the DEFAULT realm's path, which the runtime does not claim and the
+// default realm refuses. Every draw comes through here, so the prefix is
+// applied here, to every root-relative `href`, `action`, `formaction` and
+// `src`, on every draw: the page's runtime names where its prefix is read
+// from once (`realmFrom()`, which `WebPage`'s constructor calls), and a
+// value that already carries the prefix is left as it is, so a page the
+// runtime prefixed first and a caller that passes the prefix in itself
+// (#2096's `derivedBindings()`) are not prefixed twice. An address a
+// `data-*` attribute carries (`data-wsp-redraw`) is prefixed where it
+// becomes one of those four, in the markup it is drawn into.
+// `tests/web_realm_links.js` holds it.
+//
 // Runs in a browser, so no Entering/Leaving pair.
 // ---------------------------------------------------------------------------
 
@@ -35,7 +52,66 @@ const SAFE_URL = /^(?:https?:|mailto:|tel:|blob:|data:image\/|[^:]*$)/i;
 const DOWNLOAD_URL = new RegExp('^data:application/(?:octet-stream|json|' +
   'jwk\\+json|jose|pkcs8|x-pem-file|x-pkcs12);base64,', 'i');
 
+// Where the page's realm prefix is read, asked at each draw because a runtime
+// may move between realms (`/report`'s realm switch, the console's back
+// button across realms).
+let realmPrefix: () => string = function (): string {
+  return '';
+};
+
 class WebSafeDom {
+  /**
+   * Names where the page's realm prefix is read from, for every draw after
+   * this call. A page has one runtime, and its base (`WebPage`) calls this.
+   *
+   * @param source - answers the prefix, `/realm/acme`, or '' in the default
+   *   realm
+   */
+  static realmFrom(source: () => string): void {
+    realmPrefix = typeof source === 'function' ? source
+      : function (): string {
+        return '';
+      };
+  }
+
+  /**
+   * Prefixes every root-relative `href`, `action`, `formaction` and `src`
+   * with a realm's path prefix, except one that already carries it:
+   * `common/app.js`'s `withRealmLinks()`, in the browser.
+   *
+   * @param html - the markup
+   * @param prefix - the realm's path prefix, or '' for the default realm
+   * @returns the markup with its links in the realm
+   */
+  static realmLinks(html: string, prefix: string): string {
+    if (!prefix) {
+      return String(html);
+    }
+    // THE PREFIX GOES INSIDE AN ATTRIBUTE, so it is escaped as one (Qualys
+    // QID 150938, 2026-11-10). It comes from the shell's own
+    // `data-sts-prefix` or from `location.pathname`, which a browser has
+    // already percent-encoded, so nothing could break out of the quotes; the
+    // escape makes that a property of this function rather than of its
+    // callers.
+    const safe = String(prefix).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // ALREADY IN THE REALM is the prefix followed by the end of a path
+    // segment, so `/realm/acme` is not taken for `/realm/acmeco`; that is
+    // what makes a second draw of the same markup harmless.
+    const own = safe.slice(1).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const link = new RegExp('\\b(href|action|formaction|src)="\\/(?!\\/)' +
+                            '(?!' + own + '(?:[/?#"]))', 'g');
+    // `$` is doubled because the replacement is a pattern.
+    return String(html).replace(link,
+                                '$1="' + safe.replace(/\$/g, '$$$$') + '/');
+  }
+
+  // The markup, as text, with the page's realm prefix on its links.
+  private static inRealm(markup: unknown): string {
+    const html = markup === null || markup === undefined ? '' : String(markup);
+    return WebSafeDom.realmLinks(html, String(realmPrefix() || ''));
+  }
+
   /**
    * Sets an element's content to text, never markup.
    *
@@ -83,15 +159,14 @@ class WebSafeDom {
    * @param markup - the markup
    */
   static render(element: any, markup: unknown): void {
+    const html = WebSafeDom.inRealm(markup);
     // Every element in a page has an owner document; a test's stand-in has
     // none.
     if (!element.ownerDocument) {
-      element.innerHTML = String(markup === null || markup === undefined
-        ? '' : markup);
+      element.innerHTML = html;
       return;
     }
-    element.replaceChildren(
-      WebSafeDom.fragment(element.ownerDocument, markup));
+    element.replaceChildren(WebSafeDom.fragment(element.ownerDocument, html));
   }
 
   // Parsed and cleaned, ready to adopt.
@@ -111,11 +186,12 @@ class WebSafeDom {
    * @param markup - the markup
    */
   static insert(element: any, position: string, markup: unknown): void {
+    const html = WebSafeDom.inRealm(markup);
     if (!element.ownerDocument) {
-      element.insertAdjacentHTML(position, String(markup));
+      element.insertAdjacentHTML(position, html);
       return;
     }
-    const content = WebSafeDom.fragment(element.ownerDocument, markup);
+    const content = WebSafeDom.fragment(element.ownerDocument, html);
     if (position === 'afterbegin') {
       element.prepend(content);
     } else {
@@ -130,11 +206,12 @@ class WebSafeDom {
    * @param markup - the markup
    */
   static replace(element: any, markup: unknown): void {
+    const html = WebSafeDom.inRealm(markup);
     if (!element.ownerDocument) {
-      element.outerHTML = String(markup);
+      element.outerHTML = html;
       return;
     }
-    element.replaceWith(WebSafeDom.fragment(element.ownerDocument, markup));
+    element.replaceWith(WebSafeDom.fragment(element.ownerDocument, html));
   }
 }
 

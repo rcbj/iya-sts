@@ -9874,8 +9874,8 @@ const SETTINGS = [
                  'session lifetime never lengthens those three, and ' +
                  'lowering authn.sessionLifetimeS still shortens them. A ' +
                  'per-client override is oauthMaxAuthAgeS. This is not a ' +
-                 'token lifetime and it is not on /admin/token-lifetimes ' +
-                 '(#825).' },
+                 'token lifetime: /admin/token-lifetimes draws it below the ' +
+                 'lifetimes, with the rest of its group (#825, #2070).' },
 
   // The fourth is not a lifetime, and it is deliberately NOT folded into
   // `oauth2.clientAssertionSkewS` beside it: that one is how far out a CLIENT'S

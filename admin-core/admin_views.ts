@@ -3852,7 +3852,59 @@ class AdminViews {
     // Which of these an application may override, and with which attribute
     // (`applications.js`'s own table): the page's per-client column.
     (json as any).overridable = applications.overridableSettings();
+    // THE REST OF THE GROUP (#2070). `OAuth 2.0 / OIDC per-client` is homed
+    // on this page and holds more than the six rows its table draws: the
+    // refresh chain's cap, consent for public clients and the default
+    // max_age. They are not lifetimes, so they are not rows of that table
+    // (whose columns are a unit and a token count); they are the group's
+    // ordinary settings form, drawn under it from this block — the settings
+    // block every other page answers, the six left out so no setting has
+    // two controls on one page.
+    (json as any).otherSettings = this.withoutKeys(
+      this.settingsBlockOf('/admin/token-lifetimes'), TOKEN_LIFETIME_KEYS);
     return json;
+  }
+
+  // A settings block with some keys taken out of every group, its counts
+  // and its `overridden` list made again; a group left empty goes. Used
+  // where a page draws some of its group's rows in a table of its own.
+  /**
+   * Returns a copy of a settings block without the named keys.
+   *
+   * @param block - the block, as `configSettingsJson()` answers it, or null
+   * @param keys - the setting names to leave out
+   * @returns the narrowed copy, or null for a null block
+   */
+  withoutKeys(block, keys) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.withoutKeys().");
+    if (!block) {
+      log.debug("Leaving AdminViews.withoutKeys(). No block.");
+      return null;
+    }
+    const groups = (block.groups || []).map(function (group) {
+      return Object.assign({}, group, {
+        settings: (group.settings || []).filter(function (setting) {
+          return keys.indexOf(setting.key) < 0;
+        })
+      });
+    }).filter(function (group) { return group.settings.length > 0; });
+    const all = groups.reduce(function (rows, group) {
+      return rows.concat(group.settings);
+    }, []);
+    const out = Object.assign({}, block, {
+      groups: groups,
+      settingCount: all.length,
+      editableCount: all.filter(function (setting) {
+        return setting.editable;
+      }).length,
+      overridden: all.filter(function (setting) {
+        return setting.overridden;
+      }).map(function (setting) { return setting.key; })
+    });
+    log.debug("Leaving AdminViews.withoutKeys(). " + all.length +
+              " setting(s).");
+    return out;
   }
 
   // The setting's value in SECONDS, whatever unit its row is written in. Every
@@ -14391,6 +14443,11 @@ class AdminViews {
           personFieldCount: vcClaims.personFields().length,
           newUserContainer: self.newUserContainer(),
           registryKeeps: stats.MAX_USERS,
+          // THE PAGE'S SETTINGS TAB (#2070): the `Profile photos` group,
+          // which SETTING_HOMES homes here — what a person may set about
+          // themselves, beside the people it is about. It was homed here
+          // and drawn nowhere, so none of the six could be changed.
+          settings: self.settingsBlockOf('/admin/users'),
           // Each row with its live sign-on sessions, the column beside it,
           // and its entry's DN (#461) — what an application's `appMayAct`
           // names a person by, so the console's search there can store it.

@@ -128,5 +128,9 @@
   "piv.keyWarn": "هذا هو مفتاح فك التشفير الخاص بالشخص. يُعرض مرة واحدة، واسترداده مسجّل في سجل التدقيق. سلّمه كما تسلّم البطاقة.",
   "piv.privateKey": "المفتاح الخاص",
   "piv.certificate": "الشهادة",
-  "piv.import": "اكتبها في فتحة YubiKey باستخدام: ykman piv certificates import SLOT cert.pem"
+  "piv.import": "اكتبها في فتحة YubiKey باستخدام: ykman piv certificates import SLOT cert.pem",
+  "once.sshCertificate": "شهادة مستخدم SSH",
+  "ssh.certificate": "الشهادة",
+  "ssh.pqc": "شهادة ML-DSA",
+  "ssh.install": "احفظها بجانب المفتاح الخاص، باسم ملف المفتاح مع -cert.pub في آخره، وسيقدمها ssh مع المفتاح."
 }

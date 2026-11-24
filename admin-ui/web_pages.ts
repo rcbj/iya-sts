@@ -349,8 +349,10 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/tls': [],
   '/admin/tls/trust': ['anchors', 'add'],
   // DIRECTORY (rcbj, 2026-10-12): the pages with more than one section. A
-  // page with one (Users, Every entry, The directory service) is left as
-  // it is; Policies draws tabs of its own, Metadata first.
+  // page with one (Every entry, The directory service) is left as
+  // it is; Policies draws tabs of its own, Metadata first. Users is tabbed
+  // since #2070: the tiles, the people, the `Profile photos` settings.
+  '/admin/users': ['people', 'settings'],
   '/admin/groups': ['groups', 'create', 'settings'],
   '/admin/roles': ['roles', 'create', 'member', 'authorizes', 'requiring',
                    'preview', 'settings'],
@@ -358,8 +360,9 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/devices': ['devices', 'register'],
   // #1955 P1: the register's list; P4: imported OATH tokens;
   // P2: PIV enrolment and escrowed keys; the #1955 review: a person's SSH
-  // user certificates.
-  '/admin/hardware-tokens': ['tokens', 'oath', 'enrol', 'escrow', 'ssh'],
+  // user certificates; #2071: imported YubiKey OTPs.
+  '/admin/hardware-tokens': ['tokens', 'oath', 'yubiotp', 'enrol', 'escrow',
+                             'ssh'],
   // #1955 P6: the person, the registration, the directory.
   '/admin/openpgp': ['person', 'register', 'directory'],
   '/admin/attribute-sources': ['sources', 'add', 'person', 'settings'],
@@ -917,11 +920,17 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/hardware-tokens',
     // #1955 P4: the OATH tab, always asked, under names of its own so its
     // filter and pager move its list and not the register's.
-    compose: { oath: '/admin-api/hardware-tokens/oath' },
-    composeWhen: { oath: ['oq', 'ostatus', 'opage', 'per'] },
+    // #2071: the YubiKey OTP tab, the same way under `yq`, `ystatus` and
+    // `ypage`.
+    compose: { oath: '/admin-api/hardware-tokens/oath',
+               yubiotp: '/admin-api/hardware-tokens/yubiotp' },
+    composeWhen: { oath: ['oq', 'ostatus', 'opage', 'per'],
+                   yubiotp: ['yq', 'ystatus', 'ypage', 'per'] },
     composeParams: { oath: { oq: 'q', ostatus: 'status', opage: 'page',
-                             per: 'per' } },
-    composeAlways: ['oath'],
+                             per: 'per' },
+                     yubiotp: { yq: 'q', ystatus: 'status', ypage: 'page',
+                                per: 'per' } },
+    composeAlways: ['oath', 'yubiotp'],
     render: HardwareTokensPage.render },
   // #1955 P6: Directory → OpenPGP keys, one person's OpenPGP key, its Web
   // Key Directory publication and their mail encryption.
@@ -1197,19 +1206,24 @@ const PAGES: WebPage[] = [
     compose: {
       personTokens: '/admin-api/hardware-tokens',
       personOath: '/admin-api/hardware-tokens/oath',
+      // #2071: the YubiKey OTPs on the person's entry.
+      personYubi: '/admin-api/hardware-tokens/yubiotp',
       personOpenpgp: '/admin-api/openpgp'
     },
     composeWhen: {
       personTokens: ['user'],
       personOath: ['user'],
+      personYubi: ['user'],
       personOpenpgp: ['user']
     },
     composeParams: {
       personTokens: { user: 'q' },
       personOath: { user: 'q' },
+      personYubi: { user: 'q' },
       personOpenpgp: { user: 'user' }
     },
-    composeKeep: ['personTokens', 'personOath', 'personOpenpgp'],
+    composeKeep: ['personTokens', 'personOath', 'personYubi',
+                  'personOpenpgp'],
     drill: {
       param: 'user',
       sample: function (list: Json): string | null {
@@ -1469,9 +1483,8 @@ const PAGES: WebPage[] = [
   // THE CLUSTER PAGE WAS NEVER CONVERTED (#446), so Platform → Cluster
   // answered "not a console page" and its settings were drawn nowhere;
   // `tests/setting_homes_drawn.js` found it (#2049). Its settings and
-  // prose are drawn here; its status block (members, leases, other cells)
-  // is still drawn by the console in node only, and has no browser
-  // renderer in `web_protocol_settings.ts` yet.
+  // prose are drawn here, and since #2070 its status block (members,
+  // leases, other cells) too, by `web_cluster_status.ts`.
   { path: '/admin/cluster', title: 'Cluster',
     operation: '/admin-api/cluster',
     render: ProtocolSettingsPage.render },

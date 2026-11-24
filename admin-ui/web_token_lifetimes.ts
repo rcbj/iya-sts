@@ -121,6 +121,8 @@ class TokenLifetimesPage {
               t.text('consoleTokenLifetimes.appconfigFile'),
             defaultsFile: (json.context || {}).defaultsFile })))) +
 
+      TokenLifetimesPage.otherSettings(json.otherSettings, t) +
+
       kit.frame('<h2>' + t.html('consoleTokenLifetimes.skewHeading') +
       '</h2>' +
       kit.note(t.html('consoleTokenLifetimes.skewNote'))) +
@@ -166,6 +168,33 @@ class TokenLifetimesPage {
       kit.note(t.html('consoleTokenLifetimes.json'));
 
     return inner;
+  }
+
+  // THE REST OF THE GROUP (#2070): `OAuth 2.0 / OIDC per-client` is homed
+  // on this page, and the three rows that are not lifetimes — the refresh
+  // chain's cap, consent for a public client, the default max_age — were in
+  // no answer and on no page. They are the group's ordinary settings form,
+  // posting `set-many` to /admin/config like every other page's, and coming
+  // back here (`from`).
+  /**
+   * Draws the group's settings that the lifetimes table does not hold.
+   *
+   * @param block - the answer's `otherSettings`, a settings block, or null
+   * @param t - the page's translator (#539)
+   * @returns the section as HTML, or '' when there is nothing to draw
+   */
+  static otherSettings(block, t) {
+    const groups = (block && block.groups) || [];
+    if (!groups.length) {
+      return '';
+    }
+    return kit.frame('<h2>' + t.html('consoleTokenLifetimes.otherHeading') +
+      '</h2>' +
+      kit.note(t.html('consoleTokenLifetimes.otherNote')) +
+      groups.map(function (group) {
+        return SettingsForms.section(group, '/admin/token-lifetimes',
+                                     block.context || {}, t);
+      }).join(''));
   }
 
   // One row of the form. A `number` input rather than the text box

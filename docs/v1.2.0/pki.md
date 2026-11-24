@@ -243,6 +243,19 @@ schemas are in `GET /admin-api/account-api`.
   revokes one there or with `POST /admin-api/hardware-tokens/revoke-ssh` and
   `{ "username": "...", "serial": "..." }`. A revoked certificate is on the
   KRL until it expires.
+- **An administrator issuing one.** The **Issue a certificate** form on that
+  SSH certificates tab, or on the person's SSH sub-tab with the person
+  fixed, is `POST /admin-api/hardware-tokens/issue-ssh` with
+  `{ "username": "...", "publicKey": "...", "principals": [...],
+  "lifetimeS": 300 }` (`principals` may be the console's text separated by
+  commas; none is the person's uid). It is the person's own issuance run
+  for them: the same principals, each the access policy's decision about
+  the person, the same lifetimes and security-key attestation, and the
+  certificate written onto their entry before it is answered. The audit
+  row (`ssh-user-ca.issue`) names the administrator and the person; it is
+  not rate-limited the way the portal is, and `pki.personSelfService` does
+  not turn it off. The certificate is shown once. Nobody of that name is
+  404 (`STS-SSHCA-0004`), a refused principal 403.
 - **On the person's directory entry.** Every live certificate is also on
   its holder's entry, in `stsSshUserCertificate` (one JSON value each: the
   serial, the certificate in OpenSSH text form, the key, the principals,

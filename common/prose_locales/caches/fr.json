@@ -1796,8 +1796,8 @@
     "text": "Une ligne par certificat utilisateur OpenSSH que l’AC utilisateur SSH de ce domaine a émis, par numéro de série : à qui il appartient (urn:uuid), l’empreinte de la clé, ses principaux, sa durée de vie et s’il a été révoqué. Jamais une clé."
   },
   "caches.store.ssh_user_ca.issued.bound": {
-    "en": "36fc38da0e0699e8",
-    "text": "Les lignes qu’un processus détient sont un cache de 5 000 par domaine ; une ligne quitte le magasin quand son certificat expire."
+    "en": "e9eaf8f07040a227",
+    "text": "Appliqué : les lignes qu’un processus détient sont une fenêtre à la demande de 5 000 par domaine ; une ligne quitte le magasin quand son certificat expire."
   },
   "caches.store.ssh_user_ca.issued.lifetime": {
     "en": "fdcbaa82a4ac533d",

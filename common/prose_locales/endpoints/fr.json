@@ -1315,6 +1315,10 @@
     "en": "009f323198517782",
     "text": "Jetons OATH importés"
   },
+  "endpoints.route./admin-api/hardware-tokens/yubiotp.name": {
+    "en": "038eb465fd8d6235",
+    "text": "YubiKey OTP importés"
+  },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
     "en": "33209f967f070175",
     "text": "Actions sur les jetons matériels"

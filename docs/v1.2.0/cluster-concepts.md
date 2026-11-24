@@ -216,7 +216,12 @@ A node joins before it restores anything from the store or binds any port.
   restarted under the same name is counted on its running row;
 - each lease, its holder and its fencing token;
 - the capability table, and the shared secrets with where this process's
-  value came from.
+  value came from;
+- in a service of several cells, every other cell's members, leases and
+  worker pools.
+
+All of that is on the page's **Metadata** tab, and the `cluster.*` settings
+are on its **Settings** tab.
 
 **Monitoring → Worker Pools** and **Monitoring → Node Health** show every
 node by name. The node drawing the page shows its own figures live; every
