@@ -1224,6 +1224,13 @@ const JOBS = [
   // outside it), the refusals with their codes, and the row's pullScope
   // and audit (xacml_pep_scope in process). In a realm of its own.
   { file: 'sts_xacml_pep_scope.js', browser: false, local: true },
+  // #2028: a policy change heard over Shared Signals. A deploy to the root
+  // an application is decided by puts one pep-policies-changed SET on the
+  // bound application's poll stream and none on another application's, and
+  // ssfAllowedEvents naming only caep withholds it and lists the PEP in the
+  // application's pepEventsExcluded (pep_policies_changed in process). In a
+  // realm of its own.
+  { file: 'sts_pep_policies_changed.js', browser: false, local: true },
   // THE SOCKETS AND DOORS A DEPLOYED CLUSTER IS MOST LIKELY TO BREAK
   // (2026-09-18): every one of these families was covered in process and by
   // nothing driven over the network, so a stack behind a load balancer said

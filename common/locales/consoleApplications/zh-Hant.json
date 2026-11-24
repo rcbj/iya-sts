@@ -1031,5 +1031,6 @@
   "protection.removeN": "移除運算式 {n}",
   "protection.addList": "將清單加入欄位",
   "protection.recipientOne": "{field} 只容納一個運算式：請在清單中只保留一個。",
-  "protection.addedN": "已向 {field} 加入 {n} 個運算式。請在表單上按「儲存」以保留它們。"
+  "protection.addedN": "已向 {field} 加入 {n} 個運算式。請在表單上按「儲存」以保留它們。",
+  "embeddedPeps.eventsExcluded": "此應用程式的 Shared Signals 串流無法傳遞 pep-policies-changed（其 ssfAllowedEvents 將其排除，或 PEP 回報如此），因此這些 local 模式的 PEP 只能在備援輪詢時得知原則變更：{peps}。請將 urn:iya:sts:secevent:event-type:pep-policies-changed 加入 ssfAllowedEvents。"
 }

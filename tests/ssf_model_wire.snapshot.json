@@ -931,6 +931,31 @@
       ]
      },
      {
+      "uri": "urn:iya:sts:secevent:event-type:pep-policies-changed",
+      "name": "PEP Policies Changed",
+      "family": "sts",
+      "subject": "required",
+      "what": "NON-SPEC, this service's own (#2028, part of #1206). What a remote PEP embedded in the application named by the subject pulls has changed: the policies of its bound-application scope, the realm's AuthZEN attribute catalogue, or both. It carries NO policy: the PEP pulls again with its own credential, and a PEP in central mode clears any Permits it cached. Sent to the streams the application owns, one SET per PEP bound to it, while the application's ssfAllowedEvents allows it. A hint only: a PEP that misses it converges on its fallback poll.",
+      "offered": true,
+      "members": [
+       {
+        "name": "pep",
+        "required": true,
+        "what": "The remote PEP the change is for: the username of its service account. A PEP ignores an event naming another PEP."
+       },
+       {
+        "name": "changed",
+        "required": true,
+        "what": "What moved: \"policies\" (its bound-application scope's token) and/or \"catalogue\" (the AuthZEN attribute catalogue's token)."
+       },
+       {
+        "name": "sync_token",
+        "required": true,
+        "what": "The new token of what moved: the scope's, or the catalogue's when only the catalogue moved. Never trusted in place of a pull."
+       }
+      ]
+     },
+     {
       "uri": "urn:iya:sts:secevent:event-type:announcement",
       "name": "Announcement",
       "family": "sts",
@@ -1739,6 +1764,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_requested": [
@@ -1808,6 +1834,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_requested": [
@@ -1840,6 +1867,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_delivered": [
@@ -1872,6 +1900,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "delivery": {
@@ -1934,6 +1963,7 @@
       "urn:iya:sts:secevent:event-type:federation-key-rotated",
       "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
       "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+      "urn:iya:sts:secevent:event-type:pep-policies-changed",
       "urn:iya:sts:secevent:event-type:announcement"
      ],
      "events_requested": [
@@ -1986,6 +2016,7 @@
       "urn:iya:sts:secevent:event-type:federation-key-rotated",
       "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
       "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+      "urn:iya:sts:secevent:event-type:pep-policies-changed",
       "urn:iya:sts:secevent:event-type:announcement"
      ],
      "events_requested": [
@@ -2018,6 +2049,7 @@
       "urn:iya:sts:secevent:event-type:federation-key-rotated",
       "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
       "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+      "urn:iya:sts:secevent:event-type:pep-policies-changed",
       "urn:iya:sts:secevent:event-type:announcement"
      ],
      "events_delivered": [
@@ -2050,6 +2082,7 @@
       "urn:iya:sts:secevent:event-type:federation-key-rotated",
       "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
       "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+      "urn:iya:sts:secevent:event-type:pep-policies-changed",
       "urn:iya:sts:secevent:event-type:announcement"
      ],
      "delivery": {
@@ -2112,6 +2145,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_requested": [
@@ -2144,6 +2178,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_delivered": [
@@ -2176,6 +2211,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "delivery": {
@@ -2279,6 +2315,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_requested": [
@@ -2311,6 +2348,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_delivered": [
@@ -2343,6 +2381,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "delivery": {
@@ -2425,6 +2464,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_requested": [
@@ -2457,6 +2497,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_delivered": [
@@ -2489,6 +2530,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "delivery": {
@@ -4450,6 +4492,31 @@
       ]
      },
      {
+      "uri": "urn:iya:sts:secevent:event-type:pep-policies-changed",
+      "name": "PEP Policies Changed",
+      "family": "sts",
+      "subject": "required",
+      "what": "NON-SPEC, this service's own (#2028, part of #1206). What a remote PEP embedded in the application named by the subject pulls has changed: the policies of its bound-application scope, the realm's AuthZEN attribute catalogue, or both. It carries NO policy: the PEP pulls again with its own credential, and a PEP in central mode clears any Permits it cached. Sent to the streams the application owns, one SET per PEP bound to it, while the application's ssfAllowedEvents allows it. A hint only: a PEP that misses it converges on its fallback poll.",
+      "offered": true,
+      "members": [
+       {
+        "name": "pep",
+        "required": true,
+        "what": "The remote PEP the change is for: the username of its service account. A PEP ignores an event naming another PEP."
+       },
+       {
+        "name": "changed",
+        "required": true,
+        "what": "What moved: \"policies\" (its bound-application scope's token) and/or \"catalogue\" (the AuthZEN attribute catalogue's token)."
+       },
+       {
+        "name": "sync_token",
+        "required": true,
+        "what": "The new token of what moved: the scope's, or the catalogue's when only the catalogue moved. Never trusted in place of a pull."
+       }
+      ]
+     },
+     {
       "uri": "urn:iya:sts:secevent:event-type:announcement",
       "name": "Announcement",
       "family": "sts",
@@ -5258,6 +5325,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_requested": [
@@ -5327,6 +5395,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_requested": [
@@ -5359,6 +5428,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_delivered": [
@@ -5391,6 +5461,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "delivery": {
@@ -5453,6 +5524,7 @@
       "urn:iya:sts:secevent:event-type:federation-key-rotated",
       "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
       "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+      "urn:iya:sts:secevent:event-type:pep-policies-changed",
       "urn:iya:sts:secevent:event-type:announcement"
      ],
      "events_requested": [
@@ -5505,6 +5577,7 @@
       "urn:iya:sts:secevent:event-type:federation-key-rotated",
       "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
       "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+      "urn:iya:sts:secevent:event-type:pep-policies-changed",
       "urn:iya:sts:secevent:event-type:announcement"
      ],
      "events_requested": [
@@ -5537,6 +5610,7 @@
       "urn:iya:sts:secevent:event-type:federation-key-rotated",
       "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
       "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+      "urn:iya:sts:secevent:event-type:pep-policies-changed",
       "urn:iya:sts:secevent:event-type:announcement"
      ],
      "events_delivered": [
@@ -5569,6 +5643,7 @@
       "urn:iya:sts:secevent:event-type:federation-key-rotated",
       "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
       "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+      "urn:iya:sts:secevent:event-type:pep-policies-changed",
       "urn:iya:sts:secevent:event-type:announcement"
      ],
      "delivery": {
@@ -5631,6 +5706,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_requested": [
@@ -5663,6 +5739,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_delivered": [
@@ -5695,6 +5772,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "delivery": {
@@ -5798,6 +5876,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_requested": [
@@ -5830,6 +5909,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_delivered": [
@@ -5862,6 +5942,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "delivery": {
@@ -5944,6 +6025,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_requested": [
@@ -5976,6 +6058,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_delivered": [
@@ -6008,6 +6091,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "delivery": {
@@ -7969,6 +8053,31 @@
       ]
      },
      {
+      "uri": "urn:iya:sts:secevent:event-type:pep-policies-changed",
+      "name": "PEP Policies Changed",
+      "family": "sts",
+      "subject": "required",
+      "what": "NON-SPEC, this service's own (#2028, part of #1206). What a remote PEP embedded in the application named by the subject pulls has changed: the policies of its bound-application scope, the realm's AuthZEN attribute catalogue, or both. It carries NO policy: the PEP pulls again with its own credential, and a PEP in central mode clears any Permits it cached. Sent to the streams the application owns, one SET per PEP bound to it, while the application's ssfAllowedEvents allows it. A hint only: a PEP that misses it converges on its fallback poll.",
+      "offered": true,
+      "members": [
+       {
+        "name": "pep",
+        "required": true,
+        "what": "The remote PEP the change is for: the username of its service account. A PEP ignores an event naming another PEP."
+       },
+       {
+        "name": "changed",
+        "required": true,
+        "what": "What moved: \"policies\" (its bound-application scope's token) and/or \"catalogue\" (the AuthZEN attribute catalogue's token)."
+       },
+       {
+        "name": "sync_token",
+        "required": true,
+        "what": "The new token of what moved: the scope's, or the catalogue's when only the catalogue moved. Never trusted in place of a pull."
+       }
+      ]
+     },
+     {
       "uri": "urn:iya:sts:secevent:event-type:announcement",
       "name": "Announcement",
       "family": "sts",
@@ -8777,6 +8886,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_requested": [
@@ -8846,6 +8956,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_requested": [
@@ -8878,6 +8989,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_delivered": [
@@ -8910,6 +9022,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "delivery": {
@@ -8972,6 +9085,7 @@
       "urn:iya:sts:secevent:event-type:federation-key-rotated",
       "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
       "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+      "urn:iya:sts:secevent:event-type:pep-policies-changed",
       "urn:iya:sts:secevent:event-type:announcement"
      ],
      "events_requested": [
@@ -9024,6 +9138,7 @@
       "urn:iya:sts:secevent:event-type:federation-key-rotated",
       "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
       "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+      "urn:iya:sts:secevent:event-type:pep-policies-changed",
       "urn:iya:sts:secevent:event-type:announcement"
      ],
      "events_requested": [
@@ -9056,6 +9171,7 @@
       "urn:iya:sts:secevent:event-type:federation-key-rotated",
       "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
       "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+      "urn:iya:sts:secevent:event-type:pep-policies-changed",
       "urn:iya:sts:secevent:event-type:announcement"
      ],
      "events_delivered": [
@@ -9088,6 +9204,7 @@
       "urn:iya:sts:secevent:event-type:federation-key-rotated",
       "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
       "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+      "urn:iya:sts:secevent:event-type:pep-policies-changed",
       "urn:iya:sts:secevent:event-type:announcement"
      ],
      "delivery": {
@@ -9150,6 +9267,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_requested": [
@@ -9182,6 +9300,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_delivered": [
@@ -9214,6 +9333,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "delivery": {
@@ -9317,6 +9437,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_requested": [
@@ -9349,6 +9470,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_delivered": [
@@ -9381,6 +9503,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "delivery": {
@@ -9463,6 +9586,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_requested": [
@@ -9495,6 +9619,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "events_delivered": [
@@ -9527,6 +9652,7 @@
      "urn:iya:sts:secevent:event-type:federation-key-rotated",
      "urn:iya:sts:secevent:event-type:spiffe-authority-rotated",
      "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+     "urn:iya:sts:secevent:event-type:pep-policies-changed",
      "urn:iya:sts:secevent:event-type:announcement"
     ],
     "delivery": {
@@ -11501,6 +11627,31 @@
       ]
      },
      {
+      "uri": "urn:iya:sts:secevent:event-type:pep-policies-changed",
+      "name": "PEP Policies Changed",
+      "family": "sts",
+      "subject": "required",
+      "what": "NON-SPEC, this service's own (#2028, part of #1206). What a remote PEP embedded in the application named by the subject pulls has changed: the policies of its bound-application scope, the realm's AuthZEN attribute catalogue, or both. It carries NO policy: the PEP pulls again with its own credential, and a PEP in central mode clears any Permits it cached. Sent to the streams the application owns, one SET per PEP bound to it, while the application's ssfAllowedEvents allows it. A hint only: a PEP that misses it converges on its fallback poll.",
+      "offered": true,
+      "members": [
+       {
+        "name": "pep",
+        "required": true,
+        "what": "The remote PEP the change is for: the username of its service account. A PEP ignores an event naming another PEP."
+       },
+       {
+        "name": "changed",
+        "required": true,
+        "what": "What moved: \"policies\" (its bound-application scope's token) and/or \"catalogue\" (the AuthZEN attribute catalogue's token)."
+       },
+       {
+        "name": "sync_token",
+        "required": true,
+        "what": "The new token of what moved: the scope's, or the catalogue's when only the catalogue moved. Never trusted in place of a pull."
+       }
+      ]
+     },
+     {
       "uri": "urn:iya:sts:secevent:event-type:announcement",
       "name": "Announcement",
       "family": "sts",
@@ -13353,7 +13504,7 @@
    "verdict": {
     "ok": false,
     "errors": [
-     "\"urn:nope\" is not an event type this service knows. The ones it does are: https://schemas.openid.net/secevent/ssf/event-type/verification, https://schemas.openid.net/secevent/ssf/event-type/stream-updated, https://schemas.openid.net/secevent/caep/event-type/session-revoked, https://schemas.openid.net/secevent/caep/event-type/session-established, https://schemas.openid.net/secevent/caep/event-type/session-presented, https://schemas.openid.net/secevent/caep/event-type/token-claims-change, https://schemas.openid.net/secevent/caep/event-type/credential-change, https://schemas.openid.net/secevent/caep/event-type/assurance-level-change, https://schemas.openid.net/secevent/caep/event-type/device-compliance-change, https://schemas.openid.net/secevent/caep/event-type/risk-level-change, https://schemas.openid.net/secevent/risc/event-type/account-credential-change-required, https://schemas.openid.net/secevent/risc/event-type/account-purged, https://schemas.openid.net/secevent/risc/event-type/account-disabled, https://schemas.openid.net/secevent/risc/event-type/account-enabled, https://schemas.openid.net/secevent/risc/event-type/identifier-changed, https://schemas.openid.net/secevent/risc/event-type/identifier-recycled, https://schemas.openid.net/secevent/risc/event-type/credential-compromise, https://schemas.openid.net/secevent/risc/event-type/opt-in, https://schemas.openid.net/secevent/risc/event-type/opt-out-initiated, https://schemas.openid.net/secevent/risc/event-type/opt-out-cancelled, https://schemas.openid.net/secevent/risc/event-type/opt-out-effective, https://schemas.openid.net/secevent/risc/event-type/recovery-activated, https://schemas.openid.net/secevent/risc/event-type/recovery-information-changed, https://schemas.openid.net/secevent/risc/event-type/sessions-revoked, urn:iya:sts:secevent:event-type:signing-key-rotated, urn:iya:sts:secevent:event-type:kerberos-tickets-invalidated, urn:iya:sts:secevent:event-type:federation-key-rotated, urn:iya:sts:secevent:event-type:spiffe-authority-rotated, urn:iya:sts:secevent:event-type:tls-certificate-changed, urn:iya:sts:secevent:event-type:announcement."
+     "\"urn:nope\" is not an event type this service knows. The ones it does are: https://schemas.openid.net/secevent/ssf/event-type/verification, https://schemas.openid.net/secevent/ssf/event-type/stream-updated, https://schemas.openid.net/secevent/caep/event-type/session-revoked, https://schemas.openid.net/secevent/caep/event-type/session-established, https://schemas.openid.net/secevent/caep/event-type/session-presented, https://schemas.openid.net/secevent/caep/event-type/token-claims-change, https://schemas.openid.net/secevent/caep/event-type/credential-change, https://schemas.openid.net/secevent/caep/event-type/assurance-level-change, https://schemas.openid.net/secevent/caep/event-type/device-compliance-change, https://schemas.openid.net/secevent/caep/event-type/risk-level-change, https://schemas.openid.net/secevent/risc/event-type/account-credential-change-required, https://schemas.openid.net/secevent/risc/event-type/account-purged, https://schemas.openid.net/secevent/risc/event-type/account-disabled, https://schemas.openid.net/secevent/risc/event-type/account-enabled, https://schemas.openid.net/secevent/risc/event-type/identifier-changed, https://schemas.openid.net/secevent/risc/event-type/identifier-recycled, https://schemas.openid.net/secevent/risc/event-type/credential-compromise, https://schemas.openid.net/secevent/risc/event-type/opt-in, https://schemas.openid.net/secevent/risc/event-type/opt-out-initiated, https://schemas.openid.net/secevent/risc/event-type/opt-out-cancelled, https://schemas.openid.net/secevent/risc/event-type/opt-out-effective, https://schemas.openid.net/secevent/risc/event-type/recovery-activated, https://schemas.openid.net/secevent/risc/event-type/recovery-information-changed, https://schemas.openid.net/secevent/risc/event-type/sessions-revoked, urn:iya:sts:secevent:event-type:signing-key-rotated, urn:iya:sts:secevent:event-type:kerberos-tickets-invalidated, urn:iya:sts:secevent:event-type:federation-key-rotated, urn:iya:sts:secevent:event-type:spiffe-authority-rotated, urn:iya:sts:secevent:event-type:tls-certificate-changed, urn:iya:sts:secevent:event-type:pep-policies-changed, urn:iya:sts:secevent:event-type:announcement."
     ],
     "warnings": []
    }
@@ -14743,6 +14894,44 @@
   },
   {
    "kind": "row",
+   "uri": "urn:iya:sts:secevent:event-type:pep-policies-changed",
+   "name": "PEP Policies Changed",
+   "family": "sts",
+   "subject": "required",
+   "required": [
+    "pep",
+    "changed",
+    "sync_token"
+   ],
+   "members": [
+    {
+     "name": "pep",
+     "required": true,
+     "type": "string",
+     "what": "The remote PEP the change is for: the username of its service account. A PEP ignores an event naming another PEP."
+    },
+    {
+     "name": "changed",
+     "required": true,
+     "type": "strings",
+     "what": "What moved: \"policies\" (its bound-application scope's token) and/or \"catalogue\" (the AuthZEN attribute catalogue's token)."
+    },
+    {
+     "name": "sync_token",
+     "required": true,
+     "type": "string",
+     "what": "The new token of what moved: the scope's, or the catalogue's when only the catalogue moved. Never trusted in place of a pull."
+    }
+   ],
+   "generated": {
+    "pep": "",
+    "changed": [],
+    "sync_token": ""
+   },
+   "what": "NON-SPEC, this service's own (#2028, part of #1206). What a remote PEP embedded in the application named by the subject pulls has changed: the policies of its bound-application scope, the realm's AuthZEN attribute catalogue, or both. It carries NO policy: the PEP pulls again with its own credential, and a PEP in central mode clears any Permits it cached. Sent to the streams the application owns, one SET per PEP bound to it, while the application's ssfAllowedEvents allows it. A hint only: a PEP that misses it converges on its fallback poll."
+  },
+  {
+   "kind": "row",
    "uri": "urn:iya:sts:secevent:event-type:announcement",
    "name": "Announcement",
    "family": "sts",
@@ -15098,6 +15287,13 @@
   {
    "kind": "transmit",
    "mode": "development",
+   "uri": "urn:iya:sts:secevent:event-type:pep-policies-changed",
+   "ok": true,
+   "errors": []
+  },
+  {
+   "kind": "transmit",
+   "mode": "development",
    "uri": "urn:iya:sts:secevent:event-type:announcement",
    "ok": true,
    "errors": []
@@ -15308,6 +15504,13 @@
   {
    "kind": "transmit",
    "mode": "product",
+   "uri": "urn:iya:sts:secevent:event-type:pep-policies-changed",
+   "ok": true,
+   "errors": []
+  },
+  {
+   "kind": "transmit",
+   "mode": "product",
    "uri": "urn:iya:sts:secevent:event-type:announcement",
    "ok": true,
    "errors": []
@@ -15512,6 +15715,13 @@
    "kind": "transmit",
    "mode": "defects",
    "uri": "urn:iya:sts:secevent:event-type:tls-certificate-changed",
+   "ok": true,
+   "errors": []
+  },
+  {
+   "kind": "transmit",
+   "mode": "defects",
+   "uri": "urn:iya:sts:secevent:event-type:pep-policies-changed",
    "ok": true,
    "errors": []
   },

@@ -1031,5 +1031,6 @@
   "protection.removeN": "Remove expression {n}",
   "protection.addList": "Add the list to the field",
   "protection.recipientOne": "{field} holds one expression: leave exactly one in the list.",
-  "protection.addedN": "Added {n} expression(s) to {field}. Press Save on the form to keep them."
+  "protection.addedN": "Added {n} expression(s) to {field}. Press Save on the form to keep them.",
+  "embeddedPeps.eventsExcluded": "This application’s Shared Signals streams cannot carry pep-policies-changed (its ssfAllowedEvents leaves it out, or the PEP reported so), so these PEPs in local mode learn of a policy change only on their fallback poll: {peps}. Add urn:iya:sts:secevent:event-type:pep-policies-changed to ssfAllowedEvents."
 }

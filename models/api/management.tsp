@@ -2612,7 +2612,7 @@ namespace IyaSts.Api.Management {
       `ownership`?: WithKindNameMarkedEtc5;
       `krb5Across`?: NullableObject75;
       @js(#{`description`:"The routes of this realm's remote PEPs that front this application (#1760): which PEP, which route, its path and mechanisms — the reference only."}) `pepRoutes`?: (XacmlPepRouteReference)[];
-      @js(#{`description`:"The embedded remote PEPs bound to this application (#2025), by username."}) `embeddedPeps`?: (string)[]
+      @js(#{`description`:"The embedded remote PEPs in local mode bound to this application that will not hear of a policy change over Shared Signals (#2028): its ssfAllowedEvents leaves pep-policies-changed out, or the PEP reported its stream excludes it. The page warns; they converge on their fallback poll."}) `pepEventsExcluded`?: (string)[]; @js(#{`description`:"The embedded remote PEPs bound to this application (#2025), by username."}) `embeddedPeps`?: (string)[]
     }
   }
 
@@ -2681,7 +2681,7 @@ namespace IyaSts.Api.Management {
     `owners`?: (WithDnKindNameEtc4)[];
     `maxOwners`?: numeric;
     @js(#{`description`:"The routes of this realm's remote PEPs that front this application (#1760): the reference only."}) `pepRoutes`?: (XacmlPepRouteReference)[];
-    @js(#{`description`:"The embedded remote PEPs bound to this application (#2025), by username."}) `embeddedPeps`?: (string)[]
+    @js(#{`description`:"The embedded remote PEPs in local mode bound to this application that will not hear of a policy change over Shared Signals (#2028): its ssfAllowedEvents leaves pep-policies-changed out, or the PEP reported its stream excludes it. The page warns; they converge on their fallback poll."}) `pepEventsExcluded`?: (string)[]; @js(#{`description`:"The embedded remote PEPs bound to this application (#2025), by username."}) `embeddedPeps`?: (string)[]
   }
 
 @js(#{

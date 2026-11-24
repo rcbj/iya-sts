@@ -11792,6 +11792,46 @@ class AdminViews {
    * @param identifier - the application
    * @returns the PEPs' usernames
    */
+  // THE LOCAL EMBEDDED PEPS BOUND TO AN APPLICATION THAT WILL NOT HEAR OF A
+  // POLICY CHANGE (#2028, D4): the application's `ssfAllowedEvents` leaves
+  // `pep-policies-changed` out (asked as delivery asks it, through
+  // `ssf_streams.ts`'s `allowedEventsFor()`), or the PEP reported on its
+  // heartbeat that its stream excludes it. Such a PEP converges only on its
+  // fallback poll, which is what the page's warning says. None where the
+  // families are not loaded.
+  /**
+   * The local embedded PEPs bound to an application whose stream cannot
+   * carry `pep-policies-changed` (#2028).
+   *
+   * @param identifier - the application
+   * @param peps - the PEPs bound to it
+   * @returns the PEPs' usernames
+   */
+  pepEventsExcludedOf(identifier, peps) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.pepEventsExcludedOf().");
+    let out = [];
+    try {
+      const registry = require('../xacml/xacml_pep_registry');
+      const uri = require('../ssf/ssf_events').PEP_POLICIES_CHANGED;
+      const restriction = require('../ssf/ssf_streams')
+        .allowedEventsFor(String(identifier || ''));
+      const refused = !!restriction && !restriction.allowed[uri];
+      out = (peps || []).filter(function (name) {
+        const row = registry.read(String(name));
+        return !!row && row.kind === 'embedded' && row.mode === 'local' &&
+          (refused || row.policyEvents === 'excluded');
+      });
+    } catch (e) {
+      log.debug("Caught in AdminViews.pepEventsExcludedOf(): " +
+                ((e && e.message) || e));
+      // A family not loaded here: nothing to warn about.
+      out = [];
+    }
+    log.debug("Leaving AdminViews.pepEventsExcludedOf(). " + out.length);
+    return out;
+  }
+
   embeddedPepsOf(identifier) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.embeddedPepsOf().");
@@ -12072,6 +12112,10 @@ class AdminViews {
     (out as any).pepRoutes = self.pepRoutesFronting(row.identifier);
     // THE EMBEDDED REMOTE PEPS BOUND TO IT (#2025): their usernames.
     (out as any).embeddedPeps = self.embeddedPepsOf(row.identifier);
+    // AND THOSE IN `local` MODE THAT WILL NOT HEAR OF A POLICY CHANGE
+    // (#2028): the page warns.
+    (out as any).pepEventsExcluded = self.pepEventsExcludedOf(row.identifier,
+      (out as any).embeddedPeps);
     // Closed to its owners, and why (#607).
     (out as any).ownership = self.ownershipOf('application', row.identifier);
     (out.config as any).fieldWarnings = scopeWarnings.length
@@ -17113,6 +17157,9 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   logoutInventoryFor: slot.forward('logoutInventoryFor'),
   pepRoutesFronting: slot.forward('pepRoutesFronting'),
+  // The local embedded PEPs bound to an application that will not hear of a
+  // policy change (#2028).
+  pepEventsExcludedOf: slot.forward('pepEventsExcludedOf'),
   logoutFamilies: slot.forward('logoutFamilies'),
   logoutJson: slot.forward('logoutJson'),
   mfaRosterJson: slot.forward('mfaRosterJson'),

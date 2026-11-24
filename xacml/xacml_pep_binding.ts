@@ -495,6 +495,35 @@ class PepBinding {
   }
 
   /**
+   * Every binding in the ambient realm, by username, sorted (#2028). Never
+   * throws.
+   *
+   * @returns `{ name, application }` per bound PEP
+   */
+  all(): Array<{ name: string; application: string }> {
+    const { log } = this.deps;
+    log.debug('Entering PepBinding.all().');
+    const dir = this.deps.directory();
+    let out: Array<{ name: string; application: string }> = [];
+    try {
+      out = !dir ? [] : dir.holders().filter(function (one) {
+        return !!one.application;
+      }).map(function (one) {
+        return { name: one.name, application: one.application };
+      }).sort(function (a, b) {
+        return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0);
+      });
+    } catch (e) {
+      // No binding can be read: no PEP is told anything, and each converges
+      // on its fallback poll.
+      log.debug('Caught in PepBinding.all(): ' + ((e && e.message) || e));
+      out = [];
+    }
+    log.debug('Leaving PepBinding.all(). ' + out.length);
+    return out;
+  }
+
+  /**
    * Clears every binding naming an application that was just deleted, and
    * writes an audit row for each. Called by `ldap_server.js`'s
    * `noteApplicationRemoved()`, which both doors that delete an application

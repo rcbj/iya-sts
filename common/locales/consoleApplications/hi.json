@@ -1031,5 +1031,6 @@
   "protection.removeN": "एक्सप्रेशन {n} हटाएँ",
   "protection.addList": "सूची को फ़ील्ड में जोड़ें",
   "protection.recipientOne": "{field} में एक ही एक्सप्रेशन होता है: सूची में ठीक एक छोड़ें।",
-  "protection.addedN": "{field} में {n} एक्सप्रेशन जोड़े गए। उन्हें रखने के लिए फ़ॉर्म पर सहेजें दबाएँ।"
+  "protection.addedN": "{field} में {n} एक्सप्रेशन जोड़े गए। उन्हें रखने के लिए फ़ॉर्म पर सहेजें दबाएँ।",
+  "embeddedPeps.eventsExcluded": "इस एप्लिकेशन की Shared Signals स्ट्रीम pep-policies-changed नहीं ले जा सकतीं (इसका ssfAllowedEvents इसे बाहर रखता है, या PEP ने ऐसा बताया), इसलिए local मोड के इन PEP को नीति परिवर्तन का पता केवल अपनी फ़ॉलबैक पूछताछ पर चलता है: {peps}। ssfAllowedEvents में urn:iya:sts:secevent:event-type:pep-policies-changed जोड़ें।"
 }

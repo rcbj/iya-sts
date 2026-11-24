@@ -173,6 +173,10 @@ import peps = require('./xacml_pep_registry');
 // registration as an embedded PEP is checked against (#2026). A LIBRARY
 // requiring only leaves, so it can neither move a route nor close a cycle.
 import PepBinding = require('./xacml_pep_binding');
+// THIS SERVICE'S OWN SIGNALS (#2028): a LIBRARY that finds `ssf.ts` in the
+// require cache when an event is due, so this require neither moves a
+// route nor closes a cycle.
+import serviceSignals = require('../ssf/service_signals');
 // Remote PEP clusters (#1760): a member's pulls are answered from its
 // EFFECTIVE row, the cluster's documents with its own addresses.
 import pepClusters = require('./xacml_pep_clusters');
@@ -204,6 +208,13 @@ import accessGate = require('../common/access_gate');
 import cells = require('../common/cells');
 import cellPlacement = require('../common/cell_placement');
 import realms = require('../common/realms');
+
+// WHAT THIS PROCESS LAST KNEW EACH BOUND PEP TO HOLD (#2028): its scope's
+// token and the catalogue's, per realm at the declaration, held in this
+// process only (it is a hint's memory, `notePepPolicies()`). Bounded by the
+// realm's bound PEPs.
+const pepTokens: any = realms.map();
+
 // The description page's shell and script (#584).
 import DescriptionPages = require('../common/description_pages');
 // THE CONSOLE PAGES. Required from here rather than from
@@ -1934,6 +1945,7 @@ class XacmlSurface {
     }
     self.notePull(name, 'bound-application');
     const pulled = peps.boundPull(bound);
+    self.notePepPulled(name, 'policies', pulled.token, bound);
     if (self.unchanged(req, pulled.token)) {
       res.status(304)
          .set('Cache-Control', 'no-store')
@@ -2693,6 +2705,138 @@ class XacmlSurface {
     log.debug('Leaving XacmlSurface.nudgeRegisteredPeps().');
   }
 
+  // -------------------------------------------------------------------------
+  // AN EMBEDDED PEP IS TOLD OVER SHARED SIGNALS (#2028, part of #1206;
+  // rcbj's D4): `pep-policies-changed`, on its application's own stream,
+  // because an embedded PEP has no listener for the nudge.
+  //
+  // CALLED AFTER ANY CHANGE THAT CAN MOVE WHAT AN EMBEDDED PEP PULLS: the
+  // policy repository's (the store's change observer, every door), the
+  // AuthZEN catalogue's rows (`authzen_admin.ts`) and an application's
+  // fine-grained enforcement (`fga_policies.ts`, which moves both the
+  // catalogue's `fgaApplications` and which policy a local PEP is sent).
+  // After the commit (`afterCommit()`, the nudge's reason). For each PEP
+  // bound to an application in the ambient realm it works out the token of
+  // the PEP's bound-application scope (`boundPull()`) and the catalogue's,
+  // and sends the event when either MOVED, naming which:
+  //
+  //   * MOVED is against what this process last knew of the PEP
+  //     (`pepTokens`, primed by the PEP's own scoped and catalogue pulls
+  //     and by each check), and, with nothing known yet, against the scope
+  //     token a local PEP's row says it holds. A PEP this process knows
+  //     nothing about is told nothing about the catalogue: its next pull
+  //     takes the catalogue anyway, and a burst on every restart would
+  //     make the event mean nothing;
+  //   * a `central` PEP holds no policy and is told too — the event clears
+  //     its cached Permits (D4);
+  //   * a change to another application's policy moves no token of this
+  //     PEP's, so it sends nothing.
+  //
+  // PER PROCESS AND A HINT: in a cluster the node that made the change
+  // decides, and a PEP that misses the event converges on its fallback
+  // poll. NOTHING HERE THROWS: a failure is logged under STS-XACML-0346.
+  // -------------------------------------------------------------------------
+  /**
+   * Checks, after the change commits, whether what each embedded PEP pulls
+   * moved, and sends `pep-policies-changed` for each one that did (#2028).
+   *
+   * @param what - a description of the change, for the log
+   */
+  notePepPolicies(what: string): void {
+    const self = this;
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.notePepPolicies(). what=' + what);
+    if (!self.remotePepsEnabled()) {
+      log.debug('Leaving XacmlSurface.notePepPolicies(). Remote PEPs off.');
+      return;
+    }
+    self.afterCommit(function () {
+      log.debug('Entering notePepPoliciesNow().');
+      try {
+        self.checkPepPolicies(what);
+      } catch (e) {
+        log.debug('Caught in notePepPoliciesNow(): ' +
+                  ((e && e.message) || e));
+        log.warn(errorCodes.tag('STS-XACML-0346') + 'xacml: after ' + what +
+                 ', whether an embedded PEP\'s policies moved could not be ' +
+                 'decided: ' + ((e && e.message) || e));
+      }
+      log.debug('Leaving notePepPoliciesNow().');
+    });
+    log.debug('Leaving XacmlSurface.notePepPolicies().');
+  }
+
+  /**
+   * The check `notePepPolicies()` makes, synchronously, in the ambient
+   * realm: which bound PEPs' scope or catalogue tokens moved, each sent its
+   * event. Throws only what its caller catches.
+   *
+   * @param what - a description of the change, for the log
+   * @returns the PEPs told, by name
+   */
+  checkPepPolicies(what: string): string[] {
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.checkPepPolicies(). what=' + what);
+    const bound = PepBinding.shared().all();
+    if (!bound.length) {
+      log.debug('Leaving XacmlSurface.checkPepPolicies(). Nobody bound.');
+      return [];
+    }
+    const catalogue = this.authzenCatalogue();
+    const catalogueToken = catalogue.unreadable ? '' : catalogue.token;
+    const scopes: Record<string, string> = {};
+    const told: string[] = [];
+    bound.forEach(function (one) {
+      if (!Object.prototype.hasOwnProperty.call(scopes, one.application)) {
+        scopes[one.application] = peps.boundPull(one.application).token;
+      }
+      const scopeToken = scopes[one.application];
+      const known = pepTokens.get(one.name);
+      const row = known && known.application === one.application ? null
+        : peps.read(one.name);
+      const policiesMoved = known && known.application === one.application
+        ? known.policies !== scopeToken
+        : !!row && row.kind === 'embedded' && row.mode === 'local' &&
+          !!row.syncToken && row.syncToken !== scopeToken;
+      const catalogueMoved = !!known && !!catalogueToken &&
+        !!known.catalogue && known.catalogue !== catalogueToken;
+      pepTokens.set(one.name, { application: one.application,
+                                policies: scopeToken,
+                                catalogue: catalogueToken ||
+                                  (known ? known.catalogue : '') });
+      if (!policiesMoved && !catalogueMoved) {
+        return;
+      }
+      const changed = (policiesMoved ? ['policies'] : [])
+        .concat(catalogueMoved ? ['catalogue'] : []);
+      told.push(one.name);
+      serviceSignals.pepPoliciesChanged({
+        application: one.application, pep: one.name, changed: changed,
+        syncToken: policiesMoved ? scopeToken : catalogueToken });
+    });
+    log.debug('Leaving XacmlSurface.checkPepPolicies(). ' + told.length +
+              ' told.');
+    return told;
+  }
+
+  // What a bound PEP was just SENT, so a later check compares with it
+  // (#2028): its scoped pull's token, or the catalogue's.
+  private notePepPulled(name: string, kind: 'policies' | 'catalogue',
+                        token: string, application?: string): void {
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.notePepPulled(). ' + name + ' ' + kind);
+    const bound = application || PepBinding.shared().of(name);
+    if (!bound) {
+      log.debug('Leaving XacmlSurface.notePepPulled(). Not bound.');
+      return;
+    }
+    const known = pepTokens.get(name);
+    const kept = known && known.application === bound ? known
+      : { application: bound, policies: '', catalogue: '' };
+    pepTokens.set(name, Object.assign({}, kept, { [kind]: token }));
+    log.debug('Leaving XacmlSurface.notePepPulled().');
+  }
+
   /**
    * Tells the named remote PEPs that their configuration changed, once the
    * change has committed (#1760, Remote PEP clusters): a cluster's write is
@@ -2761,7 +2905,15 @@ class XacmlSurface {
   installChangeObserver(): void {
     const { log, store } = this.deps;
     log.debug("Entering XacmlSurface.installChangeObserver().");
-    store.setChangeObserver(this.nudgeRegisteredPeps.bind(this));
+    // THE NUDGE, AND AN EMBEDDED PEP'S EVENT (#2028): a repository change
+    // reaches both, each after the commit and each unable to throw into
+    // the write that made it.
+    store.setChangeObserver((what: string): void => {
+      log.debug("Entering changeObserver().");
+      this.nudgeRegisteredPeps(what);
+      this.notePepPolicies(what);
+      log.debug("Leaving changeObserver().");
+    });
     log.debug("Leaving XacmlSurface.installChangeObserver().");
   }
 
@@ -3461,6 +3613,14 @@ class XacmlSurface {
         return;
       }
       const catalogue = self.authzenCatalogue();
+      // WHAT A BOUND PEP HOLDS NOW (#2028), so a later change is told.
+      if (!catalogue.unreadable) {
+        const puller = self.pepNameOf(access.identity,
+                                      String(req.query.pep || ''));
+        if (puller) {
+          self.notePepPulled(puller, 'catalogue', catalogue.token);
+        }
+      }
       if (!catalogue.body) {
         // NOT SENT RATHER THAN SENT WITHOUT THE FGA LIST (#564, P7): a
         // catalogue naming no enforcing application would have the edge
@@ -4283,5 +4443,9 @@ export = {
   // `tests/cluster_observation_counters.js` (2026-09-15):
   // a clustered node nudges only after the commit.
   nudgeRegisteredPeps: slot.forward('nudgeRegisteredPeps'),
-  nudgePeps: slot.forward('nudgePeps')
+  nudgePeps: slot.forward('nudgePeps'),
+  // An embedded PEP told over Shared Signals (#2028): after a catalogue or
+  // enforcement change, by `authzen_admin.ts` and `fga_policies.ts`.
+  notePepPolicies: slot.forward('notePepPolicies'),
+  checkPepPolicies: slot.forward('checkPepPolicies')
 };

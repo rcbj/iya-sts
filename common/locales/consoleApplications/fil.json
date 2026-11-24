@@ -1031,5 +1031,6 @@
   "protection.removeN": "Alisin ang expression {n}",
   "protection.addList": "Idagdag ang listahan sa field",
   "protection.recipientOne": "Isang expression lang ang hawak ng {field}: mag-iwan ng eksaktong isa sa listahan.",
-  "protection.addedN": "Nagdagdag ng {n} expression sa {field}. Pindutin ang I-save sa form para itago ang mga ito."
+  "protection.addedN": "Nagdagdag ng {n} expression sa {field}. Pindutin ang I-save sa form para itago ang mga ito.",
+  "embeddedPeps.eventsExcluded": "Hindi kayang dalhin ng mga Shared Signals stream ng application na ito ang pep-policies-changed (hindi ito kasama sa ssfAllowedEvents nito, o iniulat ito ng PEP), kaya nalalaman lang ng mga PEP na ito sa local mode ang pagbabago ng patakaran sa kanilang fallback na pagtatanong: {peps}. Idagdag ang urn:iya:sts:secevent:event-type:pep-policies-changed sa ssfAllowedEvents."
 }

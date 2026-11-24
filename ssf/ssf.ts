@@ -4153,6 +4153,89 @@ class SharedSignals {
   }
 
   // ---------------------------------------------------------------------------
+  // WHAT AN EMBEDDED REMOTE PEP PULLS MOVED (#2028, part of #1206; rcbj's
+  // D4): `pep-policies-changed`, this service's own, about the APPLICATION
+  // the PEP is embedded in. `xacml.ts` decides that a PEP's
+  // bound-application scope or the AuthZEN catalogue moved, and
+  // `ssf/service_signals.ts` hands it here; this builds the payload (the
+  // PEP's name, what moved, the new token — never a policy) and sends one SET
+  // to every stream of the AMBIENT realm that the application OWNS and that
+  // delivers the type, which `deliversEvent()` asks of the owner's
+  // `ssfAllowedEvents` like any CAEP or RISC type. The subject is the
+  // application's complex subject (`applicationSubject()`). Never throws,
+  // for `serviceKeyChanged()`'s reason: it follows a policy deploy that has
+  // already happened.
+  // ---------------------------------------------------------------------------
+  /**
+   * Sends `pep-policies-changed` to the streams an application owns, for one
+   * remote PEP embedded in it.
+   *
+   * @param notice - `application`, `pep`, `changed` (`policies` and/or
+   *   `catalogue`) and `syncToken`
+   * @returns a promise of `{ sent, streams }`, with `why` when nothing was
+   *   sent; it never rejects
+   */
+  pepPoliciesChanged(notice?: Json): Promise<EmitResult> {
+    const { log, events, streams, subjects, errorCodes } = this.deps;
+    log.debug('Entering SharedSignals.pepPoliciesChanged().');
+    const n = notice || {};
+    const application = String(n.application || '');
+    if (!this.enabled() || !application || !n.pep) {
+      log.debug('Leaving SharedSignals.pepPoliciesChanged(). Off, or no ' +
+                'application or PEP named.');
+      return Promise.resolve({ sent: 0, streams: 0,
+                               why: 'not sent: off, or nobody named' });
+    }
+    const uri = events.PEP_POLICIES_CHANGED;
+    let candidates: Json[] = [];
+    let payload: Json = null;
+    let subject: Json = null;
+    try {
+      payload = events.EVENT_BY_URI[uri].generate({ pep: n.pep,
+        changed: n.changed, sync_token: n.syncToken });
+      subject = subjects.applicationSubject(application, '');
+      candidates = streams.listStreams().filter((record: Json) => {
+        return streams.ownerApplication(record) === application &&
+               streams.deliversEvent(record, uri);
+      });
+    } catch (e) {
+      log.debug('Caught in SharedSignals.pepPoliciesChanged(): ' +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-SSF-0164') + 'ssf: pep-policies-changed ' +
+               'for "' + String(n.pep) + '" could not be built: ' +
+               ((e && e.message) || e));
+      return Promise.resolve({ sent: 0, streams: 0,
+                               why: String((e && e.message) || e) });
+    }
+    if (!candidates.length) {
+      log.debug('Leaving SharedSignals.pepPoliciesChanged(). No stream of ' +
+                'the application takes it.');
+      return Promise.resolve({ sent: 0, streams: 0 });
+    }
+    log.debug('Leaving SharedSignals.pepPoliciesChanged().');
+    const txn = this.newTxn();
+    return Promise.all(candidates.map((record: Json) => {
+      return this.transmit(record, { txn: txn, uri: uri, payload: payload,
+                                     subject: subject });
+    })).then((reports) => {
+      const sent = reports.filter((one) => {
+        return one.ok;
+      }).length;
+      log.info('ssf: pep-policies-changed (' + payload.changed.join(', ') +
+               ') for the remote PEP "' + payload.pep + '" embedded in "' +
+               application + '" went to ' + sent + ' of ' +
+               candidates.length + ' stream(s).');
+      return { sent: sent, streams: candidates.length, reports: reports };
+    }).catch((e) => {
+      log.debug('Caught in SharedSignals.pepPoliciesChanged(): ' +
+                ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-SSF-0164') + 'ssf: pep-policies-changed ' +
+                'for "' + String(n.pep) + '" could not be sent: ' + e.message);
+      return { sent: 0, streams: candidates.length, why: e.message };
+    });
+  }
+
+  // ---------------------------------------------------------------------------
   // A CAEP EVENT A PROTOCOL FAMILY OBSERVED ABOUT SOMETHING THAT IS NOT A
   // SIGN-ON SESSION.
   //
@@ -6473,6 +6556,8 @@ export = {
   broadcastAnnouncement: slot.forward('broadcastAnnouncement'),
   kerberosTicketsInvalidated: slot.forward('kerberosTicketsInvalidated'),
   serviceKeyChanged: slot.forward('serviceKeyChanged'),
+  // What an embedded remote PEP pulls moved (#2028).
+  pepPoliciesChanged: slot.forward('pepPoliciesChanged'),
   emitProtocolEvent: slot.forward('emitProtocolEvent'),
   caepReport: slot.forward('caepReport'),
   caepAction: slot.forward('caepAction'),

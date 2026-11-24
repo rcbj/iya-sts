@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6088** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6090** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -79,7 +79,7 @@ is an ordinary outcome.
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 77
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 174
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 143
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
 * [Mail (`STS-MAIL`)](#sts-mail) — 44
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 16
@@ -92,7 +92,7 @@ is an ordinary outcome.
 * [OpenSSH user certificates (`STS-SSHCA`)](#sts-sshca) — 11
 * [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 34
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 266
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 267
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 140
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 137
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
@@ -4438,6 +4438,7 @@ Raised from: ssf/.
 | `STS-SSF-0161` | A Security Event Token this service built carried a claim models/ssf/ssf.tsp does not name, one of a type it does not allow, or lacked one RFC 8417 requires (#1579). The SET is sent as it was built; this is a model gap to close. | none (recorded only; the SET is unchanged) |
 | `STS-SSF-0162` | A document this realm exchanged with a federation partner's Shared Signals transmitter is not the shape models/ssf/ssf.tsp gives it (#1579): a configuration or a SET the partner sent, or a stream request or poll this realm sent. Recorded; what was received is still judged by the receiver's own checks, and what is sent is sent unchanged. | none (recorded only) |
 | `STS-SSF-0163` | X-Iya-Pep-Name was sent and is not a PEP name: one token of 1 to 128 letters, digits, ".", "_" or "-". A cluster member sends its registered name so its CAEP/RISC stream is its own; a header that is not one is refused rather than read as no header (#1760 phase 3). | HTTP 400 |
+| `STS-SSF-0164` | pep-policies-changed could not be built or sent for a remote PEP embedded in an application (#2028). Logged and nothing else: the event is a hint, the policy change it follows has happened, and the PEP converges on its fallback poll. | none (a log line) |
 
 ## STS-RISK
 
@@ -5558,6 +5559,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0343` | GET /xacml/pep/policies?scope=bound-application was asked by a caller that is not a registered embedded PEP in local mode bound to the application it registered for (#2027): the pull scoped to an application, which carries that application's own policy, is answered to that application's local PEP and nobody else. Nothing was sent. | GET /xacml/pep/policies: HTTP 403 access_denied |
 | `STS-XACML-0344` | GET /xacml/pep/policies named a scope this service does not have: repository (or none) and bound-application are the two (#2027). | GET /xacml/pep/policies: HTTP 400 invalid_request |
 | `STS-XACML-0345` | Whether an application enforces fine-grained authorization could not be read while building its local PEP's scoped pull (#2027), so the PEP was sent the realm root and its closure, which is what AuthZEN decides the application by when it cannot read it either. Logged. | none (a log line; the pull is answered) |
+| `STS-XACML-0346` | Whether what an embedded remote PEP pulls moved could not be decided after a change to the policies or the AuthZEN catalogue (#2028), so no pep-policies-changed was sent for it. Logged and nothing else: the change itself stands, and the PEP converges on its fallback poll. | none (a log line) |
 
 ## STS-XPEP
 

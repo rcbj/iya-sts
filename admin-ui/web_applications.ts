@@ -1505,7 +1505,8 @@ class ApplicationsPage {
         { id: 'tab-embedded-peps',
           label: t.text('consoleApplications.embeddedPeps.tab'),
           html: ApplicationsPage.applicationEmbeddedPepsSection(t,
-            json.page.embeddedPeps || []) },
+            json.page.embeddedPeps || [],
+            json.page.pepEventsExcluded || []) },
         // THE METADATA REFRESH, the only control on this page that reaches off
         // this machine, drawn only for an application that names a URL — see
         // sp_metadata.ts.
@@ -5583,13 +5584,24 @@ class ApplicationsPage {
    *
    * @param t - the translator
    * @param peps - the PEPs' usernames
+   * @param excluded - those in local mode whose stream cannot carry
+   *   pep-policies-changed (#2028)
    * @returns the section, or '' when none is bound
    */
-  static applicationEmbeddedPepsSection(t, peps) {
+  static applicationEmbeddedPepsSection(t, peps, excluded) {
     if (!peps.length) {
       return '';
     }
-    return kit.frame('<p>' + t.html('consoleApplications.embeddedPeps.lead') +
+    // A LOCAL PEP THAT WILL NOT HEAR OF A POLICY CHANGE (#2028): the
+    // application's ssfAllowedEvents leaves pep-policies-changed out, or the
+    // PEP said its stream does. It converges only on its fallback poll.
+    const warn = (excluded || []).length
+      ? '<p class="warn">' +
+        t.html('consoleApplications.embeddedPeps.eventsExcluded',
+               { peps: (excluded || []).map(String).join(', ') }) + '</p>'
+      : '';
+    return kit.frame(warn +
+      '<p>' + t.html('consoleApplications.embeddedPeps.lead') +
       '</p><ul>' + peps.map(function (one) {
         return '<li><a href="/admin/xacml/pep?pep=' +
           kit.esc(encodeURIComponent(String(one))) + '"><code>' +

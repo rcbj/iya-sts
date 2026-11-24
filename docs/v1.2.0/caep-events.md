@@ -805,6 +805,27 @@ issued stays valid until it expires.
 A **service account** is a person entry flagged as one, so it is named and
 told exactly as a person is.
 
+## This service's own event for an embedded PEP: `pep-policies-changed`
+
+Not a CAEP event, but it travels on the same streams and its trigger belongs
+here ([#2028](https://github.com/rcbj/iya-sts/issues/2028)).
+`urn:iya:sts:secevent:event-type:pep-policies-changed` tells a remote PEP
+embedded in an application ([Remote PEP](remote-pep.md)) that what it pulls
+has changed, because an embedded PEP has no listener for the nudge the
+container gets.
+
+| | |
+|---|---|
+| **Fires when** | after a change commits, a PEP bound to an application holds out-of-date policies or catalogue: the token of its `bound-application` scope moved (a policy it is sent, or one its policies reference, was changed, disabled, deleted or replaced; the application's fine-grained authorization was switched on or off), or the token of the realm's AuthZEN attribute catalogue moved (a catalogue row set or removed, enforcement switched) |
+| **Does not fire** | for a change to a policy the PEP is not sent (another application's, one its policies do not reference); and not for a PEP this service has not yet seen pull, for the catalogue |
+| **Sent to** | every stream the bound application owns that delivers the type, one SET per PEP bound to it; in `central` mode too, where it clears the PEP's cached Permits |
+| **Subject** | the application: `{ "format": "complex", "application": { "format": "opaque", "id": "<identifier>" } }` |
+| **Payload** | `pep` (the PEP's name), `changed` (`policies` and/or `catalogue`), `sync_token` (the new token). Never a policy: the PEP pulls with its own credential |
+| **Allowed by** | the application entry's `ssfAllowedEvents`: unlike this service's other own events, which name nobody, this one is withheld when the entry's list does not name it. The application's page warns when a `local` PEP bound to it will therefore not hear of a change |
+
+It is a hint. A PEP that misses it, or whose stream excludes it, still
+converges on its fallback poll.
+
 ## What never produces a CAEP event
 
 Nothing below is ever the subject of a *session* event. That is not an

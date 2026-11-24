@@ -1512,6 +1512,46 @@ other scope is 400 `STS-XACML-0344`.
 `tests/xacml_pep_scope.js` holds `boundPull()` in process;
 `tests/protocol/sts_xacml_pep_scope.js` the door over the wire.
 
+## An embedded PEP hears of a change over Shared Signals (#2028)
+
+**Part of #1206 (work item 5; rcbj's D4).** An embedded PEP has no listener
+for the nudge, so `pep-policies-changed` (this service's own type, a row in
+`models/ssf/ssf_events.tsp` and its payload in `ssf/ssf_events.js`) goes to
+the streams its APPLICATION owns, subject the application.
+
+* **WHEN.** `notePepPolicies()` runs after a change that can move what a
+  bound PEP pulls has committed (`afterCommit()`): the store's change
+  observer (beside the nudge, every door), a catalogue row set or removed
+  (`authzen_admin.ts`) and fine-grained enforcement switched
+  (`fga_policies.ts`). `checkPepPolicies()` then works out, for every binding
+  in the realm (`PepBinding.all()`), the token of the PEP's
+  bound-application scope (`boundPull()`) and the catalogue's, and tells the
+  PEPs for which either MOVED, naming which (`changed`).
+* **MOVED AGAINST WHAT.** `pepTokens`, per realm and per process, records
+  what each bound PEP was last sent (its scoped and catalogue pulls) or
+  last checked against. With nothing recorded yet, a `local` PEP's scope is
+  compared with the token its row says it holds; the catalogue is not, so a
+  restart does not send every PEP an event. A `central` PEP is told too (D4:
+  it clears its cached Permits). In a cluster the node that made the change
+  decides; the event is a hint, and a PEP that misses it converges on its
+  fallback poll.
+* **HOW.** `ssf/service_signals.ts`'s `pepPoliciesChanged()` finds `ssf.ts`
+  in the cache, and `ssf.pepPoliciesChanged()` sends one SET to each stream
+  whose owner (`ssf_streams.ts`'s `ownerApplication()`) is the application
+  and which delivers the type. Nothing throws into the change: a failure is
+  `STS-XACML-0346` or `STS-SSF-0164` in the log.
+* **`ssfAllowedEvents` IS RESPECTED.** This service's own events were always
+  allowed past an entry's list because each named nobody; the rule is now
+  the catalogue row's `subject` (`allowedEventsFor()`): one that names a
+  subject, which this is, is withheld unless the list names it.
+* **THE WARNING.** The application's view carries `pepEventsExcluded`: its
+  bound PEPs in `local` mode that will not hear of a change, because the
+  entry's list leaves the type out or the PEP reported `policyEvents:
+  excluded`; the console draws it on the Embedded PEPs tab.
+
+`tests/pep_policies_changed.js` in process;
+`tests/protocol/sts_pep_policies_changed.js` over the wire.
+
 ## A heartbeat writes the entry only when something durable changed (#1882)
 
 **rcbj: "not every PEP heartbeat needs a directory write".** Until

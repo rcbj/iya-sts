@@ -20613,6 +20613,12 @@ const CODES = [
       'that is not one is refused rather than read as no header ' +
       '(#1760 phase 3).',
     spec: 'HTTP 400' },
+  { code: 'STS-SSF-0164',
+    summary: 'pep-policies-changed could not be built or sent for a remote ' +
+      'PEP embedded in an application (#2028). Logged and nothing else: ' +
+      'the event is a hint, the policy change it follows has happened, and ' +
+      'the PEP converges on its fallback poll.',
+    spec: 'none (a log line)' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +
@@ -25686,6 +25692,13 @@ const CODES = [
       'is what AuthZEN decides the application by when it cannot read it ' +
       'either. Logged.',
     spec: 'none (a log line; the pull is answered)' },
+  { code: 'STS-XACML-0346',
+    summary: 'Whether what an embedded remote PEP pulls moved could not be ' +
+      'decided after a change to the policies or the AuthZEN catalogue ' +
+      '(#2028), so no pep-policies-changed was sent for it. Logged and ' +
+      'nothing else: the change itself stands, and the PEP converges on its ' +
+      'fallback poll.',
+    spec: 'none (a log line)' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
