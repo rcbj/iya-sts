@@ -8120,10 +8120,28 @@ SLH-DSA has no mechanism here. `docs/v1.2.0/hsm.md` is the operator half.
   initialised the module again posts on a BroadcastChannel named for the
   module's path — every thread hears it, no plumbing through the pool — and
   the others move their epoch and do not finalize for an outage met on a
-  session opened before it (`tests/pkcs11_signing.js` N). What is left is the
-  message's own flight time: two threads finalizing inside it still cost
-  each other's retries. A SharedArrayBuffer would close that too, at the
-  price of handing one to every request worker through the pool; not done.
+  session opened before it (`tests/pkcs11_signing.js` N). **And the
+  reconnect is SINGLE-FLIGHT PER PROCESS** (rcbj, 2026-11-23: "fix it").
+  The message's flight time left two threads that met one outage in the
+  same instant each finalizing the module, the second after the first had
+  reconnected, so the first's retry failed (`STS-KEYS-0201`) — a spurious
+  failed signature or decryption during an outage. The race was between
+  JavaScript threads (the front and the request workers, each with its own
+  binding and pool), not libuv's pool. Now a SharedArrayBuffer made by the
+  first thread to load `crypto_impl/pkcs11.js` (the front, at `crypto.js`'s
+  require, before any worker starts) reaches every Worker through
+  `worker_threads.setEnvironmentData()`, which a new Worker inherits — no
+  plumbing through the pool. Per module path it holds a lock and a
+  GENERATION; a session remembers the generation it was opened under. A
+  thread that must re-initialise takes the lock (`Atomics.waitAsync`, a
+  ref'd message port holding its loop open for the wait); if the generation
+  moved since its session was opened another thread reconnected, and it
+  adopts that result instead of finalizing; otherwise it re-initialises and
+  moves the generation. A holder that never lets go is taken over after
+  30 s (`STS-KEYS-0213`); the blocking door waits at most 2 s
+  (`Atomics.wait`) and is refused `STS-KEYS-0212` past it.
+  `tests/pkcs11_reconnect.js` holds it: two worker threads meeting one
+  outage finalize once and both sign after it (fake module and SoftHSM2).
 * **A SIGNING KEY IN THE HSM TRAVELS WHERE A PEM TRAVELS.** Its "PEM" is a
   reference, `pkcs11-key:v1:<b64url {token, id, kty, crv, bits}>` — what
   `export()` answers and what `keystore.js` seals — and `privateKeyFrom()`

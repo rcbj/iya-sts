@@ -269,11 +269,14 @@ volume of tokens with a YubiHSM 2 should sign them with an EC key
   refused with `STS-KEYS-0212`, and the module is initialised again without
   blocking.
 * A module is shared by every thread of a process (the front and each
-  request worker), and finalizing it ends every thread's sessions. A thread
-  that initialises it again tells the others, which then do not finalize it
-  again for an outage they meet on a session from before. Two threads that
-  both finalize within the moment that message takes to arrive can still
-  cost an operation in flight its one retry (`STS-KEYS-0201`).
+  request worker), and finalizing it ends every thread's sessions. So
+  reconnecting is one at a time for the whole process: when several threads
+  meet the same outage at once, one initialises the module again and the
+  others wait for it and then use the module it reconnected, so none of them
+  loses its retry. A thread that has held that turn for more than 30 seconds
+  (one that stopped while reconnecting) is taken over, logged as
+  `STS-KEYS-0213`. A blocking call waits at most 2 seconds for another
+  thread's reconnect and is then refused with `STS-KEYS-0212`.
 * The other codes: `STS-KEYS-0202` (the module or token cannot be used),
   `STS-KEYS-0203` (the key), `STS-KEYS-0204` (no mechanism), `STS-KEYS-0205`
   (the URI or PIN), `STS-KEYS-0206` (a key in the HSM was asked to do
