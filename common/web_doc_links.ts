@@ -212,6 +212,12 @@ const CONSOLE: Record<string, string> = {
   '/admin/persistence': 'persistence.html',
   '/admin/totp': 'authentication.html#totp-mfa',
   '/admin/webauthn': 'authentication.html#webauthn',
+  '/admin/hardware-tokens-settings': 'hardware-tokens.html',
+  '/admin/piv': 'hardware-tokens.html#piv-key-attestation',
+  '/admin/yubiotp': 'yubiotp.html',
+  '/admin/oath-tokens': 'one-time-code-tokens.html',
+  '/admin/ssh-user-ca': 'pki.html#openssh-user-certificates',
+  '/admin/openpgp-settings': 'openpgp.html',
   '/admin/wstrust': 'ws-trust.html',
   '/admin/wsfed': 'ws-federation.html',
   '/admin/worker-pools':
