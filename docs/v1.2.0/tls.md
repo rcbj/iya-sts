@@ -452,7 +452,10 @@ on the operator's behalf.
 
 ### The client truststore
 
-The anchors client certificates are verified against. It **starts empty** and
+The anchors client certificates are verified against. Since 1.2.0 it is the
+[truststore](truststores.md) `client-certificates`, which the `tls-client`
+use case trusts by default; assigning `tls-client` other truststores changes
+what every listener asks for, beside a listener's own `trustAnchorsFile`. It **starts empty** and
 is filled from three places:
 
 | Source | When | Survives a restart? |

@@ -879,6 +879,14 @@
     "en": "49eac4924ef09867",
     "text": "تغيير مخزن ثقة الموقّعين، أو صفًا متشكّكًا، أو إعادة فحص التثبيتات"
   },
+  "endpoints.route./admin-api/truststores.name": {
+    "en": "e251c7be80ae5c59",
+    "text": "مخازن الثقة المسمّاة وحالات الاستخدام التي تثق بها"
+  },
+  "endpoints.route./admin-api/truststores/:action.name": {
+    "en": "22e0c653af6cd6b9",
+    "text": "تغيير مخزن ثقة مسمّى أو ما تثق به حالة استخدام"
+  },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
     "text": "بناء تسلسل هرمي، وإصدار زوج مفاتيح، وتأليف شهادة"

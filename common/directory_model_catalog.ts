@@ -25,7 +25,8 @@ const log = bunyan.createLogger({
 });
 
 const IDS = ['operational', 'person', 'group', 'attributeSource', 'oidfed',
-  'claimProvider', 'kerberosTrust', 'trustAnchor', 'signerTrustAnchor'];
+  'claimProvider', 'kerberosTrust', 'trustAnchor', 'signerTrustAnchor',
+  'truststore', 'truststoreAssignments'];
 
 /**
  * One catalogued object.

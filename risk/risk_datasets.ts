@@ -57,6 +57,7 @@ import riskTerms = require('./risk_terms');
 // The one expansion path (#215): a gzip or zip file, whichever door it came
 // through, is expanded by `risk_expand.ts` as its lines are read.
 import RiskExpand = require('./risk_expand');
+import truststores = require('../common/truststores');
 
 const log = bunyan.createLogger({ name: 'sts-risk-datasets' });
 config.registerLogger(log);
@@ -1121,7 +1122,7 @@ class RiskDatasets {
     }
     const pki = require('../common/pki');
     const verified = await pki.verifyFidoMdsBlob(text, {
-      anchorsPem: String(config.value('risk.mdsTrustAnchors') || ''),
+      anchorsPem: truststores.configuredPems('fido-mds').join('\n'),
       now: now(), overrideSignature: o.overrideSignature === true });
     if (!verified.ok) {
       log.debug("Leaving RiskDatasets.importMds(). Does not verify.");

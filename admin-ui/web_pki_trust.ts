@@ -13,6 +13,13 @@
 // daily audit last found, and a link to the client-certificate truststore,
 // which is the process's and stays on a page of its own.
 //
+// AND SINCE #2118 (phase 4), from `GET /admin-api/truststores` composed in:
+// the Truststores tab (every truststore this realm can name, named ones
+// created, filled and deleted here, every other kind read-only with where it
+// is changed), the Use cases tab (what each use case trusts, its default,
+// and the assignment of one that takes one) and the System truststore tab
+// (node's default store, read-only, filtered by the page's own `systemq`).
+//
 // A `web_` MODULE, on `web_kit.ts`'s terms: it requires other `web_` modules
 // only, logs nothing, and is bundled for a browser by `build-typescript.sh`.
 // ---------------------------------------------------------------------------
@@ -22,6 +29,14 @@ import kit = require('./web_kit');
 type Json = any;
 
 const PAGE = '/admin/pki/trust';
+
+// The three tabs #2118 added, by the ids `WebPages.protocolTabs()` gives
+// them: a form names its tab, so `web_forms.ts` resolves it to
+// `/admin-api/truststores/<action>` and not to this page's own `add` and
+// `remove`, which are the signer truststore's.
+const TAB_STORES = 'pki-trust-tab-truststores';
+const TAB_USES = 'pki-trust-tab-usecases';
+const TAB_SYSTEM = 'pki-trust-tab-system';
 
 // A status chip's class, for what the audit found.
 const STATUS_CLASS: Record<string, string> = {
@@ -142,6 +157,281 @@ class PkiTrustPage {
       '</td></tr>';
   }
 
+  // ----- #2118 phase 4: named truststores, use cases, node's store --------
+
+  // A truststore's kind, as a reader reads it.
+  private static kindText(kind: string, t: Json): string {
+    switch (kind) {
+      case 'built-in':
+        return t.html('consolePkiTrust.kindBuiltIn');
+      case 'view':
+        return t.html('consolePkiTrust.kindView');
+      case 'setting':
+        return t.html('consolePkiTrust.kindSetting');
+      case 'spiffe':
+        return t.html('consolePkiTrust.kindSpiffe');
+      default:
+        return t.html('consolePkiTrust.kindNamed');
+    }
+  }
+
+  // Where a truststore this page cannot change is changed, as a sentence.
+  private static whereChanged(row: Json, ctx: Json): string {
+    const t = ctx.t;
+    if (row.kind === 'built-in') {
+      return t.html('consolePkiTrust.whereBuiltIn');
+    }
+    if (row.kind === 'view' && row.name === 'signers') {
+      return t.html('consolePkiTrust.whereSigners');
+    }
+    if (row.kind === 'view') {
+      return t.html('consolePkiTrust.whereClient') + ' <a href="' +
+        '/admin/tls/trust">' + t.html('consolePkiTrust.clientLink') + '</a>';
+    }
+    if (row.kind === 'setting') {
+      return t.html('consolePkiTrust.whereSetting', {
+        key: String(row.name).replace(/^setting:/, '') });
+    }
+    if (row.kind === 'spiffe') {
+      return t.html('consolePkiTrust.whereSpiffe');
+    }
+    return t.html('consolePkiTrust.whereShared');
+  }
+
+  // One certificate of a named truststore, with its remove control.
+  private static storeCertificateOf(name: string, one: Json,
+                                    writable: boolean, ctx: Json): string {
+    const t = ctx.t;
+    return '<tr><td><code>' + kit.esc(one.subject) + '</code>' +
+      '<div class="sub">' + kit.esc(one.issuer) + '</div></td><td>' +
+      kit.esc(one.kind) + '</td><td class="sub">' +
+      PkiTrustPage.when(one.notBefore) + '<br>' +
+      PkiTrustPage.when(one.notAfter) + '</td><td class="sub"><code>' +
+      kit.esc(one.fingerprint256) + '</code></td><td>' +
+      (writable
+        ? '<form method="post" action="' + PAGE + '#' + TAB_STORES + '">' +
+          '<input type="hidden" name="action" value="remove">' +
+          '<input type="hidden" name="name" value="' + kit.esc(name) + '">' +
+          '<input type="hidden" name="fingerprint" value="' +
+          kit.esc(one.fingerprint256) + '"><button type="submit" ' +
+          'class="secondary">' + t.html('consolePkiTrust.remove') +
+          '</button></form>'
+        : '') + '</td></tr>';
+  }
+
+  // One truststore's row: what it is, what it holds, who trusts it, and for
+  // a named truststore this realm holds, its certificates and controls.
+  private static storeOf(row: Json, ctx: Json): string {
+    const t = ctx.t;
+    const writable = !row.readOnly && row.kind === 'named' && ctx.write;
+    const holds = t.html('consolePkiTrust.holds', {
+      anchors: String(row.anchors), intermediates: String(row.intermediates)
+    }) + (row.kind === 'spiffe'
+      ? '<div class="sub">' + t.html('consolePkiTrust.jwtKeys', {
+        n: String(row.jwtKeys || 0) }) + '</div>' : '');
+    const certificates = row.certificates || [];
+    let detail = '';
+    if (row.kind === 'named') {
+      detail = '<details><summary>' + t.html('consolePkiTrust.certificates', {
+        n: String(certificates.length) }) + '</summary>' +
+        (certificates.length
+          ? '<table><tr><th>' + t.html('consolePkiTrust.thSubject') +
+            '</th><th>' + t.html('consolePkiTrust.thKind') + '</th><th>' +
+            t.html('consolePkiTrust.thValidity') + '</th><th>' +
+            t.html('consolePkiTrust.thFingerprint') + '</th><th></th></tr>' +
+            certificates.map(function (one: Json) {
+              return PkiTrustPage.storeCertificateOf(row.name, one,
+                                                     writable, ctx);
+            }).join('') + '</table>'
+          : '<p class="sub">' + t.html('consolePkiTrust.emptyStore') +
+            '</p>') +
+        (writable
+          ? '<form method="post" action="' + PAGE + '#' + TAB_STORES + '">' +
+            '<input type="hidden" name="action" value="add">' +
+            '<input type="hidden" name="name" value="' + kit.esc(row.name) +
+            '"><textarea name="certificates" rows="6" ' +
+            'placeholder="-----BEGIN CERTIFICATE-----"></textarea>' +
+            '<div class="formrow"><button type="submit">' +
+            t.html('consolePkiTrust.addToStore') + '</button></div></form>'
+          : '') + '</details>';
+    }
+    const control = writable
+      ? '<form method="post" action="' + PAGE + '#' + TAB_STORES + '">' +
+        '<input type="hidden" name="action" value="delete">' +
+        '<input type="hidden" name="name" value="' + kit.esc(row.name) + '">' +
+        '<button type="submit" class="secondary">' +
+        t.html('consolePkiTrust.deleteStore') + '</button></form>'
+      : (row.readOnly || row.kind !== 'named'
+        ? '<span class="sub">' + PkiTrustPage.whereChanged(row, ctx) +
+          '</span>' : '');
+    return '<tr><td><code>' + kit.esc(row.name) + '</code>' +
+      (row.description ? '<div class="sub">' + kit.esc(row.description) +
+        '</div>' : '') +
+      (row.problem ? '<div class="state-invalid">' + kit.esc(row.problem) +
+        '</div>' : '') + detail + '</td><td>' +
+      PkiTrustPage.kindText(row.kind, t) + '</td><td>' +
+      (row.scope === 'service' ? t.html('consolePkiTrust.scopeService')
+                               : t.html('consolePkiTrust.scopeRealm')) +
+      '</td><td>' + holds + '</td><td>' +
+      ((row.usedBy || []).map(function (one: string) {
+        return '<code>' + kit.esc(one) + '</code>';
+      }).join(', ') || '<span class="sub">' +
+        t.html('consolePkiTrust.nobody') + '</span>') + '</td><td>' +
+      control + '</td></tr>';
+  }
+
+  // The Truststores tab.
+  private static storesTab(view: Json, ctx: Json): string {
+    const t = ctx.t;
+    const limits = view.limits || {};
+    const create = ctx.write
+      ? kit.frame('<h3>' + t.html('consolePkiTrust.createHeading') + '</h3>' +
+        kit.note(t.html('consolePkiTrust.createNote', {
+          max: String(limits.maxStores) })) +
+        '<form method="post" action="' + PAGE + '#' + TAB_STORES + '">' +
+        '<input type="hidden" name="action" value="create">' +
+        '<div class="formrow"><label for="truststore-name">' +
+        t.html('consolePkiTrust.createName') + '</label><input type="text" ' +
+        'id="truststore-name" name="name" size="32" ' +
+        'pattern="[a-z0-9][a-z0-9-]{0,62}" required></div>' +
+        '<div class="formrow"><label for="truststore-description">' +
+        t.html('consolePkiTrust.createDescription') + '</label><input ' +
+        'type="text" id="truststore-description" name="description" ' +
+        'size="48"></div><div class="formrow"><button type="submit">' +
+        t.html('consolePkiTrust.createButton') + '</button></div></form>')
+      : kit.note(t.html('consolePkiTrust.needsWrite'));
+    return '<h2 data-tab="truststores">' +
+      t.html('consolePkiTrust.truststores') + '</h2>' +
+      kit.frame(kit.note(t.html('consolePkiTrust.truststoresNote')) +
+      (limits.installed ? ''
+        : kit.warn(t.html('consolePkiTrust.notInstalled'))) +
+      '<table><tr><th>' + t.html('consolePkiTrust.thName') + '</th><th>' +
+      t.html('consolePkiTrust.thKind') + '</th><th>' +
+      t.html('consolePkiTrust.thScope') + '</th><th>' +
+      t.html('consolePkiTrust.thHolds') + '</th><th>' +
+      t.html('consolePkiTrust.thTrustedBy') + '</th><th></th></tr>' +
+      (view.stores || []).map(function (row: Json) {
+        return PkiTrustPage.storeOf(row, ctx);
+      }).join('') + '</table>' + create);
+  }
+
+  // One use case's row, with its assignment control where it has one.
+  private static useCaseOf(row: Json, realm: string, ctx: Json): string {
+    const t = ctx.t;
+    const names = function (list: string[]): string {
+      return (list || []).map(function (one) {
+        return '<code>' + kit.esc(one) + '</code>';
+      }).join(', ');
+    };
+    let control = '';
+    if (!row.assignable) {
+      control = '<span class="sub">' +
+        (row.kind === 'pins' ? t.html('consolePkiTrust.notAssignablePins')
+          : row.kind === 'admission'
+            ? t.html('consolePkiTrust.notAssignableAdmission')
+            : t.html('consolePkiTrust.notAssignableFixed')) + '</span>';
+    } else if (row.scope === 'service' && realm !== 'default') {
+      control = '<span class="sub">' +
+        t.html('consolePkiTrust.assignedFromDefault') + '</span>';
+    } else if (ctx.write) {
+      control = '<form method="post" action="' + PAGE + '#' + TAB_USES +
+        '"><input type="hidden" name="action" value="assign">' +
+        '<input type="hidden" name="useCase" value="' + kit.esc(row.id) +
+        '"><input type="text" name="truststores" size="28" value="' +
+        kit.esc((row.names || []).join(', ')) + '" aria-label="' +
+        kit.esc(t.text('consolePkiTrust.assignHint')) + '" title="' +
+        kit.esc(t.text('consolePkiTrust.assignHint')) + '"> ' +
+        '<button type="submit" class="secondary">' +
+        t.html('consolePkiTrust.assignButton') + '</button></form>' +
+        (row.assigned
+          ? '<form method="post" action="' + PAGE + '#' + TAB_USES + '">' +
+            '<input type="hidden" name="action" value="unassign">' +
+            '<input type="hidden" name="useCase" value="' +
+            kit.esc(row.id) + '"><button type="submit" class="secondary">' +
+            t.html('consolePkiTrust.unassignButton') + '</button></form>'
+          : '');
+    }
+    return '<tr><td><code>' + kit.esc(row.id) + '</code><div class="sub">' +
+      kit.esc(row.title) + '</div><details><summary>' +
+      t.html('consolePkiTrust.sites') + '</summary><p class="sub">' +
+      (row.sites || []).map(function (one: string) {
+        return '<code>' + kit.esc(one) + '</code>';
+      }).join('<br>') + '</p></details></td><td>' +
+      (row.direction === 'outbound' ? t.html('consolePkiTrust.outbound')
+                                    : t.html('consolePkiTrust.inbound')) +
+      '</td><td>' +
+      (row.scope === 'service' ? t.html('consolePkiTrust.scopeService')
+                               : t.html('consolePkiTrust.scopeRealm')) +
+      '</td><td>' + (names(row.names) || '—') + '<div class="sub">' +
+      (row.assigned ? t.html('consolePkiTrust.assigned')
+                    : t.html('consolePkiTrust.byDefault')) + '</div></td><td>' +
+      (names(row.defaults) || '—') +
+      ((row.fallback || []).length
+        ? '<div class="sub">' + t.html('consolePkiTrust.fallback') + ' ' +
+          names(row.fallback) + '</div>' : '') + '</td><td>' + control +
+      '</td></tr>';
+  }
+
+  // The Use cases tab.
+  private static useCasesTab(view: Json, ctx: Json): string {
+    const t = ctx.t;
+    return '<h2 data-tab="usecases">' + t.html('consolePkiTrust.useCases') +
+      '</h2>' + kit.frame(kit.note(t.html('consolePkiTrust.useCasesNote')) +
+      (ctx.write ? '' : kit.note(t.html('consolePkiTrust.needsWrite'))) +
+      '<table><tr><th>' + t.html('consolePkiTrust.thUseCase') + '</th><th>' +
+      t.html('consolePkiTrust.thDirection') + '</th><th>' +
+      t.html('consolePkiTrust.thScope') + '</th><th>' +
+      t.html('consolePkiTrust.thTrustsNow') + '</th><th>' +
+      t.html('consolePkiTrust.thDefault') + '</th><th></th></tr>' +
+      (view.useCases || []).map(function (row: Json) {
+        return PkiTrustPage.useCaseOf(row, String(view.realm || ''), ctx);
+      }).join('') + '</table>');
+  }
+
+  // The System truststore tab: node's default store, filtered by the page's
+  // own `systemq`, sorted by subject as the view sends it.
+  private static systemTab(view: Json, ctx: Json): string {
+    const t = ctx.t;
+    const system = view.system || { count: 0, certificates: [] };
+    const wanted = String(kit.queryOne(ctx.query || {}, 'systemq') || '')
+      .trim();
+    const needle = wanted.toLowerCase();
+    const shown = (system.certificates || []).filter(function (one: Json) {
+      return !needle ||
+        [one.subject, one.issuer, one.fingerprint256].some(function (v) {
+          return String(v || '').toLowerCase().indexOf(needle) >= 0;
+        });
+    });
+    return '<h2 data-tab="system">' + t.html('consolePkiTrust.system') +
+      '</h2>' + kit.frame(kit.note(t.html('consolePkiTrust.systemNote')) +
+      '<div class="tiles">' + kit.tile(system.count,
+        t.text('consolePkiTrust.tileSystem')) + '</div>' +
+      '<form method="get" action="' + PAGE + '#' + TAB_SYSTEM + '">' +
+      '<div class="formrow"><label for="systemq">' +
+      t.html('consolePkiTrust.systemFilter') + '</label><input type="text" ' +
+      'id="systemq" name="systemq" size="32" value="' + kit.esc(wanted) +
+      '" placeholder="' + kit.esc(t.text('consolePkiTrust.systemHint')) +
+      '"><button class="secondary">' + t.html('consoleKit.search') +
+      '</button>' + (wanted ? ' <a href="' + PAGE + '#' + TAB_SYSTEM + '">' +
+        t.html('consoleKit.clear') + '</a>' : '') + '</div></form>' +
+      (wanted ? '<p class="sub">' + t.html('consolePkiTrust.systemShown', {
+        shown: String(shown.length), n: String(system.count) }) + '</p>'
+        : '') +
+      '<table><tr><th>' + t.html('consolePkiTrust.thSubject') + '</th><th>' +
+      t.html('consolePkiTrust.thIssuer') + '</th><th>' +
+      t.html('consolePkiTrust.thValidity') + '</th><th>' +
+      t.html('consolePkiTrust.thFingerprint') + '</th></tr>' +
+      (shown.map(function (one: Json) {
+        return '<tr><td>' + kit.esc(one.subject) + '</td><td class="sub">' +
+          kit.esc(one.issuer) + '</td><td class="sub">' +
+          PkiTrustPage.when(one.notBefore) + '<br>' +
+          PkiTrustPage.when(one.notAfter) + '</td><td class="sub"><code>' +
+          kit.esc(one.fingerprint256) + '</code></td></tr>';
+      }).join('') || '<tr><td colspan="4">' +
+        kit.esc(t.text('consolePkiTrust.emptySystem')) + '</td></tr>') +
+      '</table>');
+  }
+
   /**
    * Draws the page from its view.
    *
@@ -233,7 +523,14 @@ class PkiTrustPage {
       kit.frame(kit.note(t.html('consolePkiTrust.clientNote', {
         n: String(json.clientTruststore.count) })) +
       kit.note('<a href="' + kit.esc(json.clientTruststore.href) + '">' +
-               t.html('consolePkiTrust.clientLink') + '</a>'));
+               t.html('consolePkiTrust.clientLink') + '</a>')) +
+      // #2118: drawn from `GET /admin-api/truststores`, composed into the
+      // view as `truststores` (`web_pages.ts`).
+      (json.truststores
+        ? PkiTrustPage.storesTab(json.truststores, context) +
+          PkiTrustPage.useCasesTab(json.truststores, context) +
+          PkiTrustPage.systemTab(json.truststores, context)
+        : '');
   }
 }
 

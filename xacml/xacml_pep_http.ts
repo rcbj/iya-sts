@@ -156,6 +156,7 @@ import OutboundTls = require('../common/outbound_tls');
 import pki = require('../common/pki');
 // The one place this service parses a certificate (#453), for the pin.
 import stsCrypto = require('../common/crypto');
+import truststores = require('../common/truststores');
 
 const { URL } = url;
 
@@ -460,7 +461,15 @@ class PepNotifier {
         anchors.push(pem);
       });
     }
-    const verified: any = OutboundTls.verifiedOptions(anchors);
+    // `outbound-xacml-pep`'s truststores where it is assigned (#2118); the pin
+    // to this realm's pep-tls Issuing CA below holds either way.
+    const assigned = truststores.namesFor('outbound-xacml-pep').assigned ?
+      OutboundTls.optionsFor('outbound-xacml-pep') : null;
+    if (assigned && assigned.problem) {
+      log.debug('Leaving PepNotifier.trust(). A store is unusable.');
+      return { ok: false, options: {}, why: assigned.problem.why };
+    }
+    const verified: any = assigned || OutboundTls.verifiedOptions(anchors);
     const hostCheck = verified.checkServerIdentity;
     verified.checkServerIdentity = function (host: string, cert: any) {
       const problem = hostCheck(host, cert);

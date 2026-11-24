@@ -16,6 +16,7 @@ import config = require('./config');
 import crypto = require('./crypto');
 import pkijs = require('pkijs');
 import asn1js = require('asn1js');
+import truststores = require('./truststores');
 
 const { log } = helpers;
 type Json = any;
@@ -201,8 +202,8 @@ class PasskeyEvidence {
     log.debug('Entering PasskeyEvidence.timestamp().');
     const endpoint = String(config.value('webauthn.attestationEvidenceTsaUrl') ||
                             '').trim();
-    const anchors = String(config.value(
-      'webauthn.attestationEvidenceTsaTrustAnchors') || '');
+    const anchors = truststores.configuredPems('timestamp-authority')
+      .join('\n');
     if (!endpoint || !anchors.trim()) {
       throw new Error('A passkey evidence TSA URL and its trust anchors ' +
                       'must both be configured.');
