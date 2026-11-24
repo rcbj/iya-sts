@@ -12323,6 +12323,14 @@
     "en": "895bdb616e169134",
     "text": "Die Nachrichten, nach Vorlagen-ID (password-reset, account-activation, sign-in-code, sign-in-link, credential-compromised und der Rest der Liste unter Monitoring → Mail), die nur verschlüsselt gesendet werden — PGP/MIME an den OpenPGP-Schlüssel der Person oder S/MIME an ihr Zertifikat, wie sie es im Portal gewählt hat. Einer Person, die keines von beiden gewählt hat, wird die Nachricht nicht gesendet (STS-MAIL-0240), und die anfordernde Verwendung meldet dies wie bei jeder nicht gesendeten Nachricht. Leer, der Standard, verlangt keine; die Wahl einer Person wird in jedem Fall beachtet."
   },
+  "mail.smimeContentEncryption|label": {
+    "en": "04776ccf8787181b",
+    "text": "S/MIME-Inhaltsverschlüsselung"
+  },
+  "mail.smimeContentEncryption|description": {
+    "en": "fb3309ac8f290326",
+    "text": "Wie E-Mails verschlüsselt werden, die an das S/MIME-Zertifikat einer Person verschlüsselt werden. aes256-gcm, der Standard, sendet ein AuthEnvelopedData nach RFC 5083 unter AES-256-GCM (smime-type=authEnveloped-data, RFC 8551), bei dem ein Leser erkennen kann, dass es nicht verändert wurde. aes256-cbc sendet das EnvelopedData unter AES-256-CBC, das vor 1.2.0 gesendet wurde (smime-type=enveloped-data), für einen Empfänger, dessen E-Mail-Programm AuthEnvelopedData nicht lesen kann. WARNUNG: CBC hat keinen Integritätsschutz, und solange dies im Produktmodus aes256-cbc ist, ist die Anforderung 11.3.3 von ASVS 5.0.0 nicht erfüllt, was /admin/mode meldet."
+  },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",
     "text": "Selbstbedientes Zurücksetzen des Passworts"
