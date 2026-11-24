@@ -46,10 +46,10 @@ using IyaSts.Api.Common;
       `name`:"Service",
       `description`:"What this API is, its document, and the explorer that calls it."
     },
+    #{`name`:"PKI",`description`:""},
     #{`name`:"Delegation",`description`:""},
     #{`name`:"Federation",`description`:""},
-    #{`name`:"Applications",`description`:""},
-    #{`name`:"PKI",`description`:""}
+    #{`name`:"Applications",`description`:""}
   ],
   `security`:#[
     #{`oauth2`:#["admin:console","admin:read","admin:write"]},
