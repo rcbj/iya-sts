@@ -59,6 +59,9 @@ const CLIENTS = Object.freeze([
   'curl', 'openssl'
 ]);
 
+// THE LOGGER ITSELF, and a hot path: no Entering/Leaving pair, which would
+// log every log line (root CLAUDE.md, *Code style*). The same for `log`'s
+// four methods below.
 function line(level, msg) {
   if (LEVELS[level] < LEVEL) {
     return;

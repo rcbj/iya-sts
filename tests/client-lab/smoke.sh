@@ -74,8 +74,9 @@ attest() {
   docker exec "${NAME}" /opt/client-lab/bin/lab-piv-attest \
     "/run/client-lab/work/${dir}" 9a "${f9}" > "${OUT}/${dir}.log" 2>&1
   docker cp "${NAME}:/run/client-lab/work/${dir}" "${OUT}/${dir}"
+  local script=tests/client-lab/verify-attestation.js
   if docker run --rm -v "${OUT}/${dir}:/attest:ro" \
-       -v "${PWD}/tests/client-lab/verify-attestation.js:/usr/src/sts/tests/client-lab/verify-attestation.js:ro" \
+       -v "${PWD}/${script}:/usr/src/sts/${script}:ro" \
        "${TESTS_IMAGE}" node tests/client-lab/verify-attestation.js \
        /attest "$@" > "${OUT}/${dir}.json" 2> "${OUT}/${dir}.err"; then
     echo "ok   ${dir}: $*"

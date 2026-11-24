@@ -48,7 +48,10 @@ mkdir -p jcsdk/lib
 curl -fsSL -o jcsdk/lib/api_classic.jar \
   "https://github.com/martinpaljak/oracle_javacard_sdks/raw/${JCSDK_COMMIT}/jc305u3_kit/lib/api_classic.jar"
 echo "${JCSDK_API_SHA256}  jcsdk/lib/api_classic.jar" | sha256sum -c -
-echo "martinpaljak/oracle_javacard_sdks ${JCSDK_COMMIT} jc305u3_kit/lib/api_classic.jar sha256:${JCSDK_API_SHA256}" >> "${OUT}/PINS"
+{
+  echo "martinpaljak/oracle_javacard_sdks ${JCSDK_COMMIT}"
+  echo "  jc305u3_kit/lib/api_classic.jar sha256:${JCSDK_API_SHA256}"
+} >> "${OUT}/PINS"
 
 fetch licel/jcardsim "${JCARDSIM_COMMIT}" jcardsim
 # ONE CHANGE TO jcardsim: SEED ITS KEY-GENERATION RANDOMNESS. Its
@@ -58,19 +61,24 @@ fetch licel/jcardsim "${JCARDSIM_COMMIT}" jcardsim
 # with jcardsim could make — and an ECDSA nonce from the same stream (the
 # first attestation's r was the 9a key's x). An instance initializer seeds
 # it from the platform's SecureRandom; nothing else in jcardsim changes.
-nullrng=jcardsim/src/main/java/com/licel/jcardsim/crypto/SecureRandomNullProvider.java
-sed -i 's|RandomGenerator engine = new DigestRandomGenerator(new SHA1Digest());|& { engine.addSeedMaterial(new SecureRandom().generateSeed(32)); }|' \
+nullrng=jcardsim/src/main/java/com/licel/jcardsim/crypto
+nullrng="${nullrng}/SecureRandomNullProvider.java"
+field='RandomGenerator engine = new DigestRandomGenerator(new SHA1Digest());'
+seed='{ engine.addSeedMaterial(new SecureRandom().generateSeed(32)); }'
+sed -i "s|${field}|& ${seed}|" \
   "${nullrng}"
 grep -q 'engine.addSeedMaterial(new SecureRandom().generateSeed(32))' \
   "${nullrng}"
-echo "  patched: SecureRandomNullProvider seeded from SecureRandom" >> "${OUT}/PINS"
+echo "  patched: SecureRandomNullProvider seeded from SecureRandom" \
+  >> "${OUT}/PINS"
 # Its pom installs the API jar in the `initialize` phase, which one `mvn
 # package` resolves dependencies before; jcardsim's own README runs
 # `mvn initialize` first for that reason.
 (cd jcardsim && JC_CLASSIC_HOME=/build/jcsdk mvn -B -q initialize \
    && JC_CLASSIC_HOME=/build/jcsdk mvn -B -q -DskipTests \
         -Dmaven.javadoc.skip=true package)
-cp "$(ls jcardsim/target/jcardsim-*.jar | grep -v -e sources -e javadoc -e android -e original \
+cp "$(ls jcardsim/target/jcardsim-*.jar \
+      | grep -v -e sources -e javadoc -e android -e original \
       | head -1)" "${OUT}/jcardsim.jar"
 
 fetch ANSSI-FR/SmartPGP "${SMARTPGP_COMMIT}" smartpgp
@@ -100,6 +108,9 @@ mkdir -p "${OUT}/pivapplet-yubikey"
 # shellcheck disable=SC2046
 javac -nowarn --release 11 -cp "${OUT}/jcardsim.jar" \
   -d "${OUT}/pivapplet-yubikey" $(find pivapplet/src-gen -name '*.java')
-echo "  patched: patches/pivapplet-yubikey-attestation.patch (pivapplet-yubikey/; pivapplet-stock/ is unpatched)" >> "${OUT}/PINS"
+{
+  echo "  patched: patches/pivapplet-yubikey-attestation.patch"
+  echo "    (pivapplet-yubikey/; pivapplet-stock/ is unpatched)"
+} >> "${OUT}/PINS"
 
 cat "${OUT}/PINS"

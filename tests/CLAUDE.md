@@ -1336,6 +1336,7 @@ Three rules that are not optional here:
 | `realm_domain.js` | **A TRUST REALM'S DNS DOMAIN** (2026-09-18). The shape (one label, a numeric top-level label, a bad character, a leading hyphen and a 64-character label each `STS-CORE-0099`; lower-cased, trimmed, an internationalised name kept as its A-label); a realm with none given `<id>.<global.domain>`, whose base is the `dc=<id>` beneath the default realm's every realm had before; one with its own rooted at the RFC 2247 mapping, not under the default realm's; the names seeded from it (URN entity IDs, the trust domain, the Kerberos realm in capitals, Kerberos still off, the OpenID4VP client id keeping its id suffix, the service principal NOT seeded) and a caller's override winning; `STS-CORE-0100` for another realm's domain and the default realm's; a domain INSIDE another realm's accepted; `STS-CORE-0101` for a change and the same domain again accepted; through `performOperation()`, every realm's base in the root DSE, a tree outside the default realm's reachable, a DN in no tree refused, and a subtree search from the parent returning none of the nested realm's entries; and the invented mail address in the ambient realm's domain. Every realm it makes is removed. **Its first run found a committed defect**: #74 had added a second `function inRealmOf(id, fn)` to `ldap_server.js`, hoisted over the socket's `inRealmOf(dn, fn)`, so every LDAP operation on any non-default realm's DN answered from the default realm's store — renamed `inRealmById`. Six mutants, all caught |
 | `custom_listeners.js` | **CUSTOM LISTENERS AND THE HOSTED APPLICATIONS MAPPED TO THEM** (#472, 2026-10-07; it was `realm_listener.js`, #99's), in a CHILD PROCESS with the whole stack: every write rule by its code — a malformed definition and a reserved id (STS-CORE-0153), an http base (0146), the main port (0147), `listeners.realm` refused on the default realm, an unknown application or listener, another realm's listener, a mapped listener removed and oidfed off the issuer's listener (0154), the sign-on session's applications on two host names without and outside `authn.cookieDomain` (0155), the API taken off the listener a write arrived on refused (0156) and accepted when confirmed; the mapping as read (a realm's `*` before the service's entries, inheritance, `main` for the unnamed); the URL rule (`pinnedBaseUrl(app)`, `baseUrlOf(req, app)`, `urlOf()`, and a realm mapping `*` to its listener built on its base with its prefix); real sockets — the authorization server refused on the console's listener with STS-TLS-0047 naming where it is, the console's shell telling its runtime where the authorization server is with `connect-src` to match, a realm's listener answering its discovery on its own base and refusing the default realm's path (STS-TLS-0041); and the definitions driving the sockets — a new port rebinds, an unreadable certificate fails with STS-TLS-0040, a port in use with STS-TLS-0039, removal closes it |
 | `demo_endpoints.js` | **THE RUNTIME SHIPS NO DEMONSTRATION ENDPOINT** (#591, #599): a GUARD. #585 made every demonstration development-only behind a mark on its route; #592–#598 moved each to the test peer, the companion, the remote PEP, a console page, a setting or `/admin-api`, or deleted it, and #599 removed the mark. In a CHILD PROCESS with the whole stack: the app carries no mark or reader of one, the mode no `servesDemoEndpoints()` and no `demo-endpoints` requirement or refusal sentence; no route carries a mark (a handler with `stsDemo`, or one named after the old marks) and no path a demonstration was registered on (#585's inventory, listed with where each went) is registered again; no `sts_metadata.ts` row carries `demo`, no card `whatWithoutDemos`, the report and the router's list no demonstration member, with no drift; the hosted-applications catalogue holds no demonstration application or prefix. And in the runner: no service source (tests, docs, the companion, vendored copies and bundles aside) names one of the mechanism's symbols. A new endpoint that exists only to be exercised belongs in the test peer or the companion |
+| `client_lab_isolation.js` | **NOTHING OF THE CLIENT LAB IS IN THE PRODUCT IMAGE** (#2056, rcbj 2026-11-23): a GUARD over files. (A) The lab is under `tests/client-lab/` with its own Dockerfile, and the product Dockerfile removes `./tests`. (B) The product Dockerfile's final stage copies nothing from the context that could carry the lab (`COPY .`, a `tests` path, `client-lab`), and every stage it copies FROM that took the context removes `./tests` after its last such copy. (C) No instruction in any stage names a lab package or component (jcardsim, SmartPGP, PivApplet, vsmartcard/vpcd, pcscd, OpenSC, yubico-piv-tool, gnupg, scdaemon, postfix, sendmail, openssh-server, oathtool, pam_yubico, pamtester, krb5-user, `client-lab`); comments are not instructions. (D) `package.json`'s dependencies name none of them, and neither the user's compose files nor `build-container.yml` names the lab. (E) Each check is run against a copy changed in exactly the way it guards against, and must report it: a final-stage `COPY tests/client-lab` or `COPY .`, `pcscd opensc` installed, `./tests` kept, a lab-named dependency |
 | `hosted_applications.js` | **EVERY ROUTE BELONGS TO A HOSTED APPLICATION** (#472), in a CHILD PROCESS with the whole stack: every path the router holds is classified (the CORS preflight `*` aside), `/healthcheck` is everywhere, a dozen paths are where a reader expects (named authorization servers and EST labels among them), no path is claimed twice and every application claims a route. A new route family that no application claims fails here, because it would answer on every listener |
 | `ldap_logout.js` | **a sign-out reaching a directory connection the process answering has neither seen nor can close** (2026-09-09). In LDAP the connection IS the session (RFC 4511 section 4.2), and a request worker binds no port — so `boundConnections()` there answered "there are none", the sign-out driver had nothing to end, and a global logout in `dispatch` mode reported that it had ended everything while a bound connection went on being signed in. Five claims: that a mirrored process reads the front process's list and that no socket rides along in it; that a sign-out driven through the real `logout.terminate()` ASKS the process holding the socket and reports the row ended; that an ask which cannot be made or is refused reports the connection NOT ended, with the reason, rather than claiming success — which is the original bug one layer up; that the two processes spell the header the same way, since a rename in either is silent in both; and that the front process's snapshot is published AFTER the bind handler has run, because ldapjs sets the bound DN only then and a snapshot taken inside the handler names nobody. **The end-to-end job cannot say which half broke, and in one launcher it was not asking at all** — `sts_global_logout` sees only a socket that is still open, so "the worker never saw it" and "the worker could not close it" look identical from there; and until 2026-09-09 that job dialled 389 on the HOST under `./local-run-tests.sh`, got ECONNREFUSED, noted it and passed. This file needs no port and cannot degrade to green that way |
 | `front_process_writes.js` | **that a write by the process holding the UNDISPATCHED sockets marks every request worker stale** (2026-09-09). The read-your-write generation moved in one place — a worker announcing its commit — and this process answers on five socket families that never reach a worker at all: the two TLS listeners (their own handler, not `app`), the directory, the KDC and SPIFFE's gRPC pair. So a sign-on session minted by a client certificate on 9443 was invisible to the worker answering `/logout`, and a global sign-out reported ending everything while leaving a live way in. **Four families since 2026-09-16**: the two TLS listeners were deleted and the certificate sign-in is a route on the main port — `app`, but kept in this process by `request_pool.js`'s `NEVER_DISPATCHED` (`/tls` is on it), so its writes are still this process's own — and the file is unchanged, because what it asserts is `noteLocalWrites()`'s comparison of two integers and never was about any one family. **Intermittent by construction** — the worker catches up on the replication poll, so it failed once in a three-mode run and passed when the job was run alone, which is the least useful evidence there is. The decision underneath is a comparison of two integers and that is what is asserted: the first sample is a baseline, a growing count moves it by one, a repeated or BACKWARDS count moves nothing, and with `workers.readYourWrite` off nothing moves at all. `noteLocalWrites()` takes the count rather than reading it, precisely so the decision is testable apart from the store that counts |
@@ -3646,6 +3647,124 @@ own and run it beside a service on a network of your own, with
 `TEST_PEER_PUBLIC_HOST` set to the name the service reaches it by and the
 shared directory mounted at `/run/sts-test`; then run a job with
 `STS_TEST_PEER_URL`.
+
+## THE CLIENT LAB (#2056, umbrella #2055, 2026-11-23)
+
+**Real client software and virtual smart cards, for the realistic jobs
+#2057–#2062** (OpenPGP mail, S/MIME, PIV, SSH, YubiKey OTP, OATH): rcbj's
+"realistic tests", which drive the software a person and an administrator
+really use against a running service. `tests/client-lab/`, image
+`sts-client-lab`, service `client-lab` in `docker-compose-run-tests.yml`.
+
+**NOTHING OF IT IS IN THE PRODUCT IMAGE (rcbj, 2026-11-23).** It lives under
+`tests/`, which the product Dockerfile's `typescript` stage removes before
+the final stage copies the tree. It has its own Dockerfile, and the product
+`Dockerfile` and `package.json` are not touched. `tests/client_lab_isolation.js`
+fails if the final stage could carry the directory, or if any stage names a
+lab package. Do not "simplify" a job by installing a lab client in the
+service image or in `tests/Dockerfile`: the lab is where they live.
+
+| What | Where it comes from | Licence |
+|---|---|---|
+| jcardsim, the Java Card simulator | `licel/jcardsim` @ `7cd4b51db322e9b7f8bb883e3832197892504b99` (master, 2026-11-21), `mvn package`, built from source | Apache-2.0 |
+| Oracle's Java Card 3.0.5 classic API jar (what jcardsim compiles against) | `martinpaljak/oracle_javacard_sdks` @ `700ec80afdda210a0e62fb6a151a9cddc1acd244`, `jc305u3_kit/lib/api_classic.jar`, sha256 `686c789a…ed4bc0` checked | Oracle's |
+| SmartPGP, an OpenPGP card 3.4 | `ANSSI-FR/SmartPGP` @ `da52ec4d6baa2b8f5bf8de35e7932572bb96b161` (tag `v1.23.2.0-javacard-3.0.4-without-secure-messaging`), javac | GPL-2.0 |
+| PivApplet, a YubiKey-style PIV card | `arekinath/PivApplet` @ `5cb14a9e8d16e92fbad73dcad86a219a9210554f` (master, after v0.9.0), its jpp preprocessor and javac, built TWICE: stock, and with `patches/pivapplet-yubikey-attestation.patch` | MPL-2.0 (the patch too, `REUSE.toml`) |
+| vpcd, pcscd, OpenSC, yubico-piv-tool 2.2.0, gnupg + scdaemon, openssh client and server, postfix, oathtool, libpam-yubico + pamtester, MIT krb5-user, curl, openssl, a Java 17 runtime | Debian bookworm packages on `node:24.22.1-bookworm-slim` (the mirror) | each its own |
+
+The pins are `ARG`s in `tests/client-lab/Dockerfile`, and `/opt/cards/PINS`
+in the image records what was built. To bump one, change the commit (and,
+for the API jar, its sha256). A fetch by commit means a moved tag changes
+nothing.
+
+* **THE CARDS.** There are two jcardsim processes, each holding one applet,
+  each plugged into its own vpcd slot (`card-lib.sh`):
+  * slot 0, `Virtual PCD 00 00`: SmartPGP. Its AID carries a random serial
+    made at start.
+  * slot 1, `Virtual PCD 00 01`: PivApplet.
+  jcardsim's configuration file only LOADS an applet, so `card-lib.sh`
+  installs each with jcardsim's own CREATE APPLET APDU (`80 B8`).
+  **Every start is a factory-fresh card**: OpenPGP PINs 123456 and
+  12345678; PIV PIN 123456, PUK 12345678 and the well-known management key;
+  a random PIV serial. `bin/lab-piv-card yubikey|stock` swaps in a fresh PIV
+  card while the lab is running.
+* **STOCK jcardsim IS DETERMINISTIC, SO THE BUILD SEEDS IT. Do not remove
+  the seed.** Its `SecureRandomNullProvider`, which generates key pairs and
+  signature nonces, is a SHA-1 `DigestRandomGenerator` that is never
+  seeded. Without the seed, every fresh card generates the SAME keys in the
+  same order on every start: keys anyone with jcardsim can make, which
+  would also collide in any register keyed by a public key. The ECDSA nonce
+  comes from the same stream; the first attestation's `r` was the 9a key's
+  `x`. `build-cards.sh` adds one instance initializer that seeds it from
+  `SecureRandom`, and checks that the edit took.
+* **THE PIV CARD ATTESTS AS A YUBIKEY 5, AND A STOCK ONE IS KEPT AS THE
+  NEGATIVE.** Stock PivApplet's attestation is refused by
+  `common/piv_attestation.ts`, and must go on being refused. Its subject is
+  `PIVApplet Attestation 9A`; its issuer is always the fixed
+  `CN=PIVApplet Attestation`; it carries no 41482.3.7 serial and no 3.9
+  form factor. The verdict is STS-PIV-0006 under a YubiKey-named f9
+  certificate, and STS-PIV-0007 under one named as that fixed issuer.
+  The patch changes five things, and its header cites the Yubico page each
+  follows:
+  * the subject becomes `YubiKey PIV Attestation <slot>`;
+  * the issuer becomes the f9 certificate's own subject;
+  * firmware 5.4.3;
+  * a positive eight-digit per-card serial as a DER INTEGER, equal to GET
+    SERIAL;
+  * form factor USB-A Keychain.
+  With it, the verifier ACCEPTS the attestation for piv-auth, tls-client and
+  smartcard-logon, and still refuses piv-sign for a 9a key (STS-PIV-0008).
+  **The verifier was not changed for either card.** The finding and the
+  verbatim results are on #2056.
+* **PivApplet will not IMPORT a key into f9** (`INS FE` answers `6A86` for
+  f9). An attestation key is therefore GENERATED on the card and certified
+  by a root made at run time; `bin/lab-piv-attest` does the whole ceremony.
+  That is also how a real card's f9 key is made.
+* **HOW A JOB REACHES IT.** Through the agent `lab_agent.js` at
+  `CLIENT_LAB_URL` (`http://client-lab:9610`, pinned `.53`, unpublished),
+  with four operations:
+  * `GET /health`: 200 once both cards are installed;
+  * `POST /run {program, args, stdin|stdinBase64, env, cwd, timeoutMs}`:
+    one program by name, either a client on a fixed list (gpg, gpgsm,
+    yubico-piv-tool, pkcs11-tool, opensc-tool, ssh, ssh-keygen, sendmail,
+    oathtool, pamtester, kinit, curl, openssl, …) or a script in `bin/`.
+    It runs with `execFile`, never a shell, and the answer carries the exit
+    code, stdout (also as base64) and stderr;
+  * `PUT /files/<path>`: puts a file into `/run/client-lab/work`;
+  * `GET /files/<path>`: takes one out.
+  **The job brings what the lab needs.** It passes the service's TLS anchor
+  (its own `NODE_EXTRA_CA_CERTS` file), an access token it obtained, a CA
+  or a configuration through `/files`. The lab holds no credential of its
+  own. The lab mounts `sts-test-shared` at `/run/sts-test` as the runner
+  and the service do, so the test peer's CA and anything a job writes there
+  are visible to all three. `sshd` and `postfix` are installed and NOT
+  started: the job that needs one configures it and starts it.
+  `bin/lab-gnupg-home <dir>` makes a GNUPGHOME whose scdaemon uses slot 0
+  through pcscd (`disable-ccid`, `pcsc-shared`, `reader-port`).
+* **A JOB THAT NEEDS IT carries `clientLab: true` in `MANIFEST.js`.**
+  `run-report.js` reports it SKIPPED, with the reason, when there is no
+  `CLIENT_LAB_URL`: an AWS target, or `./run-coverage.sh`, which empties
+  the URL because `--no-deps` starts no lab and the runner cannot start one
+  as a child.
+* **EVERY LOCAL MODE, NO PROFILE**, the test peer's arrangement. The rows
+  in `./run-tests.sh` are the container name, the image, `.53` and the URL.
+  The runner waits for the lab `service_started`, not healthy. The lab's
+  log is saved as `00-client-lab.log`. CI hands the image between jobs
+  (`.github/scripts/stack-images.sh`), and `tests/image_mirror_coverage.js`
+  holds its two FROMs (maven, node) to the mirror.
+* **THE SMOKE CHECK, BY HAND:** `tests/client-lab/smoke.sh --build` (or
+  `CLIENT_LAB_IMAGE=…`), with the tests image from `./docker-npm-test.sh`
+  (`STS_NPM_TEST_IMAGE=…`). It starts one lab container of its own and
+  runs three checks:
+  1. `bin/lab-smoke` inside it: `gpg --card-status` reads the OpenPGP card
+     with this start's serial, `yubico-piv-tool -a status` reads the PIV
+     card, OpenSC's PKCS#11 module sees both, and every client answers;
+  2. the yubikey card's attestation goes through `verify-attestation.js`,
+     the service's own `piv.verify()` run in process in the tests image
+     with that run's root as the only anchor, and must be accepted;
+  3. a stock card's attestation must be refused with 0006 and 0007.
+  It removes its container on the way out. The lab image and the tests
+  image are the only things it runs, never a stack image.
 
 ## THE SAML PEERS (#189–#192, 2026-09-24)
 
