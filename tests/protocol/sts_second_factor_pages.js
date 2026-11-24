@@ -289,12 +289,12 @@ async function theSettingsAreOnTheirPages() {
   const SHARED_GROUP = [SHARED_POLICY,
                         "appPasswords.enabled", "appPasswords.maxPerPerson"];
 
-  // THE OTHER ONE-TIME CODES SHARE THE TOTP PAGE (#1955 P4, P5): an imported
-  // HOTP token's `hotp.*` rows and the YubiKey OTP's `yubiotp.offered` and
-  // `yubiotp.ykval` are in the TOTP MFA group, because all three are checked
-  // at the same one-time-code step. They are the TOTP page's own, so they
-  // are allowed there by prefix and on /admin/webauthn not at all.
-  const ONE_TIME_CODES = /^(totp|hotp|yubiotp)\./;
+  // THE OTHER ONE-TIME CODES SHARED THE TOTP PAGE (#1955 P4, P5) until
+  // #2049, which gave each a Protocols page and a group of its own: the
+  // `hotp.*` rows are on /admin/oath-tokens and the `yubiotp.*` ones on
+  // /admin/yubiotp. So the TOTP page draws `totp.*` and the shared policy
+  // and nothing else, and a row that wandered back fails here.
+  const ONE_TIME_CODES = /^totp\./;
 
   const totp = await get("/totp");
   check("GET /admin-api/totp carries the seven totp.* settings and the " +
@@ -310,8 +310,8 @@ async function theSettingsAreOnTheirPages() {
     assert.ok(keys.every(function (k) {
       return ONE_TIME_CODES.test(k) || SHARED_GROUP.indexOf(k) !== -1;
     }),
-      "and a setting that is neither a one-time code's row (totp.*, " +
-      "hotp.*, yubiotp.*) nor one of the second-factor requirement's is " +
+      "and a setting that is neither a totp.* row nor one of the " +
+      "second-factor requirement's is " +
       "drawn on it: " + keys.join(", "));
     assert.ok(keys.indexOf(SHARED_POLICY) !== -1,
       SHARED_POLICY + " is not drawn on it: " + keys.join(", "));

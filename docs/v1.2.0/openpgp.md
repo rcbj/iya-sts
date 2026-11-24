@@ -66,8 +66,8 @@ separate classical one.
 ### Configuring the algorithms
 
 `openpgp.algorithms` (`STS_OPENPGP_ALGORITHMS`) is per realm and takes
-effect while the service is running. On **Directory → OpenPGP keys**
-(`/admin/openpgp`) each name is a checkbox and an order number. **Select
+effect while the service is running. On **Protocols → OpenPGP**
+(`/admin/openpgp-settings`) each name is a checkbox and an order number. **Select
 all** ticks every name, or only the four composites while
 `openpgp.pqcOnly` is on. At least one name must stay ticked; a save of an
 empty list is refused (`STS-ADMIN-0840`). The same value can be set with
@@ -238,6 +238,12 @@ administrator mailing a link is told it was not sent, and every refusal is on
 the audit log.
 
 ## Settings
+
+The `openpgp.*` rows are drawn on **Protocols → OpenPGP**
+(`/admin/openpgp-settings`), whose Metadata tab also lists the realm's Web
+Key Directory endpoints. **Directory → OpenPGP keys** (`/admin/openpgp`)
+shows one person's key and draws no setting; until #2049 the group was homed
+there, and could not be changed in the console.
 
 | Setting | Default | What it does |
 |---|---|---|

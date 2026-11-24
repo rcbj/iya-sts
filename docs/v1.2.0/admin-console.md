@@ -232,8 +232,10 @@ way. Its five sections:
   Policies, Policy editor, Remote PEPs and Try a decision tabs), SCIM, SSF
   (Metadata, Shared Signals, CAEP and RISC tabs), Kerberos (Metadata, Settings,
   PAC claims and Principals tabs), Federation, OpenID
-  Federation, GNAP, the second factors, Kerberos, LDAP, WS-Trust,
-  WS-Federation, PKI, Cert issuance (Metadata, ACME, EST, SCEP and SPIFFE
+  Federation, GNAP, the second factors, the hardware-token mechanisms
+  (Hardware tokens, PIV, YubiKey OTP and OATH tokens, each a Metadata and a
+  Settings tab), Kerberos, LDAP, WS-Trust, WS-Federation, PKI, SSH user
+  certificates, OpenPGP, Cert issuance (Metadata, ACME, EST, SCEP and SPIFFE
   tabs, the SPIFFE tab's sub-tabs the trust domain, registration entries,
   agents and brokers) and TLS.
   [Overview](index.md#protocols-by-the-admin-consoles-protocols-menu)
@@ -2235,6 +2237,24 @@ is configured to mint.
 and issues no token. Signing in with a wallet is `/authn/wallet`, which asks for
 a credential this realm issued with a request of its own and is not configured
 here ([OpenID4VP](oid4vp.md#signing-in-with-a-wallet)).
+
+### The hardware-token mechanisms and OpenPGP — `/admin/hardware-tokens-settings`, `/admin/piv`, `/admin/yubiotp`, `/admin/oath-tokens`, `/admin/ssh-user-ca`, `/admin/openpgp-settings`
+
+Six Protocols pages since #2049, each a **Metadata** tab — what the
+mechanism is, its specifications and the realm's endpoints that use it — and
+a **Settings** tab with a settings group of its own: *Hardware tokens*
+(`hardwareTokens.hardwareClaims`), *PIV* (every `piv.*`), *YubiKey OTP*
+(every `yubiotp.*`), *OATH tokens* (`hotp.*` and `pskc.allowPlaintextImport`),
+*SSH user certificates* (every `pki.ssh*`) and *OpenPGP* (every
+`openpgp.*`). The settings kept their keys, environment variables and
+defaults; only the page that draws them moved (they were under Devices, TOTP
+MFA and PKI, and the OpenPGP group was homed on a Directory page that drew no
+form). The registers stay where they were: **Directory → Hardware tokens**
+(`/admin/hardware-tokens`) keeps its tokens, OATH inventory, PIV enrolment,
+escrow and SSH tabs, and **Directory → OpenPGP keys** (`/admin/openpgp`) one
+person's key. Each page is mirrored by `GET /admin-api/<page>`
+(`/hardware-tokens-settings`, `/piv`, `/yubiotp`, `/oath-tokens`,
+`/ssh-user-ca`, `/openpgp-settings`).
 
 ### XACML — `/admin/xacml`
 

@@ -108,8 +108,9 @@ the KRL, and a scheduler refreshes it periodically.
 
 `pki.sshUserCaAlgorithms` (`STS_PKI_SSH_USER_CA_ALGORITHMS`) is which
 algorithms the user CA may sign with, in preference order. It is per realm
-and takes effect while the service is running. On **Protocols → PKI**
-(`/admin/pki`) each name is a checkbox and an order number. **Select all**
+and takes effect while the service is running. On **Protocols → SSH user
+certificates** (`/admin/ssh-user-ca`), where every `pki.ssh*` setting is
+drawn since #2049 (they kept their keys), each name is a checkbox and an order number. **Select all**
 ticks every name, or only `ssh-mldsa-65` while `pki.sshUserCaPqcOnly` is
 on. At least one name must stay ticked; a save of an empty list is refused
 (`STS-ADMIN-0840`). The same value can be set with

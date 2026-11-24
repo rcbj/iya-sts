@@ -148,7 +148,8 @@ RFC 8176 `amr` values that say a key is in hardware are earned from
   evidence, and `pkinit-smartcard` (and `sc`) when the key is on a card. By
   default it also keeps the inference it used before: a smart-card logon
   certificate whose key this service did not generate. The setting
-  `hardwareTokens.hardwareClaims` (in the *Devices* group) controls this.
+  `hardwareTokens.hardwareClaims` (the *Hardware tokens* group, on
+  Protocols → Hardware tokens) controls this.
 
 | `hardwareTokens.hardwareClaims` | PKINIT earns a hardware claim from |
 |---|---|
@@ -472,7 +473,15 @@ this mapping is not asked for it.
 | `pki.paranoidPivAttestation`, `pki.paranoidPivCard` | on | The two use cases' rows under paranoid PKI mode |
 | `hardwareTokens.hardwareClaims` | `inference` | Whether a PKINIT inference, and a passkey without trusted attestation, still earns `hwk` |
 
-Every row is also in [Configuration](configuration.md#devices).
+The `piv.*` rows are the *PIV* group, on **Protocols → PIV** (`/admin/piv`),
+and `hardwareTokens.hardwareClaims` is the *Hardware tokens* group, on
+**Protocols → Hardware tokens** (`/admin/hardware-tokens-settings`), whose
+Metadata tab says what a token register is and what a sign-in earns. Until
+#2049 both were in the *Devices* group; keys, variables and defaults did not
+change. **Directory → Hardware tokens** (`/admin/hardware-tokens`) keeps the
+tokens, the OATH inventory, PIV enrolment, escrow and SSH certificates. Every
+row is also in [Configuration](configuration.md#piv), under *PIV* and
+*Hardware tokens*.
 
 ## Error codes
 
