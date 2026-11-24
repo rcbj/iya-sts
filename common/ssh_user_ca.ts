@@ -51,7 +51,8 @@
 //     IS RETURNED** beside the classical one, and revoked with it when the
 //     hardware evidence cannot be recorded.
 //   * **A PERSON'S CERTIFICATES CAN BE LISTED**, by them and by an
-//     administrator, and an administrator can revoke one (rule 7).
+//     administrator, and an administrator can revoke one (rule 7) and,
+//     since #2071, issue one (`adminIssue()`, through `issue()`).
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
@@ -483,7 +484,8 @@ class SshUserCa {
    * Issues a certificate for a caller's UID and permitted group principals.
    *
    * @param spec - `{ username, subject, publicKey, principals, lifetimeS,
-   *   attestation, attestationChallenge }`
+   *   attestation, attestationChallenge }`, and from `adminIssue()` the
+   *   `actor`, `via` and the policy's `contextPath`
    * @returns the issued certificate or a marked refusal
    */
   async issue(spec: Json): Promise<Json> {
@@ -537,7 +539,9 @@ class SshUserCa {
         owner: s.username, sshPrincipal: principals[i],
         sshPrincipalKind: identity.uid.indexOf(principals[i]) >= 0
           ? 'uid' : 'group',
-        context: { method: 'POST', path: '/account-api/ssh/certificates' }
+        context: { method: 'POST',
+                   path: String(s.contextPath ||
+                                '/account-api/ssh/certificates') }
       });
       if (!decision.allowed) {
         log.info('ssh-user-ca: policy refused principal ' +
@@ -615,17 +619,25 @@ class SshUserCa {
           'revocation.');
       }
     }
+    // WHO ISSUED IT: the person on their own door, or the administrator
+    // `adminIssue()` names (#2071), whose row says so and by which door.
+    const actor = String(s.actor || s.username);
+    const byOther = actor !== String(s.username);
     eventLog.record({
       category: 'authentication', action: 'ssh-user-ca.issue',
-      actor: String(s.username), target: String(s.username),
+      actor: actor, target: String(s.username),
       outcome: 'success',
-      summary: String(s.username) + ' issued an SSH user certificate',
+      summary: byOther
+        ? 'An administrator issued an SSH user certificate to ' +
+          String(s.username)
+        : String(s.username) + ' issued an SSH user certificate',
       detail: { serialHex: issued.serialHex,
                 pqcSerialHex: issued.pqcSerialHex || undefined,
                 principals: principals,
                 keyFingerprint: fingerprint,
                 hardwareBound: !!hardwareEvidence,
-                lifetimeS: lifetimeS }
+                lifetimeS: lifetimeS,
+                via: s.via ? String(s.via) : undefined }
     });
     log.debug("Leaving SshUserCa.issue(). Issued.");
     const out: Json = { ok: true, certificate: issued.line,
@@ -641,6 +653,88 @@ class SshUserCa {
       out.pqcSerialHex = String(issued.pqcSerialHex);
     }
     return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // AN ADMINISTRATOR ISSUES A PERSON'S CERTIFICATE (#2071, rule 7): the same
+  // core the person's own door (`account-api/ssh_user_ca.ts`) calls, so the
+  // principals still come only from the person's entry, each is still the
+  // policy's question about THEM, the lifetime still follows the key's
+  // evidence, and the certificate is written onto their entry
+  // (`stsSshUserCertificate`, the master copy) through the register before
+  // it is answered. What differs is who is named: the person by `username`,
+  // their subject read here, and the actor the administrator — the caller's
+  // own, or the ambient source's (`audit.currentActor()`, the API token's
+  // subject) — never the person.
+  // -------------------------------------------------------------------------
+  /**
+   * Issues an SSH user certificate to a named person for an administrator.
+   *
+   * @param spec - `{ realm, username, publicKey, principals?, lifetimeS?,
+   *   attestation?, attestationChallenge?, actor?, via? }`; no principals
+   *   is the person's uid
+   * @returns a promise of the issued certificate, or a marked refusal
+   */
+  async adminIssue(spec: Json): Promise<Json> {
+    const { log, audit: eventLog } = this.deps;
+    log.debug("Entering SshUserCa.adminIssue().");
+    const s = spec || {};
+    const username = String(s.username || '').trim();
+    const subject = username && this.deps.subjectFor
+      ? this.deps.subjectFor(username) : '';
+    let actor = String(s.actor || '');
+    if (!actor) {
+      try {
+        actor = String((eventLog as Json).currentActor() || '');
+      } catch (e) {
+        log.debug("Caught in SshUserCa.adminIssue(): " +
+                  ((e && e.message) || e));
+        actor = '';
+      }
+    }
+    if (!subject) {
+      eventLog.record({
+        category: 'authentication', action: 'ssh-user-ca.issue',
+        actor: actor, target: username.slice(0, 64), outcome: 'refused',
+        summary: 'An administrator could not issue an SSH user ' +
+                 'certificate: nobody of that name',
+        detail: { via: String(s.via || '') }, errorCode: 'STS-SSHCA-0004'
+      });
+      log.debug("Leaving SshUserCa.adminIssue(). Nobody.");
+      return this.refuse('STS-SSHCA-0004', 'There is nobody called "' +
+        username.slice(0, 64) + '" in this realm\'s directory.');
+    }
+    let principals: Json[] = Array.isArray(s.principals)
+      ? s.principals.map(function (one: Json): string {
+        return String(one).trim();
+      }).filter(Boolean) : [];
+    if (!principals.length) {
+      const identity = this.candidatesOf(username);
+      principals = identity && identity.uid.length ? [identity.uid[0]] : [];
+    }
+    const answer = await this.issue({
+      realm: s.realm, username: username, subject: subject,
+      publicKey: s.publicKey, principals: principals,
+      lifetimeS: s.lifetimeS, attestation: s.attestation,
+      attestationChallenge: s.attestationChallenge,
+      actor: actor || 'unknown: an administrator\'s SSH issuance',
+      via: String(s.via || 'api'),
+      contextPath: '/admin-api/hardware-tokens/issue-ssh'
+    });
+    if (!answer || !answer.ok) {
+      eventLog.record({
+        category: 'authentication', action: 'ssh-user-ca.issue',
+        actor: actor, target: username, outcome: 'refused',
+        summary: 'An administrator could not issue an SSH user ' +
+                 'certificate to ' + username,
+        detail: { via: String(s.via || '') },
+        errorCode: String(this.deps.errorCodes.codeOf(answer) ||
+                          'STS-PKI-0290')
+      });
+    }
+    log.debug("Leaving SshUserCa.adminIssue(). " +
+              (answer && answer.ok ? 'Issued.' : 'Refused.'));
+    return answer;
   }
 
   /**
@@ -855,5 +949,6 @@ export = {
   lifetimes: slot.forward('lifetimes'),
   certificatesOf: slot.forward('certificatesOf'),
   certificatesOfPerson: slot.forward('certificatesOfPerson'),
-  adminRevoke: slot.forward('adminRevoke')
+  adminRevoke: slot.forward('adminRevoke'),
+  adminIssue: slot.forward('adminIssue')
 };

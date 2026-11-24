@@ -50,9 +50,9 @@ and a **Settings** tab.
 |---|---|---|---|---|
 | Hardware tokens | `stsHardwareToken` | **Hardware tokens** (`/portal/tokens`) | Directory → Hardware tokens, *Hardware tokens* tab | Protocols → Hardware tokens (`/admin/hardware-tokens-settings`) |
 | [OATH tokens](one-time-code-tokens.md) (HOTP, PSKC) | `stsOathToken` | **OATH tokens** (`/portal/tokens`, `/portal/mfa`) | Directory → Hardware tokens, *OATH tokens* tab | Protocols → OATH tokens (`/admin/oath-tokens`) |
-| [YubiKey OTP](yubiotp.md) | `stsYubiOtpToken` | **YubiKey OTP** (`/portal/mfa`) | the person's *YubiKey OTP* sub-tab; a batch is imported through `/admin-api` | Protocols → YubiKey OTP (`/admin/yubiotp`) |
+| [YubiKey OTP](yubiotp.md) | `stsYubiOtpToken` | **YubiKey OTP** (`/portal/mfa`) | Directory → Hardware tokens, *YubiKey OTP* tab (the inventory and the CSV import) | Protocols → YubiKey OTP (`/admin/yubiotp`) |
 | [PIV certificates](#piv-key-attestation) | `stsEnrolledCertificate`, and the card in `stsHardwareToken` | **PIV** (`/portal/tokens`) | Directory → Hardware tokens, *Enrol PIV* and *Escrowed keys* tabs | Protocols → PIV (`/admin/piv`) |
-| [SSH user certificates](pki.md#openssh-user-certificates) | `stsSshUserCertificate` | **SSH user certificates** | Directory → Hardware tokens, *SSH certificates* tab | Protocols → SSH user certificates (`/admin/ssh-user-ca`) |
+| [SSH user certificates](pki.md#openssh-user-certificates) | `stsSshUserCertificate` | **SSH user certificates** | Directory → Hardware tokens, *SSH certificates* tab (list, issue, revoke) | Protocols → SSH user certificates (`/admin/ssh-user-ca`) |
 | [OpenPGP keys and S/MIME certificates](openpgp.md) | `stsOpenPgpKey`, `userSMIMECertificate` | **OpenPGP and S/MIME** (`/portal/openpgp`) | Directory → OpenPGP keys (`/admin/openpgp`) | Protocols → OpenPGP (`/admin/openpgp-settings`) |
 
 **A write of the entry by another door** — the console's attribute editor,
@@ -211,7 +211,11 @@ Tokens recorded before 1.2.0 are copied onto their holders' entries by the
 
 The person, from the portal, or an administrator, from the console or with
 `POST /admin-api/hardware-tokens/lost` and `{ "key": "<vendor>/<serial>" }`,
-can report a token lost. The service then does all of the following at once:
+can report a token lost. The `key` may also be the one a
+[PSKC import](one-time-code-tokens.md) answered for an OATH token,
+`<vendor>/<serial>/<key id>`, once that token is assigned; it names the same
+token. On the portal, `POST /account-api/tokens` with `action` `lost` takes
+either key the same way. The service then does all of the following at once:
 
 1. The token is marked **lost**. From that moment none of its credentials
    counts as hardware evidence.

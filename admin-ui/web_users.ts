@@ -3187,7 +3187,8 @@ class UsersPage {
   // Six Credentials sub-tabs, each drawn by its central Directory page's
   // own functions with the person fixed — `web_hardware_tokens.ts` and
   // `web_openpgp.ts` — from the answers the drill composes
-  // (`web_pages.ts`: `personTokens`, `personOath`, `personOpenpgp`). Every
+  // (`web_pages.ts`: `personTokens`, `personOath`, `personYubi` since
+  // #2071, `personOpenpgp`). Every
   // form posts to the central page's path and so reaches the same
   // `/admin-api` operation (rule 7); the runtime returns to the sub-tab it
   // was sent from. The one-time code token and the YubiKey OTP blocks, with
@@ -3214,8 +3215,8 @@ class UsersPage {
         html: HardwareTokensPage.personOath(ctx.t, json.personOath || null,
                                             c, key, mfaParts.hotp || '') },
       { id: 'ucred-yubiotp', label: t.text('console.nav.yubiotp'),
-        html: HardwareTokensPage.personYubi(ctx.t, c, key,
-                                            mfaParts.yubi || '') },
+        html: HardwareTokensPage.personYubi(ctx.t, json.personYubi || null,
+                                            c, key, mfaParts.yubi || '') },
       { id: 'ucred-piv', label: t.text('console.nav.piv'),
         html: HardwareTokensPage.personPiv(ctx.t, tokens, c, key) },
       // THE CERTIFICATE SIGN-IN BINDINGS (#2080): `stsCertificateBinding`,

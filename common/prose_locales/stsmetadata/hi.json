@@ -2299,13 +2299,17 @@
     "en": "f149352fa2ac36d0",
     "text": "NON-SPEC (#1955 P4). वे HOTP और TOTP टोकन जिन्हें व्यवस्थापकों ने विक्रेताओं की PSKC सीड फ़ाइलों से आयात किया, असाइन नहीं, असाइन या सेवानिवृत्त, पृष्ठों में और सीरियल नंबर या व्यक्ति से खोजे जा सकने वाले। कभी कोई सीक्रेट नहीं। GET /admin/hardware-tokens (उसके OATH टैब) का प्रतिबिंब।"
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/yubiotp.what": {
+    "en": "6c6508ca58d1ea8d",
+    "text": "NON-SPEC (#2071). वे YubiKey OTP जिन्हें व्यवस्थापकों ने CSV से आयात किया, असौंपे, सौंपे गए या सेवानिवृत्त, पृष्ठों में और सीरियल या व्यक्ति से खोजे जा सकने वाले; किसी व्यक्ति के उनकी प्रविष्टि से पढ़े जाते हैं, जो मुख्य प्रति है। कभी कोई कुंजी नहीं। GET /admin/hardware-tokens (उसका YubiKey OTP टैब) को दर्शाता है।"
+  },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "cdbf34a1fbdf290e",
-    "text": "NON-SPEC (#1955)। lost, { key } के साथ: टोकन खोया हुआ चिह्नित होता है, उस पर हर पासकी हटाई जाती है, उस पर हर प्रमाणपत्र keyCompromise के लिए रद्द होता है, हर एक के लिए CAEP credential-change भेजा जाता है और उनके द्वारा साइन-इन सत्र समाप्त होते हैं। enrol-piv, { username, profile, csr, attestationCertificate?, attestationIssuer? } के साथ: EST जारीकर्ता CA के माध्यम से उस व्यक्ति को PIV स्लॉट प्रमाणपत्र जारी, उसका YubiKey PIV अटेस्टेशन सत्यापित और YubiKey दर्ज। recover-key, { username, serial } के साथ: उस व्यक्ति की एस्क्रो की गई piv-key-management कुंजी, जिसे एक्सेस-कंट्रोल नीति हाल के साइन-इन के बाद केवल PIV_KEY_RECOVERY को देती है। revoke-ssh, { username, serial } के साथ: उस व्यक्ति का SSH उपयोगकर्ता प्रमाणपत्र रद्द करके रीयल्म की KRL में डाला जाता है। उस पृष्ठ पर कंसोल की चार क्रियाएँ।"
+    "en": "ecf18182e65d8f0a",
+    "text": "NON-SPEC (#1955)। lost, { key } के साथ: टोकन खोया हुआ चिह्नित होता है, उस पर हर पासकी हटाई जाती है, उस पर हर प्रमाणपत्र keyCompromise के लिए रद्द होता है, हर एक के लिए CAEP credential-change भेजा जाता है और उनके द्वारा साइन-इन सत्र समाप्त होते हैं। enrol-piv, { username, profile, csr, attestationCertificate?, attestationIssuer? } के साथ: EST जारीकर्ता CA के माध्यम से उस व्यक्ति को PIV स्लॉट प्रमाणपत्र जारी, उसका YubiKey PIV अटेस्टेशन सत्यापित और YubiKey दर्ज। recover-key, { username, serial } के साथ: उस व्यक्ति की एस्क्रो की गई piv-key-management कुंजी, जिसे एक्सेस-कंट्रोल नीति हाल के साइन-इन के बाद केवल PIV_KEY_RECOVERY को देती है। revoke-ssh, { username, serial } के साथ: उस व्यक्ति का SSH उपयोगकर्ता प्रमाणपत्र रद्द करके रीयल्म की KRL में डाला जाता है। issue-ssh, { username, publicKey, principals?, lifetimeS? } के साथ: उस व्यक्ति के लिए जारी किया गया SSH उपयोगकर्ता प्रमाणपत्र, पहले उनकी प्रविष्टि पर लिखा जाता है (#2071)। उस पृष्ठ पर कंसोल की पाँच क्रियाएँ।"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "f5b724d2c79b5f74",
-    "text": "हार्डवेयर टोकन खोने की सूचना देता है और उसके क्रेडेंशियल हटाता है, PIV स्लॉट प्रमाणपत्र जारी करता है, एस्क्रो की गई कुंजी सौंपता है, या किसी व्यक्ति का SSH प्रमाणपत्र रद्द करता है"
+    "en": "38d7254e0ab72a00",
+    "text": "हार्डवेयर टोकन खोने की सूचना देता है और उसके क्रेडेंशियल हटाता है, PIV स्लॉट प्रमाणपत्र जारी करता है, एस्क्रो की गई कुंजी सौंपता है, या किसी व्यक्ति का SSH प्रमाणपत्र जारी या रद्द करता है"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/ssh-certificates.what": {
     "en": "84ce6fea3694d4c0",

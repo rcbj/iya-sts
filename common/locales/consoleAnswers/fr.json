@@ -128,5 +128,9 @@
   "piv.keyWarn": "Il s'agit de la clé privée de déchiffrement de la personne. Elle n'est affichée qu'une fois, et sa récupération figure dans le journal d'audit. Remettez-la comme vous remettriez la carte.",
   "piv.privateKey": "Clé privée",
   "piv.certificate": "Certificat",
-  "piv.import": "Écrivez-le dans l'emplacement de la YubiKey avec : ykman piv certificates import SLOT cert.pem"
+  "piv.import": "Écrivez-le dans l'emplacement de la YubiKey avec : ykman piv certificates import SLOT cert.pem",
+  "once.sshCertificate": "Certificat utilisateur SSH",
+  "ssh.certificate": "Certificat",
+  "ssh.pqc": "Certificat ML-DSA",
+  "ssh.install": "Enregistrez-le à côté de la clé privée, sous le nom du fichier de la clé suivi de -cert.pub, et ssh le présente avec la clé."
 }

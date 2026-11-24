@@ -1521,6 +1521,20 @@ class WebAnswers {
       return { title: title, active: page,
                html: WebAnswers.pivAnswer(answer, action, back, t) };
     }
+    // AN SSH USER CERTIFICATE AN ADMINISTRATOR ISSUED (#2071), from the SSH
+    // tab or a person's SSH sub-tab: public, but drawn once, in place, so
+    // it can be copied beside the private key it certifies. From the
+    // person's sub-tab the trail names the person.
+    if (page === '/admin/hardware-tokens' && action === 'issue-ssh' &&
+        answer.ok && answer.certificate) {
+      const title = t.text('consoleAnswers.once.sshCertificate');
+      const who = String(answer.username ||
+                         WebAnswers.one(fields, 'username') || '');
+      return { title: title, active: page,
+               up: /^\/admin\/users/.test(back) && who
+                 ? WebAnswers.personTrail(who, title) : undefined,
+               html: WebAnswers.sshCertificate(answer, back, t) };
+    }
     if (answer.hmacKey) {
       return { title: t.text('consoleAnswers.once.eabKey'),
                active: '/admin/cert-issuance',
@@ -1939,6 +1953,36 @@ class WebAnswers {
                   '<p class="note">' + t.html('consoleAnswers.piv.import') +
                   '</p>');
     return body + '<p class="links"><a href="' + kit.esc(back) + '">' +
+      t.html('consoleAnswers.back') + '</a></p>';
+  }
+
+  /**
+   * An SSH user certificate issued by an administrator (#2071), once: the
+   * line, and the ML-DSA one beside it where the realm issues one.
+   *
+   * @param result - `issue-ssh`'s answer
+   * @param back - the page the form was on
+   * @param t - optional; the translator, the default when left out
+   * @returns the HTML
+   */
+  static sshCertificate(result: Json, back: string, t?: Json): string {
+    t = t || kit.context().t;
+    const area = function (name: string, value: unknown): string {
+      return '<textarea readonly rows="6" name="' + name + '">' +
+        kit.esc(value) + '</textarea>';
+    };
+    return '<p>' + kit.esc(result.message || '') + '</p>' +
+      kit.frame('<h2>' + t.html('consoleAnswers.ssh.certificate') +
+                '</h2>' + area('ssh-certificate', result.certificate) +
+                '<div class="formrow secret-copy">' +
+                kit.copyButton(result.certificate, t) + '</div>' +
+                '<p class="note">' + t.html('consoleAnswers.ssh.install') +
+                '</p>') +
+      (result.pqcCertificate
+        ? kit.frame('<h2>' + t.html('consoleAnswers.ssh.pqc') + '</h2>' +
+                    area('ssh-pqc-certificate', result.pqcCertificate))
+        : '') +
+      '<p class="links"><a href="' + kit.esc(back) + '">' +
       t.html('consoleAnswers.back') + '</a></p>';
   }
 

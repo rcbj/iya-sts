@@ -163,32 +163,73 @@ class Ykval {
     const otp = String(fields.otp || '');
     const nonce = String(fields.nonce || '');
     const h = String(fields.h || '');
-    if (!id || !otp || !nonce || !h) {
-      const key = id ? store.clientKey(id) : '';
-      log.debug("Leaving Ykval.decide(). Missing.");
+    // THE ORDER OF THE CHECKS IS THE REFERENCE SERVER'S (#2094). The
+    // Validation Protocol V2.0 lists the statuses and which parameters are
+    // required (id, otp, nonce), and names no order between them. The one
+    // order there is is Yubico's own yubikey-val (ykval-verify.php),
+    // published with that specification, and the clients that read the
+    // status (pam_yubico, ykclient) were written against it:
+    //   1. no nonce                          MISSING_PARAMETER
+    //   2. the otp not in an OTP's format    BAD_OTP ("invalid format")
+    //   3. no client id                      MISSING_PARAMETER
+    //   4. a nonce not 16-40 characters      MISSING_PARAMETER
+    //   5. a client nobody created           NO_SUCH_CLIENT
+    //   6. a signature that does not match   BAD_SIGNATURE
+    // So an unknown client with a malformed OTP is BAD_OTP: the format is
+    // judged before any client is looked up. This file answered
+    // MISSING_PARAMETER to `?id=1&otp=x&nonce=...` because it asked for
+    // `h` first. **ONE DEPARTURE, AND IT IS THIS SERVICE'S POLICY**: the
+    // specification makes `h` optional, and here it is required (the
+    // header: the HMAC is checked in every mode), so an unsigned request
+    // from a KNOWN client is MISSING_PARAMETER at step 6, after the lookup.
+    // An unknown client is NO_SUCH_CLIENT whether it signed or not. A
+    // malformed nonce was REPLAYED_REQUEST, after the signature; it is the
+    // reference's MISSING_PARAMETER at step 4 now. A refusal before the
+    // lookup is signed when the id names a client, as a missing parameter
+    // always was, and unsigned otherwise.
+    const key = id ? store.clientKey(id) : '';
+    if (!nonce) {
+      log.debug("Leaving Ykval.decide(). No nonce.");
       return Promise.resolve(Ykval.signed({
         status: 'MISSING_PARAMETER', code: 'STS-YUBIOTP-0013', key: key,
         otp: otp, nonce: nonce }));
     }
-    const key = store.clientKey(id);
+    if (!yubi.parse(otp)) {
+      log.debug("Leaving Ykval.decide(). Not an OTP's format.");
+      return Promise.resolve(Ykval.signed({
+        status: 'BAD_OTP', code: 'STS-YUBIOTP-0033', key: key,
+        otp: otp, nonce: nonce }));
+    }
+    if (!id) {
+      log.debug("Leaving Ykval.decide(). No client id.");
+      return Promise.resolve(Ykval.signed({
+        status: 'MISSING_PARAMETER', code: 'STS-YUBIOTP-0013', key: '',
+        otp: otp, nonce: nonce }));
+    }
+    const YubiOtp = yubi.YubiOtp;
+    if (!YubiOtp.NONCE_RE.test(nonce)) {
+      log.debug("Leaving Ykval.decide(). Nonce.");
+      return Promise.resolve(Ykval.signed({
+        status: 'MISSING_PARAMETER', code: 'STS-YUBIOTP-0034', key: key,
+        otp: otp, nonce: nonce }));
+    }
     if (!key) {
       log.debug("Leaving Ykval.decide(). No client.");
       return Promise.resolve({
         status: 'NO_SUCH_CLIENT', code: 'STS-YUBIOTP-0015', key: '',
         fields: { status: 'NO_SUCH_CLIENT' } });
     }
+    if (!h) {
+      log.debug("Leaving Ykval.decide(). Unsigned.");
+      return Promise.resolve(Ykval.signed({
+        status: 'MISSING_PARAMETER', code: 'STS-YUBIOTP-0013', key: key,
+        otp: otp, nonce: nonce }));
+    }
     if (!yubi.signatureOk(key, fields)) {
       log.debug("Leaving Ykval.decide(). Bad signature.");
       return Promise.resolve({
         status: 'BAD_SIGNATURE', code: 'STS-YUBIOTP-0014', key: '',
         fields: { status: 'BAD_SIGNATURE' } });
-    }
-    const YubiOtp = yubi.YubiOtp;
-    if (!YubiOtp.NONCE_RE.test(nonce)) {
-      log.debug("Leaving Ykval.decide(). Nonce.");
-      return Promise.resolve(Ykval.signed({
-        status: 'REPLAYED_REQUEST', code: 'STS-YUBIOTP-0016', key: key,
-        otp: otp, nonce: nonce }));
     }
     log.debug("Leaving Ykval.decide(). The nonce is spent next.");
     return store.rememberNonceAsync(id, nonce).then(function (spent: Json) {
