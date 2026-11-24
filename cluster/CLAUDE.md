@@ -1258,6 +1258,8 @@ row's body runs on a request worker except those marked **front**:
 | `report.retention.here` | per-process, realm, quiet; every 60 s — `report.retention` on that same holder (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
 | `report.schedule.here` | per-process, realm, quiet; every 60 s — `report.schedule` on that same holder (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
 | `audit.export` | per-process, realm, quiet; `auditExport.intervalS` — each process delivers its own audit ring to the enabled destinations, cursors `merge: 'own'`, at-least-once (#641) | `common/audit_export.ts`, `common/CLAUDE.md` 3da |
+| `ssh-user-ca.krl` | cluster, realm; every five minutes — rebuilds the realm's OpenSSH KRL from the register's revoked rows and the PKI row's, the expired left off (#1955 P3) | `common/ssh_user_ca.ts` |
+| `ssh-user-ca.entries` | cluster, realm, in every cell (a person's entry is in their home cell, the register global); every five minutes — each person the register's `e:1` index names brought in step with it (expired and revoked certificates off `stsSshUserCertificate`, a lost live one back), and on its first run in a process the backfill of certificates issued before #2050 (#2050) | `common/ssh_issued.ts` |
 | `yubiotp.nonce-sweep` | cluster, realm, **a global job** (`GLOBAL_JOBS`, so one cell sweeps the shared map); every minute — drops YK-VAL nonces older than five minutes, and the oldest past ten thousand. The nonce is a client-chosen replay key on the global tier; a sweep in every cell would delete the same rows (#1955 P5) | `common/yubiotp_store.ts` |
 
 **The timers still outside it** are listed, each with the reason it stays, in

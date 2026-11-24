@@ -663,6 +663,14 @@
     "en": "bd4794eda9c5d2d2",
     "text": "Pina-pause, dini-disable o binubura ang stream na hindi aktibo ang receiver sa loob ng ssf.inactivityTimeoutS (SSF 1.0 section 8.1.1), na inaanunsyo muna ang pause o disable gamit ang stream-updated event, at nagpapadala ng verification event sa bawat naka-enable na stream na walang natanggap mula sa transmitter na ito sa loob ng ssf.verificationEveryS (section 8.1.4)."
   },
+  "sched.jobs.ssh-user-ca.entries.title": {
+    "en": "510115184c6100fc",
+    "text": "Mga SSH user certificate sa mga entry"
+  },
+  "sched.jobs.ssh-user-ca.entries.describe": {
+    "en": "312afdd863ef16cd",
+    "text": "Inaalis ang mga nag-expire at binawing SSH user certificate ng bawat realm sa mga entry ng mga may hawak nito (stsSshUserCertificate), isinusulat muli ang buhay na kulang sa isang entry, at sa unang takbo nito sa isang proseso ay kinokopya sa mga may hawak ang mga certificate na inisyu bago sila itinago sa mga entry."
+  },
   "sched.jobs.ssh-user-ca.krl.title": {
     "en": "9694f71884ac8e1b",
     "text": "Revocation list ng SSH user CA"

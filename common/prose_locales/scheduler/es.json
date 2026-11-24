@@ -663,6 +663,14 @@
     "en": "bd4794eda9c5d2d2",
     "text": "Pausa, deshabilita o elimina un flujo cuyo receptor haya estado inactivo durante ssf.inactivityTimeoutS (SSF 1.0 sección 8.1.1), anunciando primero una pausa o deshabilitación con un evento stream-updated, y envía un evento de verificación a cada flujo habilitado que no haya recibido ninguno de este transmisor durante ssf.verificationEveryS (sección 8.1.4)."
   },
+  "sched.jobs.ssh-user-ca.entries.title": {
+    "en": "510115184c6100fc",
+    "text": "Certificados de usuario SSH en las entradas"
+  },
+  "sched.jobs.ssh-user-ca.entries.describe": {
+    "en": "312afdd863ef16cd",
+    "text": "Quita de las entradas de sus titulares (stsSshUserCertificate) los certificados de usuario SSH caducados y revocados de cada dominio, vuelve a escribir uno vigente que falte en una entrada y, en su primera ejecución en un proceso, copia en sus titulares los certificados emitidos antes de que se guardaran en las entradas."
+  },
   "sched.jobs.ssh-user-ca.krl.title": {
     "en": "9694f71884ac8e1b",
     "text": "Lista de revocación de la CA de usuarios SSH"

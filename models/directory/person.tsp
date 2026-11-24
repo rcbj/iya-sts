@@ -62,6 +62,10 @@ model Person {
   mail?: (string)[];
   @attr(#{what: "Certificates stored on the person, as userCertificate;binary (base64 DER). A certificate from an outside certificate authority is an identity only as the one entry storing it, byte for byte. Written from the person's console page, /admin-api/users/add-certificate and remove-certificate, or an LDAP modify."})
   userCertificate?: (string)[];
+  @attr(#{what: "The person's S/MIME certificates (RFC 2798), as userSMIMECertificate;binary: base64 DER, or a PKCS #7 bundle. Mail to the person is encrypted to the first that can receive it when they choose S/MIME (stsMailEncryption). Public. Written by /portal/openpgp, /admin-api/users/openpgp and an LDAP modify; never a sign-in credential."})
+  userSMIMECertificate?: (string)[];
+  @attr(#{kind: "multi", what: "The OpenSSH user certificates the realm's SSH user CA issued the person that are live: one JSON value per certificate, its serial, the certificate itself in OpenSSH text form (absent for one issued before #2050, whose text was never kept), the key's type and fingerprint, its principals, when it expires and which authority signed it (#2050). Public. Written by issuance; removed at revocation, at the lost-key retirement of its key and when it expires, by ssh_user_ca.issued, which is authoritative."})
+  stsSshUserCertificate?: (DirectoryJson)[];
   @attr(#{what: "The person's job title, released as the job_title claim and mapped by SCIM."})
   title?: (string)[];
   @attr(#{what: "The person's relationship to the organisation, such as employee or contractor, released as the employee_type claim and mapped by SCIM."})

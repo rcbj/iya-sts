@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6059** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6062** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -89,7 +89,7 @@ is an ordinary outcome.
 * [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 36
 * [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 32
 * [PIV key attestation (`STS-PIV`)](#sts-piv) — 30
-* [OpenSSH user certificates (`STS-SSHCA`)](#sts-sshca) — 5
+* [OpenSSH user certificates (`STS-SSHCA`)](#sts-sshca) — 8
 * [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 33
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 258
@@ -5170,6 +5170,9 @@ Raised from: common/ssh_user_ca.ts, common/ssh_issued.ts, common/pki.js, pki/pki
 | `STS-SSHCA-0003` | An SSH security-key attestation was sent without the challenge ssh-keygen was given, which the attestation signed, so it could not be verified (#1955). | HTTP 400 |
 | `STS-SSHCA-0004` | An administrator's SSH certificate act named nobody of the realm's directory (#1955). | HTTP 404 |
 | `STS-SSHCA-0005` | A person's SSH user certificates could not be read or revoked: the register threw (#1955). | HTTP 500 or 503 |
+| `STS-SSHCA-0006` | The directory offered the SSH user certificate register no locate() or write(), so nothing was installed: no certificate is written onto its holder's entry (stsSshUserCertificate) until one is, and the register still holds and publishes every certificate (#2050). | none — logged |
+| `STS-SSHCA-0007` | A person's entry could not be brought in step with the SSH user certificates the register holds for them: the certificate was issued or revoked in the register, which is authoritative, and the ssh-user-ca.entries job tries the entry again (#2050). | none — logged |
+| `STS-SSHCA-0008` | The ssh-user-ca.entries job could not read the register of issued SSH user certificates, or record what it found, so no entry was brought in step this run; the next run tries again (#2050). | none — logged |
 
 ## STS-OPENPGP
 

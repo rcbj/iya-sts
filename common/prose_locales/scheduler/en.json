@@ -165,6 +165,8 @@
   "sched.jobs.ssf.internal-poll.describe": "This service's own admin console and user portal collect the Security Event Tokens waiting on their streams, in every realm, over RFC 8936 poll from /ssf/poll — verified, recorded, acted on and acknowledged (#771).",
   "sched.jobs.ssf.stream-maintenance.title": "Shared Signals stream maintenance",
   "sched.jobs.ssf.stream-maintenance.describe": "Pauses, disables or deletes a stream whose receiver has been inactive for ssf.inactivityTimeoutS (SSF 1.0 section 8.1.1), announcing a pause or disable with a stream-updated event first, and sends a verification event to every enabled stream that has had none from this transmitter for ssf.verificationEveryS (section 8.1.4).",
+  "sched.jobs.ssh-user-ca.entries.title": "SSH user certificates on entries",
+  "sched.jobs.ssh-user-ca.entries.describe": "Takes each realm's expired and revoked SSH user certificates off their holders' entries (stsSshUserCertificate), writes back a live one an entry lacks, and on its first run in a process copies the certificates issued before they were kept on entries onto their holders.",
   "sched.jobs.ssh-user-ca.krl.title": "SSH user CA revocation list",
   "sched.jobs.ssh-user-ca.krl.describe": "Refreshes each realm's OpenSSH user CA KRL after issued certificate revocations and removes expired revocations.",
   "sched.jobs.tls.ticket-key-rotate.title": "TLS session-ticket key rotation",

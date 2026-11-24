@@ -8404,6 +8404,35 @@ for a serial, a key's certificates, a person's list and the KRL, so what was
 issued before is still listed and revocable; nothing new goes on the row. A
 revocation of a row-held serial refreshes the PKI row first.
 
+**AND ON THE HOLDER'S ENTRY (#2050, rcbj 2026-11-23: S/MIME and SSH user
+certificates are mapped to the person).** A person's live certificates are
+in `stsSshUserCertificate` (OID 1000), one JSON value each with the
+OpenSSH text, written at issuance once the register kept the row, taken
+off at revocation (a person's, an administrator's, a lost key's through
+`revokeSshUserKeyAsync()`) and at expiry. **The register is authoritative
+and the entry its projection**: the KRL, `ofKey()` and revocation never
+read the entry, and the `ssh-user-ca.entries` job (cluster, per realm, five
+minutes, in every cell) reconciles each person the register's `e:1` index
+names — expired and revoked off, a lost live one back, a value it does not
+hold dropped. A row's `entry` marker (`held`/`gone`) is the projection's
+state, and a `held` row outlives its certificate by a day so the job sees it
+expire. Its first run in a process is the BACKFILL (from 1.0.0 on): rows
+written before #2050 and the PKI row's `sshIssued` members, copied into the
+register with their revocation, are marked and then projected; idempotent,
+and bounded because a certificate lives an hour at most. The directory is a
+rule 3e slot, `ssh_issued.setDirectory()`, filled by `ldap/ldap_server.js`:
+the register is built at the credential libraries, long before 21, and a
+require the other way would drag the `/admin/ldap/*` pages forward. A
+process that does not hold the person's entry (another cell's) answers
+`absent` and marks nothing `gone`. `userSMIMECertificate` is declared on
+the person by the same change and read through `Credential.smimeCertificate`
+(`openpgp_keys.ts`'s `person()`); `DomainMap.valuesOf()` reads an attribute
+under its RFC 4522 `;binary` spelling first and its plain one after. Both
+are listed beside the stored certificates in `GET /admin-api/users/
+certificates` (`smimeCertificates`, `sshCertificates`) and on the person's
+console page. STS-SSHCA-0006 (a partial slot), 0007 (an entry not brought
+in step), 0008 (the job could not read or record).
+
 The CA key and KRL are public, `no-store` documents at
 `/pki/ssh-user-ca/{scope}` and `/pki/ssh-user-krl/{scope}`, on the main port
 only: the plain-HTTP revocation listener refuses both (STS-SSHCA-0001),

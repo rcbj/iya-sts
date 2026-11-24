@@ -207,6 +207,22 @@ schemas are in `GET /admin-api/account-api`.
   revokes one there or with `POST /admin-api/hardware-tokens/revoke-ssh` and
   `{ "username": "...", "serial": "..." }`. A revoked certificate is on the
   KRL until it expires.
+- **On the person's directory entry.** Every live certificate is also on
+  its holder's entry, in `stsSshUserCertificate` (one JSON value each: the
+  serial, the certificate in OpenSSH text form, the key, the principals,
+  when it expires and which authority signed it), so an LDAP read of the
+  person returns it, and the person's console page lists it under **Stored
+  certificates** (`GET /admin-api/users/certificates`, `sshCertificates`).
+  It is written when the certificate is issued and taken off when it is
+  revoked, when its key is reported lost and when it expires. **The CA's
+  own register is authoritative**: the KRL, revocation and a lost key's
+  certificates are decided from it, never from the entry, and the
+  `ssh-user-ca.entries` scheduler job (every five minutes) takes an
+  expired or revoked certificate off an entry, writes back a live one an
+  entry lost, and drops a value the register does not hold. Deleting a
+  value from the entry revokes nothing. Certificates issued before 1.2.0
+  are copied onto their holders' entries by the same job's first run; their
+  `certificate` is empty, because their text was never kept.
 
 A browserless SSH client can use the RFC 8628 device flow: its public OAuth
 client must declare `ssh:certificate` (or `account:manage`) and the

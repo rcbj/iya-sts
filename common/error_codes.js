@@ -23842,6 +23842,24 @@ const CODES = [
     summary: 'A person\'s SSH user certificates could not be read or ' +
       'revoked: the register threw (#1955).',
     spec: 'HTTP 500 or 503' },
+  { code: 'STS-SSHCA-0006',
+    summary: 'The directory offered the SSH user certificate register no ' +
+      'locate() or write(), so nothing was installed: no certificate is ' +
+      'written onto its holder\'s entry (stsSshUserCertificate) until one ' +
+      'is, and the register still holds and publishes every certificate ' +
+      '(#2050).',
+    spec: 'none — logged' },
+  { code: 'STS-SSHCA-0007',
+    summary: 'A person\'s entry could not be brought in step with the SSH ' +
+      'user certificates the register holds for them: the certificate was ' +
+      'issued or revoked in the register, which is authoritative, and the ' +
+      'ssh-user-ca.entries job tries the entry again (#2050).',
+    spec: 'none — logged' },
+  { code: 'STS-SSHCA-0008',
+    summary: 'The ssh-user-ca.entries job could not read the register of ' +
+      'issued SSH user certificates, or record what it found, so no entry ' +
+      'was brought in step this run; the next run tries again (#2050).',
+    spec: 'none — logged' },
   // ===== OPENPGP ===========================================================
   { code: 'STS-OPENPGP-0001',
     summary: 'An OpenPGP public key offered for registration did not ' +

@@ -663,6 +663,14 @@
     "en": "bd4794eda9c5d2d2",
     "text": "暫停、停用或刪除接收者已閒置 ssf.inactivityTimeoutS 的串流（SSF 1.0 section 8.1.1），暫停或停用前會先以 stream-updated 事件通告；並對已有 ssf.verificationEveryS 未從此傳送者收到驗證事件的每個已啟用串流送出驗證事件（section 8.1.4）。"
   },
+  "sched.jobs.ssh-user-ca.entries.title": {
+    "en": "510115184c6100fc",
+    "text": "項目上的 SSH 使用者憑證"
+  },
+  "sched.jobs.ssh-user-ca.entries.describe": {
+    "en": "312afdd863ef16cd",
+    "text": "將每個領域已過期和已撤銷的 SSH 使用者憑證從其持有人的項目（stsSshUserCertificate）上移除，寫回項目缺少的有效憑證，並在一個程序中首次執行時，把在憑證保存到項目之前簽發的憑證複製到其持有人上。"
+  },
   "sched.jobs.ssh-user-ca.krl.title": {
     "en": "9694f71884ac8e1b",
     "text": "SSH 使用者 CA 撤銷清單"

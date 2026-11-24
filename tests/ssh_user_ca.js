@@ -18,6 +18,10 @@
 // administrator lists and revokes a person's; the plain-HTTP listener
 // serves neither the CA key nor the KRL; and the register keeps issued
 // certificates in a store of their own.
+//
+// AND (#2050) EACH PERSON'S LIVE CERTIFICATES ON THEIR ENTRY: written at
+// issuance, taken off at revocation and expiry, reconciled with the
+// register by its job, and the older certificates backfilled once.
 
 const bunyan = require('bunyan');
 const sshUserCa = require('../common/ssh_user_ca');
@@ -373,6 +377,146 @@ async function checkRegister(t) {
   log.debug('Leaving checkRegister().');
 }
 
+// A DIRECTORY OF ONE PERSON (#2050): the slot's two functions over a Map.
+function fakeDirectory(people) {
+  log.debug('Entering fakeDirectory().');
+  const writes = [];
+  const out = {
+    writes: writes,
+    locate: async function locate(subject) {
+      log.debug('Entering locate().');
+      const p = people.get(String(subject));
+      log.debug('Leaving locate().');
+      return p ? { dn: p.dn, values: p.values.slice() } : null;
+    },
+    write: function write(dn, values) {
+      log.debug('Entering write().');
+      writes.push(dn);
+      for (const [, p] of people) {
+        if (p.dn === dn) {
+          p.values = values.slice();
+          log.debug('Leaving write(). Written.');
+          return true;
+        }
+      }
+      log.debug('Leaving write(). Nobody.');
+      return false;
+    }
+  };
+  log.debug('Leaving fakeDirectory().');
+  return out;
+}
+
+function serialsOn(person) {
+  log.debug('Entering serialsOn().');
+  const register = require('../common/ssh_issued');
+  const out = person.values.map(function (one) {
+    const read = register.readEntryValue(one);
+    return read ? read.serialHex : '?';
+  }).sort().join(',');
+  log.debug('Leaving serialsOn().');
+  return out;
+}
+
+// THE CERTIFICATES ON THEIR HOLDER'S ENTRY (#2050): issuance writes one,
+// revocation takes it off and leaves it on the KRL, the entries job takes
+// an expired one off, writes back one the entry lost and drops a value the
+// register does not hold, and the backfill copies the PKI row's onto their
+// holders once. S/MIME is read through the concept.
+async function checkEntries(t) {
+  log.debug('Entering checkEntries().');
+  const register = require('../common/ssh_issued');
+  const realms = require('../common/realms');
+  const realm = realms.currentId();
+  const before = register.installedDirectory();
+  const ana = { dn: 'uid=ana,ou=users,dc=example', values: [] };
+  const people = new Map([['urn:uuid:ent-ana', ana]]);
+  const dir = fakeDirectory(people);
+  t.check(!register.setDirectory({ locate: dir.locate }),
+          '9a. a directory offering half the slot is refused whole');
+  t.check(register.setDirectory(dir), '9b. and the whole slot installed');
+  const now = Date.now();
+  const row = function (serial, lifeMs, extra) {
+    log.debug('Entering row().');
+    log.debug('Leaving row().');
+    return Object.assign({ serialHex: serial, keyType: 'ssh-ed25519',
+      keyFingerprint: 'SHA256:ana', ownerSubject: 'urn:uuid:ent-ana',
+      principals: ['ana'], issuedAt: new Date(now).toISOString(),
+      notAfter: new Date(now + lifeMs).toISOString(), caMember: 'sshUserCa',
+      certificate: 'ssh-ed25519-cert-v01@openssh.com AAAA' + serial },
+      extra || {});
+  };
+  t.check(await register.record(realm, [row('e1', 600000),
+                                        row('e2', 2000)]),
+          '9c. two certificates issued');
+  t.equal(serialsOn(ana), 'e1,e2',
+          '9d. both are on the holder\'s entry once the store kept them');
+  const first = register.readEntryValue(ana.values[0]);
+  t.check(/^ssh-ed25519-cert-v01@openssh\.com /.test(first.certificate) &&
+          first.principals[0] === 'ana' && first.authority === 'classical',
+          '9e. each value carries the certificate in OpenSSH text form',
+          JSON.stringify(first));
+  await register.markRevoked(realm, 'e1', new Date(now).toISOString());
+  t.equal(serialsOn(ana), 'e2', '9f. a revoked certificate leaves the entry');
+  t.check((await register.revoked(realm, now)).some(function (one) {
+    return one.serialHex === 'e1';
+  }), '9g. and stays on the KRL\'s question until it expires');
+  const swept = await register.reconcileEntries(realm, now + 5000);
+  t.check(swept.ok && serialsOn(ana) === '',
+          '9h. the entries job takes the expired one off',
+          JSON.stringify(swept));
+  t.check(await register.record(realm, [row('e3', 600000)]),
+          '9i. another issued');
+  ana.values = ['{"not":"ours"}'];
+  await register.reconcileEntries(realm, now);
+  t.equal(serialsOn(ana), 'e3', '9j. the job writes back a live one the ' +
+          'entry lost and drops a value the register does not hold');
+  // THE BACKFILL: the PKI row's certificates from before the #1955 review,
+  // through an instance whose legacy reader is a stub.
+  const legacy = [row('f1', 600000), row('f2', 600000,
+    { revokedAt: new Date(now).toISOString() }), row('f3', -1000)];
+  const old = new register.SshIssued(Object.assign(
+    register.SshIssued.defaultDeps(), {
+      legacyRows: async function legacyRows() {
+        log.debug('Entering legacyRows().');
+        log.debug('Leaving legacyRows().');
+        return legacy;
+      }
+    }));
+  old.setDirectory(dir);
+  const filled = await old.reconcileEntries(realm, now);
+  t.check(filled.ok && filled.copied === 2 && serialsOn(ana) === 'e3,f1',
+          '9k. the backfill copies the live PKI-row certificates into the ' +
+          'register and the unrevoked one onto its holder',
+          JSON.stringify(filled) + ' ' + serialsOn(ana));
+  t.check((await register.revoked(realm, now)).some(function (one) {
+    return one.serialHex === 'f2';
+  }), '9l. a copied revocation is still on the KRL\'s question');
+  const writes = dir.writes.length;
+  const again = new register.SshIssued(Object.assign(
+    register.SshIssued.defaultDeps(), {
+      legacyRows: async function legacyRows() {
+        log.debug('Entering legacyRows().');
+        log.debug('Leaving legacyRows().');
+        return legacy;
+      }
+    }));
+  again.setDirectory(dir);
+  const twice = await again.reconcileEntries(realm, now);
+  t.check(twice.ok && twice.copied === 0 && twice.marked === 0 &&
+          dir.writes.length === writes && serialsOn(ana) === 'e3,f1',
+          '9m. a second backfill copies nothing and writes no entry',
+          JSON.stringify(twice));
+  const DomainMap = require('../common/domain_map');
+  t.equal((DomainMap.fieldOf('Credential', 'smimeCertificate', {
+    'userSMIMECertificate;binary': ['A'], userSMIMECertificate: ['B']
+  }) || []).join(','), 'A,B', '9n. S/MIME certificates are read through ' +
+          'the concept, under both RFC 4522 spellings');
+  register.setDirectory(before);
+  register.forgetForTests();
+  log.debug('Leaving checkEntries().');
+}
+
 async function run(t) {
   log.debug('Entering run().');
   await checkPrincipals(t);
@@ -380,6 +524,7 @@ async function run(t) {
   await checkPqcAndRevocation(t);
   await checkPublication(t);
   await checkRegister(t);
+  await checkEntries(t);
   log.debug('Leaving run().');
 }
 

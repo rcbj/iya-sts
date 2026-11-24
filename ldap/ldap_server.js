@@ -13848,8 +13848,20 @@ function storedCertificatesOf(kind, id) {
       }
     });
   });
+  // AND A PERSON'S OTHER TWO KINDS OF CERTIFICATE (#2050), which identify
+  // nobody at a sign-in and are listed beside these: the S/MIME
+  // certificates mail to them is encrypted to (either RFC 4522 spelling),
+  // and the live SSH user certificates the realm's SSH user CA issued them,
+  // as stored. Read here, by name, because this is the store.
+  const answer = { dn: String(stored.dn), certificates: out };
+  if (kind === 'person') {
+    answer.smime = [].concat(stored.attributes['usersmimecertificate;binary'] ||
+                             [], stored.attributes.usersmimecertificate || [])
+      .map(String);
+    answer.ssh = (stored.attributes.stssshusercertificate || []).map(String);
+  }
   log.debug("Leaving storedCertificatesOf(). " + out.length + ".");
-  return { dn: String(stored.dn), certificates: out };
+  return answer;
 }
 
 /**
@@ -16032,6 +16044,38 @@ openpgpKeys.setDirectory({
     return allowed && writePersonAttribute(dn, name, values) === true;
   },
   personByMail: personNameByMail
+});
+
+// A PERSON'S LIVE SSH USER CERTIFICATES (#2050), the OpenPGP slot's shape:
+// `common/ssh_issued.ts`, the register of what the realm's SSH user CA
+// issued, finds one person by subject off the event loop and replaces the
+// one attribute it owns, `stsSshUserCertificate`, in place. It is built at
+// the composition root's credential libraries and reached by `pki.js`, long
+// before this module, so it cannot require this one (rule 3e; its header
+// argues both ways round). The register is authoritative and the attribute
+// its projection, so this hands over nothing else of the entry.
+const sshIssued = require('../common/ssh_issued');
+sshIssued.setDirectory({
+  locate: async function locate(subject) {
+    log.debug('Entering the SSH certificate locate().');
+    await warmSubjectsAsync([String(subject || '')]);
+    const stored = entryByUuid(String(subject || ''));
+    if (!stored || !isPersonEntry(stored)) {
+      log.debug('Leaving the SSH certificate locate(). Nobody.');
+      return null;
+    }
+    const values = (stored.attributes.stssshusercertificate || [])
+      .map(String);
+    log.debug('Leaving the SSH certificate locate(). ' + stored.dn);
+    return { dn: stored.dn, values: values };
+  },
+  write: function write(dn, values) {
+    log.debug('Entering the SSH certificate write().');
+    const written = writePersonAttribute(dn, 'stsSshUserCertificate',
+                                         values) === true;
+    log.debug('Leaving the SSH certificate write(). ' + written);
+    return written;
+  }
 });
 
 // ---------------------------------------------------------------------------

@@ -426,7 +426,10 @@ class OpenPgpKeys {
       fingerprint: String(credential.openPgpFingerprint || '').toLowerCase(),
       info: info || {},
       mailEncryption: MAIL_ENCRYPTION.indexOf(choice) >= 0 ? choice : 'none',
-      smime: [].concat(found.smime || [])
+      // THROUGH THE CONCEPT (#2050): `userSMIMECertificate` is declared on
+      // the person, and `Credential.smimeCertificate` reads it under either
+      // RFC 4522 spelling, in the order the store's `smime` gave.
+      smime: [].concat(credential.smimeCertificate || [])
     };
   }
 

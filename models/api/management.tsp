@@ -5262,6 +5262,8 @@ namespace IyaSts.Api.Management {
     `user`?: string;
     `dn`?: string;
     `certificates`?: `WithSubjectLabelEnrolledAt`;
+    `smimeCertificates`?: `WithSubjectLabelEnrolledAt`;
+    `sshCertificates`?: (PersonSshCertificateOnEntry)[];
     `rule`?: string
   }
 
@@ -16074,7 +16076,7 @@ op `getUserAppPasswords`(`parameters/0/schema`: string,
   #{
     `operationId`:"getUserCertificates",
     `summary`:"The certificates stored on one person's entry (userCertificate)",
-    `description`:"Each certificate stored in the person's `userCertificate`: the SHA-256 of its DER, its subject, issuer, serial and validity. A certificate from an outside certificate authority signs its holder in only as the one entry storing it (#1061).\n\n**Mirrors** `GET /admin/users` on the admin console.",
+    `description`:"Each certificate stored in the person's `userCertificate`: the SHA-256 of its DER, its subject, issuer, serial and validity. A certificate from an outside certificate authority signs its holder in only as the one entry storing it (#1061). Beside them, the person's S/MIME certificates (`userSMIMECertificate`, described the same way) and the live SSH user certificates the realm's SSH user CA issued them (`stsSshUserCertificate`), neither of which signs anybody in (#2050).\n\n**Mirrors** `GET /admin/users` on the admin console.",
     `tags`:#["Users"],
     `responses`:#{
       `200`:#{
@@ -16105,6 +16107,8 @@ op `getUserCertificates`(@js(#{`examples`:#["alice"]}) `parameters/0/schema`: st
     `user`?: string;
     `dn`?: string;
     `certificates`?: `WithSubjectLabelEnrolledAt`;
+    @js(#{`description`:"The person's S/MIME certificates (userSMIMECertificate), described as the stored ones are (#2050)."}) `smimeCertificates`?: `WithSubjectLabelEnrolledAt`;
+    @js(#{`description`:"The person's live SSH user certificates, as their entry carries them (stsSshUserCertificate, #2050)."}) `sshCertificates`?: (PersonSshCertificateOnEntry)[];
     `rule`?: string
   },
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;

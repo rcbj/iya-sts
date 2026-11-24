@@ -663,6 +663,14 @@
     "en": "bd4794eda9c5d2d2",
     "text": "对接收方已不活动达 ssf.inactivityTimeoutS 的流进行暂停、禁用或删除（SSF 1.0 section 8.1.1），暂停或禁用前先以 stream-updated 事件通告；并向每个已启用、且在 ssf.verificationEveryS 内未从本发送方收到验证事件的流发送验证事件（section 8.1.4）。"
   },
+  "sched.jobs.ssh-user-ca.entries.title": {
+    "en": "510115184c6100fc",
+    "text": "条目上的 SSH 用户证书"
+  },
+  "sched.jobs.ssh-user-ca.entries.describe": {
+    "en": "312afdd863ef16cd",
+    "text": "将每个领域已过期和已吊销的 SSH 用户证书从其持有人的条目（stsSshUserCertificate）上移除，写回条目缺少的有效证书，并在一个进程中首次运行时，把在证书保存到条目之前签发的证书复制到其持有人上。"
+  },
   "sched.jobs.ssh-user-ca.krl.title": {
     "en": "9694f71884ac8e1b",
     "text": "SSH 用户 CA 吊销列表"
