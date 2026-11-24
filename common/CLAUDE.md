@@ -10,6 +10,7 @@ more than one family needs it, not because it felt general.
 | `xml_model.ts` | **AN XML FAMILY'S MODEL, AS THE CODE READS IT (#1579).** The one reader of the facts `models/lib/saml_lib.mjs` writes — a vocabulary's terms, a message's attributes and children in their order, a parameter set — over one or more generated files merged (`saml.json`; `ws.json` with `saml.json`, so an RSTR's assertion is held to SAML's own model). `term()`, `terms()`, `read()`, the writers' order (`attributes()`, `children()`, which throw on a part the model does not name) and `hold()`, which logs a gap under the family's code and answers the document unchanged; a fragment whose prefixes its document declares is held with them (`declarations`). `saml/saml_model.ts` and `ws-trust/ws_model.ts` are its instances. A leaf. |
 | `xml_format.ts` | **A DOCUMENT THIS SERVICE BUILT, INDENTED FOR A PERSON (rcbj, 2026-11-13).** `XmlFormat.indent(xml, log)`: one element a line, two spaces deeper than its parent, an element holding only text kept on its line and the text untouched. For documents this service writes with `Html.esc()`'d values and no comments, CDATA or mixed content (the WSDL); a caller's XML is parsed with xmldom instead. A static utility class. |
 | `subject_urn.ts` | **THE NAMES A LEAF GIVES ITS HOLDER, DEFINED ONCE (#1827, 2026-11-16).** `SubjectUrn`: the one table of `urn:sts:<form>:` prefixes (person, sa, application, federation, cell, device), `forPerson()`, `forHolder()`, `parse()` (bare or `URI:`), `namesIn()`, `namesPerson()`, `isServiceAccountForm()`, `sameHolder()`. A static utility class and a leaf (`bunyan`, `config`). See *3df*. |
+| `image_metadata.ts` | **`ImageMetadata.stripped()`, A PUBLISHED IMAGE WITHOUT ITS METADATA (#2140).** The JPEG and PNG writers `profile_photo.ts` had (#719), moved here so the sign-in logo (`branding.ts`) uses them too, and a WebP writer for the logo. Each walks the container and keeps the listed segments or chunks; one it cannot walk answers null and the caller refuses. A JPEG ends at its FIRST end marker since #2140 (the last kept an appended MPF image and its EXIF), and an APP2 is kept only as an ICC profile. A library with no route, requiring only `helpers`, so 6a-brand and 6a-photo each require it without moving anything. A static utility class. |
 | `html.ts` | **`Html.esc()`, THE FIRST STATIC UTILITY CLASS (#50).** The HTML escaper converted modules use; unconverted ones keep their own until they are converted. |
 | `heap_collector.ts` | **A FULL GARBAGE COLLECTION OF THE ISOLATE THAT ASKS (#611, 2026-10-13)** — `HeapCollector.collect(log)`, run by Monitoring → Node Health in the front process and, asked over the pool's channel, in each worker thread. `gc` is obtained WITHOUT `--expose-gc` (rcbj: the command line, `process_memory.ts`'s re-exec and the pool's `Worker` flags are untouched): the flag is set for the one `vm.runInNewContext('gc')` that hands it back and CLEARED at once, or every context and worker thread made later would carry a global `gc`; a process started with the flag keeps its own. The figures are `v8.getHeapStatistics()`'s, the isolate's own, and the pause is the call's time. A static utility class over node's `v8` and `vm` only, its logger an argument; it never throws. `tests/heap_collector.js`. |
 | `config_file.js` | The one place that decides what `CONFIG_FILE` means. Requires nothing at all. |
@@ -1559,7 +1560,11 @@ screen, per realm, and decided six questions on it (D1–D6, on the ticket).
   2048 pixels), at most `branding.logoMaxBytes`, with alternative text. It
   is kept in `realms.map({ persist: 'branding.assets' })` — per realm at the
   declaration, replicated by the change log, a global store in cells
-  (`persistence/tiers.js`), not sealed because a logo is public — and served
+  (`persistence/tiers.js`), not sealed because a logo is public — **cleaned
+  of its metadata first** (#2140: `image_metadata.ts`, the photo's writers
+  plus WebP; the stored sha256, sides and size are the cleaned bytes', and a
+  file that cannot be walked is refused, STS-AUTHN-0624; logos stored
+  before it are served as stored, and nothing cleans them) — and served
   at `/web/branding/logo` with the type its bytes are, `nosniff`, a
   sandboxing CSP through `app.contentSecurityPolicy()` (#1337) and an ETag. **Under `/web` on purpose**: the sign-in pages,
   the front door and the portal draw it, and they may be on different
@@ -17240,8 +17245,10 @@ to it could undo.
 * **THE SERVER STRIPS, EVEN THOUGH THE BROWSER ALREADY DID.** The browser's canvas
   drops metadata from what the portal sends. A partner's copy and a direct call
   to `/account-api/photo` have no browser in the way, and the address is public.
-  There is no image library here: `strippedJpeg()` and `strippedPng()` walk
-  segments and keep what is listed. WebP is refused rather than kept uncleaned.
+  There is no image library here: `image_metadata.ts`'s `strippedJpeg()` and
+  `strippedPng()` (this module's until #2140, shared with the logo since)
+  walk segments and keep what is listed. WebP is refused for a photo; that
+  module can clean one now (the logo's), but nobody asked for WebP photos.
   **So nothing here decodes pixels**, and an image that decodes badly is the
   viewer's to fail on. The `sandbox` policy and `nosniff` are what stand between
   that and anything else.

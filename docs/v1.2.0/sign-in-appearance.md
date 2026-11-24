@@ -95,7 +95,18 @@ and name above the page on all three.
 
 - **PNG, JPEG or WebP.** The image's own bytes decide the type, whatever the
   upload's `Content-Type` says; anything else is refused (`STS-AUTHN-0545`).
-  SVG is not accepted.
+  SVG is not accepted: it is a document that can carry script.
+- **Its metadata is removed before it is kept.** A JPEG loses its EXIF
+  (where a photo was taken, the camera, the date), XMP and comments; a PNG
+  its text chunks, `eXIf` and animation frames; a WebP its EXIF and XMP
+  chunks; each loses anything after the end of the image. The pixels are not
+  touched: only what a viewer needs to draw the image is kept, so the logo
+  looks the same. The size, sides and digest shown for the logo are the
+  cleaned file's, so the digest differs from the file you uploaded when there
+  was something to remove. A file that cannot be read to the end of its
+  image is refused (`STS-AUTHN-0624`); save it again from an image editor.
+  A logo uploaded before 1.2.0 is served as it was until it is uploaded
+  again.
 - **Each side 16 to 2048 pixels** (`STS-AUTHN-0547`), and **no larger than
   `branding.logoMaxBytes`**, 256 KiB by default (`STS-AUTHN-0546`). It is
   drawn at most 240 pixels wide and 64 high, so a logo around twice that
