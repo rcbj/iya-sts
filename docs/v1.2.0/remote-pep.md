@@ -83,7 +83,7 @@ membership, a valid key or a listener pair already there is reported as
 | 5. the cluster, with `--cluster` | `POST /admin-api/xacml/add-pep-cluster-member` (and `create-pep-cluster` with `--create-cluster`) | it is a member already |
 | 6. the HTTPS listener pair | `POST /admin-api/xacml/issue-pep-certificate` | `--out` holds a pair (`--reissue-https` replaces it) |
 | 7. the environment | writes `pep.env` and `docker-compose.pep.yml`. With `--cluster`, that compose is the cluster: every member whose `--out` is in the same directory, one load balancer published on `127.0.0.1` only, and the companion. The parent of `--out` also gets `docker-compose.pep-cluster.yml`, `pep-cluster-haproxy.cfg` and the saved port | never; rewritten each run |
-| 8. the companion path | a `--cluster` run registers it (so does `--pep-app`): the role (`POST /admin-api/roles/create-role`), the confidential client (`POST /admin-api/applications/create` and `POST /admin-api/consent/grant-global-consent`) and one session route (`POST /admin-api/xacml/set-pep-cluster-proxy`, or `set-pep-cluster-route` when the cluster already has a proxy) | the route is already that one role's, and the callback is registered |
+| 8. the companion path | a `--cluster` run registers it (so does `--pep-app`): the role (`POST /admin-api/roles/create-role`), the confidential client, with `client_credentials`, the `ssf.read` and `ssf.manage` scopes and the `SSF_READ` and `SSF_MANAGE` roles for the route's signals receiver (`POST /admin-api/applications/create` and `POST /admin-api/consent/grant-global-consent`) and one session route (`POST /admin-api/xacml/set-pep-cluster-proxy`, or `set-pep-cluster-route` when the cluster already has a proxy) | the route is already that one role's, and the callback is registered |
 | 9. the containers, with `--cluster` | `docker compose up -d --no-build --pull never` of `docker-compose.pep-cluster.yml`: the members, the load balancer and the companion. The identity service is not in that file | `--dry-run` only says it would |
 
 **The listener pair waits for the first registration**, because the realm
@@ -1849,8 +1849,10 @@ mutual TLS pull. It is never on a console page or in an `/admin-api` answer.
 4. **A sign-out at the service ends access.** The proxy receives the
    application's CAEP and RISC events on a Shared Signals poll stream, and a
    `session-revoked` event ends the proxy session. Give the application the
-   `client_credentials` grant and the `ssf.read` and `ssf.manage` scopes for
-   this, and turn on the realm's transmitter. A route with `signals: false`
+   `client_credentials` grant, the `ssf.read` and `ssf.manage` scopes and the
+   `SSF_READ` and `SSF_MANAGE` roles that confer them for this, and turn on
+   the realm's transmitter. Without all of them the receiver does not start
+   (`STS-XPEP-0094`). A route with `signals: false`
    asks `POST /xacml/pep/session` instead, at most every
    `PEP_PROXY_SESSION_RECHECK_MS`. Either way the browser is sent to sign in
    again with the `iya_pep_session` cookie cleared.

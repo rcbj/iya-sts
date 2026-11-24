@@ -1807,9 +1807,20 @@ browser sees `CN = test-pep.iyasec.io` from Amazon's CA;
 `/pep-app/protected` answered a browser 302 to testidp's authorization
 endpoint with a PAR `request_uri`; `GET /` on 9443 round-robined. A request
 on an open connection from rcbj's machine took 0.28 s against a 0.21 s TCP
-connect: the time is the distance to us-west-2, not the stack. Not
-exercised: a whole sign-in, `shared` mode and autoscaling, `notify_cidrs`,
-and the destroy. `tests/render.tftest.hcl` holds the shapes offline.
+connect: the time is the distance to us-west-2, not the stack. **A WHOLE
+SIGN-IN, in a real headless Chrome over CDP** (a throwaway person holding
+`pep-app`, deleted afterwards): the forced first password change, an
+authenticator app enrolled, consent, the member's callback, and
+`/pep-app/protected` answered by the companion with `X-Remote-User`,
+`X-Iya-Auth: session` and `X-Iya-Amr: pwd,otp`; a second page on the same
+proxy session; 14 s in all. **A script cannot stand in for that browser**:
+the same steps in node's `fetch` were rated HIGH (`automated-client`) by
+the risk engine and refused, which is the engine working. The members'
+CAEP/RISC receiver started only after the `pep-app` client was given
+`client_credentials`, `ssf.read`/`ssf.manage` AND the `SSF_READ`/
+`SSF_MANAGE` roles (`STS-XPEP-0094` until then); `register-remote-pep.js`
+now does all three. Not exercised: `shared` mode and autoscaling,
+`notify_cidrs`. `tests/render.tftest.hcl` holds the shapes offline.
 
 ## The deployer's permissions, and how to extend them
 
