@@ -12,5 +12,8 @@
   "act.credentialCompromised": "credencial marcada como comprometida",
   "act.accountDisabled": "cuenta desactivada",
   "rights.access": "acceso",
-  "address.none": "(ninguna)"
+  "address.none": "(ninguna)",
+  "credentialChange.item": "{change, select, added {alta} generated {generación} removed {eliminación} other {cambio}}: {kind, select, passkey {clave de acceso o llave de seguridad} totp {aplicación de autenticación} app-password {contraseña de aplicación} hotp {token de código de un solo uso} yubiotp {YubiKey OTP} recovery-codes {códigos de recuperación} certificate {certificado} certificate-binding {vínculo de certificado para iniciar sesión} smime {certificado S/MIME} openpgp {clave OpenPGP} other {credencial}}",
+  "credentialChange.itemNamed": "{change, select, added {alta} generated {generación} removed {eliminación} other {cambio}}: {kind, select, passkey {clave de acceso o llave de seguridad} totp {aplicación de autenticación} app-password {contraseña de aplicación} hotp {token de código de un solo uso} yubiotp {YubiKey OTP} recovery-codes {códigos de recuperación} certificate {certificado} certificate-binding {vínculo de certificado para iniciar sesión} smime {certificado S/MIME} openpgp {clave OpenPGP} other {credencial}} «{label}»",
+  "credentialChange.by": "{entity, select, user {por usted, en el portal o al iniciar sesión} other {por un administrador}}"
 }

@@ -12371,6 +12371,14 @@
     "en": "4f3937bae763d218",
     "text": "Eine Person an der Adresse in ihrem Eintrag benachrichtigen, wenn ihr Konto deaktiviert wird, ihre Sitzungen von einem Administrator beendet werden, ihr Passwort geändert oder zurückgesetzt wird, ihre Anmeldedaten als kompromittiert markiert werden oder eine Wiederherstellung beginnt. Eine Person kann diese nicht abwählen; ein Betreiber kann sie hier ausschalten."
   },
+  "mail.credentialChangeNotices|label": {
+    "en": "1cc94431099aa34f",
+    "text": "Hinweise zu geänderten Anmeldedaten"
+  },
+  "mail.credentialChangeNotices|description": {
+    "en": "ad78820ed6c28ff0",
+    "text": "Eine Person benachrichtigen, wenn ein Passkey oder Sicherheitsschlüssel, eine Authenticator-App, ein App-Passwort, ein Einmalcode- oder YubiKey-OTP-Token, ein Satz Wiederherstellungscodes, ein Zertifikat, eine Zertifikatsbindung für die Anmeldung, ein S/MIME-Zertifikat oder ein OpenPGP-Schlüssel von ihr hinzugefügt oder entfernt wird, von wem und wann. Mehrere Änderungen durch eine Handlung ergeben eine Nachricht. Aus sendet keine davon; der Hinweis zur Passwortänderung ist nicht betroffen. Nichts wird gesendet, solange Sicherheitshinweise aus sind oder kein Transport konfiguriert ist."
+  },
   "mail.notifyAdministrators|label": {
     "en": "cf148262e35b0d11",
     "text": "Administratoren über Handlungen des Systems informieren"

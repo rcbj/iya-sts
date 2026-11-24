@@ -12371,6 +12371,14 @@
     "en": "4f3937bae763d218",
     "text": "Meddela en person, på adressen på personens post, när kontot inaktiveras, när sessionerna avslutas av en administratör, när lösenordet ändras eller återställs, när en inloggningsuppgift markeras som komprometterad eller när återställning påbörjas. En person kan inte välja bort dessa; en operatör kan stänga av dem här."
   },
+  "mail.credentialChangeNotices|label": {
+    "en": "1cc94431099aa34f",
+    "text": "Meddelanden om ändrade inloggningsuppgifter"
+  },
+  "mail.credentialChangeNotices|description": {
+    "en": "ad78820ed6c28ff0",
+    "text": "Meddela en person när en passkey eller säkerhetsnyckel, en autentiseringsapp, ett applösenord, en engångskods- eller YubiKey OTP-token, en uppsättning återställningskoder, ett certifikat, en certifikatkoppling för inloggning, ett S/MIME-certifikat eller en OpenPGP-nyckel som tillhör personen läggs till eller tas bort, av vem och när. Flera ändringar som görs av en handling blir ett meddelande. Av skickar inga av dessa; meddelandet om ändrat lösenord påverkas inte. Inget skickas medan säkerhetsmeddelanden är av eller ingen transport är konfigurerad."
+  },
   "mail.notifyAdministrators|label": {
     "en": "cf148262e35b0d11",
     "text": "Meddela administratörer om systemhandlingar"

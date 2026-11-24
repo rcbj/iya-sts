@@ -12371,6 +12371,14 @@
     "en": "4f3937bae763d218",
     "text": "Prévenir une personne, à l’adresse figurant sur son entrée, lorsque son compte est désactivé, que ses sessions sont terminées par un administrateur, que son mot de passe est modifié ou réinitialisé, que son identifiant est marqué comme compromis ou qu’une récupération est lancée. Une personne ne peut pas refuser ces avis ; un opérateur peut les désactiver ici."
   },
+  "mail.credentialChangeNotices|label": {
+    "en": "1cc94431099aa34f",
+    "text": "Avis de modification des identifiants"
+  },
+  "mail.credentialChangeNotices|description": {
+    "en": "ad78820ed6c28ff0",
+    "text": "Prévenir une personne lorsqu’une clé d’accès ou clé de sécurité, une application d’authentification, un mot de passe d’application, un jeton de code à usage unique ou YubiKey OTP, un jeu de codes de récupération, un certificat, une liaison de certificat pour la connexion, un certificat S/MIME ou une clé OpenPGP lui appartenant est ajouté ou supprimé, par qui et quand. Plusieurs modifications faites par un même acte forment un seul message. Désactivé, aucun de ces avis n’est envoyé ; l’avis de changement de mot de passe n’est pas concerné. Rien n’est envoyé tant que les avis de sécurité sont désactivés ou qu’aucun transport n’est configuré."
+  },
   "mail.notifyAdministrators|label": {
     "en": "cf148262e35b0d11",
     "text": "Prévenir les administrateurs des actes du système"

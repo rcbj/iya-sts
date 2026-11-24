@@ -3092,6 +3092,8 @@
   "mail.verificationTtlMinutes|description": "How long an address verification link works. It is single-use, stored hashed, and bound to the address it was sent to: changing the address unverifies it.",
   "mail.securityNotices|label": "Security notices",
   "mail.securityNotices|description": "Tell a person, at the address on their entry, when their account is disabled, their sessions are ended by an administrator, their password is changed or reset, their credential is marked compromised or recovery is started. A person cannot opt out of these; an operator can turn them off here.",
+  "mail.credentialChangeNotices|label": "Credential change notices",
+  "mail.credentialChangeNotices|description": "Tell a person when a passkey or security key, an authenticator app, an app password, a one-time code or YubiKey OTP token, a set of recovery codes, a certificate, a certificate sign-in binding, an S/MIME certificate or an OpenPGP key of theirs is added or removed, by whom and when. Several changes made by one act are one message. Off sends none of these; the password-changed notice is not affected. Nothing is sent while security notices are off or no transport is configured.",
   "mail.notifyAdministrators|label": "Tell administrators of system acts",
   "mail.notifyAdministrators|description": "When the SERVICE, not a person, marks a credential compromised or disables an account (risk scoring), also mail every member of the realm's Admin Write roster that has an address.",
   "report.syncMaxRows|label": "Synchronous report row cap",

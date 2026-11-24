@@ -12,5 +12,8 @@
   "act.credentialCompromised": "minarkahang nakompromiso ang credential",
   "act.accountDisabled": "na-disable ang account",
   "rights.access": "access",
-  "address.none": "(wala)"
+  "address.none": "(wala)",
+  "credentialChange.item": "{kind, select, passkey {passkey o security key} totp {authenticator app} app-password {app password} hotp {one-time code token} yubiotp {YubiKey OTP} recovery-codes {mga recovery code} certificate {sertipiko} certificate-binding {pagbibigkis ng sertipiko sa pag-sign in} smime {S/MIME na sertipiko} openpgp {OpenPGP na key} other {kredensyal}}: {change, select, added {idinagdag} generated {ginawa} removed {inalis} other {binago}}",
+  "credentialChange.itemNamed": "{kind, select, passkey {passkey o security key} totp {authenticator app} app-password {app password} hotp {one-time code token} yubiotp {YubiKey OTP} recovery-codes {mga recovery code} certificate {sertipiko} certificate-binding {pagbibigkis ng sertipiko sa pag-sign in} smime {S/MIME na sertipiko} openpgp {OpenPGP na key} other {kredensyal}} “{label}”: {change, select, added {idinagdag} generated {ginawa} removed {inalis} other {binago}}",
+  "credentialChange.by": "{entity, select, user {ninyo, sa portal o sa pag-sign in} other {ng isang administrator}}"
 }

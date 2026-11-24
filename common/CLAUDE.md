@@ -14366,6 +14366,30 @@ that queued it and swept by a CLUSTER scheduler job. It differs in two ways:
   An app password (a `friendlyName`) is not "your password was changed". A
   recovery whose link was itself mailed (`mailed: true`) sends no second
   message.
+- **Every other credential added or removed (#2163, ASVS 5.0.0 6.3.7)** is
+  the `credential-changed` notice, `mail.credentialChangeNotices` (on). Two
+  funnels feed `MailUses.credentialChanged()`, and between them every door:
+  - `AccountSignals.credentialChanged()` (a passkey, an authenticator app,
+    an app password, an HOTP or YubiKey OTP token, a certificate), mapped by
+    `credentialChangeOf()` from the CAEP type; and
+    `recoveryInformationChanged()` with a `changeType` (a set generated or
+    removed; a code SPENT names none and is not mailed).
+  - `ldap_server.js`'s `noteCredentialAttributes()`, on every UPDATE of an
+    entry, for what lives only as an attribute: `stsCertificateBinding`,
+    `stsPivCardUuid`, `userSMIMECertificate`, `stsOpenPgpFingerprint`. No
+    CAEP event for those: none of them is a credential a receiver names.
+
+  A change with no `changeType`, or initiated by `system` or `policy`, is
+  not mailed: no person did it. **One act, one mail**: `MailUses.batch()`
+  (also `AccountSignals.batch()`) holds every change told inside it — an
+  `AsyncLocalStorage` slot, so awaits and nested doors join — and sends one
+  notice per person when it ends, a line each, repeats dropped. The
+  administrator's disable-mfa, remove-primary-keys and import-ldif, and
+  `hardware_tokens.markLost()`, run in one. The lines are `mailValues`
+  messages inside a `{ list }` value, which `Mail.resolveValues()` joins in
+  the recipient's language (`Intl.ListFormat`). The doors this ticket added
+  a CAEP call to: `/admin-api`'s `assign-oath` and `assign-yubiotp`, and the
+  OATH and YubiKey OTP lost-token retirers. `tests/credential_change_mail.js`.
 
 `tests/mail.js` holds all of it in process, including SMTP against a real
 `smtp-server` with STARTTLS and DKIM. `tests/protocol/sts_mail.js` drives it

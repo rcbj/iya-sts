@@ -12,5 +12,8 @@
   "act.credentialCompromised": "Anmeldedaten als kompromittiert markiert",
   "act.accountDisabled": "Konto deaktiviert",
   "rights.access": "Zugriff",
-  "address.none": "(keine)"
+  "address.none": "(keine)",
+  "credentialChange.item": "{kind, select, passkey {Passkey oder Sicherheitsschlüssel} totp {Authenticator-App} app-password {App-Passwort} hotp {Einmalcode-Token} yubiotp {YubiKey OTP} recovery-codes {Wiederherstellungscodes} certificate {Zertifikat} certificate-binding {Zertifikatsbindung für die Anmeldung} smime {S/MIME-Zertifikat} openpgp {OpenPGP-Schlüssel} other {Anmeldedaten}}: {change, select, added {hinzugefügt} generated {erzeugt} removed {entfernt} other {geändert}}",
+  "credentialChange.itemNamed": "{kind, select, passkey {Passkey oder Sicherheitsschlüssel} totp {Authenticator-App} app-password {App-Passwort} hotp {Einmalcode-Token} yubiotp {YubiKey OTP} recovery-codes {Wiederherstellungscodes} certificate {Zertifikat} certificate-binding {Zertifikatsbindung für die Anmeldung} smime {S/MIME-Zertifikat} openpgp {OpenPGP-Schlüssel} other {Anmeldedaten}} „{label}“: {change, select, added {hinzugefügt} generated {erzeugt} removed {entfernt} other {geändert}}",
+  "credentialChange.by": "{entity, select, user {von Ihnen, im Portal oder bei der Anmeldung} other {von einem Administrator}}"
 }

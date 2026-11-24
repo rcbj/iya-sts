@@ -28529,6 +28529,114 @@ function startSelfVerification(stored, before) {
   log.debug('Leaving startSelfVerification().');
 }
 
+// ---------------------------------------------------------------------------
+// A CREDENTIAL HELD AS AN ATTRIBUTE, ADDED OR REMOVED (#2163, ASVS 5.0.0
+// 6.3.7). The person is mailed (`common/mail_uses.ts`'s
+// `credentialChanged()`) when an UPDATE of their entry adds or removes a
+// value of one of these. A created entry is told nothing — the account is
+// new — and a deleted one has nobody to tell. Who wrote it decides the
+// line's "by": the person themselves, or anybody else, who is an
+// administrator or a program acting for one; a write by the service's own
+// jobs (an actor of `system`) is not told. Several values in one write are
+// one notice (`batch()`). No CAEP event: a binding is not a certificate a
+// receiver could name, and a mail-encryption key signs nobody in. Lazily
+// required, for account_state's reason; never throws into the write.
+// ---------------------------------------------------------------------------
+const CREDENTIAL_ATTRIBUTES = [
+  { kind: 'certificate-binding',
+    names: ['stscertificatebinding', 'stspivcarduuid'] },
+  { kind: 'smime',
+    names: ['usersmimecertificate', 'usersmimecertificate;binary'] },
+  { kind: 'openpgp', names: ['stsopenpgpfingerprint'], replaces: true }
+];
+
+/**
+ * Tells the person of every credential attribute value an update added or
+ * removed.
+ *
+ * @param dn - the entry
+ * @param before - its attributes before, lower-cased names
+ * @param after - and after
+ * @param options - the write's `{ actor }`, if it names one
+ * @returns how many lines were told
+ */
+function noteCredentialAttributes(dn, before, after, options) {
+  log.debug('Entering noteCredentialAttributes().');
+  const valuesAt = function (attributes, names) {
+    log.debug('Entering valuesAt().');
+    const out = [];
+    names.forEach(function (name) {
+      valuesOf((attributes || {})[name]).forEach(function (one) {
+        const value = String(one);
+        if (value && out.indexOf(value) < 0) {
+          out.push(value);
+        }
+      });
+    });
+    log.debug('Leaving valuesAt().');
+    return out;
+  };
+  const lines = [];
+  CREDENTIAL_ATTRIBUTES.forEach(function (held) {
+    const was = valuesAt(before, held.names);
+    const now = valuesAt(after, held.names);
+    const added = now.filter(function (v) {
+      return was.indexOf(v) < 0;
+    });
+    const removed = was.filter(function (v) {
+      return now.indexOf(v) < 0;
+    });
+    if (held.replaces && added.length && removed.length) {
+      lines.push({ kind: held.kind, change: 'changed' });
+      return;
+    }
+    added.forEach(function () {
+      lines.push({ kind: held.kind, change: 'added' });
+    });
+    removed.forEach(function () {
+      lines.push({ kind: held.kind, change: 'removed' });
+    });
+  });
+  if (!lines.length) {
+    log.debug('Leaving noteCredentialAttributes(). Nothing moved.');
+    return 0;
+  }
+  const username = canonicalUsernameOfDn(dn);
+  let actor = String((options && options.actor) || '');
+  try {
+    if (!actor) {
+      actor = String(require('../common/audit').currentActor() || '');
+    }
+    if (/^system\b/i.test(actor)) {
+      log.debug('Leaving noteCredentialAttributes(). The service\'s own.');
+      return 0;
+    }
+    // The person by name, by DN (an LDAP bind) or by subject (a token's
+    // `urn:uuid:` of their entryUUID).
+    const uuid = String(valuesOf((after || {}).entryuuid)[0] || '')
+      .toLowerCase();
+    const self = actor.toLowerCase() === String(username).toLowerCase() ||
+      (actor.indexOf('=') > 0 && normalizeDn(actor) === normalizeDn(dn)) ||
+      (!!uuid && actor.toLowerCase().replace(/^urn:uuid:/, '') === uuid);
+    const uses = require('../common/mail_uses');
+    realms.run(realmFor(dn), function () {
+      uses.batch(function () {
+        lines.forEach(function (line) {
+          uses.credentialChanged({ username: username, kind: line.kind,
+                                   change: line.change, label: '',
+                                   by: self ? 'user' : 'admin' });
+        });
+      });
+    });
+  } catch (e) {
+    log.warn(errorCodes.tag('STS-MAIL-0031') + 'ldap: a credential of ' + dn +
+             ' changed and the person could not be told: ' +
+             ((e && e.message) || e));
+  }
+  log.debug('Leaving noteCredentialAttributes(). ' + lines.length);
+  return lines.length;
+}
+
 function noteAccountChange(kind, dn, before, after, options) {
   log.debug('Entering noteAccountChange(). ' + kind + ' ' + dn);
   // A DELETED PERSON'S PHOTO GOES WITH THEM (#719). Its address has answered
@@ -28683,6 +28791,13 @@ function noteAccountChange(kind, dn, before, after, options) {
     log.error(errorCodes.tag('STS-LDAP-0225') + 'ldap: the credential ' +
               'attributes of ' + dn + ' could not be handed to their ' +
               'owners: ' + ((e && e.message) || e));
+  }
+  // THE CREDENTIALS HELD ONLY AS ATTRIBUTES, TOLD TO THE PERSON (#2163):
+  // certificate sign-in bindings, an S/MIME certificate, an OpenPGP key.
+  // Every door writes them here — the console, `/admin-api`, the portal,
+  // SCIM, an LDAP modify — so this is where they are told.
+  if (String(kind) === 'updated') {
+    noteCredentialAttributes(dn, before, after, options);
   }
   if (!accountObserver && !accountListeners.length) {
     log.debug('Leaving noteAccountChange(). Nobody is observing.');
