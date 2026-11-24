@@ -28,6 +28,14 @@
 //   D. the declaration the PrefixList renders is signed: the same document
 //      with the Response's `xs` namespace changed is refused;
 //   E. the Response itself signed the same way (no ancestor) verifies.
+//   F. PYSAML2'S SHAPE (run 45298800947): the XML Signature prefix (`ns2`)
+//      declared on the signed root, not on the Signature, exclusive c14n
+//      with no PrefixList, signed in place as xmlsec1 signs it — an
+//      AuthnRequest, an ArtifactResolve, and the same with `ds` and a
+//      default namespace. #2020 copied the root's declarations onto the
+//      Signature with `setAttribute()`, the serializer declared `ns2`
+//      again, and every one was refused as "Attribute xmlns:ns2
+//      redefined". Each verifies, and a changed Issuer is still refused.
 // ===========================================================================
 
 const crypto = require('../common/crypto');
@@ -42,6 +50,9 @@ const SAML = 'urn:oasis:names:tc:SAML:2.0:assertion';
 const XS = 'http://www.w3.org/2001/XMLSchema';
 const XSI = 'http://www.w3.org/2001/XMLSchema-instance';
 const EXC = 'http://www.w3.org/2001/10/xml-exc-c14n#';
+const DS = 'http://www.w3.org/2000/09/xmldsig#';
+const RSA_SHA256 = 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256';
+const SHA256 = 'http://www.w3.org/2001/04/xmlenc#sha256';
 
 // One key pair and a self-signed certificate, made here.
 function keys() {
@@ -111,6 +122,102 @@ function nested(pair, onSignedInfo, onReference, xsNamespace) {
   return responseOpen(xsNamespace) + assertion + '</samlp:Response>';
 }
 
+// PYSAML2'S SHAPE, SIGNED AS xmlsec1 SIGNS IT: the Signature in place,
+// after the Issuer, its prefix `prefix` (none: a default namespace on the
+// Signature itself) declared wherever `xml` declares it; the Reference's
+// digest over the root's exclusive canonical form, and SignedInfo
+// canonicalized IN PLACE, where every declaration of the root is in scope.
+// Written by hand rather than by the vendored signer, which puts its own
+// `xmlns:ds` on the Signature and so never makes this document.
+function pysaml2Signed(xml, pair, prefix, after) {
+  log.debug("Entering pysaml2Signed().");
+  const forge = xmldsig.forge;
+  const p = prefix ? prefix + ':' : '';
+  const tag = function (name, attrs, body) {
+    return '<' + p + name + (attrs || '') +
+      (body === undefined ? '/>' : '>' + body + '</' + p + name + '>');
+  };
+  const parse = function (text) {
+    return new DOMParser().parseFromString(text, 'text/xml');
+  };
+  const root = parse(xml).documentElement;
+  const md = forge.md.sha256.create();
+  md.update(xmldsig.canonicalize(root, {}), 'utf8');
+  const digest = forge.util.encode64(md.digest().getBytes());
+  const certB64 = pair.certPem.replace(/-----[^-]+-----|\s/g, '');
+  const signedInfo = tag('SignedInfo', '',
+    tag('CanonicalizationMethod', ' Algorithm="' + EXC + '"') +
+    tag('SignatureMethod', ' Algorithm="' + RSA_SHA256 + '"') +
+    tag('Reference', ' URI="#' + root.getAttribute('ID') + '"',
+        tag('Transforms', '',
+            tag('Transform', ' Algorithm="' +
+                xmldsig.TRANSFORM_ENVELOPED + '"') +
+            tag('Transform', ' Algorithm="' + EXC + '"')) +
+        tag('DigestMethod', ' Algorithm="' + SHA256 + '"') +
+        tag('DigestValue', '', digest)));
+  const signature = tag('Signature',
+    prefix ? '' : ' xmlns="' + DS + '"',
+    signedInfo + tag('SignatureValue', '', 'SIGNATURE-VALUE') +
+    tag('KeyInfo', '', tag('X509Data', '',
+                           tag('X509Certificate', '', certB64))));
+  const placed = xml.replace(after, after + signature);
+  const si = parse(placed).getElementsByTagNameNS(DS, 'SignedInfo')[0];
+  const siMd = forge.md.sha256.create();
+  siMd.update(xmldsig.canonicalize(si, {}), 'utf8');
+  const value = forge.util.encode64(
+    forge.pki.privateKeyFromPem(pair.keyPem).sign(siMd));
+  log.debug("Leaving pysaml2Signed().");
+  return placed.replace('SIGNATURE-VALUE', value);
+}
+
+// Section F's documents: pysaml2's AuthnRequest and ArtifactResolve, with
+// `ns0`, `ns1` and `ns2` all on the root, and two spellings of the same
+// request with a default namespace.
+function pysaml2Cases(t, pair, verify) {
+  log.debug("Entering pysaml2Cases().");
+  const issuer = '<ns1:Issuer Format="urn:oasis:names:tc:SAML:2.0:' +
+    'nameid-format:entity">http://saml-pysaml2:8000/sp</ns1:Issuer>';
+  const head = ' xmlns:ns0="' + SAMLP + '" xmlns:ns1="' + SAML +
+    '" xmlns:ns2="' + DS + '" Version="2.0" ' +
+    'IssueInstant="2026-11-24T02:49:06Z"';
+  const authn = pysaml2Signed('<ns0:AuthnRequest' + head +
+    ' ID="id-authn" AssertionConsumerServiceURL=' +
+    '"http://saml-pysaml2:8000/acs/post" ProtocolBinding=' +
+    '"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST">' + issuer +
+    '<ns0:NameIDPolicy AllowCreate="false"/></ns0:AuthnRequest>',
+    pair, 'ns2', issuer);
+  t.check(/<ns2:Signature>/.test(authn) &&
+          !/<ns2:Signature [^>]*xmlns/.test(authn),
+          'precondition: the Signature declares nothing; ns2 is the ' +
+          'AuthnRequest\'s', authn.slice(0, 400));
+  let r = verify(authn, 'AuthnRequest');
+  t.check(r.ok, 'F. a pysaml2 AuthnRequest, ns2 declared on the root, ' +
+          'verifies', r.why);
+  r = verify(authn.replace('http://saml-pysaml2:8000/sp',
+                           'http://saml-pysaml2:8000/other'),
+             'AuthnRequest');
+  t.check(!r.ok, 'F. and the same AuthnRequest with its Issuer changed is ' +
+          'refused', JSON.stringify(r).slice(0, 300));
+  const resolve = pysaml2Signed('<ns0:ArtifactResolve' + head +
+    ' ID="id-resolve">' + issuer + '<ns0:Artifact>AAQAAA==</ns0:Artifact>' +
+    '</ns0:ArtifactResolve>', pair, 'ns2', issuer);
+  r = verify(resolve, 'ArtifactResolve');
+  t.check(r.ok, 'F. a pysaml2 ArtifactResolve, ns2 declared on the root, ' +
+          'verifies', r.why);
+  const dflt = '<AuthnRequest xmlns="' + SAMLP + '" xmlns:ns1="' + SAML +
+    '"DS Version="2.0" IssueInstant="2026-11-24T02:49:06Z" ID="id-d">' +
+    issuer + '</AuthnRequest>';
+  r = verify(pysaml2Signed(dflt.replace('DS', ''), pair, '', issuer),
+             'AuthnRequest');
+  t.check(r.ok, 'F. a default-namespace AuthnRequest, the Signature ' +
+          'declaring its own default namespace, verifies', r.why);
+  r = verify(pysaml2Signed(dflt.replace('DS', ' xmlns:ds="' + DS + '"'),
+                           pair, 'ds', issuer), 'AuthnRequest');
+  t.check(r.ok, 'F. a default-namespace AuthnRequest, ds declared on the ' +
+          'root, verifies', r.why);
+  log.debug("Leaving pysaml2Cases().");
+}
+
 function run(t) {
   log.debug("Entering run().");
   const pair = keys();
@@ -146,6 +253,7 @@ function run(t) {
   r = verify(root, 'Response');
   t.check(r.ok, 'E. a Response signed at its root with PrefixList "xs", ' +
           'xs declared on the Response, verifies', r.why);
+  pysaml2Cases(t, pair, verify);
   log.debug("Leaving run().");
 }
 
@@ -153,6 +261,7 @@ module.exports = {
   name: 'saml_inclusive_prefixes',
   describe: 'crypto.verifyXmlSignature(): an enveloped signature whose ' +
             'exclusive c14n names an InclusiveNamespaces PrefixList, the ' +
-            'listed prefix declared on an ancestor, verifies as signed',
+            'listed prefix declared on an ancestor, verifies as signed; and ' +
+            'pysaml2\'s signature prefix declared on the signed root',
   run: run
 };

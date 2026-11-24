@@ -1210,30 +1210,30 @@ function verifyXmlSignature(xml, opts) {
   // true only without a PrefixList (#1917's WSS4J round trip found the
   // same in the WS-Security verifiers). Copying all of them changes the
   // exclusive octets only where a PrefixList asks, which is the point.
-  const declared = {};
-  for (let node = sigEl.parentNode; node && node.nodeType === 1;
-       node = node.parentNode) {
-    for (let i = 0; i < node.attributes.length; i++) {
-      const attr = node.attributes[i];
-      const name = String(attr.name || '');
-      if ((name === 'xmlns' || name.indexOf('xmlns:') === 0) &&
-          !Object.prototype.hasOwnProperty.call(declared, name)) {
-        declared[name] = attr.value;
-      }
-    }
-  }
-  Object.keys(declared).forEach(function (name) {
-    if (!sigEl.hasAttribute(name)) {
-      sigEl.setAttribute(name, declared[name]);
-    }
-  });
+  //
+  // THE COPY IS A NAMESPACE DECLARATION, NOT AN ATTRIBUTE NAMED `xmlns:…`
+  // (run 45298800947, 2026-11-23). #2020 wrote the copies with
+  // `setAttribute()`, which xmldom's serializer does not take for a
+  // declaration: a Signature whose own prefix is declared on an ancestor —
+  // pysaml2 declares `ns2` (XML Signature) on the AuthnRequest or the
+  // ArtifactResolve, Signature and all — got the serializer's own
+  // `xmlns:ns2` as well as the copied one, and "Attribute xmlns:ns2
+  // redefined" refused every pysaml2 request as malformed. Until #2020 the
+  // exclusive case copied nothing, so only an inclusive signature could
+  // meet it. `withInScopeNamespaces()` makes each copy with
+  // `setAttributeNS()` in the xmlns namespace, on a clone, which is what
+  // the WS-Security verifiers already did. Under exclusive c14n the copies
+  // still render nothing but a prefix SignedInfo visibly uses or a
+  // PrefixList names (Exclusive XML Canonicalization 1.0 section 3), so no
+  // octet is added that the signer did not sign.
+  const sigCopy = withInScopeNamespaces(sigEl);
 
   const serializer = new xmldom.XMLSerializer();
   // With a key from here, the engine is not shown the certificate text: it
   // would try to read it with forge, which reads RSA only.
   const signatureXml = found
-    ? withoutCertificateText(serializer.serializeToString(sigEl))
-    : serializer.serializeToString(sigEl);
+    ? withoutCertificateText(serializer.serializeToString(sigCopy))
+    : serializer.serializeToString(sigCopy);
   sigEl.parentNode.removeChild(sigEl);
   // The signed element too, for the same reason: a Reference's exclusive
   // transform may carry a PrefixList, and the element is serialized on its
