@@ -1206,7 +1206,7 @@ const PAGES: WebPage[] = [
     },
     composeParams: {
       personTokens: { user: 'q' },
-      personOath: { user: 'oq' },
+      personOath: { user: 'q' },
       personOpenpgp: { user: 'user' }
     },
     composeKeep: ['personTokens', 'personOath', 'personOpenpgp'],

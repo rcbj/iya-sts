@@ -82,7 +82,7 @@ function childMain() {
             byMember.personOath &&
             byMember.personOath.operation ===
               '/admin-api/hardware-tokens/oath' &&
-            byMember.personOath.params.oq === NAME &&
+            byMember.personOath.params.q === NAME &&
             byMember.personOpenpgp &&
             byMember.personOpenpgp.operation === '/admin-api/openpgp' &&
             byMember.personOpenpgp.params.user === NAME,
