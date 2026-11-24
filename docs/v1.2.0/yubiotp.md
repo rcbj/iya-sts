@@ -12,7 +12,7 @@ Enrolment is off until an operator turns on both `yubiotp.offered` and the authe
 
 There is no signature-algorithm setting for a YubiKey OTP. The OTP itself is AES-128-ECB of one 16-byte block, which is Yubico's format. A YK-VAL request is signed with HMAC-SHA1, which is Validation Protocol 2.0. Neither can be changed.
 
-`yubiotp.offered` (`STS_YUBIOTP_OFFERED`) and `yubiotp.ykval` (`STS_YUBIOTP_YKVAL`) are on **Protocols → TOTP MFA** (`/admin/totp`). `yubiotp.allowPlaintextImport` (`STS_YUBIOTP_ALLOW_PLAINTEXT_IMPORT`) is in the Devices group, on **Protocols → Device registration** (`/admin/device-registration`). All three take effect while the service is running. They turn enrolment, the verify endpoint and plaintext import on or off. They leave AES-128-ECB and HMAC-SHA1 as they are.
+`yubiotp.offered` (`STS_YUBIOTP_OFFERED`), `yubiotp.ykval` (`STS_YUBIOTP_YKVAL`) and `yubiotp.allowPlaintextImport` (`STS_YUBIOTP_ALLOW_PLAINTEXT_IMPORT`) are the YubiKey OTP group, on **Protocols → YubiKey OTP** (`/admin/yubiotp`). Until #2049 the first two were on Protocols → TOTP MFA and the third on Protocols → Device registration; their keys, variables and defaults did not change. All three take effect while the service is running. They turn enrolment, the verify endpoint and plaintext import on or off. They leave AES-128-ECB and HMAC-SHA1 as they are.
 
 ## Set one up
 

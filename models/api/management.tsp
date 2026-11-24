@@ -1752,6 +1752,14 @@ using IyaSts.Api.Common;
     #{`name`:"TOTP MFA",`description`:""},
     #{`name`:"Recovery codes",`description`:""},
     #{`name`:"WebAuthn",`description`:""},
+    #{
+      `name`:"Hardware tokens",
+      `description`:"The settings of the hardware-token mechanisms (#2049): the token register's hardware claims, PIV, YubiKey OTP, OATH tokens and the SSH user CA, one page each. The registers themselves are under Directory."
+    },
+    #{
+      `name`:"OpenPGP",
+      `description`:"The OpenPGP settings (#2049): the algorithms a registered key may use, the post-quantum rules, the registration challenge and the Web Key Directory. A person's key is under Directory."
+    },
     #{`name`:"Kerberos",`description`:""},
     #{`name`:"Persistence",`description`:""},
     #{`name`:"Cluster",`description`:""},
@@ -22329,6 +22337,145 @@ op `getWsTrustSettings`(`responses/200/content/application~1json/schema`: `WithP
 op `getWsFedSettings`(`responses/200/content/application~1json/schema`: `WithPageTitleWhat2`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
+
+@endpoint("/admin-api/hardware-tokens-settings",
+  "get",
+  #{
+    `operationId`:"getHardwareTokensSettings",
+    `summary`:"The hardware-token mechanism's page and its setting",
+    `description`:"The Hardware tokens group (#2049): `hardwareTokens.hardwareClaims`, which decides whether a PKINIT inference and a passkey without trusted attestation still earn `hwk` (`inference`, the default) or only recorded attestation evidence does (`evidence`). The page says what a token register is: a token recorded only from its own attestation (FIDO enterprise attestation, a YubiKey PIV attestation) or a vendor's PSKC file, the evidence a sign-in earns, the XACML token attributes, and what reporting one lost retires. The tokens are `GET /hardware-tokens`. The setting was in the Devices group until #2049; its key, variable and default did not change.\n\nTHERE IS NO POST BESIDE THIS ONE and that is not a gap: every form on the console page this mirrors posts `set-many` to /admin/config, so `POST /admin-api/config/set-many` is already the operation for it. One store, one action, two doors.\n\n**Mirrors** `GET /admin/hardware-tokens-settings` on the admin console.\n\nThe reply also carries `protocolEndpoints`: every endpoint of this family in the realm the call arrived in, as `{ name, methods, url }` (plus `route` for an HTTP endpoint, `transport` for a socket, and `registered: false` for a route the router no longer has).",
+    `tags`:#["Hardware tokens"],
+    `responses`:#{
+      `200`:#{
+        `description`:"What the page says, and the settings it draws — described rows carrying each value's source and whether it can be changed while the service runs.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getHardwareTokensSettings`(`responses/200/content/application~1json/schema`: `WithPageTitleWhat2`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/piv",
+  "get",
+  #{
+    `operationId`:"getPivSettings",
+    `summary`:"The PIV and CAC smart-card settings",
+    `description`:"The PIV group (#2049), every `piv.*` setting: the attestation roots, whether a PIV profile requires a YubiKey PIV attestation, the weakest PIN and touch policies an attested key may have, whether a `piv-card-auth` certificate signs in, `piv-key-management` key escrow, and the outside PIV and CAC issuers mapped by FIPS 201 card UUID with the policies they must assert. Issuing a slot certificate is `POST /hardware-tokens/enrol-piv`. These were in the Devices group until #2049; keys, variables and defaults did not change.\n\nTHERE IS NO POST BESIDE THIS ONE and that is not a gap: every form on the console page this mirrors posts `set-many` to /admin/config, so `POST /admin-api/config/set-many` is already the operation for it. One store, one action, two doors.\n\n**Mirrors** `GET /admin/piv` on the admin console.\n\nThe reply also carries `protocolEndpoints`: every endpoint of this family in the realm the call arrived in, as `{ name, methods, url }` (plus `route` for an HTTP endpoint, `transport` for a socket, and `registered: false` for a route the router no longer has).",
+    `tags`:#["Hardware tokens"],
+    `responses`:#{
+      `200`:#{
+        `description`:"What the page says, and the settings it draws — described rows carrying each value's source and whether it can be changed while the service runs.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getPivSettings`(`responses/200/content/application~1json/schema`: `WithPageTitleWhat2`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/yubiotp",
+  "get",
+  #{
+    `operationId`:"getYubiOtpSettings",
+    `summary`:"The YubiKey OTP settings",
+    `description`:"The YubiKey OTP group (#2049): `yubiotp.offered` (enrolment, assignment and a claim), `yubiotp.ykval` (whether `/wsapi/2.0/verify` answers YK-VAL 2.0) and `yubiotp.allowPlaintextImport`. Yubico OTP is checked by this service with the AES key it holds, so a sign-in is `amr otp` and never `hwk`. The first two were in the TOTP MFA group and the third in Devices until #2049; keys, variables and defaults did not change.\n\nTHERE IS NO POST BESIDE THIS ONE and that is not a gap: every form on the console page this mirrors posts `set-many` to /admin/config, so `POST /admin-api/config/set-many` is already the operation for it. One store, one action, two doors.\n\n**Mirrors** `GET /admin/yubiotp` on the admin console.\n\nThe reply also carries `protocolEndpoints`: every endpoint of this family in the realm the call arrived in, as `{ name, methods, url }` (plus `route` for an HTTP endpoint, `transport` for a socket, and `registered: false` for a route the router no longer has).",
+    `tags`:#["Hardware tokens"],
+    `responses`:#{
+      `200`:#{
+        `description`:"What the page says, and the settings it draws — described rows carrying each value's source and whether it can be changed while the service runs.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getYubiOtpSettings`(`responses/200/content/application~1json/schema`: `WithPageTitleWhat2`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/oath-tokens",
+  "get",
+  #{
+    `operationId`:"getOathTokensSettings",
+    `summary`:"The OATH token settings",
+    `description`:"The OATH tokens group (#2049): the three `hotp.*` settings (RFC 4226's code length, look-ahead and resynchronisation window) and `pskc.allowPlaintextImport`, whether product mode accepts a vendor's PSKC seed file (RFC 6030) whose secrets are not encrypted. The imported tokens are `GET /hardware-tokens/oath`. The `hotp.*` rows were in the TOTP MFA group and the PSKC one in Devices until #2049; keys, variables and defaults did not change.\n\nTHERE IS NO POST BESIDE THIS ONE and that is not a gap: every form on the console page this mirrors posts `set-many` to /admin/config, so `POST /admin-api/config/set-many` is already the operation for it. One store, one action, two doors.\n\n**Mirrors** `GET /admin/oath-tokens` on the admin console.\n\nThe reply also carries `protocolEndpoints`: every endpoint of this family in the realm the call arrived in, as `{ name, methods, url }` (plus `route` for an HTTP endpoint, `transport` for a socket, and `registered: false` for a route the router no longer has).",
+    `tags`:#["Hardware tokens"],
+    `responses`:#{
+      `200`:#{
+        `description`:"What the page says, and the settings it draws — described rows carrying each value's source and whether it can be changed while the service runs.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getOathTokensSettings`(`responses/200/content/application~1json/schema`: `WithPageTitleWhat2`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/ssh-user-ca",
+  "get",
+  #{
+    `operationId`:"getSshUserCaSettings",
+    `summary`:"The SSH user certificate authority's settings",
+    `description`:"The SSH user certificates group (#2049), every `pki.ssh*` setting: the algorithms the realm's OpenSSH user CA signs in, the two post-quantum rules, the longest certificate with and without hardware evidence, the extensions a certificate carries and the groups whose names may be principals. The CA's public key is `GET /pki/ssh-user-ca/{scope}` and its revocation list `GET /pki/ssh-user-krl/{scope}`. These were in the PKI group until #2049 and kept their `pki.` keys, variables and defaults.\n\nTHERE IS NO POST BESIDE THIS ONE and that is not a gap: every form on the console page this mirrors posts `set-many` to /admin/config, so `POST /admin-api/config/set-many` is already the operation for it. One store, one action, two doors.\n\n**Mirrors** `GET /admin/ssh-user-ca` on the admin console.\n\nThe reply also carries `protocolEndpoints`: every endpoint of this family in the realm the call arrived in, as `{ name, methods, url }` (plus `route` for an HTTP endpoint, `transport` for a socket, and `registered: false` for a route the router no longer has).",
+    `tags`:#["Hardware tokens"],
+    `responses`:#{
+      `200`:#{
+        `description`:"What the page says, and the settings it draws — described rows carrying each value's source and whether it can be changed while the service runs.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getSshUserCaSettings`(`responses/200/content/application~1json/schema`: `WithPageTitleWhat2`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
+@endpoint("/admin-api/openpgp-settings",
+  "get",
+  #{
+    `operationId`:"getOpenPgpSettings",
+    `summary`:"The OpenPGP settings",
+    `description`:"The OpenPGP group, every `openpgp.*` setting: the Web Key Directory's switch and domains, the algorithms a registered key may use (RFC 9580 and RFC 9980's composites), the smallest RSA key, the two post-quantum rules, the registration challenge's lifetime and the proof signature's clock skew. One person's key is `GET /openpgp`. Until #2049 the group was homed on Directory → OpenPGP keys, which drew no settings form.\n\nTHERE IS NO POST BESIDE THIS ONE and that is not a gap: every form on the console page this mirrors posts `set-many` to /admin/config, so `POST /admin-api/config/set-many` is already the operation for it. One store, one action, two doors.\n\n**Mirrors** `GET /admin/openpgp-settings` on the admin console.\n\nThe reply also carries `protocolEndpoints`: every endpoint of this family in the realm the call arrived in, as `{ name, methods, url }` (plus `route` for an HTTP endpoint, `transport` for a socket, and `registered: false` for a route the router no longer has).",
+    `tags`:#["OpenPGP"],
+    `responses`:#{
+      `200`:#{
+        `description`:"What the page says, and the settings it draws — described rows carrying each value's source and whether it can be changed while the service runs.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getOpenPgpSettings`(`responses/200/content/application~1json/schema`: `WithPageTitleWhat2`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+  
+
 
 @endpoint("/admin-api/tls",
   "get",

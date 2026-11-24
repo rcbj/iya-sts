@@ -68,5 +68,14 @@
   "sshExpires": "Går ut",
   "sshHardware": "hårdvarubundet",
   "sshRevoked": "återkallat",
-  "sshRevoke": "Återkalla"
+  "sshRevoke": "Återkalla",
+  "person.unavailable": "Den här personens token kunde inte läsas här. Katalog → Maskinvarutoken visar dem.",
+  "person.noOath": "Ingen OATH-token är tilldelad den här personen.",
+  "person.tokenKey": "Tokennyckel (leverantör/serienummer)",
+  "person.yubiSerial": "YubiKeyns serienummer",
+  "person.yubiOtp": "Ett OTP från den (valfritt)",
+  "person.noYubi": "Den här personen har ingen YubiKey OTP.",
+  "person.yubiWhat": "Tilldela den här personen en importerad YubiKey via dess serienummer. Ett OTP som skrivs från nyckeln visar att den finns till hands och kontrolleras innan nyckeln tilldelas.",
+  "person.sshIssue": "En person utfärdar sitt eget SSH-användarcertifikat på portalen, för en publik nyckel hen har. En administratör kan återkalla det här.",
+  "person.central": "Alla token i den här realmen: Katalog → Maskinvarutoken"
 }

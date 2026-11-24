@@ -68,5 +68,14 @@
   "sshExpires": "到期",
   "sshHardware": "绑定硬件",
   "sshRevoked": "已吊销",
-  "sshRevoke": "吊销"
+  "sshRevoke": "吊销",
+  "person.unavailable": "无法在此读取此人的令牌。目录 → 硬件令牌会显示它们。",
+  "person.noOath": "没有为此人分配 OATH 令牌。",
+  "person.tokenKey": "令牌键（厂商/序列号）",
+  "person.yubiSerial": "YubiKey 序列号",
+  "person.yubiOtp": "它生成的一个 OTP（可选）",
+  "person.noYubi": "此人没有 YubiKey OTP。",
+  "person.yubiWhat": "按序列号将一个已导入的 YubiKey 分配给此人。从该密钥输入的 OTP 可证明它在手边，并在分配前进行检查。",
+  "person.sshIssue": "个人在门户上为自己持有的公钥签发自己的 SSH 用户证书。管理员可以在此撤销。",
+  "person.central": "此领域的所有令牌：目录 → 硬件令牌"
 }

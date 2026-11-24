@@ -214,6 +214,7 @@
   "detail.tabService": "सेवा खाता",
   "detail.tabKeys": "कुंजी युग्म",
   "detail.tabSelfIssued": "स्व-जारी पहचान",
+  "detail.tabOpenpgp": "OpenPGP और S/MIME",
   "detail.tabFederation": "फ़ेडरेशन लिंक",
   "detail.tabGnap": "GNAP अनुदान",
   "detail.tabUma": "UMA",

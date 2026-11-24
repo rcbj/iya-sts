@@ -418,6 +418,17 @@ class AccountTokens {
                                  caller: AccountCaller): Promise<unknown> {
           return ctx.json(res, 200, await self.view(caller));
         } },
+      // TOKENS AND KEYS (#2053): the page of tabs over every kind a person
+      // registers, drawn from this view and composing the MFA, OpenPGP and
+      // SSH operations in the browser. Its own operation because a page is
+      // drawn from the one GET that mirrors it; the view is this one.
+      { method: 'GET', path: ctx.BASE + '/tokens-and-keys',
+        operationId: 'getTokensAndKeys', access: 'person',
+        query: TOKENS_QUERY,
+        handler: async function (req, res,
+                                 caller: AccountCaller): Promise<unknown> {
+          return ctx.json(res, 200, await self.view(caller));
+        } },
       { method: 'POST', path: ctx.BASE + '/tokens',
         operationId: 'actOnTokens', access: 'person', recentAuth: true,
         body: TOKENS_FORM,

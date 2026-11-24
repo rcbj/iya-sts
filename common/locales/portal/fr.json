@@ -42,6 +42,8 @@
   "nav.keys.heading": "Clés d’accès",
   "nav.tokens.label": "Clés de sécurité",
   "nav.tokens.heading": "Vos clés de sécurité et cartes à puce",
+  "nav.tokens-and-keys.label": "Jetons et clés",
+  "nav.tokens-and-keys.heading": "Vos jetons, certificats et clés",
   "nav.openpgp.label": "OpenPGP et chiffrement des messages",
   "nav.openpgp.heading": "Votre clé OpenPGP et le chiffrement des messages",
   "nav.mfa.label": "Application d’authentification",

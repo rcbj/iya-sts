@@ -68,5 +68,14 @@
   "sshExpires": "Mag-e-expire",
   "sshHardware": "nakatali sa hardware",
   "sshRevoked": "na-revoke",
-  "sshRevoke": "I-revoke"
+  "sshRevoke": "I-revoke",
+  "person.unavailable": "Hindi mabasa rito ang mga token ng taong ito. Ipinapakita ang mga ito ng Directory → Hardware tokens.",
+  "person.noOath": "Walang OATH token na nakatalaga sa taong ito.",
+  "person.tokenKey": "Key ng token (vendor/serial)",
+  "person.yubiSerial": "Serial ng YubiKey",
+  "person.yubiOtp": "Isang OTP mula rito (opsyonal)",
+  "person.noYubi": "Walang YubiKey OTP ang taong ito.",
+  "person.yubiWhat": "Italaga sa taong ito ang isang na-import na YubiKey ayon sa serial nito. Ang OTP na itinype mula sa key ay nagpapatunay na hawak ito at sinusuri bago italaga ang key.",
+  "person.sshIssue": "Ang isang tao ay naglalabas ng sarili niyang SSH user certificate sa portal, para sa public key na hawak niya. Maaari itong bawiin ng isang administrator dito.",
+  "person.central": "Bawat token sa realm na ito: Directory → Hardware tokens"
 }

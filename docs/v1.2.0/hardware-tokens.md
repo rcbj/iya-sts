@@ -87,6 +87,19 @@ under that serial.
 - **People** see their own tokens on the portal's **Security keys** page
   (`/portal/tokens`, under *How I sign in*). The page draws from
   `GET /account-api/tokens`.
+- The portal's **Tokens and keys** page (`/portal/tokens-and-keys`, also
+  under *How I sign in*) has a tab per kind a person registers: **Hardware
+  tokens**, **OATH tokens**, **YubiKey OTP**, **PIV**, **SSH user
+  certificates**, and **OpenPGP and S/MIME** — the same names and order as
+  the Credentials sub-tabs of a person's page in the console. Each tab is
+  the card of the page that already had it (Security keys, Authenticator
+  app, OpenPGP and mail encryption), and a form on it is answered on its
+  tab. The SSH tab lists your SSH user certificates, issues one for an
+  OpenSSH public key you paste and revokes one, over
+  `/account-api/ssh/certificates` (see [PKI](pki.md#openssh-user-certificates)).
+  The page draws from `GET /account-api/tokens-and-keys` and asks
+  `GET /account-api/mfa`, `GET /account-api/openpgp` and
+  `GET /account-api/ssh/certificates` for the other tabs.
 - **Administrators** see the realm's tokens under **Directory → Hardware
   tokens** (`/admin/hardware-tokens`). The list can be filtered by status
   and searched by serial or by person. Where the store is read on demand,
@@ -198,7 +211,8 @@ RFC 8176 `amr` values that say a key is in hardware are earned from
   evidence, and `pkinit-smartcard` (and `sc`) when the key is on a card. By
   default it also keeps the inference it used before: a smart-card logon
   certificate whose key this service did not generate. The setting
-  `hardwareTokens.hardwareClaims` (in the *Devices* group) controls this.
+  `hardwareTokens.hardwareClaims` (the *Hardware tokens* group, on
+  Protocols → Hardware tokens) controls this.
 
 | `hardwareTokens.hardwareClaims` | PKINIT earns a hardware claim from |
 |---|---|
@@ -522,7 +536,15 @@ this mapping is not asked for it.
 | `pki.paranoidPivAttestation`, `pki.paranoidPivCard` | on | The two use cases' rows under paranoid PKI mode |
 | `hardwareTokens.hardwareClaims` | `inference` | Whether a PKINIT inference, and a passkey without trusted attestation, still earns `hwk` |
 
-Every row is also in [Configuration](configuration.md#devices).
+The `piv.*` rows are the *PIV* group, on **Protocols → PIV** (`/admin/piv`),
+and `hardwareTokens.hardwareClaims` is the *Hardware tokens* group, on
+**Protocols → Hardware tokens** (`/admin/hardware-tokens-settings`), whose
+Metadata tab says what a token register is and what a sign-in earns. Until
+#2049 both were in the *Devices* group; keys, variables and defaults did not
+change. **Directory → Hardware tokens** (`/admin/hardware-tokens`) keeps the
+tokens, the OATH inventory, PIV enrolment, escrow and SSH certificates. Every
+row is also in [Configuration](configuration.md#piv), under *PIV* and
+*Hardware tokens*.
 
 ## Error codes
 

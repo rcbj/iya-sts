@@ -185,4 +185,13 @@ export interface PortalPage {
   // `operation`. The view `render()` is then handed is
   // `{ owned: { status, answer, canWrite, query } }`.
   admin?(query: any): string | null;
+  // A PAGE OF TABS OVER OTHER PAGES' OPERATIONS (#2053): member → the GET
+  // operation whose answer (its `view`, else the whole answer) the runtime
+  // adds to the page's view under that member.
+  compose?: Record<string, string>;
+  // Where a form on such a page posts → the member its answer replaces:
+  // '' is the page's own view (its composed members kept), and a member
+  // whose post answers no view keeps the answer as `<member>Answer` while
+  // the page is asked again.
+  members?: Record<string, string>;
 }
