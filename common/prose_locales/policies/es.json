@@ -275,6 +275,14 @@
     "en": "b66258c1b032dec3",
     "text": "Para cualquiera que tenga un rol de consola (Admin Read o Admin Write) y no tenga segundo factor. `offer`: en cada inicio de sesión se le muestra el paso que configura uno, con un botón Ignorar. `always`: debe configurar uno antes de iniciar sesión, salvo el administrador integrado del dominio predeterminado (admin.bootstrapUsername), al que solo se le ofrece, para que un servicio nunca se quede sin nadie que pueda iniciar sesión. `if-held`: como todos los demás, según el campo anterior. MÁS DÉBIL QUE `always`: un administrador con solo una contraseña es un administrador que puede ser cualquiera que tenga la contraseña."
   },
+  "authn.FIELDS.requireAttestedHardware.label": {
+    "en": "231d6b2e19c32f3c",
+    "text": "Se exige un token de hardware atestado"
+  },
+  "authn.FIELDS.requireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no`: ningún requisito más allá de las filas de mecanismos. `always`: una sesión solo se inicia cuando la credencial que completó el inicio de sesión (una clave de acceso, una llave de seguridad, un certificado o una tarjeta inteligente) está en un token de hardware activo cuya atestación registró el registro, la misma prueba que hace el mecanismo `attested-hardware` de una aplicación. Se rechaza una contraseña, una aplicación de autenticación, un código enviado por correo, una cartera, un socio de federación o un ticket de Kerberos por sí solos. El administrador integrado del reino predeterminado (admin.bootstrapUsername) está exento, para que un servicio nunca quede sin nadie que pueda iniciar sesión."
+  },
   "authn.FIELDS.passwordPrimary.label": {
     "en": "8459feba5558b2cd",
     "text": "Contraseña — como primer factor"
@@ -320,16 +328,16 @@
     "text": "Token de códigos de un solo uso (HOTP): como segundo factor"
   },
   "authn.FIELDS.hotpSecondFactor.what": {
-    "en": "608274a83bf567cd",
-    "text": "Un código de un solo uso RFC 4226 de un token basado en contador (#1955): la ranura OTP de una YubiKey, o el token de un proveedor que un administrador importó de un archivo de semillas PSKC. Nunca es un primer factor. Si está desactivado aquí, nadie puede INSCRIBIR ni reclamar uno; a quien ya tiene uno se le sigue pidiendo, como al titular de una aplicación de autenticación."
+    "en": "33918856782d0904",
+    "text": "Un código de un solo uso RFC 4226 de un token basado en contador (#1955): la ranura OTP de una YubiKey, o el token de un proveedor que un administrador importó de un archivo de semillas PSKC. Nunca es primer factor. DESACTIVADO DE FORMA PREDETERMINADA, y debe activarse para este reino antes de que nadie pueda inscribir, reclamar o recibir un token HOTP, de modo que ningún token HOTP se usa al iniciar sesión hasta entonces. Desactivado aquí, nadie puede INSCRIBIR ni reclamar uno; a quien ya tiene uno se le sigue pidiendo, como al titular de una aplicación de autenticación."
   },
   "authn.FIELDS.yubicoOtpSecondFactor.label": {
     "en": "cba1439d0faf9aaf",
     "text": "OTP de YubiKey — como segundo factor"
   },
   "authn.FIELDS.yubicoOtpSecondFactor.what": {
-    "en": "f8f7a6ee5bbb46a8",
-    "text": "Una OTP de YubiKey (la contraseña de un solo uso en modhex publicada por Yubico, #1955). Nunca un primer factor: este servicio guarda la clave AES. Desactivada aquí, nadie puede INSCRIBIR, asignar o reclamar una, aunque yubiotp.offered esté activado; a quien ya tiene una se le sigue pidiendo."
+    "en": "a5efe4af91b59cf2",
+    "text": "Una YubiKey OTP (la contraseña de un solo uso modhex publicada por Yubico, #1955). Nunca es primer factor: este servicio guarda la clave AES. DESACTIVADO DE FORMA PREDETERMINADA, y debe activarse para este reino (con yubiotp.offered) antes de que nadie pueda inscribir, reclamar o recibir una YubiKey OTP, de modo que ninguna se usa al iniciar sesión hasta entonces. Desactivado aquí, nadie puede INSCRIBIR, asignar ni reclamar una, aunque yubiotp.offered esté activado; a quien ya tiene una se le sigue pidiendo."
   },
   "authn.FIELDS.recoveryCodeSecondFactor.label": {
     "en": "ee9982b48a9c6a90",
@@ -376,16 +384,40 @@
     "text": "Certificado de cliente TLS — como primer factor"
   },
   "authn.FIELDS.certificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Un certificado de cliente TLS verificado: GET /tls/sign-in, o Continuar con su certificado en la pantalla de inicio de sesión."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Un certificado de cliente TLS verificado que no es una tarjeta inteligente: GET /tls/sign-in, o Continuar con su certificado en la pantalla de inicio de sesión. Un certificado de tarjeta inteligente es de la fila de tarjeta inteligente, que sigue a esta mientras no tiene valor (#2031)."
+  },
+  "authn.FIELDS.smartCardPrimary.label": {
+    "en": "2fd7ffc9233a4399",
+    "text": "Certificado de tarjeta inteligente (PIV/CAC) — como primer factor"
+  },
+  "authn.FIELDS.smartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Un certificado de tarjeta inteligente (PIV/CAC), en GET /tls/sign-in o en Continuar con su certificado: una clave PIV atestada, un certificado inscrito aquí con un perfil de ranura PIV, una tarjeta externa asignada por su UUID de tarjeta (piv.externalIssuers, stsPivCardUuid) o uno bajo un perfil de certSignIn.profiles marcado smartCard. AUSENTE, sigue a stsAuthnCertificatePrimary, de modo que una política escrita antes conserva su significado (#2031)."
+  },
+  "authn.FIELDS.smartCardCardAuthPrimary.label": {
+    "en": "a8aedf2b449f0f65",
+    "text": "Clave de autenticación de tarjeta PIV (sin PIN) — como primer factor"
+  },
+  "authn.FIELDS.smartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Un certificado de autenticación de tarjeta PIV (ranura 9e), cuya clave funciona sin PIN. También es una tarjeta inteligente, así que la fila de tarjeta inteligente también debe estar activada. AUSENTE, sigue el ajuste piv.cardAuthSignIn (#2031)."
   },
   "authn.FIELDS.kerberosPrimary.label": {
     "en": "f2f6ed9dd0454fdc",
     "text": "Kerberos (SPNEGO) — como primer factor"
   },
   "authn.FIELDS.kerberosPrimary.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego con un ticket de Kerberos."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego con un ticket de Kerberos, salvo PKINIT con tarjeta inteligente, que tiene su propia fila y sigue a esta mientras no tiene valor (#2031)."
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.label": {
+    "en": "9c5eeb540b2f1c36",
+    "text": "Kerberos PKINIT con tarjeta inteligente — como primer factor"
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego con un ticket de Kerberos que lleva el indicador pkinit-smartcard de este reino: el KDC lo emitió con PKINIT desde una tarjeta inteligente. AUSENTE, sigue a stsAuthnKerberosPrimary (#2031)."
   },
   "authn.FIELDS.walletPrimary.label": {
     "en": "f215dfc0a7d74e7f",
@@ -491,6 +523,10 @@
     "en": "b66258c1b032dec3",
     "text": "Para cualquiera que tenga un rol de consola (Admin Read o Admin Write) y no tenga segundo factor. `offer`: en cada inicio de sesión se le muestra el paso que configura uno, con un botón Ignorar. `always`: debe configurar uno antes de iniciar sesión, salvo el administrador integrado del dominio predeterminado (admin.bootstrapUsername), al que solo se le ofrece, para que un servicio nunca se quede sin nadie que pueda iniciar sesión. `if-held`: como todos los demás, según el campo anterior. MÁS DÉBIL QUE `always`: un administrador con solo una contraseña es un administrador que puede ser cualquiera que tenga la contraseña."
   },
+  "authn.SCHEMA.attributes.stsAuthnRequireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no`: ningún requisito más allá de las filas de mecanismos. `always`: una sesión solo se inicia cuando la credencial que completó el inicio de sesión (una clave de acceso, una llave de seguridad, un certificado o una tarjeta inteligente) está en un token de hardware activo cuya atestación registró el registro, la misma prueba que hace el mecanismo `attested-hardware` de una aplicación. Se rechaza una contraseña, una aplicación de autenticación, un código enviado por correo, una cartera, un socio de federación o un ticket de Kerberos por sí solos. El administrador integrado del reino predeterminado (admin.bootstrapUsername) está exento, para que un servicio nunca quede sin nadie que pueda iniciar sesión."
+  },
   "authn.SCHEMA.attributes.stsAuthnPasswordPrimary.what": {
     "en": "3b32854915d0d6d0",
     "text": "Una contraseña en la pantalla de inicio de sesión. Como SEGUNDO factor es la contraseña que se pide después de una wallet u otro primer factor sin contraseña."
@@ -512,12 +548,12 @@
     "text": "Un código de un solo uso de RFC 6238. Nunca es un primer factor: este servicio guarda el mismo secreto compartido que la app. Desactivado aquí, nadie puede REGISTRAR uno; a quien ya tenga uno se le sigue pidiendo, porque un interruptor de desactivación que rebajara cada cuenta registrada a solo una contraseña haría algo distinto de lo que dice (esta fila reemplazó a totp.enabled y mantiene su contrato)."
   },
   "authn.SCHEMA.attributes.stsAuthnHotpSecondFactor.what": {
-    "en": "608274a83bf567cd",
-    "text": "Un código de un solo uso RFC 4226 de un token basado en contador (#1955): la ranura OTP de una YubiKey, o el token de un proveedor que un administrador importó de un archivo de semillas PSKC. Nunca es un primer factor. Si está desactivado aquí, nadie puede INSCRIBIR ni reclamar uno; a quien ya tiene uno se le sigue pidiendo, como al titular de una aplicación de autenticación."
+    "en": "33918856782d0904",
+    "text": "Un código de un solo uso RFC 4226 de un token basado en contador (#1955): la ranura OTP de una YubiKey, o el token de un proveedor que un administrador importó de un archivo de semillas PSKC. Nunca es primer factor. DESACTIVADO DE FORMA PREDETERMINADA, y debe activarse para este reino antes de que nadie pueda inscribir, reclamar o recibir un token HOTP, de modo que ningún token HOTP se usa al iniciar sesión hasta entonces. Desactivado aquí, nadie puede INSCRIBIR ni reclamar uno; a quien ya tiene uno se le sigue pidiendo, como al titular de una aplicación de autenticación."
   },
   "authn.SCHEMA.attributes.stsAuthnYubicoOtpSecondFactor.what": {
-    "en": "f8f7a6ee5bbb46a8",
-    "text": "Una OTP de YubiKey (la contraseña de un solo uso en modhex publicada por Yubico, #1955). Nunca un primer factor: este servicio guarda la clave AES. Desactivada aquí, nadie puede INSCRIBIR, asignar o reclamar una, aunque yubiotp.offered esté activado; a quien ya tiene una se le sigue pidiendo."
+    "en": "a5efe4af91b59cf2",
+    "text": "Una YubiKey OTP (la contraseña de un solo uso modhex publicada por Yubico, #1955). Nunca es primer factor: este servicio guarda la clave AES. DESACTIVADO DE FORMA PREDETERMINADA, y debe activarse para este reino (con yubiotp.offered) antes de que nadie pueda inscribir, reclamar o recibir una YubiKey OTP, de modo que ninguna se usa al iniciar sesión hasta entonces. Desactivado aquí, nadie puede INSCRIBIR, asignar ni reclamar una, aunque yubiotp.offered esté activado; a quien ya tiene una se le sigue pidiendo."
   },
   "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
     "en": "e93ab2adc3e581bd",
@@ -540,12 +576,24 @@
     "text": "Un enlace de un solo uso enviado por correo a la dirección VERIFICADA de la persona, que completa el inicio de sesión solo en el navegador que lo empezó. NIST SP 800-63B-4 sección 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", porque a un buzón se puede acceder con solo una contraseña, y el correo puede leerse en tránsito o desviarse. Desactivado de forma predeterminada por ese motivo; actívelo solo donde ese sea un riesgo aceptado."
   },
   "authn.SCHEMA.attributes.stsAuthnCertificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Un certificado de cliente TLS verificado: GET /tls/sign-in, o Continuar con su certificado en la pantalla de inicio de sesión."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Un certificado de cliente TLS verificado que no es una tarjeta inteligente: GET /tls/sign-in, o Continuar con su certificado en la pantalla de inicio de sesión. Un certificado de tarjeta inteligente es de la fila de tarjeta inteligente, que sigue a esta mientras no tiene valor (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Un certificado de tarjeta inteligente (PIV/CAC), en GET /tls/sign-in o en Continuar con su certificado: una clave PIV atestada, un certificado inscrito aquí con un perfil de ranura PIV, una tarjeta externa asignada por su UUID de tarjeta (piv.externalIssuers, stsPivCardUuid) o uno bajo un perfil de certSignIn.profiles marcado smartCard. AUSENTE, sigue a stsAuthnCertificatePrimary, de modo que una política escrita antes conserva su significado (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Un certificado de autenticación de tarjeta PIV (ranura 9e), cuya clave funciona sin PIN. También es una tarjeta inteligente, así que la fila de tarjeta inteligente también debe estar activada. AUSENTE, sigue el ajuste piv.cardAuthSignIn (#2031)."
   },
   "authn.SCHEMA.attributes.stsAuthnKerberosPrimary.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego con un ticket de Kerberos."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego con un ticket de Kerberos, salvo PKINIT con tarjeta inteligente, que tiene su propia fila y sigue a esta mientras no tiene valor (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego con un ticket de Kerberos que lleva el indicador pkinit-smartcard de este reino: el KDC lo emitió con PKINIT desde una tarjeta inteligente. AUSENTE, sigue a stsAuthnKerberosPrimary (#2031)."
   },
   "authn.SCHEMA.attributes.stsAuthnWalletPrimary.what": {
     "en": "c6b81177c7b7d944",
@@ -644,16 +692,16 @@
     "text": "Token de códigos de un solo uso (HOTP)"
   },
   "authn.MECHANISMS.hotp.what": {
-    "en": "608274a83bf567cd",
-    "text": "Un código de un solo uso RFC 4226 de un token basado en contador (#1955): la ranura OTP de una YubiKey, o el token de un proveedor que un administrador importó de un archivo de semillas PSKC. Nunca es un primer factor. Si está desactivado aquí, nadie puede INSCRIBIR ni reclamar uno; a quien ya tiene uno se le sigue pidiendo, como al titular de una aplicación de autenticación."
+    "en": "33918856782d0904",
+    "text": "Un código de un solo uso RFC 4226 de un token basado en contador (#1955): la ranura OTP de una YubiKey, o el token de un proveedor que un administrador importó de un archivo de semillas PSKC. Nunca es primer factor. DESACTIVADO DE FORMA PREDETERMINADA, y debe activarse para este reino antes de que nadie pueda inscribir, reclamar o recibir un token HOTP, de modo que ningún token HOTP se usa al iniciar sesión hasta entonces. Desactivado aquí, nadie puede INSCRIBIR ni reclamar uno; a quien ya tiene uno se le sigue pidiendo, como al titular de una aplicación de autenticación."
   },
   "authn.MECHANISMS.yubico-otp.label": {
     "en": "01f8772904333b7b",
     "text": "OTP de YubiKey"
   },
   "authn.MECHANISMS.yubico-otp.what": {
-    "en": "f8f7a6ee5bbb46a8",
-    "text": "Una OTP de YubiKey (la contraseña de un solo uso en modhex publicada por Yubico, #1955). Nunca un primer factor: este servicio guarda la clave AES. Desactivada aquí, nadie puede INSCRIBIR, asignar o reclamar una, aunque yubiotp.offered esté activado; a quien ya tiene una se le sigue pidiendo."
+    "en": "a5efe4af91b59cf2",
+    "text": "Una YubiKey OTP (la contraseña de un solo uso modhex publicada por Yubico, #1955). Nunca es primer factor: este servicio guarda la clave AES. DESACTIVADO DE FORMA PREDETERMINADA, y debe activarse para este reino (con yubiotp.offered) antes de que nadie pueda inscribir, reclamar o recibir una YubiKey OTP, de modo que ninguna se usa al iniciar sesión hasta entonces. Desactivado aquí, nadie puede INSCRIBIR, asignar ni reclamar una, aunque yubiotp.offered esté activado; a quien ya tiene una se le sigue pidiendo."
   },
   "authn.MECHANISMS.recoveryCode.label": {
     "en": "5bda8302b5ecf4d3",
@@ -684,16 +732,40 @@
     "text": "Certificado de cliente TLS"
   },
   "authn.MECHANISMS.certificate.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Un certificado de cliente TLS verificado: GET /tls/sign-in, o Continuar con su certificado en la pantalla de inicio de sesión."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Un certificado de cliente TLS verificado que no es una tarjeta inteligente: GET /tls/sign-in, o Continuar con su certificado en la pantalla de inicio de sesión. Un certificado de tarjeta inteligente es de la fila de tarjeta inteligente, que sigue a esta mientras no tiene valor (#2031)."
+  },
+  "authn.MECHANISMS.smartCard.label": {
+    "en": "055e41994165a328",
+    "text": "Certificado de tarjeta inteligente (PIV/CAC)"
+  },
+  "authn.MECHANISMS.smartCard.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Un certificado de tarjeta inteligente (PIV/CAC), en GET /tls/sign-in o en Continuar con su certificado: una clave PIV atestada, un certificado inscrito aquí con un perfil de ranura PIV, una tarjeta externa asignada por su UUID de tarjeta (piv.externalIssuers, stsPivCardUuid) o uno bajo un perfil de certSignIn.profiles marcado smartCard. AUSENTE, sigue a stsAuthnCertificatePrimary, de modo que una política escrita antes conserva su significado (#2031)."
+  },
+  "authn.MECHANISMS.smartCardCardAuth.label": {
+    "en": "7b5626b23b778ecd",
+    "text": "Clave de autenticación de tarjeta PIV (sin PIN)"
+  },
+  "authn.MECHANISMS.smartCardCardAuth.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Un certificado de autenticación de tarjeta PIV (ranura 9e), cuya clave funciona sin PIN. También es una tarjeta inteligente, así que la fila de tarjeta inteligente también debe estar activada. AUSENTE, sigue el ajuste piv.cardAuthSignIn (#2031)."
   },
   "authn.MECHANISMS.kerberos.label": {
     "en": "a8316dcb1a42420f",
     "text": "Kerberos (SPNEGO)"
   },
   "authn.MECHANISMS.kerberos.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego con un ticket de Kerberos."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego con un ticket de Kerberos, salvo PKINIT con tarjeta inteligente, que tiene su propia fila y sigue a esta mientras no tiene valor (#2031)."
+  },
+  "authn.MECHANISMS.pkinitSmartCard.label": {
+    "en": "62046e8418115023",
+    "text": "Kerberos PKINIT con tarjeta inteligente"
+  },
+  "authn.MECHANISMS.pkinitSmartCard.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego con un ticket de Kerberos que lleva el indicador pkinit-smartcard de este reino: el KDC lo emitió con PKINIT desde una tarjeta inteligente. AUSENTE, sigue a stsAuthnKerberosPrimary (#2031)."
   },
   "authn.MECHANISMS.wallet.label": {
     "en": "696e7476221a3382",
@@ -754,6 +826,10 @@
   "authn.sentences.emailTtlInactive": {
     "en": "20f80fea7980a662",
     "text": "un código o enlace enviado por correo es válido durante {{n}} segundos — INACTIVO: este dominio no puede enviar correo"
+  },
+  "authn.sentences.attestedAlways": {
+    "en": "7feb965c44fd5614",
+    "text": "todo inicio de sesión debe terminar en una credencial guardada en un token de hardware atestado (salvo el administrador integrado)"
   },
   "kinds.serviceAccount.label": {
     "en": "029b1070484594c2",

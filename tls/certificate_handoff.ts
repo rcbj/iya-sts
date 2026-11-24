@@ -281,6 +281,9 @@ class CertificateHandoff {
       username: String(kept.username), credentialId: String(kept.credentialId),
       serial: String(kept.serial || ''),
       amr: Array.isArray(kept.amr) ? kept.amr.map(String) : ['swk'],
+      // A smart card or not (#2031), as the listener's door found it.
+      smartCard: kept.smartCard === true,
+      cardAuth: kept.cardAuth === true,
       revocationSaid: String(kept.revocationSaid || ''),
       recordVerification: function recordVerification(): void {
         self.deps.log.debug('Entering recordVerification(). (handoff)');
@@ -391,6 +394,8 @@ class CertificateHandoff {
           credentialId: String(holder.credentialId || ''),
           serial: String(holder.serial || ''),
           amr: Array.isArray(holder.amr) ? holder.amr.map(String) : ['swk'],
+          smartCard: holder.smartCard === true,
+          cardAuth: holder.cardAuth === true,
           revocationSaid: String(holder.revocationSaid || ''),
           facts: holder.verificationFacts || {} }
       : { ok: false,

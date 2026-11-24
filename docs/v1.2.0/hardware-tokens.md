@@ -174,6 +174,15 @@ holds it. Policy can use that fact in two ways:
   whose policy names only `attested-hardware` therefore gets a sign-in
   screen with a passkey and, where the realm accepts one, a certificate,
   and no password field. A session made any other way is asked again.
+- **The realm's `requireAttestedHardware`** (#2031). At `always`, every
+  sign-in in the realm must end on a credential on an attested token, by
+  the same test; see [the authentication policy](authentication.md#attested-hardware-for-everybody).
+- **The smart-card rows** (#2031). A certificate whose key the register says
+  is on a smart card, or one enrolled under a PIV slot profile, signs in
+  under the authentication policy's *Smart card (PIV/CAC) certificate* row
+  rather than *TLS client certificate*, and a SPNEGO ticket carrying
+  `pkinit-smartcard` under *Kerberos PKINIT with a smart card*; see
+  [Smart cards](authentication.md#smart-cards-2031).
 - **XACML attributes**, sent as environment attributes on every browser
   issuance. No built-in rule reads them; they are there for a realm's own
   rules.
@@ -287,8 +296,12 @@ the family's `allowedProfiles`.
 
 The PIV profiles are issued to people only. **A `piv-card-auth` certificate
 does not sign anybody in** by default: the 9e key works without a PIN, for
-door readers. `piv.cardAuthSignIn` lets it sign in over TLS. PKINIT refuses
-it (`STS-PIV-0013`), and it carries neither PKINIT purpose anyway.
+door readers. The authentication policy's *PIV card authentication key (no
+PIN)* row lets it sign in over TLS; while the policy stores no value for that
+row it follows `piv.cardAuthSignIn` (#2031). PKINIT refuses it
+(`STS-PIV-0013`), and it carries neither PKINIT purpose anyway. A card
+authentication certificate is a smart card, so the policy's *Smart card
+(PIV/CAC) certificate* row must be on too.
 
 **The attestation's slot must fit the profile.** An attestation of slot 9e is
 accepted only for `piv-card-auth` (`STS-PIV-0037`), whatever profile the

@@ -2332,5 +2332,15 @@ requirement; what is this directory's:
   answers its STS-AUTHN-0464.
 * **WHAT HAS NO TEST**: the handoff over two real listeners and a real
   browser, and a request through a real TLS-terminating proxy.
+
+## A SMART CARD OR NOT (#2031, 2026-11-23)
+
+`smartCardOf(cert, gated, amr)` answers `{ smartCard, cardAuth }` from
+evidence only (`common/CLAUDE.md` 3bd, *The smart-card rows*). Both sign-in
+doors ask it: `startCertificateSessionIn()` puts it on the session's
+credential, `screenCertificateHolder()` on its answer (and the handoff row
+carries it), so the authentication policy's `smartCard` or `certificate` row
+is asked for the kind the certificate is. `cardAuthRefusalOf()` is unchanged;
+the rule it asks now reads the policy's `smartCardCardAuth` row.
   `tests/certificate_binding.js` holds both in process over stubs; no protocol
   job binds a second listener for it yet.

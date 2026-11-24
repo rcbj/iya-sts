@@ -9237,7 +9237,10 @@ namespace IyaSts.Api.Management {
     `email`?: boolean;
     `what`?: string;
     `disabled`?: boolean;
-    `disabledWhy`?: string
+    `disabledWhy`?: string;
+    @js(#{`description`:"On a row that follows another while the policy stores no value for it (#2031): the field key it follows, or `setting:<key>`."}) `follows`?: string;
+    @js(#{`description`:"What it follows, as a reader names it: the row's label, or the setting's key."}) `followsLabel`?: string;
+    @js(#{`description`:"Whether the row follows now: the profile holds no value for it."}) `following`?: boolean
   }
 
 @component model `WithContainerDefinitionContainerObjectClasses` is (`WithKeyAttributeLabel`)[];
@@ -9290,6 +9293,7 @@ namespace IyaSts.Api.Management {
     `enforced`?: boolean;
     `requireSecondFactor`?: StringOrNumericOrBooleanEtc8;
     `requireSecondFactorForAdministrators`?: StringOrNumericOrBooleanEtc8;
+    `requireAttestedHardware`?: StringOrNumericOrBooleanEtc8;
     `rememberedBrowserDays`?: StringOrNumericOrBooleanEtc8;
     `rememberedBrowserSkipsSecondFactor`?: StringOrNumericOrBooleanEtc8;
     `emailCodeTtlS`?: StringOrNumericOrBooleanEtc8;
@@ -9309,7 +9313,10 @@ namespace IyaSts.Api.Management {
     `emailLinkPrimary`?: StringOrNumericOrBooleanEtc8;
     `emailLinkSecondFactor`?: StringOrNumericOrBooleanEtc8;
     `certificatePrimary`?: StringOrNumericOrBooleanEtc8;
+    `smartCardPrimary`?: StringOrNumericOrBooleanEtc8;
+    `smartCardCardAuthPrimary`?: StringOrNumericOrBooleanEtc8;
     `kerberosPrimary`?: StringOrNumericOrBooleanEtc8;
+    `pkinitSmartCardPrimary`?: StringOrNumericOrBooleanEtc8;
     `walletPrimary`?: StringOrNumericOrBooleanEtc8;
     `walletSecondFactor`?: StringOrNumericOrBooleanEtc8;
     `federationPrimary`?: StringOrNumericOrBooleanEtc8
@@ -38958,12 +38965,12 @@ op `resetPasswordPolicy`(@js(#{`examples`:#[#{`profile`:"default"}]}) `requestBo
   }) @hoisted union post_admin_api_policies_save_authn_policy_b_application_json_totpSecondFactor_h2982 {boolean, string}
 
 @js(#{
-    `description`:"An RFC 4226 one-time code from a counter-based token (#1955): a YubiKey's OTP slot, or a vendor's token an administrator imported from a PSKC seed file. Never a first factor. Off here, nobody may ENROL or claim one; a person who already holds one is still asked for it, as an authenticator app's holder is. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false; a save that leaves it out keeps the profile's current value, so a client written before it is not refused and changes nothing.",
+    `description`:"An RFC 4226 one-time code from a counter-based token (#1955): a YubiKey's OTP slot, or a vendor's token an administrator imported from a PSKC seed file. Never a first factor. OFF BY DEFAULT, and it must be turned on for this realm before anybody can enrol, claim or be assigned an HOTP token, so no HOTP token is used at sign-in until it is. Off here, nobody may ENROL or claim one; a person who already holds one is still asked for it, as an authenticator app's holder is. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false; a save that leaves it out keeps the profile's current value, so a client written before it is not refused and changes nothing.",
     `$comb`:"oneOf"
   }) @hoisted union post_admin_api_policies_save_authn_policy_b_application_json_hotpSecondFactor_p4 {boolean, string}
 
 @js(#{
-    `description`:"A YubiKey OTP (Yubico's published modhex one-time password, #1955). Never a first factor: this service holds the AES key. Off here, nobody may ENROL, assign or claim one, even when yubiotp.offered is on; a person who already holds one is still asked for it. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false; a save that leaves it out keeps the profile's current value, so a client written before it is not refused and changes nothing.",
+    `description`:"A YubiKey OTP (Yubico's published modhex one-time password, #1955). Never a first factor: this service holds the AES key. OFF BY DEFAULT, and it must be turned on for this realm (with yubiotp.offered) before anybody can enrol, claim or be assigned a YubiKey OTP, so none is used at sign-in until it is. Off here, nobody may ENROL, assign or claim one, even when yubiotp.offered is on; a person who already holds one is still asked for it. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false; a save that leaves it out keeps the profile's current value, so a client written before it is not refused and changes nothing.",
     `$comb`:"oneOf"
   }) @hoisted union post_admin_api_policies_save_authn_policy_b_application_json_yubicoOtpSecondFactor_p5 {boolean, string}
 
@@ -38973,12 +38980,27 @@ op `resetPasswordPolicy`(@js(#{`examples`:#[#{`profile`:"default"}]}) `requestBo
   }) @hoisted union post_admin_api_policies_save_authn_policy_b_application_json_recoveryCodeSecondFactor_h2983 {boolean, string}
 
 @js(#{
-    `description`:"A verified TLS client certificate: GET /tls/sign-in, or Continue with your certificate on the sign-in screen. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true.",
+    `description`:"A verified TLS client certificate that is not a smart card: GET /tls/sign-in, or Continue with your certificate on the sign-in screen. A smart card certificate is `smartCardPrimary`'s, which follows this one while unset (#2031). (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true.",
     `$comb`:"oneOf"
   }) @hoisted union post_admin_api_policies_save_authn_policy_b_application_json_certificatePrimary_h2988 {boolean, string}
 
 @js(#{
-    `description`:"GET /authn/spnego with a Kerberos ticket. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true.",
+    `description`:"A smart card (PIV/CAC) certificate: an attested PIV key, a certificate enrolled here under a PIV slot profile, an outside card mapped by its card UUID, or one under a certSignIn.profiles profile marked smartCard (#2031). `true`, `false`, or `follow`: while the profile stores no value it follows `certificatePrimary`, and `follow` keeps it so. Default `follow`; a save that leaves it out keeps what the profile has now, following included, so a client written before it is not refused and changes nothing.",
+    `$comb`:"oneOf"
+  }) @hoisted union post_admin_api_policies_save_authn_policy_b_application_json_smartCardPrimary_p2031 {boolean, string}
+
+@js(#{
+    `description`:"A PIV card authentication (slot 9e) certificate, whose key works without a PIN; a smart card too, so `smartCardPrimary` must also be on (#2031). `true`, `false`, or `follow`: while the profile stores no value it follows the piv.cardAuthSignIn setting (false by default). Default `follow`; a save that leaves it out keeps what the profile has now.",
+    `$comb`:"oneOf"
+  }) @hoisted union post_admin_api_policies_save_authn_policy_b_application_json_smartCardCardAuthPrimary_p2031 {boolean, string}
+
+@js(#{
+    `description`:"GET /authn/spnego with a Kerberos ticket that carries this realm's pkinit-smartcard indicator (#2031). `true`, `false`, or `follow`: while the profile stores no value it follows `kerberosPrimary`. Default `follow`; a save that leaves it out keeps what the profile has now.",
+    `$comb`:"oneOf"
+  }) @hoisted union post_admin_api_policies_save_authn_policy_b_application_json_pkinitSmartCardPrimary_p2031 {boolean, string}
+
+@js(#{
+    `description`:"GET /authn/spnego with a Kerberos ticket, other than PKINIT with a smart card, which is `pkinitSmartCardPrimary`'s and follows this one while unset (#2031). (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true.",
     `$comb`:"oneOf"
   }) @hoisted union post_admin_api_policies_save_authn_policy_b_application_json_kerberosPrimary_h2989 {boolean, string}
 
@@ -39077,6 +39099,7 @@ op `saveAuthnPolicy`(@js(#{
         `profile`:"default",
         `requireSecondFactor`:"if-held",
         `requireSecondFactorForAdministrators`:"offer",
+        `requireAttestedHardware`:"no",
         `passwordPrimary`:true,
         `passwordSecondFactor`:true,
         `passkeyPrimary`:true,
@@ -39090,7 +39113,10 @@ op `saveAuthnPolicy`(@js(#{
         `emailLinkPrimary`:false,
         `emailLinkSecondFactor`:false,
         `certificatePrimary`:true,
+        `smartCardPrimary`:"follow",
+        `smartCardCardAuthPrimary`:"follow",
         `kerberosPrimary`:true,
+        `pkinitSmartCardPrimary`:"follow",
         `walletPrimary`:true,
         `walletSecondFactor`:true,
         `federationPrimary`:true,
@@ -39111,6 +39137,9 @@ op `saveAuthnPolicy`(@js(#{
     @js(#{
       `description`:"For anybody holding a console role (Admin Read or Admin Write) who holds no second factor. `offer`: they are shown the step that sets one up, with an Ignore button, at every sign-in. `always`: they must set one up before they are signed in — except the default realm's built-in administrator (admin.bootstrapUsername), who is only ever offered one, so a service is never left with nobody who can sign in. `if-held`: as everybody else, by the field above. WEAKER THAN `always`: an administrator on a password alone is an administrator anyone with the password is. Default `offer`."
     }) `requireSecondFactorForAdministrators`: "if-held" | "offer" | "always";
+    @js(#{
+      `description`:"#2031. `no`: no requirement beyond the mechanism rows. `always`: a session starts only where the credential that completed the sign-in (a passkey, a security key, a certificate or a smart card) is on an active hardware token whose attestation the register recorded; the default realm's built-in administrator is exempt. Default `no`; a save that leaves it out keeps the profile's current value."
+    }) `requireAttestedHardware`?: "no" | "always";
     `passwordPrimary`: BooleanOrString3;
     `passwordSecondFactor`: BooleanOrString3;
     `passkeyPrimary`: post_admin_api_policies_save_authn_policy_b_application_json_passkeyPrimary_h2980;
@@ -39124,7 +39153,10 @@ op `saveAuthnPolicy`(@js(#{
     `emailLinkPrimary`: BooleanOrString5;
     `emailLinkSecondFactor`: BooleanOrString5;
     `certificatePrimary`: post_admin_api_policies_save_authn_policy_b_application_json_certificatePrimary_h2988;
+    `smartCardPrimary`?: post_admin_api_policies_save_authn_policy_b_application_json_smartCardPrimary_p2031;
+    `smartCardCardAuthPrimary`?: post_admin_api_policies_save_authn_policy_b_application_json_smartCardCardAuthPrimary_p2031;
     `kerberosPrimary`: post_admin_api_policies_save_authn_policy_b_application_json_kerberosPrimary_h2989;
+    `pkinitSmartCardPrimary`?: post_admin_api_policies_save_authn_policy_b_application_json_pkinitSmartCardPrimary_p2031;
     `walletPrimary`: BooleanOrString6;
     `walletSecondFactor`: BooleanOrString6;
     `federationPrimary`: post_admin_api_policies_save_authn_policy_b_application_json_federationPrimary_h2992;

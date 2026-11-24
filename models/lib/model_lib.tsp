@@ -132,6 +132,14 @@ model MechanismRow {
    * one, not refused.
    */
   optional?: boolean;
+  /**
+   * What the row answers while the policy stores no value for it (#2031):
+   * another row's field key (`certificatePrimary`), or `setting:<key>` for a
+   * setting (`setting:piv.cardAuthSignIn`). A save may say `follow` to keep
+   * it following. Its `primary` is then only the value drawn as the
+   * built-in one where nothing it follows can be read.
+   */
+  follows?: string;
 }
 
 /**
