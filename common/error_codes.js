@@ -5561,6 +5561,51 @@ const CODES = [
       'persisted (#2092); the list built is answered and the next build ' +
       'makes it again.',
     spec: 'Nothing: GET /pki/ssh-user-krl/{scope} answers the KRL' },
+  { code: 'STS-PKI-0300',
+    summary: 'The named truststores\' directory half is not installed in ' +
+      'this process (#2118): a partial slot was refused, or a write was ' +
+      'asked of a process with no directory.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0301',
+    summary: 'A truststore name resolves to nothing in the realm (#2118): ' +
+      'no built-in, view, setting, SPIFFE bundle or named truststore has ' +
+      'it, or the named truststore holds no such certificate.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}; at a validation, the use case\'s own refusal' },
+  { code: 'STS-PKI-0302',
+    summary: 'A service-wide use case was assigned a truststore a realm ' +
+      'other than the default defines (#2118, D2): a handshake, an ' +
+      'outbound dial and the database carry no realm.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0303',
+    summary: 'A truststore assignment names no use case this service has, ' +
+      'one that is not assigned truststores (pins, its own hierarchy, an ' +
+      'admission rule), or no truststore at all (#2118).',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0304',
+    summary: 'A SPIFFE use case was assigned a truststore that is not a ' +
+      'SPIFFE bundle, or another use case a SPIFFE bundle (#2118, D5).',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0305',
+    summary: 'A new truststore\'s name is not 1 to 63 lower-case letters, ' +
+      'digits and hyphens, is a built-in name, or is taken in the realm ' +
+      '(#2118).',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0306',
+    summary: 'A named truststore is full: 64 per realm, 32 anchors or 64 ' +
+      'intermediates per truststore, or the directory itself (#2118).',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0307',
+    summary: 'A named truststore a use case of the realm still trusts was ' +
+      'asked to be deleted (#2118); the assignment is changed first.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },

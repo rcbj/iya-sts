@@ -136,6 +136,7 @@ import vcDidResolver = require('./vc_did_resolver');
 // requires persistence lazily, so it moves no route and closes no cycle.
 import clusterClaims = require('../cluster/cluster_claims');
 import capabilities = require('../cluster/cluster_capabilities');
+import truststores = require('../common/truststores');
 
 // THE HOLDER KEYS AN ldp_vc MAY BE BOUND TO (#38's follow-ups): the JOSE
 // algorithms whose keys a Data Integrity cryptosuite `vc_data_integrity.ts`
@@ -1288,8 +1289,8 @@ class VcIssuer {
   private attesterKeys(): any[] {
     const { log, config, errorCodes } = this.deps;
     log.debug("Entering VcIssuer.attesterKeys().");
-    const text = String(config.value(
-      'oid4vci.keyAttestationTrustedCertificates') || '');
+    const text = truststores.configuredPems('vc-key-attestation')
+      .join('\n');
     const blocks = text.match(
       /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
     const out: any[] = [];

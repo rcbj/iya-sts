@@ -143,6 +143,7 @@ import fedHttp = require('../federation/federation_http');
 import version = require('../common/version');
 // SAML's vocabularies (#1579). A leaf.
 import SamlModel = require('./saml_model');
+import truststores = require('../common/truststores');
 const USER_AGENT = version.userAgent('saml-sp-metadata');
 
 // What parse() answers. It answers rather than throws; see that method.
@@ -1560,7 +1561,13 @@ class SpMetadata {
     const { config } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering SpMetadata.realmAnchorValues().");
-    const raw = config.value('saml2.metadataTrustAnchors');
+    // Assigned truststores (#2118) answer as base64 DER, the setting's own
+    // form; unassigned, the setting is read exactly as before.
+    const assigned = truststores.namesFor('saml-metadata-signer').assigned;
+    const raw = assigned ? truststores.configuredPems('saml-metadata-signer')
+      .map(function (pem: string) {
+        return pem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+      }) : config.value('saml2.metadataTrustAnchors');
     const list = (Array.isArray(raw) ? raw : String(raw || '').split(','))
       .map(function (one) {
         return String(one).trim();

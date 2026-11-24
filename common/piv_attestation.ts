@@ -98,6 +98,7 @@ import stsCrypto = require('./crypto');
 import errorCodes = require('./error_codes');
 import audit = require('./audit');
 import CertificateTrust = require('./certificate_trust');
+import truststores = require('./truststores');
 
 type Json = any;
 
@@ -355,8 +356,10 @@ class PivAttestation {
         'different public key from the one in the request, so it says ' +
         'nothing about where the request\'s key lives.');
     }
+    // `piv-attestation`'s truststores, or unassigned piv.attestationAnchors
+    // (#2118); empty, the shipped Yubico roots as before.
     const anchors = p.pivAttestationAnchors(
-      this.setting('piv.attestationAnchors', ''));
+      truststores.configuredPems('piv-attestation').join('\n'));
     if (!anchors.anchors.length) {
       log.debug("Leaving PivAttestation.verify(). No anchor.");
       return this.refuse('STS-PIV-0006', 'No PIV attestation anchor is ' +
@@ -742,7 +745,7 @@ class PivAttestation {
       this.deps;
     log.debug("Entering PivAttestation.cardIdentityOf().");
     const issuers = p.certificateBundle(
-      this.setting('piv.externalIssuers', '')).certificates;
+      truststores.configuredPems('piv-card').join('\n')).certificates;
     if (!issuers.length) {
       log.debug("Leaving PivAttestation.cardIdentityOf(). Not configured.");
       return null;

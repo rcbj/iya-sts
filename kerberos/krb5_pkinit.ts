@@ -122,6 +122,7 @@ import asn1 = require('./krb5_asn1');
 import msgs = require('./krb5_messages');
 import principals = require('./krb5_principals');
 import codec = require('./krb5_pkinit_codec');
+import truststores = require('../common/truststores');
 
 type Json = any;
 
@@ -639,7 +640,10 @@ class Krb5Pkinit {
       return cryptoLib.pkinitSignerIdentifies(signer.sid, one);
     })[0];
     const realmId = String(realms.currentId() || '');
-    const anchorsPem: string[] = pki.trustAnchorsFor(realmId);
+    // What `pkinit` is assigned (#2118): this service's Root by default,
+    // and now an outside smart-card CA too where a truststore holds one.
+    const anchorsPem: string[] = truststores.resolve('pkinit',
+      { realmId: realmId, expandSystem: true }).anchors;
     const anchorEpis = this.trustedCertifiers(anchorsPem);
     if (!leaf) {
       log.debug('Leaving Krb5Pkinit.checkCertificate(). No signer cert.');

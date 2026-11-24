@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6080** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6088** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -58,7 +58,7 @@ is an ordinary outcome.
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 202
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 286
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 294
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
@@ -1147,6 +1147,14 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0297` | An SSH user certificate was asked for while pki.sshUserCaPqcOnly is on, and the realm has no ML-DSA SSH user CA: this runtime cannot generate ML-DSA, ssh-mldsa-65 is not in pki.sshUserCaAlgorithms, or the authority could not be made. No classical certificate is issued in its place. | The account API refuses the request with HTTP 503 |
 | `STS-PKI-0298` | A public SSH user CA request named an algorithm other than ssh-mldsa-65, or asked for the ML-DSA authority of a realm that has none. | GET /pki/ssh-user-ca/{scope} answers 400 or 404 |
 | `STS-PKI-0299` | A realm's SSH user KRL was built but its cache could not be persisted (#2092); the list built is answered and the next build makes it again. | Nothing: GET /pki/ssh-user-krl/{scope} answers the KRL |
+| `STS-PKI-0300` | The named truststores' directory half is not installed in this process (#2118): a partial slot was refused, or a write was asked of a process with no directory. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0301` | A truststore name resolves to nothing in the realm (#2118): no built-in, view, setting, SPIFFE bundle or named truststore has it, or the named truststore holds no such certificate. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors}; at a validation, the use case's own refusal |
+| `STS-PKI-0302` | A service-wide use case was assigned a truststore a realm other than the default defines (#2118, D2): a handshake, an outbound dial and the database carry no realm. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0303` | A truststore assignment names no use case this service has, one that is not assigned truststores (pins, its own hierarchy, an admission rule), or no truststore at all (#2118). | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0304` | A SPIFFE use case was assigned a truststore that is not a SPIFFE bundle, or another use case a SPIFFE bundle (#2118, D5). | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0305` | A new truststore's name is not 1 to 63 lower-case letters, digits and hyphens, is a built-in name, or is taken in the realm (#2118). | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0306` | A named truststore is full: 64 per realm, 32 anchors or 64 intermediates per truststore, or the directory itself (#2118). | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0307` | A named truststore a use case of the realm still trusts was asked to be deleted (#2118); the assignment is changed first. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-ENROLL
 

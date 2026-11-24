@@ -328,6 +328,7 @@ holds is the table above; what each module is for is that directory's
 | `common/applications.js` | `setFgaLifecycle` (an application's fine-grained policy created and retired with it), filled by `xacml/fga_policies.ts` at 23c (#564) | `common/CLAUDE.md` |
 | `common/fga_gate.ts` | `setDecider` (one RFC 9396 detail of an application that enforces fine-grained authorization; EMPTY REFUSES), filled by `xacml/fga_pep.ts` at 23c (#564 P3) | `common/CLAUDE.md`, `xacml/CLAUDE.md` |
 | `common/signer_truststore.ts` | `setDirectory` (a realm's signer truststore entries listed, written and removed), filled by `ldap/ldap_server.js` (#1360) | `common/CLAUDE.md` (3dd) |
+| `common/truststores.ts` | `setDirectory` (a realm's named truststores, their certificates and its use-case assignments under `ou=truststores`), filled by `ldap/ldap_server.js` (#2118) | `common/CLAUDE.md` (*Named truststores*) |
 | `authzen/authzen_admin.ts` | `setDirectory` (an entry located, a group's members, a person's `stsAuthzenApplication` written), filled by `ldap/ldap_server.js` (#563) | `authzen/CLAUDE.md` |
 | `xacml/xacml_pep_binding.ts` | `setDirectory` (a PEP's entry located with its binding, `stsPepApplication` written and nothing else, its holders), filled by `ldap/ldap_server.js` (#2025) | `xacml/CLAUDE.md` |
 | `common/openpgp_keys.ts` | `setDirectory` (a person located with their S/MIME values, the five OpenPGP/mail-encryption attributes written, a person by `mail`), filled by `ldap/ldap_server.js` (#1955 P6) | `common/CLAUDE.md` (`openpgp_keys.ts`) |
