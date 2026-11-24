@@ -1,6 +1,7 @@
 {
   "yes": "oo",
   "no": "hindi",
+  "follows": "kapareho ng {row}",
   "configuration": "Configuration",
   "schema": "Schema",
   "saveProfile": "I-save ang profile",

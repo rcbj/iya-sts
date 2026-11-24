@@ -112,6 +112,9 @@ interface Mechanism {
   // keeps the profile's current value, so a client written before the row
   // is not refused. Both are off by default.
   optional?: boolean;
+  // #2031: what the row answers while the policy stores no value for it —
+  // another row's field key, or `setting:<key>`. See FOLLOWING, below.
+  follows?: string;
   // Written on the mechanism's attribute in the model; set below.
   what?: string;
 }
@@ -131,6 +134,7 @@ interface PolicyField {
   role?: Role;
   email?: boolean;
   optional?: boolean;
+  follows?: string;
   what: string;
 }
 
@@ -237,8 +241,28 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
   adminAsked: 'administrators are asked as everybody else is',
   emailTtl: 'an emailed code or link is valid for {{n}} seconds',
   emailTtlInactive: 'an emailed code or link is valid for {{n}} seconds — ' +
-    'INACTIVE: this realm cannot send mail'
+    'INACTIVE: this realm cannot send mail',
+  attestedAlways: 'every sign-in must end on a credential held on an ' +
+    'attested hardware token (the built-in administrator excepted)'
 });
+
+// ---------------------------------------------------------------------------
+// A ROW THAT FOLLOWS ANOTHER WHILE UNSET (#2031, rcbj's decision of
+// 2026-11-23: smart-card rows beside the generic ones). The smart-card rows
+// split a path out of a row that governed it until now — a PIV card out of
+// `certificatePrimary`, PKINIT with a smart card out of `kerberosPrimary`,
+// the card authentication key out of the `piv.cardAuthSignIn` setting. A
+// policy stored before they existed stores no value for them, and must keep
+// meaning what it meant: so a row with `follows` (the model's mechanism row)
+// answers what it follows whenever the entry holds no value for it, and says
+// so in `sources`. That is a third state, not a default: a save may send
+// FOLLOW to keep it, and writes no attribute, so the row goes on following
+// later changes of the row it follows. A save that omits the row keeps
+// whatever it is now, following included (`optional`).
+// ---------------------------------------------------------------------------
+/** The value a save sends to keep a row following. */
+const FOLLOW = 'follow';
+const FOLLOW_SETTING = 'setting:';
 
 // ---------------------------------------------------------------------------
 // THE MECHANISMS, written in models/directory/policy_authn.tsp as its
@@ -309,6 +333,7 @@ const FIELDS: PolicyField[] =
     out.push({ key: key, attribute: attributeOf(key), type: 'bool',
                dflt: dflt, mechanism: m.id, role: role, email: !!m.email,
                optional: !!m.optional,
+               follows: m.follows || undefined,
                label: m.label + (role === 'primary' ? ' — as a first factor'
                                    : ' — as a second factor'),
                what: TABLE_WHAT.get(attributeOf(key)) });
@@ -582,6 +607,18 @@ class AuthnPolicy {
                  'of those who hold one.');
       }
     }
+    // ATTESTED HARDWARE FOR EVERYBODY (#2031) needs a way in that CAN be on
+    // attested hardware: a passkey, a security key, a certificate or a
+    // smart card.
+    if (values.requireAttestedHardware === 'always' &&
+        !values.passkeyPrimary && !values.securityKeySecondFactor &&
+        !values.certificatePrimary && !values.smartCardPrimary) {
+      out.push('Attested hardware is required of every sign-in, but no ' +
+               'mechanism that can be on a hardware token (a passkey, a ' +
+               'security key, a TLS client certificate or a smart card) is ' +
+               'accepted, so nobody could finish signing in. Turn one on, ' +
+               'or do not require attested hardware.');
+    }
     log.debug("Leaving AuthnPolicy.crossFieldProblems().");
     return out;
   }
@@ -672,6 +709,11 @@ class AuthnPolicy {
         sources[field.key] = found.from === 'realm' ? 'directory'
           : 'default realm';
       });
+    }
+    // THE ROWS THAT FOLLOW (#2031): every one the entry holds no value for,
+    // the realm's own entry, the default realm's, or none at all.
+    this.resolveFollowing(values, sources);
+    if (entry) {
       this.crossFieldProblems(values).forEach(function (problem) {
         problems.push(problem);
       });
@@ -691,6 +733,89 @@ class AuthnPolicy {
       enforced: true
     }, values) as AuthnProfile;
     log.debug('Leaving AuthnPolicy.read(). From ' + found.from + '.');
+    return out;
+  }
+
+  // What a following row answers (#2031): the row it follows, or the
+  // setting it follows read in the ambient realm. A setting that cannot be
+  // read answers the row's built-in value.
+  private followedValue(field: PolicyField,
+                        values: Record<string, unknown>): boolean {
+    const { log } = this.deps;
+    log.debug("Entering AuthnPolicy.followedValue(). " + field.key);
+    const target = String(field.follows || '');
+    if (target.indexOf(FOLLOW_SETTING) !== 0) {
+      log.debug("Leaving AuthnPolicy.followedValue(). A row.");
+      return values[target] === undefined ? !!field.dflt : !!values[target];
+    }
+    let out = !!field.dflt;
+    try {
+      // LAZY: `config.js` requires nothing here, but a leaf asks it only
+      // when a row follows a setting.
+      const raw = require('./config').value(
+        target.slice(FOLLOW_SETTING.length));
+      out = raw === true || /^(true|on|1)$/i.test(String(raw));
+    } catch (e) {
+      log.debug("Caught in AuthnPolicy.followedValue(): " +
+                ((e && e.message) || e));
+      // No settings table (a library tested on its own): the built-in
+      // value, which for every such row is the setting's own default.
+      out = !!field.dflt;
+    }
+    log.debug("Leaving AuthnPolicy.followedValue(). A setting: " + out);
+    return out;
+  }
+
+  // Fills every following row the policy holds no value for (#2031), in
+  // place, and marks its source `follows <what>`. A row's source is
+  // `built-in` exactly when no entry gave it a value.
+  private resolveFollowing(values: Record<string, unknown>,
+                           sources: Record<string, string>): void {
+    const { log } = this.deps;
+    log.debug("Entering AuthnPolicy.resolveFollowing().");
+    FIELDS.forEach((field) => {
+      if (!field.follows || sources[field.key] !== 'built-in') {
+        return;
+      }
+      values[field.key] = this.followedValue(field, values);
+      sources[field.key] = 'follows ' + String(field.follows)
+        .replace(FOLLOW_SETTING, '');
+    });
+    log.debug("Leaving AuthnPolicy.resolveFollowing().");
+  }
+
+  /**
+   * Whether a row of a profile is following another (#2031): the profile
+   * holds no value for it, and it answers what it follows.
+   *
+   * @param profile - a profile as `read()` answers it
+   * @param key - the field key
+   * @returns true while it follows
+   */
+  following(profile: AuthnProfile, key: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering AuthnPolicy.following(). " + key);
+    const field = FIELD_BY_KEY[key];
+    const out = !!(field && field.follows && profile && profile.sources &&
+      String(profile.sources[key] || '').indexOf('follows ') === 0);
+    log.debug("Leaving AuthnPolicy.following(). " + out);
+    return out;
+  }
+
+  /**
+   * `no` or `always` (#2031): whether every sign-in must end on a
+   * credential held on an attested hardware token.
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns `no` or `always`
+   */
+  requireAttestedHardware(profile?: AuthnProfile | null): string {
+    const { log } = this.deps;
+    log.debug("Entering AuthnPolicy.requireAttestedHardware().");
+    const rules = profile || this.read(DEFAULT_PROFILE);
+    const out = String(rules.requireAttestedHardware) === 'always'
+      ? 'always' : 'no';
+    log.debug("Leaving AuthnPolicy.requireAttestedHardware(). " + out);
     return out;
   }
 
@@ -926,6 +1051,9 @@ class AuthnPolicy {
           ? SENTENCES.adminOffer
           : SENTENCES.adminAsked)
     ];
+    if (String(rules.requireAttestedHardware) === 'always') {
+      out.push(SENTENCES.attestedAlways);
+    }
     const email = MECHANISMS.some((m) => {
       return m.email && (this.allows(m.id, 'primary', rules) ||
                          this.allows(m.id, 'second-factor', rules));
@@ -1443,9 +1571,10 @@ class AuthnPolicy {
     const body = given || {};
     const values: Record<string, number | boolean | string> = {};
     const problems: string[] = [];
+    const following: string[] = [];
     FIELDS.forEach((field) => {
       let raw = body[field.key];
-      if (raw === undefined && field.type === 'bool' &&
+      if (raw === undefined && field.type === 'bool' && !field.follows &&
           body.form === 'console') {
         raw = 'false';
       }
@@ -1453,6 +1582,14 @@ class AuthnPolicy {
       // `hotp`, P5's `yubico-otp`): a save that does not name it keeps
       // its built-in value rather than being refused, so an older client
       // still saves.
+      // A ROW THAT FOLLOWS (#2031): its built-in state IS following, and
+      // FOLLOW keeps it so. Its value is filled below, once every row it
+      // may follow has one.
+      if (field.follows && (raw === undefined ||
+          (typeof raw === 'string' && raw.trim().toLowerCase() === FOLLOW))) {
+        following.push(field.key);
+        return;
+      }
       if (raw === undefined && field.optional) {
         raw = String(field.dflt);
       }
@@ -1472,6 +1609,9 @@ class AuthnPolicy {
       }
       values[field.key] = parsed.value;
     });
+    following.forEach((key) => {
+      values[key] = this.followedValue(FIELD_BY_KEY[key], values);
+    });
     if (!problems.length) {
       this.crossFieldProblems(values).forEach(function (problem) {
         problems.push(problem);
@@ -1479,7 +1619,7 @@ class AuthnPolicy {
     }
     log.debug('Leaving AuthnPolicy.validate(). ' + problems.length +
               ' problem(s).');
-    return { values: values, problems: problems };
+    return { values: values, problems: problems, following: following };
   }
 
   // The email rows that a save would turn ON, which is what the mail check
@@ -1522,10 +1662,12 @@ class AuthnPolicy {
     // `validate()` alone would take the built-in default.
     const current = this.read(String(name || DEFAULT_PROFILE));
     const filled: Record<string, any> = Object.assign({}, given || {});
-    FIELDS.forEach(function (field) {
+    FIELDS.forEach((field) => {
       if (field.optional && filled[field.key] === undefined &&
           filled.form !== 'console') {
-        filled[field.key] = String(current[field.key]);
+        // A row following now goes on following (#2031).
+        filled[field.key] = this.following(current, field.key) ? FOLLOW
+          : String(current[field.key]);
       }
     });
     const checked = this.validate(filled);
@@ -1557,6 +1699,10 @@ class AuthnPolicy {
       description: String((given && given.description) || '').slice(0, 1024)
     };
     FIELDS.forEach(function (field) {
+      // A following row is written as no attribute at all (#2031).
+      if (checked.following.indexOf(field.key) >= 0) {
+        return;
+      }
       const value = checked.values[field.key];
       attributes[field.attribute] = field.type === 'bool'
         ? (value ? 'TRUE' : 'FALSE') : String(value);
@@ -1693,6 +1839,9 @@ export = {
   configuredSecondFactor: slot.forward('configuredSecondFactor'),
   requireSecondFactorForAdministrators:
     slot.forward('requireSecondFactorForAdministrators'),
+  requireAttestedHardware: slot.forward('requireAttestedHardware'),
+  following: slot.forward('following'),
+  FOLLOW: FOLLOW,
   emailSettings: slot.forward('emailSettings'),
   rememberedBrowser: slot.forward('rememberedBrowser'),
   describe: slot.forward('describe'),

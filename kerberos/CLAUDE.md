@@ -2015,6 +2015,17 @@ code, the refusal and PREAUTH_FAILED, FAST and OTP with its own client in
 
 ## PKINIT: A CERTIFICATE AS THE PRE-AUTHENTICATION (#179, 2026-10-05)
 
+**THE AUTHENTICATION POLICY'S `pkinitSmartCard` ROW (#2031, 2026-11-23).**
+A SPNEGO session whose ticket carries this realm's `pkinit-smartcard`
+indicator earns `amr ["hwk","sc"]` (`krb5_tokens.factorsFor()`), and
+`authn.ts`'s `authnPolicyRefusal()` asks the policy's *Kerberos PKINIT with a
+smart card* row for it (STS-AUTHN-0591) rather than `kerberos`. While the
+policy stores no value for that row it follows `kerberosPrimary`. The AS
+exchange itself is not gated by either row, as it never was by `kerberos`;
+the PIV card authentication key is still refused at PKINIT by
+`piv_attestation.signInRefusal()`, which now asks the policy's
+`smartCardCardAuth` row (following `piv.cardAuthSignIn` while unset).
+
 **THE HOLE #173 LEFT.** A product person who holds or owes a second factor is
 refused a ticket on the password alone, and FAST with OTP is the way in for
 an authenticator app. A person whose only second factor is a SECURITY KEY had

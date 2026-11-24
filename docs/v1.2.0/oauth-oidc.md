@@ -176,9 +176,16 @@ is one a conforming client must reject. The inserted form behaves like its
   otherwise the person is asked to sign in again. A Logout Token or an access
   token is not an ID Token, and is refused as a hint even when this realm signed
   it for the same client.
-* **`display`** (`page`, `popup`, `touch`), **`ui_locales`** and
-  **`claims_locales`** are accepted. There is one sign-in page and it is in
-  English, so each is answered in English, which the specification permits.
+* **`display`** (`page`, `popup`, `touch`) is accepted. There is one sign-in
+  page, and it is what all three get. `wap` is not claimed.
+* **`ui_locales`** is accepted and honoured on the sign-in screens and the
+  consent screen. The discovery document's `ui_locales_supported` lists the
+  locales the language chooser offers. A locale with no catalog is skipped.
+  See [Languages and regions](languages.md#which-language-a-page-is-drawn-in).
+* **`claims_locales`** is accepted. A claim value in the directory has no
+  language tag, so each claim is returned in the one language it is stored
+  in. `claims_locales_supported` is `en-US`. An unsupported locale is not an
+  error.
 
 The authorization endpoint takes **`GET` and `POST`** `/oauth2/authorize`; a
 POST carries the request form-serialized (`application/x-www-form-urlencoded`,

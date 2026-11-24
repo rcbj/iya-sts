@@ -1859,6 +1859,45 @@ service deployed as cells each tier has its own sweep since #1313 — see
 caught (the wholesale realm delete, `removedHere` ignored, the tombstone guard,
 the list merge, the session rank).
 
+### The front process catches up on a settings write (#2019; rcbj, 2026-11-23)
+
+**A realm row or a setting a request worker wrote reached the front process
+only at its next change-log pull**, and the front decides some things before
+dispatch on its own copy (the RFC 9440 proxy's pins and ranges,
+`common/forwarded_client_certificate.ts`). On PostgreSQL that pull is the
+LISTEN/NOTIFY nudge, sent after the COMMIT and coalesced 25 ms; on MariaDB
+the one-second poll; so `tests/protocol/sts_cert_sign_in_profiles.js` E3,
+sending the proxy's request the moment `/admin-api/realms/set` answered, met
+the replaced range in single-node and mariadb. rcbj chose **catch up on
+change**, with no per-request store round trip. `persistence.js`'s header
+block *THE SETTINGS GENERATION* argues it; the facts:
+
+* **`settingsGeneration()`** moves in `realmsChanged()` and
+  `configChanged()`, where a realm row or a process-wide setting is marked
+  dirty — every create, update, removal and override, nothing else.
+* **The answer carries it.** A worker marks an answer during which it moved
+  (`x-sts-pool-settings`, set in `writeHead()`, which on every database store
+  runs after the commit, `cluster/cluster_barrier.js` rule 2), and the front
+  forwards none of it until `syncSettingsNow()` — this module's log and the
+  global tier's, where a realm's row lives in a service of cells — has
+  pulled. One catch-up in flight and at most one queued behind it, shared.
+* **The commit nudges.** After a worker's `saveRealms()` or
+  `saveOverrides()` commits, `announceSettingsCommitted()` posts
+  `{ settingsCommitted }` on the worker channel and the front wakes its
+  pulls (`nudgeSettingsPull()`, which `wake()` coalesces) — for a write
+  with no answer to ride on, a cluster job's body.
+* **Every store mode**: memory and ldif have no request workers (dispatch
+  without coordination is refused), so the front is the writer; postgres,
+  mariadb and each cell's front catch up as above.
+* **What it does not cover: another NODE.** In cluster mode a write on node
+  A reaches node B's front only by the log's own nudge (NOTIFY, or MariaDB's
+  poll), because no answer from A passes through B. That is why E1/E3's
+  retry stays: the balancer may send the proxy's request to B.
+* A catch-up that runs out (syncNow()'s own deadline) forwards the answer
+  anyway, logged once a minute under STS-WORKER-0058.
+* `tests/front_settings_catch_up.js`; it is not periodic work
+  (`tests/no_periodic_timers.js` sees no timer).
+
 ### What still does not coordinate
 
 * **The sockets.** The KDC, both LDAP listeners, the main port and SPIFFE's

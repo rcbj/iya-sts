@@ -6248,8 +6248,8 @@
     "text": "Klientcertifikat för TLS-terminerande proxyservrar (SHA-256)"
   },
   "tls.trustedProxyCertificates|description": {
-    "en": "5ebd0abc01f9dfdf",
-    "text": "SHA-256-fingeravtrycken för de klientcertifikat som en TLS-terminerande proxy presenterar när den ansluter hit. För en begäran på en anslutning som presenterar ett av dem, från en adress i tls.trustedProxyAddresses, verifieras dess huvuden Client-Cert och Client-Cert-Chain enligt RFC 9440 här mot klientens förtroendelager och återkallelse, och det certifikatet står för handskakningens vid varje dörr. Båda inställningarna krävs; från varje annan avsändare tas de två huvudena bort och registreras (STS-TLS-0072) och läses aldrig. TOMT, standard, läser ett certifikat endast från handskakningen."
+    "en": "16cfd6503c70990f",
+    "text": "SHA-256-fingeravtrycken för de klientcertifikat som en TLS-terminerande proxy presenterar när den ansluter hit. I hex (kolon och prefixet sha256: tillåts). spki: före samma hex fäster i stället SHA-256 för certifikatets SubjectPublicKeyInfo, som en förnyelse med samma nyckel behåller; en felaktig post avvisas (STS-TLS-0077). För en begäran på en anslutning som presenterar ett av dem, från en adress i tls.trustedProxyAddresses, verifieras dess huvuden Client-Cert och Client-Cert-Chain enligt RFC 9440 här mot klientens förtroendelager och återkallelse, och det certifikatet står för handskakningens vid varje dörr. Båda inställningarna krävs; från varje annan avsändare tas de två huvudena bort och registreras (STS-TLS-0072) och läses aldrig. TOMT, standard, läser ett certifikat endast från handskakningen."
   },
   "tls.trustedProxyAddresses|label": {
     "en": "4bc0cf2135bd81af",

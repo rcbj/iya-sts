@@ -411,6 +411,18 @@ model AuthenticationPolicy {
   @fromAttr(#{attr: "stsAuthnKerberosPrimary"})
   `kerberosPrimary`?: boolean;
 
+  @fromAttr(#{attr: "stsAuthnSmartCardPrimary"})
+  `smartCardPrimary`?: boolean;
+
+  @fromAttr(#{attr: "stsAuthnSmartCardCardAuthPrimary"})
+  `smartCardCardAuthPrimary`?: boolean;
+
+  @fromAttr(#{attr: "stsAuthnPkinitSmartCardPrimary"})
+  `pkinitSmartCardPrimary`?: boolean;
+
+  @fromAttr(#{attr: "stsAuthnRequireAttestedHardware"})
+  `requireAttestedHardware`?: string;
+
   @fromAttr(#{attr: "stsAuthnWalletPrimary"})
   `walletPrimary`?: boolean;
 

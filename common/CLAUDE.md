@@ -2350,6 +2350,23 @@ each mode guarantees, exactly:
   START (`startSyncRound()`), which the sharing rule already allowed, so a
   keyed round leaves no worker looking behind. `tests/request_ryw_session.js`.
 
+**THE FRONT PROCESS CATCHES UP ON A SETTINGS ANSWER (found in #2019; rcbj,
+2026-11-23: "catch up on change").** The read barrier is a worker's: a
+request the front DISPATCHES runs none in the front, yet every middleware
+`app.js` installs above the pool — `forwarded_client_certificate.ts` first
+— decides on the front's copy of the realm. So a worker marks an answer
+during which a realm row or a setting changed (`x-sts-pool-settings`,
+`RequestWorker.markSettingsAnswer()`, wrapping `writeHead()`), and
+`request_pool.js`'s `holdForSettings()` forwards it only once
+`persistence.syncSettingsNow()` has caught up (both tiers' logs; one
+catch-up in flight and one queued, shared; STS-WORKER-0058 when it runs out,
+and the answer goes anyway). A worker's committed realm or settings save
+also posts `{ settingsCommitted }`, which wakes the front's pull
+(`receiveSettingsCommitted()`), for a write with no answer to ride on. No
+timer and no store round trip on an unmarked request.
+`persistence/CLAUDE.md` has what it covers and what it does not;
+`tests/front_settings_catch_up.js` holds it.
+
 **A RUN-OUT BARRIER IS A REFUSAL, NEVER A STALE ANSWER (2026-11-14).**
 The barrier gave up at a hard-coded 5,000 ms and SERVED the request "from what
 that worker has", on the argument that reaching it meant the store was unwell.
@@ -8120,10 +8137,28 @@ SLH-DSA has no mechanism here. `docs/v1.2.0/hsm.md` is the operator half.
   initialised the module again posts on a BroadcastChannel named for the
   module's path — every thread hears it, no plumbing through the pool — and
   the others move their epoch and do not finalize for an outage met on a
-  session opened before it (`tests/pkcs11_signing.js` N). What is left is the
-  message's own flight time: two threads finalizing inside it still cost
-  each other's retries. A SharedArrayBuffer would close that too, at the
-  price of handing one to every request worker through the pool; not done.
+  session opened before it (`tests/pkcs11_signing.js` N). **And the
+  reconnect is SINGLE-FLIGHT PER PROCESS** (rcbj, 2026-11-23: "fix it").
+  The message's flight time left two threads that met one outage in the
+  same instant each finalizing the module, the second after the first had
+  reconnected, so the first's retry failed (`STS-KEYS-0201`) — a spurious
+  failed signature or decryption during an outage. The race was between
+  JavaScript threads (the front and the request workers, each with its own
+  binding and pool), not libuv's pool. Now a SharedArrayBuffer made by the
+  first thread to load `crypto_impl/pkcs11.js` (the front, at `crypto.js`'s
+  require, before any worker starts) reaches every Worker through
+  `worker_threads.setEnvironmentData()`, which a new Worker inherits — no
+  plumbing through the pool. Per module path it holds a lock and a
+  GENERATION; a session remembers the generation it was opened under. A
+  thread that must re-initialise takes the lock (`Atomics.waitAsync`, a
+  ref'd message port holding its loop open for the wait); if the generation
+  moved since its session was opened another thread reconnected, and it
+  adopts that result instead of finalizing; otherwise it re-initialises and
+  moves the generation. A holder that never lets go is taken over after
+  30 s (`STS-KEYS-0213`); the blocking door waits at most 2 s
+  (`Atomics.wait`) and is refused `STS-KEYS-0212` past it.
+  `tests/pkcs11_reconnect.js` holds it: two worker threads meeting one
+  outage finalize once and both sign after it (fake module and SoftHSM2).
 * **A SIGNING KEY IN THE HSM TRAVELS WHERE A PEM TRAVELS.** Its "PEM" is a
   reference, `pkcs11-key:v1:<b64url {token, id, kty, crv, bits}>` — what
   `export()` answers and what `keystore.js` seals — and `privateKeyFrom()`
@@ -12413,7 +12448,17 @@ is exactly what it was. The headers of the three files argue them in full.
   only from a proxy named by BOTH `tls.trustedProxyCertificates` (the SHA-256
   of the client certificate it connects with, which must have verified) AND
   `tls.trustedProxyAddresses`; one without the other trusts nobody
-  (STS-TLS-0076). The forwarded chain is verified HERE to the client
+  (STS-TLS-0076). **A pin may name the KEY** (#2012, rcbj 2026-11-23: "accept
+  both"): `spki:<hex>` is the SHA-256 of the certificate's SubjectPublicKeyInfo,
+  read off its DER through `crypto.certificateSpkiDer()`, so a proxy
+  certificate renewed under the same key keeps matching; a bare value is the
+  whole certificate's DER hash, as before, in the same hex form (colons, a
+  `sha256:` prefix). `pinOf()` is the one reading, shared with
+  `certificate_pins.ts`'s inventory row (an SPKI pin is listed `spki:<hex>`,
+  `(key)` after its place). A malformed entry is refused at the WRITE by the
+  module's write rule (`STS-TLS-0077`) and skipped, as always, where it was
+  already stored or came from the environment — a write rule, not a type
+  check, so a stored value that predates the rule is not re-judged. The forwarded chain is verified HERE to the client
   truststore (`pki.verifyPathToAnchors()`), and the request's `req.socket` is
   replaced, for that request, by a Proxy over the real socket whose
   `authorized`, `getPeerCertificate()` and `getPeerX509Certificate()` answer
@@ -12424,8 +12469,17 @@ is exactly what it was. The headers of the three files argue them in full.
   through `request_pool.js`'s `peerOf()` and never the headers; from any other
   sender both headers are deleted and recorded (STS-TLS-0072, at most once a
   minute). `oauth2_bcp.js`'s `no-certificate-header` note says the same.
+  **Its settings are the front's copy, CAUGHT UP ON CHANGE** (#2019's
+  finding; rcbj, 2026-11-23): a `/admin-api` write of the proxy settings is
+  answered by a request worker, and the front holds that answer until its
+  own realm and settings logs have the write — so the proxy's next request
+  meets the new pins and ranges on that node. `persistence/CLAUDE.md`, *The
+  front process catches up on a settings write*.
 * **THE HANDOFF** (`certSignIn.handoff`, rcbj: an option, off by default) is
   `tls/CLAUDE.md`'s, with the `certificate-sign-in` hosted application.
+* **A PROFILE MAY SAY `smartCard: true`** (#2031): the certificates it
+  covers sign in under the authentication policy's smart card row
+  (`identityOf()` answers `smartCard`). Absent is false.
 * **WHAT HAS NO TEST**: a real handshake through a profile, the handoff over
   two real listeners, and a real TLS-terminating proxy. `tests/certificate_binding.js`
   holds the logic in process over certificates made at run time; nothing has
@@ -14318,6 +14372,46 @@ the sign-in closed. A person names none of their own.
 ways round, at the issuance gate), and `tests/authn_policy.js` the module,
 the inheritance, the mail guard, the retired settings and a kind registered
 later.
+
+### The smart-card rows and attested hardware (#2031, rcbj 2026-11-23)
+
+Three mechanism rows split a smart card out of the row that governed it:
+`smartCard` (out of `certificate`), `pkinitSmartCard` (out of `kerberos`)
+and `smartCardCardAuth` (out of the `piv.cardAuthSignIn` setting). Each is
+first-factor only and `optional`. Three rules a maintainer must keep:
+
+* **A ROW WITH `follows` IS A THIRD STATE, NOT A DEFAULT.** The model's
+  mechanism row names what it follows (a field key, or `setting:<key>`).
+  `read()` answers that value whenever the entry stores no value for the
+  row (`resolveFollowing()`, `sources` = `follows <what>`); a save may send
+  `follow`, which writes NO attribute; a save that omits the row keeps what
+  it is now, following included. So a policy stored before the rows keeps
+  its meaning. `following(profile, key)` is the one reader of the state; the
+  console draws a third radio (FOLLOW) from the view's `follows`,
+  `followsLabel` and `following`.
+* **WHAT IS A SMART CARD IS EVIDENCE, DECIDED IN `tls/tls_server.js`'s
+  `smartCardOf()`** — `sc` in the register's amr, a PIV slot profile in the
+  enrolment register (`piv_attestation.enrolledPivOf()`), an outside card's
+  `pivCard` identity, or a `certSignIn.profiles` profile with
+  `smartCard: true` — and carried on the session's credential
+  (`smartCard`, `cardAuth`). `authn.ts`'s `authnPolicyRefusal()` maps a
+  smart-card certificate to `smartCard` (STS-AUTHN-0590) and a Kerberos
+  session with `sc` to `pkinitSmartCard` (0591). The screen offers a
+  certificate while either certificate row is on and its act asks the one
+  the certificate is (0593). `piv_attestation.signInRefusal()` asks
+  `smartCardCardAuth` (still STS-PIV-0013); a card-auth key needs `smartCard`
+  too, which is what keeps the unset policy equal to the old two conditions.
+* **`requireAttestedHardware` (`no` | `always`) IS A REQUIREMENT FIELD, NOT
+  A MECHANISM ROW**: nothing is presented as attested hardware. At `always`
+  `authnPolicyRefusal()` refuses a session whose completing credential is on
+  no active token (`Authn.attestedHardwareHeld()`, STS-AUTHN-0592), the
+  default realm's built-in administrator exempt; a save with no
+  hardware-capable row on is refused (cross-field). The KDC's own AS
+  exchange is gated by neither Kerberos row, as before.
+
+**HOTP and YubiKey OTP say they are off by default** in their `what` (rcbj,
+2026-11-23), which the page and `/admin-api` draw. `tests/authn_policy_smart_card.js`
+holds all of it; `tests/piv_attestation.js` 4j-4m the card-auth row.
 
 ## 3cd. `service_accounts.ts`, `service_account_policy.ts`, `service_account_rotation.ts`: A SERVICE ACCOUNT IS A PERSON WITH A FLAG (#221, 2026-10-06)
 

@@ -22,7 +22,11 @@
 //      issuer-serial.
 //   5. REVOCATION AT SIGN-IN: `certSignIn.requireRevocation`.
 //   6. RFC 9440: the two headers parsed, the trusted proxy by certificate AND
-//      address, the socket's view, the headers removed from anybody else.
+//      address, the socket's view, the headers removed from anybody else;
+//      and the proxy pinned by its KEY (`spki:<hex>`, rcbj 2026-11-23): a
+//      renewal under the same key matching the key pin and not the
+//      certificate pin, a malformed entry refused at the write
+//      (STS-TLS-0077), and the pin inventory's rows.
 //   7. THE HANDOFF: offered and reused, refused unknown or for another
 //      browser, presented, consumed once, never for another browser.
 //   8. THE DIRECTORY: `stsCertificateBinding` canonicalised and held unique
@@ -475,6 +479,63 @@ async function checkForwarded(t, h, p) {
   const half = make({ 'tls.trustedProxyCertificates': proxySha });
   t.check(!half.fromTrustedProxy({ socket: socketOf(proxy.der, '10.9.1.2') }),
           '6f. a certificate without an address range trusts nobody');
+  // AN SPKI PIN (rcbj, 2026-11-23: "accept both"). The key's digest is
+  // computed here with node's own X509Certificate, not through the module.
+  const spkiHex = function (der) {
+    return nodeCrypto.createHash('sha256').update(
+      new nodeCrypto.X509Certificate(der).publicKey
+        .export({ type: 'spki', format: 'der' })).digest('hex');
+  };
+  const renewed = await leaf(h.intermediate, { pair: proxy.pair });
+  const byKey = make({ 'tls.trustedProxyCertificates':
+                         'spki:' + spkiHex(proxy.der),
+                       'tls.trustedProxyAddresses': '10.9.0.0/16' });
+  t.check(byKey.fromTrustedProxy({ socket: socketOf(proxy.der, '10.9.1.2') }),
+          '6k. an spki: pin trusts the proxy\'s certificate by its key');
+  t.check(!renewed.der.equals(proxy.der) &&
+          byKey.fromTrustedProxy({ socket: socketOf(renewed.der,
+                                                    '10.9.1.2') }),
+          '6l. a certificate renewed under the same key still matches the ' +
+          'spki: pin');
+  t.check(!both.fromTrustedProxy({ socket: socketOf(renewed.der,
+                                                    '10.9.1.2') }),
+          '6m. the renewed certificate no longer matches the certificate pin');
+  t.check(!byKey.fromTrustedProxy({ socket: socketOf(p.jane.der,
+                                                     '10.9.1.2') }),
+          '6n. a certificate under another key does not match the spki: pin');
+  const colons = spkiHex(proxy.der).toUpperCase().match(/../g).join(':');
+  const mixed = make({ 'tls.trustedProxyCertificates': 'sha256:' + proxySha +
+                         ', SPKI:' + colons,
+                       'tls.trustedProxyAddresses': '10.9.0.0/16' });
+  const both2 = mixed.configured();
+  t.check(both2.fingerprints.length === 1 && both2.keys.length === 1 &&
+          mixed.fromTrustedProxy({ socket: socketOf(renewed.der,
+                                                    '10.9.1.2') }),
+          '6o. a certificate pin and a key pin listed together, the key ' +
+          'pin in colon-separated upper-case hex', JSON.stringify(both2));
+  const pinCode = function (value) {
+    return config.checkWriteCode('tls.trustedProxyCertificates', value,
+                                 false);
+  };
+  t.check(!pinCode('spki:' + spkiHex(proxy.der) + ',' + proxySha) &&
+          !config.checkWrite('tls.trustedProxyCertificates',
+                             'sha256:' + proxySha, false),
+          '6p. a write of certificate and spki: pins is taken');
+  t.check(['spki:', 'spki:' + proxySha.slice(2), 'deadbeef',
+           'sha1:' + proxySha, proxySha + ',x'].every(function (bad) {
+    return pinCode(bad) === 'STS-TLS-0077';
+  }), '6q. a malformed entry is refused at the write (STS-TLS-0077)');
+  config.setOverride('tls.trustedProxyCertificates',
+                     proxySha + ',spki:' + colons);
+  OVERRIDDEN.push('tls.trustedProxyCertificates');
+  const pins = require('../common/certificate_pins').fromTrustedProxies();
+  config.clearOverride('tls.trustedProxyCertificates');
+  t.check(pins.length === 2 && pins[0].thumbprint === proxySha &&
+          !/\(key\)/.test(pins[0].where) &&
+          pins[1].thumbprint === 'spki:' + spkiHex(proxy.der) &&
+          /#2 \(key\)$/.test(pins[1].where),
+          '6r. the pin inventory lists a certificate pin as written and a ' +
+          'key pin as spki:<hex>, marked (key)', JSON.stringify(pins));
   const verdict = await both.verify(parsed);
   t.check(verdict.ok && verdict.path.length === 3,
           '6g. the forwarded chain verifies to the client truststore',

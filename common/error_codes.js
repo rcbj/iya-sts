@@ -1661,6 +1661,13 @@ const CODES = [
       'writes in it may not have reached the store. A flush that settles ' +
       'before then is waited for.',
     spec: 'Log line' },
+  { code: 'STS-WORKER-0058',
+    summary: 'The front process could not catch up on the realm and ' +
+      'settings change logs before forwarding an answer that wrote a ' +
+      'setting (the catch-up ran out or failed): the answer is forwarded, ' +
+      'and a check the front makes before dispatch meets the new value at ' +
+      'its next change-log pull (#2019).',
+    spec: 'Log line' },
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',
     spec: '' },
@@ -4021,6 +4028,13 @@ const CODES = [
       'asynchronous calls of this thread still hold sessions on it: the ' +
       'module is initialised again off the event loop once they drain, and ' +
       'the next call is made on it (#1955).',
+    spec: '' },
+  { code: 'STS-KEYS-0213',
+    summary: 'A thread held the process-wide lock on re-initialising a ' +
+      'PKCS#11 module for longer than the bound (a worker stopped while it ' +
+      'held it, or the module hung in C_Finalize or C_Initialize): the ' +
+      'thread waiting for it takes it over and initialises the module ' +
+      'again itself (#1955).',
     spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
@@ -8626,6 +8640,30 @@ const CODES = [
       'where it may have been required. The other activities are still ' +
       'asked. Logged at error level once per activity in a process (#2009).',
     spec: 'Log line; the sign-in goes on without that activity' },
+  { code: 'STS-AUTHN-0590',
+    summary: 'A session was refused: this realm\'s authentication policy ' +
+      'does not accept a smart card (PIV/CAC) certificate as a first ' +
+      'factor (its smartCard row, which follows certificatePrimary while ' +
+      'unset) (#2031).',
+    spec: 'the door\'s own refusal page' },
+  { code: 'STS-AUTHN-0591',
+    summary: 'A session was refused: this realm\'s authentication policy ' +
+      'does not accept Kerberos PKINIT with a smart card (a ticket carrying ' +
+      'this realm\'s pkinit-smartcard indicator; its pkinitSmartCard row, ' +
+      'which follows kerberosPrimary while unset) (#2031).',
+    spec: 'the door\'s own refusal page' },
+  { code: 'STS-AUTHN-0592',
+    summary: 'A session was refused: this realm\'s authentication policy ' +
+      'requires attested hardware (requireAttestedHardware is always), and ' +
+      'the credential that completed the sign-in is on no active hardware ' +
+      'token in the register (#2031).',
+    spec: 'the door\'s own refusal page' },
+  { code: 'STS-AUTHN-0593',
+    summary: 'The sign-in screen refused a client certificate: the ' +
+      'authentication policy takes the other kind of certificate (a smart ' +
+      'card, or a certificate that is not one) as a first factor, and not ' +
+      'this kind (#2031).',
+    spec: 'Sign-in screen refusal sentence; /authn-api answers refused' },
   // #2009 P2: THE MAIL-ENCRYPTION ACTIVITY'S STEP. Numbered from 0600 so
   // the parallel #2031 branch's codes above 0582 cannot meet these.
   { code: 'STS-AUTHN-0600',
@@ -18907,6 +18945,12 @@ const CODES = [
       'certificate is read: a TLS-terminating proxy is trusted by both its ' +
       'certificate and its address (#2012).',
     spec: 'none (logged)' },
+  { code: 'STS-TLS-0077',
+    summary: 'A write of tls.trustedProxyCertificates was refused: an entry ' +
+      'is neither the SHA-256 of a certificate (64 hex digits, colons and ' +
+      'a sha256: prefix allowed) nor spki: followed by the SHA-256 of a ' +
+      'SubjectPublicKeyInfo in the same form (#2012).',
+    spec: '' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +
@@ -23659,8 +23703,9 @@ const CODES = [
     spec: 'HTTP 400' },
   { code: 'STS-PIV-0013',
     summary: 'A piv-card-auth (slot 9e) certificate was refused at a ' +
-      'sign-in, because that key works without a PIN ' +
-      '(piv.cardAuthSignIn) (#1955).',
+      'sign-in, because that key works without a PIN: the authentication ' +
+      'policy\'s smartCardCardAuth row is off (it follows ' +
+      'piv.cardAuthSignIn while unset, #2031) (#1955).',
     spec: 'the TLS sign-in and PKINIT refusals' },
   { code: 'STS-PIV-0014',
     summary: 'A certificate was issued from a verified PIV attestation and ' +

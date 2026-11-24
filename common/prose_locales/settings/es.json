@@ -6248,8 +6248,8 @@
     "text": "Certificados de cliente de los proxies que terminan TLS (SHA-256)"
   },
   "tls.trustedProxyCertificates|description": {
-    "en": "5ebd0abc01f9dfdf",
-    "text": "Las huellas SHA-256 de los certificados de cliente que presenta un proxy que termina TLS al conectarse aquí. En una solicitud sobre una conexión que presenta uno de ellos, desde una dirección de tls.trustedProxyAddresses, sus encabezados Client-Cert y Client-Cert-Chain de RFC 9440 se verifican aquí frente al almacén de confianza de clientes y la revocación, y ese certificado sustituye al del protocolo de enlace en cada puerta. Se requieren ambos ajustes; desde cualquier otro remitente los dos encabezados se eliminan y se registran (STS-TLS-0072) y nunca se leen. VACÍO, el valor predeterminado, solo lee un certificado del protocolo de enlace."
+    "en": "16cfd6503c70990f",
+    "text": "Las huellas SHA-256 de los certificados de cliente que presenta un proxy que termina TLS al conectarse aquí. En hexadecimal (se admiten dos puntos y un prefijo sha256:). spki: delante del mismo valor hexadecimal fija en su lugar el SHA-256 de la SubjectPublicKeyInfo del certificado, que una renovación con la misma clave conserva; una entrada mal formada se rechaza (STS-TLS-0077). En una solicitud sobre una conexión que presenta uno de ellos, desde una dirección de tls.trustedProxyAddresses, sus encabezados Client-Cert y Client-Cert-Chain de RFC 9440 se verifican aquí frente al almacén de confianza de clientes y la revocación, y ese certificado sustituye al del protocolo de enlace en cada puerta. Se requieren ambos ajustes; desde cualquier otro remitente los dos encabezados se eliminan y se registran (STS-TLS-0072) y nunca se leen. VACÍO, el valor predeterminado, solo lee un certificado del protocolo de enlace."
   },
   "tls.trustedProxyAddresses|label": {
     "en": "4bc0cf2135bd81af",
