@@ -1838,6 +1838,17 @@ const JOBS = [
   // switch, and the application `/admin-api` answers after Save. Its own
   // application and console user, removed in a `finally`.
   { file: 'sts_wstrust_xpath_builder.js', browser: true, local: true },
+  // CERTIFICATE SIGN-IN'S SETTINGS EDITORS (#2096, rcbj 2026-11-24, for
+  // #2080's editors). `local: true`: this repository's console, in Chrome,
+  // in a throwaway realm reached through the switcher — `wire()` driven
+  // where `tests/cert_sign_in_editor.js` holds only the pure functions: a
+  // certSignIn.profiles profile written with the editor (an issuer picked
+  // from the client truststore, presets, the low-affinity lock), reordered,
+  // saved and read back exactly; a hand-written value saved byte for byte;
+  // piv.attestationAnchors' PEM list; listeners.applications; and a
+  // person's binding values derived from an uploaded certificate, added
+  // and removed. Its truststore Root is removed and every setting reset.
+  { file: 'sts_cert_sign_in_editors.js', browser: true, local: true },
   // EVERY SAML 2.0, SAML 1.1, WS-TRUST AND WS-FEDERATION DOCUMENT THIS
   // SERVICE EMITS, AGAINST THE PUBLISHED OASIS AND W3C XML SCHEMAS (#188,
   // 2026-09-24): metadata, Responses on every binding, the ArtifactResponse,
