@@ -1796,8 +1796,8 @@
     "text": "Isang hilera bawat OpenSSH user certificate na inisyu ng SSH user CA ng realm na ito, ayon sa serial: kanino ito (urn:uuid), ang fingerprint ng key, ang mga principal nito, ang tagal nito at kung na-revoke ito. Kailanman ay hindi isang key."
   },
   "caches.store.ssh_user_ca.issued.bound": {
-    "en": "36fc38da0e0699e8",
-    "text": "Ang mga hilerang hawak ng isang proseso ay isang cache na 5,000 bawat realm; umaalis ang isang hilera sa store kapag nag-expire ang certificate nito."
+    "en": "e9eaf8f07040a227",
+    "text": "Ipinapatupad: ang mga hanay na hawak ng isang proseso ay isang on-demand na window ng 5,000 bawat realm; umaalis ang isang hanay sa store kapag nag-expire ang sertipiko nito."
   },
   "caches.store.ssh_user_ca.issued.lifetime": {
     "en": "fdcbaa82a4ac533d",

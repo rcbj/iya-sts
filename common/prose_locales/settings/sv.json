@@ -4860,8 +4860,8 @@
     "text": "Högsta autentiseringsålder (s)"
   },
   "oauth2.maxAuthAgeS|description": {
-    "en": "5a37fced9d4d040e",
-    "text": "Hur länge sedan en klient autentiserades, i sekunder, innan en auktoriseringsbegäran måste autentisera igen, även när begäran inte skickar max_age. 0, standardvärdet, lägger inte till någon egen gräns, så en vanlig klient är oförändrad. Läses vid varje auktoriseringsbegäran: den skriver inte om en session som redan är lagrad. Administratörskonsolen (sts-admin-console), användarportalen (sts-user-portal) och rapportprogrammet (sts-report) bär var sitt eget värde och tar det kortare av det och authn.sessionLifetimeS, så att höja den här inställningen eller sessionens livslängd förlänger aldrig de tre, och att sänka authn.sessionLifetimeS förkortar dem fortfarande. En överskridning per klient är oauthMaxAuthAgeS. Det här är inte en tokens livslängd och den finns inte på /admin/token-lifetimes (#825)."
+    "en": "163792a8531f4514",
+    "text": "Hur länge sedan en klient autentiserades, i sekunder, innan en auktoriseringsbegäran måste autentisera igen, även när begäran inte skickar max_age. 0, standardvärdet, lägger inte till någon egen gräns, så en vanlig klient är oförändrad. Läses vid varje auktoriseringsbegäran: den skriver inte om en session som redan är lagrad. Administratörskonsolen (sts-admin-console), användarportalen (sts-user-portal) och rapportprogrammet (sts-report) bär var sitt eget värde och tar det kortare av det och authn.sessionLifetimeS, så att höja den här inställningen eller sessionens livslängd förlänger aldrig de tre, och att sänka authn.sessionLifetimeS förkortar dem fortfarande. En överskridning per klient är oauthMaxAuthAgeS. Det här är inte en tokens livslängd: /admin/token-lifetimes visar den under livslängderna, tillsammans med resten av dess grupp (#825, #2070)."
   },
   "oauth2.expiredTokenRetentionS|label": {
     "en": "4466b89054d69c81",

@@ -180,7 +180,10 @@ inventory its index ([Hardware tokens](hardware-tokens.md#on-the-persons-directo
 ## A lost token
 
 Report the token lost on the *Hardware tokens* tab or the person's portal
-(see [Hardware tokens](hardware-tokens.md)). Its secret is taken off the
+(see [Hardware tokens](hardware-tokens.md)). Through
+`POST /admin-api/hardware-tokens/lost` or `POST /account-api/tokens`, the
+`key` is the token's `<vendor>/<serial>` or the key the import answered for
+it, `<vendor>/<serial>/<key id>`. Its secret is taken off the
 person's entry, the sessions its codes signed in end, and the inventory
 marks it retired. A retired token is never assigned again: its secret may
 be with whoever found it.

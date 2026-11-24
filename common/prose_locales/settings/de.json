@@ -4860,8 +4860,8 @@
     "text": "Höchstalter der Authentifizierung (s)"
   },
   "oauth2.maxAuthAgeS|description": {
-    "en": "5a37fced9d4d040e",
-    "text": "Wie lange die Authentifizierung eines Clients zurückliegt, in Sekunden, bevor eine Autorisierungsanfrage erneut authentifizieren muss, auch wenn die Anfrage kein max_age sendet. 0, die Vorgabe, fügt keine eigene Grenze hinzu, sodass ein gewöhnlicher Client unverändert bleibt. Bei jeder Autorisierungsanfrage gelesen: eine bereits gespeicherte Sitzung wird nicht umgeschrieben. Die Administratorkonsole (sts-admin-console), das Benutzerportal (sts-user-portal) und die Berichts-Anwendung (sts-report) tragen jeweils einen eigenen Wert und nehmen den kürzeren aus diesem und authn.sessionLifetimeS, sodass ein Anheben dieser Einstellung oder der Sitzungslebensdauer diese drei niemals verlängert und ein Absenken von authn.sessionLifetimeS sie weiterhin verkürzt. Eine Überschreibung je Client ist oauthMaxAuthAgeS. Dies ist keine Token-Lebensdauer und steht nicht auf /admin/token-lifetimes (#825)."
+    "en": "163792a8531f4514",
+    "text": "Wie lange die Authentifizierung eines Clients zurückliegt, in Sekunden, bevor eine Autorisierungsanfrage erneut authentifizieren muss, auch wenn die Anfrage kein max_age sendet. 0, die Vorgabe, fügt keine eigene Grenze hinzu, sodass ein gewöhnlicher Client unverändert bleibt. Bei jeder Autorisierungsanfrage gelesen: eine bereits gespeicherte Sitzung wird nicht umgeschrieben. Die Administratorkonsole (sts-admin-console), das Benutzerportal (sts-user-portal) und die Berichts-Anwendung (sts-report) tragen jeweils einen eigenen Wert und nehmen den kürzeren aus diesem und authn.sessionLifetimeS, sodass ein Anheben dieser Einstellung oder der Sitzungslebensdauer diese drei niemals verlängert und ein Absenken von authn.sessionLifetimeS sie weiterhin verkürzt. Eine Überschreibung je Client ist oauthMaxAuthAgeS. Dies ist keine Token-Lebensdauer: /admin/token-lifetimes zeigt sie unter den Lebensdauern, zusammen mit dem Rest ihrer Gruppe (#825, #2070)."
   },
   "oauth2.expiredTokenRetentionS|label": {
     "en": "4466b89054d69c81",

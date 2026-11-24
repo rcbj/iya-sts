@@ -392,7 +392,7 @@
   "caches.store.ssf.dead-letter-counts.lifetime": "No expiry: recounted at each dead-letter sweep, one entry per stream.",
   "caches.store.ssh_user_ca.issued.title": "SSH user certificates issued",
   "caches.store.ssh_user_ca.issued.description": "One row per OpenSSH user certificate this realm's SSH user CA issued, keyed by serial: whose it is (urn:uuid), the key fingerprint, its principals, its lifetime and whether it was revoked. Never a key.",
-  "caches.store.ssh_user_ca.issued.bound": "The rows a process holds are a cache of 5,000 per realm; a row leaves the store when its certificate expires.",
+  "caches.store.ssh_user_ca.issued.bound": "Enforced: the rows a process holds are an on-demand window of 5,000 per realm; a row leaves the store when its certificate expires.",
   "caches.store.ssh_user_ca.issued.lifetime": "Until the certificate expires.",
   "caches.store.tls.client-certificate-identities.title": "Client certificate identities",
   "caches.store.tls.client-certificate-identities.description": "What a verified TLS client certificate was mapped to — a person or application in a realm, or a refusal — keyed by the leaf's digest and the authorities held when it was walked.",

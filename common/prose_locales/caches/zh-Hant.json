@@ -1796,8 +1796,8 @@
     "text": "此領域的 SSH 使用者 CA 簽發的每張 OpenSSH 使用者憑證一列，依序號：屬於誰（urn:uuid）、金鑰指紋、主體、有效期以及是否已撤銷。從不包含金鑰。"
   },
   "caches.store.ssh_user_ca.issued.bound": {
-    "en": "36fc38da0e0699e8",
-    "text": "程序持有的列是每個領域 5,000 筆的快取；憑證到期時該列離開儲存區。"
+    "en": "e9eaf8f07040a227",
+    "text": "強制執行：處理程序持有的列是每個領域 5,000 列的隨需視窗；當某列的憑證到期時，該列離開儲存區。"
   },
   "caches.store.ssh_user_ca.issued.lifetime": {
     "en": "fdcbaa82a4ac533d",

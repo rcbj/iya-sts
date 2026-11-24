@@ -328,6 +328,7 @@
   "endpoints.route./admin-api/post-login-activities/:action.name": "Start, pause, resume or end a post-login activity",
   "endpoints.route./admin-api/hardware-tokens.name": "Hardware tokens",
   "endpoints.route./admin-api/hardware-tokens/oath.name": "Imported OATH tokens",
+  "endpoints.route./admin-api/hardware-tokens/yubiotp.name": "Imported YubiKey OTPs",
   "endpoints.route./admin-api/hardware-tokens/:action.name": "Hardware token acts",
   "endpoints.route./admin-api/hardware-tokens/ssh-certificates.name": "A person's SSH user certificates",
   "endpoints.route./admin-api/hardware-tokens/escrowed.name": "Escrowed PIV keys",

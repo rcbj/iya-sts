@@ -2326,6 +2326,9 @@ namespace IyaSts.Api.Management {
     `personFieldCount`?: numeric;
     `newUserContainer`?: string;
     `registryKeeps`?: numeric;
+    @js(#{
+      `description`:"The settings this page draws, described: the same rows GET /config returns, filtered to the ones this page owns."
+    }) `settings`?: WithPageDescriptionGroupsEtc15;
     `users`?: (WithKeyNameFormsEtc22)[]
   }
 
@@ -3147,7 +3150,10 @@ namespace IyaSts.Api.Management {
     `tokens`?: WithHeldForgottenCapEtc5;
     `now`?: numeric;
     `context`?: NullableObject93;
-    `overridable`?: (WithSettingAttribute)[]
+    `overridable`?: (WithSettingAttribute)[];
+    @js(#{
+      `description`:"The rest of the `OAuth 2.0 / OIDC per-client` group, which this page draws as an ordinary settings form: the page's settings block with the rows of `settings` left out."
+    }) `otherSettings`?: WithPageDescriptionGroupsEtc15
   }
 
 @component model `SamlAssertions` {
@@ -46930,7 +46936,7 @@ op `getHardwareTokens`(@js(#{`maxLength`:256,`examples`:#["12345678"]}) `paramet
   #{
     `operationId`:"reportHardwareTokenLost",
     `summary`:"Report a hardware token lost (#1955)",
-    `description`:"Marks the token lost, then retires every credential on it by its kind: a passkey is removed from its holder's entry (passing the last-way-in guard) and the sessions it signed in end, a certificate is revoked for keyCompromise; a CAEP credential-change goes for each. `retired` and `notRetired` list them; a credential not retired is still live. 404 for no such token, 409 for one already lost. Acting on a Security Administrator's token needs admin:security.\n\n**Mirrors** `POST /admin/hardware-tokens` on the admin console.",
+    `description`:"Marks the token lost, then retires every credential on it by its kind: a passkey is removed from its holder's entry (passing the last-way-in guard) and the sessions it signed in end, a certificate is revoked for keyCompromise; a CAEP credential-change goes for each. `retired` and `notRetired` list them; a credential not retired is still live. The token is named by its `<vendor>/<serial>` or by a credential on it: an OATH token by the `key` the PSKC import answered. 404 for no such token, 409 for one already lost. Acting on a Security Administrator's token needs admin:security.\n\n**Mirrors** `POST /admin/hardware-tokens` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -46958,7 +46964,7 @@ op `getHardwareTokens`(@js(#{`maxLength`:256,`examples`:#["12345678"]}) `paramet
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `reportHardwareTokenLost`(@js(#{`examples`:#[#{`key`:"yubico/12345678"}]}) `requestBody/content/application~1json/schema`: {
-    @js(#{`description`:"The token, `<vendor>/<serial>`.",`maxLength`:200}) `key`: string
+    @js(#{`description`:"The token: its `<vendor>/<serial>`, or the `key` the PSKC import answered for an OATH token on it (`<vendor>/<serial>/<key id>`).",`maxLength`:200}) `key`: string
   },
   `responses/200/content/application~1json/schema`: {
     `ok`: boolean;
@@ -47923,6 +47929,120 @@ op `revokeUserSshCertificate`(@js(#{`examples`:#[#{`username`:"alice",`serial`:"
   `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+@endpoint("/admin-api/hardware-tokens/issue-ssh",
+  "post",
+  #{
+    `operationId`:"issueUserSshCertificate",
+    `summary`:"Issue an SSH user certificate to a person (#2071)",
+    `description`:"An administrator certifies one OpenSSH public key for the person `username` names, through the same core the person's own `POST /account-api/ssh/certificates` uses: the principals are that person's uid, or groups of theirs the realm offers as principals (pki.sshGroupPrincipals), each a separate decision of the access-control policy about THEM; none given is their uid. A security key's attestation, with the challenge ssh-keygen was given, earns the longer lifetime; any other key the shorter one (pki.sshSoftwareLifetimeSeconds). The certificate is written onto the person's entry (`stsSshUserCertificate`, the master copy) and recorded in the realm's register before it is answered, and the audit row names the administrator. The certificate is public; it is answered once here and listed, without the line, by `getUserSshCertificates`. 404 for nobody of that name, 403 for a principal the policy refuses or a group that cannot be one, 400 for a key or lifetime that is refused, 503 when the realm has no SSH user CA or the certificate could not be recorded. Acting on a Security Administrator's account needs admin:security.\n\n**Mirrors** `POST /admin/hardware-tokens` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The certificate, issued and written onto the person's entry.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The key, the principals or the lifetime was refused; nothing was issued.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"A principal the policy refused, or a group that cannot be one.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `404`:#{
+        `description`:"Nobody of that name in this realm's directory.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `503`:#{
+        `description`:"The realm has no SSH user CA, or the certificate could not be recorded.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `issueUserSshCertificate`(@js(#{`examples`:#[#{`username`:"alice",`publicKey`:"ssh-ed25519 invalid",`principals`:#["alice"]}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"The person the certificate is issued to.",`maxLength`:256}) `username`: string;
+    @js(#{`description`:"One OpenSSH public key line; certificate keys and authorized-key options are not accepted.",`maxLength`:8192}) `publicKey`: string;
+    @js(#{`description`:"The principals: a list, or the console's text separated by commas. Each must be the person's uid or a group of theirs that pki.sshGroupPrincipals names; none is their uid."}) `principals`?: string[] | string;
+    @js(#{`description`:"Certificate lifetime in seconds, or the console's text of one; empty or absent is pki.sshSoftwareLifetimeSeconds. At most that for an ordinary key, and pki.sshHardwareLifetimeSeconds with verified hardware evidence."}) `lifetimeS`?: integer | string;
+    @js(#{`description`:"Base64 of the OpenSSH security-key attestation file (`ssh-keygen -O write-attestation=`), for an `sk-*` key.",`maxLength`:87384}) `attestation`?: string;
+    @js(#{`description`:"Base64 of the challenge ssh-keygen was given (`-O challenge=`), which the attestation signed; required with `attestation`.",`maxLength`:2048}) `attestationChallenge`?: string
+  },
+  `responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string;
+    @js(#{`description`:"Who it was issued to."}) `username`: string;
+    @js(#{`description`:"The OpenSSH user certificate, in authorized-key format."}) `certificate`: string;
+    @js(#{`description`:"The serial, lower-case hex: what `revokeUserSshCertificate` names."}) `serialHex`: string;
+    @js(#{`description`:"Seconds since the epoch."}) `validAfter`: integer;
+    @js(#{`description`:"Seconds since the epoch."}) `validBefore`: integer;
+    @js(#{`description`:"Whether verified hardware evidence covered the key."}) `hardwareBound`: boolean;
+    @js(#{`description`:"The ML-DSA certificate issued beside the classical one, where pki.sshUserCaPqcAlongsideClassical is on."}) `pqcCertificate`?: string;
+    `pqcSerialHex`?: string
+  },
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+
+// #2071: THE IMPORTED YUBIKEY OTP INVENTORY (`common/yubiotp_store.ts`),
+// Directory → Hardware tokens' YubiKey OTP tab. Never a key.
+@hoisted model YubiOtpTokenAdminRow {
+  @js(#{`description`:"The serial printed on the YubiKey: what `assignYubiOtp` and `removeYubiOtp` name."}) `serial`: string;
+  @js(#{`description`:"The modhex public identity the key types first."}) `publicId`: string;
+  @js(#{`description`:"`unassigned`, `assigned` or `retired` (its hardware token was reported lost, or its holder gave it up)."}) `status`: string;
+  @js(#{`description`:"Who it is assigned to, by username; empty while unassigned."}) `holder`: string;
+  `importedAt`: string;
+  `assignedAt`: string;
+  `retiredAt`: string
+}
+
+@endpoint("/admin-api/hardware-tokens/yubiotp",
+  "get",
+  #{
+    `operationId`:"getYubiOtpTokens",
+    `summary`:"The realm's imported YubiKey OTPs (#2071)",
+    `description`:"Directory → Hardware tokens' YubiKey OTP tab: `tokens`, one page of the YubiKey OTPs administrators imported from a CSV — serial, public identity, status (`unassigned`, `assigned`, `retired`) and who holds it — newest first, with `paging`. `q` naming a person answers the tokens on THEIR ENTRY (`stsYubiOtpToken`, the master copy), which is what a person's YubiKey OTP sub-tab lists; no search walks the directory. `capped` as `getHardwareTokens` has it. No key is ever in this answer.\n\n**Mirrors** `GET /admin/hardware-tokens` on the admin console.",
+    `tags`:#["Directory"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The page of tokens.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `parameters`:#[
+      #{`name`:"q",`in`:"query",`required`:false,`schema`:null,`description`:"A serial, matched exactly, or a username for the YubiKey OTPs on that person's entry; empty for every token."},
+      #{`name`:"status",`in`:"query",`required`:false,`schema`:null,`description`:"`unassigned`, `assigned` or `retired`; empty for all three."},
+      #{`name`:"page",`in`:"query",`required`:false,`schema`:null,`description`:"Which page; a page past the end answers the last one."},
+      #{`name`:"per",`in`:"query",`required`:false,`schema`:null,`description`:"Rows per page, 50 by default and at most 300."}
+    ],
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getYubiOtpTokens`(@js(#{`maxLength`:256,`examples`:#["12345678"]}) `parameters/0/schema`: string,
+  `parameters/1/schema`: "" | "unassigned" | "assigned" | "retired",
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[50]}) `parameters/3/schema`: integer,
+  `responses/200/content/application~1json/schema`: {
+    `tokens`: (YubiOtpTokenAdminRow)[];
+    `paging`: WithPagePagesPerPageEtc8;
+    `capped`: boolean;
+    `q`: string;
+    `status`: string
+  },
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
 
 

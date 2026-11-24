@@ -1315,6 +1315,10 @@
     "en": "009f323198517782",
     "text": "匯入的 OATH 權杖"
   },
+  "endpoints.route./admin-api/hardware-tokens/yubiotp.name": {
+    "en": "038eb465fd8d6235",
+    "text": "匯入的 YubiKey OTP"
+  },
   "endpoints.route./admin-api/hardware-tokens/:action.name": {
     "en": "33209f967f070175",
     "text": "硬體權杖動作"

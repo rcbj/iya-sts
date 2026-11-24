@@ -7364,13 +7364,20 @@ const ENDPOINTS: EndpointEntry[] = [
           'imported from vendors\' PSKC seed files, unassigned, assigned ' +
           'or retired, paged and searched by serial or person. Never a ' +
           'secret. Mirrors GET /admin/hardware-tokens (its OATH tab).' },
+  { path: '/admin-api/hardware-tokens/yubiotp', group: 'Management API',
+    name: 'Imported YubiKey OTPs', specs: ['openapi', 'yubico-otp'],
+    what: 'NON-SPEC (#2071). The YubiKey OTPs administrators imported ' +
+          'from a CSV, unassigned, assigned or retired, paged and searched ' +
+          'by serial or person; a person\'s are read off their entry, the ' +
+          'master copy. Never a key. Mirrors GET /admin/hardware-tokens ' +
+          '(its YubiKey OTP tab).' },
   { path: '/admin-api/hardware-tokens/:action', group: 'Management API',
     name: 'Hardware token acts',
     specs: ['openapi', 'rfc6030', 'yubico-piv-attestation',
           'lamps-csr-attestation'],
     effect: 'reports a hardware token lost and retires its credentials, ' +
             'issues a PIV slot certificate, hands over an escrowed key, or ' +
-            'revokes a person\'s SSH certificate',
+            'issues or revokes a person\'s SSH certificate',
     what: 'NON-SPEC (#1955). lost, with { key }: the token is marked lost, ' +
           'each passkey on it removed, each certificate on it revoked for ' +
           'keyCompromise, a CAEP credential-change sent for each and the ' +
@@ -7382,8 +7389,10 @@ const ENDPOINTS: EndpointEntry[] = [
           'escrowed piv-key-management key, which the access-control ' +
           'policy permits only to PIV_KEY_RECOVERY, after a recent sign-in. ' +
           'revoke-ssh, with { username, serial }: that person\'s SSH user ' +
-          'certificate revoked and put on the realm\'s KRL. The console\'s ' +
-          'four acts on that page.' },
+          'certificate revoked and put on the realm\'s KRL. issue-ssh, ' +
+          'with { username, publicKey, principals?, lifetimeS? }: an SSH ' +
+          'user certificate issued to that person, written onto their ' +
+          'entry first (#2071). The console\'s five acts on that page.' },
   { path: '/admin-api/hardware-tokens/ssh-certificates',
     group: 'Management API',
     name: 'A person\'s SSH user certificates', specs: ['openapi'],

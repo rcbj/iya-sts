@@ -27,8 +27,9 @@
 //   d. TOTP at /authn: the code the claim spent is refused at sign-in; at
 //      the next time step oathtool's code signs in, and is refused again;
 //   e. reported lost, by the person on the portal (HOTP) and by the
-//      administrator through /admin-api (TOTP): the next code the token
-//      would show signs nobody in.
+//      administrator through /admin-api (TOTP), each by the key the PSKC
+//      import answered (#2095): the next code the token would show signs
+//      nobody in.
 //
 // The realm runs in the stack's mode, with the hotp row of its
 // authentication policy on. Every seed and key is drawn in the run.
@@ -465,23 +466,14 @@ async function test() {
   });
 
   log.info("=== e. reported lost ===");
-  // THE TOKEN'S KEY, as the portal's token list names it: `<vendor>/
-  // <serial>`, the hardware token register's, which is not the inventory
-  // key the import answered (that one also names the key package).
-  const tokenKey = async function (holder, serial) {
-    const listed = await holder.api("GET", "/account-api/tokens");
-    const held = ((listed.json && listed.json.tokens) || []).filter(
-      function (one) {
-        return String(one.serial) === serial;
-      })[0];
-    assert.ok(held, "the token list does not name " + serial + ": " +
-              String(listed.text).slice(0, 300));
-    return held.key;
-  };
+  // THE KEY THE IMPORT ANSWERED (#2095), `<vendor>/<serial>/<key id>`,
+  // and nothing else: the lost act takes it as well as the register's
+  // `<vendor>/<serial>`, so a caller holding only the import's answer can
+  // report the token lost, on the portal and through /admin-api alike.
   const lostH = await holderH.api("POST", "/account-api/tokens",
-    { action: "lost", key: await tokenKey(holderH, hotp.serial) });
+    { action: "lost", key: keyOf[hotp.serial] });
   const lostT = await postJson(rb + "/admin-api/hardware-tokens/lost",
-                               { key: await tokenKey(holderT, totp.serial) });
+                               { key: keyOf[totp.serial] });
   const afterH = await signInWithCode(rb, HOLDER_H, await hotpCode(hotp, 4));
   await earlyInAStep();
   const afterT = await signInWithCode(rb, HOLDER_T,

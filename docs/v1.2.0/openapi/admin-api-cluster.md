@@ -451,6 +451,7 @@ Scope: `admin:read`.
 | `status (shape 2).self.role` | string, or null |  |  |
 | `status (shape 2).self.ttlMs` | number |  |  |
 | `status (shape 2).self.why` | string |  |  |
+| `status (shape 2).serviceLease` | string |  | The lease whose holder serves in active-passive mode. |
 | `status (shape 2).snapshotAgeMs` | number, or null |  |  |
 | `title` | string |  |  |
 | `what` | string |  | What the page says the family is, as plain text. |

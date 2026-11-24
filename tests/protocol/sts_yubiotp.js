@@ -17,8 +17,16 @@
 //   c. a CSV made in the run is imported and assigned; the confirmation
 //      OTP is spent; no answer carries the AES key, the private id or an
 //      error code;
+//   c2. (#2071) GET /admin-api/hardware-tokens/yubiotp lists the token:
+//      unassigned after the import, assigned to the person after the
+//      assignment, by serial and by the person (read off their entry),
+//      filtered by status, and no answer carries a key or an error code;
 //   d. a YK-VAL client created here: a missing parameter, an unknown
-//      client and a bad HMAC; a fresh OTP is OK with sl=100 and a
+//      client and a bad HMAC; the reference server's order (#2094): an
+//      unknown client with a malformed OTP is BAD_OTP, an unknown
+//      client's unsigned request NO_SUCH_CLIENT, a known client's
+//      malformed nonce or missing h MISSING_PARAMETER, signed; a fresh
+//      OTP is OK with sl=100 and a
 //      signature this client checks; the same OTP is REPLAYED_OTP; the
 //      same nonce is REPLAYED_REQUEST; POST works the same way; a zero
 //      counter is BAD_OTP; removing the client makes the next request
@@ -435,6 +443,8 @@ async function test() {
         password: PASSWORD,
         attributes: { cn: "Yubi " + PERSON, sn: PERSON, givenName: "Yubi",
                       mail: PERSON + "@" + DOMAIN } } });
+    const listedBefore = await send("GET",
+      realmPath(OPERATION + "/yubiotp?status=unassigned"));
     const confirming = otpFor(secret, 1, 1);
     const assigned = await send("POST",
       realmPath(OPERATION + "/assign-yubiotp"), { json: {
@@ -469,6 +479,56 @@ async function test() {
       assert.ok(codeFree(text), text.slice(0, 400));
     });
 
+    log.info("=== c2. the inventory listed (#2071) ===");
+    const bySerial = await send("GET",
+      realmPath(OPERATION + "/yubiotp?q=" +
+                encodeURIComponent(secret.serial)));
+    const byPerson = await send("GET",
+      realmPath(OPERATION + "/yubiotp?q=" + encodeURIComponent(PERSON)));
+    const unassignedNow = await send("GET",
+      realmPath(OPERATION + "/yubiotp?status=unassigned"));
+    const everything = await send("GET",
+      realmPath(OPERATION + "/yubiotp?per=5&page=1"));
+    const badStatus = await send("GET",
+      realmPath(OPERATION + "/yubiotp?status=lost"));
+    check("the inventory lists the token unassigned, then assigned to the " +
+          "person by serial and off the person's entry, filtered and " +
+          "paged, with no key and no error code", function () {
+      const rowOf = function (res) {
+        assert.strictEqual(res.status, 200, res.raw.slice(0, 300));
+        return (res.json.tokens || []).filter(function (r) {
+          return r.serial === secret.serial;
+        })[0] || null;
+      };
+      const before = rowOf(listedBefore);
+      assert.ok(before && before.status === "unassigned" &&
+                before.holder === "" && before.publicId === secret.publicId,
+                "the import was not listed unassigned: " + listedBefore.raw);
+      const one = rowOf(bySerial);
+      assert.ok(one && one.status === "assigned" && one.holder === PERSON,
+                "the serial's row: " + bySerial.raw.slice(0, 300));
+      assert.strictEqual(bySerial.json.tokens.length, 1, bySerial.raw);
+      const theirs = rowOf(byPerson);
+      assert.ok(theirs && theirs.status === "assigned" &&
+                theirs.holder === PERSON && theirs.assignedAt,
+                "the person's entry did not list it: " +
+                byPerson.raw.slice(0, 300));
+      assert.ok(!rowOf(unassignedNow), "an assigned token was listed " +
+                "under unassigned");
+      assert.ok(everything.json.paging && everything.json.paging.perPage ===
+                5 && everything.json.paging.page === 1 &&
+                everything.json.capped === false, everything.raw);
+      assert.strictEqual(badStatus.status, 400, "a status the operation " +
+                         "does not declare was not refused: " +
+                         badStatus.raw.slice(0, 200));
+      const text = listedBefore.raw + bySerial.raw + byPerson.raw +
+        unassignedNow.raw + everything.raw;
+      [secret.k, secret.p].forEach(function (needle) {
+        assert.ok(text.indexOf(needle) < 0, "a list carried a secret");
+      });
+      assert.ok(codeFree(text), text.slice(0, 400));
+    });
+
     log.info("=== d. YK-VAL 2.0 ===");
     const id = clientId();
     const missing = await verify({ otp: confirming, nonce: nonce(),
@@ -483,6 +543,18 @@ async function test() {
     assert.ok(key && added.json.id === id, "the client key was not " +
               "answered once");
     const missingSigned = await verify({ id: id });
+    // #2094: the request pam_yubico's lab run found, and its neighbours.
+    const strangerId = id === "9999999999999999" ? "9999999999999998"
+      : "9999999999999999";
+    const strangerMalformed = await verify({ id: strangerId, otp: "x",
+                                             nonce: nonce() });
+    const strangerUnsigned = await verify({ id: strangerId,
+                                            otp: otpFor(secret, 9, 9),
+                                            nonce: nonce() });
+    const shortNonce = await verify({ id: id, otp: otpFor(secret, 9, 9),
+                                      nonce: "short" });
+    const unsigned = await verify({ id: id, otp: otpFor(secret, 9, 9),
+                                    nonce: nonce() });
     const bad = await verify({ id: id, otp: confirming, nonce: nonce(),
                                h: "not-a-signature" });
     const spentNonce = nonce();
@@ -523,6 +595,22 @@ async function test() {
       const partial = assertAnswer(missingSigned, "MISSING_PARAMETER");
       assert.strictEqual(partial.h, sign(key, partial),
                          "the signed refusal does not verify");
+    });
+    check("in the reference server's order (#2094), an unknown client " +
+          "with a malformed OTP is BAD_OTP and with a well-formed one " +
+          "NO_SUCH_CLIENT, unsigned; a known client's malformed nonce or " +
+          "missing h is MISSING_PARAMETER, signed", function () {
+      const malformed = assertAnswer(strangerMalformed, "BAD_OTP");
+      assert.ok(!malformed.h, "an unknown client's BAD_OTP was signed");
+      assert.strictEqual(malformed.otp, "x");
+      const stranger = assertAnswer(strangerUnsigned, "NO_SUCH_CLIENT");
+      assert.ok(!stranger.h, "an unknown client was signed");
+      const shortFields = assertAnswer(shortNonce, "MISSING_PARAMETER");
+      assert.strictEqual(shortFields.h, sign(key, shortFields),
+                         "the malformed nonce's refusal does not verify");
+      const noH = assertAnswer(unsigned, "MISSING_PARAMETER");
+      assert.strictEqual(noH.h, sign(key, noH),
+                         "the unsigned request's refusal does not verify");
     });
     check("the OTP that assigned the token is REPLAYED_OTP, and a fresh " +
           "one is OK with sl=100 and a signature this client checks",

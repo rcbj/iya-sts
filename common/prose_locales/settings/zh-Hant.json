@@ -4860,8 +4860,8 @@
     "text": "最大驗證時限（秒）"
   },
   "oauth2.maxAuthAgeS|description": {
-    "en": "5a37fced9d4d040e",
-    "text": "用戶端在多少秒以前完成過驗證之後，授權請求必須再次進行驗證，即使該請求沒有傳送 max_age。0 是預設值，不增加自身的界限，因此一般用戶端保持不變。在每次授權請求時讀取：它不改寫已經儲存的工作階段。管理主控台（sts-admin-console）、使用者入口（sts-user-portal）和報表應用程式（sts-report）各自帶有自己的值，並取該值與 authn.sessionLifetimeS 中較短的一個，因此提高此項設定或工作階段有效期永遠不會延長這三項，而降低 authn.sessionLifetimeS 仍然會縮短它們。按用戶端覆寫的屬性是 oauthMaxAuthAgeS。這不是權杖有效期，也不在 /admin/token-lifetimes 上（#825）。"
+    "en": "163792a8531f4514",
+    "text": "用戶端在多少秒以前完成過驗證之後，授權請求必須再次進行驗證，即使該請求沒有傳送 max_age。0 是預設值，不增加自身的界限，因此一般用戶端保持不變。在每次授權請求時讀取：它不改寫已經儲存的工作階段。管理主控台（sts-admin-console）、使用者入口（sts-user-portal）和報表應用程式（sts-report）各自帶有自己的值，並取該值與 authn.sessionLifetimeS 中較短的一個，因此提高此項設定或工作階段有效期永遠不會延長這三項，而降低 authn.sessionLifetimeS 仍然會縮短它們。按用戶端覆寫的屬性是 oauthMaxAuthAgeS。這不是權杖有效期：/admin/token-lifetimes 在各有效期下方將它與所屬群組的其餘設定一起顯示（#825、#2070）。"
   },
   "oauth2.expiredTokenRetentionS|label": {
     "en": "4466b89054d69c81",

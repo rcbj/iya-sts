@@ -24,6 +24,16 @@
 //     slot certificate to the person `username` names, from a certificate
 //     request and, optionally, its YubiKey PIV attestation: the console's
 //     enrolment form, for a machine (`common/piv_enrolment.ts`).
+//   * `GET /admin-api/hardware-tokens/yubiotp` (#2071) — the imported
+//     YubiKey OTP inventory, paged, filtered by `status` and searched by
+//     `q` (a serial, or a username, whose tokens are read off their entry,
+//     the master copy). The YubiKey OTP tab's list and a person's YubiKey
+//     OTP sub-tab.
+//   * `POST /admin-api/hardware-tokens/issue-ssh` (#2071) — an
+//     administrator issues an SSH user certificate to the person
+//     `username` names, through the same core the person's own door uses
+//     (`common/ssh_user_ca.ts`'s `adminIssue()`): their principals, the
+//     policy about them, their entry written first.
 //   * `GET /admin-api/hardware-tokens/escrowed` and `POST
 //     /admin-api/hardware-tokens/recover-key` (#1955 P2, D7) — a person's
 //     escrowed piv-key-management certificates, and the recovery of one's
@@ -63,7 +73,8 @@ interface HardwareTokensApiDeps {
 }
 
 // The acts, in the order the unknown-action sentence names them.
-const ACTIONS = ['lost', 'enrol-piv', 'recover-key', 'revoke-ssh'];
+const ACTIONS = ['lost', 'enrol-piv', 'recover-key', 'revoke-ssh',
+                 'issue-ssh'];
 
 const BASE = '/admin-api';
 
@@ -281,6 +292,39 @@ class HardwareTokensApi {
                                offset: paging.offset, limit: per });
     }
     log.debug("Leaving HardwareTokensApi.oathView().");
+    return { tokens: page.tokens,
+             paging: { page: paging.page, pages: paging.pages,
+                       perPage: paging.perPage, firstRow: paging.firstRow,
+                       lastRow: paging.lastRow, total: paging.total,
+                       param: paging.param, noun: paging.noun },
+             capped: !!page.capped, q: q, status: status };
+  }
+
+  /**
+   * The YubiKey OTP inventory, one page (#2071).
+   *
+   * @param query - `q`, `status`, `page`, `per`
+   * @returns `{ tokens, paging, capped, q, status }`
+   */
+  async yubiView(query: Json): Promise<Json> {
+    const { log, adminViews: views } = this.deps;
+    log.debug("Entering HardwareTokensApi.yubiView().");
+    const q = String((query && query.q) || '').slice(0, 256);
+    const status = String((query && query.status) || '');
+    const yubi = this.deps.loadYubi();
+    const per = Math.max(1, Math.min(300,
+      parseInt(String((query && query.per) || ''), 10) || 50));
+    const asked = Math.max(1, parseInt(String((query && query.page) || ''),
+                                       10) || 1);
+    let page: Json = await yubi.list({ q: q, status: status,
+      offset: (asked - 1) * per, limit: per });
+    const paging = views.pagingOf({ page: asked, per: per }, page.total,
+                                  { noun: 'tokens' });
+    if (paging.offset !== (asked - 1) * per) {
+      page = await yubi.list({ q: q, status: status,
+                               offset: paging.offset, limit: per });
+    }
+    log.debug("Leaving HardwareTokensApi.yubiView().");
     return { tokens: page.tokens,
              paging: { page: paging.page, pages: paging.pages,
                        perPage: paging.perPage, firstRow: paging.firstRow,
@@ -545,6 +589,77 @@ class HardwareTokensApi {
     });
   }
 
+  // AN ADMINISTRATOR ISSUES A PERSON'S SSH CERTIFICATE (#2071, rule 7):
+  // the person's own core, `adminIssue()`, which writes their entry first.
+  // `principals` is a list or the console's comma-separated text; none is
+  // the person's uid.
+  /**
+   * Answers `issue-ssh`.
+   *
+   * @param res - the response
+   * @param actor - the token's subject
+   * @param body - `{ username, publicKey, principals?, lifetimeS?,
+   *   attestation?, attestationChallenge? }`
+   */
+  issueSsh(res: Json, actor: string, body: Json): void {
+    const { log, errorCodes: codes } = this.deps;
+    const self = this;
+    log.debug("Entering HardwareTokensApi.issueSsh().");
+    const username = String(body.username || '').slice(0, 256);
+    const principals = (Array.isArray(body.principals) ? body.principals
+      : String(body.principals || '').split(','))
+      .map(function (one: unknown): string {
+        return String(one).trim();
+      }).filter(Boolean);
+    const lifetime = String(body.lifetimeS === undefined ? ''
+                                                         : body.lifetimeS);
+    Promise.resolve().then(function (): Json {
+      return self.deps.loadSshUserCa().adminIssue({
+        realm: require('../common/realms').currentId(), username: username,
+        publicKey: String(body.publicKey || ''), principals: principals,
+        lifetimeS: lifetime.trim() ? Number(lifetime) : undefined,
+        attestation: body.attestation ? String(body.attestation) : '',
+        attestationChallenge: body.attestationChallenge
+          ? String(body.attestationChallenge) : '',
+        actor: actor, via: 'api' });
+    }).then(function (done: Json): void {
+      if (!done || !done.ok) {
+        // error-code: none — the act's own code, read off the result
+        const code = String(codes.codeOf(done) || 'STS-SSHCA-0011');
+        codes.mark(res, code);
+        self.sendJson(res, code === 'STS-PKI-0290' || code === 'STS-PKI-0297'
+          ? 503 : (code === 'STS-SSHCA-0004' ? 404
+            : (code === 'STS-PKI-0293' || code === 'STS-PKI-0294' ||
+               code === 'STS-SSHCA-0002' ? 403 : 400)),
+          { ok: false, errors: (done && done.errors) || ['refused'] });
+        log.debug("Leaving HardwareTokensApi.issueSsh(). Refused.");
+        return;
+      }
+      const out: Json = { ok: true,
+        message: 'The SSH user certificate ' + String(done.serialHex) +
+                 ' was issued to ' + username + ' and written onto their ' +
+                 'entry.',
+        username: username, certificate: String(done.certificate),
+        serialHex: String(done.serialHex),
+        validAfter: Number(done.validAfter),
+        validBefore: Number(done.validBefore),
+        hardwareBound: !!done.hardwareBound };
+      if (done.pqcCertificate) {
+        out.pqcCertificate = String(done.pqcCertificate);
+        out.pqcSerialHex = String(done.pqcSerialHex || '');
+      }
+      self.sendJson(res, 200, out);
+      log.debug("Leaving HardwareTokensApi.issueSsh(). Issued.");
+    }).catch(function (e: Json): void {
+      log.error(codes.tag('STS-SSHCA-0011') + 'hardware tokens: issuing ' +
+                'an SSH certificate threw: ' + ((e && e.message) || e));
+      codes.mark(res, 'STS-SSHCA-0011');
+      self.sendJson(res, 500, { ok: false, errors: [
+        'The SSH certificate could not be issued.'] });
+      log.debug("Leaving HardwareTokensApi.issueSsh(). Threw.");
+    });
+  }
+
   // THE TWO PIV ACTS (header): `enrol-piv` for the person `username`
   // names, and `recover-key`, which the access-control policy decides.
   /**
@@ -751,6 +866,12 @@ class HardwareTokensApi {
                       "action. Sign in again.");
             return;
           }
+          if (action === 'issue-ssh') {
+            self.issueSsh(res, actor, body);
+            log.debug("Leaving the management API hardware tokens " +
+                      "action. An SSH issuance.");
+            return;
+          }
           if (action === 'revoke-ssh') {
             self.revokeSsh(res, actor, body);
             log.debug("Leaving the management API hardware tokens " +
@@ -823,8 +944,55 @@ class HardwareTokensApi {
             operationId: 'removeYkvalClient' },
           { action: 'enrol-piv', operationId: 'enrolPivCertificate' },
           { action: 'recover-key', operationId: 'recoverEscrowedPivKey' },
-          { action: 'revoke-ssh', operationId: 'revokeUserSshCertificate' }
+          { action: 'revoke-ssh', operationId: 'revokeUserSshCertificate' },
+          { action: 'issue-ssh', operationId: 'issueUserSshCertificate' }
         ] }),
+
+      // #2071: THE IMPORTED YUBIKEY OTP INVENTORY, Directory → Hardware
+      // tokens' YubiKey OTP tab and a person's YubiKey OTP sub-tab. Never a
+      // key.
+      { method: 'GET', path: BASE + '/hardware-tokens/yubiotp',
+        tag: 'Directory', operationId: 'getYubiOtpTokens',
+        mirrors: 'GET /admin/hardware-tokens',
+        parameters: [
+          { name: 'q', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256,
+                      examples: ['12345678'] },
+            description: 'A serial, matched exactly, or a username for ' +
+                         'the YubiKey OTPs on that person\'s entry; empty ' +
+                         'for every token.' },
+          { name: 'status', in: 'query', required: false,
+            schema: { type: 'string',
+                      enum: ['', 'unassigned', 'assigned', 'retired'] },
+            description: '`unassigned`, `assigned` or `retired`; empty ' +
+                         'for all three.' },
+          { name: 'page', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, examples: [1] },
+            description: 'Which page; a page past the end answers the ' +
+                         'last one.' },
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 300,
+                      examples: [50] },
+            description: 'Rows per page, 50 by default and at most 300.' }
+        ],
+        handler: function (req, res): void {
+          log.debug("Entering the management API YubiKey OTP tokens " +
+                    "endpoint.");
+          self.yubiView(req.query || {}).then(function (view: Json): void {
+            self.sendJson(res, 200, view);
+            log.debug("Leaving the management API YubiKey OTP tokens " +
+                      "endpoint.");
+          }, function (e: any): void {
+            log.error(codes.tag('STS-YUBIOTP-0035') + 'the YubiKey OTP ' +
+                      'inventory could not be listed: ' +
+                      ((e && e.message) || e));
+            codes.mark(res, 'STS-YUBIOTP-0035');
+            self.sendJson(res, 500, { ok: false, errors: [
+              'The YubiKey OTP inventory could not be read.'] });
+            log.debug("Leaving the management API YubiKey OTP tokens " +
+                      "endpoint. Threw.");
+          });
+        } },
 
       // A PERSON'S SSH USER CERTIFICATES (the #1955 review, rule 7): which
       // there are and whether each is revoked, never a key.

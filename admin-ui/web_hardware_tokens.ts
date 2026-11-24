@@ -30,6 +30,14 @@
 //     assigned. Each posts to `/admin/hardware-tokens` and so reaches `POST
 //     /admin-api/hardware-tokens/{import-pskc,assign-oath,remove-oath}`.
 //
+// #2071 adds the `yubiotp` tab — the imported YubiKey OTP inventory,
+// composed from `GET /admin-api/hardware-tokens/yubiotp` under `yq`,
+// `ystatus` and `ypage`, with its CSV import form, Assign on each unassigned
+// token (a person and one OTP) and Remove on each that is not assigned,
+// posting `{import,assign,remove}-yubiotp` — and an Issue form on the SSH
+// tab, posting `issue-ssh`, which the person's SSH sub-tab draws with the
+// person fixed (rule 7: each of those operations had no console control).
+//
 // #1955 P2 adds two tabs: Enrol PIV (the PIV enrolment form for a named
 // person: the slot profile, the request and the two attestation
 // certificates, posting `enrol-piv`) and Escrowed keys (a person's escrowed
@@ -167,12 +175,196 @@ class HardwareTokensPage {
         WebKit.note(t.html('consoleHardwareTokens.lostWhat'))) +
       '<h2 data-tab="oath">' + t.html('consoleHardwareTokens.oath.heading') +
       '</h2>' + self.oathTab(v, c) +
+      '<h2 data-tab="yubiotp">' +
+      t.html('consoleHardwareTokens.yubi.heading') + '</h2>' +
+      self.yubiTab(v, c) +
       '<h2 data-tab="enrol">' + t.html('consoleHardwareTokens.enrolTab') +
       '</h2>' + WebKit.frame(self.enrolForm(t, v, c)) +
       '<h2 data-tab="escrow">' + t.html('consoleHardwareTokens.escrowTab') +
       '</h2>' + WebKit.frame(self.escrowList(t, v, c)) +
       '<h2 data-tab="ssh">' + t.html('consoleHardwareTokens.sshTab') +
-      '</h2>' + WebKit.frame(self.sshList(t, v, c));
+      '</h2>' + WebKit.frame(self.sshList(t, v, c)) +
+      self.sshIssueForm(t, c, '');
+  }
+
+  /**
+   * The SSH Issue form (#2071): a person and one public key, posting
+   * `issue-ssh`; with `user`, for that person alone.
+   *
+   * @param t - the translator
+   * @param c - the render context
+   * @param user - the person the form is fixed to, or '' for a field
+   * @returns the HTML, framed; nothing for a reader who may not write
+   */
+  static sshIssueForm(t: Json, c: Json, user: string): string {
+    const esc = WebKit.esc;
+    if (!c.write) {
+      return '';
+    }
+    const id = user ? 'ucred-ssh' : 'hwt-ssh';
+    return WebKit.frame('<h3>' +
+      t.html('consoleHardwareTokens.ssh.issueHeading') + '</h3>' +
+      WebKit.note(t.html('consoleHardwareTokens.ssh.issueLead')) +
+      '<form method="post" action="' + PAGE + '">' +
+      '<input type="hidden" name="action" value="issue-ssh">' +
+      (user
+        ? '<input type="hidden" name="username" value="' + esc(user) + '">'
+        : '<div class="formrow"><label for="' + id + '-user">' +
+          t.html('consoleHardwareTokens.ssh.issueUser') + '</label>' +
+          '<input type="text" id="' + id + '-user" name="username" ' +
+          'size="24" maxlength="256" required></div>') +
+      '<label for="' + id + '-key">' +
+      t.html('consoleHardwareTokens.ssh.publicKey') + '</label>' +
+      '<textarea id="' + id + '-key" name="publicKey" rows="3" cols="64" ' +
+      'maxlength="8192" required placeholder="ssh-ed25519 AAAA… ' +
+      'user@host"></textarea>' +
+      '<div class="formrow"><label for="' + id + '-principals">' +
+      t.html('consoleHardwareTokens.ssh.principals') + '</label>' +
+      '<input type="text" id="' + id + '-principals" name="principals" ' +
+      'size="32" maxlength="1024" value="' + esc(user) + '">' +
+      '<label for="' + id + '-lifetime">' +
+      t.html('consoleHardwareTokens.ssh.lifetime') + '</label>' +
+      '<input type="text" id="' + id + '-lifetime" name="lifetimeS" ' +
+      'size="8" maxlength="16" inputmode="numeric"></div>' +
+      '<div class="formrow"><button type="submit">' +
+      t.html('consoleHardwareTokens.ssh.issueButton') + '</button></div>' +
+      '</form>');
+  }
+
+  /**
+   * The YubiKey OTP inventory's rows (#2071): Assign on each unassigned
+   * token and Remove on each that is not assigned.
+   *
+   * @param t - the translator
+   * @param tokens - the rows to draw
+   * @param c - the render context
+   * @param acts - whether to draw the two acts
+   * @returns the HTML
+   */
+  static yubiTable(t: Json, tokens: Json[], c: Json,
+                   acts: boolean): string {
+    const esc = WebKit.esc;
+    const statusName = function (s: string): string {
+      return s === 'assigned'
+        ? t.html('consoleHardwareTokens.oath.status.assigned')
+        : (s === 'retired'
+          ? t.html('consoleHardwareTokens.oath.status.retired')
+          : t.html('consoleHardwareTokens.oath.status.unassigned'));
+    };
+    if (!tokens.length) {
+      return WebKit.note(t.html('consoleHardwareTokens.yubi.none'));
+    }
+    const rows = tokens.map(function (r: Json): string {
+      const assign = acts && c.write && r.status === 'unassigned'
+        ? '<form method="post" action="' + PAGE + '" class="inline">' +
+          '<input type="hidden" name="action" value="assign-yubiotp">' +
+          '<input type="hidden" name="serial" value="' + esc(r.serial) +
+          '"><input type="text" name="username" size="14" ' +
+          'maxlength="256" required aria-label="' +
+          esc(t.text('consoleHardwareTokens.oath.assignTo')) +
+          '" placeholder="' +
+          esc(t.text('consoleHardwareTokens.oath.assignTo')) + '">' +
+          '<input type="text" name="otp" size="20" maxlength="64" ' +
+          'autocomplete="off" aria-label="' +
+          esc(t.text('consoleHardwareTokens.person.yubiOtp')) +
+          '" placeholder="' +
+          esc(t.text('consoleHardwareTokens.person.yubiOtp')) + '">' +
+          '<button type="submit">' +
+          t.html('consoleHardwareTokens.oath.assign') + '</button></form>'
+        : '';
+      const remove = acts && c.write && r.status !== 'assigned'
+        ? ' <form method="post" action="' + PAGE + '" class="inline">' +
+          '<input type="hidden" name="action" value="remove-yubiotp">' +
+          '<input type="hidden" name="serial" value="' + esc(r.serial) +
+          '"><button class="danger" type="submit">' +
+          t.html('consoleHardwareTokens.oath.remove') + '</button></form>'
+        : '';
+      return '<tr><td><code>' + esc(r.serial) + '</code></td><td><code>' +
+        esc(r.publicId) + '</code></td><td>' + statusName(r.status) +
+        (r.holder ? '<br>' + esc(r.holder) : '') + '</td><td>' +
+        esc(r.importedAt) + (r.assignedAt ? '<br><small>' +
+          esc(r.assignedAt) + '</small>' : '') + '</td>' +
+        (acts ? '<td>' + assign + remove + '</td>' : '') + '</tr>';
+    }).join('');
+    return '<table class="grid"><thead><tr><th>' +
+      t.html('consoleHardwareTokens.yubi.thSerial') + '</th><th>' +
+      t.html('consoleHardwareTokens.yubi.thPublicId') + '</th><th>' +
+      t.html('consoleHardwareTokens.thStatus') + '</th><th>' +
+      t.html('consoleHardwareTokens.oath.thImported') + '</th>' +
+      (acts ? '<th></th>' : '') + '</tr></thead><tbody>' + rows +
+      '</tbody></table>';
+  }
+
+  /**
+   * The YubiKey OTP tab (#2071): the inventory, its filters, the CSV
+   * import form and each token's acts.
+   *
+   * @param v - the page's view, the inventory composed as `yubiotp`
+   * @param c - the render context
+   * @returns the tab's HTML
+   */
+  static yubiTab(v: Json, c: Json): string {
+    const t = c.t;
+    const esc = WebKit.esc;
+    const y = v.yubiotp || { tokens: [], paging: { pages: 1 } };
+    const refused = HardwareTokensPage.refusedNote(t, y);
+    const params: Json = {};
+    if (v.q) {
+      params.q = v.q;
+    }
+    if (v.status) {
+      params.status = v.status;
+    }
+    if (y.q) {
+      params.yq = y.q;
+    }
+    if (y.status) {
+      params.ystatus = y.status;
+    }
+    // THE TAB'S OWN PAGE PARAMETER, so its pager moves this list only.
+    const nav = WebKit.pageNavPair(PAGE, params,
+      Object.assign({}, y.paging || { pages: 1 }, { param: 'ypage' }), t);
+    const filters = '<form method="get" action="' + PAGE +
+      '#hardware-tokens-tab-yubiotp">' +
+      '<div class="formrow"><label for="yubi-q">' +
+      t.html('consoleHardwareTokens.search') + '</label>' +
+      '<input type="text" id="yubi-q" name="yq" size="24" maxlength="256" ' +
+      'value="' + esc(y.q || '') + '"><label for="yubi-status">' +
+      t.html('consoleHardwareTokens.status') + '</label>' +
+      '<select id="yubi-status" name="ystatus">' +
+      ['', 'unassigned', 'assigned', 'retired'].map(function (s: string) {
+        return '<option value="' + s + '"' + (s === (y.status || '')
+          ? ' selected' : '') + '>' + (s === 'unassigned'
+            ? t.html('consoleHardwareTokens.oath.status.unassigned')
+            : (s === 'assigned'
+              ? t.html('consoleHardwareTokens.oath.status.assigned')
+              : (s === 'retired'
+                ? t.html('consoleHardwareTokens.oath.status.retired')
+                : t.html('consoleHardwareTokens.any')))) + '</option>';
+      }).join('') + '</select><button type="submit">' +
+      t.html('consoleHardwareTokens.filter') + '</button></div></form>';
+    const importForm = !c.write ? '' : WebKit.frame(
+      '<h3>' + t.html('consoleHardwareTokens.yubi.importHeading') + '</h3>' +
+      WebKit.note(t.html('consoleHardwareTokens.yubi.importLead')) +
+      '<form method="post" action="' + PAGE + '">' +
+      '<input type="hidden" name="action" value="import-yubiotp">' +
+      '<div class="formrow"><label for="yubi-csv">' +
+      t.html('consoleHardwareTokens.yubi.file') + '</label>' +
+      '<textarea id="yubi-csv" name="csv" rows="8" cols="64" required ' +
+      'placeholder="serial,public_id,private_id,key"></textarea></div>' +
+      '<div class="formrow"><button type="button" class="secondary" ' +
+      'data-load-file="yubi-csv-file">' +
+      t.html('consoleHardwareTokens.oath.load') + '</button>' +
+      '<input type="file" id="yubi-csv-file" hidden ' +
+      'accept=".csv,text/csv,text/plain" data-load-into="yubi-csv"></div>' +
+      '<div class="formrow"><button type="submit">' +
+      t.html('consoleHardwareTokens.oath.import') + '</button></div>' +
+      '</form>');
+    return WebKit.frame(filters + (refused || ((y.capped
+      ? WebKit.note(t.html('consoleHardwareTokens.capped')) : '') +
+      nav.head + HardwareTokensPage.yubiTable(t, y.tokens || [], c, true) +
+      nav.foot)) + WebKit.note(t.html('consoleHardwareTokens.yubi.what'))) +
+      importForm;
   }
 
   /**
@@ -547,19 +739,28 @@ class HardwareTokensPage {
   }
 
   /**
-   * The YubiKey OTP sub-tab: assign an imported YubiKey by serial, and the
-   * person's YubiKey OTP from the users answer.
+   * The YubiKey OTP sub-tab: the imported YubiKey OTPs on the person's
+   * entry (#2071, `GET /admin-api/hardware-tokens/yubiotp?q=<person>`, read
+   * off the entry, the master copy), assign an imported YubiKey by serial,
+   * and the person's YubiKey OTP from the users answer.
    *
    * @param t - the translator
+   * @param y - `GET /admin-api/hardware-tokens/yubiotp?q=<person>`'s answer
    * @param c - the render context
    * @param user - the person
    * @param enrolled - the person's YubiKey OTP, drawn by the users page
    *   (`mfaSection()`'s `yubi`), with its Clear
    * @returns the HTML
    */
-  static personYubi(t: Json, c: Json, user: string,
+  static personYubi(t: Json, y: Json, c: Json, user: string,
                     enrolled: string): string {
     const esc = WebKit.esc;
+    const refused = HardwareTokensPage.refusedNote(t, y);
+    const rows: Json[] = refused ? [] : ((y && y.tokens) || []).filter(
+      function (r: Json): boolean { return r.holder === user; });
+    const list = refused || (rows.length
+      ? HardwareTokensPage.yubiTable(t, rows, c, false)
+      : WebKit.note(t.html('consoleHardwareTokens.person.noYubiTokens')));
     const assign = c.write
       ? '<form method="post" action="' + PAGE + '">' +
         '<input type="hidden" name="action" value="assign-yubiotp">' +
@@ -575,8 +776,9 @@ class HardwareTokensPage {
       : '';
     return (enrolled ? WebKit.frame(enrolled) : WebKit.frame(
       WebKit.note(t.html('consoleHardwareTokens.person.noYubi')))) +
-      WebKit.frame(WebKit.note(
-        t.html('consoleHardwareTokens.person.yubiWhat')) + assign);
+      WebKit.frame(list + WebKit.note(
+        t.html('consoleHardwareTokens.person.yubiWhat')) + assign +
+        HardwareTokensPage.centralLink(t));
   }
 
   /**
@@ -614,9 +816,11 @@ class HardwareTokensPage {
     if (refused) {
       return WebKit.frame(refused);
     }
+    // #2071: the Issue form, fixed to the person, where the note that
+    // only the person could issue one stood.
     return WebKit.frame(HardwareTokensPage.sshList(t,
-      HardwareTokensPage.personView(v, user), c) +
-      WebKit.note(t.html('consoleHardwareTokens.person.sshIssue')));
+      HardwareTokensPage.personView(v, user), c)) +
+      HardwareTokensPage.sshIssueForm(t, c, user);
   }
 
   /**

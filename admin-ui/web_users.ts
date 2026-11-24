@@ -20,6 +20,7 @@
 // ---------------------------------------------------------------------------
 
 import kit = require('./web_kit');
+import SettingsForms = require('./web_settings');
 import ApplicationsPage = require('./web_applications');
 import GroupsPage = require('./web_groups');
 import TokensPage = require('./web_tokens');
@@ -294,6 +295,10 @@ class UsersPage {
                                            1000))),
         max: String(json.directoryCountsKeptFor) }))
       : '';
+    // TABS (#2070), the Directory pages' shape (`WebPages.PROTOCOL_TABS`):
+    // the tiles and the notes about them are Metadata, the list is a tab
+    // headed by the page's own name, and the `Profile photos` settings
+    // SETTING_HOMES homes here are the Settings tab.
     const inner = '<div class="tiles">' +
         tiles.filter(function (one) {
           return one[0] !== null && one[0] !== undefined;
@@ -353,6 +358,8 @@ class UsersPage {
       '<a href="/admin/cert-issuance#cert-spiffe-overview">' +
       'SPIFFE</a>.') +
       kit.warn(t.html('consoleUsers.body.oneRow')) +
+
+      '<h2 data-tab="people">' + t.html('console.nav.users') + '</h2>' +
 
       // FRAMED AS KEY PAIRS IS (`secframe`, rcbj 2026-11-16): the list has
       // no heading, so everything below the tiles and their notes — the
@@ -506,7 +513,13 @@ class UsersPage {
           limit: String(json.scanLimit),
           people: String(json.directoryPeople) }))) +
       kit.note(t.html('consoleUsers.body.inMemory',
-                      { keeps: json.registryKeeps })));
+                      { keeps: json.registryKeeps }))) +
+
+      // Its own `<h2 data-tab="settings">`, the Settings tab.
+      (json.settings
+        ? SettingsForms.forms(json.settings, '/admin/users', undefined,
+                              ctx.t)
+        : '');
 
     return inner;
   }
@@ -3187,7 +3200,8 @@ class UsersPage {
   // Six Credentials sub-tabs, each drawn by its central Directory page's
   // own functions with the person fixed — `web_hardware_tokens.ts` and
   // `web_openpgp.ts` — from the answers the drill composes
-  // (`web_pages.ts`: `personTokens`, `personOath`, `personOpenpgp`). Every
+  // (`web_pages.ts`: `personTokens`, `personOath`, `personYubi` since
+  // #2071, `personOpenpgp`). Every
   // form posts to the central page's path and so reaches the same
   // `/admin-api` operation (rule 7); the runtime returns to the sub-tab it
   // was sent from. The one-time code token and the YubiKey OTP blocks, with
@@ -3214,8 +3228,8 @@ class UsersPage {
         html: HardwareTokensPage.personOath(ctx.t, json.personOath || null,
                                             c, key, mfaParts.hotp || '') },
       { id: 'ucred-yubiotp', label: t.text('console.nav.yubiotp'),
-        html: HardwareTokensPage.personYubi(ctx.t, c, key,
-                                            mfaParts.yubi || '') },
+        html: HardwareTokensPage.personYubi(ctx.t, json.personYubi || null,
+                                            c, key, mfaParts.yubi || '') },
       { id: 'ucred-piv', label: t.text('console.nav.piv'),
         html: HardwareTokensPage.personPiv(ctx.t, tokens, c, key) },
       // THE CERTIFICATE SIGN-IN BINDINGS (#2080): `stsCertificateBinding`,

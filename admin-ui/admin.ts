@@ -793,6 +793,7 @@ import InstanceSlot = require('../common/instance_slot');
 // process, so the pid alone no longer tells two of them apart.
 import WorkerChannel = require('../common/worker_channel');
 import ProtocolSettingsPage = require('./web_protocol_settings');
+import ClusterStatusPage = require('./web_cluster_status');
 import RolesPage = require('./web_roles');
 import GroupsPage = require('./web_groups');
 import AuditPage = require('./web_audit');
@@ -7902,131 +7903,36 @@ class AdminConsole {
   // page, and the page says how old it is. A synchronous page cannot wait for a
   // query, and a page that silently showed an hour-old membership would be
   // worse than one that says "as of two seconds ago".
+  //
+  // **DRAWN BY `web_cluster_status.ts` SINCE #2070** (2026-11-24), from the
+  // JSON this block answers passed through JSON, as `persistenceStatusBlock()`
+  // is drawn by `web_protocol_settings.ts`. The console is a static
+  // application since #446, so that JSON is all a browser has: the markup
+  // this function built here went unused from then until #2070 and is gone,
+  // and what the page decides — serving or standby read from the lease
+  // table, the members folded by name, every time the database's clock — is
+  // decided there, over `status.self`, `status.nodes`, `status.members`,
+  // `status.leases` and `status.serviceLease`.
   // ===========================================================================
   /**
-   * The Cluster page's section on every OTHER cell's cluster (#361), from
+   * The Cluster page's facts about every OTHER cell's cluster (#361), from
    * what `prepareClusterPage()` read: each cell's running members (folded
    * by name, with their restarts), its leases and each node's worker
-   * pools; a cell that did not answer is drawn as unreachable, with why.
-   * Times are the answering cell's database clock, shown relative to the
-   * moment it answered.
+   * pools, or why a cell did not answer.
    *
-   * @returns `{ html, json }`; both empty in single-cell mode
+   * @returns `{ askedAt, cells, error }`, or null in single-cell mode
    */
-  otherCellsBlock() {
+  otherCellsJson() {
     const { log } = this.deps;
-    const self = this;
-    log.debug("Entering AdminConsole.otherCellsBlock().");
+    log.debug("Entering AdminConsole.otherCellsJson().");
     const held = this.peerClustersNow;
     if (!held) {
-      log.debug("Leaving AdminConsole.otherCellsBlock(). Single cell.");
-      return { html: '', json: null };
+      log.debug("Leaving AdminConsole.otherCellsJson(). Single cell.");
+      return null;
     }
-    const agoFrom = function (at, t) {
-      if (!t) {
-        return '—';
-      }
-      const ms = at - t;
-      return ms >= 0 ? self.esc(self.durationText(ms)) + ' ago'
-                     : 'in ' + self.esc(self.durationText(-ms));
-    };
-    const sections = (held.rows || []).map(function (row) {
-      const head = '<h3>Cell <code>' + self.esc(row.cell) + '</code> (' +
-        self.esc(row.jurisdiction || '?') + ')</h3>';
-      if (!row.reachable) {
-        return head + self.warn('<strong>This cell did not answer.</strong> ' +
-          self.esc(row.error || '') + ' Its members may be running; the ' +
-          'inter-cell channel could not ask them.');
-      }
-      const sum = row.summary || {};
-      const at = Number(sum.at) || 0;
-      if (!sum.clustered) {
-        return head + self.note('Answered in ' +
-          self.esc(String(row.answeredMs)) + 'ms; it is not clustered ' +
-          '(<code>cluster.mode</code> ' + self.esc(sum.mode || 'off') +
-          ').');
-      }
-      const members = sum.members || { live: [], restarts: {}, gone: [] };
-      const restarts = members.restarts || {};
-      const live = (members.live || []).map(function (n) {
-        const r = restarts[n.name] || null;
-        return '<tr><td><strong>' + self.esc(n.name) + '</strong></td><td>' +
-          self.esc(n.mode) + '</td><td>' + self.esc(n.version || 'unknown') +
-          '</td><td>' + (n.uptimeMs
-            ? self.esc(self.durationText(n.uptimeMs)) : '—') +
-          (r ? '<br><span class="sub">restarted ' + self.esc(String(r.count)) +
-               ' time(s), the last life ended ' + agoFrom(at, r.lastEndedAt) +
-               '</span>' : '') +
-          '</td><td>' + agoFrom(at, n.heartbeatAt) +
-          (n.lastStallMs ? '<br><strong>last stall ' +
-            self.esc(String(Math.round(n.lastStallMs / 100) / 10)) +
-            's</strong>' : '') +
-          '</td><td>' + self.esc(String(n.workers || 0)) + '</td><td>' +
-          ((n.leases || []).map(function (l) {
-            return '<code>' + self.esc(l) + '</code>';
-          }).join('<br>') || 'none') + '</td><td>' +
-          (n.agrees === null ? 'not known there'
-            : n.agrees ? 'yes' : '<strong>NO</strong>') + '</td></tr>';
-      }).join('');
-      const gone = (members.gone || []).map(function (n) {
-        return '<tr><td>' + self.esc(n.name || '(no name)') + '</td><td>' +
-          self.esc(n.version || 'unknown') + '</td><td>' +
-          (n.how === 'left' ? 'left cleanly ' : '<strong>expired</strong> ') +
-          agoFrom(at, n.endedAt) + (n.earlierLives
-            ? '<br><span class="sub">and ' + self.esc(String(n.earlierLives)) +
-              ' earlier life/lives</span>' : '') + '</td></tr>';
-      }).join('');
-      const pools = (sum.pools || []).map(function (node) {
-        return (node.pools || []).map(function (p) {
-          return '<tr><td>' + self.esc(node.name) +
-            (node.state && node.state !== 'live'
-              ? ' <em>(' + self.esc(node.state) + ')</em>' : '') +
-            '</td><td>' + self.esc(p.title || p.id) + '</td><td>' +
-            self.esc(p.state || '') + '</td><td>' +
-            self.esc(String(p.currentWorkers)) + '</td><td>' +
-            self.esc(String(p.busyWorkers)) + '</td><td>' +
-            self.esc(String(p.freeWorkers)) + '</td><td>' +
-            self.esc(String(p.crashed)) + '</td><td>' +
-            self.esc(String(p.failedStarts)) + '</td></tr>';
-        }).join('');
-      }).join('');
-      return head + '<div class="tiles">' +
-        self.tile((members.live || []).length, 'running') +
-        self.tile((sum.leases || []).length, 'leases held') +
-        self.tile((members.gone || []).length, 'left or expired') +
-        '</div><p class="sub">Mode ' + self.esc(sum.mode) +
-        '; answered in ' + self.esc(String(row.answeredMs)) + 'ms. Times ' +
-        'are that cell\'s database clock, relative to when it answered.</p>' +
-        self.wideTable('Running members of cell ' + row.cell,
-          '<table><tr><th>Node</th><th>Mode</th><th>Version</th><th>Up</th>' +
-          '<th>Last seen</th><th>Request workers</th><th>Leases</th>' +
-          '<th>Settings agree</th></tr>' +
-          (live || '<tr><td colspan="8">no running members</td></tr>') +
-          '</table>') +
-        (gone ? '<details class="fold"><summary>' +
-          self.esc(String((members.gone || []).length)) + ' node name(s) ' +
-          'that have left or expired</summary><div class="foldbody">' +
-          self.wideTable('Left or expired in cell ' + row.cell,
-            '<table><tr><th>Node</th><th>Version</th><th>Ended</th></tr>' +
-            gone + '</table>') + '</div></details>' : '') +
-        (pools ? self.wideTable('Worker pools of cell ' + row.cell,
-          '<table><tr><th>Node</th><th>Pool</th><th>State</th>' +
-          '<th>Workers</th><th>Busy</th><th>Free</th><th>Crashed</th>' +
-          '<th>Failed starts</th></tr>' + pools + '</table>')
-          : (sum.poolsError ? self.note('Its worker pools could not be ' +
-              'read: ' + self.esc(sum.poolsError)) : ''));
-    }).join('');
-    const html = '<h2>The other cells</h2>' +
-      self.note('This service runs as several cells, each its own cluster ' +
-        'against its own database; the list above is this cell\'s. Each ' +
-        'other cell was asked over the inter-cell channel for its members ' +
-        'and pools when this page was drawn — names and counts only, never ' +
-        'an address.') +
-      (held.error ? self.warn(self.esc(held.error)) : '') +
-      (sections || self.note('No other cell is configured.'));
-    log.debug("Leaving AdminConsole.otherCellsBlock().");
-    return { html: html, json: { askedAt: held.at, cells: held.rows || [],
-                                 error: held.error || null } };
+    log.debug("Leaving AdminConsole.otherCellsJson().");
+    return { askedAt: held.at, cells: held.rows || [],
+             error: held.error || null };
   }
 
   /**
@@ -8034,413 +7940,49 @@ class AdminConsole {
    * active-active still waits for and the shared secrets, for
    * /admin/cluster. The member tables are a snapshot, and say how old.
    *
-   * @returns `html`, the block, and `json`, the status, snapshot and
-   *   secrets it was drawn from
+   * @returns `html`, the block (`web_cluster_status.ts`), and `json`, the
+   *   status, snapshot and secrets it is drawn from
    */
   clusterStatusBlock() {
     const { log, cluster, clusterSecrets, clusterBarrier } = this.deps;
-    const consoleSelf = this;
     log.debug("Entering AdminConsole.clusterStatusBlock().");
     const self = cluster.status();
     const snap = cluster.snapshot();
     const state = snap.state;
-    const secrets = clusterSecrets.describe();
-    const barrier = clusterBarrier.report();
-    const off = self.mode === 'off';
-    const nameOf = {};
-    ((state && state.nodes) || []).forEach(function (node) {
-      nameOf[node.nodeId] = node.name;
-    });
-    // A TIME AGAINST THE DATABASE'S CLOCK, never this process's. Tenths of a
-    // second up to two minutes, because every lifetime and every heartbeat on
-    // this page is seconds long and a tenth is the difference between a node
-    // that is late and one that is dead; past two minutes it is a duration,
-    // because "7200s ago" is a number a reader has to divide (2026-09-17, the
-    // roster — a node that left hours ago is on this page now).
-    const ago = function (at) {
-      if (!state || !at) {
-        return '—';
-      }
-      const ms = state.now - at;
-      const size = Math.abs(ms);
-      const much = size >= 120000
-        ? consoleSelf.durationText(size)
-        : String(Math.round(size / 100) / 10) + 's';
-      return ms >= 0 ? consoleSelf.esc(much) + ' ago'
-                     : 'in ' + consoleSelf.esc(much);
-    };
-
-    const rows = [
-      ['Mode',
-       '<strong>' + this.esc(self.mode) + '</strong> — ' + this.esc(self.why) +
-        (self.refused ? '. ' + this.warn(this.esc(self.refused)) : '')],
-      ['This node', off ? 'not a member of anything'
-        : '<code>' + this.esc(self.nodeId) + '</code> (' + this.esc(self.name) +
-          '), ' +
-          this.esc(self.role === 'worker' ? 'a request worker of that node'
-                                          : 'the front process') +
-          (self.joinedAt ? ', joined ' + this.esc(self.joinedAt) : '')],
-      ['Heartbeat', off ? '—'
-        : 'every ' + this.esc(String(self.heartbeatMs)) + 'ms, lifetime ' +
-          this.esc(String(self.ttlMs)) + 'ms by the database clock' +
-          (self.msSinceRenewal !== null
-            ? '; last renewed ' + this.esc(String(self.msSinceRenewal)) +
-              'ms ago'
-            : '') +
-          (self.heartbeatFailures
-            ? '. <strong>' + this.esc(String(self.heartbeatFailures)) +
-              ' consecutive failure(s)</strong>: ' +
-              this.esc(String(self.lastHeartbeatError)) +
-              '. A node that cannot renew within its lifetime exits.'
-            : '')],
-      ['Leases held here', off || !self.leases.length ? 'none'
-        : self.leases.map(function (lease) {
-          return '<code>' + consoleSelf.esc(lease.name) + '</code> at token ' +
-                 consoleSelf.esc(String(lease.token));
-        }).join(', ')],
-      ['Read barrier', barrier.active
-        ? this.esc(String(barrier.requests)) + ' request(s) waited a mean ' +
-          this.esc(String(Math.round(barrier.meanWaitMs * 10) / 10)) + 'ms ' +
-          'to catch up; ' + this.esc(String(barrier.gaveUp)) + ' were served ' +
-          'before catching up; ' + this.esc(String(barrier.heldForCommit)) +
-          ' response(s) were held a mean ' +
-          this.esc(String(Math.round(barrier.meanHoldMs * 10) / 10)) + 'ms ' +
-          'for their writes to commit' + (barrier.commitFailures
-            ? ', <strong>' + this.esc(String(barrier.commitFailures)) +
-              ' of which failed</strong>' : '')
-        : 'off — only active-active nodes wait for each other\'s writes']
-    ];
-
-    // =======================================================================
-    // THE ROSTER (2026-09-17): WHO IS RUNNING, AND WHEN ANYTHING LAST HEARD
-    // FROM THEM.
-    //
-    // The first question an operator brings to this page is whether the other
-    // container is up and when it was last seen, and until this it was
-    // answered by one table that mixed the live members in with every row the
-    // store has kept and left out everything the membership row's `info`
-    // carries. So the LIVE members come first, one row each, with what only
-    // that node can say about itself — where it runs, how long its process has
-    // been up, how many processes answer requests there, whether its event
-    // loop has stalled — and the rows that have left or expired are folded
-    // underneath rather than thrown away, because #46's own failure mode is a
-    // node whose row expired while its process kept running and the operator
-    // needs to see that it was here.
-    //
-    // **EVERY TIME HERE IS THE DATABASE'S CLOCK** (`state.now`), never this
-    // process's: two containers' clocks differ, and `cluster.js` measures a
-    // lease against the store's clock for exactly that reason. `info.uptimeMs`
-    // is the one exception and is labelled as the node's own, because no other
-    // clock can state how long a process has been running.
-    //
-    // **AND IT IS DRAWN EVEN WHEN THIS PROCESS IS NOT CLUSTERED.** A section
-    // that disappears in `off` mode reads as a page that has not loaded; one
-    // that says there is no membership to list answers the question.
-    // =======================================================================
-    const nodes = state ? state.nodes : [];
-    const now = state ? state.now : 0;
     // FOLDED BY NAME (2026-09-30, `cluster.foldMembers()`): a dead row whose
-    // name has a live row is that node's restart history and is counted on
-    // its live row; only a name with no live row has left or expired, drawn
-    // once. A snapshot from an older build carries no `members`, so it is
-    // folded here from the rows.
-    const folded = (state && state.members) ||
-                   cluster.foldMembers(nodes, now);
-    const live = folded.live;
-    const gone = folded.gone;
-    const restarts = folded.restarts || {};
-
-    // WHICH LEASES EACH NODE STILL HOLDS, by holder. A lapsed row is left out:
-    // a released lease is expired and never deleted (the fencing token must
-    // never go back to 1), so a page that listed every row would say a node
-    // holds what it gave up.
-    const leasesOf = {};
-    ((state && state.leases) || []).forEach(function (lease) {
-      if (lease.expiresAt <= now) {
-        return;
-      }
-      if (!leasesOf[lease.holder]) {
-        leasesOf[lease.holder] = [];
-      }
-      leasesOf[lease.holder].push(lease);
-    });
-
-    // WHAT A LIVE NODE IS DOING is not the same question as whether it is
-    // alive, and the difference is the whole of active-passive mode: one
-    // member holds the service lease and serves, and every other one is a
-    // standby that has restored nothing and bound nothing. The LEASE TABLE is
-    // the only thing that says which, so it is read rather than guessed from
-    // the node's own mode.
-    const roleOf = function (node) {
-      const mine = leasesOf[node.nodeId] || [];
-      const serving = node.mode === 'active-active' || mine.some(
-        function (lease) {
-          return lease.name === cluster.SERVICE_LEASE;
-        });
-      return serving ? { label: 'serving', cls: 'state-valid' }
-                     : { label: 'standby', cls: 'state-none' };
+    // name has a live row is that node's restart history; only a name with
+    // no live row has left or expired. A snapshot from an older build
+    // carries no `members`, so it is folded here from the rows.
+    const folded = state
+      ? (state.members || cluster.foldMembers(state.nodes, state.now))
+      : null;
+    const json = {
+      self: self, snapshotAgeMs: snap.ageMs,
+      nodes: state ? state.nodes : [],
+      // The page's reading of `nodes`, folded by name (rule 7).
+      members: folded ? {
+        running: folded.live.map(function (node) {
+          return node.nodeId;
+        }),
+        restarts: folded.restarts || {},
+        leftOrExpired: folded.gone.map(function (node) {
+          return { nodeId: node.nodeId, name: node.name,
+                   earlierLives: node.earlierLives || 0 };
+        })
+      } : null,
+      leases: state ? state.leases : [],
+      // Which lease makes a member the one serving in active-passive mode
+      // (#2070): the page reads serving or standby from the lease table.
+      serviceLease: cluster.SERVICE_LEASE,
+      databaseNow: state ? state.now : null,
+      otherCells: this.otherCellsJson(),
+      secrets: clusterSecrets.describe(),
+      barrier: clusterBarrier.report()
     };
-
-    // WHERE THE CONTAINER IS, out of the membership row's `info` — the only
-    // channel a node has to tell the others anything about itself, rewritten
-    // on its join and on every heartbeat (`cluster/cluster.js`, `nodeInfo()`).
-    // A row written by an older build simply has fewer members in it, so
-    // nothing below assumes any one of them is there.
-    const whereOf = function (node) {
-      const info = node.info || {};
-      const parts = [];
-      if (info.host) {
-        parts.push('<code>' + consoleSelf.esc(String(info.host)) +
-                   (info.port ? ':' + consoleSelf.esc(String(info.port)) : '') +
-                   '</code>');
-      }
-      if (info.pid) {
-        parts.push('pid ' + consoleSelf.esc(String(info.pid)));
-      }
-      if (info.workers) {
-        parts.push(consoleSelf.esc(String(info.workers)) +
-                   ' request worker(s)');
-      }
-      return parts.length ? parts.join('<br>') : '—';
-    };
-
-    // HOW LONG THE PROCESS HAS BEEN UP, which the node states itself, falling
-    // back to how long its membership row has existed. They are different
-    // facts and the second is the weaker one — a row is written after the
-    // process starts and survives a restart that reuses no node id — so it is
-    // only used where the node said nothing.
-    const upOf = function (node) {
-      const info = node.info || {};
-      const r = restarts[node.name || ''];
-      const history = r
-        ? '<br><span class="sub">restarted ' +
-          consoleSelf.esc(String(r.count)) + ' time(s), the last life ended ' +
-          ago(r.lastEndedAt) + '</span>'
-        : '';
-      if (info.uptimeMs) {
-        return consoleSelf.esc(consoleSelf.durationText(info.uptimeMs)) +
-               history;
-      }
-      return 'joined ' + ago(node.startedAt) + history;
-    };
-
-    // WHEN ANYTHING LAST HEARD FROM IT, and — where the node reported one —
-    // the stall that explains a late heartbeat. A blocked event loop cannot
-    // heartbeat, so the last stall a node saw is the first thing to look at
-    // when its row is close to expiring, and it is the reason `cluster.js`
-    // logs `STS-CLUSTER-0025` at all. It is the MOST RECENT stall rather than
-    // the worst one, which is what `status()` reports as `lastStallMs` too.
-    const seenOf = function (node) {
-      const info = node.info || {};
-      const stall = Number(info.lastStallMs) || 0;
-      return ago(node.heartbeatAt) + (stall
-        ? '<br><strong>last stall ' +
-          consoleSelf.esc(String(Math.round(stall / 100) / 10)) + 's</strong>'
-        : '');
-    };
-
-    const leasesCell = function (node) {
-      const mine = leasesOf[node.nodeId] || [];
-      if (!mine.length) {
-        return 'none';
-      }
-      return mine.map(function (lease) {
-        return '<code>' + consoleSelf.esc(lease.name) + '</code> at token ' +
-               consoleSelf.esc(String(lease.token));
-      }).join('<br>');
-    };
-
-    const agreesCell = function (node) {
-      if (node.agrees === null) {
-        return 'not known here';
-      }
-      return node.agrees ? 'yes'
-        : '<strong>NO</strong> — two nodes with different values answer ' +
-          'the same request two ways';
-    };
-
-    const liveRows = live.map(function (node) {
-      const role = roleOf(node);
-      return '<tr><td><strong>' + consoleSelf.esc(node.name) +
-        '</strong>' + (node.nodeId === self.nodeId
-          ? ' <em>(this node)</em>' : '') +
-        '<br><code>' + consoleSelf.esc(node.nodeId) + '</code></td><td>' +
-        whereOf(node) + '</td><td><span class="' + role.cls + '">' +
-        consoleSelf.esc(role.label) + '</span><br>' +
-        consoleSelf.esc(node.mode) + '</td><td>' +
-        consoleSelf.esc(node.version || 'unknown') + '</td><td>' +
-        upOf(node) + '</td><td>' + seenOf(node) + '</td><td>' +
-        ago(node.expiresAt) + '</td><td>' + leasesCell(node) + '</td><td>' +
-        agreesCell(node) + '</td></tr>';
-    }).join('');
-
-    const goneRows = gone.map(function (node) {
-      return '<tr><td><strong>' + consoleSelf.esc(node.name) +
-        '</strong><br><code>' + consoleSelf.esc(node.nodeId) +
-        '</code></td><td>' + whereOf(node) + '</td><td>' +
-        consoleSelf.esc(node.mode) + '</td><td>' +
-        consoleSelf.esc(node.version || 'unknown') + '</td><td>' +
-        ago(node.startedAt) + '</td><td>' + ago(node.heartbeatAt) +
-        '</td><td>' + (node.leftAt
-          ? 'left cleanly ' + ago(node.leftAt)
-          : '<strong>expired</strong> ' + ago(node.expiresAt)) +
-        (node.earlierLives
-          ? '<br><span class="sub">and ' +
-            consoleSelf.esc(String(node.earlierLives)) +
-            ' earlier life/lives under this name</span>'
-          : '') +
-        '</td></tr>';
-    }).join('');
-
-    const goneTable = !gone.length ? ''
-      : '<details class="fold"><summary>' + this.esc(String(gone.length)) +
-        ' node(s) that have left or expired</summary><div class="foldbody">' +
-        '<p>One row per NODE NAME with no running member: a name that is ' +
-        'running again is that node restarted, counted on its running row ' +
-        'above rather than listed here, and a name that ended several ' +
-        'times is shown once, as its latest life.</p>' +
-        '<p>A node that stopped cleanly released its leases on the way out, ' +
-        'so another member took them over within one heartbeat. A node that ' +
-        'EXPIRED did not, and its leases waited out their lifetime — and it ' +
-        'is dead for good either way: the heartbeat refuses to renew an ' +
-        'expired row, so its process exits rather than come back quietly.</p>' +
-        this.wideTable('Nodes that have left or expired',
-          '<table><tr><th>Node</th><th>Where</th><th>Mode</th>' +
-          '<th>Version</th><th>Started</th><th>Last seen</th><th>Ended</th>' +
-          '</tr>' + goneRows + '</table>') + '</div></details>';
-
-    // TWO DIFFERENT REASONS FOR NO LIST, AND THEY MUST NOT SHARE A SENTENCE
-    // (2026-09-18). `off` is a fact about the configuration. No `state` on a
-    // clustered process is a fact about THIS PROCESS: it has not read the
-    // member list yet — a request worker reads it when it attaches and then
-    // at most once a heartbeat, and a page drawn in the gap has nothing to
-    // show. The first version said "cluster.mode resolved to off" for both,
-    // and on testidp, where `/admin` is served by a worker, told somebody
-    // looking at a healthy three-node cluster that it was not clustered.
-    const noList = off
-      ? this.note('There is no membership to list: <code>cluster.mode</code> ' +
-                  'resolved to <code>off</code>, so this process is not a ' +
-                  'node of anything and writes nothing another node could ' +
-                  'fence. What runs here is one container, which is correct ' +
-                  'for one container and WRONG for several against one store.')
-      : this.note('<strong>This process has not read the member list ' +
-                  'yet.</strong> The node is clustered (' +
-                  this.esc(self.mode) + '); the ' +
-                  (self.role === 'worker' ? 'request worker' : 'process') +
-                  ' drawing this page reads the membership from the store ' +
-                  'when it starts and then at most once a heartbeat, and ' +
-                  'this page was drawn before the first read came back. ' +
-                  'Reload it.');
-    const nodeTable = '<h2>Members</h2>' + (off || !state
-      ? noList
-      : '<div class="tiles">' +
-        this.tile(live.length, 'running') +
-        this.tile(Object.keys(leasesOf).length, 'nodes holding a lease') +
-        this.tile(gone.length, 'left or expired') +
-        '</div><p>As of ' +
-        this.esc(String(Math.round((snap.ageMs || 0) / 100) / 10)) +
-        's ago, read at most one heartbeat apart by whichever process drew ' +
-        'this page. <strong>Every time below is the database\'s ' +
-        'clock</strong>, which a lifetime is measured against — two ' +
-        'containers\' clocks differ, and a lease that expires by ' +
-        'whoever-is-asking\'s ' +
-        'clock is a lease two nodes both hold. <em>Up</em> is the exception: ' +
-        'it is the node\'s own process uptime, which no other clock can ' +
-        'state.</p>' +
-        this.wideTable('Running cluster members',
-          '<table><tr><th>Node</th><th>Where</th><th>State</th>' +
-          '<th>Version</th><th>Up</th><th>Last seen</th><th>Expires</th>' +
-          '<th>Leases</th><th>Settings agree</th></tr>' +
-          (liveRows || '<tr><td colspan="9">no live member rows — this ' +
-           'node\'s own row arrives on its first heartbeat</td></tr>') +
-          '</table>') + goneTable +
-        '<h2>Leases</h2><p>A lease is a named role ONE node holds, with a ' +
-        'fencing token that goes up every time it changes hands. A released ' +
-        'lease is expired and never deleted, so the token never goes back ' +
-        'to 1.</p><table><tr><th>Lease</th><th>Holder</th>' +
-        '<th>Token</th><th>Expires</th></tr>' +
-        (state.leases.length ? state.leases.map(function (lease) {
-          const lapsed = lease.expiresAt <= now;
-          return '<tr><td><code>' + consoleSelf.esc(lease.name) +
-                 '</code></td><td>' +
-            consoleSelf.esc(nameOf[lease.holder] || lease.holder) +
-            '</td><td>' +
-            consoleSelf.esc(String(lease.token)) + '</td><td>' +
-            (lapsed ? 'released or expired' : ago(lease.expiresAt)) +
-            '</td></tr>';
-        }).join('') : '<tr><td colspan="4">none</td></tr>') + '</table>');
-
-    const caps = self.capabilities;
-    const capabilityTable = '<h2>What active-active depends on</h2><p>' +
-      (caps.ready
-        ? 'Every capability is provided' + (caps.acceptedMissing.length
-          ? ' or accepted as missing (<code>' +
-            this.esc(caps.acceptedMissing.join(', ')) + '</code>)' : '') + '.'
-        : '<strong>' + this.esc(String(caps.missing.length)) + ' of ' +
-          this.esc(String(caps.rows.length)) + ' are missing</strong>, so ' +
-          '<code>cluster.mode=active-active</code> refuses to start. Each is ' +
-          'a way two nodes give different answers, described under the ' +
-          'section of issue #46 named beside it.') +
-      (caps.unknownAccepted.length
-        ? ' <strong>cluster.acceptMissingCapabilities names ids this build ' +
-          'does not know:</strong> <code>' +
-          this.esc(caps.unknownAccepted.join(', ')) + '</code>.' : '') +
-      '</p><table><tr><th>Capability</th><th>#46</th><th>State</th>' +
-      '<th>What</th><th>Where</th></tr>' +
-      caps.rows.map(function (row) {
-        return '<tr><td><code>' + consoleSelf.esc(row.id) + '</code></td><td>' +
-          consoleSelf.esc(row.section) + '</td><td>' +
-          (row.provided ? 'provided'
-            : (row.accepted ? '<strong>accepted as missing</strong>'
-                            : '<strong>missing</strong>')) + '</td><td>' +
-          consoleSelf.esc(row.what) + '</td><td><code>' +
-          consoleSelf.esc(row.by) + '</code></td></tr>';
-      }).join('') + '</table>';
-
-    const secretTable = '<h2>Shared secrets</h2><table><tr><th>Secret</th>' +
-      '<th>Where this process\'s value came from</th><th>What</th></tr>' +
-      secrets.secrets.map(function (one) {
-        return '<tr><td><code>' + consoleSelf.esc(one.name) +
-               '</code></td><td>' +
-          consoleSelf.esc(one.source) + '</td><td>' +
-          consoleSelf.esc(one.what) + '</td></tr>';
-      }).join('') + '</table>';
-
-    const otherCells = this.otherCellsBlock();
-    const html = '<h2>Right now</h2>' +
-      (off ? this.note('This process is not clustered: ' +
-                       '<code>cluster.mode</code> resolved to ' +
-                       '<code>off</code>. That is correct for one container ' +
-                       'and WRONG for several against one store — see the ' +
-                       'first paragraph above.') : '') +
-      '<table class="key"><tr><th>What</th><th>Answer</th></tr>' +
-      rows.map(function (row) {
-        return '<tr><th>' + consoleSelf.esc(row[0]) + '</th><td>' + row[1] +
-               '</td></tr>';
-      }).join('') + '</table>' + nodeTable + otherCells.html + capabilityTable +
-      secretTable;
-
+    const html = ClusterStatusPage.render(JSON.parse(JSON.stringify(json)),
+                                          WebKit.context().t);
     log.debug("Leaving AdminConsole.clusterStatusBlock(). mode=" + self.mode);
-    return {
-      html: html,
-      json: { self: self, snapshotAgeMs: snap.ageMs,
-              nodes: state ? state.nodes : [],
-              // The page's reading of `nodes`, folded by name (rule 7).
-              members: state ? {
-                running: live.map(function (node) {
-                  return node.nodeId;
-                }),
-                restarts: restarts,
-                leftOrExpired: gone.map(function (node) {
-                  return { nodeId: node.nodeId, name: node.name,
-                           earlierLives: node.earlierLives || 0 };
-                })
-              } : null,
-              leases: state ? state.leases : [],
-              databaseNow: state ? state.now : null,
-              otherCells: otherCells.json,
-              secrets: secrets, barrier: barrier }
-    };
+    return { html: html, json: json };
   }
 
   // ===========================================================================
@@ -9274,7 +8816,9 @@ const SETTING_HOMES = [
   // these five had to LEAVE /admin/oauth2, and a group leaves a page by being
   // homed on another. The four global oauth2 rows — the issuer, RFC 9700 mode
   // and the two clock skews — stay in the `OAuth 2.0 / OIDC` group and stay
-  // over there.
+  // over there. The page's table holds the lifetimes; the group's other
+  // three rows are an ordinary settings form under it since #2070
+  // (`otherSettings` on the answer), where they had been drawn nowhere.
   { group: 'OAuth 2.0 / OIDC per-client', pages: ['/admin/token-lifetimes'] },
   { group: 'WS-Trust', pages: ['/admin/wstrust'] },
   // `WS-Federation` had one row, the mock relying party's wctx lifetime, and
@@ -9410,7 +8954,9 @@ const SETTING_HOMES = [
   { group: 'Audit log', pages: ['/admin/audit'] },
   { group: 'Audit export', pages: ['/admin/audit-export'] },
   { group: 'Sign-in appearance', pages: ['/admin/sign-in-appearance'] },
-  // What a person may set, so beside the people it is about (#719).
+  // What a person may set, so beside the people it is about (#719). Drawn
+  // on the Users page's Settings tab since #2070; until then the page drew
+  // the people and no settings form, and none of the six could be changed.
   { group: 'Profile photos', pages: ['/admin/users'] },
   // A person's OpenPGP key and the Web Key Directory (#1955 P6). On
   // Protocols → OpenPGP since #2049: Directory → OpenPGP keys
@@ -10675,9 +10221,13 @@ const PROTOCOL_SETTINGS_PAGES = [
           'the 44 characters a YubiKey types are decrypted with the slot\'s ' +
           'AES-128 key, which this service holds, and the counters checked ' +
           'so a code is accepted once. Nothing is sent to YubiCloud. A ' +
-          'person enrols a slot on <code>/portal/mfa</code>, or an ' +
-          'administrator imports a batch and assigns one on <a ' +
-          'href="/admin/hardware-tokens">Directory → Hardware tokens</a>.',
+          'person enrols a slot on <code>/portal/mfa</code>. An ' +
+          'administrator imports a batch of YubiKeys from a CSV on the ' +
+          'YubiKey OTP tab of <a href="/admin/hardware-tokens#hardware-' +
+          'tokens-tab-yubiotp">Directory → Hardware tokens</a>, which ' +
+          'lists them and assigns one; a person\'s own YubiKey OTP ' +
+          'sub-tab on Directory → Users lists theirs and assigns one by ' +
+          'serial, or the person claims it on the portal.',
     also: ['<strong>THE AES KEY STAYS ON THIS SERVICE, SO THE SIGN-IN IS ' +
            '<code>amr otp</code> AND NEVER <code>hwk</code>.</strong> ' +
            'Holding the key that checks a code is what lets a copy of it ' +
@@ -10733,8 +10283,10 @@ const PROTOCOL_SETTINGS_PAGES = [
           'trusts through <code>TrustedUserCAKeys</code>. The public key ' +
           'is <code>GET /pki/ssh-user-ca/{scope}</code> and its key ' +
           'revocation list <code>GET /pki/ssh-user-krl/{scope}</code>. A ' +
-          'person\'s certificates, and revoking one, are the SSH tab of <a ' +
-          'href="/admin/hardware-tokens">Directory → Hardware tokens</a>.',
+          'person\'s certificates — issuing one for them, listing them ' +
+          'and revoking one — are the SSH tab of <a ' +
+          'href="/admin/hardware-tokens">Directory → Hardware tokens</a> ' +
+          'and the person\'s own SSH sub-tab on Directory → Users.',
     also: ['<strong>OPENSSH DEFINES NO POST-QUANTUM SIGNATURE.</strong> ' +
            '<code>ssh-mldsa-65</code> is this service\'s own wire name, a ' +
            'second authority published at the same path with ' +

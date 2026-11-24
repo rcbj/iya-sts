@@ -2299,13 +2299,17 @@
     "en": "f149352fa2ac36d0",
     "text": "NON-SPEC (#1955 P4). Ang mga HOTP at TOTP token na in-import ng mga administrator mula sa mga PSKC seed file ng mga vendor, hindi naka-assign, naka-assign o retirado, naka-page at hinahanap ayon sa serial o tao. Hindi kailanman secret. Kapareho ng GET /admin/hardware-tokens (ang OATH tab nito)."
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/yubiotp.what": {
+    "en": "6c6508ca58d1ea8d",
+    "text": "NON-SPEC (#2071). Ang mga YubiKey OTP na na-import ng mga administrator mula sa isang CSV, hindi nakatalaga, nakatalaga o retirado, naka-page at hinahanap ayon sa serial o tao; ang sa isang tao ay binabasa mula sa kanilang entry, ang master copy. Hindi kailanman isang key. Sinasalamin ang GET /admin/hardware-tokens (ang YubiKey OTP tab nito)."
+  },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "cdbf34a1fbdf290e",
-    "text": "NON-SPEC (#1955). lost, na may { key }: minamarkahang nawala ang token, inaalis ang bawat passkey dito, nire-revoke ang bawat certificate dito dahil sa keyCompromise, nagpapadala ng CAEP credential-change para sa bawat isa at tinatapos ang mga session na kanilang na-sign in. enrol-piv, na may { username, profile, csr, attestationCertificate?, attestationIssuer? }: isang PIV slot certificate na inisyu sa taong iyon sa pamamagitan ng EST Issuing CA, napatunayan ang YubiKey PIV attestation nito at naitala ang YubiKey. recover-key, na may { username, serial }: ang naka-escrow na piv-key-management key ng taong iyon, na pinahihintulutan lamang ng access-control policy sa PIV_KEY_RECOVERY, pagkatapos ng kamakailang sign-in. revoke-ssh, na may { username, serial }: nire-revoke ang SSH user certificate ng taong iyon at inilalagay sa KRL ng realm. Ang apat na aksiyon ng console sa pahinang iyon."
+    "en": "ecf18182e65d8f0a",
+    "text": "NON-SPEC (#1955). lost, na may { key }: minamarkahang nawala ang token, inaalis ang bawat passkey dito, nire-revoke ang bawat certificate dito dahil sa keyCompromise, nagpapadala ng CAEP credential-change para sa bawat isa at tinatapos ang mga session na kanilang na-sign in. enrol-piv, na may { username, profile, csr, attestationCertificate?, attestationIssuer? }: isang PIV slot certificate na inisyu sa taong iyon sa pamamagitan ng EST Issuing CA, napatunayan ang YubiKey PIV attestation nito at naitala ang YubiKey. recover-key, na may { username, serial }: ang naka-escrow na piv-key-management key ng taong iyon, na pinahihintulutan lamang ng access-control policy sa PIV_KEY_RECOVERY, pagkatapos ng kamakailang sign-in. revoke-ssh, na may { username, serial }: nire-revoke ang SSH user certificate ng taong iyon at inilalagay sa KRL ng realm. issue-ssh, na may { username, publicKey, principals?, lifetimeS? }: isang SSH user certificate na inisyu sa taong iyon, isinulat muna sa kanilang entry (#2071). Ang limang aksiyon ng console sa pahinang iyon."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "f5b724d2c79b5f74",
-    "text": "nag-uulat ng nawalang hardware token at nagreretiro ng mga credential nito, nag-iisyu ng PIV slot certificate, nagbibigay ng naka-escrow na key, o nire-revoke ang SSH certificate ng isang tao"
+    "en": "38d7254e0ab72a00",
+    "text": "nag-uulat ng nawalang hardware token at nagreretiro ng mga credential nito, nag-iisyu ng PIV slot certificate, nagbibigay ng naka-escrow na key, o nag-iisyu o nire-revoke ang SSH certificate ng isang tao"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/ssh-certificates.what": {
     "en": "84ce6fea3694d4c0",

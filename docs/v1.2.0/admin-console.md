@@ -380,6 +380,14 @@ A request that was *refused* records nothing, so this is a list of identities
 that got somewhere, not of names that were tried. Applications are never listed
 here — they are on [Applications](applications.md).
 
+**The page is drawn as tabs.** **Metadata** holds the tiles and the notes
+about them, **Users** the list and the Create a user box, and **Settings**
+holds the [Profile photos](configuration.md#profile-photos)
+settings: whether a person may set their own photo on the portal, whether a
+federation partner's photo is copied, and the size and pixel limits. They are
+answered as `settings` on `GET /admin-api/users` and saved through
+`POST /admin-api/config/set-many`.
+
 **The tiles count the realm's whole directory; the list is capped.** The
 list reads at most the first 5,000 directory people (`credentials.factorScanLimit`)
 and adds everybody this service has seen, so the footer's *known in total* is
@@ -1241,19 +1249,20 @@ walks through both. [Applications](applications.md) documents the page,
 The registers of what people carry, filed under Directory because each is
 somebody's; the mechanisms' settings are six Protocols pages
 ([below](#protocols-pages-worth-explaining)).
-**Directory → Hardware tokens** has five tabs after Metadata:
+**Directory → Hardware tokens** has six tabs after Metadata:
 
 | Tab | What it holds | API |
 |---|---|---|
 | **Hardware tokens** | every token the realm recorded from an attestation, by status, searched by serial or person, with **Report lost** | `GET /admin-api/hardware-tokens`, `POST …/lost` |
 | **OATH tokens** | the inventory of imported PSKC tokens, the import form, **Assign** on an unassigned one and **Remove** on one not assigned | `GET …/oath`, `POST …/import-pskc`, `assign-oath`, `remove-oath` |
+| **YubiKey OTP** | the inventory of imported YubiKey OTPs, searched by serial or person, the CSV import form, **Assign** (a person and one OTP) on an unassigned one and **Remove** on one not assigned | `GET …/yubiotp`, `POST …/import-yubiotp`, `assign-yubiotp`, `remove-yubiotp` |
 | **Enrol PIV** | the PIV enrolment form for a named person: the slot profile, the request and the two attestation certificates | `POST …/enrol-piv` |
 | **Escrowed keys** | a person's escrowed `piv-key-management` certificates, each with **Recover key** | `GET …/escrowed`, `POST …/recover-key` |
-| **SSH certificates** | a person's SSH user certificates, each with **Revoke** | `GET …/ssh-certificates`, `POST …/revoke-ssh` |
+| **SSH certificates** | a person's SSH user certificates, each with **Revoke**, and the **Issue a certificate** form: a person, one public key, principals and a lifetime | `GET …/ssh-certificates`, `POST …/revoke-ssh`, `POST …/issue-ssh` |
 
-YubiKey OTP has no tab: a batch is imported with
-`POST /admin-api/hardware-tokens/import-yubiotp` and assigned on the person's
-YubiKey OTP sub-tab. **Directory → OpenPGP keys** shows one person's OpenPGP
+The person's YubiKey OTP sub-tab lists the imported YubiKey OTPs on their
+entry and assigns one by serial; their SSH sub-tab lists their certificates
+and issues one with the person fixed. **Directory → OpenPGP keys** shows one person's OpenPGP
 key, its Web Key Directory publication, their S/MIME certificate and their
 mail encryption, and registers a key from a challenge they signed. Both
 pages' per-person halves are also the person's Credentials sub-tabs
@@ -2036,6 +2045,15 @@ from `POST /admin-api/config/set-many` in one way: they **refuse** a key that is
 not one of the four, so a misspelling fails loudly.
 `POST /admin-api/token-lifetimes/defaults` restores the four without disturbing
 any other setting.
+
+**The rest of the per-client group is drawn under the lifetimes.** Three
+settings share the lifetimes' group and are not lifetimes:
+`oauth2.refreshTokenMaxChainS` (how long a chain of refresh tokens may last
+from the first one), `oauth2.consentAlwaysForPublicClients` and
+`oauth2.maxAuthAgeS`. They are an ordinary settings form on this page, saved
+through `POST /admin-api/config/set-many` like every other page's, and
+`GET /admin-api/token-lifetimes` answers them as `otherSettings`. They are not
+taken by `POST /admin-api/token-lifetimes/set`.
 
 ### Claims — `/admin/claims`, `/admin/userinfo-claims`, `/admin/saml-attributes`
 

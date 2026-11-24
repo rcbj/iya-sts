@@ -2299,13 +2299,17 @@
     "en": "f149352fa2ac36d0",
     "text": "NON-SPEC (#1955 P4). De HOTP- och TOTP-tokens som administratörer importerat från leverantörers PSKC-fröfiler, ej tilldelade, tilldelade eller avvecklade, sidindelade och sökbara på serienummer eller person. Aldrig en hemlighet. Speglar GET /admin/hardware-tokens (dess OATH-flik)."
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens/yubiotp.what": {
+    "en": "6c6508ca58d1ea8d",
+    "text": "NON-SPEC (#2071). De YubiKey OTP som administratörer importerat från en CSV, otilldelade, tilldelade eller tagna ur bruk, sidindelade och sökbara på serienummer eller person; en persons läses från deras post, huvudkopian. Aldrig en nyckel. Speglar GET /admin/hardware-tokens (dess flik YubiKey OTP)."
+  },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.what": {
-    "en": "cdbf34a1fbdf290e",
-    "text": "NON-SPEC (#1955). lost, med { key }: token markeras som förlorad, varje passkey på den tas bort, varje certifikat på den återkallas för keyCompromise, en CAEP credential-change skickas för var och en och de sessioner de loggade in avslutas. enrol-piv, med { username, profile, csr, attestationCertificate?, attestationIssuer? }: ett PIV-platscertifikat utfärdat till den personen över EST:s utfärdande CA, dess YubiKey-PIV-attestering verifierad och YubiKey registrerad. recover-key, med { username, serial }: den personens deponerade piv-key-management-nyckel, som åtkomstpolicyn endast tillåter PIV_KEY_RECOVERY, efter en nylig inloggning. revoke-ssh, med { username, serial }: den personens SSH-användarcertifikat återkallat och lagt på sfärens KRL. Konsolens fyra åtgärder på den sidan."
+    "en": "ecf18182e65d8f0a",
+    "text": "NON-SPEC (#1955). lost, med { key }: token markeras som förlorad, varje passkey på den tas bort, varje certifikat på den återkallas för keyCompromise, en CAEP credential-change skickas för var och en och de sessioner de loggade in avslutas. enrol-piv, med { username, profile, csr, attestationCertificate?, attestationIssuer? }: ett PIV-platscertifikat utfärdat till den personen över EST:s utfärdande CA, dess YubiKey-PIV-attestering verifierad och YubiKey registrerad. recover-key, med { username, serial }: den personens deponerade piv-key-management-nyckel, som åtkomstpolicyn endast tillåter PIV_KEY_RECOVERY, efter en nylig inloggning. revoke-ssh, med { username, serial }: den personens SSH-användarcertifikat återkallat och lagt på sfärens KRL. issue-ssh, med { username, publicKey, principals?, lifetimeS? }: ett SSH-användarcertifikat utfärdat till den personen, skrivet på deras post först (#2071). Konsolens fem åtgärder på den sidan."
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/:action.effect": {
-    "en": "f5b724d2c79b5f74",
-    "text": "anmäler en hårdvarutoken som förlorad och drar tillbaka dess autentiseringsuppgifter, utfärdar ett PIV-platscertifikat, lämnar ut en deponerad nyckel eller återkallar en persons SSH-certifikat"
+    "en": "38d7254e0ab72a00",
+    "text": "anmäler en hårdvarutoken som förlorad och drar tillbaka dess autentiseringsuppgifter, utfärdar ett PIV-platscertifikat, lämnar ut en deponerad nyckel eller utfärdar eller återkallar en persons SSH-certifikat"
   },
   "stsmetadata.endpoints./admin-api/hardware-tokens/ssh-certificates.what": {
     "en": "84ce6fea3694d4c0",

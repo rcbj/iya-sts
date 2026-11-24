@@ -28,7 +28,10 @@
 //   2. every page draws a control for every setting of each group it homes,
 //      but for the rows OWED names, which must still be undrawn;
 //   3. the six #2049 pages draw their groups, and Directory → OpenPGP keys
-//      and Directory → Hardware tokens are named by no row.
+//      and Directory → Hardware tokens are named by no row;
+//   4. the #2070 pages: the rest of the per-client group on Token
+//      lifetimes, Profile photos on a Users tab, and the Cluster status
+//      block.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -53,20 +56,10 @@ require('../admin-ui/crypto_metadata');
 // `/admin/cluster` (never converted by #446, so "not a console page"),
 // `/admin/vc` (`Person DIDs` left out of the tab's group list) and
 // `/admin/saml2` (two assertion rows outside `SAML_ASSERTION_SETTINGS`).
-const OWED = {
-  // The tab draws `TOKEN_LIFETIME_KEYS` only, from an answer that carries
-  // those rows alone; drawing the rest of the group needs the answer's
-  // model to carry them.
-  '/admin/token-lifetimes [OAuth 2.0 / OIDC per-client]':
-    ['oauth2.refreshTokenMaxChainS', 'oauth2.consentAlwaysForPublicClients',
-     'oauth2.maxAuthAgeS'],
-  // Directory → Users draws people and no settings form; its answer
-  // carries no settings block.
-  '/admin/users [Profile photos]':
-    ['profilePhoto.selfService', 'profilePhoto.cacheFederated',
-     'profilePhoto.maxFileBytes', 'profilePhoto.maxStoredBytes',
-     'profilePhoto.minPixels', 'profilePhoto.maxPixels']
-};
+// EMPTY SINCE #2070: `/admin/token-lifetimes` draws the rest of its group
+// from the answer's `otherSettings`, and Directory → Users draws
+// `Profile photos` on a Settings tab from its answer's `settings`.
+const OWED = {};
 
 const log = require('bunyan').createLogger({
   name: 'setting_homes_drawn',
@@ -196,6 +189,44 @@ async function runBody(t) {
            'SSH user certificates', 'Hardware tokens'].map(function (g) {
             return g + '=' + keysOf(g).join('|');
           }).join(' '));
+
+  t.log.info('=== 4. the #2070 pages ===');
+  // The two groups #2070 drew, each on its page; the Users page as tabs
+  // in the Directory pages' shape; and Platform → Cluster's status block,
+  // which had no browser renderer from #446 until #2070.
+  const tokenPage = await consolePage.draw('/admin/token-lifetimes', {});
+  t.check(tokenPage.status === 200 &&
+          ['oauth2.refreshTokenMaxChainS',
+           'oauth2.consentAlwaysForPublicClients',
+           'oauth2.maxAuthAgeS'].every(function (key) {
+            return (tokenPage.html.split('name="' + key + '"').length - 1) ===
+              1;
+          }),
+          '4. /admin/token-lifetimes draws one control for each of the ' +
+          'three rows that are not lifetimes',
+          String(tokenPage.status));
+  const usersPage = await consolePage.draw('/admin/users', {});
+  t.check(usersPage.status === 200 &&
+          usersPage.html.indexOf('id="users-tab-metadata"') >= 0 &&
+          usersPage.html.indexOf('id="users-tab-metadata"') <
+            usersPage.html.indexOf('id="users-tab-people"') &&
+          usersPage.html.indexOf('id="users-tab-people"') <
+            usersPage.html.indexOf('id="users-tab-settings"') &&
+          usersPage.html.indexOf('name="profilePhoto.selfService"') >
+            usersPage.html.indexOf('id="users-tab-settings"'),
+          '4. /admin/users is tabs: Metadata, the people, and the ' +
+          'Profile photos settings',
+          String(usersPage.status));
+  const clusterPage = await consolePage.draw('/admin/cluster', {});
+  t.check(clusterPage.status === 200 &&
+          ['Right now', 'Members', 'What active-active depends on',
+           'Shared secrets'].every(function (heading) {
+            return clusterPage.html.indexOf('<h2>' + heading + '</h2>') >= 0;
+          }) &&
+          clusterPage.html.indexOf('consoleCluster.') < 0,
+          '4. /admin/cluster draws its status block, every word from the ' +
+          'catalog',
+          String(clusterPage.status));
   log.debug("Leaving runBody().");
 }
 

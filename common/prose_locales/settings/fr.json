@@ -4860,8 +4860,8 @@
     "text": "Âge maximal d’authentification (s)"
   },
   "oauth2.maxAuthAgeS|description": {
-    "en": "5a37fced9d4d040e",
-    "text": "Depuis combien de temps un client a été authentifié, en secondes, avant qu’une demande d’autorisation doive authentifier de nouveau, même lorsque la demande n’envoie pas de max_age. 0, la valeur par défaut, n’ajoute aucune limite propre, si bien qu’un client ordinaire est inchangé. Lu à chaque demande d’autorisation : cela ne réécrit pas une session déjà enregistrée. La console d’administration (sts-admin-console), le portail utilisateur (sts-user-portal) et l’application de rapports (sts-report) portent chacun leur propre valeur et prennent la plus courte entre elle et authn.sessionLifetimeS, si bien qu’augmenter ce paramètre ou la durée de vie de la session n’allonge jamais ces trois-là, et diminuer authn.sessionLifetimeS les raccourcit encore. Le remplacement par client est oauthMaxAuthAgeS. Ce n’est pas une durée de vie de jeton et ce n’est pas sur /admin/token-lifetimes (#825)."
+    "en": "163792a8531f4514",
+    "text": "Depuis combien de temps un client a été authentifié, en secondes, avant qu’une demande d’autorisation doive authentifier de nouveau, même lorsque la demande n’envoie pas de max_age. 0, la valeur par défaut, n’ajoute aucune limite propre, si bien qu’un client ordinaire est inchangé. Lu à chaque demande d’autorisation : cela ne réécrit pas une session déjà enregistrée. La console d’administration (sts-admin-console), le portail utilisateur (sts-user-portal) et l’application de rapports (sts-report) portent chacun leur propre valeur et prennent la plus courte entre elle et authn.sessionLifetimeS, si bien qu’augmenter ce paramètre ou la durée de vie de la session n’allonge jamais ces trois-là, et diminuer authn.sessionLifetimeS les raccourcit encore. Le remplacement par client est oauthMaxAuthAgeS. Ce n’est pas une durée de vie de jeton : /admin/token-lifetimes l’affiche sous les durées de vie, avec le reste de son groupe (#825, #2070)."
   },
   "oauth2.expiredTokenRetentionS|label": {
     "en": "4466b89054d69c81",

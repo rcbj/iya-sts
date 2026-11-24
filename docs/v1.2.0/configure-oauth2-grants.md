@@ -434,7 +434,9 @@ comes back still carries the whole grant.
 **Per-client overrides.** Each application can override the lifetimes, and
 `oauthMaxAuthAgeS` overrides `oauth2.maxAuthAgeS` (how old an authentication
 may be before the authorization endpoint asks again, even when the request
-sends no `max_age`). That setting is not on the Token lifetimes tab. In
+sends no `max_age`). That setting is not a lifetime: the Token lifetimes
+tab draws it below the lifetimes, with `oauth2.refreshTokenMaxChainS` and
+`oauth2.consentAlwaysForPublicClients`. In
 the console they are fields of their own names: on the new-application form,
 and on the application's **Configuration** tab, **OAuth 2.0 / OpenID Connect**
 sub-tab, under **Show every field (advanced view)**. Empty a field to take the
