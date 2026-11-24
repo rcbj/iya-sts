@@ -591,6 +591,14 @@
     "en": "92433c797106d523",
     "text": "एक YK-VAL क्लाइंट हटाया गया"
   },
+  "audit.actions.ykval.verify.label": {
+    "en": "75090a0d0937732e",
+    "text": "एक YK-VAL क्लाइंट ने पूछा कि कोई YubiKey OTP मान्य है या नहीं"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "एक एस्क्रो की गई PIV कुंजी-प्रबंधन कुंजी पुनर्प्राप्त की गई"
+  },
   "audit.actions.openpgp.challenge.label": {
     "en": "454a22b5bcd9d6a2",
     "text": "OpenPGP कुंजी पंजीकरण की एक चुनौती जारी की गई"
@@ -1166,6 +1174,10 @@
   "audit.actions.xacml.pep.credential.label": {
     "en": "b86f230b79b40252",
     "text": "एक दूरस्थ PEP की अभिकथन कुंजी उसके अनुरोध से प्रमाणित की गई"
+  },
+  "audit.actions.xacml.pep.binding.label": {
+    "en": "a254d6c56c6f82ac",
+    "text": "एक एम्बेडेड रिमोट PEP को उसके एप्लिकेशन से बाँधा गया, या अलग किया गया"
   },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
@@ -2470,13 +2482,5 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "एक दूरस्थ PEP क्लस्टर का रिवर्स-प्रॉक्सी कॉन्फ़िगरेशन हटाया गया"
-  },
-  "audit.actions.piv-escrow.recover.label": {
-    "en": "0cad829ec7cafc72",
-    "text": "एक एस्क्रो की गई PIV कुंजी-प्रबंधन कुंजी पुनर्प्राप्त की गई"
-  },
-  "audit.actions.ykval.verify.label": {
-    "en": "75090a0d0937732e",
-    "text": "एक YK-VAL क्लाइंट ने पूछा कि कोई YubiKey OTP मान्य है या नहीं"
   }
 }

@@ -591,6 +591,14 @@
     "en": "92433c797106d523",
     "text": "已移除 YK-VAL 客户端"
   },
+  "audit.actions.ykval.verify.label": {
+    "en": "75090a0d0937732e",
+    "text": "一个 YK-VAL 客户端询问了某个 YubiKey OTP 是否有效"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "已恢复一个托管的 PIV 密钥管理密钥"
+  },
   "audit.actions.openpgp.challenge.label": {
     "en": "454a22b5bcd9d6a2",
     "text": "已发出 OpenPGP 密钥注册质询"
@@ -1166,6 +1174,10 @@
   "audit.actions.xacml.pep.credential.label": {
     "en": "b86f230b79b40252",
     "text": "远程 PEP 的断言密钥已根据其请求完成认证"
+  },
+  "audit.actions.xacml.pep.binding.label": {
+    "en": "a254d6c56c6f82ac",
+    "text": "嵌入式远程 PEP 已绑定到其应用程序，或已解除绑定"
   },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
@@ -2470,13 +2482,5 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "已移除远程 PEP 集群的反向代理配置"
-  },
-  "audit.actions.piv-escrow.recover.label": {
-    "en": "0cad829ec7cafc72",
-    "text": "已恢复一个托管的 PIV 密钥管理密钥"
-  },
-  "audit.actions.ykval.verify.label": {
-    "en": "75090a0d0937732e",
-    "text": "一个 YK-VAL 客户端询问了某个 YubiKey OTP 是否有效"
   }
 }

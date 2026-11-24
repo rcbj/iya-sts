@@ -591,6 +591,14 @@
     "en": "92433c797106d523",
     "text": "Ein YK-VAL-Client wurde entfernt"
   },
+  "audit.actions.ykval.verify.label": {
+    "en": "75090a0d0937732e",
+    "text": "Ein YK-VAL-Client hat gefragt, ob ein YubiKey-OTP gültig ist"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "Ein hinterlegter PIV-Key-Management-Schlüssel wurde wiederhergestellt"
+  },
   "audit.actions.openpgp.challenge.label": {
     "en": "454a22b5bcd9d6a2",
     "text": "Eine Challenge zur Registrierung eines OpenPGP-Schlüssels wurde ausgestellt"
@@ -1166,6 +1174,10 @@
   "audit.actions.xacml.pep.credential.label": {
     "en": "b86f230b79b40252",
     "text": "Der Assertion-Schlüssel eines entfernten PEP wurde anhand seiner Anfrage zertifiziert"
+  },
+  "audit.actions.xacml.pep.binding.label": {
+    "en": "a254d6c56c6f82ac",
+    "text": "Ein eingebetteter entfernter PEP wurde an seine Anwendung gebunden oder davon gelöst"
   },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
@@ -2470,13 +2482,5 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "Die Reverse-Proxy-Konfiguration eines Clusters entfernter PEPs wurde entfernt"
-  },
-  "audit.actions.piv-escrow.recover.label": {
-    "en": "0cad829ec7cafc72",
-    "text": "Ein hinterlegter PIV-Key-Management-Schlüssel wurde wiederhergestellt"
-  },
-  "audit.actions.ykval.verify.label": {
-    "en": "75090a0d0937732e",
-    "text": "Ein YK-VAL-Client hat gefragt, ob ein YubiKey-OTP gültig ist"
   }
 }
