@@ -12371,6 +12371,14 @@
     "en": "4f3937bae763d218",
     "text": "Avisa a una persona, en la dirección de su entrada, cuando se desactiva su cuenta, un administrador termina sus sesiones, se cambia o restablece su contraseña, su credencial se marca como comprometida o se inicia una recuperación. Una persona no puede excluirse de estos avisos; un operador puede desactivarlos aquí."
   },
+  "mail.credentialChangeNotices|label": {
+    "en": "1cc94431099aa34f",
+    "text": "Avisos de cambio de credenciales"
+  },
+  "mail.credentialChangeNotices|description": {
+    "en": "ad78820ed6c28ff0",
+    "text": "Avisar a una persona cuando se agrega o se elimina una clave de acceso o llave de seguridad, una aplicación de autenticación, una contraseña de aplicación, un token de código de un solo uso o YubiKey OTP, un conjunto de códigos de recuperación, un certificado, un vínculo de certificado para iniciar sesión, un certificado S/MIME o una clave OpenPGP suya, quién lo hizo y cuándo. Varios cambios hechos por un mismo acto son un solo mensaje. Desactivado, no se envía ninguno de estos; el aviso de cambio de contraseña no se ve afectado. No se envía nada mientras los avisos de seguridad estén desactivados o no haya un transporte configurado."
+  },
   "mail.notifyAdministrators|label": {
     "en": "cf148262e35b0d11",
     "text": "Avisar a los administradores de los actos del sistema"

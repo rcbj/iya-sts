@@ -22242,6 +22242,21 @@ const SETTINGS = [
                  'credential is marked compromised or recovery is started. ' +
                  'A person cannot opt out of these; an operator can turn ' +
                  'them off here.' },
+  // #2163 (ASVS 5.0.0 6.3.7): `common/mail_uses.ts`'s credentialChanged().
+  { key: 'mail.credentialChangeNotices', group: 'Mail',
+    label: 'Credential change notices',
+    env: 'STS_MAIL_CREDENTIAL_CHANGE_NOTICES', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Tell a person when a passkey or security key, an ' +
+                 'authenticator app, an app password, a one-time code or ' +
+                 'YubiKey OTP token, a set of recovery codes, a ' +
+                 'certificate, a certificate sign-in binding, an S/MIME ' +
+                 'certificate or an OpenPGP key of theirs is added or ' +
+                 'removed, by whom and when. Several changes made by one ' +
+                 'act are one message. Off sends none of these; the ' +
+                 'password-changed notice is not affected. Nothing is sent ' +
+                 'while security notices are off or no transport is ' +
+                 'configured.' },
   { key: 'mail.notifyAdministrators', group: 'Mail',
     label: 'Tell administrators of system acts',
     env: 'STS_MAIL_NOTIFY_ADMINISTRATORS', type: 'bool', dflt: true,

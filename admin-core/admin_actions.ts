@@ -3506,14 +3506,17 @@ class AdminActions {
         return this.refusedBy('STS-ADMIN-0783', result);
       }
       const removed = result.removed || [];
-      removed.forEach(function (one) {
-        accountSignals.credentialChanged({ username: who,
-          credentialType: accountSignals.keyCredentialType(one),
-          fido2Aaguid: String((one && one.aaguid) || ''),
-          changeType: 'delete', friendlyName: one.label, via: ctx.via,
-          reasonAdmin: 'An administrator removed every passkey of ' +
-                       who + '.',
-          reasonUser: 'A passkey was removed from your account.' });
+      // ONE MAIL FOR THEM ALL (#2163): each key is still its own CAEP event.
+      accountSignals.batch(function () {
+        removed.forEach(function (one) {
+          accountSignals.credentialChanged({ username: who,
+            credentialType: accountSignals.keyCredentialType(one),
+            fido2Aaguid: String((one && one.aaguid) || ''),
+            changeType: 'delete', friendlyName: one.label, via: ctx.via,
+            reasonAdmin: 'An administrator removed every passkey of ' +
+                         who + '.',
+            reasonUser: 'A passkey was removed from your account.' });
+        });
       });
       // THE SESSIONS EACH REMOVED KEY SIGNED IN END (#963), and no other:
       // a password session stays. Since #1135 every key goes (a key has no
@@ -3551,29 +3554,34 @@ class AdminActions {
       // them. Sessions wait for a removal that finished: a partial write
       // is a refusal, and a factor that is still there must not lose the
       // sessions it signed in.
-      if (removed.totp) {
-        accountSignals.credentialChanged({ username: who,
-          credentialType: accountSignals.TOTP_CREDENTIAL_TYPE,
-          changeType: 'delete', via: ctx.via,
-          reasonAdmin: 'An administrator disabled every second factor of ' +
-                       who + '.',
-          reasonUser: 'Your authenticator app was removed from your ' +
-                      'account.' });
-      }
-      (removed.keys || []).forEach(function (one) {
-        accountSignals.credentialChanged({ username: who,
-          credentialType: accountSignals.keyCredentialType(one),
-          fido2Aaguid: String((one && one.aaguid) || ''),
-          changeType: 'delete', friendlyName: one.label, via: ctx.via,
-          reasonAdmin: 'An administrator disabled every second factor of ' +
-                       who + '.',
-          reasonUser: 'A passkey was removed from your account.' });
+      // ONE MAIL FOR EVERY FACTOR (#2163): the person is told once, with a
+      // line per factor; each is still its own CAEP or RISC event.
+      accountSignals.batch(function () {
+        if (removed.totp) {
+          accountSignals.credentialChanged({ username: who,
+            credentialType: accountSignals.TOTP_CREDENTIAL_TYPE,
+            changeType: 'delete', via: ctx.via,
+            reasonAdmin: 'An administrator disabled every second factor ' +
+                         'of ' + who + '.',
+            reasonUser: 'Your authenticator app was removed from your ' +
+                        'account.' });
+        }
+        (removed.keys || []).forEach(function (one) {
+          accountSignals.credentialChanged({ username: who,
+            credentialType: accountSignals.keyCredentialType(one),
+            fido2Aaguid: String((one && one.aaguid) || ''),
+            changeType: 'delete', friendlyName: one.label, via: ctx.via,
+            reasonAdmin: 'An administrator disabled every second factor ' +
+                         'of ' + who + '.',
+            reasonUser: 'A passkey was removed from your account.' });
+        });
+        if (removed.backupCodes) {
+          accountSignals.recoveryInformationChanged({ username: who,
+            changeType: 'delete', initiatingEntity: 'admin', via: ctx.via,
+            reasonAdmin: 'An administrator disabled every second factor ' +
+                         'of ' + who + ', recovery codes included.' });
+        }
       });
-      if (removed.backupCodes) {
-        accountSignals.recoveryInformationChanged({ username: who,
-          reasonAdmin: 'An administrator disabled every second factor of ' +
-                       who + ', recovery codes included.' });
-      }
       if (!result.ok) {
         audited('admin.mfa.disabled',
                 'could not disable every second factor of ' + who,
@@ -5177,6 +5185,7 @@ class AdminActions {
       });
       if (result.ok) {
         accountSignals.recoveryInformationChanged({ username: who,
+          changeType: 'delete', initiatingEntity: 'admin', via: ctx.via,
           reasonAdmin: 'An administrator cleared the recovery codes of ' + who +
                        '.' });
         log.info('admin: the recovery codes for "' + who +
@@ -5919,23 +5928,27 @@ class AdminActions {
                      reasonUser: 'Your account was created with ' +
                                  'credentials an administrator imported.' };
       const kinds = imported.credentialKinds || [];
-      if (kinds.indexOf('password') >= 0 ||
-          kinds.indexOf('app-passwords') >= 0) {
-        accountSignals.credentialChanged(Object.assign({},
-          said, { credentialType: 'password' }));
-      }
-      if (kinds.indexOf('totp') >= 0) {
-        accountSignals.credentialChanged(Object.assign({},
-          said, { credentialType: accountSignals.TOTP_CREDENTIAL_TYPE }));
-      }
-      if (kinds.indexOf('passkey') >= 0) {
-        accountSignals.credentialChanged(Object.assign({},
-          said, { credentialType: accountSignals.keyCredentialType(null) }));
-      }
-      if (kinds.indexOf('certificate') >= 0) {
-        accountSignals.credentialChanged(Object.assign({},
-          said, { credentialType: 'x509' }));
-      }
+      // ONE MAIL FOR THE IMPORT (#2163), a line per kind.
+      accountSignals.batch(function () {
+        if (kinds.indexOf('password') >= 0 ||
+            kinds.indexOf('app-passwords') >= 0) {
+          accountSignals.credentialChanged(Object.assign({},
+            said, { credentialType: 'password' }));
+        }
+        if (kinds.indexOf('totp') >= 0) {
+          accountSignals.credentialChanged(Object.assign({},
+            said, { credentialType: accountSignals.TOTP_CREDENTIAL_TYPE }));
+        }
+        if (kinds.indexOf('passkey') >= 0) {
+          accountSignals.credentialChanged(Object.assign({},
+            said,
+            { credentialType: accountSignals.keyCredentialType(null) }));
+        }
+        if (kinds.indexOf('certificate') >= 0) {
+          accountSignals.credentialChanged(Object.assign({},
+            said, { credentialType: 'x509' }));
+        }
+      });
       log.debug("Leaving AdminActions.usersAction(). import-ldif.");
       return { ok: true, changed: true, username: who, dn: imported.dn,
                attributes: imported.attributes,

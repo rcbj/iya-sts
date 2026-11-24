@@ -1791,6 +1791,7 @@ var config = {
     resetRequiresBackupCode: true,        // Self-service reset needs a recovery code
     verificationTtlMinutes: 1440,         // Address verification link lifetime (minutes)
     securityNotices: true,                // Security notices
+    credentialChangeNotices: true,        // Credential change notices
     notifyAdministrators: true            // Tell administrators of system acts
   },
 

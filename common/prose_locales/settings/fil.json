@@ -12371,6 +12371,14 @@
     "en": "4f3937bae763d218",
     "text": "Abisuhan ang isang tao, sa address sa kanyang entry, kapag na-disable ang kanyang account, tinapos ng administrator ang kanyang mga session, binago o ni-reset ang kanyang password, minarkahang compromised ang kanyang credential o sinimulan ang recovery. Hindi maaaring mag-opt out ang tao sa mga ito; maaaring i-off ito ng operator dito."
   },
+  "mail.credentialChangeNotices|label": {
+    "en": "1cc94431099aa34f",
+    "text": "Mga abiso sa pagbabago ng kredensyal"
+  },
+  "mail.credentialChangeNotices|description": {
+    "en": "ad78820ed6c28ff0",
+    "text": "Abisuhan ang isang tao kapag idinagdag o inalis ang kanyang passkey o security key, authenticator app, app password, one-time code o YubiKey OTP token, isang hanay ng mga recovery code, sertipiko, pagbibigkis ng sertipiko sa pag-sign in, S/MIME na sertipiko o OpenPGP na key, kung sino ang gumawa at kailan. Ang ilang pagbabagong ginawa ng iisang kilos ay iisang mensahe. Kapag naka-off, wala sa mga ito ang ipinapadala; hindi apektado ang abiso sa pagbabago ng password. Walang ipinapadala habang naka-off ang mga abiso sa seguridad o walang naka-configure na transport."
+  },
   "mail.notifyAdministrators|label": {
     "en": "cf148262e35b0d11",
     "text": "Abisuhan ang mga administrator sa mga kilos ng system"
