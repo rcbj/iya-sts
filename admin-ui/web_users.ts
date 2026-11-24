@@ -24,6 +24,10 @@ import ApplicationsPage = require('./web_applications');
 import GroupsPage = require('./web_groups');
 import TokensPage = require('./web_tokens');
 import AuditPage = require('./web_audit');
+// A person's token and key sub-tabs (#2052), drawn by the central pages'
+// own functions with the person fixed.
+import HardwareTokensPage = require('./web_hardware_tokens');
+import OpenPgpPage = require('./web_openpgp');
 
 type Json = any;
 
@@ -1273,7 +1277,7 @@ class UsersPage {
             { id: 'ucred-kerberos', label: 'Kerberos',
               html: UsersPage.userKerberosSection(t, key, json.kerberos,
                                                   gate) }
-          ]) },
+          ].concat(UsersPage.tokenSubTabs(ctx, t, key, json, mfaParts))) },
         // Which partners' subjects sign them in (#109): a link is another way
         // in, so it has a tab of its own beside Credentials.
         { id: 'utab-federation',
@@ -1889,11 +1893,12 @@ class UsersPage {
    * @param state - the gate state; `write` draws the controls
    * @param back - the list to return to after an action
    * @param data - `page.mfa` from the person's management API answer
-   * @returns the three Credentials pieces. `factors` is this pane.
+   * @returns the Credentials pieces. `factors` is this pane.
    *   `keyCertificates` is stored certificates, message-signing and TLS
    *   client certificates, drawn on Key pairs. `selfIssued` is self-issued
-   *   IDs and published DIDs. With no credential store the note is on
-   *   `factors` and the other two pieces are empty.
+   *   IDs and published DIDs. `hotp` and `yubi` (#2052) are the one-time
+   *   code token and the YubiKey OTP, drawn on their own sub-tabs. With no
+   *   credential store the note is on `factors` and the rest are empty.
    */
   static mfaSection(t, row, key, state, back, data) {
     const heading = '<h2 id="second-factors">' +
@@ -1904,6 +1909,8 @@ class UsersPage {
       return {
         factors: kit.frame(heading +
           kit.note(t.html('consoleUsers.mfaSection.noStore'))),
+        hotp: '',
+        yubi: '',
         keyCertificates: '',
         selfIssued: ''
       };
@@ -2050,9 +2057,12 @@ class UsersPage {
           kit.note(t.html('consoleUsers.mfaSection.clearTotpNote'))
         : (mech.totp
             ? kit.note(t.html('consoleUsers.mfaSection.clearingNeedsWrite'))
-            : '')) +
-      // THE ONE-TIME CODE TOKEN (#1955 P4): how it was provisioned, when it
-      // was last used, and Clear, under the same evidence rule as the app.
+            : ''));
+    // THE ONE-TIME CODE TOKEN (#1955 P4): how it was provisioned, when it
+    // was last used, and Clear, under the same evidence rule as the app.
+    // On the person's OATH tokens sub-tab since #2052, beside the tokens
+    // assigned to them.
+    const hotpBlock =
       (mech.hotp
         ? '<h3>' + t.html('consoleUsers.mfaSection.hotpHeading') + '</h3>' +
           '<table class="kv"><tr><th>' +
@@ -2079,10 +2089,12 @@ class UsersPage {
               t.html('consoleUsers.mfaSection.clearHotp') +
               '</button></div></form>'
             : kit.note(t.html('consoleUsers.mfaSection.clearingNeedsWrite')))
-        : '') +
-      // A YUBIKEY OTP (#1955 P5): the public identity and how it was
-      // provisioned. The AES key is never on this page. Clear is the same
-      // evidence rule as the one-time code token.
+        : '');
+    // A YUBIKEY OTP (#1955 P5): the public identity and how it was
+    // provisioned. The AES key is never on this page. Clear is the same
+    // evidence rule as the one-time code token. On the person's YubiKey OTP
+    // sub-tab since #2052.
+    const yubiBlock =
       (mech.yubi
         ? '<h3>' + t.html('consoleUsers.mfaSection.yubiHeading') + '</h3>' +
           '<table class="kv"><tr><th>' +
@@ -3110,10 +3122,57 @@ class UsersPage {
     // Credentials sub-tab.
     return {
       factors: html,
+      hotp: hotpBlock,
+      yubi: yubiBlock,
       keyCertificates: certificatesBlock + signingBlock + tlsBlock,
       selfIssued: selfIssuedBlock + kit.frame(UsersPage.publishedDidsBlock(
         t, key, state, back, data.publishedDids))
     };
+  }
+
+  // A PERSON'S TOKENS AND KEYS (#2052, rcbj 2026-11-23: "I also want it to
+  // be a tab on individual user objects. Reuse the code for these pages.").
+  // Six Credentials sub-tabs, each drawn by its central Directory page's
+  // own functions with the person fixed — `web_hardware_tokens.ts` and
+  // `web_openpgp.ts` — from the answers the drill composes
+  // (`web_pages.ts`: `personTokens`, `personOath`, `personOpenpgp`). Every
+  // form posts to the central page's path and so reaches the same
+  // `/admin-api` operation (rule 7); the runtime returns to the sub-tab it
+  // was sent from. The one-time code token and the YubiKey OTP blocks, with
+  // their Clear, moved here from Second factors. The names and order are
+  // the portal's too (#2053).
+  /**
+   * The person's token and key sub-tabs of Credentials.
+   *
+   * @param ctx - the render context
+   * @param t - the page's translator
+   * @param key - the person
+   * @param json - the drill's answer, with the composed members
+   * @param mfaParts - `mfaSection()`'s pieces (`hotp`, `yubi`)
+   * @returns the sub-tab panels
+   */
+  static tokenSubTabs(ctx, t, key, json, mfaParts) {
+    const c = ctx;
+    const tokens = json.personTokens || null;
+    return [
+      { id: 'ucred-hardware-tokens',
+        label: t.text('console.nav.hardware-tokens'),
+        html: HardwareTokensPage.personTokens(ctx.t, tokens, c, key) },
+      { id: 'ucred-oath-tokens', label: t.text('console.nav.oath-tokens'),
+        html: HardwareTokensPage.personOath(ctx.t, json.personOath || null,
+                                            c, key, mfaParts.hotp || '') },
+      { id: 'ucred-yubiotp', label: t.text('console.nav.yubiotp'),
+        html: HardwareTokensPage.personYubi(ctx.t, c, key,
+                                            mfaParts.yubi || '') },
+      { id: 'ucred-piv', label: t.text('console.nav.piv'),
+        html: HardwareTokensPage.personPiv(ctx.t, tokens, c, key) },
+      { id: 'ucred-ssh', label: t.text('console.nav.ssh-user-ca'),
+        html: HardwareTokensPage.personSsh(ctx.t, tokens, c, key) },
+      { id: 'ucred-openpgp',
+        label: t.text('consoleUsers.detail.tabOpenpgp'),
+        html: OpenPgpPage.personPanel(ctx.t, json.personOpenpgp || null,
+                                      !!ctx.write) }
+    ];
   }
 
   // The drill-down. Returns null when the identity is not one this service

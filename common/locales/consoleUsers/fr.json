@@ -214,6 +214,7 @@
   "detail.tabService": "Compte de service",
   "detail.tabKeys": "Paires de clés",
   "detail.tabSelfIssued": "Self-issued IDs",
+  "detail.tabOpenpgp": "OpenPGP et S/MIME",
   "detail.tabFederation": "Liens de fédération",
   "detail.tabGnap": "Octrois GNAP",
   "detail.tabUma": "UMA",

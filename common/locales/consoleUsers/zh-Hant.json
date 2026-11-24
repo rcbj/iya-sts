@@ -214,6 +214,7 @@
   "detail.tabService": "服務帳戶",
   "detail.tabKeys": "金鑰組",
   "detail.tabSelfIssued": "Self-issued IDs",
+  "detail.tabOpenpgp": "OpenPGP 與 S/MIME",
   "detail.tabFederation": "聯合連結",
   "detail.tabGnap": "GNAP 授予",
   "detail.tabUma": "UMA",

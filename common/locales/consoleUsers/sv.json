@@ -214,6 +214,7 @@
   "detail.tabService": "Tjänstekonto",
   "detail.tabKeys": "Nyckelpar",
   "detail.tabSelfIssued": "Self-issued IDs",
+  "detail.tabOpenpgp": "OpenPGP och S/MIME",
   "detail.tabFederation": "Federationslänkar",
   "detail.tabGnap": "GNAP-beviljanden",
   "detail.tabUma": "UMA",

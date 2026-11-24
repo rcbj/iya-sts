@@ -214,6 +214,7 @@
   "detail.tabService": "Service account",
   "detail.tabKeys": "Mga key pair",
   "detail.tabSelfIssued": "Self-issued IDs",
+  "detail.tabOpenpgp": "OpenPGP at S/MIME",
   "detail.tabFederation": "Mga federation link",
   "detail.tabGnap": "Mga GNAP grant",
   "detail.tabUma": "UMA",

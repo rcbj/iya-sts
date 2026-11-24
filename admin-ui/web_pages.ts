@@ -1189,6 +1189,27 @@ const PAGES: WebPage[] = [
       return ClaimsPage.userinfoClaimsBody(ctx || WebKit.context(), view);
     } },
   { path: '/admin/users', title: 'Users', operation: '/admin-api/users',
+    // A PERSON'S TOKENS AND KEYS (#2052): the central Directory pages'
+    // operations, asked with the person, for the drill's Credentials
+    // sub-tabs. Only when the query names a person, and each kept when it
+    // refuses, so a refusal is a note on its sub-tab and not a page that
+    // could not be drawn.
+    compose: {
+      personTokens: '/admin-api/hardware-tokens',
+      personOath: '/admin-api/hardware-tokens/oath',
+      personOpenpgp: '/admin-api/openpgp'
+    },
+    composeWhen: {
+      personTokens: ['user'],
+      personOath: ['user'],
+      personOpenpgp: ['user']
+    },
+    composeParams: {
+      personTokens: { user: 'q' },
+      personOath: { user: 'oq' },
+      personOpenpgp: { user: 'user' }
+    },
+    composeKeep: ['personTokens', 'personOath', 'personOpenpgp'],
     drill: {
       param: 'user',
       sample: function (list: Json): string | null {
