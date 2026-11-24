@@ -69,6 +69,16 @@ before; a value holding a line break is now matched across it, as RFC 4517
 asks. A search whose substring assertion holds more than 32 components is
 refused with adminLimitExceeded (11), recorded as `STS-LDAP-0226`. See
 [LDAP](ldap.md#how-a-filter-value-is-matched).
+### Fixed: federated sign-ins no longer pile up cookies
+
+In product mode each federated sign-in sets a cookie that binds it to the
+browser that started it (`sts_fed_flow_…`). Until 1.2.0 none was ever
+cleared, so a person who started many sign-ins within ten minutes could fill
+their Cookie header until the service answered 431 (ASVS 5.0.0 4.2.5,
+#2139). The cookie is now cleared by the partner's answer, whether it signs
+the person in or is refused, and one browser holds at most eight: a ninth
+start clears the oldest. Nothing to configure; a cookie set by an earlier
+build still binds its sign-in.
 
 ### Behaviour change: S/MIME mail is authenticated encryption
 
