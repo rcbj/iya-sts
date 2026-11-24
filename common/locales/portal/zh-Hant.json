@@ -495,6 +495,7 @@
   "resetDone.heading": "您的密碼已設定",
   "resetDone.ok": "此重設連結現已使用，無法再次使用。",
   "resetDone.next": "請使用新密碼登入。如果您的帳戶有第二因素，系統會照常要求您提供。",
+  "resetDone.signedOut": "您在所有裝置上的全部工作階段都已登出，因此知道您舊密碼的人不會仍處於登入狀態。",
   "signedOut.title": "已登出",
   "signedOut.heading": "您已登出",
   "signedOut.noSession": "此瀏覽器上沒有可結束的入口網站工作階段。",

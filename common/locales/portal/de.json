@@ -495,6 +495,7 @@
   "resetDone.heading": "Ihr Passwort ist festgelegt",
   "resetDone.ok": "Dieser Rücksetzlink wurde nun verwendet und funktioniert nicht erneut.",
   "resetDone.next": "Melden Sie sich mit Ihrem neuen Passwort an. Wenn Ihr Konto einen zweiten Faktor hat, werden Sie wie üblich danach gefragt.",
+  "resetDone.signedOut": "Alle Ihre Sitzungen auf allen Geräten wurden abgemeldet, sodass niemand, der Ihr altes Passwort kannte, noch angemeldet ist.",
   "signedOut.title": "Abgemeldet",
   "signedOut.heading": "Sie sind abgemeldet",
   "signedOut.noSession": "Auf diesem Browser gab es keine Portal-Sitzung zu beenden.",
