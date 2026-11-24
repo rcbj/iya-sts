@@ -79,5 +79,7 @@
   "applicationsText": "Où se trouve chaque application hébergée : les écouteurs qui lui répondent, et celui sur lequel ses URL — son émetteur, ses métadonnées, ses redirections et ses liens envoyés par courriel — sont construites.",
   "tabDefaults": "Valeurs par défaut du service",
   "defaultsNote": "Ce dont hérite chaque écouteur TLS, sauf indication contraire de son propre onglet ou de sa définition.",
+  "tabCertSignIn": "Connexion par certificat",
+  "certSignInNote": "Les profils de connexion par certificat, la révocation qu’exige une connexion, le passage à un écouteur personnalisé qui demande un certificat, et un proxy qui termine TLS devant lui. Les mêmes paramètres sont dans Protocoles → PIV.",
   "customTabNote": "Fixé dans la définition de l’écouteur, sur l’onglet Écouteurs personnalisés."
 }

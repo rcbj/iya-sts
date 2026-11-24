@@ -79,5 +79,7 @@
   "applicationsText": "Var varje värdapplikation finns: lyssnarna som svarar den, och den som dess URL:er — utfärdare, metadata, omdirigeringar och e-postade länkar — byggs på.",
   "tabDefaults": "Tjänstens standardvärden",
   "defaultsNote": "Det som varje TLS-lyssnare ärver om inte dess egen flik eller definition säger annat.",
+  "tabCertSignIn": "Certifikatinloggning",
+  "certSignInNote": "Profiler för certifikatinloggning, den spärrkontroll en inloggning kräver, överlämningen till en anpassad lyssnare som ber om ett certifikat och en TLS-avslutande proxy framför en sådan. Samma inställningar finns under Protokoll → PIV.",
   "customTabNote": "Anges i lyssnarens definition, på fliken Egna lyssnare."
 }

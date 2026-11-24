@@ -3007,7 +3007,9 @@ const USER_SUB_TAB_IDS = ['ucred-factors', 'ucred-password', 'ucred-service',
   'ucred-keys', 'ucred-self-issued', 'ucred-kerberos',
   // A person's token and key sub-tabs (#2052).
   'ucred-hardware-tokens', 'ucred-oath-tokens', 'ucred-yubiotp',
-  'ucred-piv', 'ucred-ssh', 'ucred-openpgp'].concat(
+  'ucred-piv', 'ucred-ssh', 'ucred-openpgp',
+  // Its certificate sign-in bindings (#2080).
+  'ucred-cert-binding'].concat(
   personEditor.FIELD_GROUPS.map(function (group) {
   return 'ufg-' + group.id;
 }));
@@ -4822,7 +4824,8 @@ class AdminConsole {
        'tab-password', 'tab-authn', 'tab-serviceAccount', 'tab-passkey',
        'tab-locale', 'tab-attributes', 'tab-profiles', 'tab-transfer',
        'listeners-tab-metadata',
-       'tab-listeners', 'tab-custom', 'tab-applications', 'tab-defaults'],
+       'tab-listeners', 'tab-custom', 'tab-applications', 'tab-defaults',
+       'tab-cert-sign-in'],
       LISTENER_TAB_IDS, POLICY_SUB_TAB_IDS,
       CERT_TAB_IDS, CERT_SUB_TAB_IDS,
       WebPagesTable.PROTOCOL_TAB_IDS).map(function (id) {
@@ -9298,6 +9301,11 @@ const SETTING_HOMES = [
   // Service-wide defaults tab beside the TLS ones.
   { group: 'HTTP connections', pages: ['/admin/listeners'] },
   { group: 'TLS', pages: ['/admin/listeners'] },
+  // CERTIFICATE SIGN-IN (#2080): the profiles, the revocation a sign-in
+  // needs, the handoff and the TLS-terminating proxy — on Protocols → PIV,
+  // where a smart-card sign-in is set up, and still on the Listeners page,
+  // whose custom listener and truststore the handoff and the proxy need.
+  { group: 'Certificate sign-in', pages: ['/admin/piv', '/admin/listeners'] },
   // The custom listeners and which hosted application is on which (#472,
   // which folded #99's realm listener in): on the Listeners page's
   // Applications tab, beside the forms that edit them.
@@ -10600,10 +10608,14 @@ const PROTOCOL_SETTINGS_PAGES = [
           'the PIV enrolment tab of <a href="/admin/hardware-tokens">' +
           'Directory → Hardware tokens</a>.',
     also: ['<strong>A card-authentication key works without a ' +
-           'PIN</strong>, for physical access, so a ' +
-           '<code>piv-card-auth</code> certificate signs nobody in — over ' +
-           'TLS or at PKINIT — unless <code>piv.cardAuthSignIn</code> is ' +
-           'on, and it never earns <code>hwk</code> or <code>sc</code>.',
+           'PIN</strong>, for physical access, so whether a ' +
+           '<code>piv-card-auth</code> (9e) certificate signs anybody in — ' +
+           'over TLS or at PKINIT — is the <a ' +
+           'href="/admin/policies#authn">authentication ' +
+           'policy</a>\'s PIV card authentication key row (#2031), which ' +
+           'follows <code>piv.cardAuthSignIn</code> only while the policy ' +
+           'stores no value for it. It never earns <code>hwk</code> or ' +
+           '<code>sc</code>.',
            '<strong>Escrow is the one place this service keeps a card ' +
            'key.</strong> With <code>piv.keyEscrow</code> on, EST ' +
            '<code>/serverkeygen</code> for <code>piv-key-management</code> ' +
@@ -10617,11 +10629,45 @@ const PROTOCOL_SETTINGS_PAGES = [
            'policy in <code>piv.externalPolicyOids</code>, signs in the one ' +
            'person whose <code>stsPivCardUuid</code> holds that UUID. No ' +
            'entry is created, and the CA must also be in a client ' +
-           'truststore.'],
+           'truststore.',
+           // EVERYTHING A SMART-CARD SIGN-IN NEEDS, FROM ONE PAGE (#2080):
+           // rcbj set up a real PIV sign-in and could not find the
+           // settings, which were on four pages and one of them a JSON box.
+           '<strong>Setting up a smart-card sign-in.</strong> (1) Put the ' +
+           'card\'s CA in the <a href="/admin/tls/trust">client ' +
+           'truststore</a>. (2) Add a certificate sign-in profile for it ' +
+           'under <em>Certificate sign-in</em> below — the CA picked from ' +
+           'the truststore, the purposes, the policy and how a card names ' +
+           'its holder — and record each person\'s binding on their ' +
+           'Credentials → Certificate sign-in tab (<a ' +
+           'href="/admin/users">Directory → Users</a>). (3) Decide ' +
+           'revocation: <code>certSignIn.requireRevocation</code> below, ' +
+           'and <code>pki.revocationCheck</code> on <a ' +
+           'href="/admin/pki">PKI</a>. (4) To ask for the card on a ' +
+           'listener of its own, turn on <code>certSignIn.handoff</code>, ' +
+           'map the <code>certificate-sign-in</code> application to a ' +
+           '<a href="/admin/listeners#tab-custom">custom listener</a> ' +
+           'whose <code>clientAuth</code> asks for a certificate, and ' +
+           'stop the main port asking with ' +
+           '<code>tls.mainPortDisableOptionalClientCertificate</code> (<a ' +
+           'href="/admin/listeners#tab-main">Listeners → Main port</a>). ' +
+           '(5) Allow the sign-in: the <a ' +
+           'href="/admin/policies#authn">authentication policy</a>\'s ' +
+           'smart card row. The whole walk-through is <a ' +
+           'href="https://rcbj.github.io/iya-sts/v1.2.0/configure-tls.html' +
+           '#smart-card-and-certificate-sign-in">Smart-card and ' +
+           'certificate sign-in</a>.'],
     links: [['/admin/hardware-tokens', 'PIV enrolment and escrowed keys'],
             ['/admin/hardware-tokens-settings', 'hardware tokens'],
-            ['/admin/pki', 'the certificate authority that issues them'],
+            ['/admin/tls/trust', 'the client truststore'],
+            ['/admin/pki', 'revocation (pki.revocationCheck) and the ' +
+             'certificate authority that issues them'],
             ['/admin/pki/trust', 'paranoid PKI mode'],
+            ['/admin/listeners#tab-custom', 'custom listeners'],
+            ['/admin/listeners#tab-main',
+             'tls.mainPortDisableOptionalClientCertificate'],
+            ['/admin/policies#authn', 'the authentication policy\'s ' +
+             'smart card row'],
             ['/admin/tls', 'certificate sign-in']] },
 
   { path: '/admin/yubiotp', title: 'YubiKey OTP',

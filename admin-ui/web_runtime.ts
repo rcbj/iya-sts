@@ -75,6 +75,7 @@ import WebMessages = require('../common/web_messages');
 import WebAccounts = require('../common/web_accounts');
 import WebFooter = require('../common/web_footer');
 import WebWsTrustProtection = require('./web_wstrust_protection');
+import WebCertSignIn = require('./web_cert_sign_in');
 
 type Json = any;
 
@@ -1438,6 +1439,15 @@ class ConsoleRuntime extends SpaClient {
     const self = this;
     WebWsTrustProtection.wire(this.env, this.t, function () {
       self.dirty = true;
+    });
+    // CERTIFICATE SIGN-IN'S EDITORS (#2080): the structured settings drawn
+    // as form fields over the box that carries each value, and a person's
+    // certificate binding editor. What a certificate says is read by the
+    // console's inspection helper, through this runtime's own API calls.
+    WebCertSignIn.wire(this.env, this.t, function () {
+      self.dirty = true;
+    }, function (method: string, path: string, body?: Json) {
+      return self.apiJson(method, path, body);
     });
     this.loadPageScripts();
     this.revealActiveNav();
