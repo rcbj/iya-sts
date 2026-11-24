@@ -10,6 +10,7 @@ more than one family needs it, not because it felt general.
 | `xml_model.ts` | **AN XML FAMILY'S MODEL, AS THE CODE READS IT (#1579).** The one reader of the facts `models/lib/saml_lib.mjs` writes — a vocabulary's terms, a message's attributes and children in their order, a parameter set — over one or more generated files merged (`saml.json`; `ws.json` with `saml.json`, so an RSTR's assertion is held to SAML's own model). `term()`, `terms()`, `read()`, the writers' order (`attributes()`, `children()`, which throw on a part the model does not name) and `hold()`, which logs a gap under the family's code and answers the document unchanged; a fragment whose prefixes its document declares is held with them (`declarations`). `saml/saml_model.ts` and `ws-trust/ws_model.ts` are its instances. A leaf. |
 | `xml_format.ts` | **A DOCUMENT THIS SERVICE BUILT, INDENTED FOR A PERSON (rcbj, 2026-11-13).** `XmlFormat.indent(xml, log)`: one element a line, two spaces deeper than its parent, an element holding only text kept on its line and the text untouched. For documents this service writes with `Html.esc()`'d values and no comments, CDATA or mixed content (the WSDL); a caller's XML is parsed with xmldom instead. A static utility class. |
 | `subject_urn.ts` | **THE NAMES A LEAF GIVES ITS HOLDER, DEFINED ONCE (#1827, 2026-11-16).** `SubjectUrn`: the one table of `urn:sts:<form>:` prefixes (person, sa, application, federation, cell, device), `forPerson()`, `forHolder()`, `parse()` (bare or `URI:`), `namesIn()`, `namesPerson()`, `isServiceAccountForm()`, `sameHolder()`. A static utility class and a leaf (`bunyan`, `config`). See *3df*. |
+| `csv_cell.ts` | **`CsvCell.of()`, EVERY CSV CELL THIS SERVICE WRITES (#2138).** A string whose first character is `=`, `+`, `-`, `@`, tab, CR or NUL gets a single quote in front (OWASP's CSV injection guidance, ASVS 5.0.0 1.2.10), then RFC 4180 quoting. A JavaScript number or bigint is never prefixed, so a negative count stays a number; the string `-5` is prefixed. Used by `report/formats.ts` and `passkey_report.ts`'s export; a new CSV writer uses it too. A static utility class. |
 | `image_metadata.ts` | **`ImageMetadata.stripped()`, A PUBLISHED IMAGE WITHOUT ITS METADATA (#2140).** The JPEG and PNG writers `profile_photo.ts` had (#719), moved here so the sign-in logo (`branding.ts`) uses them too, and a WebP writer for the logo. Each walks the container and keeps the listed segments or chunks; one it cannot walk answers null and the caller refuses. A JPEG ends at its FIRST end marker since #2140 (the last kept an appended MPF image and its EXIF), and an APP2 is kept only as an ICC profile. A library with no route, requiring only `helpers`, so 6a-brand and 6a-photo each require it without moving anything. A static utility class. |
 | `html.ts` | **`Html.esc()`, THE FIRST STATIC UTILITY CLASS (#50).** The HTML escaper converted modules use; unconverted ones keep their own until they are converted. |
 | `heap_collector.ts` | **A FULL GARBAGE COLLECTION OF THE ISOLATE THAT ASKS (#611, 2026-10-13)** — `HeapCollector.collect(log)`, run by Monitoring → Node Health in the front process and, asked over the pool's channel, in each worker thread. `gc` is obtained WITHOUT `--expose-gc` (rcbj: the command line, `process_memory.ts`'s re-exec and the pool's `Worker` flags are untouched): the flag is set for the one `vm.runInNewContext('gc')` that hands it back and CLEARED at once, or every context and worker thread made later would carry a global `gc`; a process started with the flag keeps its own. The figures are `v8.getHeapStatistics()`'s, the isolate's own, and the pause is the call's time. A static utility class over node's `v8` and `vm` only, its logger an argument; it never throws. `tests/heap_collector.js`. |
@@ -1492,7 +1493,15 @@ value written through either door verifies through either door. In
 **everything decidable without computing scrypt is decided in the first** — the
 reserved refusal, development mode, a missing name, a missing store, a store
 that threw, nobody by that name, a stored form this service did not write — and
-those are the overwhelming majority of refusals, none of which costs 68ms. An
+those are the overwhelming majority of refusals, none of which NEEDS 68ms. **But
+since #2136 the ones that would name an account by their speed pay for a
+derivation anyway** (ASVS 5.0.0 6.3.8): nobody by that name, an unreadable
+stored form, a disabled account and a service account at a closed door are
+marked `decoy` in product, and both doors verify the presented password against
+`crypto.decoyPasswordHash()` — one hash per spec per process, at the policy's
+current parameters, matching no password — and discard the result, on the
+thread each door uses for a real comparison. The refusal and its code do not
+change. `tests/password_unknown_name_cost.js` counts the calls. An
 async door with its own copy of those seven refusals is exactly the shape that
 file exists to prevent: `verify()` is the one place a presented password is
 checked, and two copies of "when do we say no" would eventually say it in two
@@ -16578,7 +16587,8 @@ what a maintainer must not undo:
   `paging.nextFrom`), at most `LIST_SCAN` entries a request, `complete:
   false` when that stopped a page short; `page` without `from` reads from the
   start. The export reads on to `EXPORT_LIMIT` rows and quotes a CSV cell a
-  spreadsheet would read as a formula.
+  spreadsheet would read as a formula (`csv_cell.ts` since #2138, which
+  added a leading NUL to the leads this export's own escape knew).
 * **#941's attestation certificate is counted** by `attestationFacetOf()`:
   the leaf of `attestation.algorithms` (a compound statement's members, and
   the anchor only when the statement carried no certificate), as
