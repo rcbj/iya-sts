@@ -361,6 +361,13 @@ const EXACT: Record<string, string> = {
   'ucred-keys': 'pki.html#a-persons-credentials-on-their-own-page',
   'ucred-self-issued': 'oid4vp.html#self-issued-id-tokens-siopv2',
   'ucred-kerberos': 'kerberos.html',
+  // A person's token and key sub-tabs (#2052).
+  'ucred-hardware-tokens': 'hardware-tokens.html',
+  'ucred-oath-tokens': 'one-time-code-tokens.html',
+  'ucred-yubiotp': 'yubiotp.html',
+  'ucred-piv': 'hardware-tokens.html#piv-key-attestation',
+  'ucred-ssh': 'pki.html#openssh-user-certificates',
+  'ucred-openpgp': 'openpgp.html',
   'utab-federation': 'federation.html',
   'utab-gnap': 'gnap.html',
   'utab-uma': 'uma.html#the-console',
