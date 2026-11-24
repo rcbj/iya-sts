@@ -3166,7 +3166,7 @@ async function answerAnonymousAsReq(request, fast, pkinit) {
   });
   if (!result.ok) {
     log.debug('Leaving answerAnonymousAsReq(). Refused.');
-    // error-code: none — the code is the refusal's own, STS-KRB-0178..0197, chosen in krb5_pkinit.ts
+    // error-code: none — the code is the refusal's own, STS-KRB-0178..0197 or 0260..0262, chosen in krb5_pkinit.ts
     return refuse(result.code, result.errorCode, result.eText, result.eData);
   }
   const authtime = now();
@@ -3568,7 +3568,7 @@ async function answerAsReq(request, fast) {
     if (!result.ok) {
       log.debug("Leaving answerAsReq(). PKINIT refused.");
       return errorReply(result.code, {
-        // error-code: none — the code is the refusal's own, STS-KRB-0178..0197, chosen in krb5_pkinit.ts
+        // error-code: none — the code is the refusal's own, STS-KRB-0178..0197 or 0260..0262, chosen in krb5_pkinit.ts
         errorCode: result.errorCode,
         crealm: body.realm, cname: body.cname, sname: body.sname,
         eText: result.eText, eData: result.eData || null

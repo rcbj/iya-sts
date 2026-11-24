@@ -7859,6 +7859,14 @@
     "en": "77b517dda5eb4231",
     "text": "Indique si une requête PKINIT doit porter un jeton de fraîcheur RFC 8070 — un jeton que ce KDC a émis dans KDC_ERR_PREAUTH_REQUIRED dans la limite du décalage d’horloge. C’est ce qui empêche qu’un AuthPack signé à l’avance sur une carte à puce empruntée soit utilisé plus tard. MIT Kerberos 1.17 et versions ultérieures, ainsi que Heimdal, en envoient un lorsqu’on le leur demande. AVERTISSEMENT : désactivé, une requête PKINIT n’est soumise qu’à son propre horodatage et au contrôle anti-rejeu."
   },
+  "krb5.pkinitRequirePaChecksum2|label": {
+    "en": "b537d343a181f8ff",
+    "text": "PKINIT exige paChecksum2"
+  },
+  "krb5.pkinitRequirePaChecksum2|description": {
+    "en": "09dc40308cf18597",
+    "text": "Indique si une requête PKINIT doit porter le paChecksum2 de Microsoft (MS-PKCA section 2.2.3) — le SHA-256, SHA-384 ou SHA-512 du corps de la requête, à côté du paChecksum SHA-1 qu'exige la RFC 4556. Un paChecksum2 envoyé est vérifié dans tous les cas, et un paChecksum2 en SHA-1 est refusé en mode produit. Désactivé par défaut, car MIT Kerberos n'en envoie pas ; Windows 11 et Windows Server 2022 23H2 et versions ultérieures en envoient. Activé, un client qui n'en envoie pas — PKINIT anonyme compris — est refusé avec KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED."
+  },
   "krb5.pkinitLegacyKdf|label": {
     "en": "45d1284fa60afa2b",
     "text": "PKINIT accepte la dérivation de clé propre à RFC 4556"

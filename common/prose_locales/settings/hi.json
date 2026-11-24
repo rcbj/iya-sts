@@ -7859,6 +7859,14 @@
     "en": "77b517dda5eb4231",
     "text": "क्या PKINIT अनुरोध RFC 8070 ताज़गी टोकन ले जाए — एक जिसे इस KDC ने घड़ी के अंतर के भीतर KDC_ERR_PREAUTH_REQUIRED में जारी किया। यही उधार ली स्मार्ट कार्ड पर पहले से हस्ताक्षरित AuthPack को बाद में उपयोग होने से रोकता है। MIT Kerberos 1.17 और बाद के तथा Heimdal माँगने पर एक भेजते हैं। चेतावनी: बंद होने पर PKINIT अनुरोध केवल अपने टाइमस्टैम्प और रिप्ले जाँच तक सीमित रहता है।"
   },
+  "krb5.pkinitRequirePaChecksum2|label": {
+    "en": "b537d343a181f8ff",
+    "text": "PKINIT को paChecksum2 चाहिए"
+  },
+  "krb5.pkinitRequirePaChecksum2|description": {
+    "en": "09dc40308cf18597",
+    "text": "क्या किसी PKINIT अनुरोध में Microsoft का paChecksum2 (MS-PKCA खंड 2.2.3) होना ज़रूरी है — अनुरोध के मुख्य भाग का SHA-256, SHA-384 या SHA-512, RFC 4556 द्वारा अपेक्षित SHA-1 paChecksum के साथ। भेजा गया paChecksum2 हर हाल में जाँचा जाता है, और SHA-1 पर बना paChecksum2 प्रोडक्ट मोड में अस्वीकार किया जाता है। डिफ़ॉल्ट रूप से बंद, क्योंकि MIT Kerberos इसे नहीं भेजता; Windows 11 और Windows Server 2022 23H2 तथा बाद के संस्करण भेजते हैं। चालू होने पर, जो क्लाइंट इसे नहीं भेजता — अनाम PKINIT सहित — उसे KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED से अस्वीकार किया जाता है।"
+  },
   "krb5.pkinitLegacyKdf|label": {
     "en": "45d1284fa60afa2b",
     "text": "PKINIT, RFC 4556 की अपनी कुंजी व्युत्पत्ति स्वीकार करे"

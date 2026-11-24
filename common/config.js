@@ -15371,6 +15371,20 @@ const SETTINGS = [
                  'WARNING: off, a PKINIT request is held only to its own ' +
                  'timestamp and the replay check.' },
 
+  { key: 'krb5.pkinitRequirePaChecksum2', group: 'Kerberos',
+    label: 'PKINIT requires paChecksum2',
+    env: 'KRB5_PKINIT_REQUIRE_PA_CHECKSUM2', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether a PKINIT request must carry Microsoft\'s ' +
+                 'paChecksum2 (MS-PKCA section 2.2.3) — the request body\'s ' +
+                 'SHA-256, SHA-384 or SHA-512 beside the SHA-1 paChecksum ' +
+                 'RFC 4556 requires. A paChecksum2 that is sent is checked ' +
+                 'either way, and one over SHA-1 is refused in product. Off ' +
+                 'by default, because MIT Kerberos does not send one; ' +
+                 'Windows 11 and Windows Server 2022 23H2 and later do. On, ' +
+                 'a client that does not — anonymous PKINIT included — is ' +
+                 'refused KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED.' },
+
   { key: 'krb5.pkinitLegacyKdf', group: 'Kerberos',
     label: 'PKINIT accepts RFC 4556\'s own key derivation',
     env: 'KRB5_PKINIT_LEGACY_KDF', type: 'bool', dflt: false, runtime: true,

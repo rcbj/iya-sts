@@ -7859,6 +7859,14 @@
     "en": "77b517dda5eb4231",
     "text": "ما إذا كان يجب أن يحمل طلب PKINIT رمز حداثة وفق RFC 8070 — رمزاً أصدره KDC هذا في KDC_ERR_PREAUTH_REQUIRED ضمن انحراف الساعة. وهو ما يمنع استخدام AuthPack وُقّع مسبقاً على بطاقة ذكية مستعارة في وقت لاحق. ويرسل MIT Kerberos 1.17 وما بعده وكذلك Heimdal واحداً عند الطلب. تحذير: عند الإيقاف لا يُقيَّد طلب PKINIT إلا بطابعه الزمني وفحص الإعادة."
   },
+  "krb5.pkinitRequirePaChecksum2|label": {
+    "en": "b537d343a181f8ff",
+    "text": "يتطلب PKINIT وجود paChecksum2"
+  },
+  "krb5.pkinitRequirePaChecksum2|description": {
+    "en": "09dc40308cf18597",
+    "text": "ما إذا كان يجب أن يحمل طلب PKINIT قيمة paChecksum2 الخاصة بـ Microsoft ‏(MS-PKCA القسم 2.2.3) — أي SHA-256 أو SHA-384 أو SHA-512 لجسم الطلب، إلى جانب paChecksum المبني على SHA-1 الذي يتطلبه RFC 4556. يُتحقق من paChecksum2 المرسل في كل الأحوال، ويُرفض المبني منه على SHA-1 في وضع المنتج. معطّل افتراضيًا لأن MIT Kerberos لا يرسله؛ أما Windows 11 وWindows Server 2022 23H2 وما بعدهما فترسله. عند تفعيله، يُرفض العميل الذي لا يرسله — بما في ذلك PKINIT المجهول — بالخطأ KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED."
+  },
   "krb5.pkinitLegacyKdf|label": {
     "en": "45d1284fa60afa2b",
     "text": "PKINIT يقبل اشتقاق المفتاح الخاص بـ RFC 4556"

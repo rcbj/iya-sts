@@ -1239,6 +1239,7 @@ var config = {
     krbtgtRotationIntervalDays: 180,                       // Rotate the krbtgt key every (days)
     pkinit: true,                                          // PKINIT (certificate pre-authentication)
     pkinitRequireFreshness: true,                          // PKINIT requires a freshness token
+    pkinitRequirePaChecksum2: false,                       // PKINIT requires paChecksum2
     pkinitLegacyKdf: false,                                // PKINIT accepts RFC 4556's own key derivation
     pkinitKdcKeyAlgorithm: "ec-p256",                      // PKINIT KDC key algorithm
     anonymousPkinit: true,                                 // Anonymous PKINIT (FAST armor)

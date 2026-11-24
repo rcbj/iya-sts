@@ -78,6 +78,16 @@ For a recipient whose mail client cannot read AuthEnvelopedData, set
 `STS_MAIL_SMIME_CONTENT_ENCRYPTION`) to send exactly what 1.1 sent. While it
 is `aes256-cbc` in product mode, `/admin/mode` reports ASVS 5.0.0 11.3.3 as
 not met. See [OpenPGP and S/MIME](openpgp.md#encrypted-mail).
+### New: PKINIT checks Microsoft's paChecksum2
+
+The KDC now checks MS-PKCA's `paChecksum2` — the request body's SHA-256,
+SHA-384 or SHA-512 — whenever a PKINIT client sends one, beside RFC 4556's
+SHA-1 `paChecksum`, which stays required. A mismatch is refused
+(`STS-KRB-0261`), and so is one over SHA-1 in product mode or over an
+unlisted digest (`STS-KRB-0260`). The new setting
+`krb5.pkinitRequirePaChecksum2` (off by default, because MIT Kerberos does
+not send one) refuses a request without it (`STS-KRB-0262`). See
+[Kerberos](kerberos.md).
 
 ### New: WS-Trust message integrity, and signed answers
 

@@ -37,6 +37,11 @@
 //     KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED, because a reply key
 //     encrypted to the client's RSA key has no forward secrecy (#179's
 //     scope says so). DH keys are never reused (no serverDHNonce).
+//   * MS-PKCA section 2.2.3 — paChecksum2 (#2125): the KDC-REQ-BODY's
+//     digest under SHA-256, SHA-384 or SHA-512 beside RFC 4556's SHA-1
+//     paChecksum, which stays required. Checked whenever it is sent (SHA-1
+//     in it refused in product), required with
+//     `krb5.pkinitRequirePaChecksum2` (off by default; MIT does not send it).
 //   * RFC 5349 — ECDH on P-256, P-384 and P-521 beside MODP groups 14 to 18.
 //   * RFC 8070 — the freshness token: sealed under the realm's krbtgt key
 //     like FAST's cookie, offered in every KDC_ERR_PREAUTH_REQUIRED that asks
@@ -981,6 +986,65 @@ class Krb5Pkinit {
   // `errorReply()`. `sessionKeyFor(etype)` answers the ticket session key and
   // its PA-PKINIT-KX for an anonymous client, and null otherwise.
   // -------------------------------------------------------------------------
+  // MS-PKCA SECTION 2.2.3's paChecksum2 (#2125, ASVS 5.0.0 11.4.3, rcbj's
+  // decision of 2026-11-24). The section says a PAChecksum2 that is present
+  // "will always be validated even if it is SHA-1", and that it "SHOULD be
+  // present" where SHA-1 is disabled; Windows Server 2022 23H2 and later send
+  // it. So: present, it is checked whatever else is true — an algorithm the
+  // section does not list, or SHA-1 in product (`mode.allowsLegacyHashes()`,
+  // the switch every other SHA-1 here answers to), is refused rather than
+  // skipped, because a client that chose a checksum is told it was not
+  // accepted instead of being judged on a weaker one in silence. Absent, it
+  // is refused only where krb5.pkinitRequirePaChecksum2 asks for it, which is
+  // off by default because MIT's client does not send one. The refusals are
+  // RFC 4556's for the paChecksum, which MS-PKCA names no others beside:
+  // KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79) for one missing or not
+  // acceptable, KRB_AP_ERR_MODIFIED (41) for one that does not match.
+  /**
+   * Checks the PKAuthenticator's paChecksum2, if it carries one, and
+   * whether the realm requires one.
+   *
+   * @param pack - the decoded AuthPack
+   * @param raw - the KDC-REQ-BODY as it arrived
+   * @returns a refusal, or null when the request may go on
+   */
+  checkPaChecksum2(pack: Json, raw: Uint8Array): Json {
+    const { log, codec, cryptoLib, config, mode } = this.deps;
+    log.debug('Entering Krb5Pkinit.checkPaChecksum2().');
+    const given = pack.paChecksum2;
+    if (!given) {
+      if (config.value('krb5.pkinitRequirePaChecksum2') === true) {
+        log.debug('Leaving Krb5Pkinit.checkPaChecksum2(). Required.');
+        return this.refuse(codec.ERROR.PA_CHECKSUM_MUST_BE_INCLUDED,
+                           'STS-KRB-0262', 'this realm requires an MS-PKCA ' +
+                           'paChecksum2 in the PKAuthenticator');
+      }
+      log.debug('Leaving Krb5Pkinit.checkPaChecksum2(). None sent.');
+      return null;
+    }
+    const algorithm = cryptoLib.pkinitPaChecksum2Algorithm(given.algorithm);
+    if (!algorithm ||
+        (algorithm.legacy && !mode.allowsLegacyHashes())) {
+      log.debug('Leaving Krb5Pkinit.checkPaChecksum2(). Not acceptable: ' +
+                given.algorithm);
+      return this.refuse(codec.ERROR.PA_CHECKSUM_MUST_BE_INCLUDED,
+                         'STS-KRB-0260', 'the paChecksum2 is over ' +
+                         (algorithm ? algorithm.label : given.algorithm) +
+                         ', which this KDC does not accept; send SHA-256, ' +
+                         'SHA-384 or SHA-512');
+    }
+    if (!cryptoLib.pkinitPaChecksum2Matches(raw, given.algorithm,
+                                            given.checksum)) {
+      log.debug('Leaving Krb5Pkinit.checkPaChecksum2(). Mismatch.');
+      return this.refuse(41, 'STS-KRB-0261', 'the paChecksum2 is not the ' +
+                         algorithm.label + ' of this request\'s ' +
+                         'KDC-REQ-BODY');
+    }
+    log.debug('Leaving Krb5Pkinit.checkPaChecksum2(). ' + algorithm.label +
+              ' matches.');
+    return null;
+  }
+
   /**
    * Checks a PA-PK-AS-REQ and builds the PKINIT reply: the client's
    * signature and certificate (or none, for anonymous PKINIT), the freshness
@@ -1030,15 +1094,20 @@ class Krb5Pkinit {
                              'anonymous principal may send');
     }
     // THE paChecksum (section 3.2.1 item 6) over the KDC-REQ-BODY the AuthPack
-    // was signed for. THE ONE SHA-1 THIS SERVICE MAY NOT REFUSE (ASVS 5.0.0
-    // 11.4.1): RFC 4556 says it MUST be present and contains a SHA-1 checksum,
-    // and that a KDC MUST answer KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED where it
-    // is absent; RFC 8636 section 9 leaves it "fixed at SHA-1". What the
-    // request's security rests on is elsewhere, and in product it is enforced
-    // below: the signature's digest is not SHA-1, the reply key is agreed by
-    // Diffie-Hellman, and RFC 8636's KDF over SHA-256 or better binds the
+    // was signed for. STILL REQUIRED, AND STILL SHA-1 (ASVS 5.0.0 11.4.1 and
+    // 11.4.3): RFC 4556 says it MUST be present and contains a SHA-1
+    // checksum, and that a KDC MUST answer KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED
+    // where it is absent; RFC 8636 section 9 leaves it "fixed at SHA-1". So
+    // it is checked as the RFC says, and refusing it would refuse every MIT
+    // and Heimdal client. It is no longer the only integrity check this KDC
+    // can make over the request body: MS-PKCA's paChecksum2, below, is the
+    // same binding under SHA-256 or better, checked whenever a client sends
+    // one and required with krb5.pkinitRequirePaChecksum2 (#2125). Beyond
+    // both, what the request's security rests on is enforced below in
+    // product: the signature's digest is not SHA-1, the reply key is agreed
+    // by Diffie-Hellman, and RFC 8636's KDF over SHA-256 or better binds the
     // AS-REQ to the reply (its section 3), which is what covers a second
-    // preimage of this checksum (its section 9).
+    // preimage of the SHA-1 checksum (its section 9).
     if (!pack.paChecksum) {
       log.debug('Leaving Krb5Pkinit.checkRequest(). No paChecksum.');
       return this.refuse(codec.ERROR.PA_CHECKSUM_MUST_BE_INCLUDED,
@@ -1049,6 +1118,11 @@ class Krb5Pkinit {
       log.debug('Leaving Krb5Pkinit.checkRequest(). paChecksum mismatch.');
       return this.refuse(41, 'STS-KRB-0180', 'the paChecksum is not the ' +
                          'SHA-1 of this request\'s KDC-REQ-BODY');
+    }
+    const second = this.checkPaChecksum2(pack, body.raw);
+    if (second) {
+      log.debug('Leaving Krb5Pkinit.checkRequest(). paChecksum2.');
+      return second;
     }
     // THE TIMESTAMP (section 3.2.2: "the time skew falls within acceptable
     // limits").
