@@ -6,6 +6,19 @@ title: Release notes
 
 ## 1.2.0
 
+### Behaviour change: CSV exports neutralise spreadsheet formulas
+
+A report exported as CSV, and the passkey report's CSV export, now put a
+single quote (`'`) in front of any text value whose first character is
+`=`, `+`, `-`, `@`, a tab, a carriage return or NUL, so a value someone
+chose (a username, a display name) cannot run as a formula when the file
+is opened in a spreadsheet (ASVS 5.0.0 1.2.10). The quote is visible in
+the cell. Numbers are not touched: a negative count is still a number.
+Until 1.2.0 a report's CSV quoted only per RFC 4180, and the passkey
+export did not catch a leading NUL. A program that reads these files and
+compared a text cell starting with one of those characters byte for byte
+now sees the quote in front. See [Reporting](reporting.md#formats).
+
 ### Behaviour change: an uploaded sign-in logo loses its metadata
 
 A realm's sign-in logo is shown to everybody who opens a sign-in page, so
@@ -146,6 +159,20 @@ password somebody else may know, and a session opened with it should not
 outlive the new one (ASVS 5.0.0 7.4.3). The page that confirms the new
 password says so. If the sessions cannot be ended, the password is still set
 and `STS-PORTAL-0638` is logged.
+
+### Fixed: a password check takes as long for an account that does not exist
+
+In product mode, a password presented for a name with no stored password, for
+an account holding a stored value this service cannot read, for a disabled
+account, or for a service account at a door its policy closes was refused at
+once, while a wrong password for a real person took one password-hash
+computation. The response time said which accounts exist (ASVS 5.0.0 6.3.8).
+Those refusals now verify the presented password against a hash nobody holds,
+made once per process at the password policy's current parameters, and discard
+the result, so every refusal costs the same. What is refused, and the error
+code recorded for it, are unchanged. This applies at every door that checks a
+person's password: the sign-in screen, the password grant, an LDAP bind, a
+WS-Trust UsernameToken, SCIM, SSF and EST HTTP Basic.
 
 ### Fixed: the console, portal and reports say why they cannot open without WebCrypto
 
