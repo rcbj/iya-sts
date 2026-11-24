@@ -104,6 +104,7 @@ directory's `CLAUDE.md` is the documentation of what is in it.
 | `deploy/aws/`, `deploy/gcp/`, `deploy/azure/`, `deploy/multicloud/` | **Not part of the mock**: Terraform for the cluster on each cloud (only AWS has been applied). Each directory's `CLAUDE.md`. |
 | `debugger/` | The embedded identity protocol debugger, on a listener of its own. `debugger/embedded/` is build output, never source. `debugger/CLAUDE.md`. |
 | `rust/` | The Rust conversion (#444); `rust/DESIGN.md` is the design. Only the remote PEP runs on it; the Node service runs none of it. |
+| `sdk/` | **Not part of the service's tree**: the optional SDKs the image installs into `/opt/sts-sdk` (node-vault, and what `STS_CLOUD_SDKS` names), one pinned npm workspace each and one lockfile (#2141). The `Dockerfile` comment above the install is its documentation. |
 | `postgres/` | The database container's files, never this service's. `postgres/CLAUDE.md`. |
 | `docs/` | The GitHub Pages site: how to USE this service, one folder per release (`v1.2.0/` the latest, `v1.1.0/` and `v1.0.0/` frozen). `docs/CLAUDE.md`. |
 | `env/` | The appconfig files, each a layer over `defaults.js`. `env/CLAUDE.md`. |

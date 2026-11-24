@@ -1,0 +1,10 @@
+{
+  "name": "sts-sdk-aws-sdk-client-ecs",
+  "version": "0.0.0",
+  "private": true,
+  "license": "BUSL-1.1",
+  "description": "Pins @aws-sdk/client-ecs for the image prefix /opt/sts-sdk (Dockerfile).",
+  "dependencies": {
+    "@aws-sdk/client-ecs": "3.1177.0"
+  }
+}

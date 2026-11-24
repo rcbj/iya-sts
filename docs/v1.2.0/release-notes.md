@@ -6,6 +6,19 @@ title: Release notes
 
 ## 1.2.0
 
+### Changed: the image's optional SDKs come from a lockfile
+
+The Vault client every image carries, and the SDKs the `STS_CLOUD_SDKS` build
+argument adds, were installed with a bare `npm install`: the newest version the
+registry had that day, with install scripts on. They are now pinned in the
+repository's `sdk/` directory, one npm workspace per SDK, and installed from
+`sdk/package-lock.json` with `npm ci --ignore-scripts` (ASVS 5.0.0 15.2.4).
+`STS_CLOUD_SDKS` takes the same package names as before. A name the lockfile
+does not pin, or a `name@version` whose version it does not hold, now fails the
+build instead of installing something unpinned; to move a pin, change it in
+`sdk/packages/` and run `npm install --package-lock-only --ignore-scripts` in
+`sdk/`.
+
 ### Behaviour change: S/MIME mail is authenticated encryption
 
 Mail encrypted to a person's S/MIME certificate is now a CMS

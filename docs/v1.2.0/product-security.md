@@ -364,8 +364,14 @@ default. When it is on, product mode reaches the scanner over TLS only. See
 
 [`SECURITY.md`](https://github.com/rcbj/iya-sts/blob/main/SECURITY.md) sets how
 quickly a vulnerable dependency is fixed and how to report a vulnerability. Images
-install exactly what the lockfiles name, and a daily check covers the published
-image as well as the lockfiles.
+install exactly what the lockfiles name, with `npm ci`, and a daily check covers
+the published image as well as the lockfiles. That includes the optional SDKs
+under `/opt/sts-sdk`, the Vault client every image carries and whatever
+`STS_CLOUD_SDKS` adds: each is pinned in the repository's `sdk/` directory and
+installed from `sdk/package-lock.json` with install scripts off (only `pkcs11js`,
+a native module, is built after). A build that names an SDK the lockfile does not
+pin, or a version it does not hold, fails. The base images are named by version
+tag, not by digest.
 
 The image holds a CycloneDX inventory of its npm dependencies at
 `/usr/src/sts/sbom.cdx.json`, one of the optional SDKs under `/opt/sts-sdk` at
