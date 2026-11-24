@@ -1358,6 +1358,10 @@ function create(deps) {
         tally.secrets += dialect.affected(u) ? 1 : 0;
       }
       for (const one of deps.extraSealed || []) {
+        // A count-only column (the audit log, #1616) is left as it is.
+        if (one.countOnly) {
+          continue;
+        }
         await resealExtra(one, like, limit, reseal, tally, ask, tx);
       }
     }

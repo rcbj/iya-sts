@@ -1235,6 +1235,73 @@ CREATE TABLE IF NOT EXISTS sts_report_artifact_pieces (
   PRIMARY KEY (realm, job_id, seq)
 );
 
+-- THE AUDIT LOG, APPEND-ONLY (#1616, schema version 33; ASVS 5.0.0 16.4.2).
+-- One sealed row per event. The application role is given INSERT and SELECT
+-- on it and nothing else (the REVOKE after the grants below); rows leave
+-- only through the two functions after it, which run as the role that runs
+-- this file and do exactly one thing each.
+CREATE TABLE IF NOT EXISTS sts_audit (
+  realm  text   NOT NULL,
+  origin text   NOT NULL DEFAULT '',
+  seq    bigint NOT NULL,
+  at     bigint NOT NULL,
+  body   text   NOT NULL,
+  PRIMARY KEY (realm, origin, seq)
+);
+
+CREATE INDEX IF NOT EXISTS sts_audit_at ON sts_audit (realm, at, origin, seq);
+
+-- RETENTION: everything in a realm older than its newest `p_keep` rows, in
+-- (at, origin, seq) order — the audit page's order. **The function keeps
+-- at least 1000 whatever it is asked**, because the caller is the role this
+-- table is protected FROM: a service that could pass 1 could empty the log
+-- one call at a time. `audit.maxEvents` below that is honoured by the
+-- reader, which shows no more than it says. SECURITY DEFINER with its
+-- search_path fixed where it is created (this schema, then `public`, where
+-- nobody may create), so a
+-- caller cannot redirect `sts_audit` to a table of its own.
+CREATE OR REPLACE FUNCTION sts_audit_retain(p_realm text, p_keep bigint)
+  RETURNS bigint LANGUAGE plpgsql SECURITY DEFINER SET search_path FROM CURRENT AS $$
+DECLARE
+  keep bigint := GREATEST(COALESCE(p_keep, 0), 1000);
+  edge record;
+  gone bigint;
+BEGIN
+  SELECT a.at, a.origin, a.seq INTO edge FROM sts_audit a
+   WHERE a.realm = p_realm
+   ORDER BY a.at DESC, a.origin DESC, a.seq DESC OFFSET keep - 1 LIMIT 1;
+  IF NOT FOUND THEN
+    RETURN 0;
+  END IF;
+  DELETE FROM sts_audit a
+   WHERE a.realm = p_realm AND (a.at, a.origin, a.seq) < (edge.at, edge.origin, edge.seq);
+  GET DIAGNOSTICS gone = ROW_COUNT;
+  RETURN gone;
+END $$;
+
+-- A REALM'S ROWS, ONLY WHEN THE REALM IS GONE OR GOING: absent from
+-- `sts_realms`, or with `retiring_at` set. Never the default realm, which
+-- has no row there and is never removed.
+CREATE OR REPLACE FUNCTION sts_audit_purge_realm(p_realm text)
+  RETURNS bigint LANGUAGE plpgsql SECURITY DEFINER SET search_path FROM CURRENT AS $$
+DECLARE
+  gone bigint;
+BEGIN
+  IF p_realm IS NULL OR p_realm = '' OR p_realm = 'default' THEN
+    RETURN 0;
+  END IF;
+  IF EXISTS (SELECT 1 FROM sts_realms r
+              WHERE r.id = p_realm AND r.retiring_at IS NULL) THEN
+    RETURN 0;
+  END IF;
+  DELETE FROM sts_audit a WHERE a.realm = p_realm;
+  GET DIAGNOSTICS gone = ROW_COUNT;
+  RETURN gone;
+END $$;
+
+REVOKE ALL ON FUNCTION sts_audit_retain(text, bigint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION sts_audit_purge_realm(text) FROM PUBLIC;
+
 CREATE TABLE IF NOT EXISTS sts_schema (
   version    int         PRIMARY KEY,
   applied_at timestamptz NOT NULL DEFAULT now()
@@ -1243,7 +1310,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (32) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (33) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.
@@ -1333,6 +1400,17 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA :"sts_schema"
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :"sts_app_role";
 ALTER DEFAULT PRIVILEGES IN SCHEMA :"sts_schema"
   GRANT USAGE, SELECT ON SEQUENCES TO :"sts_app_role";
+
+-- **EXCEPT THE AUDIT LOG (#1616, ASVS 5.0.0 16.4.2), which it may add to and
+-- read and never change.** Revoked AFTER the table-wide grant above, which
+-- every run of this file repeats, so a second run cannot hand UPDATE back.
+-- Its rows leave through the two SECURITY DEFINER functions only, which the
+-- role may call and nothing else may.
+REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+  ON sts_audit FROM :"sts_app_role";
+GRANT EXECUTE ON FUNCTION sts_audit_retain(text, bigint)
+  TO :"sts_app_role";
+GRANT EXECUTE ON FUNCTION sts_audit_purge_realm(text) TO :"sts_app_role";
 
 -- ---------------------------------------------------------------------------
 -- AND NOW THE REVOCATIONS, WHICH ARE THE HALF THAT MAKES THE SENTENCE TRUE.

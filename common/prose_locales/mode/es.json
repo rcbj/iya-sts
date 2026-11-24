@@ -611,6 +611,18 @@
     "en": "e082de544e11ddcb",
     "text": "Añada un destino de exportación de auditoría, para que una copia del registro quede fuera del alcance de una intrusión. Mientras no exista, el servicio registra una advertencia para ese dominio."
   },
+  "mode.requirements.audit-append-only.what": {
+    "en": "53b7ec225e4b3f63",
+    "text": "El registro de auditoría no puede modificarse con la propia credencial de base de datos del servicio"
+  },
+  "mode.requirements.audit-append-only.development": {
+    "en": "11ab073d36508489",
+    "text": "Donde el estado generado persiste (workers de solicitudes o varios nodos, o keys.source=persisted) el registro se escribe como en producto. En otro caso está en memoria y desaparece con el proceso."
+  },
+  "mode.requirements.audit-append-only.product": {
+    "en": "421ebab018244a91",
+    "text": "Cada evento es una fila sellada de sts_audit, donde el rol de base de datos del servicio puede añadir y leer filas y nada más; las filas antiguas salen solo mediante la función de retención del propietario de la tabla, que conserva al menos 1000 en cada dominio. Donde el rol puede modificar la tabla — es su propietario o tiene UPDATE, DELETE o TRUNCATE sobre ella — esto se informa como no cumplido (STS-AUDIT-0019) y el servicio sigue funcionando."
+  },
   "mode.requirements.malware-scan-tls.what": {
     "en": "926957ee32cf2309",
     "text": "Los archivos llegan cifrados al analizador"

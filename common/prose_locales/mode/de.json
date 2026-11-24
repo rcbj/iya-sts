@@ -611,6 +611,18 @@
     "en": "e082de544e11ddcb",
     "text": "Fügen Sie ein Ziel für den Audit-Export hinzu, damit eine Kopie des Protokolls außer Reichweite einer hiesigen Kompromittierung liegt. Solange keines existiert, protokolliert der Dienst eine Warnung für diesen Bereich."
   },
+  "mode.requirements.audit-append-only.what": {
+    "en": "53b7ec225e4b3f63",
+    "text": "Das Audit-Protokoll lässt sich über die eigene Datenbank-Zugangsberechtigung des Dienstes nicht ändern"
+  },
+  "mode.requirements.audit-append-only.development": {
+    "en": "11ab073d36508489",
+    "text": "Wo erzeugter Zustand dauerhaft gespeichert wird (Anfrage-Worker oder mehrere Knoten, oder keys.source=persisted), wird das Protokoll wie im Produktmodus geschrieben. Andernfalls liegt es im Arbeitsspeicher und geht mit dem Prozess verloren."
+  },
+  "mode.requirements.audit-append-only.product": {
+    "en": "421ebab018244a91",
+    "text": "Jedes Ereignis ist eine versiegelte Zeile von sts_audit, in der die Datenbankrolle des Dienstes Zeilen hinzufügen und lesen darf und sonst nichts; alte Zeilen verlassen die Tabelle nur über die Aufbewahrungsfunktion des Tabelleneigentümers, die in jedem Bereich mindestens 1000 behält. Wo die Rolle die Tabelle ändern kann — sie besitzt sie oder hält UPDATE, DELETE oder TRUNCATE darauf —, wird dies als nicht erfüllt gemeldet (STS-AUDIT-0019), und der Dienst läuft weiter."
+  },
   "mode.requirements.malware-scan-tls.what": {
     "en": "926957ee32cf2309",
     "text": "Dateien erreichen den Malware-Scanner verschlüsselt"

@@ -3127,7 +3127,12 @@ left; anything that renumbers rewrites every segment. A stored copy can carry up
 to N-1 elements the owner already dropped, so the reader trims (`audit.js`'s
 `merged()` keeps `audit.maxEvents` per origin) — `realms.js`'s `segmentedArr()`
 argues it. `audit.events` is the one declared so (`segment: 32`); the measured
-reason is in `cluster/CLAUDE.md`.
+reason is in `cluster/CLAUDE.md`. **Since #1616 that declaration is the OLD
+audit ring, read once to be copied:** every audit event is a row of
+`sts_audit`, the append-only table the service's database role may add to
+and read and nothing else (ASVS 5.0.0 16.4.2), and `audit.js`'s ring is this
+process's events in memory. `persistence/CLAUDE.md`, *The audit log,
+append-only*, argues it.
 
 ### A store becomes per realm at its DECLARATION, and "everything it is made of" is the test
 

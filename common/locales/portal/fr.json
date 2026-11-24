@@ -495,6 +495,7 @@
   "resetDone.heading": "Votre mot de passe est défini",
   "resetDone.ok": "Ce lien de réinitialisation a maintenant été utilisé et ne fonctionnera plus.",
   "resetDone.next": "Connectez-vous avec votre nouveau mot de passe. Si votre compte a un deuxième facteur, il vous sera demandé comme d’habitude.",
+  "resetDone.signedOut": "Toutes vos sessions, sur tous vos appareils, ont été fermées ; personne qui connaissait votre ancien mot de passe n’est donc encore connecté.",
   "signedOut.title": "Déconnecté",
   "signedOut.heading": "Vous êtes déconnecté",
   "signedOut.noSession": "Il n’y avait aucune session de portail à terminer dans ce navigateur.",

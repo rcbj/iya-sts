@@ -233,7 +233,10 @@ cluster (`security.rateLimit*`).
   person names their account and a single-use reset link is mailed to its
   (verified, by default) address. The answer is the same whether or not the
   account exists, and the current password keeps working until the link is
-  used ([mail](mail.md)).
+  used ([mail](mail.md)). **Setting the new password signs the person out
+  everywhere**, as an administrator's reset does, so a session opened with
+  the old password does not outlive it (since 1.2.0, ASVS 5.0.0 7.4.3). The
+  page says so.
 * **Activation link.** A new account may be given a single-use activation link
   to `/portal/activate` (`security.activationTtlMinutes`), where the person sets
   a password or enrols a security key or an authenticator app.
