@@ -43,6 +43,9 @@ const consolePage = require('./tools/console_page')
 // and without it `GET /admin-api/xacml` answers the no-XACML view, which
 // carries no settings block.
 require('../xacml/xacml_admin');
+// The same for Signing keys: `GET /admin-api/keys` answers 503 until
+// `admin-ui/crypto_metadata` fills the crypto reporter (it does at 20a).
+require('../admin-ui/crypto_metadata');
 
 // WHAT THIS FOUND AND #2049 DID NOT FIX, each named with its reason so the
 // table can only shrink: every entry is asserted to be STILL undrawn, so a
