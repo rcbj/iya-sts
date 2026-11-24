@@ -78,7 +78,8 @@ RUN echo "postfix postfix/main_mailer_type select Local only" \
         openssh-client openssh-server \
         postfix bsd-mailx \
         oathtool libpam-yubico pamtester \
-        krb5-user \
+        krb5-user krb5-pkinit \
+        libengine-pkcs11-openssl \
         curl openssl ca-certificates procps \
  && rm -rf /var/lib/apt/lists/*
 
@@ -86,6 +87,7 @@ COPY --from=cards /opt/cards /opt/cards
 WORKDIR /opt/client-lab
 COPY lab-start.sh card-lib.sh lab_agent.js ./
 COPY bin/ ./bin/
+COPY piv/ ./piv/
 RUN chmod 0755 lab-start.sh bin/*
 
 # ROOT, ON PURPOSE: pcscd, sshd and postfix are system daemons, and the lab
