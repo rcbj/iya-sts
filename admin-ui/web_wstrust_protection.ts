@@ -17,10 +17,18 @@
 // THE EIGHT BOXES STORE NOTHING. They carry no `name`, so the form posts
 // none of them; each is drawn ticked when its preset's expressions are all
 // in its map (`WebWsProtection.isOn()`), and ticking one rewrites that
-// map's list of boxes in the same form (`WebWsProtection.applied()`), so
-// the existing Save (`update-fields`) is what stores the map. A map typed
-// by hand ticks the box too, because the box is read from the map and
-// nothing else. A box is re-read whenever its map's boxes are typed in.
+// map's list of boxes in the same form, so the existing Save
+// (`update-fields`) is what stores the map. A map typed by hand ticks the
+// box too, because the box is read from the map and nothing else. A box is
+// re-read whenever its map's boxes are typed in.
+//
+// A BOX REPLACES ITS MAP, AND UNTICKING GIVES IT BACK (rcbj, 2026-11-23):
+// ticking Body or Header sets the map to the presets ticked and nothing
+// else, and the expressions it held before are remembered; unticking the
+// last box on that map restores them (`toggled()`). The memory is the
+// page's (`REMEMBERED`, by application and map), so it outlives a redraw
+// and a Save and is gone with a reload; with nothing remembered, unticking
+// takes out only the preset's own expressions, as it always did.
 //
 // THE XPATH BUILDER POSTS NOTHING EITHER: its controls carry no `name` and
 // its buttons are `type="button"`. The sample is parsed in the browser
@@ -150,6 +158,11 @@ const SAMPLE = '<s:Envelope xmlns:s="' + P.soap12 + '"\n' +
   '  </s:Body>\n' +
   '</s:Envelope>';
 
+// WHAT EACH MAP HELD BEFORE A BOX FIRST REPLACED IT, by application and map
+// (`toggled()`), for as long as the page is open: the console redraws a
+// page without reloading it, so a module's state outlives each drawing.
+const REMEMBERED: { [key: string]: string[] } = {};
+
 // XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, by number: a stand-in browser in
 // a test has no XPathResult.
 const SNAPSHOT = 7;
@@ -223,6 +236,62 @@ class WebWsTrustProtection {
           box(one.map, 'body', label) + box(one.map, 'header', label) +
           switchState(one.map) + '</tr>';
       }).join('') + '</table>');
+  }
+
+  /**
+   * What a map holds after one of its Body / Header boxes is ticked or
+   * unticked. The boxes still ticked REPLACE the map with their presets;
+   * when none is, the map gets back what it held before a box first
+   * replaced it.
+   *
+   * @param values - the map's values now
+   * @param map - the map's attribute
+   * @param part - the box changed, `body` or `header`
+   * @param on - whether it is now ticked
+   * @param remembered - what the map held before a box replaced it, or null
+   * @returns `{ values, remembered }`: the map's new values, and what to
+   *   remember from now on (null once it has been given back)
+   */
+  static toggled(values, map, part, on, remembered): { values: string[],
+                                               remembered: string[] | null } {
+    const parts = ['body', 'header'];
+    const held = (values || []).map(function (one) {
+      return String(one).trim();
+    }).filter(function (one) {
+      return one !== '';
+    });
+    const before = parts.filter(function (one) {
+      return WebWsProtection.isOn(held, map, one);
+    });
+    // NOTHING REMEMBERED YET: what the map holds that no ticked box put
+    // there (all of it, when no box was ticked).
+    let kept = remembered ? remembered.slice() : null;
+    if (!kept) {
+      const presets = [];
+      before.forEach(function (one) {
+        WebWsProtection.expressions(map, one).forEach(function (expr) {
+          presets.push(expr);
+        });
+      });
+      kept = held.filter(function (one) {
+        return presets.indexOf(one) < 0;
+      });
+    }
+    const ticked = parts.filter(function (one) {
+      return one === part ? !!on : before.indexOf(one) >= 0;
+    });
+    if (!ticked.length) {
+      return { values: kept, remembered: null };
+    }
+    const next = [];
+    ticked.forEach(function (one) {
+      WebWsProtection.expressions(map, one).forEach(function (expr) {
+        if (next.indexOf(expr) < 0) {
+          next.push(expr);
+        }
+      });
+    });
+    return { values: next, remembered: kept };
   }
 
   /**
@@ -656,10 +725,23 @@ class WebWsTrustProtection {
       }
       box.addEventListener('change', function () {
         const cell = doc.getElementById('fgc-' + map);
-        const next = WebWsProtection.applied(
+        // The application the form saves, so one application's memory is
+        // never another's.
+        const form = box.closest ? box.closest('form') : null;
+        const owner = form
+          ? form.querySelector('input[name="application"]') : null;
+        const key = String((owner && owner.value) || '') + ' ' + map;
+        const done = WebWsTrustProtection.toggled(
           WebWsTrustProtection.listValues(cell, map), map, part,
-          !!box.checked);
-        WebWsTrustProtection.redrawList(doc, map, next, t);
+          !!box.checked,
+          Object.prototype.hasOwnProperty.call(REMEMBERED, key)
+            ? REMEMBERED[key] : null);
+        if (done.remembered) {
+          REMEMBERED[key] = done.remembered;
+        } else {
+          delete REMEMBERED[key];
+        }
+        WebWsTrustProtection.redrawList(doc, map, done.values, t);
         WebWsTrustProtection.syncBoxes(doc);
         touched();
       });

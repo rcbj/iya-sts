@@ -34,6 +34,9 @@
 //      simple, then Message encryption and Message signing, each request
 //      then response and advanced, every field in its section, and a
 //      builder button in each target field's own card that posts nothing.
+//   I. A box REPLACES its map with the presets ticked, and unticking the
+//      last one gives back what the map held (rcbj, 2026-11-23); with
+//      nothing remembered, unticking takes out only the preset.
 //   H. Adding the dialog's list to a field appends what it lacks, once;
 //      the single recipient expression takes a list of exactly one.
 // ---------------------------------------------------------------------------
@@ -328,6 +331,56 @@ function merging(t) {
   log.debug("Leaving merging().");
 }
 
+function replacing(t) {
+  log.debug("Entering replacing().");
+  const map = 'wstrustSignRequestElements';
+  const body = WebWsProtection.expressions(map, 'body');
+  const header = WebWsProtection.expressions(map, 'header');
+  const same = function (a, b) {
+    return JSON.stringify(a) === JSON.stringify(b);
+  };
+  const mine = ['/soap12:Envelope/soap12:Header/wsa:To', '/x'];
+  const one = Protection.toggled(mine, map, 'body', true, null);
+  t.check(same(one.values, body) && same(one.remembered, mine),
+          'I. ticking Body replaces the map with its preset and remembers ' +
+          'what was there', JSON.stringify(one));
+  const two = Protection.toggled(one.values, map, 'header', true,
+                                 one.remembered);
+  t.check(same(two.values, body.concat(header)) &&
+          same(two.remembered, mine),
+          'I. ticking Header too leaves both presets and nothing else',
+          JSON.stringify(two));
+  const three = Protection.toggled(two.values, map, 'body', false,
+                                   two.remembered);
+  t.check(same(three.values, header) && same(three.remembered, mine),
+          'I. unticking Body while Header stays leaves Header\'s preset',
+          JSON.stringify(three));
+  const four = Protection.toggled(three.values, map, 'header', false,
+                                  three.remembered);
+  t.check(same(four.values, mine) && four.remembered === null,
+          'I. unticking the last box gives the map back what it held',
+          JSON.stringify(four));
+  // NOTHING REMEMBERED (the page was loaded with a box already ticked):
+  // what no ticked preset put there is what the map goes back to.
+  const loaded = body.concat(['/x']);
+  const off = Protection.toggled(loaded, map, 'body', false, null);
+  t.check(same(off.values, ['/x']) && off.remembered === null,
+          'I. with nothing remembered, unticking takes out only the preset',
+          JSON.stringify(off));
+  const more = Protection.toggled(loaded, map, 'header', true, null);
+  t.check(same(more.values, body.concat(header)) &&
+          same(more.remembered, ['/x']),
+          'I. with nothing remembered, a second box replaces the rest and ' +
+          'remembers it', JSON.stringify(more));
+  const empty = Protection.toggled([], map, 'body', true, null);
+  const back = Protection.toggled(empty.values, map, 'body', false,
+                                  empty.remembered);
+  t.check(same(back.values, []) && back.remembered === null,
+          'I. an empty map ticked and unticked is empty again',
+          JSON.stringify([empty, back]));
+  log.debug("Leaving replacing().");
+}
+
 function steps(t) {
   log.debug("Entering steps().");
   const P = WebWsProtection.PREFIXES;
@@ -450,6 +503,7 @@ function run(t) {
   builder(t, tr);
   sections(t, tr);
   merging(t);
+  replacing(t);
   const sample = steps(t);
   tree(t, sample);
   lists(t, tr);
