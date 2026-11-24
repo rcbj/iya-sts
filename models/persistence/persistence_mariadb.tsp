@@ -878,6 +878,23 @@ model StsReportArtifactPieces {
   bytes: bytes;
 }
 
+// THE AUDIT LOG, APPEND-ONLY (#1616, schema version 33): PostgreSQL's
+// `sts_audit`, and the one table whose per-table grant is not the four
+// verbs — the application account may add rows and read them.
+@table(#{name: "sts_audit", engine: "mariadb", head: "CREATE TABLE IF NOT EXISTS", suffix: "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_nopad_bin", constraints: #[#{at: 5, text: "PRIMARY KEY (realm, origin, seq)"}], driver: #{order: 79}, grant: "SELECT, INSERT", indexes: #[#{name: "sts_audit_at", text: "CREATE INDEX IF NOT EXISTS sts_audit_at ON sts_audit (realm, at, origin, seq)", driver: #{order: 80}}]})
+model StsAudit {
+  @column(#{sql: "VARCHAR(64)", clauses: "NOT NULL", required: true, primaryKey: true})
+  realm: string;
+  @column(#{sql: "VARCHAR(255)", clauses: "NOT NULL DEFAULT ''", required: true, primaryKey: true})
+  origin: string;
+  @column(#{sql: "BIGINT", clauses: "NOT NULL", required: true, primaryKey: true})
+  seq: int64;
+  @column(#{sql: "BIGINT", clauses: "NOT NULL", required: true})
+  at: int64;
+  @column(#{sql: "LONGTEXT", clauses: "NOT NULL", required: true})
+  body: string;
+}
+
 @table(#{name: "sts_schema", engine: "mariadb", head: "CREATE TABLE IF NOT EXISTS", suffix: "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_nopad_bin", constraints: #[#{at: 2, text: "PRIMARY KEY (version)"}], driver: #{order: 77}})
 model StsSchema {
   @column(#{sql: "INT", clauses: "NOT NULL", required: true, primaryKey: true})
@@ -886,5 +903,5 @@ model StsSchema {
   applied_at: unknown;
 }
 
-@schema(#{engine: "mariadb", version: 32})
+@schema(#{engine: "mariadb", version: 33})
 model MariaDbSchema {}

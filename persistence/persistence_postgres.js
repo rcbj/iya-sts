@@ -327,7 +327,15 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // started_at DESC, key`, `WHERE chosen`). `started_at` is set once, so
 // the index does not newly make an update non-HOT. How a large store
 // builds it is in `postgres/CLAUDE.md`.
-const SCHEMA_VERSION = 32;
+// 33 SINCE 2026-11-24 (#1616, ASVS 5.0.0 16.4.2): `sts_audit`, the audit
+// log as one sealed row per event, where the application role holds INSERT
+// and SELECT and nothing else, and the two SECURITY DEFINER functions rows
+// leave it through (`sts_audit_retain`, `sts_audit_purge_realm`). The table
+// is created here like any other, which only a role that could also alter
+// it can do — so `auditPrivileges()` reports whether this role can change
+// it, and `/admin/mode` says so. `postgres/upgrade-1.1.0.sql` builds it on a
+// 1.1.x store; the rows the ring held move in at the first start.
+const SCHEMA_VERSION = 33;
 // How many times a directory flush re-reads the data-key rows and tries
 // again when a locked row is sealed under a key this process does not hold
 // yet, and the pause between tries (2026-10-27; saveDirectory()).

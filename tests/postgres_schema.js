@@ -671,9 +671,16 @@ function checkTheScopeUpgrade(t) {
   t.check(/dflt:\s*'openid'/.test(row) && /'legacy'/.test(row),
           'oauth2.undeclaredClientScopes defaults to openid and offers legacy',
           row);
-  t.check(!/\b(CREATE|ALTER|DROP)\s/i.test(code) &&
-          !/INSERT INTO sts_schema/i.test(code),
-          'upgrade-1.1.0.sql runs no DDL and records no schema version');
+  // Its DDL is the append-only audit log's (#1616), and nothing else.
+  const created = (code.match(/^CREATE (?:TABLE IF NOT EXISTS|INDEX IF NOT EXISTS|OR REPLACE FUNCTION) \w+/mg) || [])
+    .map(function (one) { return one.split(/\s+/).pop(); });
+  t.equal(created.join(','),
+          'sts_audit,sts_audit_at,sts_audit_retain,sts_audit_purge_realm',
+          'upgrade-1.1.0.sql creates the audit table, its index and its two ' +
+          'functions, and nothing else');
+  t.check(!/\b(ALTER|DROP)\s/i.test(code) &&
+          /INSERT INTO sts_schema \(version\) VALUES \(33\)/.test(code),
+          'and alters or drops nothing, and records schema version 33');
   t.check(/WHERE version >= 32/.test(code),
           'upgrade-1.1.0.sql refuses a store older than release 1.1.0');
   t.check(/INSERT INTO sts_appconfig \(key, value\)\s+SELECT 'oauth2\.undeclaredClientScopes', '\{"raw": "legacy"\}'::jsonb\s+WHERE EXISTS \(SELECT 1 FROM sts_ldap_entries\s+WHERE parent_key LIKE 'ou=applications,%'\)\s+ON CONFLICT \(key\) DO NOTHING/
@@ -684,6 +691,61 @@ function checkTheScopeUpgrade(t) {
             .test(code),
           'the write records a change-log row, and only when it wrote');
   log.debug("Leaving checkTheScopeUpgrade().");
+}
+
+// THE APPEND-ONLY AUDIT LOG (#1616, schema version 33; ASVS 5.0.0 16.4.2).
+// postgres/schema.sql takes UPDATE, DELETE and TRUNCATE on `sts_audit` away
+// from the application role AFTER its table-wide grant (which every run
+// repeats), and gives it EXECUTE on the two SECURITY DEFINER functions rows
+// leave through; the retention function keeps a floor whatever it is asked,
+// and the purge refuses a live realm and the default one. upgrade-1.1.0.sql
+// builds the same objects with the same statements on a 1.1.x store.
+function checkTheAuditLog(t, sql) {
+  log.debug("Entering checkTheAuditLog().");
+  const all = statementsIn(sql);
+  const at = function (re) {
+    return all.findIndex(function (one) { return re.test(one); });
+  };
+  const grantAll = at(/^GRANT SELECT, INSERT, UPDATE, DELETE\s+ON ALL TABLES/);
+  const revoke = at(/^REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER\s+ON sts_audit FROM/);
+  t.check(grantAll >= 0 && revoke > grantAll,
+          'schema.sql revokes UPDATE, DELETE and TRUNCATE on sts_audit after ' +
+          'the table-wide grant', JSON.stringify({ grantAll, revoke }));
+  t.check(at(/^GRANT EXECUTE ON FUNCTION sts_audit_retain\(text, bigint\)/) > 0 &&
+          at(/^GRANT EXECUTE ON FUNCTION sts_audit_purge_realm\(text\)/) > 0 &&
+          at(/^REVOKE ALL ON FUNCTION sts_audit_retain/) > 0,
+          'and lets the role call the two functions, and nobody else');
+  const fn = function (text, name) {
+    const m = new RegExp('CREATE OR REPLACE FUNCTION ' + name +
+                         '[\\s\\S]*?END \\$\\$;').exec(text);
+    return m ? m[0].replace(/\s+/g, ' ') : '';
+  };
+  const retain = fn(sql, 'sts_audit_retain');
+  const purge = fn(sql, 'sts_audit_purge_realm');
+  t.check(/SECURITY DEFINER SET search_path FROM CURRENT/.test(retain) &&
+          /GREATEST\(COALESCE\(p_keep, 0\), 1000\)/.test(retain),
+          'the retention function runs as its owner, on a fixed path, and ' +
+          'keeps at least 1000 rows', retain.slice(0, 200));
+  t.check(/SECURITY DEFINER/.test(purge) && /'default'/.test(purge) &&
+          /retiring_at IS NULL/.test(purge),
+          'the purge runs as its owner and refuses the default realm and a ' +
+          'live one');
+  const upgrade = fs.readFileSync(
+    path.join(ROOT, 'postgres', 'upgrade-1.1.0.sql'), 'utf8');
+  t.equal(fn(upgrade, 'sts_audit_retain'), retain,
+          'upgrade-1.1.0.sql\'s retention function is schema.sql\'s');
+  t.equal(fn(upgrade, 'sts_audit_purge_realm'), purge,
+          'and its purge is schema.sql\'s');
+  const tableOf = function (text) {
+    const m = /CREATE TABLE IF NOT EXISTS sts_audit \([\s\S]*?\n\);/.exec(text);
+    return m ? m[0].replace(/\s+/g, ' ') : '';
+  };
+  t.check(!!tableOf(sql) && tableOf(upgrade) === tableOf(sql),
+          'and its table is schema.sql\'s', tableOf(upgrade));
+  t.check(/REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER\s+ON sts_audit FROM :"sts_app_role"/
+            .test(upgrade),
+          'and it takes the same verbs away from the application role');
+  log.debug("Leaving checkTheAuditLog().");
 }
 
 // Schema 23 (2026-10-20, `/portal/delegate`): the uid trigram index, a GIN
@@ -913,6 +975,7 @@ function run(t) {
   checkTheSessionIndex(t, sql);
   checkTheReleaseUpgrade(t, sql);
   checkTheScopeUpgrade(t);
+  checkTheAuditLog(t, sql);
   checkTheUidTrigramIndex(t, sql);
   checkThePrivilegeIsNarrow(t, sql);
   checkTheRoleNameAgrees(t);
