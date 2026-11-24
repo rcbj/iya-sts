@@ -302,6 +302,15 @@ module.exports = {
               truststores.remove(realmA, 'partners').ok,
               'unassigned, a truststore is deleted');
 
+      // E2. THE PUBLIC PAGE names every use case, so the table there cannot
+      // quietly fall behind the catalogue.
+      const page = require('fs').readFileSync(require('path').join(__dirname,
+        '..', 'docs', 'v1.2.0', 'truststores.md'), 'utf8');
+      UseCases.ROWS.forEach(function (row) {
+        t.check(page.indexOf('| `' + row.id + '` |') >= 0,
+                'docs/v1.2.0/truststores.md lists ' + row.id);
+      });
+
       // F. THE SLOT.
       t.log.info('F. the slot');
       t.check(truststores.setDirectory({ listStores: function () {
