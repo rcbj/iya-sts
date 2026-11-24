@@ -9050,3 +9050,35 @@ names each operation declares, and `web_runtime.ts` passes them to
 `WebPages.operationQuery()`, which leaves the rest on the address.
 `tests/tools/console_page.js` calls a handler directly and goes through
 no wrapper, so it needs no such filter.
+
+## Certificate sign-in's settings as form fields (#2080, rcbj 2026-11-24)
+
+rcbj set up a real PIV sign-in and could not find the settings, nor write
+them: `certSignIn.profiles` was a JSON box on the Listeners page's defaults
+tab. **The five certificate sign-in settings are a group of their own**,
+*Certificate sign-in*, homed on Protocols → PIV and on the Listeners page's
+**Certificate sign-in** tab (`SETTING_HOMES`, two pages); keys, variables and
+defaults are unchanged. **Six structured settings are drawn as editors**
+(`web_cert_sign_in.ts`, its header argues it): the profiles, `listeners.custom`
+and `listeners.realm`, `listeners.applications` (also over the Custom and
+Applications tabs' own boxes), and the two PIV PEM bundles.
+
+* **The value is still the box.** `SettingsForms.row()` draws a structured
+  setting as an editor's place plus a `<textarea name="<key">` under *As
+  JSON*; the editor's own controls carry no `name`, so the form posts exactly
+  what it did and the write rules judge it. Typing redraws nothing (the
+  field keeps its focus); a structural act redraws the editor.
+* **A value read is written back unchanged** — members, their order, a
+  `bindings` never set — and one the editor cannot read stays in the box with
+  the reason. `tests/cert_sign_in_editor.js` holds both.
+* **No digest in the browser.** A CA's SubjectPublicKeyInfo SHA-256 comes from
+  `GET /admin-api/tls/trust`'s `spkiSha256` and from the console form helper
+  `POST /admin-api/console/certificates/inspect` (`mgmt-api/CLAUDE.md`).
+* **A person's bindings** are a Credentials sub-tab, `ucred-cert-binding`:
+  the values held with Remove, and their certificate handed in to derive
+  `spki-sha256`, `issuer-serial` and `issuer-ski`, each an Add through
+  `users/add-attribute`. `ldap/person_editor.ts` canonicalises both doors.
+* **The PIV page links everything a smart-card sign-in needs** (its last
+  note and its links): the truststore, revocation, the custom listener, the
+  main port's optional client certificate, the authentication policy's smart
+  card row and the guide.

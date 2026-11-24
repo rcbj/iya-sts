@@ -1703,6 +1703,10 @@
     "en": "2aecb981d7ca88ee",
     "text": "NON-SPEC. Sariling operasyon ng console (#454): pinupunan ng apply-profile, generate-keys, generate-alt-keys at use-key ang certificate form mula sa isang profile, isang bagong key pair o isang nakaimbak, at walang isinusulat. Ang issue na hinahantungan nila ay POST /admin-api/pki/issue-certificate."
   },
+  "stsmetadata.endpoints./admin-api/console/certificates/:action.what": {
+    "en": "2956cd8c671bb4fe",
+    "text": "NON-SPEC. Sariling operasyon ng console (#2080): binabasa ng inspect ang mga ibinigay na PEM na sertipiko — subject, SHA-256, SHA-256 ng SubjectPublicKeyInfo — para sa editor ng mga profile ng pag-sign in gamit ang sertipiko, ang mga PEM list ng PIV at ang binding editor ng isang tao, at kapag may bindings ay sinasagot ang mga halaga ng stsCertificateBinding na ginagamit para mahanap ang una. Wala itong isinusulat o itinatago; ang hantungan nito ay POST /admin-api/config/set o /admin-api/users/add-attribute."
+  },
   "stsmetadata.endpoints./admin-api/console/applications/:action.what": {
     "en": "4c43b5b63d2a5381",
     "text": "NON-SPEC. Sariling operasyon ng console (#454): gumagawa ang generate-secret ng client secret para sa form na isusumite na at walang isinusulat. Ang create ay POST /admin-api/applications/create."

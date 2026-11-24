@@ -113,6 +113,14 @@ import stsCrypto = require('../common/crypto');
 import pqcSupport = require('../common/pqc_support');
 import cacheRegistry = require('../common/cache_registry');
 import InstanceSlot = require('../common/instance_slot');
+import certificateBinding = require('../common/certificate_binding');
+
+// WHAT `inspectView()` TAKES AT MOST (#2080): a pasted bundle is an
+// administrator's own, but a megabyte of text would hold a request worker
+// parsing it. A federal bridge bundle is a few dozen certificates.
+const INSPECT_MAX_CHARS = 262144;
+const INSPECT_MAX_CERTIFICATES = 64;
+const PEM_BLOCK = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g;
 
 // The pages a details view is drawn on. The route that draws one passes its
 // own path to the renderer, so this list decides nothing at request time; it
@@ -717,6 +725,168 @@ class CertificateViews {
     facts.set(key, value);
   }
 
+  // -------------------------------------------------------------------------
+  // A CERTIFICATE THE ADMINISTRATOR HANDS IN, DESCRIBED (#2080).
+  //
+  // The console's form helper for certificate sign-in
+  // (`POST /admin-api/console/certificates/inspect`): the profile editor's
+  // "add an issuer from its certificate", the PEM lists of
+  // `piv.externalIssuers` and `piv.attestationAnchors`, and a person's
+  // binding editor all need what a certificate SAYS — its subject, its
+  // SHA-256, its SubjectPublicKeyInfo's SHA-256, its serial and key
+  // identifier — and a browser must not compute a digest of its own
+  // (`common/crypto.js` is the one place this service hashes).
+  //
+  // **THIS IS THE ONE VIEW HERE THAT DESCRIBES WHAT IT IS HANDED**, and the
+  // header's reason for looking up rather than parsing does not reach it:
+  // that reason is a LINK — a GET anybody can be sent, drawing an attacker's
+  // certificate under this console's header. This is a POST with the
+  // administrator's own token and their own text, answered as JSON to the
+  // page that sent it and drawn nowhere else; it writes nothing and keeps
+  // nothing, so what comes back is what they pasted, read.
+  //
+  // A PERSON'S BINDINGS (`bindings: true`): the values the high-affinity
+  // methods of `common/certificate_binding.ts` look the FIRST certificate up
+  // by, in `bindingValueOf()`'s grammar — `spki-sha256` from the leaf alone,
+  // and `issuer-serial` and `issuer-ski` from its issuer, found among the
+  // other certificates handed in or in the client truststore by the one
+  // whose key verifies the leaf's signature (`crypto.certificateSignedWith()`,
+  // as `signedPath()` links a chain). No issuer found is said, and the two
+  // issuer-scoped values are left out rather than guessed.
+  // -------------------------------------------------------------------------
+  /**
+   * Describes the certificates in a PEM text, and optionally the binding
+   * values of the first.
+   *
+   * @param body - `{ pem, bindings }`
+   * @returns `{ ok, errors, certificates, issuer, bindings }`, a refusal
+   *   marked with its code
+   */
+  inspectView(body) {
+    const { log, loadTlsServer, errorCodes: codes } = this.deps;
+    log.debug("Entering CertificateViews.inspectView().");
+    const text = String((body && body.pem) || '');
+    // The code is MARKED on the answer, never a member of it: it is
+    // recorded on the request's row and never sent (root CLAUDE.md).
+    const refused = function (code, message) {
+      log.debug("Leaving CertificateViews.inspectView(). Refused.");
+      return codes.mark({ ok: false, errors: [message], certificates: [],
+                          issuer: null, bindings: [] }, code);
+    };
+    if (text.length > INSPECT_MAX_CHARS) {
+      return refused('STS-ADMIN-0953', 'The text is longer than ' +
+                     INSPECT_MAX_CHARS + ' characters.');
+    }
+    const blocks = text.match(PEM_BLOCK) || [];
+    if (!blocks.length) {
+      return refused('STS-ADMIN-0953', 'The text holds no PEM certificate ' +
+                     '(-----BEGIN CERTIFICATE-----).');
+    }
+    if (blocks.length > INSPECT_MAX_CERTIFICATES) {
+      return refused('STS-ADMIN-0953', 'The text holds ' + blocks.length +
+                     ' certificates, more than ' + INSPECT_MAX_CERTIFICATES +
+                     '.');
+    }
+    const parsed = [];
+    for (let i = 0; i < blocks.length; i++) {
+      try {
+        const cert = stsCrypto.parseCertificate(blocks[i]);
+        parsed.push({ pem: blocks[i], cert: cert,
+                      facts: stsCrypto.certificateFacts(cert) });
+      } catch (e) {
+        log.debug("Caught in CertificateViews.inspectView(): " +
+                  ((e && e.message) || e));
+        return refused('STS-ADMIN-0954', 'Certificate ' + (i + 1) +
+                       ' could not be read: ' + ((e && e.message) || e) +
+                       '.');
+      }
+    }
+    const shown = parsed.map(function (one) {
+      const f = one.facts;
+      const uuids = ((f.san && f.san.uri) || []).filter(function (u) {
+        return /^urn:uuid:/i.test(String(u));
+      });
+      return {
+        pem: one.pem,
+        subject: String(f.subject || ''),
+        issuer: String(f.issuer || ''),
+        serialHex: String(f.serialHex || ''),
+        notBefore: new Date(f.notBefore).toISOString(),
+        notAfter: new Date(f.notAfter).toISOString(),
+        ca: !!f.ca,
+        selfIssued: !!f.selfIssued,
+        fingerprint256: String(f.fingerprint256 || ''),
+        sha256: stsCrypto.digest('sha256', one.cert.raw, 'hex'),
+        spkiSha256: String(f.spkiSha256 || ''),
+        ski: String(f.ski || ''),
+        keyUsage: Array.isArray(f.keyUsage) ? f.keyUsage.slice(0) : [],
+        extendedKeyUsage: Array.isArray(f.eku) ? f.eku.slice(0) : [],
+        cardUuids: uuids.map(String)
+      };
+    });
+    let issuer = null;
+    const values = [];
+    if (body && body.bindings === true) {
+      const leaf = parsed[0];
+      const candidates = parsed.slice(1).map(function (one) {
+        return { pem: one.pem, from: 'bundle' };
+      });
+      try {
+        const tls = loadTlsServer();
+        const anchors = (tls && tls.truststore && tls.truststore.list)
+          ? (tls.truststore.list().anchors || []) : [];
+        anchors.forEach(function (row) {
+          if (row && row.pem) {
+            candidates.push({ pem: String(row.pem), from: 'truststore' });
+          }
+        });
+      } catch (e) {
+        // No truststore in this process: the bundle's own certificates are
+        // the only candidates, and the answer says no issuer was found.
+        log.debug("Caught in CertificateViews.inspectView(): " +
+                  ((e && e.message) || e));
+      }
+      for (let i = 0; i < candidates.length && !issuer; i++) {
+        try {
+          const above = stsCrypto.parseCertificate(candidates[i].pem);
+          if (stsCrypto.certificateSignedWith(leaf.cert, above.publicKey) ===
+              true) {
+            const facts = stsCrypto.certificateFacts(above);
+            issuer = { subject: String(facts.subject || ''),
+                       spkiSha256: String(facts.spkiSha256 || ''),
+                       from: candidates[i].from };
+          }
+        } catch (e) {
+          // A candidate whose key cannot verify this signature is not its
+          // issuer; the next one is asked.
+          log.debug("Caught in CertificateViews.inspectView(): " +
+                    ((e && e.message) || e));
+        }
+      }
+      const add = function (method, raw) {
+        const value = certificateBinding.bindingValueOf(raw);
+        if (value) {
+          values.push({ method: method, value: value });
+        }
+      };
+      const f = leaf.facts;
+      if (f.spkiSha256) {
+        add('spki-sha256', 'spki-sha256:' + f.spkiSha256);
+      }
+      if (issuer && issuer.spkiSha256 && f.serialHex) {
+        add('issuer-serial', 'issuer-serial:' + issuer.spkiSha256 + ':' +
+            f.serialHex);
+      }
+      if (issuer && issuer.spkiSha256 && f.ski) {
+        add('issuer-ski', 'issuer-ski:' + issuer.spkiSha256 + ':' + f.ski);
+      }
+    }
+    log.debug("Leaving CertificateViews.inspectView(). " + shown.length +
+              " certificate(s).");
+    return { ok: true, errors: [], certificates: shown,
+             issuer: issuer, bindings: values };
+  }
+
   // ---------------------------------------------------------------------------
   // WHETHER A CERTIFICATE CARRIES A POST-QUANTUM KEY, `pqc_support.of()`'s
   // answer for `{ certificatePem }`, parsed once per certificate text (#352).
@@ -785,6 +955,7 @@ export = {
   detailsView: slot.forward('detailsView'),
   listView: slot.forward('listView'),
   pqcOf: slot.forward('pqcOf'),
+  inspectView: slot.forward('inspectView'),
   // For the #352 test: how many parsed facts are held, and a way to forget
   // them so a count starts from nothing.
   factsHeld: (): number => facts.size,

@@ -1703,6 +1703,10 @@
     "en": "2aecb981d7ca88ee",
     "text": "NON-SPEC. Propre à la console (#454) : apply-profile, generate-keys, generate-alt-keys et use-key remplissent le formulaire de certificat à partir d’un profil, d’une nouvelle paire de clés ou d’une paire stockée, et n’écrivent rien. L’émission à laquelle elles mènent est POST /admin-api/pki/issue-certificate."
   },
+  "stsmetadata.endpoints./admin-api/console/certificates/:action.what": {
+    "en": "2956cd8c671bb4fe",
+    "text": "NON-SPEC. Propre à la console (#2080) : inspect lit les certificats PEM fournis — sujet, SHA-256, SHA-256 de la SubjectPublicKeyInfo — pour l’éditeur des profils de connexion par certificat, les listes PEM de PIV et l’éditeur de liaisons d’une personne, et avec bindings répond les valeurs stsCertificateBinding par lesquelles le premier est trouvé. Il n’écrit et ne conserve rien ; ce à quoi il mène est POST /admin-api/config/set ou /admin-api/users/add-attribute."
+  },
   "stsmetadata.endpoints./admin-api/console/applications/:action.what": {
     "en": "4c43b5b63d2a5381",
     "text": "NON-SPEC. Propre à la console (#454) : generate-secret produit un secret client pour un formulaire sur le point d’être soumis et n’écrit rien. La création est POST /admin-api/applications/create."

@@ -1703,6 +1703,10 @@
     "en": "2aecb981d7ca88ee",
     "text": "ICKE-SPEC. Konsolens egen (#454): apply-profile, generate-keys, generate-alt-keys och use-key fyller certifikatformuläret från en profil, ett nytt nyckelpar eller ett lagrat, och skriver ingenting. Utfärdandet de leder till är POST /admin-api/pki/issue-certificate."
   },
+  "stsmetadata.endpoints./admin-api/console/certificates/:action.what": {
+    "en": "2956cd8c671bb4fe",
+    "text": "ICKE-SPEC. Konsolens egen (#2080): inspect läser de PEM-certifikat som lämnas in — subjekt, SHA-256, SHA-256 av SubjectPublicKeyInfo — för redigeraren av profiler för certifikatinloggning, PIV:s PEM-listor och en persons bindningsredigerare, och med bindings svarar den med de stsCertificateBinding-värden det första hittas med. Den skriver och behåller ingenting; det den leder till är POST /admin-api/config/set eller /admin-api/users/add-attribute."
+  },
   "stsmetadata.endpoints./admin-api/console/applications/:action.what": {
     "en": "4c43b5b63d2a5381",
     "text": "ICKE-SPEC. Konsolens egen (#454): generate-secret präglar en klienthemlighet för ett formulär som ska skickas in och skriver ingenting. Skapandet är POST /admin-api/applications/create."

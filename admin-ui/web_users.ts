@@ -28,6 +28,7 @@ import AuditPage = require('./web_audit');
 // own functions with the person fixed.
 import HardwareTokensPage = require('./web_hardware_tokens');
 import OpenPgpPage = require('./web_openpgp');
+import CertSignInEditors = require('./web_cert_sign_in');
 
 type Json = any;
 
@@ -3217,6 +3218,16 @@ class UsersPage {
                                             mfaParts.yubi || '') },
       { id: 'ucred-piv', label: t.text('console.nav.piv'),
         html: HardwareTokensPage.personPiv(ctx.t, tokens, c, key) },
+      // THE CERTIFICATE SIGN-IN BINDINGS (#2080): `stsCertificateBinding`,
+      // the values a realm's certificate sign-in profiles find this person
+      // by, derived from their certificate and written through
+      // users/add-attribute (`web_cert_sign_in.ts`).
+      { id: 'ucred-cert-binding',
+        label: t.text('consoleCertSignIn.person.tab'),
+        html: CertSignInEditors.personBindings(ctx.t, key,
+          UsersPage.attributeValues(json.attributeEditor,
+                                    'stsCertificateBinding'),
+          !!ctx.write) },
       { id: 'ucred-ssh', label: t.text('console.nav.ssh-user-ca'),
         html: HardwareTokensPage.personSsh(ctx.t, tokens, c, key) },
       { id: 'ucred-openpgp',
@@ -3224,6 +3235,22 @@ class UsersPage {
         html: OpenPgpPage.personPanel(ctx.t, json.personOpenpgp || null,
                                       !!ctx.write) }
     ];
+  }
+
+  /**
+   * The values a person's entry holds of one attribute, from the answer's
+   * attribute editor.
+   *
+   * @param editor - `attributeEditor`, or null with no entry
+   * @param name - the attribute
+   * @returns the values, as text
+   */
+  static attributeValues(editor, name: string): string[] {
+    const row = editor && Array.isArray(editor.attributes)
+      ? editor.attributes.filter(function (one) {
+        return one.name === name;
+      })[0] : null;
+    return row && Array.isArray(row.values) ? row.values.map(String) : [];
   }
 
   // The drill-down. Returns null when the identity is not one this service

@@ -2280,8 +2280,14 @@ function describePem(pem) {
   // `readable` is the one fact the management door refuses on — see
   // `addAnchors()` — and it is recorded here so that a caller never has to
   // parse a certificate twice to learn whether the first parse worked.
+  // `spkiSha256` (#2080): the SHA-256 of the anchor's SubjectPublicKeyInfo,
+  // which is what a certificate sign-in profile names a CA by
+  // (`certSignIn.profiles`' `issuers`), so the profile editor on
+  // Protocols → PIV can offer the anchors by subject and write the value.
+  // Computed by `crypto.js`, as every digest is; '' where it cannot read the
+  // key.
   let details = { issuer: '', serial: '', notBefore: '', notAfter: '',
-                  ca: false, readable: false };
+                  ca: false, readable: false, spkiSha256: '' };
   try {
     const parsed = stsCrypto.parseCertificate(pem);
     details = {
@@ -2290,7 +2296,8 @@ function describePem(pem) {
       notBefore: new Date(parsed.validFrom).toISOString(),
       notAfter: new Date(parsed.validTo).toISOString(),
       ca: !!parsed.ca,
-      readable: true
+      readable: true,
+      spkiSha256: ''
     };
   } catch (e) {
     // OpenSSL cannot read it, so it is not an anchor OpenSSL will use either.
@@ -2299,6 +2306,17 @@ function describePem(pem) {
     // and `readable: false` says why the rest is blank.
     log.debug('describePem(): OpenSSL could not read the certificate: ' +
               e.message);
+  }
+  if (details.readable) {
+    try {
+      details.spkiSha256 = String(
+        stsCrypto.certificateFacts(pem).spkiSha256 || '');
+    } catch (e) {
+      // A key the facts reader cannot take (a composite, say) is still an
+      // anchor OpenSSL reads; the row says so by an empty digest.
+      log.debug('Caught in describePem(): ' + ((e && e.message) || e));
+      details.spkiSha256 = '';
+    }
   }
   log.debug('Leaving describePem(). subject=' + subject);
   return Object.assign({ pem: pem, subject: subject,
@@ -5267,6 +5285,9 @@ function publicAnchor(anchor, candidates) {
     notBefore: anchor.notBefore, notAfter: anchor.notAfter,
     fingerprint256: anchor.fingerprint256, ca: !!anchor.ca,
     readable: !!anchor.readable,
+    // What a certificate sign-in profile names this CA by (#2080,
+    // `describePem()`).
+    spkiSha256: anchor.spkiSha256 || '',
     source: anchor.source === 'file' ? 'file' : 'runtime',
     // Admitted once and refused by the rule now (#1360): kept, and reported.
     unadmittable: anchor.unadmittable || '',

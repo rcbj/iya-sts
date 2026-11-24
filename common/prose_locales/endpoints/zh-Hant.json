@@ -839,6 +839,10 @@
     "en": "91b14d0429eaa0bc",
     "text": "憑證表單的輔助功能"
   },
+  "endpoints.route./admin-api/console/certificates/:action.name": {
+    "en": "134f5f716b5ca38d",
+    "text": "憑證登入的憑證讀取器"
+  },
   "endpoints.route./admin-api/console/applications/:action.name": {
     "en": "18ea7bf0d0fcc0d4",
     "text": "新應用程式表單的輔助功能"

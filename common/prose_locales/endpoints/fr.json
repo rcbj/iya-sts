@@ -839,6 +839,10 @@
     "en": "91b14d0429eaa0bc",
     "text": "Les assistants du formulaire de certificat"
   },
+  "endpoints.route./admin-api/console/certificates/:action.name": {
+    "en": "134f5f716b5ca38d",
+    "text": "Le lecteur de certificats de la connexion par certificat"
+  },
   "endpoints.route./admin-api/console/applications/:action.name": {
     "en": "18ea7bf0d0fcc0d4",
     "text": "L’assistant du formulaire de nouvelle application"

@@ -589,9 +589,41 @@ so list a narrower profile (an issuing CA) before a wider one (its root).
 
 The setting is read at every sign-in, so no restart is needed. Set it in the
 realm the people sign in to (`/realm/<id>/admin-api/...` for a realm other
-than the default). In the console it is with the other TLS settings, on
-**Server configuration → Listeners**. With the API, keep the array in a file
-and send it as a string:
+than the default).
+
+**In the console** it is in the *Certificate sign-in* settings group, on
+**Protocols → PIV** and on the **Certificate sign-in** tab of **Server
+configuration → Listeners**, drawn as a form, one card per profile:
+
+* **Id** and **Description**.
+* **Issuers**: pick a CA from the client truststore, which the page lists by
+  subject with its SubjectPublicKeyInfo SHA-256 computed by the service;
+  paste a hash; or paste or choose a CA's certificate and **Read and add**,
+  which adds each CA certificate in it by its digest. A CA that is not in the
+  truststore (an intermediate the card sends) is added the second or third
+  way.
+* **Key usage**, one box per bit; **Extended key usage**, boxes for TLS client
+  authentication (`1.3.6.1.5.5.7.3.2`), Microsoft smart card logon
+  (`1.3.6.1.4.1.311.20.2.2`) and the Kerberos PKINIT client
+  (`1.3.6.1.5.2.3.4`), and any other OID typed in; **Certificate policies**, a
+  box for `id-fpki-common-authentication` (`2.16.840.1.101.3.2.1.3.13`, PIV
+  Authentication) and any other OID typed in.
+* **Bindings** in two groups: high affinity, and low affinity, whose boxes
+  stay disabled until **Accept a name method (lowAffinity)** is ticked;
+  unticking it takes the name methods out. A profile that never set its
+  bindings shows the default ticked and keeps it unwritten until a box is
+  changed.
+* **The certificates it covers are smart cards**, the `smartCard` member.
+* **Move up**, **Move down**, **Remove** and **Add a profile**: the first
+  profile naming a CA in a certificate's path covers it.
+
+The form writes the same JSON the setting always held into the box under
+**As JSON**, which can still be edited by hand, and **Save** posts it through
+the same `config/set-many` operation, so the same rule (`STS-TLS-0065`)
+judges it. A profile written by hand comes back from the form unchanged,
+members and order alike; a value the form cannot show is left to the box,
+with the reason. With the API, keep the array in a file and send it as a
+string:
 
 ```bash
 api config/set "$(jq -n --arg v "$(jq -c . profiles.json)" \
@@ -601,7 +633,11 @@ api config/reset '{"key":"certSignIn.profiles"}'   # back to empty: no profile
 
 ### Working out the values
 
-Every hexadecimal value may be written with or without colons, in either case.
+The console works out the three values a binding on a person most often
+needs, and a CA's digest for `issuers`, from the certificate itself (above,
+and [Recording a binding on a person](#recording-a-binding-on-a-person)).
+By hand, every hexadecimal value may be written with or without colons, in
+either case.
 
 ```bash
 # A CA's SubjectPublicKeyInfo SHA-256: for "issuers", and the issuer part of
@@ -663,8 +699,15 @@ spellings: `users/remove-attribute` puts it in the stored form before it
 looks for it, and adding a value already held in another spelling is
 refused as already held.
 
-* **Console:** **Directory → Users →** the person **→ Attributes**, the
-  *Certificate sign-in bindings* field: one box per value, **+** to add one.
+* **Console:** **Directory → Users →** the person **→ Credentials →
+  Certificate sign-in** lists the values held, each with **Remove**. Under
+  *From the person's certificate*, paste or choose the person's certificate
+  (followed by its issuing CA's, when that CA is not in the client
+  truststore) and **Derive the bindings**: the service reads it and answers
+  `spki-sha256`, `issuer-serial` and `issuer-ski`, each with **Add**, which is
+  `users/add-attribute`. Without the issuer only `spki-sha256` is derived.
+  The *Certificate sign-in bindings* field on **→ Attributes** still takes
+  any value typed in.
 * **API:**
   ```bash
   api users/add-attribute '{"user":"alice","attribute":"stsCertificateBinding",

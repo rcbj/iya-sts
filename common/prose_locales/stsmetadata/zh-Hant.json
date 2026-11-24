@@ -1703,6 +1703,10 @@
     "en": "2aecb981d7ca88ee",
     "text": "非規格端點。主控台自己的操作（#454）：apply-profile、generate-keys、generate-alt-keys 與 use-key 以設定檔、全新金鑰組或已儲存的金鑰組填入憑證表單，不寫入任何東西。它們所導向的簽發是 POST /admin-api/pki/issue-certificate。"
   },
+  "stsmetadata.endpoints./admin-api/console/certificates/:action.what": {
+    "en": "2956cd8c671bb4fe",
+    "text": "非規格端點。主控台自己的操作（#2080）：inspect 讀取提交的 PEM 憑證——主體、SHA-256、SubjectPublicKeyInfo 的 SHA-256——供憑證登入設定檔編輯器、PIV 的 PEM 清單與人員的綁定編輯器使用；帶 bindings 時還給出用來找到第一張憑證的 stsCertificateBinding 值。它不寫入也不保留任何東西；它所導向的是 POST /admin-api/config/set 或 /admin-api/users/add-attribute。"
+  },
   "stsmetadata.endpoints./admin-api/console/applications/:action.what": {
     "en": "4c43b5b63d2a5381",
     "text": "非規格端點。主控台自己的操作（#454）：generate-secret 為即將送出的表單產生用戶端密碼，不寫入任何東西。建立則是 POST /admin-api/applications/create。"

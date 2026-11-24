@@ -839,6 +839,10 @@
     "en": "91b14d0429eaa0bc",
     "text": "Los auxiliares del formulario de certificados"
   },
+  "endpoints.route./admin-api/console/certificates/:action.name": {
+    "en": "134f5f716b5ca38d",
+    "text": "El lector de certificados del inicio de sesión con certificado"
+  },
   "endpoints.route./admin-api/console/applications/:action.name": {
     "en": "18ea7bf0d0fcc0d4",
     "text": "El auxiliar del formulario de nueva aplicación"
