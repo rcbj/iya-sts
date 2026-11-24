@@ -2013,6 +2013,19 @@ class ApplicationsPage {
               ['gnap_access_token'], 'cfg-gnap-claims',
               t.text('consoleApplications.a2.customClaims'))
           : '');
+      // The grid's options, for the plain grid and WS-Trust's sections.
+      const gridOptions = { redraw: '/admin/applications/edit',
+                            showSet: true, protocols: config.protocols,
+                            views: views,
+                            // The scopes the delegated permission grants
+                            // declare, read-only in their list (#1141).
+                            derived: config.derived || {},
+                            // The lists with a search, and the last
+                            // search's results for each (#459).
+                            searches: config.fieldSearches || {},
+                            finds: (state && state.finds) || {},
+                            // #488: the scope policy's warnings, by field.
+                            fieldWarnings: config.fieldWarnings || {} };
       // The sub-tab's own fields, in one form.
       const fieldForm = kit.frame(
         // A sub-tab drawn only for a section has no fields to save.
@@ -2031,19 +2044,14 @@ class ApplicationsPage {
           ? WsTrustProtection.frame(values, drawn,
                                     '/admin/applications/edit', t)
           : '') +
-        kit.fieldGridOf(drawn, config.groups, values,
-                           { redraw: '/admin/applications/edit',
-                             showSet: true, protocols: config.protocols,
-                             views: views,
-                             // The scopes the delegated permission grants
-                             // declare, read-only in their list (#1141).
-                             derived: config.derived || {},
-                             // The lists with a search, and the last
-                             // search's results for each (#459).
-                             searches: config.fieldSearches || {},
-                             finds: (state && state.finds) || {},
-                             // #488: the scope policy's warnings, by field.
-                             fieldWarnings: config.fieldWarnings || {} }) +
+        // WS-TRUST'S SECTIONS (#2046): General, Message encryption and
+        // Message signing, each of the last two in request and response
+        // halves (`WsTrustProtection.grid()`); every other sub-tab is the
+        // plain grid.
+        (group.id === 'wstrust'
+          ? WsTrustProtection.grid(drawn, group.label, values, gridOptions,
+                                   t)
+          : kit.fieldGridOf(drawn, config.groups, values, gridOptions)) +
         // #825: the three hosted surfaces. The checkbox posts confirm=1.
         // An unchanged bound does not need it; a changed one does, and the
         // server refuses the whole save without it. The list matches
@@ -2167,10 +2175,11 @@ class ApplicationsPage {
         ? ''
         : DocLinks.consoleHtml(
             DocLinks.forConsoleTab('cfg-' + group.id), t);
-      // THE XPATH BUILDER (#1917), under the WS-Trust form whose five XPath
-      // fields it adds to. Outside the form, and it posts nothing anyway.
+      // THE XPATH BUILDER (#1917), a dialog since #2046, opened by the
+      // Message encryption and Message signing sections' buttons. Outside
+      // the form, and it posts nothing anyway.
       const xpathBuilder = group.id === 'wstrust'
-        ? WsTrustProtection.builder(drawn.map(function (one) {
+        ? WsTrustProtection.dialog(drawn.map(function (one) {
             return one.attribute;
           }), t)
         : '';

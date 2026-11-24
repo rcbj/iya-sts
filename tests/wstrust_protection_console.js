@@ -18,7 +18,7 @@
 //   B. The frame's markup: eight boxes, each ticked from the map's values
 //      and nothing else, none with a `name` (they post nothing), each map's
 //      switch beside it; nothing at all when the form draws no map.
-//   C. The builder's markup posts nothing: no control has a `name`, no
+//   C. The builder (a `<dialog>` since #2046) posts nothing: no control has a `name`, no
 //      button submits, the sample is escaped, and only targets the page
 //      draws are offered.
 //   D. Steps and paths: a namespace the service has a prefix for is written
@@ -30,6 +30,12 @@
 //      the element as the sample spells it, escaped.
 //   F. A list drawn again in the browser (`WebKit.fieldListOf()`) is the
 //      grid's own list, to the byte.
+//   G. The sections (#2046): General (AppliesTo, the JWT scopes) first and
+//      simple, then Message encryption and Message signing, each request
+//      then response and advanced, every field in its section, and a
+//      builder button in each of the two that posts nothing.
+//   H. Adding the dialog's list to a field appends what it lacks, once;
+//      the single recipient expression takes a list of exactly one.
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
@@ -154,13 +160,16 @@ function frame(t, tr) {
 
 function builder(t, tr) {
   log.debug("Entering builder().");
-  const html = Protection.builder(WebWsProtection.TARGETS.concat(['other']),
-                                  tr);
+  const html = Protection.dialog(WebWsProtection.TARGETS.concat(['other']),
+                                 tr);
+  t.check(html.indexOf('<dialog class="wsp-dialog" id="wsp-dialog"') === 0 &&
+          /<\/dialog>$/.test(html),
+          'C. the builder is one in-page <dialog>');
   t.check(!/\sname=/.test(html), 'C. no builder control carries a name');
   const buttons = html.match(/<button[^>]*>/g) || [];
-  t.check(buttons.length === 2 && buttons.every(function (one) {
+  t.check(buttons.length === 5 && buttons.every(function (one) {
     return /type="button"/.test(one);
-  }), 'C. its two buttons are type="button"', buttons.join(' '));
+  }), 'C. its five buttons are type="button"', buttons.join(' '));
   t.check(html.indexOf('&lt;s:Envelope') > 0 &&
           html.indexOf('<s:Envelope') < 0,
           'C. the sample is escaped into its box');
@@ -169,13 +178,125 @@ function builder(t, tr) {
       return /"([^"]+)"/.exec(one)[1];
     });
   t.check(JSON.stringify(options) ===
-          JSON.stringify(WebWsProtection.TARGETS),
+          JSON.stringify(WebWsProtection.TARGETS) &&
+          html.indexOf('data-wsp-targets="' +
+                       WebWsProtection.TARGETS.join(' ') + '"') > 0,
           'C. the five targets, and nothing else', JSON.stringify(options));
-  t.check(Protection.builder(['wstrustSignRequestElements'], tr)
+  t.check(Protection.dialog(['wstrustSignRequestElements'], tr)
             .match(/<option /g).length === 1 &&
-          Protection.builder(['other'], tr) === '',
+          Protection.dialog(['other'], tr) === '',
           'C. only the targets the page draws; none, no builder');
+  t.check(html.indexOf('consoleApplications.') < 0,
+          'C. every word from the catalog');
   log.debug("Leaving builder().");
+}
+
+function sections(t, tr) {
+  log.debug("Entering sections().");
+  const rows = applications.applicationFields().filter(function (row) {
+    return row.group === 'wstrust';
+  });
+  const placed = {};
+  Protection.PARTS.forEach(function (part) {
+    part.sections.forEach(function (section) {
+      section.attributes.forEach(function (one) {
+        placed[one] = (placed[one] || 0) + 1;
+      });
+    });
+  });
+  const names = rows.map(function (row) {
+    return row.attribute;
+  });
+  t.check(Object.keys(placed).every(function (one) {
+    return placed[one] === 1 && names.indexOf(one) >= 0;
+  }), 'G. each placed field is a WS-Trust field, placed once',
+          JSON.stringify(placed));
+  const general = rows.filter(function (row) {
+    return !Protection.placeOf(row.attribute);
+  }).map(function (row) {
+    return row.attribute;
+  });
+  t.check(general.indexOf('wstrustAppliesTo') >= 0 &&
+          general.indexOf('wstrustJwtScope') >= 0 &&
+          general.every(function (one) {
+            return !/Encrypt|Sign|Recipient|Protection|KeyTransport/
+              .test(one);
+          }),
+          'G. General holds AppliesTo and the JWT scopes, and no signing ' +
+          'or encryption field', JSON.stringify(general));
+  // THE SIMPLE VIEW is the General fields: every signing and encryption
+  // field is advanced, and AppliesTo and the JWT scopes are simple.
+  t.check(rows.every(function (row) {
+    return Protection.placeOf(row.attribute) ? !row.simple : true;
+  }) && rows.filter(function (row) {
+    return row.attribute === 'wstrustAppliesTo' ||
+      row.attribute === 'wstrustJwtScope';
+  }).every(function (row) {
+    return row.simple;
+  }) && WebKit.hasViews(rows),
+          'G. the simple view is the General fields; the sections are ' +
+          'advanced');
+  const html = Protection.grid(rows, 'WS-Trust', {},
+    { redraw: '/admin/applications/edit', views: true, derived: {} }, tr);
+  const at = function (id) {
+    return html.indexOf('id="fgs-wstrust-' + id + '"');
+  };
+  t.check(at('general') > 0 && at('general') < at('encryption') &&
+          at('encryption') < at('encryption-request') &&
+          at('encryption-request') < at('encryption-response') &&
+          at('encryption-response') < at('signing') &&
+          at('signing') < at('signing-request') &&
+          at('signing-request') < at('signing-response'),
+          'G. General, then encryption and signing, each request then ' +
+          'response');
+  const cellAt = function (attribute) {
+    return html.indexOf('id="fgc-' + attribute + '"');
+  };
+  t.check(cellAt('wstrustEncryptRequestElements') > at('encryption-request') &&
+          cellAt('wstrustEncryptRequestElements') <
+            at('encryption-response') &&
+          cellAt('wstrustSignResponseElements') > at('signing-response') &&
+          cellAt('wstrustAppliesTo') > at('general') &&
+          cellAt('wstrustAppliesTo') < at('encryption'),
+          'G. each field is drawn in its section');
+  const openers = html.match(/<button[^>]*data-wsp-open="[^"]+"[^>]*>/g) ||
+    [];
+  t.check(openers.length === 2 && openers.every(function (one) {
+    return /type="button"/.test(one) && !/\sname=/.test(one);
+  }) && /data-wsp-open="encrypt"/.test(openers[0]) &&
+          /data-wsp-open="sign"/.test(openers[1]),
+          'G. one builder button in each of the two sections, posting ' +
+          'nothing', openers.join(' '));
+  t.check(JSON.stringify(Protection.targetsOf('encrypt')) ===
+            JSON.stringify(['wstrustEncryptRequestElements',
+                            'wstrustEncryptResponseElements',
+                            'wstrustResponseRecipientXPath']) &&
+          JSON.stringify(Protection.targetsOf('sign')) ===
+            JSON.stringify(['wstrustSignRequestElements',
+                            'wstrustSignResponseElements']),
+          'G. each section\'s builder offers its own fields');
+  t.check(html.indexOf('consoleApplications.') < 0 &&
+          Protection.grid([], 'WS-Trust', {}, {}, tr) === '',
+          'G. every word from the catalog; no fields, nothing');
+  log.debug("Leaving sections().");
+}
+
+function merging(t) {
+  log.debug("Entering merging().");
+  const map = Protection.merged('wstrustSignRequestElements',
+    ['/a', '', ' /b'], ['/b', '/c', '/c', ' ']);
+  t.check(JSON.stringify(map.values) === JSON.stringify(['/a', ' /b', '/c']) &&
+          map.added === 1,
+          'H. a list adds what the field lacks, once, and keeps the rest',
+          JSON.stringify(map));
+  const one = Protection.merged('wstrustResponseRecipientXPath', ['/old'],
+                                ['/new']);
+  t.check(JSON.stringify(one.values) === JSON.stringify(['/new']) &&
+          Protection.merged('wstrustResponseRecipientXPath', [],
+                            ['/a', '/b']) === null &&
+          Protection.merged('wstrustResponseRecipientXPath', [], []) === null,
+          'H. the recipient takes a list of exactly one, which replaces it');
+  log.debug("Leaving merging().");
 }
 
 function steps(t) {
@@ -298,6 +419,8 @@ function run(t) {
   presets(t);
   frame(t, tr);
   builder(t, tr);
+  sections(t, tr);
+  merging(t);
   const sample = steps(t);
   tree(t, sample);
   lists(t, tr);
@@ -307,6 +430,7 @@ function run(t) {
 module.exports = {
   name: 'ws-trust message protection console',
   describe: 'the WS-Trust sub-tab\'s Body / Header boxes over the XPath ' +
-            'maps and its XPath builder (#1917)',
+            'maps, its sections and its XPath builder dialog (#1917, ' +
+            '#2046)',
   run: run
 };

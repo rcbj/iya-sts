@@ -854,14 +854,32 @@ signs while the realm does not is configured on the client by hand.
 
 ## Message protection in the console
 
-On the application's page, **Configuration → WS-Trust** has a **Message
-protection** table above the fields. It has a **Body** box and a **Header**
-box for each of the four XPath maps: encryption of the request and of the
-response (`wstrustEncryptRequestElements`, `wstrustEncryptResponseElements`)
-and signing of the request and of the response
-(`wstrustSignRequestElements`, `wstrustSignResponseElements`). Ticking a box
-adds a fixed set of expressions to that map, and unticking it takes out only
-those expressions. Every other expression stays. **Save** stores the map.
+On the application's page, **Configuration → WS-Trust** has two views. Choose
+one with the **Simplified view** and **Advanced view** buttons at the top
+of the form.
+
+* **Simplified view** shows the **Message protection** table and the fields that
+  have nothing to do with signing or encrypting a message: `wstrustAppliesTo`
+  and `wstrustJwtScope`.
+* **Advanced view** shows the table and every field, in these sections:
+
+| Section | Request message processing | Response message processing |
+|---|---|---|
+| **General** | `wstrustAppliesTo`, `wstrustJwtScope` | |
+| **Message encryption** | `wstrustEncryptRequest`, `wstrustAcceptEncryptedElements`, `wstrustEncryptRequestElements` | `wstrustEncryptResponse`, `wstrustEncryptResponseElements`, `wstrustEncryptionAlgorithm`, `wstrustKeyTransportAlgorithm`, `wstrustEncryptionCertificate`, `wstrustResponseRecipientXPath`, `wstrustEncryptSignature` |
+| **Message signing** | `wstrustSignRequest`, `wstrustSignRequestElements` | `wstrustSignResponse`, `wstrustSignResponseElements`, `wstrustResponseProtectionOrder` |
+
+The application's decryption key pair is on its **Credentials** tab.
+
+### The Message protection table
+
+The table has a **Body** box and a **Header** box for each of the four XPath
+maps: encryption of the request and of the response
+(`wstrustEncryptRequestElements`, `wstrustEncryptResponseElements`) and
+signing of the request and of the response (`wstrustSignRequestElements`,
+`wstrustSignResponseElements`). Ticking a box adds a fixed set of expressions
+to that map, and unticking it takes out only those expressions. Every other
+expression stays. **Save** stores the map.
 
 The boxes store nothing of their own. A box is ticked whenever its map holds
 all of its expressions, including expressions typed by hand or set through
@@ -876,7 +894,11 @@ A map is read only while its switch is on. The switch is the attribute shown
 in the table's last column, or the realm's setting when that attribute is
 empty.
 
-Under the form, the **XPath builder** writes an expression for you:
+### The XPath builder
+
+The **Message encryption** and **Message signing** sections each have an
+**XPath builder…** button. It opens the builder in a window over the page,
+for that section's fields. The builder makes a list of expressions for you:
 
 1. Paste a sample SOAP message into its box. A sample Issue request is there
    to start with.
@@ -886,11 +908,17 @@ Under the form, the **XPath builder** writes an expression for you:
    and not the sample's own. It marks every element of the sample the
    expression matches. An element in a namespace this service has no prefix
    for is written as `*[local-name()='…' and namespace-uri()='…']`.
-3. Choose a field and click **Add to field**. A map gets the expression as
-   a new value. `wstrustResponseRecipientXPath` holds one expression, so the
-   builder replaces it. Then click **Save** on the form.
+3. Click **Add to the list**. Repeat steps 2 and 3 for each element you
+   want. The bin beside an expression takes it off the list.
+4. Choose a field and click **Add the list to the field**. A map gets each
+   expression it does not already hold as a new value.
+   `wstrustResponseRecipientXPath` holds one expression, so for that field
+   the list must hold exactly one, and it replaces the field's value. The
+   builder closes, and the section says what was added.
+5. Click **Save** on the form.
 
-The sample is parsed in your browser and never sent.
+The sample is parsed in your browser and never sent. Close the builder with
+**Close**, the **×** or the Esc key; the list stays until you add it.
 
 ## Related
 
