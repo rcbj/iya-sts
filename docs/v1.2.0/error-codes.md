@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6086** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6087** of them, in **58** subsystems.
 
 ## Where a code appears
 

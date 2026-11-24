@@ -509,7 +509,11 @@ function reportSourceRefusal(who: ReportCaller, action: string, object: any,
     log.debug("Leaving reportSourceRefusal(). The catalog refuses it.");
     return refusal;
   }
-  const row = object || { kind: 'query', owner: who.subject, groups: [] };
+  // An ad hoc query has NO OWNER, and is asked as an ownerless resource: a
+  // realm whose access-control override says `permitOwner: no` refuses
+  // every resource that names an owner, and an ad hoc query was never one.
+  // The administrators' source condition holds whoever the owner is.
+  const row = object || { kind: 'query', owner: '', groups: [] };
   const answer = reportDecide(who, action, {
     kind: row.kind, owner: row.owner, groups: row.groups,
     sources: asked.sources, adminSources: asked.adminSources
