@@ -2354,7 +2354,7 @@ class AdminApi {
   // console page, and on 2026-08-27 eight pages arrived at once — one per
   // protocol family whose appconfig rows had no page of their own. TOTP,
   // WebAuthn, recovery codes, persistence and the cluster have joined them
-  // since, so the table holds thirteen.
+  // since, so the table held thirteen — and nineteen since #2049's six.
   //
   // THERE IS NO POST BESIDE ANY OF THEM, and that is the rule read exactly
   // rather than a gap. Every form on those pages posts `set-many` to
@@ -2403,6 +2403,24 @@ class AdminApi {
         tag: 'Recovery codes', operationId: 'getBackupCodesSettings' },
       { path: '/webauthn', console: '/admin/webauthn', tag: 'WebAuthn',
         operationId: 'getWebauthnSettings' },
+      // THE #1955 MECHANISMS AND OPENPGP (#2049): six Protocols pages, each
+      // a settings group of its own, and rule 7 owes an operation per page.
+      // The four token mechanisms and the SSH CA share the Hardware tokens
+      // tag, the way the three second factors share nothing but a page
+      // type: a reader looking for one of them looks for the others.
+      { path: '/hardware-tokens-settings',
+        console: '/admin/hardware-tokens-settings', tag: 'Hardware tokens',
+        operationId: 'getHardwareTokensSettings' },
+      { path: '/piv', console: '/admin/piv', tag: 'Hardware tokens',
+        operationId: 'getPivSettings' },
+      { path: '/yubiotp', console: '/admin/yubiotp', tag: 'Hardware tokens',
+        operationId: 'getYubiOtpSettings' },
+      { path: '/oath-tokens', console: '/admin/oath-tokens',
+        tag: 'Hardware tokens', operationId: 'getOathTokensSettings' },
+      { path: '/ssh-user-ca', console: '/admin/ssh-user-ca',
+        tag: 'Hardware tokens', operationId: 'getSshUserCaSettings' },
+      { path: '/openpgp-settings', console: '/admin/openpgp-settings',
+        tag: 'OpenPGP', operationId: 'getOpenPgpSettings' },
       { path: '/kerberos', console: '/admin/kerberos', tag: 'Kerberos',
         operationId: 'getKerberosSettings' },
       { path: '/ldap', console: '/admin/ldap', tag: 'LDAP',

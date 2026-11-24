@@ -995,6 +995,30 @@
     "en": "dcc6aecb3740fef3",
     "text": "WebAuthn-inställningar"
   },
+  "endpoints.route./admin-api/hardware-tokens-settings.name": {
+    "en": "f7c0eac08cccb13f",
+    "text": "Inställningar för maskinvarutoken"
+  },
+  "endpoints.route./admin-api/piv.name": {
+    "en": "3708b64a7c448009",
+    "text": "PIV-inställningar"
+  },
+  "endpoints.route./admin-api/yubiotp.name": {
+    "en": "1b84971a31275a96",
+    "text": "YubiKey OTP-inställningar"
+  },
+  "endpoints.route./admin-api/oath-tokens.name": {
+    "en": "87d8bb1a9df4fe02",
+    "text": "Inställningar för OATH-token"
+  },
+  "endpoints.route./admin-api/ssh-user-ca.name": {
+    "en": "863acd9a2df9d014",
+    "text": "Inställningar för SSH-användarcertifikat"
+  },
+  "endpoints.route./admin-api/openpgp-settings.name": {
+    "en": "60b6f8684877d1e1",
+    "text": "OpenPGP-inställningar"
+  },
   "endpoints.route./admin-api/mfa.name": {
     "en": "63fc7f058d95883b",
     "text": "Vem som har en andra faktor"

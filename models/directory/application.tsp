@@ -2649,6 +2649,18 @@ model Application {
     what: "TRUE or FALSE: encrypt the ds:Signature of a WS-Trust response for this application as well (WS-SecurityPolicy's sp:EncryptSignature), overriding wstrust.encryptSignature. Read only while the response is both signed and encrypted, signed first; the signature is encrypted to the response's recipient."
   })
   wstrustEncryptSignature?: string;
+  // THE KEYUSAGE WAIVER (rcbj, 2026-11-24, #2046): the one paranoid-PKI check
+  // an application may waive, and only for its WS-Trust response recipient.
+  // common/certificate_trust.ts's header argues it.
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    from: "by hand",
+    families: #["wstrust"],
+    overrides: "wstrust.recipientIgnoresKeyUsage",
+    what: "TRUE or FALSE: encrypt this application's WS-Trust responses to their recipient certificate whatever its keyUsage says, overriding wstrust.recipientIgnoresKeyUsage. The realm's message-signing certificates permit digitalSignature only, so an answer encrypted to the request's signing certificate is refused without it. Only the keyUsage check is waived: the certificate's validity, its path and its revocation are still checked where paranoid PKI mode checks them.",
+  })
+  wstrustRecipientIgnoresKeyUsage?: string;
   // THE APPLICATION'S OWN DECRYPTION KEY PAIR (#1668, rcbj's request of
   // 2026-11-19): what a request for this application may be encrypted TO,
   // in place of the realm's XML Encryption certificate. Written only by

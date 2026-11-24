@@ -1351,6 +1351,10 @@
     "en": "05bb26087cc96574",
     "text": "TRUE o FALSE: cifrar también la ds:Signature de una respuesta WS-Trust para esta aplicación (sp:EncryptSignature de WS-SecurityPolicy), prevaleciendo sobre wstrust.encryptSignature. Solo se lee mientras la respuesta está firmada y cifrada a la vez, firmada primero; la firma se cifra para el destinatario de la respuesta."
   },
+  "applications.schema.attributes.wstrustRecipientIgnoresKeyUsage.what": {
+    "en": "ee5d3e5465e289d1",
+    "text": "TRUE o FALSE: cifrar las respuestas WS-Trust de esta aplicación para su certificado destinatario sea cual sea su keyUsage, sustituyendo a wstrust.recipientIgnoresKeyUsage. Los certificados de firma de mensajes del dominio solo permiten digitalSignature, así que sin esto se rechaza una respuesta cifrada para el certificado de firma de la solicitud. Solo se omite la comprobación de keyUsage: la validez, la ruta y la revocación del certificado se siguen comprobando donde el modo PKI paranoico las comprueba."
+  },
   "applications.schema.attributes.wstrustDecryptionCertificate.what": {
     "en": "b00a63a9bafc49ad",
     "text": "EL CERTIFICADO AL QUE SE CIFRA UNA SOLICITUD WS-TRUST PARA ESTA APLICACIÓN, PEM. Mientras está definido, una solicitud para esta aplicación se descifra con su clave privada y no con la del dominio, y una solicitud para ella cifrada a la clave del dominio es un FailedCheck. Público: la página de la aplicación y GET /admin-api/applications lo entregan."

@@ -145,7 +145,10 @@ async function certificate(o) {
   cert.serialNumber = new asn1js.Integer({
     valueHex: new Uint8Array(Buffer.concat([Buffer.from([1]),
                                             nodeCrypto.randomBytes(8)])) });
-  cert.subject = dn(o.subject);
+  // A subject of several RDNs comes ready made (#2081): `dn()` puts every
+  // pair in ONE RDN, a multi-valued one, which no PIV card carries.
+  cert.subject = o.subject instanceof pkijs.RelativeDistinguishedNames
+    ? o.subject : dn(o.subject);
   cert.issuer = o.issuer ? o.issuer.pkijs.subject : cert.subject;
   cert.notBefore.value = new Date(Date.now() - 3600 * 1000);
   cert.notAfter.value = new Date(Date.now() + (o.expired ? -1800 * 1000

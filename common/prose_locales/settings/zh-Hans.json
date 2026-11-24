@@ -6175,6 +6175,14 @@
     "en": "32f9389b65f0eb67",
     "text": "WS-Trust 响应的 ds:Signature 是否也被加密（WS-SecurityPolicy 的 sp:EncryptSignature），加密给响应的接收方。仅在响应先签名后加密时读取。此项开启时，WSDL 的绑定携带 sp:EncryptSignature。应用的 wstrustEncryptSignature 覆盖此项。"
   },
+  "wstrust.recipientIgnoresKeyUsage|label": {
+    "en": "5084027709e17c26",
+    "text": "无论证书的 keyUsage 如何都将响应加密给它"
+  },
+  "wstrust.recipientIgnoresKeyUsage|description": {
+    "en": "58e43975d6e28519",
+    "text": "是否可以将 WS-Trust 响应加密给 keyUsage 既不允许 keyEncipherment 也不允许 keyAgreement 的证书——通常是请求的签名证书：本领域的消息签名证书只允许 digitalSignature。只跳过这一项检查；在偏执 PKI 模式检查的地方，仍会检查证书的有效期、路径和吊销状态。默认关闭。应用程序的 wstrustRecipientIgnoresKeyUsage 会覆盖此设置。"
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "身份提供方发起的登录"

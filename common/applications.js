@@ -2766,6 +2766,7 @@ const FIELD_EXAMPLES = {
   wstrustSignResponse: 'true',
   wstrustResponseProtectionOrder: 'sign-then-encrypt',
   wstrustEncryptSignature: 'false',
+  wstrustRecipientIgnoresKeyUsage: 'false',
   krb5ServicePrincipalName: 'HTTP/app.example.com@EXAMPLE.COM',
   oid4vpClientId: 'x509_san_dns:verifier.example.com',
   federationPartnerId: 'partner-idp',

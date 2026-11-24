@@ -1953,8 +1953,12 @@ class ApplicationsPage {
       // A primary name equal to the identifier is folded into the advanced
       // view (#393). The copy is what is drawn; `mine` stays the entry's
       // own rows, which the SAML panels fold for themselves.
-      const folded = ApplicationsPage.withFoldedPrimaryNames(
-        mine, values, row.identifier);
+      // EXCEPT ON WS-TRUST (rcbj, 2026-11-23, #2046): `wstrustAppliesTo` is
+      // always in that sub-tab's simplified view, whatever it holds.
+      const folded = group.id === 'wstrust'
+        ? { rows: mine, folded: false }
+        : ApplicationsPage.withFoldedPrimaryNames(mine, values,
+                                                  row.identifier);
       const drawn = folded.rows;
       const views = kit.hasViews(drawn);
       const advancedRows = drawn.filter(function (one) {
@@ -2043,20 +2047,16 @@ class ApplicationsPage {
           ? kit.note(t.html(
               'consoleApplications.a2.primaryNameFolded'))
           : '') +
-        // MESSAGE PROTECTION (#1917): the eight Body / Header boxes, inside
-        // this form so the one Save stores the maps they rewrite. They post
-        // nothing themselves (`web_wstrust_protection.ts`).
-        (group.id === 'wstrust'
-          ? WsTrustProtection.frame(values, drawn,
-                                    '/admin/applications/edit', t)
-          : '') +
-        // WS-TRUST'S SECTIONS (#2046): General, Message encryption and
-        // Message signing, each of the last two in request and response
-        // halves (`WsTrustProtection.grid()`); every other sub-tab is the
-        // plain grid.
+        // WS-TRUST'S SECTIONS (#2046): General, then MESSAGE PROTECTION
+        // (#1917: the eight Body / Header boxes, inside this form so the one
+        // Save stores the maps they rewrite; they post nothing themselves),
+        // then Message encryption and Message signing, each in request and
+        // response halves (`WsTrustProtection.grid()`). Every other sub-tab
+        // is the plain grid.
         (group.id === 'wstrust'
           ? WsTrustProtection.grid(drawn, group.label, values, gridOptions,
-                                   t)
+              t, WsTrustProtection.frame(values, drawn,
+                                         '/admin/applications/edit', t))
           : kit.fieldGridOf(drawn, config.groups, values, gridOptions)) +
         // #825: the three hosted surfaces. The checkbox posts confirm=1.
         // An unchanged bound does not need it; a changed one does, and the

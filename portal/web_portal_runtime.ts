@@ -120,6 +120,9 @@ class PortalRuntime extends SpaClient {
   // a query name its operation does not declare.
   private queryNames: Json;
   private view: Json;
+  // What a post on a page of tabs answered once, for the page asked again
+  // (#2053): `{ member, json }`, or null.
+  private keptAnswer: Json = null;
   // The announcement banner's poller (#1086), once the person is known.
   private announcements: WebAnnouncements | null = null;
   // What an act left to say on the next page drawn: `{ message, error }`.
@@ -640,6 +643,44 @@ class PortalRuntime extends SpaClient {
    *
    * @returns whether it is in hand
    */
+  // A FIELD THE OPERATION TAKES AS A LIST OR A NUMBER (#2053): a form
+  // field is text, and the account API refuses a string where its model
+  // has an array or an integer. A form names such fields in `data-array`
+  // (a list typed separated by commas or spaces) and `data-integer`; an
+  // empty number is left out, as an unset optional member.
+  /**
+   * Turns a form's list and number fields into the types the operation
+   * takes, in place.
+   *
+   * @param form - the form
+   * @param fields - its fields, as `formFields()` read them
+   * @returns nothing
+   */
+  static typedFields(form: Json, fields: Json): void {
+    const names = function (attribute: string): string[] {
+      return String((form && form.getAttribute &&
+                     form.getAttribute(attribute)) || '')
+        .split(/\s+/).filter(Boolean);
+    };
+    names('data-array').forEach(function (name: string) {
+      if (fields[name] !== undefined) {
+        fields[name] = [].concat(fields[name]).join(',').split(/[\s,]+/)
+          .filter(Boolean);
+      }
+    });
+    names('data-integer').forEach(function (name: string) {
+      if (fields[name] === undefined) {
+        return;
+      }
+      const text = String(fields[name]).trim();
+      if (!text) {
+        delete fields[name];
+      } else if (/^-?\d+$/.test(text)) {
+        fields[name] = Number(text);
+      }
+    });
+  }
+
   async ensureFormTable(): Promise<boolean> {
     if (this.formTable) {
       return true;
@@ -930,7 +971,30 @@ class PortalRuntime extends SpaClient {
       this.flash = { error: (json.errors || []).join(' ') ||
                             'The account API answered ' + answer.status + '.' };
     }
-    this.view = { page: page, query: query, json: json.view || json };
+    let drawn = json.view || json;
+    // A PAGE OF TABS OVER OTHER PAGES' OPERATIONS (#2053): each composed
+    // member is that operation's view, asked with the same token; one that
+    // refuses is its refusal, which its tab draws.
+    if (page.compose) {
+      drawn = Object.assign({}, drawn);
+      const members = Object.keys(page.compose);
+      for (let i = 0; i < members.length; i++) {
+        const got = await this.apiJson('GET', page.compose[members[i]]);
+        const body = (got && got.json) || {};
+        drawn[members[i]] = got && got.status === 200
+          ? (body.view || body) : { ok: false, refused: true };
+      }
+      if (identity !== this.identity) {
+        return;
+      }
+      // What a post on one tab answered once (an issued SSH certificate),
+      // kept across the page being asked again.
+      if (this.keptAnswer) {
+        drawn[this.keptAnswer.member] = this.keptAnswer.json;
+        this.keptAnswer = null;
+      }
+    }
+    this.view = { page: page, query: query, json: drawn };
     this.drawView();
   }
 
@@ -976,6 +1040,7 @@ class PortalRuntime extends SpaClient {
     target.searchParams.forEach(function (value: string, name: string) {
       fields[name] = value;
     });
+    PortalRuntime.typedFields(form, fields);
     if (!await this.ensureFormTable()) {
       this.flash = { error: 'The account API could not be reached.' };
       this.drawView();
@@ -1172,6 +1237,28 @@ class PortalRuntime extends SpaClient {
     }
     if (json.signedOut) {
       this.signOut();
+      return;
+    }
+    // A FORM ON A PAGE OF TABS (#2053) posts to the page whose operation
+    // its tab is drawn from, and its answer goes back into that tab's
+    // member: the page, its address and its fragment stay.
+    const holder = this.view && this.view.page && this.view.page.members;
+    if (holder && path && Object.prototype.hasOwnProperty.call(holder,
+                                                               path)) {
+      const member = holder[path];
+      this.flash = said;
+      if (json.view) {
+        this.view = { page: this.view.page, query: this.view.query,
+          json: member === ''
+            ? Object.assign({}, this.view.json, json.view)
+            : Object.assign({}, this.view.json, { [member]: json.view }) };
+        this.drawView();
+        this.showFresh();
+        return;
+      }
+      this.keptAnswer = json.ok === false ? null
+        : { member: member + 'Answer', json: json };
+      await this.route();
       return;
     }
     if (json.view) {

@@ -858,15 +858,16 @@ On the application's page, **Configuration → WS-Trust** has two views. Choose
 one with the **Simplified view** and **Advanced view** buttons at the top
 of the form.
 
-* **Simplified view** shows the **Message protection** table and the fields that
-  have nothing to do with signing or encrypting a message: `wstrustAppliesTo`
-  and `wstrustJwtScope`.
-* **Advanced view** shows the table and every field, in these sections:
+* **Simplified view** shows **General** first, with the fields that have
+  nothing to do with signing or encrypting a message (`wstrustAppliesTo`
+  and `wstrustJwtScope`), and then the **Message protection** table.
+* **Advanced view** shows General, the Message protection table, and then
+  every other field, in these sections:
 
 | Section | Request message processing | Response message processing |
 |---|---|---|
 | **General** | `wstrustAppliesTo`, `wstrustJwtScope` | |
-| **Message encryption** | `wstrustEncryptRequest`, `wstrustAcceptEncryptedElements`, `wstrustEncryptRequestElements` | `wstrustEncryptResponse`, `wstrustEncryptResponseElements`, `wstrustEncryptionAlgorithm`, `wstrustKeyTransportAlgorithm`, `wstrustEncryptionCertificate`, `wstrustResponseRecipientXPath`, `wstrustEncryptSignature` |
+| **Message encryption** | `wstrustEncryptRequest`, `wstrustAcceptEncryptedElements`, `wstrustEncryptRequestElements` | `wstrustEncryptResponse`, `wstrustEncryptResponseElements`, `wstrustEncryptionAlgorithm`, `wstrustKeyTransportAlgorithm`, `wstrustEncryptionCertificate`, `wstrustResponseRecipientXPath`, `wstrustRecipientIgnoresKeyUsage`, `wstrustEncryptSignature` |
 | **Message signing** | `wstrustSignRequest`, `wstrustSignRequestElements` | `wstrustSignResponse`, `wstrustSignResponseElements`, `wstrustResponseProtectionOrder` |
 
 The application's decryption key pair is on its **Credentials** tab.
@@ -877,9 +878,12 @@ The table has a **Body** box and a **Header** box for each of the four XPath
 maps: encryption of the request and of the response
 (`wstrustEncryptRequestElements`, `wstrustEncryptResponseElements`) and
 signing of the request and of the response (`wstrustSignRequestElements`,
-`wstrustSignResponseElements`). Ticking a box adds a fixed set of expressions
-to that map, and unticking it takes out only those expressions. Every other
-expression stays. **Save** stores the map.
+`wstrustSignResponseElements`). Ticking a box **replaces** the map's
+expressions with a fixed set: with Body or Header ticked, the map holds the
+sets of the ticked boxes and nothing else. The expressions the map held
+before are remembered while the page is open, and unticking the map's last
+box puts them back. After a reload nothing is remembered, and unticking a
+box takes out only that box's expressions. **Save** stores the map.
 
 The boxes store nothing of their own. A box is ticked whenever its map holds
 all of its expressions, including expressions typed by hand or set through
@@ -892,13 +896,18 @@ the Management API:
 
 A map is read only while its switch is on. The switch is the attribute shown
 in the table's last column, or the realm's setting when that attribute is
-empty.
+empty. Putting a map to use turns its switch on: ticking its box, adding the
+XPath builder's list to it, or typing into it while it is empty. Giving the
+map back (unticking its last box) or emptying it puts the switch back as it
+was. A switch you set yourself stays as you set it.
 
 ### The XPath builder
 
-The **Message encryption** and **Message signing** sections each have an
-**XPath builder…** button. It opens the builder in a window over the page,
-for that section's fields. The builder makes a list of expressions for you:
+Each field that holds XPath expressions has an **XPath builder…** button in
+its card: `wstrustEncryptRequestElements`, `wstrustEncryptResponseElements`,
+`wstrustResponseRecipientXPath`, `wstrustSignRequestElements` and
+`wstrustSignResponseElements`. It opens the builder in a window over the
+page, for that field. The builder makes a list of expressions for you:
 
 1. Paste a sample SOAP message into its box. A sample Issue request is there
    to start with.
@@ -910,15 +919,16 @@ for that section's fields. The builder makes a list of expressions for you:
    for is written as `*[local-name()='…' and namespace-uri()='…']`.
 3. Click **Add to the list**. Repeat steps 2 and 3 for each element you
    want. The bin beside an expression takes it off the list.
-4. Choose a field and click **Add the list to the field**. A map gets each
-   expression it does not already hold as a new value.
-   `wstrustResponseRecipientXPath` holds one expression, so for that field
-   the list must hold exactly one, and it replaces the field's value. The
-   builder closes, and the section says what was added.
+4. Click **Add the list to the field**. A map gets each expression it does
+   not already hold as a new value. `wstrustResponseRecipientXPath` holds
+   one expression, so for that field the list must hold exactly one, and it
+   replaces the field's value. The builder closes, and the field's card
+   says what was added.
 5. Click **Save** on the form.
 
 The sample is parsed in your browser and never sent. Close the builder with
-**Close**, the **×** or the Esc key; the list stays until you add it.
+**Close**, the **×** or the Esc key. The list stays until you add it or
+open the builder for another field.
 
 ## Related
 

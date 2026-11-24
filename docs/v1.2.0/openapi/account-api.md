@@ -11434,6 +11434,100 @@ Scope: `account:manage`.
 | `view.tokens[].status` | string | yes | `active` or `lost`. |
 | `view.tokens[].vendor` | string | yes |  |
 
+## GET /account-api/tokens-and-keys
+
+`getTokensAndKeys`
+
+**Your tokens and keys**
+
+The view of `GET /account-api/tokens` (your hardware tokens, the PIV profiles and your escrowed keys), for the portal's Tokens and keys page (#2053), whose tabs also draw `GET /account-api/mfa`, `GET /account-api/openpgp` and `GET /account-api/ssh/certificates`.
+
+Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
+**200**: The answer.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `escrowed` | list | yes | The caller's escrowed piv-key-management certificates (#1955 P2), newest first; never a key. |
+| `escrowed[].issuedAt` | string | yes |  |
+| `escrowed[].notAfter` | string | yes |  |
+| `escrowed[].profile` | string | yes |  |
+| `escrowed[].revoked` | boolean | yes | Whether the certificate was revoked; its escrowed key is still recoverable. |
+| `escrowed[].serialHex` | string | yes | The certificate's serial, lower-case hex: what `recover-key` and `attach-key` name. |
+| `escrowed[].subject` | string | yes |  |
+| `issued` | object |  | `enrol-piv`'s answer only: the certificate issued, drawn once. |
+| `issued.attested` | boolean | yes | Whether a YubiKey PIV attestation of the key verified. |
+| `issued.certificatePem` | string | yes | The certificate, PEM: import it with ykman piv certificates import. |
+| `issued.chainPem` | list | yes | The issuing chain, PEM, nearest first. |
+| `issued.chainPem[]` | string |  |  |
+| `issued.profile` | string | yes |  |
+| `issued.serialHex` | string | yes | The issued certificate's serial, lower-case hex. |
+| `issued.token` | string | yes | The hardware token it was recorded on, `<vendor>/<serial>`, or empty. |
+| `piv` | object | yes | What the PIV enrolment form may issue here. |
+| `piv.keyEscrow` | boolean | yes | Whether piv-key-management keys may be escrowed (piv.keyEscrow). |
+| `piv.profiles` | list | yes | The PIV slot profiles this realm's EST may issue (est.allowedProfiles). |
+| `piv.profiles[]` | string |  |  |
+| `piv.requireAttestation` | boolean | yes | Whether a PIV profile needs a YubiKey PIV attestation (piv.requireAttestation). |
+| `recovered` | object |  | `recover-key`'s answer only: the escrowed key and its certificate, drawn once. |
+| `recovered.certificatePem` | string | yes |  |
+| `recovered.chainPem` | list | yes |  |
+| `recovered.chainPem[]` | string |  |  |
+| `recovered.privateKeyPem` | string | yes | The escrowed private key, PEM. Sent with Cache-Control: no-store; keep it as you would the card. |
+| `recovered.serialHex` | string | yes |  |
+| `tokens` | list | yes | Every token the caller holds or has a credential on, newest first. |
+| `tokens[].attested` | boolean | yes | Whether attestation evidence is recorded for it (always, today: a serial is recorded only from attestation). |
+| `tokens[].credentials` | list | yes | The caller's own credentials on it. |
+| `tokens[].credentials[].addedAt` | string | yes | When it was recorded on the token, ISO 8601. |
+| `tokens[].credentials[].algorithm` | string |  | The signature algorithm recorded for it, when the door that wrote it named one (an ML-DSA passkey's COSE algorithm). Absent where the credential has none. |
+| `tokens[].credentials[].kind` | string | yes | The credential's kind: `fido`, `x509`, or since #1955 P4 `hotp` or `totp` (an imported OATH token), and since P5 `yubico-otp` (later `ssh`, `openpgp`). |
+| `tokens[].credentials[].label` | string | yes | Its name, where it has one. |
+| `tokens[].credentials[].retired` | boolean | yes | Whether the lost-key act retired it. |
+| `tokens[].formFactor` | string | yes | How it is made, where its evidence says; empty where it does not. |
+| `tokens[].key` | string | yes | The token's register key, `<vendor>/<serial>`: what `actOnTokens` names. |
+| `tokens[].lostAt` | string | yes | When it was reported lost, or empty. |
+| `tokens[].model` | string | yes |  |
+| `tokens[].registeredAt` | string | yes |  |
+| `tokens[].serial` | string | yes | The serial its attestation named. |
+| `tokens[].status` | string | yes | `active` or `lost`. |
+| `tokens[].vendor` | string | yes |  |
+
+**400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**401**: No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
+**403**: The token is for another audience or does not carry `account:manage`, or the access policy refused the person.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `ok` | boolean |  |  |
+
 ## GET /account-api/verify-email
 
 `getEmailVerification`

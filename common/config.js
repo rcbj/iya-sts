@@ -3181,7 +3181,10 @@ const SETTINGS = [
   // #1955 P4: COUNTER-BASED CODES (RFC 4226), `common/hotp.ts`. The digits
   // are copied onto an enrolment (the token's); the two windows are policy,
   // read live, so changing them invalidates nothing anybody enrolled.
-  { key: 'hotp.digits', group: 'TOTP MFA',
+  // In the OATH tokens group since #2049, with the PSKC import: an OATH
+  // HOTP token is what these three configure, and the TOTP page is RFC
+  // 6238's.
+  { key: 'hotp.digits', group: 'OATH tokens',
     label: 'HOTP code length (digits)', path: 'hotp.digits',
     env: 'STS_HOTP_DIGITS', type: 'int', dflt: 6, runtime: true,
     min: 6, max: 8,
@@ -3190,7 +3193,7 @@ const SETTINGS = [
                  'the portal takes 6 or 8. A token imported from its ' +
                  'vendor\'s PSKC file keeps the length the file names.' },
 
-  { key: 'hotp.window', group: 'TOTP MFA',
+  { key: 'hotp.window', group: 'OATH tokens',
     label: 'HOTP look-ahead (codes)', path: 'hotp.window',
     env: 'STS_HOTP_WINDOW', type: 'int', dflt: 10, runtime: true,
     min: 0, max: 100,
@@ -3201,7 +3204,7 @@ const SETTINGS = [
                  'it; a code before it never is. Zero accepts only the ' +
                  'next code. Live, for every enrolment.' },
 
-  { key: 'hotp.resyncWindow', group: 'TOTP MFA',
+  { key: 'hotp.resyncWindow', group: 'OATH tokens',
     label: 'HOTP resynchronisation window (codes)',
     path: 'hotp.resyncWindow', env: 'STS_HOTP_RESYNC_WINDOW', type: 'int',
     dflt: 100, runtime: true, min: 2, max: 1000,
@@ -3215,7 +3218,7 @@ const SETTINGS = [
   // default: a credential already held is still verified, and enrolment,
   // assignment and a claim wait for the switch. The YK-VAL endpoint is a
   // second switch, also off.
-  { key: 'yubiotp.offered', group: 'TOTP MFA',
+  { key: 'yubiotp.offered', group: 'YubiKey OTP',
     label: 'Offer YubiKey OTP enrolment', path: 'yubiotp.offered',
     env: 'STS_YUBIOTP_OFFERED', type: 'bool', dflt: false, runtime: true,
     description: 'Whether a person may enrol a YubiKey OTP slot, and ' +
@@ -3225,7 +3228,7 @@ const SETTINGS = [
                  'stays on this service, so the sign-in is amr otp and ' +
                  'never hwk.' },
 
-  { key: 'yubiotp.ykval', group: 'TOTP MFA',
+  { key: 'yubiotp.ykval', group: 'YubiKey OTP',
     label: 'Answer the YK-VAL 2.0 verify endpoint', path: 'yubiotp.ykval',
     env: 'STS_YUBIOTP_YKVAL', type: 'bool', dflt: false, runtime: true,
     description: 'Whether GET and POST /wsapi/2.0/verify check a YubiKey ' +
@@ -7392,7 +7395,12 @@ const SETTINGS = [
 
   // #1955 P1: WHAT A HARDWARE CLAIM STANDS ON. `common/hardware_tokens.ts`
   // argues it; the default is the behaviour before #1955.
-  { key: 'hardwareTokens.hardwareClaims', group: 'Devices',
+  // EACH #1955 MECHANISM IS A GROUP OF ITS OWN SINCE #2049 (rcbj,
+  // 2026-11-23), drawn on its own Protocols page — Hardware tokens, PIV,
+  // YubiKey OTP, OATH tokens, SSH user certificates. Only the group moved:
+  // every key, variable and default is what it was (backwards
+  // compatibility). They were in Devices, TOTP MFA and PKI until then.
+  { key: 'hardwareTokens.hardwareClaims', group: 'Hardware tokens',
     label: 'What earns a hardware-key claim',
     env: 'STS_HARDWARE_TOKENS_HARDWARE_CLAIMS', type: 'enum',
     enumValues: ['inference', 'evidence'], dflt: 'inference',
@@ -7411,7 +7419,7 @@ const SETTINGS = [
 
   // #1955 P4: a vendor's PSKC seed file (RFC 6030) with its secrets in
   // the clear. `common/mode.js`'s `refusesPlaintextSeedFiles()` reads it.
-  { key: 'pskc.allowPlaintextImport', group: 'Devices',
+  { key: 'pskc.allowPlaintextImport', group: 'OATH tokens',
     label: 'Accept plaintext PSKC seed files in product mode',
     env: 'STS_PSKC_ALLOW_PLAINTEXT_IMPORT', type: 'bool', dflt: false,
     runtime: true,
@@ -7426,7 +7434,7 @@ const SETTINGS = [
   // ESCROW (D7) AND THE OUTSIDE PIV / CAC MAPPING (D8). Every one is off or
   // empty by default, so a realm behaves as it did before #1955 until an
   // operator sets one. `common/piv_attestation.ts` argues them.
-  { key: 'piv.attestationAnchors', group: 'Devices',
+  { key: 'piv.attestationAnchors', group: 'PIV',
     label: 'PIV attestation roots (PEM)',
     env: 'STS_PIV_ATTESTATION_ANCHORS', type: 'string', dflt: '',
     runtime: true,
@@ -7437,7 +7445,7 @@ const SETTINGS = [
                  'common/pki_piv_anchors.json and pinned there by SHA-256, ' +
                  'with Yubico\'s PIV intermediates. A certificate here ' +
                  'replaces the shipped roots.' },
-  { key: 'piv.requireAttestation', group: 'Devices',
+  { key: 'piv.requireAttestation', group: 'PIV',
     label: 'Require a PIV attestation for the PIV profiles',
     env: 'STS_PIV_REQUIRE_ATTESTATION', type: 'bool', dflt: false,
     runtime: true,
@@ -7449,7 +7457,7 @@ const SETTINGS = [
                  'generated it. Off, the default, such a request without ' +
                  'one is issued with no hardware evidence; a request that ' +
                  'carries one that does not verify is refused either way.' },
-  { key: 'piv.pinPolicy', group: 'Devices',
+  { key: 'piv.pinPolicy', group: 'PIV',
     label: 'Weakest PIN policy an attested PIV key may have',
     env: 'STS_PIV_PIN_POLICY', type: 'enum',
     enumValues: ['any', 'once', 'always'], dflt: 'any', runtime: true,
@@ -7459,7 +7467,7 @@ const SETTINGS = [
                  '(match-always counts). `any`, the default, holds no ' +
                  'PIN policy. A key whose attestation is weaker is refused ' +
                  '(STS-PIV-0011).' },
-  { key: 'piv.touchPolicy', group: 'Devices',
+  { key: 'piv.touchPolicy', group: 'PIV',
     label: 'Weakest touch policy an attested PIV key may have',
     env: 'STS_PIV_TOUCH_POLICY', type: 'enum',
     enumValues: ['any', 'cached', 'always'], dflt: 'any', runtime: true,
@@ -7467,7 +7475,7 @@ const SETTINGS = [
                  '`cached`: a touch, remembered for 15 seconds; `always`: ' +
                  'a touch for every use. `any`, the default, holds none. A ' +
                  'key whose attestation is weaker is refused (STS-PIV-0012).' },
-  { key: 'piv.cardAuthSignIn', group: 'Devices',
+  { key: 'piv.cardAuthSignIn', group: 'PIV',
     label: 'Let a piv-card-auth certificate sign in',
     env: 'STS_PIV_CARD_AUTH_SIGN_IN', type: 'bool', dflt: false,
     runtime: true,
@@ -7476,7 +7484,7 @@ const SETTINGS = [
                  'TLS sign-in and at PKINIT (STS-PIV-0013) unless this is ' +
                  'on. A slot 9e key is certified under piv-card-auth only ' +
                  '(STS-PIV-0037), and never earns hwk or sc.' },
-  { key: 'piv.keyEscrow', group: 'Devices',
+  { key: 'piv.keyEscrow', group: 'PIV',
     label: 'Escrow piv-key-management keys',
     env: 'STS_PIV_KEY_ESCROW', type: 'bool', dflt: false, runtime: true,
     description: 'On, EST /serverkeygen for the piv-key-management profile ' +
@@ -7489,7 +7497,7 @@ const SETTINGS = [
                  'evidence. Off, the default, /serverkeygen refuses the ' +
                  'piv-key-management profile (STS-PIV-0021), so a 9d key ' +
                  'is generated on the card and kept nowhere else.' },
-  { key: 'piv.externalIssuers', group: 'Devices',
+  { key: 'piv.externalIssuers', group: 'PIV',
     label: 'Outside PIV or CAC issuing CAs mapped by card UUID (PEM)',
     env: 'STS_PIV_EXTERNAL_ISSUERS', type: 'string', dflt: '',
     runtime: true,
@@ -7502,7 +7510,7 @@ const SETTINGS = [
                  'no entry is created. The CA must also be in a client ' +
                  'truststore, or the handshake refuses it first. Empty, the ' +
                  'default, maps nothing.' },
-  { key: 'piv.externalPolicyOids', group: 'Devices',
+  { key: 'piv.externalPolicyOids', group: 'PIV',
     label: 'PIV Authentication policies an outside card must assert',
     env: 'STS_PIV_EXTERNAL_POLICY_OIDS', type: 'csv',
     dflt: '2.16.840.1.101.3.2.1.3.13,2.16.840.1.101.3.2.1.3.18',
@@ -7629,7 +7637,7 @@ const SETTINGS = [
 
   // #1955 P5: a CSV of YubiKey OTP secrets in the clear.
   // `common/mode.js`'s `refusesPlaintextYubiCsv()` reads it.
-  { key: 'yubiotp.allowPlaintextImport', group: 'Devices',
+  { key: 'yubiotp.allowPlaintextImport', group: 'YubiKey OTP',
     label: 'Accept plaintext YubiKey OTP CSV files in product mode',
     path: 'yubiotp.allowPlaintextImport',
     env: 'STS_YUBIOTP_ALLOW_PLAINTEXT_IMPORT', type: 'bool', dflt: false,
@@ -8414,7 +8422,10 @@ const SETTINGS = [
   // second authority, stored beside the classical one, published at the
   // same path with ?algorithm=ssh-mldsa-65 and never concatenated onto
   // TrustedUserCAKeys.
-  { key: 'pki.sshUserCaAlgorithms', group: 'PKI',
+  // It and the six pki.ssh* rows below are the SSH user certificates group
+  // since #2049, drawn on Protocols → SSH user certificates; their keys
+  // keep the pki. prefix they always had.
+  { key: 'pki.sshUserCaAlgorithms', group: 'SSH user certificates',
     label: 'SSH user CA algorithms',
     env: 'STS_PKI_SSH_USER_CA_ALGORITHMS', type: 'csv',
     dflt: 'ssh-mldsa-65,ssh-ed25519,ecdsa-sha2-nistp256,' +
@@ -8443,7 +8454,7 @@ const SETTINGS = [
                  'the key; otherwise certificates stay classical ' +
                  '(STS-PKI-0290 is recorded and the classical authority ' +
                  'still answers), unless pki.sshUserCaPqcOnly is on.' },
-  { key: 'pki.sshUserCaPqcOnly', group: 'PKI',
+  { key: 'pki.sshUserCaPqcOnly', group: 'SSH user certificates',
     label: 'SSH user certificates are post-quantum only',
     env: 'STS_PKI_SSH_USER_CA_PQC_ONLY', type: 'bool', dflt: false,
     runtime: true,
@@ -8461,7 +8472,7 @@ const SETTINGS = [
                  'certificates keep verifying. Cannot be on while ' +
                  'pki.sshUserCaPqcAlongsideClassical is on (STS-PKI-0296). ' +
                  'Off by default.' },
-  { key: 'pki.sshUserCaPqcAlongsideClassical', group: 'PKI',
+  { key: 'pki.sshUserCaPqcAlongsideClassical', group: 'SSH user certificates',
     label: 'SSH user certificates carry a post-quantum certificate too',
     env: 'STS_PKI_SSH_USER_CA_PQC_ALONGSIDE_CLASSICAL', type: 'bool',
     dflt: false, runtime: true,
@@ -8478,7 +8489,7 @@ const SETTINGS = [
   // Each default is what the code did before, but the last two, which were
   // gaps: a certificate with no extensions opens no shell, and every group
   // a person was in was a principal. `common/ssh_user_ca.ts` argues them.
-  { key: 'pki.sshSoftwareLifetimeSeconds', group: 'PKI',
+  { key: 'pki.sshSoftwareLifetimeSeconds', group: 'SSH user certificates',
     label: 'Longest SSH user certificate without hardware evidence (s)',
     env: 'STS_PKI_SSH_SOFTWARE_LIFETIME_SECONDS', type: 'int', dflt: 300,
     min: 60, max: 3600, runtime: true,
@@ -8487,7 +8498,7 @@ const SETTINGS = [
                  'evidence covers: a plain key, or an sk- security key ' +
                  'sent without a trusted attestation. The request may ask ' +
                  'for less. Five minutes by default.' },
-  { key: 'pki.sshHardwareLifetimeSeconds', group: 'PKI',
+  { key: 'pki.sshHardwareLifetimeSeconds', group: 'SSH user certificates',
     label: 'Longest SSH user certificate with hardware evidence (s)',
     env: 'STS_PKI_SSH_HARDWARE_LIFETIME_SECONDS', type: 'int', dflt: 3600,
     min: 60, max: 3600, runtime: true,
@@ -8497,7 +8508,7 @@ const SETTINGS = [
                  'and is trusted, or a key an attested PIV certificate ' +
                  'certifies. The request may ask for less. One hour by ' +
                  'default, which is also the most.' },
-  { key: 'pki.sshUserCertificateExtensions', group: 'PKI',
+  { key: 'pki.sshUserCertificateExtensions', group: 'SSH user certificates',
     label: 'Extensions an SSH user certificate carries',
     env: 'STS_PKI_SSH_USER_CERTIFICATE_EXTENSIONS', type: 'csv',
     dflt: 'permit-X11-forwarding,permit-agent-forwarding,' +
@@ -8509,7 +8520,7 @@ const SETTINGS = [
                  'none lets its holder sign in without a terminal, ' +
                  'forwarding or rc file. no-touch-required may be added ' +
                  'too. A name OpenSSH does not define is dropped.' },
-  { key: 'pki.sshGroupPrincipals', group: 'PKI',
+  { key: 'pki.sshGroupPrincipals', group: 'SSH user certificates',
     label: 'Groups whose names may be SSH principals',
     env: 'STS_PKI_SSH_GROUP_PRINCIPALS', type: 'csv', dflt: '',
     runtime: true,
@@ -12510,6 +12521,22 @@ const SETTINGS = [
                  'response is signed and then encrypted. The WSDL\'s ' +
                  'binding carries sp:EncryptSignature while it is on. An ' +
                  'application\'s wstrustEncryptSignature overrides this.' },
+  // THE ONE WAIVER OF A PARANOID-PKI CHECK (rcbj, 2026-11-24, #2046):
+  // common/certificate_trust.ts's header argues it.
+  { key: 'wstrust.recipientIgnoresKeyUsage', group: 'WS-Trust',
+    label: 'Encrypt a response to a certificate whatever its keyUsage',
+    env: 'STS_WSTRUST_RECIPIENT_IGNORES_KEY_USAGE', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Whether a WS-Trust response may be encrypted to a ' +
+                 'certificate whose keyUsage permits neither ' +
+                 'keyEncipherment nor keyAgreement — the request\'s ' +
+                 'signing certificate, most often: this realm\'s ' +
+                 'message-signing certificates permit digitalSignature ' +
+                 'only. Only that check is waived; the certificate\'s ' +
+                 'validity, its path and its revocation are still checked ' +
+                 'where paranoid PKI mode checks them. Off by default. An ' +
+                 'application\'s wstrustRecipientIgnoresKeyUsage overrides ' +
+                 'this.' },
 
   // WHO MAY START A SIGN-IN (#426, #710), the WS-Federation pair. A
   // wsignin1.0 at /wsfed is the relying party's (WS-Federation 1.2 section

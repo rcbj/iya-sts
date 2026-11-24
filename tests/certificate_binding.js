@@ -33,6 +33,12 @@
 //      on every write, found by value and by UPN; a covered certificate
 //      resolved end to end by `tls_client_certificates.storedIdentityOf()`;
 //      a stored certificate whose card UUID another person holds refused.
+//   9. EVERY BINDING METHOD (#2081): issuer-ski (its renewal, an absent
+//      subjectKeyIdentifier, another issuing CA's identical one), email,
+//      issuer-subject and subject (several RDNs and an escaped comma, as
+//      openssl prints them) and card-uuid, each matched and each unmapped;
+//      a multi-valued RDN in openssl's order, and a value stored in the
+//      form before #2081 still matching.
 //
 // Over HTTP, with a real handshake and listener, is owed: nothing here
 // binds a socket (tests/CLAUDE.md, *What has no test*).
@@ -99,8 +105,9 @@ function policies(oids) {
     }) }).toSchema().toBER(false));
 }
 
-// A subjectAltName with a UPN (otherName) and an rfc822Name.
-function names(upn, email) {
+// A subjectAltName with a UPN (otherName), an rfc822Name and a URI (the
+// FIPS 201 card UUID's form, `urn:uuid:<uuid>`).
+function names(upn, email, uri) {
   log.debug("Entering names().");
   const value = [];
   if (upn) {
@@ -113,9 +120,32 @@ function names(upn, email) {
     value.push(new asn1js.Primitive({ idBlock: { tagClass: 3, tagNumber: 1 },
                                       valueHex: ab(email) }));
   }
+  if (uri) {
+    value.push(new asn1js.Primitive({ idBlock: { tagClass: 3, tagNumber: 6 },
+                                      valueHex: ab(uri) }));
+  }
   log.debug("Leaving names().");
   return kit.extension('2.5.29.17', false,
                        new asn1js.Sequence({ value: value }).toBER(false));
+}
+
+// A subject of SEPARATE RDNs (#2081), most general first as encoded: each
+// row of `rows` is one RDN, a row of several pairs a multi-valued one. C is
+// a PrintableString, every other value a UTF8String.
+function rdnSequence(rows) {
+  log.debug("Entering rdnSequence().");
+  const seq = new asn1js.Sequence({ value: rows.map(function (row) {
+    return new asn1js.Set({ value: row.map(function (pair) {
+      return new asn1js.Sequence({ value: [
+        new asn1js.ObjectIdentifier({ value: pair[0] }),
+        pair[0] === '2.5.4.6'
+          ? new asn1js.PrintableString({ value: pair[1] })
+          : new asn1js.Utf8String({ value: pair[1] })] });
+    }) });
+  }) });
+  const parsed = asn1js.fromBER(seq.toBER(false)).result;
+  log.debug("Leaving rdnSequence().");
+  return new pkijs.RelativeDistinguishedNames({ schema: parsed });
 }
 
 // A path in the Federal PKI's shape: a root (the anchor), an intermediate
@@ -148,17 +178,23 @@ async function leaf(issuer, o) {
     policies(o.policies || [P_AGENCY])
   ];
   // An empty subjectAltName is malformed (RFC 5280 4.2.1.6): none at all.
-  if (o.upn || o.email) {
-    ext.push(names(o.upn || '', o.email || ''));
+  if (o.upn || o.email || o.uri) {
+    ext.push(names(o.upn || '', o.email || '', o.uri || ''));
   }
-  if (o.ski !== false) {
+  // A subjectKeyIdentifier of `o.skiBytes` where given (a renewal keeping
+  // its identifier), random otherwise, and none for `ski: false`.
+  const ski = o.ski === false ? null
+    : (o.skiBytes || nodeCrypto.randomBytes(20));
+  if (ski) {
     ext.push(kit.extension('2.5.29.14', false, new asn1js.OctetString({
-      valueHex: ab(nodeCrypto.randomBytes(20)) }).toBER(false)));
+      valueHex: ab(ski) }).toBER(false)));
   }
-  const made = await kit.certificate({ subject: [['2.5.4.3', o.cn ||
-    'SMITH.JANE.' + RUN]], publicKey: pair.crypto.publicKey, issuer: issuer,
-                                       extensions: ext });
+  const made = await kit.certificate({ subject: o.subject ||
+    [['2.5.4.3', o.cn || 'SMITH.JANE.' + RUN]],
+                                       publicKey: pair.crypto.publicKey,
+                                       issuer: issuer, extensions: ext });
   made.pair = pair;
+  made.ski = ski;
   log.debug("Leaving leaf().");
   return made;
 }
@@ -252,6 +288,22 @@ function checkGrammar(t) {
           '2d. upn is not a stored method');
   t.equal(binding.bindingValueOf('issuer-ski:nothex:01'), '',
           '2e. an issuer that is not a digest is no binding');
+  t.equal(binding.canonicalDn('CN=Smith.Jane + UID=12345, O=Agency'),
+          binding.canonicalDn('uid=12345+cn=smith.jane,o=agency'),
+          '2f. a multi-valued RDN is a set: its attributes in either order ' +
+          'and spacing are one DN (#2081)');
+  t.equal(binding.canonicalDn('CN=A\\+B,O=X'), 'cn=a\\+b,o=x',
+          '2g. an escaped + inside a value does not split it');
+  t.equal(binding.canonicalDn('CN=A\\,B,O=X'), 'cn=a\\,b,o=x',
+          '2h. nor does an escaped comma');
+  t.equal(binding.canonicalDn('CN=#0C03414243,O=X'),
+          binding.canonicalDn('cn=#0c03414243,o=x'),
+          '2i. a hex-encoded value compares as the same bytes in either case');
+  t.equal(binding.canonicalDn('CN=Jane Smith,OU=People,O=Agency,C=US'),
+          binding.CertificateBinding.legacyCanonicalDn(
+            'CN=Jane Smith,OU=People,O=Agency,C=US'),
+          '2j. a DN of single-valued RDNs canonicalises as it did before ' +
+          '#2081');
   log.debug("Leaving checkGrammar().");
 }
 
@@ -409,6 +461,192 @@ async function checkBindings(t, h, p) {
           'jane', '4j. certificate-sha256 finds a stored binding as well as ' +
           'userCertificate');
   log.debug("Leaving checkBindings().");
+}
+
+// A second issuing CA under the same root (#2081), asserting nothing: the
+// issuer-scoped methods must not take its certificates for the first's.
+async function sibling(h) {
+  log.debug("Entering sibling().");
+  const pair = await kit.keyPair('ec');
+  const made = await kit.certificate({
+    subject: [['2.5.4.3', 'Test Sibling CA ' + RUN]],
+    publicKey: pair.crypto.publicKey, issuer: h.root, ca: true });
+  made.signingKey = pair.crypto.privateKey;
+  log.debug("Leaving sibling().");
+  return made;
+}
+
+// A value as an administrator writes it from `openssl x509 -noout -ext
+// subjectKeyIdentifier` (docs/v1.2.0/configure-tls.md, *Working out the
+// values*): upper-case hexadecimal, a colon between bytes.
+function opensslHex(bytes) {
+  log.debug("Entering opensslHex().");
+  log.debug("Leaving opensslHex().");
+  return Buffer.from(bytes).toString('hex').toUpperCase()
+    .replace(/(..)(?=.)/g, '$1:');
+}
+
+// EVERY BINDING METHOD, EACH ON ITS OWN (#2081): the acceptance criteria ask
+// for a successful match and the rejection of an unmapped credential for
+// every supported method. Section 4 holds issuer-serial, spki-sha256,
+// certificate-sha256 and upn; this holds issuer-ski (with its renewal, the
+// absent extension and another issuer's identical identifier), email,
+// issuer-subject and subject (with a subject of several RDNs and an escaped
+// comma, written the way `openssl -nameopt RFC2253` prints it), and
+// card-uuid. Every profile here asks no policy, so a refusal is the
+// binding's and never the path's.
+async function checkEveryMethod(t, h, p) {
+  log.debug("Entering checkEveryMethod().");
+  t.log.info('=== 9. every binding method ===');
+  const issuerKey = stsCrypto.certificateFacts(h.intermediate.der)
+    .spkiSha256;
+  const other = await sibling(h);
+  const otherChain = [other.der, h.root.der];
+  const only = function (bindings, dir, low) {
+    return boundOver({ 'certSignIn.profiles': JSON.stringify([
+      Object.assign({}, p.profile, { policies: [], bindings: bindings,
+                                     lowAffinity: !!low })]) }, dir);
+  };
+  const accepted = function (answer, who) {
+    return !!(answer && answer.accepted && answer.username === who);
+  };
+
+  // issuer-ski
+  const skiBytes = nodeCrypto.randomBytes(20);
+  const jane = await leaf(h.intermediate, { skiBytes: skiBytes });
+  const skiValue = binding.bindingValueOf('issuer-ski:' + issuerKey + ':' +
+                                          opensslHex(skiBytes));
+  const skiDir = directoryStub();
+  const bySki = only(['issuer-ski'], skiDir);
+  t.equal(bySki.identityOf(jane.der, p.chain, 'default').error, 'NOT_STORED',
+          '9a. issuer-ski: a leaf bound to nobody names nobody');
+  skiDir.hold('binding', skiValue, 'jane');
+  const skiOne = bySki.identityOf(jane.der, p.chain, 'default');
+  t.check(accepted(skiOne, 'jane') && skiOne.methods.join() === 'issuer-ski' &&
+          skiOne.lowAffinity === false,
+          '9b. issuer-ski written as openssl prints it binds the one person',
+          JSON.stringify(skiOne));
+  const noSki = await leaf(h.intermediate, { ski: false });
+  t.equal(bySki.identityOf(noSki.der, p.chain, 'default').error, 'NOT_STORED',
+          '9c. a leaf with no subjectKeyIdentifier matches nobody by ' +
+          'issuer-ski');
+  const renewedSki = await leaf(h.intermediate, { skiBytes: skiBytes });
+  t.check(accepted(bySki.identityOf(renewedSki.der, p.chain, 'default'),
+                   'jane'),
+          '9d. a renewal by the same CA keeping the identifier carries ' +
+          'issuer-ski over');
+  const rekeyed = await leaf(h.intermediate, {});
+  t.equal(bySki.identityOf(rekeyed.der, p.chain, 'default').error,
+          'NOT_STORED', '9e. a renewal with a new identifier must be bound ' +
+          'again');
+  const elsewhere = await leaf(other, { skiBytes: skiBytes });
+  t.equal(bySki.identityOf(elsewhere.der, otherChain, 'default').error,
+          'NOT_STORED', '9f. the same identifier from another issuing CA ' +
+          'under the same root names nobody: issuer-ski is the issuer\'s');
+
+  // email
+  const mail = 'jane.smith.' + RUN + '@agency.test';
+  const mailed = await leaf(h.intermediate, { email: mail });
+  const mailDir = directoryStub();
+  const byMail = only(['email'], mailDir, true);
+  t.equal(byMail.identityOf(mailed.der, p.chain, 'default').error,
+          'NOT_STORED', '9g. email: an address nobody holds names nobody');
+  mailDir.hold('mail', mail, 'jane');
+  const mailOne = byMail.identityOf(mailed.der, p.chain, 'default');
+  t.check(accepted(mailOne, 'jane') && mailOne.lowAffinity === true,
+          '9h. under an opted-in profile the one rfc822Name binds the person ' +
+          'whose mail it is', JSON.stringify(mailOne));
+  mailDir.hold('mail', mail, 'bob');
+  t.equal(byMail.identityOf(mailed.der, p.chain, 'default').error,
+          'STORED_TWICE', '9i. an address two people hold names nobody');
+
+  // issuer-subject and subject: a federal-style subject of several RDNs,
+  // one value carrying a comma.
+  const cn = 'SMITH.JANE.A.' + RUN;
+  const rdns = rdnSequence([[['2.5.4.6', 'US']],
+                            [['2.5.4.10', 'Example, Inc.']],
+                            [['2.5.4.11', 'People']], [['2.5.4.3', cn]]]);
+  const printed = 'CN=' + cn + ',OU=People,O=Example\\, Inc.,C=US';
+  const named = await leaf(h.intermediate, { subject: rdns });
+  const isDir = directoryStub();
+  const byIssuerSubject = only(['issuer-subject'], isDir, true);
+  t.equal(byIssuerSubject.identityOf(named.der, p.chain, 'default').error,
+          'NOT_STORED', '9j. issuer-subject: a subject nobody holds names ' +
+          'nobody');
+  isDir.hold('binding', binding.bindingValueOf('issuer-subject:' +
+                                               issuerKey + ':' + printed),
+             'jane');
+  const isOne = byIssuerSubject.identityOf(named.der, p.chain, 'default');
+  t.check(accepted(isOne, 'jane'),
+          '9k. issuer-subject written as openssl -nameopt RFC2253 prints it ' +
+          '(an escaped comma among four RDNs) binds the person',
+          JSON.stringify(isOne));
+  const sameName = await leaf(other, { subject: rdns });
+  t.equal(byIssuerSubject.identityOf(sameName.der, otherChain,
+                                     'default').error, 'NOT_STORED',
+          '9l. the same subject from another issuing CA names nobody by ' +
+          'issuer-subject');
+  const subjDir = directoryStub();
+  const bySubject = only(['subject'], subjDir, true);
+  t.equal(bySubject.identityOf(named.der, p.chain, 'default').error,
+          'NOT_STORED', '9m. subject: a subject nobody holds names nobody');
+  subjDir.hold('binding', binding.bindingValueOf('subject:' +
+    'cn = ' + cn + ' , OU=People,o=Example\\, Inc., C=us'), 'jane');
+  t.check(accepted(bySubject.identityOf(named.der, p.chain, 'default'),
+                   'jane'),
+          '9n. subject binds the person, written with other spacing and case');
+  t.check(accepted(bySubject.identityOf(sameName.der, otherChain, 'default'),
+                   'jane'),
+          '9o. and, being a name alone, binds another CA\'s certificate of ' +
+          'that subject too: why it needs lowAffinity');
+
+  // A MULTI-VALUED RDN (#2081): CN and UID in one RDN, recorded the way
+  // `openssl -nameopt RFC2253` prints it (UID first, no spaces), which node
+  // prints the other way round.
+  const multi = await leaf(h.intermediate, { subject: rdnSequence([
+    [['2.5.4.6', 'US']], [['2.5.4.10', 'Agency']],
+    [['2.5.4.3', cn], ['0.9.2342.19200300.100.1.1', '12345']]]) });
+  const multiDir = directoryStub();
+  const byMulti = only(['subject'], multiDir, true);
+  multiDir.hold('binding', binding.bindingValueOf('subject:UID=12345+CN=' +
+                                                  cn + ',O=Agency,C=US'),
+                'jane');
+  t.check(accepted(byMulti.identityOf(multi.der, p.chain, 'default'),
+                   'jane'),
+          '9r. a multi-valued RDN recorded as openssl prints it (its ' +
+          'attributes in another order) binds the person');
+  const legacyDir = directoryStub();
+  const multiSubject = stsCrypto.certificateFacts(multi.der).subject;
+  legacyDir.hold('binding', 'subject:' +
+                 binding.CertificateBinding.legacyCanonicalDn(multiSubject),
+                 'jane');
+  t.check(accepted(only(['subject'], legacyDir, true)
+    .identityOf(multi.der, p.chain, 'default'), 'jane'),
+          '9s. a value stored in the form before #2081 (' +
+          binding.CertificateBinding.legacyCanonicalDn(multiSubject) +
+          ') still matches');
+  const isLegacyDir = directoryStub();
+  isLegacyDir.hold('binding', 'issuer-subject:' + issuerKey + ':' +
+                   binding.CertificateBinding.legacyCanonicalDn(multiSubject),
+                   'jane');
+  isLegacyDir.hold('binding', binding.bindingValueOf('issuer-subject:' +
+    issuerKey + ':UID=12345+CN=' + cn + ',O=Agency,C=US'), 'jane');
+  const both = only(['issuer-subject'], isLegacyDir, true)
+    .identityOf(multi.der, p.chain, 'default');
+  t.check(accepted(both, 'jane'), '9t. one person holding both forms is ' +
+          'one person, not two', JSON.stringify(both));
+
+  // card-uuid
+  const uuid = nodeCrypto.randomUUID();
+  const carded = await leaf(h.intermediate, { uri: 'urn:uuid:' + uuid });
+  const cardDir = directoryStub();
+  const byCard = only(['card-uuid'], cardDir);
+  t.equal(byCard.identityOf(carded.der, p.chain, 'default').error,
+          'NOT_STORED', '9p. card-uuid: a card UUID nobody holds names nobody');
+  cardDir.hold('card', uuid, 'jane');
+  t.check(accepted(byCard.identityOf(carded.der, p.chain, 'default'), 'jane'),
+          '9q. card-uuid binds the person holding the card UUID');
+  log.debug("Leaving checkEveryMethod().");
 }
 
 function checkRevocation(t) {
@@ -711,6 +949,26 @@ async function checkDirectory(t, h, p) {
   t.equal(code(editor.update(bob, { attribute: 'stsCertificateBinding',
     mode: 'set', value: 'serial:42' }, { actor: 'test', via: 'test' })),
           'STS-TLS-0069', '8c. a value outside the grammar is refused');
+  // A binding added the way openssl prints it, then removed by the same
+  // text (#2081): the directory holds it canonical, and the editor compares
+  // in that form too.
+  const printed = 'Issuer-SKI:' + issuerKey.toUpperCase() + ':AB:CD:EF:01';
+  const added = editor.update(jane, { attribute: 'stsCertificateBinding',
+    mode: 'add', value: printed }, { actor: 'test', via: 'test' });
+  const again = editor.update(jane, { attribute: 'stsCertificateBinding',
+    mode: 'add', value: printed.toLowerCase() }, { actor: 'test',
+                                                    via: 'test' });
+  const removed = editor.update(jane, { attribute: 'stsCertificateBinding',
+    mode: 'remove', value: printed }, { actor: 'test', via: 'test' });
+  const left = ((((ldap.existingUserEntry(jane) || {}).stored ||
+                 ldap.existingUserEntry(jane) || {}).attributes || {})
+    .stscertificatebinding || []);
+  t.check(added.ok && !again.ok && removed.ok &&
+          left.indexOf(binding.bindingValueOf(printed)) < 0 &&
+          left.indexOf(canonical) >= 0,
+          '8c-ii. a binding added as openssl prints it is found again by ' +
+          'that text: a second add is refused and the remove takes it off',
+          JSON.stringify([added.errors, again.errors, removed.errors, left]));
   const found = ldap.certificateBindingHolders('binding', canonical);
   t.check(found.length === 1 && found[0].id === jane,
           '8d. the binding finds its holder');
@@ -761,6 +1019,7 @@ async function run(t) {
     const h = await hierarchy();
     const p = await checkProfile(t, h);
     await checkBindings(t, h, p);
+    await checkEveryMethod(t, h, p);
     checkRevocation(t);
     await checkForwarded(t, h, p);
     await checkHandoff(t);

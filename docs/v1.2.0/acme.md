@@ -293,6 +293,7 @@ allowed ones):
 | `email` | an `email` identifier: the person's own `mail` |
 | `timestamping` | — |
 | `smartcard-logon` | a person with `userPrincipalName` or `mail` — the certificate carries it as the UPN |
+| `piv-auth`, `piv-sign`, `piv-key-management`, `piv-card-auth` | a person; the YubiKey's PIV slot profiles, issued only once an operator adds them to `acme.allowedProfiles`, with the card's attestation as evidence. See [Hardware tokens](hardware-tokens.md#piv-certificate-profiles) |
 
 **Never issued over ACME**, whatever the setting says, answered
 `invalidProfile` with the reason: `root-ca`, `intermediate-ca`, `issuing-ca`
