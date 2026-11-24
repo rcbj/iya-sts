@@ -551,6 +551,14 @@
     "en": "f7fb5461e2325e1e",
     "text": "硬體權杖已回報遺失，其憑證已停用"
   },
+  "audit.actions.hardware-token.entry-removed.label": {
+    "en": "b0c30c4d2648746a",
+    "text": "某個硬體權杖已從某人的項目中移除，其在該權杖上的憑證也已離開登記簿"
+  },
+  "audit.actions.hardware-token.entry-refused.label": {
+    "en": "4cbaa7f21b4532bb",
+    "text": "寫到某人項目上的權杖被拒絕，並按登記內容還原"
+  },
   "audit.actions.oath-token.import.label": {
     "en": "4da380e22dff30ec",
     "text": "供應商的 PSKC 種子檔案已匯入或遭拒"
@@ -567,6 +575,10 @@
     "en": "92d69a1a2d848892",
     "text": "未指派的 OATH 權杖已從清冊移除"
   },
+  "audit.actions.oath-token.retire.label": {
+    "en": "eb17373466c15b1b",
+    "text": "已指派的 OATH 權杖因從持有人的項目中移除而被停用"
+  },
   "audit.actions.yubiotp.import.label": {
     "en": "6f92401fa557c5e6",
     "text": "匯入或拒絕了 YubiKey OTP CSV"
@@ -582,6 +594,10 @@
   "audit.actions.yubiotp.remove.label": {
     "en": "a4a9aedd10cc2813",
     "text": "未指派的 YubiKey OTP 已從清冊中移除"
+  },
+  "audit.actions.yubiotp.retire.label": {
+    "en": "3ec9c9ee79cdc845",
+    "text": "已指派的 YubiKey OTP 因從持有人的項目中移除而被停用"
   },
   "audit.actions.yubiotp.client-add.label": {
     "en": "40676cb783f36097",

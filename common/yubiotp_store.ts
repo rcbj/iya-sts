@@ -74,6 +74,10 @@ const inventory = realms.map({
     if (row && row.status) {
       out.push('st:' + String(row.status));
     }
+    // A row whose holder's entry was not written (#2051).
+    if (row && row.entrySync === 'pending') {
+      out.push('e:pending');
+    }
     return out;
   },
   sortBy: function (row: Json): number | null {
@@ -515,7 +519,7 @@ class YubiOtpStore {
       log.warn('yubiotp: token ' + serial + ' was assigned to ' + username +
                ' and the hardware token register did not record it.');
     }
-    inventory.set(serial, Object.assign({}, row, {
+    this.put(serial, Object.assign({}, row, {
       status: 'assigned', holder: username, secret: '', sealed: false,
       credentialId: installed.id, assignedAt: this.nowIso() }));
     const verb = s.via === 'claim' ? 'claimed by ' : 'assigned to ';
@@ -619,8 +623,9 @@ class YubiOtpStore {
     }
     const row = inventory.get(serial);
     if (row) {
-      inventory.set(serial, Object.assign({}, row, {
-        status: 'retired', secret: '', sealed: false }));
+      this.put(serial, Object.assign({}, row, {
+        status: 'retired', secret: '', sealed: false,
+        retiredAt: this.nowIso() }));
     }
     log.debug("Leaving YubiOtpStore.retire().");
     return { ok: true };
@@ -780,6 +785,235 @@ class YubiOtpStore {
               r.currentId() + ".");
     return { ok: true, removed: expired.length + trimmed };
   }
+
+  // -------------------------------------------------------------------------
+  // AN ASSIGNED TOKEN ON ITS HOLDER'S ENTRY (#2051, `common/token_entries.ts`):
+  // the entry's `stsYubiOtpToken` is the master once the token is assigned,
+  // and the inventory row and the public-identity index are its indexes. An
+  // unassigned row has no person, so it is the staging inventory and holds
+  // the sealed AES key until then.
+  // -------------------------------------------------------------------------
+
+  /**
+   * A row's value of `stsYubiOtpToken`: never its AES key.
+   *
+   * @param serial - the serial
+   * @param row - the inventory row
+   * @returns the value
+   */
+  static entryValueOf(serial: string, row: Json): Json {
+    helpers.log.debug("Entering YubiOtpStore.entryValueOf().");
+    const r = row || {};
+    helpers.log.debug("Leaving YubiOtpStore.entryValueOf().");
+    return {
+      serial: String(serial), publicId: String(r.publicId || ''),
+      credentialId: String(r.credentialId || ''),
+      status: String(r.status || ''),
+      importedAt: String(r.importedAt || ''),
+      assignedAt: String(r.assignedAt || ''),
+      retiredAt: String(r.retiredAt || '')
+    };
+  }
+
+  // THE ENTRY FIRST, THEN THE INDEX (above).
+  private put(serial: string, row: Json): void {
+    const { log } = this.deps;
+    log.debug("Entering YubiOtpStore.put().");
+    const entries = require('./token_entries');
+    const state = row.holder
+      ? entries.project(String(row.holder), entries.ATTRIBUTES.yubiotp,
+                        serial, YubiOtpStore.entryValueOf(serial, row))
+      : 'done';
+    const next = Object.assign({}, row);
+    if (state === 'failed') {
+      next.entrySync = 'pending';
+    } else {
+      delete next.entrySync;
+    }
+    inventory.set(serial, next);
+    log.debug("Leaving YubiOtpStore.put(). " + state);
+  }
+
+  /**
+   * The entries job's part: every pending row written again, and with
+   * `backfill` every row with a holder, in the ambient realm.
+   *
+   * @param opts - `{ backfill }`
+   * @returns a promise of `{ ok, written, pending }`
+   */
+  async syncEntries(opts?: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering YubiOtpStore.syncEntries().");
+    const rows: Json[] = [];
+    if (opts && opts.backfill) {
+      await inventory.scanAsync(function (value: Json, key: unknown) {
+        if (value && value.holder) {
+          rows.push({ key: String(key), value: value });
+        }
+      });
+    } else {
+      rows.push.apply(rows, await inventory.lookupEntriesAsync('e:pending'));
+    }
+    const entries = require('./token_entries');
+    let written = 0;
+    let pending = 0;
+    for (const one of rows) {
+      if (!one || !one.value || !one.value.holder) {
+        continue;
+      }
+      const state = await entries.projectAsync(String(one.value.holder),
+        entries.ATTRIBUTES.yubiotp, String(one.key),
+        YubiOtpStore.entryValueOf(String(one.key), one.value));
+      const failed = state === 'failed';
+      if (failed) {
+        pending += 1;
+      } else {
+        written += 1;
+      }
+      if (failed !== (one.value.entrySync === 'pending')) {
+        const next = Object.assign({}, one.value);
+        if (failed) {
+          next.entrySync = 'pending';
+        } else {
+          delete next.entrySync;
+        }
+        inventory.set(String(one.key), next);
+      }
+    }
+    log.debug("Leaving YubiOtpStore.syncEntries(). " + written + "/" +
+              pending);
+    return { ok: true, written: written, pending: pending };
+  }
+
+  // The inventory's row of a serial, read from the store when this process
+  // does not hold it.
+  private async rowAsync(serial: string): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering YubiOtpStore.rowAsync().");
+    if (!inventory.get(serial)) {
+      try {
+        await inventory.warm([serial]);
+      } catch (e) {
+        log.debug("Caught in YubiOtpStore.rowAsync(): " +
+                  ((e && e.message) || e));
+        // The store cannot be asked: what this process holds decides.
+      }
+    }
+    log.debug("Leaving YubiOtpStore.rowAsync().");
+    return inventory.get(serial) || null;
+  }
+
+  /**
+   * What the inventory holds for one person's value of a token (the entry
+   * observer's check, `token_entries.ts`), or null.
+   *
+   * @param serial - the serial
+   * @param change - the observer's change (`username` the person)
+   * @returns a promise of the value, or null
+   */
+  async entryValueFor(serial: string, change: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering YubiOtpStore.entryValueFor().");
+    const row = await this.rowAsync(String(serial));
+    const who = String((change && change.username) || '');
+    log.debug("Leaving YubiOtpStore.entryValueFor().");
+    return row && who && String(row.holder || '') === who
+      ? YubiOtpStore.entryValueOf(String(serial), row) : null;
+  }
+
+  /**
+   * A token's value removed from its holder's entry by another door (the
+   * entry observer): the entry is the master, so the token is RETIRED —
+   * the credential removed when it is still this serial's and its public
+   * identity dropped, as a lost report would — and the row no longer names
+   * a holder. The entry first, then the row.
+   *
+   * @param serial - the serial
+   * @param change - the observer's change
+   * @returns a promise of `{ ok, changed }`
+   */
+  async entryRemoved(serial: string, change: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering YubiOtpStore.entryRemoved().");
+    const c = change || {};
+    const who = String(c.username || '');
+    const row = await this.rowAsync(String(serial));
+    if (!row || !who || String(row.holder || '') !== who) {
+      log.debug("Leaving YubiOtpStore.entryRemoved(). Not theirs.");
+      return { ok: true, changed: false };
+    }
+    if (row.status === 'assigned') {
+      await this.retire({ serial: String(serial) }, {}, { username: who });
+    }
+    const entries = require('./token_entries');
+    entries.project(String(c.subject || who), entries.ATTRIBUTES.yubiotp,
+                    String(serial), null);
+    const fresh = inventory.get(String(serial)) || row;
+    const next = Object.assign({}, fresh, {
+      status: 'retired', holder: '', retiredFrom: who,
+      retiredAt: String(fresh.retiredAt || this.nowIso()) });
+    delete next.entrySync;
+    inventory.set(String(serial), next);
+    this.recordAudit('yubiotp.retire', String(c.actor || c.door ||
+      'directory'), who, 'YubiKey OTP ' + serial + ' was retired: it was ' +
+      'removed from the entry of ' + who, { serial: String(serial),
+                                            door: String(c.door || '') });
+    log.debug("Leaving YubiOtpStore.entryRemoved(). Retired.");
+    return { ok: true, changed: true };
+  }
+
+  /**
+   * The inventory's assigned and retired rows, and the public-identity
+   * index of the assigned ones, rebuilt from the entries, which are the
+   * master; a row the inventory lost is made again, without a secret.
+   *
+   * @returns a promise of `{ ok, rebuilt }`
+   */
+  async rebuildFromEntries(): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering YubiOtpStore.rebuildFromEntries().");
+    const entries = require('./token_entries');
+    const holders = await entries.holdersOf(entries.ATTRIBUTES.yubiotp);
+    let rebuilt = 0;
+    for (const person of holders) {
+      for (const value of person.values || []) {
+        const serial = String((value && value.serial) || '');
+        if (!serial || !person.username) {
+          continue;
+        }
+        if (!inventory.get(serial)) {
+          await inventory.warm([serial]);
+        }
+        const held = Object.assign({}, inventory.get(serial) || {});
+        delete held.entrySync;
+        const next = Object.assign({}, held, {
+          serial: serial, publicId: value.publicId,
+          credentialId: value.credentialId, status: value.status,
+          holder: person.username, importedAt: value.importedAt,
+          assignedAt: value.assignedAt, retiredAt: value.retiredAt,
+          secret: '', sealed: false });
+        if (entries.stored(held) !== entries.stored(next)) {
+          inventory.set(serial, next);
+          rebuilt += 1;
+        }
+        if (value.status === 'assigned' && value.publicId) {
+          if (!publicIds.get(String(value.publicId))) {
+            await publicIds.warm([String(value.publicId)]);
+          }
+          const indexed = publicIds.get(String(value.publicId)) || {};
+          const wanted = { username: person.username,
+                           credentialId: String(value.credentialId || ''),
+                           serial: serial };
+          if (entries.stored(indexed) !== entries.stored(wanted)) {
+            publicIds.set(String(value.publicId), wanted);
+            rebuilt += 1;
+          }
+        }
+      }
+    }
+    log.debug("Leaving YubiOtpStore.rebuildFromEntries(). " + rebuilt);
+    return { ok: true, rebuilt: rebuilt };
+  }
 }
 
 const slot = new InstanceSlot<YubiOtpStore>(
@@ -811,5 +1045,10 @@ export = {
   clientKey: slot.forward('clientKey'),
   removeClient: slot.forward('removeClient'),
   rememberNonceAsync: slot.forward('rememberNonceAsync'),
-  sweepNonces: slot.forward('sweepNonces')
+  sweepNonces: slot.forward('sweepNonces'),
+  entryValueOf: YubiOtpStore.entryValueOf,
+  syncEntries: slot.forward('syncEntries'),
+  rebuildFromEntries: slot.forward('rebuildFromEntries'),
+  entryValueFor: slot.forward('entryValueFor'),
+  entryRemoved: slot.forward('entryRemoved')
 };

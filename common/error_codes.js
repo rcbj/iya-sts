@@ -23367,6 +23367,31 @@ const CODES = [
       'an unexpected error at /admin-api; the log line has the stack ' +
       '(#1955).',
     spec: 'HTTP 500' },
+  { code: 'STS-HWTOKEN-0014',
+    summary: 'The directory offered the token entries library no ' +
+      'locate(), locateAsync(), write() or holdersAsync(), so nothing was ' +
+      'installed: no hardware, OATH or YubiKey OTP token is written onto ' +
+      'its holder\'s entry until one is, and every index write is marked ' +
+      'pending (#2051).',
+    spec: 'none — logged' },
+  { code: 'STS-HWTOKEN-0015',
+    summary: 'A token\'s value could not be written onto its holder\'s ' +
+      'entry (stsHardwareToken, stsOathToken or stsYubiOtpToken); the ' +
+      'index row is marked pending and the hardware-tokens.entries job ' +
+      'writes it again (#2051).',
+    spec: 'none — logged' },
+  { code: 'STS-HWTOKEN-0016',
+    summary: 'The hardware-tokens.entries job, or the manual rebuild of ' +
+      'the token indexes from the entries, could not read a store or the ' +
+      'directory; nothing more was done this run (#2051).',
+    spec: 'none — logged' },
+  { code: 'STS-HWTOKEN-0017',
+    summary: 'A hardware, OATH or YubiKey OTP token value written onto a ' +
+      'person\'s entry by a door other than its own module was not what ' +
+      'the index recorded for them, so it was put back as recorded or ' +
+      'taken off, and audited with the writer: a serial is recorded only ' +
+      'from attestation and a token assigned only by its inventory (#2051).',
+    spec: 'none — audited' },
   // ===== OATH ==============================================================
   { code: 'STS-OATH-0001',
     summary: 'An HOTP code (or a pair given to resynchronise) was not ' +

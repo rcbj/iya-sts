@@ -235,6 +235,9 @@ declare namespace IyaDomain {
     userCertificate?: string[];
     smimeCertificate?: string[];
     sshUserCertificate?: string[];
+    hardwareTokens?: string[];
+    oathTokens?: string[];
+    yubiOtpTokens?: string[];
     krb5KeyInfo?: string;
     openPgpKey?: string;
     openPgpFingerprint?: string;

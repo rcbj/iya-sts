@@ -551,6 +551,14 @@
     "en": "f7fb5461e2325e1e",
     "text": "Se notificó la pérdida de un token de hardware y se retiraron sus credenciales"
   },
+  "audit.actions.hardware-token.entry-removed.label": {
+    "en": "b0c30c4d2648746a",
+    "text": "Se quitó un token de hardware de la entrada de una persona, y sus credenciales en él salieron del registro"
+  },
+  "audit.actions.hardware-token.entry-refused.label": {
+    "en": "4cbaa7f21b4532bb",
+    "text": "Se rechazó un token escrito en la entrada de una persona y se restauró tal como estaba registrado"
+  },
   "audit.actions.oath-token.import.label": {
     "en": "4da380e22dff30ec",
     "text": "Se importó, o se rechazó, el archivo de semillas PSKC de un proveedor"
@@ -567,6 +575,10 @@
     "en": "92d69a1a2d848892",
     "text": "Se quitó del inventario un token OATH sin asignar"
   },
+  "audit.actions.oath-token.retire.label": {
+    "en": "eb17373466c15b1b",
+    "text": "Se retiró un token OATH asignado porque se quitó de la entrada de su titular"
+  },
   "audit.actions.yubiotp.import.label": {
     "en": "6f92401fa557c5e6",
     "text": "Se importó un CSV de OTP YubiKey, o se rechazó"
@@ -582,6 +594,10 @@
   "audit.actions.yubiotp.remove.label": {
     "en": "a4a9aedd10cc2813",
     "text": "Se quitó del inventario un OTP YubiKey sin asignar"
+  },
+  "audit.actions.yubiotp.retire.label": {
+    "en": "3ec9c9ee79cdc845",
+    "text": "Se retiró un YubiKey OTP asignado porque se quitó de la entrada de su titular"
   },
   "audit.actions.yubiotp.client-add.label": {
     "en": "40676cb783f36097",

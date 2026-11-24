@@ -551,6 +551,14 @@
     "en": "f7fb5461e2325e1e",
     "text": "硬件令牌已报告丢失，其凭据已停用"
   },
+  "audit.actions.hardware-token.entry-removed.label": {
+    "en": "b0c30c4d2648746a",
+    "text": "某个硬件令牌已从某人的条目中移除，其在该令牌上的凭据也已离开登记簿"
+  },
+  "audit.actions.hardware-token.entry-refused.label": {
+    "en": "4cbaa7f21b4532bb",
+    "text": "写到某人条目上的令牌被拒绝，并按登记内容恢复"
+  },
   "audit.actions.oath-token.import.label": {
     "en": "4da380e22dff30ec",
     "text": "供应商的 PSKC 种子文件已导入或被拒绝"
@@ -567,6 +575,10 @@
     "en": "92d69a1a2d848892",
     "text": "未分配的 OATH 令牌已从清单中移除"
   },
+  "audit.actions.oath-token.retire.label": {
+    "en": "eb17373466c15b1b",
+    "text": "已分配的 OATH 令牌因从持有人的条目中移除而被停用"
+  },
   "audit.actions.yubiotp.import.label": {
     "en": "6f92401fa557c5e6",
     "text": "导入或拒绝了 YubiKey OTP CSV"
@@ -582,6 +594,10 @@
   "audit.actions.yubiotp.remove.label": {
     "en": "a4a9aedd10cc2813",
     "text": "未分配的 YubiKey OTP 已从清单中移除"
+  },
+  "audit.actions.yubiotp.retire.label": {
+    "en": "3ec9c9ee79cdc845",
+    "text": "已分配的 YubiKey OTP 因从持有人的条目中移除而被停用"
   },
   "audit.actions.yubiotp.client-add.label": {
     "en": "40676cb783f36097",

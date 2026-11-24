@@ -551,6 +551,14 @@
     "en": "f7fb5461e2325e1e",
     "text": "Un jeton matériel a été déclaré perdu et ses identifiants retirés"
   },
+  "audit.actions.hardware-token.entry-removed.label": {
+    "en": "b0c30c4d2648746a",
+    "text": "Un jeton matériel a été retiré de l’entrée d’une personne, et ses identifiants sur ce jeton ont quitté le registre"
+  },
+  "audit.actions.hardware-token.entry-refused.label": {
+    "en": "4cbaa7f21b4532bb",
+    "text": "Un jeton écrit sur l’entrée d’une personne a été refusé et rétabli tel qu’il était enregistré"
+  },
   "audit.actions.oath-token.import.label": {
     "en": "4da380e22dff30ec",
     "text": "Le fichier de semences PSKC d’un fournisseur a été importé, ou refusé"
@@ -567,6 +575,10 @@
     "en": "92d69a1a2d848892",
     "text": "Un jeton OATH non attribué a été supprimé de l’inventaire"
   },
+  "audit.actions.oath-token.retire.label": {
+    "en": "eb17373466c15b1b",
+    "text": "Un jeton OATH attribué a été retiré parce qu’il a été supprimé de l’entrée de son titulaire"
+  },
   "audit.actions.yubiotp.import.label": {
     "en": "6f92401fa557c5e6",
     "text": "Un CSV d’OTP YubiKey a été importé, ou refusé"
@@ -582,6 +594,10 @@
   "audit.actions.yubiotp.remove.label": {
     "en": "a4a9aedd10cc2813",
     "text": "Un OTP YubiKey non attribué a été retiré de l’inventaire"
+  },
+  "audit.actions.yubiotp.retire.label": {
+    "en": "3ec9c9ee79cdc845",
+    "text": "Un YubiKey OTP attribué a été retiré parce qu’il a été supprimé de l’entrée de son titulaire"
   },
   "audit.actions.yubiotp.client-add.label": {
     "en": "40676cb783f36097",
