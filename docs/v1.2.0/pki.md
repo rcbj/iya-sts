@@ -1203,6 +1203,14 @@ force, restores exactly the behaviour that use case had before this mode existed
 and nothing else changes.** There is no third state, and development mode with
 `auto` is that earlier behaviour, whole.
 
+**No application can exempt a certificate, with one exception.** An application
+declared for WS-Trust may waive the `keyUsage` check, and only that check, on the
+certificate its responses are encrypted to (`wstrustRecipientIgnoresKeyUsage`, over
+the realm's `wstrust.recipientIgnoresKeyUsage`; both off by default). This lets an
+answer be encrypted to the request's signing certificate, whose `keyUsage` permits
+`digitalSignature` only. Validity, the path and revocation are still checked. See
+[WS-Trust](ws-trust.md#xml-encryption).
+
 **No source named, no check to perform.** Under this mode a certificate that names no
 CRL distribution point and no OCSP responder has no revocation check, under
 soft-fail or hard-fail. Where a source is named, in the certificate or a CA above

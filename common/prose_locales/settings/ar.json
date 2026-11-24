@@ -6175,6 +6175,14 @@
     "en": "32f9389b65f0eb67",
     "text": "ما إذا كان ds:Signature لاستجابة WS-Trust يُشفَّر أيضًا (sp:EncryptSignature في WS-SecurityPolicy)، إلى مستلم الاستجابة. لا يُقرأ إلا ما دامت الاستجابة تُوقَّع ثم تُشفَّر. يحمل ربط WSDL القيمة sp:EncryptSignature ما دام هذا مفعّلًا. يعلو wstrustEncryptSignature الخاص بتطبيق على هذا."
   },
+  "wstrust.recipientIgnoresKeyUsage|label": {
+    "en": "5084027709e17c26",
+    "text": "تشفير الاستجابة لشهادة أيًّا كان keyUsage الخاص بها"
+  },
+  "wstrust.recipientIgnoresKeyUsage|description": {
+    "en": "58e43975d6e28519",
+    "text": "ما إذا كان يجوز تشفير استجابة WS-Trust لشهادة لا يسمح keyUsage الخاص بها بـ keyEncipherment ولا keyAgreement — وهي في الغالب شهادة توقيع الطلب: فشهادات توقيع الرسائل في هذا النطاق تسمح بـ digitalSignature فقط. يُتجاوز هذا الفحص وحده؛ وتبقى صلاحية الشهادة ومسارها وحالة إلغائها مفحوصة حيث يفحصها وضع PKI المتشدد. معطّل افتراضيًا. يتجاوزه wstrustRecipientIgnoresKeyUsage الخاص بالتطبيق."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "تسجيل الدخول الذي يبدأه مزود الهوية"

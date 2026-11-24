@@ -12510,6 +12510,22 @@ const SETTINGS = [
                  'response is signed and then encrypted. The WSDL\'s ' +
                  'binding carries sp:EncryptSignature while it is on. An ' +
                  'application\'s wstrustEncryptSignature overrides this.' },
+  // THE ONE WAIVER OF A PARANOID-PKI CHECK (rcbj, 2026-11-24, #2046):
+  // common/certificate_trust.ts's header argues it.
+  { key: 'wstrust.recipientIgnoresKeyUsage', group: 'WS-Trust',
+    label: 'Encrypt a response to a certificate whatever its keyUsage',
+    env: 'STS_WSTRUST_RECIPIENT_IGNORES_KEY_USAGE', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Whether a WS-Trust response may be encrypted to a ' +
+                 'certificate whose keyUsage permits neither ' +
+                 'keyEncipherment nor keyAgreement — the request\'s ' +
+                 'signing certificate, most often: this realm\'s ' +
+                 'message-signing certificates permit digitalSignature ' +
+                 'only. Only that check is waived; the certificate\'s ' +
+                 'validity, its path and its revocation are still checked ' +
+                 'where paranoid PKI mode checks them. Off by default. An ' +
+                 'application\'s wstrustRecipientIgnoresKeyUsage overrides ' +
+                 'this.' },
 
   // WHO MAY START A SIGN-IN (#426, #710), the WS-Federation pair. A
   // wsignin1.0 at /wsfed is the relying party's (WS-Federation 1.2 section

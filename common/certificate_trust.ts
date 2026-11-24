@@ -39,6 +39,20 @@
 // certificate: rcbj's decision, and `tests/paranoid_settings.js` reads this
 // file to hold it.
 //
+// **ONE DELIBERATE EXCEPTION (rcbj, 2026-11-24, #2046)**: an application may
+// waive the keyUsage check — that check alone — on the certificate a WS-Trust
+// response is encrypted to (`wstrustRecipientIgnoresKeyUsage`, over the
+// realm's `wstrust.recipientIgnoresKeyUsage`, both off by default). The
+// realm's message-signing certificates permit digitalSignature only, so
+// without it an answer encrypted to the request's signing certificate is
+// always refused, and real requesters sign and decrypt with one key. The
+// caller reads the setting and passes `ignoreKeyUsage`; the door reads no
+// entry. Validity, the path and revocation are asked as always, and the
+// verdict names the check `waived-by-administrator`, never `passed`. The
+// option is honoured for `encryption-recipient` only, and
+// `tests/paranoid_settings.js` holds that ws-trust/ws_encryption.ts is the
+// one caller that passes it.
+//
 // **A LEAF ACCEPTED SELF-SIGNED MAY CARRY cA=TRUE.** Every `openssl req -x509`
 // certificate does; `pki.verifySignerChain()`'s `pinned` branch argued that on
 // 2026-09-13, and a use case the specification defines as certificate equality
@@ -1025,11 +1039,22 @@ class CertificateTrust {
           verdict.checks[check] = 'passed';
         }
       });
-    problems.forEach(function (one: Json) {
+    // THE ONE WAIVER (see the header): keyUsage, on an encryption
+    // recipient, when the caller's application says so. Whatever keyUsage
+    // says is not a refusal, and the verdict says it was waived.
+    const waives = opts.ignoreKeyUsage === true &&
+      verdict.purpose === 'encryption-recipient';
+    const kept = problems.filter(function (one: Json) {
+      return !(waives && one.check === 'key-usage');
+    });
+    if (waives) {
+      verdict.checks['key-usage'] = 'waived-by-administrator';
+    }
+    kept.forEach(function (one: Json) {
       verdict.checks[one.check] = 'failed';
     });
     helpers.log.debug("Leaving CertificateTrust.fieldChecks().");
-    return problems;
+    return kept;
   }
 
   // Does this certificate carry the name the caller expected?

@@ -6,7 +6,8 @@
 // a `TrustVerdict`, and `common/signer_truststore.ts` holds `SignerAnchor`s.
 // ---------------------------------------------------------------------------
 
-export type CheckStatus = 'passed' | 'failed' | 'not-asked' | 'exempt-by-spec';
+export type CheckStatus = 'passed' | 'failed' | 'not-asked' | 'exempt-by-spec' |
+  'waived-by-administrator';
 
 export type CheckId = 'path' | 'validity' | 'revocation' |
   'basic-constraints' | 'key-usage' | 'extended-key-usage' |

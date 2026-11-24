@@ -995,7 +995,8 @@ var config = {
     signRequest: false,                           // Require a request signed
     signResponse: false,                          // Sign a response
     responseProtectionOrder: "sign-then-encrypt", // Response protection order
-    encryptSignature: false                       // Encrypt a response's signature
+    encryptSignature: false,                      // Encrypt a response's signature
+    recipientIgnoresKeyUsage: false               // Encrypt a response to a certificate whatever its keyUsage
   },
 
   // --- WS-Federation ---------------------------------------------------
