@@ -56,7 +56,9 @@ const webMessages = require('../common/web_messages');
 const REALM = 'brand-api-test';
 const PAGE = '/admin/sign-in-appearance';
 
-// A PNG's first 24 bytes are all the check reads (`tests/branding.js`).
+// A PNG's first 24 bytes are what the check reads, and (#2140, which walks
+// the file to remove its metadata) an IDAT and an IEND end it
+// (`tests/branding.js`).
 function png(width, height, length) {
   log.debug("Entering png().");
   const b = Buffer.alloc(length || 64);
@@ -65,6 +67,10 @@ function png(width, height, length) {
   b.write('IHDR', 12, 'latin1');
   b.writeUInt32BE(width, 16);
   b.writeUInt32BE(height, 20);
+  b.writeUInt32BE(7, 33);
+  b.write('IDAT', 37, 'latin1');
+  b.writeUInt32BE(0, 52);
+  b.write('IEND', 56, 'latin1');
   log.debug("Leaving png().");
   return b;
 }

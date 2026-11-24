@@ -598,5 +598,7 @@
 "hotp.start": "Konfigurera en engångskodstoken",
 "apps.reauthenticate": "Logga in igen",
 "apps.reauthenticateNote": "Varje inloggningslänk ber dig logga in på nytt, så att du kan välja vilka roller du vill använda i programmet.",
-"apps.reauthenticateApply": "Tillämpa"
+"apps.reauthenticateApply": "Tillämpa",
+"noWebCrypto.title": "Den här webbläsaren kan inte öppna sidan",
+"noWebCrypto.text": "Den här webbläsaren kan inte köra sidan säkert: WebCrypto är inte tillgängligt, oftast för att sidan inte öppnades över HTTPS eller för att webbläsaren är för gammal."
 }

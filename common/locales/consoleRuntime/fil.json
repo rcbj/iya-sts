@@ -18,5 +18,7 @@
   "accounts.otherAccount": "Ibang account ang sign-in na iyon, kaya hindi ito tinanggap ng tab na ito. Mag-sign in muli bilang {user}, o lumipat ng account mula sa account menu.",
   "accounts.refused.title": "Hindi magbubukas ang console para sa account na ito",
   "accounts.refused.text": "Sumagot ng {status} ang management API para sa account na naka-sign in sa tab na ito.",
-  "policyName.required": "Kailangan ng pangalan."
+  "policyName.required": "Kailangan ng pangalan.",
+  "noWebCrypto.title": "Hindi mabuksan ng browser na ito ang pahinang ito",
+  "noWebCrypto.text": "Hindi ligtas na mapapatakbo ng browser na ito ang pahinang ito: hindi available ang WebCrypto, kadalasan dahil hindi binuksan ang pahina sa HTTPS o masyadong luma na ang browser."
 }
