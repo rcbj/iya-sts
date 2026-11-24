@@ -250,7 +250,13 @@ SET @sts_app_require_ssl := COALESCE(@sts_app_require_ssl, 0);
 
 --@table sts_report_artifact_pieces
 
--- THE AUDIT LOG, APPEND-ONLY (#1616, schema version 33; ASVS 5.0.0 16.4.2):
+--@table sts_schema
+
+-- #882. Driver order 78 follows `sts_schema`, so the index is here.
+--@index sts_sessions_started
+
+-- THE AUDIT LOG, APPEND-ONLY (#1616, schema version 33; ASVS 5.0.0 16.4.2),
+-- after the session index because driver order 79 follows it:
 -- PostgreSQL's table and its two functions, here procedures. Each is ONE
 -- statement, so this file needs no DELIMITER. SQL SECURITY DEFINER: they run
 -- as the account running this file, and the application account may call
@@ -267,11 +273,6 @@ CREATE OR REPLACE PROCEDURE sts_audit_retain(IN p_realm VARCHAR(64), IN p_keep B
 -- A realm's rows only when the realm is gone from sts_realms or retiring,
 -- and never the default realm's.
 CREATE OR REPLACE PROCEDURE sts_audit_purge_realm(IN p_realm VARCHAR(64)) SQL SECURITY DEFINER DELETE FROM sts_audit WHERE realm = p_realm AND p_realm NOT IN ('', 'default') AND NOT EXISTS (SELECT 1 FROM sts_realms r WHERE r.id = p_realm AND r.retiring_at IS NULL);
-
---@table sts_schema
-
--- #882. Driver order 78 follows `sts_schema`, so the index is here.
---@index sts_sessions_started
 
 -- The same number as PostgreSQL's, so there is one SCHEMA_VERSION.
 INSERT IGNORE INTO sts_schema (version) VALUES (33);

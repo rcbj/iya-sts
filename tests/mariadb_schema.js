@@ -102,10 +102,11 @@ function checkTheReleaseUpgrade(t, sql, schema) {
           'F3. no sts_sessions_subject_band: MariaDB has none');
   t.check(!/CREATE INDEX CONCURRENTLY/i.test(code),
           'F4. no CREATE INDEX CONCURRENTLY: MariaDB has none');
+  // Release 1.1.0's version, 32: upgrade-1.1.0.sql records 33 (#1616), and
+  // this file takes a store to 1.1.0 and no further.
   t.check(upgrade.indexOf(
-    'INSERT IGNORE INTO sts_schema (version) VALUES (' +
-    schema.SCHEMA_VERSION + ')') >= 0,
-          'F5. the script records the module\'s SCHEMA_VERSION');
+    'INSERT IGNORE INTO sts_schema (version) VALUES (32)') >= 0,
+          'F5. the script records version 32, release 1.1.0\'s');
   // The driver builds this index in place, after open(), and never refuses a
   // start over it (#882): it is the one the model marks `online`.
   const online = (schema.SCHEMA_OBJECTS || []).filter(function (one) {
