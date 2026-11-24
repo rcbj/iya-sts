@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# File: tests/client-lab/bin/lab-trust-anchor
+#
+# ---------------------------------------------------------------------------
+# THE SERVICE'S ROOT IN THE LAB'S SYSTEM TRUST STORE (#2057), as an
+# administrator installs a private CA for every program on a machine.
+# Programs that take no CA option — GnuPG's dirmngr fetching a Web Key
+# Directory — trust what /etc/ssl/certs holds and nothing else.
+#
+#   lab-trust-anchor add <name> <file>   installs <file> (PEM, under the
+#                                        work directory when relative)
+#   lab-trust-anchor remove <name>       takes it out again
+#
+# <name> is lowercase letters, digits and dashes.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+action="${1:?add or remove}"
+name="${2:?a name}"
+if ! [[ "${name}" =~ ^[a-z0-9-]+$ ]]; then
+  echo "lab-trust-anchor: a name is [a-z0-9-]+, not ${name}" >&2
+  exit 2
+fi
+target="/usr/local/share/ca-certificates/lab-${name}.crt"
+case "${action}" in
+  add)
+    file="${3:?a file}"
+    case "${file}" in
+      /*) ;;
+      *) file="/run/client-lab/work/${file}" ;;
+    esac
+    # update-ca-certificates takes ONE certificate per .crt file.
+    awk -v base="/usr/local/share/ca-certificates/lab-${name}" '
+      /-----BEGIN CERTIFICATE-----/ { n++; out = base "-" n ".crt" }
+      out { print > out }
+      /-----END CERTIFICATE-----/ { close(out); out = "" }' "${file}"
+    update-ca-certificates > /dev/null 2>&1
+    ls /usr/local/share/ca-certificates/ | grep -c "^lab-${name}-"
+    ;;
+  remove)
+    rm -f "/usr/local/share/ca-certificates/lab-${name}"-*.crt "${target}"
+    update-ca-certificates --fresh > /dev/null 2>&1
+    echo "removed"
+    ;;
+  *)
+    echo "lab-trust-anchor: add or remove, not ${action}" >&2
+    exit 2
+    ;;
+esac

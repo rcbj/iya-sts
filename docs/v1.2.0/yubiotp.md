@@ -40,6 +40,16 @@ An assigned YubiKey is on its holder's entry, in `stsYubiOtpToken`: one JSON val
 
 `ykval-client-add` creates a client. The id is 1 to 16 digits. The HMAC key is in the answer once and is not logged.
 
+### pam_yubico
+
+Yubico's PAM module, `pam_yubico` 2.26, works against this endpoint. Tested with `pamtester` and OTPs from Yubico's `ykgenerate`. Give it the client's id and key, the realm's endpoint as its URL, and the service's CA certificate as `cainfo`:
+
+```
+auth required pam_yubico.so id=<client id> key=<client key> urllist=https://<host>/realm/<realm>/wsapi/2.0/verify authfile=/etc/yubikey_mappings cainfo=/etc/ssl/sts-ca.pem
+```
+
+`authfile` maps a user name to the token's public identity (`user:<public id>`). With the right key the module checks every answer's signature. With a wrong key, the service answers `BAD_SIGNATURE` unsigned, and the module refuses it (`BAD_SERVER_SIGNATURE`, PAM's `AUTHINFO_UNAVAIL`). After a token is reported lost, its OTPs are `BAD_OTP`.
+
 ## What the users page does not count
 
 A person whose only second factor is a YubiKey OTP is omitted from the realm-wide second-factor tile. The same limit applies to an HOTP-only person. Counting them would add an index, which this release does not do. The person's own page still shows the credential, on the **YubiKey OTP** sub-tab of their Credentials: the public identity, how it was provisioned, and when it was last used. Clearing it is `POST /admin-api/users/clear-yubi` (and `POST /admin-api/mfa/clear-yubi`). A token lost with the key is better reported lost, which retires every credential on it.

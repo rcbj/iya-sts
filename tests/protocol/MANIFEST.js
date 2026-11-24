@@ -1438,11 +1438,28 @@ const JOBS = [
   // removed; no answer carries the secret, the key or an error code. What a
   // code does at a sign-in is tests/hotp.js and tests/oath_tokens.js.
   { file: 'sts_oath_tokens.js', browser: false, local: true },
+  // IMPORTED OATH TOKENS WITH oathtool (#2062, umbrella #2055): a PSKC
+  // file made in the run imported by the administrator, each token claimed
+  // on the portal and used at /authn with codes OATH Toolkit's oathtool
+  // computes from its seed — HOTP's counter moved and a reused code
+  // refused, TOTP's spent step refused and the next one accepted — the
+  // tokens on the entries (ldapsearch), and refused once reported lost.
+  // `clientLab: true`: skipped where there is no lab.
+  { file: 'sts_oath_oathtool.js', browser: false, local: true,
+    clientLab: true },
   // YUBIKEY OTP AND YK-VAL 2.0 OVER HTTP (#1955 P5): a CSV and a client
   // made in the run, the verify endpoint's statuses and HMAC, and the
   // three settings put back on the realm this job created. The policy
   // row is tests/yubiotp.js, in process.
   { file: 'sts_yubiotp.js', browser: false, local: true },
+  // YUBIKEY OTP THROUGH pam_yubico (#2061, umbrella #2055): Yubico's PAM
+  // module in the client lab, driven by pamtester, asks /wsapi/2.0/verify
+  // about OTPs Yubico's reference generator (ykgenerate) makes for a token
+  // imported from a CSV made at run time: signed in, a replay, a forged
+  // OTP and a wrong client key refused, the token on the entry (ldapsearch)
+  // and, reported lost on the portal, refused and off it. `clientLab: true`.
+  { file: 'sts_yubiotp_pam.js', browser: false, local: true,
+    clientLab: true },
   // A YUBIKEY PIV KEY ATTESTATION OVER EST (#1955 P2), in a throwaway realm:
   // an attested request recorded as a hardware token, an attestation of
   // another key and of another slot refused, enrol-piv on /admin-api, and
@@ -1489,11 +1506,31 @@ const JOBS = [
   // directory answering it on a domain only this job uses; the depth is
   // tests/openpgp_keys.js, in process.
   { file: 'sts_openpgp.js', browser: false, local: true },
+  // OpenPGP MAIL BETWEEN TWO PEOPLE, THE KEY ON THE CARD (#2057, umbrella
+  // #2055): the recipient's key generated on the client lab's OpenPGP card
+  // (gpg --card-edit), the portal's challenge clear-signed on it,
+  // registered and published; a sender finds it by name through the Web
+  // Key Directory (gpg --auto-key-locate wkd, openpgpkey.<domain> on a
+  // custom listener the job adds and takes away), encrypts and sends with
+  // sendmail to the lab's postfix; decrypted on the card, and not with the
+  // card out; this service's emailed code arriving PGP/MIME and decrypted
+  // on the card; withdrawn, 404. `clientLab: true`. Holds port 443.
+  { file: 'sts_openpgp_card_mail.js', browser: false, local: true,
+    clientLab: true },
   // SSH USER CERTIFICATES OVER HTTP (#1955 P3): a key made here, issued
   // and revoked through /account-api, checked as an OpenSSH certificate
   // and a KRL without this service's own parser. The issuer's decisions
   // are tests/ssh_user_ca.js, in process. This job is not opt-in.
   { file: 'sts_ssh_user_ca.js', browser: false, local: true },
+  // SSH USER CERTIFICATES AGAINST A REAL sshd (#2060, umbrella #2055):
+  // OpenSSH in the client lab trusting the realm's CA and KRL, a key in
+  // ssh-agent and one on the virtual PIV card (ssh -I) certified through
+  // the device grant, the certificate on the person's entry read and
+  // REMOVED with a real ldapmodify over LDAPS (a revocation), a write-back
+  // taken off again, the person's own revoke, and ssh refused after each
+  // KRL refresh. `clientLab: true`: skipped where there is no lab.
+  { file: 'sts_ssh_client_lab.js', browser: false, local: true,
+    clientLab: true },
   // LINKING A WEBAUTHN PLATFORM CREDENTIAL ON /portal/devices, IN A REAL
   // BROWSER (#258, 2026-10-06): Chrome's virtual authenticators enrol a
   // roaming key and a platform key on /portal/keys; the roaming one is

@@ -152,6 +152,13 @@ drops its copy of the secret.
 The authentication policy's rows decide whether either kind may be given:
 `hotp` (*One-time code token (HOTP)*) and `totp`.
 
+Tested with OATH Toolkit's `oathtool` computing the codes from the seed in
+the vendor's file: `oathtool --hotp --counter=<n> <hex seed>` for an HOTP
+token and `oathtool --totp --time-step-size=30s <hex seed>` for a TOTP one.
+The code a claim spends is refused at the next sign-in. An HOTP code a few
+presses ahead signs in and moves the counter, after which the skipped codes
+are refused.
+
 ## On the person's entry
 
 **An assigned token is on its holder's entry**, in `stsOathToken`: one JSON

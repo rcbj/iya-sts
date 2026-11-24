@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# File: tests/client-lab/bin/lab-hosts
+#
+# ---------------------------------------------------------------------------
+# A NAME THAT RESOLVES TO THE SERVICE IN THE LAB ALONE (#2057), as a
+# deployment's DNS would point it: the Web Key Directory's advanced method
+# asks `openpgpkey.<domain>`, and a mail domain a job made up has no DNS.
+#
+#   lab-hosts add <name> <host>   <name> resolves to <host>'s address
+#                                 (an address, or a name this lab resolves)
+#   lab-hosts remove <name>       takes it out again
+#
+# Only /etc/hosts of this container changes; nothing outside it does.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+action="${1:?add or remove}"
+name="${2:?a name}"
+if ! [[ "${name}" =~ ^[a-z0-9][a-z0-9.-]*[a-z0-9]$ ]]; then
+  echo "lab-hosts: ${name} is not a host name" >&2
+  exit 2
+fi
+grep -v "[[:space:]]${name}\$" /etc/hosts > /tmp/lab-hosts.$$ || true
+case "${action}" in
+  add)
+    target="${3:?a host}"
+    address="$(getent ahostsv4 "${target}" | awk 'NR==1 {print $1}')"
+    if [ -z "${address}" ]; then
+      echo "lab-hosts: ${target} does not resolve" >&2
+      rm -f /tmp/lab-hosts.$$
+      exit 2
+    fi
+    echo "${address} ${name}" >> /tmp/lab-hosts.$$
+    cat /tmp/lab-hosts.$$ > /etc/hosts
+    echo "${address} ${name}"
+    ;;
+  remove)
+    cat /tmp/lab-hosts.$$ > /etc/hosts
+    echo "removed ${name}"
+    ;;
+  *)
+    echo "lab-hosts: add or remove, not ${action}" >&2
+    rm -f /tmp/lab-hosts.$$
+    exit 2
+    ;;
+esac
+rm -f /tmp/lab-hosts.$$
