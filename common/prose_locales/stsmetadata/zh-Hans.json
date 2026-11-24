@@ -1915,6 +1915,30 @@
     "en": "b48aa4041763958e",
     "text": "非规范。各项 `webauthn.*` 设置，分为四类——仪式（RP 名称、RP ID 覆盖、算法、用户验证、证明传递方式、超时）、CTAP2（身份验证器连接方式、credProps）和策略（密钥是否可以作为主要因素、是否可以作为第二因素、每人可有多少个）——以及旁边的 COSE 算法表，从检查签名的模块 authn/webauthn.js 中读取。**只有一项是强制执行的，其余都是请求**：userVerification 会依照身份验证器所签名字节中的 UV 标志进行检查。证明策略（#105）和当前生效的 FIDO 元数据在旁边报告。旁边没有 POST：各表单将 set-many 提交到 /admin/config。对应 GET /admin/webauthn。"
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens-settings.what": {
+    "en": "0052f035e7838d3d",
+    "text": "非规范（#2049）。Hardware tokens 组：hardwareTokens.hardwareClaims，它决定 PKINIT 推断和没有可信证明的通行密钥是否仍获得 hwk，旁边说明令牌登记册是什么，以及丢失的令牌会撤销什么。旁边没有 POST：表单将 set-many 提交到 /admin/config。对应 GET /admin/hardware-tokens-settings。"
+  },
+  "stsmetadata.endpoints./admin-api/piv.what": {
+    "en": "24ea31c5f2d6423c",
+    "text": "非规范（#2049）。每个 piv.* 设置：证明根、PIV 配置文件是否要求证明、PIN 和触摸策略、卡认证登录、密钥托管，以及按卡 UUID 映射的外部签发者。旁边没有 POST：表单将 set-many 提交到 /admin/config。对应 GET /admin/piv。"
+  },
+  "stsmetadata.endpoints./admin-api/yubiotp.what": {
+    "en": "00d89a7aca51d6c1",
+    "text": "非规范（#2049）。每个 yubiotp.* 设置：注册、YK-VAL 2.0 验证端点和明文导入。旁边没有 POST：表单将 set-many 提交到 /admin/config。对应 GET /admin/yubiotp。"
+  },
+  "stsmetadata.endpoints./admin-api/oath-tokens.what": {
+    "en": "5cf49220b4238eee",
+    "text": "非规范（#2049）。hotp.* 设置和 pskc.allowPlaintextImport：代码长度、两个窗口，以及产品模式是否接受明文 PSKC 种子文件。旁边没有 POST：表单将 set-many 提交到 /admin/config。对应 GET /admin/oath-tokens。"
+  },
+  "stsmetadata.endpoints./admin-api/ssh-user-ca.what": {
+    "en": "d469684ddad7dfa3",
+    "text": "非规范（#2049）。领域 OpenSSH 用户 CA 的每个 pki.ssh* 设置：其算法、后量子规则、有和没有硬件证据时最长的证书、扩展和主体。旁边没有 POST：表单将 set-many 提交到 /admin/config。对应 GET /admin/ssh-user-ca。"
+  },
+  "stsmetadata.endpoints./admin-api/openpgp-settings.what": {
+    "en": "392792b504230c16",
+    "text": "非规范（#2049）。每个 openpgp.* 设置：Web Key Directory、接受的算法、最小的 RSA 密钥、后量子规则、质询的有效期和签名的时钟偏差。旁边没有 POST：表单将 set-many 提交到 /admin/config。对应 GET /admin/openpgp-settings。"
+  },
   "stsmetadata.endpoints./admin-api/mfa.what": {
     "en": "22620e663bd803a3",
     "text": "非规范。每人一行：密码、`mfa` 角色中的安全密钥、是否注册了身份验证器应用，以及会要求其提供两者中的哪一个。需要留意的是 `totpUsable: false` 的行——本进程无法读取的注册，其持有者会在验证码步骤被拒绝，而不是凭单一因素放行。**它曾对应的控制台页面已不存在**：/admin/mfa 只存在了几个小时，就拆分为机制页面 /admin/totp 和 /admin/webauthn，以及一个如今成为 /admin/users 上若干列的名册。此资源被保留，并从那个视图中应答，因此只有一份统计，而不是两次扫描。对应 GET /admin/users，而 GET /admin-api/users 在每一行的 `factors` 中携带相同的事实。"

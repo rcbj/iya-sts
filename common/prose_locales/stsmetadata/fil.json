@@ -1915,6 +1915,30 @@
     "en": "b48aa4041763958e",
     "text": "NON-SPEC. Ang mga `webauthn.*` setting sa apat na uri — ang CEREMONY (RP name, RP ID override, mga algorithm, user verification, attestation conveyance, timeout), CTAP2 (authenticator attachment, credProps) at POLICY (kung puwedeng primary ang key, kung puwede itong second factor, ilan bawat tao) — kasama ang COSE algorithm table sa tabi nila, binabasa mula sa authn/webauthn.js, ang module na sumusuri ng signature. **ISA ANG IPINAPATUPAD AT ANG IBA AY MGA HILING**: sinusuri ang userVerification laban sa UV flag sa loob ng mga byte na pinirmahan ng authenticator. Iniuulat sa tabi nila ang attestation policy (#105) at ang umiiral na FIDO metadata. Walang POST sa tabi nito: nagpo-post ang mga form ng set-many sa /admin/config. Sinasalamin ang GET /admin/webauthn."
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens-settings.what": {
+    "en": "0052f035e7838d3d",
+    "text": "NON-SPEC (#2049). Ang grupong Hardware tokens: hardwareTokens.hardwareClaims, na nagpapasya kung ang isang PKINIT inference at isang passkey na walang pinagkakatiwalaang attestation ay makakakuha pa rin ng hwk, kasama kung ano ang token register at kung ano ang binabawi ng nawalang token. Walang POST sa tabi nito: ang mga form ay nagpo-post ng set-many sa /admin/config. Sinasalamin ang GET /admin/hardware-tokens-settings."
+  },
+  "stsmetadata.endpoints./admin-api/piv.what": {
+    "en": "24ea31c5f2d6423c",
+    "text": "NON-SPEC (#2049). Bawat piv.* setting: ang mga attestation root, kung nangangailangan ng attestation ang isang PIV profile, ang mga patakaran sa PIN at touch, ang pag-sign in gamit ang card authentication, ang key escrow at ang mga panlabas na issuer na itinutugma ayon sa card UUID. Walang POST sa tabi nito: ang mga form ay nagpo-post ng set-many sa /admin/config. Sinasalamin ang GET /admin/piv."
+  },
+  "stsmetadata.endpoints./admin-api/yubiotp.what": {
+    "en": "00d89a7aca51d6c1",
+    "text": "NON-SPEC (#2049). Bawat yubiotp.* setting: ang enrolment, ang YK-VAL 2.0 verify endpoint at ang mga plaintext import. Walang POST sa tabi nito: ang mga form ay nagpo-post ng set-many sa /admin/config. Sinasalamin ang GET /admin/yubiotp."
+  },
+  "stsmetadata.endpoints./admin-api/oath-tokens.what": {
+    "en": "5cf49220b4238eee",
+    "text": "NON-SPEC (#2049). Ang mga hotp.* setting at pskc.allowPlaintextImport: ang haba ng code, ang dalawang window at kung tumatanggap ang product mode ng plaintext na PSKC seed file. Walang POST sa tabi nito: ang mga form ay nagpo-post ng set-many sa /admin/config. Sinasalamin ang GET /admin/oath-tokens."
+  },
+  "stsmetadata.endpoints./admin-api/ssh-user-ca.what": {
+    "en": "d469684ddad7dfa3",
+    "text": "NON-SPEC (#2049). Bawat pki.ssh* setting ng OpenSSH user CA ng realm: ang mga algorithm nito, ang mga post-quantum na patakaran, ang pinakamahabang certificate na may at walang hardware evidence, ang mga extension at ang mga principal. Walang POST sa tabi nito: ang mga form ay nagpo-post ng set-many sa /admin/config. Sinasalamin ang GET /admin/ssh-user-ca."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp-settings.what": {
+    "en": "392792b504230c16",
+    "text": "NON-SPEC (#2049). Bawat openpgp.* setting: ang Web Key Directory, ang mga tinatanggap na algorithm, ang pinakamaliit na RSA key, ang mga post-quantum na patakaran, ang tagal ng challenge at ang clock skew ng signature. Walang POST sa tabi nito: ang mga form ay nagpo-post ng set-many sa /admin/config. Sinasalamin ang GET /admin/openpgp-settings."
+  },
   "stsmetadata.endpoints./admin-api/mfa.what": {
     "en": "22620e663bd803a3",
     "text": "NON-SPEC. Isang row bawat tao: password, mga security key sa role na `mfa`, kung may naka-enroll na authenticator app, at kung alin sa dalawa ang hihingin sa kanya. Ang `totpUsable: false` ang row na dapat hanapin — isang enrolment na hindi mabasa ng process na ito, na ang may hawak ay TINATANGGIHAN sa code step sa halip na papasukin sa iisang factor. **WALA NA ANG CONSOLE PAGE NA SINASALAMIN NITO**: ilang oras lang tumagal ang /admin/mfa bago nahati sa mga mechanism page na /admin/totp at /admin/webauthn at sa isang roster na ngayon ay mga column sa /admin/users. Pinanatili ang resource na ito at sumasagot MULA SA VIEW NA IYON, kaya iisang tally at hindi dalawang scan. Sinasalamin ang GET /admin/users, at may dala ang GET /admin-api/users ng parehong mga katotohanan bilang `factors` sa bawat row."
