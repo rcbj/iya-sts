@@ -1,0 +1,123 @@
+#!/usr/bin/env node
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+//
+// File: tests/client-lab/bin/lab-gpg-answer
+//
+// ---------------------------------------------------------------------------
+// gpg's MENUS ANSWERED AS A PERSON ANSWERS THEM, WITH NO TERMINAL (#2057).
+// `gpg --card-edit` (key-attr, generate, passwd) asks its questions one at
+// a time, and which PIN it asks for, and how often, depends on what the
+// card and scdaemon already hold, so a fixed stdin goes out of step. This
+// runs gpg with `--command-fd` and `--status-fd` and answers each prompt by
+// the KEYWORD gpg names (`[GNUPG:] GET_LINE cardedit.prompt`):
+//
+//   lab-gpg-answer [--line <keyword>=<a>,<b>,...]... [--hidden <a>,<b>,...]
+//                  -- <gpg arguments>
+//
+// A keyword's answers are given in order; once they run out the last one is
+// repeated. GET_BOOL answers come from `--line` too (y/n). Every
+// GET_HIDDEN (a PIN or passphrase, gpg's loopback pinentry) takes the next
+// `--hidden` answer, repeating the last. A prompt with no answer given ends
+// the run (exit 3) rather than guessing. gpg's own status and output are
+// printed, prompts and answers marked `>`, PINs as `***`.
+//
+// The PINs are a factory-fresh card's, or ones the job set; nothing here is
+// a secret of anybody's.
+// ---------------------------------------------------------------------------
+
+"use strict";
+
+const childProcess = require("child_process");
+
+// The parent's style rule, in a script with no bunyan: entering and leaving
+// a named function is said at debug, here only with LAB_GPG_DEBUG set.
+const log = {
+  debug: function (msg) {
+    if (process.env.LAB_GPG_DEBUG) {
+      process.stderr.write("lab-gpg-answer: " + msg + "\n");
+    }
+  }
+};
+
+const lines = {};
+const used = {};
+let hidden = [];
+let hiddenAt = 0;
+const argv = process.argv.slice(2);
+const split = argv.indexOf("--");
+if (split < 0) {
+  process.stderr.write("lab-gpg-answer: give the gpg arguments after --\n");
+  process.exit(2);
+}
+const own = argv.slice(0, split);
+const gpgArgs = argv.slice(split + 1);
+for (let i = 0; i < own.length; i++) {
+  if (own[i] === "--line" && own[i + 1]) {
+    const at = own[i + 1].indexOf("=");
+    lines[own[i + 1].slice(0, at)] = own[i + 1].slice(at + 1).split(",");
+    i += 1;
+  } else if (own[i] === "--hidden" && own[i + 1] !== undefined) {
+    hidden = own[i + 1].split(",");
+    i += 1;
+  } else {
+    process.stderr.write("lab-gpg-answer: unknown argument " + own[i] +
+                         "\n");
+    process.exit(2);
+  }
+}
+
+function next(keyword) {
+  log.debug("Entering next(). " + keyword);
+  const list = lines[keyword];
+  if (!list) {
+    log.debug("Leaving next(). None given.");
+    return null;
+  }
+  const n = used[keyword] || 0;
+  used[keyword] = n + 1;
+  log.debug("Leaving next().");
+  return list[Math.min(n, list.length - 1)];
+}
+
+const child = childProcess.spawn("gpg", ["--no-tty", "--command-fd", "0",
+  "--status-fd", "1", "--pinentry-mode", "loopback"].concat(gpgArgs),
+  { stdio: ["pipe", "pipe", "inherit"] });
+let buffered = "";
+let failed = 0;
+child.stdout.on("data", function (chunk) {
+  buffered += chunk.toString("utf8");
+  let nl = buffered.indexOf("\n");
+  while (nl >= 0) {
+    const line = buffered.slice(0, nl);
+    buffered = buffered.slice(nl + 1);
+    process.stdout.write(line + "\n");
+    const m = /^\[GNUPG:\] (GET_LINE|GET_BOOL|GET_HIDDEN) (\S+)/.exec(line);
+    if (m) {
+      let answer = null;
+      if (m[1] === "GET_HIDDEN") {
+        answer = hidden.length
+          ? hidden[Math.min(hiddenAt++, hidden.length - 1)] : null;
+      } else {
+        answer = next(m[2]);
+      }
+      if (answer === null) {
+        process.stdout.write("> no answer was given for " + m[2] + "\n");
+        failed = 3;
+        child.stdin.end();
+        child.kill("SIGTERM");
+      } else {
+        process.stdout.write("> " + m[2] + ": " +
+          (m[1] === "GET_HIDDEN" ? "***" : answer) + "\n");
+        child.stdin.write(answer + "\n");
+      }
+    }
+    nl = buffered.indexOf("\n");
+  }
+});
+child.stdin.on("error", function (e) {
+  process.stderr.write("lab-gpg-answer: " + ((e && e.message) || e) + "\n");
+});
+child.on("close", function (code) {
+  process.exit(failed || (code === null ? 1 : code));
+});
