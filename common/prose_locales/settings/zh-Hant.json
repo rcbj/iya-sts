@@ -5156,8 +5156,8 @@
     "text": "未宣告任何範圍的用戶端所得的範圍"
   },
   "oauth2.undeclaredClientScopes|description": {
-    "en": "58d0721fcc34cae0",
-    "text": "產品模式向 oauthAllowedScope 未列出任何內容的用戶端簽發什麼——通常是自行註冊（RFC 7591）且沒有 scope 成員的用戶端。openid，自 1.2.0 起的預設值：僅 openid，因此其他每個範圍都必須宣告（ASVS 5.0.0 10.4.11）。identity：OpenID Connect 的身分範圍——openid、profile、email、address 與 phone——以及 OpenID Connect Key Binding 開啟期間的 bound_key，但絕不包括 offline_access 或任何 OpenID4VCI 範圍。legacy：1.2.0 之前的版本所給予的——身分範圍、offline_access（壽命超過工作階段的更新權杖）以及本領域的 OpenID4VCI 憑證範圍；1.1.0 升級指令碼會把它存入每個已有應用程式的領域，生效期間 /admin/mode 會發出警告。開發模式無論此項如何設定，都會簽發用戶端請求的任何範圍；本服務的受保護範圍一律需要宣告。（#1589）"
+    "en": "81354ac467a58be0",
+    "text": "產品模式向 oauthAllowedScope 未列出任何內容的用戶端簽發什麼——通常是自行註冊（RFC 7591）且沒有 scope 成員的用戶端。openid，自 1.2.0 起的預設值：僅 openid，因此其他每個範圍都必須宣告（ASVS 5.0.0 10.4.11）。identity：OpenID Connect 的身分範圍——openid、profile、email、address 與 phone——以及 OpenID Connect Key Binding 開啟期間的 bound_key，但絕不包括 offline_access 或任何 OpenID4VCI 範圍。legacy：1.2.0 之前的版本所給予的——身分範圍、offline_access（壽命超過工作階段的更新權杖）以及本領域的 OpenID4VCI 憑證範圍；若儲存庫中有任何應用程式，1.1.0 升級指令碼會把它只存入預設領域一次，每個沒有自己取值的領域都回退到它；生效期間 /admin/mode 會發出警告。開發模式無論此項如何設定，都會簽發用戶端請求的任何範圍；本服務的受保護範圍一律需要宣告。（#1589）"
   },
   "oauth2.enterpriseClaimsAlways|label": {
     "en": "25c226f1b3654eee",

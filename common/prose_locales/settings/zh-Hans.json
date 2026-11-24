@@ -5156,8 +5156,8 @@
     "text": "未声明任何范围的客户端所得的范围"
   },
   "oauth2.undeclaredClientScopes|description": {
-    "en": "58d0721fcc34cae0",
-    "text": "产品模式向 oauthAllowedScope 未列出任何内容的客户端签发什么——通常是自行注册（RFC 7591）且没有 scope 成员的客户端。openid，自 1.2.0 起的默认值：仅 openid，因此其他每个范围都必须声明（ASVS 5.0.0 10.4.11）。identity：OpenID Connect 的身份范围——openid、profile、email、address 和 phone——以及 OpenID Connect Key Binding 开启期间的 bound_key，但绝不包括 offline_access 或任何 OpenID4VCI 范围。legacy：1.2.0 之前的版本所给予的——身份范围、offline_access（寿命超过会话的刷新令牌）以及本领域的 OpenID4VCI 凭证范围；1.1.0 升级脚本会把它存入每个已有应用程序的领域，生效期间 /admin/mode 会发出警告。开发模式无论此项如何设置，都会签发客户端请求的任何范围；本服务的受保护范围始终需要声明。（#1589）"
+    "en": "81354ac467a58be0",
+    "text": "产品模式向 oauthAllowedScope 未列出任何内容的客户端签发什么——通常是自行注册（RFC 7591）且没有 scope 成员的客户端。openid，自 1.2.0 起的默认值：仅 openid，因此其他每个范围都必须声明（ASVS 5.0.0 10.4.11）。identity：OpenID Connect 的身份范围——openid、profile、email、address 和 phone——以及 OpenID Connect Key Binding 开启期间的 bound_key，但绝不包括 offline_access 或任何 OpenID4VCI 范围。legacy：1.2.0 之前的版本所给予的——身份范围、offline_access（寿命超过会话的刷新令牌）以及本领域的 OpenID4VCI 凭证范围；若存储中有任何应用程序，1.1.0 升级脚本会把它只存入默认领域一次，每个没有自己取值的领域都回退到它；生效期间 /admin/mode 会发出警告。开发模式无论此项如何设置，都会签发客户端请求的任何范围；本服务的受保护范围始终需要声明。（#1589）"
   },
   "oauth2.enterpriseClaimsAlways|label": {
     "en": "25c226f1b3654eee",
