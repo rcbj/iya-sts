@@ -630,6 +630,13 @@ below.
 
 ### A certificate as the pre-authentication: PKINIT (#179)
 
+**Which sign-ins a PKINIT ticket gives.** A SPNEGO sign-in at
+`/authn/spnego` whose ticket carries this realm's `pkinit-smartcard`
+indicator is governed by the authentication policy's *Kerberos PKINIT with a
+smart card* row, which follows *Kerberos (SPNEGO)* while the policy stores no
+value for it (#2031, [Smart cards](authentication.md#smart-cards-2031)). The
+AS exchange itself is not gated by either row.
+
 PKINIT (RFC 4556) signs the AS-REQ with a certificate's key — a smart card's,
 a PIV token's, or a key file — and agrees the reply key by Diffie-Hellman, so
 no password is involved. It is on in every realm (`krb5.pkinit`) and is how a

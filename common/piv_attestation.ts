@@ -634,42 +634,92 @@ class PivAttestation {
   signInRefusal(serialHex: string, thumbprint?: string): Json {
     const { log } = this.deps;
     log.debug("Entering PivAttestation.signInRefusal().");
-    if (this.flag('piv.cardAuthSignIn')) {
+    const enrolled = this.enrolledPivOf(serialHex, thumbprint);
+    if (!enrolled || !enrolled.cardAuth) {
+      log.debug("Leaving PivAttestation.signInRefusal(). Not card auth.");
+      return null;
+    }
+    // THE AUTHENTICATION POLICY DECIDES (#2031): its `smartCardCardAuth`
+    // row, which follows piv.cardAuthSignIn while the policy stores no
+    // value for it, so a realm that never set the row is answered as before.
+    if (this.cardAuthAllowed()) {
       log.debug("Leaving PivAttestation.signInRefusal(). Allowed.");
       return null;
     }
+    log.debug("Leaving PivAttestation.signInRefusal(). Refused.");
+    return this.refuse('STS-PIV-0013', 'A PIV Card Authentication (slot ' +
+      '9e) certificate works without a PIN and does not sign in here ' +
+      '(the authentication policy\'s PIV card authentication key row, ' +
+      'piv.cardAuthSignIn while it is unset).');
+  }
+
+  // The authentication policy's answer for the card authentication key
+  // (#2031), asked LAZILY: `authn_policy.ts` is a leaf, but this file is
+  // required by the enrolment door before the policy is wanted. A policy
+  // that cannot be asked answers the setting, as it did before the row.
+  private cardAuthAllowed(): boolean {
+    const { log } = this.deps;
+    log.debug("Entering PivAttestation.cardAuthAllowed().");
+    let out = false;
+    try {
+      out = !!require('./authn_policy').allows('smartCardCardAuth',
+                                                'primary');
+    } catch (e) {
+      log.debug("Caught in PivAttestation.cardAuthAllowed(): " +
+                ((e && e.message) || e));
+      out = this.flag('piv.cardAuthSignIn');
+    }
+    log.debug("Leaving PivAttestation.cardAuthAllowed(). " + out);
+    return out;
+  }
+
+  /**
+   * What the enrolment register says of a certificate enrolled here under
+   * a PIV slot profile (#2031's smart-card evidence): its profile, and
+   * whether it is the card authentication key (profile `piv-card-auth`, or
+   * an attestation naming slot 9e).
+   *
+   * @param serialHex - the certificate's serial, hex
+   * @param thumbprint - its SHA-256, hex, where the caller has it
+   * @returns `{ profile, cardAuth }`, or null for a certificate not
+   *   enrolled here under a PIV profile
+   */
+  enrolledPivOf(serialHex: string, thumbprint?: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering PivAttestation.enrolledPivOf().");
     let found: Json = null;
     try {
       found = this.deps.loadEnrollment().findEnrolled(String(serialHex || ''));
     } catch (e) {
-      log.debug("Caught in PivAttestation.signInRefusal(): " +
+      log.debug("Caught in PivAttestation.enrolledPivOf(): " +
                 ((e && e.message) || e));
-      // Not enrolled here, or no register to ask: not this rule's.
+      // Not enrolled here, or no register to ask.
       found = null;
     }
     const given = String(thumbprint || '').toLowerCase()
       .replace(/[^0-9a-f]/g, '');
     if (found && found.record && given && found.record.thumbprint &&
         String(found.record.thumbprint).toLowerCase() !== given) {
-      log.debug("Leaving PivAttestation.signInRefusal(). Another " +
+      log.debug("Leaving PivAttestation.enrolledPivOf(). Another " +
                 "certificate with the serial.");
       return null;
     }
     // BY THE PROFILE, AND BY THE SLOT THE ATTESTATION NAMED (the #1955
-    // review): a slot 9e key is refused whatever profile it was issued
-    // under. `verify()` refuses that issuance now; a row from before it is
-    // still on the register, and is refused here.
+    // review): a slot 9e key is the card authentication key whatever
+    // profile it was issued under. `verify()` refuses that issuance now; a
+    // row from before it is still on the register.
     const record = (found && found.record) || {};
+    const profile = String(record.profile || '');
     const slot = String((record.attestation || {}).slot || '')
       .toLowerCase();
-    if (record.profile !== 'piv-card-auth' && slot !== CARD_AUTH_SLOT) {
-      log.debug("Leaving PivAttestation.signInRefusal(). Not card auth.");
+    if (profile.indexOf('piv-') !== 0 && slot === '') {
+      log.debug("Leaving PivAttestation.enrolledPivOf(). Not PIV.");
       return null;
     }
-    log.debug("Leaving PivAttestation.signInRefusal(). Refused.");
-    return this.refuse('STS-PIV-0013', 'A PIV Card Authentication (slot ' +
-      '9e) certificate works without a PIN and does not sign in here ' +
-      '(piv.cardAuthSignIn).');
+    log.debug("Leaving PivAttestation.enrolledPivOf(). " + profile);
+    return { profile: profile,
+             cardAuth: profile === 'piv-card-auth' ||
+               slot === CARD_AUTH_SLOT };
   }
 
   // -------------------------------------------------------------------------
@@ -833,5 +883,6 @@ export = {
   evidenceForRequest: slot.forward('evidenceForRequest'),
   recordToken: slot.forward('recordToken'),
   signInRefusal: slot.forward('signInRefusal'),
+  enrolledPivOf: slot.forward('enrolledPivOf'),
   cardIdentityOf: slot.forward('cardIdentityOf')
 };

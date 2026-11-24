@@ -275,6 +275,14 @@
     "en": "b66258c1b032dec3",
     "text": "Pour toute personne détenant un rôle de console (Admin Read ou Admin Write) qui ne détient aucun second facteur. `offer` : l’étape qui en configure un lui est présentée, avec un bouton Ignorer, à chaque connexion. `always` : elle doit en configurer un avant d’être connectée — sauf l’administrateur intégré du domaine par défaut (admin.bootstrapUsername), à qui il n’est jamais que proposé, afin qu’un service ne se retrouve jamais sans personne capable de se connecter. `if-held` : comme tout le monde, selon le champ ci-dessus. PLUS FAIBLE QUE `always` : un administrateur protégé par un seul mot de passe est un administrateur que devient quiconque possède ce mot de passe."
   },
+  "authn.FIELDS.requireAttestedHardware.label": {
+    "en": "231d6b2e19c32f3c",
+    "text": "Jeton matériel attesté exigé"
+  },
+  "authn.FIELDS.requireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no` : aucune exigence au-delà des lignes de mécanismes. `always` : une session ne commence que si l'identifiant qui a achevé la connexion (une clé d'accès, une clé de sécurité, un certificat ou une carte à puce) se trouve sur un jeton matériel actif dont le registre a enregistré l'attestation, le même test que celui du mécanisme `attested-hardware` d'une application. Un mot de passe, une application d'authentification, un code envoyé par courriel, un portefeuille, un partenaire de fédération ou un ticket Kerberos seul est refusé. L'administrateur intégré du royaume par défaut (admin.bootstrapUsername) en est exempté, afin qu'un service ne reste jamais sans personne pour se connecter."
+  },
   "authn.FIELDS.passwordPrimary.label": {
     "en": "8459feba5558b2cd",
     "text": "Mot de passe — comme premier facteur"
@@ -320,16 +328,16 @@
     "text": "Jeton de codes à usage unique (HOTP) — comme deuxième facteur"
   },
   "authn.FIELDS.hotpSecondFactor.what": {
-    "en": "608274a83bf567cd",
-    "text": "Un code à usage unique RFC 4226 provenant d’un jeton à compteur (#1955) : l’emplacement OTP d’une YubiKey, ou le jeton d’un fournisseur qu’un administrateur a importé depuis un fichier de semences PSKC. Jamais un premier facteur. Désactivé ici, personne ne peut en ENRÔLER ni en réclamer un ; une personne qui en détient déjà un se le voit toujours demander, comme le détenteur d’une application d’authentification."
+    "en": "33918856782d0904",
+    "text": "Un code à usage unique RFC 4226 issu d'un jeton à compteur (#1955) : l'emplacement OTP d'une YubiKey, ou le jeton d'un fournisseur qu'un administrateur a importé d'un fichier de graines PSKC. Jamais un premier facteur. DÉSACTIVÉ PAR DÉFAUT, et il doit être activé pour ce royaume avant que quiconque puisse inscrire, réclamer ou se voir attribuer un jeton HOTP, si bien qu'aucun jeton HOTP n'est utilisé à la connexion jusque-là. Désactivé ici, personne ne peut en INSCRIRE ni en réclamer ; une personne qui en détient déjà un est toujours invitée à le fournir, comme le détenteur d'une application d'authentification."
   },
   "authn.FIELDS.yubicoOtpSecondFactor.label": {
     "en": "cba1439d0faf9aaf",
     "text": "OTP YubiKey — comme deuxième facteur"
   },
   "authn.FIELDS.yubicoOtpSecondFactor.what": {
-    "en": "f8f7a6ee5bbb46a8",
-    "text": "Un OTP YubiKey (mot de passe à usage unique modhex publié par Yubico, #1955). Jamais un premier facteur : ce service détient la clé AES. Ici désactivé, personne ne peut ENRÔLER, attribuer ou revendiquer un, même lorsque yubiotp.offered est activé ; une personne qui en détient déjà un est toujours invitée à le donner."
+    "en": "a5efe4af91b59cf2",
+    "text": "Une YubiKey OTP (le mot de passe à usage unique modhex publié par Yubico, #1955). Jamais un premier facteur : ce service détient la clé AES. DÉSACTIVÉ PAR DÉFAUT, et il doit être activé pour ce royaume (avec yubiotp.offered) avant que quiconque puisse inscrire, réclamer ou se voir attribuer une YubiKey OTP, si bien qu'aucune n'est utilisée à la connexion jusque-là. Désactivé ici, personne ne peut en INSCRIRE, en attribuer ni en réclamer, même si yubiotp.offered est activé ; une personne qui en détient déjà une est toujours invitée à la fournir."
   },
   "authn.FIELDS.recoveryCodeSecondFactor.label": {
     "en": "ee9982b48a9c6a90",
@@ -376,16 +384,40 @@
     "text": "Certificat client TLS — comme premier facteur"
   },
   "authn.FIELDS.certificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Un certificat client TLS vérifié : GET /tls/sign-in, ou Continuer avec votre certificat sur l'écran de connexion."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Un certificat client TLS vérifié qui n'est pas une carte à puce : GET /tls/sign-in, ou Continuer avec votre certificat sur l'écran de connexion. Un certificat de carte à puce relève de la ligne de carte à puce, qui suit celle-ci tant qu'elle n'a pas de valeur (#2031)."
+  },
+  "authn.FIELDS.smartCardPrimary.label": {
+    "en": "2fd7ffc9233a4399",
+    "text": "Certificat de carte à puce (PIV/CAC) — comme premier facteur"
+  },
+  "authn.FIELDS.smartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Un certificat de carte à puce (PIV/CAC), à GET /tls/sign-in ou par Continuer avec votre certificat : une clé PIV attestée, un certificat inscrit ici sous un profil d'emplacement PIV, une carte externe associée par son UUID de carte (piv.externalIssuers, stsPivCardUuid), ou un certificat relevant d'un profil certSignIn.profiles marqué smartCard. ABSENT, il suit stsAuthnCertificatePrimary, de sorte qu'une politique écrite avant lui garde son sens (#2031)."
+  },
+  "authn.FIELDS.smartCardCardAuthPrimary.label": {
+    "en": "a8aedf2b449f0f65",
+    "text": "Clé d'authentification de carte PIV (sans PIN) — comme premier facteur"
+  },
+  "authn.FIELDS.smartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Un certificat d'authentification de carte PIV (emplacement 9e), dont la clé fonctionne sans PIN. C'est aussi une carte à puce, donc la ligne de carte à puce doit aussi être activée. ABSENT, il suit le paramètre piv.cardAuthSignIn (#2031)."
   },
   "authn.FIELDS.kerberosPrimary.label": {
     "en": "f2f6ed9dd0454fdc",
     "text": "Kerberos (SPNEGO) — comme premier facteur"
   },
   "authn.FIELDS.kerberosPrimary.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego avec un ticket Kerberos."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego avec un ticket Kerberos, hors PKINIT avec une carte à puce, qui a sa propre ligne et suit celle-ci tant qu'elle n'a pas de valeur (#2031)."
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.label": {
+    "en": "9c5eeb540b2f1c36",
+    "text": "Kerberos PKINIT avec une carte à puce — comme premier facteur"
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego avec un ticket Kerberos portant l'indicateur pkinit-smartcard de ce royaume : le KDC l'a émis par PKINIT depuis une carte à puce. ABSENT, il suit stsAuthnKerberosPrimary (#2031)."
   },
   "authn.FIELDS.walletPrimary.label": {
     "en": "f215dfc0a7d74e7f",
@@ -491,6 +523,10 @@
     "en": "b66258c1b032dec3",
     "text": "Pour toute personne détenant un rôle de console (Admin Read ou Admin Write) qui ne détient aucun second facteur. `offer` : l’étape qui en configure un lui est présentée, avec un bouton Ignorer, à chaque connexion. `always` : elle doit en configurer un avant d’être connectée — sauf l’administrateur intégré du domaine par défaut (admin.bootstrapUsername), à qui il n’est jamais que proposé, afin qu’un service ne se retrouve jamais sans personne capable de se connecter. `if-held` : comme tout le monde, selon le champ ci-dessus. PLUS FAIBLE QUE `always` : un administrateur protégé par un seul mot de passe est un administrateur que devient quiconque possède ce mot de passe."
   },
+  "authn.SCHEMA.attributes.stsAuthnRequireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no` : aucune exigence au-delà des lignes de mécanismes. `always` : une session ne commence que si l'identifiant qui a achevé la connexion (une clé d'accès, une clé de sécurité, un certificat ou une carte à puce) se trouve sur un jeton matériel actif dont le registre a enregistré l'attestation, le même test que celui du mécanisme `attested-hardware` d'une application. Un mot de passe, une application d'authentification, un code envoyé par courriel, un portefeuille, un partenaire de fédération ou un ticket Kerberos seul est refusé. L'administrateur intégré du royaume par défaut (admin.bootstrapUsername) en est exempté, afin qu'un service ne reste jamais sans personne pour se connecter."
+  },
   "authn.SCHEMA.attributes.stsAuthnPasswordPrimary.what": {
     "en": "3b32854915d0d6d0",
     "text": "Un mot de passe sur l’écran de connexion. Comme SECOND facteur, c’est le mot de passe demandé après un portefeuille ou un autre premier facteur sans mot de passe."
@@ -512,12 +548,12 @@
     "text": "Un code à usage unique RFC 6238. Jamais un premier facteur : ce service détient le même secret partagé que l’application. Désactivé ici, personne ne peut en ENREGISTRER un ; une personne qui en détient déjà un doit toujours le fournir, car un interrupteur qui ramènerait chaque compte enregistré à un simple mot de passe ferait autre chose que ce qu’il annonce (cette ligne a remplacé totp.enabled, et en conserve le contrat)."
   },
   "authn.SCHEMA.attributes.stsAuthnHotpSecondFactor.what": {
-    "en": "608274a83bf567cd",
-    "text": "Un code à usage unique RFC 4226 provenant d’un jeton à compteur (#1955) : l’emplacement OTP d’une YubiKey, ou le jeton d’un fournisseur qu’un administrateur a importé depuis un fichier de semences PSKC. Jamais un premier facteur. Désactivé ici, personne ne peut en ENRÔLER ni en réclamer un ; une personne qui en détient déjà un se le voit toujours demander, comme le détenteur d’une application d’authentification."
+    "en": "33918856782d0904",
+    "text": "Un code à usage unique RFC 4226 issu d'un jeton à compteur (#1955) : l'emplacement OTP d'une YubiKey, ou le jeton d'un fournisseur qu'un administrateur a importé d'un fichier de graines PSKC. Jamais un premier facteur. DÉSACTIVÉ PAR DÉFAUT, et il doit être activé pour ce royaume avant que quiconque puisse inscrire, réclamer ou se voir attribuer un jeton HOTP, si bien qu'aucun jeton HOTP n'est utilisé à la connexion jusque-là. Désactivé ici, personne ne peut en INSCRIRE ni en réclamer ; une personne qui en détient déjà un est toujours invitée à le fournir, comme le détenteur d'une application d'authentification."
   },
   "authn.SCHEMA.attributes.stsAuthnYubicoOtpSecondFactor.what": {
-    "en": "f8f7a6ee5bbb46a8",
-    "text": "Un OTP YubiKey (mot de passe à usage unique modhex publié par Yubico, #1955). Jamais un premier facteur : ce service détient la clé AES. Ici désactivé, personne ne peut ENRÔLER, attribuer ou revendiquer un, même lorsque yubiotp.offered est activé ; une personne qui en détient déjà un est toujours invitée à le donner."
+    "en": "a5efe4af91b59cf2",
+    "text": "Une YubiKey OTP (le mot de passe à usage unique modhex publié par Yubico, #1955). Jamais un premier facteur : ce service détient la clé AES. DÉSACTIVÉ PAR DÉFAUT, et il doit être activé pour ce royaume (avec yubiotp.offered) avant que quiconque puisse inscrire, réclamer ou se voir attribuer une YubiKey OTP, si bien qu'aucune n'est utilisée à la connexion jusque-là. Désactivé ici, personne ne peut en INSCRIRE, en attribuer ni en réclamer, même si yubiotp.offered est activé ; une personne qui en détient déjà une est toujours invitée à la fournir."
   },
   "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
     "en": "e93ab2adc3e581bd",
@@ -540,12 +576,24 @@
     "text": "Un lien à usage unique envoyé à l’adresse VÉRIFIÉE de la personne, qui ne termine la connexion que dans le navigateur qui l’a commencée. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courrier peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
   },
   "authn.SCHEMA.attributes.stsAuthnCertificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Un certificat client TLS vérifié : GET /tls/sign-in, ou Continuer avec votre certificat sur l'écran de connexion."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Un certificat client TLS vérifié qui n'est pas une carte à puce : GET /tls/sign-in, ou Continuer avec votre certificat sur l'écran de connexion. Un certificat de carte à puce relève de la ligne de carte à puce, qui suit celle-ci tant qu'elle n'a pas de valeur (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Un certificat de carte à puce (PIV/CAC), à GET /tls/sign-in ou par Continuer avec votre certificat : une clé PIV attestée, un certificat inscrit ici sous un profil d'emplacement PIV, une carte externe associée par son UUID de carte (piv.externalIssuers, stsPivCardUuid), ou un certificat relevant d'un profil certSignIn.profiles marqué smartCard. ABSENT, il suit stsAuthnCertificatePrimary, de sorte qu'une politique écrite avant lui garde son sens (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Un certificat d'authentification de carte PIV (emplacement 9e), dont la clé fonctionne sans PIN. C'est aussi une carte à puce, donc la ligne de carte à puce doit aussi être activée. ABSENT, il suit le paramètre piv.cardAuthSignIn (#2031)."
   },
   "authn.SCHEMA.attributes.stsAuthnKerberosPrimary.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego avec un ticket Kerberos."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego avec un ticket Kerberos, hors PKINIT avec une carte à puce, qui a sa propre ligne et suit celle-ci tant qu'elle n'a pas de valeur (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego avec un ticket Kerberos portant l'indicateur pkinit-smartcard de ce royaume : le KDC l'a émis par PKINIT depuis une carte à puce. ABSENT, il suit stsAuthnKerberosPrimary (#2031)."
   },
   "authn.SCHEMA.attributes.stsAuthnWalletPrimary.what": {
     "en": "c6b81177c7b7d944",
@@ -644,16 +692,16 @@
     "text": "Jeton de codes à usage unique (HOTP)"
   },
   "authn.MECHANISMS.hotp.what": {
-    "en": "608274a83bf567cd",
-    "text": "Un code à usage unique RFC 4226 provenant d’un jeton à compteur (#1955) : l’emplacement OTP d’une YubiKey, ou le jeton d’un fournisseur qu’un administrateur a importé depuis un fichier de semences PSKC. Jamais un premier facteur. Désactivé ici, personne ne peut en ENRÔLER ni en réclamer un ; une personne qui en détient déjà un se le voit toujours demander, comme le détenteur d’une application d’authentification."
+    "en": "33918856782d0904",
+    "text": "Un code à usage unique RFC 4226 issu d'un jeton à compteur (#1955) : l'emplacement OTP d'une YubiKey, ou le jeton d'un fournisseur qu'un administrateur a importé d'un fichier de graines PSKC. Jamais un premier facteur. DÉSACTIVÉ PAR DÉFAUT, et il doit être activé pour ce royaume avant que quiconque puisse inscrire, réclamer ou se voir attribuer un jeton HOTP, si bien qu'aucun jeton HOTP n'est utilisé à la connexion jusque-là. Désactivé ici, personne ne peut en INSCRIRE ni en réclamer ; une personne qui en détient déjà un est toujours invitée à le fournir, comme le détenteur d'une application d'authentification."
   },
   "authn.MECHANISMS.yubico-otp.label": {
     "en": "01f8772904333b7b",
     "text": "OTP YubiKey"
   },
   "authn.MECHANISMS.yubico-otp.what": {
-    "en": "f8f7a6ee5bbb46a8",
-    "text": "Un OTP YubiKey (mot de passe à usage unique modhex publié par Yubico, #1955). Jamais un premier facteur : ce service détient la clé AES. Ici désactivé, personne ne peut ENRÔLER, attribuer ou revendiquer un, même lorsque yubiotp.offered est activé ; une personne qui en détient déjà un est toujours invitée à le donner."
+    "en": "a5efe4af91b59cf2",
+    "text": "Une YubiKey OTP (le mot de passe à usage unique modhex publié par Yubico, #1955). Jamais un premier facteur : ce service détient la clé AES. DÉSACTIVÉ PAR DÉFAUT, et il doit être activé pour ce royaume (avec yubiotp.offered) avant que quiconque puisse inscrire, réclamer ou se voir attribuer une YubiKey OTP, si bien qu'aucune n'est utilisée à la connexion jusque-là. Désactivé ici, personne ne peut en INSCRIRE, en attribuer ni en réclamer, même si yubiotp.offered est activé ; une personne qui en détient déjà une est toujours invitée à la fournir."
   },
   "authn.MECHANISMS.recoveryCode.label": {
     "en": "5bda8302b5ecf4d3",
@@ -684,16 +732,40 @@
     "text": "Certificat client TLS"
   },
   "authn.MECHANISMS.certificate.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Un certificat client TLS vérifié : GET /tls/sign-in, ou Continuer avec votre certificat sur l'écran de connexion."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Un certificat client TLS vérifié qui n'est pas une carte à puce : GET /tls/sign-in, ou Continuer avec votre certificat sur l'écran de connexion. Un certificat de carte à puce relève de la ligne de carte à puce, qui suit celle-ci tant qu'elle n'a pas de valeur (#2031)."
+  },
+  "authn.MECHANISMS.smartCard.label": {
+    "en": "055e41994165a328",
+    "text": "Certificat de carte à puce (PIV/CAC)"
+  },
+  "authn.MECHANISMS.smartCard.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Un certificat de carte à puce (PIV/CAC), à GET /tls/sign-in ou par Continuer avec votre certificat : une clé PIV attestée, un certificat inscrit ici sous un profil d'emplacement PIV, une carte externe associée par son UUID de carte (piv.externalIssuers, stsPivCardUuid), ou un certificat relevant d'un profil certSignIn.profiles marqué smartCard. ABSENT, il suit stsAuthnCertificatePrimary, de sorte qu'une politique écrite avant lui garde son sens (#2031)."
+  },
+  "authn.MECHANISMS.smartCardCardAuth.label": {
+    "en": "7b5626b23b778ecd",
+    "text": "Clé d'authentification de carte PIV (sans PIN)"
+  },
+  "authn.MECHANISMS.smartCardCardAuth.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Un certificat d'authentification de carte PIV (emplacement 9e), dont la clé fonctionne sans PIN. C'est aussi une carte à puce, donc la ligne de carte à puce doit aussi être activée. ABSENT, il suit le paramètre piv.cardAuthSignIn (#2031)."
   },
   "authn.MECHANISMS.kerberos.label": {
     "en": "a8316dcb1a42420f",
     "text": "Kerberos (SPNEGO)"
   },
   "authn.MECHANISMS.kerberos.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego avec un ticket Kerberos."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego avec un ticket Kerberos, hors PKINIT avec une carte à puce, qui a sa propre ligne et suit celle-ci tant qu'elle n'a pas de valeur (#2031)."
+  },
+  "authn.MECHANISMS.pkinitSmartCard.label": {
+    "en": "62046e8418115023",
+    "text": "Kerberos PKINIT avec une carte à puce"
+  },
+  "authn.MECHANISMS.pkinitSmartCard.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego avec un ticket Kerberos portant l'indicateur pkinit-smartcard de ce royaume : le KDC l'a émis par PKINIT depuis une carte à puce. ABSENT, il suit stsAuthnKerberosPrimary (#2031)."
   },
   "authn.MECHANISMS.wallet.label": {
     "en": "696e7476221a3382",
@@ -754,6 +826,10 @@
   "authn.sentences.emailTtlInactive": {
     "en": "20f80fea7980a662",
     "text": "un code ou un lien envoyé par e-mail est valable {{n}} secondes — INACTIF : ce domaine ne peut pas envoyer de courrier"
+  },
+  "authn.sentences.attestedAlways": {
+    "en": "7feb965c44fd5614",
+    "text": "toute connexion doit se terminer sur un identifiant détenu sur un jeton matériel attesté (sauf l'administrateur intégré)"
   },
   "kinds.serviceAccount.label": {
     "en": "029b1070484594c2",

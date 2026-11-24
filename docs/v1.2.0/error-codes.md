@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6035** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6039** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 449
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 453
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 87
@@ -1847,6 +1847,10 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0580` | A legacy U2F key was not imported: the person's passkey policy enforces a CTAP 2.1 credProtect level, which an imported key ran no ceremony to report and cannot prove (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-AUTHN-0581` | A post-login activity is not asked: the module its row in common/post_login_kinds.ts names could not be loaded, or does not export a whole activity (its id and exposure the row's, and every question it must answer). The other activities are still asked (#2009). | Log line; nobody is asked that activity |
 | `STS-AUTHN-0582` | A post-login activity could not say whether a person is due it (its answer threw), so it was not asked at that sign-in, even where it may have been required. The other activities are still asked. Logged at error level once per activity in a process (#2009). | Log line; the sign-in goes on without that activity |
+| `STS-AUTHN-0590` | A session was refused: this realm's authentication policy does not accept a smart card (PIV/CAC) certificate as a first factor (its smartCard row, which follows certificatePrimary while unset) (#2031). | the door's own refusal page |
+| `STS-AUTHN-0591` | A session was refused: this realm's authentication policy does not accept Kerberos PKINIT with a smart card (a ticket carrying this realm's pkinit-smartcard indicator; its pkinitSmartCard row, which follows kerberosPrimary while unset) (#2031). | the door's own refusal page |
+| `STS-AUTHN-0592` | A session was refused: this realm's authentication policy requires attested hardware (requireAttestedHardware is always), and the credential that completed the sign-in is on no active hardware token in the register (#2031). | the door's own refusal page |
+| `STS-AUTHN-0593` | The sign-in screen refused a client certificate: the authentication policy takes the other kind of certificate (a smart card, or a certificate that is not one) as a first factor, and not this kind (#2031). | Sign-in screen refusal sentence; /authn-api answers refused |
 
 ## STS-OAUTH
 
@@ -5123,7 +5127,7 @@ Raised from: common/piv_attestation.ts, common/cert_enrollment.ts, common/piv_en
 | `STS-PIV-0010` | A PIV profile was asked without a PIV attestation in a realm that requires one (piv.requireAttestation) (#1955). | HTTP 400 |
 | `STS-PIV-0011` | An attested PIV key's PIN policy is weaker than the realm requires (piv.pinPolicy) (#1955). | HTTP 400 |
 | `STS-PIV-0012` | An attested PIV key's touch policy is weaker than the realm requires (piv.touchPolicy) (#1955). | HTTP 400 |
-| `STS-PIV-0013` | A piv-card-auth (slot 9e) certificate was refused at a sign-in, because that key works without a PIN (piv.cardAuthSignIn) (#1955). | the TLS sign-in and PKINIT refusals |
+| `STS-PIV-0013` | A piv-card-auth (slot 9e) certificate was refused at a sign-in, because that key works without a PIN: the authentication policy's smartCardCardAuth row is off (it follows piv.cardAuthSignIn while unset, #2031) (#1955). | the TLS sign-in and PKINIT refusals |
 | `STS-PIV-0014` | A certificate was issued from a verified PIV attestation and the hardware token register could not record its token; the certificate stands and earns no hardware claim (#1955). | — |
 | `STS-PIV-0016` | A PIV enrolment or key-recovery act failed with an unexpected error; the log line has the stack (#1955). | HTTP 500 |
 | `STS-PIV-0020` | A piv-key-management key was to be escrowed and no key-encryption key is held to seal it, so it was neither generated nor kept (#1955, D7). | HTTP 503 |
