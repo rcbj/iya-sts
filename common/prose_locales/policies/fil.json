@@ -275,6 +275,14 @@
     "en": "b66258c1b032dec3",
     "text": "Para sa sinumang may hawak na console role (Admin Read o Admin Write) na walang hawak na pangalawang factor. `offer`: ipinapakita sa kanila ang hakbang para mag-set up ng isa, na may Ignore button, sa bawat pag-sign in. `always`: dapat silang mag-set up ng isa bago sila ma-sign in — maliban sa built-in na administrator ng default na realm (admin.bootstrapUsername), na inaalukan lang palagi ng isa, para hindi kailanman maiwan ang isang serbisyo nang walang sinumang makakapag-sign in. `if-held`: gaya ng lahat, ayon sa field sa itaas. MAS MAHINA KAYSA SA `always`: ang administrator na password lang ang gamit ay administrator na kahit sinong may hawak ng password."
   },
+  "authn.FIELDS.requireAttestedHardware.label": {
+    "en": "231d6b2e19c32f3c",
+    "text": "Kailangan ang attested na hardware token"
+  },
+  "authn.FIELDS.requireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no`: walang kailangan maliban sa mga mechanism row. `always`: nagsisimula lang ang session kapag ang credential na tumapos sa sign-in (isang passkey, security key, certificate o smart card) ay nasa aktibong hardware token na ang attestation ay naitala ng register, ang parehong pagsusuri na ginagawa ng `attested-hardware` mechanism ng isang application. Tinatanggihan ang password, authenticator app, emailed code, wallet, federation partner o Kerberos ticket nang mag-isa. Hindi saklaw ang built-in na administrator ng default realm (admin.bootstrapUsername), para hindi maiwan ang serbisyo nang walang makakapag-sign in."
+  },
   "authn.FIELDS.passwordPrimary.label": {
     "en": "8459feba5558b2cd",
     "text": "Password — bilang unang factor"
@@ -320,16 +328,16 @@
     "text": "Token para sa one-time code (HOTP) — bilang ikalawang factor"
   },
   "authn.FIELDS.hotpSecondFactor.what": {
-    "en": "608274a83bf567cd",
-    "text": "Isang RFC 4226 one-time code mula sa counter-based na token (#1955): ang OTP slot ng isang YubiKey, o token ng vendor na in-import ng administrator mula sa PSKC seed file. Hindi kailanman unang factor. Kapag naka-off dito, walang maaaring mag-ENROLL o mag-claim nito; ang taong may hawak na nito ay hinihingan pa rin nito, gaya ng may hawak ng authenticator app."
+    "en": "33918856782d0904",
+    "text": "Isang RFC 4226 one-time code mula sa counter-based token (#1955): ang OTP slot ng YubiKey, o token ng vendor na ini-import ng administrator mula sa PSKC seed file. Hindi kailanman unang factor. NAKA-OFF BILANG DEFAULT, at dapat itong i-on para sa realm na ito bago makapag-enrol, makapag-claim o mabigyan ng HOTP token ang sinuman, kaya walang HOTP token na ginagamit sa sign-in hanggang doon. Kapag naka-off dito, walang makakapag-ENROL o makakapag-claim; ang may hawak na ay hinihingan pa rin nito, tulad ng may authenticator app."
   },
   "authn.FIELDS.yubicoOtpSecondFactor.label": {
     "en": "cba1439d0faf9aaf",
     "text": "YubiKey OTP — bilang ikalawang factor"
   },
   "authn.FIELDS.yubicoOtpSecondFactor.what": {
-    "en": "f8f7a6ee5bbb46a8",
-    "text": "Isang YubiKey OTP (ang inilathalang modhex na one-time password ng Yubico, #1955). Hindi kailanman unang factor: hawak ng serbisyong ito ang AES key. Kapag naka-off dito, walang maaaring MAG-ENROL, magtalaga o mag-claim ng isa, kahit naka-on ang yubiotp.offered; ang taong mayroon na nito ay tatanungin pa rin."
+    "en": "a5efe4af91b59cf2",
+    "text": "Isang YubiKey OTP (ang inilathalang modhex one-time password ng Yubico, #1955). Hindi kailanman unang factor: hawak ng serbisyong ito ang AES key. NAKA-OFF BILANG DEFAULT, at dapat itong i-on para sa realm na ito (kasama ang yubiotp.offered) bago makapag-enrol, makapag-claim o mabigyan ng YubiKey OTP ang sinuman, kaya walang ginagamit sa sign-in hanggang doon. Kapag naka-off dito, walang makakapag-ENROL, makakapag-assign o makakapag-claim, kahit naka-on ang yubiotp.offered; ang may hawak na ay hinihingan pa rin nito."
   },
   "authn.FIELDS.recoveryCodeSecondFactor.label": {
     "en": "ee9982b48a9c6a90",
@@ -376,16 +384,40 @@
     "text": "TLS client certificate — bilang unang factor"
   },
   "authn.FIELDS.certificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Isang na-verify na TLS client certificate: GET /tls/sign-in, o Magpatuloy gamit ang iyong certificate sa sign-in screen."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Isang na-verify na TLS client certificate na hindi smart card: GET /tls/sign-in, o Continue with your certificate sa sign-in screen. Ang smart card certificate ay sakop ng smart card row, na sumusunod dito habang wala itong halaga (#2031)."
+  },
+  "authn.FIELDS.smartCardPrimary.label": {
+    "en": "2fd7ffc9233a4399",
+    "text": "Smart card (PIV/CAC) certificate — bilang unang factor"
+  },
+  "authn.FIELDS.smartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Isang smart card (PIV/CAC) certificate, sa GET /tls/sign-in o sa Continue with your certificate: isang attested na PIV key, isang certificate na na-enrol dito sa ilalim ng PIV slot profile, isang panlabas na card na itinugma sa card UUID nito (piv.externalIssuers, stsPivCardUuid), o isa sa ilalim ng certSignIn.profiles profile na may markang smartCard. KAPAG WALA, sinusundan nito ang stsAuthnCertificatePrimary, kaya ang policy na isinulat bago ito ay may parehong kahulugan (#2031)."
+  },
+  "authn.FIELDS.smartCardCardAuthPrimary.label": {
+    "en": "a8aedf2b449f0f65",
+    "text": "PIV card authentication key (walang PIN) — bilang unang factor"
+  },
+  "authn.FIELDS.smartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Isang PIV card authentication (slot 9e) certificate, na ang key ay gumagana nang walang PIN. Smart card din ito, kaya dapat naka-on din ang smart card row. KAPAG WALA, sinusundan nito ang setting na piv.cardAuthSignIn (#2031)."
   },
   "authn.FIELDS.kerberosPrimary.label": {
     "en": "f2f6ed9dd0454fdc",
     "text": "Kerberos (SPNEGO) — bilang unang factor"
   },
   "authn.FIELDS.kerberosPrimary.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego na may Kerberos ticket."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego gamit ang Kerberos ticket, maliban sa PKINIT gamit ang smart card, na may sariling row at sumusunod dito habang wala itong halaga (#2031)."
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.label": {
+    "en": "9c5eeb540b2f1c36",
+    "text": "Kerberos PKINIT gamit ang smart card — bilang unang factor"
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego gamit ang Kerberos ticket na may pkinit-smartcard indicator ng realm na ito: inilabas ito ng KDC sa PKINIT mula sa smart card. KAPAG WALA, sinusundan nito ang stsAuthnKerberosPrimary (#2031)."
   },
   "authn.FIELDS.walletPrimary.label": {
     "en": "f215dfc0a7d74e7f",
@@ -491,6 +523,10 @@
     "en": "b66258c1b032dec3",
     "text": "Para sa sinumang may hawak na console role (Admin Read o Admin Write) na walang hawak na pangalawang factor. `offer`: ipinapakita sa kanila ang hakbang para mag-set up ng isa, na may Ignore button, sa bawat pag-sign in. `always`: dapat silang mag-set up ng isa bago sila ma-sign in — maliban sa built-in na administrator ng default na realm (admin.bootstrapUsername), na inaalukan lang palagi ng isa, para hindi kailanman maiwan ang isang serbisyo nang walang sinumang makakapag-sign in. `if-held`: gaya ng lahat, ayon sa field sa itaas. MAS MAHINA KAYSA SA `always`: ang administrator na password lang ang gamit ay administrator na kahit sinong may hawak ng password."
   },
+  "authn.SCHEMA.attributes.stsAuthnRequireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no`: walang kailangan maliban sa mga mechanism row. `always`: nagsisimula lang ang session kapag ang credential na tumapos sa sign-in (isang passkey, security key, certificate o smart card) ay nasa aktibong hardware token na ang attestation ay naitala ng register, ang parehong pagsusuri na ginagawa ng `attested-hardware` mechanism ng isang application. Tinatanggihan ang password, authenticator app, emailed code, wallet, federation partner o Kerberos ticket nang mag-isa. Hindi saklaw ang built-in na administrator ng default realm (admin.bootstrapUsername), para hindi maiwan ang serbisyo nang walang makakapag-sign in."
+  },
   "authn.SCHEMA.attributes.stsAuthnPasswordPrimary.what": {
     "en": "3b32854915d0d6d0",
     "text": "Isang password sa sign-in screen. Bilang PANGALAWANG factor, ito ang password na hinihingi pagkatapos ng wallet o ibang passwordless na unang factor."
@@ -512,12 +548,12 @@
     "text": "Isang RFC 6238 one-time code. Hindi kailanman unang factor: hawak ng serbisyong ito ang parehong shared secret na hawak ng app. Kapag naka-off dito, walang sinumang puwedeng MAG-ENROLL ng isa; ang taong may hawak na nito ay hinihingan pa rin nito, dahil ang off switch na magbababa sa bawat naka-enroll na account sa password lang ay gagawa ng iba sa sinasabi nito (pinalitan ng row na ito ang totp.enabled, at pinapanatili ang kontrata nito)."
   },
   "authn.SCHEMA.attributes.stsAuthnHotpSecondFactor.what": {
-    "en": "608274a83bf567cd",
-    "text": "Isang RFC 4226 one-time code mula sa counter-based na token (#1955): ang OTP slot ng isang YubiKey, o token ng vendor na in-import ng administrator mula sa PSKC seed file. Hindi kailanman unang factor. Kapag naka-off dito, walang maaaring mag-ENROLL o mag-claim nito; ang taong may hawak na nito ay hinihingan pa rin nito, gaya ng may hawak ng authenticator app."
+    "en": "33918856782d0904",
+    "text": "Isang RFC 4226 one-time code mula sa counter-based token (#1955): ang OTP slot ng YubiKey, o token ng vendor na ini-import ng administrator mula sa PSKC seed file. Hindi kailanman unang factor. NAKA-OFF BILANG DEFAULT, at dapat itong i-on para sa realm na ito bago makapag-enrol, makapag-claim o mabigyan ng HOTP token ang sinuman, kaya walang HOTP token na ginagamit sa sign-in hanggang doon. Kapag naka-off dito, walang makakapag-ENROL o makakapag-claim; ang may hawak na ay hinihingan pa rin nito, tulad ng may authenticator app."
   },
   "authn.SCHEMA.attributes.stsAuthnYubicoOtpSecondFactor.what": {
-    "en": "f8f7a6ee5bbb46a8",
-    "text": "Isang YubiKey OTP (ang inilathalang modhex na one-time password ng Yubico, #1955). Hindi kailanman unang factor: hawak ng serbisyong ito ang AES key. Kapag naka-off dito, walang maaaring MAG-ENROL, magtalaga o mag-claim ng isa, kahit naka-on ang yubiotp.offered; ang taong mayroon na nito ay tatanungin pa rin."
+    "en": "a5efe4af91b59cf2",
+    "text": "Isang YubiKey OTP (ang inilathalang modhex one-time password ng Yubico, #1955). Hindi kailanman unang factor: hawak ng serbisyong ito ang AES key. NAKA-OFF BILANG DEFAULT, at dapat itong i-on para sa realm na ito (kasama ang yubiotp.offered) bago makapag-enrol, makapag-claim o mabigyan ng YubiKey OTP ang sinuman, kaya walang ginagamit sa sign-in hanggang doon. Kapag naka-off dito, walang makakapag-ENROL, makakapag-assign o makakapag-claim, kahit naka-on ang yubiotp.offered; ang may hawak na ay hinihingan pa rin nito."
   },
   "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
     "en": "e93ab2adc3e581bd",
@@ -540,12 +576,24 @@
     "text": "Isang single-use na link na ipinapadala sa VERIFIED na address ng tao, na kumukumpleto lang ng pag-sign in sa browser na nagsimula nito. NIST SP 800-63B-4 section 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", dahil maaaring maabot ang mailbox gamit ang password lang, at maaaring mabasa ang mail habang ipinapadala o mailihis. Naka-off bilang default dahil doon; i-on lang ito kung tinatanggap ang panganib na iyon."
   },
   "authn.SCHEMA.attributes.stsAuthnCertificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Isang na-verify na TLS client certificate: GET /tls/sign-in, o Magpatuloy gamit ang iyong certificate sa sign-in screen."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Isang na-verify na TLS client certificate na hindi smart card: GET /tls/sign-in, o Continue with your certificate sa sign-in screen. Ang smart card certificate ay sakop ng smart card row, na sumusunod dito habang wala itong halaga (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Isang smart card (PIV/CAC) certificate, sa GET /tls/sign-in o sa Continue with your certificate: isang attested na PIV key, isang certificate na na-enrol dito sa ilalim ng PIV slot profile, isang panlabas na card na itinugma sa card UUID nito (piv.externalIssuers, stsPivCardUuid), o isa sa ilalim ng certSignIn.profiles profile na may markang smartCard. KAPAG WALA, sinusundan nito ang stsAuthnCertificatePrimary, kaya ang policy na isinulat bago ito ay may parehong kahulugan (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Isang PIV card authentication (slot 9e) certificate, na ang key ay gumagana nang walang PIN. Smart card din ito, kaya dapat naka-on din ang smart card row. KAPAG WALA, sinusundan nito ang setting na piv.cardAuthSignIn (#2031)."
   },
   "authn.SCHEMA.attributes.stsAuthnKerberosPrimary.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego na may Kerberos ticket."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego gamit ang Kerberos ticket, maliban sa PKINIT gamit ang smart card, na may sariling row at sumusunod dito habang wala itong halaga (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego gamit ang Kerberos ticket na may pkinit-smartcard indicator ng realm na ito: inilabas ito ng KDC sa PKINIT mula sa smart card. KAPAG WALA, sinusundan nito ang stsAuthnKerberosPrimary (#2031)."
   },
   "authn.SCHEMA.attributes.stsAuthnWalletPrimary.what": {
     "en": "c6b81177c7b7d944",
@@ -644,16 +692,16 @@
     "text": "Token para sa one-time code (HOTP)"
   },
   "authn.MECHANISMS.hotp.what": {
-    "en": "608274a83bf567cd",
-    "text": "Isang RFC 4226 one-time code mula sa counter-based na token (#1955): ang OTP slot ng isang YubiKey, o token ng vendor na in-import ng administrator mula sa PSKC seed file. Hindi kailanman unang factor. Kapag naka-off dito, walang maaaring mag-ENROLL o mag-claim nito; ang taong may hawak na nito ay hinihingan pa rin nito, gaya ng may hawak ng authenticator app."
+    "en": "33918856782d0904",
+    "text": "Isang RFC 4226 one-time code mula sa counter-based token (#1955): ang OTP slot ng YubiKey, o token ng vendor na ini-import ng administrator mula sa PSKC seed file. Hindi kailanman unang factor. NAKA-OFF BILANG DEFAULT, at dapat itong i-on para sa realm na ito bago makapag-enrol, makapag-claim o mabigyan ng HOTP token ang sinuman, kaya walang HOTP token na ginagamit sa sign-in hanggang doon. Kapag naka-off dito, walang makakapag-ENROL o makakapag-claim; ang may hawak na ay hinihingan pa rin nito, tulad ng may authenticator app."
   },
   "authn.MECHANISMS.yubico-otp.label": {
     "en": "01f8772904333b7b",
     "text": "YubiKey OTP"
   },
   "authn.MECHANISMS.yubico-otp.what": {
-    "en": "f8f7a6ee5bbb46a8",
-    "text": "Isang YubiKey OTP (ang inilathalang modhex na one-time password ng Yubico, #1955). Hindi kailanman unang factor: hawak ng serbisyong ito ang AES key. Kapag naka-off dito, walang maaaring MAG-ENROL, magtalaga o mag-claim ng isa, kahit naka-on ang yubiotp.offered; ang taong mayroon na nito ay tatanungin pa rin."
+    "en": "a5efe4af91b59cf2",
+    "text": "Isang YubiKey OTP (ang inilathalang modhex one-time password ng Yubico, #1955). Hindi kailanman unang factor: hawak ng serbisyong ito ang AES key. NAKA-OFF BILANG DEFAULT, at dapat itong i-on para sa realm na ito (kasama ang yubiotp.offered) bago makapag-enrol, makapag-claim o mabigyan ng YubiKey OTP ang sinuman, kaya walang ginagamit sa sign-in hanggang doon. Kapag naka-off dito, walang makakapag-ENROL, makakapag-assign o makakapag-claim, kahit naka-on ang yubiotp.offered; ang may hawak na ay hinihingan pa rin nito."
   },
   "authn.MECHANISMS.recoveryCode.label": {
     "en": "5bda8302b5ecf4d3",
@@ -684,16 +732,40 @@
     "text": "TLS client certificate"
   },
   "authn.MECHANISMS.certificate.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Isang na-verify na TLS client certificate: GET /tls/sign-in, o Magpatuloy gamit ang iyong certificate sa sign-in screen."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Isang na-verify na TLS client certificate na hindi smart card: GET /tls/sign-in, o Continue with your certificate sa sign-in screen. Ang smart card certificate ay sakop ng smart card row, na sumusunod dito habang wala itong halaga (#2031)."
+  },
+  "authn.MECHANISMS.smartCard.label": {
+    "en": "055e41994165a328",
+    "text": "Smart card (PIV/CAC) certificate"
+  },
+  "authn.MECHANISMS.smartCard.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Isang smart card (PIV/CAC) certificate, sa GET /tls/sign-in o sa Continue with your certificate: isang attested na PIV key, isang certificate na na-enrol dito sa ilalim ng PIV slot profile, isang panlabas na card na itinugma sa card UUID nito (piv.externalIssuers, stsPivCardUuid), o isa sa ilalim ng certSignIn.profiles profile na may markang smartCard. KAPAG WALA, sinusundan nito ang stsAuthnCertificatePrimary, kaya ang policy na isinulat bago ito ay may parehong kahulugan (#2031)."
+  },
+  "authn.MECHANISMS.smartCardCardAuth.label": {
+    "en": "7b5626b23b778ecd",
+    "text": "PIV card authentication key (walang PIN)"
+  },
+  "authn.MECHANISMS.smartCardCardAuth.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Isang PIV card authentication (slot 9e) certificate, na ang key ay gumagana nang walang PIN. Smart card din ito, kaya dapat naka-on din ang smart card row. KAPAG WALA, sinusundan nito ang setting na piv.cardAuthSignIn (#2031)."
   },
   "authn.MECHANISMS.kerberos.label": {
     "en": "a8316dcb1a42420f",
     "text": "Kerberos (SPNEGO)"
   },
   "authn.MECHANISMS.kerberos.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego na may Kerberos ticket."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego gamit ang Kerberos ticket, maliban sa PKINIT gamit ang smart card, na may sariling row at sumusunod dito habang wala itong halaga (#2031)."
+  },
+  "authn.MECHANISMS.pkinitSmartCard.label": {
+    "en": "62046e8418115023",
+    "text": "Kerberos PKINIT gamit ang smart card"
+  },
+  "authn.MECHANISMS.pkinitSmartCard.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego gamit ang Kerberos ticket na may pkinit-smartcard indicator ng realm na ito: inilabas ito ng KDC sa PKINIT mula sa smart card. KAPAG WALA, sinusundan nito ang stsAuthnKerberosPrimary (#2031)."
   },
   "authn.MECHANISMS.wallet.label": {
     "en": "696e7476221a3382",
@@ -754,6 +826,10 @@
   "authn.sentences.emailTtlInactive": {
     "en": "20f80fea7980a662",
     "text": "valid ang code o link sa email nang {{n}} segundo — HINDI AKTIBO: hindi makapagpadala ng mail ang realm na ito"
+  },
+  "authn.sentences.attestedAlways": {
+    "en": "7feb965c44fd5614",
+    "text": "bawat sign-in ay dapat magtapos sa credential na nasa attested na hardware token (maliban sa built-in na administrator)"
   },
   "kinds.serviceAccount.label": {
     "en": "029b1070484594c2",
@@ -1911,6 +1987,134 @@
     "en": "4fa78beae92d0ce5",
     "text": "none: ML-DSA lang. classical: kapag pumalya ang pag-register ng ML-DSA sa device, iniaalok ang pag-ulit gamit ang mga classical na algorithm (kung saan pinapayagan ito ng passkey policy) — mas mabuti ang classical na passkey kaysa password, at hihingan ang may hawak nito ng migration sa ibang pagkakataon gaya ng iba."
   },
+  "postLogin.FIELDS.mailEnabled.label": {
+    "en": "40a2cfe48791e921",
+    "text": "Humingi ng post-quantum na pag-encrypt ng mail"
+  },
+  "postLogin.FIELDS.mailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, bawat taong naaabot ng profile na ito na ang mail ay naka-encrypt sa isang klasikong key — isang OpenPGP key na ang encryption key ay hindi ML-KEM, o isang S/MIME certificate na ang key ay hindi ML-KEM — ay hihilingang magrehistro ng post-quantum na key pagkatapos mag-sign in (pqc-mail-encryption): ang naka-encrypt ngayon sa isang klasikong key ay mababasa kapag bumagsak ang key na iyon. Ang isang pinangalanang profile na naka-off ito ay hindi isinasama sa aktibidad na ito ang sinumang pinili nito."
+  },
+  "postLogin.FIELDS.mailSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "araw"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.label": {
+    "en": "13594ff89ca962fe",
+    "text": "Pag-encrypt ng mail: ipinagpapaliban ito ng Laktawan nang"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "Gaano katagal ipinagpapaliban ng Laktawan ang aktibidad ng pag-encrypt ng mail para sa taong iyon."
+  },
+  "postLogin.FIELDS.mailGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "araw"
+  },
+  "postLogin.FIELDS.mailGraceDays.label": {
+    "en": "0ac068befb17c89a",
+    "text": "Pag-encrypt ng mail: itinakdang panahon"
+  },
+  "postLogin.FIELDS.mailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "Binibilang mula sa UNANG imbitasyon ng tao sa aktibidad ng pag-encrypt ng mail. Kapag lumipas na, wala nang Laktawan at pipigilan ang pag-sign in hanggang may nairehistrong post-quantum na key. Ang 0 ay walang deadline."
+  },
+  "postLogin.FIELDS.mailNoKey.label": {
+    "en": "59ea773955163006",
+    "text": "Pag-encrypt ng mail: isang taong hindi naka-encrypt ang mail"
+  },
+  "postLogin.FIELDS.mailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "Isang taong hindi naka-encrypt ang mail kahit kailan (stsMailEncryption none o wala). leave: hindi tatanungin. invite: hihilingang magrehistro ng post-quantum na key, at laging puwedeng laktawan. require: tatanungin, at puwede lang laktawan hanggang lumipas ang itinakdang panahon."
+  },
+  "postLogin.FIELDS.mailPrefer.label": {
+    "en": "ec4a832609a5828b",
+    "text": "Pag-encrypt ng mail: ano ang iniaalok"
+  },
+  "postLogin.FIELDS.mailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "Ano ang iniaalok ng hakbang. either: isang OpenPGP key at isang S/MIME certificate, nauuna ang uring ginagamit ng tao ngayon. openpgp: isang OpenPGP key ayon sa RFC 9980 lamang. smime: isang ML-KEM S/MIME certificate lamang, ina-upload (walang inilalabas ang realm na ito). Hindi kailanman iniaalok ang uring hindi matatanggap ng realm, at walang tatanungin kung wala sa dalawa ang puwede."
+  },
+  "postLogin.FIELDS.mailKeepClassical.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "araw"
+  },
+  "postLogin.FIELDS.mailKeepClassical.label": {
+    "en": "771fd3ea4d36a053",
+    "text": "Pag-encrypt ng mail: panatilihin ang klasikong OpenPGP key nang"
+  },
+  "postLogin.FIELDS.mailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "Ilang araw nananatili ang klasikong OpenPGP key ng tao sa kanyang entry at sa Web Key Directory katabi ng post-quantum na key na pumalit dito, para mahanap pa rin ng kausap na hindi magamit ang bago ang luma. Ang bagong mail mula sa serbisyong ito ay pupunta agad sa post-quantum na key. Pagkatapos, aalisin ng isang scheduler job ang klasikong key sa entry at sa Web Key Directory. Inaalis ito agad ng 0."
+  },
+  "postLogin.FIELDS.pivEnabled.label": {
+    "en": "6d8ee32fc1b5b94a",
+    "text": "Hilingin ang muling pag-isyu ng mga PIV certificate"
+  },
+  "postLogin.FIELDS.pivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, ang bawat taong naaabot ng profile na ito na may hawak na PIV slot certificate na inisyu ng realm na ito, sa slot na pinangalanan ng pivSlots, ay hinihilingang mag-enrol ng bago pagkatapos mag-sign in (piv-reissue) kapag sinabi ng pivTrigger na dapat na: nilagdaan ito ng issuer nito gamit ang klasikong algorithm habang post-quantum ang EST Issuing CA ng realm na ito, o mag-e-expire ito sa loob ng pivRenewDays. Binabawi (superseded) ang lumang certificate kapag unang ginamit ang bago sa isang sign-in. Ang pinangalanang profile na naka-off ito ay nag-aalis sa aktibidad na ito ng sinumang pinili para rito."
+  },
+  "postLogin.FIELDS.pivSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "araw"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.label": {
+    "en": "733d7ad9439f061c",
+    "text": "Muling pag-isyu ng PIV: ipinagpapaliban ito ng Laktawan nang"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "Gaano katagal ipinagpapaliban ng Laktawan ang muling pag-isyu ng PIV para sa taong iyon."
+  },
+  "postLogin.FIELDS.pivGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "araw"
+  },
+  "postLogin.FIELDS.pivGraceDays.label": {
+    "en": "cf0842fc5de15483",
+    "text": "Muling pag-isyu ng PIV: nakalaang panahon"
+  },
+  "postLogin.FIELDS.pivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "Binibilang mula sa UNANG imbitasyon ng tao sa muling pag-isyu ng PIV. Kapag lumipas na, wala nang Laktawan at pinipigil ang sign-in hanggang magkaroon ng bagong certificate ang bawat slot na dapat na. Ang 0 ay walang deadline."
+  },
+  "postLogin.FIELDS.pivSlots.label": {
+    "en": "95dcbc9b5db168f8",
+    "text": "Muling pag-isyu ng PIV: mga slot"
+  },
+  "postLogin.FIELDS.pivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "Ang mga PIV slot na ang mga certificate ay tinitingnan ng aktibidad, pinaghihiwalay ng kuwit: 9a (PIV authentication), 9c (digital signature), 9d (key management), 9e (card authentication). Hindi kailanman hinihiling ang slot na ang profile ay wala sa est.allowedProfiles."
+  },
+  "postLogin.FIELDS.pivTrigger.label": {
+    "en": "3a6dc99d50545fe3",
+    "text": "Muling pag-isyu ng PIV: ano ang nagpapadapat sa isang certificate"
+  },
+  "postLogin.FIELDS.pivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "Ano ang nagpapadapat sa certificate ng isang slot. classical-issuer: nilagdaan ito ng issuer nito gamit ang klasikong algorithm at post-quantum ang EST Issuing CA ng realm na ito (hindi magiging mas mabuti ang certificate na muling inisyu sa ilalim ng klasikong CA). expiring: mag-e-expire ito sa loob ng pivRenewDays. both: alinman."
+  },
+  "postLogin.FIELDS.pivRenewDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "araw"
+  },
+  "postLogin.FIELDS.pivRenewDays.label": {
+    "en": "2e9493d0c48dc0ba",
+    "text": "Muling pag-isyu ng PIV: i-renew nang ganito kaaga bago mag-expire"
+  },
+  "postLogin.FIELDS.pivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "Ilang araw bago mag-expire ang isang PIV slot certificate ito dapat nang i-renew, kapag expiring o both ang pivTrigger."
+  },
+  "postLogin.FIELDS.pivTarget.label": {
+    "en": "a1261fcffb0037ed",
+    "text": "Muling pag-isyu ng PIV: ano ang iniisyu"
+  },
+  "postLogin.FIELDS.pivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "Para saan ang bagong certificate. reissue: bagong certificate para sa key na muling ginagawa ng card sa parehong slot, nilagdaan ng EST Issuing CA ng realm. rekey: isang post-quantum key sa card, na wala pang PIV card na kayang gumawa ngayon, kaya walang hinihilingan ang profile na naka-rekey."
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "b1a01fe693170513",
     "text": "Ang class ng serbisyong ito para sa post-login activity profile: kung ano ang hinihinging gawin ng tao pagkatapos mag-sign in. Pinangangalanan ayon sa PROFILE (`cn=default`, o isang named profile na pinapangalanan ng isang application o isang group)."
@@ -1946,6 +2150,58 @@
   "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyFallback.what": {
     "en": "4fa78beae92d0ce5",
     "text": "none: ML-DSA lang. classical: kapag pumalya ang pag-register ng ML-DSA sa device, iniaalok ang pag-ulit gamit ang mga classical na algorithm (kung saan pinapayagan ito ng passkey policy) — mas mabuti ang classical na passkey kaysa password, at hihingan ang may hawak nito ng migration sa ibang pagkakataon gaya ng iba."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, bawat taong naaabot ng profile na ito na ang mail ay naka-encrypt sa isang klasikong key — isang OpenPGP key na ang encryption key ay hindi ML-KEM, o isang S/MIME certificate na ang key ay hindi ML-KEM — ay hihilingang magrehistro ng post-quantum na key pagkatapos mag-sign in (pqc-mail-encryption): ang naka-encrypt ngayon sa isang klasikong key ay mababasa kapag bumagsak ang key na iyon. Ang isang pinangalanang profile na naka-off ito ay hindi isinasama sa aktibidad na ito ang sinumang pinili nito."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "Gaano katagal ipinagpapaliban ng Laktawan ang aktibidad ng pag-encrypt ng mail para sa taong iyon."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "Binibilang mula sa UNANG imbitasyon ng tao sa aktibidad ng pag-encrypt ng mail. Kapag lumipas na, wala nang Laktawan at pipigilan ang pag-sign in hanggang may nairehistrong post-quantum na key. Ang 0 ay walang deadline."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "Isang taong hindi naka-encrypt ang mail kahit kailan (stsMailEncryption none o wala). leave: hindi tatanungin. invite: hihilingang magrehistro ng post-quantum na key, at laging puwedeng laktawan. require: tatanungin, at puwede lang laktawan hanggang lumipas ang itinakdang panahon."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "Ano ang iniaalok ng hakbang. either: isang OpenPGP key at isang S/MIME certificate, nauuna ang uring ginagamit ng tao ngayon. openpgp: isang OpenPGP key ayon sa RFC 9980 lamang. smime: isang ML-KEM S/MIME certificate lamang, ina-upload (walang inilalabas ang realm na ito). Hindi kailanman iniaalok ang uring hindi matatanggap ng realm, at walang tatanungin kung wala sa dalawa ang puwede."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "Ilang araw nananatili ang klasikong OpenPGP key ng tao sa kanyang entry at sa Web Key Directory katabi ng post-quantum na key na pumalit dito, para mahanap pa rin ng kausap na hindi magamit ang bago ang luma. Ang bagong mail mula sa serbisyong ito ay pupunta agad sa post-quantum na key. Pagkatapos, aalisin ng isang scheduler job ang klasikong key sa entry at sa Web Key Directory. Inaalis ito agad ng 0."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, ang bawat taong naaabot ng profile na ito na may hawak na PIV slot certificate na inisyu ng realm na ito, sa slot na pinangalanan ng pivSlots, ay hinihilingang mag-enrol ng bago pagkatapos mag-sign in (piv-reissue) kapag sinabi ng pivTrigger na dapat na: nilagdaan ito ng issuer nito gamit ang klasikong algorithm habang post-quantum ang EST Issuing CA ng realm na ito, o mag-e-expire ito sa loob ng pivRenewDays. Binabawi (superseded) ang lumang certificate kapag unang ginamit ang bago sa isang sign-in. Ang pinangalanang profile na naka-off ito ay nag-aalis sa aktibidad na ito ng sinumang pinili para rito."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "Gaano katagal ipinagpapaliban ng Laktawan ang muling pag-isyu ng PIV para sa taong iyon."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "Binibilang mula sa UNANG imbitasyon ng tao sa muling pag-isyu ng PIV. Kapag lumipas na, wala nang Laktawan at pinipigil ang sign-in hanggang magkaroon ng bagong certificate ang bawat slot na dapat na. Ang 0 ay walang deadline."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "Ang mga PIV slot na ang mga certificate ay tinitingnan ng aktibidad, pinaghihiwalay ng kuwit: 9a (PIV authentication), 9c (digital signature), 9d (key management), 9e (card authentication). Hindi kailanman hinihiling ang slot na ang profile ay wala sa est.allowedProfiles."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "Ano ang nagpapadapat sa certificate ng isang slot. classical-issuer: nilagdaan ito ng issuer nito gamit ang klasikong algorithm at post-quantum ang EST Issuing CA ng realm na ito (hindi magiging mas mabuti ang certificate na muling inisyu sa ilalim ng klasikong CA). expiring: mag-e-expire ito sa loob ng pivRenewDays. both: alinman."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "Ilang araw bago mag-expire ang isang PIV slot certificate ito dapat nang i-renew, kapag expiring o both ang pivTrigger."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "Para saan ang bagong certificate. reissue: bagong certificate para sa key na muling ginagawa ng card sa parehong slot, nilagdaan ng EST Issuing CA ng realm. rekey: isang post-quantum key sa card, na wala pang PIV card na kayang gumawa ngayon, kaya walang hinihilingan ang profile na naka-rekey."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
     "en": "2b5b2ba409912c7d",
@@ -2018,6 +2274,66 @@
   "postLogin.sentences.noPasskeyRequire": {
     "en": "988144ad40324fa8",
     "text": "ang taong walang hawak na passkey ay hinihiling na mag-register ng post-quantum na passkey, at puwede itong i-skip hanggang matapos ang grace period"
+  },
+  "postLogin.sentences.mailMigration": {
+    "en": "51b2d82c00bdd004",
+    "text": "ang isang taong ang mail ay naka-encrypt sa isang klasikong OpenPGP key o S/MIME certificate ay hihilingang magrehistro ng post-quantum (ML-KEM) na key o certificate pagkatapos mag-sign in"
+  },
+  "postLogin.sentences.mailOfferEither": {
+    "en": "a56bdbdfc1184177",
+    "text": "puwede silang magrehistro ng OpenPGP key o mag-upload ng S/MIME certificate"
+  },
+  "postLogin.sentences.mailOfferOpenpgp": {
+    "en": "1088a13e106235ab",
+    "text": "puwede silang magrehistro ng OpenPGP key"
+  },
+  "postLogin.sentences.mailOfferSmime": {
+    "en": "1f353acddbfc305e",
+    "text": "puwede silang mag-upload ng S/MIME certificate"
+  },
+  "postLogin.sentences.mailNoKeyLeave": {
+    "en": "207bfd0824bc73d6",
+    "text": "hindi tinatanong ang taong hindi naka-encrypt ang mail"
+  },
+  "postLogin.sentences.mailNoKeyInvite": {
+    "en": "5b5bb65ef0e67a72",
+    "text": "iniimbitahan ang taong hindi naka-encrypt ang mail na magrehistro ng post-quantum na key, at laging puwedeng laktawan"
+  },
+  "postLogin.sentences.mailNoKeyRequire": {
+    "en": "cb269a837a256b60",
+    "text": "hinihiling sa taong hindi naka-encrypt ang mail na magrehistro ng post-quantum na key, at puwedeng laktawan hanggang matapos ang palugit"
+  },
+  "postLogin.sentences.mailKeep": {
+    "en": "f73b9c2b0b0c4082",
+    "text": "ang klasikong OpenPGP key na pinalitan ng post-quantum ay pinananatiling katabi nito, at inilalathala kasama nito, sa loob ng {{days}} araw"
+  },
+  "postLogin.sentences.mailKeepNone": {
+    "en": "f7cb6f0da08b7411",
+    "text": "ang klasikong OpenPGP key na pinalitan ng post-quantum ay inaalis agad"
+  },
+  "postLogin.sentences.pivReissue": {
+    "en": "5f2f81aff443f105",
+    "text": "ang taong may hawak na PIV slot certificate ({{slots}}) ay hinihilingang mag-enrol ng bago pagkatapos mag-sign in"
+  },
+  "postLogin.sentences.pivTriggerClassical": {
+    "en": "632e10e241646755",
+    "text": "dapat na ang isang certificate kapag klasikong CA ang lumagda rito at post-quantum ang EST Issuing CA ng realm na ito"
+  },
+  "postLogin.sentences.pivTriggerExpiring": {
+    "en": "aded73c111de1a19",
+    "text": "dapat na ang isang certificate {{days}} araw bago ito mag-expire"
+  },
+  "postLogin.sentences.pivTriggerBoth": {
+    "en": "e1ad48c0307193c5",
+    "text": "dapat na ang isang certificate kapag klasikong CA ang lumagda rito at post-quantum ang EST Issuing CA ng realm na ito, o {{days}} araw bago ito mag-expire"
+  },
+  "postLogin.sentences.pivTargetRekey": {
+    "en": "812934151a1711bd",
+    "text": "hinihiling ang post-quantum key sa card, na wala pang PIV card na kayang gumawa ngayon, kaya walang hinihilingan"
+  },
+  "postLogin.sentences.pivSuperseded": {
+    "en": "89b3974d23046244",
+    "text": "binabawi ang lumang certificate kapag unang ginamit ang bago sa pag-sign in"
   },
   "postLogin.sentences.appliesTo": {
     "en": "f195acc04e68d15e",

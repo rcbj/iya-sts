@@ -132,7 +132,10 @@ const ATTRIBUTES = {
   info: 'stsOpenPgpKeyInfo',
   mailEncryption: 'stsMailEncryption',
   // RFC 4522's transfer form, as an LDAP client writes it.
-  smime: 'userSMIMECertificate;binary'
+  smime: 'userSMIMECertificate;binary',
+  // THE CLASSICAL KEY KEPT BESIDE A POST-QUANTUM ONE (#2009 P2, rcbj's D3).
+  classicalKey: 'stsOpenPgpClassicalKey',
+  classicalInfo: 'stsOpenPgpClassicalKeyInfo'
 };
 
 // The claim scope a challenge's nonce is spent under.
@@ -176,6 +179,23 @@ const published = realms.map({
   indexBy: function (row: Json): string[] {
     return row && row.holder ? ['h:' + String(row.holder)] : [];
   }
+});
+
+// ---------------------------------------------------------------------------
+// THE CLASSICAL KEYS KEPT, AND UNTIL WHEN (#2009 P2, rcbj's D3): entryUUID →
+// `{ keptUntil, fingerprint }`, one row per person whose classical OpenPGP
+// key sits beside the post-quantum key the post-login mail-encryption
+// activity registered. It is what the job `post-login.mail-classical-retire`
+// walks — the rows to act on and nothing else, so the job never walks the
+// directory (no index answers "holds stsOpenPgpClassicalKey" without a
+// scan). The entry is the truth: a row whose entry no longer holds that
+// classical key is dropped, and a key past `keptUntil` is not published
+// whether or not the job has run (the read-time check, `classicalKept()`).
+// On demand, as the challenges are.
+// ---------------------------------------------------------------------------
+const classicalKept = realms.map({
+  persist: 'openpgp.classicalKept',
+  onDemand: { maxEntries: CHALLENGES_MAX }
 });
 
 cacheRegistry.register({
@@ -385,8 +405,21 @@ class OpenPgpKeys {
       info = null;
     }
     const choice = String(record.mailEncryption || 'none');
+    // THE CLASSICAL KEY KEPT BESIDE A POST-QUANTUM ONE (#2009 P2), and what
+    // is drawn about it; a value written by hand that is not ours reads as
+    // none, as the key information above does.
+    let classicalInfo: Json = null;
+    try {
+      classicalInfo = credential.openPgpClassicalKeyInfo
+        ? JSON.parse(String(credential.openPgpClassicalKeyInfo)) : null;
+    } catch (e) {
+      log.debug("Caught in OpenPgpKeys.person(): " + ((e && e.message) || e));
+      classicalInfo = null;
+    }
     log.debug("Leaving OpenPgpKeys.person().");
     return {
+      classicalKey: String(credential.openPgpClassicalKey || ''),
+      classicalInfo: classicalInfo || {},
       dn: String(found.dn), username: String(found.username || username),
       mail: String(user.email || '').trim(),
       key: String(credential.openPgpKey || ''),
@@ -466,6 +499,8 @@ class OpenPgpKeys {
         registeredVia: String(info.via || ''),
         armored: p.key
       } : null,
+      // THE CLASSICAL KEY KEPT BESIDE THIS ONE (#2009 P2), until when.
+      classicalKept: this.classicalKept(p),
       challenge: pending ? { text: String(pending.text),
         expiresAt: new Date(Number(pending.expiresAt)).toISOString() }
         : null,
@@ -495,6 +530,48 @@ class OpenPgpKeys {
       realm: r.currentId()
     };
     log.debug("Leaving OpenPgpKeys.view().");
+    return out;
+  }
+
+  /**
+   * Whether a stored key's encryption key is post-quantum: one of RFC 9980's
+   * ML-KEM composites (#2009 P2). A key with no encryption key is not.
+   *
+   * @param info - the stored key information
+   * @returns true when it is
+   */
+  static encryptionIsPq(info: Json): boolean {
+    helpers.log.debug("Entering OpenPgpKeys.encryptionIsPq().");
+    const name = String((info && info.encryption) || '').trim()
+      .split(' ')[0];
+    const out = !!name && stsCrypto.openpgpIsPq(name);
+    helpers.log.debug("Leaving OpenPgpKeys.encryptionIsPq(). " + out);
+    return out;
+  }
+
+  /**
+   * The classical key a person keeps beside a post-quantum one (#2009 P2,
+   * rcbj's D3), while it is kept: its fingerprint, its algorithms and until
+   * when. Null where there is none, or its time has passed — then it is
+   * neither drawn nor published, whether or not the job has removed it yet.
+   *
+   * @param p - the person, as `person()` reads them
+   * @returns the description, or null
+   */
+  classicalKept(p: Json): Json {
+    const { log, now } = this.deps;
+    log.debug("Entering OpenPgpKeys.classicalKept().");
+    const info = (p && p.classicalInfo) || {};
+    const until = Date.parse(String(info.keptUntil || ''));
+    const out = p && p.classicalKey && until > now()
+      ? { fingerprint: String(info.fingerprint || ''),
+          algorithm: String(info.algorithm || ''),
+          encryption: String(info.encryption || ''),
+          replacedAt: String(info.replacedAt || ''),
+          keptUntil: new Date(until).toISOString() }
+      : null;
+    log.debug("Leaving OpenPgpKeys.classicalKept(). " + (out ? 'Kept.'
+                                                             : 'None.'));
     return out;
   }
 
@@ -662,6 +739,20 @@ class OpenPgpKeys {
       return refused(this.refuse(this.deps.errorCodes.codeOf(key) ||
                                  'STS-OPENPGP-0001', String(key.error)));
     }
+    // A POST-QUANTUM KEY, WHERE THE CALLER ASKS FOR ONE (#2009 P2: the
+    // post-login mail-encryption activity): its encryption key one of RFC
+    // 9980's ML-KEM composites. Asked before the proof, so a classical key
+    // is refused with nothing spent and nothing written.
+    if (ctx && ctx.requirePostQuantum === true &&
+        !OpenPgpKeys.encryptionIsPq({ encryption: key.description.encryption
+          ? OpenPgpKeys.algorithmText(key.description.encryption) : '' })) {
+      log.debug("Leaving OpenPgpKeys.register(). Not post-quantum.");
+      return refused(this.refuse('STS-OPENPGP-0033', 'The key\'s ' +
+        'encryption key is ' + (key.description.encryption
+          ? OpenPgpKeys.algorithmText(key.description.encryption)
+          : 'missing') + ', not one of RFC 9980\'s ML-KEM composites ' +
+        '(ML-KEM-768+X25519, ML-KEM-1024+X448).'));
+    }
     const wanted = p.mail.toLowerCase();
     const matching = key.description.users.filter(function (u: Json) {
       return u.valid && String(u.email || '').toLowerCase() === wanted;
@@ -736,6 +827,22 @@ class OpenPgpKeys {
       return refused(this.refuse('STS-OPENPGP-0019', 'The key verified but ' +
         'could not be written to ' + p.username + '\'s entry.'));
     }
+    // THE CLASSICAL KEY KEPT BESIDE THE POST-QUANTUM ONE (#2009 P2, rcbj's
+    // D3). Only where the caller asks (`keepClassicalDays`, the post-login
+    // mail-encryption activity's `keepClassical`), the key replaced has a
+    // classical encryption key and the new one a post-quantum one: then the
+    // old key goes to the second slot until `keptUntil`, published in the
+    // Web Key Directory with the new one, and mail from this service goes to
+    // the new one at once (`encryptionFor()` reads only the first slot).
+    // Any other registration leaves a kept key where it is, unless it IS
+    // that key coming back, which ends the keeping.
+    const keepDays = ctx && ctx.keepClassicalDays !== undefined
+      ? Number(ctx.keepClassicalDays) : -1;
+    // The new key IS registered by now, so a kept key that could not be
+    // written is said (STS-OPENPGP-0031) and the registration stands: the
+    // old key is then simply replaced, today's one-key rule.
+    const keptUntil = await this.keepClassical(p, info, keepDays, at, actor,
+                                               via);
     // A CHOICE OF openpgp WITH NO ENCRYPTION KEY NOW is put back to none,
     // and the page says so: mail cannot be encrypted to a key that has no
     // encryption subkey.
@@ -753,7 +860,192 @@ class OpenPgpKeys {
         replaced: before || '' });
     log.debug("Leaving OpenPgpKeys.register(). " + d.fingerprint);
     return { ok: true, fingerprint: d.fingerprint, replaced: before || '',
-             choiceReset: choiceReset };
+             choiceReset: choiceReset,
+             postQuantum: OpenPgpKeys.encryptionIsPq(info),
+             classicalKeptUntil: keptUntil };
+  }
+
+  // THE SECOND SLOT (#2009 P2, rcbj's D3), written after the new key: the
+  // replaced key, armored, and what is drawn about it, and the row the
+  // retirement job walks. `days` below 0 means the caller did not ask. The
+  // answer is when the kept key goes ('' for none kept); a write that
+  // fails is said and answers ''.
+  private async keepClassical(p: Json, info: Json, days: number, at: number,
+                              actor: string, via: string): Promise<string> {
+    const { log, errorCodes: codes } = this.deps;
+    log.debug("Entering OpenPgpKeys.keepClassical(). " + days);
+    const holder = this.holderOf(p.username);
+    const wasClassical = !!p.key && !OpenPgpKeys.encryptionIsPq(p.info);
+    const keptFingerprint = String((p.classicalInfo &&
+                                    p.classicalInfo.fingerprint) || '');
+    if (days < 0 || !wasClassical || !OpenPgpKeys.encryptionIsPq(info) ||
+        days === 0) {
+      // NOT KEPT. A kept key the person registered again ends the keeping:
+      // it is the first slot's key now.
+      if (p.classicalKey && keptFingerprint &&
+          keptFingerprint === String(info.fingerprint)) {
+        this.write(p, ATTRIBUTES.classicalKey, []);
+        this.write(p, ATTRIBUTES.classicalInfo, []);
+        if (holder) {
+          classicalKept.delete(holder);
+        }
+      }
+      log.debug("Leaving OpenPgpKeys.keepClassical(). Not kept.");
+      return '';
+    }
+    const until = new Date(at + days * 24 * 60 * 60 * 1000).toISOString();
+    const kept = {
+      fingerprint: p.fingerprint,
+      algorithm: String((p.info && p.info.algorithm) || ''),
+      encryption: String((p.info && p.info.encryption) || ''),
+      replacedBy: String(info.fingerprint),
+      replacedAt: new Date(at).toISOString(),
+      keptUntil: until
+    };
+    const written = this.write(p, ATTRIBUTES.classicalKey, [p.key]) &&
+      this.write(p, ATTRIBUTES.classicalInfo, [JSON.stringify(kept)]);
+    if (!written || !holder) {
+      log.error(codes.tag('STS-OPENPGP-0031') + 'openpgp: the classical ' +
+                'key ' + p.fingerprint + ' of ' + p.username + ' could ' +
+                'not be kept beside the post-quantum key that replaced it; ' +
+                'it is replaced, as a registration replaces a key.');
+      this.write(p, ATTRIBUTES.classicalKey, []);
+      this.write(p, ATTRIBUTES.classicalInfo, []);
+      log.debug("Leaving OpenPgpKeys.keepClassical(). Not written.");
+      return '';
+    }
+    classicalKept.set(holder, { keptUntil: Date.parse(until),
+                                fingerprint: p.fingerprint });
+    this.recordAudit('openpgp.classical-kept', actor, p.username,
+      'the classical OpenPGP key ' + p.fingerprint + ' of ' + p.username +
+      ' is kept beside the post-quantum key ' + info.fingerprint +
+      ' until ' + until, { fingerprint: p.fingerprint,
+                           replacedBy: String(info.fingerprint),
+                           keptUntil: until, via: via });
+    log.debug("Leaving OpenPgpKeys.keepClassical(). Until " + until);
+    return until;
+  }
+
+  /**
+   * Removes a person's kept classical OpenPGP key (#2009 P2): from the
+   * entry, and so from the Web Key Directory, with its retirement row.
+   *
+   * @param username - the person
+   * @param ctx - `{ actor, via, reason }`
+   * @returns `{ ok, fingerprint }`; `fingerprint` '' where none was kept
+   */
+  retireClassical(username: string, ctx: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering OpenPgpKeys.retireClassical().");
+    const p = this.person(username);
+    if (!p) {
+      log.debug("Leaving OpenPgpKeys.retireClassical(). Nobody.");
+      return this.refuse(this.deps.directory() ? 'STS-OPENPGP-0013'
+                                               : 'STS-OPENPGP-0020',
+                         'There is no person "' + String(username || '') +
+                         '" in this realm.');
+    }
+    const holder = this.holderOf(p.username);
+    const fingerprint = String((p.classicalInfo &&
+                                p.classicalInfo.fingerprint) || '');
+    if (!p.classicalKey && !fingerprint) {
+      if (holder) {
+        classicalKept.delete(holder);
+      }
+      log.debug("Leaving OpenPgpKeys.retireClassical(). None kept.");
+      return { ok: true, fingerprint: '' };
+    }
+    const removed = this.write(p, ATTRIBUTES.classicalKey, []) &&
+      this.write(p, ATTRIBUTES.classicalInfo, []);
+    if (!removed) {
+      log.debug("Leaving OpenPgpKeys.retireClassical(). Not written.");
+      return this.refuse('STS-OPENPGP-0019', 'The kept classical key could ' +
+                         'not be removed from ' + p.username + '\'s entry.');
+    }
+    if (holder) {
+      classicalKept.delete(holder);
+    }
+    this.recordAudit('openpgp.classical-retired',
+      String((ctx && ctx.actor) || ''), p.username,
+      'the classical OpenPGP key ' + fingerprint + ' of ' + p.username +
+      ' was removed' + (ctx && ctx.reason ? ' (' + ctx.reason + ')' : ''),
+      { fingerprint: fingerprint, via: String((ctx && ctx.via) || '') });
+    log.debug("Leaving OpenPgpKeys.retireClassical(). " + fingerprint);
+    return { ok: true, fingerprint: fingerprint };
+  }
+
+  /**
+   * The retirement job's body in the ambient realm (#2009 P2): every kept
+   * classical key whose time has passed is removed. Walks the retirement
+   * rows only — never the directory — at most `limit` a run, asking
+   * `ctx.stillOwner()` between people. Never throws for one person.
+   *
+   * @param ctx - the scheduler's run context, or nothing
+   * @param limit - the most people one run retires
+   * @returns `{ retired, failed, kept, summary }`
+   */
+  async retireClassicalDueAsync(ctx?: Json, limit?: number): Promise<Json> {
+    const { log, now, errorCodes: codes } = this.deps;
+    log.debug("Entering OpenPgpKeys.retireClassicalDueAsync().");
+    const cap = Number(limit) > 0 ? Number(limit) : 500;
+    const due: string[] = [];
+    let held = 0;
+    const at = now();
+    const walk = function (row: Json, key: unknown): boolean {
+      if (!row || typeof row !== 'object') {
+        return true;
+      }
+      held += 1;
+      if (Number(row.keptUntil) <= at) {
+        due.push(String(key));
+      }
+      return due.length < cap;
+    };
+    if (typeof (classicalKept as Json).scanAsync === 'function') {
+      await (classicalKept as Json).scanAsync(walk);
+    } else {
+      classicalKept.forEach(function (row: Json, key: unknown): void {
+        walk(row, key);
+      });
+    }
+    let retired = 0;
+    let failed = 0;
+    for (const holder of due) {
+      if (ctx && typeof ctx.stillOwner === 'function' && !ctx.stillOwner()) {
+        break;
+      }
+      const name = this.nameOfHolder(holder);
+      if (!name) {
+        // The person is gone: so is their entry and the key on it.
+        classicalKept.delete(holder);
+        continue;
+      }
+      let done: Json = null;
+      try {
+        done = this.retireClassical(name, {
+          actor: '', via: 'post-login.mail-classical-retire',
+          reason: 'the time it was kept beside the post-quantum key ended' });
+      } catch (e) {
+        log.debug("Caught in OpenPgpKeys.retireClassicalDueAsync(): " +
+                  ((e && e.message) || e));
+        done = { ok: false, error: String((e && e.message) || e) };
+      }
+      if (done && done.ok) {
+        retired += done.fingerprint ? 1 : 0;
+      } else {
+        failed += 1;
+        log.error(codes.tag('STS-OPENPGP-0032') + 'openpgp: the kept ' +
+                  'classical key of ' + name + ' could not be removed: ' +
+                  String((done && done.error) || ''));
+      }
+    }
+    const out = { retired: retired, failed: failed, kept: held - retired,
+                  summary: retired + ' classical OpenPGP key(s) removed' +
+                    (failed ? ', ' + failed + ' could not be' : '') + '.' };
+    log.debug("Leaving OpenPgpKeys.retireClassicalDueAsync(). " +
+              out.summary);
+    return failed ? Object.assign(out, { errorCode: 'STS-OPENPGP-0032' })
+                  : out;
   }
 
   /**
@@ -795,9 +1087,17 @@ class OpenPgpKeys {
       return this.refuse('STS-OPENPGP-0015', p.username + ' has no ' +
                          'OpenPGP key registered.');
     }
+    // A kept classical key (#2009 P2) goes with the key it was kept beside.
+    const holderNow = this.holderOf(p.username);
+    if (holderNow) {
+      classicalKept.delete(holderNow);
+    }
     const written = this.write(p, ATTRIBUTES.key, []) &&
       this.write(p, ATTRIBUTES.fingerprint, []) &&
       this.write(p, ATTRIBUTES.info, []) &&
+      (!p.classicalKey ||
+       (this.write(p, ATTRIBUTES.classicalKey, []) &&
+        this.write(p, ATTRIBUTES.classicalInfo, []))) &&
       (p.mailEncryption !== 'openpgp' ||
        this.write(p, ATTRIBUTES.mailEncryption, ['none']));
     if (!written) {
@@ -1137,9 +1437,16 @@ class OpenPgpKeys {
       return null;
     }
     const bytes = await c.openpgpBinaryKey(p.key);
-    log.debug("Leaving OpenPgpKeys.lookup(). " + (bytes ? 'Answered.'
-                                                         : 'Unreadable.'));
-    return bytes;
+    // THE CLASSICAL KEY KEPT BESIDE IT (#2009 P2, rcbj's D3) is published
+    // too, after the post-quantum one, while it is kept: the draft's answer
+    // is the binary keys for the address, and several are concatenated. A
+    // kept key that does not read is left out, never the answer with it.
+    const kept = bytes && this.classicalKept(p)
+      ? await c.openpgpBinaryKey(p.classicalKey) : null;
+    const out = bytes && kept ? Buffer.concat([bytes, kept]) : bytes;
+    log.debug("Leaving OpenPgpKeys.lookup(). " + (out ? (kept ? 'Answered ' +
+              'with the kept classical key.' : 'Answered.') : 'Unreadable.'));
+    return out;
   }
 
   // -------------------------------------------------------------------------
@@ -1520,6 +1827,7 @@ class OpenPgpKeys {
     log.debug("Entering OpenPgpKeys.forgetForTests().");
     challenges.clear();
     published.clear();
+    classicalKept.clear();
     log.debug("Leaving OpenPgpKeys.forgetForTests().");
   }
 }
@@ -1585,5 +1893,10 @@ export = {
   wkdDomains: slot.forward('wkdDomains'),
   lookup: slot.forward('lookup'),
   retireLost: slot.forward('retireLost'),
+  encryptionIsPq: OpenPgpKeys.encryptionIsPq,
+  classicalKept: slot.forward('classicalKept'),
+  retireClassical: slot.forward('retireClassical'),
+  retireClassicalDueAsync: slot.forward('retireClassicalDueAsync'),
+  person: slot.forward('person'),
   forgetForTests: slot.forward('forgetForTests')
 };

@@ -39,5 +39,11 @@
   "groupsFull": "{max} grupo na ang napili, ang pinakamaraming maaaring pangalanan ng isang aktibidad.",
   "startNote": "Kapag sinimulan, tatanungin ang mga taong naaabot nito mula sa susunod nilang pag-sign in; magsisimula ang pagpapadala sa susunod na takbo ng job. Hindi tinatanong at hindi sinusulatan ang taong nakagawa na ng aktibidad, ang hindi maaaring hilingan ng realm, o ang hindi isinasama ng isang may-pangalang profile na naka-off.",
   "startButton": "Simulan",
-  "readOnly": "Kailangan ng Admin Write para magsimula, mag-pause at tapusin ang isang aktibidad pagkatapos mag-sign in."
+  "readOnly": "Kailangan ng Admin Write para magsimula, mag-pause at tapusin ang isang aktibidad pagkatapos mag-sign in.",
+  "activityName.passkey": "Post-quantum na passkey",
+  "activityName.mail": "Post-quantum na pag-encrypt ng email",
+  "activityName.piv": "Muling pag-isyu ng PIV certificate",
+  "activityWhat.passkey": "ang taong may classical na passkey, o wala, ay hinihilingang magrehistro ng ML-DSA na passkey, ayon sa mga hanay ng passkey ng post-login profile.",
+  "activityWhat.mail": "ang taong naka-encrypt ang email sa isang classical na OpenPGP key o S/MIME certificate ay hinihilingang magrehistro ng ML-KEM na isa, ayon sa bloke ng pag-encrypt ng email ng profile.",
+  "activityWhat.piv": "ang taong may PIV slot certificate na inisyu ng realm na ito ay hinihilingang mag-enrol ng bago kapag pinirmahan ito ng classical na issuer o malapit na itong mag-expire, ayon sa PIV na bloke ng profile."
 }

@@ -696,6 +696,20 @@ const JOBS = [
   // profile a group names (#1239), not deleted while named. `local: true`: this repository's own /authn
   // and /admin-api.
   { file: 'sts_post_login_activity.js', browser: false },
+  // THE MAIL-ENCRYPTION ACTIVITY (#2009 P2): in a throwaway realm, a person
+  // whose mail is S/MIME to an RSA certificate (made here with openssl)
+  // held at /authn/post-login once the policy's mail block is on; the
+  // passkey act and an RSA certificate refused at that step, an OpenPGP
+  // challenge drawn on it, and an ML-KEM certificate finishing it, the code
+  // reaching the client and the next sign-in not asked. `local: true`: this
+  // repository's own /authn and /admin-api.
+  { file: 'sts_post_login_mail.js', browser: false, local: true },
+  // THE POST-LOGIN PIV RE-ISSUE (#2009 P3): the PIV block off then on, the
+  // sign-in held for a piv-auth certificate due for renewal, the step's
+  // refusals, a new 9a certificate enrolled with its import command, and
+  // Continue starting the held session. `local: true`: this repository's
+  // own /authn and /admin-api.
+  { file: 'sts_post_login_piv.js', browser: false, local: true },
   // DYNAMIC SELECTABLE ROLES (#1072): a dynamic role made and given its
   // ALFA eligibility policy over /admin-api, the administrator's test, the
   // sign-in screen's box, the role step (a fabricated role refused, the
@@ -1404,6 +1418,14 @@ const JOBS = [
   // paused, resumed and ended. `local: true`: this repository's console and
   // management API.
   { file: 'sts_post_login_activities.js', browser: false },
+  // EVERY POST-LOGIN ACTIVITY STARTED OVER /admin-api (#2009 P4): in a
+  // realm of its own, the view offering all three, `pqc-mail-encryption`
+  // and `piv-reissue` started for a group made here, refused twice for the
+  // same people (0492), paused, resumed and ended; the passkey migration
+  // beside them for the same group; an activity outside the three refused
+  // by the schema. What each reminder says is in process
+  // (`tests/post_login_started_kinds.js`).
+  { file: 'sts_post_login_started_kinds.js', browser: false, local: true },
   // DIRECTORY → HARDWARE TOKENS (#1955 P1): the console page's shell, the
   // two operations in the document and the gate, the view's paging and
   // filters, and the lost-key act's refusals. The register's behaviour

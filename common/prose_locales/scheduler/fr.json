@@ -396,8 +396,16 @@
     "text": "Courrier des activités après connexion"
   },
   "sched.jobs.post-login.activity-mail.describe": {
-    "en": "5081eadb5d5abbeb",
-    "text": "Envoie aux personnes qu'atteint une activité après connexion en cours (#1111) un rappel de se connecter, où l'activité leur demande alors d'enregistrer une clé d'accès post-quantique. Lit à chaque exécution une tranche de la population de chaque activité lancée (le domaine, ou l'union de ses groupes) après un curseur, n'écrit qu'aux personnes à qui l'activité est due, jamais dans l'intervalle de rappel ni au-delà de son maximum, et écrit une ligne d'audit par activité lancée et par exécution."
+    "en": "9e62432e54429d50",
+    "text": "Envoie aux personnes qu'atteint une activité après connexion en cours (#1111) un rappel de se connecter, où l'activité leur demande alors de la faire : enregistrer une clé d'accès post-quantique, une clé de chiffrement des e-mails post-quantique ou un nouveau certificat PIV, chaque activité avec son propre message. Lit à chaque exécution une tranche de la population de chaque activité lancée (le domaine, ou l'union de ses groupes) après un curseur, n'écrit qu'aux personnes à qui l'activité est due, jamais dans l'intervalle de rappel ni au-delà de son maximum, et écrit une ligne d'audit par activité lancée et par exécution."
+  },
+  "sched.jobs.post-login.mail-classical-retire.title": {
+    "en": "3a94b1ec977440b8",
+    "text": "Clés OpenPGP classiques conservées, retirées"
+  },
+  "sched.jobs.post-login.mail-classical-retire.describe": {
+    "en": "5ecdf1cc48430c85",
+    "text": "Retire une clé OpenPGP classique que l’activité post-connexion de chiffrement du courrier a conservée à côté de la clé post-quantique qui l’a remplacée (#2009, D3), une fois écoulés les mailKeepClassical jours du profil : de l’entrée de la personne et donc du Web Key Directory. Ne parcourt que les lignes des clés conservées, jamais l’annuaire, et écrit une ligne d’audit par clé retirée. Une clé dont le temps est passé est déjà absente de l’annuaire et de toute page, que cette tâche ait tourné ou non."
   },
   "sched.jobs.process.memory-report.title": {
     "en": "b84bcf99d45e1ee1",

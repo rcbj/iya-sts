@@ -212,6 +212,13 @@ model Credential {
   @fromAttr(#{attr: "stsOpenPgpKeyInfo"})
   `openPgpKeyInfo`?: string;
 
+  // #2009 P2: the classical key kept beside a post-quantum one (D3).
+  @fromAttr(#{attr: "stsOpenPgpClassicalKey"})
+  `openPgpClassicalKey`?: string;
+
+  @fromAttr(#{attr: "stsOpenPgpClassicalKeyInfo"})
+  `openPgpClassicalKeyInfo`?: string;
+
   @fromAttr(#{attr: "hobaPublicKey"})
   `hobaPublicKey`?: string[];
 

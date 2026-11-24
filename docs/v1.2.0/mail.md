@@ -312,7 +312,11 @@ ticked whenever the realm has a transport. The API equivalent is `deliver:
 
 **A started post-login activity's reminder** (#1111) asks a person to sign
 in, where the [post-login activity](post-login-activities.md#starting-an-activity) then asks
-them to register a post-quantum passkey. It goes to the address on their entry,
+them to do it. Each activity has its own message, which a realm may reword
+like any other: `post-login-reminder` for the post-quantum passkey (the
+message it has always been), `post-login-reminder-mail-encryption` for a
+post-quantum mail-encryption key and `post-login-reminder-piv-reissue` for a
+new PIV certificate. It goes to the address on their entry,
 and its one link opens the user portal on this service's own address, which
 sends them to sign in. The
 link signs nobody in and carries nothing about the person. It is a

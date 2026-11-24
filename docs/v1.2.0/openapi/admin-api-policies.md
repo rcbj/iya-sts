@@ -105,6 +105,9 @@ Scope: `admin:read`.
 | `attributes.fields[].disabledWhy` | string |  |  |
 | `attributes.fields[].email` | boolean |  |  |
 | `attributes.fields[].empty` | string |  |  |
+| `attributes.fields[].following` | boolean |  | Whether the row follows now: the profile holds no value for it. |
+| `attributes.fields[].follows` | string |  | On a row that follows another while the policy stores no value for it (#2031): the field key it follows, or `setting:<key>`. |
+| `attributes.fields[].followsLabel` | string |  | What it follows, as a reader names it: the row's label, or the setting's key. |
 | `attributes.fields[].key` | string |  |  |
 | `attributes.fields[].label` | string |  |  |
 | `attributes.fields[].max` | number |  |  |
@@ -134,6 +137,9 @@ Scope: `admin:read`.
 | `attributes.named[].fields[].disabledWhy` | string |  |  |
 | `attributes.named[].fields[].email` | boolean |  |  |
 | `attributes.named[].fields[].empty` | string |  |  |
+| `attributes.named[].fields[].following` | boolean |  | Whether the row follows now: the profile holds no value for it. |
+| `attributes.named[].fields[].follows` | string |  | On a row that follows another while the policy stores no value for it (#2031): the field key it follows, or `setting:<key>`. |
+| `attributes.named[].fields[].followsLabel` | string |  | What it follows, as a reader names it: the row's label, or the setting's key. |
 | `attributes.named[].fields[].key` | string |  |  |
 | `attributes.named[].fields[].label` | string |  |  |
 | `attributes.named[].fields[].max` | number |  |  |
@@ -225,6 +231,9 @@ Scope: `admin:read`.
 | `authn.fields[].disabledWhy` | string |  |  |
 | `authn.fields[].email` | boolean |  |  |
 | `authn.fields[].empty` | string |  |  |
+| `authn.fields[].following` | boolean |  | Whether the row follows now: the profile holds no value for it. |
+| `authn.fields[].follows` | string |  | On a row that follows another while the policy stores no value for it (#2031): the field key it follows, or `setting:<key>`. |
+| `authn.fields[].followsLabel` | string |  | What it follows, as a reader names it: the row's label, or the setting's key. |
 | `authn.fields[].key` | string |  |  |
 | `authn.fields[].label` | string |  |  |
 | `authn.fields[].max` | number |  |  |
@@ -263,6 +272,9 @@ Scope: `admin:read`.
 | `authn.named[].fields[].disabledWhy` | string |  |  |
 | `authn.named[].fields[].email` | boolean |  |  |
 | `authn.named[].fields[].empty` | string |  |  |
+| `authn.named[].fields[].following` | boolean |  | Whether the row follows now: the profile holds no value for it. |
+| `authn.named[].fields[].follows` | string |  | On a row that follows another while the policy stores no value for it (#2031): the field key it follows, or `setting:<key>`. |
+| `authn.named[].fields[].followsLabel` | string |  | What it follows, as a reader names it: the row's label, or the setting's key. |
 | `authn.named[].fields[].key` | string |  |  |
 | `authn.named[].fields[].label` | string |  |  |
 | `authn.named[].fields[].max` | number |  |  |
@@ -338,6 +350,8 @@ Scope: `admin:read`.
 | `authn.profile.passwordPrimary[]` | string, or number, or boolean, or null |  |  |
 | `authn.profile.passwordSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `authn.profile.passwordSecondFactor[]` | string, or number, or boolean, or null |  |  |
+| `authn.profile.pkinitSmartCardPrimary` | list, or string, or number, or boolean, or null |  |  |
+| `authn.profile.pkinitSmartCardPrimary[]` | string, or number, or boolean, or null |  |  |
 | `authn.profile.precedence` | integer |  |  |
 | `authn.profile.problems` | list |  |  |
 | `authn.profile.problems[]` | string |  |  |
@@ -347,12 +361,18 @@ Scope: `admin:read`.
 | `authn.profile.rememberedBrowserDays[]` | string, or number, or boolean, or null |  |  |
 | `authn.profile.rememberedBrowserSkipsSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `authn.profile.rememberedBrowserSkipsSecondFactor[]` | string, or number, or boolean, or null |  |  |
+| `authn.profile.requireAttestedHardware` | list, or string, or number, or boolean, or null |  |  |
+| `authn.profile.requireAttestedHardware[]` | string, or number, or boolean, or null |  |  |
 | `authn.profile.requireSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `authn.profile.requireSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `authn.profile.requireSecondFactorForAdministrators` | list, or string, or number, or boolean, or null |  |  |
 | `authn.profile.requireSecondFactorForAdministrators[]` | string, or number, or boolean, or null |  |  |
 | `authn.profile.securityKeySecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `authn.profile.securityKeySecondFactor[]` | string, or number, or boolean, or null |  |  |
+| `authn.profile.smartCardCardAuthPrimary` | list, or string, or number, or boolean, or null |  |  |
+| `authn.profile.smartCardCardAuthPrimary[]` | string, or number, or boolean, or null |  |  |
+| `authn.profile.smartCardPrimary` | list, or string, or number, or boolean, or null |  |  |
+| `authn.profile.smartCardPrimary[]` | string, or number, or boolean, or null |  |  |
 | `authn.profile.sources` | map |  |  |
 | `authn.profile.sources.{key}` | string |  |  |
 | `authn.profile.stored` | boolean |  |  |
@@ -412,6 +432,9 @@ Scope: `admin:read`.
 | `locale.fields[].disabledWhy` | string |  |  |
 | `locale.fields[].email` | boolean |  |  |
 | `locale.fields[].empty` | string |  |  |
+| `locale.fields[].following` | boolean |  | Whether the row follows now: the profile holds no value for it. |
+| `locale.fields[].follows` | string |  | On a row that follows another while the policy stores no value for it (#2031): the field key it follows, or `setting:<key>`. |
+| `locale.fields[].followsLabel` | string |  | What it follows, as a reader names it: the row's label, or the setting's key. |
 | `locale.fields[].key` | string |  |  |
 | `locale.fields[].label` | string |  |  |
 | `locale.fields[].max` | number |  |  |
@@ -437,6 +460,9 @@ Scope: `admin:read`.
 | `locale.named[].fields[].disabledWhy` | string |  |  |
 | `locale.named[].fields[].email` | boolean |  |  |
 | `locale.named[].fields[].empty` | string |  |  |
+| `locale.named[].fields[].following` | boolean |  | Whether the row follows now: the profile holds no value for it. |
+| `locale.named[].fields[].follows` | string |  | On a row that follows another while the policy stores no value for it (#2031): the field key it follows, or `setting:<key>`. |
+| `locale.named[].fields[].followsLabel` | string |  | What it follows, as a reader names it: the row's label, or the setting's key. |
 | `locale.named[].fields[].key` | string |  |  |
 | `locale.named[].fields[].label` | string |  |  |
 | `locale.named[].fields[].max` | number |  |  |
@@ -555,6 +581,9 @@ Scope: `admin:read`.
 | `passkey.fields[].disabledWhy` | string |  |  |
 | `passkey.fields[].email` | boolean |  |  |
 | `passkey.fields[].empty` | string |  |  |
+| `passkey.fields[].following` | boolean |  | Whether the row follows now: the profile holds no value for it. |
+| `passkey.fields[].follows` | string |  | On a row that follows another while the policy stores no value for it (#2031): the field key it follows, or `setting:<key>`. |
+| `passkey.fields[].followsLabel` | string |  | What it follows, as a reader names it: the row's label, or the setting's key. |
 | `passkey.fields[].key` | string |  |  |
 | `passkey.fields[].label` | string |  |  |
 | `passkey.fields[].max` | number |  |  |
@@ -580,6 +609,9 @@ Scope: `admin:read`.
 | `passkey.named[].fields[].disabledWhy` | string |  |  |
 | `passkey.named[].fields[].email` | boolean |  |  |
 | `passkey.named[].fields[].empty` | string |  |  |
+| `passkey.named[].fields[].following` | boolean |  | Whether the row follows now: the profile holds no value for it. |
+| `passkey.named[].fields[].follows` | string |  | On a row that follows another while the policy stores no value for it (#2031): the field key it follows, or `setting:<key>`. |
+| `passkey.named[].fields[].followsLabel` | string |  | What it follows, as a reader names it: the row's label, or the setting's key. |
 | `passkey.named[].fields[].key` | string |  |  |
 | `passkey.named[].fields[].label` | string |  |  |
 | `passkey.named[].fields[].max` | number |  |  |
@@ -721,6 +753,9 @@ Scope: `admin:read`.
 | `password.fields[].disabledWhy` | string |  |  |
 | `password.fields[].email` | boolean |  |  |
 | `password.fields[].empty` | string |  |  |
+| `password.fields[].following` | boolean |  | Whether the row follows now: the profile holds no value for it. |
+| `password.fields[].follows` | string |  | On a row that follows another while the policy stores no value for it (#2031): the field key it follows, or `setting:<key>`. |
+| `password.fields[].followsLabel` | string |  | What it follows, as a reader names it: the row's label, or the setting's key. |
 | `password.fields[].key` | string |  |  |
 | `password.fields[].label` | string |  |  |
 | `password.fields[].max` | number |  |  |
@@ -755,6 +790,9 @@ Scope: `admin:read`.
 | `password.named[].fields[].disabledWhy` | string |  |  |
 | `password.named[].fields[].email` | boolean |  |  |
 | `password.named[].fields[].empty` | string |  |  |
+| `password.named[].fields[].following` | boolean |  | Whether the row follows now: the profile holds no value for it. |
+| `password.named[].fields[].follows` | string |  | On a row that follows another while the policy stores no value for it (#2031): the field key it follows, or `setting:<key>`. |
+| `password.named[].fields[].followsLabel` | string |  | What it follows, as a reader names it: the row's label, or the setting's key. |
 | `password.named[].fields[].key` | string |  |  |
 | `password.named[].fields[].label` | string |  |  |
 | `password.named[].fields[].max` | number |  |  |
@@ -864,6 +902,9 @@ Scope: `admin:read`.
 | `postLogin.fields[].disabledWhy` | string |  |  |
 | `postLogin.fields[].email` | boolean |  |  |
 | `postLogin.fields[].empty` | string |  |  |
+| `postLogin.fields[].following` | boolean |  | Whether the row follows now: the profile holds no value for it. |
+| `postLogin.fields[].follows` | string |  | On a row that follows another while the policy stores no value for it (#2031): the field key it follows, or `setting:<key>`. |
+| `postLogin.fields[].followsLabel` | string |  | What it follows, as a reader names it: the row's label, or the setting's key. |
 | `postLogin.fields[].key` | string |  |  |
 | `postLogin.fields[].label` | string |  |  |
 | `postLogin.fields[].max` | number |  |  |
@@ -889,6 +930,9 @@ Scope: `admin:read`.
 | `postLogin.named[].fields[].disabledWhy` | string |  |  |
 | `postLogin.named[].fields[].email` | boolean |  |  |
 | `postLogin.named[].fields[].empty` | string |  |  |
+| `postLogin.named[].fields[].following` | boolean |  | Whether the row follows now: the profile holds no value for it. |
+| `postLogin.named[].fields[].follows` | string |  | On a row that follows another while the policy stores no value for it (#2031): the field key it follows, or `setting:<key>`. |
+| `postLogin.named[].fields[].followsLabel` | string |  | What it follows, as a reader names it: the row's label, or the setting's key. |
 | `postLogin.named[].fields[].key` | string |  |  |
 | `postLogin.named[].fields[].label` | string |  |  |
 | `postLogin.named[].fields[].max` | number |  |  |
@@ -940,6 +984,18 @@ Scope: `admin:read`.
 | `postLogin.profile.graceDays` | list, or string, or number, or boolean, or null |  |  |
 | `postLogin.profile.graceDays[]` | string, or number, or boolean, or null |  |  |
 | `postLogin.profile.inherited` | boolean |  |  |
+| `postLogin.profile.mailEnabled` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailEnabled[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailGraceDays` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailGraceDays[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailKeepClassical` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailKeepClassical[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailNoKey` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailNoKey[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailPrefer` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailPrefer[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailSnoozeDays` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailSnoozeDays[]` | string, or number, or boolean, or null |  |  |
 | `postLogin.profile.method` | list, or string, or number, or boolean, or null |  |  |
 | `postLogin.profile.method[]` | string, or number, or boolean, or null |  |  |
 | `postLogin.profile.name` | string |  |  |
@@ -947,6 +1003,20 @@ Scope: `admin:read`.
 | `postLogin.profile.noPasskey[]` | string, or number, or boolean, or null |  |  |
 | `postLogin.profile.noPasskeyFallback` | list, or string, or number, or boolean, or null |  |  |
 | `postLogin.profile.noPasskeyFallback[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivEnabled` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivEnabled[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivGraceDays` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivGraceDays[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivRenewDays` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivRenewDays[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivSlots` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivSlots[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivSnoozeDays` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivSnoozeDays[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivTarget` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivTarget[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivTrigger` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivTrigger[]` | string, or number, or boolean, or null |  |  |
 | `postLogin.profile.precedence` | integer |  |  |
 | `postLogin.profile.problems` | list |  |  |
 | `postLogin.profile.problems[]` | string |  |  |
@@ -995,6 +1065,9 @@ Scope: `admin:read`.
 | `serviceAccount.fields[].disabledWhy` | string |  |  |
 | `serviceAccount.fields[].email` | boolean |  |  |
 | `serviceAccount.fields[].empty` | string |  |  |
+| `serviceAccount.fields[].following` | boolean |  | Whether the row follows now: the profile holds no value for it. |
+| `serviceAccount.fields[].follows` | string |  | On a row that follows another while the policy stores no value for it (#2031): the field key it follows, or `setting:<key>`. |
+| `serviceAccount.fields[].followsLabel` | string |  | What it follows, as a reader names it: the row's label, or the setting's key. |
 | `serviceAccount.fields[].key` | string |  |  |
 | `serviceAccount.fields[].label` | string |  |  |
 | `serviceAccount.fields[].max` | number |  |  |
@@ -1020,6 +1093,9 @@ Scope: `admin:read`.
 | `serviceAccount.named[].fields[].disabledWhy` | string |  |  |
 | `serviceAccount.named[].fields[].email` | boolean |  |  |
 | `serviceAccount.named[].fields[].empty` | string |  |  |
+| `serviceAccount.named[].fields[].following` | boolean |  | Whether the row follows now: the profile holds no value for it. |
+| `serviceAccount.named[].fields[].follows` | string |  | On a row that follows another while the policy stores no value for it (#2031): the field key it follows, or `setting:<key>`. |
+| `serviceAccount.named[].fields[].followsLabel` | string |  | What it follows, as a reader names it: the row's label, or the setting's key. |
 | `serviceAccount.named[].fields[].key` | string |  |  |
 | `serviceAccount.named[].fields[].label` | string |  |  |
 | `serviceAccount.named[].fields[].max` | number |  |  |
@@ -1649,6 +1725,8 @@ Scope: `admin:write`.
 | `profile.passwordPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.passwordSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.passwordSecondFactor[]` | string, or number, or boolean, or null |  |  |
+| `profile.pkinitSmartCardPrimary` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pkinitSmartCardPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.precedence` | integer |  |  |
 | `profile.problems` | list |  |  |
 | `profile.problems[]` | string |  |  |
@@ -1658,12 +1736,18 @@ Scope: `admin:write`.
 | `profile.rememberedBrowserDays[]` | string, or number, or boolean, or null |  |  |
 | `profile.rememberedBrowserSkipsSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.rememberedBrowserSkipsSecondFactor[]` | string, or number, or boolean, or null |  |  |
+| `profile.requireAttestedHardware` | list, or string, or number, or boolean, or null |  |  |
+| `profile.requireAttestedHardware[]` | string, or number, or boolean, or null |  |  |
 | `profile.requireSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.requireSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `profile.requireSecondFactorForAdministrators` | list, or string, or number, or boolean, or null |  |  |
 | `profile.requireSecondFactorForAdministrators[]` | string, or number, or boolean, or null |  |  |
 | `profile.securityKeySecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.securityKeySecondFactor[]` | string, or number, or boolean, or null |  |  |
+| `profile.smartCardCardAuthPrimary` | list, or string, or number, or boolean, or null |  |  |
+| `profile.smartCardCardAuthPrimary[]` | string, or number, or boolean, or null |  |  |
+| `profile.smartCardPrimary` | list, or string, or number, or boolean, or null |  |  |
+| `profile.smartCardPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.sources` | map |  |  |
 | `profile.sources.{key}` | string |  |  |
 | `profile.stored` | boolean |  |  |
@@ -1726,6 +1810,8 @@ Scope: `admin:write`.
 | `profile.passwordPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.passwordSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.passwordSecondFactor[]` | string, or number, or boolean, or null |  |  |
+| `profile.pkinitSmartCardPrimary` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pkinitSmartCardPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.precedence` | integer |  |  |
 | `profile.problems` | list |  |  |
 | `profile.problems[]` | string |  |  |
@@ -1735,12 +1821,18 @@ Scope: `admin:write`.
 | `profile.rememberedBrowserDays[]` | string, or number, or boolean, or null |  |  |
 | `profile.rememberedBrowserSkipsSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.rememberedBrowserSkipsSecondFactor[]` | string, or number, or boolean, or null |  |  |
+| `profile.requireAttestedHardware` | list, or string, or number, or boolean, or null |  |  |
+| `profile.requireAttestedHardware[]` | string, or number, or boolean, or null |  |  |
 | `profile.requireSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.requireSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `profile.requireSecondFactorForAdministrators` | list, or string, or number, or boolean, or null |  |  |
 | `profile.requireSecondFactorForAdministrators[]` | string, or number, or boolean, or null |  |  |
 | `profile.securityKeySecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.securityKeySecondFactor[]` | string, or number, or boolean, or null |  |  |
+| `profile.smartCardCardAuthPrimary` | list, or string, or number, or boolean, or null |  |  |
+| `profile.smartCardCardAuthPrimary[]` | string, or number, or boolean, or null |  |  |
+| `profile.smartCardPrimary` | list, or string, or number, or boolean, or null |  |  |
+| `profile.smartCardPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.sources` | map |  |  |
 | `profile.sources.{key}` | string |  |  |
 | `profile.stored` | boolean |  |  |
@@ -2214,6 +2306,18 @@ Scope: `admin:write`.
 | `profile.graceDays` | list, or string, or number, or boolean, or null |  |  |
 | `profile.graceDays[]` | string, or number, or boolean, or null |  |  |
 | `profile.inherited` | boolean |  |  |
+| `profile.mailEnabled` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailEnabled[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailGraceDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailGraceDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailKeepClassical` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailKeepClassical[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailNoKey` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailNoKey[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailPrefer` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailPrefer[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailSnoozeDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailSnoozeDays[]` | string, or number, or boolean, or null |  |  |
 | `profile.method` | list, or string, or number, or boolean, or null |  |  |
 | `profile.method[]` | string, or number, or boolean, or null |  |  |
 | `profile.name` | string |  |  |
@@ -2221,6 +2325,20 @@ Scope: `admin:write`.
 | `profile.noPasskey[]` | string, or number, or boolean, or null |  |  |
 | `profile.noPasskeyFallback` | list, or string, or number, or boolean, or null |  |  |
 | `profile.noPasskeyFallback[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivEnabled` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivEnabled[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivGraceDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivGraceDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivRenewDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivRenewDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivSlots` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivSlots[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivSnoozeDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivSnoozeDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivTarget` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivTarget[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivTrigger` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivTrigger[]` | string, or number, or boolean, or null |  |  |
 | `profile.precedence` | integer |  |  |
 | `profile.problems` | list |  |  |
 | `profile.problems[]` | string |  |  |
@@ -2257,6 +2375,18 @@ Scope: `admin:write`.
 | `profile.graceDays` | list, or string, or number, or boolean, or null |  |  |
 | `profile.graceDays[]` | string, or number, or boolean, or null |  |  |
 | `profile.inherited` | boolean |  |  |
+| `profile.mailEnabled` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailEnabled[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailGraceDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailGraceDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailKeepClassical` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailKeepClassical[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailNoKey` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailNoKey[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailPrefer` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailPrefer[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailSnoozeDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailSnoozeDays[]` | string, or number, or boolean, or null |  |  |
 | `profile.method` | list, or string, or number, or boolean, or null |  |  |
 | `profile.method[]` | string, or number, or boolean, or null |  |  |
 | `profile.name` | string |  |  |
@@ -2264,6 +2394,20 @@ Scope: `admin:write`.
 | `profile.noPasskey[]` | string, or number, or boolean, or null |  |  |
 | `profile.noPasskeyFallback` | list, or string, or number, or boolean, or null |  |  |
 | `profile.noPasskeyFallback[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivEnabled` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivEnabled[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivGraceDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivGraceDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivRenewDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivRenewDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivSlots` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivSlots[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivSnoozeDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivSnoozeDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivTarget` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivTarget[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivTrigger` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivTrigger[]` | string, or number, or boolean, or null |  |  |
 | `profile.precedence` | integer |  |  |
 | `profile.problems` | list |  |  |
 | `profile.problems[]` | string |  |  |
@@ -2533,7 +2677,7 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `certificatePrimary` | boolean, or string | yes | A verified TLS client certificate: GET /tls/sign-in, or Continue with your certificate on the sign-in screen. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
+| `certificatePrimary` | boolean, or string | yes | A verified TLS client certificate that is not a smart card: GET /tls/sign-in, or Continue with your certificate on the sign-in screen. A smart card certificate is `smartCardPrimary`'s, which follows this one while unset (#2031). (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
 | `description` | string |  | What the profile is for, for the next person. Optional. |
 | `emailCodeAttempts` | integer, or string | yes | How many wrong codes one sign-in step accepts before it is ended and the person starts again. The per-person and per-network rate limits apply as well. Between 1 and 10. Default 5. |
 | `emailCodePrimary` | boolean, or string | yes | A six-digit code mailed to the person's VERIFIED address. NIST SP 800-63B-4 section 3.1.3.1: "Email SHALL NOT be used for out-of-band authentication", because a mailbox may be reached with a password alone, and mail may be read in transit or rerouted. Off by default for that reason; turn it on only where that is an accepted risk. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false. |
@@ -2544,22 +2688,26 @@ Scope: `admin:write`.
 | `emailLinkSecondFactor` | boolean, or string | yes | A single-use link mailed to the person's VERIFIED address, which completes the sign-in only in the browser that started it. NIST SP 800-63B-4 section 3.1.3.1: "Email SHALL NOT be used for out-of-band authentication", because a mailbox may be reached with a password alone, and mail may be read in transit or rerouted. Off by default for that reason; turn it on only where that is an accepted risk. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false. |
 | `emailResendS` | integer, or string | yes | A new code or link replaces the last one, which stops working. At most three are sent for one sign-in step. Between 15 and 600. Default 60. |
 | `federationPrimary` | boolean, or string | yes | A sign-in asserted by a configured federation partner. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
-| `hotpSecondFactor` | boolean, or string |  | An RFC 4226 one-time code from a counter-based token (#1955): a YubiKey's OTP slot, or a vendor's token an administrator imported from a PSKC seed file. Never a first factor. Off here, nobody may ENROL or claim one; a person who already holds one is still asked for it, as an authenticator app's holder is. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false; a save that leaves it out keeps the profile's current value, so a client written before it is not refused and changes nothing. |
-| `kerberosPrimary` | boolean, or string | yes | GET /authn/spnego with a Kerberos ticket. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
+| `hotpSecondFactor` | boolean, or string |  | An RFC 4226 one-time code from a counter-based token (#1955): a YubiKey's OTP slot, or a vendor's token an administrator imported from a PSKC seed file. Never a first factor. OFF BY DEFAULT, and it must be turned on for this realm before anybody can enrol, claim or be assigned an HOTP token, so no HOTP token is used at sign-in until it is. Off here, nobody may ENROL or claim one; a person who already holds one is still asked for it, as an authenticator app's holder is. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false; a save that leaves it out keeps the profile's current value, so a client written before it is not refused and changes nothing. |
+| `kerberosPrimary` | boolean, or string | yes | GET /authn/spnego with a Kerberos ticket, other than PKINIT with a smart card, which is `pkinitSmartCardPrimary`'s and follows this one while unset (#2031). (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
 | `passkeyPrimary` | boolean, or string | yes | Any passkey (WebAuthn credential) the person holds, signing them in with no password. A passkey has no role: this row says, at each sign-in, whether any of them may be a first factor in this realm, unless the first factors of the authentication policy an application names (appAuthnPolicy) say otherwise. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
 | `passwordPrimary` | boolean, or string | yes | A password on the sign-in screen. As a SECOND factor it is the password asked for after a wallet or other passwordless first factor. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
 | `passwordSecondFactor` | boolean, or string | yes | A password on the sign-in screen. As a SECOND factor it is the password asked for after a wallet or other passwordless first factor. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
+| `pkinitSmartCardPrimary` | boolean, or string |  | GET /authn/spnego with a Kerberos ticket that carries this realm's pkinit-smartcard indicator (#2031). `true`, `false`, or `follow`: while the profile stores no value it follows `kerberosPrimary`. Default `follow`; a save that leaves it out keeps what the profile has now. |
 | `profile` | one of `default` |  | Which profile. Only `default` exists. |
 | `recoveryCodeSecondFactor` | boolean, or string | yes | A single-use code from a set the person generated. Off here, no new set may be generated; a set already held still works (this row replaced backupCodes.enabled, and keeps its contract). (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
 | `rememberedBrowserDays` | integer, or string | yes | Counted from the last time the person gave their second factor on that browser. After it they are asked again, and giving it starts the period again. Between 1 and 400. Default 30. |
 | `rememberedBrowserSkipsSecondFactor` | boolean, or string | yes | OFF BY DEFAULT. On, a person signing in on a browser they chose to remember is not asked for their second factor again within the period below of last giving it on that browser. NEVER at the admin console, the user portal or the protocol debugger; never for an administrator; never while the sign-in's risk is medium or higher; and the sign-in is then ONE factor to every relying party — amr ["pwd"] and acr "1", as a password alone — so an application asking for "mfa" is refused it. The browser is recognised by a bearer cookie: whoever copies the cookie skips the second factor too, until the copy is caught. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false. |
+| `requireAttestedHardware` | one of `no`, `always` |  | #2031. `no`: no requirement beyond the mechanism rows. `always`: a session starts only where the credential that completed the sign-in (a passkey, a security key, a certificate or a smart card) is on an active hardware token whose attestation the register recorded; the default realm's built-in administrator is exempt. Default `no`; a save that leaves it out keeps the profile's current value. |
 | `requireSecondFactor` | one of `if-held`, `always` | yes | `if-held`: a person is asked for a second factor when they hold one (or their entry says stsMfaRequired). `always`: everybody in this realm is, and somebody who holds none is sent to enrol one at their next sign-in. This replaced authn.mfaRequired. There is no "never": a held factor is always asked for. Default `if-held`. |
 | `requireSecondFactorForAdministrators` | one of `if-held`, `offer`, `always` | yes | For anybody holding a console role (Admin Read or Admin Write) who holds no second factor. `offer`: they are shown the step that sets one up, with an Ignore button, at every sign-in. `always`: they must set one up before they are signed in — except the default realm's built-in administrator (admin.bootstrapUsername), who is only ever offered one, so a service is never left with nobody who can sign in. `if-held`: as everybody else, by the field above. WEAKER THAN `always`: an administrator on a password alone is an administrator anyone with the password is. Default `offer`. |
 | `securityKeySecondFactor` | boolean, or string | yes | Any passkey (WebAuthn credential) the person holds, asked for after a first factor. A passkey has no role: this row says, at each sign-in, whether any of them may be a second factor in this realm, unless the second factors of the authentication policy an application names (appAuthnPolicy) say otherwise. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
+| `smartCardCardAuthPrimary` | boolean, or string |  | A PIV card authentication (slot 9e) certificate, whose key works without a PIN; a smart card too, so `smartCardPrimary` must also be on (#2031). `true`, `false`, or `follow`: while the profile stores no value it follows the piv.cardAuthSignIn setting (false by default). Default `follow`; a save that leaves it out keeps what the profile has now. |
+| `smartCardPrimary` | boolean, or string |  | A smart card (PIV/CAC) certificate: an attested PIV key, a certificate enrolled here under a PIV slot profile, an outside card mapped by its card UUID, or one under a certSignIn.profiles profile marked smartCard (#2031). `true`, `false`, or `follow`: while the profile stores no value it follows `certificatePrimary`, and `follow` keeps it so. Default `follow`; a save that leaves it out keeps what the profile has now, following included, so a client written before it is not refused and changes nothing. |
 | `totpSecondFactor` | boolean, or string | yes | An RFC 6238 one-time code. Never a first factor: this service holds the same shared secret the app does. Off here, nobody may ENROL one; a person who already holds one is still asked for it, because an off switch that downgraded every enrolled account to a password alone would do something other than it says (this row replaced totp.enabled, and keeps its contract). (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
 | `walletPrimary` | boolean, or string | yes | /authn/wallet with a credential this realm issued, or a SIOPv2 self-issued ID Token from an enrolled key. As a SECOND factor, the wallet presented after a password. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
 | `walletSecondFactor` | boolean, or string | yes | /authn/wallet with a credential this realm issued, or a SIOPv2 self-issued ID Token from an enrolled key. As a SECOND factor, the wallet presented after a password. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
-| `yubicoOtpSecondFactor` | boolean, or string |  | A YubiKey OTP (Yubico's published modhex one-time password, #1955). Never a first factor: this service holds the AES key. Off here, nobody may ENROL, assign or claim one, even when yubiotp.offered is on; a person who already holds one is still asked for it. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false; a save that leaves it out keeps the profile's current value, so a client written before it is not refused and changes nothing. |
+| `yubicoOtpSecondFactor` | boolean, or string |  | A YubiKey OTP (Yubico's published modhex one-time password, #1955). Never a first factor: this service holds the AES key. OFF BY DEFAULT, and it must be turned on for this realm (with yubiotp.offered) before anybody can enrol, claim or be assigned a YubiKey OTP, so none is used at sign-in until it is. Off here, nobody may ENROL, assign or claim one, even when yubiotp.offered is on; a person who already holds one is still asked for it. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false; a save that leaves it out keeps the profile's current value, so a client written before it is not refused and changes nothing. |
 
 **200**: The profile now in force and the rules as sentences.
 
@@ -2608,6 +2756,8 @@ Scope: `admin:write`.
 | `profile.passwordPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.passwordSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.passwordSecondFactor[]` | string, or number, or boolean, or null |  |  |
+| `profile.pkinitSmartCardPrimary` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pkinitSmartCardPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.precedence` | integer |  |  |
 | `profile.problems` | list |  |  |
 | `profile.problems[]` | string |  |  |
@@ -2617,12 +2767,18 @@ Scope: `admin:write`.
 | `profile.rememberedBrowserDays[]` | string, or number, or boolean, or null |  |  |
 | `profile.rememberedBrowserSkipsSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.rememberedBrowserSkipsSecondFactor[]` | string, or number, or boolean, or null |  |  |
+| `profile.requireAttestedHardware` | list, or string, or number, or boolean, or null |  |  |
+| `profile.requireAttestedHardware[]` | string, or number, or boolean, or null |  |  |
 | `profile.requireSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.requireSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `profile.requireSecondFactorForAdministrators` | list, or string, or number, or boolean, or null |  |  |
 | `profile.requireSecondFactorForAdministrators[]` | string, or number, or boolean, or null |  |  |
 | `profile.securityKeySecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.securityKeySecondFactor[]` | string, or number, or boolean, or null |  |  |
+| `profile.smartCardCardAuthPrimary` | list, or string, or number, or boolean, or null |  |  |
+| `profile.smartCardCardAuthPrimary[]` | string, or number, or boolean, or null |  |  |
+| `profile.smartCardPrimary` | list, or string, or number, or boolean, or null |  |  |
+| `profile.smartCardPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.sources` | map |  |  |
 | `profile.sources.{key}` | string |  |  |
 | `profile.stored` | boolean |  |  |
@@ -2685,6 +2841,8 @@ Scope: `admin:write`.
 | `profile.passwordPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.passwordSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.passwordSecondFactor[]` | string, or number, or boolean, or null |  |  |
+| `profile.pkinitSmartCardPrimary` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pkinitSmartCardPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.precedence` | integer |  |  |
 | `profile.problems` | list |  |  |
 | `profile.problems[]` | string |  |  |
@@ -2694,12 +2852,18 @@ Scope: `admin:write`.
 | `profile.rememberedBrowserDays[]` | string, or number, or boolean, or null |  |  |
 | `profile.rememberedBrowserSkipsSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.rememberedBrowserSkipsSecondFactor[]` | string, or number, or boolean, or null |  |  |
+| `profile.requireAttestedHardware` | list, or string, or number, or boolean, or null |  |  |
+| `profile.requireAttestedHardware[]` | string, or number, or boolean, or null |  |  |
 | `profile.requireSecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.requireSecondFactor[]` | string, or number, or boolean, or null |  |  |
 | `profile.requireSecondFactorForAdministrators` | list, or string, or number, or boolean, or null |  |  |
 | `profile.requireSecondFactorForAdministrators[]` | string, or number, or boolean, or null |  |  |
 | `profile.securityKeySecondFactor` | list, or string, or number, or boolean, or null |  |  |
 | `profile.securityKeySecondFactor[]` | string, or number, or boolean, or null |  |  |
+| `profile.smartCardCardAuthPrimary` | list, or string, or number, or boolean, or null |  |  |
+| `profile.smartCardCardAuthPrimary[]` | string, or number, or boolean, or null |  |  |
+| `profile.smartCardPrimary` | list, or string, or number, or boolean, or null |  |  |
+| `profile.smartCardPrimary[]` | string, or number, or boolean, or null |  |  |
 | `profile.sources` | map |  |  |
 | `profile.sources.{key}` | string |  |  |
 | `profile.stored` | boolean |  |  |
@@ -3262,7 +3426,11 @@ Scope: `admin:write`.
 
 Writes `cn=<profile>,ou=postLoginPolicies` in this realm's directory, REPLACING what is there; a realm with no `default` of its own follows the default realm's, and named profiles are the realm's own. **Off by default** (`enabled`). On, a person the profile reaches who is due the `activity` is asked after signing in, before being sent back to the application: `pqc-passkey-migration` asks a person holding a classical passkey and no post-quantum one to register an ML-DSA passkey, and — per `noPasskey` — a person holding none to register one. A passkey has no role (#1135): `noPasskeyRole` is accepted and ignored. Skip puts it off `snoozeDays`; once `graceDays` (0 = never) have passed since the person's first invitation Skip is refused (STS-AUTHN-0474) and the sign-in is held until it is done, and a door that cannot ask for it refuses the sign-in (STS-AUTHN-0473). A named profile carries a `precedence` and nothing else: a group names it in `stsPostLoginPolicy` (`POST /admin-api/groups/set-policy`) and an application in `appPostLoginPolicy` (`POST /admin-api/applications/set`). Of the profile the application signed in to names and those the person's groups name the lowest `precedence` wins, so a named profile with `enabled` off excludes them; a started activity's mail and the progress report know no application and select by the groups alone. A profile something names is not deleted (STS-AUTHN-0543). `method` (#1100) is how a classical passkey is migrated: `upgrade` (proved once, then replaced in place on its authenticator), `alongside` (an ML-DSA passkey beside it) or `automatic` (the lanes decide). `attestation` (#1102): `post-quantum` counts an ML-DSA passkey as migrated only where its recorded attestation is post-quantum too. `noPasskeyFallback` (#1103): `classical` offers a person with no passkey a classical retry where their device cannot make ML-DSA.
 
-**Every field is required** and one left out is refused by name rather than reset to a default, because a save that quietly loosened a rule nobody mentioned is the mistake nobody sees.
+**The mail-encryption activity (#2009) is a block of its own**, off by default with its own switch, so a profile saved before reads it as off: `mailEnabled` asks a person whose mail is encrypted to a classical OpenPGP key or S/MIME certificate to register a post-quantum (ML-KEM) one after signing in; `mailNoKey` what a person whose mail is not encrypted is asked; `mailPrefer` what the step offers (an OpenPGP key, an uploaded S/MIME certificate, or either); `mailKeepClassical` how many days a replaced classical OpenPGP key stays on the entry and in the Web Key Directory beside the new one; and its own `mailSnoozeDays` and `mailGraceDays`.
+
+**The PIV re-issue (#2009) is a block of its own** too, off by default with its own switch: `pivEnabled` asks a person holding a PIV slot certificate this realm issued, in a slot `pivSlots` names, to enrol a new one after signing in when `pivTrigger` says it is due (`classical-issuer`: a classical CA signed it and the realm's EST Issuing CA is post-quantum; `expiring`: it expires within `pivRenewDays`); `pivTarget` `rekey` asks nobody; the old certificate is revoked when the new one is first used to sign in; and its own `pivSnoozeDays` and `pivGraceDays`.
+
+**Every field is required**, except the mail-encryption and PIV re-issue blocks, which a save may leave out to keep what the profile stored, and one left out is refused by name rather than reset to a default, because a save that quietly loosened a rule nobody mentioned is the mistake nobody sees.
 
 **Mirrors** `POST /admin/policies` on the admin console.
 
@@ -3284,10 +3452,23 @@ Scope: `admin:write`.
 | `description` | string |  | What the profile is for, for the next person. Optional. |
 | `enabled` | boolean, or string | yes | OFF BY DEFAULT. On, every person this profile reaches who is due the activity below is asked to do it after signing in, before they are sent back to the application. A named profile with this off EXCLUDES whoever it is selected for: the members of the groups naming it, and a sign-in to an application naming it. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false. |
 | `graceDays` | integer, or string | yes | Counted from the person's FIRST invitation. When it has passed, Skip is gone and the sign-in is held — no session is started — until the activity is done. 0 is no deadline: it can always be skipped. Between 0 and 3650. Default 0. |
+| `mailEnabled` | boolean, or string |  | OFF BY DEFAULT. The mail-encryption activity (#2009): a person whose mail is encrypted to a classical key is asked to register a post-quantum one. Left out, the profile's stored value stays. |
+| `mailGraceDays` | integer, or string |  | The mail-encryption activity's allotted time from the first invitation; 0 is no deadline. Between 0 and 3650. Left out, the stored value stays. |
+| `mailKeepClassical` | integer, or string |  | Days a replaced classical OpenPGP key is kept beside the post-quantum one; 0 removes it at once. Between 0 and 3650. Left out, the stored value stays. |
+| `mailNoKey` | one of `leave`, `invite`, `require` |  | A person whose mail is not encrypted: leave, invite or require. Left out, the stored value stays. |
+| `mailPrefer` | one of `either`, `openpgp`, `smime` |  | What the step offers: either, openpgp or smime (uploaded). Left out, the stored value stays. |
+| `mailSnoozeDays` | integer, or string |  | How long Skip puts the mail-encryption activity off. Between 1 and 90. Left out, the stored value stays. |
 | `method` | one of `automatic`, `upgrade`, `alongside` | yes | upgrade: the person uses their classical passkey once, then an ML-DSA passkey replaces it in place on the same authenticator — one passkey, nothing left behind. alongside: an ML-DSA passkey is added beside it, in the post-quantum lane where the realm offers two lanes, or on another authenticator where it offers one. automatic: alongside where the person's passkey policy offers two lanes, upgrade where it offers one. Default `automatic`. |
 | `noPasskey` | one of `leave`, `invite`, `require` | yes | leave: not asked. invite: asked to register a post-quantum passkey, and may always skip it. require: asked, and may skip it only until the allotted time has passed. Default `leave`. |
 | `noPasskeyFallback` | one of `none`, `classical` | yes | none: ML-DSA only. classical: after an ML-DSA registration fails on the device, a retry with the classical algorithms is offered (where the passkey policy allows one) — a classical passkey is better than a password, and its holder is asked for the migration later like anyone else's. Default `none`. |
 | `noPasskeyRole` | string |  | Ignored since #1135: a passkey has no role, so a person with none registers a passkey and nothing else is asked. Accepted so that an older body is not refused; not stored, not answered. |
+| `pivEnabled` | boolean, or string |  | OFF BY DEFAULT. The PIV re-issue (#2009): a person holding a PIV slot certificate this realm issued is asked to enrol a new one when it is due. Left out, the stored value stays. |
+| `pivGraceDays` | integer, or string |  | The PIV re-issue's allotted time from the first invitation; 0 is no deadline. Between 0 and 3650. Left out, the stored value stays. |
+| `pivRenewDays` | integer, or string |  | Days before expiry a certificate is due. Between 1 and 365. Left out, the stored value stays. |
+| `pivSlots` | string |  | The slots looked at, comma-separated: 9a, 9c, 9d, 9e. Left out, the stored value stays. |
+| `pivSnoozeDays` | integer, or string |  | How long Skip puts the PIV re-issue off. Between 1 and 90. Left out, the stored value stays. |
+| `pivTarget` | one of `reissue`, `rekey` |  | reissue (a new certificate over a key the card makes again) or rekey (a post-quantum key on the card, which no card makes today, so nobody is asked). Left out, the stored value stays. |
+| `pivTrigger` | one of `classical-issuer`, `expiring`, `both` |  | What makes a certificate due: classical-issuer, expiring or both. Left out, the stored value stays. |
 | `precedence` | integer, or string |  | A named profile only: the lowest matching precedence wins. Default 100. |
 | `profile` | string |  | Which profile: `default`, or a named profile (lower-case letters, digits and hyphens), which is created by its first save. Left out, the save edits the default profile; given empty, or null, it is refused. |
 | `snoozeDays` | integer, or string | yes | How long Skip puts the activity off for that person. Between 1 and 90. Default 7. |
@@ -3316,6 +3497,18 @@ Scope: `admin:write`.
 | `profile.graceDays` | list, or string, or number, or boolean, or null |  |  |
 | `profile.graceDays[]` | string, or number, or boolean, or null |  |  |
 | `profile.inherited` | boolean |  |  |
+| `profile.mailEnabled` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailEnabled[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailGraceDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailGraceDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailKeepClassical` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailKeepClassical[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailNoKey` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailNoKey[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailPrefer` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailPrefer[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailSnoozeDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailSnoozeDays[]` | string, or number, or boolean, or null |  |  |
 | `profile.method` | list, or string, or number, or boolean, or null |  |  |
 | `profile.method[]` | string, or number, or boolean, or null |  |  |
 | `profile.name` | string |  |  |
@@ -3323,6 +3516,20 @@ Scope: `admin:write`.
 | `profile.noPasskey[]` | string, or number, or boolean, or null |  |  |
 | `profile.noPasskeyFallback` | list, or string, or number, or boolean, or null |  |  |
 | `profile.noPasskeyFallback[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivEnabled` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivEnabled[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivGraceDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivGraceDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivRenewDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivRenewDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivSlots` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivSlots[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivSnoozeDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivSnoozeDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivTarget` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivTarget[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivTrigger` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivTrigger[]` | string, or number, or boolean, or null |  |  |
 | `profile.precedence` | integer |  |  |
 | `profile.problems` | list |  |  |
 | `profile.problems[]` | string |  |  |
@@ -3359,6 +3566,18 @@ Scope: `admin:write`.
 | `profile.graceDays` | list, or string, or number, or boolean, or null |  |  |
 | `profile.graceDays[]` | string, or number, or boolean, or null |  |  |
 | `profile.inherited` | boolean |  |  |
+| `profile.mailEnabled` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailEnabled[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailGraceDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailGraceDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailKeepClassical` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailKeepClassical[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailNoKey` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailNoKey[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailPrefer` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailPrefer[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailSnoozeDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailSnoozeDays[]` | string, or number, or boolean, or null |  |  |
 | `profile.method` | list, or string, or number, or boolean, or null |  |  |
 | `profile.method[]` | string, or number, or boolean, or null |  |  |
 | `profile.name` | string |  |  |
@@ -3366,6 +3585,20 @@ Scope: `admin:write`.
 | `profile.noPasskey[]` | string, or number, or boolean, or null |  |  |
 | `profile.noPasskeyFallback` | list, or string, or number, or boolean, or null |  |  |
 | `profile.noPasskeyFallback[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivEnabled` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivEnabled[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivGraceDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivGraceDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivRenewDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivRenewDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivSlots` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivSlots[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivSnoozeDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivSnoozeDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivTarget` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivTarget[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivTrigger` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivTrigger[]` | string, or number, or boolean, or null |  |  |
 | `profile.precedence` | integer |  |  |
 | `profile.problems` | list |  |  |
 | `profile.problems[]` | string |  |  |

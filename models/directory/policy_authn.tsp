@@ -51,7 +51,21 @@ namespace IyaSts.Directory;
     #{id: "emailCode", label: "Emailed six-digit code", primary: false, secondFactor: false, email: true},
     #{id: "emailLink", label: "Emailed sign-in link", primary: false, secondFactor: false, email: true},
     #{id: "certificate", label: "TLS client certificate", primary: true, secondFactor: null},
+    // #2031: a smart card (PIV/CAC) certificate, told apart from other TLS
+    // client certificates by evidence the service holds (an attested PIV
+    // key, a PIV slot profile, an outside card's UUID, a profile marked
+    // `smartCard`). `follows`: while the policy stores no value, it is
+    // whatever `certificatePrimary` is, so a policy written before it keeps
+    // its meaning. `optional`, as `hotp` is.
+    #{id: "smartCard", label: "Smart card (PIV/CAC) certificate", primary: true, secondFactor: null, optional: true, follows: "certificatePrimary"},
+    // #2031: the PIV card authentication key (slot 9e), which needs no PIN.
+    // A card-auth certificate is a smart card too, so it needs this row AND
+    // `smartCard`. While unset it follows the piv.cardAuthSignIn setting.
+    #{id: "smartCardCardAuth", label: "PIV card authentication key (no PIN)", primary: false, secondFactor: null, optional: true, follows: "setting:piv.cardAuthSignIn"},
     #{id: "kerberos", label: "Kerberos (SPNEGO)", primary: true, secondFactor: null},
+    // #2031: a SPNEGO sign-in whose ticket carries this realm's
+    // pkinit-smartcard indicator. While unset it follows `kerberosPrimary`.
+    #{id: "pkinitSmartCard", label: "Kerberos PKINIT with a smart card", primary: true, secondFactor: null, optional: true, follows: "kerberosPrimary"},
     #{id: "wallet", label: "Wallet presentation", primary: true, secondFactor: true},
     #{id: "federation", label: "Federation partner", primary: true, secondFactor: null}
   ],
@@ -80,6 +94,16 @@ model PolicyAuthn {
     field: #{key: "requireSecondFactorForAdministrators", type: "enum", values: #["if-held", "offer", "always"], dflt: "offer", label: "Second factor for administrators"}
   })
   stsAuthnRequireSecondFactorForAdministrators?: string;
+  // #2031, design X4's `attested-hardware` as realm policy. Not a mechanism
+  // row: nothing is presented AS attested hardware, it is a property of the
+  // passkey, key, certificate or smart card that answered. `optional`, so a
+  // save that omits it keeps the profile's value.
+  @attr(#{
+    kind: "single",
+    what: "`no`: no requirement beyond the mechanism rows. `always`: a session starts only where the credential that completed the sign-in (a passkey, a security key, a certificate or a smart card) is on an active hardware token whose attestation the register recorded, the same test an application's `attested-hardware` mechanism makes. A password, an authenticator app, an emailed code, a wallet, a federation partner or a Kerberos ticket alone is refused. The default realm's built-in administrator (admin.bootstrapUsername) is exempt, so a service is never left with nobody who can sign in.",
+    field: #{key: "requireAttestedHardware", type: "enum", values: #["no", "always"], dflt: "no", label: "Attested hardware token required", optional: true}
+  })
+  stsAuthnRequireAttestedHardware?: string;
   @attr(#{
     kind: "single",
     what: "A password on the sign-in screen. As a SECOND factor it is the password asked for after a wallet or other passwordless first factor."
@@ -107,12 +131,12 @@ model PolicyAuthn {
   stsAuthnTotpSecondFactor?: DirectoryBoolean;
   @attr(#{
     kind: "single",
-    what: "An RFC 4226 one-time code from a counter-based token (#1955): a YubiKey's OTP slot, or a vendor's token an administrator imported from a PSKC seed file. Never a first factor. Off here, nobody may ENROL or claim one; a person who already holds one is still asked for it, as an authenticator app's holder is."
+    what: "An RFC 4226 one-time code from a counter-based token (#1955): a YubiKey's OTP slot, or a vendor's token an administrator imported from a PSKC seed file. Never a first factor. OFF BY DEFAULT, and it must be turned on for this realm before anybody can enrol, claim or be assigned an HOTP token, so no HOTP token is used at sign-in until it is. Off here, nobody may ENROL or claim one; a person who already holds one is still asked for it, as an authenticator app's holder is."
   })
   stsAuthnHotpSecondFactor?: DirectoryBoolean;
   @attr(#{
     kind: "single",
-    what: "A YubiKey OTP (Yubico's published modhex one-time password, #1955). Never a first factor: this service holds the AES key. Off here, nobody may ENROL, assign or claim one, even when yubiotp.offered is on; a person who already holds one is still asked for it."
+    what: "A YubiKey OTP (Yubico's published modhex one-time password, #1955). Never a first factor: this service holds the AES key. OFF BY DEFAULT, and it must be turned on for this realm (with yubiotp.offered) before anybody can enrol, claim or be assigned a YubiKey OTP, so none is used at sign-in until it is. Off here, nobody may ENROL, assign or claim one, even when yubiotp.offered is on; a person who already holds one is still asked for it."
   })
   stsAuthnYubicoOtpSecondFactor?: DirectoryBoolean;
   @attr(#{
@@ -142,14 +166,29 @@ model PolicyAuthn {
   stsAuthnEmailLinkSecondFactor?: DirectoryBoolean;
   @attr(#{
     kind: "single",
-    what: "A verified TLS client certificate: GET /tls/sign-in, or Continue with your certificate on the sign-in screen."
+    what: "A verified TLS client certificate that is not a smart card: GET /tls/sign-in, or Continue with your certificate on the sign-in screen. A smart card certificate is the smart card row's, which follows this one while unset (#2031)."
   })
   stsAuthnCertificatePrimary?: DirectoryBoolean;
   @attr(#{
     kind: "single",
-    what: "GET /authn/spnego with a Kerberos ticket."
+    what: "A smart card (PIV/CAC) certificate, at GET /tls/sign-in or Continue with your certificate: an attested PIV key, a certificate enrolled here under a PIV slot profile, an outside card mapped by its card UUID (piv.externalIssuers, stsPivCardUuid), or one under a certSignIn.profiles profile marked smartCard. ABSENT, it follows stsAuthnCertificatePrimary, so a policy written before it keeps its meaning (#2031)."
+  })
+  stsAuthnSmartCardPrimary?: DirectoryBoolean;
+  @attr(#{
+    kind: "single",
+    what: "A PIV card authentication (slot 9e) certificate, whose key works without a PIN. It is a smart card too, so the smart card row must also be on. ABSENT, it follows the piv.cardAuthSignIn setting (#2031)."
+  })
+  stsAuthnSmartCardCardAuthPrimary?: DirectoryBoolean;
+  @attr(#{
+    kind: "single",
+    what: "GET /authn/spnego with a Kerberos ticket, other than PKINIT with a smart card, which is its own row and follows this one while unset (#2031)."
   })
   stsAuthnKerberosPrimary?: DirectoryBoolean;
+  @attr(#{
+    kind: "single",
+    what: "GET /authn/spnego with a Kerberos ticket that carries this realm's pkinit-smartcard indicator: the KDC issued it on PKINIT from a smart card. ABSENT, it follows stsAuthnKerberosPrimary (#2031)."
+  })
+  stsAuthnPkinitSmartCardPrimary?: DirectoryBoolean;
   @attr(#{
     kind: "single",
     what: "/authn/wallet with a credential this realm issued, or a SIOPv2 self-issued ID Token from an enrolled key. As a SECOND factor, the wallet presented after a password."

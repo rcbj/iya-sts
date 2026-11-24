@@ -7559,7 +7559,8 @@ class Authn {
   // ---------------------------------------------------------------------------
   // Which mechanism, in which role, the authentication policy refuses for
   // this session — its code — or ''. See the paragraph in startSession().
-  private authnPolicyRefusal(amr: any, credential: any): string {
+  private authnPolicyRefusal(amr: any, credential: any,
+                             username?: string): string {
     const { log, authnPolicy } = this.deps;
     log.debug("Entering Authn.authnPolicyRefusal().");
     const kind = String((credential && credential.kind) || '');
@@ -7574,6 +7575,16 @@ class Authn {
     if (ONLY_FIRST[kind]) {
       mechanism = ONLY_FIRST[kind];
       role = 'primary';
+      // THE SMART-CARD ROWS (#2031): a certificate the door found to be a
+      // smart card (`tls_server.js`'s `smartCardOf()`), and a Kerberos
+      // ticket that carries this realm's pkinit-smartcard indicator, which
+      // is what earns `sc` there (`krb5_tokens.factorsFor()`). Each row
+      // follows the generic one while the policy stores no value for it.
+      if (kind === 'certificate' && credential.smartCard === true) {
+        mechanism = 'smartCard';
+      } else if (kind === 'kerberos' && factors.indexOf('sc') >= 0) {
+        mechanism = 'pkinitSmartCard';
+      }
     } else if (kind === 'password') {
       mechanism = 'password';
     } else if (kind === 'wallet') {
@@ -7593,9 +7604,77 @@ class Authn {
     // A held second factor is never refused here (see the caller).
     const refused = mechanism && !authnPolicy.allows(mechanism, role);
     const code = !refused ? ''
-      : (role === 'primary' ? 'STS-AUTHN-0268' : 'STS-AUTHN-0269');
-    log.debug("Leaving Authn.authnPolicyRefusal(). " + (code || 'allowed'));
-    return code;
+      : (mechanism === 'smartCard' ? 'STS-AUTHN-0590'
+      : (mechanism === 'pkinitSmartCard' ? 'STS-AUTHN-0591'
+      : (role === 'primary' ? 'STS-AUTHN-0268' : 'STS-AUTHN-0269')));
+    if (code) {
+      log.debug("Leaving Authn.authnPolicyRefusal(). " + code);
+      return code;
+    }
+    // ATTESTED HARDWARE FOR EVERYBODY (#2031): with the policy's
+    // `requireAttestedHardware` at `always`, the credential that completed
+    // the sign-in must be on an active hardware token in the register — the
+    // test an application's `attested-hardware` mechanism makes
+    // (`authn_mechanisms.ts`). A door that names no credential is not
+    // asked, as above. The default realm's built-in administrator is exempt,
+    // as from `requireSecondFactorForAdministrators: always`, so a service is
+    // never left with nobody who can sign in.
+    const attested = kind &&
+      authnPolicy.requireAttestedHardware() === 'always' &&
+      !this.builtInAdministrator(username) &&
+      !Authn.attestedHardwareHeld(credential, username)
+      ? 'STS-AUTHN-0592' : '';
+    log.debug("Leaving Authn.authnPolicyRefusal(). " +
+              (attested || 'allowed'));
+    return attested;
+  }
+
+  // Whether a name is the default realm's built-in administrator
+  // (`admin.bootstrapUsername`, #2031's exemption).
+  private builtInAdministrator(username: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Authn.builtInAdministrator().");
+    let out = false;
+    try {
+      out = realms.currentId() === 'default' && !!username &&
+        String(username) === require('../common/bootstrap_name').current();
+    } catch (e) {
+      log.debug("Caught in Authn.builtInAdministrator(): " +
+                ((e && e.message) || e));
+      // Nothing to compare with: nobody is exempt.
+      out = false;
+    }
+    log.debug("Leaving Authn.builtInAdministrator(). " + out);
+    return out;
+  }
+
+  // Whether a sign-in's credential is on an ACTIVE hardware token the
+  // register holds (#2031): `hardwareTokenOf()`'s snapshot, asked again for
+  // the token's status now, as `authn_mechanisms.ts` asks it.
+  /**
+   * Whether the credential that completed a sign-in is on an active,
+   * attested hardware token.
+   *
+   * @param given - the credential detail a door passed
+   * @param username - the person signing in
+   * @returns true where it is
+   */
+  static attestedHardwareHeld(given: any, username?: string): boolean {
+    helpers.log.debug("Entering Authn.attestedHardwareHeld().");
+    const token = Authn.hardwareTokenOf(given, username);
+    let out = false;
+    try {
+      const now = token ? require('../common/hardware_tokens')
+        .byKey(String(token.key || '')) : null;
+      out = !!now && String(now.status || '') === 'active';
+    } catch (e) {
+      helpers.log.debug("Caught in Authn.attestedHardwareHeld(): " +
+                        ((e && e.message) || e));
+      // A register that cannot be asked proves nothing.
+      out = false;
+    }
+    helpers.log.debug("Leaving Authn.attestedHardwareHeld(). " + out);
+    return out;
   }
 
   // THE PASSKEY QUESTION AT SIGN-IN (#536): whether the passkey that
@@ -7856,6 +7935,45 @@ class Authn {
     log.debug("Leaving Authn.recoveryRefusalAtSession(). " +
               (out ? out.code : 'allowed'));
     return out;
+  }
+
+  // A SESSION STARTED ON A CERTIFICATE (#2009 P3, rcbj's D5): where the
+  // certificate is one a post-login PIV re-issue enrolled, the certificate
+  // it replaces is revoked (superseded) now, at its first use, and not when
+  // it was issued — an import that failed must not leave a card that signs
+  // nobody in. `common/post_login_piv.ts` decides; this only tells it, and
+  // nothing it does can touch the sign-in: it is not awaited, and a module
+  // that is not loaded (a process with no composition root) is not asked.
+  private pivCertificateUsed(username: string, extra: any): void {
+    const { log } = this.deps;
+    log.debug("Entering Authn.pivCertificateUsed().");
+    const credential = extra && extra.credential;
+    if (!credential || String(credential.kind || '') !== 'certificate' ||
+        !String(credential.serial || '')) {
+      log.debug("Leaving Authn.pivCertificateUsed(). Not a certificate.");
+      return;
+    }
+    let piv: any = null;
+    try {
+      piv = require('../common/post_login_piv');
+    } catch (e) {
+      log.debug("Caught in Authn.pivCertificateUsed(): " +
+                ((e && e.message) || e));
+      piv = null;
+    }
+    if (!piv || typeof piv.certificateUsed !== 'function') {
+      log.debug("Leaving Authn.pivCertificateUsed(). No module.");
+      return;
+    }
+    Promise.resolve()
+      .then(function () {
+        return piv.certificateUsed(username, String(credential.serial));
+      })
+      .catch(function (e: any) {
+        log.debug("Caught in Authn.pivCertificateUsed(): " +
+                  ((e && e.message) || e));
+      });
+    log.debug("Leaving Authn.pivCertificateUsed().");
   }
 
   // A PASSKEY SIGNED THEM IN AFTER A RECOVERY (#724): the pending recovery
@@ -8274,7 +8392,7 @@ class Authn {
     // draws as the policy's refusal.
     // -------------------------------------------------------------------------
     const policyCode = extra.authenticated === false ? ''
-      : this.authnPolicyRefusal(amr, extra.credential);
+      : this.authnPolicyRefusal(amr, extra.credential, username);
     if (policyCode) {
       log.info('authn: a session for "' + username + '" was REFUSED at the ' +
                (via || 'sign-in') + ' door: this realm\'s authentication ' +
@@ -9042,6 +9160,7 @@ class Authn {
                                                amr,
                                                acr, via, extra);
       this.recoveryCompleted(username, extra);
+      this.pivCertificateUsed(username, extra);
       if (multiAccount) {
         this.enrolInAccountSet(extra.request, res, again, defaultFound);
       }
@@ -9466,6 +9585,8 @@ class Authn {
     }
     // A PASSKEY AFTER A RECOVERY (#724) completes it.
     this.recoveryCompleted(username, extra);
+    // A RE-ISSUED PIV CERTIFICATE'S FIRST USE (#2009 P3, D5).
+    this.pivCertificateUsed(username, extra);
     log.debug("Leaving Authn.startSessionHere(). " + username +
               " is signed in (amr " +
               (amr || []).join(',') + ").");
@@ -12137,6 +12258,20 @@ class Authn {
   // application and the risk the door assessed. The first invitation is
   // recorded here, which is when the allotted time starts.
   // ---------------------------------------------------------------------------
+  // WHAT AN ACTIVITY ASKS, in the audit row's words (#2009 P2): the rows
+  // keep their actions and `activity` (design X7), and the summary names
+  // what was asked rather than always a passkey.
+  private postLoginWhat(activity: string): string {
+    const { log } = this.deps;
+    log.debug("Entering Authn.postLoginWhat(). " + activity);
+    log.debug("Leaving Authn.postLoginWhat().");
+    return activity === 'pqc-mail-encryption'
+      ? 'move their mail encryption to a post-quantum key'
+      : (activity === 'piv-reissue'
+        ? 'enrol new PIV slot certificates'
+        : 'register a post-quantum passkey');
+  }
+
   private postLoginStep(res: any, record: any, username: string,
                         said: any): boolean {
     const { log, randomId, stsCrypto, audit, postLogin } = this.deps;
@@ -12173,7 +12308,27 @@ class Authn {
         profile: String(due.profile || ''),
         // Who asked (#1126): the policy, or a started activity's id;
         // written on the progress row at Skip and at done as at the ask.
-        askedBy: String(due.askedBy || '') },
+        askedBy: String(due.askedBy || ''),
+        // THE MAIL-ENCRYPTION ACTIVITY'S FACTS (#2009 P2): what the step
+        // offers, what the person's mail is encrypted to now, and how
+        // long a replaced classical OpenPGP key is kept (D3). Empty for
+        // the passkey migration.
+        offers: Array.isArray(due.offers) ? due.offers.map(String) : [],
+        current: due.current
+          ? { kind: String(due.current.kind || ''),
+              algorithm: String(due.current.algorithm || '') } : null,
+        keepClassicalDays: Number(due.keepClassicalDays) || 0,
+        // THE PIV RE-ISSUE'S FACTS (#2009 P3): each due slot, its
+        // certificate and why; `issued` fills as the step enrols. Empty for
+        // the other activities.
+        slots: Array.isArray(due.slots) ? due.slots.map(function (one: any) {
+          return { slot: String(one.slot || ''),
+                   profile: String(one.profile || ''),
+                   serialHex: String(one.serialHex || ''),
+                   notAfter: String(one.notAfter || ''),
+                   reason: String(one.reason || '') };
+        }) : [],
+        issued: [] },
       held: {
         amr: Array.isArray(hold.amr) ? hold.amr : [],
         acr: String(hold.acr || ''), via: String(hold.via || ''),
@@ -12196,8 +12351,8 @@ class Authn {
       action: 'authn.post-login.asked', outcome: 'success',
       actor: username, target: username, channel: 'http',
       protocol: record && record.protocol,
-      summary: username + ' was asked, after signing in, to register a ' +
-               'post-quantum passkey' +
+      summary: username + ' was asked, after signing in, to ' +
+               this.postLoginWhat(String(due.activity)) +
                (due.required ? '; it is required' : ''),
       detail: { activity: String(due.activity),
                 reason: String(due.reason), required: due.required === true,
@@ -12618,8 +12773,9 @@ class Authn {
         action: 'authn.post-login.skipped', outcome: 'success',
         actor: step.username, target: step.username, channel: 'http',
         protocol: step.authn && step.authn.protocol,
-        summary: step.username + ' put off registering a post-quantum ' +
-                 'passkey for ' + due.snoozeDays + ' day(s)',
+        summary: step.username + ' put off a post-login activity (' +
+                 String(due.activity) + ') for ' + due.snoozeDays +
+                 ' day(s)',
         detail: { activity: String(due.activity),
                   snoozedUntil: new Date(Number(skipped.snoozedUntil))
                     .toISOString(),
@@ -12628,6 +12784,16 @@ class Authn {
       });
       this.finishPostLogin(req, res, base, step);
       log.debug("Leaving Authn.postLoginAct(). Skipped.");
+      return;
+    }
+    // REGISTER IS THE PASSKEY MIGRATION'S ACT (#2009 P2): another
+    // activity's step has acts of its own (`postLoginMailAct()`).
+    if (String(due.activity || postLogin.PQC_MIGRATION) !==
+        postLogin.PQC_MIGRATION) {
+      errorCodes.mark(res, 'STS-AUTHN-0602');
+      this.stepRefused(res, 'This step asks for another post-login ' +
+                       'activity, not a passkey.');
+      log.debug("Leaving Authn.postLoginAct(). Another activity's step.");
       return;
     }
     if (!postLogin.canRegister(String(due.method || ''))) {
@@ -12681,6 +12847,243 @@ class Authn {
     this.stepAnswer(res, 'mfa', 'webauthn', String(stepId), WEBAUTHN_PATH,
                     'mfa');
     log.debug("Leaving Authn.postLoginAct(). To the registration.");
+  }
+
+  // ---------------------------------------------------------------------------
+  // `POST /authn-api/mfa/{id}/post-login/mail` — THE MAIL-ENCRYPTION
+  // ACTIVITY'S ACTS (#2009 P2, design X4), each through
+  // `common/post_login_mail.ts` and so through `common/openpgp_keys.ts`'s
+  // own doors and refusals:
+  //
+  //   * `openpgp-challenge` — the registration challenge, kept on the step
+  //     and drawn by the page, which the person signs with their OpenPGP
+  //     tool;
+  //   * `openpgp-register` — the signed challenge and the public key, which
+  //     must be post-quantum (STS-OPENPGP-0033); the classical key it
+  //     replaces is kept for the profile's days (D3);
+  //   * `smime-register` — an ML-KEM certificate, uploaded (D4;
+  //     STS-AUTHN-0600 for any other).
+  //
+  // A registration done, the activity is done and the held session starts
+  // as the door would have started it. Where the realm can no longer take
+  // anything the step offered, the held session starts without it
+  // (STS-AUTHN-0603): a sign-in is never held for what cannot be done.
+  // ---------------------------------------------------------------------------
+  /**
+   * Answers an act at the post-login mail-encryption step.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param stepId - the step's id
+   * @param body - `{ act, publicKey?, signed?, certificate? }`
+   * @returns a promise settled when the answer is sent
+   */
+  async postLoginMailAct(req: any,
+                         res: IyaApi.AuthnAnswering<'answerPostLoginMail'>,
+                         stepId: string, body: any): Promise<void> {
+    const { log, baseUrlOf, audit, errorCodes, postLogin } = this.deps;
+    log.debug("Entering Authn.postLoginMailAct(). " +
+              String((body && body.act) || ''));
+    const base = baseUrlOf(req);
+    const found = this.stepProblem('post-login', stepId);
+    if (found.problem) {
+      errorCodes.mark(res, found.problem.code);
+      this.stepRefused(res, found.problem.why);
+      log.debug("Leaving Authn.postLoginMailAct(). No step.");
+      return;
+    }
+    const step = found.step;
+    const due = step.postLogin;
+    if (String(due.activity || '') !== 'pqc-mail-encryption') {
+      errorCodes.mark(res, 'STS-AUTHN-0602');
+      this.stepRefused(res, 'This step asks for another post-login ' +
+                       'activity, not a mail encryption key.');
+      log.debug("Leaving Authn.postLoginMailAct(). Another activity.");
+      return;
+    }
+    const mail = require('../common/post_login_mail');
+    const still = [].concat(due.offers || []).filter(function (k: string) {
+      return k === 'openpgp' ? mail.canOpenpgp() : mail.canSmime();
+    });
+    if (!still.length) {
+      pendingMfa.delete(String(stepId));
+      log.info(errorCodes.tag('STS-AUTHN-0603') + 'authn: the post-login ' +
+               'mail-encryption activity of "' + step.username + '" ' +
+               'cannot be done here any more; the held session is started ' +
+               'without it.');
+      errorCodes.mark(res, 'STS-AUTHN-0603');
+      this.finishPostLogin(req, res, base, step);
+      log.debug("Leaving Authn.postLoginMailAct(). Cannot be done here.");
+      return;
+    }
+    const act = String((body && body.act) || '');
+    const username = String(step.username);
+    let answer: any = null;
+    if (act === 'openpgp-challenge') {
+      answer = mail.challenge(username, due);
+      if (answer && answer.ok) {
+        step.postLogin.challenge = answer.challenge;
+        pendingMfa.set(String(stepId), step);
+        this.stepAnswer(res, 'mfa', 'post-login', String(stepId),
+                        POST_LOGIN_PATH, 'mfa');
+        log.debug("Leaving Authn.postLoginMailAct(). A challenge.");
+        return;
+      }
+    } else if (act === 'openpgp-register') {
+      answer = await mail.registerOpenPgp(username, due, body || {});
+    } else {
+      answer = mail.registerSmime(username, due, body || {});
+    }
+    if (!answer || !answer.ok) {
+      errorCodes.mark(res, errorCodes.codeOf(answer) || 'STS-AUTHN-0601');
+      this.stepRefused(res, String(((answer && answer.errors) || [])[0] ||
+        (answer && answer.error) || 'The key was not registered.'));
+      log.debug("Leaving Authn.postLoginMailAct(). Refused.");
+      return;
+    }
+    pendingMfa.delete(String(stepId));
+    postLogin.noteDone(username, due);
+    audit.audit({
+      action: 'authn.post-login.done', outcome: 'success',
+      actor: username, target: username, channel: 'http',
+      protocol: step.authn && step.authn.protocol,
+      summary: username + ' moved their mail encryption to a ' +
+               'post-quantum ' + (answer.kind === 'smime'
+                 ? 'S/MIME certificate' : 'OpenPGP key') +
+               ' after signing in',
+      detail: { activity: String(due.activity), kind: String(answer.kind),
+                fingerprint: String(answer.fingerprint || ''),
+                serial: String(answer.serial || ''),
+                classicalKeptUntil: String(answer.keptUntil || ''),
+                profile: String(due.profile || ''),
+                askedBy: String(due.askedBy || '') }
+    });
+    this.finishPostLogin(req, res, base, step);
+    log.debug("Leaving Authn.postLoginMailAct(). Done.");
+  }
+
+  // ---------------------------------------------------------------------------
+  // `POST /authn-api/mfa/{id}/post-login/piv` — THE PIV RE-ISSUE'S ACTS
+  // (#2009 P3, design X5), through `common/post_login_piv.ts` and so through
+  // the PIV enrolment form (`common/piv_enrolment.ts`) with the step's person
+  // as the caller:
+  //
+  //   * `piv-enrol` — one due slot's certificate request, its attestation and
+  //     the f9 certificate; the new certificate, its chain and the `ykman`
+  //     command that writes it to the card are kept on the step and drawn by
+  //     the page, which stays (a person writes it to the card before going
+  //     on). What it replaces is revoked when it is first used (D5);
+  //   * `piv-continue` — once every due slot has a new certificate, the
+  //     activity is done and the held session starts (STS-AUTHN-0622 before).
+  //
+  // Where the realm no longer enrols any profile the step asked for, the
+  // held session starts without it (STS-AUTHN-0623).
+  // ---------------------------------------------------------------------------
+  /**
+   * Answers an act at the post-login PIV re-issue step.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param stepId - the step's id
+   * @param body - `{ act, slot?, csr?, slotPem?, attestationPem? }`
+   * @returns a promise settled when the answer is sent
+   */
+  async postLoginPivAct(req: any,
+                        res: IyaApi.AuthnAnswering<'answerPostLoginPiv'>,
+                        stepId: string, body: any): Promise<void> {
+    const { log, baseUrlOf, audit, errorCodes, postLogin } = this.deps;
+    log.debug("Entering Authn.postLoginPivAct(). " +
+              String((body && body.act) || ''));
+    const base = baseUrlOf(req);
+    const found = this.stepProblem('post-login', stepId);
+    if (found.problem) {
+      errorCodes.mark(res, found.problem.code);
+      this.stepRefused(res, found.problem.why);
+      log.debug("Leaving Authn.postLoginPivAct(). No step.");
+      return;
+    }
+    const step = found.step;
+    const due = step.postLogin;
+    if (String(due.activity || '') !== 'piv-reissue') {
+      errorCodes.mark(res, 'STS-AUTHN-0602');
+      this.stepRefused(res, 'This step asks for another post-login ' +
+                       'activity, not a PIV certificate.');
+      log.debug("Leaving Authn.postLoginPivAct(). Another activity.");
+      return;
+    }
+    const piv = require('../common/post_login_piv');
+    const slots: any[] = [].concat(due.slots || []);
+    const issued: any[] = [].concat(due.issued || []);
+    const open = slots.filter(function (one: any) {
+      return !issued.some(function (i: any) {
+        return i.slot === one.slot;
+      });
+    });
+    if (open.length && !open.some(function (one: any) {
+      return piv.canIssue(String(one.profile));
+    })) {
+      pendingMfa.delete(String(stepId));
+      log.info(errorCodes.tag('STS-AUTHN-0623') + 'authn: the post-login ' +
+               'PIV re-issue of "' + step.username + '" cannot be done ' +
+               'here any more; the held session is started without it.');
+      errorCodes.mark(res, 'STS-AUTHN-0623');
+      this.finishPostLogin(req, res, base, step);
+      log.debug("Leaving Authn.postLoginPivAct(). Cannot be done here.");
+      return;
+    }
+    const act = String((body && body.act) || '');
+    const username = String(step.username);
+    if (act === 'piv-enrol') {
+      const answer: any = await piv.enrol(username, due, body || {});
+      if (!answer || !answer.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(answer) || 'STS-AUTHN-0620');
+        this.stepRefused(res, String(((answer && answer.errors) || [])[0] ||
+          (answer && answer.error) || 'No certificate was issued.'));
+        log.debug("Leaving Authn.postLoginPivAct(). Refused.");
+        return;
+      }
+      step.postLogin.issued = issued.filter(function (i: any) {
+        return i.slot !== answer.slot;
+      }).concat([{ slot: answer.slot, profile: answer.profile,
+                   serialHex: answer.serialHex,
+                   certificatePem: answer.certificatePem,
+                   chainPem: answer.chainPem,
+                   command: answer.command }]);
+      pendingMfa.set(String(stepId), step);
+      this.stepAnswer(res, 'mfa', 'post-login', String(stepId),
+                      POST_LOGIN_PATH, 'mfa');
+      log.debug("Leaving Authn.postLoginPivAct(). Issued " + answer.slot);
+      return;
+    }
+    if (open.length) {
+      errorCodes.mark(res, 'STS-AUTHN-0622');
+      this.stepRefused(res, 'Enrol a new certificate for slot(s) ' +
+        open.map(function (one: any) {
+          return one.slot;
+        }).join(', ') + ' first.');
+      log.debug("Leaving Authn.postLoginPivAct(). Slots still open.");
+      return;
+    }
+    pendingMfa.delete(String(stepId));
+    postLogin.noteDone(username, due);
+    audit.audit({
+      action: 'authn.post-login.done', outcome: 'success',
+      actor: username, target: username, channel: 'http',
+      protocol: step.authn && step.authn.protocol,
+      summary: username + ' enrolled new PIV slot certificates (' +
+               issued.map(function (i: any) {
+                 return i.slot;
+               }).join(', ') + ') after signing in',
+      detail: { activity: String(due.activity),
+                certificates: issued.map(function (i: any) {
+                  return { slot: String(i.slot),
+                           serialHex: String(i.serialHex) };
+                }),
+                profile: String(due.profile || ''),
+                askedBy: String(due.askedBy || '') }
+    });
+    this.finishPostLogin(req, res, base, step);
+    log.debug("Leaving Authn.postLoginPivAct(). Done.");
   }
 
   private refusedSession(res, base, record, username, started, detail) {
@@ -13971,6 +14374,42 @@ class Authn {
         snoozeDays: Number(due.snoozeDays) || 0,
         deadline: Number(due.deadline) > 0
           ? new Date(Number(due.deadline)).toISOString() : '' };
+      // THE MAIL-ENCRYPTION ACTIVITY (#2009 P2): what the step offers,
+      // what the person's mail is encrypted to now, the OpenPGP challenge
+      // the step issued (none until asked), and how long a replaced
+      // classical key is kept.
+      if (String(due.activity || '') === 'pqc-mail-encryption') {
+        view.postLogin.mail = {
+          offers: Array.isArray(due.offers) ? due.offers.map(String) : [],
+          current: { kind: String((due.current && due.current.kind) || ''),
+                     algorithm: String((due.current &&
+                                        due.current.algorithm) || '') },
+          challenge: due.challenge
+            ? { text: String(due.challenge.text || ''),
+                expiresAt: String(due.challenge.expiresAt || '') }
+            : null,
+          keepClassicalDays: Number(due.keepClassicalDays) || 0 };
+      }
+      // THE PIV RE-ISSUE (#2009 P3): each due slot, and what the step has
+      // issued so far with the command that writes it to the card.
+      if (String(due.activity || '') === 'piv-reissue') {
+        view.postLogin.piv = {
+          slots: [].concat(due.slots || []).map(function (one: any) {
+            return { slot: String(one.slot || ''),
+                     profile: String(one.profile || ''),
+                     serialHex: String(one.serialHex || ''),
+                     notAfter: String(one.notAfter || ''),
+                     reason: String(one.reason || '') };
+          }),
+          issued: [].concat(due.issued || []).map(function (one: any) {
+            return { slot: String(one.slot || ''),
+                     profile: String(one.profile || ''),
+                     serialHex: String(one.serialHex || ''),
+                     certificatePem: String(one.certificatePem || ''),
+                     chainPem: [].concat(one.chainPem || []).map(String),
+                     command: String(one.command || '') };
+          }) };
+      }
     }
     const own = this.preferredLanguageOf(String(step.username));
     log.debug("Leaving Authn.mfaView().");
@@ -14778,7 +15217,11 @@ class Authn {
     log.debug("Entering Authn.certificateNotHere().");
     const restricted: string[] = Array.isArray(record.allowedMechanisms)
       ? record.allowedMechanisms : [];
-    const why = !authnPolicy.allows('certificate', 'primary')
+    // EITHER KIND (#2031): which this certificate is — a smart card or not —
+    // is known only once it is read, so the offer is drawn while the policy
+    // takes either, and the act asks the one it is.
+    const why = !authnPolicy.allows('certificate', 'primary') &&
+                !authnPolicy.allows('smartCard', 'primary')
       ? 'the authentication policy does not take a certificate as a first ' +
         'factor'
       : (record.lockedUsername ? 'a linking sign-in rests on the password'
@@ -14901,9 +15344,31 @@ class Authn {
       }
     }
     const application = String(record.application || '');
-    const credential = { kind: 'certificate',
-                         id: String(holder.credentialId || ''),
-                         serial: String(holder.serial || '') };
+    // A SMART CARD, OR ANOTHER CERTIFICATE (#2031): the authentication
+    // policy has a row for each, and the offer was drawn while either was
+    // on, before the certificate was read. The act asks the one this
+    // certificate is, from what `tls_server.js` found (`smartCardOf()`).
+    const smartCard = holder.smartCard === true;
+    if (!this.deps.authnPolicy.allows(smartCard ? 'smartCard'
+                                                : 'certificate', 'primary')) {
+      log.info('authn: a certificate sign-in was refused at the screen: ' +
+               'the authentication policy does not take ' +
+               (smartCard ? 'a smart card' : 'a certificate that is not a ' +
+                'smart card') + ' as a first factor.');
+      log.debug("Leaving Authn.certificateSignIn(). Not this kind.");
+      errorCodes.mark(res, 'STS-AUTHN-0593');
+      return this.screenRefused(res, record,
+               Sentence.say('refusals.authn.certificateNotOffered'));
+    }
+    const credential: any = { kind: 'certificate',
+                              id: String(holder.credentialId || ''),
+                              serial: String(holder.serial || '') };
+    if (smartCard) {
+      credential.smartCard = true;
+    }
+    if (holder.cardAuth === true) {
+      credential.cardAuth = true;
+    }
     const assessed = await this.assessSignIn(req, username, record.protocol,
       { application: application, credential: credential,
         // A key may answer as the second factor (#259).
@@ -21625,6 +22090,8 @@ export = {
   mfaWebauthnAct: slot.forward('mfaWebauthnAct'),
   mfaSetupAct: slot.forward('mfaSetupAct'),
   postLoginAct: slot.forward('postLoginAct'),
+  postLoginMailAct: slot.forward('postLoginMailAct'),
+  postLoginPivAct: slot.forward('postLoginPivAct'),
   mfaStartOver: slot.forward('mfaStartOver'),
   passwordChangeStartOver: slot.forward('passwordChangeStartOver'),
   finishEmailSecondFactor: slot.forward('finishEmailSecondFactor'),

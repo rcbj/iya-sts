@@ -508,6 +508,56 @@ const BUILT_IN: TemplateSpec[] = [
           'the sign-in page. It does not sign you in and carries nothing ' +
           'about your account. If you did not expect this message, ignore ' +
           'it, or ask whoever manages your account.</p>' },
+  // #2009 P4: the same reminder for the two other post-login activities,
+  // one message each, so what the mail says is what the sign-in will ask.
+  // `common/post_login_kinds.ts`'s table names which activity is sent which.
+  { id: 'post-login-reminder-mail-encryption', category: 'notification',
+    title: 'A reminder to register a post-quantum mail-encryption key',
+    values: ['username'],
+    links: ['signin'],
+    subject: 'Register a post-quantum mail-encryption key for {{service}}',
+    text: '{{service}} asks {{username}} to register a new key for ' +
+          'encrypting mail that uses post-quantum cryptography (ML-KEM): ' +
+          'an OpenPGP key or an S/MIME certificate. Mail encrypted to a ' +
+          'classical key today can be read once that key is broken.\n\n' +
+          'Sign in here, and you will be asked to register it right after ' +
+          'you sign in:\n\n{{signin}}\n\nThe link only opens the sign-in ' +
+          'page. It does not sign you in and carries nothing about your ' +
+          'account. If you did not expect this message, ignore it, or ask ' +
+          'whoever manages your account.\n',
+    html: '<p>{{service}} asks <strong>{{username}}</strong> to register a ' +
+          'new key for encrypting mail that uses post-quantum cryptography ' +
+          '(ML-KEM): an OpenPGP key or an S/MIME certificate. Mail ' +
+          'encrypted to a classical key today can be read once that key is ' +
+          'broken.</p><p><a href="{{signin}}">Sign in</a>, and you will be ' +
+          'asked to register it right after you sign in.</p><p>The link ' +
+          'only opens the sign-in page. It does not sign you in and carries ' +
+          'nothing about your account. If you did not expect this message, ' +
+          'ignore it, or ask whoever manages your account.</p>' },
+  { id: 'post-login-reminder-piv-reissue', category: 'notification',
+    title: 'A reminder to renew a PIV certificate',
+    values: ['username'],
+    links: ['signin'],
+    subject: 'Renew your PIV certificate for {{service}}',
+    text: '{{service}} asks {{username}} to enrol a new certificate for ' +
+          'the PIV smart card or security key they sign in with: the one ' +
+          'it holds was signed with a classical algorithm, or expires soon. ' +
+          'Have the card with you, and a tool that makes a certificate ' +
+          'request from it, such as ykman.\n\nSign in here, and you will ' +
+          'be asked to enrol it right after you sign in:\n\n{{signin}}\n\n' +
+          'The link only opens the sign-in page. It does not sign you in ' +
+          'and carries nothing about your account. If you did not expect ' +
+          'this message, ignore it, or ask whoever manages your account.\n',
+    html: '<p>{{service}} asks <strong>{{username}}</strong> to enrol a ' +
+          'new certificate for the PIV smart card or security key they sign ' +
+          'in with: the one it holds was signed with a classical algorithm, ' +
+          'or expires soon. Have the card with you, and a tool that makes a ' +
+          'certificate request from it, such as ykman.</p><p><a ' +
+          'href="{{signin}}">Sign in</a>, and you will be asked to enrol it ' +
+          'right after you sign in.</p><p>The link only opens the sign-in ' +
+          'page. It does not sign you in and carries nothing about your ' +
+          'account. If you did not expect this message, ignore it, or ask ' +
+          'whoever manages your account.</p>' },
   { id: 'reset-refused-attempt', category: 'security',
     title: 'A password reset was refused',
     values: ['username', 'when'],

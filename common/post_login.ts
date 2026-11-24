@@ -1042,6 +1042,40 @@ class PostLogin {
   }
 
   /**
+   * One activity's Skip length and allotted time under a profile's rules
+   * (#2009 P4): its own block's (`timing()`), so the report's deadline for a
+   * row that recorded none is the activity's and not the passkey
+   * migration's. An activity that is not asked here answers none.
+   *
+   * @param activity - the activity
+   * @param rules - a profile, as `post_login_policy.forPerson()` reads one
+   * @returns `{ snoozeDays, graceDays }`
+   */
+  timingOf(activity: string, rules: Record<string, any>):
+      { snoozeDays: number; graceDays: number } {
+    const { log } = this.deps;
+    log.debug("Entering PostLogin.timingOf().");
+    const kind = this.kindsAsked().filter(function (one: Kind): boolean {
+      return one.id === String(activity || '');
+    })[0];
+    let out = { snoozeDays: 0, graceDays: 0 };
+    if (kind) {
+      try {
+        const timing = kind.timing(rules || {});
+        out = { snoozeDays: Number(timing.snoozeDays) || 0,
+                graceDays: Number(timing.graceDays) || 0 };
+      } catch (e) {
+        // An activity whose timing cannot be read gives no allotted time;
+        // the row is still reported.
+        log.debug("Caught in PostLogin.timingOf(): " +
+                  ((e && e.message) || e));
+      }
+    }
+    log.debug("Leaving PostLogin.timingOf(). " + out.graceDays);
+    return out;
+  }
+
+  /**
    * Forgets a person's progress on an activity: the allotted time starts
    * again at the next invitation. For a test, and an operator's reset.
    *
@@ -1125,6 +1159,7 @@ export = {
   noteMailed: slot.forward('noteMailed'),
   eachProgressAsync: slot.forward('eachProgressAsync'),
   graceOf: slot.forward('graceOf'),
+  timingOf: slot.forward('timingOf'),
   forget: slot.forward('forget'),
   forgetPerson: slot.forward('forgetPerson')
 };

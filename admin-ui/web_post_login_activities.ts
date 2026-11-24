@@ -18,7 +18,10 @@
 // and a Pause, Resume or End button where the state allows one. **Start an
 // activity**: the groups chosen so far, a group search, and the form — the
 // activity, the reminder interval, the most mails per person and how many
-// people a run reads. Each form posts to `/admin/post-login-activities`,
+// people a run reads. Since #2009's P4 the activity is chosen by what it
+// asks — a post-quantum passkey, a post-quantum mail-encryption key, a new
+// PIV certificate — each named in the reader's words with its id beside it.
+// Each form posts to `/admin/post-login-activities`,
 // which the runtime sends to `POST /admin-api/post-login-activities/<action>`
 // (rule 7); the answer comes back as the page's notice or refusal.
 //
@@ -104,6 +107,33 @@ class PostLoginActivitiesPage {
     return words[state] ? t.html(words[state]) : WebKit.esc(state);
   }
 
+  // An activity in the reader's words (#2009 P4), or its id where the page
+  // knows no words for it. Each key is written out whole, for the catalog
+  // check; the id is drawn beside it on the list, because the id is what
+  // the API, the audit rows and the report name.
+  private static activityWord(t: Json, activity: string): string {
+    const words: Record<string, string> = {
+      'pqc-passkey-migration':
+        'consolePostLoginActivities.activityName.passkey',
+      'pqc-mail-encryption': 'consolePostLoginActivities.activityName.mail',
+      'piv-reissue': 'consolePostLoginActivities.activityName.piv'
+    };
+    return words[activity] ? t.html(words[activity])
+                           : WebKit.esc(activity);
+  }
+
+  // What starting each activity asks of the people it reaches (#2009 P4):
+  // the start form's note under the chooser, one line per activity.
+  private static activityWhat(t: Json, activity: string): string {
+    const words: Record<string, string> = {
+      'pqc-passkey-migration':
+        'consolePostLoginActivities.activityWhat.passkey',
+      'pqc-mail-encryption': 'consolePostLoginActivities.activityWhat.mail',
+      'piv-reissue': 'consolePostLoginActivities.activityWhat.piv'
+    };
+    return words[activity] ? t.html(words[activity]) : '';
+  }
+
   // One act's button, a form of its own posting `action` and `id`.
   private static actButton(t: Json, act: string, id: string): string {
     const words: Record<string, string> = {
@@ -148,8 +178,9 @@ class PostLoginActivitiesPage {
               self.actButton(t, 'end', one.id)
             : '';
       return '<tr><td><code>' + WebKit.esc(one.id) + '</code></td><td>' +
-        self.stateWord(t, one.state) + '</td><td><code>' +
-        WebKit.esc(one.activity) + '</code></td><td>' +
+        self.stateWord(t, one.state) + '</td><td>' +
+        self.activityWord(t, one.activity) + '<br><small><code>' +
+        WebKit.esc(one.activity) + '</code></small></td><td>' +
         self.groupsCell(t, one.groups) +
         '</td><td>' + t.html('consolePostLoginActivities.numbers', {
           interval: Number(one.intervalDays) || 0,
@@ -282,11 +313,19 @@ class PostLoginActivitiesPage {
           ? t.text('consolePostLoginActivities.noGroupMatches')
           : t.text('consolePostLoginActivities.noGroupsAtAll')
       }, t);
-    const activities = (Array.isArray(v.activities) ? v.activities : [])
-      .map(function (one: string): string {
-        return '<option value="' + WebKit.esc(one) + '">' +
-          WebKit.esc(one) + '</option>';
-      }).join('');
+    const offered: string[] = Array.isArray(v.activities) ? v.activities
+                                                           : [];
+    const activities = offered.map(function (one: string): string {
+      return '<option value="' + WebKit.esc(one) + '">' +
+        self.activityWord(t, one) + '</option>';
+    }).join('');
+    // What each one asks, under the chooser: the reader picks by what the
+    // people will be asked to do, not by an id.
+    const whats = offered.map(function (one: string): string {
+      const what = self.activityWhat(t, one);
+      return what ? '<li><strong>' + self.activityWord(t, one) +
+        '</strong> — ' + what + '</li>' : '';
+    }).join('');
     const hiddenGroups = dns.map(function (dn: string): string {
       return '<input type="hidden" name="groups" value="' +
         WebKit.esc(dn) + '">';
@@ -300,6 +339,7 @@ class PostLoginActivitiesPage {
       t.html('consolePostLoginActivities.activity') + '</label>' +
       '<select id="pla-activity" name="activity">' + activities +
       '</select></div>' +
+      (whats ? '<ul class="hint">' + whats + '</ul>' : '') +
       self.numberField(t, 'intervalDays', limits.intervalDays) +
       self.numberField(t, 'maxMails', limits.maxMails) +
       self.numberField(t, 'perRun', limits.perRun) +

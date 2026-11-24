@@ -18,6 +18,17 @@
 // connects from (`tls.trustedProxyAddresses`, CIDR ranges) — rcbj's decision
 // on #2012. Either alone trusts nobody, and says so once (STS-TLS-0076).
 //
+// **A PIN NAMES THE CERTIFICATE OR ITS KEY** (rcbj, 2026-11-23: "accept
+// both"). A bare value is the SHA-256 of the proxy's whole certificate (DER),
+// as it always was — 64 hex digits, colons and a `sha256:` prefix allowed —
+// so it breaks when the proxy's certificate is renewed. `spki:<the same
+// hex>` is the SHA-256 of its SubjectPublicKeyInfo (RFC 7469's pin, in this
+// setting's encoding), which a renewal under the same key keeps. The SPKI
+// is read off the certificate's own DER (`crypto.certificateSpkiDer()`), so
+// a key node cannot load is still a key here. A malformed entry is refused
+// at the write (STS-TLS-0077, `writeRule()`); one already stored or read
+// from the environment is skipped, as it always was, never widened.
+//
 // **FROM THAT PROXY**, RFC 9440's two headers are read:
 //
 //   * `Client-Cert` — one Structured Field byte sequence (RFC 8941 section
@@ -74,6 +85,7 @@ const MAX_HEADER = 32768;
 const MAX_CHAIN = 8;
 const RECORD_EVERY_MS = 60000;
 const BYTE_SEQUENCE = /^:([A-Za-z0-9+/]+={0,2}):$/;
+const PINS_SETTING = 'tls.trustedProxyCertificates';
 
 interface ForwardedClientCertificateDeps {
   log: typeof helpers.log;
@@ -147,9 +159,64 @@ class ForwardedClientCertificate {
   // WHO THE PROXY IS.
   // -------------------------------------------------------------------------
   /**
-   * The configured proxy fingerprints, canonical, and the address ranges.
+   * One entry of `tls.trustedProxyCertificates`, read: a certificate's
+   * SHA-256 (bare, `sha256:` or `sha-256:`) or a SubjectPublicKeyInfo's
+   * (`spki:`), as lower-case hex, or null for an entry that is neither.
    *
-   * @returns `{ fingerprints, ranges }`; both empty where it is off
+   * @param text - the entry
+   * @returns `{ kind: 'certificate' | 'spki', hex }`, or null
+   */
+  static pinOf(text: unknown): Json {
+    helpers.log.debug("Entering ForwardedClientCertificate.pinOf().");
+    const s = String(text == null ? '' : text).trim().toLowerCase();
+    const spki = s.indexOf('spki:') === 0;
+    const body = spki ? s.slice(5) : s.replace(/^sha-?256:/, '');
+    const hex = body.replace(/[:\s]/g, '');
+    const ok = /^[0-9a-f]{64}$/.test(hex);
+    helpers.log.debug("Leaving ForwardedClientCertificate.pinOf(). " + ok);
+    return ok ? { kind: spki ? 'spki' : 'certificate', hex: hex } : null;
+  }
+
+  /**
+   * The rule `config.addWriteRule()` asks of every write of
+   * `tls.trustedProxyCertificates`: each entry a certificate pin or an
+   * `spki:` pin, else refused (STS-TLS-0077) naming the first that is not.
+   *
+   * @param key - the setting written
+   * @param parsed - its value, parsed
+   * @returns `{ problem, code }` for a refusal, or null
+   */
+  static writeRule(key: string, parsed: unknown): Json {
+    helpers.log.debug("Entering ForwardedClientCertificate.writeRule(). " +
+                      key);
+    if (key !== PINS_SETTING) {
+      helpers.log.debug("Leaving ForwardedClientCertificate.writeRule(). " +
+                        "Not ours.");
+      return null;
+    }
+    const entries = (Array.isArray(parsed) ? parsed
+      : String(parsed == null ? '' : parsed).split(','))
+      .map(function (one: unknown): string {
+        return String(one).trim();
+      }).filter(Boolean);
+    const bad = entries.filter(function (one: string): boolean {
+      return !ForwardedClientCertificate.pinOf(one);
+    })[0];
+    helpers.log.debug("Leaving ForwardedClientCertificate.writeRule(). " +
+                      (bad === undefined ? 'Taken.' : 'Refused.'));
+    return bad === undefined ? null : {
+      problem: PINS_SETTING + ' is refused: "' + bad.slice(0, 80) + '" is ' +
+        'neither the SHA-256 of a certificate (64 hex digits, colons and a ' +
+        'sha256: prefix allowed) nor spki: followed by the SHA-256 of a ' +
+        'SubjectPublicKeyInfo in the same form.',
+      code: 'STS-TLS-0077' };
+  }
+
+  /**
+   * The configured proxy pins, canonical, and the address ranges.
+   *
+   * @returns `{ fingerprints, keys, ranges }`: the certificates' SHA-256,
+   *   the SubjectPublicKeyInfos', and the ranges; all empty where it is off
    */
   configured(): Json {
     const { log, config: settings, clientAddress: addresses } = this.deps;
@@ -161,12 +228,14 @@ class ForwardedClientCertificate {
           return String(one).trim();
         }).filter(Boolean);
     };
-    const fingerprints = listOf('tls.trustedProxyCertificates')
-      .map(function (one: string): string {
-        const hex = one.toLowerCase().replace(/^sha-?256:/, '')
-          .replace(/[:\s]/g, '');
-        return /^[0-9a-f]{64}$/.test(hex) ? hex : '';
-      }).filter(Boolean);
+    const fingerprints: string[] = [];
+    const keys: string[] = [];
+    listOf(PINS_SETTING).forEach(function (one: string): void {
+      const pin = ForwardedClientCertificate.pinOf(one);
+      if (pin) {
+        (pin.kind === 'spki' ? keys : fingerprints).push(pin.hex);
+      }
+    });
     const entries = listOf('tls.trustedProxyAddresses');
     const text = entries.join(',');
     if (text !== this.rangesText || !this.ranges) {
@@ -175,15 +244,16 @@ class ForwardedClientCertificate {
                                           'tls.trustedProxyAddresses');
     }
     log.debug("Leaving ForwardedClientCertificate.configured(). " +
-              fingerprints.length + " certificate(s), " + this.ranges.count +
-              " range(s).");
-    return { fingerprints: fingerprints, ranges: this.ranges };
+              fingerprints.length + " certificate(s), " + keys.length +
+              " key(s), " + this.ranges.count + " range(s).");
+    return { fingerprints: fingerprints, keys: keys, ranges: this.ranges };
   }
 
   /**
    * Whether a request arrived from a trusted TLS-terminating proxy: on a
    * connection whose own client certificate verified and is one of
-   * `tls.trustedProxyCertificates`, from an address in
+   * `tls.trustedProxyCertificates` — by its own SHA-256 or, for an `spki:`
+   * pin, its SubjectPublicKeyInfo's — from an address in
    * `tls.trustedProxyAddresses`.
    *
    * @param req - the request
@@ -194,8 +264,9 @@ class ForwardedClientCertificate {
             clientAddress: addresses } = this.deps;
     log.debug("Entering ForwardedClientCertificate.fromTrustedProxy().");
     const wanted = this.configured();
-    if (!wanted.fingerprints.length || !wanted.ranges.count) {
-      if ((wanted.fingerprints.length || wanted.ranges.count) &&
+    const pins = wanted.fingerprints.length + wanted.keys.length;
+    if (!pins || !wanted.ranges.count) {
+      if ((pins || wanted.ranges.count) &&
           this.deps.now() - this.lastHalfConfigured > RECORD_EVERY_MS) {
         this.lastHalfConfigured = this.deps.now();
         log.warn(codes.tag('STS-TLS-0076') + 'forwarded_client_certificate: ' +
@@ -224,8 +295,24 @@ class ForwardedClientCertificate {
                 ((e && e.message) || e));
       raw = null;
     }
-    const trusted = !!raw && wanted.fingerprints.indexOf(
+    if (!raw) {
+      log.debug("Leaving ForwardedClientCertificate.fromTrustedProxy(). " +
+                "No certificate.");
+      return false;
+    }
+    let trusted = wanted.fingerprints.indexOf(
       c.digest('sha256', raw, 'hex')) >= 0;
+    if (!trusted && wanted.keys.length) {
+      try {
+        trusted = wanted.keys.indexOf(c.digest('sha256',
+          c.certificateSpkiDer(raw.toString('base64')), 'hex')) >= 0;
+      } catch (e) {
+        // A certificate whose key cannot be read matches no key pin.
+        log.debug("Caught in ForwardedClientCertificate.fromTrustedProxy(): " +
+                  ((e && e.message) || e));
+        trusted = false;
+      }
+    }
     log.debug("Leaving ForwardedClientCertificate.fromTrustedProxy(). " +
               trusted);
     return trusted;
@@ -583,6 +670,8 @@ class ForwardedClientCertificate {
   }
 }
 
+config.addWriteRule(ForwardedClientCertificate.writeRule);
+
 const slot = new InstanceSlot<ForwardedClientCertificate>(
   'common/forwarded_client_certificate',
   () => new ForwardedClientCertificate(
@@ -601,6 +690,8 @@ export = {
   ForwardedClientCertificate: ForwardedClientCertificate,
   parse: ForwardedClientCertificate.parse,
   byteSequence: ForwardedClientCertificate.byteSequence,
+  pinOf: ForwardedClientCertificate.pinOf,
+  writeRule: ForwardedClientCertificate.writeRule,
   viewOf: ForwardedClientCertificate.viewOf,
   installInstance: (instance: ForwardedClientCertificate): void =>
     slot.install(instance),

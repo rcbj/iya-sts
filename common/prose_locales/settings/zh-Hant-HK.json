@@ -1572,8 +1572,8 @@
     "text": "終止 TLS 之代理的客戶端證書（SHA-256）"
   },
   "tls.trustedProxyCertificates|description": {
-    "en": "5ebd0abc01f9dfdf",
-    "text": "終止 TLS 的代理連線到此處時出示之客戶端證書的 SHA-256 指紋。對於出示其中之一的連線上、來自 tls.trustedProxyAddresses 中某個地址的請求，其 RFC 9440 標頭 Client-Cert 與 Client-Cert-Chain 會在此處對照客戶端信任存放區與撤銷狀態進行驗證，該證書在每道門上都代替交握中的證書。兩個設定都是必要的；來自任何其他傳送者時，這兩個標頭會被移除並記錄（STS-TLS-0072），且從不讀取。空白（預設值）時只從交握中讀取證書。"
+    "en": "16cfd6503c70990f",
+    "text": "終止 TLS 的代理連線到此處時出示之客戶端證書的 SHA-256 指紋。以十六進位書寫（允許冒號與 sha256: 前綴）。在同一十六進位值前加上 spki: 則改為固定證書 SubjectPublicKeyInfo 的 SHA-256，以同一密鑰續期後該固定值仍然有效；格式錯誤的項目會被拒絕（STS-TLS-0077）。對於出示其中之一的連線上、來自 tls.trustedProxyAddresses 中某個地址的請求，其 RFC 9440 標頭 Client-Cert 與 Client-Cert-Chain 會在此處對照客戶端信任存放區與撤銷狀態進行驗證，該證書在每道門上都代替交握中的證書。兩個設定都是必要的；來自任何其他傳送者時，這兩個標頭會被移除並記錄（STS-TLS-0072），且從不讀取。空白（預設值）時只從交握中讀取證書。"
   },
   "tls.trustedProxyAddresses|label": {
     "en": "4bc0cf2135bd81af",

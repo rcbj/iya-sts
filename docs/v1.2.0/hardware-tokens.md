@@ -21,6 +21,14 @@ its vendor and serial number. The record holds:
 - the evidence the serial came from;
 - whether it is in use or was reported lost.
 
+**Moving a token's credentials to post-quantum algorithms** is a
+[post-login activity](post-login-activities.md): the passkeys
+(`pqc-passkey-migration`), and the mail-encryption key (an OpenPGP key or an
+S/MIME certificate, `pqc-mail-encryption`). An OpenPGP card cannot hold an
+RFC 9980 key yet, so the post-quantum OpenPGP key is kept in software and is
+not recorded on a token here; the card's own key keeps working for signing
+elsewhere.
+
 The register is a sibling of the [device register](devices.md), not part of
 it. A device there is the computer or phone a person signs in *from*, and a
 roaming security key identifies no such device.
@@ -174,6 +182,15 @@ holds it. Policy can use that fact in two ways:
   whose policy names only `attested-hardware` therefore gets a sign-in
   screen with a passkey and, where the realm accepts one, a certificate,
   and no password field. A session made any other way is asked again.
+- **The realm's `requireAttestedHardware`** (#2031). At `always`, every
+  sign-in in the realm must end on a credential on an attested token, by
+  the same test; see [the authentication policy](authentication.md#attested-hardware-for-everybody).
+- **The smart-card rows** (#2031). A certificate whose key the register says
+  is on a smart card, or one enrolled under a PIV slot profile, signs in
+  under the authentication policy's *Smart card (PIV/CAC) certificate* row
+  rather than *TLS client certificate*, and a SPNEGO ticket carrying
+  `pkinit-smartcard` under *Kerberos PKINIT with a smart card*; see
+  [Smart cards](authentication.md#smart-cards-2031).
 - **XACML attributes**, sent as environment attributes on every browser
   issuance. No built-in rule reads them; they are there for a realm's own
   rules.
@@ -287,8 +304,12 @@ the family's `allowedProfiles`.
 
 The PIV profiles are issued to people only. **A `piv-card-auth` certificate
 does not sign anybody in** by default: the 9e key works without a PIN, for
-door readers. `piv.cardAuthSignIn` lets it sign in over TLS. PKINIT refuses
-it (`STS-PIV-0013`), and it carries neither PKINIT purpose anyway.
+door readers. The authentication policy's *PIV card authentication key (no
+PIN)* row lets it sign in over TLS; while the policy stores no value for that
+row it follows `piv.cardAuthSignIn` (#2031). PKINIT refuses it
+(`STS-PIV-0013`), and it carries neither PKINIT purpose anyway. A card
+authentication certificate is a smart card, so the policy's *Smart card
+(PIV/CAC) certificate* row must be on too.
 
 **The attestation's slot must fit the profile.** An attestation of slot 9e is
 accepted only for `piv-card-auth` (`STS-PIV-0037`), whatever profile the
@@ -298,6 +319,15 @@ refused for a PIV profile and for `tls-client`, `tls-server-client` and
 `smartcard-logon` (`STS-PIV-0036`). The FIPS mark is read from the f9
 certificate that signed the slot's certificate, never from whichever
 certificate the request sent first.
+
+**Replacing them after a sign-in.** The post-login activity
+[`piv-reissue`](post-login-activities.md#the-piv-re-issue) asks a person
+to enrol new slot certificates through the same form when a classical CA
+signed theirs and the realm's EST Issuing CA is now post-quantum, or when
+one is about to expire. The old certificate is revoked (`superseded`) the
+first time the new one is used to sign in. To reach card holders who rarely
+sign in, [start the activity](post-login-activities.md#starting-an-activity)
+for their groups: they are mailed a reminder to sign in and renew.
 
 The certificate issued for a profile is signed by that profile's issuing
 CA. The key in the slot is the subject's. A YubiKey 5 attests a classical

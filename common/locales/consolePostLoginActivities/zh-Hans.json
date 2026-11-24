@@ -39,5 +39,11 @@
   "groupsFull": "已选择 {max} 个组，这是一个活动可指定的上限。",
   "startNote": "启动后，其覆盖的人从下次登录起会被请求完成；发送从作业的下一次运行开始。已完成该活动的人、领域无法向其提出该活动的人，或被已关闭的具名配置文件排除的人，既不会被请求，也不会收到邮件。",
   "startButton": "启动",
-  "readOnly": "启动、暂停和结束登录后活动需要 Admin Write。"
+  "readOnly": "启动、暂停和结束登录后活动需要 Admin Write。",
+  "activityName.passkey": "后量子通行密钥",
+  "activityName.mail": "后量子邮件加密",
+  "activityName.piv": "PIV 证书重新签发",
+  "activityWhat.passkey": "持有经典通行密钥或没有通行密钥的人，会按登录后配置文件中的通行密钥规则被要求注册 ML-DSA 通行密钥。",
+  "activityWhat.mail": "邮件以经典 OpenPGP 密钥或 S/MIME 证书加密的人，会按配置文件的邮件加密规则被要求注册 ML-KEM 密钥或证书。",
+  "activityWhat.piv": "持有本领域签发的 PIV 插槽证书的人，在该证书由经典签发者签名或即将过期时，会按配置文件的 PIV 规则被要求申领新证书。"
 }

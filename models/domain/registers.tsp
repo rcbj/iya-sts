@@ -411,6 +411,18 @@ model AuthenticationPolicy {
   @fromAttr(#{attr: "stsAuthnKerberosPrimary"})
   `kerberosPrimary`?: boolean;
 
+  @fromAttr(#{attr: "stsAuthnSmartCardPrimary"})
+  `smartCardPrimary`?: boolean;
+
+  @fromAttr(#{attr: "stsAuthnSmartCardCardAuthPrimary"})
+  `smartCardCardAuthPrimary`?: boolean;
+
+  @fromAttr(#{attr: "stsAuthnPkinitSmartCardPrimary"})
+  `pkinitSmartCardPrimary`?: boolean;
+
+  @fromAttr(#{attr: "stsAuthnRequireAttestedHardware"})
+  `requireAttestedHardware`?: string;
+
   @fromAttr(#{attr: "stsAuthnWalletPrimary"})
   `walletPrimary`?: boolean;
 
@@ -672,6 +684,47 @@ model PostLoginPolicy {
 
   @fromAttr(#{attr: "stsPostLoginNoPasskeyFallback"})
   `noPasskeyFallback`?: string;
+
+  // #2009 P2: the mail-encryption activity's block.
+  @fromAttr(#{attr: "stsPostLoginMailEnabled"})
+  `mailEnabled`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginMailSnoozeDays"})
+  `mailSnoozeDays`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginMailGraceDays"})
+  `mailGraceDays`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginMailNoKey"})
+  `mailNoKey`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginMailPrefer"})
+  `mailPrefer`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginMailKeepClassical"})
+  `mailKeepClassical`?: string;
+
+  // #2009 P3: the PIV re-issue's block.
+  @fromAttr(#{attr: "stsPostLoginPivEnabled"})
+  `pivEnabled`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginPivSnoozeDays"})
+  `pivSnoozeDays`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginPivGraceDays"})
+  `pivGraceDays`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginPivSlots"})
+  `pivSlots`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginPivTrigger"})
+  `pivTrigger`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginPivRenewDays"})
+  `pivRenewDays`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginPivTarget"})
+  `pivTarget`?: string;
 
   @fromAttr(#{attr: "stsPostLoginPrecedence"})
   `precedence`?: integer;

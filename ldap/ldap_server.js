@@ -11206,10 +11206,15 @@ pepBinding.setDirectory({
     return writePersonAttribute(dn, pepBinding.ATTRIBUTE,
                                 value ? [value] : []) === true;
   },
+  // Asked of the SERVICE ACCOUNTS, not of `stspepapplication`: a binding is
+  // only ever written on a service account (`eligible()`), nothing un-makes
+  // one (#1760), and `stsserviceaccount` is already an asked name, so this
+  // needs no new index expression and no schema version
+  // (`persistence/directory_queries.js`'s ASKED_ATTRIBUTES).
   holders: function holders() {
     log.debug('Entering the PEP binding holders().');
     const out = [];
-    eachHolderOfAny(['stspepapplication'], function (stored) {
+    eachHolderOfAny(['stsserviceaccount'], function (stored) {
       const value = String((stored.attributes.stspepapplication || [])[0] ||
                            '');
       if (value && isPersonEntry(stored)) {
@@ -15995,8 +16000,12 @@ if (typeof mailChannel.setDirectory === 'function') {
 // values are read HERE, by name, under both RFC 4522 spellings, because this
 // is the store and a certificate written by an LDAP client arrives as
 // `userSMIMECertificate;binary`.
+// And since #2009 P2 the CLASSICAL key kept beside a post-quantum one
+// (rcbj's D3): `stsOpenPgpClassicalKey` and `stsOpenPgpClassicalKeyInfo`.
 const OPENPGP_WRITABLE = ['stsopenpgpkey', 'stsopenpgpfingerprint',
                           'stsopenpgpkeyinfo', 'stsmailencryption',
+                          'stsopenpgpclassicalkey',
+                          'stsopenpgpclassicalkeyinfo',
                           'usersmimecertificate;binary',
                           'usersmimecertificate'];
 const openpgpKeys = require('../common/openpgp_keys');

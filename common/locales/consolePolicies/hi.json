@@ -1,6 +1,7 @@
 {
   "yes": "हाँ",
   "no": "नहीं",
+  "follows": "{row} के अनुसार",
   "configuration": "कॉन्फ़िगरेशन",
   "schema": "स्कीमा",
   "saveProfile": "प्रोफ़ाइल सहेजें",

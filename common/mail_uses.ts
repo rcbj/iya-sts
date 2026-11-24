@@ -36,8 +36,12 @@
 //      while they were not there, waiting on /portal/ciba.
 //   6. **A STARTED POST-LOGIN ACTIVITY'S REMINDER** (#1111), a notification
 //      a person may decline: sign in, and the post-login activity asks you
-//      to register a post-quantum passkey. The one link is the portal's path;
-//      it carries no credential (`common/post_login_activities.ts`).
+//      to do it. The one link is the portal's path; it carries no credential
+//      (`common/post_login_activities.ts`). Each activity has its own
+//      message since #2009's P4 — a post-quantum passkey
+//      (`post-login-reminder`, the id it always had), a post-quantum
+//      mail-encryption key, a new PIV certificate — named by
+//      `post_login_kinds.ts`'s table.
 //   7. **AN AUTHZEN ACCESS REQUEST WAITING FOR ITS APPROVERS** (#1180), a
 //      notification a person may decline, waiting on
 //      /portal/access-requests — and, for an emergency access the policy
@@ -65,6 +69,9 @@ import audit = require('./audit');
 import stsCrypto = require('./crypto');
 import mail = require('./mail');
 import Classes = require('./domain_classes');
+// The activities' table (#2009 P4): which reminder each one is sent with. A
+// leaf that requires nothing of this service.
+import PostLoginKinds = require('./post_login_kinds');
 
 type Json = any;
 
@@ -940,7 +947,9 @@ class MailUses {
    * Mails a person a started post-login activity's reminder to sign in.
    *
    * @param username - the person
-   * @param facts - `started` (its id), `mails` (how many it sent them
+   * @param facts - `started` (its id), `activity` (which activity: its
+   *   own message, #2009 P4; the passkey migration's when absent, as a
+   *   reminder asked before P4 always was), `mails` (how many it sent them
    *   before this one), `actor` (who started it)
    * @returns what `send()` answered, or `{ ok: false, skipped }`
    */
@@ -956,7 +965,8 @@ class MailUses {
         return out;
       }
       out = mail.send({
-        username: username, template: 'post-login-reminder',
+        username: username,
+        template: PostLoginKinds.templateOf(String(f.activity || '')),
         values: { username: username },
         links: { signin: '/portal' },
         dedupKey: 'post-login-reminder:' + String(f.started || '') + ':' +
