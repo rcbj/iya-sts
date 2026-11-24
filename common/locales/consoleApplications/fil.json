@@ -1011,5 +1011,7 @@
   "protection.target": "Field",
   "protection.add": "Idagdag sa field",
   "protection.added": "Naidagdag sa {field}. Pindutin ang I-save sa form sa itaas para panatilihin ito.",
-  "protection.notDrawn": "Wala sa pahinang ito ang {field}."
+  "protection.notDrawn": "Wala sa pahinang ito ang {field}.",
+  "embeddedPeps.tab": "Mga naka-embed na PEP",
+  "embeddedPeps.lead": "Naka-embed ang mga remote PEP na ito sa application na ito sa pamamagitan ng isang authentication library, at nakatali rito. Bawat isa ay itinatali at kinakalas sa sarili nitong pahina."
 }

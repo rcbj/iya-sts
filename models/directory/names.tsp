@@ -389,6 +389,12 @@ namespace IyaSts.Directory;
   // application's only. Written by an administrator only, through
   // authzen/authzen_admin.ts; an `sts*` name is refused by every other door.
   "stsAuthzenCallbackUri",
+  // AN EMBEDDED REMOTE PEP'S APPLICATION (#2025, part of #1206): on the
+  // service account a PEP embedded in an authentication library signs in
+  // as, the identifier of the one application it is embedded in. Written by
+  // an administrator only, through xacml/xacml_pep_binding.ts; an `sts*`
+  // name is refused by every other door.
+  "stsPepApplication",
 
   // THE CLIENT TRUSTSTORE'S DURABLE HALF (2026-09-12): one entry per anchor
   // under ou=trustAnchors in the DEFAULT realm. A CA certificate is public, so

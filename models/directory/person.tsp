@@ -285,6 +285,8 @@ model Person {
   stsAuthzenApplication?: (string)[];
   @attr(#{kind: "multi"})
   stsAuthzenCallbackUri?: (string)[];
+  @attr(#{kind: "single"})
+  stsPepApplication?: string;
   @attr(#{kind: "multi"})
   stsAssertionIssuer?: (string)[];
   @attr(#{kind: "multi"})

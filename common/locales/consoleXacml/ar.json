@@ -1049,5 +1049,18 @@
   "tip.credential.csr": "طلب PKCS #10 موقّع بالمفتاح المراد تصديقه: EC P-256 (مفضّل) أو RSA من 2048 بت أو أكثر. يُتجاهل موضوعه وأسماؤه؛ تسمّي الشهادة المدخل.",
   "tip.credential.load": "اقرأ ملف طلب في المربع أعلاه، في المتصفح. لا يُرسل شيء إلى أن تصدّق.",
   "tip.credential.revokePrevious": "إيقاف افتراضيًا: يُبقي PEP قيد التشغيل مفتاحه القديم إلى أن يُنقل إلى الجديد. عند التشغيل، يذهب كل مفتاح RFC 7523 صالح آخر للمدخل إلى قائمة إبطال authority&rsquo;s.",
-  "tip.credential.submit": "يرسل issue-pep-credential. يعرض الجواب الشهادة والبيئة لبدء PEP بها، مرة واحدة."
+  "tip.credential.submit": "يرسل issue-pep-credential. يعرض الجواب الشهادة والبيئة لبدء PEP بها، مرة واحدة.",
+  "pepPage.th.application": "مضمَّن في",
+  "pepPage.application.none": "لا يوجد تطبيق",
+  "tip.overview.application": "التطبيق الذي يرتبط به PEP مضمَّن، محفوظ على إدخاله. يُرفض التسجيل بوصفه PEP مضمَّنًا ما لم يُسمِّ هذا التطبيق.",
+  "binding.legend": "مضمَّن في تطبيق",
+  "binding.lead": "يعمل PEP المضمَّن داخل تطبيق، عبر مكتبة مصادقة. اربط حساب الخدمة الخاص به بذلك التطبيق الواحد؛ وأزل الربط عندما لا يعود PEP مضمَّنًا فيه.",
+  "binding.application": "معرّف التطبيق",
+  "tip.binding.application": "معرّف التطبيق في سجل هذا النطاق.",
+  "binding.submit": "ربط",
+  "tip.binding.submit": "اكتب الربط على إدخال PEP، مستبدلًا أي ربط موجود.",
+  "binding.clear": "إزالة الربط",
+  "tip.binding.clear": "أزل الربط من إدخال PEP.",
+  "credential.application": "مضمَّن في التطبيق (اختياري)",
+  "tip.credential.application": "اربط PEP أيضًا بهذا التطبيق، في الاستدعاء نفسه، بعد اعتماد المفتاح. اتركه فارغًا لـ PEP غير مضمَّن في أي تطبيق."
 }

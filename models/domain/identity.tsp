@@ -628,6 +628,10 @@ model PersonRecord {
   @fromAttr(#{attr: "stsAuthzenCallbackUri"})
   `authzenCallbackUri`?: string[];
 
+  // #2025: the application an embedded remote PEP is bound to.
+  @fromAttr(#{attr: "stsPepApplication"})
+  `pepApplication`?: string;
+
   @fromAttr(#{attr: "stsMailVerified"})
   `mailVerified`?: string;
 

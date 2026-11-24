@@ -646,6 +646,7 @@
   "stsPasswordResetSource": 622,
   "stsPasswordResetToken": 623,
   "stsPasswordRotatedAt": 624,
+  "stsPepApplication": 966,
   "stsPivCardUuid": 790,
   "stsPostLoginActivity": 625,
   "stsPostLoginAttestation": 626,

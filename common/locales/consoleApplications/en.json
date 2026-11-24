@@ -1011,5 +1011,7 @@
   "protection.target": "Field",
   "protection.add": "Add to field",
   "protection.added": "Added to {field}. Press Save on the form above to keep it.",
-  "protection.notDrawn": "{field} is not on this page."
+  "protection.notDrawn": "{field} is not on this page.",
+  "embeddedPeps.tab": "Embedded PEPs",
+  "embeddedPeps.lead": "These remote PEPs are embedded in this application through an authentication library, and bound to it. Each is bound and unbound on its own page."
 }

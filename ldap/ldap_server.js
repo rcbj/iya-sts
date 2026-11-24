@@ -209,6 +209,7 @@ const personEditor = require('./person_editor');
 // management API loads at 19, handed what it needs through setDirectory(),
 // filled below. It requires only the engine's model and the helpers.
 const authzenAdmin = require('../authzen/authzen_admin');
+const pepBinding = require('../xacml/xacml_pep_binding');
 // The revocation register, for the CRL container below. A LEAF (rule 3): it
 // registers no route, so requiring it here moves nothing.
 const pkiRevocation = require('../common/pki_revocation');
@@ -11176,6 +11177,48 @@ authzenAdmin.setDirectory({
     log.debug('Entering the AuthZEN addMember(). group=' + group);
     log.debug('Leaving the AuthZEN addMember().');
     return addGroupMember(group, member, options);
+  }
+});
+
+// AN EMBEDDED REMOTE PEP'S BINDING (#2025), authzen's shape above:
+// `xacml/xacml_pep_binding.ts` locates a PEP's entry with the binding read
+// here, as the store reads it, writes `stsPepApplication` and nothing else,
+// and lists its holders. An `sts*` name is refused by every other door.
+pepBinding.setDirectory({
+  locate: function locate(name) {
+    log.debug('Entering the PEP binding locate(). name=' + name);
+    const stored = locateEntry(String(name || '')).stored;
+    if (!stored) {
+      log.debug('Leaving the PEP binding locate(). Nobody.');
+      return null;
+    }
+    const a = stored.attributes;
+    log.debug('Leaving the PEP binding locate(). ' + stored.dn);
+    return { dn: stored.dn, name: personNameOf(stored),
+             person: isPersonEntry(stored),
+             serviceAccount: (a.stsserviceaccount || []).length > 0,
+             application: String((a.stspepapplication || [])[0] || '') };
+  },
+  write: function write(dn, application) {
+    log.debug('Entering the PEP binding write(). dn=' + dn);
+    const value = String(application || '');
+    log.debug('Leaving the PEP binding write().');
+    return writePersonAttribute(dn, pepBinding.ATTRIBUTE,
+                                value ? [value] : []) === true;
+  },
+  holders: function holders() {
+    log.debug('Entering the PEP binding holders().');
+    const out = [];
+    eachHolderOfAny(['stspepapplication'], function (stored) {
+      const value = String((stored.attributes.stspepapplication || [])[0] ||
+                           '');
+      if (value && isPersonEntry(stored)) {
+        out.push({ dn: stored.dn, name: personNameOf(stored),
+                   application: value });
+      }
+    });
+    log.debug('Leaving the PEP binding holders(). ' + out.length);
+    return out;
   }
 });
 
@@ -28869,6 +28912,9 @@ function noteApplicationRemoved(stored, via) {
   // registered again under it was listed them (forgetHolderCertificates()).
   forgetHolderCertificates('application', identifier, '', a,
                            String(stored.dn), via);
+  // AND ITS EMBEDDED PEPS ARE UNBOUND (#2025): an application registered
+  // later under the same identifier must not inherit them.
+  pepBinding.shared().applicationRemoved(identifier, via);
   try {
     require('../ssf/account_signals').applicationPurged({
       application: identifier, dn: String(stored.dn), via: via,

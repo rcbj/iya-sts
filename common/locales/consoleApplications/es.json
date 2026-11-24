@@ -1011,5 +1011,7 @@
   "protection.target": "Campo",
   "protection.add": "Añadir al campo",
   "protection.added": "Añadida a {field}. Pulse Guardar en el formulario de arriba para conservarla.",
-  "protection.notDrawn": "{field} no está en esta página."
+  "protection.notDrawn": "{field} no está en esta página.",
+  "embeddedPeps.tab": "PEP integrados",
+  "embeddedPeps.lead": "Estos PEP remotos están integrados en esta aplicación mediante una biblioteca de autenticación, y vinculados a ella. Cada uno se vincula y desvincula en su propia página."
 }

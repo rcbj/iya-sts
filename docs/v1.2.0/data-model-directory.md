@@ -35,7 +35,7 @@ Do not edit it by hand.
 | [Kerberos trust](#kerberos-trust) | `KerberosTrust` | ou=kerberosTrusts | 8 |
 | [OpenID Federation entry](#openid-federation-entry) | `Oidfed` | ou=oidfed | 5 |
 | [Operational attributes](#operational-attributes) | `Operational` |  | 6 |
-| [Person](#person) | `Person` | ou=users | 132 |
+| [Person](#person) | `Person` | ou=users | 133 |
 | [Attribute policy](#attribute-policy) | `PolicyAttributes` | ou=attributePolicies | 8 |
 | [Attribute policy on a person](#attribute-policy-on-a-person) | `PolicyAttributesOnPerson` | on the person | 1 |
 | [Authentication policy](#authentication-policy) | `PolicyAuthn` | ou=authnPolicies | 29 |
@@ -853,6 +853,7 @@ No SCHEMA export. One person is one entry, RDN uid.
 | `stsOpenPgpKeyInfo` | one | this service | `1.3.6.1.4.1.67607.1.1.923` | What the portal and console draw about stsOpenPgpKey, one JSON value: its version, algorithms, the user ids that matched, when it was registered and by whom, and whether the person publishes it in the Web Key Directory (#1955). Written with the key and by the publication choice. |
 | `stsPasswordResetExpires` | one | this service | `1.3.6.1.4.1.67607.1.1.621` | When the pending password reset link stops working. |
 | `stsPasswordResetToken` | one | this service | `1.3.6.1.4.1.67607.1.1.623` | Secret. The scrypt hash of a pending password reset link an administrator or the person started. Withheld from every read. |
+| `stsPepApplication` | one | this service | `1.3.6.1.4.1.67607.1.1.966` | AN EMBEDDED REMOTE PEP'S APPLICATION (#2025, part of #1206): on the service account a PEP embedded in an authentication library signs in as, the identifier of the one application it is embedded in. Written by an administrator only, through xacml/xacml_pep_binding.ts; an `sts*` name is refused by every other door. |
 | `stsPivCardUuid` | several | this service | `1.3.6.1.4.1.67607.1.1.790` | The FIPS 201 card UUIDs of the person's outside PIV or CAC cards, one lower-case UUID per card (no urn:uuid: prefix). A card certificate from one of the realm's piv.externalIssuers that names one of these in its urn:uuid subjectAltName signs this person in (#1955). Written by an administrator; a reissued card has a new UUID. |
 | `stsProfilePhoto` | one | this service | `1.3.6.1.4.1.67607.1.1.639` | Secret. The person's profile photo record, one JSON value: which stored image is theirs, whose it was, and whether they declined a partner's copy. The image itself is not on the entry. Written only by the portal and a federated sign-in, and withheld from every read. |
 | `stsProvisionedBy` | one | this service | `1.3.6.1.4.1.67607.1.1.640` | WHO CREATED THE ENTRY when it was not one of this service's own doors (2026-10-20): `federation:<relationship>`, written once by the federated sign-in that created it and by nothing else. See PROVISIONED_BY. |

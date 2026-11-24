@@ -1049,5 +1049,18 @@
   "tip.credential.csr": "Une demande PKCS #10 signée avec la clé à certifier : EC P-256 (de préférence) ou RSA de 2048 bits ou plus. Son sujet et ses noms sont ignorés ; le certificat nomme l’entrée.",
   "tip.credential.load": "Lit un fichier de demande dans la zone ci-dessus, dans le navigateur. Rien n’est envoyé avant la certification.",
   "tip.credential.revokePrevious": "Désactivé par défaut : un PEP en cours d’exécution garde son ancienne clé jusqu’à ce qu’il passe à la nouvelle. Activé, toutes les autres clés RFC 7523 valides de l’entrée sont inscrites sur la liste de révocation de leur autorité.",
-  "tip.credential.submit": "Envoie issue-pep-credential. La réponse affiche une seule fois le certificat et l’environnement avec lequel démarrer le PEP."
+  "tip.credential.submit": "Envoie issue-pep-credential. La réponse affiche une seule fois le certificat et l’environnement avec lequel démarrer le PEP.",
+  "pepPage.th.application": "Intégré dans",
+  "pepPage.application.none": "aucune application",
+  "tip.overview.application": "L’application à laquelle un PEP intégré est lié, conservée sur son entrée. Un enregistrement comme PEP intégré est refusé s’il ne nomme pas cette application.",
+  "binding.legend": "Intégré dans une application",
+  "binding.lead": "Un PEP intégré s’exécute dans une application, au moyen d’une bibliothèque d’authentification. Liez son compte de service à cette seule application ; retirez la liaison quand le PEP n’y est plus intégré.",
+  "binding.application": "Identifiant de l’application",
+  "tip.binding.application": "L’identifiant de l’application dans le registre de ce domaine.",
+  "binding.submit": "Lier",
+  "tip.binding.submit": "Écrire la liaison sur l’entrée du PEP, en remplaçant celle qu’il a.",
+  "binding.clear": "Retirer la liaison",
+  "tip.binding.clear": "Retirer la liaison de l’entrée du PEP.",
+  "credential.application": "Intégré dans l’application (facultatif)",
+  "tip.credential.application": "Lier aussi le PEP à cette application, dans le même appel, une fois la clé certifiée. Laissez vide pour un PEP qui n’est intégré dans aucune application."
 }

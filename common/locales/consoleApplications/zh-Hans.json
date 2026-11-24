@@ -1011,5 +1011,7 @@
   "protection.target": "字段",
   "protection.add": "添加到字段",
   "protection.added": "已添加到 {field}。在上方表单中按“保存”以保留。",
-  "protection.notDrawn": "{field} 不在此页面上。"
+  "protection.notDrawn": "{field} 不在此页面上。",
+  "embeddedPeps.tab": "嵌入式 PEP",
+  "embeddedPeps.lead": "这些远程 PEP 通过身份验证库嵌入在此应用中，并绑定到它。每个 PEP 在其自己的页面上绑定和解除绑定。"
 }

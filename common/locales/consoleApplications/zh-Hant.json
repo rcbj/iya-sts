@@ -1011,5 +1011,7 @@
   "protection.target": "欄位",
   "protection.add": "加入欄位",
   "protection.added": "已加入 {field}。在上方表單中按「儲存」以保留。",
-  "protection.notDrawn": "{field} 不在此頁面上。"
+  "protection.notDrawn": "{field} 不在此頁面上。",
+  "embeddedPeps.tab": "嵌入式 PEP",
+  "embeddedPeps.lead": "這些遠端 PEP 透過身分驗證程式庫嵌入在此應用程式中，並綁定到它。每個 PEP 在其自己的頁面上綁定和解除綁定。"
 }
