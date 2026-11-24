@@ -422,6 +422,48 @@ const removedHere = new Set();
 let directoryDirty = false;
 let realmsDirty = false;
 let configDirty = false;
+// ---------------------------------------------------------------------------
+// THE SETTINGS GENERATION, AND THE FRONT PROCESS CATCHING UP ON IT (found in
+// #2019; rcbj, 2026-11-23: "catch up on change").
+//
+// A realm or a process-wide setting written in a request worker reached the
+// front process only at its next change-log pull — the LISTEN/NOTIFY nudge
+// on PostgreSQL (sent after the COMMIT, coalesced 25 ms), the one-second poll
+// on MariaDB — and the front decides some things BEFORE dispatch, on its own
+// copy: `common/forwarded_client_certificate.ts` reads
+// `tls.trustedProxyCertificates` and `tls.trustedProxyAddresses` there, and
+// so does every other middleware above the pool in `app.js` that reads a
+// realm setting. So a proxy's request sent the moment `/admin-api/realms/set`
+// answered was decided on the value the write had just replaced
+// (`tests/protocol/sts_cert_sign_in_profiles.js` E3, single-node and mariadb).
+//
+// Two halves, neither a per-request store round trip and neither a timer:
+//
+//   * THE ANSWER CARRIES IT. `settingsGen` moves wherever a realm row or a
+//     setting is marked dirty (`realmsChanged()`, `configChanged()`), and a
+//     request worker reads it when a request arrives and again as its
+//     answer's headers go: moved, the answer is marked
+//     `x-sts-pool-settings` (`request_worker.ts`), and the front process
+//     catches up (`syncSettingsNow()`, both tiers' logs) BEFORE it forwards a
+//     byte of that answer (`request_pool.js`). The answer goes out after its
+//     commit (`cluster/cluster_barrier.js` rule 2, every database store), so
+//     the catch-up pulls the write, and every request the client sends after
+//     reading the answer meets the new value in the front.
+//   * THE COMMIT NUDGES. A settings write with no answer to ride on (a
+//     cluster job's body run in a worker, #408) is announced once its save
+//     commits (`announceSettingsCommitted()`, `{ settingsCommitted }` on the
+//     worker channel), and the front wakes its pull at once
+//     (`nudgeSettingsPull()` — `wake()`, which coalesces into the pull in
+//     flight, so a burst is one or two pulls).
+//
+// WHAT IT DOES NOT COVER: another NODE's write (cluster mode). That reaches
+// this node's front as it always did — PostgreSQL's NOTIFY within tens of
+// milliseconds, MariaDB's poll within a second — because no answer of
+// another node passes through this front. Nor a store with no coordination
+// (memory, ldif): there are no request workers there, and the front is the
+// process that took the write.
+// ---------------------------------------------------------------------------
+let settingsGen = 0;
 
 // The pending flush, and the promise anybody waiting on it holds.
 let timer = null;
@@ -1088,6 +1130,7 @@ function realmsChanged() {
   }
   realmsDirty = true;
   dirGeneration += 1;
+  settingsGen += 1;
   schedule();
   log.debug("Leaving realmsChanged().");
 }
@@ -1119,8 +1162,26 @@ function configChanged(realmId) {
   }
   configDirty = true;
   dirGeneration += 1;
+  settingsGen += 1;
   schedule();
   log.debug("Leaving configChanged().");
+}
+
+// A request worker's realm or settings save has committed: the front process
+// is told, so its pull runs now rather than at its next nudge or poll (see
+// THE SETTINGS GENERATION, above). Outside a worker thread the channel's
+// send() is a no-op, so the front process and a single process send nothing.
+function announceSettingsCommitted() {
+  log.debug("Entering announceSettingsCommitted().");
+  try {
+    require('../common/worker_channel').send({ settingsCommitted: true });
+  } catch (e) {
+    // The channel has gone: this worker is ending, and the front's own pull
+    // still brings the change.
+    log.debug("Caught in announceSettingsCommitted(): " +
+              ((e && e.message) || e));
+  }
+  log.debug("Leaving announceSettingsCommitted().");
 }
 
 function schedule() {
@@ -2055,6 +2116,7 @@ function flush() {
       // The whole delta, a dropped value included, so that the next flush
       // does not send it again: `isolateDirectory()`'s rule.
       advanceRealmShadow(realmChanges);
+      announceSettingsCommitted();
     });
   }).then(function () {
     if (!wantConfig) {
@@ -2071,6 +2133,7 @@ function flush() {
       })
       .then(function () {
         advanceAppconfigShadow(configChanges);
+        announceSettingsCommitted();
       });
   }).then(function () {
     if (!changes) {
@@ -6781,6 +6844,55 @@ module.exports = {
     log.debug("Entering syncNow().");
     log.debug("Leaving syncNow().");
     return replication.syncNow();
+  },
+  // THE SETTINGS GENERATION and the front process's two ways of catching up
+  // on it. See THE SETTINGS GENERATION, above.
+  /**
+   * How many times a realm row or a setting has been marked changed in this
+   * process: a request worker compares it across one request.
+   * @returns the generation
+   */
+  settingsGeneration: function () {
+    log.debug("Entering settingsGeneration().");
+    log.debug("Leaving settingsGeneration().");
+    return settingsGen;
+  },
+  /**
+   * Waits until every realm and settings change committed before the call is
+   * applied here: the cell's log, and the global tier's where the store is
+   * tiered (a realm's row and its overrides are global).
+   * @returns a promise of `{ caughtUp, coordinating }`, never rejected
+   */
+  syncSettingsNow: function () {
+    log.debug("Entering syncSettingsNow().");
+    const pulls = [replication.syncNow()];
+    if (globalReplication) {
+      pulls.push(globalReplication.syncNow());
+    }
+    log.debug("Leaving syncSettingsNow().");
+    return Promise.all(pulls).then(function (states) {
+      return {
+        caughtUp: states.every(function (one) {
+          return !one || one.caughtUp !== false ||
+                 one.coordinating === false;
+        }),
+        coordinating: states.some(function (one) {
+          return !!one && one.coordinating !== false;
+        })
+      };
+    });
+  },
+  /**
+   * Wakes this process's change-log pulls now, for a worker's committed
+   * settings save. Coalesces into a pull in flight; arms no timer.
+   */
+  nudgeSettingsPull: function () {
+    log.debug("Entering nudgeSettingsPull().");
+    replication.wake();
+    if (globalReplication) {
+      globalReplication.wake();
+    }
+    log.debug("Leaving nudgeSettingsPull().");
   },
   status: status
 };

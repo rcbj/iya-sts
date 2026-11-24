@@ -275,6 +275,14 @@
     "en": "b66258c1b032dec3",
     "text": "Für jede Person mit einer Konsolenrolle (Admin Read oder Admin Write), die keinen zweiten Faktor besitzt. `offer`: ihr wird bei jeder Anmeldung der Schritt zum Einrichten gezeigt, mit einer Schaltfläche „Ignorieren“. `always`: sie muss einen einrichten, bevor sie angemeldet wird — außer dem eingebauten Administrator des Standardbereichs (admin.bootstrapUsername), dem einer nur angeboten wird, damit ein Dienst nie ohne jemanden dasteht, der sich anmelden kann. `if-held`: wie alle anderen, nach dem Feld oben. SCHWÄCHER ALS `always`: ein Administrator allein mit Passwort ist ein Administrator, der jeder ist, der das Passwort hat."
   },
+  "authn.FIELDS.requireAttestedHardware.label": {
+    "en": "231d6b2e19c32f3c",
+    "text": "Attestiertes Hardware-Token erforderlich"
+  },
+  "authn.FIELDS.requireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no`: keine Anforderung über die Mechanismuszeilen hinaus. `always`: eine Sitzung beginnt nur, wenn die Anmeldeinformation, die die Anmeldung abgeschlossen hat (ein Passkey, ein Sicherheitsschlüssel, ein Zertifikat oder eine Smartcard), auf einem aktiven Hardware-Token liegt, dessen Attestierung das Register erfasst hat — dieselbe Prüfung, die der Mechanismus `attested-hardware` einer Anwendung vornimmt. Ein Passwort, eine Authenticator-App, ein per E-Mail gesendeter Code, eine Wallet, ein Föderationspartner oder ein Kerberos-Ticket allein wird abgelehnt. Der integrierte Administrator des Standardbereichs (admin.bootstrapUsername) ist ausgenommen, damit ein Dienst nie ohne jemanden bleibt, der sich anmelden kann."
+  },
   "authn.FIELDS.passwordPrimary.label": {
     "en": "8459feba5558b2cd",
     "text": "Passwort — als erster Faktor"
@@ -320,16 +328,16 @@
     "text": "Einmalcode-Token (HOTP) — als zweiter Faktor"
   },
   "authn.FIELDS.hotpSecondFactor.what": {
-    "en": "608274a83bf567cd",
-    "text": "Ein Einmalcode nach RFC 4226 von einem zählerbasierten Token (#1955): der OTP-Slot eines YubiKey oder das Token eines Herstellers, das ein Administrator aus einer PSKC-Seed-Datei importiert hat. Nie ein erster Faktor. Ist dies hier aus, darf niemand eines EINRICHTEN oder beanspruchen; wer bereits eines hat, wird weiterhin danach gefragt, wie der Inhaber einer Authenticator-App."
+    "en": "33918856782d0904",
+    "text": "Ein RFC-4226-Einmalcode von einem zählerbasierten Token (#1955): der OTP-Slot eines YubiKey oder das Token eines Anbieters, das ein Administrator aus einer PSKC-Seed-Datei importiert hat. Nie ein erster Faktor. STANDARDMÄSSIG AUS, und es muss für diesen Bereich eingeschaltet werden, bevor jemand ein HOTP-Token registrieren, beanspruchen oder zugewiesen bekommen kann; bis dahin wird kein HOTP-Token bei der Anmeldung verwendet. Hier aus, kann niemand eines REGISTRIEREN oder beanspruchen; wer bereits eines hat, wird weiterhin danach gefragt, wie der Inhaber einer Authenticator-App."
   },
   "authn.FIELDS.yubicoOtpSecondFactor.label": {
     "en": "cba1439d0faf9aaf",
     "text": "YubiKey-OTP — als zweiter Faktor"
   },
   "authn.FIELDS.yubicoOtpSecondFactor.what": {
-    "en": "f8f7a6ee5bbb46a8",
-    "text": "Ein YubiKey-OTP (Yubicos veröffentlichtes Modhex-Einmalpasswort, #1955). Nie ein erster Faktor: dieser Dienst besitzt den AES-Schlüssel. Ist dies hier aus, darf niemand eines EINRICHTEN, zuweisen oder beanspruchen, auch wenn yubiotp.offered an ist; wer bereits eines hat, wird weiterhin danach gefragt."
+    "en": "a5efe4af91b59cf2",
+    "text": "Ein YubiKey-OTP (Yubicos veröffentlichtes modhex-Einmalpasswort, #1955). Nie ein erster Faktor: dieser Dienst hält den AES-Schlüssel. STANDARDMÄSSIG AUS, und es muss für diesen Bereich eingeschaltet werden (mit yubiotp.offered), bevor jemand ein YubiKey-OTP registrieren, beanspruchen oder zugewiesen bekommen kann; bis dahin wird keines bei der Anmeldung verwendet. Hier aus, kann niemand eines REGISTRIEREN, zuweisen oder beanspruchen, auch wenn yubiotp.offered eingeschaltet ist; wer bereits eines hat, wird weiterhin danach gefragt."
   },
   "authn.FIELDS.recoveryCodeSecondFactor.label": {
     "en": "ee9982b48a9c6a90",
@@ -376,16 +384,40 @@
     "text": "TLS-Clientzertifikat — als erster Faktor"
   },
   "authn.FIELDS.certificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Ein verifiziertes TLS-Clientzertifikat: GET /tls/sign-in oder „Mit Ihrem Zertifikat fortfahren“ auf dem Anmeldebildschirm."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Ein verifiziertes TLS-Clientzertifikat, das keine Smartcard ist: GET /tls/sign-in oder „Mit Ihrem Zertifikat fortfahren“ auf dem Anmeldebildschirm. Ein Smartcard-Zertifikat gehört zur Smartcard-Zeile, die dieser folgt, solange sie keinen Wert hat (#2031)."
+  },
+  "authn.FIELDS.smartCardPrimary.label": {
+    "en": "2fd7ffc9233a4399",
+    "text": "Smartcard-Zertifikat (PIV/CAC) — als erster Faktor"
+  },
+  "authn.FIELDS.smartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Ein Smartcard-Zertifikat (PIV/CAC), bei GET /tls/sign-in oder „Mit Ihrem Zertifikat fortfahren“: ein attestierter PIV-Schlüssel, ein hier unter einem PIV-Slot-Profil ausgestelltes Zertifikat, eine externe Karte, die über ihre Karten-UUID zugeordnet ist (piv.externalIssuers, stsPivCardUuid), oder eines unter einem als smartCard markierten certSignIn.profiles-Profil. FEHLT der Wert, folgt es stsAuthnCertificatePrimary, sodass eine zuvor geschriebene Richtlinie ihre Bedeutung behält (#2031)."
+  },
+  "authn.FIELDS.smartCardCardAuthPrimary.label": {
+    "en": "a8aedf2b449f0f65",
+    "text": "PIV-Kartenauthentifizierungsschlüssel (ohne PIN) — als erster Faktor"
+  },
+  "authn.FIELDS.smartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Ein PIV-Kartenauthentifizierungszertifikat (Slot 9e), dessen Schlüssel ohne PIN funktioniert. Es ist auch eine Smartcard, daher muss auch die Smartcard-Zeile eingeschaltet sein. FEHLT der Wert, folgt es der Einstellung piv.cardAuthSignIn (#2031)."
   },
   "authn.FIELDS.kerberosPrimary.label": {
     "en": "f2f6ed9dd0454fdc",
     "text": "Kerberos (SPNEGO) — als erster Faktor"
   },
   "authn.FIELDS.kerberosPrimary.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego mit einem Kerberos-Ticket."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego mit einem Kerberos-Ticket, außer PKINIT mit Smartcard, das eine eigene Zeile hat und dieser folgt, solange sie keinen Wert hat (#2031)."
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.label": {
+    "en": "9c5eeb540b2f1c36",
+    "text": "Kerberos PKINIT mit Smartcard — als erster Faktor"
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego mit einem Kerberos-Ticket, das den pkinit-smartcard-Indikator dieses Bereichs trägt: das KDC hat es über PKINIT von einer Smartcard ausgestellt. FEHLT der Wert, folgt es stsAuthnKerberosPrimary (#2031)."
   },
   "authn.FIELDS.walletPrimary.label": {
     "en": "f215dfc0a7d74e7f",
@@ -491,6 +523,10 @@
     "en": "b66258c1b032dec3",
     "text": "Für jede Person mit einer Konsolenrolle (Admin Read oder Admin Write), die keinen zweiten Faktor besitzt. `offer`: ihr wird bei jeder Anmeldung der Schritt zum Einrichten gezeigt, mit einer Schaltfläche „Ignorieren“. `always`: sie muss einen einrichten, bevor sie angemeldet wird — außer dem eingebauten Administrator des Standardbereichs (admin.bootstrapUsername), dem einer nur angeboten wird, damit ein Dienst nie ohne jemanden dasteht, der sich anmelden kann. `if-held`: wie alle anderen, nach dem Feld oben. SCHWÄCHER ALS `always`: ein Administrator allein mit Passwort ist ein Administrator, der jeder ist, der das Passwort hat."
   },
+  "authn.SCHEMA.attributes.stsAuthnRequireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no`: keine Anforderung über die Mechanismuszeilen hinaus. `always`: eine Sitzung beginnt nur, wenn die Anmeldeinformation, die die Anmeldung abgeschlossen hat (ein Passkey, ein Sicherheitsschlüssel, ein Zertifikat oder eine Smartcard), auf einem aktiven Hardware-Token liegt, dessen Attestierung das Register erfasst hat — dieselbe Prüfung, die der Mechanismus `attested-hardware` einer Anwendung vornimmt. Ein Passwort, eine Authenticator-App, ein per E-Mail gesendeter Code, eine Wallet, ein Föderationspartner oder ein Kerberos-Ticket allein wird abgelehnt. Der integrierte Administrator des Standardbereichs (admin.bootstrapUsername) ist ausgenommen, damit ein Dienst nie ohne jemanden bleibt, der sich anmelden kann."
+  },
   "authn.SCHEMA.attributes.stsAuthnPasswordPrimary.what": {
     "en": "3b32854915d0d6d0",
     "text": "Ein Passwort auf dem Anmeldebildschirm. Als ZWEITER Faktor ist es das Passwort, das nach einer Wallet oder einem anderen passwortlosen ersten Faktor verlangt wird."
@@ -512,12 +548,12 @@
     "text": "Ein Einmalcode nach RFC 6238. Niemals ein erster Faktor: dieser Dienst besitzt dasselbe gemeinsame Geheimnis wie die App. Hier aus, darf niemand einen EINRICHTEN; eine Person, die bereits einen besitzt, wird weiterhin danach gefragt, weil ein Ausschalter, der jedes eingerichtete Konto auf ein Passwort allein herabstufen würde, etwas anderes täte, als er sagt (diese Zeile hat totp.enabled ersetzt und behält dessen Vertrag)."
   },
   "authn.SCHEMA.attributes.stsAuthnHotpSecondFactor.what": {
-    "en": "608274a83bf567cd",
-    "text": "Ein Einmalcode nach RFC 4226 von einem zählerbasierten Token (#1955): der OTP-Slot eines YubiKey oder das Token eines Herstellers, das ein Administrator aus einer PSKC-Seed-Datei importiert hat. Nie ein erster Faktor. Ist dies hier aus, darf niemand eines EINRICHTEN oder beanspruchen; wer bereits eines hat, wird weiterhin danach gefragt, wie der Inhaber einer Authenticator-App."
+    "en": "33918856782d0904",
+    "text": "Ein RFC-4226-Einmalcode von einem zählerbasierten Token (#1955): der OTP-Slot eines YubiKey oder das Token eines Anbieters, das ein Administrator aus einer PSKC-Seed-Datei importiert hat. Nie ein erster Faktor. STANDARDMÄSSIG AUS, und es muss für diesen Bereich eingeschaltet werden, bevor jemand ein HOTP-Token registrieren, beanspruchen oder zugewiesen bekommen kann; bis dahin wird kein HOTP-Token bei der Anmeldung verwendet. Hier aus, kann niemand eines REGISTRIEREN oder beanspruchen; wer bereits eines hat, wird weiterhin danach gefragt, wie der Inhaber einer Authenticator-App."
   },
   "authn.SCHEMA.attributes.stsAuthnYubicoOtpSecondFactor.what": {
-    "en": "f8f7a6ee5bbb46a8",
-    "text": "Ein YubiKey-OTP (Yubicos veröffentlichtes Modhex-Einmalpasswort, #1955). Nie ein erster Faktor: dieser Dienst besitzt den AES-Schlüssel. Ist dies hier aus, darf niemand eines EINRICHTEN, zuweisen oder beanspruchen, auch wenn yubiotp.offered an ist; wer bereits eines hat, wird weiterhin danach gefragt."
+    "en": "a5efe4af91b59cf2",
+    "text": "Ein YubiKey-OTP (Yubicos veröffentlichtes modhex-Einmalpasswort, #1955). Nie ein erster Faktor: dieser Dienst hält den AES-Schlüssel. STANDARDMÄSSIG AUS, und es muss für diesen Bereich eingeschaltet werden (mit yubiotp.offered), bevor jemand ein YubiKey-OTP registrieren, beanspruchen oder zugewiesen bekommen kann; bis dahin wird keines bei der Anmeldung verwendet. Hier aus, kann niemand eines REGISTRIEREN, zuweisen oder beanspruchen, auch wenn yubiotp.offered eingeschaltet ist; wer bereits eines hat, wird weiterhin danach gefragt."
   },
   "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
     "en": "e93ab2adc3e581bd",
@@ -540,12 +576,24 @@
     "text": "Ein einmalig verwendbarer Link, der an die VERIFIZIERTE Adresse der Person gesendet wird und die Anmeldung nur in dem Browser abschließt, der sie begonnen hat. NIST SP 800-63B-4 Abschnitt 3.1.3.1: „E-Mail DARF NICHT für die Out-of-Band-Authentifizierung verwendet werden“, weil ein Postfach mit einem Passwort allein erreichbar sein kann und E-Mail unterwegs gelesen oder umgeleitet werden kann. Aus diesem Grund standardmäßig aus; schalten Sie diese Möglichkeit nur ein, wo das ein akzeptiertes Risiko ist."
   },
   "authn.SCHEMA.attributes.stsAuthnCertificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Ein verifiziertes TLS-Clientzertifikat: GET /tls/sign-in oder „Mit Ihrem Zertifikat fortfahren“ auf dem Anmeldebildschirm."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Ein verifiziertes TLS-Clientzertifikat, das keine Smartcard ist: GET /tls/sign-in oder „Mit Ihrem Zertifikat fortfahren“ auf dem Anmeldebildschirm. Ein Smartcard-Zertifikat gehört zur Smartcard-Zeile, die dieser folgt, solange sie keinen Wert hat (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Ein Smartcard-Zertifikat (PIV/CAC), bei GET /tls/sign-in oder „Mit Ihrem Zertifikat fortfahren“: ein attestierter PIV-Schlüssel, ein hier unter einem PIV-Slot-Profil ausgestelltes Zertifikat, eine externe Karte, die über ihre Karten-UUID zugeordnet ist (piv.externalIssuers, stsPivCardUuid), oder eines unter einem als smartCard markierten certSignIn.profiles-Profil. FEHLT der Wert, folgt es stsAuthnCertificatePrimary, sodass eine zuvor geschriebene Richtlinie ihre Bedeutung behält (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Ein PIV-Kartenauthentifizierungszertifikat (Slot 9e), dessen Schlüssel ohne PIN funktioniert. Es ist auch eine Smartcard, daher muss auch die Smartcard-Zeile eingeschaltet sein. FEHLT der Wert, folgt es der Einstellung piv.cardAuthSignIn (#2031)."
   },
   "authn.SCHEMA.attributes.stsAuthnKerberosPrimary.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego mit einem Kerberos-Ticket."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego mit einem Kerberos-Ticket, außer PKINIT mit Smartcard, das eine eigene Zeile hat und dieser folgt, solange sie keinen Wert hat (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego mit einem Kerberos-Ticket, das den pkinit-smartcard-Indikator dieses Bereichs trägt: das KDC hat es über PKINIT von einer Smartcard ausgestellt. FEHLT der Wert, folgt es stsAuthnKerberosPrimary (#2031)."
   },
   "authn.SCHEMA.attributes.stsAuthnWalletPrimary.what": {
     "en": "c6b81177c7b7d944",
@@ -644,16 +692,16 @@
     "text": "Einmalcode-Token (HOTP)"
   },
   "authn.MECHANISMS.hotp.what": {
-    "en": "608274a83bf567cd",
-    "text": "Ein Einmalcode nach RFC 4226 von einem zählerbasierten Token (#1955): der OTP-Slot eines YubiKey oder das Token eines Herstellers, das ein Administrator aus einer PSKC-Seed-Datei importiert hat. Nie ein erster Faktor. Ist dies hier aus, darf niemand eines EINRICHTEN oder beanspruchen; wer bereits eines hat, wird weiterhin danach gefragt, wie der Inhaber einer Authenticator-App."
+    "en": "33918856782d0904",
+    "text": "Ein RFC-4226-Einmalcode von einem zählerbasierten Token (#1955): der OTP-Slot eines YubiKey oder das Token eines Anbieters, das ein Administrator aus einer PSKC-Seed-Datei importiert hat. Nie ein erster Faktor. STANDARDMÄSSIG AUS, und es muss für diesen Bereich eingeschaltet werden, bevor jemand ein HOTP-Token registrieren, beanspruchen oder zugewiesen bekommen kann; bis dahin wird kein HOTP-Token bei der Anmeldung verwendet. Hier aus, kann niemand eines REGISTRIEREN oder beanspruchen; wer bereits eines hat, wird weiterhin danach gefragt, wie der Inhaber einer Authenticator-App."
   },
   "authn.MECHANISMS.yubico-otp.label": {
     "en": "01f8772904333b7b",
     "text": "YubiKey-OTP"
   },
   "authn.MECHANISMS.yubico-otp.what": {
-    "en": "f8f7a6ee5bbb46a8",
-    "text": "Ein YubiKey-OTP (Yubicos veröffentlichtes Modhex-Einmalpasswort, #1955). Nie ein erster Faktor: dieser Dienst besitzt den AES-Schlüssel. Ist dies hier aus, darf niemand eines EINRICHTEN, zuweisen oder beanspruchen, auch wenn yubiotp.offered an ist; wer bereits eines hat, wird weiterhin danach gefragt."
+    "en": "a5efe4af91b59cf2",
+    "text": "Ein YubiKey-OTP (Yubicos veröffentlichtes modhex-Einmalpasswort, #1955). Nie ein erster Faktor: dieser Dienst hält den AES-Schlüssel. STANDARDMÄSSIG AUS, und es muss für diesen Bereich eingeschaltet werden (mit yubiotp.offered), bevor jemand ein YubiKey-OTP registrieren, beanspruchen oder zugewiesen bekommen kann; bis dahin wird keines bei der Anmeldung verwendet. Hier aus, kann niemand eines REGISTRIEREN, zuweisen oder beanspruchen, auch wenn yubiotp.offered eingeschaltet ist; wer bereits eines hat, wird weiterhin danach gefragt."
   },
   "authn.MECHANISMS.recoveryCode.label": {
     "en": "5bda8302b5ecf4d3",
@@ -684,16 +732,40 @@
     "text": "TLS-Clientzertifikat"
   },
   "authn.MECHANISMS.certificate.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Ein verifiziertes TLS-Clientzertifikat: GET /tls/sign-in oder „Mit Ihrem Zertifikat fortfahren“ auf dem Anmeldebildschirm."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Ein verifiziertes TLS-Clientzertifikat, das keine Smartcard ist: GET /tls/sign-in oder „Mit Ihrem Zertifikat fortfahren“ auf dem Anmeldebildschirm. Ein Smartcard-Zertifikat gehört zur Smartcard-Zeile, die dieser folgt, solange sie keinen Wert hat (#2031)."
+  },
+  "authn.MECHANISMS.smartCard.label": {
+    "en": "055e41994165a328",
+    "text": "Smartcard-Zertifikat (PIV/CAC)"
+  },
+  "authn.MECHANISMS.smartCard.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Ein Smartcard-Zertifikat (PIV/CAC), bei GET /tls/sign-in oder „Mit Ihrem Zertifikat fortfahren“: ein attestierter PIV-Schlüssel, ein hier unter einem PIV-Slot-Profil ausgestelltes Zertifikat, eine externe Karte, die über ihre Karten-UUID zugeordnet ist (piv.externalIssuers, stsPivCardUuid), oder eines unter einem als smartCard markierten certSignIn.profiles-Profil. FEHLT der Wert, folgt es stsAuthnCertificatePrimary, sodass eine zuvor geschriebene Richtlinie ihre Bedeutung behält (#2031)."
+  },
+  "authn.MECHANISMS.smartCardCardAuth.label": {
+    "en": "7b5626b23b778ecd",
+    "text": "PIV-Kartenauthentifizierungsschlüssel (ohne PIN)"
+  },
+  "authn.MECHANISMS.smartCardCardAuth.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Ein PIV-Kartenauthentifizierungszertifikat (Slot 9e), dessen Schlüssel ohne PIN funktioniert. Es ist auch eine Smartcard, daher muss auch die Smartcard-Zeile eingeschaltet sein. FEHLT der Wert, folgt es der Einstellung piv.cardAuthSignIn (#2031)."
   },
   "authn.MECHANISMS.kerberos.label": {
     "en": "a8316dcb1a42420f",
     "text": "Kerberos (SPNEGO)"
   },
   "authn.MECHANISMS.kerberos.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego mit einem Kerberos-Ticket."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego mit einem Kerberos-Ticket, außer PKINIT mit Smartcard, das eine eigene Zeile hat und dieser folgt, solange sie keinen Wert hat (#2031)."
+  },
+  "authn.MECHANISMS.pkinitSmartCard.label": {
+    "en": "62046e8418115023",
+    "text": "Kerberos PKINIT mit Smartcard"
+  },
+  "authn.MECHANISMS.pkinitSmartCard.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego mit einem Kerberos-Ticket, das den pkinit-smartcard-Indikator dieses Bereichs trägt: das KDC hat es über PKINIT von einer Smartcard ausgestellt. FEHLT der Wert, folgt es stsAuthnKerberosPrimary (#2031)."
   },
   "authn.MECHANISMS.wallet.label": {
     "en": "696e7476221a3382",
@@ -754,6 +826,10 @@
   "authn.sentences.emailTtlInactive": {
     "en": "20f80fea7980a662",
     "text": "ein per E-Mail gesendeter Code oder Link ist {{n}} Sekunden gültig — INAKTIV: dieser Bereich kann keine E-Mail senden"
+  },
+  "authn.sentences.attestedAlways": {
+    "en": "7feb965c44fd5614",
+    "text": "jede Anmeldung muss mit einer Anmeldeinformation auf einem attestierten Hardware-Token enden (der integrierte Administrator ausgenommen)"
   },
   "kinds.serviceAccount.label": {
     "en": "029b1070484594c2",

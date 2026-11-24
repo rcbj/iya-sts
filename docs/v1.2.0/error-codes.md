@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6048** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6055** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -52,18 +52,18 @@ is an ordinary outcome.
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 21
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 112
-* [Worker pools (`STS-WORKER`)](#sts-worker) — 57
+* [Worker pools (`STS-WORKER`)](#sts-worker) — 58
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 116
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 24
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 201
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 202
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 285
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 57
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 457
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 461
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 87
@@ -77,7 +77,7 @@ is an ordinary outcome.
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 35
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 76
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 77
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 174
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
@@ -342,6 +342,7 @@ Raised from: common/request_pool.js, common/request_worker.ts, common/service_st
 | `STS-WORKER-0055` | A request worker reported that its change-log pull waited on its own flush past workers.readBarrierTimeoutMs (STS-STORE-0176), so the front process retired it — nothing more routed to it, then drained, waiting for its own flush to settle — and forks a replacement into its slot when it exits. A pool that is stopping or has given up keeps the worker, and the line says why. | — |
 | `STS-WORKER-0056` | A request worker retired because its change-log pull was wedged (STS-WORKER-0055) did not finish draining within 8000 ms and was ended; its replacement follows as for any worker that exits. | — |
 | `STS-WORKER-0057` | A request worker was ended, or exited, with its own flush still out past ten times workers.readBarrierTimeoutMs after it began (5 minutes by default): the flush was given up on, and the writes in it may not have reached the store. A flush that settles before then is waited for. | Log line |
+| `STS-WORKER-0058` | The front process could not catch up on the realm and settings change logs before forwarding an answer that wrote a setting (the catch-up ran out or failed): the answer is forwarded, and a check the front makes before dispatch meets the new value at its next change-log pull (#2019). | Log line |
 
 ## STS-STORE
 
@@ -850,6 +851,7 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0210` | A warning at start: the PKCS#11 calls this process can run at once with realm keys in the HSM (keys.pkcs11Sessions times its threads) reach libuv's thread pool size (UV_THREADPOOL_SIZE), which they share with password hashing and post-quantum signing. Nothing blocks the event loop; a slow token could hold every pool thread. The line names the size that leaves room (#1955). | — |
 | `STS-KEYS-0211` | The thread that makes a PKCS#11 token's non-cryptographic calls off the event loop (opening and logging in a session, finding a key, reading its attributes, beginning an operation, the key wrap's session object, initialising the module again) failed or exited. The calls waiting on it are refused and the next one starts a new thread (#1955). | — |
 | `STS-KEYS-0212` | A blocking PKCS#11 call was refused because the module is being initialised again after the device was lost, or must be and asynchronous calls of this thread still hold sessions on it: the module is initialised again off the event loop once they drain, and the next call is made on it (#1955). | — |
+| `STS-KEYS-0213` | A thread held the process-wide lock on re-initialising a PKCS#11 module for longer than the bound (a worker stopped while it held it, or the module hung in C_Finalize or C_Initialize): the thread waiting for it takes it over and initialises the module again itself (#1955). | — |
 
 ## STS-PKI
 
@@ -1847,6 +1849,10 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0580` | A legacy U2F key was not imported: the person's passkey policy enforces a CTAP 2.1 credProtect level, which an imported key ran no ceremony to report and cannot prove (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-AUTHN-0581` | A post-login activity is not asked: the module its row in common/post_login_kinds.ts names could not be loaded, or does not export a whole activity (its id and exposure the row's, and every question it must answer). The other activities are still asked (#2009). | Log line; nobody is asked that activity |
 | `STS-AUTHN-0582` | A post-login activity could not say whether a person is due it (its answer threw), so it was not asked at that sign-in, even where it may have been required. The other activities are still asked. Logged at error level once per activity in a process (#2009). | Log line; the sign-in goes on without that activity |
+| `STS-AUTHN-0590` | A session was refused: this realm's authentication policy does not accept a smart card (PIV/CAC) certificate as a first factor (its smartCard row, which follows certificatePrimary while unset) (#2031). | the door's own refusal page |
+| `STS-AUTHN-0591` | A session was refused: this realm's authentication policy does not accept Kerberos PKINIT with a smart card (a ticket carrying this realm's pkinit-smartcard indicator; its pkinitSmartCard row, which follows kerberosPrimary while unset) (#2031). | the door's own refusal page |
+| `STS-AUTHN-0592` | A session was refused: this realm's authentication policy requires attested hardware (requireAttestedHardware is always), and the credential that completed the sign-in is on no active hardware token in the register (#2031). | the door's own refusal page |
+| `STS-AUTHN-0593` | The sign-in screen refused a client certificate: the authentication policy takes the other kind of certificate (a smart card, or a certificate that is not one) as a first factor, and not this kind (#2031). | Sign-in screen refusal sentence; /authn-api answers refused |
 | `STS-AUTHN-0600` | The post-login mail-encryption activity refused an S/MIME certificate whose key is not ML-KEM (RFC 9935): the activity asks for a post-quantum certificate, and mail encrypted to an RSA or EC one could be read once that key falls. Nothing was written (#2009). | none (HTTP 400 from /authn-api) |
 | `STS-AUTHN-0601` | A post-login mail-encryption act named a kind of key the step does not offer (an OpenPGP act where only S/MIME is offered, or the reverse): the profile's mailPrefer and what the realm can take decide what is offered, not the browser (#2009). | none (HTTP 400 from /authn-api) |
 | `STS-AUTHN-0602` | A post-login act was sent to a step asking another activity: a mail-encryption act at a passkey step, a passkey registration at a mail-encryption step. Nothing was done (#2009). | none (HTTP 400 from /authn-api) |
@@ -4094,6 +4100,7 @@ Raised from: tls/.
 | `STS-TLS-0074` | A certificate sign-in handoff (/authn/certificate/continue) named no live handoff: unknown, used, expired, or certSignIn.handoff is off (#2012). | HTTP 400 |
 | `STS-TLS-0075` | A certificate sign-in handoff arrived without the sign-on session cookie of the browser that started it, so the certificate was not bound to that sign-in: the listener does not share the main port's host name and is not under authn.cookieDomain, or another browser opened the link (#2012). | HTTP 403 |
 | `STS-TLS-0076` | Only one of tls.trustedProxyCertificates and tls.trustedProxyAddresses is set, so no forwarded client certificate is read: a TLS-terminating proxy is trusted by both its certificate and its address (#2012). | none (logged) |
+| `STS-TLS-0077` | A write of tls.trustedProxyCertificates was refused: an entry is neither the SHA-256 of a certificate (64 hex digits, colons and a sha256: prefix allowed) nor spki: followed by the SHA-256 of a SubjectPublicKeyInfo in the same form (#2012). | — |
 
 ## STS-VC
 
@@ -5131,7 +5138,7 @@ Raised from: common/piv_attestation.ts, common/cert_enrollment.ts, common/piv_en
 | `STS-PIV-0010` | A PIV profile was asked without a PIV attestation in a realm that requires one (piv.requireAttestation) (#1955). | HTTP 400 |
 | `STS-PIV-0011` | An attested PIV key's PIN policy is weaker than the realm requires (piv.pinPolicy) (#1955). | HTTP 400 |
 | `STS-PIV-0012` | An attested PIV key's touch policy is weaker than the realm requires (piv.touchPolicy) (#1955). | HTTP 400 |
-| `STS-PIV-0013` | A piv-card-auth (slot 9e) certificate was refused at a sign-in, because that key works without a PIN (piv.cardAuthSignIn) (#1955). | the TLS sign-in and PKINIT refusals |
+| `STS-PIV-0013` | A piv-card-auth (slot 9e) certificate was refused at a sign-in, because that key works without a PIN: the authentication policy's smartCardCardAuth row is off (it follows piv.cardAuthSignIn while unset, #2031) (#1955). | the TLS sign-in and PKINIT refusals |
 | `STS-PIV-0014` | A certificate was issued from a verified PIV attestation and the hardware token register could not record its token; the certificate stands and earns no hardware claim (#1955). | — |
 | `STS-PIV-0016` | A PIV enrolment or key-recovery act failed with an unexpected error; the log line has the stack (#1955). | HTTP 500 |
 | `STS-PIV-0020` | A piv-key-management key was to be escrowed and no key-encryption key is held to seal it, so it was neither generated nor kept (#1955, D7). | HTTP 503 |

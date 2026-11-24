@@ -6248,8 +6248,8 @@
     "text": "Clientzertifikate TLS-terminierender Proxys (SHA-256)"
   },
   "tls.trustedProxyCertificates|description": {
-    "en": "5ebd0abc01f9dfdf",
-    "text": "Die SHA-256-Fingerabdrücke der Clientzertifikate, die ein TLS-terminierender Proxy vorlegt, wenn er sich hierher verbindet. Bei einer Anfrage auf einer Verbindung, die eines davon vorlegt, von einer Adresse in tls.trustedProxyAddresses, werden ihre Header Client-Cert und Client-Cert-Chain nach RFC 9440 hier gegen den Client-Truststore und die Sperrung geprüft, und dieses Zertifikat steht an jeder Tür für das des Handshakes. Beide Einstellungen sind erforderlich; von jedem anderen Absender werden die beiden Header entfernt und protokolliert (STS-TLS-0072) und nie gelesen. LEER, der Standard, liest ein Zertifikat nur aus dem Handshake."
+    "en": "16cfd6503c70990f",
+    "text": "Die SHA-256-Fingerabdrücke der Clientzertifikate, die ein TLS-terminierender Proxy vorlegt, wenn er sich hierher verbindet. Hexadezimal (Doppelpunkte und ein Präfix sha256: sind erlaubt). spki: vor demselben Hexwert pinnt stattdessen den SHA-256 der SubjectPublicKeyInfo des Zertifikats, den eine Erneuerung mit demselben Schlüssel beibehält; ein fehlerhafter Eintrag wird abgelehnt (STS-TLS-0077). Bei einer Anfrage auf einer Verbindung, die eines davon vorlegt, von einer Adresse in tls.trustedProxyAddresses, werden ihre Header Client-Cert und Client-Cert-Chain nach RFC 9440 hier gegen den Client-Truststore und die Sperrung geprüft, und dieses Zertifikat steht an jeder Tür für das des Handshakes. Beide Einstellungen sind erforderlich; von jedem anderen Absender werden die beiden Header entfernt und protokolliert (STS-TLS-0072) und nie gelesen. LEER, der Standard, liest ein Zertifikat nur aus dem Handshake."
   },
   "tls.trustedProxyAddresses|label": {
     "en": "4bc0cf2135bd81af",

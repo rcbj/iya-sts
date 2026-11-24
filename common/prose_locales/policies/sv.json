@@ -275,6 +275,14 @@
     "en": "b66258c1b032dec3",
     "text": "För den som har en konsolroll (Admin Read eller Admin Write) men ingen andra faktor. `offer`: hen visas steget som konfigurerar en, med en Ignorera-knapp, vid varje inloggning. `always`: hen måste konfigurera en innan hen loggas in — utom standardsfärens inbyggda administratör (admin.bootstrapUsername), som bara någonsin erbjuds en, så att en tjänst aldrig blir utan någon som kan logga in. `if-held`: som alla andra, enligt fältet ovan. SVAGARE ÄN `always`: en administratör med enbart ett lösenord är en administratör som vem som helst med lösenordet är."
   },
+  "authn.FIELDS.requireAttestedHardware.label": {
+    "en": "231d6b2e19c32f3c",
+    "text": "Attesterad hårdvarutoken krävs"
+  },
+  "authn.FIELDS.requireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no`: inget krav utöver mekanismraderna. `always`: en session startar bara där autentiseringsuppgiften som slutförde inloggningen (en passkey, en säkerhetsnyckel, ett certifikat eller ett smartkort) finns på en aktiv hårdvarutoken vars attestering registret har registrerat, samma test som en applikations `attested-hardware`-mekanism gör. Ett lösenord, en autentiseringsapp, en e-postad kod, en plånbok, en federationspartner eller en Kerberos-biljett ensam avvisas. Standardsfärens inbyggda administratör (admin.bootstrapUsername) är undantagen, så att en tjänst aldrig lämnas utan någon som kan logga in."
+  },
   "authn.FIELDS.passwordPrimary.label": {
     "en": "8459feba5558b2cd",
     "text": "Lösenord — som första faktor"
@@ -320,16 +328,16 @@
     "text": "Engångskodstoken (HOTP) — som andra faktor"
   },
   "authn.FIELDS.hotpSecondFactor.what": {
-    "en": "608274a83bf567cd",
-    "text": "En engångskod enligt RFC 4226 från en räknarbaserad token (#1955): en YubiKeys OTP-plats, eller en leverantörs token som en administratör importerade från en PSKC-fröfil. Aldrig en första faktor. Är detta av här får ingen REGISTRERA eller göra anspråk på en; den som redan har en ombeds ändå ange den, precis som innehavaren av en autentiseringsapp."
+    "en": "33918856782d0904",
+    "text": "En RFC 4226-engångskod från en räknarbaserad token (#1955): en YubiKeys OTP-plats, eller en leverantörs token som en administratör importerat från en PSKC-fröfil. Aldrig en första faktor. AV SOM STANDARD, och den måste slås på för denna sfär innan någon kan registrera, göra anspråk på eller tilldelas en HOTP-token, så ingen HOTP-token används vid inloggning förrän dess. Av här kan ingen REGISTRERA eller göra anspråk på en; den som redan har en tillfrågas fortfarande om den, som innehavaren av en autentiseringsapp."
   },
   "authn.FIELDS.yubicoOtpSecondFactor.label": {
     "en": "cba1439d0faf9aaf",
     "text": "YubiKey-OTP — som andra faktor"
   },
   "authn.FIELDS.yubicoOtpSecondFactor.what": {
-    "en": "f8f7a6ee5bbb46a8",
-    "text": "En YubiKey-OTP (Yubicos publicerade engångslösenord i modhex, #1955). Aldrig en första faktor: den här tjänsten har AES-nyckeln. Av här får ingen REGISTRERA, tilldela eller göra anspråk på en, även när yubiotp.offered är på; den som redan har en tillfrågas fortfarande."
+    "en": "a5efe4af91b59cf2",
+    "text": "En YubiKey OTP (Yubicos publicerade modhex-engångslösenord, #1955). Aldrig en första faktor: denna tjänst har AES-nyckeln. AV SOM STANDARD, och den måste slås på för denna sfär (med yubiotp.offered) innan någon kan registrera, göra anspråk på eller tilldelas en YubiKey OTP, så ingen används vid inloggning förrän dess. Av här kan ingen REGISTRERA, tilldela eller göra anspråk på en, även när yubiotp.offered är på; den som redan har en tillfrågas fortfarande om den."
   },
   "authn.FIELDS.recoveryCodeSecondFactor.label": {
     "en": "ee9982b48a9c6a90",
@@ -376,16 +384,40 @@
     "text": "TLS-klientcertifikat — som första faktor"
   },
   "authn.FIELDS.certificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Ett verifierat TLS-klientcertifikat: GET /tls/sign-in, eller Fortsätt med ditt certifikat på inloggningssidan."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Ett verifierat TLS-klientcertifikat som inte är ett smartkort: GET /tls/sign-in, eller Fortsätt med ditt certifikat på inloggningsskärmen. Ett smartkortscertifikat hör till smartkortsraden, som följer denna så länge den saknar värde (#2031)."
+  },
+  "authn.FIELDS.smartCardPrimary.label": {
+    "en": "2fd7ffc9233a4399",
+    "text": "Smartkortscertifikat (PIV/CAC) — som första faktor"
+  },
+  "authn.FIELDS.smartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Ett smartkortscertifikat (PIV/CAC), vid GET /tls/sign-in eller Fortsätt med ditt certifikat: en attesterad PIV-nyckel, ett certifikat registrerat här under en PIV-platsprofil, ett externt kort mappat via sitt kort-UUID (piv.externalIssuers, stsPivCardUuid), eller ett under en certSignIn.profiles-profil märkt smartCard. SAKNAS det följer det stsAuthnCertificatePrimary, så en policy skriven före det behåller sin innebörd (#2031)."
+  },
+  "authn.FIELDS.smartCardCardAuthPrimary.label": {
+    "en": "a8aedf2b449f0f65",
+    "text": "PIV-kortautentiseringsnyckel (utan PIN) — som första faktor"
+  },
+  "authn.FIELDS.smartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Ett PIV-kortautentiseringscertifikat (plats 9e), vars nyckel fungerar utan PIN. Det är också ett smartkort, så smartkortsraden måste också vara på. SAKNAS det följer det inställningen piv.cardAuthSignIn (#2031)."
   },
   "authn.FIELDS.kerberosPrimary.label": {
     "en": "f2f6ed9dd0454fdc",
     "text": "Kerberos (SPNEGO) — som första faktor"
   },
   "authn.FIELDS.kerberosPrimary.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego med en Kerberos-biljett."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego med en Kerberos-biljett, utom PKINIT med smartkort, som har en egen rad och följer denna så länge den saknar värde (#2031)."
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.label": {
+    "en": "9c5eeb540b2f1c36",
+    "text": "Kerberos PKINIT med smartkort — som första faktor"
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego med en Kerberos-biljett som bär denna sfärs pkinit-smartcard-indikator: KDC utfärdade den via PKINIT från ett smartkort. SAKNAS det följer det stsAuthnKerberosPrimary (#2031)."
   },
   "authn.FIELDS.walletPrimary.label": {
     "en": "f215dfc0a7d74e7f",
@@ -491,6 +523,10 @@
     "en": "b66258c1b032dec3",
     "text": "För den som har en konsolroll (Admin Read eller Admin Write) men ingen andra faktor. `offer`: hen visas steget som konfigurerar en, med en Ignorera-knapp, vid varje inloggning. `always`: hen måste konfigurera en innan hen loggas in — utom standardsfärens inbyggda administratör (admin.bootstrapUsername), som bara någonsin erbjuds en, så att en tjänst aldrig blir utan någon som kan logga in. `if-held`: som alla andra, enligt fältet ovan. SVAGARE ÄN `always`: en administratör med enbart ett lösenord är en administratör som vem som helst med lösenordet är."
   },
+  "authn.SCHEMA.attributes.stsAuthnRequireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no`: inget krav utöver mekanismraderna. `always`: en session startar bara där autentiseringsuppgiften som slutförde inloggningen (en passkey, en säkerhetsnyckel, ett certifikat eller ett smartkort) finns på en aktiv hårdvarutoken vars attestering registret har registrerat, samma test som en applikations `attested-hardware`-mekanism gör. Ett lösenord, en autentiseringsapp, en e-postad kod, en plånbok, en federationspartner eller en Kerberos-biljett ensam avvisas. Standardsfärens inbyggda administratör (admin.bootstrapUsername) är undantagen, så att en tjänst aldrig lämnas utan någon som kan logga in."
+  },
   "authn.SCHEMA.attributes.stsAuthnPasswordPrimary.what": {
     "en": "3b32854915d0d6d0",
     "text": "Ett lösenord på inloggningsskärmen. Som ANDRA faktor är det lösenordet som efterfrågas efter en plånbok eller en annan lösenordsfri första faktor."
@@ -512,12 +548,12 @@
     "text": "En engångskod enligt RFC 6238. Aldrig en första faktor: den här tjänsten har samma delade hemlighet som appen. Avstängd här får ingen REGISTRERA en; en person som redan har en ombeds fortfarande om den, eftersom en avstängning som nedgraderade varje registrerat konto till enbart ett lösenord skulle göra något annat än den säger (den här raden ersatte totp.enabled och behåller dess kontrakt)."
   },
   "authn.SCHEMA.attributes.stsAuthnHotpSecondFactor.what": {
-    "en": "608274a83bf567cd",
-    "text": "En engångskod enligt RFC 4226 från en räknarbaserad token (#1955): en YubiKeys OTP-plats, eller en leverantörs token som en administratör importerade från en PSKC-fröfil. Aldrig en första faktor. Är detta av här får ingen REGISTRERA eller göra anspråk på en; den som redan har en ombeds ändå ange den, precis som innehavaren av en autentiseringsapp."
+    "en": "33918856782d0904",
+    "text": "En RFC 4226-engångskod från en räknarbaserad token (#1955): en YubiKeys OTP-plats, eller en leverantörs token som en administratör importerat från en PSKC-fröfil. Aldrig en första faktor. AV SOM STANDARD, och den måste slås på för denna sfär innan någon kan registrera, göra anspråk på eller tilldelas en HOTP-token, så ingen HOTP-token används vid inloggning förrän dess. Av här kan ingen REGISTRERA eller göra anspråk på en; den som redan har en tillfrågas fortfarande om den, som innehavaren av en autentiseringsapp."
   },
   "authn.SCHEMA.attributes.stsAuthnYubicoOtpSecondFactor.what": {
-    "en": "f8f7a6ee5bbb46a8",
-    "text": "En YubiKey-OTP (Yubicos publicerade engångslösenord i modhex, #1955). Aldrig en första faktor: den här tjänsten har AES-nyckeln. Av här får ingen REGISTRERA, tilldela eller göra anspråk på en, även när yubiotp.offered är på; den som redan har en tillfrågas fortfarande."
+    "en": "a5efe4af91b59cf2",
+    "text": "En YubiKey OTP (Yubicos publicerade modhex-engångslösenord, #1955). Aldrig en första faktor: denna tjänst har AES-nyckeln. AV SOM STANDARD, och den måste slås på för denna sfär (med yubiotp.offered) innan någon kan registrera, göra anspråk på eller tilldelas en YubiKey OTP, så ingen används vid inloggning förrän dess. Av här kan ingen REGISTRERA, tilldela eller göra anspråk på en, även när yubiotp.offered är på; den som redan har en tillfrågas fortfarande om den."
   },
   "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
     "en": "e93ab2adc3e581bd",
@@ -540,12 +576,24 @@
     "text": "En engångslänk som skickas till personens VERIFIERADE adress och som slutför inloggningen bara i den webbläsare som startade den. NIST SP 800-63B-4 avsnitt 3.1.3.1: ”Email SHALL NOT be used for out-of-band authentication”, eftersom en brevlåda kan nås med enbart ett lösenord, och e-post kan läsas under överföring eller omdirigeras. Avstängd som standard av det skälet; slå på den bara där det är en accepterad risk."
   },
   "authn.SCHEMA.attributes.stsAuthnCertificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Ett verifierat TLS-klientcertifikat: GET /tls/sign-in, eller Fortsätt med ditt certifikat på inloggningssidan."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Ett verifierat TLS-klientcertifikat som inte är ett smartkort: GET /tls/sign-in, eller Fortsätt med ditt certifikat på inloggningsskärmen. Ett smartkortscertifikat hör till smartkortsraden, som följer denna så länge den saknar värde (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Ett smartkortscertifikat (PIV/CAC), vid GET /tls/sign-in eller Fortsätt med ditt certifikat: en attesterad PIV-nyckel, ett certifikat registrerat här under en PIV-platsprofil, ett externt kort mappat via sitt kort-UUID (piv.externalIssuers, stsPivCardUuid), eller ett under en certSignIn.profiles-profil märkt smartCard. SAKNAS det följer det stsAuthnCertificatePrimary, så en policy skriven före det behåller sin innebörd (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Ett PIV-kortautentiseringscertifikat (plats 9e), vars nyckel fungerar utan PIN. Det är också ett smartkort, så smartkortsraden måste också vara på. SAKNAS det följer det inställningen piv.cardAuthSignIn (#2031)."
   },
   "authn.SCHEMA.attributes.stsAuthnKerberosPrimary.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego med en Kerberos-biljett."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego med en Kerberos-biljett, utom PKINIT med smartkort, som har en egen rad och följer denna så länge den saknar värde (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego med en Kerberos-biljett som bär denna sfärs pkinit-smartcard-indikator: KDC utfärdade den via PKINIT från ett smartkort. SAKNAS det följer det stsAuthnKerberosPrimary (#2031)."
   },
   "authn.SCHEMA.attributes.stsAuthnWalletPrimary.what": {
     "en": "c6b81177c7b7d944",
@@ -644,16 +692,16 @@
     "text": "Engångskodstoken (HOTP)"
   },
   "authn.MECHANISMS.hotp.what": {
-    "en": "608274a83bf567cd",
-    "text": "En engångskod enligt RFC 4226 från en räknarbaserad token (#1955): en YubiKeys OTP-plats, eller en leverantörs token som en administratör importerade från en PSKC-fröfil. Aldrig en första faktor. Är detta av här får ingen REGISTRERA eller göra anspråk på en; den som redan har en ombeds ändå ange den, precis som innehavaren av en autentiseringsapp."
+    "en": "33918856782d0904",
+    "text": "En RFC 4226-engångskod från en räknarbaserad token (#1955): en YubiKeys OTP-plats, eller en leverantörs token som en administratör importerat från en PSKC-fröfil. Aldrig en första faktor. AV SOM STANDARD, och den måste slås på för denna sfär innan någon kan registrera, göra anspråk på eller tilldelas en HOTP-token, så ingen HOTP-token används vid inloggning förrän dess. Av här kan ingen REGISTRERA eller göra anspråk på en; den som redan har en tillfrågas fortfarande om den, som innehavaren av en autentiseringsapp."
   },
   "authn.MECHANISMS.yubico-otp.label": {
     "en": "01f8772904333b7b",
     "text": "YubiKey-OTP"
   },
   "authn.MECHANISMS.yubico-otp.what": {
-    "en": "f8f7a6ee5bbb46a8",
-    "text": "En YubiKey-OTP (Yubicos publicerade engångslösenord i modhex, #1955). Aldrig en första faktor: den här tjänsten har AES-nyckeln. Av här får ingen REGISTRERA, tilldela eller göra anspråk på en, även när yubiotp.offered är på; den som redan har en tillfrågas fortfarande."
+    "en": "a5efe4af91b59cf2",
+    "text": "En YubiKey OTP (Yubicos publicerade modhex-engångslösenord, #1955). Aldrig en första faktor: denna tjänst har AES-nyckeln. AV SOM STANDARD, och den måste slås på för denna sfär (med yubiotp.offered) innan någon kan registrera, göra anspråk på eller tilldelas en YubiKey OTP, så ingen används vid inloggning förrän dess. Av här kan ingen REGISTRERA, tilldela eller göra anspråk på en, även när yubiotp.offered är på; den som redan har en tillfrågas fortfarande om den."
   },
   "authn.MECHANISMS.recoveryCode.label": {
     "en": "5bda8302b5ecf4d3",
@@ -684,16 +732,40 @@
     "text": "TLS-klientcertifikat"
   },
   "authn.MECHANISMS.certificate.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Ett verifierat TLS-klientcertifikat: GET /tls/sign-in, eller Fortsätt med ditt certifikat på inloggningssidan."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Ett verifierat TLS-klientcertifikat som inte är ett smartkort: GET /tls/sign-in, eller Fortsätt med ditt certifikat på inloggningsskärmen. Ett smartkortscertifikat hör till smartkortsraden, som följer denna så länge den saknar värde (#2031)."
+  },
+  "authn.MECHANISMS.smartCard.label": {
+    "en": "055e41994165a328",
+    "text": "Smartkortscertifikat (PIV/CAC)"
+  },
+  "authn.MECHANISMS.smartCard.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Ett smartkortscertifikat (PIV/CAC), vid GET /tls/sign-in eller Fortsätt med ditt certifikat: en attesterad PIV-nyckel, ett certifikat registrerat här under en PIV-platsprofil, ett externt kort mappat via sitt kort-UUID (piv.externalIssuers, stsPivCardUuid), eller ett under en certSignIn.profiles-profil märkt smartCard. SAKNAS det följer det stsAuthnCertificatePrimary, så en policy skriven före det behåller sin innebörd (#2031)."
+  },
+  "authn.MECHANISMS.smartCardCardAuth.label": {
+    "en": "7b5626b23b778ecd",
+    "text": "PIV-kortautentiseringsnyckel (utan PIN)"
+  },
+  "authn.MECHANISMS.smartCardCardAuth.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Ett PIV-kortautentiseringscertifikat (plats 9e), vars nyckel fungerar utan PIN. Det är också ett smartkort, så smartkortsraden måste också vara på. SAKNAS det följer det inställningen piv.cardAuthSignIn (#2031)."
   },
   "authn.MECHANISMS.kerberos.label": {
     "en": "a8316dcb1a42420f",
     "text": "Kerberos (SPNEGO)"
   },
   "authn.MECHANISMS.kerberos.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego med en Kerberos-biljett."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego med en Kerberos-biljett, utom PKINIT med smartkort, som har en egen rad och följer denna så länge den saknar värde (#2031)."
+  },
+  "authn.MECHANISMS.pkinitSmartCard.label": {
+    "en": "62046e8418115023",
+    "text": "Kerberos PKINIT med smartkort"
+  },
+  "authn.MECHANISMS.pkinitSmartCard.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego med en Kerberos-biljett som bär denna sfärs pkinit-smartcard-indikator: KDC utfärdade den via PKINIT från ett smartkort. SAKNAS det följer det stsAuthnKerberosPrimary (#2031)."
   },
   "authn.MECHANISMS.wallet.label": {
     "en": "696e7476221a3382",
@@ -754,6 +826,10 @@
   "authn.sentences.emailTtlInactive": {
     "en": "20f80fea7980a662",
     "text": "en kod eller länk via e-post är giltig i {{n}} sekunder — INAKTIV: den här sfären kan inte skicka e-post"
+  },
+  "authn.sentences.attestedAlways": {
+    "en": "7feb965c44fd5614",
+    "text": "varje inloggning måste sluta med en autentiseringsuppgift på en attesterad hårdvarutoken (den inbyggda administratören undantagen)"
   },
   "kinds.serviceAccount.label": {
     "en": "029b1070484594c2",

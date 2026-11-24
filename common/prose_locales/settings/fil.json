@@ -6248,8 +6248,8 @@
     "text": "Mga client certificate ng mga TLS-terminating proxy (SHA-256)"
   },
   "tls.trustedProxyCertificates|description": {
-    "en": "5ebd0abc01f9dfdf",
-    "text": "Ang mga SHA-256 fingerprint ng mga client certificate na ipinapakita ng proxy na nagte-terminate ng TLS kapag kumokonekta ito rito. Sa request sa connection na nagpapakita ng isa sa mga ito, mula sa address sa tls.trustedProxyAddresses, ang mga RFC 9440 header nitong Client-Cert at Client-Cert-Chain ay vine-verify rito laban sa client truststore at sa revocation, at ang certificate na iyon ang tumatayo para sa certificate ng handshake sa bawat pinto. Kailangan ang parehong setting; mula sa anumang ibang nagpadala, inaalis at itinatala ang dalawang header (STS-TLS-0072) at hindi kailanman binabasa. WALANG LAMAN, ang default, ay nagbabasa lang ng certificate mula sa handshake."
+    "en": "16cfd6503c70990f",
+    "text": "Ang mga SHA-256 fingerprint ng mga client certificate na ipinapakita ng proxy na nagte-terminate ng TLS kapag kumokonekta ito rito. Sa hex (pinapayagan ang mga colon at ang prefix na sha256:). Ang spki: bago ang parehong hex ay nagpi-pin sa halip ng SHA-256 ng SubjectPublicKeyInfo ng certificate, na pinananatili ng renewal sa parehong key; tinatanggihan ang maling entry (STS-TLS-0077). Sa request sa connection na nagpapakita ng isa sa mga ito, mula sa address sa tls.trustedProxyAddresses, ang mga RFC 9440 header nitong Client-Cert at Client-Cert-Chain ay vine-verify rito laban sa client truststore at sa revocation, at ang certificate na iyon ang tumatayo para sa certificate ng handshake sa bawat pinto. Kailangan ang parehong setting; mula sa anumang ibang nagpadala, inaalis at itinatala ang dalawang header (STS-TLS-0072) at hindi kailanman binabasa. WALANG LAMAN, ang default, ay nagbabasa lang ng certificate mula sa handshake."
   },
   "tls.trustedProxyAddresses|label": {
     "en": "4bc0cf2135bd81af",

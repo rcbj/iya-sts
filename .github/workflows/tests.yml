@@ -673,12 +673,17 @@ jobs:
       - name: Log in to GitHub Container Registry
         run: echo "${{ secrets.GITHUB_TOKEN }}" |
              docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-      - name: Format, then test the workspace
+      # `cargo check` before `cargo test` (rcbj, 2026-11-23): the test build
+      # links every dev-dependency, so a crate whose own code uses one it
+      # declares only under [dev-dependencies] compiles there and fails in
+      # the image build (#2000: xacml-pep's sts-model-pep). `cargo check`
+      # builds the workspace's libraries and binaries without them.
+      - name: Format, check without dev-dependencies, then test the workspace
         run: >-
           docker run --rm -v "${PWD}:/src" -w /src/rust
           -e CARGO_TERM_COLOR=always -e CARGO_INCREMENTAL=0
           ghcr.io/rcbj/iya-sts/mirror/rust:1.97-bookworm
-          bash -c "rustup component add rustfmt && cargo fmt --check && cargo test --workspace --locked"
+          bash -c "rustup component add rustfmt && cargo fmt --check && cargo check --workspace --locked && cargo test --workspace --locked"
 
   openapi-breaking:
     if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'api-breaking')

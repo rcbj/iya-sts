@@ -7559,7 +7559,8 @@ class Authn {
   // ---------------------------------------------------------------------------
   // Which mechanism, in which role, the authentication policy refuses for
   // this session — its code — or ''. See the paragraph in startSession().
-  private authnPolicyRefusal(amr: any, credential: any): string {
+  private authnPolicyRefusal(amr: any, credential: any,
+                             username?: string): string {
     const { log, authnPolicy } = this.deps;
     log.debug("Entering Authn.authnPolicyRefusal().");
     const kind = String((credential && credential.kind) || '');
@@ -7574,6 +7575,16 @@ class Authn {
     if (ONLY_FIRST[kind]) {
       mechanism = ONLY_FIRST[kind];
       role = 'primary';
+      // THE SMART-CARD ROWS (#2031): a certificate the door found to be a
+      // smart card (`tls_server.js`'s `smartCardOf()`), and a Kerberos
+      // ticket that carries this realm's pkinit-smartcard indicator, which
+      // is what earns `sc` there (`krb5_tokens.factorsFor()`). Each row
+      // follows the generic one while the policy stores no value for it.
+      if (kind === 'certificate' && credential.smartCard === true) {
+        mechanism = 'smartCard';
+      } else if (kind === 'kerberos' && factors.indexOf('sc') >= 0) {
+        mechanism = 'pkinitSmartCard';
+      }
     } else if (kind === 'password') {
       mechanism = 'password';
     } else if (kind === 'wallet') {
@@ -7593,9 +7604,77 @@ class Authn {
     // A held second factor is never refused here (see the caller).
     const refused = mechanism && !authnPolicy.allows(mechanism, role);
     const code = !refused ? ''
-      : (role === 'primary' ? 'STS-AUTHN-0268' : 'STS-AUTHN-0269');
-    log.debug("Leaving Authn.authnPolicyRefusal(). " + (code || 'allowed'));
-    return code;
+      : (mechanism === 'smartCard' ? 'STS-AUTHN-0590'
+      : (mechanism === 'pkinitSmartCard' ? 'STS-AUTHN-0591'
+      : (role === 'primary' ? 'STS-AUTHN-0268' : 'STS-AUTHN-0269')));
+    if (code) {
+      log.debug("Leaving Authn.authnPolicyRefusal(). " + code);
+      return code;
+    }
+    // ATTESTED HARDWARE FOR EVERYBODY (#2031): with the policy's
+    // `requireAttestedHardware` at `always`, the credential that completed
+    // the sign-in must be on an active hardware token in the register — the
+    // test an application's `attested-hardware` mechanism makes
+    // (`authn_mechanisms.ts`). A door that names no credential is not
+    // asked, as above. The default realm's built-in administrator is exempt,
+    // as from `requireSecondFactorForAdministrators: always`, so a service is
+    // never left with nobody who can sign in.
+    const attested = kind &&
+      authnPolicy.requireAttestedHardware() === 'always' &&
+      !this.builtInAdministrator(username) &&
+      !Authn.attestedHardwareHeld(credential, username)
+      ? 'STS-AUTHN-0592' : '';
+    log.debug("Leaving Authn.authnPolicyRefusal(). " +
+              (attested || 'allowed'));
+    return attested;
+  }
+
+  // Whether a name is the default realm's built-in administrator
+  // (`admin.bootstrapUsername`, #2031's exemption).
+  private builtInAdministrator(username: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Authn.builtInAdministrator().");
+    let out = false;
+    try {
+      out = realms.currentId() === 'default' && !!username &&
+        String(username) === require('../common/bootstrap_name').current();
+    } catch (e) {
+      log.debug("Caught in Authn.builtInAdministrator(): " +
+                ((e && e.message) || e));
+      // Nothing to compare with: nobody is exempt.
+      out = false;
+    }
+    log.debug("Leaving Authn.builtInAdministrator(). " + out);
+    return out;
+  }
+
+  // Whether a sign-in's credential is on an ACTIVE hardware token the
+  // register holds (#2031): `hardwareTokenOf()`'s snapshot, asked again for
+  // the token's status now, as `authn_mechanisms.ts` asks it.
+  /**
+   * Whether the credential that completed a sign-in is on an active,
+   * attested hardware token.
+   *
+   * @param given - the credential detail a door passed
+   * @param username - the person signing in
+   * @returns true where it is
+   */
+  static attestedHardwareHeld(given: any, username?: string): boolean {
+    helpers.log.debug("Entering Authn.attestedHardwareHeld().");
+    const token = Authn.hardwareTokenOf(given, username);
+    let out = false;
+    try {
+      const now = token ? require('../common/hardware_tokens')
+        .byKey(String(token.key || '')) : null;
+      out = !!now && String(now.status || '') === 'active';
+    } catch (e) {
+      helpers.log.debug("Caught in Authn.attestedHardwareHeld(): " +
+                        ((e && e.message) || e));
+      // A register that cannot be asked proves nothing.
+      out = false;
+    }
+    helpers.log.debug("Leaving Authn.attestedHardwareHeld(). " + out);
+    return out;
   }
 
   // THE PASSKEY QUESTION AT SIGN-IN (#536): whether the passkey that
@@ -8313,7 +8392,7 @@ class Authn {
     // draws as the policy's refusal.
     // -------------------------------------------------------------------------
     const policyCode = extra.authenticated === false ? ''
-      : this.authnPolicyRefusal(amr, extra.credential);
+      : this.authnPolicyRefusal(amr, extra.credential, username);
     if (policyCode) {
       log.info('authn: a session for "' + username + '" was REFUSED at the ' +
                (via || 'sign-in') + ' door: this realm\'s authentication ' +
@@ -15138,7 +15217,11 @@ class Authn {
     log.debug("Entering Authn.certificateNotHere().");
     const restricted: string[] = Array.isArray(record.allowedMechanisms)
       ? record.allowedMechanisms : [];
-    const why = !authnPolicy.allows('certificate', 'primary')
+    // EITHER KIND (#2031): which this certificate is — a smart card or not —
+    // is known only once it is read, so the offer is drawn while the policy
+    // takes either, and the act asks the one it is.
+    const why = !authnPolicy.allows('certificate', 'primary') &&
+                !authnPolicy.allows('smartCard', 'primary')
       ? 'the authentication policy does not take a certificate as a first ' +
         'factor'
       : (record.lockedUsername ? 'a linking sign-in rests on the password'
@@ -15261,9 +15344,31 @@ class Authn {
       }
     }
     const application = String(record.application || '');
-    const credential = { kind: 'certificate',
-                         id: String(holder.credentialId || ''),
-                         serial: String(holder.serial || '') };
+    // A SMART CARD, OR ANOTHER CERTIFICATE (#2031): the authentication
+    // policy has a row for each, and the offer was drawn while either was
+    // on, before the certificate was read. The act asks the one this
+    // certificate is, from what `tls_server.js` found (`smartCardOf()`).
+    const smartCard = holder.smartCard === true;
+    if (!this.deps.authnPolicy.allows(smartCard ? 'smartCard'
+                                                : 'certificate', 'primary')) {
+      log.info('authn: a certificate sign-in was refused at the screen: ' +
+               'the authentication policy does not take ' +
+               (smartCard ? 'a smart card' : 'a certificate that is not a ' +
+                'smart card') + ' as a first factor.');
+      log.debug("Leaving Authn.certificateSignIn(). Not this kind.");
+      errorCodes.mark(res, 'STS-AUTHN-0593');
+      return this.screenRefused(res, record,
+               Sentence.say('refusals.authn.certificateNotOffered'));
+    }
+    const credential: any = { kind: 'certificate',
+                              id: String(holder.credentialId || ''),
+                              serial: String(holder.serial || '') };
+    if (smartCard) {
+      credential.smartCard = true;
+    }
+    if (holder.cardAuth === true) {
+      credential.cardAuth = true;
+    }
     const assessed = await this.assessSignIn(req, username, record.protocol,
       { application: application, credential: credential,
         // A key may answer as the second factor (#259).

@@ -12697,7 +12697,12 @@ const SETTINGS = [
     env: 'STS_TLS_TRUSTED_PROXY_CERTIFICATES', type: 'csv', dflt: '',
     runtime: true,
     description: 'The SHA-256 fingerprints of the client certificates a ' +
-                 'proxy that terminates TLS presents when it connects here. ' +
+                 'proxy that terminates TLS presents when it connects here, ' +
+                 'in hex (colons and a sha256: prefix allowed). spki: ' +
+                 'before the same hex pins the SHA-256 of the ' +
+                 'certificate\'s SubjectPublicKeyInfo instead, which a ' +
+                 'renewal under the same key keeps; a malformed entry is ' +
+                 'refused (STS-TLS-0077). ' +
                  'A request on a connection presenting one of them, from an ' +
                  'address in tls.trustedProxyAddresses, has its RFC 9440 ' +
                  'Client-Cert and Client-Cert-Chain headers verified here ' +

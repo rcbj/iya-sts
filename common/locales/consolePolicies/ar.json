@@ -1,6 +1,7 @@
 {
   "yes": "نعم",
   "no": "لا",
+  "follows": "مثل {row}",
   "configuration": "التهيئة",
   "schema": "المخطط",
   "saveProfile": "حفظ ملف التعريف",

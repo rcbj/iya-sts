@@ -275,6 +275,14 @@
     "en": "b66258c1b032dec3",
     "text": "适用于持有控制台角色（Admin Read 或 Admin Write）但没有第二因素的任何人。`offer`：每次登录时向其显示设置第二因素的步骤，并带有“忽略”按钮。`always`：他们必须先设置一个才能登录——默认领域的内置管理员（admin.bootstrapUsername）除外，该管理员只会被建议设置，这样服务永远不会出现无人能登录的情况。`if-held`：与其他所有人一样，按上一个字段处理。比 `always` 弱：仅凭密码登录的管理员，就是任何知道该密码的人都能冒充的管理员。"
   },
+  "authn.FIELDS.requireAttestedHardware.label": {
+    "en": "231d6b2e19c32f3c",
+    "text": "要求经过证明的硬件令牌"
+  },
+  "authn.FIELDS.requireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no`：除机制行外没有其他要求。`always`：只有当完成登录的凭据（通行密钥、安全密钥、证书或智能卡）位于登记册记录了其证明的有效硬件令牌上时，才会开始会话，这与应用程序的 `attested-hardware` 机制所做的检查相同。仅凭密码、身份验证器应用、电子邮件代码、钱包、联合伙伴或 Kerberos 票据将被拒绝。默认领域的内置管理员（admin.bootstrapUsername）不受此限，以免服务无人能够登录。"
+  },
   "authn.FIELDS.passwordPrimary.label": {
     "en": "8459feba5558b2cd",
     "text": "密码——作为第一因素"
@@ -320,16 +328,16 @@
     "text": "一次性验证码令牌（HOTP）——作为第二因素"
   },
   "authn.FIELDS.hotpSecondFactor.what": {
-    "en": "608274a83bf567cd",
-    "text": "来自基于计数器的令牌的 RFC 4226 一次性验证码（#1955）：YubiKey 的 OTP 插槽，或管理员从 PSKC 种子文件导入的供应商令牌。绝不作为第一因素。此处关闭时，任何人都不能注册或认领；已持有的人仍会被要求提供，就像身份验证器应用的持有者一样。"
+    "en": "33918856782d0904",
+    "text": "来自基于计数器的令牌的 RFC 4226 一次性代码（#1955）：YubiKey 的 OTP 插槽，或管理员从 PSKC 种子文件导入的供应商令牌。绝不作为第一因素。默认关闭，必须为本领域开启后，任何人才能注册、认领或被分配 HOTP 令牌，因此在此之前登录时不会使用任何 HOTP 令牌。在此关闭时，任何人都不能注册或认领；已持有者仍会被要求提供，与身份验证器应用的持有者相同。"
   },
   "authn.FIELDS.yubicoOtpSecondFactor.label": {
     "en": "cba1439d0faf9aaf",
     "text": "YubiKey OTP — 作为第二因素"
   },
   "authn.FIELDS.yubicoOtpSecondFactor.what": {
-    "en": "f8f7a6ee5bbb46a8",
-    "text": "YubiKey OTP（Yubico 公布的 modhex 一次性密码，#1955）。绝不是第一因素：本服务持有 AES 密钥。此处关闭时，即使 yubiotp.offered 为开，也不得登记、分配或认领；已持有者仍会被要求提供。"
+    "en": "a5efe4af91b59cf2",
+    "text": "YubiKey OTP（Yubico 公布的 modhex 一次性密码，#1955）。绝不作为第一因素：本服务持有 AES 密钥。默认关闭，必须为本领域开启（并开启 yubiotp.offered）后，任何人才能注册、认领或被分配 YubiKey OTP，因此在此之前登录时不会使用任何 YubiKey OTP。在此关闭时，即使 yubiotp.offered 已开启，任何人都不能注册、分配或认领；已持有者仍会被要求提供。"
   },
   "authn.FIELDS.recoveryCodeSecondFactor.label": {
     "en": "ee9982b48a9c6a90",
@@ -376,16 +384,40 @@
     "text": "TLS 客户端证书——作为第一因素"
   },
   "authn.FIELDS.certificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "已验证的 TLS 客户端证书：GET /tls/sign-in，或在登录页面上使用“使用您的证书继续”。"
+    "en": "f2fbb7dc9d0fa190",
+    "text": "不是智能卡的已验证 TLS 客户端证书：GET /tls/sign-in，或登录屏幕上的“使用您的证书继续”。智能卡证书归智能卡行管理，该行在未设置时跟随本行（#2031）。"
+  },
+  "authn.FIELDS.smartCardPrimary.label": {
+    "en": "2fd7ffc9233a4399",
+    "text": "智能卡（PIV/CAC）证书——作为第一因素"
+  },
+  "authn.FIELDS.smartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "智能卡（PIV/CAC）证书，用于 GET /tls/sign-in 或“使用您的证书继续”：经过证明的 PIV 密钥、在此以 PIV 插槽配置文件注册的证书、按卡 UUID 映射的外部卡（piv.externalIssuers、stsPivCardUuid），或属于标记为 smartCard 的 certSignIn.profiles 配置文件的证书。未设置时，它跟随 stsAuthnCertificatePrimary，因此在它之前编写的策略保持原有含义（#2031）。"
+  },
+  "authn.FIELDS.smartCardCardAuthPrimary.label": {
+    "en": "a8aedf2b449f0f65",
+    "text": "PIV 卡认证密钥（无需 PIN）——作为第一因素"
+  },
+  "authn.FIELDS.smartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "PIV 卡认证（插槽 9e）证书，其密钥无需 PIN 即可使用。它也是智能卡，因此智能卡行也必须开启。未设置时，它跟随 piv.cardAuthSignIn 设置（#2031）。"
   },
   "authn.FIELDS.kerberosPrimary.label": {
     "en": "f2f6ed9dd0454fdc",
     "text": "Kerberos（SPNEGO）——作为第一因素"
   },
   "authn.FIELDS.kerberosPrimary.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "使用 Kerberos 票据访问 GET /authn/spnego。"
+    "en": "0507278dcc36c133",
+    "text": "使用 Kerberos 票据访问 GET /authn/spnego，但使用智能卡的 PKINIT 除外，它有自己的行，并在未设置时跟随本行（#2031）。"
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.label": {
+    "en": "9c5eeb540b2f1c36",
+    "text": "使用智能卡的 Kerberos PKINIT——作为第一因素"
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "使用携带本领域 pkinit-smartcard 指示符的 Kerberos 票据访问 GET /authn/spnego：KDC 通过智能卡 PKINIT 签发了该票据。未设置时，它跟随 stsAuthnKerberosPrimary（#2031）。"
   },
   "authn.FIELDS.walletPrimary.label": {
     "en": "f215dfc0a7d74e7f",
@@ -491,6 +523,10 @@
     "en": "b66258c1b032dec3",
     "text": "适用于持有控制台角色（Admin Read 或 Admin Write）但没有第二因素的任何人。`offer`：每次登录时向其显示设置第二因素的步骤，并带有“忽略”按钮。`always`：他们必须先设置一个才能登录——默认领域的内置管理员（admin.bootstrapUsername）除外，该管理员只会被建议设置，这样服务永远不会出现无人能登录的情况。`if-held`：与其他所有人一样，按上一个字段处理。比 `always` 弱：仅凭密码登录的管理员，就是任何知道该密码的人都能冒充的管理员。"
   },
+  "authn.SCHEMA.attributes.stsAuthnRequireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no`：除机制行外没有其他要求。`always`：只有当完成登录的凭据（通行密钥、安全密钥、证书或智能卡）位于登记册记录了其证明的有效硬件令牌上时，才会开始会话，这与应用程序的 `attested-hardware` 机制所做的检查相同。仅凭密码、身份验证器应用、电子邮件代码、钱包、联合伙伴或 Kerberos 票据将被拒绝。默认领域的内置管理员（admin.bootstrapUsername）不受此限，以免服务无人能够登录。"
+  },
   "authn.SCHEMA.attributes.stsAuthnPasswordPrimary.what": {
     "en": "3b32854915d0d6d0",
     "text": "登录界面上的密码。作为第二因素时，它是在钱包或其他无密码第一因素之后要求提供的密码。"
@@ -512,12 +548,12 @@
     "text": "RFC 6238 一次性代码。绝不作为第一因素：本服务持有与应用相同的共享密钥。此处关闭时，任何人都不能注册新的；已持有的人仍会被要求提供，因为一个把每个已注册账户降级为仅凭密码的关闭开关，所做的事与它所声称的不同（此行取代了 totp.enabled，并保留其约定）。"
   },
   "authn.SCHEMA.attributes.stsAuthnHotpSecondFactor.what": {
-    "en": "608274a83bf567cd",
-    "text": "来自基于计数器的令牌的 RFC 4226 一次性验证码（#1955）：YubiKey 的 OTP 插槽，或管理员从 PSKC 种子文件导入的供应商令牌。绝不作为第一因素。此处关闭时，任何人都不能注册或认领；已持有的人仍会被要求提供，就像身份验证器应用的持有者一样。"
+    "en": "33918856782d0904",
+    "text": "来自基于计数器的令牌的 RFC 4226 一次性代码（#1955）：YubiKey 的 OTP 插槽，或管理员从 PSKC 种子文件导入的供应商令牌。绝不作为第一因素。默认关闭，必须为本领域开启后，任何人才能注册、认领或被分配 HOTP 令牌，因此在此之前登录时不会使用任何 HOTP 令牌。在此关闭时，任何人都不能注册或认领；已持有者仍会被要求提供，与身份验证器应用的持有者相同。"
   },
   "authn.SCHEMA.attributes.stsAuthnYubicoOtpSecondFactor.what": {
-    "en": "f8f7a6ee5bbb46a8",
-    "text": "YubiKey OTP（Yubico 公布的 modhex 一次性密码，#1955）。绝不是第一因素：本服务持有 AES 密钥。此处关闭时，即使 yubiotp.offered 为开，也不得登记、分配或认领；已持有者仍会被要求提供。"
+    "en": "a5efe4af91b59cf2",
+    "text": "YubiKey OTP（Yubico 公布的 modhex 一次性密码，#1955）。绝不作为第一因素：本服务持有 AES 密钥。默认关闭，必须为本领域开启（并开启 yubiotp.offered）后，任何人才能注册、认领或被分配 YubiKey OTP，因此在此之前登录时不会使用任何 YubiKey OTP。在此关闭时，即使 yubiotp.offered 已开启，任何人都不能注册、分配或认领；已持有者仍会被要求提供。"
   },
   "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
     "en": "e93ab2adc3e581bd",
@@ -540,12 +576,24 @@
     "text": "发送到此人已验证地址的一次性链接，只能在发起登录的浏览器中完成登录。NIST SP 800-63B-4 第 3.1.3.1 节：“Email SHALL NOT be used for out-of-band authentication”，因为邮箱可能仅凭密码即可访问，而邮件可能在传输途中被读取或被改道。因此默认关闭；仅在这是可接受的风险时才开启。"
   },
   "authn.SCHEMA.attributes.stsAuthnCertificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "已验证的 TLS 客户端证书：GET /tls/sign-in，或在登录页面上使用“使用您的证书继续”。"
+    "en": "f2fbb7dc9d0fa190",
+    "text": "不是智能卡的已验证 TLS 客户端证书：GET /tls/sign-in，或登录屏幕上的“使用您的证书继续”。智能卡证书归智能卡行管理，该行在未设置时跟随本行（#2031）。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "智能卡（PIV/CAC）证书，用于 GET /tls/sign-in 或“使用您的证书继续”：经过证明的 PIV 密钥、在此以 PIV 插槽配置文件注册的证书、按卡 UUID 映射的外部卡（piv.externalIssuers、stsPivCardUuid），或属于标记为 smartCard 的 certSignIn.profiles 配置文件的证书。未设置时，它跟随 stsAuthnCertificatePrimary，因此在它之前编写的策略保持原有含义（#2031）。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "PIV 卡认证（插槽 9e）证书，其密钥无需 PIN 即可使用。它也是智能卡，因此智能卡行也必须开启。未设置时，它跟随 piv.cardAuthSignIn 设置（#2031）。"
   },
   "authn.SCHEMA.attributes.stsAuthnKerberosPrimary.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "使用 Kerberos 票据访问 GET /authn/spnego。"
+    "en": "0507278dcc36c133",
+    "text": "使用 Kerberos 票据访问 GET /authn/spnego，但使用智能卡的 PKINIT 除外，它有自己的行，并在未设置时跟随本行（#2031）。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnPkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "使用携带本领域 pkinit-smartcard 指示符的 Kerberos 票据访问 GET /authn/spnego：KDC 通过智能卡 PKINIT 签发了该票据。未设置时，它跟随 stsAuthnKerberosPrimary（#2031）。"
   },
   "authn.SCHEMA.attributes.stsAuthnWalletPrimary.what": {
     "en": "c6b81177c7b7d944",
@@ -644,16 +692,16 @@
     "text": "一次性验证码令牌（HOTP）"
   },
   "authn.MECHANISMS.hotp.what": {
-    "en": "608274a83bf567cd",
-    "text": "来自基于计数器的令牌的 RFC 4226 一次性验证码（#1955）：YubiKey 的 OTP 插槽，或管理员从 PSKC 种子文件导入的供应商令牌。绝不作为第一因素。此处关闭时，任何人都不能注册或认领；已持有的人仍会被要求提供，就像身份验证器应用的持有者一样。"
+    "en": "33918856782d0904",
+    "text": "来自基于计数器的令牌的 RFC 4226 一次性代码（#1955）：YubiKey 的 OTP 插槽，或管理员从 PSKC 种子文件导入的供应商令牌。绝不作为第一因素。默认关闭，必须为本领域开启后，任何人才能注册、认领或被分配 HOTP 令牌，因此在此之前登录时不会使用任何 HOTP 令牌。在此关闭时，任何人都不能注册或认领；已持有者仍会被要求提供，与身份验证器应用的持有者相同。"
   },
   "authn.MECHANISMS.yubico-otp.label": {
     "en": "01f8772904333b7b",
     "text": "YubiKey OTP"
   },
   "authn.MECHANISMS.yubico-otp.what": {
-    "en": "f8f7a6ee5bbb46a8",
-    "text": "YubiKey OTP（Yubico 公布的 modhex 一次性密码，#1955）。绝不是第一因素：本服务持有 AES 密钥。此处关闭时，即使 yubiotp.offered 为开，也不得登记、分配或认领；已持有者仍会被要求提供。"
+    "en": "a5efe4af91b59cf2",
+    "text": "YubiKey OTP（Yubico 公布的 modhex 一次性密码，#1955）。绝不作为第一因素：本服务持有 AES 密钥。默认关闭，必须为本领域开启（并开启 yubiotp.offered）后，任何人才能注册、认领或被分配 YubiKey OTP，因此在此之前登录时不会使用任何 YubiKey OTP。在此关闭时，即使 yubiotp.offered 已开启，任何人都不能注册、分配或认领；已持有者仍会被要求提供。"
   },
   "authn.MECHANISMS.recoveryCode.label": {
     "en": "5bda8302b5ecf4d3",
@@ -684,16 +732,40 @@
     "text": "TLS 客户端证书"
   },
   "authn.MECHANISMS.certificate.what": {
-    "en": "bbf7d091b1854474",
-    "text": "已验证的 TLS 客户端证书：GET /tls/sign-in，或在登录页面上使用“使用您的证书继续”。"
+    "en": "f2fbb7dc9d0fa190",
+    "text": "不是智能卡的已验证 TLS 客户端证书：GET /tls/sign-in，或登录屏幕上的“使用您的证书继续”。智能卡证书归智能卡行管理，该行在未设置时跟随本行（#2031）。"
+  },
+  "authn.MECHANISMS.smartCard.label": {
+    "en": "055e41994165a328",
+    "text": "智能卡（PIV/CAC）证书"
+  },
+  "authn.MECHANISMS.smartCard.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "智能卡（PIV/CAC）证书，用于 GET /tls/sign-in 或“使用您的证书继续”：经过证明的 PIV 密钥、在此以 PIV 插槽配置文件注册的证书、按卡 UUID 映射的外部卡（piv.externalIssuers、stsPivCardUuid），或属于标记为 smartCard 的 certSignIn.profiles 配置文件的证书。未设置时，它跟随 stsAuthnCertificatePrimary，因此在它之前编写的策略保持原有含义（#2031）。"
+  },
+  "authn.MECHANISMS.smartCardCardAuth.label": {
+    "en": "7b5626b23b778ecd",
+    "text": "PIV 卡认证密钥（无需 PIN）"
+  },
+  "authn.MECHANISMS.smartCardCardAuth.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "PIV 卡认证（插槽 9e）证书，其密钥无需 PIN 即可使用。它也是智能卡，因此智能卡行也必须开启。未设置时，它跟随 piv.cardAuthSignIn 设置（#2031）。"
   },
   "authn.MECHANISMS.kerberos.label": {
     "en": "a8316dcb1a42420f",
     "text": "Kerberos（SPNEGO）"
   },
   "authn.MECHANISMS.kerberos.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "使用 Kerberos 票据访问 GET /authn/spnego。"
+    "en": "0507278dcc36c133",
+    "text": "使用 Kerberos 票据访问 GET /authn/spnego，但使用智能卡的 PKINIT 除外，它有自己的行，并在未设置时跟随本行（#2031）。"
+  },
+  "authn.MECHANISMS.pkinitSmartCard.label": {
+    "en": "62046e8418115023",
+    "text": "使用智能卡的 Kerberos PKINIT"
+  },
+  "authn.MECHANISMS.pkinitSmartCard.what": {
+    "en": "475e236f74379392",
+    "text": "使用携带本领域 pkinit-smartcard 指示符的 Kerberos 票据访问 GET /authn/spnego：KDC 通过智能卡 PKINIT 签发了该票据。未设置时，它跟随 stsAuthnKerberosPrimary（#2031）。"
   },
   "authn.MECHANISMS.wallet.label": {
     "en": "696e7476221a3382",
@@ -754,6 +826,10 @@
   "authn.sentences.emailTtlInactive": {
     "en": "20f80fea7980a662",
     "text": "电子邮件代码或链接的有效期为 {{n}} 秒——未启用：此领域无法发送邮件"
+  },
+  "authn.sentences.attestedAlways": {
+    "en": "7feb965c44fd5614",
+    "text": "每次登录都必须以保存在经过证明的硬件令牌上的凭据完成（内置管理员除外）"
   },
   "kinds.serviceAccount.label": {
     "en": "029b1070484594c2",
