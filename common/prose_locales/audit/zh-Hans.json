@@ -591,6 +591,14 @@
     "en": "92433c797106d523",
     "text": "已移除 YK-VAL 客户端"
   },
+  "audit.actions.ykval.verify.label": {
+    "en": "75090a0d0937732e",
+    "text": "一个 YK-VAL 客户端询问了某个 YubiKey OTP 是否有效"
+  },
+  "audit.actions.piv-escrow.recover.label": {
+    "en": "0cad829ec7cafc72",
+    "text": "已恢复一个托管的 PIV 密钥管理密钥"
+  },
   "audit.actions.openpgp.challenge.label": {
     "en": "454a22b5bcd9d6a2",
     "text": "已发出 OpenPGP 密钥注册质询"
@@ -618,6 +626,22 @@
   "audit.actions.openpgp.smime-certificate.label": {
     "en": "663072a33ce1e178",
     "text": "某人的 S/MIME 证书已设置或删除"
+  },
+  "audit.actions.openpgp.classical-kept.label": {
+    "en": "88853e0422aaf987",
+    "text": "一个经典 OpenPGP 密钥被保留在取代它的后量子密钥旁边"
+  },
+  "audit.actions.openpgp.classical-retired.label": {
+    "en": "dd04754fc94b2d49",
+    "text": "一个保留的经典 OpenPGP 密钥已被删除"
+  },
+  "audit.actions.piv.reissued.label": {
+    "en": "c91e03d452110e24",
+    "text": "登录后重新签发了一个 PIV 证书"
+  },
+  "audit.actions.piv.superseded.label": {
+    "en": "8b80ee2d97b80d29",
+    "text": "一个 PIV 证书在其替代证书用于登录后被吊销"
   },
   "audit.actions.device.key-add.label": {
     "en": "6c1b2513c20532ef",
@@ -2470,13 +2494,5 @@
   "audit.actions.xacml.pep.cluster.proxy.clear.label": {
     "en": "c2812e5d21fb6dd4",
     "text": "已移除远程 PEP 集群的反向代理配置"
-  },
-  "audit.actions.piv-escrow.recover.label": {
-    "en": "0cad829ec7cafc72",
-    "text": "已恢复一个托管的 PIV 密钥管理密钥"
-  },
-  "audit.actions.ykval.verify.label": {
-    "en": "75090a0d0937732e",
-    "text": "一个 YK-VAL 客户端询问了某个 YubiKey OTP 是否有效"
   }
 }

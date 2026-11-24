@@ -12791,8 +12791,8 @@ class Authn {
     if (String(due.activity || postLogin.PQC_MIGRATION) !==
         postLogin.PQC_MIGRATION) {
       errorCodes.mark(res, 'STS-AUTHN-0602');
-      this.stepRefused(res, 'This step asks for another post-login ' +
-                       'activity, not a passkey.');
+      this.stepRefused(res,
+        Sentence.say('refusals.authn.postLoginOtherActivityPasskey'));
       log.debug("Leaving Authn.postLoginAct(). Another activity's step.");
       return;
     }
@@ -12896,8 +12896,8 @@ class Authn {
     const due = step.postLogin;
     if (String(due.activity || '') !== 'pqc-mail-encryption') {
       errorCodes.mark(res, 'STS-AUTHN-0602');
-      this.stepRefused(res, 'This step asks for another post-login ' +
-                       'activity, not a mail encryption key.');
+      this.stepRefused(res,
+        Sentence.say('refusals.authn.postLoginOtherActivityMail'));
       log.debug("Leaving Authn.postLoginMailAct(). Another activity.");
       return;
     }
@@ -13006,8 +13006,8 @@ class Authn {
     const due = step.postLogin;
     if (String(due.activity || '') !== 'piv-reissue') {
       errorCodes.mark(res, 'STS-AUTHN-0602');
-      this.stepRefused(res, 'This step asks for another post-login ' +
-                       'activity, not a PIV certificate.');
+      this.stepRefused(res,
+        Sentence.say('refusals.authn.postLoginOtherActivityPiv'));
       log.debug("Leaving Authn.postLoginPivAct(). Another activity.");
       return;
     }
