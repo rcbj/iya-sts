@@ -147,5 +147,7 @@
   "presetsNote": "Jede öffnet Neue Abfrage mit eingesetzter Abfrage. Nichts läuft, bis Sie Ausführen drücken, und das Speichern ergibt eine eigene Definition.",
   "presetFrom": "Gestartet aus der vordefinierten Abfrage {name}.",
   "adminOnlySource": "Nur für Berichtsadministratoren",
-  "adminOnlyNote": "Nur ein Berichtsadministrator (REPORT_ADMIN) darf diese Quelle abfragen: Sie enthält, wer was von wo aus getan hat oder wer welche Anmeldeinformation besitzt."
+  "adminOnlyNote": "Nur ein Berichtsadministrator (REPORT_ADMIN) darf diese Quelle abfragen: Sie enthält, wer was von wo aus getan hat oder wer welche Anmeldeinformation besitzt.",
+  "noWebCrypto.title": "Dieser Browser kann diese Seite nicht öffnen",
+  "noWebCrypto.text": "Dieser Browser kann diese Seite nicht sicher ausführen: WebCrypto ist nicht verfügbar, meist weil die Seite nicht über HTTPS geöffnet wurde oder der Browser zu alt ist."
 }

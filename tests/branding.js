@@ -46,8 +46,10 @@ const WebSurface = require('../common/web_surface');
 
 const REALM = 'brand-test';
 
-// A PNG's first 24 bytes — the signature and the IHDR's sides — are all the
-// check reads; the rest of a real image is not needed to judge one.
+// A PNG's first 24 bytes — the signature and the IHDR's sides — are what
+// the check reads; since #2140 the file is also walked chunk by chunk to its
+// IEND (its metadata is removed), so it carries an IDAT and an IEND, still
+// 64 bytes in all and with nothing to remove.
 function png(width, height) {
   log.debug("Entering png().");
   const b = Buffer.alloc(64);
@@ -56,6 +58,10 @@ function png(width, height) {
   b.write('IHDR', 12, 'latin1');
   b.writeUInt32BE(width, 16);
   b.writeUInt32BE(height, 20);
+  b.writeUInt32BE(7, 33);
+  b.write('IDAT', 37, 'latin1');
+  b.writeUInt32BE(0, 52);
+  b.write('IEND', 56, 'latin1');
   log.debug("Leaving png().");
   return b;
 }

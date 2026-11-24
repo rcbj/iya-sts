@@ -147,5 +147,7 @@
   "presetsNote": "每一項都會開啟「新增查詢」並填好其查詢。在您按下「執行」之前不會執行任何動作，儲存後會成為您自己的定義。",
   "presetFrom": "從預先定義的查詢 {name} 開始。",
   "adminOnlySource": "僅限報告管理員",
-  "adminOnlyNote": "只有報告管理員（REPORT_ADMIN）可以查詢此資料來源：它記錄誰在何處做了什麼，或誰持有哪種憑證。"
+  "adminOnlyNote": "只有報告管理員（REPORT_ADMIN）可以查詢此資料來源：它記錄誰在何處做了什麼，或誰持有哪種憑證。",
+  "noWebCrypto.title": "此瀏覽器無法開啟此頁面",
+  "noWebCrypto.text": "此瀏覽器無法安全地執行此頁面：WebCrypto 無法使用，通常是因為頁面未透過 HTTPS 開啟，或瀏覽器版本過舊。"
 }

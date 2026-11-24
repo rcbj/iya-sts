@@ -8717,6 +8717,13 @@ const CODES = [
       'asked for. The held session is started without it: a sign-in is ' +
       'never held for something that cannot be done (#2009).',
     spec: 'none (the sign-in goes on)' },
+  { code: 'STS-AUTHN-0624',
+    summary: 'A sign-in logo was not saved: its bytes are a PNG, a JPEG or ' +
+      'a WebP image, but the file could not be walked to the end of its ' +
+      'image, so its metadata (EXIF, XMP, text chunks) could not be ' +
+      'removed. A logo is served to everybody and is kept only cleaned ' +
+      '(#2140).',
+    spec: 'none (a management API refusal, HTTP 400)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6095** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6096** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 461
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 462
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 87
@@ -1862,6 +1862,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0621` | A post-login PIV re-issue act named a slot whose profile this realm no longer enrols: est.allowedProfiles left it out after the step was asked. Nothing was issued (#2009). | none (HTTP 400 from /authn-api) |
 | `STS-AUTHN-0622` | The post-login PIV re-issue step was asked to continue before every slot it asks for had a new certificate: enrol the others, or Skip where the step may still be skipped (#2009). | none (HTTP 400 from /authn-api) |
 | `STS-AUTHN-0623` | The post-login PIV re-issue can no longer be done here: since the step was asked, the realm stopped enrolling every profile it asked for. The held session is started without it: a sign-in is never held for something that cannot be done (#2009). | none (the sign-in goes on) |
+| `STS-AUTHN-0624` | A sign-in logo was not saved: its bytes are a PNG, a JPEG or a WebP image, but the file could not be walked to the end of its image, so its metadata (EXIF, XMP, text chunks) could not be removed. A logo is served to everybody and is kept only cleaned (#2140). | none (a management API refusal, HTTP 400) |
 
 ## STS-OAUTH
 

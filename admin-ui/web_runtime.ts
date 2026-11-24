@@ -4044,6 +4044,13 @@ class ConsoleRuntime extends SpaClient {
    * @returns nothing
    */
   async start(): Promise<void> {
+    // NO WEBCRYPTO, NO SIGN-IN (#2143): one sentence, and nothing else.
+    if (SpaClient.webCryptoMissing(this.env)) {
+      const words = await this.noWebCryptoWords('consoleRuntime');
+      this.t = words.t;
+      this.drawProblem(words.title, words.text);
+      return;
+    }
     const self = this;
     this.env.document.addEventListener('click', function (event) {
       self.onClick(event);
