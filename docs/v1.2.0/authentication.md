@@ -124,7 +124,15 @@ pre-authentication) count failed attempts only, under the same limits.
 
 A password made by `reset-password`, by `set-password` with `generate: true`,
 or, in product mode, when a person is created, must be changed at the next
-sign-in.
+sign-in. **In product mode a password an administrator TYPES is temporary
+too** (since 1.2.0, #2160): `set-password` with `password`, a person created
+with `credential: "password"`, and an administrator's LDAP modify or add of
+somebody else's `userPassword` all set `pwdReset`, because the administrator
+knows the password. The sign-in screen asks the person for a new one, and
+the doors that cannot ask (an LDAP bind, the password grant, WS-Trust,
+Kerberos, SCIM Basic) refuse it until they have chosen one. Typed passwords
+are still accepted. A service account's password is not temporary, because
+it belongs to a program, and in development mode no typed password is.
 
 ### Other ways to establish a session
 

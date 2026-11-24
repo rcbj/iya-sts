@@ -77,6 +77,7 @@ const assert = require("assert");
 const ldapjs = require("ldapjs");
 const names = require("./random_username.js");
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const passkeys = require("./passkey_wire_kit.js");
 const fixtures = require("./oauth_fixtures.js");
 
@@ -218,11 +219,19 @@ async function makeRealm(realm, mode) {
 
 async function person(realm, who, password) {
   log.debug("Entering person(). " + who);
+  // Temporary, then the person's own (#2160, `own_password.js`): E binds
+  // with `password` in product, where a typed one would be temporary. The
+  // policy probes below go through `setPassword()` as written, and are
+  // judged on the password they send.
   await ok(realm.api + "/users/create", { username: who, invent: false,
-    credential: "password", password: password,
+    credential: "password", password: ownPassword.temporaryFor(password),
     attributes: { cn: "PWP " + who, givenName: "PWP", sn: who,
                   mail: who + "@" + realm.domain } },
     "created " + who + " in " + realm.id);
+  await ownPassword.ownPassword(realm.api.replace(/\/admin-api$/, ""), who,
+                                password, function (one, value) {
+    return setPassword(realm, one, value);
+  });
   log.debug("Leaving person().");
 }
 

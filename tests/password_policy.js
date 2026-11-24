@@ -360,10 +360,15 @@ async function checkThePolicy(t, who) {
               crypto.verifySecret('Ldap-Passw0rd!', hashed),
               'and STORED AS A HASH — this door used to write the value ' +
               'verbatim, in the clear', String(hashed).slice(0, 20));
+      // AN OPERATOR'S PASSWORD IS TEMPORARY (#2160): the sign-in screen
+      // takes it, to ask for a new one, and the other doors refuse it.
       t.check(credentials.verify('password-policy-ldap-probe',
-                                 'Ldap-Passw0rd!').ok,
-              'which the sign-in verifier accepts, so an LDAP-set password ' +
-              'works');
+                                 'Ldap-Passw0rd!',
+                                 { allowPasswordReset: true }).ok &&
+              credentials.passwordResetRequired('password-policy-ldap-probe'),
+              'which the sign-in screen accepts, so an LDAP-set password ' +
+              'works there, and must be changed (#2160): an operator wrote ' +
+              'it');
       const unchanged = await asOperator(probe.dn,
                                    [['replace', 'userPassword', hashed]]);
       t.check(!unchanged.failure,

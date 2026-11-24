@@ -40,6 +40,7 @@
 // ---------------------------------------------------------------------------
 
 const assert = require("assert");
+const ownPassword = require("./own_password");
 const crypto = require("crypto");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
@@ -335,12 +336,18 @@ async function setUp() {
   // serves an application only the protocols it is declared for
   // (appAllowedProtocol): the front end is an OAuth client too.
   await set(idOf("front"), "appAllowedProtocol", "add", "oauth2");
+  // Temporary, then the person's own (#2160, `own_password.js`): a keytab
+  // reset is refused while a change is owed, in product.
   await ok("/users/create", { username: PERSON, invent: false,
-                              credential: "password", password: PASSWORD,
+                              credential: "password",
+                              password: ownPassword.temporaryFor(PASSWORD),
                               attributes: { cn: PERSON, givenName: "KT",
                                             sn: PERSON,
                                             mail: PERSON + "@kt.test" } },
            "created " + PERSON);
+  await ownPassword.ownPassword(base, PERSON, PASSWORD, function (one, value) {
+    return call("POST", "/users/set-password", { user: one, password: value });
+  });
   const keytab = await call("POST", "/kerberos/principals/reset-person-keytab",
     { username: PERSON, password: KEYTAB_PASSWORD });
   assert.ok(keytab.status === 200 && keytab.body.keytab,

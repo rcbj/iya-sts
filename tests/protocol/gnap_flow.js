@@ -42,6 +42,7 @@
 
 // The sign-in screen over `/authn-api` (#571).
 const authnSignin = require("./authn_signin");
+const ownPassword = require("./own_password");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const gnap = require("./gnap_client.js");
@@ -580,13 +581,20 @@ function harness(options) {
 
   self.ensurePerson = async function (who) {
     log.debug("Entering ensurePerson().");
+    // Temporary, then the person's own (#2160, `own_password.js`).
     const r = await self.apiPost(realmApi + "/users/create", {
-      username: who, invent: false, credential: "password", password: PASSWORD,
+      username: who, invent: false, credential: "password",
+      password: ownPassword.temporaryFor(PASSWORD),
       attributes: { cn: "GNAP " + who, sn: who, givenName: "GNAP",
                     displayName: "GNAP " + who,
                     mail: who + "@gnap.test" } });
     assert.ok(r.status === 200 && r.body.ok,
               "created " + who + ": " + r.raw.slice(0, 300));
+    await ownPassword.ownPassword(realmBase, who, PASSWORD,
+      function (one, value) {
+        return self.apiPost(realmApi + "/users/set-password",
+                            { user: one, password: value });
+      });
     log.debug("Leaving ensurePerson().");
   };
 

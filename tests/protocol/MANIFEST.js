@@ -3424,6 +3424,11 @@ const LOCAL_HELPERS = [
   // since; the static console (#446) made it a different helper from the
   // parent's, which signs in to a cookie-holding console.
   'console_signin.js',
+  // A person whose password is their own in every mode (#2160): a
+  // temporary password set by the job's administrator door, then the
+  // person's own change at the sign-in screen, since a typed password is
+  // temporary in product.
+  'own_password.js',
   // The portal's sign-in and a client of the operations its pages are drawn
   // from (#568): the static portal signs in as the public client
   // `sts-user-portal` and draws every page from `/account-api`.

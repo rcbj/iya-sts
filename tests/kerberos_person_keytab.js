@@ -297,6 +297,17 @@ async function keytabChild() {
   // --- D. the administrator's reset, with a typed password ---
   const PW2 = 'Admin-Chosen-Passw0rd!-2';
   credentials.setPasswordResetRequired('ktowner', true);
+  // A FORCED CHANGE STILL OWED (#2160): in product the reset is refused
+  // before anything changes, because the KDC would refuse the keytab; the
+  // person changes their password first, which this stands in for.
+  const kvnoBeforeOwed = kvnoOf('ktowner');
+  out.owed = product ? brief(await reset({ username: 'ktowner',
+                                           password: PW2 })) : null;
+  out.owedUnchanged = kvnoOf('ktowner') === kvnoBeforeOwed &&
+    credentials.passwordResetRequired('ktowner');
+  if (product) {
+    credentials.setPasswordResetRequired('ktowner', false);
+  }
   const link = credentials.issuePasswordReset('ktowner');
   out.linkIssued = link.ok;
   const typed = await reset({ username: 'ktowner', password: PW2 });
@@ -572,9 +583,17 @@ function productAssertions(t, r) {
           'the OLD password is refused KDC_ERR_PREAUTH_FAILED and the new ' +
           'one signs in', JSON.stringify([r.oldPasswordAfterTyped,
                                           r.newPasswordAfterTyped]));
+  // #2160: the reset neither sets nor clears `pwdReset`. In product it is
+  // refused while a change is owed, so the job clears the flag first (the
+  // person's own change), and the reset does not set it again.
+  t.check(r.owed && !r.owed.ok && r.owed.codeOf === 'STS-ADMIN-0956' &&
+          r.owedUnchanged,
+          'a keytab reset for somebody who must change their password is ' +
+          'refused STS-ADMIN-0956, and nothing changed',
+          JSON.stringify(r.owed));
   t.check(r.forcedAfterTyped === false,
-          'the person is NOT made to change it at their next sign-in (a ' +
-          'pending forced change was cleared) — that would end the keytab');
+          'the reset does not make them change it at their next sign-in ' +
+          '— that would end the keytab');
   t.check(r.linkIssued && r.linkAfterTyped === false,
           'an outstanding reset link is spent by the reset');
   t.check(Object.keys(r.ownAfterReset).length > 0 &&
@@ -675,6 +694,10 @@ function developmentAssertions(t, r) {
           JSON.stringify([r.nobody, r.disabled]));
   t.check(!r.auditHasKeytab && !r.auditHasPassword,
           'no audit row carries a keytab or a password');
+  t.check(r.forcedAfterTyped === true && r.owed === null,
+          'a pending forced change is NOT cleared by a keytab reset (#2160); ' +
+          'development does not refuse the reset, as its KDC does not ' +
+          'check the flag');
   log.debug("Leaving developmentAssertions().");
 }
 
