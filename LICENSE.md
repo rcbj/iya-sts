@@ -123,6 +123,7 @@ own licences. `REUSE.toml` declares each of them in machine-readable form and
 | `spiffe/protos/` | The SPIRE API SDK's protobuf definitions, the SPIFFE Workload API and the SPIFFE Broker API, copied verbatim. | Apache-2.0 |
 | `common/crypto_impl/contexts/credentials_v1.json`, `credentials_v2.json` | The W3C Verifiable Credentials JSON-LD contexts. | W3C Software and Document License |
 | `admin-ui/natural_earth/` | Country outlines derived from Natural Earth's 1:50m Admin 0 – Countries by `tests/tools/natural-earth.js`. | Public domain |
+| `tests/client-lab/patches/pivapplet-yubikey-attestation.patch` | A patch to [`arekinath/PivApplet`](https://github.com/arekinath/PivApplet)'s `PivApplet.java` (#2056) that makes the client lab's virtual PIV card attest as a YubiKey 5. It is a modified form of that file, so it is under that file's licence. It is applied to the pinned upstream source only when the TEST image `tests/client-lab/` is built. That build also fetches PivApplet, SmartPGP (GPL-2.0), jcardsim (Apache-2.0) and Oracle's Java Card API jar, and installs vsmartcard's vpcd (GPL-3.0). None of these is in this repository or in the service image. | MPL-2.0 |
 
 The Business Source License above covers every other file, with one
 exception. The rest of `common/crypto_impl/` (all but `pqc.js`, `pqc_x509.js` and

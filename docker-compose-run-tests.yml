@@ -1550,6 +1550,50 @@ services:
       default:
         ipv4_address: ${COMPANION_ADDRESS:-172.30.0.49}
 
+  # ===========================================================================
+  # THE CLIENT LAB (#2056, umbrella #2055): REAL CLIENT SOFTWARE AND VIRTUAL
+  # SMART CARDS for the realistic jobs (#2057-#2062). jcardsim runs SmartPGP
+  # (an OpenPGP card) and PivApplet (a PIV card attesting as a YubiKey 5)
+  # behind vpcd and pcscd, beside gpg/scdaemon, OpenSC, yubico-piv-tool,
+  # ssh/sshd, postfix, oathtool, pam_yubico, MIT kinit, curl and openssl.
+  # Built from tests/client-lab; tests/CLAUDE.md, *THE CLIENT LAB*, argues
+  # it. A TEST IMAGE ONLY: tests/client_lab_isolation.js holds the product
+  # image free of it.
+  #
+  # A job reaches it at CLIENT_LAB_URL (an agent on 9610: /run a client,
+  # /files in and out, /health); an AWS target names none, and a job that
+  # needs it skips. IN EVERY LOCAL MODE, with no profile, for the test
+  # peer's reason, and STARTED rather than healthy in the runner's
+  # depends_on for the same reason (a lab that will not start fails the
+  # jobs that need it, which wait for /health themselves). PINNED at `.53`,
+  # above the PEP cluster's `.52`, for the conformance suite's reason.
+  #
+  # NOTHING IS A KEY: every card is factory-fresh at every start, and every
+  # key, certificate and PIN is made by a job at run time.
+  # ===========================================================================
+  client-lab:
+    container_name: ${STS_CLIENT_LAB_CONTAINER_NAME:-sts-docker-tests-client-lab}
+    hostname: client-lab
+    image: ${CLIENT_LAB_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/sts-client-lab:${IMAGE_TAG:-latest}}
+    build:
+      context: tests/client-lab
+      # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
+      additional_contexts: *mirror-contexts
+    environment:
+      - CLIENT_LAB_PORT=9610
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - sts-test-shared:/run/sts-test
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9610/health"]
+      interval: 5s
+      timeout: 10s
+      retries: 24
+      start_period: 20s
+    networks:
+      default:
+        ipv4_address: ${CLIENT_LAB_ADDRESS:-172.30.0.53}
+
   tests:
     container_name: ${STS_TESTS_CONTAINER_NAME:-iya-sts-test-runner}
     # A DOTTED NAME FOR THE SERVICE, FOR THE RUNNER ONLY (#694). `sts` is one
@@ -1799,6 +1843,10 @@ services:
       # The CA certificate the peer writes, at the path the SERVICE reads it
       # (the same volume, mounted at the same place in `sts`).
       - TEST_PEER_CA_FILE=${TEST_PEER_CA_FILE:-/run/sts-test/test-peer/ca.crt}
+      # The client lab (#2056). ./run-tests.sh names it in every local mode;
+      # EMPTY is "there is no lab" (an AWS target), and the jobs that need it
+      # skip — a hand run of this file gets the default address.
+      - CLIENT_LAB_URL=${CLIENT_LAB_URL-http://client-lab:9610}
       # A file secret push destination's directory (#221 P3): the same
       # volume, at the same path, in `sts`. Empty skips the job's file half.
       - SECRET_PUSH_TEST_DIR=${SECRET_PUSH_TEST_DIR-/run/sts-test-secret-push}
@@ -1837,6 +1885,9 @@ services:
       # application that will not come up fails the remote PEP job's proxy
       # section, which waits for it, and nothing else.
       companion:
+        condition: service_started
+      # The client lab (#2056): STARTED, for the test peer's reason.
+      client-lab:
         condition: service_started
       sts:
         # The whole ordering of this file. `up` reports success for a container

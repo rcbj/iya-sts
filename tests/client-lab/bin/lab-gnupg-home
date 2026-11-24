@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# File: tests/client-lab/bin/lab-gnupg-home
+#
+# ---------------------------------------------------------------------------
+# A FRESH GNUPGHOME WHOSE scdaemon USES THE LAB'S OpenPGP CARD (#2056).
+#
+#   lab-gnupg-home <dir>        makes <dir> (under the work directory when
+#                               relative) and prints its absolute path
+#
+# scdaemon reaches the card through pcscd, never its own CCID driver (there
+# is no USB device), shares the reader with OpenSC (pcsc-shared), and is
+# pointed at slot 0 — SmartPGP — by name, so it never claims the PIV card.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+dir="${1:?a directory}"
+mkdir -p -m 0700 "${dir}"
+dir="$(cd "${dir}" && pwd)"
+cat > "${dir}/scdaemon.conf" <<CONF
+disable-ccid
+pcsc-shared
+reader-port Virtual PCD 00 00
+CONF
+cat > "${dir}/gpg-agent.conf" <<CONF
+allow-loopback-pinentry
+CONF
+cat > "${dir}/gpg.conf" <<CONF
+pinentry-mode loopback
+CONF
+echo "${dir}"
