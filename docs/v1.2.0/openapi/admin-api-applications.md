@@ -675,6 +675,8 @@ Scope: `admin:read`.
 | `description` | string, or null |  |  |
 | `dn` | string, or null |  |  |
 | `dnLabel` | string, or null |  |  |
+| `embeddedPeps` | list |  | The embedded remote PEPs bound to this application (#2025), by username. |
+| `embeddedPeps[]` | string |  |  |
 | `fields` | map |  | By attribute name. |
 | `fields.{key}` | list, or string, or number, or boolean, or null |  |  |
 | `fields.{key}[]` | string, or number, or boolean |  |  |
@@ -1237,6 +1239,8 @@ Scope: `admin:read`.
 | `page.editable.set` | list |  |  |
 | `page.editable.set[].name` | string |  |  |
 | `page.editable.set[].sensitive` | boolean |  |  |
+| `page.embeddedPeps` | list |  | The embedded remote PEPs bound to this application (#2025), by username. |
+| `page.embeddedPeps[]` | string |  |  |
 | `page.enrollment` | object |  |  |
 | `page.enrollment.config` | object |  |  |
 | `page.enrollment.config.cap` | object |  |  |

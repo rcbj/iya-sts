@@ -123,6 +123,8 @@ import pepTls = require('./xacml_pep_tls');
 // A remote PEP's RFC 7523 assertion key, certified from its own request
 // (#1827's follow-up, phase 3). A LIBRARY, registering nothing.
 import PepCredential = require('./xacml_pep_credential');
+// An embedded remote PEP bound to its application (#2025).
+import PepBinding = require('./xacml_pep_binding');
 // The remote PEP's reverse proxy (#1760): the grammar `set-pep-proxy` is
 // held to and the session mechanism's client. A LIBRARY, registering nothing.
 import pepProxy = require('./xacml_pep_proxy');
@@ -198,6 +200,7 @@ interface XacmlAdminDeps {
   pepHttp: any;
   pepTls: any;
   pepCredential: any;
+  pepBinding: any;
   pepProxy: any;
   routePolicies: any;
   pepSettings: any;
@@ -289,8 +292,14 @@ interface PepOwner {
 // PEP's own certificate request as its RFC 7523 assertion key
 // (`xacml_pep_credential.ts`) and answers a PROMISE too. It needs no
 // registered row: it is how a PEP is provisioned before it ever registers.
+// `set-pep-application` and `clear-pep-application` (#2025) bind an
+// embedded PEP's service account to the one application it is embedded in
+// (`xacml_pep_binding.ts`), and need no registered row for the same reason:
+// the registration is what checks them. `issue-pep-credential` with an
+// `application` sets the binding in the same call.
 const PEP_ACTIONS = ['enable-pep', 'disable-pep', 'forget-pep', 'sync-pep',
                      'issue-pep-certificate', 'issue-pep-credential',
+                     'set-pep-application', 'clear-pep-application',
                      'set-pep-proxy',
                      'clear-pep-proxy', 'set-pep-route-identity',
                      'set-pep-settings', 'clear-pep-settings',
@@ -448,6 +457,7 @@ class XacmlAdmin {
       pepHttp: pepHttp,
       pepTls: pepTls,
       pepCredential: new PepCredential(PepCredential.defaultDeps()),
+      pepBinding: PepBinding.shared(),
       pepProxy: pepProxy,
       routePolicies: pepRoutePolicies,
       pepSettings: pepSettings,
@@ -721,6 +731,7 @@ class XacmlAdmin {
     // `?application=` is, with `found` saying whether it is registered.
     const one = typeof pep === 'string' && pep !== '' ? pep : null;
     const clusters = this.deps.clusters;
+    const pepBinding = this.deps.pepBinding;
     const rows = peps.all().filter(function (row) {
       return one === null || row.name === one;
     }).map(function (raw) {
@@ -745,6 +756,9 @@ class XacmlAdmin {
       view.identityAccount = row.identity
         ? require('../common/service_accounts').identityOf(row.identity)
         : null;
+      // THE APPLICATION IT IS EMBEDDED IN (#2025), read off its entry where
+      // the store reads it; '' when it is bound to none.
+      view.application = pepBinding.of(row.name);
       // THE MANAGED SETTINGS (#1760), read through the validator the pull
       // uses, so the page shows what the PEP would be sent; the stored
       // text itself is not answered. `settingsInUse` is the PEP's own
@@ -1106,6 +1120,56 @@ class XacmlAdmin {
     return json;
   }
 
+  /**
+   * `issue-pep-credential`, and the binding (#2025) when the body names an
+   * `application`. The binding is asked FIRST — the entry and the
+   * application — so a binding that would be refused leaves no certified key
+   * behind it; it is written only once the key is. A failed write after the
+   * key is certified answers the key and the refusal together.
+   *
+   * @param body - the act's body: the credential's members, and optionally
+   *   `application`
+   * @returns a promise of the credential's result, with `application` when
+   *   one was bound
+   */
+  async issueCredential(body: any): Promise<any> {
+    const { log, pepCredential, pepBinding, errorCodes } = this.deps;
+    log.debug('Entering XacmlAdmin.issueCredential().');
+    const application = String((body || {}).application || '').trim();
+    if (application) {
+      const name = String((body || {}).name || '').trim();
+      const may = pepBinding.eligible(name);
+      if (!may.ok) {
+        log.debug('Leaving XacmlAdmin.issueCredential(). Not eligible.');
+        return may;
+      }
+      const problem = pepBinding.applicationProblem(application);
+      if (problem) {
+        log.debug('Leaving XacmlAdmin.issueCredential(). The application.');
+        return problem;
+      }
+    }
+    const issued = await pepCredential.issue(body);
+    if (!application || !issued || !issued.ok) {
+      log.debug('Leaving XacmlAdmin.issueCredential(). No binding asked.');
+      return issued;
+    }
+    const bound = pepBinding.set({ name: issued.pep,
+                                   application: application });
+    if (!bound.ok) {
+      log.debug('Leaving XacmlAdmin.issueCredential(). Not bound.');
+      return errorCodes.mark(Object.assign({}, issued, {
+        ok: false,
+        why: String(issued.what || '') + ' ' + String(bound.why || '')
+      }), 'STS-XACML-0337');
+    }
+    log.debug('Leaving XacmlAdmin.issueCredential(). Bound.');
+    return Object.assign({}, issued, {
+      application: application,
+      what: String(issued.what || '') + ' ' + String(bound.what || '')
+    });
+  }
+
   // A plain result, or a promise of one for `issue-pep-certificate`.
   /**
    * Applies one remote-PEP action: enable, disable, forget, or issue a
@@ -1144,7 +1208,15 @@ class XacmlAdmin {
     if (action === 'issue-pep-credential') {
       log.debug('Leaving XacmlAdmin.pepAction(). Certifying an assertion ' +
                 'key.');
-      return pepCredential.issue(body);
+      return this.issueCredential(body);
+    }
+    if (action === 'set-pep-application') {
+      log.debug('Leaving XacmlAdmin.pepAction(). Binding.');
+      return this.deps.pepBinding.set(body);
+    }
+    if (action === 'clear-pep-application') {
+      log.debug('Leaving XacmlAdmin.pepAction(). Unbinding.');
+      return this.deps.pepBinding.clear(body);
     }
     const name = String((body || {}).name || '');
     if (!name) {

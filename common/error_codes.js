@@ -25496,6 +25496,31 @@ const CODES = [
       'forbids asking (prompt=none, IsPassive), it was refused (#1072).',
     spec: 'interaction_required (OIDC Core section 3.1.2.6) with ' +
       'prompt=none; NoPassive with IsPassive' },
+  { code: 'STS-XACML-0334',
+    summary: 'set-pep-application or clear-pep-application (or ' +
+      'issue-pep-credential with an application) named no remote PEP, or a ' +
+      'name that is nobody in this realm\'s ou=users: an embedded PEP\'s ' +
+      'binding is written on the entry it signs in as (#2025).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-XACML-0335',
+    summary: 'set-pep-application named a person who is not a service ' +
+      'account, or a service account that does not hold REMOTE_PEPS: only ' +
+      'a remote PEP\'s identity is bound to an application (#2025).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-XACML-0336',
+    summary: 'set-pep-application (or issue-pep-credential with an ' +
+      'application) named no application, or one this realm\'s registry ' +
+      'does not hold, so nothing was bound (#2025).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-XACML-0337',
+    summary: 'An embedded PEP\'s binding could not be written or removed: ' +
+      'the directory is not available or refused the write (#2025). Nothing ' +
+      'changed.',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +

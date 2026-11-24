@@ -1057,6 +1057,11 @@ class XacmlPage {
         t.html('consoleXacml.credential.load') + '</button>' +
         '<input type="file" id="' + file + '" hidden ' +
         'accept=".csr,.pem,.req,text/plain" data-load-into="' + box + '">') +
+      // AND THE BINDING, IN THE SAME CALL (#2025): an embedded PEP's
+      // application, written once the key is certified.
+      self.formRow(self.labelled(t, 'consoleXacml.credential.application',
+        'consoleXacml.tip.credential.application', '<input type="text" ' +
+        'name="application" size="32">')) +
       self.formRow('<label' +
         self.tipOf(t, 'consoleXacml.tip.credential.revokePrevious') + '>' +
         '<input type="checkbox" name="revokePrevious" value="true"> ' +
@@ -4122,6 +4127,57 @@ class XacmlPage {
   }
 
   /**
+   * Draws the application an embedded PEP is bound to (#2025), or that it is
+   * bound to none.
+   *
+   * @param t - the translator
+   * @param row - one row of `GET /admin-api/xacml/peps`
+   * @returns the cell as HTML
+   */
+  static pepApplication(t: Json, row: Json): string {
+    return row.application
+      ? '<a href="/admin/applications?application=' +
+        esc(encodeURIComponent(String(row.application))) + '"><code>' +
+        esc(String(row.application)) + '</code></a>'
+      : '<span class="sub">' +
+        t.html('consoleXacml.pepPage.application.none') + '</span>';
+  }
+
+  /**
+   * The binding's two forms (#2025): bind the PEP's entry to an application,
+   * and, where it is bound, remove the binding.
+   *
+   * @param t - the translator
+   * @param username - the PEP's entry
+   * @param application - the application it is bound to now, or ''
+   * @returns the forms as HTML
+   */
+  static bindingForm(t: Json, username: string, application: string): string {
+    const self = this;
+    const bind = '<form method="post" action="/admin/xacml/peps">' +
+      self.hidden('action', 'set-pep-application') +
+      self.hidden('name', username) +
+      self.defaultSubmit(t.text('consoleXacml.binding.submit')) +
+      '<p class="sub">' + t.html('consoleXacml.binding.lead') + '</p>' +
+      self.formRow(self.labelled(t, 'consoleXacml.binding.application',
+        'consoleXacml.tip.binding.application', '<input type="text" ' +
+        'name="application" size="32" required value="' +
+        esc(application) + '">')) +
+      self.formRow('<button type="submit"' +
+        self.tipOf(t, 'consoleXacml.tip.binding.submit') + '>' +
+        t.html('consoleXacml.binding.submit') + '</button>') + '</form>';
+    const clear = application
+      ? '<form method="post" action="/admin/xacml/peps">' +
+        self.hidden('action', 'clear-pep-application') +
+        self.hidden('name', username) +
+        self.formRow('<button type="submit" class="secondary"' +
+          self.tipOf(t, 'consoleXacml.tip.binding.clear') + '>' +
+          t.html('consoleXacml.binding.clear') + '</button>') + '</form>'
+      : '';
+    return bind + clear;
+  }
+
+  /**
    * Draws the PEP's identity entry as a service account (#1760): whether it
    * is one, its owners, and a link to the person's Service account tab.
    *
@@ -4641,6 +4697,10 @@ class XacmlPage {
            'consoleXacml.tip.peps.bias') +
       line(t.html('consoleXacml.th.state'), self.pepState(t, row),
            'consoleXacml.tip.peps.state') +
+      // THE APPLICATION IT IS EMBEDDED IN (#2025), or none.
+      line(t.html('consoleXacml.pepPage.th.application'),
+           self.pepApplication(t, row),
+           'consoleXacml.tip.overview.application') +
       line(t.html('consoleXacml.pepPage.th.syncToken'),
            code(row.syncToken), 'consoleXacml.tip.overview.syncToken') +
       line(t.html('consoleXacml.th.notify'), self.pepNotify(t, row),
@@ -4651,7 +4711,11 @@ class XacmlPage {
       (ctx.write
         ? kit.frame(self.fieldGroup(t, 'consoleXacml.credential.legend',
             self.credentialForm(t, String((row.identityAccount &&
-              row.identityAccount.username) || row.name || ''), 'pep')))
+              row.identityAccount.username) || row.name || ''), 'pep'))) +
+          kit.frame(self.fieldGroup(t, 'consoleXacml.binding.legend',
+            self.bindingForm(t, String((row.identityAccount &&
+              row.identityAccount.username) || row.name || ''),
+              String(row.application || ''))))
         : '');
     const decisions = kit.frame(self.wide(t,
       'consoleXacml.pepPage.tab.decisions',

@@ -1011,5 +1011,7 @@
   "protection.target": "Feld",
   "protection.add": "Dem Feld hinzufügen",
   "protection.added": "{field} hinzugefügt. Drücken Sie Speichern im Formular oben, um es zu behalten.",
-  "protection.notDrawn": "{field} ist nicht auf dieser Seite."
+  "protection.notDrawn": "{field} ist nicht auf dieser Seite.",
+  "embeddedPeps.tab": "Eingebettete PEPs",
+  "embeddedPeps.lead": "Diese Remote-PEPs sind über eine Authentifizierungsbibliothek in diese Anwendung eingebettet und an sie gebunden. Jeder wird auf seiner eigenen Seite gebunden und gelöst."
 }

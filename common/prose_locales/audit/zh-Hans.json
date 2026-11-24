@@ -1191,6 +1191,10 @@
     "en": "b86f230b79b40252",
     "text": "远程 PEP 的断言密钥已根据其请求完成认证"
   },
+  "audit.actions.xacml.pep.binding.label": {
+    "en": "a254d6c56c6f82ac",
+    "text": "嵌入式远程 PEP 已绑定到其应用程序，或已解除绑定"
+  },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
     "text": "远程 PEP 向 PIP 查询某主体的属性"

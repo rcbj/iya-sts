@@ -1049,5 +1049,18 @@
   "tip.credential.csr": "Eine PKCS #10-Anfrage, signiert mit dem zu zertifizierenden Schlüssel: EC P-256 (bevorzugt) oder RSA mit 2048 Bit oder mehr. Subject und Namen werden ignoriert; das Zertifikat benennt den Eintrag.",
   "tip.credential.load": "Eine Anfragedatei im Browser in das Feld oben einlesen. Gesendet wird nichts, bis Sie zertifizieren.",
   "tip.credential.revokePrevious": "Standardmäßig aus: Ein laufender PEP behält seinen alten Schlüssel, bis er auf den neuen umgestellt ist. Ein: Jeder andere gültige Schlüssel nach RFC 7523 des Eintrags kommt auf die Sperrliste der authority&rsquo;s.",
-  "tip.credential.submit": "Sendet issue-pep-credential. Die Antwort zeigt einmal das Zertifikat und die Umgebung, mit der der PEP zu starten ist."
+  "tip.credential.submit": "Sendet issue-pep-credential. Die Antwort zeigt einmal das Zertifikat und die Umgebung, mit der der PEP zu starten ist.",
+  "pepPage.th.application": "Eingebettet in",
+  "pepPage.application.none": "keine Anwendung",
+  "tip.overview.application": "Die Anwendung, an die ein eingebetteter PEP gebunden ist, gespeichert an seinem Eintrag. Eine Registrierung als eingebetteter PEP wird abgelehnt, wenn sie diese Anwendung nicht nennt.",
+  "binding.legend": "In eine Anwendung eingebettet",
+  "binding.lead": "Ein eingebetteter PEP läuft in einer Anwendung, über eine Authentifizierungsbibliothek. Binden Sie sein Dienstkonto an diese eine Anwendung; entfernen Sie die Bindung, wenn der PEP dort nicht mehr eingebettet ist.",
+  "binding.application": "Kennung der Anwendung",
+  "tip.binding.application": "Die Kennung der Anwendung im Register dieses Vertrauensbereichs.",
+  "binding.submit": "Binden",
+  "tip.binding.submit": "Die Bindung an den Eintrag des PEP schreiben und eine vorhandene ersetzen.",
+  "binding.clear": "Bindung entfernen",
+  "tip.binding.clear": "Die Bindung vom Eintrag des PEP entfernen.",
+  "credential.application": "Eingebettet in Anwendung (optional)",
+  "tip.credential.application": "Den PEP im selben Aufruf auch an diese Anwendung binden, sobald der Schlüssel zertifiziert ist. Leer lassen für einen PEP, der in keine Anwendung eingebettet ist."
 }

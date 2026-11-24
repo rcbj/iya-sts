@@ -1011,5 +1011,7 @@
   "protection.target": "फ़ील्ड",
   "protection.add": "फ़ील्ड में जोड़ें",
   "protection.added": "{field} में जोड़ा गया। इसे रखने के लिए ऊपर के फ़ॉर्म में सहेजें दबाएँ।",
-  "protection.notDrawn": "{field} इस पृष्ठ पर नहीं है।"
+  "protection.notDrawn": "{field} इस पृष्ठ पर नहीं है।",
+  "embeddedPeps.tab": "एम्बेडेड PEP",
+  "embeddedPeps.lead": "ये रिमोट PEP एक प्रमाणीकरण लाइब्रेरी के माध्यम से इस एप्लिकेशन में एम्बेड हैं, और इससे बंधे हैं। प्रत्येक को उसके अपने पृष्ठ पर बाँधा और खोला जाता है।"
 }

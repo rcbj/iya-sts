@@ -11698,6 +11698,32 @@ class AdminViews {
     return out;
   }
 
+  // The embedded remote PEPs bound to an application (#2025), as usernames;
+  // none where the XACML family is not loaded (a view must still draw).
+  /**
+   * The embedded remote PEPs bound to an application (#2025).
+   *
+   * @param identifier - the application
+   * @returns the PEPs' usernames
+   */
+  embeddedPepsOf(identifier) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.embeddedPepsOf().");
+    let out = [];
+    try {
+      // Lazily: the XACML family is 23c, after this module.
+      out = require('../xacml/xacml_pep_binding').shared()
+        .boundTo(String(identifier || ''));
+    } catch (e) {
+      log.debug("Caught in AdminViews.embeddedPepsOf(): " +
+                ((e && e.message) || e));
+      // No XACML family in this process: no PEP is bound to anything.
+      out = [];
+    }
+    log.debug("Leaving AdminViews.embeddedPepsOf(). " + out.length);
+    return out;
+  }
+
   applicationScopeWarnings(identifier) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.applicationScopeWarnings().");
@@ -11958,6 +11984,8 @@ class AdminViews {
     // which PEP, which route, its path and mechanisms — never what the pull
     // reads off this entry for them.
     (out as any).pepRoutes = self.pepRoutesFronting(row.identifier);
+    // THE EMBEDDED REMOTE PEPS BOUND TO IT (#2025): their usernames.
+    (out as any).embeddedPeps = self.embeddedPepsOf(row.identifier);
     // Closed to its owners, and why (#607).
     (out as any).ownership = self.ownershipOf('application', row.identifier);
     (out.config as any).fieldWarnings = scopeWarnings.length

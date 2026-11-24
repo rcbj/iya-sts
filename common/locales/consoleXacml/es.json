@@ -1049,5 +1049,18 @@
   "tip.credential.csr": "Una solicitud PKCS #10 firmada con la clave que se certifica: EC P-256 (preferida) o RSA de 2048 bits o más. Su sujeto y sus nombres se ignoran; el certificado nombra la entrada.",
   "tip.credential.load": "Lee un archivo de solicitud en el cuadro de arriba, en el navegador. No se envía nada hasta que certifique.",
   "tip.credential.revokePrevious": "Desactivado de forma predeterminada: un PEP en ejecución conserva su clave antigua hasta que pasa a la nueva. Activado, todas las demás claves RFC 7523 válidas de la entrada pasan a la lista de revocación de su autoridad.",
-  "tip.credential.submit": "Envía issue-pep-credential. La respuesta muestra una vez el certificado y el entorno con el que iniciar el PEP."
+  "tip.credential.submit": "Envía issue-pep-credential. La respuesta muestra una vez el certificado y el entorno con el que iniciar el PEP.",
+  "pepPage.th.application": "Integrado en",
+  "pepPage.application.none": "ninguna aplicación",
+  "tip.overview.application": "La aplicación a la que está vinculado un PEP integrado, guardada en su entrada. Un registro como PEP integrado se rechaza si no nombra esta aplicación.",
+  "binding.legend": "Integrado en una aplicación",
+  "binding.lead": "Un PEP integrado se ejecuta dentro de una aplicación, mediante una biblioteca de autenticación. Vincule su cuenta de servicio a esa única aplicación; quite el vínculo cuando el PEP ya no esté integrado allí.",
+  "binding.application": "Identificador de la aplicación",
+  "tip.binding.application": "El identificador de la aplicación en el registro de este dominio.",
+  "binding.submit": "Vincular",
+  "tip.binding.submit": "Escribir el vínculo en la entrada del PEP, sustituyendo el que tenga.",
+  "binding.clear": "Quitar el vínculo",
+  "tip.binding.clear": "Quitar el vínculo de la entrada del PEP.",
+  "credential.application": "Integrado en la aplicación (opcional)",
+  "tip.credential.application": "Vincular también el PEP a esta aplicación, en la misma llamada, una vez certificada la clave. Déjelo vacío para un PEP que no está integrado en ninguna aplicación."
 }

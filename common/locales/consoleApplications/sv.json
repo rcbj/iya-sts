@@ -1011,5 +1011,7 @@
   "protection.target": "Fält",
   "protection.add": "Lägg till i fältet",
   "protection.added": "Tillagt i {field}. Tryck på Spara i formuläret ovan för att behålla det.",
-  "protection.notDrawn": "{field} finns inte på den här sidan."
+  "protection.notDrawn": "{field} finns inte på den här sidan.",
+  "embeddedPeps.tab": "Inbäddade PEP:ar",
+  "embeddedPeps.lead": "Dessa fjärr-PEP:ar är inbäddade i denna applikation genom ett autentiseringsbibliotek, och bundna till den. Var och en binds och lösgörs på sin egen sida."
 }

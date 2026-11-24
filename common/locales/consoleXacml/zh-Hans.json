@@ -1049,5 +1049,18 @@
   "tip.credential.csr": "用待认证密钥签名的 PKCS #10 请求：EC P-256（首选）或 2048 位及以上的 RSA。其主题和名称会被忽略；证书以该条目命名。",
   "tip.credential.load": "在浏览器中将请求文件读入上方的输入框。在认证之前不会发送任何内容。",
   "tip.credential.revokePrevious": "默认关闭：运行中的 PEP 会保留旧密钥，直到切换到新密钥。开启后，该条目的其他所有有效 RFC 7523 密钥都会列入其颁发机构的吊销列表。",
-  "tip.credential.submit": "发送 issue-pep-credential。响应会一次性显示证书以及启动 PEP 所需的环境变量。"
+  "tip.credential.submit": "发送 issue-pep-credential。响应会一次性显示证书以及启动 PEP 所需的环境变量。",
+  "pepPage.th.application": "嵌入于",
+  "pepPage.application.none": "无应用",
+  "tip.overview.application": "嵌入式 PEP 所绑定的应用，保存在其条目上。以嵌入式 PEP 身份注册时，若未指明此应用，将被拒绝。",
+  "binding.legend": "嵌入到应用中",
+  "binding.lead": "嵌入式 PEP 通过身份验证库在应用内部运行。将其服务账户绑定到这一个应用；当 PEP 不再嵌入其中时，移除绑定。",
+  "binding.application": "应用标识符",
+  "tip.binding.application": "该应用在此信任域注册表中的标识符。",
+  "binding.submit": "绑定",
+  "tip.binding.submit": "将绑定写入 PEP 的条目，替换其已有的绑定。",
+  "binding.clear": "移除绑定",
+  "tip.binding.clear": "从 PEP 的条目上移除绑定。",
+  "credential.application": "嵌入的应用（可选）",
+  "tip.credential.application": "在同一次调用中，于密钥认证后同时将 PEP 绑定到此应用。对于未嵌入任何应用的 PEP，请留空。"
 }

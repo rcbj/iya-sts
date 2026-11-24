@@ -1274,6 +1274,11 @@ const ACTIONS = [
   // the serial and the expiry, and never the certificate or a key.
   { action: 'xacml.pep.credential', category: 'authorization',
     label: 'A remote PEP\'s assertion key was certified from its request' },
+  // An embedded remote PEP bound to the application it is embedded in, or
+  // unbound, by an administrator or because the application was deleted
+  // (#2025). The row names the PEP and the application.
+  { action: 'xacml.pep.binding', category: 'authorization',
+    label: 'An embedded remote PEP was bound to its application, or unbound' },
   { action: 'xacml.pip.query', category: 'authorization',
     label: 'A remote PEP asked the PIP for a subject\'s attributes' },
 

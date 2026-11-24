@@ -1191,6 +1191,10 @@
     "en": "b86f230b79b40252",
     "text": "एक दूरस्थ PEP की अभिकथन कुंजी उसके अनुरोध से प्रमाणित की गई"
   },
+  "audit.actions.xacml.pep.binding.label": {
+    "en": "a254d6c56c6f82ac",
+    "text": "एक एम्बेडेड रिमोट PEP को उसके एप्लिकेशन से बाँधा गया, या अलग किया गया"
+  },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
     "text": "एक दूरस्थ PEP ने PIP से एक विषय की विशेषताएँ माँगीं"
