@@ -18,5 +18,7 @@
   "accounts.otherAccount": "该登录属于另一个账户，因此此标签页没有采用。请以 {user} 的身份重新登录，或从账户菜单中切换账户。",
   "accounts.refused.title": "控制台不会为此账户打开",
   "accounts.refused.text": "管理 API 对此标签页所登录的账户返回了 {status}。",
-  "policyName.required": "名称为必填项。"
+  "policyName.required": "名称为必填项。",
+  "noWebCrypto.title": "此浏览器无法打开此页面",
+  "noWebCrypto.text": "此浏览器无法安全地运行此页面：WebCrypto 不可用，通常是因为页面未通过 HTTPS 打开，或浏览器版本过旧。"
 }
