@@ -133,12 +133,17 @@ const PAGES = ['/admin/pki', '/admin/crypto-metadata'];
 
 interface CertificateViewsDeps {
   log: typeof log;
-  // THE THREE LAZY REQUIRES (see the header), as functions the instance calls
+  // THE LAZY REQUIRES (see the header), as functions the instance calls
   // when a view is drawn rather than when it is built: each is a cache hit by
-  // then, and none of them may be loaded from here at 18a.
+  // then, and none of the first three may be loaded from here at 18a. The
+  // fourth, the cluster membership, is a library that registers nothing; it
+  // is a loader so that a test can hand in another node's leaf.
   loadTlsServer: () => any;
   loadSpiffeCa: () => any;
   loadAdminViews: () => any;
+  // The cluster membership (`cluster/cluster.js`): the OTHER nodes' listener
+  // certificates, off their heartbeats (see `otherNodesListeners()`).
+  loadCluster: () => any;
   details: typeof details;
   errorCodes: typeof errorCodes;
   pki: typeof pki;
@@ -253,6 +258,9 @@ class CertificateViews {
       },
       loadAdminViews: function () {
         return require('./admin_views');
+      },
+      loadCluster: function () {
+        return require('../cluster/cluster');
       },
       details: details,
       errorCodes: errorCodes,
@@ -421,6 +429,10 @@ class CertificateViews {
       });
     });
 
+    this.fromSource('other cluster nodes', () => {
+      this.addOtherNodesListeners(catalogue);
+    });
+
     this.fromSource('spiffe', function () {
       // LAZILY — see the header.
       const state = loadSpiffeCa().state();
@@ -439,6 +451,110 @@ class CertificateViews {
       }
     });
     log.debug("Leaving CertificateViews.addAuthorities().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // EVERY OTHER NODE'S LISTENER CERTIFICATE (2026-11-24, GitHub Actions run
+  // 45326782254's `cluster` mode, `sts_admin_console`).
+  //
+  // A cluster node presents a listener leaf of its OWN, over its own key,
+  // under the TLS Issuing CA the cluster shares (`tls/CLAUDE.md`), and the
+  // source above reads only THIS process's. So `/admin/crypto-metadata`
+  // drawn by node A linked A's leaf, the browser's next connection was
+  // balanced to node B, and B answered the details view 404, STS-ADMIN-0641
+  // — "not held here", of a certificate this service was presenting on its
+  // main port at that moment. Not a replication lag: B never holds A's
+  // listener row, by decision (the row carries A's private key,
+  // `tls_server.js`'s `listenerKeys`), so no wait would have found it.
+  //
+  // The public half already crosses: each node publishes its leaves on its
+  // membership row (#248, for the SAML metadata), and
+  // `listenerCertificatesOfLiveNodes()` reads them out of the last state
+  // read. They are added here as authorities — a leaf this service presents
+  // is what a reader opens a details view to see, and its chain is the one
+  // the shared TLS Issuing CA already completes. A node that has left, or
+  // whose heartbeat lapsed, presents nothing a balancer sends traffic to and
+  // is not listed. Without a cluster the list is empty and nothing changes.
+  // ---------------------------------------------------------------------------
+  private addOtherNodesListeners(catalogue) {
+    const { log, details, loadCluster } = this.deps;
+    log.debug("Entering CertificateViews.addOtherNodesListeners().");
+    const cluster = loadCluster();
+    if (!cluster || typeof cluster.listenerCertificatesOfLiveNodes !==
+        'function') {
+      log.debug("Leaving CertificateViews.addOtherNodesListeners(). No " +
+                "cluster module.");
+      return;
+    }
+    let added = 0;
+    (cluster.listenerCertificatesOfLiveNodes() || []).forEach(function (b64) {
+      const body = String(b64 || '').replace(/\s+/g, '');
+      if (!body) {
+        return;
+      }
+      const pem = '-----BEGIN CERTIFICATE-----\n' +
+        (body.match(/.{1,64}/g) || []).join('\n') +
+        '\n-----END CERTIFICATE-----\n';
+      let fp = '';
+      try {
+        fp = details.fingerprintOf(pem);
+      } catch (e) {
+        log.debug("Caught in CertificateViews.addOtherNodesListeners(): " +
+                  ((e && e.message) || e));
+        return;
+      }
+      // THIS NODE'S OWN LEAF IS ON THE LIST TOO, once its row has been read,
+      // and the source above has already said where it appears.
+      if (catalogue.get(fp)) {
+        return;
+      }
+      catalogue.add(pem, 'TLS listener certificate (another cluster node)',
+                    'tls');
+      added += 1;
+    });
+    log.debug("Leaving CertificateViews.addOtherNodesListeners(). " + added +
+              ".");
+  }
+
+  // ---------------------------------------------------------------------------
+  // A MISS READS THE MEMBERSHIP AGAIN BEFORE IT IS A 404 (2026-11-24). The
+  // list above is the last membership state THIS process read, which a
+  // request worker may not have read at all yet, or read before the other
+  // node re-issued its leaf (a Root rebuilt, `tls/CLAUDE.md`). So a
+  // fingerprint nothing here holds waits for one read of the membership
+  // rows, through to the store — `cluster.refreshState()`, the read
+  // `snapshot()` starts by itself — and is looked up once more. A keyed,
+  // bounded read on the refusal path only; no cluster, no read.
+  // ---------------------------------------------------------------------------
+  private async refreshedMembership(): Promise<boolean> {
+    const { log, loadCluster } = this.deps;
+    log.debug("Entering CertificateViews.refreshedMembership().");
+    let cluster = null;
+    try {
+      cluster = loadCluster();
+    } catch (e) {
+      log.debug("Caught in CertificateViews.refreshedMembership(): " +
+                ((e && e.message) || e));
+      cluster = null;
+    }
+    if (!cluster || typeof cluster.enabled !== 'function' ||
+        !cluster.enabled() || typeof cluster.refreshState !== 'function') {
+      log.debug("Leaving CertificateViews.refreshedMembership(). No " +
+                "cluster.");
+      return false;
+    }
+    try {
+      await cluster.refreshState();
+    } catch (e) {
+      // `refreshState()` resolves the last state on a failed read; a throw
+      // here leaves the refusal as it was, which is what it would have been.
+      log.debug("Caught in CertificateViews.refreshedMembership(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving CertificateViews.refreshedMembership(). Unread.");
+      return false;
+    }
+    log.debug("Leaving CertificateViews.refreshedMembership(). Read.");
+    return true;
   }
 
   // ---------------------------------------------------------------------------
@@ -561,11 +677,19 @@ class CertificateViews {
         'certificate fingerprint. It is 64 hexadecimal digits, with or ' +
         'without colons — the value /admin/pki prints in its SHA-256 column.');
     }
-    const catalogue = this.newCatalogue();
+    let catalogue = this.newCatalogue();
     this.addAuthorities(catalogue);
     let entry = catalogue.get(fp);
     if (!entry) {
       this.addHolders(catalogue);
+      entry = catalogue.get(fp);
+    }
+    if (!entry && await this.refreshedMembership()) {
+      // Another node's listener leaf, read off the membership just read —
+      // see `refreshedMembership()`. The catalogue is built again, so the
+      // chain below is built over what is current.
+      catalogue = this.newCatalogue();
+      this.addAuthorities(catalogue);
       entry = catalogue.get(fp);
     }
     if (!entry) {
