@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# iya-sts remote PEP: the development companion's /pep-app beside ${member}
+# (#1284, `companion = true`). IN THE PEP CONTAINER'S NETWORK NAMESPACE
+# (`--network container:xacml-pep`), so the cluster route's one upstream,
+# http://127.0.0.1:${port}, is this member's own companion, and nothing is
+# published: no firewall rule names ${port}, and the VM has no external
+# address. The companion takes the person from the identity HEADERS the proxy
+# sets (#1972), which is why nothing but this member may reach it.
+#
+# BOUND TO THE PEP: it shares that container's namespace, so it stops with
+# it and starts again after it. Not the other way round — a companion that
+# fails costs /pep-app a 502 and leaves the member deciding. No bootstrap
+# secret: it holds no management power, and /pep-app needs none.
+[Unit]
+Description=iya-sts remote PEP: companion beside ${member}
+BindsTo=xacml-pep.service
+After=xacml-pep.service
+
+[Service]
+Environment=HOME=/var/lib/pep
+ExecStartPre=-/usr/bin/docker rm -f pep-companion
+ExecStartPre=/usr/bin/docker pull ${image}
+ExecStartPre=/bin/sh -c 'until [ "$$(docker inspect -f "{{.State.Running}}" xacml-pep 2>/dev/null)" = true ]; do sleep 2; done'
+ExecStart=/usr/bin/docker run --rm --name pep-companion \
+  --network container:xacml-pep \
+  -e COMPANION_PORT=${port} \
+  -e COMPANION_PUBLIC_URL=http://127.0.0.1:${port} \
+  -e COMPANION_STS_URL=${idp_url} \
+  -e COMPANION_STS_PUBLIC_URL=${idp_url} \
+  -e COMPANION_KRB5_SERVICE_PORT=off \
+  --label sts.environment=${environment} \
+  --label sts.pep=${member} \
+  --log-driver=gcplogs \
+  --log-opt labels=sts.environment,sts.pep \
+  ${image}
+ExecStop=/usr/bin/docker stop -t 10 pep-companion
+Restart=always
+RestartSec=10

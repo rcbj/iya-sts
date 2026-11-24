@@ -77,3 +77,58 @@ resource "google_dns_managed_zone_iam_member" "environment_acme" {
   role         = "roles/dns.admin"
   member       = google_service_account.environment[each.key].member
 }
+
+# ---------------------------------------------------------------------------
+# WHAT A REMOTE PEP ENVIRONMENT'S MEMBERS RUN AS (#1284, pep-cluster/): ONE
+# SERVICE ACCOUNT PER PEP ENVIRONMENT, made here for the reason the nodes'
+# are — the deployer creates no identity.
+#
+#   iya-sts-pep-<env>@<project>.iam.gserviceaccount.com
+#
+# It holds less than a node's: the log and metric writers, and reading the
+# one repository. NO dns.admin (a member's certificate is the load
+# balancer's, Google-managed, never an ACME one), NO key-encryption key (a
+# PEP seals nothing). Reading each member's secrets is granted by the PEP
+# environment itself, one secret at a time (pep-cluster/main.tf), as an
+# environment grants its nodes'.
+# ---------------------------------------------------------------------------
+resource "google_service_account" "pep" {
+  for_each     = var.pep_environments
+  account_id   = "${var.name}-pep-${each.key}"
+  display_name = "iya-sts ${each.key}: remote PEP members"
+  description  = "What every member of the ${each.key} remote PEP environment runs as (issue #1284). Made by the foundation; the deployer only attaches it."
+
+  depends_on = [google_project_service.apis]
+
+  lifecycle {
+    # One name, one kind: both stacks keep state under environment/<name>.
+    precondition {
+      condition     = !contains(keys(var.environments), each.key)
+      error_message = "${each.key} is in both environments and pep_environments; a PEP environment needs a name of its own."
+    }
+  }
+}
+
+locals {
+  pep_project_roles = {
+    for pair in setproduct(keys(var.pep_environments), [
+      "roles/logging.logWriter",
+      "roles/monitoring.metricWriter",
+    ]) : "${pair[0]}-${pair[1]}" => { env = pair[0], role = pair[1] }
+  }
+}
+
+resource "google_project_iam_member" "pep" {
+  for_each = local.pep_project_roles
+  project  = var.project_id
+  role     = each.value.role
+  member   = google_service_account.pep[each.value.env].member
+}
+
+resource "google_artifact_registry_repository_iam_member" "pep" {
+  for_each   = var.pep_environments
+  location   = google_artifact_registry_repository.main.location
+  repository = google_artifact_registry_repository.main.name
+  role       = "roles/artifactregistry.reader"
+  member     = google_service_account.pep[each.key].member
+}

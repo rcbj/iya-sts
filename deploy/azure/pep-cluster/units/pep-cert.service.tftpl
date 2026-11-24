@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# THE GATEWAY'S LISTENER CERTIFICATE, on the issuing member only (#1284).
+# node-init's sts-cert (deploy/azure/node-init/cert.sh) obtains or reads the
+# ACME bundle in the vault's `tls` secret, as an iya-sts node-a does, into
+# ${tls_dir}; then gateway-cert.sh imports it as the next version of the
+# vault's `gateway` certificate when it is not that already. RSA, because
+# the gateway takes RSA listener certificates. A FAILURE IS NOT THE
+# MEMBER'S: the member does not need the certificate (the gateway ends TLS),
+# so pep-member only Wants this unit, and the gateway keeps the certificate
+# it has.
+[Unit]
+Description=remote PEP: the gateway's listener certificate
+Requires=sts-registry.service
+After=sts-registry.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=HOME=/var/lib/sts
+ExecStartPre=/bin/mkdir -p ${tls_dir}
+ExecStartPre=/usr/bin/docker pull ${init_image}
+ExecStart=/usr/bin/docker run --rm --name pep-cert \
+  -v ${tls_dir}:${tls_dir} \
+  -e STS_TLS_DIR=${tls_dir} \
+  -e STS_TLS_OWNER=0:0 \
+  -e STS_VAULT_URL=${vault_url} \
+  -e STS_TLS_SECRET=tls \
+  -e STS_TLS_HOSTNAME=${hostname} \
+  -e STS_CERT_ISSUER=true \
+  -e STS_ACME_KEY_TYPE=rsa2048 \
+  -e STS_ACME_SERVER=${acme_server} \
+  -e STS_ACME_EMAIL=${acme_email} \
+  -e STS_ACME_RENEW_DAYS=${renew_days} \
+  -e AZURE_CLIENT_ID=${client_id} \
+  -e AZURE_SUBSCRIPTION_ID=${subscription_id} \
+  -e AZURE_RESOURCE_GROUP=${dns_zone_group} \
+  -e AZURE_ZONE_NAME=${dns_zone} \
+  ${init_image} sts-cert
+ExecStartPost=/bin/bash /etc/pep/gateway-cert.sh

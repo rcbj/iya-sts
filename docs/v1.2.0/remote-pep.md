@@ -1252,6 +1252,12 @@ on ECS Fargate in private subnets, their keys from AWS Secrets Manager,
 and the reverse proxy kept sticky by the load balancer's cookie. See
 [A remote PEP cluster](aws-cluster.md#a-remote-pep-cluster).
 
+`deploy/gcp/pep-cluster/` (Cloud Armor in front of an external Application
+Load Balancer) and `deploy/azure/pep-cluster/` (Application Gateway WAF_v2)
+build the same arrangement on Google Cloud and Azure. They are written and
+checked offline only and have not been applied yet; their `CLAUDE.md` files
+say what to look at first.
+
 ### What more instances cost the service
 
 **Polling costs almost nothing per instance**: one conditional request every

@@ -1,0 +1,47 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# THE ACME CERTIFICATE, IMPORTED AS THE GATEWAY'S NEXT VERSION (#1284).
+#
+# Application Gateway reads its listener certificate from a Key Vault
+# CERTIFICATE (a PFX behind the secret endpoint), not from node-init's PEM
+# bundle. So: build the PFX from what sts-cert wrote, compare its SHA-1
+# thumbprint with the vault certificate's current `x5t`, and import only when
+# they differ — every start of the issuer but the first after a renewal is a
+# no-op. The gateway names the version-less secret and follows the new
+# version within four hours. The PFX has no password and exists only in a
+# private temporary directory, removed on exit, and in the import request.
+set -euo pipefail
+vault=${vault_url}
+client_id=${client_id}
+dir=${tls_dir}
+work="$(mktemp -d /run/pep-gateway-cert.XXXXXX)"
+cleanup() {
+  [ -n "$${work}" ] && [ -d "$${work}" ] && find "$${work}" -mindepth 1 -delete && rmdir "$${work}"
+}
+trap cleanup EXIT
+umask 077
+token="$(curl -fsS -H Metadata:true \
+  "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fvault.azure.net&client_id=$${client_id}" |
+  jq -r .access_token)"
+# Key Vault's `x5t`: the base64url SHA-1 of the leaf's DER.
+mine="$(openssl x509 -in "$${dir}/certificate.pem" -outform DER |
+  openssl dgst -sha1 -binary | base64 | tr '+/' '-_' | tr -d '=')"
+current="$(curl -fsS -H "Authorization: Bearer $${token}" \
+  "$${vault}/certificates/gateway?api-version=7.4" | jq -r '.x5t // ""')"
+if [ "$${mine}" = "$${current}" ];
+then
+  echo "gateway-cert: the gateway's certificate is already this one."
+  exit 0
+fi
+openssl pkcs12 -export -inkey "$${dir}/key.pem" -in "$${dir}/certificate.pem" \
+  -passout pass: -out "$${work}/gateway.pfx"
+base64 -w0 "$${work}/gateway.pfx" > "$${work}/gateway.b64"
+jq -n --rawfile pfx "$${work}/gateway.b64" \
+  '{value: $pfx, policy: {key_props: {exportable: true, kty: "RSA", key_size: 2048, reuse_key: false},
+    secret_props: {contentType: "application/x-pkcs12"}}}' > "$${work}/import.json"
+curl -fsS -X POST -H "Authorization: Bearer $${token}" \
+  -H 'Content-Type: application/json' --data-binary "@$${work}/import.json" \
+  "$${vault}/certificates/gateway/import?api-version=7.4" > /dev/null
+echo "gateway-cert: imported the ACME certificate ($${mine}) as the gateway's next version."

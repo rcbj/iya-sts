@@ -9,13 +9,14 @@
 # deploy/gcp/entrypoint.sh's contract, and deploy/aws/entrypoint.sh's
 # ordering of a multi-region environment's cells.
 #
-#   TF_STACK      environment (default) | global | foundation
+#   TF_STACK      environment (default) | global | foundation | pep-cluster
 #   TF_ENV        an environment name, 2-12 [a-z0-9]
 #   TF_ACTION     init | validate | plan | apply | destroy | import | output |
 #                 output-json
 #   TF_CELL       one cell of a multi-region environment (e.g. zwus2); empty
 #                 means every cell, in order, with the global stack between
 #   TF_CELL_PHASE base | full, with TF_CELL (default full)
+#   TF_PEP_CLUSTER  pep-cluster only: the cluster's name (default azure)
 #   AZURE_SUBSCRIPTION_ID   the subscription (required)
 #
 # CREDENTIALS: the host's Azure CLI login, handed over by terraform-local.sh
@@ -163,6 +164,38 @@ if [ "${TF_STACK}" = "foundation" ];
 then
   unset TF_VAR_image_tag TF_VAR_allowed_cidrs
   run "${TF_ACTION}" "${ROOT}/foundation" foundation.tfstate
+  say "${TF_ACTION} complete."
+  exit 0
+fi
+
+# --- A remote PEP cluster (#1284) -------------------------------------------------
+# AN ENVIRONMENT OF ITS OWN (deploy/azure/pep-cluster/), named by TF_ENV like
+# any other and listed in the foundation's `pep_environments`: no cells, no
+# global stack, and nothing read from an iya-sts environment. Its own
+# variables are pep-cluster/envs/<env>.tfvars.
+if [ "${TF_STACK}" = "pep-cluster" ];
+then
+  TF_PEP_CLUSTER="${TF_PEP_CLUSTER:-azure}"
+  [[ "${TF_PEP_CLUSTER}" =~ ^[a-z0-9][a-z0-9-]{0,11}$ ]] || \
+    die "TF_PEP_CLUSTER='${TF_PEP_CLUSTER}' is not a cluster name (1-12 [a-z0-9-])."
+  [ ! -f "${CELLS_FILE}" ] || \
+    die "${TF_ENV} is a multi-region iya-sts environment; a PEP environment needs a name of its own."
+  case "${TF_ACTION}" in
+    plan|apply|import)
+      [ -n "${TF_VAR_image_tag:-}" ] || die "TF_ACTION=${TF_ACTION} needs TF_VAR_image_tag (the pep-, companion- and init- images)."
+      [ -n "${TF_VAR_allowed_cidrs:-}" ] || die "TF_ACTION=${TF_ACTION} needs TF_VAR_allowed_cidrs."
+      ;;
+    *)
+      : "${TF_VAR_image_tag:=unused}"
+      : "${TF_VAR_allowed_cidrs:=[\"192.0.2.1/32\"]}"
+      export TF_VAR_image_tag TF_VAR_allowed_cidrs
+      ;;
+  esac
+  export TF_VAR_environment="${TF_ENV}" TF_VAR_cluster="${TF_PEP_CLUSTER}"
+  PEP_VARS=()
+  [ -f "${ROOT}/pep-cluster/envs/${TF_ENV}.tfvars" ] && PEP_VARS=(-var-file="envs/${TF_ENV}.tfvars")
+  [ "${#PEP_VARS[@]}" -eq 0 ] || say "using pep-cluster/envs/${TF_ENV}.tfvars"
+  run "${TF_ACTION}" "${ROOT}/pep-cluster" "pep-cluster/${TF_ENV}/${TF_PEP_CLUSTER}.tfstate" "${PEP_VARS[@]}"
   say "${TF_ACTION} complete."
   exit 0
 fi
