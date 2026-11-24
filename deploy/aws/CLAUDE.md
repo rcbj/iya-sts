@@ -1718,23 +1718,30 @@ listener pair only to a PEP that has registered (`docs/v1.2.0/remote-pep.md`,
 (`notify_port_base + n`, the nodes' security group the only source). A
 Fargate task's address changes on every start, `hostname` is not available
 in awsvpc mode, and the deployer role has no Cloud Map grant, so there is
-no per-task name; a target group per member is a stable name (the NLB's
-direct name, which the member's certificate carries through `--https-dns`)
+no per-task name; a target group per member is a stable name (the public
+name, which the member's certificate carries through `--https-dns`)
 that reaches exactly one member. `shared` has one, which reaches one task —
 the cost that table in remote-pep.md states. **Nodes egress only 443
 otherwise**, so the stack adds the nodes' egress rule on each notify port.
 
-**THE DIRECT NAME, AND SO A PUBLIC NAME, IS REQUIRED.** Members dial
-`https://<direct_hostname>/…` and nodes dial the notify ports at the same
-name, and inside the VPC that name resolves to the NLB's PRIVATE addresses
-(`environment/dns.tf` `inside`, `cloudfront.tf` `direct_inside`), which is
-what lets every rule name a security group instead of an address. An
-environment without `public_hostname` has no such record, its NLB's own
-name resolves to public addresses, and the traffic would arrive from the
-task's public IP; the stack refuses it by precondition rather than build
-that. The node certificate names the direct host (`certificate/`), so the
-members verify the service with the system anchors; `provision.sh --ca`
-puts an anchor in the secret for an environment that has none.
+**THE PUBLIC NAME INSIDE, THE DIRECT NAME OUTSIDE, AND A PUBLIC NAME IS
+REQUIRED.** Members dial the service at `https://<public_hostname>/…`, and
+the nodes dial each notify port at the same name: inside the VPC it
+resolves to the NLB's PRIVATE addresses (`environment/dns.tf`, `inside`),
+which is what lets every rule name a security group instead of an address.
+It is also the one name the token endpoint takes as a RESOURCE: the first
+build asked for `https://direct.test-idp.iyasec.io/admin-api` and was
+refused (RFC 8707, "names no registered target"), because the service finds
+its own resource servers by `publicBaseUrl`. Outside the VPC that name may
+be CloudFront, which carries 443 only, so the stack's `decision_url` and
+`proxy_url` name `direct_hostname`; the member's certificate names both
+(`provision.sh --host --direct-host`). An environment without
+`public_hostname` has no inside record, its NLB's own name resolves to
+public addresses, and the traffic would arrive from the task's public IP;
+the stack refuses it by precondition rather than build that. The node
+certificate names the public name, so the members verify the service with
+the system anchors; `provision.sh --ca` puts an anchor in the secret for an
+environment that has none.
 
 **The proxy's target group health-checks 9443, not 9543**: the proxy
 listener answers only once a route exists, and a member with no route is
@@ -1748,9 +1755,20 @@ shared service, so `ignore_changes = [desired_count]`; a changed
 `instance_count` then reaches a running shared service only through
 `update-service`.
 
+**What was checked, 2026-11-23, on `testidp`** (one node, develop
+`b63b1ef04719`, two per-instance members): pass 1 made both entries, keys,
+secrets and the service's cluster `aws`; the apply (27 resources) started
+both, which registered on DPoP-bound tokens and pulled; pass 2 issued both
+pairs, skipped everything else, and redeployed; every PEP target group went
+healthy; `GET /` on `direct…:9443`, verified against the service Root,
+alternated between the members; `sync-pep` answered `delivered: true` for
+each, and each member's own log shows the one nudge. Not exercised: the
+`shared` mode and autoscaling (offline only), a reverse-proxy route behind
+9543, and the destroy path through `destroy_dependent_stacks`.
+
 **What has no test**: `provision.sh` against a live environment is checked
-by hand (*What was checked*); `tests/render.tftest.hcl` holds the stack's
-shapes offline.
+by hand (above); `tests/render.tftest.hcl` holds the stack's shapes
+offline.
 
 ## The deployer's permissions, and how to extend them
 

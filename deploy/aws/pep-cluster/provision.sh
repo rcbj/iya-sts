@@ -16,7 +16,8 @@
 #      machine: the entry, the remote PEPs group, the service account, the
 #      assertion key (generated here; the service gets only a PKCS #10
 #      request), and — once the member has registered — its HTTPS listener
-#      pair, naming the load balancer's direct name. It is idempotent: the
+#      pair, naming the public name and the load balancer's direct name
+#      (main.tf, *TWO NAMES*). It is idempotent: the
 #      member's secret seeds its --out, so a key already certified is not
 #      certified again and a pair already issued is not reissued.
 #   2. The member's secret, `<secret path>/pep/<cluster>/<member>`, sealed
@@ -35,7 +36,8 @@
 #   provision.sh …            the pairs; each member redeployed with its pair
 #
 #   deploy/aws/pep-cluster/provision.sh --env=testidp \
-#     --host=direct.test-idp.iyasec.io --image=<service image> [--count=2]
+#     --host=test-idp.iyasec.io --direct-host=direct.test-idp.iyasec.io \
+#     --image=<service image> [--count=2]
 #   deploy/aws/pep-cluster/provision.sh --env=testidp --remove   # the secrets
 #
 # Needs docker, the aws CLI (credentials for the account), curl and jq. The
@@ -53,6 +55,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
 ENV_NAME=""
 HOST=""
+DIRECT_HOST=""
 CLUSTER="aws"
 MODE="per-instance"
 COUNT=2
@@ -71,6 +74,7 @@ for a in "$@"; do
   case "${a}" in
     --env=*) ENV_NAME="${a#*=}" ;;
     --host=*) HOST="${a#*=}" ;;
+    --direct-host=*) DIRECT_HOST="${a#*=}" ;;
     --cluster=*) CLUSTER="${a#*=}" ;;
     --mode=*) MODE="${a#*=}" ;;
     --count=*) COUNT="${a#*=}" ;;
@@ -80,7 +84,7 @@ for a in "$@"; do
     --region=*) REGION="${a#*=}" ;;
     --ca=*) CA_FILE="${a#*=}" ;;
     --remove) REMOVE=1 ;;
-    -h|--help) sed -n '8,45p' "$0"; exit 0 ;;
+    -h|--help) sed -n '8,47p' "$0"; exit 0 ;;
     *) die "unknown argument '${a}' (--help)." ;;
   esac
 done
@@ -138,7 +142,7 @@ then
   exit 0
 fi
 
-[ -n "${HOST}" ] || die "--host is the environment's direct_hostname (terraform output direct_hostname)."
+[ -n "${HOST}" ] || die "--host is the environment's public_hostname (terraform output public_hostname): the token endpoint's resource, and what the VPC resolves to the load balancer."
 [ -n "${IMAGE}" ] || die "--image is the service image the environment runs (it ships register-remote-pep.js)."
 
 URL="https://${HOST}"
@@ -235,6 +239,7 @@ for m in "${MEMBERS[@]}"; do
     --entrypoint node "${IMAGE}" utilities/register-remote-pep.js \
     --url="${URL}" ${REALM:+--realm="${REALM}"} --name="${m}" \
     --out="/work/${m}" --pdp-url="${PDP_URL}" --https-dns="${HOST}" \
+    ${DIRECT_HOST:+--https-dns="${DIRECT_HOST}"} \
     ${CA_FILE:+--ca=/work/service-ca.pem} >&2 ||
     die "register-remote-pep.js failed for ${m}; nothing of it was stored."
 

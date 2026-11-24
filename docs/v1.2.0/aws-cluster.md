@@ -404,10 +404,10 @@ The nine `sts_cells_*` jobs check, over HTTP:
 
 `deploy/aws/pep-cluster/` runs the [remote XACML PEP](remote-pep.md) as a
 service beside an environment: the PEP image on Fargate, behind the
-environment's own load balancer, reached at the environment's direct name
-(`direct_hostname`, or `public_hostname` without CloudFront). The members
-register with the service, pull its policy, and decide locally. Nothing
-in the service changes.
+environment's own load balancer. Clients reach the members at the load
+balancer's name (`direct_hostname`, or `public_hostname` without
+CloudFront). The members register with the service, pull its policy, and
+decide locally. Nothing in the service changes.
 
 ```
 clients (allowed CIDRs) ─9443─▶ NLB ─round robin──────▶ aws-pep-1 | aws-pep-2
@@ -458,7 +458,8 @@ IMAGE=<account>.dkr.ecr.us-west-2.amazonaws.com/iya-sts:<tag>   # the service im
 
 # 1. Entries, keys and the service's PEP cluster `aws`. No listener pairs yet.
 deploy/aws/pep-cluster/provision.sh --env=testidp \
-  --host=direct.test-idp.iyasec.io --image="$IMAGE" --count=2
+  --host=test-idp.iyasec.io --direct-host=direct.test-idp.iyasec.io \
+  --image="$IMAGE" --count=2
 
 # 2. The members. They start, register and pull, with no HTTPS listener yet.
 TF_STACK=pep-cluster PEP_COUNT=2 IMAGE_TAG=<tag> \
@@ -466,7 +467,8 @@ TF_STACK=pep-cluster PEP_COUNT=2 IMAGE_TAG=<tag> \
 
 # 3. The listener pairs. Each member is redeployed with its pair.
 deploy/aws/pep-cluster/provision.sh --env=testidp \
-  --host=direct.test-idp.iyasec.io --image="$IMAGE" --count=2
+  --host=test-idp.iyasec.io --direct-host=direct.test-idp.iyasec.io \
+  --image="$IMAGE" --count=2
 ```
 
 The PEP image is `pep-<tag>` in the project's repository (`PEP_IMAGE`
@@ -475,15 +477,26 @@ registers the members to a realm rather than the default realm. Pass the
 same `--realm` to `provision.sh`. `PEP_CLUSTER` (and `--cluster`) names
 the cluster, `aws` by default. Every pass is safe to run again.
 
-The stack needs an environment with a public name. The members reach the
-service, and the nodes reach the members, at the name the VPC resolves to
-the load balancer's private addresses.
+`--host` is the environment's public name and `--direct-host` its direct
+name. The stack needs an environment with a public name. Inside the VPC
+that name resolves to the load balancer itself, so the members dial the
+service at it, and the service nudges each member at it. The token
+endpoint also accepts only that name as the resource. Each member's
+listener certificate names both, so a client may use either name. From
+outside, use the direct name for 9443 and 9543: CloudFront in front of the
+public name carries 443 only.
 
 ### Checking it
 
 ```bash
-curl -s --cacert service-root.pem https://direct.test-idp.iyasec.io:9443/healthcheck
+# The service Root is the last certificate in a member's https_cert.
+curl -s --cacert service-root.pem https://direct.test-idp.iyasec.io:9443/ |
+  jq '.registration | {name, authenticated, notify}'
 ```
+
+Repeat it: the answer alternates between the members.
+`POST /admin-api/xacml/sync-pep` with `{"name":"aws-pep-1"}` nudges one
+member and answers `delivered: true` when its notify port reached it.
 
 The console's **XACML → Remote PEPs** tab lists each member once it has
 registered, and **PEP clusters → aws** lists the cluster's members.

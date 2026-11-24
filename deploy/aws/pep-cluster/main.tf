@@ -28,8 +28,8 @@
 # JSON members into the container, which writes them to files and becomes
 # the PEP. No private key is in any Terraform state.
 #
-# THE LOAD BALANCER IS THE ENVIRONMENT'S, so a PEP is reached at the name the
-# service is (`direct_hostname`), on ports of its own:
+# THE LOAD BALANCER IS THE ENVIRONMENT'S, so a client reaches a PEP at the
+# name the load balancer is (`direct_hostname`), on ports of its own:
 #   decision_port (9443)      the decision API and the AuthZEN edge PDP,
 #                             round robin — each decision stands alone
 #   proxy_port (9543)         the reverse proxy, STICKY BY CLIENT ADDRESS:
@@ -63,17 +63,25 @@ locals {
   image_tag = var.image_tag != "" ? var.image_tag : local.env.image_tag
   image     = var.pep_image != "" ? var.pep_image : "${local.ecr_url}:pep-${local.image_tag}"
 
-  # The name a member dials the service at and is dialled at. INSIDE the
-  # VPC it resolves to the load balancer's private addresses
-  # (environment/dns.tf, `inside`; cloudfront.tf, `direct_inside`), which is
-  # what lets the security groups below name each other instead of an
-  # address. An environment with no public name has no such record — its
-  # load balancer's own DNS name resolves to public addresses everywhere —
-  # so it is refused below rather than built to fail.
-  public_name = try(local.env.public_hostname, "") != ""
-  direct_host = try(local.env.direct_hostname, "")
-  realm_path  = var.realm == "" ? "" : "/realm/${var.realm}"
-  pdp_url     = "https://${local.direct_host}${local.realm_path}"
+  # TWO NAMES. `service_host` is the environment's PUBLIC name, which is
+  # what a member dials the service at and what the nodes dial a member's
+  # notify port at: inside the VPC it resolves to the load balancer's
+  # private addresses (environment/dns.tf, `inside`), which is what lets
+  # the security groups below name each other instead of an address, and it
+  # is the one name the token endpoint takes as a resource (RFC 8707: the
+  # service's own resource servers are found by `publicBaseUrl`; the direct
+  # name is refused as "no registered target"). Outside the VPC that name may
+  # be CloudFront, which carries 443 only, so a CLIENT of the PEPs uses
+  # `direct_host` (the load balancer itself) on 9443 and 9543. A member's
+  # listener certificate names both (provision.sh). An environment with no
+  # public name has no inside record — its load balancer's own DNS name
+  # resolves to public addresses everywhere — so it is refused below rather
+  # than built to fail.
+  public_name  = try(local.env.public_hostname, "") != ""
+  service_host = try(local.env.public_hostname, "")
+  direct_host  = try(local.env.direct_hostname, "") != "" ? local.env.direct_hostname : local.service_host
+  realm_path   = var.realm == "" ? "" : "/realm/${var.realm}"
+  pdp_url      = "https://${local.service_host}${local.realm_path}"
 
   # THE MEMBERS. per-instance: `<cluster>-pep-1` … `-<n>`, one task each.
   # shared: `<cluster>-pep`, `instance_count` tasks. `n` picks the notify
@@ -243,7 +251,7 @@ resource "aws_security_group" "pep" {
 
   lifecycle {
     precondition {
-      condition     = local.public_name && local.direct_host != ""
+      condition     = local.public_name
       error_message = "A PEP cluster needs an environment with public_hostname: the members reach the service, and the nodes reach the members, at the name the VPC resolves to the load balancer's private addresses. ${var.environment} has none."
     }
     precondition {
@@ -541,10 +549,10 @@ resource "aws_ecs_task_definition" "member" {
           PEP_HTTPS_KEY     = "${local.cred_dir}/server/pep-server.key"
           PEP_HTTPS_PORT    = tostring(local.pep_https_port)
           # THE NUDGE GOES THROUGH THE LOAD BALANCER, to this member's own
-          # port: the name is the one its listener certificate carries
-          # (provision.sh asks for it), so the service's check of the host
-          # against the certificate passes.
-          PEP_NOTIFY_URL       = "https://${local.direct_host}:${local.notify_ports[each.key]}/notify"
+          # port, at the public name the VPC resolves to it: the name its
+          # listener certificate carries (provision.sh asks for it), so the
+          # service's check of the host against the certificate passes.
+          PEP_NOTIFY_URL       = "https://${local.service_host}:${local.notify_ports[each.key]}/notify"
           PEP_POLL_INTERVAL_MS = tostring(var.poll_interval_ms)
           PEP_LOG_LEVEL        = "info"
         }, var.extra_environment) : { name = k, value = v }

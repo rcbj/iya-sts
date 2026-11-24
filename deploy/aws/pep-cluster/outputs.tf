@@ -7,7 +7,7 @@ output "members" {
     for m, v in local.members : m => {
       service    = aws_ecs_service.member[m].name
       tasks      = v.desired
-      notify_url = "https://${local.direct_host}:${local.notify_ports[m]}/notify"
+      notify_url = "https://${local.service_host}:${local.notify_ports[m]}/notify"
       secret     = data.aws_secretsmanager_secret.member[m].name
     }
   }

@@ -84,9 +84,9 @@ run "per_instance_is_one_service_and_one_notify_port_per_member" {
     condition = alltrue([
       for k, t in aws_ecs_task_definition.member :
       one([for e in jsondecode(t.container_definitions)[0].environment : e.value if e.name == "PEP_NOTIFY_URL"]) ==
-      "https://direct.test-idp.example.test:${aws_lb_listener.notify[k].port}/notify"
+      "https://test-idp.example.test:${aws_lb_listener.notify[k].port}/notify"
     ])
-    error_message = "a member's notify URL is the direct name on its own notify port"
+    error_message = "a member's notify URL is the public name (the load balancer inside the VPC) on its own notify port"
   }
   assert {
     condition = alltrue([
@@ -99,9 +99,9 @@ run "per_instance_is_one_service_and_one_notify_port_per_member" {
     condition = alltrue([
       for t in aws_ecs_task_definition.member :
       one([for e in jsondecode(t.container_definitions)[0].environment : e.value if e.name == "PEP_PDP_URL"]) ==
-      "https://direct.test-idp.example.test"
+      "https://test-idp.example.test"
     ])
-    error_message = "the default realm's PDP URL has no prefix"
+    error_message = "the PDP URL is the public name, the token endpoint's resource, with no prefix for the default realm"
   }
   assert {
     condition = alltrue([
@@ -188,7 +188,7 @@ run "a_realm_prefixes_the_pdp_url" {
     condition = one([
       for e in jsondecode(aws_ecs_task_definition.member["aws-pep-1"].container_definitions)[0].environment :
       e.value if e.name == "PEP_PDP_URL"
-    ]) == "https://direct.test-idp.example.test/realm/acme"
+    ]) == "https://test-idp.example.test/realm/acme"
     error_message = "a realm's members pull from its prefix"
   }
 }
@@ -201,6 +201,15 @@ run "autoscaling_is_refused_per_instance" {
   }
 
   expect_failures = [aws_security_group.pep]
+}
+
+run "the_clients_are_told_the_direct_name" {
+  command = plan
+
+  assert {
+    condition     = output.decision_url == "https://direct.test-idp.example.test:9443" && output.proxy_url == "https://direct.test-idp.example.test:9543"
+    error_message = "outside the VPC the public name may be CloudFront, which carries 443 only"
+  }
 }
 
 run "a_port_the_environment_uses_is_refused" {
