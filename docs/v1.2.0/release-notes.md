@@ -20,8 +20,11 @@ too. Each has a realm setting beside it (`wstrust.signRequest`,
 `wstrust.encryptSignature`), all off by default. The WSDL's binding carries
 `sp:IncludeTimestamp` while the realm signs its answers. On the
 application's WS-Trust tab, **Body** and **Header** checkboxes write the
-common expressions into the four encryption and signing maps, and an
+common expressions into the four encryption and signing maps, replacing
+what a map held and putting it back when the last box is unticked, and an
 **XPath builder** writes one for an element clicked in a sample message.
+Putting a map to use turns its switch on, and giving it back turns the
+switch back.
 The tab has a simplified and an advanced view, the advanced one in General,
 Message encryption and Message signing sections, each split into request
 and response processing. Each field that holds XPath expressions has a
@@ -29,6 +32,15 @@ button that opens the XPath builder for that field in a window over the
 page, where a list of expressions is built and added to it.
 The XPath subset gains `not(…)`. New refusals: `STS-WSTRUST-0084`,
 `0085`, `0086` and `0087`. See [Message integrity](ws-trust.md#message-integrity).
+
+### Fixed: a WS-Trust answer element encrypted by a custom expression
+
+A response encryption expression naming an element below the top of the
+answer, such as `//wst:RequestedSecurityToken` or `//wst:Lifetime`, was
+encrypted as text declaring that element's namespace prefix twice. That is
+not well-formed XML, and a receiver that parses what it decrypts strictly,
+such as Apache WSS4J, could not read the answer. The Body and Header
+presets were not affected. Each prefix is now declared once.
 
 ### Fixed: WS-Trust requests signed by Apache WSS4J or CXF
 
