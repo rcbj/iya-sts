@@ -878,9 +878,12 @@ The table has a **Body** box and a **Header** box for each of the four XPath
 maps: encryption of the request and of the response
 (`wstrustEncryptRequestElements`, `wstrustEncryptResponseElements`) and
 signing of the request and of the response (`wstrustSignRequestElements`,
-`wstrustSignResponseElements`). Ticking a box adds a fixed set of expressions
-to that map, and unticking it takes out only those expressions. Every other
-expression stays. **Save** stores the map.
+`wstrustSignResponseElements`). Ticking a box **replaces** the map's
+expressions with a fixed set: with Body or Header ticked, the map holds the
+sets of the ticked boxes and nothing else. The expressions the map held
+before are remembered while the page is open, and unticking the map's last
+box puts them back. After a reload nothing is remembered, and unticking a
+box takes out only that box's expressions. **Save** stores the map.
 
 The boxes store nothing of their own. A box is ticked whenever its map holds
 all of its expressions, including expressions typed by hand or set through

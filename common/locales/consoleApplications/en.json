@@ -980,7 +980,7 @@
   "pepRoutes.thPath": "Path",
   "pepRoutes.thMechanisms": "Mechanisms",
   "protection.heading": "Message protection",
-  "protection.intro": "Each box writes a common set of XPath expressions into the map named beside it, or takes them out of it, keeping every other expression. A box stores nothing of its own: it is ticked whenever its map holds every expression of its preset, however they got there. Press Save to keep the maps. A map is read only while its switch is on — the attribute in the last column, or the realm's setting it overrides when it is empty.",
+  "protection.intro": "Each box replaces the expressions of the map named beside it with a common set: ticking Body or Header leaves the map holding the sets of the boxes ticked and nothing else. What the map held before is remembered while this page is open, and unticking its last box puts it back. A box stores nothing of its own: it is ticked whenever its map holds every expression of its preset, however they got there. Press Save to keep the maps. A map is read only while its switch is on — the attribute in the last column, or the realm's setting it overrides when it is empty.",
   "protection.headerNote": "<strong>Body</strong> encrypts the Body's content and signs the Body element itself, as WS-SecurityPolicy's <code>sp:EncryptedParts</code> and <code>sp:SignedParts</code> mean it. <strong>Header</strong> is every SOAP header block but <code>wsse:Security</code>, which holds the signature and the keys and so can be neither encrypted nor signed whole. Each preset is written for SOAP 1.1 and SOAP 1.2.",
   "protection.thProtects": "Protects",
   "protection.thBody": "Whole SOAP Body",

@@ -980,7 +980,7 @@
   "pepRoutes.thPath": "路径",
   "pepRoutes.thMechanisms": "机制",
   "protection.heading": "消息保护",
-  "protection.intro": "每个复选框会把一组常用的 XPath 表达式写入其旁边所列的映射，或将其从中移除，并保留其他所有表达式。复选框本身不存储任何内容：只要其映射包含其预设的每个表达式，无论这些表达式如何写入，它都会被勾选。按“保存”以保留这些映射。只有在其开关打开时才会读取映射——即最后一列中的属性，或者在该属性为空时由它覆盖的领域设置。",
+  "protection.intro": "每个复选框都会用一组常用表达式替换其旁边所列映射中的表达式：勾选 Body 或 Header 后，映射中只保留已勾选复选框的表达式集。映射原先的内容会在此页面打开期间被记住，取消勾选其最后一个复选框时会将其恢复。复选框本身不存储任何内容：只要其映射包含其预设的每个表达式（无论这些表达式从何而来），它就处于勾选状态。按“保存”以保留映射。仅当映射的开关打开时才会读取该映射——即最后一列中的属性，或在其为空时它所覆盖的领域设置。",
   "protection.headerNote": "<strong>Body</strong> 加密 Body 的内容并对 Body 元素本身签名，含义与 WS-SecurityPolicy 的 <code>sp:EncryptedParts</code> 和 <code>sp:SignedParts</code> 相同。<strong>Header</strong> 指除 <code>wsse:Security</code> 之外的每个 SOAP 头块；该头块包含签名和密钥，因此既不能整体加密，也不能整体签名。每个预设都同时为 SOAP 1.1 和 SOAP 1.2 编写。",
   "protection.thProtects": "保护对象",
   "protection.thBody": "整个 SOAP Body",
