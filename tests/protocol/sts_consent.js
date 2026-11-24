@@ -909,8 +909,12 @@ async function test() {
   await ok("/applications/create", {
     identifier: CLIENT, name: "Consent test client " + RUN,
     protocols: ["oauth2", "oidc"],
+    // The scopes it asks for, declared (#2169): in product a client that
+    // declares none is issued `openid` alone (#1589). The delegated
+    // permission keeps its own rule and is not listed.
     fields: { oauthClientId: CLIENT, oauthRedirectUri: [REDIRECT_URI],
-              oauthClientSecret: CLIENT_SECRET }
+              oauthClientSecret: CLIENT_SECRET,
+              oauthAllowedScope: ["openid", "profile", "email"] }
   }, "created the client application");
   // The second client, registered the same way and BEFORE anything names it:
   // section 4 signs an interloper in to it and section 5 asks it for a
@@ -919,7 +923,8 @@ async function test() {
     identifier: OTHER_CLIENT, name: "Consent test other client " + RUN,
     protocols: ["oauth2", "oidc"],
     fields: { oauthClientId: OTHER_CLIENT, oauthRedirectUri: [REDIRECT_URI],
-              oauthClientSecret: CLIENT_SECRET + "-other" }
+              oauthClientSecret: CLIENT_SECRET + "-other",
+              oauthAllowedScope: ["openid"] }
   }, "created the second client application");
 
   const first = await theFirstSignInIsAsked();

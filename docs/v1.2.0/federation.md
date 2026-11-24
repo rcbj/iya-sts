@@ -245,8 +245,9 @@ What it does, in every mode:
   or with **Register at the partner** (`register-partner` on
   `/admin-api`). The `client_id` and secret are written to the relationship,
   the secret sealed. What is registered is the relationship's own addresses,
-  response type, client authentication and algorithms, and the one public
-  key that signs its Request Objects.
+  response type, client authentication and algorithms, its `fedScope` as
+  the registration's `scope` (the scopes the partner may issue it), and the
+  one public key that signs its Request Objects.
 * **`fedRequestObject`** sends the authorization request as a Request Object
   (Core section 6, RFC 9101): `request` by value, or `request_uri` by
   reference, served once at `/federation/request/{id}/{handle}`. Signed under

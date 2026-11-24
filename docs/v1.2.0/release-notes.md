@@ -259,6 +259,39 @@ both the directory and the settings, set `oauth2.undeclaredClientScopes` to
 ASVS 5.0.0 10.4.11 as not met. Declare in each client's `oauthAllowedScope`
 the scopes it needs, then set the setting to `openid`.
 
+### Behaviour change: an anonymous wallet keeps the scopes its offer named
+
+A Credential Offer's pre-authorized code may be redeemed by a wallet that
+names no client (OpenID4VCI 1.0 section 6.1). Its access token now carries
+the scopes of the configurations the offer named, read from the offer and
+not from the request, and keeps them in product mode, where the change above
+would otherwise have issued that absent client `openid` alone. Without them
+the credential was issued but not recorded for the person: `/portal/wallet`
+did not list it and it could not sign them in. Until 1.2.0 such a token
+always carried `identity_credential`, whichever configuration was offered.
+A wallet that names a client is still issued only what that client
+declares.
+
+### Behaviour change: this service declares the scopes it asks a partner for
+
+Where this service is the relying party and registers itself, it now
+declares the scopes it will ask for, so a partner that issues a client only
+what it declared (this service's own OP, in product mode, since the change
+above) issues them. A relationship with `fedRegister` sends its `fedScope`
+as the RFC 7591 registration's `scope`, and a realm's Entity Configuration
+publishes, as its `openid_relying_party` metadata's `scope`, every scope its
+OpenID Federation relationships (`fedTrustAnchor`) ask for. Until 1.2.0
+neither carried a `scope`, and such a partner refused everything past
+`openid` (`invalid_scope`). A partner that limits the scopes a client may
+register may now refuse or trim the registration; set the relationship's
+`fedScope` to what the partner offers.
+
+**Upgrading.** Nothing to run. A relationship already registered with
+`fedRegister` keeps its registration, which declared nothing; clear its
+`fedClientId` (or press **Register at the partner**) to register again with
+its scopes. An automatic OpenID Federation registration picks the scope up
+when the OP registers the realm again, once the earlier registration ends.
+
 ### New: the audit log is append-only in the database
 
 Where the audit log is stored (product mode on PostgreSQL or MariaDB, or
