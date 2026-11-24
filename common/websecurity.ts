@@ -195,8 +195,16 @@ interface BucketCheck {
   on: boolean;
 }
 
-// A caller's ceiling: a bare number for both buckets, or each named.
-type NamedLimit = number | { identity?: number; address?: number } | null;
+// A caller's ceiling: a bare number for both buckets, or each named. The
+// object form may also name its own window and the code and sentence its
+// identity bucket refuses with (#2167, `subjectActShared()`).
+type NamedLimit = number | {
+  identity?: number;
+  address?: number;
+  windowS?: number;
+  code?: string;
+  sentence?: string;
+} | null;
 
 // The answer every limiter function gives. `ok: false` carries the refusal.
 interface LimitAnswer {
@@ -380,13 +388,35 @@ class WebSecurity {
                         'STS-HTTP-0016');
   }
 
-  private windowMs(): number {
+  // The window a call counts in: the caller's own where its limit names one
+  // (#2167), `security.rateLimitWindowS` otherwise.
+  private windowMs(limit?: NamedLimit): number {
     const { log, config } = this.deps;
     log.debug("Entering WebSecurity.windowMs().");
+    const own = (limit && typeof limit === 'object')
+      ? Math.floor(Number(limit.windowS) || 0) : 0;
     log.debug("Leaving WebSecurity.windowMs().");
-    return Math.max(1,
-                    Number(config.value('security.rateLimitWindowS') || 60)) *
-           1000;
+    return own > 0 ? own * 1000
+      : Math.max(1, Number(config.value('security.rateLimitWindowS') || 60)) *
+        1000;
+  }
+
+  // The code and the catalog sentence a refusal by `kind` goes out with:
+  // the identity bucket's may be the caller's own (#2167); otherwise the
+  // two the limiter always used.
+  private refusalTerms(limit: NamedLimit | undefined, kind: string,
+                       failed: boolean): { code: string; key: string } {
+    const { log } = this.deps;
+    log.debug("Entering WebSecurity.refusalTerms().");
+    const own = (limit && typeof limit === 'object' && kind === 'identity')
+      ? limit : null;
+    const code = (own && own.code) ||
+      (kind === 'address' ? 'STS-HTTP-0018' : 'STS-HTTP-0017');
+    const key = (own && own.sentence) || (failed
+      ? 'refusals.authn.tooManyFailedAttempts'
+      : 'refusals.authn.tooManyAttempts');
+    log.debug("Leaving WebSecurity.refusalTerms().");
+    return { code: code, key: key };
   }
 
   private limitFor(kind: string): number {
@@ -723,7 +753,7 @@ class WebSecurity {
     const { log, buckets, errorCodes } = this.deps;
     log.debug('Entering WebSecurity.attempt(). what=' + what);
     const now = Date.now();
-    const span = this.windowMs();
+    const span = this.windowMs(limit);
     const checks: BucketCheck[] = [
       { kind: 'identity',
         key: what + '|id|' + String(identity || '').toLowerCase(),
@@ -763,8 +793,8 @@ class WebSecurity {
     });
     if (refusal) {
       const found: Refusal = refusal;
-      const code = found.kind === 'address' ? 'STS-HTTP-0018'
-                                            : 'STS-HTTP-0017';
+      const terms = this.refusalTerms(limit, found.kind, false);
+      const code = terms.code;
       log.warn(errorCodes.tag(code) + 'websecurity: too many "' + what + '" ' +
           'attempts (' +
                found.kind + ' bucket, limit ' + found.limit + ' per ' +
@@ -774,8 +804,8 @@ class WebSecurity {
       return errorCodes.mark({ ok: false, kind: found.kind,
                limit: found.limit,
                retryAfterS: found.retryAfterS,
-               ...this.said(Sentence.say(
-                 'refusals.authn.tooManyAttempts',
+               // error-code: none — the code is `refusalTerms()`'s, above.
+               ...this.said(Sentence.say(terms.key,
                  { seconds: found.retryAfterS })) },
                              code);
     }
@@ -845,14 +875,14 @@ class WebSecurity {
       return null;
     }
     const found: Refusal = refusal;
-    const code = found.kind === 'address' ? 'STS-HTTP-0018' : 'STS-HTTP-0017';
+    const terms = this.refusalTerms(limit, found.kind, true);
     log.debug('Leaving WebSecurity.blocked(). Blocked by the ' + found.kind +
               ' bucket.');
+    // error-code: none — the code is `refusalTerms()`'s.
     return errorCodes.mark({ ok: false, kind: found.kind, limit: found.limit,
              retryAfterS: found.retryAfterS,
-             ...this.said(Sentence.say(
-               'refusals.authn.tooManyFailedAttempts',
-               { seconds: found.retryAfterS })) }, code);
+             ...this.said(Sentence.say(terms.key,
+               { seconds: found.retryAfterS })) }, terms.code);
   }
 
   // Forget the counters for one identity — what a SUCCESSFUL sign-in does, so
@@ -989,19 +1019,19 @@ class WebSecurity {
 
   // `detailLead` is `failed` for the failed-attempts bucket and anything
   // else for the attempts one: a choice of catalog sentence (#2006).
-  private sharedRefusal(refusal: Refusal, detailLead: string): LimitAnswer {
+  private sharedRefusal(refusal: Refusal, detailLead: string,
+                        limit?: NamedLimit): LimitAnswer {
     const { log, errorCodes } = this.deps;
     log.debug("Entering WebSecurity.sharedRefusal().");
-    const code = refusal.kind === 'address' ? 'STS-HTTP-0018'
-                                            : 'STS-HTTP-0017';
+    const terms = this.refusalTerms(limit, refusal.kind,
+                                    detailLead === 'failed');
     log.debug("Leaving WebSecurity.sharedRefusal().");
+    // error-code: none — the code is `refusalTerms()`'s.
     return errorCodes.mark({ ok: false, kind: refusal.kind,
              limit: refusal.limit, retryAfterS: refusal.retryAfterS,
              shared: true,
-             ...this.said(Sentence.say(detailLead === 'failed'
-               ? 'refusals.authn.tooManyFailedAttempts'
-               : 'refusals.authn.tooManyAttempts',
-               { seconds: refusal.retryAfterS })) }, code);
+             ...this.said(Sentence.say(terms.key,
+               { seconds: refusal.retryAfterS })) }, terms.code);
   }
 
   // A REFUSAL'S `detail` IS ITS ENGLISH, as it always was (#2006): every
@@ -1053,7 +1083,7 @@ class WebSecurity {
       return Promise.resolve(this.attempt(what, req, identity, limit));
     }
     const checks = this.bucketChecks(what, req, identity, limit);
-    const span = this.windowMs();
+    const span = this.windowMs(limit);
     log.debug('Leaving WebSecurity.attemptShared(). Counting in the store.');
     return Promise.all(checks.map(function (check) {
       return clusterCounters.countInWindow({ scope: SHARED_SCOPE,
@@ -1078,13 +1108,13 @@ class WebSecurity {
         return { ok: true, shared: true };
       }
       const found: Refusal = refusal;
-      log.warn(errorCodes.tag(found.kind === 'address' ? 'STS-HTTP-0018'
-                                                       : 'STS-HTTP-0017') +
+      log.warn(errorCodes.tag(self.refusalTerms(limit, found.kind,
+                                                false).code) +
                'websecurity: too many "' + what + '" attempts across the ' +
                'cluster (' + found.kind + ' bucket, limit ' + found.limit +
                ' per ' + Math.round(span / 1000) + 's). Refusing for ' +
                'another ' + found.retryAfterS + 's.');
-      return self.sharedRefusal(found, 'any');
+      return self.sharedRefusal(found, 'any', limit);
     });
   }
 
@@ -1151,7 +1181,7 @@ class WebSecurity {
         }
       });
       return { answer: refusal
-        ? self.sharedRefusal(refusal, 'failed') : null,
+        ? self.sharedRefusal(refusal, 'failed', limit) : null,
                counts: counts };
     });
   }
@@ -1182,6 +1212,62 @@ class WebSecurity {
     return this.attemptShared(what, req, identity,
                               limit).then(function (counted) {
       return counted && counted.ok === false ? counted : null;
+    });
+  }
+
+  // -------------------------------------------------------------------------
+  // A SIGNED-IN SUBJECT'S OWN BUDGET (#2167, ASVS 5.0.0 2.4.2).
+  //
+  // The doors above limit GUESSES: a person not yet signed in, an identity
+  // somebody is trying. Once a token has proved who is calling, the only
+  // bound on what it does was the per-address ceiling
+  // (`common/request_budget.ts`, 6000 a minute in product) — which one
+  // person behind their own address, or a script holding their token, could
+  // spend entirely on writes to their account or on report runs. So the
+  // account API's writes and the report API's expensive acts each count in
+  // a bucket of their own keyed by the TOKEN'S SUBJECT, never by address: a
+  // household or an office behind one NAT shares nothing, and a token moved
+  // to another address brings its count with it.
+  //
+  // It is `attemptShared()` with the identity bucket named and the address
+  // bucket out of reach (`IDENTITY_ONLY`'s rule), in a window of the
+  // caller's own setting rather than `security.rateLimitWindowS`, and
+  // refused with the caller's own code and sentence: an operator searching
+  // for a person locked out of a sign-in must not find somebody who merely
+  // saved their profile three hundred times. Every act COUNTS, success or
+  // not, because what is bounded is work done, not guesses. Across N nodes
+  // with no shared store each node counts its own, so the budget can be
+  // passed by N - 1 times over; with one it is the cluster's.
+  // -------------------------------------------------------------------------
+  /**
+   * Counts one act of a signed-in subject in its own bucket.
+   *
+   * @param what - the bucket's name, part of its key
+   * @param req - the express request
+   * @param subject - who the token names (realm and `sub`), the key
+   * @param perWindow - the most acts per window; 0 or less counts nothing
+   * @param windowS - the window, in seconds
+   * @param code - the error code a refusal carries
+   * @returns a promise of `{ ok: true }`, or of the refusal with
+   *   `retryAfterS`, `detail` and `said`
+   */
+  subjectActShared(what: string, req: any, subject: string,
+                   perWindow: number, windowS: number,
+                   code: string): Promise<LimitAnswer> {
+    const { log } = this.deps;
+    log.debug('Entering WebSecurity.subjectActShared(). what=' + what);
+    const most = Math.floor(Number(perWindow) || 0);
+    if (!subject || most <= 0) {
+      log.debug('Leaving WebSecurity.subjectActShared(). Not limited.');
+      return Promise.resolve({ ok: true });
+    }
+    log.debug('Leaving WebSecurity.subjectActShared(). Counting.');
+    return this.attemptShared(what, req, subject, {
+      identity: most,
+      address: Number.MAX_SAFE_INTEGER,
+      windowS: Math.max(1, Math.floor(Number(windowS) || 0)),
+      code: code,
+      sentence: 'refusals.limits.tooManyActs'
     });
   }
 
@@ -1378,6 +1464,7 @@ export = {
   blockedShared: slot.forward('blockedShared'),
   succeededShared: slot.forward('succeededShared'),
   failedShared: slot.forward('failedShared'),
+  subjectActShared: slot.forward('subjectActShared'),
   sharesLimits: slot.forward('sharesLimits'),
   addressOf: slot.forward('addressOf'),
   report: slot.forward('report'),

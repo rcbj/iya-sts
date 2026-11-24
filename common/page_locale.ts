@@ -52,7 +52,7 @@
 // its runtime: the chooser's cookie is HttpOnly, so the browser is told it.
 //
 // A LIBRARY (rule 3): `i18n` and `locale_policy` (leaves), `helpers`,
-// `config`, `version` and `web_locale`. It reads the request it is handed
+// `config`, `version`, `mode` and `web_locale`. It reads the request it is handed
 // and requires no route module; the caller passes who the page is for and
 // which application, because only the caller knows.
 // ---------------------------------------------------------------------------
@@ -62,6 +62,7 @@ import config = require('./config');
 import i18n = require('./i18n');
 import localePolicy = require('./locale_policy');
 import version = require('./version');
+import mode = require('./mode');
 import WebLocale = require('./web_locale');
 
 const { log } = helpers;
@@ -291,7 +292,7 @@ class PageLocale {
   static consoleLanguage(req: any, page: PageFor) {
     log.debug("Entering PageLocale.consoleLanguage().");
     const t = PageLocale.translatorFor(req, page);
-    const build = encodeURIComponent(String(version.buildId()));
+    const build = encodeURIComponent(String(version.buildKey()));
     const files: Record<string, string> = {};
     t.negotiated.chain.forEach(function (tag: string) {
       files[tag] = '/web/locales/console-all/' + encodeURIComponent(tag) +
@@ -407,15 +408,20 @@ class PageLocale {
       lastResort = 'en';
     }
     const out: Array<[string, string]> = [
-      ['data-sts-version', String(version.load().version || '')],
+      // Left out where the build may not be shown (#2142): a shell is
+      // served to anybody, the console's included.
+      ['data-sts-version', mode.publishesBuildDetail()
+        ? String(version.load().version || '') : ''],
       ['data-sts-lang', i18n.canonical(PageLocale.cookieOf(req, COOKIE))],
       ['data-sts-locale-default', i18n.canonical(lastResort) || 'en'],
       // WHICH BUILD, for the catalogs' addresses (#1298): two builds may
       // carry different words under one version — two release builds both
       // numbered by the same BUILD_NUMBER (#1317) — so `?v=` is keyed by the
-      // build — `version.buildId()`, the commit and the build instant — and
-      // not by the version (`common/public_assets.ts`).
-      ['data-sts-build', String(version.buildId() || '')]
+      // build and not by the version (`common/public_assets.ts`). Since
+      // #2142 by `version.buildKey()`, a key the image build drew at random,
+      // rather than by `buildId()`, which names the commit and the build
+      // instant to whoever fetches a page.
+      ['data-sts-build', String(version.buildKey() || '')]
     ];
     log.debug("Leaving PageLocale.shellAttributes().");
     return out;

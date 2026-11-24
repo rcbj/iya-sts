@@ -2716,6 +2716,10 @@ const JOBS = [
   // signers (signer_truststore, pinned_signers).
   { file: 'sts_signer_trust.js', browser: false, local: true,
     optIn: '444' },
+  // #2118 phase 4: named truststores and their use cases through
+  // /admin-api/truststores, in throwaway realms; the default realm's
+  // service-wide half is tests/truststores_api.js's, in process.
+  { file: 'sts_truststores.js', browser: false, local: true },
   // D12 (#444): the main port's chain ends with the service Root, byte for
   // byte (tls_presented_root).
   { file: 'sts_tls_presented_root.js', browser: false, local: true,

@@ -767,6 +767,17 @@ Until 2026-10-14 (#632) every value but `objectClass`'s was compared exactly,
 so a search for a person in a case other than the one stored found nobody,
 while a sign-in, the console and SCIM found them.
 
+A substring assertion — `initial*any*...*final` — is matched in one pass from
+left to right: the initial is a prefix, each `any` is found after the one
+before it, and the final is a suffix that overlaps nothing before it (RFC 4517
+section 4.2.29). It is matched that way for every attribute, exact or not, and
+a value holding a line break is matched across it. **A search whose filter
+holds a substring assertion of more than 32 components** (the initial, each
+`any` and the final, counted together) is refused with **adminLimitExceeded
+(11)** before any entry is read, and recorded under `STS-LDAP-0226`. Until
+1.2.0 (#2137) a substring was matched by a regular expression, which a filter
+such as `(cn=*a*a*a*...*b)` could keep busy for a very long time.
+
 ## Two ldapjs defects this service routes around
 
 Both are in ldapjs's `SearchResponse.prototype.send()`, and both would hit a

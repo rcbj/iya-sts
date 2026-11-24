@@ -13882,10 +13882,30 @@ function namedAnchors(source, options) {
   let anchorDers = [];
   let intermediates = [];
   if (source === 'signer-truststore') {
-    const held = require('./signer_truststore')
-      .anchorsFor(options.realmId, options.purpose);
-    anchorDers = held.anchors;
-    intermediates = held.intermediates;
+    // THE USE CASE'S TRUSTSTORES (#2118): what the purpose's use case is
+    // assigned, the signer truststore among them by default. A purpose with
+    // no such use case keeps the signer truststore alone. Both are reached
+    // lazily: each requires this module.
+    const useCases = require('./truststore_use_cases');
+    const row = useCases.forPurpose(options.purpose, options.variant);
+    if (row && useCases.assignable(row)) {
+      const resolved = require('./truststores').resolve(row.id, {
+        realmId: options.realmId, expandSystem: true,
+        context: Object.assign({ purpose: options.purpose },
+                               options.trustContext || {})
+      });
+      anchorDers = resolved.anchors.map(function (pem) {
+        return pemToDer(pem);
+      });
+      intermediates = resolved.intermediates.map(function (pem) {
+        return pemToDer(pem);
+      });
+    } else {
+      const held = require('./signer_truststore')
+        .anchorsFor(options.realmId, options.purpose);
+      anchorDers = held.anchors;
+      intermediates = held.intermediates;
+    }
   } else {
     anchorDers = trustAnchorsFor(options.realmId).map(function (pem) {
       return pemToDer(pem);

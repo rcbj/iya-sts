@@ -606,7 +606,8 @@ class RequestObject {
         port: target.port || (secure ? 443 : 80),
         path: target.pathname + target.search, method: 'GET',
         headers: { 'Accept': MEDIA_TYPE + ', application/jwt;q=0.9',
-                   'User-Agent': version.userAgent('request-uri') },
+                   'User-Agent': version.userAgent('request-uri',
+                     mode.publishesBuildDetail()) },
         timeout: timeout
       };
       if (vetted.address) {

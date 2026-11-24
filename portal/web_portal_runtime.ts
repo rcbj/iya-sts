@@ -61,6 +61,9 @@
 import SpaClient = require('../common/web_spa_client');
 import WebSafeDom = require('../common/web_safe_dom');
 import WebMessages = require('../common/web_messages');
+// An answer's refusal in the page's language where it names a catalog
+// message (#2006; the write budget's, #2167), its English otherwise.
+import WebSaid = require('../common/web_said');
 import kit = require('./web_portal_kit');
 import PortalShell = require('./web_portal_shell');
 import PortalPages = require('./web_portal_pages');
@@ -968,7 +971,7 @@ class PortalRuntime extends SpaClient {
     const own = json.view && (json.view.refused || json.view.notOffered ||
                               json.view.tooMany);
     if ((answer.status !== 200 || json.ok === false) && !own) {
-      this.flash = { error: (json.errors || []).join(' ') ||
+      this.flash = { error: WebSaid.saidWith(this.t, json) ||
                             'The account API answered ' + answer.status + '.' };
     }
     let drawn = json.view || json;
@@ -1214,7 +1217,7 @@ class PortalRuntime extends SpaClient {
     const v = json.view || {};
     const ownRefusal = !!(v.refused || v.notOffered || v.tooMany);
     const said = json.ok === false
-      ? (ownRefusal ? {} : { error: (json.errors || []).join(' ') ||
+      ? (ownRefusal ? {} : { error: WebSaid.saidWith(this.t, json) ||
                                     'Refused (' + answer.status + ').' })
       : { message: String(json.message || '') };
     if (Array.isArray(json.files) && json.files.length) {

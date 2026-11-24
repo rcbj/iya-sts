@@ -1115,6 +1115,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **404**: No such token in this realm's inventory.
@@ -1125,6 +1133,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **409**: The token is already assigned or retired.
@@ -1135,6 +1151,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 ## POST /admin-api/hardware-tokens/assign-yubiotp
@@ -1184,6 +1208,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **404**: No such serial in this realm's inventory.
@@ -1194,6 +1226,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **409**: The token is already assigned.
@@ -1204,6 +1244,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 ## POST /admin-api/hardware-tokens/enrol-piv
@@ -1257,6 +1305,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **404**: No such person in this realm.
@@ -1267,6 +1323,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **409**: The person already holds as many enrolled certificates as the realm allows.
@@ -1277,6 +1341,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **503**: The certificate could not be issued or recorded.
@@ -1287,6 +1359,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 ## GET /admin-api/hardware-tokens/escrowed
@@ -1389,6 +1469,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 ## POST /admin-api/hardware-tokens/import-yubiotp
@@ -1437,6 +1525,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 ## POST /admin-api/hardware-tokens/issue-ssh
@@ -1493,6 +1589,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **403**: A principal the policy refused, or a group that cannot be one.
@@ -1503,6 +1607,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **404**: Nobody of that name in this realm's directory.
@@ -1513,6 +1625,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **503**: The realm has no SSH user CA, or the certificate could not be recorded.
@@ -1523,6 +1643,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 ## POST /admin-api/hardware-tokens/lost
@@ -1605,6 +1733,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **404**: No such token in this realm.
@@ -1615,6 +1751,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **409**: The token was already reported lost.
@@ -1625,6 +1769,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 ## GET /admin-api/hardware-tokens/oath
@@ -1732,6 +1884,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **401**: The caller signed in longer ago than account.recentAuthMinutes allows for a recovery (RFC 9470 `insufficient_user_authentication`, with `max_age`): sign in again and resend.
@@ -1742,6 +1902,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **403**: The access-control policy did not permit the recovery.
@@ -1752,6 +1920,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **404**: No escrowed key is held for that certificate of that person.
@@ -1762,6 +1938,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **503**: The escrowed key could not be opened.
@@ -1772,6 +1956,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 ## POST /admin-api/hardware-tokens/remove-oath
@@ -1815,6 +2007,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **404**: No such token in this realm's inventory.
@@ -1825,6 +2025,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **409**: The token is assigned.
@@ -1835,6 +2043,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 ## POST /admin-api/hardware-tokens/remove-yubiotp
@@ -1878,6 +2094,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **404**: No such serial in this realm's inventory.
@@ -1888,6 +2112,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **409**: The token is assigned.
@@ -1898,6 +2130,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 ## POST /admin-api/hardware-tokens/revoke-ssh
@@ -1942,6 +2182,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **404**: Nobody of that name, or no certificate of theirs with that serial.
@@ -1952,6 +2200,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **503**: The revocation could not be recorded.
@@ -1962,6 +2218,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 ## GET /admin-api/hardware-tokens/ssh-certificates
@@ -2044,6 +2308,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 ## POST /admin-api/hardware-tokens/ykval-client-remove
@@ -2087,6 +2359,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 ## GET /admin-api/hardware-tokens/yubiotp
@@ -2284,6 +2564,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **404**: No such person in this realm.
@@ -2294,6 +2582,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **500**: The act verified but could not be written, or threw.
@@ -2304,6 +2600,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 ## POST /admin-api/openpgp/mail-encryption
@@ -2390,6 +2694,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **404**: No such person in this realm.
@@ -2400,6 +2712,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **500**: The act verified but could not be written, or threw.
@@ -2410,6 +2730,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 ## POST /admin-api/openpgp/publish
@@ -2495,6 +2823,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **404**: No such person in this realm.
@@ -2505,6 +2841,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **500**: The act verified but could not be written, or threw.
@@ -2515,6 +2859,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 ## POST /admin-api/openpgp/register
@@ -2602,6 +2954,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **404**: No such person in this realm.
@@ -2612,6 +2972,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **500**: The act verified but could not be written, or threw.
@@ -2622,6 +2990,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 ## POST /admin-api/openpgp/remove
@@ -2707,6 +3083,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **404**: No such person in this realm.
@@ -2717,6 +3101,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **500**: The act verified but could not be written, or threw.
@@ -2727,6 +3119,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 ## POST /admin-api/openpgp/smime
@@ -2813,6 +3213,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **404**: No such person in this realm.
@@ -2823,6 +3231,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **500**: The act verified but could not be written, or threw.
@@ -2833,6 +3249,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 ## POST /admin-api/openpgp/withdraw
@@ -2918,6 +3342,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **404**: No such person in this realm.
@@ -2928,6 +3360,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 **500**: The act verified but could not be written, or threw.
@@ -2938,6 +3378,14 @@ Scope: `admin:write`.
 | `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 | `ok` | boolean |  |  |
 
 ## GET /admin-api/post-login-activities

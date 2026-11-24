@@ -56,7 +56,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [OpenID4VP](admin-api-openid4vp.html) | 1 |  |
 | [OpenPGP](admin-api-openpgp.html) | 1 | The OpenPGP settings (#2049): the algorithms a registered key may use, the post-quantum rules, the registration challenge and the Web Key Directory. A person's key is under Directory. |
 | [Ownership](admin-api-ownership.html) | 2 |  |
-| [PKI](admin-api-pki.html) | 26 |  |
+| [PKI](admin-api-pki.html) | 34 |  |
 | [Persistence](admin-api-persistence.html) | 1 |  |
 | [Policies](admin-api-policies.html) | 27 | The rules this realm holds a credential to — the password policy first: its minimum length, how many previous passwords may not be reused, and the symbol, uppercase and digit rules, stored as `cn=default,ou=passwordPolicies` in the directory and ENFORCED IN PRODUCT MODE at every door that sets a password. Not the XACML policy repository, which is under XACML. |
 | [RISC](admin-api-risc.html) | 5 |  |

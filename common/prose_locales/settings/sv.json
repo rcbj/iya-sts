@@ -275,6 +275,22 @@
     "en": "99c8adf052996759",
     "text": "Hur nyligen, i minuter, någon måste ha loggat in för att ändra hur en person loggar in. På portalen: personens andra faktorer, återställningskoder, nycklar, applösenord, certifikat, signeringsnycklar, självutfärdade ID:n, e-postadress eller ett erbjudande om en plånboksbehörighet, samt att avsluta personens övriga sessioner; personen skickas till inloggning först. För en administratör: att ändra en persons lösenord, andra faktor, nyckel, återställningskoder, e-postadress eller applösenord via konsolen eller /admin-api, som svarar med insufficient_user_authentication enligt RFC 9470. Detsamma gäller när en administratör tilldelar eller tar bort en roll, skapar, ändrar eller tar bort en förtroendesfär, agerar på PKI:n, signeringsnycklarna, nyckelkrypteringsnyckeln eller målen för utskick av hemligheter, eller ändrar någon inställning (#2161). 0 betyder att det inte krävs, standardvärdet i utveckling. Produktläget använder 15 som standard."
   },
+  "account.writesPerSubject|label": {
+    "en": "90cb891002b3f2f1",
+    "text": "Kontoändringar per person och fönster"
+  },
+  "account.writesPerSubject|description": {
+    "en": "4a4d877797b1c467",
+    "text": "Hur många ändringar en inloggad person får göra i sitt eget konto via /account-api (portalen) under ett fönster på account.writeWindowS: profiländringar, registrerade eller borttagna inloggningsuppgifter, återkallade samtycken, enhetsändringar. Räknas per tokenens subjekt, inte per adress, så personer bakom samma adress delar det inte. Därutöver avvisas en ändring med 429 och Retry-After tills fönstret har passerat; läsning av kontot fortsätter. 0 betyder ingen gräns, standardvärdet i utvecklingsläge. Produktläget har 300 som standard."
+  },
+  "account.writeWindowS|label": {
+    "en": "b5b3a8ffb257226e",
+    "text": "Fönster för kontoändringar (sekunder)"
+  },
+  "account.writeWindowS|description": {
+    "en": "738a3bd11ca86499",
+    "text": "Fönstret som account.writesPerSubject räknas i, i sekunder. Ett fast fönster, som varje hastighetsgräns här."
+  },
   "persistence.allowDefaultDatabasePassword|label": {
     "en": "24634837693652d6",
     "text": "Tillåt ett standardlösenord för databasen i produktläge"
@@ -346,6 +362,22 @@
   "security.hstsIncludeSubDomains|description": {
     "en": "26b0298f1a2bd460",
     "text": "Lägger till includeSubDomains i Strict-Transport-Security, så att webbläsare använder HTTPS för alla underdomäner till tjänstens värdnamn. På som standard i produktläge. Stäng av om en underdomän fortfarande måste svara över okrypterad HTTP."
+  },
+  "security.publishBuildInfo|label": {
+    "en": "854e975db3ad3f56",
+    "text": "Visa det exakta bygget för personer som inte är administratörer"
+  },
+  "security.publishBuildInfo|description": {
+    "en": "7ee4c3866d1b407a",
+    "text": "Om den exakta versionen, byggnumret, byggtiden och commit syns där någon annan än en administratör kan läsa dem: sidfoten på varje sida, API:erna för inloggning, portal och rapporter och deras OpenAPI-dokument, och User-Agent i de förfrågningar tjänsten gör till partner. auto, standard, visar dem i utvecklingsläge och döljer dem i produktläge, där dokumenten i stället anger API:ets egen version och User-Agent bara är produktnamnet; on och off tvingar fram det i båda lägena. Konsolen och hanterings-API:et visar alltid bygget."
+  },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "Begär att stå på HSTS-förladdningslistan"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "Lägger till preload i Strict-Transport-Security, som bara produktläget skickar, så att värdnamnet kan skickas in till webbläsarnas förladdningslista på hstspreload.org. Förladdning binder hela den registrerbara domänen och varje underdomän till HTTPS i alla webbläsare, och att lämna listan tar månader. Skickas bara medan Tillämpa HSTS på underdomäner är på."
   },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
@@ -3096,8 +3128,8 @@
     "text": "Klienthemlighetens livslängd (dagar)"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "6ad202dff164f155",
-    "text": "Livslängden, i dagar, för varje klienthemlighet som tjänsten skapar eller får, och därmed det `client_secret_expires_at` som RFC 7591 avsnitt 3.2.1 publicerar för en klient registrerad på POST /oauth2/register — standardvärdet för varje hemlighet som skapas eller ges (en omgenerering, en rotation, en tillagd hemlighet, ett värde inskrivet i konsolen), om inte tilläggsformuläret anger något annat, eller skapandeformuläret gör det för ett programs första hemlighet. NOLL, standardvärdet, är det avsnittets eget ”aldrig”. Det stämplas på varje hemlighet när den skapas och flyttas inte av en senare ändring."
+    "en": "0282a861551627b6",
+    "text": "Livslängden, i dagar, för varje klienthemlighet som tjänsten skapar eller får, och därmed det `client_secret_expires_at` som RFC 7591 avsnitt 3.2.1 publicerar för en klient registrerad på POST /oauth2/register — standardvärdet för varje hemlighet som skapas eller ges (en omgenerering, en rotation, en tillagd hemlighet, ett värde inskrivet i konsolen), om inte tilläggsformuläret anger något annat, eller skapandeformuläret gör det för ett programs första hemlighet. Standardvärdet är 365 dagar (ASVS 5.0.0 13.3.4); NOLL är det avsnittets eget ”aldrig”. Det stämplas på varje hemlighet när den skapas och flyttas inte av en senare ändring."
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",
@@ -7859,6 +7891,14 @@
     "en": "77b517dda5eb4231",
     "text": "Om en PKINIT-begäran måste bära en färskhetstoken enligt RFC 8070 — en som den här KDC:n utfärdat i KDC_ERR_PREAUTH_REQUIRED inom klockavvikelsen. Det är det som hindrar ett AuthPack som signerats i förväg på ett lånat smartkort från att användas senare. MIT Kerberos 1.17 och senare samt Heimdal skickar en när de ombeds. VARNING: av hålls en PKINIT-begäran bara till sin egen tidsstämpel och återuppspelningskontrollen."
   },
+  "krb5.pkinitRequirePaChecksum2|label": {
+    "en": "b537d343a181f8ff",
+    "text": "PKINIT kräver paChecksum2"
+  },
+  "krb5.pkinitRequirePaChecksum2|description": {
+    "en": "09dc40308cf18597",
+    "text": "Om en PKINIT-begäran måste bära Microsofts paChecksum2 (MS-PKCA avsnitt 2.2.3) — begärandekroppens SHA-256, SHA-384 eller SHA-512 bredvid den SHA-1-paChecksum som RFC 4556 kräver. En paChecksum2 som skickas kontrolleras i vilket fall som helst, och en över SHA-1 avvisas i produktläge. Av som standard, eftersom MIT Kerberos inte skickar någon; Windows 11 och Windows Server 2022 23H2 och senare gör det. På avvisas en klient som inte skickar någon — anonym PKINIT inräknad — med KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED."
+  },
   "krb5.pkinitLegacyKdf|label": {
     "en": "45d1284fa60afa2b",
     "text": "PKINIT accepterar RFC 4556:s egen nyckelhärledning"
@@ -12466,6 +12506,22 @@
   "report.maxConcurrentPerSubject|description": {
     "en": "525965a5866fed18",
     "text": "Hur många rapportjobb en person får ha igång samtidigt."
+  },
+  "report.actsPerSubject|label": {
+    "en": "c2fd1d4d02b9a6b1",
+    "text": "Rapportkörningar och nedladdningar per person och fönster"
+  },
+  "report.actsPerSubject|description": {
+    "en": "e49f26690bd91e46",
+    "text": "Hur många kostsamma åtgärder en anropare av Reports API får göra under ett fönster på report.actWindowS: en ad hoc-fråga eller förhandsvisning, ett köat jobb, en sparad definition som körs, ett nedladdat resultat. Räknas per tokenens subjekt, inte per adress. Därutöver avvisas en sådan åtgärd med 429 och Retry-After tills fönstret har passerat; listorna och definitionerna kan fortfarande läsas. 0 betyder ingen gräns, standardvärdet i utvecklingsläge. Produktläget har 240 som standard."
+  },
+  "report.actWindowS|label": {
+    "en": "3e27ff3046206690",
+    "text": "Fönster för rapportåtgärder (sekunder)"
+  },
+  "report.actWindowS|description": {
+    "en": "03466784e84b1e2b",
+    "text": "Fönstret som report.actsPerSubject räknas i, i sekunder. Ett fast fönster, som varje hastighetsgräns här."
   },
   "report.artifactRetentionS|label": {
     "en": "ae014cb5ae4ea837",

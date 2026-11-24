@@ -82,6 +82,8 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import version = require('../common/version');
+// Whether the User-Agent may name the build (#2142).
+import mode = require('../common/mode');
 import OutboundTls = require('../common/outbound_tls');
 
 // What a push answers. It never rejects.
@@ -119,18 +121,6 @@ interface GnapHttpDeps {
 
 const log = helpers.log;
 
-const USER_AGENT = (function () {
-  try {
-    return version.userAgent('gnap-push-finish');
-  } catch (e) {
-    log.debug("Caught in a callback in module scope: " +
-              ((e && e.message) || e));
-    // The version record is never allowed to stop a request (root CLAUDE.md,
-    // Versioning); a bare product token is the degraded answer.
-    return 'sts (gnap-push-finish)';
-  }
-}());
-
 const MAX_RESPONSE_BYTES = 64 * 1024;
 
 // THE OUTBOUND TRANSPORT POLICY, as `common/outbound_tls.ts` takes it (#171).
@@ -158,9 +148,27 @@ const PUSH_TRANSPORT = {
  */
 class GnapHttp {
   /**
-   * The User-Agent a push finish is sent with.
+   * The User-Agent a push finish is sent with: asked per push since #2142,
+   * because product leaves the build out and the mode is per realm.
+   *
+   * @returns the header value
    */
-  static readonly USER_AGENT = USER_AGENT;
+  static userAgent(): string {
+    log.debug("Entering GnapHttp.userAgent().");
+    try {
+      const out = version.userAgent('gnap-push-finish',
+                                    mode.publishesBuildDetail());
+      log.debug("Leaving GnapHttp.userAgent().");
+      return out;
+    } catch (e) {
+      log.debug("Caught in GnapHttp.userAgent(): " +
+                ((e && e.message) || e));
+      // The version record is never allowed to stop a request (root
+      // CLAUDE.md, Versioning); a bare product token is the degraded answer.
+      log.debug("Leaving GnapHttp.userAgent(). Bare token.");
+      return 'sts (gnap-push-finish)';
+    }
+  }
   /**
    * The most of a client's response a push finish reads.
    */
@@ -425,7 +433,7 @@ class GnapHttp {
         method: 'POST',
         headers: { 'Content-Type': 'application/json',
                    'Content-Length': body.length,
-                   'User-Agent': USER_AGENT },
+                   'User-Agent': GnapHttp.userAgent() },
         rejectUnauthorized: !transport || transport.rejectUnauthorized
       };
       if (transport && transport.ca) {

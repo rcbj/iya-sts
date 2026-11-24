@@ -1533,6 +1533,36 @@ const SETTINGS = [
                  'setting (#2161). 0 means it is not asked, which is the ' +
                  'development default. Product mode defaults to 15.' },
 
+  // #2167 (ASVS 5.0.0 2.4.2): a signed-in person's own budget of writes,
+  // keyed by the token's subject. 300 in ten minutes is one write every two
+  // seconds, sustained for ten minutes; the busiest real visit to the portal
+  // — a passkey enrolled (two acts), a device approved (two), a few keys
+  // renamed, consents withdrawn, a photo set — is a few dozen. Off in
+  // development, as the per-address ceiling is.
+  { key: 'account.writesPerSubject', group: 'Web security',
+    label: 'Account writes per person per window',
+    env: 'STS_ACCOUNT_WRITES_PER_SUBJECT', type: 'int', dflt: strongerInProduct(300, 0), derived: true,
+    min: 0, max: 1000000,
+    runtime: true,
+    description: 'How many changes one signed-in person may make to their ' +
+                 'own account through /account-api (the portal) in an ' +
+                 'account.writeWindowS window: profile edits, credentials ' +
+                 'enrolled or removed, consents withdrawn, device changes. ' +
+                 'Counted by the token\'s subject, not by address, so ' +
+                 'people behind one address do not share it. Past it a ' +
+                 'write is refused with 429 and Retry-After until the ' +
+                 'window passes; reading the account goes on. 0 means no ' +
+                 'limit, which is the development default. Product mode ' +
+                 'defaults to 300.' },
+
+  { key: 'account.writeWindowS', group: 'Web security',
+    label: 'Account write window (seconds)',
+    env: 'STS_ACCOUNT_WRITE_WINDOW_S', type: 'int', dflt: 600,
+    min: 1, max: 86400,
+    runtime: true,
+    description: 'The window account.writesPerSubject is counted in, in ' +
+                 'seconds. A fixed window, as every rate limit here is.' },
+
   { key: 'persistence.allowDefaultDatabasePassword', group: 'Persistence',
     label: 'Allow a default database password in product mode',
     env: 'STS_PERSISTENCE_ALLOW_DEFAULT_DATABASE_PASSWORD', type: 'bool', dflt: false,
@@ -1622,6 +1652,42 @@ const SETTINGS = [
                  'host name too. On by default in product mode. Turn it off ' +
                  'if a subdomain of this host name must still answer over ' +
                  'plain HTTP.' },
+
+  // THE EXACT BUILD ON WHAT AN OUTSIDER SEES (#2142, ASVS 5.0.0 13.4.6):
+  // the version, build number, build instant and commit on the page footer,
+  // the shells, the sign-in and account APIs' answers and documents, and the
+  // outbound User-Agent. `auto` follows the mode (mode.publishesBuildDetail());
+  // the console and /admin-api carry the build whatever this says.
+  { key: 'security.publishBuildInfo', group: 'Web security',
+    label: 'Show the exact build to people who are not administrators',
+    env: 'STS_SECURITY_PUBLISH_BUILD_INFO', type: 'enum',
+    dflt: 'auto', runtime: true,
+    enumValues: ['auto', 'on', 'off'],
+    description: 'Whether the exact version, build number, build time and ' +
+                 'commit appear where someone other than an administrator ' +
+                 'can read them: the footer of every page, the sign-in, ' +
+                 'portal and reports APIs and their OpenAPI documents, and ' +
+                 'the User-Agent of the requests this service makes to ' +
+                 'partners. auto, the default, shows them in development ' +
+                 'mode and hides them in product mode, where the documents ' +
+                 'name the API\'s own version instead and the User-Agent is ' +
+                 'the product name alone; on and off force it in either ' +
+                 'mode. The console and the management API always show the ' +
+                 'build.' },
+  // #2165 (ASVS 5.0.0 3.7.4). Off by default in both modes: the preload list
+  // is compiled into browsers and binds the whole registrable domain, so it
+  // is an operator's decision, never a default. `common/cookie_wire.ts` sends
+  // it only with includeSubDomains in force, and says why where it does not.
+  { key: 'security.hstsPreload', group: 'Web security',
+    label: 'Ask to be on the HSTS preload list',
+    env: 'STS_SECURITY_HSTS_PRELOAD', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Adds preload to Strict-Transport-Security, which only ' +
+                 'product mode sends, so the host name can be submitted to ' +
+                 'the browsers\' preload list at hstspreload.org. Preloading ' +
+                 'commits the whole registrable domain and every subdomain ' +
+                 'to HTTPS in every browser, and leaving the list takes ' +
+                 'months. Sent only while Apply HSTS to subdomains is on.' },
 
   { key: 'federation.allowAssertionWithoutAudience', group: 'Federation',
     label: 'Accept an assertion that names no audience',
@@ -7112,7 +7178,7 @@ const SETTINGS = [
 
   { key: 'oauth2.clientSecretLifetimeDays', group: 'OAuth 2.0 / OIDC',
     label: 'Client secret lifetime (days)',
-    env: 'STS_OAUTH2_CLIENT_SECRET_LIFETIME_DAYS', type: 'int', dflt: 0,
+    env: 'STS_OAUTH2_CLIENT_SECRET_LIFETIME_DAYS', type: 'int', dflt: 365,
     min: 0, max: 730, runtime: true,
     description: 'The lifetime, in days, of every client secret this ' +
                  'service mints or is given, and so the ' +
@@ -7122,9 +7188,9 @@ const SETTINGS = [
                  'mints or is given (a regeneration, a rotation, an added ' +
                  'secret, a value typed on the console), unless the add ' +
                  'form names another, or the create form does for an ' +
-                 'application\'s first secret. ZERO, the default, is that ' +
-                 'section\'s ' +
-                 'own "never". It is stamped on each secret when it is ' +
+                 'application\'s first secret. The default is 365 days ' +
+                 '(ASVS 5.0.0 13.3.4); ZERO is that section\'s own ' +
+                 '"never". It is stamped on each secret when it is ' +
                  'made and is not moved by a later change.' },
 
   { key: 'oauth2.registeredClientIdPrefix', group: 'OAuth 2.0 / OIDC',
@@ -15371,6 +15437,20 @@ const SETTINGS = [
                  'WARNING: off, a PKINIT request is held only to its own ' +
                  'timestamp and the replay check.' },
 
+  { key: 'krb5.pkinitRequirePaChecksum2', group: 'Kerberos',
+    label: 'PKINIT requires paChecksum2',
+    env: 'KRB5_PKINIT_REQUIRE_PA_CHECKSUM2', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether a PKINIT request must carry Microsoft\'s ' +
+                 'paChecksum2 (MS-PKCA section 2.2.3) — the request body\'s ' +
+                 'SHA-256, SHA-384 or SHA-512 beside the SHA-1 paChecksum ' +
+                 'RFC 4556 requires. A paChecksum2 that is sent is checked ' +
+                 'either way, and one over SHA-1 is refused in product. Off ' +
+                 'by default, because MIT Kerberos does not send one; ' +
+                 'Windows 11 and Windows Server 2022 23H2 and later do. On, ' +
+                 'a client that does not — anonymous PKINIT included — is ' +
+                 'refused KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED.' },
+
   { key: 'krb5.pkinitLegacyKdf', group: 'Kerberos',
     label: 'PKINIT accepts RFC 4556\'s own key derivation',
     env: 'KRB5_PKINIT_LEGACY_KDF', type: 'bool', dflt: false, runtime: true,
@@ -22329,6 +22409,30 @@ const SETTINGS = [
     env: 'REPORT_MAX_CONCURRENT_PER_SUBJECT', type: 'int', dflt: 1,
     min: 1, max: 8, runtime: true,
     description: 'How many report jobs one person may have running at once.' },
+  // #2167 (ASVS 5.0.0 2.4.2): the expensive acts, keyed by the token's
+  // subject. 240 in ten minutes is one every two and a half seconds,
+  // sustained; a person refining a query previews it every few seconds at
+  // the very most, and a synchronous run may take up to report.syncMaxMs.
+  // Off in development, as the per-address ceiling is.
+  { key: 'report.actsPerSubject', group: 'Reporting',
+    label: 'Report runs and downloads per person per window',
+    env: 'REPORT_ACTS_PER_SUBJECT', type: 'int', dflt: strongerInProduct(240, 0), derived: true,
+    min: 0, max: 1000000, runtime: true,
+    description: 'How many expensive acts one caller of the Reports API may ' +
+                 'make in a report.actWindowS window: an ad hoc query or ' +
+                 'preview, a job queued, a saved definition run, a result ' +
+                 'downloaded. Counted by the token\'s subject, not by ' +
+                 'address. Past it such an act is refused with 429 and ' +
+                 'Retry-After until the window passes; the lists and ' +
+                 'definitions can still be read. 0 means no limit, which ' +
+                 'is the development default. Product mode defaults to ' +
+                 '240.' },
+  { key: 'report.actWindowS', group: 'Reporting',
+    label: 'Report act window (seconds)',
+    env: 'REPORT_ACT_WINDOW_S', type: 'int', dflt: 600,
+    min: 1, max: 86400, runtime: true,
+    description: 'The window report.actsPerSubject is counted in, in ' +
+                 'seconds. A fixed window, as every rate limit here is.' },
   { key: 'report.artifactRetentionS', group: 'Reporting',
     label: 'How long a report result is kept (seconds)',
     env: 'REPORT_ARTIFACT_RETENTION_S', type: 'int', dflt: 86400,
