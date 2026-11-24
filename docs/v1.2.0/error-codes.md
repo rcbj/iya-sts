@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6085** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6086** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -105,7 +105,7 @@ is an ordinary outcome.
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 191
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 29
-* [Reporting (`STS-REPORT`)](#sts-report) — 59
+* [Reporting (`STS-REPORT`)](#sts-report) — 60
 * [Audit export (`STS-AUDIT`)](#sts-audit) — 21
 
 ## STS-HTTP
@@ -6899,6 +6899,7 @@ Raised from: report/.
 | `STS-REPORT-0058` | A /report-api request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the operation ran (#1483). | HTTP 400 {error:invalid_query, error_description} |
 | `STS-REPORT-0059` | A token was refused because the person it names no longer exists. | HTTP 401 |
 | `STS-REPORT-0060` | A stored report definition no longer holds to the Reports API model (a filter naming a parameter longer than 64 characters, saved before #1579 bounded it), so it is answered without its document and parameters, and a run of it is refused for its query. | recorded |
+| `STS-REPORT-0061` | A report over a source for report administrators only (auditEvents, authActivity, credentialHolders: the catalog marks them adminOnly) was refused because the caller — or, for a scheduled run, the definition's owner — does not hold REPORT_ADMIN, or the access-control policy refused the source: a query, a job, a definition saved or run, or a result downloaded (#2126, ASVS 5.0.0 8.2.3). A definition saved before stays visible to its owner. | forbidden (HTTP 403); recorded for a scheduled run, whose occurrence is consumed |
 
 ## STS-AUDIT
 

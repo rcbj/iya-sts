@@ -61,6 +61,23 @@
 // A hidden row is answered `not_found` by the API, as before, so a job id
 // in a URL is still not permission to read it.
 //
+// **A SOURCE FOR REPORT ADMINISTRATORS (#2126, ASVS 5.0.0 8.2.3).** The
+// rows above are definitions and jobs; what a report READS was nobody's
+// question, so any REPORT_USE holder could report over the audit ring and
+// who holds which credential — what the console keeps behind Admin Read.
+// rcbj's decision of 2026-11-24: auditEvents, authActivity and
+// credentialHolders need REPORT_ADMIN. `sourceRefusal()` is asked before a
+// report is defined, run, previewed or downloaded, and by the schedule for
+// the owner, and it is asked TWICE OVER on purpose: the catalog's
+// `adminOnly` mark against the caller's roles here — so a realm whose
+// `access-control` override predates the rule, or a service with
+// `xacml.enforceAccess` off, still refuses — and then the PDP, with the
+// source as `report-source` and the marked ones as `report-admin-source`,
+// so the policy decides as well and a realm may add sources of its own
+// (`reportAdminSources`). Either refusal is STS-REPORT-0061. A plain read
+// of a definition carries no source, so one its owner may no longer run
+// stays visible to them, to change or delete.
+//
 // `installOwnerCheck()` is the one seam: a test of the schedule installs an
 // answer for `ownerMayRun()` so an in-memory definition store needs no
 // directory behind it. Nothing else is injectable.
@@ -68,6 +85,9 @@
 
 import bunyan = require('bunyan');
 import errorCodes = require('../common/error_codes');
+// The catalog's `adminOnly` mark (#2126). A leaf here: it requires
+// nothing of this family.
+import Catalog = require('./catalog');
 
 const log = bunyan.createLogger({ name: 'sts-report-rights' });
 
@@ -294,7 +314,12 @@ function reportDecide(who: ReportCaller, action: string, object: any): any {
     // so a caller from another realm (#1038) names nobody here: `admin` in
     // the default realm and `admin` in this one are two people, and the
     // second one's shares are not the first one's.
-    person: who.kind === 'user' && !who.realm ? who.username : ''
+    person: who.kind === 'user' && !who.realm ? who.username : '',
+    // The source question (#2126), only when the caller asked one.
+    sources: Array.isArray(object.sources) ? object.sources.map(String)
+                                           : undefined,
+    adminSources: Array.isArray(object.adminSources)
+      ? object.adminSources.map(String) : undefined
   } : null;
   const answer = accessGate.check({
     resource: accessGate.RESOURCE.REPORT_API,
@@ -439,6 +464,80 @@ function reportCanSeeJob(who: ReportCaller, job: any,
 }
 
 /**
+ * The source question a report's document puts to the PDP (#2126): the
+ * source it reads, and that source again when the catalog marks it for
+ * report administrators.
+ *
+ * @param sourceId - the document's `source`
+ * @returns `{ sources, adminSources }`
+ */
+function reportSourcesOf(sourceId: string): any {
+  log.debug("Entering reportSourcesOf().");
+  const id = String(sourceId || '');
+  const admin = !!id && new Catalog().adminOnly(id);
+  log.debug("Leaving reportSourcesOf(). " + (admin ? 'Administrators\'.'
+                                                      : 'Anybody\'s.'));
+  return { sources: id ? [id] : [], adminSources: admin ? [id] : [] };
+}
+
+/**
+ * Whether the caller may define, run, preview or download a report over
+ * a source (#2126): the catalog's `adminOnly` mark against the roles the
+ * caller holds, and then the PDP with the source on the question.
+ *
+ * @param who - the caller, or a definition's owner for the schedule
+ * @param action - `write` to save a definition, `run` to run or preview,
+ *   `read` to download a result
+ * @param object - the row as the other decisions send it (`kind`, `owner`,
+ *   `groups`), or null for an ad hoc query, which is the caller's own
+ * @param sourceId - the source the report reads
+ * @returns null when permitted, or a refusal carrying STS-REPORT-0061
+ */
+function reportSourceRefusal(who: ReportCaller, action: string, object: any,
+    sourceId: string): any {
+  log.debug("Entering reportSourceRefusal(). " + action + ' ' + sourceId);
+  const asked = reportSourcesOf(sourceId);
+  const refusal = {
+    ok: false,
+    code: 'STS-REPORT-0061',
+    error: 'forbidden',
+    description: 'The source ' + String(sourceId || '') + ' is for ' +
+      'report administrators: a report over it needs REPORT_ADMIN.'
+  };
+  const roles = (who && who.roles) || [];
+  if (asked.adminSources.length && roles.indexOf('REPORT_ADMIN') < 0) {
+    log.debug("Leaving reportSourceRefusal(). The catalog refuses it.");
+    return refusal;
+  }
+  const row = object || { kind: 'query', owner: who.subject, groups: [] };
+  const answer = reportDecide(who, action, {
+    kind: row.kind, owner: row.owner, groups: row.groups,
+    sources: asked.sources, adminSources: asked.adminSources
+  });
+  if (!answer.allowed) {
+    log.debug("Leaving reportSourceRefusal(). The policy refuses it.");
+    return refusal;
+  }
+  log.debug("Leaving reportSourceRefusal().");
+  return null;
+}
+
+/**
+ * Whether the caller may query a source at all (#2126), for the catalog's
+ * `usable`: the question an ad hoc query of their own puts.
+ *
+ * @param who - the caller
+ * @param sourceId - the source
+ * @returns true when a query of it would not be refused for its source
+ */
+function reportSourceUsable(who: ReportCaller, sourceId: string): boolean {
+  log.debug("Entering reportSourceUsable().");
+  const usable = !reportSourceRefusal(who, 'run', null, sourceId);
+  log.debug("Leaving reportSourceUsable(). " + usable);
+  return usable;
+}
+
+/**
  * Whether a definition's owner may still run it, for the schedule: the
  * roles that owner holds now, and `run` on the definition.
  *
@@ -451,12 +550,28 @@ function reportCanSeeJob(who: ReportCaller, job: any,
  */
 function reportOwnerMayRun(definition: any): any {
   log.debug("Entering reportOwnerMayRun().");
+  const def = definition || {};
+  const sourceId = String((def.document || {}).source || '');
   if (ownerCheck) {
     const out = ownerCheck(definition);
+    // A seam that names the owner's roles has the source asked of them
+    // too (#2126); one that does not answers for the whole question.
+    if (out && out.ok && Array.isArray(out.roles)) {
+      const refused = reportSourceRefusal({
+        subject: String(def.owner || ''),
+        username: String(out.username || ''),
+        kind: def.ownerKind === 'application' ? 'application' : 'user',
+        roles: out.roles.map(String), scope: '', clientId: '', realm: ''
+      }, 'run', reportDefinitionObject(def), sourceId);
+      if (refused) {
+        log.debug("Leaving reportOwnerMayRun(). Injected; the source " +
+                  "is refused.");
+        return reportOwnerSourceRefused(refused, sourceId);
+      }
+    }
     log.debug("Leaving reportOwnerMayRun(). Injected.");
     return out;
   }
-  const def = definition || {};
   const kind = def.ownerKind === 'application' ? 'application' : 'user';
   const owner = String(def.owner || '');
   // AN OWNER FROM ANOTHER REALM (#1038) is a service administrator who
@@ -508,8 +623,31 @@ function reportOwnerMayRun(definition: any): any {
     log.debug("Leaving reportOwnerMayRun(). Refused.");
     return refusal;
   }
+  // AND THE SOURCE (#2126): a scheduled report over an administrators'
+  // source runs only while its owner holds REPORT_ADMIN — one saved
+  // before the rule, or by an owner who has since lost the role, is
+  // refused here and its occurrence consumed.
+  const refused = reportSourceRefusal(who, 'run',
+    reportDefinitionObject(def), sourceId);
+  if (refused) {
+    log.debug("Leaving reportOwnerMayRun(). The source is refused.");
+    return reportOwnerSourceRefused(refused, sourceId);
+  }
   log.debug("Leaving reportOwnerMayRun().");
   return { ok: true, username: name };
+}
+
+// The schedule's refusal for the source (#2126), in the owner's words.
+function reportOwnerSourceRefused(refused: any, sourceId: string): any {
+  log.debug("Entering reportOwnerSourceRefused().");
+  log.debug("Leaving reportOwnerSourceRefused().");
+  return {
+    ok: false,
+    code: refused.code,
+    error: refused.error,
+    description: 'The owner does not hold REPORT_ADMIN, which a report ' +
+      'over ' + sourceId + ' needs.'
+  };
 }
 
 export = {
@@ -525,6 +663,9 @@ export = {
   canEdit: reportCanEdit,
   canSeeJob: reportCanSeeJob,
   ownerMayRun: reportOwnerMayRun,
+  sourceRefusal: reportSourceRefusal,
+  sourceUsable: reportSourceUsable,
+  sourcesOf: reportSourcesOf,
   username: reportUsername,
   clientIdOf: reportClientIdOf,
   inOwnerRealm: reportInOwnerRealm,

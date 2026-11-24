@@ -166,6 +166,14 @@ interface PresetSpec {
 interface SourceSpec {
   id: string;
   bounded: boolean;
+  // A SOURCE FOR REPORT ADMINISTRATORS ONLY (#2126, ASVS 5.0.0 8.2.3):
+  // what the console keeps behind Admin Read — who did what, from where,
+  // and who holds which credential. A caller without REPORT_ADMIN may not
+  // define, run, preview or download a report over it. DATA, not a list in
+  // `rights.ts`: `rights.ts` reads it here, sends it to the PDP as
+  // `urn:sts:xacml:report-admin-source`, and the API publishes it so the
+  // page can disable what the caller may not use.
+  adminOnly?: boolean;
   // A DIRECTORY-BACKED SOURCE (rcbj, 2026-10-27: a filter on a field the
   // store cannot answer "will never work given the constraints"): a filter
   // on it has to name an indexed field — a leaf of an `and`, every arm of
@@ -225,6 +233,15 @@ function source(id: string, retention: string,
     });
   }
   log.debug("Leaving source().");
+  return spec;
+}
+
+// Marks a source as one only a report administrator may query (#2126),
+// at its declaration, so the mark is read where the source is read.
+function adminOnly(spec: SourceSpec): SourceSpec {
+  log.debug("Entering adminOnly(). " + spec.id);
+  spec.adminOnly = true;
+  log.debug("Leaving adminOnly().");
   return spec;
 }
 
@@ -594,7 +611,7 @@ function standardSources(): SourceSpec[] {
        field('policy', 'string',
          'default for a realm row; otherwise the named authentication ' +
          'policy the row\'s list comes from.')]),
-    source('auditEvents',
+    adminOnly(source('auditEvents',
       'The audit rings still held by the service\'s processes, newest ' +
       'first, each capped by audit.maxEvents (5000 unless an operator set ' +
       'another cap). Not a warehouse of sign-ins.',
@@ -602,8 +619,8 @@ function standardSources(): SourceSpec[] {
        field('category', 'string', 'The audit category.'),
        field('action', 'string', 'The audit action.'),
        field('outcome', 'string', 'The audit outcome.'),
-       field('actor', 'string', 'The account name on the audit row.')]),
-    source('authActivity',
+       field('actor', 'string', 'The account name on the audit row.')])),
+    adminOnly(source('authActivity',
       'Sign-in attempts still in the same audit ring as auditEvents, ' +
       'capped by audit.maxEvents. Not a warehouse of sign-ins. A session ' +
       'id, an address, a note and a presented credential are not fields.',
@@ -620,7 +637,7 @@ function standardSources(): SourceSpec[] {
        field('application', 'string',
          'detail.application, or detail.client_id when the row has ' +
          'no application.'),
-       field('protocol', 'string', 'The protocol on the audit row.')]),
+       field('protocol', 'string', 'The protocol on the audit row.')])),
     source('serviceMetrics',
       'Numeric leaves of a live service-counter snapshot. Not a time ' +
       'series. Route rows, token kinds and other lists are not leaves, ' +
@@ -646,7 +663,7 @@ function standardSources(): SourceSpec[] {
          'When the job finished, or null while it has not.'),
        field('byteSize', 'number',
          'The stored artifact size, or null before it exists.')]),
-    source('credentialHolders',
+    adminOnly(source('credentialHolders',
       'Who holds which authentication credential, as the directory is ' +
       'now: one row per person, per mechanism, per role (#1002). A ' +
       'passkey has no role (#1135) and its role is empty; an ' +
@@ -719,7 +736,7 @@ function standardSources(): SourceSpec[] {
          'When the person last completed a multi-factor sign-in.'),
        field('memberOf', 'string',
          'The names of the groups that list this person, joined.',
-         HOLDER_INDEXED.memberOf)], true),
+         HOLDER_INDEXED.memberOf)], true)),
     source('attributeSources',
       'The attribute-source register as it is now. Connection details ' +
       'and secrets are not fields. This source does not run SQL and ' +
@@ -989,6 +1006,22 @@ class Catalog {
     log.debug("Entering Catalog().");
     this.sources = sources ? sources.slice() : standardSources();
     log.debug("Leaving Catalog().");
+  }
+
+  /**
+   * Whether a source is for report administrators only (#2126): a caller
+   * without REPORT_ADMIN may not define, run, preview or download a
+   * report over it. False for a source the catalog does not have.
+   *
+   * @param sourceId - the source
+   * @returns true for an administrators' source
+   */
+  adminOnly(sourceId: string): boolean {
+    log.debug("Entering Catalog.adminOnly().");
+    const src = this.source(sourceId);
+    const only = !!src && src.adminOnly === true;
+    log.debug("Leaving Catalog.adminOnly(). " + only);
+    return only;
   }
 
   /**
