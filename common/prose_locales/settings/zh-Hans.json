@@ -4860,8 +4860,8 @@
     "text": "最大身份验证时限（秒）"
   },
   "oauth2.maxAuthAgeS|description": {
-    "en": "5a37fced9d4d040e",
-    "text": "客户端在多少秒以前完成过身份验证之后，授权请求必须再次进行身份验证，即使该请求没有发送 max_age。0 是默认值，不增加自身的界限，因此普通客户端保持不变。在每次授权请求时读取：它不改写已经存储的会话。管理控制台（sts-admin-console）、用户门户（sts-user-portal）和报表应用（sts-report）各自带有自己的值，并取该值与 authn.sessionLifetimeS 中较短的一个，因此提高此项设置或会话有效期永远不会延长这三项，而降低 authn.sessionLifetimeS 仍然会缩短它们。按客户端覆盖的属性是 oauthMaxAuthAgeS。这不是令牌有效期，也不在 /admin/token-lifetimes 上（#825）。"
+    "en": "163792a8531f4514",
+    "text": "客户端在多少秒以前完成过身份验证之后，授权请求必须再次进行身份验证，即使该请求没有发送 max_age。0 是默认值，不增加自身的界限，因此普通客户端保持不变。在每次授权请求时读取：它不改写已经存储的会话。管理控制台（sts-admin-console）、用户门户（sts-user-portal）和报表应用（sts-report）各自带有自己的值，并取该值与 authn.sessionLifetimeS 中较短的一个，因此提高此项设置或会话有效期永远不会延长这三项，而降低 authn.sessionLifetimeS 仍然会缩短它们。按客户端覆盖的属性是 oauthMaxAuthAgeS。这不是令牌有效期：/admin/token-lifetimes 在各有效期下方将它与所在组的其余设置一起显示（#825、#2070）。"
   },
   "oauth2.expiredTokenRetentionS|label": {
     "en": "4466b89054d69c81",

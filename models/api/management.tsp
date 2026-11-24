@@ -2326,6 +2326,9 @@ namespace IyaSts.Api.Management {
     `personFieldCount`?: numeric;
     `newUserContainer`?: string;
     `registryKeeps`?: numeric;
+    @js(#{
+      `description`:"The settings this page draws, described: the same rows GET /config returns, filtered to the ones this page owns."
+    }) `settings`?: WithPageDescriptionGroupsEtc15;
     `users`?: (WithKeyNameFormsEtc22)[]
   }
 
@@ -3147,7 +3150,10 @@ namespace IyaSts.Api.Management {
     `tokens`?: WithHeldForgottenCapEtc5;
     `now`?: numeric;
     `context`?: NullableObject93;
-    `overridable`?: (WithSettingAttribute)[]
+    `overridable`?: (WithSettingAttribute)[];
+    @js(#{
+      `description`:"The rest of the `OAuth 2.0 / OIDC per-client` group, which this page draws as an ordinary settings form: the page's settings block with the rows of `settings` left out."
+    }) `otherSettings`?: WithPageDescriptionGroupsEtc15
   }
 
 @component model `SamlAssertions` {

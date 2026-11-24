@@ -1380,10 +1380,11 @@ They are also written with `POST /admin-api/applications/set` or an
 the service-wide setting is the answer for every application that has not been
 given one of its own. An **absent attribute means inherit** — there is no third
 state — and a value that will not parse is ignored, logged and the setting used
-instead. The three token lifetimes, the idle timeout and revoke-on-logout live
-on `/admin/token-lifetimes`. `oauth2.maxAuthAgeS` does not: it is in the
-per-client group, and an application's own value is `oauthMaxAuthAgeS` on its
-OAuth configuration tab. The admin console (`sts-admin-console`), the user
+instead. The three token lifetimes, the idle timeout and revoke-on-logout are
+the table on `/admin/token-lifetimes`. `oauth2.maxAuthAgeS` is not a lifetime:
+the same page draws it below that table with the rest of the per-client group,
+and an application's own value is `oauthMaxAuthAgeS` on its OAuth
+configuration tab. The admin console (`sts-admin-console`), the user
 portal (`sts-user-portal`) and the reports application (`sts-report`) take the
 shorter of their own positive maximum authentication age, refresh lifetime and
 refresh idle and the matching realm limit (`authn.sessionLifetimeS` for the
@@ -1799,7 +1800,8 @@ the whole story.
 
 What a person may set on the portal, and what is copied from a federation
 partner. [The user portal](user-facing-pages.md#the-user-portal) describes the
-card, and each of these applies per realm.
+card, and each of these applies per realm. Directory → **Users**
+(`/admin/users`) draws these rows on its **Settings** tab.
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
@@ -2028,7 +2030,7 @@ card, and each of these applies per realm.
 | `oauth2.accessTokenTtlS` | `STS_OAUTH2_ACCESS_TOKEN_TTL_S` | `3600` | yes | How long an access token is good for: its `exp` is this many seconds after it was signed, and it is the `expires_in` of every token response that carries one. One hour by default. |
 | `oauth2.idTokenTtlS` | `STS_OAUTH2_ID_TOKEN_TTL_S` | `3600` | yes | How long an ID Token is good for. |
 | `oauth2.refreshTokenTtlS` | `STS_OAUTH2_REFRESH_TOKEN_TTL_S` | `86400` | yes | The ABSOLUTE lifetime of a refresh token — the `exp` on the token itself, enforced in both modes by the refresh grant. |
-| `oauth2.maxAuthAgeS` | `STS_OAUTH2_MAX_AUTH_AGE_S` | `0` | yes | How long ago a client was authenticated, in seconds, before an authorization request must authenticate again, even when the request sends no max_age. 0, the default, adds no bound of its own, so an ordinary client is unchanged. Read on each authorization request: it does not rewrite a session already stored. The admin console (sts-admin-console), the user portal (sts-user-portal) and the reports application (sts-report) each carry their own value and take the shorter of it and authn.sessionLifetimeS, so raising this setting or the session lifetime never lengthens those three. A per-client override is oauthMaxAuthAgeS. This is not a token lifetime and it is not on /admin/token-lifetimes (#825). |
+| `oauth2.maxAuthAgeS` | `STS_OAUTH2_MAX_AUTH_AGE_S` | `0` | yes | How long ago a client was authenticated, in seconds, before an authorization request must authenticate again, even when the request sends no max_age. 0, the default, adds no bound of its own, so an ordinary client is unchanged. Read on each authorization request: it does not rewrite a session already stored. The admin console (sts-admin-console), the user portal (sts-user-portal) and the reports application (sts-report) each carry their own value and take the shorter of it and authn.sessionLifetimeS, so raising this setting or the session lifetime never lengthens those three. A per-client override is oauthMaxAuthAgeS. This is not a token lifetime: /admin/token-lifetimes draws it below the lifetimes, with the rest of its group (#825, #2070). |
 | `oauth2.refreshTokenEncryptionAlg` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_ALG` | `A256KW` | yes | Any ML-KEM or HPKE algorithm may be chosen too (#82): the token is then sealed to a key pair derived from the realm's secret for that algorithm, never published, so nothing a client sees changes; `HPKE-10-KE` (X-Wing) makes a refresh token captured today safe against a future quantum adversary. EVERY REFRESH TOKEN IS A SIGNED JWT ENCRYPTED TO ITS OWN TRUST REALM — a compact JWE with `cty: JWT` (RFC 7519 section 11.2), opaque to the client as RFC 6749 section 1.5 already makes it. This picks the key management algorithm a new token is sealed under: any the JWE module implements (RSA-OAEP, RSA-OAEP-256, ECDH-ES and its three key-wrap variants, A128KW–A256KW, A128GCMKW–A256GCMKW, PBES2, `dir`; RSA1_5 is not offered). Each realm holds its own RSA key, EC key and secret, so a change strands no token already issued. An UNENCRYPTED refresh token is refused (`invalid_grant`, and `active: false` at introspection). PBES2 is not offered: the secret is random, so stretching it as a password adds nothing. |
 | `oauth2.refreshTokenEncryptionEnc` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_ENC` | `A256GCM` | yes | The JWE content encryption algorithm for refresh tokens — A128GCM, A192GCM, A256GCM, A128CBC-HS256, A192CBC-HS384 or A256CBC-HS512. |
 | `oauth2.refreshTokenEncryptionKeyBits` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_KEY_BITS` | `2048` (`3072` in product) | yes | The RSA modulus of each realm's refresh-token encryption key. Reaches key sets made after the change; rotate a realm's keys to apply it. |

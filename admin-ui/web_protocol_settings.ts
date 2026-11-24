@@ -17,9 +17,8 @@
 // beside their plain text since #446, the settings block and the links.
 //
 // A STATUS BLOCK (persistence, the cluster, Kerberos pre-authentication and
-// the three second-factor mechanisms) is still drawn by the console and
-// handed in as `statusHtml`; the page table lists only the pages without
-// one until each block is converted.
+// the three second-factor mechanisms) is drawn here from the view's
+// `status` (`STATUS`); the cluster's is `web_cluster_status.ts`'s (#2070).
 //
 // A `web_` MODULE, on `web_kit.ts`'s terms: it requires other `web_` modules
 // only, logs nothing, and is bundled for a browser by `build-typescript.sh`.
@@ -27,6 +26,7 @@
 
 import kit = require('./web_kit');
 import SettingsForms = require('./web_settings');
+import ClusterStatusPage = require('./web_cluster_status');
 
 type Json = any;
 
@@ -42,6 +42,12 @@ class ProtocolSettingsPage {
   static readonly STATUS: Record<string, (info: Json, t: Json) => string> = {
     '/admin/persistence': function (info: Json, t: Json): string {
       return ProtocolSettingsPage.persistenceStatus(info, t);
+    },
+    // Platform → Cluster's status block (#2070): it had no browser renderer
+    // from #446 until then, so the page drew its settings and nothing of
+    // what they decide about.
+    '/admin/cluster': function (info: Json, t: Json): string {
+      return ClusterStatusPage.render(info, t);
     },
     '/admin/kerberos': function (info: Json, t: Json): string {
       return ProtocolSettingsPage.kerberosPreauthStatus(info, t);
