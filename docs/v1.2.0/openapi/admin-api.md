@@ -44,6 +44,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [Federation](admin-api-federation.html) | 24 |  |
 | [GNAP](admin-api-gnap.html) | 4 | The Grant Negotiation and Authorization Protocol (RFC 9635) and its resource server connections (RFC 9767): the authorization server of this realm, what the applications using it have done, and the two things an operator does to its state by hand. |
 | [Groups](admin-api-groups.html) | 8 | The embedded LDAP directory's groups. A group here GRANTS NOTHING: no token, assertion, ticket or PAC carries one and no endpoint reads one. |
+| [Hardware tokens](admin-api-hardware-tokens.html) | 5 | The settings of the hardware-token mechanisms (#2049): the token register's hardware claims, PIV, YubiKey OTP, OATH tokens and the SSH user CA, one page each. The registers themselves are under Directory. |
 | [Kerberos](admin-api-kerberos.html) | 28 |  |
 | [LDAP](admin-api-ldap.html) | 10 |  |
 | [Metrics](admin-api-metrics.html) | 1 | What this service has done since it started. |
@@ -53,6 +54,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [OpenID Federation](admin-api-openid-federation.html) | 19 |  |
 | [OpenID4VCI](admin-api-openid4vci.html) | 3 |  |
 | [OpenID4VP](admin-api-openid4vp.html) | 1 |  |
+| [OpenPGP](admin-api-openpgp.html) | 1 | The OpenPGP settings (#2049): the algorithms a registered key may use, the post-quantum rules, the registration challenge and the Web Key Directory. A person's key is under Directory. |
 | [Ownership](admin-api-ownership.html) | 2 |  |
 | [PKI](admin-api-pki.html) | 26 |  |
 | [Persistence](admin-api-persistence.html) | 1 |  |
