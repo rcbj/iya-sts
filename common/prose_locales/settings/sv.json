@@ -6175,6 +6175,14 @@
     "en": "32f9389b65f0eb67",
     "text": "Om ds:Signature i ett WS-Trust-svar också krypteras (WS-SecurityPolicys sp:EncryptSignature), till svarets mottagare. Läses bara medan svaret signeras och sedan krypteras. WSDL:ens bindning bär sp:EncryptSignature medan detta är på. En applikations wstrustEncryptSignature åsidosätter detta."
   },
+  "wstrust.recipientIgnoresKeyUsage|label": {
+    "en": "5084027709e17c26",
+    "text": "Kryptera ett svar till ett certifikat oavsett dess keyUsage"
+  },
+  "wstrust.recipientIgnoresKeyUsage|description": {
+    "en": "58e43975d6e28519",
+    "text": "Om ett WS-Trust-svar får krypteras till ett certifikat vars keyUsage varken tillåter keyEncipherment eller keyAgreement — oftast begärans signeringscertifikat: den här sfärens certifikat för meddelandesignering tillåter bara digitalSignature. Bara den kontrollen hoppas över; certifikatets giltighet, sökväg och spärrstatus kontrolleras fortfarande där paranoid PKI-läge kontrollerar dem. Av som standard. En applikations wstrustRecipientIgnoresKeyUsage åsidosätter detta."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Inloggning initierad av identitetsleverantören"

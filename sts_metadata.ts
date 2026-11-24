@@ -6419,6 +6419,58 @@ const ENDPOINTS: EndpointEntry[] = [
           'reported beside them. There is ' +
           'no POST beside this one: the forms post set-many to ' +
           '/admin/config. Mirrors GET /admin/webauthn.' },
+  // #2049: the hardware-token mechanisms and OpenPGP, a Protocols page
+  // each, and an operation per page.
+  { path: '/admin-api/hardware-tokens-settings', group: 'Management API',
+    name: 'Hardware token settings',
+    specs: ['webauthn', 'ctap21', 'yubico-piv-attestation', 'rfc6030'],
+    what: 'NON-SPEC (#2049). The Hardware tokens group: ' +
+          'hardwareTokens.hardwareClaims, which decides whether a PKINIT ' +
+          'inference and a passkey without trusted attestation still earn ' +
+          'hwk, beside what a token register is and what a lost token ' +
+          'retires. There is no POST beside this one: the forms post ' +
+          'set-many to /admin/config. Mirrors GET ' +
+          '/admin/hardware-tokens-settings.' },
+  { path: '/admin-api/piv', group: 'Management API',
+    name: 'PIV settings',
+    specs: ['fips201', 'yubico-piv-attestation'],
+    what: 'NON-SPEC (#2049). Every piv.* setting: the attestation roots, ' +
+          'whether a PIV profile requires an attestation, the PIN and ' +
+          'touch policies, card-authentication sign-in, key escrow and ' +
+          'the outside issuers mapped by card UUID. There is no POST ' +
+          'beside this one: the forms post set-many to /admin/config. ' +
+          'Mirrors GET /admin/piv.' },
+  { path: '/admin-api/yubiotp', group: 'Management API',
+    name: 'YubiKey OTP settings',
+    specs: ['yubico-otp', 'yk-val'],
+    what: 'NON-SPEC (#2049). Every yubiotp.* setting: enrolment, the ' +
+          'YK-VAL 2.0 verify endpoint and plaintext imports. There is no ' +
+          'POST beside this one: the forms post set-many to /admin/config. ' +
+          'Mirrors GET /admin/yubiotp.' },
+  { path: '/admin-api/oath-tokens', group: 'Management API',
+    name: 'OATH token settings',
+    specs: ['rfc4226', 'rfc6030'],
+    what: 'NON-SPEC (#2049). The hotp.* settings and ' +
+          'pskc.allowPlaintextImport: the code length, the two windows and ' +
+          'whether product mode accepts a plaintext PSKC seed file. There ' +
+          'is no POST beside this one: the forms post set-many to ' +
+          '/admin/config. Mirrors GET /admin/oath-tokens.' },
+  { path: '/admin-api/ssh-user-ca', group: 'Management API',
+    name: 'SSH user certificate settings', specs: [],
+    what: 'NON-SPEC (#2049). Every pki.ssh* setting of the realm\'s ' +
+          'OpenSSH user CA: its algorithms, the post-quantum rules, the ' +
+          'longest certificate with and without hardware evidence, the ' +
+          'extensions and the principals. There is no POST beside this ' +
+          'one: the forms post set-many to /admin/config. Mirrors GET ' +
+          '/admin/ssh-user-ca.' },
+  { path: '/admin-api/openpgp-settings', group: 'Management API',
+    name: 'OpenPGP settings',
+    specs: ['rfc9580', 'rfc9980', 'rfc3156', 'rfc8551', 'wkd'],
+    what: 'NON-SPEC (#2049). Every openpgp.* setting: the Web Key ' +
+          'Directory, the algorithms accepted, the smallest RSA key, the ' +
+          'post-quantum rules, the challenge lifetime and the signature ' +
+          'clock skew. There is no POST beside this one: the forms post ' +
+          'set-many to /admin/config. Mirrors GET /admin/openpgp-settings.' },
   { path: '/admin-api/mfa', group: 'Management API',
     name: 'Who holds a second factor',
     specs: ['rfc6238', 'rfc4226', 'webauthn'],

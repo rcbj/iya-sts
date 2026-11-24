@@ -77,6 +77,7 @@ certificates. The rules:
 | `email` | a person with a `mail` attribute |
 | `timestamping` | — |
 | `smartcard-logon` | a person with `userPrincipalName` or `mail` |
+| `piv-auth`, `piv-sign`, `piv-key-management`, `piv-card-auth` | a person; the YubiKey's PIV slot profiles, issued only once an operator adds them to `est.allowedProfiles`, with the card's attestation as evidence. See [Hardware tokens](hardware-tokens.md#piv-certificate-profiles) |
 | `device` | a DEVICE entry: the one the request's `urn:sts:device:<id>` names (its owner, or an administrator), or a new one owned by the requester; a TPM key attestation in product. See [Devices](devices.md) |
 
 **Never issued over EST** (403): `root-ca`, `intermediate-ca`, `issuing-ca`,

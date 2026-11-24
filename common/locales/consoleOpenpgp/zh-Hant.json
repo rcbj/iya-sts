@@ -41,5 +41,7 @@
   "wkdOn": "此領域會回應 Web 金鑰目錄請求（openpgp.wkd）。",
   "wkdOff": "此領域不回應 Web 金鑰目錄請求（openpgp.wkd 已關閉）。",
   "wkdDomains": "其服務的網域：",
-  "wkdWhat": "路徑中不含領域的請求，由服務其網域的領域回應，預設領域優先。只回應已選擇發布者的金鑰。"
+  "wkdWhat": "路徑中不含領域的請求，由服務其網域的領域回應，預設領域優先。只回應已選擇發布者的金鑰。",
+  "personUnavailable": "無法在此讀取此人的 OpenPGP 金鑰與 S/MIME 憑證。目錄 → OpenPGP 金鑰會顯示它們。",
+  "central": "個人的金鑰、Web Key Directory 與 S/MIME：目錄 → OpenPGP 金鑰"
 }

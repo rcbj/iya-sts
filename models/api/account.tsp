@@ -4956,6 +4956,57 @@ op `getTokens`(`responses/200/content/application~1json/schema`: HardwareTokensP
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
   }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
+  
+
+@endpoint("/account-api/tokens-and-keys",
+  "get",
+  #{
+    `operationId`:"getTokensAndKeys",
+    `tags`:#["Devices"],
+    `summary`:"Your tokens and keys",
+    `description`:"The view of `GET /account-api/tokens` (your hardware tokens, the PIV profiles and your escrowed keys), for the portal's Tokens and keys page (#2053), whose tabs also draw `GET /account-api/mfa`, `GET /account-api/openpgp` and `GET /account-api/ssh/certificates`.",
+    `parameters`:#[
+
+    ],
+    `responses`:#{
+      `200`:#{
+        `description`:"The answer.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The request did not validate, or was refused: `{ ok: false, errors: [...] }`.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `401`:#{
+        `description`:"No access token, or one that does not verify, has expired, was revoked, outlived its sign-on session, or came without its DPoP proof. `WWW-Authenticate` says which.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `403`:#{
+        `description`:"The token is for another audience or does not carry `account:manage`, or the access policy refused the person.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`portal`:#["account:manage"]}],
+    `x-access`:"person",
+    `x-mirrors`:"GET /portal/tokens-and-keys"
+  })
+op `getTokensAndKeys`(`responses/200/content/application~1json/schema`: HardwareTokensPortalView,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  @js(#{
+    `description`:"A refusal or a failure, in English. No error code is ever in it."
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
 
 
 @js(#{`description`:"What to do; `lost` where none is named. `claim` (#1955 P4) takes an imported one-time code token by its serial and a code it shows now."}) @hoisted union post_account_api_tokens_b_application_json_action {
@@ -5178,6 +5229,7 @@ op `listSshCertificates`(
     },
     `security`:#[#{`portal`:#["account:manage"]},#{`portal`:#["ssh:certificate"]}],
     `x-access`:"person",
+    `x-mirrors`:"POST /portal/ssh",
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`publicKey`:"ssh-ed25519 invalid",`principals`:#["alice"]}}}}
   })
 op `issueSshCertificate`(
@@ -5242,6 +5294,7 @@ op `issueSshCertificate`(
     },
     `security`:#[#{`portal`:#["account:manage"]},#{`portal`:#["ssh:certificate"]}],
     `x-access`:"person",
+    `x-mirrors`:"POST /portal/ssh/revoke",
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`serialHex`:"ffffffffffffffff"}}}}
   })
 op `revokeSshCertificate`(

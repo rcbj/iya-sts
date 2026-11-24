@@ -995,6 +995,30 @@
     "en": "dcc6aecb3740fef3",
     "text": "Paramètres WebAuthn"
   },
+  "endpoints.route./admin-api/hardware-tokens-settings.name": {
+    "en": "f7c0eac08cccb13f",
+    "text": "Paramètres des jetons matériels"
+  },
+  "endpoints.route./admin-api/piv.name": {
+    "en": "3708b64a7c448009",
+    "text": "Paramètres PIV"
+  },
+  "endpoints.route./admin-api/yubiotp.name": {
+    "en": "1b84971a31275a96",
+    "text": "Paramètres YubiKey OTP"
+  },
+  "endpoints.route./admin-api/oath-tokens.name": {
+    "en": "87d8bb1a9df4fe02",
+    "text": "Paramètres des jetons OATH"
+  },
+  "endpoints.route./admin-api/ssh-user-ca.name": {
+    "en": "863acd9a2df9d014",
+    "text": "Paramètres des certificats utilisateur SSH"
+  },
+  "endpoints.route./admin-api/openpgp-settings.name": {
+    "en": "60b6f8684877d1e1",
+    "text": "Paramètres OpenPGP"
+  },
   "endpoints.route./admin-api/mfa.name": {
     "en": "63fc7f058d95883b",
     "text": "Qui détient un second facteur"

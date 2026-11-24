@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# OpenSSL'S PKCS#11 ENGINE OVER OpenSC (#2059): OPENSSL_CONF=/opt/client-lab/
+# piv/openssl.cnf, with OPENSC_CONF=/opt/client-lab/piv/opensc.conf. Debian's
+# libengine-pkcs11-openssl loads p11-kit's proxy by default; this names
+# OpenSC's module, so `-engine pkcs11 -keyform engine -key "pkcs11:id=%01;
+# type=private;pin-value=…"` (openssl req, openssl cms) and curl's
+# `--engine pkcs11 --key-type ENG` reach the key on the PIV card.
+openssl_conf = openssl_init
+
+[openssl_init]
+engines = engine_section
+
+[engine_section]
+pkcs11 = pkcs11_section
+
+[pkcs11_section]
+engine_id = pkcs11
+dynamic_path = /usr/lib/x86_64-linux-gnu/engines-3/pkcs11.so
+MODULE_PATH = /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so
+init = 0
+
+[req]
+distinguished_name = req_dn
+
+[req_dn]

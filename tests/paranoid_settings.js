@@ -348,5 +348,34 @@ module.exports = {
             !/\bm\.(exempt|skip|paranoid|override)/i.test(source),
             'H. and no member of what it is handed can exempt a certificate',
             '');
+    // THE ONE WAIVER (rcbj, 2026-11-24, #2046): `ignoreKeyUsage`, keyUsage
+    // alone, for an encryption recipient alone, passed by the WS-Trust
+    // response encryption and by nothing else.
+    t.check(/opts\.ignoreKeyUsage === true &&\s*verdict\.purpose === 'encryption-recipient'/
+              .test(source),
+            'H. the one waiver is keyUsage, for an encryption recipient only');
+    const passers = [];
+    const walk = function (dir) {
+      fs.readdirSync(dir, { withFileTypes: true }).forEach(function (one) {
+        const full = path.join(dir, one.name);
+        if (one.isDirectory()) {
+          if (!/^(node_modules|tests|docs|debugger|rust|models|\..*)$/
+                .test(one.name)) {
+            walk(full);
+          }
+        } else if (/\.ts$/.test(one.name) ||
+                   (/\.js$/.test(one.name) &&
+                    !fs.existsSync(full.replace(/\.js$/, '.ts')))) {
+          if (/ignoreKeyUsage/.test(fs.readFileSync(full, 'utf8'))) {
+            passers.push(path.relative(path.join(__dirname, '..'), full));
+          }
+        }
+      });
+    };
+    walk(path.join(__dirname, '..'));
+    t.check(JSON.stringify(passers.sort()) === JSON.stringify(
+              ['common/certificate_trust.ts', 'ws-trust/ws_encryption.ts']),
+            'H. and only the WS-Trust response encryption passes it',
+            JSON.stringify(passers));
   }
 };

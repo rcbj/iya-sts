@@ -649,7 +649,10 @@ token, RFC 8636's key-derivation agility and RFC 5349's elliptic curves.
 
 * a **smart-card logon** certificate enrolled on their entry over ACME, EST or
   SCEP (the `smartcard-logon` profile, e.g. `/.well-known/est/smartcard-logon/
-  simpleenroll`), or
+  simpleenroll`),
+* a **PIV Authentication** certificate for a card's slot 9a (the `piv-auth`
+  profile, enrolled with the card's attestation; see
+  [Hardware tokens](hardware-tokens.md#piv-key-attestation)), or
 * any certificate from the realm's identity Issuing CAs whose `id-pkinit-san`
   names them exactly.
 
@@ -675,13 +678,33 @@ kinit -X X509_user_identity=PKCS11:/usr/lib/opensc-pkcs11.so alice@EXAMPLE.COM
 `root.pem` is the service Root and `chain.pem` the Issuing CA and Intermediate
 the certificate was issued under (the enrollment response carries both).
 
+**A key on a PIV card** is used through OpenSC's PKCS#11 module, as in the
+second line. MIT Kerberos 1.20 signs a PKINIT request through PKCS#11 with
+RSA only (`CKM_RSA_PKCS`; it has no PKCS#11 elliptic-curve support), so the
+slot 9a key must be RSA, such as `yubico-piv-tool -a generate -s 9a -A
+RSA2048`; a P-256 key in the slot works for TLS and not for MIT's PKINIT.
+`kinit` asks for the card's PIN.
+
 **What the ticket says.** Every PKINIT ticket carries the RFC 8129 indicator
-`pkinit`, and `/authn/spnego` reads it as `amr ["swk"]`, never `pwd`. A
-smart-card logon certificate over a key this service did not generate (that
-is, not EST `/serverkeygen`) is the one case the KDC treats as a hardware
-key: the ticket also carries `pkinit-hardware` and the hw-authent flag, read
-as `amr ["hwk"]`. Either way it is one factor, `acr "1"`. The ticket ends no
-later than the certificate does, and carries `AD-INITIAL-VERIFIED-CAS`.
+`pkinit`, and `/authn/spnego` reads it as `amr ["swk"]`, never `pwd`. The
+ticket also carries `pkinit-hardware` and the hw-authent flag (`klist -f`
+shows `H`), read as `amr ["hwk"]`, when the certificate's key is on a
+hardware token whose attestation the
+[hardware token register](hardware-tokens.md#what-a-sign-in-claims) recorded
+— an attested PIV certificate is one — and `pkinit-smartcard` beside it,
+read as `sc`, when that evidence says the key is on a smart card. By default
+(`hardwareTokens.hardwareClaims` `inference`) a smart-card logon certificate
+over a key this service did not generate (that is, not EST `/serverkeygen`)
+earns `pkinit-hardware` too; set `evidence` to earn it from attestation
+only. Either way it is one factor, `acr "1"`. The ticket ends no later than
+the certificate does, and carries `AD-INITIAL-VERIFIED-CAS`.
+
+**A revoked certificate gets no ticket.** A card reported lost has its
+certificates revoked (`keyCompromise`), and the KDC answers the next AS-REQ
+signed with one `KDC_ERR_REVOKED_CERTIFICATE`. A `piv-card-auth` (slot 9e)
+certificate gets none either: that key works without a PIN, its profile
+carries no PKINIT purpose, and the KDC refuses it (`STS-PIV-0013`) unless the
+authentication policy's *PIV card authentication key* row lets it sign in.
 
 **Refused, by design:**
 

@@ -1915,6 +1915,30 @@
     "en": "b48aa4041763958e",
     "text": "非規格端點。各項 `webauthn.*` 設定，分為四類——「儀式」（RP 名稱、RP ID 覆寫、演算法、使用者驗證、證明傳遞、逾時）、CTAP2（驗證器附接方式、credProps）以及「原則」（金鑰是否可作為主要因素、是否可作為第二因素、每人可有幾把）——旁邊附上 COSE 演算法表，從 authn/webauthn.js（檢查簽章的模組）讀出。**只有一項會被強制執行，其餘都是請求**：userVerification 會依驗證器所簽署位元組中的 UV 旗標檢查。證明原則（#105）與目前生效的 FIDO 中繼資料一併回報。旁邊沒有 POST：表單以 set-many POST 至 /admin/config。對應 GET /admin/webauthn。"
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens-settings.what": {
+    "en": "0052f035e7838d3d",
+    "text": "非規格端點（#2049）。Hardware tokens 群組：hardwareTokens.hardwareClaims，決定 PKINIT 推論與沒有可信證明的通行金鑰是否仍取得 hwk，旁邊說明權杖登錄冊是什麼，以及遺失的權杖會撤銷什麼。旁邊沒有 POST：表單以 set-many POST 至 /admin/config。對應 GET /admin/hardware-tokens-settings。"
+  },
+  "stsmetadata.endpoints./admin-api/piv.what": {
+    "en": "24ea31c5f2d6423c",
+    "text": "非規格端點（#2049）。每個 piv.* 設定：證明根、PIV 設定檔是否要求證明、PIN 與觸碰原則、卡片驗證登入、金鑰託管，以及依卡片 UUID 對應的外部簽發者。旁邊沒有 POST：表單以 set-many POST 至 /admin/config。對應 GET /admin/piv。"
+  },
+  "stsmetadata.endpoints./admin-api/yubiotp.what": {
+    "en": "00d89a7aca51d6c1",
+    "text": "非規格端點（#2049）。每個 yubiotp.* 設定：註冊、YK-VAL 2.0 驗證端點與明文匯入。旁邊沒有 POST：表單以 set-many POST 至 /admin/config。對應 GET /admin/yubiotp。"
+  },
+  "stsmetadata.endpoints./admin-api/oath-tokens.what": {
+    "en": "5cf49220b4238eee",
+    "text": "非規格端點（#2049）。hotp.* 設定與 pskc.allowPlaintextImport：代碼長度、兩個視窗，以及產品模式是否接受明文 PSKC 種子檔。旁邊沒有 POST：表單以 set-many POST 至 /admin/config。對應 GET /admin/oath-tokens。"
+  },
+  "stsmetadata.endpoints./admin-api/ssh-user-ca.what": {
+    "en": "d469684ddad7dfa3",
+    "text": "非規格端點（#2049）。領域 OpenSSH 使用者 CA 的每個 pki.ssh* 設定：其演算法、後量子規則、有與沒有硬體證據時最長的憑證、擴充與主體。旁邊沒有 POST：表單以 set-many POST 至 /admin/config。對應 GET /admin/ssh-user-ca。"
+  },
+  "stsmetadata.endpoints./admin-api/openpgp-settings.what": {
+    "en": "392792b504230c16",
+    "text": "非規格端點（#2049）。每個 openpgp.* 設定：Web Key Directory、接受的演算法、最小的 RSA 金鑰、後量子規則、挑戰的有效期與簽章的時鐘偏差。旁邊沒有 POST：表單以 set-many POST 至 /admin/config。對應 GET /admin/openpgp-settings。"
+  },
   "stsmetadata.endpoints./admin-api/mfa.what": {
     "en": "22620e663bd803a3",
     "text": "非規格端點。每人一列：密碼、`mfa` 角色中的安全金鑰、是否已註冊驗證器應用程式，以及他們會被要求使用兩者中的哪一個。要找的是 `totpUsable: false` 那一列——此程序無法讀取的註冊，其持有者會在代碼步驟被「拒絕」，而不是只憑一個因素就放行。**它原本對應的主控台頁面已經不存在**：/admin/mfa 只存在了幾個小時，就拆分為機制頁面 /admin/totp 與 /admin/webauthn，以及現在成為 /admin/users 上欄位的名冊。此資源予以保留並「從該檢視」回答，因此只有一份統計而非兩次掃描。對應 GET /admin/users，而 GET /admin-api/users 在每一列的 `factors` 中攜帶相同事實。"

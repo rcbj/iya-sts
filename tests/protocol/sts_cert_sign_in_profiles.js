@@ -39,10 +39,22 @@
 //   F. REVOCATION REQUIRED: with certSignIn.requireRevocation on and
 //      revocation not consulted (pki.revocationCheck off), the bound leaf
 //      signs nobody in.
+//   G. EVERY BINDING METHOD (#2081): issuer-serial, certificate-sha256,
+//      issuer-ski, spki-sha256, and with lowAffinity email, issuer-subject
+//      and subject, one per profile, each value worked out by openssl as
+//      docs/v1.2.0/configure-tls.md says: bound to nobody it signs nobody
+//      in, bound to alice it signs her in, and with her account disabled it
+//      signs nobody in.
+//   H. RENEWAL (#2081): the Issuing CA certifying alice's key again, then a
+//      new key. issuer-serial and certificate-sha256 must be recorded again
+//      for the renewal; spki-sha256 and issuer-ski carry over while the key
+//      does, and not past a new one.
+//   I. AN EXPIRED LEAF (#2081), bound to alice, signs nobody in: the
+//      handshake does not verify it.
 //
-// NOT CARRIED, and why: the certificate handoff to a second listener needs a
-// custom listener bound by the stack (owed with the listener jobs); a
-// policy-mapped Federal PKI path, a forged intermediate sent after the leaf,
+// The handoff to a second listener is `sts_cert_handoff.js` (#2081), an
+// exclusive job of its own. NOT CARRIED, and why: a policy-mapped Federal
+// PKI path, a forged intermediate sent after the leaf,
 // a profile mixing high- and low-affinity methods (a UPN in the leaf) and a
 // serverAuth-only forwarded leaf all need certificate fields this minting
 // tool does not write, and are held in process (tests/certificate_binding.js
@@ -54,11 +66,12 @@
 const assert = require("assert");
 const https = require("https");
 const nodeCrypto = require("crypto");
+const { execFileSync } = require("child_process");
 const anchors = require("../tools/pep-credential.js");
 const K = require("./oauth_wire_kit.js").kit("sts_cert_sign_in_profiles");
 const log = K.log;
 
-const FLOOR = 10;
+const FLOOR = 40;
 const added = [];
 
 function check(what, fn) {
@@ -364,7 +377,240 @@ async function test() {
   });
   await K.unset(realm, "pki.revocationCheck");
   await K.unset(realm, "certSignIn.requireRevocation");
+
+  await everyMethod(realm, rb, { alice: alice, card: card, profile: profile,
+                                 serialBinding: binding });
+  await renewals(realm, rb, { alice: alice, card: card, profile: profile });
+  await expired(realm, rb, { alice: alice, card: card, profile: profile });
   log.debug("Leaving test().");
+}
+
+// ---------------------------------------------------------------------------
+// THE VALUES AN ADMINISTRATOR RECORDS, WORKED OUT THE WAY THE DOCUMENTATION
+// SAYS (#2081): `docs/v1.2.0/configure-tls.md`, *Working out the values*, by
+// openssl, never by this service's own parser. A value the service then
+// fails to match is a gap between the page and the code.
+// ---------------------------------------------------------------------------
+function openssl(args, pem, binary) {
+  log.debug("Entering openssl(). " + args.join(" "));
+  const out = execFileSync("openssl", args, { input: pem });
+  log.debug("Leaving openssl().");
+  return binary ? out : out.toString("utf8").trim();
+}
+
+function sha256Hex(bytes) {
+  log.debug("Entering sha256Hex().");
+  log.debug("Leaving sha256Hex().");
+  return nodeCrypto.createHash("sha256").update(bytes).digest("hex");
+}
+
+// `openssl x509 -pubkey | openssl pkey -pubin -outform der | sha256`.
+function opensslSpki(pem) {
+  log.debug("Entering opensslSpki().");
+  const pub = openssl(["x509", "-pubkey", "-noout"], pem);
+  log.debug("Leaving opensslSpki().");
+  return sha256Hex(openssl(["pkey", "-pubin", "-outform", "der"], pub, true));
+}
+
+// Every value of `who`'s leaf for `method`, as the documentation spells it.
+function valueFor(method, leafPem, issuingPem) {
+  log.debug("Entering valueFor(). " + method);
+  const issuer = opensslSpki(issuingPem);
+  let value = "";
+  if (method === "certificate-sha256") {
+    value = method + ":" + sha256Hex(openssl(["x509", "-outform", "der"],
+                                             leafPem, true));
+  } else if (method === "spki-sha256") {
+    value = method + ":" + opensslSpki(leafPem);
+  } else if (method === "issuer-ski") {
+    // "X509v3 Subject Key Identifier: \n    AB:CD:..."
+    const printed = openssl(["x509", "-noout", "-ext",
+                             "subjectKeyIdentifier"], leafPem);
+    value = method + ":" + issuer + ":" + printed.split("\n").pop().trim();
+  } else if (method === "issuer-subject" || method === "subject") {
+    const dn = openssl(["x509", "-noout", "-subject", "-nameopt", "RFC2253"],
+                       leafPem).replace(/^subject=\s*/, "");
+    value = method === "subject" ? "subject:" + dn
+      : method + ":" + issuer + ":" + dn;
+  }
+  log.debug("Leaving valueFor().");
+  return value;
+}
+
+const LOW = ["email", "issuer-subject", "subject"];
+
+// ---------------------------------------------------------------------------
+// G. EVERY STORED METHOD OVER A REAL HANDSHAKE, AND A DISABLED ACCOUNT UNDER
+// EACH (#2081). One method per profile, so the match is that method's alone:
+// bound to nobody it signs nobody in, bound to alice it signs her in, and
+// with her account disabled it signs nobody in, whatever names her. email
+// needs a leaf with an rfc822Name, reissued under the same Issuing CA; its
+// value is the address already on alice's entry (`mail`).
+// ---------------------------------------------------------------------------
+async function everyMethod(realm, rb, o) {
+  log.debug("Entering everyMethod().");
+  log.info("=== G. every binding method, and a disabled account ===");
+  const mail = o.alice + "@cp.example.test";
+  const mailed = await anchors.reissue(o.card, { san: [{ kind: "email",
+                                                         value: mail }] });
+  const methods = ["issuer-serial", "certificate-sha256", "issuer-ski",
+                   "spki-sha256", "email", "issuer-subject", "subject"];
+  for (const method of methods) {
+    const credential = method === "email" ? mailed : o.card;
+    const tls = { cert: credential.certPem, key: credential.keyPem };
+    const value = method === "issuer-serial" ? o.serialBinding
+      : (method === "email" ? "" : valueFor(method, credential.leaf.pem,
+                                            credential.issuing.pem));
+    await K.set(realm, "certSignIn.profiles", JSON.stringify([Object.assign(
+      {}, o.profile, { bindings: [method],
+                       lowAffinity: LOW.indexOf(method) >= 0 })]));
+    if (method !== "issuer-serial" && method !== "email") {
+      const before = await settled(rb + "/tls/sign-in", { tls: tls });
+      check("G-" + method + "-1. bound to nobody, " + method + " signs " +
+            "nobody in (NOT_STORED)", function () {
+        assert.ok(!started(before), before.text.slice(0, 300));
+        assert.strictEqual(before.json && before.json.session &&
+                           before.json.session.refusedAsStored, "NOT_STORED",
+                           before.text.slice(0, 300));
+      });
+      await K.ok(rb + "/admin-api/users/add-attribute", { user: o.alice,
+        attribute: "stsCertificateBinding", value: value },
+        "bound alice by " + method + " (" + value + ")");
+    }
+    const bound = await settled(rb + "/tls/sign-in", { tls: tls });
+    check("G-" + method + "-2. " + method + ", worked out as the " +
+          "documentation says, signs alice in", function () {
+      assert.ok(started(bound), value + ": " + bound.text.slice(0, 300));
+    });
+    await K.ok(rb + "/admin-api/users/disable", { user: o.alice,
+      reason: "#2081: a disabled account under " + method },
+      "disabled alice");
+    const disabled = await settled(rb + "/tls/sign-in", { tls: tls });
+    check("G-" + method + "-3. with alice's account disabled, " + method +
+          " signs nobody in and sets no session cookie", function () {
+      assert.ok(!started(disabled), disabled.text.slice(0, 300));
+      assert.ok(!disabled.setCookies.some(function (c) {
+        return /^sts_session=[^;]+/.test(c) && !/^sts_session=;/.test(c);
+      }), JSON.stringify(disabled.setCookies));
+    });
+    await K.ok(rb + "/admin-api/users/enable", { user: o.alice },
+               "enabled alice");
+    if (method !== "issuer-serial" && method !== "email") {
+      await K.ok(rb + "/admin-api/users/remove-attribute", { user: o.alice,
+        attribute: "stsCertificateBinding", value: value },
+        "took the " + method + " binding off alice");
+    }
+  }
+  await K.set(realm, "certSignIn.profiles", JSON.stringify([o.profile]));
+  log.debug("Leaving everyMethod().");
+}
+
+// ---------------------------------------------------------------------------
+// H. RENEWAL OVER A REAL HANDSHAKE (#2081). The same Issuing CA certifies
+// alice's key again (a new serial and a new certificate, the same
+// SubjectPublicKeyInfo and the subjectKeyIdentifier derived from it), and
+// then a new key. A certificate-specific binding (issuer-serial,
+// certificate-sha256) must be recorded again for the renewal; a key-based
+// one (spki-sha256, issuer-ski) carries over while the key does, and not
+// past a new key.
+// ---------------------------------------------------------------------------
+async function renewals(realm, rb, o) {
+  log.debug("Entering renewals().");
+  log.info("=== H. renewal ===");
+  const renewed = await anchors.reissue(o.card, { sameKey: true });
+  const rekeyed = await anchors.reissue(o.card, {});
+  const asTls = function (one) {
+    return { cert: one.certPem, key: one.keyPem };
+  };
+  const rows = [["issuer-serial", false], ["certificate-sha256", false],
+                ["spki-sha256", true], ["issuer-ski", true]];
+  for (const row of rows) {
+    const method = row[0];
+    const carries = row[1];
+    const value = method === "issuer-serial"
+      ? "issuer-serial:" + opensslSpki(o.card.issuing.pem) + ":" +
+        String(o.card.leaf.serialHex).toLowerCase()
+      : valueFor(method, o.card.leaf.pem, o.card.issuing.pem);
+    await K.set(realm, "certSignIn.profiles", JSON.stringify([Object.assign(
+      {}, o.profile, { bindings: [method] })]));
+    if (method !== "issuer-serial") {
+      await K.ok(rb + "/admin-api/users/add-attribute", { user: o.alice,
+        attribute: "stsCertificateBinding", value: value },
+        "bound alice's first certificate by " + method);
+    }
+    const again = await settled(rb + "/tls/sign-in", { tls: asTls(renewed) });
+    check("H-" + method + "-1. the renewal under the same key " +
+          (carries ? "carries " + method + " over and signs alice in"
+                   : "is not bound by " + method + " until it is recorded"),
+          function () {
+      assert.strictEqual(started(again), carries, again.text.slice(0, 300));
+    });
+    if (carries) {
+      const fresh = await settled(rb + "/tls/sign-in",
+                                  { tls: asTls(rekeyed) });
+      check("H-" + method + "-2. a renewal under a new key does not carry " +
+            method + " over", function () {
+        assert.ok(!started(fresh), fresh.text.slice(0, 300));
+      });
+    } else {
+      const replaced = valueFor(method === "issuer-serial"
+        ? "certificate-sha256" : method, renewed.leaf.pem,
+                                renewed.issuing.pem);
+      const recorded = method === "issuer-serial"
+        ? "issuer-serial:" + opensslSpki(renewed.issuing.pem) + ":" +
+          String(renewed.leaf.serialHex).toLowerCase()
+        : replaced;
+      await K.ok(rb + "/admin-api/users/add-attribute", { user: o.alice,
+        attribute: "stsCertificateBinding", value: recorded },
+        "recorded the renewal by " + method);
+      const after = await settled(rb + "/tls/sign-in",
+                                  { tls: asTls(renewed) });
+      check("H-" + method + "-2. once the renewal is recorded on alice, " +
+            method + " signs her in with it", function () {
+        assert.ok(started(after), after.text.slice(0, 300));
+      });
+      await K.ok(rb + "/admin-api/users/remove-attribute", { user: o.alice,
+        attribute: "stsCertificateBinding", value: recorded },
+        "took the renewal's binding off alice");
+    }
+    if (method !== "issuer-serial") {
+      await K.ok(rb + "/admin-api/users/remove-attribute", { user: o.alice,
+        attribute: "stsCertificateBinding", value: value },
+        "took the " + method + " binding off alice");
+    }
+  }
+  await K.set(realm, "certSignIn.profiles", JSON.stringify([o.profile]));
+  log.debug("Leaving renewals().");
+}
+
+// ---------------------------------------------------------------------------
+// I. AN EXPIRED CERTIFICATE (#2081): one the Issuing CA made with a validity
+// that ended an hour ago, bound to alice by its own issuer and serial so the
+// profile would otherwise sign her in. The handshake's verification refuses
+// it, so the door sees no verified certificate.
+// ---------------------------------------------------------------------------
+async function expired(realm, rb, o) {
+  log.debug("Entering expired().");
+  log.info("=== I. an expired certificate ===");
+  const old = await anchors.reissue(o.card, { expiredSince: 3600 * 1000 });
+  const value = "issuer-serial:" + opensslSpki(old.issuing.pem) + ":" +
+    String(old.leaf.serialHex).toLowerCase();
+  await K.ok(rb + "/admin-api/users/add-attribute", { user: o.alice,
+    attribute: "stsCertificateBinding", value: value },
+    "bound the expired certificate to alice");
+  const r = await settled(rb + "/tls/sign-in",
+                          { tls: { cert: old.certPem, key: old.keyPem } });
+  check("I1. an expired certificate bound to alice under the profile signs " +
+        "nobody in: the handshake does not verify it", function () {
+    assert.ok(!started(r), r.text.slice(0, 300));
+    assert.ok(!(r.json && r.json.clientCertificate &&
+                r.json.clientCertificate.verified === true),
+              r.text.slice(0, 300));
+  });
+  await K.ok(rb + "/admin-api/users/remove-attribute", { user: o.alice,
+    attribute: "stsCertificateBinding", value: value },
+    "took the expired certificate's binding off alice");
+  log.debug("Leaving expired().");
 }
 
 async function guarded() {

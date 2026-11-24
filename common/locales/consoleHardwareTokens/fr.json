@@ -68,5 +68,14 @@
   "sshExpires": "Expire",
   "sshHardware": "lié au matériel",
   "sshRevoked": "révoqué",
-  "sshRevoke": "Révoquer"
+  "sshRevoke": "Révoquer",
+  "person.unavailable": "Les jetons de cette personne n’ont pas pu être lus ici. Annuaire → Jetons matériels les affiche.",
+  "person.noOath": "Aucun jeton OATH n’est attribué à cette personne.",
+  "person.tokenKey": "Clé du jeton (fabricant/numéro de série)",
+  "person.yubiSerial": "Numéro de série de la YubiKey",
+  "person.yubiOtp": "Un OTP de celle-ci (facultatif)",
+  "person.noYubi": "Cette personne ne détient aucun YubiKey OTP.",
+  "person.yubiWhat": "Attribuez à cette personne une YubiKey importée par son numéro de série. Un OTP saisi depuis la clé prouve qu’elle est en main et est vérifié avant l’attribution.",
+  "person.sshIssue": "Une personne émet son propre certificat utilisateur SSH sur le portail, pour une clé publique qu’elle détient. Un administrateur peut le révoquer ici.",
+  "person.central": "Tous les jetons de ce domaine : Annuaire → Jetons matériels"
 }

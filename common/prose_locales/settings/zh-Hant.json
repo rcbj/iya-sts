@@ -6175,6 +6175,14 @@
     "en": "32f9389b65f0eb67",
     "text": "WS-Trust 回應的 ds:Signature 是否也被加密（WS-SecurityPolicy 的 sp:EncryptSignature），加密給回應的接收方。僅在回應先簽章後加密時讀取。此項開啟時，WSDL 的繫結攜帶 sp:EncryptSignature。應用程式的 wstrustEncryptSignature 覆蓋此項。"
   },
+  "wstrust.recipientIgnoresKeyUsage|label": {
+    "en": "5084027709e17c26",
+    "text": "無論憑證的 keyUsage 為何都將回應加密給它"
+  },
+  "wstrust.recipientIgnoresKeyUsage|description": {
+    "en": "58e43975d6e28519",
+    "text": "是否可以將 WS-Trust 回應加密給 keyUsage 既不允許 keyEncipherment 也不允許 keyAgreement 的憑證——通常是請求的簽章憑證：本領域的訊息簽章憑證只允許 digitalSignature。只略過這一項檢查；在偏執 PKI 模式檢查之處，仍會檢查憑證的有效期、路徑與撤銷狀態。預設關閉。應用程式的 wstrustRecipientIgnoresKeyUsage 會覆寫此設定。"
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "由身分識別提供者發起的登入"

@@ -767,6 +767,7 @@
   "wstrustEncryptionCertificate": 769,
   "wstrustJwtScope": 706,
   "wstrustKeyTransportAlgorithm": 770,
+  "wstrustRecipientIgnoresKeyUsage": 1004,
   "wstrustResponseProtectionOrder": 964,
   "wstrustResponseRecipientXPath": 771,
   "wstrustSignRequest": 960,

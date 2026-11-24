@@ -608,6 +608,14 @@ const DESCRIPTION_REST = [
 ];
 
 const TAG_DESCRIPTIONS = {
+  'Hardware tokens': 'The settings of the hardware-token mechanisms ' +
+                     '(#2049): the token register\'s hardware claims, ' +
+                     'PIV, YubiKey OTP, OATH tokens and the SSH user CA, ' +
+                     'one page each. The registers themselves are under ' +
+                     'Directory.',
+  OpenPGP: 'The OpenPGP settings (#2049): the algorithms a registered key ' +
+           'may use, the post-quantum rules, the registration challenge ' +
+           'and the Web Key Directory. A person\'s key is under Directory.',
   Service: 'What this API is, its document, and the explorer that calls it.',
   SCEP: 'The Simple Certificate Enrolment Protocol (RFC 8894) server of this ' +
         'realm: its Issuing CA and RA certificate, the single-use challenge ' +

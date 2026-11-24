@@ -1468,14 +1468,39 @@ const JOBS = [
   // made at run time; the verifier's refusals in full are
   // tests/piv_attestation.js, in process.
   { file: 'sts_piv_attestation.js', browser: false, local: true },
+  // PIV ON A CARD WITH THE CLIENTS A PERSON USES (#2059): a key generated
+  // on the client lab's PIV card (PivApplet attesting as a YubiKey 5) and
+  // attested, enrolled through the portal and EST, signing in over mutual
+  // TLS (curl's PKCS#11 engine) and PKINIT (MIT kinit over OpenSC), the card
+  // reported lost and both refused, a stock PivApplet card refused.
+  // `clientLab: true`: skipped without CLIENT_LAB_URL (tests/CLAUDE.md,
+  // *THE CLIENT LAB*).
+  { file: 'sts_piv_card.js', browser: false, local: true, clientLab: true },
+  // S/MIME MAIL DECRYPTED WITH THE KEY ON A PIV CARD (#2058): a 9d key on
+  // the client lab's card, its attested certificate registered on the
+  // portal as the person's S/MIME certificate, the service's mail delivered
+  // to the lab's postfix over STARTTLS and opened by openssl cms through
+  // OpenSC; without the card's key it cannot be. `clientLab: true`.
+  { file: 'sts_piv_smime.js', browser: false, local: true, clientLab: true },
   // CERTIFICATE SIGN-IN PROFILES AND RFC 9440 OVER REAL HANDSHAKES (#2012):
   // an outside chain bound by issuer and serial through a realm's
   // certSignIn.profiles, outside the profile, a name binding refused without
   // lowAffinity, and a forwarded Client-Cert believed from the named proxy
   // only. Posts two test Roots to the client truststore and removes them;
   // every setting is the throwaway realm's. The logic in full is
-  // tests/certificate_binding.js, in process.
+  // tests/certificate_binding.js, in process. Since #2081 also every
+  // stored binding method and email, each with the account disabled,
+  // renewal under the same key and a new one, and an expired leaf; the
+  // values worked out by openssl as docs/v1.2.0/configure-tls.md says.
   { file: 'sts_cert_sign_in_profiles.js', browser: false, local: true },
+  // THE CERTIFICATE SIGN-IN HANDOFF OVER A REAL SECOND LISTENER (#2081): a
+  // throwaway realm's own listener on STS_TEST_REALM_LISTENER_PORT asking
+  // for a certificate, certificate-sign-in mapped to it; the screen's link,
+  // the listener's 303 back, the act on the main port, and the refusals
+  // (used, another browser, a certificate bound to nobody, the option off).
+  // Exclusive: that port is the one sts_realm_listener.js binds too.
+  { file: 'sts_cert_handoff.js', browser: false, local: true,
+    exclusive: true },
   // OpenPGP KEYS AND THE WEB KEY DIRECTORY OVER HTTP (#1955 P6): a key made
   // here registered through /admin-api/openpgp on its proof, and the
   // directory answering it on a domain only this job uses; the depth is
@@ -1796,6 +1821,12 @@ const JOBS = [
   // one to the realm's key refused (STS-WSTRUST-0083), a client-made pair
   // uploaded and used, and the pair removed. `local: true`: ours.
   { file: 'sts_wstrust_decryption_key.js', browser: false, local: true },
+  // THE WS-TRUST XPATH BUILDER (#2046). `local: true`: this repository's
+  // console, in Chrome — each of the five fields' builder, the exact
+  // expression it writes, the exact values in the field's card and its
+  // switch, and the application `/admin-api` answers after Save. Its own
+  // application and console user, removed in a `finally`.
+  { file: 'sts_wstrust_xpath_builder.js', browser: true, local: true },
   // EVERY SAML 2.0, SAML 1.1, WS-TRUST AND WS-FEDERATION DOCUMENT THIS
   // SERVICE EMITS, AGAINST THE PUBLISHED OASIS AND W3C XML SCHEMAS (#188,
   // 2026-09-24): metadata, Responses on every binding, the ArtifactResponse,

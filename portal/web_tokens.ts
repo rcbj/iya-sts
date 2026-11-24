@@ -178,6 +178,21 @@ class TokensPages {
    */
   static render(view: Json, ctx: Json): string {
     const t = ctx.t;
+    return TokensPages.heldCard(view, t) + TokensPages.claimCard(t) +
+      TokensPages.enrolCard(view, t) +
+      TokensPages.escrowCard(view, t);
+  }
+
+  // THE TOKENS THEMSELVES, the first card: drawn here and on the Hardware
+  // tokens tab of Tokens and keys (#2053), one card on both.
+  /**
+   * The person's tokens, each with "I lost this key".
+   *
+   * @param view - the page's view
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static heldCard(view: Json, t: Json): string {
     const held: Json[] = view.tokens || [];
     const rows = held.map(function (one: Json): string {
       const lost = one.status === 'lost';
@@ -204,9 +219,7 @@ class TokensPages {
           rows.join('') + '</table>' +
           '<p class="note">' + t.html('portalTokens.lost.what') + '</p>'
         : '<p id="tokens-none">' + t.html('portalTokens.none') + '</p>') +
-      '</div>' + TokensPages.claimCard(t) +
-      TokensPages.enrolCard(view, t) +
-      TokensPages.escrowCard(view, t);
+      '</div>';
   }
 
   /**

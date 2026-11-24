@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# File: tests/client-lab/bin/lab-piv-request
+#
+# ---------------------------------------------------------------------------
+# A CERTIFICATE REQUEST SIGNED BY A KEY ON THE PIV CARD (#2059).
+#
+#   lab-piv-request <dir> <slot> <subject>
+#
+# <dir>/slot-<slot>.pub is the slot's public key (bin/lab-piv-attest wrote
+# it when the card generated the key); the request is <dir>/<slot>.csr.
+#
+# TWO STEPS, BECAUSE OF TWO CLIENTS:
+#   1. a PLACEHOLDER CERTIFICATE in the slot (bin/lab-piv-placeholder):
+#      OpenSC lists a PIV key only beside a certificate;
+#   2. `openssl req` through OpenSSL's PKCS#11 engine over OpenSC
+#      (piv/openssl.cnf, piv/opensc.conf), the card signing.
+# yubico-piv-tool's own `request-certificate` cannot be used: 2.2.0 under
+# OpenSSL 3 (Debian bookworm's) fails it ("Failed signing request") before
+# it sends the card anything.
+#
+# FOR 9a AND 9d. A 9c key's PIN policy is `always`, and the engine (libp11
+# 0.4.12) does not log in again for it (CKR_OPERATION_ACTIVE); sign with
+# `pkcs11-tool --login --sign --id 02`, which does, as sts_piv_card.js does
+# for its 9c request.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+dir="${1:?a directory}"
+slot="${2:?a slot}"
+subject="${3:?a subject}"
+case "${slot}" in
+  9a) id=01 ;;
+  9c) id=02 ;;
+  9d) id=03 ;;
+  9e) id=04 ;;
+  *) echo "lab-piv-request: slot ${slot} is not 9a, 9c, 9d or 9e" >&2; exit 2 ;;
+esac
+/opt/client-lab/bin/lab-piv-placeholder "${dir}" "${slot}"
+cd "${dir}"
+
+OPENSC_CONF=/opt/client-lab/piv/opensc.conf \
+OPENSSL_CONF=/opt/client-lab/piv/openssl.cnf \
+  openssl req -new -engine pkcs11 -keyform engine \
+    -key "pkcs11:id=%${id};type=private;pin-value=${LAB_PIV_PIN:-123456}" \
+    -subj "${subject}" -out "${slot}.csr"
+openssl req -in "${slot}.csr" -noout -verify

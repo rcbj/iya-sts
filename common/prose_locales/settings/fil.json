@@ -6175,6 +6175,14 @@
     "en": "32f9389b65f0eb67",
     "text": "Kung ine-encrypt din ang ds:Signature ng isang WS-Trust response (ang sp:EncryptSignature ng WS-SecurityPolicy), para sa recipient ng response. Binabasa lamang habang ang response ay naka-sign at pagkatapos ay naka-encrypt. May dalang sp:EncryptSignature ang binding ng WSDL habang naka-on ito. Ino-override ito ng wstrustEncryptSignature ng isang application."
   },
+  "wstrust.recipientIgnoresKeyUsage|label": {
+    "en": "5084027709e17c26",
+    "text": "I-encrypt ang tugon sa isang certificate anuman ang keyUsage nito"
+  },
+  "wstrust.recipientIgnoresKeyUsage|description": {
+    "en": "58e43975d6e28519",
+    "text": "Kung maaaring i-encrypt ang isang WS-Trust na tugon sa isang certificate na ang keyUsage ay hindi nagpapahintulot ng keyEncipherment o keyAgreement — kadalasan, ang signing certificate ng kahilingan: digitalSignature lang ang pinapahintulutan ng mga message-signing certificate ng realm na ito. Ang pagsusuring iyon lang ang nilalaktawan; sinusuri pa rin ang bisa, path at revocation ng certificate kung saan sinusuri ito ng paranoid PKI mode. Naka-off bilang default. Ino-override ito ng wstrustRecipientIgnoresKeyUsage ng isang application."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Sign-in na sinimulan ng identity provider"

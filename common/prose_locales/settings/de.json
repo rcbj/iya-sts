@@ -6175,6 +6175,14 @@
     "en": "32f9389b65f0eb67",
     "text": "Ob die ds:Signature einer WS-Trust-Antwort ebenfalls verschlüsselt wird (sp:EncryptSignature von WS-SecurityPolicy), für den Empfänger der Antwort. Wird nur gelesen, solange die Antwort signiert und dann verschlüsselt wird. Die Bindung der WSDL trägt sp:EncryptSignature, solange dies eingeschaltet ist. Das wstrustEncryptSignature einer Anwendung setzt dies außer Kraft."
   },
+  "wstrust.recipientIgnoresKeyUsage|label": {
+    "en": "5084027709e17c26",
+    "text": "Eine Antwort an ein Zertifikat verschlüsseln, unabhängig von dessen keyUsage"
+  },
+  "wstrust.recipientIgnoresKeyUsage|description": {
+    "en": "58e43975d6e28519",
+    "text": "Ob eine WS-Trust-Antwort an ein Zertifikat verschlüsselt werden darf, dessen keyUsage weder keyEncipherment noch keyAgreement erlaubt — meist das Signaturzertifikat der Anfrage: Die Nachrichtensignatur-Zertifikate dieses Bereichs erlauben nur digitalSignature. Nur diese Prüfung entfällt; Gültigkeit, Pfad und Sperrstatus des Zertifikats werden weiterhin geprüft, wo der paranoide PKI-Modus sie prüft. Standardmäßig aus. Das wstrustRecipientIgnoresKeyUsage einer Anwendung ersetzt dies."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Vom Identitätsanbieter initiierte Anmeldung"

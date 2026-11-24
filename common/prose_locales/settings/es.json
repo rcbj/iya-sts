@@ -6175,6 +6175,14 @@
     "en": "32f9389b65f0eb67",
     "text": "Si la ds:Signature de una respuesta WS-Trust también se cifra (sp:EncryptSignature de WS-SecurityPolicy), para el destinatario de la respuesta. Solo se lee mientras la respuesta se firma y después se cifra. El binding del WSDL lleva sp:EncryptSignature mientras esto está activado. El wstrustEncryptSignature de una aplicación prevalece."
   },
+  "wstrust.recipientIgnoresKeyUsage|label": {
+    "en": "5084027709e17c26",
+    "text": "Cifrar una respuesta para un certificado sea cual sea su keyUsage"
+  },
+  "wstrust.recipientIgnoresKeyUsage|description": {
+    "en": "58e43975d6e28519",
+    "text": "Si una respuesta WS-Trust puede cifrarse para un certificado cuyo keyUsage no permite ni keyEncipherment ni keyAgreement; casi siempre, el certificado de firma de la solicitud: los certificados de firma de mensajes de este dominio solo permiten digitalSignature. Solo se omite esa comprobación; la validez, la ruta y la revocación del certificado se siguen comprobando donde el modo PKI paranoico las comprueba. Desactivado de forma predeterminada. El wstrustRecipientIgnoresKeyUsage de una aplicación lo sustituye."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Inicio de sesión iniciado por el proveedor de identidad"
