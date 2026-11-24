@@ -275,6 +275,15 @@ function sections(t, tr) {
             JSON.stringify(['wstrustSignRequestElements',
                             'wstrustSignResponseElements']),
           'G. each section\'s builder offers its own fields');
+  const boxed = Protection.grid(rows, 'WS-Trust', {},
+    { redraw: '/admin/applications/edit', views: true, derived: {} }, tr,
+    '<section id="the-boxes"></section>');
+  const boxesAt = boxed.indexOf('id="the-boxes"');
+  t.check(boxesAt > boxed.indexOf('id="fgs-wstrust-general"') &&
+          boxesAt < boxed.indexOf('id="fgs-wstrust-encryption"') &&
+          html.indexOf('the-boxes') < 0,
+          'G. the Message protection frame is drawn after General and ' +
+          'before the sections');
   t.check(html.indexOf('consoleApplications.') < 0 &&
           Protection.grid([], 'WS-Trust', {}, {}, tr) === '',
           'G. every word from the catalog; no fields, nothing');

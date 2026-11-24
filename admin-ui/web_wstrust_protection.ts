@@ -32,11 +32,11 @@
 // is added to the dialog's list, and the list is added to one of the five
 // fields of the form; Save stores it.
 //
-// THE SUB-TAB'S SECTIONS (#2046, rcbj 2026-11-23): General, then Message
-// encryption and Message signing, each split into request and response
+// THE SUB-TAB'S SECTIONS (#2046, rcbj 2026-11-23): General, the Message
+// protection boxes, then Message encryption and Message signing, each split into request and response
 // message processing (`PARTS`, the one table of which field goes where).
-// The simple view is the eight boxes and the General fields that are
-// simple; every encryption and signing field is advanced, so its sections
+// The simple view is the General fields that are simple, then the eight
+// boxes; every encryption and signing field is advanced, so its sections
 // are hidden by the stylesheet's rule for a section holding only advanced
 // cells. The sections are drawn here rather than by `fieldGridOf()`'s
 // headed sections because they nest and carry a button: they are this
@@ -277,9 +277,12 @@ class WebWsTrustProtection {
    * @param values - the form's values by attribute
    * @param options - `WebKit.fieldGridCell()`'s options
    * @param t - the translator
+   * @param protection - optional; the Message protection frame
+   *   (`frame()`), drawn after General and before the two sections (rcbj,
+   *   2026-11-23: General first in the simplified view)
    * @returns the group as HTML, or '' when it draws no field
    */
-  static grid(rows, label, values, options, t): string {
+  static grid(rows, label, values, options, t, protection?): string {
     const list = rows || [];
     if (!list.length) {
       return '';
@@ -326,7 +329,7 @@ class WebWsTrustProtection {
         ? '<div class="fg-section" id="fgs-wstrust-general"><h4>' +
           t.html(K + 'general') + '</h4><div class="fg">' + cells(general) +
           '</div></div>'
-        : '') + parts + '</div>';
+        : '') + (protection || '') + parts + '</div>';
   }
 
   /**

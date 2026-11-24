@@ -858,10 +858,11 @@ On the application's page, **Configuration → WS-Trust** has two views. Choose
 one with the **Simplified view** and **Advanced view** buttons at the top
 of the form.
 
-* **Simplified view** shows the **Message protection** table and the fields that
-  have nothing to do with signing or encrypting a message: `wstrustAppliesTo`
-  and `wstrustJwtScope`.
-* **Advanced view** shows the table and every field, in these sections:
+* **Simplified view** shows **General** first, with the fields that have
+  nothing to do with signing or encrypting a message (`wstrustAppliesTo`
+  and `wstrustJwtScope`), and then the **Message protection** table.
+* **Advanced view** shows General, the Message protection table, and then
+  every other field, in these sections:
 
 | Section | Request message processing | Response message processing |
 |---|---|---|
