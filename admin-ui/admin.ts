@@ -4602,9 +4602,9 @@ class AdminConsole {
       '.wsp-el.wsp-match::after{content:" \\2713"}' +
       '.wsp-el.wsp-chosen{outline:2px solid #0969da}' +
       '.wsp-expression{width:70%;font-family:monospace}' +
-      // ITS DIALOG AND THE SECTIONS THAT OPEN IT (#2046): a modal
-      // `<dialog>` in the page, its body scrolling inside the viewport, and
-      // each protection section's heading with its button beside it.
+      // ITS DIALOG AND THE CARDS THAT OPEN IT (#2046): a modal `<dialog>`
+      // in the page, its body scrolling inside the viewport, and the button
+      // at the foot of each target field's card.
       '.wsp-dialog{width:min(64rem,94vw);max-height:90vh;padding:0;' +
       'border:1px solid #c5c5d3;border-radius:10px;' +
       'box-shadow:0 18px 60px rgba(0,0,0,.35)}' +
@@ -4620,9 +4620,8 @@ class AdminConsole {
       'text-align:right}' +
       '.wsp-list code{word-break:break-all}' +
       '.wsp-list li{margin:.2em 0}' +
-      '.wsp-parthead{display:flex;align-items:center;gap:1em;' +
-      'flex-wrap:wrap}' +
-      '.wsp-parthead h4{margin:.6em 0}' +
+      '.wsp-cellbuilder{margin-top:.4em}' +
+      '.wsp-cellbuilder .wsp-added{margin:.3em 0 0;font-size:.9em}' +
       '.wsp-part{border-top:1px solid #e3e3ea;margin-top:.8em}' +
       '.wsp-part .fg-section h5{margin:.6em 0 .3em;font-size:.95em}' +
       // A SUB-TAB'S SIMPLE / ADVANCED SWITCH (#500, `WebKit.viewSwitch()`):

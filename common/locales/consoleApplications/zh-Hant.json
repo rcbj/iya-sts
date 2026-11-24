@@ -1017,6 +1017,7 @@
   "protection.requestProcessing": "請求訊息處理",
   "protection.responseProcessing": "回應訊息處理",
   "protection.openBuilder": "XPath 建構器…",
+  "protection.openBuilderFor": "{field} 的 XPath 建構器",
   "protection.close": "關閉",
   "protection.dialogIntro": "貼上一則範例 SOAP 訊息，顯示其元素並點選其中一個。其運算式以本服務的前綴撰寫，屬於本服務評估的子集，並會標出範例中與之相符的元素。將需要的每個運算式加入清單，然後將清單加入某個欄位，並在表單上按「儲存」：在此之前這裡不會傳送任何內容。",
   "protection.collect": "加入清單",

@@ -1017,6 +1017,7 @@
   "protection.requestProcessing": "Procesamiento del mensaje de solicitud",
   "protection.responseProcessing": "Procesamiento del mensaje de respuesta",
   "protection.openBuilder": "Generador de XPath…",
+  "protection.openBuilderFor": "Generador de XPath para {field}",
   "protection.close": "Cerrar",
   "protection.dialogIntro": "Pegue un mensaje SOAP de ejemplo, muestre sus elementos y haga clic en uno. Su expresión se escribe con los prefijos de este servicio, en el subconjunto que el servicio evalúa, y se marcan los elementos del ejemplo que coinciden con ella. Añada a la lista cada expresión que quiera, luego añada la lista a un campo y pulse Guardar en el formulario: hasta entonces no se envía nada.",
   "protection.collect": "Añadir a la lista",

@@ -897,9 +897,11 @@ empty.
 
 ### The XPath builder
 
-The **Message encryption** and **Message signing** sections each have an
-**XPath builder…** button. It opens the builder in a window over the page,
-for that section's fields. The builder makes a list of expressions for you:
+Each field that holds XPath expressions has an **XPath builder…** button in
+its card: `wstrustEncryptRequestElements`, `wstrustEncryptResponseElements`,
+`wstrustResponseRecipientXPath`, `wstrustSignRequestElements` and
+`wstrustSignResponseElements`. It opens the builder in a window over the
+page, for that field. The builder makes a list of expressions for you:
 
 1. Paste a sample SOAP message into its box. A sample Issue request is there
    to start with.
@@ -911,15 +913,16 @@ for that section's fields. The builder makes a list of expressions for you:
    for is written as `*[local-name()='…' and namespace-uri()='…']`.
 3. Click **Add to the list**. Repeat steps 2 and 3 for each element you
    want. The bin beside an expression takes it off the list.
-4. Choose a field and click **Add the list to the field**. A map gets each
-   expression it does not already hold as a new value.
-   `wstrustResponseRecipientXPath` holds one expression, so for that field
-   the list must hold exactly one, and it replaces the field's value. The
-   builder closes, and the section says what was added.
+4. Click **Add the list to the field**. A map gets each expression it does
+   not already hold as a new value. `wstrustResponseRecipientXPath` holds
+   one expression, so for that field the list must hold exactly one, and it
+   replaces the field's value. The builder closes, and the field's card
+   says what was added.
 5. Click **Save** on the form.
 
 The sample is parsed in your browser and never sent. Close the builder with
-**Close**, the **×** or the Esc key; the list stays until you add it.
+**Close**, the **×** or the Esc key. The list stays until you add it or
+open the builder for another field.
 
 ## Related
 

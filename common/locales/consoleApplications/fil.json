@@ -1017,6 +1017,7 @@
   "protection.requestProcessing": "Pagproseso ng mensahe ng kahilingan",
   "protection.responseProcessing": "Pagproseso ng mensahe ng tugon",
   "protection.openBuilder": "Tagabuo ng XPath…",
+  "protection.openBuilderFor": "Tagabuo ng XPath para sa {field}",
   "protection.close": "Isara",
   "protection.dialogIntro": "Mag-paste ng halimbawang SOAP na mensahe, ipakita ang mga elemento nito at mag-click ng isa. Isinusulat ang expression nito gamit ang mga prefix ng serbisyong ito, sa subset na sinusuri ng serbisyo, at minamarkahan ang mga elemento ng halimbawa na tinutugma nito. Idagdag sa listahan ang bawat expression na gusto mo, pagkatapos ay idagdag ang listahan sa isang field at pindutin ang I-save sa form: walang ipinapadala mula rito hanggang doon.",
   "protection.collect": "Idagdag sa listahan",

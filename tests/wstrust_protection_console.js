@@ -33,7 +33,7 @@
 //   G. The sections (#2046): General (AppliesTo, the JWT scopes) first and
 //      simple, then Message encryption and Message signing, each request
 //      then response and advanced, every field in its section, and a
-//      builder button in each of the two that posts nothing.
+//      builder button in each target field's own card that posts nothing.
 //   H. Adding the dialog's list to a field appends what it lacks, once;
 //      the single recipient expression takes a list of exactly one.
 // ---------------------------------------------------------------------------
@@ -186,6 +186,8 @@ function builder(t, tr) {
             .match(/<option /g).length === 1 &&
           Protection.dialog(['other'], tr) === '',
           'C. only the targets the page draws; none, no builder');
+  t.check(/<select id="wsp-target" hidden>/.test(html),
+          'C. the field is the opening card\'s, so its select is not shown');
   t.check(html.indexOf('consoleApplications.') < 0,
           'C. every word from the catalog');
   log.debug("Leaving builder().");
@@ -259,14 +261,32 @@ function sections(t, tr) {
           cellAt('wstrustAppliesTo') > at('general') &&
           cellAt('wstrustAppliesTo') < at('encryption'),
           'G. each field is drawn in its section');
+  // ONE BUTTON PER TARGET FIELD, in that field's own card (rcbj,
+  // 2026-11-23), naming the field it opens the dialog for.
   const openers = html.match(/<button[^>]*data-wsp-open="[^"]+"[^>]*>/g) ||
     [];
-  t.check(openers.length === 2 && openers.every(function (one) {
-    return /type="button"/.test(one) && !/\sname=/.test(one);
-  }) && /data-wsp-open="encrypt"/.test(openers[0]) &&
-          /data-wsp-open="sign"/.test(openers[1]),
-          'G. one builder button in each of the two sections, posting ' +
-          'nothing', openers.join(' '));
+  const opened = openers.map(function (one) {
+    return /data-wsp-open="([^"]+)"/.exec(one)[1];
+  });
+  t.check(JSON.stringify(opened.slice(0).sort()) ===
+            JSON.stringify(WebWsProtection.TARGETS.slice(0).sort()) &&
+          openers.every(function (one) {
+            return /type="button"/.test(one) && !/\sname=/.test(one);
+          }),
+          'G. one builder button per target field, posting nothing',
+          JSON.stringify(opened));
+  t.check(WebWsProtection.TARGETS.every(function (field) {
+    const cell = html.indexOf('id="fgc-' + field + '"');
+    const button = html.indexOf('data-wsp-open="' + field + '"');
+    const nextCell = html.indexOf('id="fgc-', cell + 5);
+    return cell > 0 && button > cell &&
+      (nextCell < 0 || button < nextCell) &&
+      html.indexOf('data-wsp-added="' + field + '"') > button;
+  }), 'G. each button, and the line saying what it added, is inside its ' +
+      'own field\'s card');
+  t.check(!/<h4>[^<]*<\/h4><button/.test(html) &&
+          html.indexOf('wsp-parthead') < 0,
+          'G. no button in a section heading');
   t.check(JSON.stringify(Protection.targetsOf('encrypt')) ===
             JSON.stringify(['wstrustEncryptRequestElements',
                             'wstrustEncryptResponseElements',

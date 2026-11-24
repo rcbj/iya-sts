@@ -24,8 +24,9 @@ common expressions into the four encryption and signing maps, and an
 **XPath builder** writes one for an element clicked in a sample message.
 The tab has a simplified and an advanced view, the advanced one in General,
 Message encryption and Message signing sections, each split into request
-and response processing; each of the last two opens the XPath builder in a
-window over the page, which builds a list of expressions for a field.
+and response processing. Each field that holds XPath expressions has a
+button that opens the XPath builder for that field in a window over the
+page, where a list of expressions is built and added to it.
 The XPath subset gains `not(…)`. New refusals: `STS-WSTRUST-0084`,
 `0085`, `0086` and `0087`. See [Message integrity](ws-trust.md#message-integrity).
 
