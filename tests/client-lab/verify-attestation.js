@@ -18,12 +18,14 @@
 // in the TESTS image, with the lab's output directory mounted:
 //
 //   docker run --rm -v <dir>:/attest:ro iya-sts-npm-test:<tag> \
-//     node tests/client-lab/verify-attestation.js /attest [profile...]
+//     node tests/client-lab/verify-attestation.js /attest [profile[=want]...]
 //
 // It prints, as JSON, the facts Yubico's extensions decode to, every
 // field the verifier reads, and the verdict for each profile asked
-// (piv-auth and tls-client by default). It changes nothing in the
-// verifier: a refusal is the answer, not something to work around.
+// (piv-auth and tls-client by default). `profile=ok` or `profile=STS-…`
+// states the verdict expected, and the exit code is 2 when any differs
+// (tests/client-lab/smoke.sh). It changes nothing in the verifier: a
+// refusal is the answer, not something to work around.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -83,8 +85,17 @@ function describe(slotPem) {
 async function main() {
   log.debug("Entering main().");
   const dir = process.argv[2] || '/attest';
-  const profiles = process.argv.length > 3 ? process.argv.slice(3)
+  const asked = process.argv.length > 3 ? process.argv.slice(3)
     : ['piv-auth', 'tls-client'];
+  const profiles = asked.map(function (a) {
+    return a.split('=')[0];
+  });
+  const wanted = {};
+  for (const a of asked) {
+    if (a.indexOf('=') > 0) {
+      wanted[a.split('=')[0]] = a.split('=')[1];
+    }
+  }
   const rootPem = read(dir, 'root.pem');
   const f9Pem = read(dir, 'f9.pem');
   const slotPem = read(dir, 'attestation.pem');
@@ -104,12 +115,20 @@ async function main() {
           why: answer.why || answer.error };
   }
   config.clearOverride('piv.attestationAnchors');
+  out.unexpected = Object.keys(wanted).filter(function (p) {
+    const v = out.verdicts[p];
+    return (v.ok ? 'ok' : v.code) !== wanted[p];
+  }).map(function (p) {
+    const v = out.verdicts[p];
+    return p + ': wanted ' + wanted[p] + ', got ' + (v.ok ? 'ok' : v.code);
+  });
   process.stdout.write(JSON.stringify(out, null, 2) + '\n');
   log.debug("Leaving main().");
+  return out.unexpected.length ? 2 : 0;
 }
 
-main().then(function () {
-  process.exit(0);
+main().then(function (code) {
+  process.exit(code);
 }, function (e) {
   process.stderr.write(String((e && e.stack) || e) + '\n');
   process.exit(1);
