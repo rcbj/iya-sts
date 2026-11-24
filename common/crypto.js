@@ -339,8 +339,8 @@ function signXml(xml, opts) {
   //     `signer` for exactly these and holds the identifiers but not the
   //     lattice — `pq_jose.js` signs, as it does every post-quantum JWS.
   //   * ECDSA: the vendored GENERAL engine (`xmldsig.signXml()`), because
-  //     `signEnveloped()`'s classical branch is RSA through forge and the
-  //     vendored file is not edited here (rcbj's D8). The signature is the
+  //     `signEnveloped()`'s classical branch is RSA only (on node's OpenSSL
+  //     since #1615) and the vendored file is not edited here (rcbj's D8). The signature is the
   //     raw r||s XML Signature 1.1 section 6.4.3 specifies, which node's
   //     `ieee-p1363` encoding produces.
   // -------------------------------------------------------------------
@@ -2186,7 +2186,7 @@ async function signWsSecurityMessageOffLoop(xml, opts) {
 // ---------------------------------------------------------------------------
 // `privateKey` (#68 phase 4b) is a signer-group key for an ECDSA or
 // post-quantum `sigAlg` — a KeyObject, or the raw bytes `pq_jose.js` signs
-// with — for which the vendored signer, RSA through forge, has no path. The
+// with — for which the vendored signer, RSA only, has no path. The
 // ECDSA signature is the raw r||s XML Signature 1.1 specifies, which is what
 // the binding's SigAlg names; RSA takes the vendored path as it always has.
 /**
@@ -2698,19 +2698,28 @@ function encryptElement(xml, certPem, opts) {
   // second DRBG, and fifty times slower (#65, section 13).
   const key = randomBytes(cipher.keyBytes).toString('binary');
   const iv = randomBytes(cipher.ivBytes).toString('binary');
-  const c = forge.cipher.createCipher(cipher.mode, key);
-  // The tag length matters only to GCM; forge ignores it for CBC, and passing
-  // it unconditionally keeps this one call rather than two.
-  c.start({ iv: iv, tagLength: cipher.tagBytes * 8 });
-  c.update(forge.util.createBuffer(forge.util.encodeUtf8(xml)));
-  if (!c.finish()) {
+  // NODE'S CIPHER (#1615, ASVS 5.0.0 11.2.1), where it was forge's
+  // JavaScript AES: the IV, the ciphertext and, for GCM, the tag, the octets
+  // forge wrote. CBC pads as PKCS#7, as forge did. `openXmlContent()` is
+  // the decryption's twin, node's already.
+  let sealed;
+  try {
+    const engine = nodeCrypto.createCipheriv(
+      'aes-' + (cipher.keyBytes * 8) + (cipher.tagBytes ? '-gcm' : '-cbc'),
+      Buffer.from(key, 'binary'), Buffer.from(iv, 'binary'),
+      /** @type {any} */ (cipher.tagBytes
+        ? { authTagLength: cipher.tagBytes } : undefined));
+    const out = Buffer.concat([
+      engine.update(Buffer.from(xml, 'utf8')), engine.final()]);
+    sealed = cipher.tagBytes
+      ? Buffer.concat([out, /** @type {any} */ (engine).getAuthTag()]) : out;
+  } catch (e) {
+    log.debug("Caught in encryptElement(): " + ((e && e.message) || e));
     log.debug("Leaving encryptElement(). The cipher refused.");
     throw new Error((opts.bare ? 'XML Encryption' : 'SAML encryption') +
                     ' failed in ' + cipher.mode);
   }
-  const body = cipher.tagBytes
-    ? iv + c.output.getBytes() + c.mode.tag.getBytes()
-    : iv + c.output.getBytes();
+  const body = iv + sealed.toString('binary');
   const certB64 = certPem.replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
   const contentKey = Buffer.from(key, 'binary');
   const recipientInfo = '<ds:X509Data><ds:X509Certificate>' + certB64 +

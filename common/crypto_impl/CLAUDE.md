@@ -243,3 +243,39 @@ takes the post-quantum path's `opts.signer` / `opts.keyInfoXml` for one. An
 X.509 path that meets an HMAC method refuses it at
 `verifyXmlSignatureValue()`'s key-type check, because no public key is
 `secret`. The rows also appear on `/admin/crypto-metadata`'s XML table.
+
+## XML on node's OpenSSL (#1615, 2026-11-24)
+
+**ASVS 5.0.0 11.2.1 asks for an industry-validated implementation, and
+`xmldsig.js` signed every RSA XML Signature, digested every Reference, ran
+AES for XML Encryption and computed HKDF in forge's JavaScript**, as
+`crypto.js`'s `encryptElement()` ran every SAML assertion's AES. Verification
+and key transport had moved already (#65, 2026-10-03). Now every primitive is
+node's: `rsaSign()` (PKCS#1 v1.5, and PSS with MGF1 over the same hash and a
+digest-length salt), `nodeMd()` (a digest in forge's shape — `create()`,
+`algorithm`, `digestLength`, `update(s[, 'utf8'])`, `digest().getBytes()` —
+so the binary-string plumbing is unchanged), `contentEncrypt()` /
+`contentDecrypt()`, node's HMAC under HKDF, and `selfSignedCertFor()` signing
+its TBSCertificate with OpenSSL (`crypto.js`'s `signCertificateNatively()`
+arrangement). **forge is left for what is not cryptography**: PEM and
+certificate parsing, base64, UTF-8 and binary strings.
+
+* **No octet changed, and `tests/xmldsig_native.js` holds it**: every RSA
+  method `signEnveloped()` and the general engine sign, over a non-ASCII
+  document, is forge's signature byte for byte (PKCS#1 v1.5 is
+  deterministic) or, for PSS, verified by forge; every digest method is
+  forge's digest; every content cipher node seals forge opens. **Nothing was
+  lost (rcbj, 2026-11-24)**, and two methods were GAINED: the registry's
+  `rsa-sha224` and `rsa-ripemd160` rows were in the general engine's table
+  and could not be signed, forge having neither hash.
+* **CBC is unpadded as forge did, by the last octet** (refused when 0, more
+  than a block or more than there is), never by node's PKCS#7 check: XML
+  Encryption section 5.2 lets a sender pad with arbitrary octets (ISO 10126,
+  xmlsec's and Santuario's), and node's own unpadding refuses them.
+* **UTF-8 is still forge's** where it decodes a plaintext: it throws on a
+  malformed sequence, where node's would substitute U+FFFD and hand a
+  different document on.
+* **Post-quantum was never forge's** and is unchanged: ML-DSA, SLH-DSA and
+  HSS/LMS go to the caller's `opts.signer` with the UTF-8 of SignedInfo.
+* **Not in this change**: `symmetric_crypto.js` (the AES under `jose_jwe.js`)
+  still runs forge's ciphers; it is JOSE, not XML.
