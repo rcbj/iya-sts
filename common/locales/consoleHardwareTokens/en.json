@@ -68,5 +68,14 @@
   "sshExpires": "Expires",
   "sshHardware": "hardware-bound",
   "sshRevoked": "revoked",
-  "sshRevoke": "Revoke"
+  "sshRevoke": "Revoke",
+  "person.unavailable": "This person's tokens could not be read here. Directory → Hardware tokens shows them.",
+  "person.noOath": "No OATH token is assigned to this person.",
+  "person.tokenKey": "Token key (vendor/serial)",
+  "person.yubiSerial": "YubiKey serial",
+  "person.yubiOtp": "One OTP from it (optional)",
+  "person.noYubi": "This person holds no YubiKey OTP.",
+  "person.yubiWhat": "Assign an imported YubiKey to this person by its serial. An OTP typed from the key proves it is in hand and is checked before the key is assigned.",
+  "person.sshIssue": "A person issues their own SSH user certificate on the portal, for a public key they hold. An administrator can revoke one here.",
+  "person.central": "Every token in this realm: Directory → Hardware tokens"
 }

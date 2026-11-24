@@ -42,6 +42,8 @@
   "nav.keys.heading": "Nycklar",
   "nav.tokens.label": "Säkerhetsnycklar",
   "nav.tokens.heading": "Dina säkerhetsnycklar och smarta kort",
+  "nav.tokens-and-keys.label": "Token och nycklar",
+  "nav.tokens-and-keys.heading": "Dina token, certifikat och nycklar",
   "nav.openpgp.label": "OpenPGP och e-postkryptering",
   "nav.openpgp.heading": "Din OpenPGP-nyckel och e-postkryptering",
   "nav.mfa.label": "Autentiseringsapp",

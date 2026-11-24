@@ -995,6 +995,30 @@
     "en": "dcc6aecb3740fef3",
     "text": "WebAuthn सेटिंग्स"
   },
+  "endpoints.route./admin-api/hardware-tokens-settings.name": {
+    "en": "f7c0eac08cccb13f",
+    "text": "हार्डवेयर टोकन सेटिंग्स"
+  },
+  "endpoints.route./admin-api/piv.name": {
+    "en": "3708b64a7c448009",
+    "text": "PIV सेटिंग्स"
+  },
+  "endpoints.route./admin-api/yubiotp.name": {
+    "en": "1b84971a31275a96",
+    "text": "YubiKey OTP सेटिंग्स"
+  },
+  "endpoints.route./admin-api/oath-tokens.name": {
+    "en": "87d8bb1a9df4fe02",
+    "text": "OATH टोकन सेटिंग्स"
+  },
+  "endpoints.route./admin-api/ssh-user-ca.name": {
+    "en": "863acd9a2df9d014",
+    "text": "SSH उपयोगकर्ता प्रमाणपत्र सेटिंग्स"
+  },
+  "endpoints.route./admin-api/openpgp-settings.name": {
+    "en": "60b6f8684877d1e1",
+    "text": "OpenPGP सेटिंग्स"
+  },
   "endpoints.route./admin-api/mfa.name": {
     "en": "63fc7f058d95883b",
     "text": "किसके पास दूसरा कारक है"

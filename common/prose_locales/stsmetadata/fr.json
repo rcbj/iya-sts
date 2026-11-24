@@ -1915,6 +1915,30 @@
     "en": "b48aa4041763958e",
     "text": "NON-SPEC. Les paramètres `webauthn.*` en quatre catégories — la CÉRÉMONIE (nom du RP, remplacement de l’ID du RP, algorithmes, vérification de l’utilisateur, transmission de l’attestation, délai), CTAP2 (rattachement de l’authentificateur, credProps) et la POLITIQUE (si une clé peut être principale, si elle peut être un second facteur, combien par personne) — avec la table des algorithmes COSE à côté, lue dans authn/webauthn.js, le module qui vérifie la signature. **UN SEUL EST APPLIQUÉ ET LES AUTRES SONT DES DEMANDES** : userVerification est vérifié par rapport à l’indicateur UV dans les octets que l’authentificateur a signés. La politique d’attestation (#105) et les métadonnées FIDO en vigueur sont indiquées à côté. Il n’y a pas de POST à côté de celui-ci : les formulaires envoient set-many à /admin/config. Reflète GET /admin/webauthn."
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens-settings.what": {
+    "en": "0052f035e7838d3d",
+    "text": "NON-SPEC (#2049). Le groupe Hardware tokens : hardwareTokens.hardwareClaims, qui décide si une inférence PKINIT et une clé d’accès sans attestation de confiance obtiennent encore hwk, avec ce qu’est un registre de jetons et ce que retire un jeton perdu. Il n’y a pas de POST à côté de celui-ci : les formulaires envoient set-many à /admin/config. Reflète GET /admin/hardware-tokens-settings."
+  },
+  "stsmetadata.endpoints./admin-api/piv.what": {
+    "en": "24ea31c5f2d6423c",
+    "text": "NON-SPEC (#2049). Chaque paramètre piv.* : les racines d’attestation, si un profil PIV exige une attestation, les politiques de PIN et de toucher, la connexion par authentification de carte, le séquestre de clés et les émetteurs externes associés par UUID de carte. Il n’y a pas de POST à côté de celui-ci : les formulaires envoient set-many à /admin/config. Reflète GET /admin/piv."
+  },
+  "stsmetadata.endpoints./admin-api/yubiotp.what": {
+    "en": "00d89a7aca51d6c1",
+    "text": "NON-SPEC (#2049). Chaque paramètre yubiotp.* : l’enrôlement, le point de vérification YK-VAL 2.0 et les imports en clair. Il n’y a pas de POST à côté de celui-ci : les formulaires envoient set-many à /admin/config. Reflète GET /admin/yubiotp."
+  },
+  "stsmetadata.endpoints./admin-api/oath-tokens.what": {
+    "en": "5cf49220b4238eee",
+    "text": "NON-SPEC (#2049). Les paramètres hotp.* et pskc.allowPlaintextImport : la longueur du code, les deux fenêtres et si le mode produit accepte un fichier de graines PSKC en clair. Il n’y a pas de POST à côté de celui-ci : les formulaires envoient set-many à /admin/config. Reflète GET /admin/oath-tokens."
+  },
+  "stsmetadata.endpoints./admin-api/ssh-user-ca.what": {
+    "en": "d469684ddad7dfa3",
+    "text": "NON-SPEC (#2049). Chaque paramètre pki.ssh* de l’autorité de certification utilisateur OpenSSH du domaine : ses algorithmes, les règles post-quantiques, le certificat le plus long avec et sans preuve matérielle, les extensions et les principaux. Il n’y a pas de POST à côté de celui-ci : les formulaires envoient set-many à /admin/config. Reflète GET /admin/ssh-user-ca."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp-settings.what": {
+    "en": "392792b504230c16",
+    "text": "NON-SPEC (#2049). Chaque paramètre openpgp.* : le Web Key Directory, les algorithmes acceptés, la plus petite clé RSA, les règles post-quantiques, la durée de vie du défi et le décalage d’horloge de la signature. Il n’y a pas de POST à côté de celui-ci : les formulaires envoient set-many à /admin/config. Reflète GET /admin/openpgp-settings."
+  },
   "stsmetadata.endpoints./admin-api/mfa.what": {
     "en": "22620e663bd803a3",
     "text": "NON-SPEC. Une ligne par personne : mot de passe, clés de sécurité dans le rôle `mfa`, si une application d’authentification est enrôlée, et lequel des deux lui sera demandé. `totpUsable: false` est la ligne à rechercher — un enrôlement que ce processus ne peut pas lire, dont le titulaire est REFUSÉ à l’étape du code plutôt qu’admis avec un seul facteur. **LA PAGE DE CONSOLE QUE CECI REFLÉTAIT A DISPARU** : /admin/mfa a duré quelques heures avant de se scinder en pages de mécanismes /admin/totp et /admin/webauthn et en une liste qui est désormais un ensemble de colonnes sur /admin/users. Cette ressource est conservée et répond À PARTIR DE CETTE VUE ; il y a donc un seul décompte plutôt que deux parcours. Reflète GET /admin/users, et GET /admin-api/users porte les mêmes faits sous `factors` sur chaque ligne."

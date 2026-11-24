@@ -1237,6 +1237,47 @@ const SECTIONS = [
                'browser was asked about attestation, the resident key or the ' +
                'attachment. Who holds a key is on that person\'s row under ' +
                '<a href="/admin/users">Users</a>.' },
+      // THE #1955 HARDWARE-TOKEN MECHANISMS, ONE PROTOCOLS PAGE EACH (#2049,
+      // rcbj 2026-11-23), beside the second factors because each answers
+      // *what does this mechanism do, and how is it configured* about a
+      // credential a person carries. The registers stay Directory →
+      // Hardware tokens (`/admin/hardware-tokens`), which keeps its tabs:
+      // where a page is filed is decided by the question it answers. Each
+      // is a row of PROTOCOL_SETTINGS_PAGES with a settings group of its
+      // own; they were scattered over Devices, TOTP MFA and PKI.
+      { path: '/admin/hardware-tokens-settings', label: 'Hardware tokens',
+        blurb: 'What a hardware-token register is and what a token proves: ' +
+               'a serial recorded only from the token\'s own attestation ' +
+               '(FIDO enterprise attestation, a YubiKey PIV attestation), ' +
+               'the evidence that earns <code>amr hwk</code> and ' +
+               '<code>pkinit-hardware</code>, the token facts XACML reads, ' +
+               'and retiring a lost token\'s credentials. The ' +
+               '<code>hardwareTokens.*</code> setting. The tokens ' +
+               'themselves are Directory → Hardware tokens.' },
+      // PIV with the tokens rather than beside PKI: its settings decide
+      // what an attested key on a card must be and whether a card signs a
+      // person in, which is a question about the token; the profiles it
+      // issues under are PKI's.
+      { path: '/admin/piv', label: 'PIV',
+        blurb: 'PIV and CAC smart cards (FIPS 201, NIST SP 800-73): the ' +
+               'YubiKey PIV attestation a slot certificate is issued ' +
+               'against, the PIN and touch policies an attested key must ' +
+               'hold, whether a card-authentication (9e) certificate signs ' +
+               'in, key-management escrow, and outside issuers mapped by ' +
+               'card UUID. Every <code>piv.*</code> setting.' },
+      { path: '/admin/yubiotp', label: 'YubiKey OTP',
+        blurb: 'Yubico OTP, checked by this service with the AES key it ' +
+               'holds: whether a slot may be enrolled, assigned or claimed, ' +
+               'whether the YK-VAL 2.0 verify endpoint answers, and ' +
+               'whether a plaintext seed file may be imported. Every ' +
+               '<code>yubiotp.*</code> setting.' },
+      { path: '/admin/oath-tokens', label: 'OATH tokens',
+        blurb: 'A vendor\'s HOTP and TOTP tokens, imported from its PSKC ' +
+               'seed file (RFC 6030), assigned by serial or claimed by the ' +
+               'person holding one, and checked at the one-time-code step ' +
+               '(RFC 4226). The <code>hotp.*</code> and <code>pskc.*</code> ' +
+               'settings; the imported tokens are Directory → Hardware ' +
+               'tokens.' },
       // DEVICE REGISTRATION (#164, #218, 2026-09-26): HOW a device comes to
       // be in the register and how it is recognised — the enrolment
       // methods, attestation, the MDM feed — and every `devices.*` setting.
@@ -1320,6 +1361,27 @@ const SECTIONS = [
                'project\'s own PKI code, vendored byte-identical, so a ' +
                'certificate issued here and one issued on its PKI / X.509 ' +
                'page are built by one encoder.' },
+      // SSH USER CERTIFICATES AND OPENPGP (#2049), beside PKI: both are
+      // keys this realm vouches for or publishes for a person — an OpenSSH
+      // user CA and the Web Key Directory — which is the question PKI's
+      // page answers for X.509. A person's own key and certificates stay
+      // Directory → Hardware tokens (its SSH tab) and Directory → OpenPGP
+      // keys (`/admin/openpgp`).
+      { path: '/admin/ssh-user-ca', label: 'SSH user certificates',
+        blurb: 'The realm\'s OpenSSH user certificate authority: the ' +
+               'public key a server trusts (TrustedUserCAKeys), its ' +
+               'revocation list, the algorithms it signs in, how long a ' +
+               'certificate lives with and without hardware evidence, its ' +
+               'extensions and principals: every <code>pki.ssh*</code> ' +
+               'setting.' },
+      { path: '/admin/openpgp-settings', label: 'OpenPGP',
+        blurb: 'OpenPGP keys (RFC 9580, and RFC 9980\'s post-quantum ' +
+               'composites) registered by signing a challenge, published ' +
+               'in the Web Key Directory, and used with S/MIME (RFC 8551) ' +
+               'to encrypt a person\'s mail: the algorithms accepted, the ' +
+               'post-quantum rules, the challenge, and the Web Key ' +
+               'Directory\'s switch and domains. Every ' +
+               '<code>openpgp.*</code> setting.' },
       // CERT ISSUANCE (2026-09-13 as *Certificate enrollment*; RENAMED AND
       // WIDENED 2026-09-22 at rcbj's ask): every protocol by which something
       // asks the certificate authority above for a certificate — ACME, EST,
@@ -2942,7 +3004,10 @@ const USER_TAB_IDS = ['utab-overview', 'utab-authentications',
 // `tests/person_fields.js` now holds every sub-tab the page draws to this
 // list.
 const USER_SUB_TAB_IDS = ['ucred-factors', 'ucred-password', 'ucred-service',
-  'ucred-keys', 'ucred-self-issued', 'ucred-kerberos'].concat(
+  'ucred-keys', 'ucred-self-issued', 'ucred-kerberos',
+  // A person's token and key sub-tabs (#2052).
+  'ucred-hardware-tokens', 'ucred-oath-tokens', 'ucred-yubiotp',
+  'ucred-piv', 'ucred-ssh', 'ucred-openpgp'].concat(
   personEditor.FIELD_GROUPS.map(function (group) {
   return 'ufg-' + group.id;
 }));
@@ -9339,8 +9404,18 @@ const SETTING_HOMES = [
   { group: 'Sign-in appearance', pages: ['/admin/sign-in-appearance'] },
   // What a person may set, so beside the people it is about (#719).
   { group: 'Profile photos', pages: ['/admin/users'] },
-  // A person's OpenPGP key and the Web Key Directory (#1955 P6).
-  { group: 'OpenPGP', pages: ['/admin/openpgp'] },
+  // A person's OpenPGP key and the Web Key Directory (#1955 P6). On
+  // Protocols → OpenPGP since #2049: Directory → OpenPGP keys
+  // (/admin/openpgp) never drew a settings form, so none of the eight could
+  // be changed in the console while this row named it.
+  { group: 'OpenPGP', pages: ['/admin/openpgp-settings'] },
+  // THE #1955 HARDWARE-TOKEN MECHANISMS (#2049), a group and a Protocols
+  // page each; Directory → Hardware tokens keeps the registers.
+  { group: 'Hardware tokens', pages: ['/admin/hardware-tokens-settings'] },
+  { group: 'PIV', pages: ['/admin/piv'] },
+  { group: 'YubiKey OTP', pages: ['/admin/yubiotp'] },
+  { group: 'OATH tokens', pages: ['/admin/oath-tokens'] },
+  { group: 'SSH user certificates', pages: ['/admin/ssh-user-ca'] },
   // On Protocols → Delegation since 2026-10-01, with the register's controls:
   // Monitoring → Delegation changes nothing.
   { group: 'Delegation', pages: ['/admin/delegation-settings'] },
@@ -10451,6 +10526,222 @@ const PROTOCOL_SETTINGS_PAGES = [
             ['/admin/users', 'who holds a key, and how to remove one'],
             ['/admin/crypto-metadata', 'every algorithm this service performs'],
             ['/portal/keys', 'where a person enrols one']] },
+
+  // -------------------------------------------------------------------------
+  // THE #1955 MECHANISMS AND OPENPGP, A PROTOCOLS PAGE EACH (#2049, rcbj
+  // 2026-11-23). Every one of them had settings and no page that drew them:
+  // OpenPGP's group was homed on Directory → OpenPGP keys, which draws a
+  // person's key and never a settings form, so `/admin/config` pointed at a
+  // page with nothing to change on it; the token mechanisms' rows were
+  // scattered over Devices, TOTP MFA and PKI. Each is now a group of its
+  // own drawn here, Metadata first; the registers and a person's keys stay
+  // on the Directory pages each `links` names. `tests/setting_homes_drawn.js`
+  // is the check that a page named in SETTING_HOMES draws its group.
+  // -------------------------------------------------------------------------
+  { path: '/admin/hardware-tokens-settings', title: 'Hardware tokens',
+    lead: '<strong>A hardware-token register: the physical security keys ' +
+          'and smart cards this realm recorded, and what a credential on ' +
+          'one proves.</strong> A token is recorded only from its own ' +
+          'attestation — a security key registered with FIDO enterprise ' +
+          'attestation (W3C WebAuthn Level 3, CTAP 2.1), a certificate ' +
+          'issued against a YubiKey PIV attestation, or a vendor\'s PSKC ' +
+          'seed file (RFC 6030) when its token is assigned or claimed. ' +
+          '<strong>A serial is never typed in</strong>: a self-declared ' +
+          'serial would let anybody claim somebody else\'s key. The tokens ' +
+          'themselves are <a href="/admin/hardware-tokens">Directory → ' +
+          'Hardware tokens</a>.',
+    also: ['<strong>EVIDENCE AT SIGN-IN.</strong> RFC 8176\'s ' +
+           '<code>hwk</code> and <code>sc</code>, and PKINIT\'s ' +
+           '<code>pkinit-hardware</code> and <code>pkinit-smartcard</code>, ' +
+           'are earned from recorded evidence. ' +
+           '<code>hardwareTokens.hardwareClaims</code> below decides ' +
+           'whether a PKINIT inference (a smart-card logon certificate ' +
+           'whose key this service did not generate) and a passkey ' +
+           'without trusted attestation still earn <code>hwk</code>: ' +
+           '<code>inference</code>, the default, keeps the behaviour ' +
+           'before #1955; <code>evidence</code> earns it from attestation ' +
+           'only. A slot 9e (card authentication) key is never evidence.',
+           '<strong>XACML READS THE TOKEN.</strong> Every browser sign-in ' +
+           'sends the token its credential is on as environment ' +
+           'attributes — <code>urn:sts:xacml:hardware-token-attested</code>, ' +
+           '<code>-key</code>, <code>-vendor</code>, <code>-model</code>, ' +
+           '<code>-evidence</code>, <code>-smart-card</code>, ' +
+           '<code>-holder-matches</code>, <code>-status</code>, the PIV ' +
+           'PIN and touch policies, the firmware, the form factor and ' +
+           '<code>-fips</code> — so a policy can require one, and the ' +
+           '<code>attested-hardware</code> mechanism is asked again at ' +
+           'every issuance.',
+           '<strong>A LOST TOKEN RETIRES EVERY CREDENTIAL ON IT AT ' +
+           'ONCE.</strong> Reported lost by its holder on the portal or by ' +
+           'an administrator, it stops counting as evidence; each passkey ' +
+           'on it is removed, each certificate revoked for ' +
+           '<code>keyCompromise</code>, each imported one-time-code secret ' +
+           'taken off its holder, a CAEP credential-change sent and the ' +
+           'sessions they started ended. A credential that could not be ' +
+           'retired is named in the answer and stays live.'],
+    links: [['/admin/hardware-tokens', 'the tokens, the OATH inventory, ' +
+             'PIV enrolment, escrow and SSH certificates'],
+            ['/admin/piv', 'PIV'],
+            ['/admin/yubiotp', 'YubiKey OTP'],
+            ['/admin/oath-tokens', 'OATH tokens'],
+            ['/admin/webauthn', 'enterprise attestation'],
+            ['/portal/tokens', 'where a person sees their own']] },
+
+  { path: '/admin/piv', title: 'PIV',
+    lead: '<strong>PIV and CAC smart cards — FIPS 201 and NIST SP 800-73 — ' +
+          'and the YubiKey PIV attestation a slot certificate is issued ' +
+          'against.</strong> A <code>piv-auth</code> (9a), ' +
+          '<code>piv-sign</code> (9c), <code>piv-key-management</code> ' +
+          '(9d) or <code>piv-card-auth</code> (9e) certificate carries the ' +
+          'card\'s attestation as evidence when the request has one that ' +
+          'verifies against Yubico\'s roots (or ' +
+          '<code>piv.attestationAnchors</code>); the attested PIN and ' +
+          'touch policies are held to the settings below. Issuing one is ' +
+          'the PIV enrolment tab of <a href="/admin/hardware-tokens">' +
+          'Directory → Hardware tokens</a>.',
+    also: ['<strong>A card-authentication key works without a ' +
+           'PIN</strong>, for physical access, so a ' +
+           '<code>piv-card-auth</code> certificate signs nobody in — over ' +
+           'TLS or at PKINIT — unless <code>piv.cardAuthSignIn</code> is ' +
+           'on, and it never earns <code>hwk</code> or <code>sc</code>.',
+           '<strong>Escrow is the one place this service keeps a card ' +
+           'key.</strong> With <code>piv.keyEscrow</code> on, EST ' +
+           '<code>/serverkeygen</code> for <code>piv-key-management</code> ' +
+           'keeps the generated key sealed under the key-encryption key, ' +
+           'so old mail can be decrypted after a card is lost; an escrowed ' +
+           'key is never hardware evidence. Off, the default, that profile ' +
+           'is refused there and the 9d key is generated on the card.',
+           '<strong>An outside PIV or CAC card is mapped by its FIPS 201 ' +
+           'card UUID, never by a name.</strong> A client certificate an ' +
+           'issuer in <code>piv.externalIssuers</code> issued, asserting a ' +
+           'policy in <code>piv.externalPolicyOids</code>, signs in the one ' +
+           'person whose <code>stsPivCardUuid</code> holds that UUID. No ' +
+           'entry is created, and the CA must also be in a client ' +
+           'truststore.'],
+    links: [['/admin/hardware-tokens', 'PIV enrolment and escrowed keys'],
+            ['/admin/hardware-tokens-settings', 'hardware tokens'],
+            ['/admin/pki', 'the certificate authority that issues them'],
+            ['/admin/pki/trust', 'paranoid PKI mode'],
+            ['/admin/tls', 'certificate sign-in']] },
+
+  { path: '/admin/yubiotp', title: 'YubiKey OTP',
+    lead: '<strong>Yubico OTP, checked by this service itself</strong>: ' +
+          'the 44 characters a YubiKey types are decrypted with the slot\'s ' +
+          'AES-128 key, which this service holds, and the counters checked ' +
+          'so a code is accepted once. Nothing is sent to YubiCloud. A ' +
+          'person enrols a slot on <code>/portal/mfa</code>, or an ' +
+          'administrator imports a batch and assigns one on <a ' +
+          'href="/admin/hardware-tokens">Directory → Hardware tokens</a>.',
+    also: ['<strong>THE AES KEY STAYS ON THIS SERVICE, SO THE SIGN-IN IS ' +
+           '<code>amr otp</code> AND NEVER <code>hwk</code>.</strong> ' +
+           'Holding the key that checks a code is what lets a copy of it ' +
+           'make one; the code proves a secret, not where it lives.',
+           '<strong>THE YK-VAL 2.0 ENDPOINT IS A SECOND SWITCH.</strong> ' +
+           'With <code>yubiotp.ykval</code> on, <code>/wsapi/2.0/verify' +
+           '</code> answers a client that signed its request with its id ' +
+           'and HMAC-SHA1, checked in every mode including development. ' +
+           'Off, the default, it answers <code>OPERATION_NOT_ALLOWED</code>.',
+           '<strong>A credential already held is still checked</strong> ' +
+           'while <code>yubiotp.offered</code> is off: the switch decides ' +
+           'enrolment, assignment and a claim, not whether a slot somebody ' +
+           'has keeps working.'],
+    links: [['/admin/hardware-tokens', 'imported YubiKeys and who holds one'],
+            ['/admin/oath-tokens', 'a YubiKey\'s OATH-HOTP slot'],
+            ['/admin/totp', 'the one-time-code step'],
+            ['/portal/mfa', 'where a person enrols one']] },
+
+  { path: '/admin/oath-tokens', title: 'OATH tokens',
+    lead: '<strong>Counter-based one-time codes — OATH HOTP, RFC 4226 — ' +
+          'and the vendor tokens imported from their PSKC seed files ' +
+          '(RFC 6030).</strong> A person programs a YubiKey\'s OATH-HOTP ' +
+          'slot on <code>/portal/mfa</code>; an administrator imports a ' +
+          'vendor\'s file and assigns a token by serial, or its holder ' +
+          'claims it, on <a href="/admin/hardware-tokens">Directory → ' +
+          'Hardware tokens</a>. Either is accepted at every door that ' +
+          'takes a code, its counter advanced by compare-and-set.',
+    also: ['<strong>A PLAINTEXT SEED FILE IS A LIST OF WORKING SECOND ' +
+           'FACTORS</strong> on every disk and mailbox it passed through. ' +
+           'Product mode refuses one unless ' +
+           '<code>pskc.allowPlaintextImport</code> is on; a vendor can ' +
+           'encrypt it under a pre-shared key or a password (RFC 6030 ' +
+           'sections 6.1 and 6.2). Development mode accepts one regardless.',
+           '<strong>The windows are policy and live; the digits are the ' +
+           'token\'s.</strong> <code>hotp.window</code> and ' +
+           '<code>hotp.resyncWindow</code> apply to every enrolment at ' +
+           'once. <code>hotp.digits</code> is copied onto a new ' +
+           'enrolment, and an imported token keeps the length its file ' +
+           'names.',
+           '<strong>THE SECRET IS NEVER SHOWN.</strong> An imported token ' +
+           'is recorded by the serial its file\'s <code>DeviceInfo</code> ' +
+           'names, with evidence <code>pskc-import</code>; neither the ' +
+           'inventory nor any answer carries the secret.'],
+    links: [['/admin/hardware-tokens', 'the OATH inventory'],
+            ['/admin/totp', 'time-based codes'],
+            ['/admin/yubiotp', 'Yubico OTP'],
+            ['/portal/mfa', 'where a person programs one']] },
+
+  { path: '/admin/ssh-user-ca', title: 'SSH user certificates',
+    lead: '<strong>This realm\'s OpenSSH user certificate authority</strong> ' +
+          '(OpenSSH\'s <code>PROTOCOL.certkeys</code>): it signs a ' +
+          'person\'s SSH public key into a user certificate a server ' +
+          'trusts through <code>TrustedUserCAKeys</code>. The public key ' +
+          'is <code>GET /pki/ssh-user-ca/{scope}</code> and its key ' +
+          'revocation list <code>GET /pki/ssh-user-krl/{scope}</code>. A ' +
+          'person\'s certificates, and revoking one, are the SSH tab of <a ' +
+          'href="/admin/hardware-tokens">Directory → Hardware tokens</a>.',
+    also: ['<strong>OPENSSH DEFINES NO POST-QUANTUM SIGNATURE.</strong> ' +
+           '<code>ssh-mldsa-65</code> is this service\'s own wire name, a ' +
+           'second authority published at the same path with ' +
+           '<code>?algorithm=ssh-mldsa-65</code> and never put on the ' +
+           '<code>TrustedUserCAKeys</code> line, which is always the first ' +
+           'classical name in <code>pki.sshUserCaAlgorithms</code>. Stock ' +
+           '<code>sshd</code> cannot verify it yet.',
+           '<strong>Hardware evidence buys a longer certificate.</strong> ' +
+           'A key whose security-key attestation was verified may hold a ' +
+           'certificate up to <code>pki.sshHardwareLifetimeSeconds</code>; ' +
+           'any other key, <code>pki.sshSoftwareLifetimeSeconds</code>.',
+           '<strong>These settings kept their <code>pki.</code> ' +
+           'keys</strong> when they moved here from the PKI group (#2049), ' +
+           'so an appconfig file or a variable that sets one still does.'],
+    links: [['/admin/hardware-tokens', 'a person\'s SSH certificates'],
+            ['/admin/pki', 'the X.509 certificate authority'],
+            ['/pki/ssh-user-ca/default', 'the default realm\'s CA key']] },
+
+  { path: '/admin/openpgp-settings', title: 'OpenPGP',
+    lead: '<strong>OpenPGP keys — RFC 9580, and RFC 9980\'s post-quantum ' +
+          'composites — registered by signing a challenge, published in ' +
+          'the Web Key Directory, and used to encrypt a person\'s ' +
+          'mail.</strong> A person registers a key on ' +
+          '<code>/portal/openpgp</code> by signing the challenge with ' +
+          '<code>gpg --clearsign</code> (on a YubiKey the card signs). ' +
+          'Mail this service sends them is encrypted to it (RFC 3156), or ' +
+          'to their S/MIME certificate (RFC 8551). One person\'s key is <a ' +
+          'href="/admin/openpgp">Directory → OpenPGP keys</a>.',
+    also: ['<strong>THE WEB KEY DIRECTORY IS OFF BY DEFAULT</strong> ' +
+           '(draft-koch-openpgp-webkey-service). With ' +
+           '<code>openpgp.wkd</code> on, this realm answers ' +
+           '<code>/.well-known/openpgpkey/&lt;domain&gt;/hu/&lt;hash&gt;' +
+           '</code> (the advanced method, on ' +
+           '<code>openpgpkey.&lt;domain&gt;</code>) and ' +
+           '<code>/.well-known/openpgpkey/hu/&lt;hash&gt;</code> (the ' +
+           'direct method) for the domains in ' +
+           '<code>openpgp.wkdDomains</code> — the realm\'s own DNS domain ' +
+           'when that is empty — and only for a person who opted in. The ' +
+           'endpoints of this realm are listed below.',
+           '<strong>THE POST-QUANTUM RULES NARROW REGISTRATION ONLY.' +
+           '</strong> <code>openpgp.pqcOnly</code> and ' +
+           '<code>openpgp.pqcAlongsideClassical</code> cannot both be on; ' +
+           'either applies to a key registered after it is set, and a ' +
+           'classical key already registered still verifies and still ' +
+           'receives mail.',
+           '<strong>Until #2049 these settings could not be changed here.' +
+           '</strong> They were homed on Directory → OpenPGP keys, which ' +
+           'never drew a settings form.'],
+    links: [['/admin/openpgp', 'one person\'s key'],
+            ['/admin/mail', 'the mail channel'],
+            ['/admin/crypto-metadata', 'every algorithm this service ' +
+             'performs'],
+            ['/portal/openpgp', 'where a person registers one']] },
 
   { path: '/admin/oauth2', title: 'OAuth 2.0 / OIDC settings',
     lead: '<strong>The authorization server\'s own settings.</strong> ' +

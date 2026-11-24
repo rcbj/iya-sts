@@ -68,5 +68,14 @@
   "sshExpires": "Läuft ab",
   "sshHardware": "hardwaregebunden",
   "sshRevoked": "widerrufen",
-  "sshRevoke": "Widerrufen"
+  "sshRevoke": "Widerrufen",
+  "person.unavailable": "Die Token dieser Person konnten hier nicht gelesen werden. Verzeichnis → Hardware-Token zeigt sie.",
+  "person.noOath": "Dieser Person ist kein OATH-Token zugewiesen.",
+  "person.tokenKey": "Token-Schlüssel (Hersteller/Seriennummer)",
+  "person.yubiSerial": "YubiKey-Seriennummer",
+  "person.yubiOtp": "Ein OTP davon (optional)",
+  "person.noYubi": "Diese Person besitzt kein YubiKey OTP.",
+  "person.yubiWhat": "Weisen Sie dieser Person einen importierten YubiKey über seine Seriennummer zu. Ein vom Schlüssel eingegebenes OTP beweist, dass er vorliegt, und wird vor der Zuweisung geprüft.",
+  "person.sshIssue": "Eine Person stellt ihr eigenes SSH-Benutzerzertifikat im Portal aus, für einen öffentlichen Schlüssel, den sie besitzt. Ein Administrator kann es hier widerrufen.",
+  "person.central": "Alle Token dieses Realms: Verzeichnis → Hardware-Token"
 }

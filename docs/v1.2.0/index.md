@@ -204,11 +204,13 @@ documents it.
 | GNAP | `/admin/gnap` | [GNAP](gnap.md) | [GNAP](configure-gnap.md) |
 | TOTP MFA, Recovery codes, WebAuthn | `/admin/totp`, `/admin/backup-codes`, `/admin/webauthn` | [Authentication](authentication.md), [Passkeys and WebAuthn](passkeys.md) | [Passkeys and WebAuthn](passkeys.md#recipes) |
 | Device registration | `/admin/device-registration` | [Devices](devices.md) | |
+| Hardware tokens, PIV, YubiKey OTP, OATH tokens | `/admin/hardware-tokens-settings`, `/admin/piv`, `/admin/yubiotp`, `/admin/oath-tokens` | [Hardware tokens](hardware-tokens.md), [YubiKey OTP](yubiotp.md), [One-time code tokens](one-time-code-tokens.md) | |
 | Kerberos | `/admin/kerberos`, `/admin/kerberos/principals` | [Kerberos and SPNEGO](kerberos.md) | [Kerberos and SPNEGO](configure-kerberos.md) |
 | LDAP / LDAPS | `/admin/ldap` | [LDAP](ldap.md) | [LDAP](configure-ldap.md) |
 | WS-Trust | `/admin/wstrust` | [WS-Trust](ws-trust.md) | [WS-Trust](configure-ws-trust.md) |
 | WS-Federation | `/admin/wsfed` | [WS-Federation](ws-federation.md) | [WS-Federation](configure-ws-federation.md) |
 | PKI | `/admin/pki` | [PKI](pki.md), [OpenSSH user certificates](pki.md#openssh-user-certificates) | |
+| SSH user certificates, OpenPGP | `/admin/ssh-user-ca`, `/admin/openpgp-settings` | [OpenSSH user certificates](pki.md#openssh-user-certificates), [OpenPGP keys and encrypted mail](openpgp.md) | |
 | PKI trust | `/admin/pki/trust` | [Signer truststore](signer-truststore.md), [use cases](pki-use-cases.md), [paranoid PKI mode](pki.md#paranoid-pki-mode) | |
 | Cryptography | `/admin/crypto-metadata` | [Signature algorithms](crypto.md) | |
 | Cert issuance (ACME, EST, SCEP and SPIFFE tabs) | `/admin/cert-issuance` | [ACME](acme.md), [EST](est.md), [SCEP](scep.md), [SPIFFE](spiffe.md) | [ACME, EST, SCEP](configure-enrollment.md), [SPIFFE](configure-spiffe.md) |
@@ -296,7 +298,7 @@ the diagram and a walk through each layer.
 | **App passwords** — what a person with a second factor gives a client at the five doors that take only a password (LDAP, WS-Trust, SCIM, SSF and EST Basic), which in product refuse their own password; generated, shown **once**, hashed, scoped to the doors named and never accepted at a browser sign-in | `/portal/app-passwords`, `/admin/users`, `/admin-api/users/app-passwords` | [authentication](authentication.md#the-password-only-doors-and-app-passwords) |
 | **HOTP (RFC 4226) and PSKC (RFC 6030)** — a counter-based one-time code from a YubiKey slot programmed for HOTP, or from a vendor's seed file, as a second factor | `/portal/mfa`, `/admin/hardware-tokens` | [one-time-code-tokens](one-time-code-tokens.md) |
 | **Yubico OTP and YK-VAL 2.0** — a YubiKey OTP checked on this service, and an optional validation server for clients that already speak YK-VAL. Nothing is sent to YubiCloud | `/portal/mfa`, `/wsapi/2.0/verify` | [yubiotp](yubiotp.md) |
-| **Hardware tokens, PIV (NIST SP 800-73-4, FIPS 201-3) and YubiKey PIV attestation** — one record per physical key, taken from attestation: passkeys, PIV certificates from attested keys, one-time codes, an OpenSSH certificate and an OpenPGP key. Reporting it lost retires every credential on it | `/admin/hardware-tokens`, `/portal/tokens` | [hardware-tokens](hardware-tokens.md) |
+| **Hardware tokens, PIV (NIST SP 800-73-4, FIPS 201-3) and YubiKey PIV attestation** — one record per physical key, taken from attestation: passkeys, PIV certificates from attested keys, one-time codes, an OpenSSH certificate and an OpenPGP key. Reporting it lost retires every credential on it | `/admin/hardware-tokens`, `/portal/tokens`, `/portal/tokens-and-keys` | [hardware-tokens](hardware-tokens.md) |
 | Kerberos v5 — a KDC, a protected service, and MS-KKDCP; a person's **keytab**, derived from a password in hand | TCP/UDP 88, `/KdcProxy`, `/portal/kerberos` | [kerberos](kerberos.md) |
 | SPNEGO (RFC 4559/4178) | `/authn/spnego` | [kerberos](kerberos.md) |
 | LDAP v3 (RFC 4511) and LDAPS | TCP 389 and 636 | [ldap](ldap.md) |

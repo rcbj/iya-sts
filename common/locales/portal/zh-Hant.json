@@ -42,6 +42,8 @@
   "nav.keys.heading": "密碼金鑰",
   "nav.tokens.label": "安全金鑰",
   "nav.tokens.heading": "您的安全金鑰與智慧卡",
+  "nav.tokens-and-keys.label": "權杖與金鑰",
+  "nav.tokens-and-keys.heading": "您的權杖、憑證與金鑰",
   "nav.openpgp.label": "OpenPGP 與郵件加密",
   "nav.openpgp.heading": "您的 OpenPGP 金鑰與郵件加密",
   "nav.mfa.label": "驗證器應用程式",

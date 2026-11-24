@@ -1915,6 +1915,30 @@
     "en": "b48aa4041763958e",
     "text": "NO ESTÁNDAR. Los ajustes `webauthn.*` en cuatro tipos (la CEREMONIA: nombre del RP, reemplazo del ID del RP, algoritmos, verificación de usuario, transmisión de la atestación, tiempo de espera; CTAP2: conexión del autenticador, credProps; y POLÍTICA: si una clave puede ser primaria, si puede ser segundo factor, cuántas por persona), con la tabla de algoritmos COSE a su lado, leída de authn/webauthn.js, el módulo que comprueba la firma. **UNO SE APLICA Y LOS DEMÁS SON SOLICITUDES**: userVerification se comprueba contra el indicador UV dentro de los bytes que firmó el autenticador. La política de atestación (#105) y los metadatos FIDO vigentes se informan a su lado. No hay ningún POST junto a esta: los formularios envían set-many a /admin/config. Refleja GET /admin/webauthn."
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens-settings.what": {
+    "en": "0052f035e7838d3d",
+    "text": "NO ESTÁNDAR (#2049). El grupo Hardware tokens: hardwareTokens.hardwareClaims, que decide si una inferencia PKINIT y una llave de acceso sin atestación de confianza siguen obteniendo hwk, junto con qué es un registro de tokens y qué retira un token perdido. No hay ningún POST junto a esta: los formularios envían set-many a /admin/config. Refleja GET /admin/hardware-tokens-settings."
+  },
+  "stsmetadata.endpoints./admin-api/piv.what": {
+    "en": "24ea31c5f2d6423c",
+    "text": "NO ESTÁNDAR (#2049). Cada ajuste piv.*: las raíces de atestación, si un perfil PIV exige una atestación, las políticas de PIN y de toque, el inicio de sesión con autenticación de tarjeta, el depósito de claves y los emisores externos asignados por UUID de tarjeta. No hay ningún POST junto a esta: los formularios envían set-many a /admin/config. Refleja GET /admin/piv."
+  },
+  "stsmetadata.endpoints./admin-api/yubiotp.what": {
+    "en": "00d89a7aca51d6c1",
+    "text": "NO ESTÁNDAR (#2049). Cada ajuste yubiotp.*: la inscripción, el punto de verificación YK-VAL 2.0 y las importaciones en claro. No hay ningún POST junto a esta: los formularios envían set-many a /admin/config. Refleja GET /admin/yubiotp."
+  },
+  "stsmetadata.endpoints./admin-api/oath-tokens.what": {
+    "en": "5cf49220b4238eee",
+    "text": "NO ESTÁNDAR (#2049). Los ajustes hotp.* y pskc.allowPlaintextImport: la longitud del código, las dos ventanas y si el modo producto acepta un archivo de semillas PSKC en claro. No hay ningún POST junto a esta: los formularios envían set-many a /admin/config. Refleja GET /admin/oath-tokens."
+  },
+  "stsmetadata.endpoints./admin-api/ssh-user-ca.what": {
+    "en": "d469684ddad7dfa3",
+    "text": "NO ESTÁNDAR (#2049). Cada ajuste pki.ssh* de la autoridad de certificación de usuarios OpenSSH del dominio: sus algoritmos, las reglas poscuánticas, el certificado más largo con y sin evidencia de hardware, las extensiones y los principales. No hay ningún POST junto a esta: los formularios envían set-many a /admin/config. Refleja GET /admin/ssh-user-ca."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp-settings.what": {
+    "en": "392792b504230c16",
+    "text": "NO ESTÁNDAR (#2049). Cada ajuste openpgp.*: el Web Key Directory, los algoritmos aceptados, la clave RSA más pequeña, las reglas poscuánticas, la vida del desafío y el desfase de reloj de la firma. No hay ningún POST junto a esta: los formularios envían set-many a /admin/config. Refleja GET /admin/openpgp-settings."
+  },
   "stsmetadata.endpoints./admin-api/mfa.what": {
     "en": "22620e663bd803a3",
     "text": "NO ESTÁNDAR. Una fila por persona: contraseña, llaves de seguridad en el rol `mfa`, si hay una aplicación de autenticación inscrita y cuál de las dos se le pedirá. `totpUsable: false` es la fila que hay que buscar: una inscripción que este proceso no puede leer, cuyo titular es RECHAZADO en el paso del código en lugar de dejarlo pasar con un solo factor. **LA PÁGINA DE LA CONSOLA QUE ESTO REFLEJABA YA NO EXISTE**: /admin/mfa duró unas horas antes de dividirse en las páginas de mecanismos /admin/totp y /admin/webauthn y una lista que ahora son columnas en /admin/users. Este recurso se conserva y responde A PARTIR DE ESA VISTA, de modo que hay un recuento y no dos exploraciones. Refleja GET /admin/users, y GET /admin-api/users lleva los mismos datos como `factors` en cada fila."

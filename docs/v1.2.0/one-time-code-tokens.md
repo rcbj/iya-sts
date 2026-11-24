@@ -179,6 +179,11 @@ no post-quantum MAC.
 
 ## Settings
 
+The four rows are the OATH tokens group, on **Protocols → OATH tokens**
+(`/admin/oath-tokens`). Until #2049 the `hotp.*` rows were on Protocols →
+TOTP MFA and the PSKC one on Protocols → Device registration; their keys,
+variables and defaults did not change.
+
 | Setting | Default | What it does |
 |---|---|---|
 | `hotp.digits` | 6 | Digits of a new token set up on the portal (6 to 8). An imported token keeps its own. |

@@ -214,6 +214,7 @@
   "detail.tabService": "حساب الخدمة",
   "detail.tabKeys": "أزواج المفاتيح",
   "detail.tabSelfIssued": "معرّفات صادرة ذاتيًا",
+  "detail.tabOpenpgp": "OpenPGP و S/MIME",
   "detail.tabFederation": "روابط الاتحاد",
   "detail.tabGnap": "منح GNAP",
   "detail.tabUma": "UMA",
