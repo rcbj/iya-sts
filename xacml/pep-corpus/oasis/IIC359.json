@@ -1,0 +1,98 @@
+{
+  "name": "IIC359",
+  "source": "oasis-mandatory",
+  "policies": [
+    {
+      "policyId": "urn:oasis:names:tc:xacml:2.0:conformance-test:IIC359:policy",
+      "kind": "Policy",
+      "version": "1.0",
+      "isRoot": true,
+      "document": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n<Policy xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" PolicyId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIC359:policy\" RuleCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:rule-combining-algorithm:deny-overrides\" Version=\"1.0\" >\n    <Description>\n        Policy for Conformance Test IIC359. Arithmetic on INF returns INF.\n    </Description>\n    <Target/>\n    <Rule Effect=\"Permit\" RuleId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIC359:rule\">\n        <Description>\n            Test age is INF.\n        </Description>\n        <Condition>\n\t\t  <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:double-equal\">\n            <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:double-subtract\">\n                <Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:double-one-and-only\">\n                    <AttributeDesignator AttributeId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:age\" Category=\"urn:oasis:names:tc:xacml:1.0:subject-category:access-subject\" DataType=\"http://www.w3.org/2001/XMLSchema#double\" MustBePresent=\"false\"/>\n                </Apply>\n                <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#double\">1.0</AttributeValue>\n            </Apply>\n            <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#double\">INF</AttributeValue>\n\t\t  </Apply>\n        </Condition>\n    </Rule>\n</Policy>\n"
+    }
+  ],
+  "request": {
+    "returnPolicyIdList": false,
+    "combinedDecision": false,
+    "categories": [
+      {
+        "category": "urn:oasis:names:tc:xacml:1.0:subject-category:access-subject",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:subject:subject-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "Julius Hibbert"
+              }
+            ]
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:age",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#double",
+                "value": "INF"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:resource",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:resource:resource-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#anyURI",
+                "value": "http://medico.com/record/patient/BartSimpson"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:action",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:action:action-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "read"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:environment",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:bart-simpson-age",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#double",
+                "value": "10.2"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "decision": "Permit",
+    "obligations": [],
+    "advice": []
+  }
+}

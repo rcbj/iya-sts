@@ -2792,6 +2792,16 @@ generated from the model in `models/pep/` and kept in the repository under
 The same model generates Rust types for every request and answer, in the
 crate `rust/crates/sts-model-pep`.
 
+## The embedded PEP corpus
+
+The PEP embedded in an application by the authentication libraries carries its own lightweight XACML engine, one per language ([#1206](https://github.com/rcbj/iya-sts/issues/1206)). Each engine must decide exactly as this one does. The cases it is held to are in the repository at [`xacml/pep-corpus/`](https://github.com/rcbj/iya-sts/tree/develop/xacml/pep-corpus):
+
+- **The cases:** the XACML 3.0 conformance suite's mandatory cases, one JSON file each. Each holds the policies as the pull sends them, the request as attributes, and the answer this service's engine gives.
+- **The enforcement table:** the bias and obligation table both PEPs follow.
+- **`MANIFEST.json`:** the version a package pins.
+
+`README.md` there gives the format, how an answer is compared, and the licences: the cases are Apache-2.0 like the suite they come from, and the rest is MIT.
+
 ## An embedded PEP's application
 
 A PEP can also run inside an application, embedded through an authentication library ([#1206](https://github.com/rcbj/iya-sts/issues/1206)). It still signs in as its own service account, with its own key, exactly as above. What it adds is a **binding**: its entry names the one application it is embedded in.

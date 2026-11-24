@@ -1,0 +1,119 @@
+{
+  "name": "IIF301_FIXED_NO_XPATH",
+  "source": "oasis-mandatory",
+  "policies": [
+    {
+      "policyId": "urn:oasis:names:tc:xacml:2.0:conformance-test:IIIG006:policy",
+      "kind": "Policy",
+      "version": "1.0",
+      "isRoot": true,
+      "document": "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"no\"?>\n<Policy xmlns=\"urn:oasis:names:tc:xacml:3.0:core:schema:wd-17\" xmlns:md=\"http://www.medico.com/schemas/record\" xmlns:xacml-context=\"urn:oasis:names:tc:xacml:3.0:context:schema:os\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" PolicyId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIIG006:policy\" RuleCombiningAlgId=\"urn:oasis:names:tc:xacml:3.0:rule-combining-algorithm:deny-overrides\" Version=\"1.0\" >\n    <Description>\n        Policy for Conformance Test IIF301.\n        Purpose: new 3.0 feature: Custom Categories; check they are found in XPaths and in AttributeDesignators\n    </Description>\n    <PolicyDefaults>\n    <!-- FIXED original wrong XPathVersion \"http://www.w3.org/TR/1999/Rec-xpath-19991116\" -->\n        <XPathVersion>http://www.w3.org/TR/1999/REC-xpath-19991116</XPathVersion>\n    </PolicyDefaults>\n    <Target/>\n\n    <Rule Effect=\"Permit\" RuleId=\"urn:oasis:names:tc:xacml:2.0:conformance-test:IIF301:rule\">\n    <!-- XPath support is optional in XACML 3.0 therefore removed here. The original has been moved to 'optional' test folder. -->\n<!--         <Condition> -->\n<!--  \t\t\t<Apply FunctionId=\"urn:oasis:names:tc:xacml:1.0:function:integer-equal\"> -->\n\n\n<!--                 <Apply FunctionId=\"urn:oasis:names:tc:xacml:3.0:function:xpath-node-count\"> -->\n\n<!--                 \t<AttributeValue DataType=\"urn:oasis:names:tc:xacml:3.0:data-type:xpathExpression\"  -->\n<!--                 \t \tXPathCategory=\"OurTown\" > -->\n<!--                 \t \t\t//md:location -->\n<!--                 \t </AttributeValue> -->\n<!--                 </Apply> -->\n<!--                 <AttributeValue DataType=\"http://www.w3.org/2001/XMLSchema#integer\">1</AttributeValue> -->\n<!--             </Apply> -->\n<!--         </Condition> -->\n        <AdviceExpressions>\n\t        <AdviceExpression AppliesTo=\"Permit\" AdviceId=\"webSiteURL\">\n\t\t\t\t<AttributeAssignmentExpression AttributeId=\"URLforABC_Hospital\">\n\t                <AttributeDesignator\n\t                \tCategory=\"OurTown\"\n\t                \tAttributeId=\"theHospitalWebSite\"\n\t                \tDataType=\"http://www.w3.org/2001/XMLSchema#anyURI\"\n\t                \tMustBePresent=\"true\"/>\n\t            </AttributeAssignmentExpression>\n\t            </AdviceExpression>\n\t\t</AdviceExpressions>\n    </Rule>\n</Policy>\n"
+    }
+  ],
+  "request": {
+    "returnPolicyIdList": false,
+    "combinedDecision": false,
+    "categories": [
+      {
+        "category": "urn:oasis:names:tc:xacml:1.0:subject-category:access-subject",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:subject:subject-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "Julius Hibbert"
+              }
+            ]
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:test-attr",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "   This  is IT!  "
+              }
+            ]
+          },
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:2.0:conformance-test:test-attr",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "   This  is IT!  "
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "PersonalInfo",
+        "hasContent": true,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:resource:resource-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#anyURI",
+                "value": "http://medico.com/record/patient/BartSimpson"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "urn:oasis:names:tc:xacml:3.0:attribute-category:action",
+        "hasContent": false,
+        "attributes": [
+          {
+            "attributeId": "urn:oasis:names:tc:xacml:1.0:action:action-id",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#string",
+                "value": "read"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "category": "OurTown",
+        "hasContent": true,
+        "attributes": [
+          {
+            "attributeId": "theHospitalWebSite",
+            "includeInResult": false,
+            "values": [
+              {
+                "dataType": "http://www.w3.org/2001/XMLSchema#anyURI",
+                "value": "http://medico.com/ABC_Hospital"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "expected": {
+    "decision": "Permit",
+    "obligations": [],
+    "advice": [
+      {
+        "id": "webSiteURL",
+        "assignments": [
+          {
+            "attributeId": "URLforABC_Hospital",
+            "dataType": "http://www.w3.org/2001/XMLSchema#anyURI",
+            "value": "http://medico.com/ABC_Hospital"
+          }
+        ]
+      }
+    ]
+  }
+}
