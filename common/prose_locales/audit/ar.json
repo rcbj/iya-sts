@@ -1847,6 +1847,10 @@
     "en": "45c66d3faec475a4",
     "text": "ألغى شخص إحدى شهادات مستخدم SSH الخاصة به"
   },
+  "audit.actions.ssh-user-ca.entry-refused.label": {
+    "en": "a3319df6d0e3cfae",
+    "text": "رُفضت شهادة مستخدم SSH كُتبت على إدخال شخص: لم تصدرها السلطة له، أو أنها ملغاة أو منتهية"
+  },
   "audit.actions.did.person.published.label": {
     "en": "36165dbbaae0269a",
     "text": "نشر شخص did:web خاصًا به"

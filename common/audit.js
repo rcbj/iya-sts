@@ -1717,6 +1717,10 @@ const ACTIONS = [
     label: 'A person was issued an SSH user certificate' },
   { action: 'ssh-user-ca.revoke', category: 'authentication',
     label: 'A person revoked one of their SSH user certificates' },
+  { action: 'ssh-user-ca.entry-refused', category: 'authentication',
+    label: 'An SSH user certificate written onto a person\'s entry ' +
+           'was refused: the CA did not issue it to them, or it is ' +
+           'revoked or expired' },
   // #1291: a person's own did:web, published from the user portal.
   { action: 'did.person.published', category: 'authentication',
     label: 'A person published a did:web of their own' },

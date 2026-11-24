@@ -1847,6 +1847,10 @@
     "en": "45c66d3faec475a4",
     "text": "某人撤銷了自己的一張 SSH 使用者憑證"
   },
+  "audit.actions.ssh-user-ca.entry-refused.label": {
+    "en": "a3319df6d0e3cfae",
+    "text": "寫到某人項目上的 SSH 使用者憑證被拒絕：CA 並未向其簽發，或該憑證已撤銷或已過期"
+  },
   "audit.actions.did.person.published.label": {
     "en": "36165dbbaae0269a",
     "text": "某人發布了自己的 did:web"

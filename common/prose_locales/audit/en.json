@@ -461,6 +461,7 @@
   "audit.actions.portal.signing-key.revoked.label": "A person revoked one of their signing key pairs",
   "audit.actions.ssh-user-ca.issue.label": "A person was issued an SSH user certificate",
   "audit.actions.ssh-user-ca.revoke.label": "A person revoked one of their SSH user certificates",
+  "audit.actions.ssh-user-ca.entry-refused.label": "An SSH user certificate written onto a person's entry was refused: the CA did not issue it to them, or it is revoked or expired",
   "audit.actions.did.person.published.label": "A person published a did:web of their own",
   "audit.actions.did.person.version.label": "A person's published DID document gained a new version",
   "audit.actions.did.person.authorized.label": "A person authorized a key on their published DID",

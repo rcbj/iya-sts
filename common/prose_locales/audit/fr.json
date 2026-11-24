@@ -1847,6 +1847,10 @@
     "en": "45c66d3faec475a4",
     "text": "Une personne a révoqué l’un de ses certificats utilisateur SSH"
   },
+  "audit.actions.ssh-user-ca.entry-refused.label": {
+    "en": "a3319df6d0e3cfae",
+    "text": "Un certificat utilisateur SSH écrit sur l’entrée d’une personne a été refusé : l’AC ne le lui a pas délivré, ou il est révoqué ou expiré"
+  },
   "audit.actions.did.person.published.label": {
     "en": "36165dbbaae0269a",
     "text": "Une personne a publié son propre did:web"

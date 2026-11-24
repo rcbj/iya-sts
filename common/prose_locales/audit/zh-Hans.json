@@ -1847,6 +1847,10 @@
     "en": "45c66d3faec475a4",
     "text": "某人吊销了自己的一张 SSH 用户证书"
   },
+  "audit.actions.ssh-user-ca.entry-refused.label": {
+    "en": "a3319df6d0e3cfae",
+    "text": "写到某人条目上的 SSH 用户证书被拒绝：CA 并未向其签发，或该证书已吊销或已过期"
+  },
   "audit.actions.did.person.published.label": {
     "en": "36165dbbaae0269a",
     "text": "某人发布了自己的 did:web"

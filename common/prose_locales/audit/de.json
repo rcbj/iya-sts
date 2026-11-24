@@ -1847,6 +1847,10 @@
     "en": "45c66d3faec475a4",
     "text": "Eine Person hat eines ihrer SSH-Benutzerzertifikate widerrufen"
   },
+  "audit.actions.ssh-user-ca.entry-refused.label": {
+    "en": "a3319df6d0e3cfae",
+    "text": "Ein auf den Eintrag einer Person geschriebenes SSH-Benutzerzertifikat wurde abgelehnt: Die CA hat es ihr nicht ausgestellt, oder es ist gesperrt oder abgelaufen"
+  },
   "audit.actions.did.person.published.label": {
     "en": "36165dbbaae0269a",
     "text": "Eine Person hat eine eigene did:web veröffentlicht"

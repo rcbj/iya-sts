@@ -1847,6 +1847,10 @@
     "en": "45c66d3faec475a4",
     "text": "Binawi ng isang tao ang isa sa kanyang mga SSH user certificate"
   },
+  "audit.actions.ssh-user-ca.entry-refused.label": {
+    "en": "a3319df6d0e3cfae",
+    "text": "Tinanggihan ang isang SSH user certificate na isinulat sa entry ng isang tao: hindi ito inisyu sa kanila ng CA, o binawi o nag-expire na"
+  },
   "audit.actions.did.person.published.label": {
     "en": "36165dbbaae0269a",
     "text": "Naglathala ang isang tao ng sarili niyang did:web"
