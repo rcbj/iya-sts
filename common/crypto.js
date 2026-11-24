@@ -16637,8 +16637,14 @@ const SHA1_PURPOSES = Object.freeze({
   'ocsp-cert-id': 'RFC 6960 section 4.1.1',
   // RFC 4556 section 3.2.1 item 6: PKINIT's paChecksum MUST be present and is
   // SHA-1, and RFC 8636 section 9 leaves it so. `kerberos/krb5_pkinit.ts` says
-  // what the request's security rests on instead.
+  // what the request's security rests on instead, and checks MS-PKCA's
+  // paChecksum2 over SHA-2 beside it when a client sends one (#2125).
   'pkinit-pachecksum': 'RFC 4556 section 3.2.1, RFC 8636 section 9',
+  // MS-PKCA section 2.2.3: PAChecksum2 MAY name SHA-1 (#2125). Verified only
+  // where `kerberos/krb5_pkinit.ts` lets it be — never in product unless
+  // crypto.allowLegacyHashes is on — because MS-PKCA says a PAChecksum2
+  // that is present "will always be validated even if it is SHA-1".
+  'pkinit-pachecksum2': 'MS-PKCA section 2.2.3',
   // RFC 5019 section 6.2 RECOMMENDS an OCSP response's ETag be the hex
   // SHA-1 of the response. Opaque to the client, which only compares it.
   'ocsp-etag': 'RFC 5019 section 6.2',
@@ -19161,6 +19167,67 @@ function pkinitPaChecksumMatches(reqBodyBytes, claimed) {
                               Buffer.from(reqBodyBytes || []));
   const given = Buffer.from(claimed || []);
   log.debug("Leaving pkinitPaChecksumMatches().");
+  return given.length === computed.length &&
+         nodeCrypto.timingSafeEqual(given, computed);
+}
+
+// MS-PKCA SECTION 2.2.3's PAChecksum2 (#2125, ASVS 5.0.0 11.4.3): Microsoft's
+// answer to the SHA-1 above, the same KDC-REQ-BODY's digest under an
+// algorithm the client names. The four the section lists, by OID; anything
+// else is not a PAChecksum2 this KDC can check. `legacy` marks the one a
+// product KDC refuses (`kerberos/krb5_pkinit.ts` decides, through
+// `mode.allowsLegacyHashes()`): MS-PKCA admits SHA-1 here, and a client that
+// sends it buys nothing over the paChecksum it already carries.
+/** PAChecksum2's digests, by OID (MS-PKCA section 2.2.3, RFC 5754). */
+const PKINIT_PACHECKSUM2_DIGESTS = Object.freeze({
+  '1.3.14.3.2.26': { id: 'sha1', label: 'SHA-1', legacy: true },
+  '2.16.840.1.101.3.4.2.1': { id: 'sha256', label: 'SHA-256', legacy: false },
+  '2.16.840.1.101.3.4.2.2': { id: 'sha384', label: 'SHA-384', legacy: false },
+  '2.16.840.1.101.3.4.2.3': { id: 'sha512', label: 'SHA-512', legacy: false }
+});
+
+/**
+ * Describes the digest a PAChecksum2 names.
+ *
+ * @param oid - the AlgorithmIdentifier's OID, dotted
+ * @returns `{ id, label, legacy }`, or null for an OID MS-PKCA does not list
+ */
+function pkinitPaChecksum2Algorithm(oid) {
+  log.debug("Entering pkinitPaChecksum2Algorithm().");
+  const known = Object.prototype.hasOwnProperty.call(
+    PKINIT_PACHECKSUM2_DIGESTS, String(oid))
+    ? PKINIT_PACHECKSUM2_DIGESTS[String(oid)] : null;
+  log.debug("Leaving pkinitPaChecksum2Algorithm().");
+  return known ? Object.assign({}, known) : null;
+}
+
+/**
+ * Computes MS-PKCA's PAChecksum2 — the KDC-REQ-BODY's digest under the
+ * algorithm it names — and compares it with the one a request carries in
+ * constant time. The caller has already decided the algorithm is acceptable.
+ *
+ * @param reqBodyBytes - the KDC-REQ-BODY as it arrived
+ * @param oid - the PAChecksum2's algorithm OID, dotted
+ * @param claimed - the PAChecksum2's checksum
+ * @returns true when they agree
+ * @throws Error for an OID not in PKINIT_PACHECKSUM2_DIGESTS
+ */
+function pkinitPaChecksum2Matches(reqBodyBytes, oid, claimed) {
+  log.debug("Entering pkinitPaChecksum2Matches().");
+  const algorithm = pkinitPaChecksum2Algorithm(oid);
+  if (!algorithm) {
+    log.debug("Leaving pkinitPaChecksum2Matches(). Unknown algorithm.");
+    // error-code: none — the caller asks pkinitPaChecksum2Algorithm() first
+    // and refuses an unknown OID under its own code
+    throw new Error('crypto: PAChecksum2 names ' + oid + ', which MS-PKCA ' +
+                    'section 2.2.3 does not list');
+  }
+  const body = Buffer.from(reqBodyBytes || []);
+  const computed = algorithm.legacy
+    ? sha1Digest('pkinit-pachecksum2', body)
+    : digest(algorithm.id, body);
+  const given = Buffer.from(claimed || []);
+  log.debug("Leaving pkinitPaChecksum2Matches().");
   return given.length === computed.length &&
          nodeCrypto.timingSafeEqual(given, computed);
 }
@@ -22296,6 +22363,8 @@ module.exports = {
   pkinitDhParameters: pkinitDhParameters,
   pkinitDigestAlgorithms: pkinitDigestAlgorithms,
   pkinitPaChecksumMatches: pkinitPaChecksumMatches,
+  pkinitPaChecksum2Algorithm: pkinitPaChecksum2Algorithm,
+  pkinitPaChecksum2Matches: pkinitPaChecksum2Matches,
   pkinitOctetString2Key: pkinitOctetString2Key,
   pkinitKdf: pkinitKdf,
   // --- section 15: digests, key derivation and key import (#178) ---

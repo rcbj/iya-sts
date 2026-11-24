@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6085** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6088** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
 * [Federation (`STS-FED`)](#sts-fed) — 228
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 259
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 262
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 179
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
@@ -3479,6 +3479,9 @@ Raised from: kerberos/.
 | `STS-KRB-0257` | A person whose password must be changed asked for a ticket, in product (ASVS 5.0.0 6.4.1). | KDC_ERR_KEY_EXPIRED |
 | `STS-KRB-0258` | GET /authn/spnego was asked to withhold the AP-REP (?mutual=off) where the test controls are closed (#896). | none (RFC 4120 section 3.2.5; a development test control) |
 | `STS-KRB-0259` | An AS-REQ or TGS-REQ changed the store and the commit of that change failed, so it was answered KDC_ERR_SVC_UNAVAILABLE instead of its reply; the change is retried (GitHub run #569). | KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9 |
+| `STS-KRB-0260` | A PKINIT PKAuthenticator carried an MS-PKCA paChecksum2 over an algorithm this KDC does not accept: one MS-PKCA does not list, or SHA-1 in product mode without crypto.allowLegacyHashes (#2125). | MS-PKCA section 2.2.3, RFC 4556 section 3.2.3: KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79) |
+| `STS-KRB-0261` | A PKINIT PKAuthenticator carried an MS-PKCA paChecksum2 that is not the digest of the KDC-REQ-BODY under the algorithm it names (#2125). | MS-PKCA section 2.2.3: KRB_AP_ERR_MODIFIED (41) |
+| `STS-KRB-0262` | A PKINIT PKAuthenticator carried no MS-PKCA paChecksum2, which krb5.pkinitRequirePaChecksum2 requires (#2125). | MS-PKCA section 2.2.3, RFC 4556 section 3.2.3: KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79) |
 
 ## STS-LDAP
 

@@ -7859,6 +7859,14 @@
     "en": "77b517dda5eb4231",
     "text": "Ob eine PKINIT-Anfrage ein Frische-Token nach RFC 8070 tragen muss — eines, das dieser KDC in KDC_ERR_PREAUTH_REQUIRED innerhalb der Uhrabweichung ausgestellt hat. Es verhindert, dass ein AuthPack, das vorab auf einer entliehenen Smartcard signiert wurde, später verwendet wird. MIT Kerberos 1.17 und später sowie Heimdal senden eines, wenn sie danach gefragt werden. WARNUNG: Aus wird eine PKINIT-Anfrage nur an ihrem eigenen Zeitstempel und an der Replay-Prüfung gemessen."
   },
+  "krb5.pkinitRequirePaChecksum2|label": {
+    "en": "b537d343a181f8ff",
+    "text": "PKINIT verlangt paChecksum2"
+  },
+  "krb5.pkinitRequirePaChecksum2|description": {
+    "en": "09dc40308cf18597",
+    "text": "Ob eine PKINIT-Anfrage Microsofts paChecksum2 (MS-PKCA Abschnitt 2.2.3) tragen muss — SHA-256, SHA-384 oder SHA-512 des Anfragekörpers neben der SHA-1-paChecksum, die RFC 4556 verlangt. Eine gesendete paChecksum2 wird in jedem Fall geprüft, und eine über SHA-1 wird im Produktmodus abgelehnt. Standardmäßig aus, weil MIT Kerberos keine sendet; Windows 11 sowie Windows Server 2022 23H2 und später tun es. Ein wird ein Client, der keine sendet — anonymes PKINIT eingeschlossen — mit KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED abgelehnt."
+  },
   "krb5.pkinitLegacyKdf|label": {
     "en": "45d1284fa60afa2b",
     "text": "PKINIT akzeptiert die eigene Schlüsselableitung aus RFC 4556"

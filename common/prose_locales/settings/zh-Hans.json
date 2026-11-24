@@ -7859,6 +7859,14 @@
     "en": "77b517dda5eb4231",
     "text": "PKINIT 请求是否必须携带 RFC 8070 新鲜度令牌——即此 KDC 在时钟偏差范围内通过 KDC_ERR_PREAUTH_REQUIRED 签发的令牌。它能阻止事先在借来的智能卡上签署的 AuthPack 日后被使用。MIT Kerberos 1.17 及更高版本以及 Heimdal 在被要求时会发送它。警告：关闭时，PKINIT 请求仅受其自身时间戳和重放检查的约束。"
   },
+  "krb5.pkinitRequirePaChecksum2|label": {
+    "en": "b537d343a181f8ff",
+    "text": "PKINIT 要求 paChecksum2"
+  },
+  "krb5.pkinitRequirePaChecksum2|description": {
+    "en": "09dc40308cf18597",
+    "text": "PKINIT 请求是否必须携带 Microsoft 的 paChecksum2（MS-PKCA 第 2.2.3 节）——即请求正文的 SHA-256、SHA-384 或 SHA-512，与 RFC 4556 要求的 SHA-1 paChecksum 并列。已发送的 paChecksum2 无论如何都会被校验，基于 SHA-1 的 paChecksum2 在产品模式下会被拒绝。默认关闭，因为 MIT Kerberos 不发送它；Windows 11 以及 Windows Server 2022 23H2 及更高版本会发送。开启后，未发送它的客户端（包括匿名 PKINIT）将被以 KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED 拒绝。"
+  },
   "krb5.pkinitLegacyKdf|label": {
     "en": "45d1284fa60afa2b",
     "text": "PKINIT 接受 RFC 4556 自身的密钥派生"

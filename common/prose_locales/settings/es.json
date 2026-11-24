@@ -7859,6 +7859,14 @@
     "en": "77b517dda5eb4231",
     "text": "Si una solicitud PKINIT debe llevar un token de frescura de RFC 8070 — uno que este KDC emitió en KDC_ERR_PREAUTH_REQUIRED dentro del desfase de reloj. Es lo que impide que un AuthPack firmado de antemano con una tarjeta inteligente prestada se use más tarde. MIT Kerberos 1.17 y posteriores y Heimdal envían uno cuando se les pide. ADVERTENCIA: desactivado, una solicitud PKINIT queda sujeta solo a su propia marca de tiempo y a la comprobación de repetición."
   },
+  "krb5.pkinitRequirePaChecksum2|label": {
+    "en": "b537d343a181f8ff",
+    "text": "PKINIT exige paChecksum2"
+  },
+  "krb5.pkinitRequirePaChecksum2|description": {
+    "en": "09dc40308cf18597",
+    "text": "Indica si una solicitud PKINIT debe llevar el paChecksum2 de Microsoft (MS-PKCA sección 2.2.3): el SHA-256, SHA-384 o SHA-512 del cuerpo de la solicitud, junto al paChecksum SHA-1 que exige la RFC 4556. Un paChecksum2 enviado se comprueba en cualquier caso, y uno sobre SHA-1 se rechaza en modo producto. Desactivado de forma predeterminada, porque MIT Kerberos no lo envía; Windows 11 y Windows Server 2022 23H2 y posteriores sí. Activado, un cliente que no lo envíe —incluido PKINIT anónimo— se rechaza con KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED."
+  },
   "krb5.pkinitLegacyKdf|label": {
     "en": "45d1284fa60afa2b",
     "text": "PKINIT acepta la derivación de claves propia de RFC 4556"

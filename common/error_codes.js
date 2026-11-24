@@ -16278,6 +16278,22 @@ const CODES = [
       'that change failed, so it was answered KDC_ERR_SVC_UNAVAILABLE ' +
       'instead of its reply; the change is retried (GitHub run #569).',
     spec: 'KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9' },
+  { code: 'STS-KRB-0260',
+    summary: 'A PKINIT PKAuthenticator carried an MS-PKCA paChecksum2 over ' +
+      'an algorithm this KDC does not accept: one MS-PKCA does not list, ' +
+      'or SHA-1 in product mode without crypto.allowLegacyHashes (#2125).',
+    spec: 'MS-PKCA section 2.2.3, RFC 4556 section 3.2.3: ' +
+      'KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79)' },
+  { code: 'STS-KRB-0261',
+    summary: 'A PKINIT PKAuthenticator carried an MS-PKCA paChecksum2 that ' +
+      'is not the digest of the KDC-REQ-BODY under the algorithm it names ' +
+      '(#2125).',
+    spec: 'MS-PKCA section 2.2.3: KRB_AP_ERR_MODIFIED (41)' },
+  { code: 'STS-KRB-0262',
+    summary: 'A PKINIT PKAuthenticator carried no MS-PKCA paChecksum2, ' +
+      'which krb5.pkinitRequirePaChecksum2 requires (#2125).',
+    spec: 'MS-PKCA section 2.2.3, RFC 4556 section 3.2.3: ' +
+      'KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79)' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',

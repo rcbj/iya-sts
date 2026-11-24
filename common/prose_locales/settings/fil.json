@@ -7859,6 +7859,14 @@
     "en": "77b517dda5eb4231",
     "text": "Kung dapat may dalang RFC 8070 freshness token ang isang PKINIT request — isang in-issue ng KDC na ito sa KDC_ERR_PREAUTH_REQUIRED sa loob ng clock skew. Ito ang pumipigil na magamit sa ibang pagkakataon ang AuthPack na pinirmahan nang maaga sa isang hiniram na smart card. Nagpapadala nito ang MIT Kerberos 1.17 pataas at ang Heimdal kapag hiningi. BABALA: kapag naka-off, ang PKINIT request ay sinusukat lang sa sarili nitong timestamp at sa replay check."
   },
+  "krb5.pkinitRequirePaChecksum2|label": {
+    "en": "b537d343a181f8ff",
+    "text": "Hinihingi ng PKINIT ang paChecksum2"
+  },
+  "krb5.pkinitRequirePaChecksum2|description": {
+    "en": "09dc40308cf18597",
+    "text": "Kung kailangang magdala ang isang PKINIT na kahilingan ng paChecksum2 ng Microsoft (MS-PKCA seksyon 2.2.3) — ang SHA-256, SHA-384 o SHA-512 ng katawan ng kahilingan, katabi ng SHA-1 na paChecksum na hinihingi ng RFC 4556. Sinusuri ang paChecksum2 na ipinadala sa alinmang kaso, at tinatanggihan sa product mode ang isa na nasa SHA-1. Naka-off bilang default, dahil hindi nagpapadala nito ang MIT Kerberos; nagpapadala nito ang Windows 11 at ang Windows Server 2022 23H2 at mas bago. Kapag naka-on, tinatanggihan ng KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED ang isang client na hindi nagpapadala nito — kasama ang anonymous PKINIT."
+  },
   "krb5.pkinitLegacyKdf|label": {
     "en": "45d1284fa60afa2b",
     "text": "Tumatanggap ang PKINIT ng sariling key derivation ng RFC 4556"
