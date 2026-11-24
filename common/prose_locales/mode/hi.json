@@ -344,8 +344,8 @@
     "text": "GNAP पुश समापन, SSF पुश डिलीवरी, फ़ेडरेशन के बैक चैनल और XACML PEP नज अपनी …SkipTlsVerification सेटिंग का सम्मान करते हैं (सत्यापन बंद, प्रत्येक अनुरोध पर चेतावनी) और अपनी …AllowHttp सेटिंग का (किसी भी होस्ट पर सादा http)। SPIRE की spiffe.k8sSkipKubeletVerification का भी सम्मान होता है।"
   },
   "mode.requirements.outbound-tls.product": {
-    "en": "247dae79affdfe65",
-    "text": "प्रत्येक …SkipTlsVerification सेटिंग, और spiffe.k8sSkipKubeletVerification, अनदेखी की जाती है — अपने कोड के साथ एक बार लॉग होती है — और /admin तथा /admin-api के माध्यम से लेखन पर अस्वीकार की जाती है (STS-CORE-0103); निजी CA तक परिवार की …CaFile से सत्यापन चालू रखकर पहुँचा जाता है। सादा http SSF, फ़ेडरेशन और XACML के लिए अस्वीकार है, …AllowHttp कुछ भी कहे, और GNAP पुश समापन के लिए केवल लूपबैक पते पर अनुमत है (RFC 9635 अनुभाग 2.5.2.1)।"
+    "en": "32e402ebc2350105",
+    "text": "प्रत्येक …SkipTlsVerification सेटिंग, और spiffe.k8sSkipKubeletVerification, अनदेखी की जाती है — अपने कोड के साथ एक बार लॉग होती है — और /admin तथा /admin-api के माध्यम से लेखन पर अस्वीकार की जाती है (STS-CORE-0103); निजी CA तक परिवार की …CaFile से सत्यापन चालू रखकर पहुँचा जाता है। सादा http SSF, फ़ेडरेशन और XACML के लिए अस्वीकार है, …AllowHttp कुछ भी कहे, और GNAP पुश समापन के लिए केवल लूपबैक पते पर अनुमत है (RFC 9635 अनुभाग 2.5.2.1) — जिसे आउटबाउंड पता नियम अस्वीकार करते हैं, इसलिए कोई सादा-http पुश वितरित नहीं होता (#1614)।"
   },
   "mode.requirements.deliberate-defects.what": {
     "en": "055db67685f19f36",

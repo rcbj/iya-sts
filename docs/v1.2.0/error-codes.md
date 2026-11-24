@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6079** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6080** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -83,7 +83,7 @@ is an ordinary outcome.
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
 * [Mail (`STS-MAIL`)](#sts-mail) — 44
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 16
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 362
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
 * [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 17
 * [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 36
@@ -4850,6 +4850,7 @@ Raised from: gnap/.
 | `STS-GNAP-0603` | A client answered a GNAP push interaction finish with a status other than 2xx. | — |
 | `STS-GNAP-0604` | A GNAP push interaction finish could not be started or delivered, or its response could not be read. | — |
 | `STS-GNAP-0605` | A GNAP push interaction finish timed out. | — |
+| `STS-GNAP-0606` | A GNAP push interaction finish URI is not one the outbound policy will dial: federation.outbound is off, its host is not in security.outboundAllowedHosts, or (in product mode) the name resolves to a loopback, private, link-local or reserved address (ASVS 5.0.0 1.3.6). Refused at the grant request, and nothing is sent at the push. | invalid_interaction (HTTP 400) at the grant request |
 | `STS-GNAP-0650` | A GNAP monitor event is not in gnap_monitor.js's vocabulary and was not counted — a programming error. | — |
 | `STS-GNAP-0651` | A GNAP monitor counter threw and was ignored; the grant itself was unaffected. | — |
 | `STS-GNAP-0652` | An application entry carries a gnapKey that is not a JSON key object; it identifies nobody. | — |

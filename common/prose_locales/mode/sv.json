@@ -344,8 +344,8 @@
     "text": "GNAP-push-avslutningar, SSF-push-leveranser, federationens bakkanaler och XACML PEP-knuffar respekterar sina …SkipTlsVerification-inställningar (verifiering avstängd, varnas vid varje begäran) och sina …AllowHttp-inställningar (vanlig http till vilken värd som helst). SPIRE:s spiffe.k8sSkipKubeletVerification respekteras också."
   },
   "mode.requirements.outbound-tls.product": {
-    "en": "247dae79affdfe65",
-    "text": "Varje …SkipTlsVerification-inställning, och spiffe.k8sSkipKubeletVerification, IGNORERAS — loggas en gång med sin kod — och avvisas vid skrivning via /admin och /admin-api (STS-CORE-0103); en privat CA nås via familjens …CaFile med verifiering påslagen. Vanlig http avvisas för SSF, federation och XACML oavsett vad …AllowHttp säger, och tillåts för en GNAP-push-avslutning bara till en loopback-adress (RFC 9635 avsnitt 2.5.2.1)."
+    "en": "32e402ebc2350105",
+    "text": "Varje …SkipTlsVerification-inställning, och spiffe.k8sSkipKubeletVerification, IGNORERAS — loggas en gång med sin kod — och avvisas vid skrivning via /admin och /admin-api (STS-CORE-0103); en privat CA nås via familjens …CaFile med verifiering påslagen. Vanlig http avvisas för SSF, federation och XACML oavsett vad …AllowHttp säger, och tillåts för en GNAP-push-avslutning bara till en loopback-adress (RFC 9635 avsnitt 2.5.2.1) — vilket reglerna för utgående adresser avvisar, så ingen push i vanlig http levereras (#1614)."
   },
   "mode.requirements.deliberate-defects.what": {
     "en": "055db67685f19f36",

@@ -344,8 +344,8 @@
     "text": "تحترم إنهاءات دفع GNAP وتسليمات دفع SSF والقنوات الخلفية للاتحاد وتنبيهات PEP في XACML إعدادات …SkipTlsVerification الخاصة بها (التحقق متوقف، مع تحذير في كل طلب) وإعدادات …AllowHttp الخاصة بها (http عادي إلى أي مضيف). يُحترَم أيضًا spiffe.k8sSkipKubeletVerification الخاص بـ SPIRE."
   },
   "mode.requirements.outbound-tls.product": {
-    "en": "247dae79affdfe65",
-    "text": "يُتجاهَل كل إعداد …SkipTlsVerification، وكذلك spiffe.k8sSkipKubeletVerification — يُسجَّل مرة واحدة مع رمزه — ويُرفض عند الكتابة عبر /admin و/admin-api (STS-CORE-0103)؛ ويُوصل إلى CA خاص عبر …CaFile الخاص بالعائلة مع التحقق مفعّلًا. يُرفض http العادي لـ SSF والاتحاد وXACML مهما قال …AllowHttp، ولا يُسمح به لإنهاء دفع GNAP إلا إلى عنوان loopback (RFC 9635 القسم 2.5.2.1)."
+    "en": "32e402ebc2350105",
+    "text": "يُتجاهَل كل إعداد …SkipTlsVerification، وكذلك spiffe.k8sSkipKubeletVerification — يُسجَّل مرة واحدة مع رمزه — ويُرفض عند الكتابة عبر /admin و/admin-api (STS-CORE-0103)؛ ويُوصل إلى CA خاص عبر …CaFile الخاص بالعائلة مع التحقق مفعّلًا. يُرفض http العادي لـ SSF والاتحاد وXACML مهما قال …AllowHttp، ولا يُسمح به لإنهاء دفع GNAP إلا إلى عنوان loopback (RFC 9635 القسم 2.5.2.1) — وهو ما ترفضه قواعد العناوين الصادرة، فلا يُسلَّم أي دفع عبر http العادي (#1614)."
   },
   "mode.requirements.deliberate-defects.what": {
     "en": "055db67685f19f36",

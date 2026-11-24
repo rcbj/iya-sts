@@ -344,8 +344,8 @@
     "text": "GNAP 推送完成、SSF 推送投递、联合的反向通道以及 XACML PEP 提醒会遵从各自的 …SkipTlsVerification 设置（关闭验证，每次请求都发出警告）和 …AllowHttp 设置（以纯 http 访问任何主机）。SPIRE 的 spiffe.k8sSkipKubeletVerification 也会被遵从。"
   },
   "mode.requirements.outbound-tls.product": {
-    "en": "247dae79affdfe65",
-    "text": "每个 …SkipTlsVerification 设置以及 spiffe.k8sSkipKubeletVerification 都会被忽略——连同其代码记录一次日志——并且通过 /admin 和 /admin-api 写入时会被拒绝（STS-CORE-0103）；私有 CA 通过该协议族的 …CaFile 在开启验证的情况下访问。无论 …AllowHttp 如何设置，SSF、联合和 XACML 都拒绝纯 http；GNAP 推送完成只允许对环回地址使用纯 http（RFC 9635 第 2.5.2.1 节）。"
+    "en": "32e402ebc2350105",
+    "text": "每个 …SkipTlsVerification 设置以及 spiffe.k8sSkipKubeletVerification 都会被忽略——连同其代码记录一次日志——并且通过 /admin 和 /admin-api 写入时会被拒绝（STS-CORE-0103）；私有 CA 通过该协议族的 …CaFile 在开启验证的情况下访问。无论 …AllowHttp 如何设置，SSF、联合和 XACML 都拒绝纯 http；GNAP 推送完成只允许对环回地址使用纯 http（RFC 9635 第 2.5.2.1 节）——而出站地址规则会拒绝环回地址，因此不会投递任何纯 http 推送（#1614）。"
   },
   "mode.requirements.deliberate-defects.what": {
     "en": "055db67685f19f36",

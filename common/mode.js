@@ -3160,7 +3160,9 @@ const REQUIREMENTS = [
              'the family\'s …CaFile with verification on. Plain http is ' +
              'refused for SSF, federation and XACML whatever …AllowHttp ' +
              'says, and allowed for a GNAP push finish only to a loopback ' +
-             'address (RFC 9635 section 2.5.2.1).',
+             'address (RFC 9635 section 2.5.2.1) — which the outbound ' +
+             'address rules refuse, so no plain-http push is delivered ' +
+             '(#1614).',
     where: 'common/outbound_tls.ts, gnap/gnap_http.ts, ssf/ssf_http.ts, ' +
            'federation/federation_http.ts, xacml/xacml_pep_http.ts, ' +
            'spiffe/spiffe_workload_attestor_k8s.ts' },
