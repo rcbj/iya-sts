@@ -13420,13 +13420,26 @@ The file's header is the argument; what a maintainer needs beside it:
   `openpgp.minRsaBits` ≥ 3072; never DSA, ElGamal, Brainpool or SLH-DSA),
   because #1368's registry has no OpenPGP surface. `openpgp.pqcOnly` and
   `openpgp.pqcAlongsideClassical` narrow registration only, and a composite
-  name counts as post-quantum. S/MIME to a classical certificate is pkijs's
-  EnvelopedData on node's Web Crypto, AES-256-CBC and not GCM: RFC 5083 puts
-  GCM in AuthEnvelopedData and pkijs writes it into an EnvelopedData. An
-  ML-KEM certificate (RFC 9935) is a KEMRecipientInfo (RFC 9629) built with
-  asn1js, HKDF-SHA-256 and AES-Wrap, and the content cipher stays AES-256-CBC.
-  A runtime that cannot encapsulate records `STS-OPENPGP-0028` and does not
-  fall back to RSA or ECDH.
+  name counts as post-quantum. **S/MIME is RFC 5083 AuthEnvelopedData under
+  AES-256-GCM since #2124** (rcbj, 2026-11-24, ASVS 5.0.0 11.3.3;
+  `smime-type=authEnveloped-data`): pkijs has none, so `crypto.js` seals
+  with node's `aes-256-gcm` (12-octet nonce, 16-octet ICV, no authAttrs, so
+  no AAD) and writes the structure with asn1js. The RSA-OAEP and ECDH
+  RecipientInfos are still pkijs's, built by `smimeClassicalRecipients()`
+  handing `EnvelopedData.encrypt()` an engine whose `generateKey()` answers
+  our content key and whose AES-GCM `encrypt()` writes nothing — the one
+  trick here, and the reason the RFC 5753 KDF is not copied. An ML-KEM
+  certificate (RFC 9935) is a KEMRecipientInfo (RFC 9629) built with asn1js,
+  HKDF-SHA-256 and AES-Wrap, in the same AuthEnvelopedData (version 0
+  whatever the recipients). `mail.smimeContentEncryption` `aes256-cbc` is
+  the way back — the pre-1.2.0 EnvelopedData, byte for byte the old code
+  path — read by `mail.ts` at each ATTEMPT, so it reaches queued retries;
+  in product `mode.js` `smimeCbcWaivers()` puts ASVS 11.3.3 on the
+  `smime-authenticated-encryption` row. `crypto.smimeContentEncryption()`
+  reads anything but `aes256-cbc` as GCM, and `smimeTypeFor()` names the
+  MIME parameter from the same reading, so the label cannot disagree with
+  the content type. A runtime that cannot encapsulate records
+  `STS-OPENPGP-0028` and does not fall back to RSA or ECDH.
 * **Proof of possession, never a key on somebody's word.** A challenge per
   person (keyed by entryUUID, `openpgp.challenges`, per realm, minted,
   expiring), signed with `gpg --clearsign`; the key's valid user id must carry
@@ -13469,7 +13482,9 @@ The file's header is the argument; what a maintainer needs beside it:
   back to `none`.
 * **Tests**: `tests/openpgp_keys.js` (every key and certificate made at run
   time; S/MIME opened by `openssl cms`), `tests/openpgp_pqc.js`,
-  `tests/smime_pqc.js`, `tests/protocol/sts_openpgp.js`.
+  `tests/smime_pqc.js`, `tests/smime_auth_enveloped.js` (#2124: the
+  AuthEnvelopedData parsed and opened with node alone, a tampered one
+  refused, the CBC setting, the mode row), `tests/protocol/sts_openpgp.js`.
 
 ## `devices.ts`: THE DEVICE REGISTER (#130, 2026-09-23; #164 and #218, 2026-09-26)
 

@@ -333,8 +333,13 @@ who has an address is told as well (`mail.notifyAdministrators`).
 A person can choose to have their mail encrypted with PGP/MIME to their
 OpenPGP key or with S/MIME to their certificate, and a realm can require it
 for chosen messages (`mail.encryptionRequired`). An encrypted message goes out
-under a neutral subject. See [OpenPGP keys and encrypted
-mail](openpgp.md).
+under a neutral subject. S/MIME mail is an AuthEnvelopedData under
+AES-256-GCM (`smime-type=authEnveloped-data`), which a reader can tell has
+not been changed; `mail.smimeContentEncryption` `aes256-cbc` returns to the
+AES-256-CBC EnvelopedData of earlier releases for a mail client that cannot
+read it, and `/admin/mode` reports ASVS 5.0.0 11.3.3 as not met while it is
+set in product mode. See [OpenPGP keys and encrypted
+mail](openpgp.md#encrypted-mail).
 
 ## Where to look
 

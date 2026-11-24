@@ -12323,6 +12323,14 @@
     "en": "895bdb616e169134",
     "text": "Les messages, par identifiant de modèle (password-reset, account-activation, sign-in-code, sign-in-link, credential-compromised et le reste de la liste de Monitoring → Mail), qui ne sont envoyés que chiffrés — en PGP/MIME pour la clé OpenPGP de la personne ou en S/MIME pour son certificat, selon son choix sur le portail. Une personne qui n'a choisi ni l'un ni l'autre ne reçoit pas le message (STS-MAIL-0240), et l'usage qui l'a demandé le signale comme pour tout message non envoyé. Vide, la valeur par défaut, n'en exige aucun ; le choix d'une personne est respecté dans tous les cas."
   },
+  "mail.smimeContentEncryption|label": {
+    "en": "04776ccf8787181b",
+    "text": "Chiffrement du contenu S/MIME"
+  },
+  "mail.smimeContentEncryption|description": {
+    "en": "fb3309ac8f290326",
+    "text": "Comment est chiffré le courriel chiffré pour le certificat S/MIME d’une personne. aes256-gcm, la valeur par défaut, envoie un AuthEnvelopedData RFC 5083 sous AES-256-GCM (smime-type=authEnveloped-data, RFC 8551), dont un lecteur peut vérifier qu’il n’a pas été modifié. aes256-cbc envoie l’EnvelopedData sous AES-256-CBC envoyé avant la version 1.2.0 (smime-type=enveloped-data), pour un destinataire dont le client de messagerie ne sait pas lire AuthEnvelopedData. AVERTISSEMENT : CBC n’offre aucune protection d’intégrité, et tant que ce paramètre vaut aes256-cbc en mode produit, l’exigence 11.3.3 d’ASVS 5.0.0 n’est pas respectée, ce que /admin/mode signale."
+  },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",
     "text": "Réinitialisation du mot de passe en libre-service"

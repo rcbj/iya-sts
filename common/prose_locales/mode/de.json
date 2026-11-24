@@ -683,6 +683,18 @@
     "en": "b8bdc8b82bb08a9e",
     "text": "Nur AES-GCM wird angeboten oder akzeptiert, und es wird verwendet, wo ein Client kein enc nennt, sofern crypto.allowCbcJwe nicht on ist."
   },
+  "mode.requirements.smime-authenticated-encryption.what": {
+    "en": "e4e548f216488a28",
+    "text": "S/MIME-E-Mails sind authentifizierte Verschlüsselung"
+  },
+  "mode.requirements.smime-authenticated-encryption.development": {
+    "en": "6d1da1e7b21d186d",
+    "text": "An ein S/MIME-Zertifikat verschlüsselte E-Mails sind ein AuthEnvelopedData unter AES-256-GCM, es sei denn, mail.smimeContentEncryption ist aes256-cbc; dann wird ein EnvelopedData unter AES-256-CBC ohne Integritätsschutz gesendet. In keinem Fall wird etwas gemeldet."
+  },
+  "mode.requirements.smime-authenticated-encryption.product": {
+    "en": "58e070998a057f5e",
+    "text": "Dasselbe, und solange mail.smimeContentEncryption aes256-cbc ist, meldet diese Zeile ASVS 5.0.0 11.3.3 als nicht erfüllt."
+  },
   "mode.requirements.unscoped-people.what": {
     "en": "313033517d6bf954",
     "text": "Eine Person braucht bei SCIM und Shared Signals eine Rolle"

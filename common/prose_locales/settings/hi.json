@@ -12323,6 +12323,14 @@
     "en": "895bdb616e169134",
     "text": "टेम्पलेट id द्वारा संदेश (password-reset, account-activation, sign-in-code, sign-in-link, credential-compromised और Monitoring → Mail की सूची के बाकी), जो केवल एन्क्रिप्ट करके भेजे जाते हैं — व्यक्ति की OpenPGP कुंजी के लिए PGP/MIME या उनके प्रमाणपत्र के लिए S/MIME, जैसा उन्होंने पोर्टल पर चुना। जिस व्यक्ति ने दोनों में से कुछ नहीं चुना उसे यह नहीं भेजा जाता (STS-MAIL-0240), और जिस उपयोग ने माँगा था वह यह बताता है, जैसे किसी भी न भेजे गए संदेश के लिए बताता है। खाली, यानी डिफ़ॉल्ट, किसी की माँग नहीं करता; व्यक्ति ने जो भी चुना हो, उसका दोनों स्थितियों में पालन होता है।"
   },
+  "mail.smimeContentEncryption|label": {
+    "en": "04776ccf8787181b",
+    "text": "S/MIME सामग्री एन्क्रिप्शन"
+  },
+  "mail.smimeContentEncryption|description": {
+    "en": "fb3309ac8f290326",
+    "text": "किसी व्यक्ति के S/MIME प्रमाणपत्र के लिए एन्क्रिप्ट किया गया मेल कैसे एन्क्रिप्ट होता है। aes256-gcm, डिफ़ॉल्ट, AES-256-GCM के अंतर्गत RFC 5083 AuthEnvelopedData भेजता है (smime-type=authEnveloped-data, RFC 8551), जिसके बारे में पाठक जान सकता है कि उसे बदला नहीं गया। aes256-cbc वह AES-256-CBC के अंतर्गत EnvelopedData भेजता है जो 1.2.0 से पहले भेजा जाता था (smime-type=enveloped-data), ऐसे प्राप्तकर्ता के लिए जिसका मेल क्लाइंट AuthEnvelopedData नहीं पढ़ सकता। चेतावनी: CBC में अखंडता सुरक्षा नहीं है, और जब तक उत्पाद मोड में यह aes256-cbc है, ASVS 5.0.0 की आवश्यकता 11.3.3 पूरी नहीं होती, जिसकी सूचना /admin/mode देता है।"
+  },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",
     "text": "स्व-सेवा पासवर्ड रीसेट"
