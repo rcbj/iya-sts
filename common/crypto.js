@@ -11384,6 +11384,55 @@ function verifySecretAsync(plaintext, stored) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// A PASSWORD HASH NOBODY HOLDS (#2136, ASVS 5.0.0 6.3.8 and 11.2.4).
+//
+// A refusal that needs no comparison — nobody by that name, a stored value
+// this service cannot read, a disabled account — used to come back at once,
+// while a wrong password for a real person cost a whole derivation (about
+// 68 ms at scrypt's N=2^15). The difference was the answer to "does this
+// account exist", whatever the response said. `credentials.ts` now verifies
+// the presented password against THIS hash on those paths and discards the
+// result, so both cost one derivation at the policy's parameters.
+//
+// MADE ONCE PER PROCESS PER SPEC, from a random value nobody knows, so it
+// matches no password; a policy whose parameters change gets a new one at
+// the first refusal after the change (the spec is the key). Bounded, because
+// a spec comes from the realms' password policies and an administrator can
+// make as many of those as they like: past the bound the memo starts again,
+// which costs one more hash and nothing else.
+// ---------------------------------------------------------------------------
+const DECOY_HASH_LIMIT = 32;
+const decoyHashes = new Map();
+
+/**
+ * Answers a password hash at this spec's parameters that no password
+ * matches, made once per process per spec. What a refusal that needed no
+ * comparison verifies against, so it costs what a wrong password does
+ * (#2136).
+ *
+ * @param spec - the policy's hash spec (`passwordHashSpec()`'s input)
+ * @returns the stored form
+ */
+function decoyPasswordHash(spec) {
+  log.debug('Entering decoyPasswordHash().');
+  const use = passwordHashSpec(spec);
+  const key = JSON.stringify(use);
+  const held = decoyHashes.get(key);
+  if (held) {
+    log.debug('Leaving decoyPasswordHash(). Made already.');
+    return held;
+  }
+  if (decoyHashes.size >= DECOY_HASH_LIMIT) {
+    decoyHashes.clear();
+  }
+  const made = hashPassword(nodeCrypto.randomBytes(32).toString('base64url'),
+                            use);
+  decoyHashes.set(key, made);
+  log.debug('Leaving decoyPasswordHash(). Made for ' + use.algorithm + '.');
+  return made;
+}
+
 // ===========================================================================
 // SECTION 8 — SIGNATURES OVER RAW BYTES, AND THE TPM 2.0 KEY DERIVATION
 // (#40, 2026-09-21).
@@ -22813,6 +22862,8 @@ module.exports = {
   kekBytes: kekBytes,
   verifySecret: verifySecret,
   verifySecretAsync: verifySecretAsync,
+  // A hash no password matches, for a refusal that needed no comparison.
+  decoyPasswordHash: decoyPasswordHash,
   isHashedSecret: isHashedSecret,
   // --- a person's password (#847): argon2id or scrypt, by the policy ---
   PASSWORD_HASH_ALGORITHMS: PASSWORD_HASH_ALGORITHMS,

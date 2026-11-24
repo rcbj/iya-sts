@@ -1270,6 +1270,15 @@ is an empty field. A field is quoted when it contains a comma, a
 quotation mark, CR or LF. A quotation mark inside a quoted field is
 doubled.
 
+A text value that a spreadsheet would read as a formula gets a single
+quote (`'`) in front of it: one whose first character is `=`, `+`, `-`,
+`@`, a tab, a carriage return or NUL. `=SUM(A1)` is written `'=SUM(A1)`,
+so Excel, LibreOffice and Google Sheets show it as text instead of
+running it. The quote is visible in the cell. A number is never
+prefixed: a negative count such as `-5` stays a number you can sum. The
+text `-5` (a name someone typed, say) is prefixed like any other text.
+The same rule applies to the passkey report's CSV export.
+
 **PDF.** PDF 1.4, Helvetica, WinAnsi, US Letter. A value wraps within
 its column: a long value takes as many lines as it needs, broken at a
 space where one falls within the line, and a line feed in a value starts

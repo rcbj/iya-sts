@@ -766,6 +766,18 @@ shadow is the stored row less what the live realm left out
 (`heldShadowRowOf()`), bar what this process cleared and has not written.
 `tests/realm_replicated_overrides.js`.
 
+**The process-wide overrides took the same check on 2026-11-24** (GitHub
+Actions run 45454368120): `config.applyPersistedOverrides()`, at a start and
+at every change-log apply, ran `checkOverride()` with the rules between
+settings, one key at a time in the order the store answered, against what
+this process held before the set. MariaDB's one-second poll handed three
+request workers `listeners.custom` and `listeners.applications` in one
+change; the mapping was judged first, against a listener list without its
+listener, refused STS-CORE-0008 and never asked again, and those workers
+refused every request on the listener (STS-TLS-0047), so
+`sts_openpgp_card_mail`'s Web Key Directory answered gpg 404. It is
+`checkStoredOverride()` now. `tests/stored_override_order.js`.
+
 ## When the flush happens
 
 Both modes schedule; they differ only in the delay.
