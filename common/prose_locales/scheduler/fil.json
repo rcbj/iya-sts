@@ -396,8 +396,8 @@
     "text": "Mail ng aktibidad pagkatapos mag-sign in"
   },
   "sched.jobs.post-login.activity-mail.describe": {
-    "en": "5081eadb5d5abbeb",
-    "text": "Pinapadalhan ng paalala na mag-sign in ang mga taong naaabot ng isang tumatakbong aktibidad pagkatapos mag-sign in (#1111), kung saan hihilingin sa kanila ng aktibidad na magrehistro ng post-quantum passkey. Bumabasa bawat takbo ng isang bahagi ng populasyon ng bawat sinimulang aktibidad (ang realm, o ang unyon ng mga grupo nito) pagkatapos ng cursor, sinusulatan lamang ang mga may nakabinbing aktibidad, hindi kailanman sa loob ng pagitan ng paalala o lampas sa maximum nito, at sumusulat ng isang audit row bawat sinimulang aktibidad bawat takbo."
+    "en": "9e62432e54429d50",
+    "text": "Pinapadalhan ng paalala na mag-sign in ang mga taong naaabot ng isang tumatakbong aktibidad pagkatapos mag-sign in (#1111), kung saan hihilingin sa kanila ng aktibidad na gawin ito: magrehistro ng post-quantum passkey, post-quantum na key sa pag-encrypt ng email, o bagong PIV certificate, bawat aktibidad may sariling mensahe. Bumabasa bawat takbo ng isang bahagi ng populasyon ng bawat sinimulang aktibidad (ang realm, o ang unyon ng mga grupo nito) pagkatapos ng cursor, sinusulatan lamang ang mga may nakabinbing aktibidad, hindi kailanman sa loob ng pagitan ng paalala o lampas sa maximum nito, at sumusulat ng isang audit row bawat sinimulang aktibidad bawat takbo."
   },
   "sched.jobs.post-login.mail-classical-retire.title": {
     "en": "3a94b1ec977440b8",

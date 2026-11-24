@@ -39,5 +39,11 @@
   "groupsFull": "已選擇 {max} 個群組，這是一個活動可指定的上限。",
   "startNote": "啟動後，其涵蓋的人從下次登入起會被請求完成；寄送從工作的下一次執行開始。已完成該活動的人、領域無法向其提出該活動的人，或被已關閉的具名設定檔排除的人，既不會被請求，也不會收到郵件。",
   "startButton": "啟動",
-  "readOnly": "啟動、暫停和結束登入後活動需要 Admin Write。"
+  "readOnly": "啟動、暫停和結束登入後活動需要 Admin Write。",
+  "activityName.passkey": "後量子通行金鑰",
+  "activityName.mail": "後量子郵件加密",
+  "activityName.piv": "PIV 憑證重新簽發",
+  "activityWhat.passkey": "持有傳統通行金鑰或沒有通行金鑰的人，會依登入後設定檔中的通行金鑰規則被要求註冊 ML-DSA 通行金鑰。",
+  "activityWhat.mail": "郵件以傳統 OpenPGP 金鑰或 S/MIME 憑證加密的人，會依設定檔的郵件加密規則被要求註冊 ML-KEM 金鑰或憑證。",
+  "activityWhat.piv": "持有本領域簽發的 PIV 插槽憑證的人，在該憑證由傳統簽發者簽署或即將到期時，會依設定檔的 PIV 規則被要求申請新憑證。"
 }

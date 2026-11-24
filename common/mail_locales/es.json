@@ -119,6 +119,16 @@
       "subject": "Mensaje de prueba de {{service}}",
       "text": "Este es un mensaje de prueba, enviado el {{when}} a través del transporte {{transport}} a petición de {{username}}.\n",
       "html": "<p>Este es un mensaje de prueba, enviado el {{when}} a través del transporte {{transport}} a petición de <strong>{{username}}</strong>.</p>"
+    },
+    "post-login-reminder-mail-encryption": {
+      "subject": "Registre una clave poscuántica para cifrar su correo en {{service}}",
+      "text": "{{service}} pide a {{username}} que registre una nueva clave para cifrar el correo que use criptografía poscuántica (ML-KEM): una clave OpenPGP o un certificado S/MIME. El correo cifrado hoy con una clave clásica podrá leerse cuando esa clave se rompa.\n\nInicie sesión aquí y se le pedirá que la registre justo después de iniciar sesión:\n\n{{signin}}\n\nEl enlace solo abre la página de inicio de sesión. No inicia su sesión ni lleva nada sobre su cuenta. Si no esperaba este mensaje, ignórelo o consulte a quien administra su cuenta.\n",
+      "html": "<p>{{service}} pide a <strong>{{username}}</strong> que registre una nueva clave para cifrar el correo que use criptografía poscuántica (ML-KEM): una clave OpenPGP o un certificado S/MIME. El correo cifrado hoy con una clave clásica podrá leerse cuando esa clave se rompa.</p><p><a href=\"{{signin}}\">Inicie sesión</a> y se le pedirá que la registre justo después de iniciar sesión.</p><p>El enlace solo abre la página de inicio de sesión. No inicia su sesión ni lleva nada sobre su cuenta. Si no esperaba este mensaje, ignórelo o consulte a quien administra su cuenta.</p>"
+    },
+    "post-login-reminder-piv-reissue": {
+      "subject": "Renueve su certificado PIV para {{service}}",
+      "text": "{{service}} pide a {{username}} que inscriba un nuevo certificado para la tarjeta inteligente PIV o la llave de seguridad con la que inicia sesión: el que contiene se firmó con un algoritmo clásico o vence pronto. Tenga la tarjeta con usted y una herramienta que genere una solicitud de certificado desde ella, como ykman.\n\nInicie sesión aquí y se le pedirá que lo inscriba justo después de iniciar sesión:\n\n{{signin}}\n\nEl enlace solo abre la página de inicio de sesión. No inicia su sesión ni lleva nada sobre su cuenta. Si no esperaba este mensaje, ignórelo o consulte a quien administra su cuenta.\n",
+      "html": "<p>{{service}} pide a <strong>{{username}}</strong> que inscriba un nuevo certificado para la tarjeta inteligente PIV o la llave de seguridad con la que inicia sesión: el que contiene se firmó con un algoritmo clásico o vence pronto. Tenga la tarjeta con usted y una herramienta que genere una solicitud de certificado desde ella, como ykman.</p><p><a href=\"{{signin}}\">Inicie sesión</a> y se le pedirá que lo inscriba justo después de iniciar sesión.</p><p>El enlace solo abre la página de inicio de sesión. No inicia su sesión ni lleva nada sobre su cuenta. Si no esperaba este mensaje, ignórelo o consulte a quien administra su cuenta.</p>"
     }
   },
   "layout": {

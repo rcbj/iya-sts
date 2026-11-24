@@ -156,7 +156,9 @@ new one** for the profile's `mailKeepClassical` days (90 by default): it
 stays on the person's entry and the Web Key Directory answers **both keys**,
 the post-quantum one first, so a correspondent that cannot use the new key
 can still find the old one. Mail from this service goes to the new key at
-once. When the time is up, the key is no longer answered, and the job
+once. An administrator may also
+[start the activity](post-login-activities.md#starting-an-activity) for a
+group, which mails its people a reminder to sign in and move. When the time is up, the key is no longer answered, and the job
 `post-login.mail-classical-retire` removes it from the entry. Removing the
 person's key removes a kept key with it. A registration on this page, outside
 the activity, replaces the key as it always did.
