@@ -170,6 +170,10 @@ declare namespace IyaDomain {
     emailLinkSecondFactor?: boolean;
     certificatePrimary?: boolean;
     kerberosPrimary?: boolean;
+    smartCardPrimary?: boolean;
+    smartCardCardAuthPrimary?: boolean;
+    pkinitSmartCardPrimary?: boolean;
+    requireAttestedHardware?: string;
     walletPrimary?: boolean;
     walletSecondFactor?: boolean;
     federationPrimary?: boolean;

@@ -8626,6 +8626,30 @@ const CODES = [
       'where it may have been required. The other activities are still ' +
       'asked. Logged at error level once per activity in a process (#2009).',
     spec: 'Log line; the sign-in goes on without that activity' },
+  { code: 'STS-AUTHN-0590',
+    summary: 'A session was refused: this realm\'s authentication policy ' +
+      'does not accept a smart card (PIV/CAC) certificate as a first ' +
+      'factor (its smartCard row, which follows certificatePrimary while ' +
+      'unset) (#2031).',
+    spec: 'the door\'s own refusal page' },
+  { code: 'STS-AUTHN-0591',
+    summary: 'A session was refused: this realm\'s authentication policy ' +
+      'does not accept Kerberos PKINIT with a smart card (a ticket carrying ' +
+      'this realm\'s pkinit-smartcard indicator; its pkinitSmartCard row, ' +
+      'which follows kerberosPrimary while unset) (#2031).',
+    spec: 'the door\'s own refusal page' },
+  { code: 'STS-AUTHN-0592',
+    summary: 'A session was refused: this realm\'s authentication policy ' +
+      'requires attested hardware (requireAttestedHardware is always), and ' +
+      'the credential that completed the sign-in is on no active hardware ' +
+      'token in the register (#2031).',
+    spec: 'the door\'s own refusal page' },
+  { code: 'STS-AUTHN-0593',
+    summary: 'The sign-in screen refused a client certificate: the ' +
+      'authentication policy takes the other kind of certificate (a smart ' +
+      'card, or a certificate that is not one) as a first factor, and not ' +
+      'this kind (#2031).',
+    spec: 'Sign-in screen refusal sentence; /authn-api answers refused' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -23632,8 +23656,9 @@ const CODES = [
     spec: 'HTTP 400' },
   { code: 'STS-PIV-0013',
     summary: 'A piv-card-auth (slot 9e) certificate was refused at a ' +
-      'sign-in, because that key works without a PIN ' +
-      '(piv.cardAuthSignIn) (#1955).',
+      'sign-in, because that key works without a PIN: the authentication ' +
+      'policy\'s smartCardCardAuth row is off (it follows ' +
+      'piv.cardAuthSignIn while unset, #2031) (#1955).',
     spec: 'the TLS sign-in and PKINIT refusals' },
   { code: 'STS-PIV-0014',
     summary: 'A certificate was issued from a verified PIV attestation and ' +

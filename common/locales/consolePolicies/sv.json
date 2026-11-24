@@ -1,6 +1,7 @@
 {
   "yes": "ja",
   "no": "nej",
+  "follows": "som {row}",
   "configuration": "Konfiguration",
   "schema": "Schema",
   "saveProfile": "Spara profilen",
