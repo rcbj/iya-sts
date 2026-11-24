@@ -438,7 +438,7 @@ class HardwareTokensPage {
   // these pages."). Each is drawn by the functions above with the person
   // fixed — the same table, the same lists, the same forms — from the
   // answers the users drill composes: `GET /admin-api/hardware-tokens` with
-  // `q` the person, and `GET /admin-api/hardware-tokens/oath` with `oq` the
+  // `q` the person, and `GET /admin-api/hardware-tokens/oath` with `q` the
   // person. Every form posts to `/admin/hardware-tokens`, so it reaches the
   // same operation as the central page (rule 7), and the runtime returns to
   // the sub-tab it was sent from. A search names a person or a serial, so
@@ -503,7 +503,7 @@ class HardwareTokensPage {
    * by key, and their one-time code token from the users answer.
    *
    * @param t - the translator
-   * @param o - `GET /admin-api/hardware-tokens/oath?oq=<person>`'s answer
+   * @param o - `GET /admin-api/hardware-tokens/oath?q=<person>`'s answer
    * @param c - the render context
    * @param user - the person
    * @param enrolled - the person's one-time code token, drawn by the users
