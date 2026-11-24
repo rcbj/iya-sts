@@ -804,6 +804,12 @@ returns a fault.** Nothing is issued, and the clear response is not sent.
 The fault itself stays in the clear, in both modes. Development no longer
 answers in clear when encryption was required and could not be done.
 
+* **How a request's key may be wrapped.** RSA-OAEP over SHA-256
+  (`http://www.w3.org/2009/xmlenc11#rsa-oaep` with a SHA-256 digest and
+  MGF1-SHA-256) is opened in every mode. A key wrapped with OAEP over SHA-1
+  — `rsa-oaep-mgf1p`, Apache WSS4J's default — is refused unless
+  `crypto.allowLegacyHashes` is on (`wsse:FailedCheck`,
+  `STS-WSTRUST-0075`), so configure the client for SHA-256.
 * **Which ciphertext a request may carry.** The shapes opened are an
   `xenc:EncryptedData` of type Element or Content, or a WS-Security 1.1
   `EncryptedHeader`, its key in its own `KeyInfo` or in an
@@ -1020,6 +1026,13 @@ describes the tab.
 against `/sts/cert`, decrypts and verifies it in both orders and with the
 signature encrypted, and its signed requests (with or without its
 `InclusiveNamespaces` prefix list) are accepted and held to the presets.
+Requests WSS4J signs and encrypts are accepted in either order: AES-256-GCM,
+RSA-OAEP over SHA-256, a header block as an `EncryptedHeader`, the
+recipient named by issuer and serial, a direct reference, its SKI or its
+thumbprint. Every combination of the eight Body and Header boxes, under
+SOAP 1.1 and 1.2, and custom expressions in all five fields are exchanged
+with WSS4J and opened and verified by it, in product mode
+(`tests/wstrust_protection_matrix.js`).
 While answers are signed, each output's `ResponseProtection` offers
 `sp:SignedParts` and `sp:SignedElements`, both optional.
 
