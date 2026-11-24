@@ -8819,6 +8819,60 @@ class AdminApi {
           { action: 'set-row', operationId: 'setParanoidPkiRow' }
         ] }),
 
+      // #2118 PHASE 4. Named truststores and the use cases that trust them,
+      // the Truststores, Use cases and System truststore tabs of
+      // /admin/pki/trust. A path of its own rather than more actions under
+      // `/pki/trust`, whose `add` and `remove` already mean the signer
+      // truststore (which this API keeps, unchanged, as the `signers` view).
+      // The forms post from the two tabs, so each names its tab
+      // (`web_forms.ts` resolves `<page>#<tab> <action>` first): the page's
+      // own `add` stays `/pki/trust/add`.
+      { method: 'GET', path: BASE + '/truststores', tag: 'PKI',
+        operationId: 'getTruststores',
+        mirrors: 'GET /admin/pki/trust',
+        handler: function (req, res) {
+          log.debug("Entering the management API truststores endpoint.");
+          self.sendJson(res, 200, adminViews.namedTruststoresJson(req));
+          log.debug("Leaving the management API truststores endpoint.");
+        } },
+
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/truststores/:action', tag: 'PKI',
+        mirrors: 'POST /admin/pki/trust#pki-trust-tab-truststores and ' +
+                 'POST /admin/pki/trust#pki-trust-tab-usecases',
+        handler: function (req, res) {
+          log.debug("Entering the management API truststores action " +
+                    "endpoint.");
+          const body = parseBody(req);
+          // AWAITED, AND THE REJECTION IS TURNED INTO A REFUSAL, `/pki/trust`'s
+          // reason: Express 4 does not look at what a handler returns.
+          adminActions.namedTruststoresAction(self.withAction(req, body),
+            { via: 'api', actor: self.callerNameOf(res) })
+            .then(function (result) {
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-API-0141');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+              log.debug("Leaving the management API truststores action " +
+                        "endpoint.");
+            }, function (e) {
+              log.debug("Caught in the management API truststores action " +
+                        "endpoint: " + ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-API-0141');
+              self.sendJson(res, 500, { ok: false, errors: [e.message] });
+            });
+        },
+        actions: [
+          { action: 'show', operationId: 'showTruststore' },
+          { action: 'create', operationId: 'createTruststore' },
+          { action: 'delete', operationId: 'deleteTruststore' },
+          { action: 'add', operationId: 'addTruststoreCertificates' },
+          { action: 'remove', operationId: 'removeTruststoreCertificate' },
+          { action: 'assign', operationId: 'assignTruststores' },
+          { action: 'unassign', operationId: 'unassignTruststores' }
+        ] }),
+
       ApiRows.actions({ method: 'POST',
         route: BASE + '/pki/:action', tag: 'PKI',
         // TWO CONSOLE PATHS, because the pane answers with a PAGE rather than a

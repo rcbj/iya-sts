@@ -6529,4 +6529,442 @@ Scope: `admin:write`.
 | `workbench.signerLabel` | string |  |  |
 | `workbench.slowFamilies` | list |  |  |
 | `workbench.slowFamilies[]` | string |  |  |
+
+## GET /admin-api/truststores
+
+`getTruststores`
+
+**Named truststores and the use cases that trust them (#2118)**
+
+Everything the Truststores, Use cases and System truststore tabs of /admin/pki/trust draw: every truststore this realm can name with what it holds counted and the use cases that trust it, every use case with what it trusts now and its default, the limits, and node's default store (`system`) certificate by certificate without PEM.
+
+**Mirrors** `GET /admin/pki/trust` on the admin console.
+
+Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**200**: The truststores of this realm.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `actions` | list | yes |  |
+| `actions[]` | string |  |  |
+| `limits` | object | yes |  |
+| `limits.installed` | boolean | yes | Whether the directory that keeps named truststores is installed in this process. |
+| `limits.maxAnchors` | integer | yes | Anchors per named truststore. |
+| `limits.maxIntermediates` | integer | yes | Intermediates per named truststore. |
+| `limits.maxStores` | integer | yes | Named truststores per realm. |
+| `realm` | string | yes |  |
+| `stores` | list | yes |  |
+| `stores[].addedBy` | string |  | Who created a named truststore, by name. |
+| `stores[].anchors` | integer | yes | The self-issued certificates it holds. |
+| `stores[].certificates` | list |  | A named truststore's certificates, without PEM; absent for any other kind (`showTruststore` answers any truststore whole). |
+| `stores[].certificates[].fingerprint256` | string | yes | SHA-256, upper-case hex without colons: what `removeTruststoreCertificate` names. |
+| `stores[].certificates[].issuer` | string | yes |  |
+| `stores[].certificates[].kind` | string | yes | `anchor` or `intermediate`. |
+| `stores[].certificates[].notAfter` | number | yes | Milliseconds since the epoch. |
+| `stores[].certificates[].notBefore` | number | yes | Milliseconds since the epoch. |
+| `stores[].certificates[].pem` | string |  | The certificate as PEM; left out where the caller asked for none. |
+| `stores[].certificates[].subject` | string | yes |  |
+| `stores[].certificates[].unadmittable` | string |  | Why a block is no certificate, in English. |
+| `stores[].description` | string | yes |  |
+| `stores[].intermediates` | integer | yes | The certificates it holds that are steps on a path, not anchors. |
+| `stores[].jwtKeys` | integer |  | A SPIFFE bundle truststore's JWT-SVID keys, counted. |
+| `stores[].kind` | string | yes | `built-in`, `view`, `setting`, `spiffe` or `named`. |
+| `stores[].name` | string | yes | Unique in its realm. A built-in (`system`, `service-root`, …), a view (`signers`, `client-certificates`), a legacy setting (`setting:<key>`), a SPIFFE bundle (`spiffe:<trust domain>`) or a named truststore. |
+| `stores[].problem` | string | yes | Why what it names could not be read (an unreadable legacy file), in English; empty where nothing is wrong. |
+| `stores[].readOnly` | boolean | yes | Whether this realm may change it here: built-ins, views and settings are changed where they are kept, and a service-wide named truststore only from the default realm. |
+| `stores[].scope` | string | yes | `service` (the default realm's, nameable by a handshake or outbound use case) or `realm`. |
+| `stores[].trustDomain` | string |  | A SPIFFE bundle truststore's trust domain. |
+| `stores[].usedBy` | list | yes | The use cases that trust it in this realm, assigned or by default. |
+| `stores[].usedBy[]` | string |  |  |
+| `system` | object | yes | Node's default store, what the built-in `system` holds: the roots bundled with node plus NODE_EXTRA_CA_CERTS, sorted by subject, without PEM. |
+| `system.certificates` | list | yes |  |
+| `system.certificates[].fingerprint256` | string | yes | SHA-256, upper-case hex without colons: what `removeTruststoreCertificate` names. |
+| `system.certificates[].issuer` | string | yes |  |
+| `system.certificates[].kind` | string | yes | `anchor` or `intermediate`. |
+| `system.certificates[].notAfter` | number | yes | Milliseconds since the epoch. |
+| `system.certificates[].notBefore` | number | yes | Milliseconds since the epoch. |
+| `system.certificates[].pem` | string |  | The certificate as PEM; left out where the caller asked for none. |
+| `system.certificates[].subject` | string | yes |  |
+| `system.certificates[].unadmittable` | string |  | Why a block is no certificate, in English. |
+| `system.count` | integer | yes |  |
+| `useCases` | list | yes |  |
+| `useCases[].assignable` | boolean | yes | Whether it may be assigned truststores at all. |
+| `useCases[].assigned` | boolean | yes | Whether `names` is an assignment rather than the default. |
+| `useCases[].defaults` | list | yes |  |
+| `useCases[].defaults[]` | string |  |  |
+| `useCases[].direction` | string | yes | `inbound` (a certificate presented to this service) or `outbound` (the server this service dials). |
+| `useCases[].fallback` | list | yes | What it falls back to when its default list yields no anchor; never used for an assignment. |
+| `useCases[].fallback[]` | string |  |  |
+| `useCases[].id` | string | yes |  |
+| `useCases[].kind` | string | yes | `x509`, `spiffe` (names SPIFFE bundles only), `pins` (trusts what each entry registers), `fixed` (this service's own hierarchy) or `admission`. |
+| `useCases[].names` | list | yes | What it trusts now, in order: its assignment, or its default. |
+| `useCases[].names[]` | string |  |  |
+| `useCases[].scope` | string | yes | `service` (decided with no realm in hand, so it names only the default realm's truststores) or `realm`. |
+| `useCases[].sites` | list | yes | Where it is decided, by source file. |
+| `useCases[].sites[]` | string |  |  |
+| `useCases[].title` | string | yes |  |
+
+## POST /admin-api/truststores/add
+
+`addTruststoreCertificates`
+
+**Add certificates to a named truststore (#2118)**
+
+One or more PEM certificates, each through the admission rule in every mode: a self-signed CA is an anchor, any other CA an intermediate that must chain to an anchor the truststore holds, and a leaf is refused by name. A bundle's refusals are named one by one and do not stop its other blocks; it is refused whole only when nothing in it was admitted or already held.
+
+**Mirrors** `POST /admin/pki/trust#pki-trust-tab-truststores and POST /admin/pki/trust#pki-trust-tab-usecases` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `certificates` | list, or string | yes |  |
+| `certificates[]` | string |  |  |
+| `name` | string | yes | The truststore's name. |
+
+**200**: What was added, what was already held and each refusal by name.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `added` | list | yes |  |
+| `added[].fingerprint256` | string | yes | SHA-256, upper-case hex without colons: what `removeTruststoreCertificate` names. |
+| `added[].issuer` | string | yes |  |
+| `added[].kind` | string | yes | `anchor` or `intermediate`. |
+| `added[].notAfter` | number | yes | Milliseconds since the epoch. |
+| `added[].notBefore` | number | yes | Milliseconds since the epoch. |
+| `added[].pem` | string |  | The certificate as PEM; left out where the caller asked for none. |
+| `added[].subject` | string | yes |  |
+| `added[].unadmittable` | string |  | Why a block is no certificate, in English. |
+| `duplicates` | integer | yes |  |
+| `message` | string | yes |  |
+| `name` | string | yes |  |
+| `ok` | boolean | yes |  |
+| `refused` | list | yes |  |
+| `refused[].subject` | string | yes |  |
+| `refused[].why` | string | yes |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+
+## POST /admin-api/truststores/assign
+
+`assignTruststores`
+
+**Assign a use case its truststores (#2118)**
+
+The ordered list of truststores a use case trusts in this realm, in every mode; a service-wide use case is assigned in the default realm, whichever realm asks. Every name must exist; a service-wide use case may name only the default realm's truststores; a SPIFFE use case names SPIFFE bundles only and only it may; a fixed or pinned use case is not assigned.
+
+**Mirrors** `POST /admin/pki/trust#pki-trust-tab-truststores and POST /admin/pki/trust#pki-trust-tab-usecases` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `truststores` | list, or string | yes |  |
+| `truststores[]` | string |  |  |
+| `useCase` | string | yes | The use case, by id. |
+
+**200**: The use case and what it trusts now.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `message` | string | yes |  |
+| `names` | list | yes |  |
+| `names[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `useCase` | string | yes |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+
+## POST /admin-api/truststores/create
+
+`createTruststore`
+
+**Create a named truststore (#2118)**
+
+An empty truststore in this realm; the default realm's are service-wide. A name is 1 to 63 lower-case letters, digits and hyphens and is none of the built-in names; a realm holds at most 64.
+
+**Mirrors** `POST /admin/pki/trust#pki-trust-tab-truststores and POST /admin/pki/trust#pki-trust-tab-usecases` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `description` | string |  | What it is for, for a reader. |
+| `name` | string | yes | The truststore's name. |
+
+**200**: The truststore was created.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `message` | string | yes |  |
+| `name` | string | yes |  |
+| `ok` | boolean | yes |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+
+## POST /admin-api/truststores/delete
+
+`deleteTruststore`
+
+**Delete a named truststore (#2118)**
+
+A named truststore of this realm and every certificate in it. Refused while any use case in the realm trusts it, by assignment or by default; a built-in, a view, a setting or a SPIFFE bundle is changed where it is kept.
+
+**Mirrors** `POST /admin/pki/trust#pki-trust-tab-truststores and POST /admin/pki/trust#pki-trust-tab-usecases` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `name` | string | yes | The truststore's name. |
+
+**200**: The truststore was deleted.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `message` | string | yes |  |
+| `name` | string | yes |  |
+| `ok` | boolean | yes |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+
+## POST /admin-api/truststores/remove
+
+`removeTruststoreCertificate`
+
+**Remove a certificate from a named truststore (#2118)**
+
+By its SHA-256 fingerprint, in either spelling.
+
+**Mirrors** `POST /admin/pki/trust#pki-trust-tab-truststores and POST /admin/pki/trust#pki-trust-tab-usecases` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `fingerprint` | string | yes | The SHA-256 fingerprint, with or without colons. |
+| `name` | string | yes | The truststore's name. |
+
+**200**: The certificate was removed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `fingerprint` | string | yes |  |
+| `message` | string | yes |  |
+| `name` | string | yes |  |
+| `ok` | boolean | yes |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+
+## POST /admin-api/truststores/show
+
+`showTruststore`
+
+**One truststore, with what it holds (#2118)**
+
+Any truststore this realm can name, each certificate described: subject, issuer, validity and SHA-256 fingerprint, with its PEM unless `withPem` is false; a SPIFFE bundle truststore with its JWT-SVID keys. Writes nothing.
+
+**Mirrors** `POST /admin/pki/trust#pki-trust-tab-truststores and POST /admin/pki/trust#pki-trust-tab-usecases` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `name` | string | yes | The truststore's name. |
+| `withPem` | boolean |  | False leaves each certificate's PEM out, for a large store such as `system`. |
+
+**200**: The truststore.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `truststore` | object | yes |  |
+| `truststore.addedBy` | string |  |  |
+| `truststore.anchors` | integer | yes |  |
+| `truststore.certificates` | list | yes |  |
+| `truststore.certificates[].fingerprint256` | string | yes | SHA-256, upper-case hex without colons: what `removeTruststoreCertificate` names. |
+| `truststore.certificates[].issuer` | string | yes |  |
+| `truststore.certificates[].kind` | string | yes | `anchor` or `intermediate`. |
+| `truststore.certificates[].notAfter` | number | yes | Milliseconds since the epoch. |
+| `truststore.certificates[].notBefore` | number | yes | Milliseconds since the epoch. |
+| `truststore.certificates[].pem` | string |  | The certificate as PEM; left out where the caller asked for none. |
+| `truststore.certificates[].subject` | string | yes |  |
+| `truststore.certificates[].unadmittable` | string |  | Why a block is no certificate, in English. |
+| `truststore.description` | string | yes |  |
+| `truststore.intermediates` | integer | yes |  |
+| `truststore.jwks` | list | yes | A SPIFFE bundle truststore's JWT-SVID keys, as JWKs; empty for any other. |
+| `truststore.jwks[]` | object |  | One JWT-SVID key of a SPIFFE bundle, as a JWK (RFC 7517): its public members only. |
+| `truststore.jwks[].alg` | string |  |  |
+| `truststore.jwks[].crv` | string |  |  |
+| `truststore.jwks[].e` | string |  |  |
+| `truststore.jwks[].kid` | string |  |  |
+| `truststore.jwks[].kty` | string | yes |  |
+| `truststore.jwks[].n` | string |  |  |
+| `truststore.jwks[].use` | string |  |  |
+| `truststore.jwks[].x` | string |  |  |
+| `truststore.jwks[].x5c` | list |  |  |
+| `truststore.jwks[].x5c[]` | string |  |  |
+| `truststore.jwks[].x5t` | string |  |  |
+| `truststore.jwks[].x5t#S256` | string |  |  |
+| `truststore.jwks[].y` | string |  |  |
+| `truststore.jwtKeys` | integer |  |  |
+| `truststore.kind` | string | yes |  |
+| `truststore.name` | string | yes |  |
+| `truststore.problem` | string | yes |  |
+| `truststore.readOnly` | boolean | yes |  |
+| `truststore.scope` | string | yes |  |
+| `truststore.trustDomain` | string |  |  |
+| `truststore.usedBy` | list | yes |  |
+| `truststore.usedBy[]` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+
+## POST /admin-api/truststores/unassign
+
+`unassignTruststores`
+
+**Return a use case to its default truststores (#2118)**
+
+Clears the use case's assignment in this realm (or, for a service-wide one, in the default realm), so it trusts its default list again.
+
+**Mirrors** `POST /admin/pki/trust#pki-trust-tab-truststores and POST /admin/pki/trust#pki-trust-tab-usecases` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `useCase` | string | yes | The use case, by id. |
+
+**200**: The use case and what it trusts now.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `message` | string | yes |  |
+| `names` | list | yes |  |
+| `names[]` | string |  |  |
+| `ok` | boolean | yes |  |
+| `useCase` | string | yes |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
 {% endraw %}

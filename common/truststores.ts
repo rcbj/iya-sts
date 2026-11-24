@@ -1061,6 +1061,31 @@ class Truststores {
   }
 
   /**
+   * What one truststore holds, each certificate described, WITHOUT the row
+   * `store()` builds from every store's counts: for a page that lists the
+   * certificates of several truststores, or of node's default store, where
+   * `store()` would count every truststore again for each (#2118 phase 4).
+   * Read-only.
+   *
+   * @param realmId - the realm; the ambient one where omitted
+   * @param name - the truststore
+   * @returns the certificates, anchors first; empty for a name nothing holds
+   */
+  certificatesOf(realmId: string | undefined, name: string): Json[] {
+    const { log } = this.deps;
+    log.debug("Entering Truststores.certificatesOf(). " + name);
+    const self = this;
+    const held = this.holdings(this.realmIdOf(realmId), name, {});
+    const out = held.anchors.map(function (pem: string) {
+      return self.describe(pem, 'anchor');
+    }).concat(held.intermediates.map(function (pem: string) {
+      return self.describe(pem, 'intermediate');
+    }));
+    log.debug("Leaving Truststores.certificatesOf(). " + out.length + ".");
+    return out;
+  }
+
+  /**
    * Which use cases name a truststore, in a realm, by assignment or default.
    *
    * @param realmId - the realm; the ambient one where omitted
@@ -1392,6 +1417,7 @@ export = {
   assign: slot.forward('assign'),
   stores: slot.forward('stores'),
   store: slot.forward('store'),
+  certificatesOf: slot.forward('certificatesOf'),
   usedBy: slot.forward('usedBy'),
   create: slot.forward('create'),
   remove: slot.forward('remove'),

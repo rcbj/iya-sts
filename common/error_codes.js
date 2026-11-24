@@ -29203,6 +29203,15 @@ const CODES = [
       'action it does not have; the refusal names the one it has ' +
       '(#2080).',
     spec: 'HTTP 400 { ok: false, errors } (Admin Console API)' },
+  { code: 'STS-ADMIN-0956',
+    summary: '/admin-api/truststores was asked for an action it does not ' +
+      'have; the refusal names the seven it has (#2118).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-ADMIN-0957',
+    summary: 'A named truststore write was not made and the truststore ' +
+      'registry gave no code of its own for why: the directory carried out ' +
+      'nothing (#2118).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

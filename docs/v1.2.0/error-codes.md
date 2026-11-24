@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6088** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6090** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -97,7 +97,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 137
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 304
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 306
 * [Management API (`STS-API`)](#sts-api) — 97
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
@@ -6291,6 +6291,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0953` | A certificate handed to the console's certificate inspection helper (POST /admin-api/console/certificates/inspect) held no PEM certificate, or more text or more certificates than it reads. Nothing is kept (#2080). | HTTP 400 { ok: false, errors } (Admin Console API) |
 | `STS-ADMIN-0954` | A PEM block handed to the console's certificate inspection helper could not be read as an X.509 certificate. Nothing is kept (#2080). | HTTP 400 { ok: false, errors } (Admin Console API) |
 | `STS-ADMIN-0955` | The console's certificate inspection helper was asked for an action it does not have; the refusal names the one it has (#2080). | HTTP 400 { ok: false, errors } (Admin Console API) |
+| `STS-ADMIN-0956` | /admin-api/truststores was asked for an action it does not have; the refusal names the seven it has (#2118). | HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0957` | A named truststore write was not made and the truststore registry gave no code of its own for why: the directory carried out nothing (#2118). | HTTP 400 with {ok:false, errors} |
 
 ## STS-API
 

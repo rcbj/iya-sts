@@ -7693,6 +7693,79 @@ class AdminViews {
   }
 
   /**
+   * Builds `GET /admin-api/truststores` (#2118 phase 4): every truststore
+   * this realm can name with the use cases that trust it, every use case
+   * with what it trusts now, the limits, and node's default store
+   * certificate by certificate for the System truststore tab — WITHOUT PEM,
+   * about 150 roots described in a few tens of kilobytes (rcbj,
+   * 2026-11-24), the shape the `show` action answers with `withPem: false`.
+   * Certificates and sentences only; no private key is anywhere near it.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
+  namedTruststoresJson(req): IyaApi.AdminAnswer<'getTruststores'> {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.namedTruststoresJson().");
+    // Lazily: libraries, and this module is loaded long before any of them.
+    const truststores = require('../common/truststores');
+    const adminActions = require('./admin_actions');
+    const AdminActions = adminActions.AdminActions;
+    const realmId = realms.currentId();
+    const useCases = truststores.useCases(realmId);
+    // WHO TRUSTS EACH STORE, inverted from the use cases' own lists rather
+    // than asked store by store (`truststores.usedBy()`), which would read
+    // every assignment once per store.
+    const users: Record<string, string[]> = {};
+    useCases.forEach(function (row) {
+      if (!row.assignable) {
+        return;
+      }
+      row.names.forEach(function (name) {
+        (users[name] = users[name] || []).push(row.id);
+      });
+    });
+    // A NAMED truststore's certificates come with its row, so the page can
+    // list them and remove one; a realm holds at most 64 named truststores
+    // of at most 96 certificates each. Every other kind is counted only.
+    const described = function (name: string): any[] {
+      return truststores.certificatesOf(realmId, name).map(function (one) {
+        return AdminActions.truststoreCertificate(one, false);
+      });
+    };
+    const stores = truststores.stores(realmId).map(function (row) {
+      const out = AdminActions.truststoreRow(row, users[row.name] || []);
+      if (row.kind === 'named') {
+        out.certificates = described(row.name);
+      }
+      return out;
+    });
+    const roots = described('system').sort(function (a, b) {
+      return String(a.subject).localeCompare(String(b.subject));
+    });
+    const limits = truststores.limits();
+    log.debug("Leaving AdminViews.namedTruststoresJson().");
+    return {
+      realm: realmId,
+      stores: stores,
+      useCases: useCases.map(function (row) {
+        return {
+          id: row.id, title: row.title, scope: row.scope, kind: row.kind,
+          direction: row.direction, names: row.names.slice(),
+          defaults: row.defaults.slice(), fallback: row.fallback.slice(),
+          assigned: !!row.assigned, assignable: !!row.assignable,
+          sites: row.sites.slice()
+        };
+      }),
+      limits: { maxStores: limits.maxStores, maxAnchors: limits.maxAnchors,
+                maxIntermediates: limits.maxIntermediates,
+                installed: !!limits.installed },
+      system: { count: roots.length, certificates: roots },
+      actions: adminActions.NAMED_TRUSTSTORE_ACTIONS.slice()
+    };
+  }
+
+  /**
    * Builds the client-certificate truststore's JSON; certificates only.
    *
    * @param req - the request
@@ -17296,6 +17369,7 @@ export = {
   setTruststore: slot.forward('setTruststore'),
   truststoreJson: slot.forward('truststoreJson'),
   pkiTrustJson: slot.forward('pkiTrustJson'),
+  namedTruststoresJson: slot.forward('namedTruststoresJson'),
   kerberosPrincipalsJson: slot.forward('kerberosPrincipalsJson'),
   kerberosTrustsJson: slot.forward('kerberosTrustsJson'),
   krbtgtView: slot.forward('krbtgtView'),

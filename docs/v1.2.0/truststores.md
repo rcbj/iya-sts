@@ -140,7 +140,8 @@ On `/admin/pki/trust`:
   (`STS-PKI-0307`).
 * **Use cases** lists every use case, what it trusts now and its default.
   Assign a use case a list, or clear its assignment to return it to its
-  default.
+  default. A service-wide use case is assigned from the default realm only
+  (`STS-PKI-0302`): it trusts the same truststores in every realm.
 * **System truststore** lists node's default store.
 
 The management API:
