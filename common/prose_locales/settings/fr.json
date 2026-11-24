@@ -347,6 +347,14 @@
     "en": "26b0298f1a2bd460",
     "text": "Ajoute includeSubDomains à Strict-Transport-Security, afin que les navigateurs utilisent HTTPS pour tous les sous-domaines du nom d’hôte de ce service. Activé par défaut en mode produit. Désactivez-le si un sous-domaine doit encore répondre en HTTP simple."
   },
+  "cspReports.forwardUrl|label": {
+    "en": "74e7e76b0277e92e",
+    "text": "Transférer les rapports de violation CSP à"
+  },
+  "cspReports.forwardUrl|description": {
+    "en": "6d106f707a73e7c2",
+    "text": "Désactivé s'il est vide, la valeur par défaut. Une URL https qui reçoit, en JSON, chaque rapport de violation de la Content Security Policy que ce service accepte : le domaine, la directive, le chemin de la page sans sa requête, l'origine bloquée et la disposition, jamais le rapport tel que le navigateur l'a envoyé. Envoyé selon les mêmes règles sortantes que les canaux de retour de la fédération."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Accepter une assertion sans audience"

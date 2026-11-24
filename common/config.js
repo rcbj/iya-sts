@@ -1619,6 +1619,20 @@ const SETTINGS = [
                  'if a subdomain of this host name must still answer over ' +
                  'plain HTTP.' },
 
+  // #2164. Per process: the collector is the operator's, and a realm
+  // administrator may not point this service's outbound requests anywhere.
+  { key: 'cspReports.forwardUrl', group: 'CSP reports',
+    label: 'Forward CSP violation reports to',
+    env: 'STS_CSP_REPORTS_FORWARD_URL', type: 'string', dflt: '',
+    maxLength: 2048, runtime: true, perProcess: true,
+    description: 'Off when empty, the default. An https URL that receives ' +
+                 'each Content Security Policy violation report this ' +
+                 'service accepts, as JSON: the realm, the directive, the ' +
+                 'page\'s path without its query, the blocked origin and ' +
+                 'the disposition, never the report as the browser sent ' +
+                 'it. Sent through the same outbound rules as ' +
+                 'federation\'s back channels.' },
+
   { key: 'federation.allowAssertionWithoutAudience', group: 'Federation',
     label: 'Accept an assertion that names no audience',
     env: 'STS_FEDERATION_ALLOW_ASSERTION_WITHOUT_AUDIENCE', type: 'bool', dflt: false,

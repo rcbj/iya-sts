@@ -515,6 +515,10 @@
     "en": "6a36418727489219",
     "text": "सेवा का आइकन"
   },
+  "endpoints.route./web/csp-report.name": {
+    "en": "4c905dd496d09bb9",
+    "text": "Content Security Policy उल्लंघन रिपोर्टें"
+  },
   "endpoints.route./web/card.css.name": {
     "en": "96ed2387e40a779a",
     "text": "सार्वजनिक सतहों की कार्ड स्टाइलशीट"
@@ -1418,6 +1422,10 @@
   "endpoints.route./admin-api/cells/people.name": {
     "en": "3487e884b7bb0884",
     "text": "सेल निवासी"
+  },
+  "endpoints.route./admin-api/csp-reports.name": {
+    "en": "ff0444716f951c5e",
+    "text": "CSP उल्लंघन रिपोर्टें"
   },
   "endpoints.route./admin-api/malware-scanning.name": {
     "en": "48adceb89b5e59c8",

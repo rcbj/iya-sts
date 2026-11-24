@@ -1351,6 +1351,10 @@
     "en": "18aea3253b0f21a8",
     "text": "NON-SPEC. Ikonen som en webbläsare självmant begär på varje sida: logotypens kvadratiska märke (common/favicon.ico). Besvaras på varje lyssnare; sparas i en dag."
   },
+  "stsmetadata.endpoints./web/csp-report.what": {
+    "en": "2928ff0435e47393",
+    "text": "NON-SPEC (#2164). Mottagaren av det som CSP Level 3 och Reporting API låter en webbläsare skicka: varje sidas policy namnger den i report-uri och report-to, bredvid ett Reporting-Endpoints-huvud. Endast POST, inga autentiseringsuppgifter, högst 16 KiB och 60 rapporter i minuten från en adress; den sparar direktivet, sidans sökväg utan frågan och det blockerade ursprunget, loggar STS-HTTP-0027 och svarar 204 utan kropp. Besvaras av frontprocessen (common/csp_reports.ts)."
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Inloggningsskärmens kort och språkväljarens regler, som en enda formatmall som en statisk offentlig ytas skal länkar (common/web_card_css.ts). Besvaras på varje lyssnare; en adress med denna builds ?v= cachas för gott."
@@ -2426,6 +2430,10 @@
   "stsmetadata.endpoints./admin-api/cells/people.what": {
     "en": "dc30d3b633728d57",
     "text": "ICKE-SPEC (#98 D11). En sida av en annan cells invånare, besvarad av den cellen endast där dess utlämningspolicy tillåter det."
+  },
+  "stsmetadata.endpoints./admin-api/csp-reports.what": {
+    "en": "f7253840480f3165",
+    "text": "NON-SPEC (#2164). GET /admin/csp-reports som JSON: överträdelserna av Content Security Policy som webbläsare rapporterat för den här sfären, räknade per direktiv av den här nodens frontprocess, och inställningen för vidarebefordran. Den ändrar ingenting."
   },
   "stsmetadata.endpoints./admin-api/malware-scanning.what": {
     "en": "14ed85bab8488344",

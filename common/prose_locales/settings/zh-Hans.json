@@ -347,6 +347,14 @@
     "en": "26b0298f1a2bd460",
     "text": "向 Strict-Transport-Security 添加 includeSubDomains，使浏览器对此服务主机名的所有子域也使用 HTTPS。产品模式默认开启。如果某个子域仍需通过纯 HTTP 响应，请关闭。"
   },
+  "cspReports.forwardUrl|label": {
+    "en": "74e7e76b0277e92e",
+    "text": "将 CSP 违规报告转发到"
+  },
+  "cspReports.forwardUrl|description": {
+    "en": "6d106f707a73e7c2",
+    "text": "为空时关闭,这是默认值。一个 https URL,以 JSON 形式接收本服务接受的每一份内容安全策略(Content Security Policy)违规报告:领域、指令、不含查询的页面路径、被阻止的来源和处置方式,绝不是浏览器发送的原始报告。按照与联合身份反向通道相同的出站规则发送。"
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "接受未指定受众的断言"

@@ -17374,3 +17374,34 @@ accepts an id in the path, for a program.
 `scep.allowInProduct`, `oauth2.allowUndeclaredGrants`,
 `admin.allowDefaultUsername`, `crypto.allowLegacyHashes`. So those defaults are held by in-process tests
 (`tests/asvs_product_limits.js`), not by a product run of the protocol half.
+
+## CSP violation reports (#2164, ASVS 5.0.0 3.4.7)
+
+rcbj's decision: a BUILT-IN endpoint, `POST /web/csp-report`
+(`csp_reports.ts`, 6a-csp in the require order). Four things to know:
+
+* **The directives are added at the flush, not by the doors.** `app.js`'s
+  `writeHead()` appends `report-uri <prefix>/web/csp-report; report-to
+  csp-endpoint` and sets `Reporting-Endpoints` on every response whose policy
+  names no `report-uri` and whose type is not `NOT_A_PAGE_TYPES`, after the
+  `frame-ancestors` put-back and the non-page narrowing. So the base policy,
+  `contentSecurityPolicy()`, `framedContentSecurityPolicy()` and a policy a
+  leaf writes out all carry it with nothing to remember, and the
+  `CONTENT_SECURITY_POLICY` constant and every equality test against it are
+  unchanged. The prefix is the request's realm's: a realm listener answers
+  nothing else (STS-TLS-0041).
+* **The body is read before the parsers**, by `cspReportIntake` in `app.js`
+  calling `intake()`: the per-address limit (60 a minute, a table of this
+  process's, not `websecurity.ts`'s, whose every count is a store write and
+  every refusal a log line), no `Content-Encoding`, 16 KiB. The general text
+  parser's 5 MB never applies to it.
+* **What is recorded is chosen, never copied**: the directive by shape, the
+  document's PATH, the blocked ORIGIN or keyword, the disposition. A query, a
+  fragment, `script-sample`, `source-file`, the referrer and the original
+  policy never reach the log, the counts or the forward.
+* **The front process answers it and its read** (`NEVER_DISPATCHED`), because
+  the counts (`realms.map()`, 64 directives a realm, then `other`) and the
+  limiter are in memory. The forward (`cspReports.forwardUrl`, per process,
+  off by default) dials through `federation_http.ts`'s `requestConfigured()`,
+  an administrator's URL, at most 8 outstanding, and logs STS-HTTP-0031 when
+  forwarding starts failing rather than per report.

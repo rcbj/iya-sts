@@ -122,6 +122,7 @@
   "nav.spiffe-trust-domain": "Förtroendedomän",
   "nav.tls": "TLS / ömsesidig TLS",
   "nav.tls-connection": "TLS-anslutning",
+  "nav.csp-reports": "CSP-rapporter",
   "nav.pki-trust": "PKI-förtroende",
   "nav.tls-trust": "Förtroendelager för klientcertifikat",
   "nav.users": "Användare",

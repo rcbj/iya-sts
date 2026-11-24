@@ -91,6 +91,10 @@ single sign-on consent switches `saml2.ssoConsent`, `saml11.ssoConsent` and
   `Strict-Transport-Security: max-age=31536000; includeSubDomains`. Turn off
   `security.hstsIncludeSubDomains` if a subdomain of the host name must still
   answer over plain HTTP. See [TLS](tls.md#strict-transport-security).
+* **Content Security Policy reports.** Every page tells browsers to report a
+  policy violation to `/web/csp-report`, and Monitoring → CSP reports counts
+  them. Set `cspReports.forwardUrl` to send each one to your own collector as
+  well. See [OAuth security](oauth-security.md#content-security-policy-violation-reports).
 * **Forwarded addresses.** With `global.trustProxy` on, `X-Forwarded-For`,
   `X-Forwarded-Proto` and `X-Forwarded-Host` are believed only from the proxies
   listed in `global.trustedProxies`. With no list, they are believed from nobody,

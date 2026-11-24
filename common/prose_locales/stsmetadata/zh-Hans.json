@@ -1351,6 +1351,10 @@
     "en": "18aea3253b0f21a8",
     "text": "NON-SPEC。浏览器在每个页面上自行请求的图标：徽标的方形标记（common/favicon.ico）。在每个侦听器上提供；缓存一天。"
   },
+  "stsmetadata.endpoints./web/csp-report.what": {
+    "en": "2928ff0435e47393",
+    "text": "NON-SPEC (#2164). 接收 CSP Level 3 和 Reporting API 规定浏览器发送的内容:每个页面的策略在 report-uri 和 report-to 中指向它,并附带 Reporting-Endpoints 标头。仅限 POST,无需凭据,每个地址每分钟最多 60 份报告、每份最多 16 KiB;它记录指令、不含查询的页面路径和被阻止的来源,记录 STS-HTTP-0027 日志,并以无正文的 204 应答。由前端进程应答(common/csp_reports.ts)。"
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC（#570）。登录屏幕卡片和语言选择器的规则，合为一个样式表，供静态公共界面的外壳链接（common/web_card_css.ts）。在每个监听器上提供；带有本构建 ?v= 的地址会被永久缓存。"
@@ -2426,6 +2430,10 @@
   "stsmetadata.endpoints./admin-api/cells/people.what": {
     "en": "dc30d3b633728d57",
     "text": "非规范（#98 D11）。另一个单元的居民的一页，仅在该单元的发布策略允许时由该单元应答。"
+  },
+  "stsmetadata.endpoints./admin-api/csp-reports.what": {
+    "en": "f7253840480f3165",
+    "text": "NON-SPEC (#2164). 以 JSON 形式提供 GET /admin/csp-reports:浏览器为本领域报告的内容安全策略违规,由本节点的前端进程按指令计数,以及转发设置。不做任何更改。"
   },
   "stsmetadata.endpoints./admin-api/malware-scanning.what": {
     "en": "14ed85bab8488344",

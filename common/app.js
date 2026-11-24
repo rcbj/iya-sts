@@ -1101,6 +1101,26 @@ app.use(function (req, res, next) {
         CONTENT_SECURITY_POLICY && NOT_A_PAGE_TYPES.test(shown)) {
       res.setHeader('Content-Security-Policy', NOT_A_PAGE_POLICY);
     }
+    // EVERY PAGE REPORTS A VIOLATION (#2164, ASVS 5.0.0 3.4.7), with the
+    // same guarantee as `frame-ancestors` and for its reason: the base
+    // policy, a route's relaxation through contentSecurityPolicy(), the OP
+    // iframe's framedContentSecurityPolicy(), a policy written out by a leaf
+    // and one put back above all pass through here, so the two directives and
+    // `Reporting-Endpoints` are added HERE, once, rather than in each door.
+    // To the realm's own path (`common/csp_reports.ts`), because a realm's
+    // listener answers nothing else. A response that is not a page — the
+    // type test above — runs nothing and reports nothing, so it is left as
+    // it is; so is a policy that already names a report-uri.
+    const policy = String(res.getHeader('Content-Security-Policy') || '');
+    if (policy && policy.indexOf('report-uri') < 0 &&
+        !NOT_A_PAGE_TYPES.test(shown)) {
+      const cspReports = require('./csp_reports');
+      const prefix = realms.prefixOf(req.realm);
+      res.setHeader('Content-Security-Policy',
+                    policy + '; ' + cspReports.directives(prefix));
+      res.setHeader('Reporting-Endpoints',
+                    cspReports.reportingEndpoints(prefix));
+    }
     // A SIGN-IN STEP'S ID LEAVES THE ADDRESS (#1454): `common/step_address.ts`.
     const location = res.getHeader('Location');
     if (typeof location === 'string' && location.indexOf('?') > 0) {
@@ -1266,6 +1286,24 @@ function unlessStreamedUpload(parser) {
     parser(req, res, next);
   };
 }
+
+// `common/csp_reports.ts`'s PATH, below a realm's prefix; a test holds the
+// two equal.
+const CSP_REPORT_PATH = '/web/csp-report';
+
+// A CSP VIOLATION REPORT IS READ BEFORE THE PARSERS BELOW (#2164): their
+// limit is 5 MB, and a report's is 16 KiB, decided with the per-address
+// limit and the encoding before a byte is kept. `common/csp_reports.ts`'s
+// intake() answers a refusal itself; on success the parsers find the body
+// already read and leave it alone. Lazily, so this file's load order does not
+// change. Hot path: every request asks. No Entering/Leaving pair — one would
+// drown the log; intake() logs its own.
+app.use(function cspReportIntake(req, res, next) {
+  if (req.method !== 'POST' || req.path !== CSP_REPORT_PATH) {
+    return next();
+  }
+  return require('./csp_reports').intake(req, res, next);
+});
 
 app.use(unlessStreamedUpload(bodyParser.raw({
   type: ['application/kerberos', 'application/octet-stream',

@@ -385,6 +385,11 @@ var config = {
     authenticationHistoryDays: 30  // Authentication history (days)
   },
 
+  // --- CSP reports -----------------------------------------------------
+  cspReports: {
+    forwardUrl: ""  // Forward CSP violation reports to
+  },
+
   // --- Malware scanning ------------------------------------------------
   malwareScan: {
     enabled: false,        // Scan files for malware

@@ -347,6 +347,14 @@
     "en": "26b0298f1a2bd460",
     "text": "Idinaragdag ang includeSubDomains sa Strict-Transport-Security, para gumamit ang mga browser ng HTTPS sa bawat subdomain ng host name ng service na ito. Naka-on bilang default sa product mode. I-off kung kailangan pang sumagot ng subdomain sa plain HTTP."
   },
+  "cspReports.forwardUrl|label": {
+    "en": "74e7e76b0277e92e",
+    "text": "Ipasa ang mga ulat ng paglabag sa CSP sa"
+  },
+  "cspReports.forwardUrl|description": {
+    "en": "6d106f707a73e7c2",
+    "text": "Naka-off kapag walang laman, ang default. Isang https URL na tumatanggap ng bawat ulat ng paglabag sa Content Security Policy na tinatanggap ng serbisyong ito, bilang JSON: ang realm, ang direktiba, ang path ng pahina nang walang query, ang na-block na origin at ang disposisyon, hindi kailanman ang ulat gaya ng ipinadala ng browser. Ipinapadala sa ilalim ng parehong mga panuntunang palabas gaya ng mga back channel ng federation."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Tanggapin ang assertion na walang audience"
