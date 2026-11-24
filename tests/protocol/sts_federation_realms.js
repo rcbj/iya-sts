@@ -911,8 +911,12 @@ async function setUp() {
     [REL.code, "fs-code-" + STAMP, true],
     [REL.wrongKey, "fs-wrongkey-" + STAMP, false]]) {
     const where = await acsOf(rel);
+    // The scopes the relationship asks for (`fedScope`), declared (#2169):
+    // in product a client that declares none is issued `openid` alone
+    // (#1589).
     const fields = { oauthClientId: [client],
-                     oauthRedirectUri: [where.acs] };
+                     oauthRedirectUri: [where.acs],
+                     oauthAllowedScope: oidcCommon.fedScope.split(" ") };
     if (confidential) {
       fields.oauthClientSecret = CLIENT_SECRET;
       fields.oauthTokenEndpointAuthMethod = "client_secret_basic";

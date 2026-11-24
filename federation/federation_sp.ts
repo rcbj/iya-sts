@@ -7186,7 +7186,11 @@ class FederationSp {
   // this relationship is registered at the registration_endpoint the
   // partner's discovery document names — its assertion consumer service,
   // response type and grant types, client authentication, the algorithms it
-  // pins, its sign-out and login-initiation addresses, and for signed
+  // pins, its sign-out and login-initiation addresses, the scopes its
+  // authorization request asks for (`scope`, #2169: RFC 7591 section 2's
+  // declaration, without which an OP that issues a client only what it
+  // declared — this service's own in product, #1589 — refuses everything
+  // past `openid`), and for signed
   // Request Objects the one public key that signs them. The client_id and
   // secret the partner answers are written to the relationship (the secret
   // sealed as any `set` seals it), with the issuer they belong to.
@@ -7250,6 +7254,12 @@ class FederationSp {
                                '/' + id,
       frontchannel_logout_session_required: true
     };
+    // What authorizationParams() sends as `scope`, the profile's `openid`
+    // included; absent where it sends none.
+    const scope = String(shaped.fedScope || '').trim();
+    if (scope) {
+      metadata.scope = scope;
+    }
     if (String(record.fedIdTokenSignedResponseAlg || '')) {
       metadata.id_token_signed_response_alg =
         String(record.fedIdTokenSignedResponseAlg);

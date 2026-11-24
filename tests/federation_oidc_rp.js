@@ -855,6 +855,13 @@ function childMain() {
          'the client it is given, and registers one public RSA key',
          started.status + ' ' + dyn.fedClientId + ' ' +
          JSON.stringify(md).slice(0, 400));
+    // #2169: RFC 7591's `scope` is the client's declaration, and an OP that
+    // issues a client only what it declared (this service's own in product,
+    // #1589) refused everything past `openid` to a registration without it.
+    note(md.scope === 'openid profile email',
+         '7b-ii. the registration declares, as `scope`, exactly the scopes ' +
+         'the relationship asks for (its fedScope, #2169)',
+         JSON.stringify(md.scope));
     const requestUri = String(started.params.get('request_uri') || '');
     r = await call('GET', requestUri);
     const parts = r.text.split('.');

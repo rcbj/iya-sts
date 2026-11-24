@@ -353,7 +353,7 @@ api federation/enable '{"id":"oidfed-rp"}'
 
 The realm's Entity Configuration then publishes `openid_relying_party`
 metadata: the relationship's assertion consumer service as a redirect URI,
-`private_key_jwt`, and its key. Who the OP's people become here is the
+`private_key_jwt`, its key, and its `fedScope` as `scope`. Who the OP's people become here is the
 relationship's subject policy, as for any federation relationship
 ([Configuring federation → Who a partner may sign in](configure-federation.md#who-a-partner-may-sign-in)).
 

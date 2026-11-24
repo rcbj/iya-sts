@@ -2742,7 +2742,12 @@ an OpenID Connect relationship, **off by default**, and each needs
   administrator's `register-partner` (console and `/admin-api`, rule 7). What
   is registered is the relationship: its ACS, response type and grant types,
   `fedTokenAuth`, the algorithms it pins, its sign-out and login-initiation
-  addresses, and for signed Request Objects ONE public key — the realm key
+  addresses, its `fedScope` as RFC 7591's `scope` (#2169: that member is the
+  client's declaration, and an OP that issues a client only what it
+  declared — this service's own in product, `openid` alone for a client
+  declaring none, #1589 — refused everything else; a FAPI profile's
+  `openid` included, nothing sent when `fedScope` is empty), and for signed
+  Request Objects ONE public key — the realm key
   that signs them, as `jwks` by value, so nothing else of the realm's key set
   (its post-quantum keys among them) is handed over. The answer's
   `client_id` and secret are written through `federation.update()`, so the
