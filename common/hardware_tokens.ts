@@ -1215,7 +1215,63 @@ class HardwareTokens {
   }
 
   // -------------------------------------------------------------------------
-  // X2: THE LOST-KEY ACT. `spec`: { key, actor, via, initiatingEntity
+  // WHICH TOKEN A CALLER'S KEY NAMES (#2095). The register files a token
+  // under `<vendor>/<serial>` (`keyOf()`), and that is what the console,
+  // the portal's token list and every answer of this register call its
+  // key. An importer that keeps an inventory of its own answers ITS key:
+  // the PSKC import answers `<vendor>/<serial>/<key id>` (`oath_tokens.
+  // keyOf()`), because one device may carry several seeds. A caller
+  // holding only the import's answer could not report the token lost
+  // (404, STS-HWTOKEN-0005). So a key that names no token is looked up as
+  // a CREDENTIAL REFERENCE: an assigned OATH token's credential is filed
+  // with `ref` the inventory key, and the credential index (`c:<kind>:
+  // <ref>`) answers the token that lists it in one indexed question per
+  // kind, never a walk. `<vendor>/<serial>` is asked first and answers as
+  // it always did (backwards compatibility since 1.0.0). An unassigned
+  // inventory row names no token here, and stays a 404: there is nothing
+  // in the register to mark.
+  // -------------------------------------------------------------------------
+  private async tokenKeyOf(given: string): Promise<string> {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokens.tokenKeyOf().");
+    if (!given || await this.rowAsync(given)) {
+      log.debug("Leaving HardwareTokens.tokenKeyOf(). As given.");
+      return given;
+    }
+    for (const kind of CREDENTIAL_KINDS) {
+      const index = 'c:' + kind + ':' + given;
+      let rows: Json[] = [];
+      try {
+        rows = await register.lookupEntriesAsync(index);
+      } catch (e) {
+        log.debug("Caught in HardwareTokens.tokenKeyOf(): " +
+                  ((e && e.message) || e));
+        // The read pool cannot be asked: what this process holds.
+        rows = register.lookup(index).map(function (k: Json) {
+          return { key: k, value: register.get(k) };
+        });
+      }
+      // A stale index row answers a record that no longer lists it.
+      const found = rows.filter(function (r: Json) {
+        return r && r.value && (r.value.credentials || [])
+          .some(function (c: Json) {
+            return c && c.kind === kind && c.ref === given;
+          });
+      })[0];
+      if (found) {
+        log.debug("Leaving HardwareTokens.tokenKeyOf(). A " + kind +
+                  " credential's token.");
+        return String(found.key);
+      }
+    }
+    log.debug("Leaving HardwareTokens.tokenKeyOf(). None.");
+    return given;
+  }
+
+  // -------------------------------------------------------------------------
+  // X2: THE LOST-KEY ACT. `spec`: { key (the token's `<vendor>/<serial>`,
+  // or a credential reference on it such as the PSKC import's key, #2095),
+  // actor, via, initiatingEntity
   // ('user' | 'admin'), onlyHolder? (a username: the portal, which retires
   // only the caller's own credentials and refuses another's token) }.
   // -------------------------------------------------------------------------
@@ -1230,8 +1286,11 @@ class HardwareTokens {
     const { log } = this.deps;
     log.debug("Entering HardwareTokens.markLost().");
     const s = spec || {};
-    const key = String(s.key || '');
-    const record: Json = register.get(key);
+    const given = String(s.key || '');
+    const key = await this.tokenKeyOf(given);
+    // Read from the store when this process does not hold it: a token
+    // found through the credential index may be another process's row.
+    const record: Json = await this.rowAsync(key);
     const onlyHolder = s.onlyHolder ? this.holderOf(String(s.onlyHolder))
                                     : '';
     // A PERSON MAY REPORT A TOKEN LOST WHEN THEY HOLD IT OR ANY CREDENTIAL
@@ -1244,8 +1303,10 @@ class HardwareTokens {
        }));
     if (!record || (s.onlyHolder && !holds)) {
       log.debug("Leaving HardwareTokens.markLost(). Unknown.");
+      // The key the caller gave, never the token it resolved to: a token
+      // somebody else holds is not named to this caller.
       return this.refuse('STS-HWTOKEN-0005', 'No hardware token "' +
-        HardwareTokens.text(key) + '" is ' + (s.onlyHolder
+        HardwareTokens.text(given) + '" is ' + (s.onlyHolder
           ? 'held by you.' : 'in this realm\'s register.'));
     }
     if (record.status === 'lost') {

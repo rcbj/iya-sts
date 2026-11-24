@@ -13199,7 +13199,11 @@ this directory has to know beside it:
   so this file requiring them back to retire them would close a cycle. A
   kind with no retirer is reported as not retired (STS-HWTOKEN-0009), never
   skipped. A FIDO credential is REMOVED rather than disabled, because no
-  sign-in door reads a disabled mark.
+  sign-in door reads a disabled mark. **`markLost()` takes a credential's
+  `ref` as well as `<vendor>/<serial>`** (#2095, `tokenKeyOf()`): the PSKC
+  import answers its inventory key, which is the OATH credential's `ref`,
+  so the `c:` index finds the token. The register's key is asked first. A
+  refusal names the key the caller gave, never the token it resolved to.
 * **X4**: the authentication event records the credential's token
   (`authn.ts`'s `hardwareTokenOf()`), which is the authentication policy's
   `attested-hardware` mechanism (`authn_mechanisms.ts`) and the issuance

@@ -5069,7 +5069,7 @@ op `getTokensAndKeys`(`responses/200/content/application~1json/schema`: Hardware
   })
 op `actOnTokens`(`requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_tokens_b_application_json_action;
-    @js(#{`description`:"`lost` and `attach-key`: the token's key, `<vendor>/<serial>`.",`maxLength`:200}) `key`?: string;
+    @js(#{`description`:"`lost` and `attach-key`: the token's key, `<vendor>/<serial>`. `lost` also takes the key its OATH import was given, `<vendor>/<serial>/<key id>`.",`maxLength`:200}) `key`?: string;
     @js(#{`description`:"`claim`: the serial printed on the token. `recover-key` and `attach-key`: the escrowed certificate's serial, hex.",`maxLength`:64}) `serial`?: string;
     @js(#{`description`:"`claim`: a code the token shows now.",`maxLength`:32}) `code`?: string;
     @js(#{`description`:"`enrol-piv`: piv-auth, piv-sign, piv-key-management or piv-card-auth.",`maxLength`:64}) `profile`?: string;

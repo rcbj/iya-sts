@@ -1445,7 +1445,7 @@ Scope: `admin:write`.
 
 **Report a hardware token lost (#1955)**
 
-Marks the token lost, then retires every credential on it by its kind: a passkey is removed from its holder's entry (passing the last-way-in guard) and the sessions it signed in end, a certificate is revoked for keyCompromise; a CAEP credential-change goes for each. `retired` and `notRetired` list them; a credential not retired is still live. 404 for no such token, 409 for one already lost. Acting on a Security Administrator's token needs admin:security.
+Marks the token lost, then retires every credential on it by its kind: a passkey is removed from its holder's entry (passing the last-way-in guard) and the sessions it signed in end, a certificate is revoked for keyCompromise; a CAEP credential-change goes for each. `retired` and `notRetired` list them; a credential not retired is still live. The token is named by its `<vendor>/<serial>` or by a credential on it: an OATH token by the `key` the PSKC import answered. 404 for no such token, 409 for one already lost. Acting on a Security Administrator's token needs admin:security.
 
 **Mirrors** `POST /admin/hardware-tokens` on the admin console.
 
@@ -1462,7 +1462,7 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `key` | string | yes | The token, `<vendor>/<serial>`. |
+| `key` | string | yes | The token: its `<vendor>/<serial>`, or the `key` the PSKC import answered for an OATH token on it (`<vendor>/<serial>/<key id>`). |
 
 **200**: The token is lost, and what was retired.
 

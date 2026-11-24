@@ -22,6 +22,8 @@
 //   4. THE LOST KEY (design X2): reporting the register's token lost runs
 //      the `hotp` retirer this module installs — the credential leaves the
 //      entry, the inventory row is retired, and no `hwk` is earned again.
+//      The token is named by `<vendor>/<serial>` or by the key the import
+//      answered (#2095), and `onlyHolder` still refuses another person.
 //   5. REMOVAL: an unassigned token may be removed; an assigned one may not
 //      (STS-OATH-0049).
 //   6. REALM ISOLATION: a token imported in one realm can be neither
@@ -219,6 +221,40 @@ async function checkLost(t) {
                                        actor: ADMIN })), 'STS-OATH-0041',
           'A RETIRED TOKEN IS NOT ASSIGNED AGAIN: its secret may be with ' +
           'whoever found it');
+
+  // #2095: THE KEY THE IMPORT ANSWERED NAMES THE TOKEN TOO. Cat's TOTP
+  // token is reported lost by `<vendor>/<serial>/<key id>`, the portal's
+  // way (`onlyHolder`), after another person is refused it by that key.
+  t.log.info('--- by the key the import answered (#2095) ---');
+  const totpRow = (await tokens.list({ q: 'TOTP-' + RUN })).tokens[0];
+  const importKey = String((totpRow && totpRow.key) || '');
+  t.check(importKey.split('/').length === 3,
+          'the import\'s key is <vendor>/<serial>/<key id>', importKey);
+  const notBens = await register.markLost({ key: importKey, actor: BEN,
+    via: 'portal', initiatingEntity: 'user', onlyHolder: BEN });
+  t.check(codeOf(notBens) === 'STS-HWTOKEN-0005' &&
+          String(notBens.error).indexOf(importKey) >= 0,
+          'another person giving that key is refused, and told the key ' +
+          'they gave', JSON.stringify(notBens.errors));
+  const byImportKey = await register.markLost({ key: importKey,
+    actor: CAT, via: 'portal', initiatingEntity: 'user', onlyHolder: CAT });
+  t.check(byImportKey.ok && byImportKey.token.status === 'lost' &&
+          byImportKey.token.key.split('/').length === 2 &&
+          byImportKey.retired.some(function (r) {
+            return r.kind === 'totp' && r.ref === importKey;
+          }),
+          'THE IMPORT\'S KEY REPORTS THE TOKEN LOST, and its TOTP secret ' +
+          'is retired', JSON.stringify(byImportKey.token ||
+                                       byImportKey.errors));
+  t.check(!credentials.totpOf(CAT),
+          'the authenticator has left Cat\'s entry');
+  t.equal(codeOf(await register.markLost({ key: importKey, actor: ADMIN,
+                                           via: 'api' })),
+          'STS-HWTOKEN-0006', 'and by that key again it is already lost');
+  t.equal(codeOf(await register.markLost({
+    key: 'manufacturer/IDLE-' + RUN + '/1', actor: ADMIN, via: 'api' })),
+          'STS-HWTOKEN-0005',
+          'a key no token in the register lists is still refused');
   log.debug("Leaving checkLost().");
 }
 
