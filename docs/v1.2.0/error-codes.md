@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6035** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6036** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -77,7 +77,7 @@ is an ordinary outcome.
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 35
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 76
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 77
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 174
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 142
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 55
@@ -4086,6 +4086,7 @@ Raised from: tls/.
 | `STS-TLS-0074` | A certificate sign-in handoff (/authn/certificate/continue) named no live handoff: unknown, used, expired, or certSignIn.handoff is off (#2012). | HTTP 400 |
 | `STS-TLS-0075` | A certificate sign-in handoff arrived without the sign-on session cookie of the browser that started it, so the certificate was not bound to that sign-in: the listener does not share the main port's host name and is not under authn.cookieDomain, or another browser opened the link (#2012). | HTTP 403 |
 | `STS-TLS-0076` | Only one of tls.trustedProxyCertificates and tls.trustedProxyAddresses is set, so no forwarded client certificate is read: a TLS-terminating proxy is trusted by both its certificate and its address (#2012). | none (logged) |
+| `STS-TLS-0077` | A write of tls.trustedProxyCertificates was refused: an entry is neither the SHA-256 of a certificate (64 hex digits, colons and a sha256: prefix allowed) nor spki: followed by the SHA-256 of a SubjectPublicKeyInfo in the same form (#2012). | — |
 
 ## STS-VC
 
