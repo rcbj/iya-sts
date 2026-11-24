@@ -88,6 +88,19 @@ resource "google_service_account_iam_member" "deployer_attaches_environment" {
   member             = google_service_account.deployer.member
 }
 
+# A REMOTE PEP ENVIRONMENT'S MEMBERS (#1284): attaching its account to their
+# VMs, as for an environment's nodes. Its other parts — a VPC, Cloud Router
+# and NAT (networkAdmin), firewall rules and the Cloud Armor policy
+# (securityAdmin), the managed certificate, backends and forwarding rules
+# (loadBalancerAdmin), the instance groups (instanceAdmin.v1) and the grants
+# on its members' secrets (secretmanager.admin) — are the roles above.
+resource "google_service_account_iam_member" "deployer_attaches_pep" {
+  for_each           = var.pep_environments
+  service_account_id = google_service_account.pep[each.key].name
+  role               = "roles/iam.serviceAccountUser"
+  member             = google_service_account.deployer.member
+}
+
 # The environments' A records, in the one zone.
 resource "google_dns_managed_zone_iam_member" "deployer" {
   managed_zone = google_dns_managed_zone.public.name

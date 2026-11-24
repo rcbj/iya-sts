@@ -59,6 +59,32 @@ variable "environments" {
   }
 }
 
+variable "pep_environments" {
+  description = <<-EOT
+    EVERY REMOTE PEP ENVIRONMENT THAT MAY BE BUILT (#1284,
+    deploy/gcp/pep-cluster/), and its public name. Each gets the service
+    account its members run as (identities.tf, `pep`): the deployer creates
+    no identity, so a PEP environment not listed here cannot be applied, as
+    an iya-sts environment not in `environments` cannot. A PEP environment
+    is not an iya-sts environment and shares nothing with one; its name must
+    not be one of `environments`'.
+
+    `public_hostname` must be inside `dns_zone_name`.
+  EOT
+  type = map(object({
+    public_hostname = string
+  }))
+  default = {
+    testpep = { public_hostname = "test-pep.gcp.iyasec.io" }
+  }
+  validation {
+    condition = alltrue([
+      for k, v in var.pep_environments : can(regex("^[a-z][a-z0-9]{1,11}$", k))
+    ])
+    error_message = "A PEP environment name is 2-12 lower-case letters and digits, starting with a letter."
+  }
+}
+
 variable "dns_zone_name" {
   description = <<-EOT
     The public zone this project answers: a SUB-DOMAIN of iyasec.io, delegated

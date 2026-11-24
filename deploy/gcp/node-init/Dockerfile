@@ -47,7 +47,10 @@ RUN set -eu; \
 COPY deploy/gcp/node-init/secrets.sh /usr/local/bin/sts-secrets
 COPY deploy/gcp/node-init/cert.sh /usr/local/bin/sts-cert
 COPY deploy/gcp/node-init/lib.sh /usr/local/lib/sts/lib.sh
+# A remote PEP member's PEM files (#1284, deploy/gcp/pep-cluster/).
+COPY deploy/gcp/node-init/secret-files.sh /usr/local/bin/sts-secret-files
 RUN chmod 0755 /usr/local/bin/sts-secrets /usr/local/bin/sts-cert \
+      /usr/local/bin/sts-secret-files \
     && chmod 0644 /usr/local/lib/sts/lib.sh
 
 # No entrypoint of its own: the unit names the command (sts-secrets or sts-cert).

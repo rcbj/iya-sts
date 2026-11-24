@@ -68,6 +68,7 @@ const HOST_SCRIPTS = [
   'deploy/multicloud/terraform-local.sh',
   'deploy/aws/bootstrap-state.sh',
   'deploy/gcp/bootstrap-state.sh',
+  'deploy/gcp/pep-cluster/provision.sh',
   'deploy/azure/bootstrap-state.sh',
   'deploy/aws/run-suite.sh',
   'deploy/aws/convert-to-cells.sh',
