@@ -11152,7 +11152,7 @@ Scope: `account:manage`.
 | `attestationIssuer` | string |  | `enrol-piv`: the f9 attestation certificate, PEM (ykman piv certificates export f9), and any intermediate after it. |
 | `code` | string |  | `claim`: a code the token shows now. |
 | `csr` | string |  | `enrol-piv`: the PKCS#10 certificate request, PEM. |
-| `key` | string |  | `lost` and `attach-key`: the token's key, `<vendor>/<serial>`. |
+| `key` | string |  | `lost` and `attach-key`: the token's key, `<vendor>/<serial>`. `lost` also takes the key its OATH import was given, `<vendor>/<serial>/<key id>`. |
 | `profile` | string |  | `enrol-piv`: piv-auth, piv-sign, piv-key-management or piv-card-auth. |
 | `serial` | string |  | `claim`: the serial printed on the token. `recover-key` and `attach-key`: the escrowed certificate's serial, hex. |
 
