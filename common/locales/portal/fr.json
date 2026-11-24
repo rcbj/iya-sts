@@ -598,5 +598,7 @@
 "hotp.start": "Configurer un jeton de codes à usage unique",
 "apps.reauthenticate": "Se reconnecter",
 "apps.reauthenticateNote": "Chaque lien de connexion vous demande de vous reconnecter, afin de choisir les rôles à utiliser avec cette application.",
-"apps.reauthenticateApply": "Appliquer"
+"apps.reauthenticateApply": "Appliquer",
+"noWebCrypto.title": "Ce navigateur ne peut pas ouvrir cette page",
+"noWebCrypto.text": "Ce navigateur ne peut pas exécuter cette page en toute sécurité : WebCrypto n'est pas disponible, généralement parce que la page n'a pas été ouverte en HTTPS ou que le navigateur est trop ancien."
 }

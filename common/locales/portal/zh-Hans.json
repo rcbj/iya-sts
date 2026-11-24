@@ -598,5 +598,7 @@
 "hotp.start": "设置一次性验证码令牌",
 "apps.reauthenticate": "重新登录",
 "apps.reauthenticateNote": "每个登录链接都会要求您重新登录，以便您选择要在该应用程序中使用的角色。",
-"apps.reauthenticateApply": "应用"
+"apps.reauthenticateApply": "应用",
+"noWebCrypto.title": "此浏览器无法打开此页面",
+"noWebCrypto.text": "此浏览器无法安全地运行此页面：WebCrypto 不可用，通常是因为页面未通过 HTTPS 打开，或浏览器版本过旧。"
 }

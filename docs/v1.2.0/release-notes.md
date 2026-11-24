@@ -6,6 +6,40 @@ title: Release notes
 
 ## 1.2.0
 
+### Behaviour change: CSV exports neutralise spreadsheet formulas
+
+A report exported as CSV, and the passkey report's CSV export, now put a
+single quote (`'`) in front of any text value whose first character is
+`=`, `+`, `-`, `@`, a tab, a carriage return or NUL, so a value someone
+chose (a username, a display name) cannot run as a formula when the file
+is opened in a spreadsheet (ASVS 5.0.0 1.2.10). The quote is visible in
+the cell. Numbers are not touched: a negative count is still a number.
+Until 1.2.0 a report's CSV quoted only per RFC 4180, and the passkey
+export did not catch a leading NUL. A program that reads these files and
+compared a text cell starting with one of those characters byte for byte
+now sees the quote in front. See [Reporting](reporting.md#formats).
+
+### Behaviour change: an uploaded sign-in logo loses its metadata
+
+A realm's sign-in logo is shown to everybody who opens a sign-in page, so
+it is now cleaned before it is kept, as profile photos already were: a
+JPEG's EXIF (a GPS position, a camera, a date), XMP and comments, a PNG's
+text chunks and animation frames, a WebP's EXIF and XMP chunks, and
+anything after the end of the image are removed (ASVS 5.0.0 14.2.8). The
+pixels are not changed. The digest, size and sides the console and `GET
+/admin-api/branding` show describe the cleaned file. A file that cannot be
+read to the end of its image is refused with `STS-AUTHN-0624`.
+
+Profile photos use the same code, and two things changed for them: a JPEG
+now ends at its first end-of-image marker, so a second image a phone
+appends after it (a Multi-Picture Format depth or gain map, which carries
+its own EXIF) is no longer kept, and an APP2 segment is kept only when it
+is an ICC colour profile.
+
+**Upgrading.** Nothing to run. A logo uploaded before 1.2.0 is served as it
+was stored, metadata included, until it is uploaded again; upload it again
+to clean it. See [Sign-in appearance](sign-in-appearance.md#the-logo).
+
 ### Behaviour change: S/MIME mail is authenticated encryption
 
 Mail encrypted to a person's S/MIME certificate is now a CMS
@@ -104,6 +138,30 @@ password somebody else may know, and a session opened with it should not
 outlive the new one (ASVS 5.0.0 7.4.3). The page that confirms the new
 password says so. If the sessions cannot be ended, the password is still set
 and `STS-PORTAL-0638` is logged.
+
+### Fixed: a password check takes as long for an account that does not exist
+
+In product mode, a password presented for a name with no stored password, for
+an account holding a stored value this service cannot read, for a disabled
+account, or for a service account at a door its policy closes was refused at
+once, while a wrong password for a real person took one password-hash
+computation. The response time said which accounts exist (ASVS 5.0.0 6.3.8).
+Those refusals now verify the presented password against a hash nobody holds,
+made once per process at the password policy's current parameters, and discard
+the result, so every refusal costs the same. What is refused, and the error
+code recorded for it, are unchanged. This applies at every door that checks a
+person's password: the sign-in screen, the password grant, an LDAP bind, a
+WS-Trust UsernameToken, SCIM, SSF and EST HTTP Basic.
+
+### Fixed: the console, portal and reports say why they cannot open without WebCrypto
+
+The admin console, the user portal and the reports application sign in with
+the browser's WebCrypto, which a browser offers only to a page opened over
+HTTPS (or `localhost`). Opened over plain HTTP, or in a browser too old to have
+WebCrypto, each one used to stop with a blank page. Each now checks before it
+signs in and, where WebCrypto is missing, shows one sentence in the page's
+language saying that this browser cannot run the page securely, usually
+because the page was not opened over HTTPS or the browser is too old.
 
 ### Create pages mark what the create requires
 

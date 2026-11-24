@@ -18,5 +18,7 @@
   "accounts.otherAccount": "Diese Anmeldung galt einem anderen Konto, daher hat dieser Tab sie nicht übernommen. Melden Sie sich erneut als {user} an, oder wechseln Sie das Konto über das Kontomenü.",
   "accounts.refused.title": "Die Konsole öffnet sich für dieses Konto nicht",
   "accounts.refused.text": "Die Verwaltungs-API hat mit {status} für das Konto geantwortet, mit dem dieser Tab angemeldet ist.",
-  "policyName.required": "Ein Name ist erforderlich."
+  "policyName.required": "Ein Name ist erforderlich.",
+  "noWebCrypto.title": "Dieser Browser kann diese Seite nicht öffnen",
+  "noWebCrypto.text": "Dieser Browser kann diese Seite nicht sicher ausführen: WebCrypto ist nicht verfügbar, meist weil die Seite nicht über HTTPS geöffnet wurde oder der Browser zu alt ist."
 }

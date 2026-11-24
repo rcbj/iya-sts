@@ -140,6 +140,7 @@
 // ---------------------------------------------------------------------------
 
 import helpers = require('./helpers');
+import CsvCell = require('./csv_cell');
 import errorCodes = require('./error_codes');
 import realms = require('./realms');
 import credentials = require('./credentials');
@@ -1547,23 +1548,13 @@ class PasskeyReport {
              body: body, rows: out.length, truncated: truncated };
   }
 
-  // Hot path (once per person a recount, a list or an export reads, which
-  // is every holder of a realm): no Entering/Leaving pair, the exception the
-  // code style allows, stated as it requires.
-  // A CSV cell. A value a spreadsheet would read as a formula (=, +, -, @,
-  // a tab or a carriage return first) is quoted with an apostrophe in front:
-  // a username is chosen by whoever registered it.
-  private static csvCell(value: unknown): string {
-    const text = String(value === null || value === undefined ? '' : value);
-    const safe = /^[=+\-@\t\r]/.test(text) ? '\'' + text : text;
-    return /[",\r\n]/.test(safe) ? '"' + safe.replace(/"/g, '""') + '"'
-                                 : safe;
-  }
-
   // The export as CSV: one row per person.
   private static csvOf(rows: Json[]): string {
     helpers.log.debug("Entering PasskeyReport.csvOf().");
-    const cell = PasskeyReport.csvCell;
+    // Every cell through the shared helper (#2138): a username is chosen by
+    // whoever registered it, so a leading =, +, -, @, tab, CR or NUL gets a
+    // single quote in front. The count is a number and is left alone.
+    const cell = CsvCell.of;
     const lines = ['username,dn,kind,passkeys,algorithms,lanes,aaguids,' +
                    'models'];
     rows.forEach(function (r: Json) {

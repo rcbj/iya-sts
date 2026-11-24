@@ -598,5 +598,7 @@
 "hotp.start": "Mag-set up ng one-time code token",
 "apps.reauthenticate": "Mag-sign in muli",
 "apps.reauthenticateNote": "Hihilingin ng bawat link sa pag-sign in na mag-sign in ka muli, para mapili mo ang mga tungkuling gagamitin sa application na iyon.",
-"apps.reauthenticateApply": "Ilapat"
+"apps.reauthenticateApply": "Ilapat",
+"noWebCrypto.title": "Hindi mabuksan ng browser na ito ang pahinang ito",
+"noWebCrypto.text": "Hindi ligtas na mapapatakbo ng browser na ito ang pahinang ito: hindi available ang WebCrypto, kadalasan dahil hindi binuksan ang pahina sa HTTPS o masyadong luma na ang browser."
 }

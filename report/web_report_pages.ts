@@ -3140,6 +3140,13 @@ class ReportRuntime extends SpaClient {
    * @returns nothing
    */
   async start(): Promise<void> {
+    // NO WEBCRYPTO, NO SIGN-IN (#2143): one sentence, in the page's own
+    // language and chrome, as a refused sign-in is drawn.
+    if (SpaClient.webCryptoMissing(this.env)) {
+      await this.ensureLanguage();
+      this.paint(problemHtml(this.t, this.t.text('report.noWebCrypto.text')));
+      return;
+    }
     const self = this;
     this.env.document.addEventListener('click', function (event: any): void {
       // THE TAB'S OWN STORAGE GOES FIRST (#1440, ASVS 5.0.0 14.3.1): the

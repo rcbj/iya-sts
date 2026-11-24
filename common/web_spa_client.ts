@@ -57,6 +57,8 @@
 
 import WebPage = require('./web_page');
 import WebAccounts = require('./web_accounts');
+import WebI18n = require('./web_i18n');
+import WebMessages = require('./web_messages');
 
 type Json = any;
 
@@ -377,6 +379,75 @@ class SpaClient extends WebPage {
   // `SpaClient.queryOf()` is `WebPage.queryOf()`, inherited.
 
   // --- encoding and crypto -------------------------------------------------
+
+  // ---------------------------------------------------------------------------
+  // WEBCRYPTO IS ASKED FOR BEFORE ANYTHING ELSE (#2143, ASVS 5.0.0 3.7.5).
+  //
+  // Every sign-in this class makes needs it: the PKCE verifier and the DPoP
+  // `jti` are `getRandomValues()`, the challenge and `ath` are `digest()`,
+  // the key is `generateKey()` and `exportKey()`, every proof is `sign()`,
+  // and a JARM answer is `importKey()` and `verify()`. A browser holds
+  // `crypto.subtle` only in a SECURE CONTEXT, so a page reached over plain
+  // HTTP (or in a browser too old to have it) used to fail at the first
+  // `generateKey()` with an unhandled rejection and a blank page. Each
+  // runtime asks `webCryptoMissing()` before it wires or draws anything, and
+  // where it answers true draws one sentence, in the page's language, from
+  // `noWebCryptoWords()` — and starts no sign-in, because one could not be
+  // finished.
+  // ---------------------------------------------------------------------------
+  /**
+   * The WebCrypto calls a sign-in makes, each a method of `crypto.subtle`.
+   */
+  static readonly WEBCRYPTO_CALLS: string[] = ['digest', 'generateKey',
+    'exportKey', 'importKey', 'sign', 'verify'];
+
+  /**
+   * Whether this browser lacks what a sign-in needs from WebCrypto.
+   *
+   * @param env - the browser's objects; `env.crypto` is asked
+   * @returns true when `crypto`, `crypto.getRandomValues` or any of
+   *   `WEBCRYPTO_CALLS` on `crypto.subtle` is missing
+   */
+  static webCryptoMissing(env: Json): boolean {
+    const c = env ? env.crypto : null;
+    if (!c || typeof c.getRandomValues !== 'function' || !c.subtle) {
+      return true;
+    }
+    return SpaClient.WEBCRYPTO_CALLS.some(function (name) {
+      return typeof c.subtle[name] !== 'function';
+    });
+  }
+
+  /**
+   * The words a page without WebCrypto draws, in the page's language: the
+   * namespace's `noWebCrypto.title` and `noWebCrypto.text`, and the
+   * translator they came from (with the footer's words in it).
+   *
+   * @param namespace - the surface's catalog namespace (`consoleRuntime`,
+   *   `portal`, `report`)
+   * @returns `{ t, title, text }`
+   */
+  async noWebCryptoWords(namespace: string): Promise<Json> {
+    let t: Json = null;
+    try {
+      t = await new WebI18n(this.env, this, [namespace]).load();
+    } catch (e) {
+      // No catalog to be had: the English below is drawn instead.
+      t = WebMessages.WebTranslator.fromData(null);
+    }
+    const said = function (key: string, english: string): string {
+      const full = namespace + '.' + key;
+      return t.has(full) ? t.text(full) : english;
+    };
+    return {
+      t: t,
+      title: said('noWebCrypto.title', 'This browser cannot open this page'),
+      text: said('noWebCrypto.text', 'This browser cannot run this page ' +
+        'securely: WebCrypto is unavailable, usually because the page was ' +
+        'not opened over HTTPS or the browser is too old.')
+    };
+  }
+
 
   /**
    * Base64url without padding.
