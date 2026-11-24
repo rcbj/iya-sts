@@ -611,6 +611,18 @@
     "en": "e082de544e11ddcb",
     "text": "请添加审计导出目标，使日志副本在此服务遭入侵时不受影响。在添加之前，服务会为该信任域记录警告。"
   },
+  "mode.requirements.audit-append-only.what": {
+    "en": "53b7ec225e4b3f63",
+    "text": "审计日志无法通过服务自身的数据库凭据修改"
+  },
+  "mode.requirements.audit-append-only.development": {
+    "en": "11ab073d36508489",
+    "text": "在已生成状态会持久保存的情况下（请求工作线程或多个节点，或 keys.source=persisted），日志的写入方式与产品模式相同。否则它保存在内存中，随进程消失。"
+  },
+  "mode.requirements.audit-append-only.product": {
+    "en": "421ebab018244a91",
+    "text": "每个事件是 sts_audit 中的一个密封行，服务的数据库角色可以添加和读取行，除此之外什么也不能做；旧行只能通过表所有者的保留函数离开，该函数在每个领域中至少保留 1000 行。若该角色能够修改此表——它拥有该表，或对其持有 UPDATE、DELETE 或 TRUNCATE——则报告为未满足（STS-AUDIT-0019），服务仍继续运行。"
+  },
   "mode.requirements.malware-scan-tls.what": {
     "en": "926957ee32cf2309",
     "text": "文件以加密方式到达恶意软件扫描器"

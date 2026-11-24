@@ -611,6 +611,18 @@
     "en": "e082de544e11ddcb",
     "text": "Ajoutez une destination d’export d’audit, afin qu’une copie du journal soit hors d’atteinte en cas de compromission. Tant qu’il n’y en a pas, le service consigne un avertissement pour ce domaine."
   },
+  "mode.requirements.audit-append-only.what": {
+    "en": "53b7ec225e4b3f63",
+    "text": "Le journal d’audit ne peut pas être modifié avec l’identifiant de base de données propre au service"
+  },
+  "mode.requirements.audit-append-only.development": {
+    "en": "11ab073d36508489",
+    "text": "Là où l’état émis est conservé (workers de requêtes ou plusieurs nœuds, ou keys.source=persisted), le journal est écrit comme en mode produit. Sinon il est en mémoire et disparaît avec le processus."
+  },
+  "mode.requirements.audit-append-only.product": {
+    "en": "421ebab018244a91",
+    "text": "Chaque événement est une ligne scellée de sts_audit, où le rôle de base de données du service peut ajouter et lire des lignes et rien d’autre ; les anciennes lignes ne partent que par la fonction de rétention du propriétaire de la table, qui en garde au moins 1000 dans chaque domaine. Là où le rôle peut modifier la table — il en est propriétaire ou détient UPDATE, DELETE ou TRUNCATE dessus —, cela est signalé comme non satisfait (STS-AUDIT-0019) et le service continue de fonctionner."
+  },
   "mode.requirements.malware-scan-tls.what": {
     "en": "926957ee32cf2309",
     "text": "Les fichiers atteignent l’analyseur chiffrés"

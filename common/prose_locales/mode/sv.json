@@ -611,6 +611,18 @@
     "en": "e082de544e11ddcb",
     "text": "Lägg till ett exportmål för granskningsloggen, så att en kopia är utom räckhåll vid ett intrång. Tills ett finns loggar tjänsten en varning för den sfären."
   },
+  "mode.requirements.audit-append-only.what": {
+    "en": "53b7ec225e4b3f63",
+    "text": "Granskningsloggen kan inte ändras med tjänstens egna databasuppgifter"
+  },
+  "mode.requirements.audit-append-only.development": {
+    "en": "11ab073d36508489",
+    "text": "Där skapat tillstånd sparas varaktigt (begärans workers eller flera noder, eller keys.source=persisted) skrivs loggen som i produktionsläge. Annars ligger den i minnet och försvinner med processen."
+  },
+  "mode.requirements.audit-append-only.product": {
+    "en": "421ebab018244a91",
+    "text": "Varje händelse är en förseglad rad i sts_audit, där tjänstens databasroll får lägga till och läsa rader och inget annat; gamla rader lämnar tabellen bara genom tabellägarens gallringsfunktion, som behåller minst 1000 i varje sfär. Där rollen kan ändra tabellen — den äger den eller har UPDATE, DELETE eller TRUNCATE på den — rapporteras detta som ej uppfyllt (STS-AUDIT-0019) och tjänsten fortsätter köra."
+  },
   "mode.requirements.malware-scan-tls.what": {
     "en": "926957ee32cf2309",
     "text": "Filer når skannern krypterade"

@@ -23,7 +23,9 @@
 //                                         the eviction of the oldest
 //   admin_stats.nums (own)          0.9   `usersForgotten`, bumped by those
 //                                         evictions
-//   audit.events (own)              0.8   the add's audit row — legitimate
+//   audit.events (own)              0.8   the add's audit row — legitimate;
+//                                         since #1616 a row of sts_audit,
+//                                         the append-only table, instead
 //   audit.nums (own)                0.7   its counter — legitimate
 //
 // What this asserts, counting what the stores JOURNAL (a persist observer
@@ -219,12 +221,27 @@ async function scenario(t) {
           'admin_stats.nums', JSON.stringify(rep));
 
   // --- 2. a local LDAP add ------------------------------------------------
+  // SINCE #1616 the add's audit event is a row of `sts_audit`, the
+  // append-only table, and not a minted row: what `audit_store.append()` is
+  // handed is counted beside the journal.
+  const auditStore = require('../persistence/audit_store');
+  const realAppend = auditStore.append;
+  let appended = 0;
+  auditStore.append = function (realmId, row) {
+    appended++;
+    return realAppend(realmId, row);
+  };
   let localRefused = 0;
-  const loc = await measure(MEASURED, async function (i) {
-    if ((await added('crpa-loc' + i)).ok === false) {
-      localRefused++;
-    }
-  });
+  let loc;
+  try {
+    loc = await measure(MEASURED, async function (i) {
+      if ((await added('crpa-loc' + i)).ok === false) {
+        localRefused++;
+      }
+    });
+  } finally {
+    auditStore.append = realAppend;
+  }
   t.equal(localRefused, 0, mode + '2. every measured LDAP add was accepted');
   t.check(loc.all <= LOCAL_BOUND,
           mode + '2. an LDAP add made here costs at most ' + LOCAL_BOUND +
@@ -234,9 +251,10 @@ async function scenario(t) {
   t.check(!loc['risc.register'] && !loc['admin_stats.users'],
           mode + '2b. no risc.register row and no admin_stats.users row for ' +
           'a blank create', JSON.stringify(loc));
-  t.check((loc['audit.events'] || 0) > 0,
-          mode + '2c. and the add is still AUDITED: its audit event is ' +
-          'journalled', JSON.stringify(loc));
+  t.check(appended >= MEASURED && !loc['audit.events'],
+          mode + '2c. and the add is still AUDITED: its audit event goes to ' +
+          'sts_audit, the append-only table (#1616), and no longer to a ' +
+          'minted row', JSON.stringify({ appended: appended, loc: loc }));
 
   // --- 2d. counters are written once per flush, not once per event --------
   take();

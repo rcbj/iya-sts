@@ -180,9 +180,18 @@ function flush() {
   }
   const batch = pending;
   pending = [];
-  const rows = batch.map(sealed).filter(Boolean);
-  log.debug("Leaving audit_store.flush(). " + rows.length + " row(s).");
-  flushing = Promise.resolve(driver.auditInsert(rows)).then(function (n) {
+  // NEVER THROWS: sealing, or a driver that throws rather than rejecting,
+  // is a refused write like any other — the rows are kept for the next.
+  let attempt;
+  try {
+    const rows = batch.map(sealed).filter(Boolean);
+    attempt = Promise.resolve(driver.auditInsert(rows));
+  } catch (e) {
+    log.debug("Caught in audit_store.flush(): " + ((e && e.message) || e));
+    attempt = Promise.reject(e);
+  }
+  log.debug("Leaving audit_store.flush(). " + batch.length + " row(s).");
+  flushing = attempt.then(function (n) {
     flushing = null;
     if (droppedPending) {
       log.warn(errorCodes.tag('STS-AUDIT-0018') + 'audit: ' + droppedPending +
