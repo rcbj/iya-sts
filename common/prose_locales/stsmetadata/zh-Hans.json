@@ -1703,6 +1703,10 @@
     "en": "2aecb981d7ca88ee",
     "text": "非规范。控制台自己的操作（#454）：apply-profile、generate-keys、generate-alt-keys 和 use-key 分别根据配置文件、新生成的密钥对或已存储的密钥对填写证书表单，不写入任何内容。它们最终引向的签发操作是 POST /admin-api/pki/issue-certificate。"
   },
+  "stsmetadata.endpoints./admin-api/console/certificates/:action.what": {
+    "en": "2956cd8c671bb4fe",
+    "text": "非规范。控制台自己的操作（#2080）：inspect 读取提交的 PEM 证书——主题、SHA-256、SubjectPublicKeyInfo 的 SHA-256——供证书登录配置文件编辑器、PIV 的 PEM 列表和人员的绑定编辑器使用；带 bindings 时还给出用来找到第一个证书的 stsCertificateBinding 值。它不写入也不保留任何内容；它最终引向的是 POST /admin-api/config/set 或 /admin-api/users/add-attribute。"
+  },
   "stsmetadata.endpoints./admin-api/console/applications/:action.what": {
     "en": "4c43b5b63d2a5381",
     "text": "非规范。控制台自己的操作（#454）：generate-secret 为即将提交的表单生成客户端密钥，不写入任何内容。创建操作是 POST /admin-api/applications/create。"

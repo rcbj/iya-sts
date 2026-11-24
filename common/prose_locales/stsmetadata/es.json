@@ -1703,6 +1703,10 @@
     "en": "2aecb981d7ca88ee",
     "text": "NO ESTÁNDAR. Propio de la consola (#454): apply-profile, generate-keys, generate-alt-keys y use-key rellenan el formulario de certificado a partir de un perfil, de un par de claves nuevo o de uno almacenado, y no escriben nada. La emisión a la que conducen es POST /admin-api/pki/issue-certificate."
   },
+  "stsmetadata.endpoints./admin-api/console/certificates/:action.what": {
+    "en": "2956cd8c671bb4fe",
+    "text": "NO ESTÁNDAR. Propio de la consola (#2080): inspect lee los certificados PEM entregados — sujeto, SHA-256, SHA-256 de la SubjectPublicKeyInfo — para el editor de perfiles de inicio de sesión con certificado, las listas PEM de PIV y el editor de vínculos de una persona, y con bindings responde los valores de stsCertificateBinding por los que se encuentra el primero. No escribe ni guarda nada; aquello a lo que lleva es POST /admin-api/config/set o /admin-api/users/add-attribute."
+  },
   "stsmetadata.endpoints./admin-api/console/applications/:action.what": {
     "en": "4c43b5b63d2a5381",
     "text": "NO ESTÁNDAR. Propio de la consola (#454): generate-secret genera un secreto de cliente para un formulario a punto de enviarse y no escribe nada. La creación es POST /admin-api/applications/create."

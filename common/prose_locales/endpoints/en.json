@@ -209,6 +209,7 @@
   "endpoints.route./admin-api/console/operations.name": "Every operation, for the console's forms",
   "endpoints.route./admin-api/console/openapi.json.name": "The console operations' OpenAPI document",
   "endpoints.route./admin-api/console/pki/:action.name": "The certificate form's helpers",
+  "endpoints.route./admin-api/console/certificates/:action.name": "Certificate sign-in's certificate reader",
   "endpoints.route./admin-api/console/applications/:action.name": "The new application form's helper",
   "endpoints.route./admin-api/console/applications/new.name": "New application form, as the console lays it out",
   "endpoints.route./admin-api/keys.name": "Key pairs",

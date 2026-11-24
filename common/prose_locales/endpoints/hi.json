@@ -839,6 +839,10 @@
     "en": "91b14d0429eaa0bc",
     "text": "प्रमाणपत्र फ़ॉर्म के सहायक"
   },
+  "endpoints.route./admin-api/console/certificates/:action.name": {
+    "en": "134f5f716b5ca38d",
+    "text": "प्रमाणपत्र साइन-इन का प्रमाणपत्र रीडर"
+  },
   "endpoints.route./admin-api/console/applications/:action.name": {
     "en": "18ea7bf0d0fcc0d4",
     "text": "नए अनुप्रयोग फ़ॉर्म का सहायक"

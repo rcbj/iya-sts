@@ -8728,6 +8728,47 @@ class AdminApi {
           });
         } },
 
+      // ---------------------------------------------------------------------
+      // A CERTIFICATE HANDED IN, READ (#2080): a console form helper (3cc),
+      // which writes and keeps nothing. Certificate sign-in's editors — a
+      // profile's issuers, the PEM lists of `piv.externalIssuers` and
+      // `piv.attestationAnchors`, a person's `stsCertificateBinding` — need a
+      // certificate's subject, SHA-256 and SubjectPublicKeyInfo SHA-256, and
+      // a browser computes no digest (`common/crypto.js` is the one place
+      // this service hashes). What it leads to is still a management
+      // operation: `config/set` for a setting, `users/add-attribute` for a
+      // binding. `CertificateViews.inspectView()` argues why describing
+      // what is handed in is safe here and not on the GET above.
+      // ---------------------------------------------------------------------
+      // A ROW OF ONE ACTION, `writesNothing`, as the other form helpers are
+      // (`tests/admin_api_kinds.js` holds every console POST to that).
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/console/certificates/:action',
+        kind: 'console', tag: 'PKI',
+        mirrors: 'GET /admin/piv',
+        handler: function (req, res) {
+          log.debug("Entering the console certificate inspection endpoint.");
+          const asked = String((req.params && req.params.action) || '');
+          if (asked !== 'inspect') {
+            errorCodes.mark(res, 'STS-ADMIN-0955');
+            self.sendJson(res, 400, { ok: false, errors: [
+              'Unknown action "' + asked + '". The one is: inspect.'] });
+            log.debug("Leaving the console certificate inspection " +
+                      "endpoint. Unknown action.");
+            return;
+          }
+          const view = certificateViews.inspectView(parseBody(req));
+          if (!view.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(view) || 'STS-ADMIN-0953');
+          }
+          self.sendJson(res, view.ok ? 200 : 400, view);
+          log.debug("Leaving the console certificate inspection endpoint.");
+        },
+        actions: [
+          { action: 'inspect', operationId: 'inspectCertificates',
+            writesNothing: true }
+        ] }),
+
       // #1360. Paranoid PKI mode, the signer truststore and what is pinned.
       // ABOVE `/pki/:action` only for a reader: one more path segment means the
       // two cannot match the same request.

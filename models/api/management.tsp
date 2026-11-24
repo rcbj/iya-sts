@@ -8599,7 +8599,10 @@ namespace IyaSts.Api.Management {
     `addedAt`?: string;
     `pem`?: string;
     `unadmittable`?: string;
-    `shadowedBy`?: string
+    `shadowedBy`?: string;
+    @js(#{
+      `description`:"The SHA-256 of the anchor's SubjectPublicKeyInfo, lower-case hex: what a certificate sign-in profile's `issuers` names a CA by (`certSignIn.profiles`). Empty where its key could not be read."
+    }) `spkiSha256`?: string
   }
 
 @component model `WithOkMessageErrors126` is (`WithSubjectIssuerSerial`)[];

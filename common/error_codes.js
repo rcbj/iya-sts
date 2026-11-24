@@ -29105,6 +29105,22 @@ const CODES = [
       'refused; the inner code says why — the AppID, the key handle, the ' +
       'public key, the counter, or the writer\'s own rules (#1955).',
     spec: 'HTTP 400 (API)' },
+  { code: 'STS-ADMIN-0953',
+    summary: 'A certificate handed to the console\'s certificate inspection ' +
+      'helper (POST /admin-api/console/certificates/inspect) held no PEM ' +
+      'certificate, or more text or more certificates than it reads. ' +
+      'Nothing is kept (#2080).',
+    spec: 'HTTP 400 { ok: false, errors } (Admin Console API)' },
+  { code: 'STS-ADMIN-0954',
+    summary: 'A PEM block handed to the console\'s certificate inspection ' +
+      'helper could not be read as an X.509 certificate. Nothing is kept ' +
+      '(#2080).',
+    spec: 'HTTP 400 { ok: false, errors } (Admin Console API)' },
+  { code: 'STS-ADMIN-0955',
+    summary: 'The console\'s certificate inspection helper was asked for an ' +
+      'action it does not have; the refusal names the one it has ' +
+      '(#2080).',
+    spec: 'HTTP 400 { ok: false, errors } (Admin Console API)' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

@@ -12644,8 +12644,10 @@ const SETTINGS = [
   // TERMINATES TLS (RFC 9440). `common/certificate_binding.ts`,
   // `tls/certificate_handoff.ts` and `common/forwarded_client_certificate.ts`
   // argue them; each is off or empty by default, which is the service as it
-  // was.
-  { key: 'certSignIn.profiles', group: 'TLS',
+  // was. A group of their own since #2080 (they were `TLS`), drawn on
+  // Protocols → PIV and on Server configuration → Listeners
+  // (`SETTING_HOMES`): rcbj tried a real PIV sign-in and could not find them.
+  { key: 'certSignIn.profiles', group: 'Certificate sign-in',
     label: 'Certificate sign-in profiles (JSON)',
     env: 'STS_CERT_SIGN_IN_PROFILES', type: 'string', dflt: '',
     runtime: true,
@@ -12670,7 +12672,7 @@ const SETTINGS = [
                  'outside certificate is the entry storing it in ' +
                  'userCertificate, or a PIV card by piv.externalIssuers, as ' +
                  'before.' },
-  { key: 'certSignIn.requireRevocation', group: 'TLS',
+  { key: 'certSignIn.requireRevocation', group: 'Certificate sign-in',
     label: 'Require a verified revocation status at certificate sign-in',
     env: 'STS_CERT_SIGN_IN_REQUIRE_REVOCATION', type: 'enum',
     enumValues: ['auto', 'on'], dflt: 'auto', runtime: true,
@@ -12683,7 +12685,7 @@ const SETTINGS = [
                  'consulted) refuses the sign-in (STS-TLS-0071). It decides ' +
                  'only sign-ins: /tls/sign-in, the sign-in screen and the ' +
                  'certificate handoff.' },
-  { key: 'certSignIn.handoff', group: 'TLS',
+  { key: 'certSignIn.handoff', group: 'Certificate sign-in',
     label: 'Offer a certificate sign-in on its own listener',
     env: 'STS_CERT_SIGN_IN_HANDOFF', type: 'bool', dflt: false,
     runtime: true,
@@ -12703,7 +12705,7 @@ const SETTINGS = [
                  'certificate and the other ways in never see a prompt. Off, ' +
                  'the default, the screen offers only the certificate on its ' +
                  'own connection.' },
-  { key: 'tls.trustedProxyCertificates', group: 'TLS',
+  { key: 'tls.trustedProxyCertificates', group: 'Certificate sign-in',
     label: 'TLS-terminating proxies\' client certificates (SHA-256)',
     env: 'STS_TLS_TRUSTED_PROXY_CERTIFICATES', type: 'csv', dflt: '',
     runtime: true,
@@ -12723,7 +12725,7 @@ const SETTINGS = [
                  'headers are removed and recorded (STS-TLS-0072) and never ' +
                  'read. EMPTY, the default, reads a certificate only off the ' +
                  'handshake.' },
-  { key: 'tls.trustedProxyAddresses', group: 'TLS',
+  { key: 'tls.trustedProxyAddresses', group: 'Certificate sign-in',
     label: 'TLS-terminating proxies\' addresses',
     env: 'STS_TLS_TRUSTED_PROXY_ADDRESSES', type: 'csv', dflt: '',
     runtime: true,

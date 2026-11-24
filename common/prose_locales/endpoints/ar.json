@@ -839,6 +839,10 @@
     "en": "91b14d0429eaa0bc",
     "text": "مساعدات نموذج الشهادة"
   },
+  "endpoints.route./admin-api/console/certificates/:action.name": {
+    "en": "134f5f716b5ca38d",
+    "text": "قارئ الشهادات لتسجيل الدخول بالشهادة"
+  },
   "endpoints.route./admin-api/console/applications/:action.name": {
     "en": "18ea7bf0d0fcc0d4",
     "text": "مساعد نموذج التطبيق الجديد"

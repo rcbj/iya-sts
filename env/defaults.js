@@ -1034,7 +1034,7 @@ var config = {
     selfSignedOrganization: "iya-sts"                                                                                                                                                                                                                                                                          // Self-signed certificate organization; restart to apply
   },
 
-  // --- TLS -------------------------------------------------------------
+  // --- Certificate sign-in ---------------------------------------------
   certSignIn: {
     profiles: "",              // Certificate sign-in profiles (JSON)
     requireRevocation: "auto", // Require a verified revocation status at certificate sign-in

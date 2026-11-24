@@ -354,6 +354,7 @@ Scope: `admin:read`.
 | `anchors[].serial` | string, or null |  |  |
 | `anchors[].shadowedBy` | string |  |  |
 | `anchors[].source` | string |  |  |
+| `anchors[].spkiSha256` | string |  | The SHA-256 of the anchor's SubjectPublicKeyInfo, lower-case hex: what a certificate sign-in profile's `issuers` names a CA by (`certSignIn.profiles`). Empty where its key could not be read. |
 | `anchors[].subject` | string, or null |  |  |
 | `anchors[].unadmittable` | string |  |  |
 | `anchorsFile` | string |  |  |
@@ -414,6 +415,7 @@ Scope: `admin:read`.
 | `anchors[].serial` | string, or null |  |  |
 | `anchors[].shadowedBy` | string |  |  |
 | `anchors[].source` | string |  |  |
+| `anchors[].spkiSha256` | string |  | The SHA-256 of the anchor's SubjectPublicKeyInfo, lower-case hex: what a certificate sign-in profile's `issuers` names a CA by (`certSignIn.profiles`). Empty where its key could not be read. |
 | `anchors[].subject` | string, or null |  |  |
 | `anchors[].unadmittable` | string |  |  |
 | `anchorsFile` | string |  |  |
