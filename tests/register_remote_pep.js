@@ -545,6 +545,7 @@ function childMain() {
     const grants = fieldValues(application.json, 'oauthGrantType');
     const methods = fieldValues(application.json,
                                 'oauthTokenEndpointAuthMethod');
+    const scopes = fieldValues(application.json, 'oauthAllowedScope');
     note(application.json && application.json.found &&
          redirects.indexOf(P_CALLBACK) >= 0 &&
          grants.indexOf('authorization_code') >= 0 &&
@@ -553,6 +554,25 @@ function childMain() {
          'P3. the application is a confidential client of the proxy callback',
          JSON.stringify({ redirects: redirects, grants: grants,
                           methods: methods }));
+    // The route asks for signals, so the proxy's CAEP/RISC receiver needs a
+    // client-credentials token with the two SSF scopes (STS-XPEP-0094 on
+    // AWS, #1284).
+    note(grants.indexOf('client_credentials') >= 0 &&
+         scopes.indexOf('ssf.read') >= 0 && scopes.indexOf('ssf.manage') >= 0,
+         'P3b. and may get the signals receiver\'s token: client_credentials, ' +
+         'ssf.read and ssf.manage',
+         JSON.stringify({ grants: grants, scopes: scopes }));
+    const ssfRoles = await Promise.all(['SSF_READ', 'SSF_MANAGE'].map(
+      function (one) {
+        return get('/roles?role=' + one);
+      }));
+    note(ssfRoles.every(function (one) {
+      return one.json && one.json.role &&
+        (one.json.role.applications || []).indexOf(P_APP) >= 0;
+    }), 'P3c. and holds SSF_READ and SSF_MANAGE, which confer those scopes',
+         JSON.stringify(ssfRoles.map(function (one) {
+           return one.json && one.json.role && one.json.role.applications;
+         })));
     const role = await get('/roles?role=' + encodeURIComponent(P_ROLE));
     note(role.json && role.json.role && role.json.role.found === true &&
          role.json.role.name === P_ROLE,
