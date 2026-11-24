@@ -30,6 +30,12 @@
 // and a Save and is gone with a reload; with nothing remembered, unticking
 // takes out only the preset's own expressions, as it always did.
 //
+// A MAP PUT TO USE TURNS ITS SWITCH ON (rcbj, 2026-11-23): a box ticked, the
+// builder's list added or a value typed into an empty map sets the map's
+// switch (wstrustEncryptRequest and the rest) to TRUE, remembering what it
+// was; the map given back or emptied turns it back (`switchFor()`). A page
+// drawn with a map in use changes nothing until the reader acts.
+//
 // THE XPATH BUILDER POSTS NOTHING EITHER: its controls carry no `name` and
 // its buttons are `type="button"`. The sample is parsed in the browser
 // (`DOMParser`), never sent, and every name drawn from it is escaped and
@@ -163,6 +169,10 @@ const SAMPLE = '<s:Envelope xmlns:s="' + P.soap12 + '"\n' +
 // page without reloading it, so a module's state outlives each drawing.
 const REMEMBERED: { [key: string]: string[] } = {};
 
+// WHAT EACH MAP'S SWITCH WAS before this page turned it on, by application
+// and map (`switchFor()`), for as long as the page is open.
+const SWITCH_REMEMBERED: { [key: string]: string } = {};
+
 // XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, by number: a stand-in browser in
 // a test has no XPathResult.
 const SNAPSHOT = 7;
@@ -215,13 +225,15 @@ class WebWsTrustProtection {
       const state = held === 'TRUE' ? 'switchOn'
         : held === 'FALSE' ? 'switchOff' : 'switchInherit';
       return '<td><code>' + kit.esc(name) + '</code> <span class="' +
-        (state === 'switchOn' ? 'state-valid' : 'state-none') + '">' +
+        (state === 'switchOn' ? 'state-valid' : 'state-none') +
+        '" data-wsp-switch="' + kit.esc(map) + '">' +
         t.html(K + state) + '</span></td>';
     };
     return kit.frame('<h4 id="cfg-wstrust-protection">' +
       t.html(K + 'heading') + '</h4>' +
       kit.note(t.html(K + 'intro')) +
       kit.note(t.html(K + 'headerNote')) +
+      kit.note(t.html(K + 'switchNote')) +
       '<table class="wsp-presets" data-wsp-redraw="' + kit.esc(redraw) +
       '"><tr><th>' + t.html(K + 'thProtects') + '</th><th>' +
       t.html(K + 'thBody') + '</th><th>' + t.html(K + 'thHeader') +
@@ -292,6 +304,173 @@ class WebWsTrustProtection {
       });
     });
     return { values: next, remembered: kept };
+  }
+
+  /**
+   * One box ticked or unticked on one application's page: the map's new
+   * values, with what it held before remembered for the page, by
+   * application and map (`REMEMBERED`), and forgotten once given back.
+   * The click handler reads the map, calls this and draws what it answers.
+   *
+   * @param application - the application the form saves
+   * @param map - the map's attribute
+   * @param part - the box changed, `body` or `header`
+   * @param on - whether it is now ticked
+   * @param values - the map's values now
+   * @returns the map's new values
+   */
+  static boxChanged(application, map, part, on, values): string[] {
+    const key = String(application || '') + ' ' + String(map || '');
+    const done = WebWsTrustProtection.toggled(values, map, part, on,
+      Object.prototype.hasOwnProperty.call(REMEMBERED, key)
+        ? REMEMBERED[key] : null);
+    if (done.remembered) {
+      REMEMBERED[key] = done.remembered;
+    } else {
+      delete REMEMBERED[key];
+    }
+    return done.values;
+  }
+
+  /**
+   * Forgets everything the boxes and switches remembered, as a reload of
+   * the page does.
+   *
+   * @returns nothing
+   */
+  static forget(): void {
+    Object.keys(REMEMBERED).forEach(function (key) {
+      delete REMEMBERED[key];
+    });
+    Object.keys(SWITCH_REMEMBERED).forEach(function (key) {
+      delete SWITCH_REMEMBERED[key];
+    });
+  }
+
+  /**
+   * THE MAP'S SWITCH FOLLOWS THE MAP (rcbj, 2026-11-23: "when the xpath
+   * fields are enabled, make sure the 'Actually use this field' is
+   * automatically enabled"). A map put to use on this page — a box ticked,
+   * the builder's list added, a value typed into an empty map — turns its
+   * switch on (`TRUE`), remembering what it was; the map given back or
+   * emptied turns it back to that. An encryption switch left on over an
+   * empty map would refuse every exchange, which is why it goes back.
+   *
+   * @param application - the application the form saves
+   * @param map - the map's attribute
+   * @param inUse - true when the map has just been put to use, false when
+   *   it has just been given back or emptied
+   * @param current - the switch's value now (`TRUE`, `FALSE` or '')
+   * @returns the switch's new value
+   */
+  static switchFor(application, map, inUse, current): string {
+    const key = String(application || '') + ' ' + String(map || '');
+    const now = String(current || '');
+    const held = Object.prototype.hasOwnProperty.call(SWITCH_REMEMBERED, key);
+    if (inUse) {
+      if (now !== 'TRUE' && !held) {
+        SWITCH_REMEMBERED[key] = now;
+      }
+      return 'TRUE';
+    }
+    if (!held) {
+      return now;
+    }
+    const back = SWITCH_REMEMBERED[key];
+    delete SWITCH_REMEMBERED[key];
+    return back;
+  }
+
+  /**
+   * Forgets what a map's switch was before this page turned it on: the
+   * reader has set it by hand.
+   *
+   * @param application - the application the form saves
+   * @param map - the map's attribute
+   * @returns nothing
+   */
+  static switchDecided(application, map): void {
+    delete SWITCH_REMEMBERED[String(application || '') + ' ' +
+                             String(map || '')];
+  }
+
+  /**
+   * The value of a map's switch as its form holds it, and a setter.
+   *
+   * @param form - the sub-tab's form
+   * @param map - the map's attribute
+   * @returns `{ value, set(value) }`, or null when the form draws no switch
+   */
+  static switchControl(form, map): { value: string,
+                                     set: (value: string) => void } | null {
+    const name = WebWsProtection.SWITCHES[map];
+    if (!form || !name || typeof form.querySelectorAll !== 'function') {
+      return null;
+    }
+    const radios = form.querySelectorAll('input[name="field.' + name + '"]');
+    if (!radios.length) {
+      return null;
+    }
+    let value = '';
+    for (let i = 0; i < radios.length; i++) {
+      if (radios[i].checked) {
+        value = String(radios[i].value || '');
+      }
+    }
+    return {
+      value: value,
+      set: function (wanted) {
+        for (let i = 0; i < radios.length; i++) {
+          radios[i].checked = String(radios[i].value || '') === wanted;
+        }
+      }
+    };
+  }
+
+  /**
+   * Draws each map's switch state in the table's Switch column again, from
+   * the radios the form holds now.
+   *
+   * @param doc - the document
+   * @param t - the translator
+   * @returns nothing
+   */
+  static syncSwitchCells(doc, t): void {
+    const spans = doc.querySelectorAll('span[data-wsp-switch]');
+    for (let i = 0; i < spans.length; i++) {
+      const map = String(spans[i].getAttribute('data-wsp-switch') || '');
+      const form = spans[i].closest ? spans[i].closest('form') : null;
+      const control = WebWsTrustProtection.switchControl(form, map);
+      if (!control) {
+        continue;
+      }
+      const state = control.value === 'TRUE' ? 'switchOn'
+        : control.value === 'FALSE' ? 'switchOff' : 'switchInherit';
+      spans[i].className = state === 'switchOn' ? 'state-valid'
+                                                : 'state-none';
+      WebSafeDom.text(spans[i], t.text(K + state));
+    }
+  }
+
+  /**
+   * Puts a map's switch where `switchFor()` says, on the page.
+   *
+   * @param form - the sub-tab's form
+   * @param map - the map's attribute
+   * @param inUse - whether the map has just been put to use
+   * @returns nothing
+   */
+  static followSwitch(form, map, inUse): void {
+    const control = WebWsTrustProtection.switchControl(form, map);
+    if (!control) {
+      return;
+    }
+    const owner = form.querySelector('input[name="application"]');
+    const next = WebWsTrustProtection.switchFor(
+      String((owner && owner.value) || ''), map, inUse, control.value);
+    if (next !== control.value) {
+      control.set(next);
+    }
   }
 
   /**
@@ -730,29 +909,58 @@ class WebWsTrustProtection {
         const form = box.closest ? box.closest('form') : null;
         const owner = form
           ? form.querySelector('input[name="application"]') : null;
-        const key = String((owner && owner.value) || '') + ' ' + map;
-        const done = WebWsTrustProtection.toggled(
-          WebWsTrustProtection.listValues(cell, map), map, part,
-          !!box.checked,
-          Object.prototype.hasOwnProperty.call(REMEMBERED, key)
-            ? REMEMBERED[key] : null);
-        if (done.remembered) {
-          REMEMBERED[key] = done.remembered;
-        } else {
-          delete REMEMBERED[key];
-        }
-        WebWsTrustProtection.redrawList(doc, map, done.values, t);
+        const next = WebWsTrustProtection.boxChanged(
+          String((owner && owner.value) || ''), map, part, !!box.checked,
+          WebWsTrustProtection.listValues(cell, map));
+        WebWsTrustProtection.redrawList(doc, map, next, t);
+        // A box still ticked is the map in use; none ticked is the map
+        // given back, and its switch with it.
+        WebWsTrustProtection.followSwitch(form, map,
+          ['body', 'header'].some(function (one) {
+            return WebWsProtection.isOn(next, map, one);
+          }));
+        WebWsTrustProtection.syncSwitchCells(doc, t);
         WebWsTrustProtection.syncBoxes(doc);
         touched();
       });
     }
     // A MAP TYPED IN BY HAND re-reads its boxes: the cell outlives the list
-    // drawn again inside it, and `input` bubbles to it.
+    // drawn again inside it, and `input` bubbles to it. A map typed into
+    // from empty turns its switch on, and one typed empty turns it back.
+    const filled = function (cell, map) {
+      return WebWsTrustProtection.listValues(cell, map).some(function (one) {
+        return String(one).trim() !== '';
+      });
+    };
     maps.forEach(function (map) {
       const cell = doc.getElementById('fgc-' + map);
       if (cell) {
+        let had = filled(cell, map);
         cell.addEventListener('input', function () {
           WebWsTrustProtection.syncBoxes(doc);
+          const has = filled(cell, map);
+          if (has !== had) {
+            WebWsTrustProtection.followSwitch(
+              cell.closest ? cell.closest('form') : null, map, has);
+            WebWsTrustProtection.syncSwitchCells(doc, t);
+          }
+          had = has;
+        });
+      }
+    });
+    // A SWITCH PRESSED BY HAND is the reader's decision: the column follows
+    // it, and nothing remembered for it is put back later.
+    Object.keys(WebWsProtection.SWITCHES).forEach(function (map) {
+      const radios = doc.querySelectorAll('input[name="field.' +
+        WebWsProtection.SWITCHES[map] + '"]');
+      for (let i = 0; i < radios.length; i++) {
+        radios[i].addEventListener('change', function () {
+          const form = radios[i].closest ? radios[i].closest('form') : null;
+          const owner = form
+            ? form.querySelector('input[name="application"]') : null;
+          WebWsTrustProtection.switchDecided(
+            String((owner && owner.value) || ''), map);
+          WebWsTrustProtection.syncSwitchCells(doc, t);
         });
       }
     });
@@ -991,6 +1199,11 @@ class WebWsTrustProtection {
         focus = inputs.length ? inputs[inputs.length - 1] : null;
         count = next.added;
         WebWsTrustProtection.syncBoxes(doc);
+        if (next.values.length) {
+          WebWsTrustProtection.followSwitch(
+            cell.closest ? cell.closest('form') : null, field, true);
+          WebWsTrustProtection.syncSwitchCells(doc, t);
+        }
       }
       // A FIELD THE SIMPLIFIED VIEW HIDES is shown: the form is switched to
       // its advanced view, which is the form's own radio and posts as it.
