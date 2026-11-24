@@ -7967,9 +7967,10 @@ class OAuth2Server {
   // question delegated permissions ask; this is the OTHER policy, and it is a
   // function of its own for that header's reason: a translation must not also
   // be a policy. The decision is `common/scope_policy.ts`'s, shared with GNAP;
-  // what this adds is this server's DEFAULT SET — OpenID Connect's six and
-  // this realm's OpenID4VCI credential scopes, which is what a client that
-  // declares no `oauthAllowedScope` may have in product mode.
+  // what this adds is this realm's OpenID4VCI credential scopes, which join
+  // the DEFAULT SET — what a client that declares no `oauthAllowedScope` may
+  // have in product mode — only while `oauth2.undeclaredClientScopes` is
+  // `legacy` (#1589; `openid` alone is the default since 1.2.0).
   //
   // IT IS ASKED WHERE `permissionRefusal()` IS — the authorization endpoint,
   // the pushed authorization request endpoint and the token endpoint, before

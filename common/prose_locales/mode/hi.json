@@ -104,8 +104,8 @@
     "text": "क्लाइंट जो भी स्कोप माँगता है वह जारी किया जाता है, उसकी `oauthAllowedScope` सूची में कुछ भी हो। दोनों मोड में admin:read, admin:write, SCIM और Shared Signals स्कोप तथा डीबगर अनुमति केवल उस क्लाइंट को जारी किए जाते हैं जिसकी `oauthAllowedScope` उन्हें सूचीबद्ध करती है।"
   },
   "mode.requirements.declared-scopes.product": {
-    "en": "33fcb48e8c17655e",
-    "text": "क्लाइंट की `oauthAllowedScope` से बाहर का स्कोप प्राधिकरण, पुश किए गए प्राधिकरण और टोकन एंडपॉइंट पर invalid_scope के रूप में अस्वीकार किया जाता है (STS-OAUTH-0578) और रिफ़्रेश या एक्सचेंज से हटा दिया जाता है। जो क्लाइंट कुछ भी सूचीबद्ध नहीं करता उसे प्रलेखित डिफ़ॉल्ट मिलता है: openid, profile, email, address, phone, offline_access और इस क्षेत्र के OpenID4VCI स्कोप। किसी अनुप्रयोग या प्रत्यायोजित अनुमति का नाम लेने वाला स्कोप अपने नियम रखता है।"
+    "en": "dcdd1cbadd143bd7",
+    "text": "क्लाइंट की `oauthAllowedScope` से बाहर का स्कोप प्राधिकरण, पुश किए गए प्राधिकरण और टोकन एंडपॉइंट पर invalid_scope के रूप में अस्वीकार किया जाता है (STS-OAUTH-0578) और रिफ़्रेश या एक्सचेंज से हटा दिया जाता है। जो क्लाइंट कुछ भी सूचीबद्ध नहीं करता उसे वही मिलता है जो oauth2.undeclaredClientScopes कहता है: डिफ़ॉल्ट रूप से केवल openid (ASVS 5.0.0 10.4.11); identity में profile, email, address और phone जुड़ते हैं; legacy, जो अपग्रेड किया गया स्टोर बनाए रखता है, offline_access और इस क्षेत्र के OpenID4VCI स्कोप भी जोड़ता है। किसी अनुप्रयोग या प्रत्यायोजित अनुमति का नाम लेने वाला स्कोप अपने नियम रखता है।"
   },
   "mode.requirements.declared-protocols.what": {
     "en": "89e8ef1624565f1b",

@@ -104,8 +104,8 @@
     "text": "Se emite cualquier ámbito que pida un cliente, diga lo que diga su `oauthAllowedScope`. En AMBOS modos, admin:read, admin:write, los ámbitos de SCIM y de Shared Signals y el permiso del depurador solo se emiten a un cliente cuyo `oauthAllowedScope` los enumera."
   },
   "mode.requirements.declared-scopes.product": {
-    "en": "33fcb48e8c17655e",
-    "text": "Un ámbito fuera del `oauthAllowedScope` del cliente se rechaza con invalid_scope en los endpoints de autorización, de autorización enviada y de token (STS-OAUTH-0578) y se retira de una renovación o de un intercambio. Un cliente que no enumera nada recibe el valor predeterminado documentado: openid, profile, email, address, phone, offline_access y los ámbitos de OpenID4VCI de este dominio. Un ámbito que nombra una aplicación o un permiso delegado conserva sus propias reglas."
+    "en": "dcdd1cbadd143bd7",
+    "text": "Un ámbito fuera del `oauthAllowedScope` del cliente se rechaza con invalid_scope en los endpoints de autorización, de autorización enviada y de token (STS-OAUTH-0578) y se retira de una renovación o de un intercambio. Un cliente que no enumera nada recibe lo que indica oauth2.undeclaredClientScopes: por defecto solo openid (ASVS 5.0.0 10.4.11); identity añade profile, email, address y phone; legacy, lo que conserva un almacén actualizado, añade además offline_access y los ámbitos de OpenID4VCI de este dominio. Un ámbito que nombra una aplicación o un permiso delegado conserva sus propias reglas."
   },
   "mode.requirements.declared-protocols.what": {
     "en": "89e8ef1624565f1b",

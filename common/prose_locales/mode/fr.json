@@ -104,8 +104,8 @@
     "text": "Toute portée qu’un client demande est émise, quoi que liste son `oauthAllowedScope`. Dans LES DEUX modes, admin:read, admin:write, les portées SCIM et Shared Signals et la permission du débogueur ne sont émises qu’à un client dont l’`oauthAllowedScope` les liste."
   },
   "mode.requirements.declared-scopes.product": {
-    "en": "33fcb48e8c17655e",
-    "text": "Une portée hors de l’`oauthAllowedScope` du client est refusée avec invalid_scope aux points de terminaison d’autorisation, d’autorisation poussée et de jeton (STS-OAUTH-0578) et retirée d’une actualisation ou d’un échange. Un client qui ne liste rien obtient la valeur par défaut documentée : openid, profile, email, address, phone, offline_access et les portées OpenID4VCI de ce domaine. Une portée nommant une application ou une permission déléguée conserve ses propres règles."
+    "en": "dcdd1cbadd143bd7",
+    "text": "Une portée hors de l’`oauthAllowedScope` du client est refusée avec invalid_scope aux points de terminaison d’autorisation, d’autorisation poussée et de jeton (STS-OAUTH-0578) et retirée d’une actualisation ou d’un échange. Un client qui ne liste rien obtient ce que dit oauth2.undeclaredClientScopes : openid seul par défaut (ASVS 5.0.0 10.4.11) ; identity ajoute profile, email, address et phone ; legacy, ce que conserve un magasin mis à niveau, ajoute aussi offline_access et les portées OpenID4VCI de ce domaine. Une portée nommant une application ou une permission déléguée conserve ses propres règles."
   },
   "mode.requirements.declared-protocols.what": {
     "en": "89e8ef1624565f1b",

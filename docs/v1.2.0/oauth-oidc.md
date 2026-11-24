@@ -661,9 +661,12 @@ records what the client has asked for.
   one (`invalid_client_metadata`); an administrator does. The seeded
   `sts-api-client` and `sts-admin-console` declare the admin scopes.
 * **Every other scope, in product mode**, is issued only when the list names it.
-  A client with **no list** has the default set: `openid`, `profile`, `email`,
-  `address`, `phone`, `offline_access` and this realm's OpenID4VCI credential
-  scopes. In development any scope is issued.
+  A client with **no list** has the default set `oauth2.undeclaredClientScopes`
+  chooses: `openid` alone by default since 1.2.0 (ASVS 5.0.0 10.4.11);
+  `identity` adds `profile`, `email`, `address` and `phone`; `legacy`, what an
+  upgraded store keeps, adds `offline_access` and this realm's OpenID4VCI
+  credential scopes too. A client that registers itself and needs more names
+  it in the registration's `scope`. In development any scope is issued.
 * **A scope naming another application or a delegated permission** keeps its own
   rules: the first becomes the access token's audience, the second is
   described in *Permissions on another application*, below.

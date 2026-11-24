@@ -10450,6 +10450,36 @@ const SETTINGS = [
                  'every advertised scope and know nothing of Key Binding ' +
                  '(#315). A grant already bound before it was turned off ' +
                  'keeps its key check on refresh.' },
+  // WHAT A CLIENT THAT DECLARES NO SCOPES MAY BE ISSUED (#1589, rcbj
+  // 2026-11-24: option 1, the strict reading of ASVS 5.0.0 10.4.11). Read
+  // only in PRODUCT, where a scope outside a client's `oauthAllowedScope`
+  // is refused (`common/scope_policy.ts`); development issues any scope
+  // whatever this says. `openid` is the default since 1.2.0. `legacy` is
+  // what every release before it gave, and an upgraded store keeps it
+  // (`postgres/upgrade-1.1.0.sql`): `/admin/mode` warns while it is in
+  // force.
+  { key: 'oauth2.undeclaredClientScopes', group: 'OAuth 2.0 / OIDC',
+    label: 'Scopes for a client that declares none',
+    env: 'STS_OAUTH2_UNDECLARED_CLIENT_SCOPES', type: 'enum',
+    enumValues: ['openid', 'identity', 'legacy'], dflt: 'openid',
+    runtime: true,
+    description: 'What product mode issues to a client whose ' +
+                 'oauthAllowedScope lists nothing — typically one that ' +
+                 'registered itself (RFC 7591) without a scope member. ' +
+                 'openid, the default since 1.2.0: openid only, so every ' +
+                 'other scope must be declared (ASVS 5.0.0 10.4.11). ' +
+                 'identity: OpenID Connect\'s identity scopes — openid, ' +
+                 'profile, email, address and phone — and bound_key while ' +
+                 'OpenID Connect Key Binding is on, but never ' +
+                 'offline_access or an OpenID4VCI scope. legacy: what ' +
+                 'releases before 1.2.0 gave — the identity scopes, ' +
+                 'offline_access (refresh tokens outliving the session) ' +
+                 'and this realm\'s OpenID4VCI credential scopes; the 1.1.0 ' +
+                 'upgrade script stores it in each realm that had an ' +
+                 'application, and /admin/mode warns while it is in force. ' +
+                 'Development mode issues any scope a client asks for ' +
+                 'whatever this says; this service\'s protected scopes ' +
+                 'always need a declaration. (#1589)' },
   // ENTERPRISE EXTENSIONS' TWO ID TOKEN CLAIMS IN EVERY ID TOKEN (#1292,
   // 2026-11-03). Off by default: `session_expiry` and `tenant` are put in an
   // ID Token only when the client names them in the `id_token` member of a
