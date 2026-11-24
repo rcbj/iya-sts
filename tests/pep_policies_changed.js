@@ -25,6 +25,10 @@
 //   A. `ssfAllowedEvents`: an entry naming only `caep` withholds it (sent to
 //      no stream) while this service's own subject-less events stay
 //      allowed; the application's view lists the PEP in `pepEventsExcluded`.
+//   G. A GNAP WEB CLIENT'S STREAM: the GNAP subject scope lets an event
+//      about the stream's own application through (it refused every one,
+//      so a local PEP embedded in a GNAP client never heard of a change),
+//      and still refuses one about another application or naming a person.
 // ===========================================================================
 
 const fs = require('fs');
@@ -236,6 +240,58 @@ function childMain() {
     note(JSON.stringify(excluded) === JSON.stringify([PEP]),
          'A3. the application\'s view lists the local PEP that will not hear ' +
          'of a change', JSON.stringify(excluded));
+    // -----------------------------------------------------------------------
+    // G. A GNAP WEB CLIENT'S STREAM.
+    // -----------------------------------------------------------------------
+    const GAPP = 'ppc-gnap-' + stamp;
+    const GPEP = 'ppc-gpep-' + stamp;
+    const gnapApp = applications.createApplication({ identifier: GAPP,
+      name: GAPP, kind: 'gnap-client', protocols: ['gnap', 'ssf'],
+      fields: { gnapFinishUri: 'https://' + GAPP + '.test/finish' } });
+    note(gnapApp && gnapApp.ok !== false, 'a GNAP web client ' + GAPP,
+         JSON.stringify(gnapApp && (gnapApp.errors || gnapApp.ok)));
+    ldap.createUser(GPEP, { invent: false });
+    ldap.addGroupMember(String(config.value('roles.remotePepGroup')), GPEP);
+    if (!serviceAccounts.of(GPEP)) {
+      serviceAccounts.set(GPEP, { serviceAccount: true, owners: [OWNER] });
+    }
+    note(PepBinding.shared().set({ name: GPEP, application: GAPP }).ok,
+         'a PEP bound to ' + GAPP);
+    peps.register({ name: GPEP, identity: 'uid=' + GPEP, authenticated: true,
+                    kind: 'embedded', application: GAPP, mode: 'local',
+                    protocolVersion: 1, version: 't' });
+    peps.heartbeat(GPEP, { syncToken: peps.boundPull(GAPP).token });
+    xacml.checkPepPolicies('the GNAP PEP settles');
+    const gnapStream = streams.createStream(
+      { delivery: { method: 'urn:ietf:rfc:8936' },
+        events_requested: [URI] },
+      { issuer: 'https://sts.test', principal: GAPP,
+        audience: 'https://' + GAPP + '.test' });
+    opened[GAPP] = gnapStream.ok ? gnapStream.stream.stream_id : '';
+    const gnapSignals = require(ROOT_DIR + '/gnap/gnap_signals');
+    const subjects = require(ROOT_DIR + '/ssf/ssf_subjects');
+    const record = { createdBy: GAPP };
+    note(gnapSignals.scope(record, subjects.applicationSubject(GAPP, '')) ===
+           true &&
+         gnapSignals.scope(record, subjects.applicationSubject(APP, '')) ===
+           false &&
+         gnapSignals.scope(record, Object.assign(
+           subjects.applicationSubject(GAPP, ''),
+           { user: { format: 'opaque', id: 'somebody' } })) === false,
+         'G1. the GNAP scope covers a subject naming the stream\'s own ' +
+         'application alone, and not another application\'s or one ' +
+         'naming a person');
+    calls.splice(0);
+    store.write('ppc-shared-' + stamp, policy('urn:ppc:shared:' + stamp, 'r4'),
+                { enabled: true });
+    await settle();
+    const toGnap = calls.splice(0).filter(function (one) {
+      return one.notice.application === GAPP;
+    });
+    const gnapSent = toGnap.length === 1 ? await toGnap[0].sent : null;
+    note(gnapSent && gnapSent.sent === 1 && gnapSent.streams === 1,
+         'G2. a change in its closure reaches the GNAP client\'s own ' +
+         'stream', JSON.stringify(gnapSent));
     ssf.pepPoliciesChanged = real;
     Object.keys(opened).forEach(function (owner) {
       if (opened[owner]) {
