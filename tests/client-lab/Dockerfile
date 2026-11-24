@@ -79,6 +79,7 @@ RUN echo "postfix postfix/main_mailer_type select Local only" \
         postfix bsd-mailx \
         oathtool libpam-yubico pamtester \
         krb5-user \
+        ldap-utils \
         curl openssl ca-certificates procps \
  && rm -rf /var/lib/apt/lists/*
 

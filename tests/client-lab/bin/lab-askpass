@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# File: tests/client-lab/bin/lab-askpass
+#
+# ---------------------------------------------------------------------------
+# THE ANSWER TO A PROGRAM'S PIN PROMPT, WITH NO TERMINAL (#2060). ssh and
+# ssh-add ask for a PKCS#11 token's PIN through SSH_ASKPASS when they have
+# no terminal, which is always the case under the lab's agent. A job sets
+#
+#   SSH_ASKPASS=/opt/client-lab/bin/lab-askpass
+#   SSH_ASKPASS_REQUIRE=force
+#   LAB_ASKPASS_ANSWER=<the PIN>
+#
+# in the run's env, and this prints the answer to whatever was asked (the
+# prompt is $1, and goes to stderr so the job's log shows it was asked).
+# The PIN is the factory PIN of a card made at this lab's start.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+echo "lab-askpass: asked: ${1:-}" >&2
+printf '%s\n' "${LAB_ASKPASS_ANSWER:?no answer was given}"

@@ -56,6 +56,7 @@ const CLIENTS = Object.freeze([
   'sendmail', 'mailx', 'postqueue', 'postconf',
   'oathtool', 'pamtester',
   'kinit', 'klist', 'kdestroy', 'kvno',
+  'ldapmodify', 'ldapsearch',
   'curl', 'openssl'
 ]);
 
