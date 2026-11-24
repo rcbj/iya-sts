@@ -19,6 +19,27 @@ draws rather than by the build instant and commit. The new setting
 `security.publishBuildInfo` (`auto`, `on`, `off`; environment
 `STS_SECURITY_PUBLISH_BUILD_INFO`) puts the build back everywhere with `on`.
 
+### Behaviour change: an uploaded sign-in logo loses its metadata
+
+A realm's sign-in logo is shown to everybody who opens a sign-in page, so
+it is now cleaned before it is kept, as profile photos already were: a
+JPEG's EXIF (a GPS position, a camera, a date), XMP and comments, a PNG's
+text chunks and animation frames, a WebP's EXIF and XMP chunks, and
+anything after the end of the image are removed (ASVS 5.0.0 14.2.8). The
+pixels are not changed. The digest, size and sides the console and `GET
+/admin-api/branding` show describe the cleaned file. A file that cannot be
+read to the end of its image is refused with `STS-AUTHN-0624`.
+
+Profile photos use the same code, and two things changed for them: a JPEG
+now ends at its first end-of-image marker, so a second image a phone
+appends after it (a Multi-Picture Format depth or gain map, which carries
+its own EXIF) is no longer kept, and an APP2 segment is kept only when it
+is an ICC colour profile.
+
+**Upgrading.** Nothing to run. A logo uploaded before 1.2.0 is served as it
+was stored, metadata included, until it is uploaded again; upload it again
+to clean it. See [Sign-in appearance](sign-in-appearance.md#the-logo).
+
 ### Behaviour change: S/MIME mail is authenticated encryption
 
 Mail encrypted to a person's S/MIME certificate is now a CMS
@@ -117,6 +138,16 @@ password somebody else may know, and a session opened with it should not
 outlive the new one (ASVS 5.0.0 7.4.3). The page that confirms the new
 password says so. If the sessions cannot be ended, the password is still set
 and `STS-PORTAL-0638` is logged.
+
+### Fixed: the console, portal and reports say why they cannot open without WebCrypto
+
+The admin console, the user portal and the reports application sign in with
+the browser's WebCrypto, which a browser offers only to a page opened over
+HTTPS (or `localhost`). Opened over plain HTTP, or in a browser too old to have
+WebCrypto, each one used to stop with a blank page. Each now checks before it
+signs in and, where WebCrypto is missing, shows one sentence in the page's
+language saying that this browser cannot run the page securely, usually
+because the page was not opened over HTTPS or the browser is too old.
 
 ### Create pages mark what the create requires
 

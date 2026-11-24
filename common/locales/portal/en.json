@@ -598,5 +598,7 @@
 "hotp.start": "Set up a one-time code token",
 "apps.reauthenticate": "Sign in again",
 "apps.reauthenticateNote": "Each Sign in link asks you to sign in afresh, so you can choose the roles to use with that application.",
-"apps.reauthenticateApply": "Apply"
+"apps.reauthenticateApply": "Apply",
+"noWebCrypto.title": "This browser cannot open this page",
+"noWebCrypto.text": "This browser cannot run this page securely: WebCrypto is unavailable, usually because the page was not opened over HTTPS or the browser is too old."
 }

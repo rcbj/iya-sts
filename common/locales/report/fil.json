@@ -147,5 +147,7 @@
   "presetsNote": "Binubuksan ng bawat isa ang Bagong query na napunan na ang query nito. Walang tatakbo hangga't hindi mo pinipindot ang Patakbuhin, at ang pag-save nito ay gagawa ng sarili mong definition.",
   "presetFrom": "Nagsimula mula sa paunang-natukoy na query na {name}.",
   "adminOnlySource": "Para sa mga tagapangasiwa ng ulat lamang",
-  "adminOnlyNote": "Ang tagapangasiwa ng ulat (REPORT_ADMIN) lamang ang maaaring mag-query sa pinagmulang ito: nakasaad dito kung sino ang gumawa ng ano at mula saan, o kung sino ang may hawak ng aling kredensyal."
+  "adminOnlyNote": "Ang tagapangasiwa ng ulat (REPORT_ADMIN) lamang ang maaaring mag-query sa pinagmulang ito: nakasaad dito kung sino ang gumawa ng ano at mula saan, o kung sino ang may hawak ng aling kredensyal.",
+  "noWebCrypto.title": "Hindi mabuksan ng browser na ito ang pahinang ito",
+  "noWebCrypto.text": "Hindi ligtas na mapapatakbo ng browser na ito ang pahinang ito: hindi available ang WebCrypto, kadalasan dahil hindi binuksan ang pahina sa HTTPS o masyadong luma na ang browser."
 }

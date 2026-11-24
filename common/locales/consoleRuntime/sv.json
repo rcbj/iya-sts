@@ -18,5 +18,7 @@
   "accounts.otherAccount": "Den inloggningen gällde ett annat konto, så den här fliken tog inte emot den. Logga in igen som {user}, eller byt konto från kontomenyn.",
   "accounts.refused.title": "Konsolen öppnas inte för det här kontot",
   "accounts.refused.text": "Hanterings-API:t svarade {status} för kontot som den här fliken är inloggad som.",
-  "policyName.required": "Ett namn krävs."
+  "policyName.required": "Ett namn krävs.",
+  "noWebCrypto.title": "Den här webbläsaren kan inte öppna sidan",
+  "noWebCrypto.text": "Den här webbläsaren kan inte köra sidan säkert: WebCrypto är inte tillgängligt, oftast för att sidan inte öppnades över HTTPS eller för att webbläsaren är för gammal."
 }
