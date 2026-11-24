@@ -489,9 +489,19 @@ async function setUp() {
   // A product realm requires a second factor of everybody, and an LDAP
   // simple bind cannot ask for one, hence allowOptionalSecondFactor, as
   // sts_ldap_read_authorization.js has it.
+  // ITS OWN global.publicBaseUrl, AT THE CREATE (run 45454368120): a
+  // product realm accepts only the portal's REGISTERED redirect URI, which
+  // the seed builds from that setting when the realm is made, and product
+  // never registers an address a request names. A memory-mode process has
+  // none (run-tests.sh sets STS_PUBLIC_BASE_URL for the product modes
+  // alone), so the portal's sign-in met STS-OAUTH-0122 there after #2092
+  // forced this realm into product. Set after the create it is too late.
+  // The value is the address this job reaches the service at, the same
+  // value where the process has one (sts_console_bootstrap_product.js).
   await ok(base + "/admin-api/realms/create", { id: REALM, domain: DOMAIN,
     name: "SSH client lab " + STAMP, overrides: {
       "global.mode": "product",
+      "global.publicBaseUrl": base,
       "authn.allowOptionalSecondFactor": "true",
       // pki.personSelfServicePerAddress is the default five: since #2093 it
       // counts this realm's issuances only, so the four sts_ssh_user_ca.js
