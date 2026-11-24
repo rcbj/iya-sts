@@ -24257,8 +24257,10 @@ function persistableOverrides() {
 // ---------------------------------------------------------------------------
 /**
  * Puts stored process-wide overrides back, at startup or when another
- * process changed the configuration: each validated as any write is, the
- * invalid reported and skipped, and those no longer stored cleared.
+ * process changed the configuration: each checked against its row as
+ * `checkStoredOverride()` checks it (no rule between settings, which the
+ * door that took the write asked), the invalid reported and skipped, and
+ * those no longer stored cleared.
  *
  * @param saved - the stored overrides by key
  * @returns how many were applied
@@ -24266,8 +24268,27 @@ function persistableOverrides() {
 function applyPersistedOverrides(saved) {
   log.debug("Entering applyPersistedOverrides().");
   const applied = [];
+  // ------------------------------------------------------------------------
+  // WHAT EACH VALUE IS, NOT WHAT IS BESIDE IT (GitHub Actions run
+  // 45454368120): checkStoredOverride(), the realm path's check since run
+  // #300, and for its reason. This ran checkOverride(), the rules between
+  // settings included, ONE KEY AT A TIME in the order the store answered,
+  // against the companions this process held BEFORE the set was applied.
+  // `listeners.custom` defining a listener and `listeners.applications`
+  // putting `pki` on it, written in that order by one door that judged
+  // each, arrived in one pull on MariaDB (its one-second poll; PostgreSQL's
+  // NOTIFY usually pulled them apart): the mapping was judged against the
+  // old listener list, refused STS-CORE-0008 ("which is not defined") in
+  // three request workers, and never asked again, so those workers refused
+  // every Web Key Directory request on the listener (STS-TLS-0047) and
+  // `sts_openpgp_card_mail`'s gpg found no key. Taking them down in the
+  // other order refused `listeners.custom` the same way. The door that
+  // took each write judged it beside its companions; asked again here the
+  // rule reads whatever this process held at the pull, which is no state
+  // the service was ever in.
+  // ------------------------------------------------------------------------
   Object.keys(saved || {}).forEach(function (key) {
-    const problem = checkOverride(key, saved[key]);
+    const problem = checkStoredOverride(key, saved[key]);
     if (problem) {
       log.warn(errorCodes.tag('STS-CORE-0008') +
                'config: the saved override for "' + key + '" was not ' +
