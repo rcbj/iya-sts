@@ -1283,6 +1283,18 @@
     "en": "1ddc02b9b0701d2a",
     "text": "開啟（pki.paranoid=auto）：common/certificate_trust.ts 要求每一張憑證 — 無論是任一方向的 TLS 交握、簽章之下、作為加密收件者，或在證明中 — 都必須具備通往本服務已知信任錨（用戶端或簽署者信任存放區、領域的 CA、某個系列自己的設定）的路徑、此刻有效、未被撤銷，並符合其使用情境所要求的 basicConstraints、keyUsage 與 extendedKeyUsage；使用情境從未執行的檢查視為拒絕。每個使用情境有一列 pki.paranoid<UseCase>，關閉時會恢復該使用情境先前的行為，並在 /admin/pki/trust 上以紅色顯示（STS-PKI-0239）。"
   },
+  "mode.requirements.admin-compliant-device.what": {
+    "en": "850f26f2fdf7e76b",
+    "text": "個人用於管理介面（主控台、admin:* 範圍）的憑證需要符合規範的已註冊裝置"
+  },
+  "mode.requirements.admin-compliant-device.development": {
+    "en": "37281356b507b540",
+    "text": "關閉（devices.requireCompliantDeviceForAdmin=auto）：管理員照舊可從任何瀏覽器登入主控台。將其設為 on 可在此驗證該規則。"
+  },
+  "mode.requirements.admin-compliant-device.product": {
+    "en": "b0228891759cb8fd",
+    "text": "開啟（devices.requireCompliantDeviceForAdmin=auto）：簽發原則的 device-required-admin 規則在權杖端點拒絕每一個並非來自本人符合規範已註冊裝置的主控台權杖與個人 admin:* 權杖（STS-DEVICE-0054）。當某位主控台管理員首次從符合規範的裝置取得此類權杖時，它依領域啟用；在此之前每位管理員都會獲准進入，因此沒有符合規範裝置的安裝永遠不會被鎖死；一旦啟用便保持啟用，而程式（部署的管理憑證）是重新進入的途徑。目錄 > 裝置 會顯示此領域是否已啟用。"
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "以相互 TLS 證明的 GNAP 金鑰，是受信任授權單位簽發給用戶端的憑證"

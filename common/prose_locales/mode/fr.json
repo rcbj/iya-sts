@@ -1283,6 +1283,18 @@
     "en": "1ddc02b9b0701d2a",
     "text": "ACTIVÉ (pki.paranoid=auto) : common/certificate_trust.ts soumet chaque certificat — lors d’une négociation TLS dans un sens comme dans l’autre, sous une signature, comme destinataire de chiffrement, dans une attestation — à un chemin vers une ancre que ce service connaît (le magasin de confiance des clients ou des signataires, l’AC du domaine, le réglage propre à une famille), à la validité à l’instant présent, à la révocation, et aux basicConstraints, keyUsage et extendedKeyUsage que son cas d’usage demande ; un contrôle que le cas d’usage n’a jamais exécuté est un refus. Une ligne pki.paranoid<UseCase> par cas d’usage rétablit le comportement antérieur de ce cas d’usage lorsqu’elle est désactivée, et s’affiche en rouge sur /admin/pki/trust (STS-PKI-0239)."
   },
+  "mode.requirements.admin-compliant-device.what": {
+    "en": "850f26f2fdf7e76b",
+    "text": "Le justificatif d'une personne pour la surface d'administration (la console, une portée admin:*) exige un appareil enregistré conforme"
+  },
+  "mode.requirements.admin-compliant-device.development": {
+    "en": "37281356b507b540",
+    "text": "DÉSACTIVÉ (devices.requireCompliantDeviceForAdmin=auto) : un administrateur se connecte à la console depuis n'importe quel navigateur, comme avant. Mettez-le à on pour exercer la règle ici."
+  },
+  "mode.requirements.admin-compliant-device.product": {
+    "en": "b0228891759cb8fd",
+    "text": "ACTIVÉ (devices.requireCompliantDeviceForAdmin=auto) : la règle device-required-admin de la politique d'émission refuse, au point de terminaison de jetons, tout jeton de la console et tout jeton admin:* d'une personne qui ne vient pas d'un appareil enregistré conforme qui lui appartient (STS-DEVICE-0054). Elle est ARMÉE par domaine la première fois qu'un administrateur de la console en reçoit un depuis un appareil conforme, et jusque-là tout administrateur est admis, si bien qu'une installation sans appareil conforme n'est jamais verrouillée ; une fois armée elle reste armée, et un programme (le justificatif de gestion du déploiement) est le chemin du retour. Annuaire > Appareils indique si ce domaine est armé."
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "Une clé GNAP prouvée par TLS mutuel est un certificat qu’une autorité de confiance a émis pour le client"

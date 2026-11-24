@@ -2355,6 +2355,10 @@
     "en": "229ae42804651e11",
     "text": "已设置某个已注册设备的风险级别"
   },
+  "audit.actions.device.admin-requirement-armed.label": {
+    "en": "568d20fed7775fd3",
+    "text": "领域的管理员现在需要合规的已注册设备"
+  },
   "audit.actions.federation.create.label": {
     "en": "d39349db65bbbeac",
     "text": "已创建联合关系"

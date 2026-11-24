@@ -415,6 +415,7 @@
   "password.reused": "Ce mot de passe a été utilisé récemment pour ce compte. La politique de mots de passe de ce domaine refuse le mot de passe actuel et les {history} précédents (profil « {profile} »). Choisissez-en un que vous n’avez pas utilisé ici.",
   "password.rotates": "{account} est un compte de service dont le mot de passe tourne via sa destination de diffusion : il ne peut donc pas être défini à la main, car c’est dans la destination que ses consommateurs le lisent. Utilisez Rotate now sur sa page, ou POST /admin-api/users/rotate-password.",
   "policy.compliantDeviceRequired": "Un appareil enregistré et conforme est exigé.",
+  "policy.adminCompliantDeviceRequired": "La console d'administration exige un appareil enregistré et conforme. Connectez-vous depuis un appareil enregistré à votre nom et marqué conforme : enregistrez-en un sur la page Appareils du portail utilisateur, puis demandez à un autre administrateur ou à votre gestion des appareils de le marquer conforme.",
   "policy.deviceBoundPending": "L’application exige une session liée à l’appareil, et l’enregistrement de celle-ci n’est pas terminé.",
   "policy.deviceBoundRefused": "L’application exige une session liée à l’appareil, et celle-ci {fact, select, skipped {a été ignorée.} other {n’a pas été liée à temps.}}",
   "policy.indeterminate": "la politique d’émission n’a pas pu être évaluée{anyStatus, select, yes { : {status}} other {}}. Rien n’est émis sur un Indeterminate, car l’alternative serait d’émettre sur une erreur.",

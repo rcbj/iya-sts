@@ -815,6 +815,7 @@ var config = {
     lastUsedResolutionSeconds: 60,                                         // Last-used resolution (seconds)
     expectRegistered: false,                                               // Expect every person to sign in from a registered device
     requireCompliantDevice: false,                                         // Require a compliant registered device
+    requireCompliantDeviceForAdmin: "auto",                                // Administrators need a compliant registered device
     compliantDeviceAttested: false,                                        // A compliant device must also be attested
     refuseCompromised: true,                                               // Refuse a compromised device
     browserDevices: true,                                                  // Remembered browsers

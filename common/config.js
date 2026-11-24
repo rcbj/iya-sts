@@ -7834,6 +7834,35 @@ const SETTINGS = [
                  'policy. A door with no device evidence (a Kerberos ' +
                  'ticket, a password grant without DPoP) is refused. Per ' +
                  'realm, like every setting.' },
+  // #2179 (2026-11-24, ASVS 5.0.0 8.4.2): the administrative surface — a
+  // person's token to the console or carrying an admin:* scope — needs a
+  // compliant registered device in product. `auto` resolves through
+  // `mode.requiresCompliantDeviceForAdmin()`; the rule is the issuance
+  // policy's `device-required-admin`, and it is ARMED per realm on first
+  // proof (`common/admin_device_requirement.ts` argues the no-lockout rule).
+  { key: 'devices.requireCompliantDeviceForAdmin', group: 'Devices',
+    label: 'Administrators need a compliant registered device',
+    env: 'STS_DEVICES_REQUIRE_COMPLIANT_DEVICE_FOR_ADMIN', type: 'enum',
+    dflt: 'auto', runtime: true, enumValues: ['auto', 'on', 'off'],
+    description: 'Whether a PERSON is issued a credential for the ' +
+                 'administrative surface — a token to the admin console, ' +
+                 'or one carrying an admin:* scope for /admin-api — only ' +
+                 'from a compliant registered device of their own (or an ' +
+                 'application\'s), attested too where ' +
+                 'devices.compliantDeviceAttested says so ' +
+                 '(STS-DEVICE-0054). **`auto` is on in product mode and ' +
+                 'off in development**; `on` and `off` force it. Asked at ' +
+                 'the token endpoint, every grant and every refresh. ' +
+                 'Programs (client credentials, service accounts) are ' +
+                 'never asked. NO LOCKOUT: the requirement is ARMED in a ' +
+                 'realm the first time a console administrator is issued ' +
+                 'such a credential from a compliant device; until then ' +
+                 'every administrator is admitted as before, and once ' +
+                 'armed it stays armed. Register a device on the user ' +
+                 'portal\'s Devices page, have it marked compliant on ' +
+                 'Directory > Devices or by your device management, and ' +
+                 'sign in with the passkey or certificate on it. Per ' +
+                 'realm, like every setting.' },
   { key: 'devices.compliantDeviceAttested', group: 'Devices',
     label: 'A compliant device must also be attested',
     env: 'STS_DEVICES_COMPLIANT_DEVICE_ATTESTED', type: 'bool', dflt: false,

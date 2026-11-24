@@ -2355,6 +2355,10 @@
     "en": "229ae42804651e11",
     "text": "已設定某個已註冊裝置的風險等級"
   },
+  "audit.actions.device.admin-requirement-armed.label": {
+    "en": "568d20fed7775fd3",
+    "text": "領域的管理員現在需要符合規範的已註冊裝置"
+  },
   "audit.actions.federation.create.label": {
     "en": "d39349db65bbbeac",
     "text": "已建立聯盟關係"

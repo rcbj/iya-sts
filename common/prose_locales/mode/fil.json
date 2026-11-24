@@ -1283,6 +1283,18 @@
     "en": "1ddc02b9b0701d2a",
     "text": "ON (pki.paranoid=auto): isinasailalim ng common/certificate_trust.ts ang bawat certificate — sa TLS handshake sa alinmang direksyon, sa ilalim ng isang signature, bilang encryption recipient, sa isang attestation — sa path papunta sa anchor na ipinaalam sa serbisyong ito (ang client o signer truststore, ang CA ng realm, ang sariling setting ng isang family), validity sa ngayon, revocation, at ang basicConstraints, keyUsage at extendedKeyUsage na hinihingi ng use case nito; ang pagsusuring hindi isinagawa ng use case ay isang pagtanggi. Ibinabalik ng isang pki.paranoid<UseCase> row bawat use case ang dating kilos ng use case na iyon kapag off, at pula itong iginuguhit sa /admin/pki/trust (STS-PKI-0239)."
   },
+  "mode.requirements.admin-compliant-device.what": {
+    "en": "850f26f2fdf7e76b",
+    "text": "Kailangan ng compliant na nakarehistrong device ang credential ng isang tao para sa administrative surface (ang console, isang admin:* scope)"
+  },
+  "mode.requirements.admin-compliant-device.development": {
+    "en": "37281356b507b540",
+    "text": "OFF (devices.requireCompliantDeviceForAdmin=auto): nagsa-sign in ang isang administrator sa console mula sa kahit anong browser, gaya ng dati. Itakda ito sa on para subukan ang rule dito."
+  },
+  "mode.requirements.admin-compliant-device.product": {
+    "en": "b0228891759cb8fd",
+    "text": "ON (devices.requireCompliantDeviceForAdmin=auto): tinatanggihan ng rule na device-required-admin ng issuance policy, sa token endpoint, ang bawat console token at bawat admin:* token ng isang tao na hindi nagmula sa sarili niyang compliant na nakarehistrong device (STS-DEVICE-0054). Na-ARM ito bawat realm sa unang beses na mabigyan ng isa ang isang console administrator mula sa compliant na device, at hanggang doon ay pinapapasok ang bawat administrator, kaya hindi kailanman nala-lockout ang isang install na walang compliant na device; kapag na-arm na ay mananatili itong naka-arm, at ang isang program (ang management credential ng deployment) ang daan pabalik. Sinasabi ng Directory > Devices kung naka-arm ang realm na ito."
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "Ang GNAP key na pinatunayan ng mutual TLS ay isang certificate na in-issue sa client ng pinagkakatiwalaang authority"

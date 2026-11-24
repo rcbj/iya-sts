@@ -329,7 +329,16 @@ function check(request) {
   const deferred = asked.deviceDeferred === true;
   const device = deferred ? null : deviceFactsOf(asked);
   const deviceRequirement = deferred ? [] : deviceRequirementOf();
+  // THE ADMINISTRATIVE SURFACE (#2179): a PERSON being issued a token to the
+  // console or one carrying an admin:* scope, at the token endpoint. A fact
+  // the policy's `device-required-admin` rule reads beside the requirement
+  // bag's `compliant-admin`; it makes the policy asked past both shortcuts
+  // while the requirement is in force, armed or not, so that the allowed
+  // answer below can arm it whatever `roles.enforceIssuance` says.
+  const adminSurface = !deferred && adminDeviceRequirement() !== null &&
+    adminDeviceRequirement().isAdminSurface(asked);
   const deviceMatters = deviceRequirement.indexOf('compliant') >= 0 ||
+    (adminSurface && adminDeviceRequirement().inForce()) ||
     (!!device && device.status === 'compromised' &&
      deviceRequirement.indexOf('not-compromised') >= 0);
   // THE PROTOCOL DECLARATION (2026-10-01) rides along whenever the
@@ -394,6 +403,7 @@ function check(request) {
     risk: risk,
     device: device,
     deviceRequirement: deviceRequirement,
+    deviceAdminSurface: adminSurface,
     protocolFamilies: protocol ? protocol.families : [],
     declaredProtocols: protocol ? protocol.declared : [],
     mode: mode ? mode.current() : '',
@@ -435,9 +445,42 @@ function check(request) {
   }
   const result = answer || noDecision(allow('The embedded PEP answered ' +
                                             'nothing.'));
+  // ARMED ON FIRST PROOF (#2179): an administrative credential ALLOWED from
+  // a compliant device of a console administrator's own arms the realm's
+  // requirement, which until then is in force and not in the bag. The
+  // module decides whether every condition holds; a preview never arms.
+  if (result.allowed && adminSurface && !dryRunRequested(asked)) {
+    adminDeviceRequirement().noteAllowed(asked, device);
+  }
   log.debug('Leaving check(). ' + (result.allowed ? 'Allowed.' : 'REFUSED: ' +
             result.why));
   return result;
+}
+
+// A preview asks the policy what WOULD be decided (`asked.preview`, the
+// /admin/roles preview) and must change nothing.
+function dryRunRequested(asked) {
+  log.debug("Entering dryRunRequested().");
+  log.debug("Leaving dryRunRequested().");
+  return !!(asked && asked.preview);
+}
+
+// `common/admin_device_requirement.ts` (#2179), required LAZILY for
+// `riskFactsOf()`'s reason: this file is a leaf, and the module reaches the
+// realms and the settings. Null in a process that cannot load it, which
+// leaves the administrative rule out of every bag.
+function adminDeviceRequirement() {
+  log.debug("Entering adminDeviceRequirement().");
+  let held = null;
+  try {
+    held = require('./admin_device_requirement');
+  } catch (e) {
+    log.debug("Caught in adminDeviceRequirement(): " +
+              ((e && e.message) || e));
+    held = null;
+  }
+  log.debug("Leaving adminDeviceRequirement().");
+  return held;
 }
 
 // The device-bound fact of the session an issuance rests on (#743, #740):
@@ -1459,7 +1502,9 @@ function deviceFactsOf(asked) {
 // bag the issuance policy reads (`urn:sts:xacml:device-requirement`):
 // `not-compromised` while `devices.refuseCompromised` is on (the default),
 // `compliant` while `devices.requireCompliantDevice` is (off by default in
-// both modes, rcbj's decision), and `attested` beside it while
+// both modes, rcbj's decision), `compliant-admin` while the administrative
+// surface's requirement is in force and armed (#2179, on in product), and
+// `attested` beside either while
 // `devices.compliantDeviceAttested` is. The settings SWITCH the rules and
 // the policy states them — `xacml/xacml_templates.ts` argues it.
 // ---------------------------------------------------------------------------
@@ -1476,11 +1521,20 @@ function deviceRequirementOf() {
   if (config.value('devices.refuseCompromised') !== false) {
     out.push('not-compromised');
   }
-  if (config.value('devices.requireCompliantDevice') === true) {
+  const realmWide = config.value('devices.requireCompliantDevice') === true;
+  if (realmWide) {
     out.push('compliant');
-    if (config.value('devices.compliantDeviceAttested') === true) {
-      out.push('attested');
-    }
+  }
+  // #2179: the administrative surface's requirement, in the bag only while
+  // it is in force AND the realm is armed (`admin_device_requirement.ts`).
+  const admin = adminDeviceRequirement();
+  const adminRequired = admin !== null && admin.enforced();
+  if (adminRequired) {
+    out.push('compliant-admin');
+  }
+  if ((realmWide || adminRequired) &&
+      config.value('devices.compliantDeviceAttested') === true) {
+    out.push('attested');
   }
   log.debug("Leaving deviceRequirementOf(). " + out.join(', '));
   return out;

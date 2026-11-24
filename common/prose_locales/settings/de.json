@@ -3587,6 +3587,14 @@
     "en": "0199e95e9d4fd037",
     "text": "STANDARDMÄSSIG IN BEIDEN MODI AUS (#164 Entscheidung 3). Ein lehnt die Ausstellungsrichtlinie jedes Token, jede Assertion, jedes Ticket und jede Sitzung ab, sofern sie nicht vom eigenen registrierten Gerät des Subjekts (oder dem einer Anwendung) kamen, erkannt über einen seiner Schlüssel, KONFORM und nicht kompromittiert (STS-DEVICE-0037). Die Konsole und das Portal — dort registriert eine Person ein Gerät — sind in der eingebauten Richtlinie ausgenommen. Eine Tür ohne Nachweis eines Geräts (ein Kerberos-Ticket, ein Passwort-Grant ohne DPoP) wird abgelehnt. Pro Vertrauensbereich, wie jede Einstellung."
   },
+  "devices.requireCompliantDeviceForAdmin|label": {
+    "en": "accd5e669497d943",
+    "text": "Administratoren brauchen ein konformes registriertes Gerät"
+  },
+  "devices.requireCompliantDeviceForAdmin|description": {
+    "en": "de625836b2a5c41f",
+    "text": "Ob eine PERSON eine Berechtigung für die Administrationsoberfläche — ein Token für die Administrationskonsole oder eines mit einem admin:*-Scope für /admin-api — nur von einem eigenen (oder dem einer Anwendung) konformen registrierten Gerät erhält, auch attestiert, wo devices.compliantDeviceAttested das verlangt (STS-DEVICE-0054). **`auto` ist im Produktmodus an und in der Entwicklung aus**; `on` und `off` erzwingen es. Gefragt am Token-Endpunkt, bei jedem Grant und jeder Erneuerung. Programme (Client Credentials, Dienstkonten) werden nie gefragt. KEINE AUSSPERRUNG: Die Anforderung wird in einem Vertrauensbereich SCHARF GESCHALTET, sobald ein Konsolenadministrator zum ersten Mal eine solche Berechtigung von einem konformen Gerät erhält; bis dahin wird jeder Administrator wie bisher zugelassen, und einmal scharf bleibt sie scharf. Registrieren Sie ein Gerät auf der Seite Geräte des Benutzerportals, lassen Sie es unter Verzeichnis > Geräte oder von Ihrer Geräteverwaltung als konform markieren und melden Sie sich mit dem Passkey oder Zertifikat darauf an. Pro Vertrauensbereich, wie jede Einstellung."
+  },
   "devices.compliantDeviceAttested|label": {
     "en": "90baceaf602a2650",
     "text": "Ein konformes Gerät muss außerdem attestiert sein"

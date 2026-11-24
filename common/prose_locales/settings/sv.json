@@ -3587,6 +3587,14 @@
     "en": "0199e95e9d4fd037",
     "text": "AVSTÄNGT SOM STANDARD I BÅDA LÄGENA (#164 beslut 3). Påslaget avvisar utfärdandepolicyn varje token, intyg, biljett och session som inte kom från subjektets egen (eller en applikations) registrerade enhet, igenkänd genom en av dess nycklar, KOMPATIBEL och inte komprometterad (STS-DEVICE-0037). Konsolen och portalen — där en person registrerar en enhet — är undantagna i den inbyggda policyn. En ingång utan enhetsbevis (en Kerberos-biljett, ett lösenordsgrant utan DPoP) avvisas. Per sfär, som varje inställning."
   },
+  "devices.requireCompliantDeviceForAdmin|label": {
+    "en": "accd5e669497d943",
+    "text": "Administratörer behöver en kompatibel registrerad enhet"
+  },
+  "devices.requireCompliantDeviceForAdmin|description": {
+    "en": "de625836b2a5c41f",
+    "text": "Om en PERSON får en behörighet för administrationsytan — en token till administrationskonsolen, eller en som bär ett admin:*-omfång för /admin-api — endast från en egen (eller en applikations) kompatibel registrerad enhet, även attesterad där devices.compliantDeviceAttested kräver det (STS-DEVICE-0054). **`auto` är på i produktläge och av i utveckling**; `on` och `off` tvingar det. Frågas vid tokenslutpunkten, vid varje grant och varje förnyelse. Program (klientuppgifter, tjänstekonton) frågas aldrig. INGEN UTELÅSNING: kravet AKTIVERAS i en sfär första gången en konsoladministratör får en sådan behörighet från en kompatibel enhet; fram till dess släpps varje administratör in som tidigare, och när det väl är aktiverat förblir det aktiverat. Registrera en enhet på sidan Enheter i användarportalen, låt den markeras som kompatibel under Katalog > Enheter eller av er enhetshantering, och logga in med nyckeln eller certifikatet på den. Per sfär, som varje inställning."
+  },
   "devices.compliantDeviceAttested|label": {
     "en": "90baceaf602a2650",
     "text": "En kompatibel enhet måste också vara attesterad"

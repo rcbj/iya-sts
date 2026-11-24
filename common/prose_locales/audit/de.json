@@ -2355,6 +2355,10 @@
     "en": "229ae42804651e11",
     "text": "Die Risikostufe eines registrierten Geräts wurde gesetzt"
   },
+  "audit.actions.device.admin-requirement-armed.label": {
+    "en": "568d20fed7775fd3",
+    "text": "Die Administratoren des Vertrauensbereichs brauchen jetzt ein konformes registriertes Gerät"
+  },
   "audit.actions.federation.create.label": {
     "en": "d39349db65bbbeac",
     "text": "Eine Föderationsbeziehung wurde erstellt"

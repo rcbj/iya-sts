@@ -13624,6 +13624,26 @@ each argued there:
     `devices.compliantDeviceAttested`.
   * **The gate asks the policy past its two shortcuts** only where a
     device rule could refuse.
+  * **The administrative surface (#2179, ASVS 5.0.0 8.4.2)** adds
+    `compliant-admin` to the bag, only while
+    `devices.requireCompliantDeviceForAdmin` is in force (`auto`: on in
+    product, `mode.requiresCompliantDeviceForAdmin()`) AND the realm is
+    ARMED. The gate also sends `device-admin-surface`: a PERSON's token
+    to `sts-admin-console`, or one carrying an `admin:*` scope, at the
+    token endpoint only (access, refresh and ID token). Programs are never
+    asked, and neither is the session or the code. A token request's own
+    proof (DPoP `jkt`, a client certificate) may be the device.
+    `admin_device_requirement.ts` holds the definition and the LATCH. A
+    realm is armed (store `devices.adminRequirement`, global tier, `{ at }`
+    only, audited `device.admin-requirement-armed`) by the gate's first
+    ALLOWED administrative token from a compliant device owned by a member
+    of a console roster group. Until then every administrator is admitted:
+    that is the no-lockout rule. It is a latch rather than a count, because
+    a person removes their own device on the exempt portal, so a count
+    could be emptied by a stolen password. Nothing disarms it. A program
+    setting compliance, or the setting `off`, is the way back in. The
+    refusal is STS-DEVICE-0054 and `refusals.policy.adminCompliantDevice-
+    Required`. `tests/admin_device_requirement.js`.
   * **`deviceDeferred`** is how a caller asking before its credential is
     complete (the sign-in screen, ahead of WebAuthn) leaves the device
     question to the session's start. `authn.ts`'s `refusedOnDevice()`

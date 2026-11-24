@@ -14534,6 +14534,13 @@ op `getDeviceRegistration`(`responses/200/content/application~1json/schema`: {
       `refuseCompromised`?: boolean;
       `requireCompliantDevice`?: boolean;
       `compliantDeviceAttested`?: boolean;
+      `adminDevice`?: {
+        `setting`?: string;
+        `value`?: string;
+        `inForce`?: boolean;
+        `armed`?: boolean;
+        `armedAt`?: string
+      };
       `policy`?: string;
       `acr`?: string;
       `claim`?: string

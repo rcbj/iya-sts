@@ -2355,6 +2355,10 @@
     "en": "229ae42804651e11",
     "text": "ضُبط مستوى مخاطر جهاز مسجّل"
   },
+  "audit.actions.device.admin-requirement-armed.label": {
+    "en": "568d20fed7775fd3",
+    "text": "يحتاج مسؤولو نطاق الثقة الآن إلى جهاز مسجّل ومتوافق"
+  },
   "audit.actions.federation.create.label": {
     "en": "d39349db65bbbeac",
     "text": "أُنشئت علاقة اتحاد"

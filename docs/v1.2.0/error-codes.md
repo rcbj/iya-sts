@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6088** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6089** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -84,7 +84,7 @@ is an ordinary outcome.
 * [Mail (`STS-MAIL`)](#sts-mail) — 44
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 16
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 362
-* [Device register (`STS-DEVICE`)](#sts-device) — 53
+* [Device register (`STS-DEVICE`)](#sts-device) — 54
 * [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 17
 * [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 36
 * [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 35
@@ -5014,6 +5014,7 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0051` | An Android-attested key was registered and the Android attestation recheck could not be told (its registration mark not moved); the key was checked at registration, and a recheck after the next status list reaches it (#615). | — |
 | `STS-DEVICE-0052` | The Android attestation recheck's backfill could not write a device whose stsDeviceAndroidKey marker is missing or wrong; that device's keys are rechecked only once a later write of it derives the marker (#615). | — |
 | `STS-DEVICE-0053` | A device of a deleted person could not be removed from the register, so a person made again under the name owns it. Remove it on the Devices page. | — |
+| `STS-DEVICE-0054` | A person's credential for the administrative surface — a token to the admin console, or one carrying an admin:* scope — was refused by the issuance policy's device-required-admin rule: the realm requires its administrators to use a compliant registered device (devices.requireCompliantDeviceForAdmin, on in product, armed once an administrator signed in from one) and this did not come from their own (or an application's) compliant, uncompromised device (#2179). | the token endpoint's access_denied, whose description says the admin console requires a compliant registered device |
 
 ## STS-HWTOKEN
 

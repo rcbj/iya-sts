@@ -1605,6 +1605,28 @@ function enforcesParanoidPki() {
   return isProduct();
 }
 
+// Does a PERSON need a compliant registered device to be issued a credential
+// for the administrative surface — a token to the console or one carrying an
+// admin:* scope (#2179, 2026-11-24, ASVS 5.0.0 8.4.2)? This is what
+// `devices.requireCompliantDeviceForAdmin=auto` resolves to: product answers
+// yes, development no. Development keeps the console reachable from whatever
+// browser a client author has open, as it keeps every device rule off; a
+// product deployment's administrators are the people the control is for.
+// The requirement is ARMED per realm on first proof, so turning it on cannot
+// lock a realm out: `common/admin_device_requirement.ts` argues it.
+/**
+ * Tells whether the administrative surface requires a compliant registered
+ * device: what `devices.requireCompliantDeviceForAdmin=auto` resolves to (on
+ * in product, off in development).
+ *
+ * @returns true in product mode
+ */
+function requiresCompliantDeviceForAdmin() {
+  log.debug("Entering requiresCompliantDeviceForAdmin().");
+  log.debug("Leaving requiresCompliantDeviceForAdmin().");
+  return isProduct();
+}
+
 // Does a GNAP key proved by MUTUAL TLS need a certificate a trusted authority
 // issued, rather than one merely registered (#107, 2026-09-23)? This is what
 // `gnap.mtlsTrust=auto` resolves to: product answers yes (`pki`), development
@@ -4328,6 +4350,26 @@ const REQUIREMENTS = [
              '/admin/pki/trust (STS-PKI-0239).',
     where: 'common/certificate_trust.ts, common/pki.js, common/crypto.js, ' +
            'common/signer_truststore.ts' },
+  // #2179, 2026-11-24. The administrative surface's device requirement.
+  { id: 'admin-compliant-device',
+    what: 'A person\'s credential for the administrative surface (the ' +
+          'console, an admin:* scope) needs a compliant registered device',
+    development: 'OFF (devices.requireCompliantDeviceForAdmin=auto): an ' +
+                 'administrator signs in to the console from any browser, ' +
+                 'as before. Set it to on to exercise the rule here.',
+    product: 'ON (devices.requireCompliantDeviceForAdmin=auto): the ' +
+             'issuance policy\'s device-required-admin rule refuses, at ' +
+             'the token endpoint, every console token and every person\'s ' +
+             'admin:* token that did not come from a compliant registered ' +
+             'device of their own (STS-DEVICE-0054). It is ARMED per realm ' +
+             'the first time a console administrator is issued one from ' +
+             'a compliant device, and until then every administrator is ' +
+             'admitted, so an install with no compliant device is never ' +
+             'locked out; once armed it stays armed, and a program (the ' +
+             'deployment\'s management credential) is the way back in. ' +
+             'Directory > Devices says whether this realm is armed.',
+    where: 'common/admin_device_requirement.ts, common/issuance_gate.js, ' +
+           'xacml/xacml_templates.ts' },
   // 2026-09-13. The embedded protocol debugger. Its GATE is not on this page
   // because it does not move: an access token carrying the debugger
   // permission, issued only to a console administrator, in both modes.
@@ -5071,6 +5113,7 @@ module.exports = {
   refusesUnknownRevocationStatus: refusesUnknownRevocationStatus,
   refusesUnrevocableCertificates: refusesUnrevocableCertificates,
   enforcesParanoidPki: enforcesParanoidPki,
+  requiresCompliantDeviceForAdmin: requiresCompliantDeviceForAdmin,
   requiresPkiForGnapMtls: requiresPkiForGnapMtls,
   requiresEnrollmentTls: requiresEnrollmentTls,
   opensIntrospection: opensIntrospection,

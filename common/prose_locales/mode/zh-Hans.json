@@ -1283,6 +1283,18 @@
     "en": "1ddc02b9b0701d2a",
     "text": "开启（pki.paranoid=auto）：common/certificate_trust.ts 对每一份证书——无论是任一方向的 TLS 握手、签名之下、作为加密接收方，还是在证明中——都要求：存在通往本服务已知锚点（客户端或签名者信任库、领域的 CA、某个协议族自己的设置）的路径、当前时间有效、未被吊销，以及其用例所要求的 basicConstraints、keyUsage 和 extendedKeyUsage；用例从未运行的检查视为拒绝。每个用例有一行 pki.paranoid<UseCase>，关闭时恢复该用例此前的行为，并在 /admin/pki/trust 上以红色显示（STS-PKI-0239）。"
   },
+  "mode.requirements.admin-compliant-device.what": {
+    "en": "850f26f2fdf7e76b",
+    "text": "个人用于管理界面（控制台、admin:* 范围）的凭据需要合规的已注册设备"
+  },
+  "mode.requirements.admin-compliant-device.development": {
+    "en": "37281356b507b540",
+    "text": "关闭（devices.requireCompliantDeviceForAdmin=auto）：管理员照旧可从任何浏览器登录控制台。将其设为 on 可在此验证该规则。"
+  },
+  "mode.requirements.admin-compliant-device.product": {
+    "en": "b0228891759cb8fd",
+    "text": "开启（devices.requireCompliantDeviceForAdmin=auto）：签发策略的 device-required-admin 规则在令牌端点拒绝每一个并非来自本人合规已注册设备的控制台令牌和个人 admin:* 令牌（STS-DEVICE-0054）。当某位控制台管理员首次从合规设备获得此类令牌时，它按领域启用；在此之前每位管理员都会被放行，因此没有合规设备的安装永远不会被锁死；一旦启用便保持启用，而程序（部署的管理凭据）是重新进入的途径。目录 > 设备 会显示此领域是否已启用。"
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "通过双向 TLS 证明的 GNAP 密钥是受信任颁发机构签发给该客户端的证书"

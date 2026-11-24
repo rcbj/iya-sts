@@ -3587,6 +3587,14 @@
     "en": "0199e95e9d4fd037",
     "text": "DÉSACTIVÉ PAR DÉFAUT DANS LES DEUX MODES (#164 décision 3). Activé, la politique d’émission refuse tout jeton, assertion, ticket et session qui ne provient pas d’un appareil enregistré du sujet lui-même (ou d’une application), reconnu par l’une de ses clés, CONFORME et non compromis (STS-DEVICE-0037). La console et le portail — où une personne enregistre un appareil — sont exemptés dans la politique intégrée. Une porte sans preuve d’appareil (un ticket Kerberos, un octroi par mot de passe sans DPoP) est refusée. Par domaine, comme tout paramètre."
   },
+  "devices.requireCompliantDeviceForAdmin|label": {
+    "en": "accd5e669497d943",
+    "text": "Les administrateurs ont besoin d'un appareil enregistré conforme"
+  },
+  "devices.requireCompliantDeviceForAdmin|description": {
+    "en": "de625836b2a5c41f",
+    "text": "Si une PERSONNE reçoit un justificatif pour la surface d'administration — un jeton pour la console d'administration, ou un jeton portant une portée admin:* pour /admin-api — uniquement depuis un appareil enregistré conforme qui lui appartient (ou à une application), attesté aussi là où devices.compliantDeviceAttested l'exige (STS-DEVICE-0054). **`auto` est activé en mode produit et désactivé en développement** ; `on` et `off` l'imposent. Demandé au point de terminaison de jetons, à chaque octroi et chaque renouvellement. Les programmes (identifiants client, comptes de service) ne sont jamais concernés. AUCUN VERROUILLAGE : l'exigence est ARMÉE dans un domaine la première fois qu'un administrateur de la console reçoit un tel justificatif depuis un appareil conforme ; jusque-là tout administrateur est admis comme avant, et une fois armée elle reste armée. Enregistrez un appareil sur la page Appareils du portail utilisateur, faites-le marquer conforme dans Annuaire > Appareils ou par votre gestion des appareils, et connectez-vous avec la clé d'accès ou le certificat qu'il contient. Par domaine, comme tout paramètre."
+  },
   "devices.compliantDeviceAttested|label": {
     "en": "90baceaf602a2650",
     "text": "Un appareil conforme doit aussi être attesté"

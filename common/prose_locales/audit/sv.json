@@ -2355,6 +2355,10 @@
     "en": "229ae42804651e11",
     "text": "Risknivån för en registrerad enhet angavs"
   },
+  "audit.actions.device.admin-requirement-armed.label": {
+    "en": "568d20fed7775fd3",
+    "text": "Sfärens administratörer behöver nu en kompatibel registrerad enhet"
+  },
   "audit.actions.federation.create.label": {
     "en": "d39349db65bbbeac",
     "text": "En federationsrelation skapades"
