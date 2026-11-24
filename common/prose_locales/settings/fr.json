@@ -347,6 +347,14 @@
     "en": "26b0298f1a2bd460",
     "text": "Ajoute includeSubDomains à Strict-Transport-Security, afin que les navigateurs utilisent HTTPS pour tous les sous-domaines du nom d’hôte de ce service. Activé par défaut en mode produit. Désactivez-le si un sous-domaine doit encore répondre en HTTP simple."
   },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "Demander l'inscription sur la liste de préchargement HSTS"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "Ajoute preload à Strict-Transport-Security, que seul le mode produit envoie, afin que le nom d'hôte puisse être soumis à la liste de préchargement des navigateurs sur hstspreload.org. Le préchargement engage tout le domaine enregistrable et chaque sous-domaine à utiliser HTTPS dans tous les navigateurs, et quitter la liste prend des mois. Envoyé seulement tant que Appliquer HSTS aux sous-domaines est activé."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Accepter une assertion sans audience"

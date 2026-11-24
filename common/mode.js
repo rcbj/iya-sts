@@ -898,6 +898,22 @@ function auditAppendOnlyWaivers() {
       level: 'MUST', setting: 'persistence.databaseUrl' }] : [];
 }
 
+// HSTS PRELOAD ASKED FOR AND WITHHELD (#2165, ASVS 5.0.0 3.7.4):
+// `security.hstsPreload` on with `security.hstsIncludeSubDomains` off, so
+// `common/cookie_wire.ts` sends the header without `preload` — the list
+// accepts a host only when its header covers every subdomain. Carried on the
+// `strict-transport-security` row, in product (which alone sends the header),
+// naming the setting that has to change.
+function hstsPreloadWaivers() {
+  log.debug("Entering hstsPreloadWaivers().");
+  const withheld = !!config.value('security.hstsPreload') &&
+    !config.value('security.hstsIncludeSubDomains');
+  log.debug("Leaving hstsPreloadWaivers(). " + withheld);
+  return withheld ? [
+    { requirement: 'hsts-preload', section: 'ASVS 5.0.0 3.7.4',
+      level: 'SHOULD', setting: 'security.hstsIncludeSubDomains' }] : [];
+}
+
 // The switches that turn access decisions off in this process, as the data
 // `report()` carries on the row they qualify: a product operator may need one
 // to recover from a policy that denies its own repair, and it must show.
@@ -4952,6 +4968,7 @@ function report() {
   const scopes = product ? undeclaredScopeWaivers() : [];
   const auditLog = auditAppendOnlyWaivers();
   const smime = product ? smimeCbcWaivers() : [];
+  const preload = product ? hstsPreloadWaivers() : [];
   return {
     mode: current(),
     isProduct: product,
@@ -4968,7 +4985,10 @@ function report() {
                 ? { waived: auditLog }
                 : row.id === 'smime-authenticated-encryption' &&
                     smime.length
-                  ? { waived: smime } : {};
+                  ? { waived: smime }
+                  : row.id === 'strict-transport-security' &&
+                      preload.length
+                    ? { waived: preload } : {};
       return Object.assign({ inForce: product ? row.product :
                                       row.development },
                            row, extra);
@@ -5163,6 +5183,7 @@ module.exports = {
   prefixesCookies: prefixesCookies,
   accessEnforcementWaivers: accessEnforcementWaivers,
   smimeCbcWaivers: smimeCbcWaivers,
+  hstsPreloadWaivers: hstsPreloadWaivers,
   issuesUnsignedAssertions: issuesUnsignedAssertions,
   servesWithoutSecurityHeader: servesWithoutSecurityHeader,
   allowsValue: allowsValue,

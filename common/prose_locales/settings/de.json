@@ -347,6 +347,14 @@
     "en": "26b0298f1a2bd460",
     "text": "Fügt includeSubDomains zu Strict-Transport-Security hinzu, sodass Browser auch für jede Subdomäne des Hostnamens dieses Dienstes HTTPS verwenden. Im Produktmodus standardmäßig an. Schalten Sie es aus, wenn eine Subdomäne dieses Hostnamens weiterhin über reines HTTP antworten muss."
   },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "Die Aufnahme in die HSTS-Preload-Liste beantragen"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "Fügt preload zu Strict-Transport-Security hinzu, das nur der Produktmodus sendet, sodass der Hostname bei hstspreload.org für die Preload-Liste der Browser eingereicht werden kann. Das Preloading verpflichtet die gesamte registrierbare Domäne und jede Subdomäne in jedem Browser auf HTTPS, und das Verlassen der Liste dauert Monate. Wird nur gesendet, solange HSTS auf Subdomänen anwenden eingeschaltet ist."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Eine Assertion annehmen, die keine Audience nennt"

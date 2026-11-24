@@ -87,6 +87,7 @@ var config = {
     allowUnscopedPeople: false,                                                                                                        // Let a person reach SCIM and Shared Signals with no role
     passwordContextWords: "",                                                                                                          // Words a password may not contain
     outboundAllowedHosts: "",                                                                                                          // Hosts this service may dial
+    hstsPreload: false,                                                                                                                // Ask to be on the HSTS preload list
     rateLimitWindowS: 60,                                                                                                              // Rate-limit window (seconds)
     rateLimitPerIdentity: 5,                                                                                                           // Attempts per identity per window
     rateLimitPerAddress: 20,                                                                                                           // Attempts per address per window

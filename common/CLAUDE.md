@@ -17329,6 +17329,16 @@ the wire, in product over TLS, it is `__Host-` or `__Secure-`. So a new cookie
 needs nothing, and a cookie whose NAME a document must state asks
 `CookieWire.wireName()` (DBSC does). HSTS is there for the same reason.
 
+**`preload` is withheld, never refused at write (#2165).** `security.hstsPreload`
+(off by default) adds it only while `includeSubDomains` is in force, because the
+preload list rejects a header without it and `security.hstsIncludeSubDomains`
+takes its default from the realm's mode — an env variable, an appconfig file or
+a mode switch can break the pair where no write is checked. So
+`strictTransportSecurity()` decides per response, logs STS-CORE-0181 when the
+pair breaks, and `mode.js`'s `hstsPreloadWaivers()` puts it on the
+`strict-transport-security` row. `max-age` is a constant year, so the list's
+other condition always holds.
+
 **A request a worker answers is named by THE WORKER'S view of the realm's mode**
 (2026-11-16, GitHub Actions run 43884417831). The names follow the realm's mode,
 a worker answers `config/set global.mode`, and the front learns of it from the

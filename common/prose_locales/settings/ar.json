@@ -347,6 +347,14 @@
     "en": "26b0298f1a2bd460",
     "text": "يضيف includeSubDomains إلى Strict-Transport-Security، فتستخدم المتصفحات HTTPS لكل مجال فرعي من اسم مضيف هذه الخدمة أيضاً. مشغّل افتراضياً في وضع المنتج. أوقفه إذا وجب على مجال فرعي من اسم المضيف هذا أن يجيب عبر HTTP العادي."
   },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "طلب الإدراج في قائمة التحميل المسبق لـ HSTS"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "يضيف preload إلى Strict-Transport-Security، الذي لا يرسله إلا وضع الإنتاج، حتى يمكن تقديم اسم المضيف إلى قائمة التحميل المسبق في المتصفحات على hstspreload.org. يُلزم التحميل المسبق النطاق القابل للتسجيل بأكمله وكل نطاق فرعي باستخدام HTTPS في كل متصفح، ويستغرق الخروج من القائمة شهورًا. لا يُرسل إلا ما دام تطبيق HSTS على النطاقات الفرعية مفعّلًا."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "قبول تأكيد لا يسمّي جمهوراً"

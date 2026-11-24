@@ -347,6 +347,14 @@
     "en": "26b0298f1a2bd460",
     "text": "Idinaragdag ang includeSubDomains sa Strict-Transport-Security, para gumamit ang mga browser ng HTTPS sa bawat subdomain ng host name ng service na ito. Naka-on bilang default sa product mode. I-off kung kailangan pang sumagot ng subdomain sa plain HTTP."
   },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "Hilingin na mapasama sa HSTS preload list"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "Idinadagdag ang preload sa Strict-Transport-Security, na ipinapadala lamang ng product mode, upang maisumite ang host name sa preload list ng mga browser sa hstspreload.org. Itinatali ng preloading ang buong registrable domain at bawat subdomain sa HTTPS sa bawat browser, at buwan ang inaabot ng pag-alis sa listahan. Ipinapadala lamang habang naka-on ang Ilapat ang HSTS sa mga subdomain."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Tanggapin ang assertion na walang audience"

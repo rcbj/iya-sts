@@ -347,6 +347,14 @@
     "en": "26b0298f1a2bd460",
     "text": "Añade includeSubDomains a Strict-Transport-Security, para que los navegadores usen HTTPS en todos los subdominios del nombre de host de este servicio. Activado por defecto en modo producto. Desactívelo si un subdominio debe seguir respondiendo por HTTP sin cifrar."
   },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "Solicitar la inclusión en la lista de precarga de HSTS"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "Añade preload a Strict-Transport-Security, que solo envía el modo producto, para que el nombre de host pueda enviarse a la lista de precarga de los navegadores en hstspreload.org. La precarga compromete todo el dominio registrable y cada subdominio a usar HTTPS en todos los navegadores, y salir de la lista lleva meses. Solo se envía mientras Aplicar HSTS a los subdominios está activado."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Aceptar una aserción sin audiencia"

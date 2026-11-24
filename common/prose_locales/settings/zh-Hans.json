@@ -347,6 +347,14 @@
     "en": "26b0298f1a2bd460",
     "text": "向 Strict-Transport-Security 添加 includeSubDomains，使浏览器对此服务主机名的所有子域也使用 HTTPS。产品模式默认开启。如果某个子域仍需通过纯 HTTP 响应，请关闭。"
   },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "申请加入 HSTS 预加载列表"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "在 Strict-Transport-Security 中添加 preload(仅产品模式发送该标头),以便可以在 hstspreload.org 将主机名提交到浏览器的预加载列表。预加载会使整个可注册域及其每个子域在所有浏览器中都只能使用 HTTPS,而退出该列表需要数月。仅在“对子域应用 HSTS”开启时发送。"
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "接受未指定受众的断言"

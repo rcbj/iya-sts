@@ -347,6 +347,14 @@
     "en": "26b0298f1a2bd460",
     "text": "在 Strict-Transport-Security 加入 includeSubDomains，使瀏覽器對此服務主機名稱的所有子網域也使用 HTTPS。產品模式預設開啟。若某個子網域仍需透過純 HTTP 回應，請關閉。"
   },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "申請加入 HSTS 預先載入清單"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "在 Strict-Transport-Security 中加入 preload(僅產品模式會傳送此標頭),以便可在 hstspreload.org 將主機名稱提交至瀏覽器的預先載入清單。預先載入會使整個可註冊網域及其每個子網域在所有瀏覽器中都只能使用 HTTPS,而退出清單需要數個月。僅在「對子網域套用 HSTS」開啟時傳送。"
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "接受未指定受眾的判斷提示"

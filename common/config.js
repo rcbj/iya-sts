@@ -1619,6 +1619,21 @@ const SETTINGS = [
                  'if a subdomain of this host name must still answer over ' +
                  'plain HTTP.' },
 
+  // #2165 (ASVS 5.0.0 3.7.4). Off by default in both modes: the preload list
+  // is compiled into browsers and binds the whole registrable domain, so it
+  // is an operator's decision, never a default. `common/cookie_wire.ts` sends
+  // it only with includeSubDomains in force, and says why where it does not.
+  { key: 'security.hstsPreload', group: 'Web security',
+    label: 'Ask to be on the HSTS preload list',
+    env: 'STS_SECURITY_HSTS_PRELOAD', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Adds preload to Strict-Transport-Security, which only ' +
+                 'product mode sends, so the host name can be submitted to ' +
+                 'the browsers\' preload list at hstspreload.org. Preloading ' +
+                 'commits the whole registrable domain and every subdomain ' +
+                 'to HTTPS in every browser, and leaving the list takes ' +
+                 'months. Sent only while Apply HSTS to subdomains is on.' },
+
   { key: 'federation.allowAssertionWithoutAudience', group: 'Federation',
     label: 'Accept an assertion that names no audience',
     env: 'STS_FEDERATION_ALLOW_ASSERTION_WITHOUT_AUDIENCE', type: 'bool', dflt: false,

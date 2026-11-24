@@ -347,6 +347,14 @@
     "en": "26b0298f1a2bd460",
     "text": "Lägger till includeSubDomains i Strict-Transport-Security, så att webbläsare använder HTTPS för alla underdomäner till tjänstens värdnamn. På som standard i produktläge. Stäng av om en underdomän fortfarande måste svara över okrypterad HTTP."
   },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "Begär att stå på HSTS-förladdningslistan"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "Lägger till preload i Strict-Transport-Security, som bara produktläget skickar, så att värdnamnet kan skickas in till webbläsarnas förladdningslista på hstspreload.org. Förladdning binder hela den registrerbara domänen och varje underdomän till HTTPS i alla webbläsare, och att lämna listan tar månader. Skickas bara medan Tillämpa HSTS på underdomäner är på."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Acceptera ett påstående utan målgrupp"
