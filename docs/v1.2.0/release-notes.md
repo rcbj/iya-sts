@@ -22,6 +22,10 @@ too. Each has a realm setting beside it (`wstrust.signRequest`,
 application's WS-Trust tab, **Body** and **Header** checkboxes write the
 common expressions into the four encryption and signing maps, and an
 **XPath builder** writes one for an element clicked in a sample message.
+The tab has a simplified and an advanced view, the advanced one in General,
+Message encryption and Message signing sections, each split into request
+and response processing; each of the last two opens the XPath builder in a
+window over the page, which builds a list of expressions for a field.
 The XPath subset gains `not(…)`. New refusals: `STS-WSTRUST-0084`,
 `0085`, `0086` and `0087`. See [Message integrity](ws-trust.md#message-integrity).
 

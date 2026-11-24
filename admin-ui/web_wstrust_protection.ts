@@ -28,8 +28,25 @@
 // goes through `WebSafeDom`. An expression is written with the service's
 // own prefixes (`WebWsProtection.pathFor()`), so what the builder writes is
 // in the subset the service evaluates, and the matches are shown by the
-// browser's own XPath engine resolving those same prefixes. "Add to field"
-// puts it in one of the five fields of the form above; Save stores it.
+// browser's own XPath engine resolving those same prefixes. Each expression
+// is added to the dialog's list, and the list is added to one of the five
+// fields of the form; Save stores it.
+//
+// THE SUB-TAB'S SECTIONS (#2046, rcbj 2026-11-23): General, then Message
+// encryption and Message signing, each split into request and response
+// message processing (`PARTS`, the one table of which field goes where).
+// The simple view is the eight boxes and the General fields that are
+// simple; every encryption and signing field is advanced, so its sections
+// are hidden by the stylesheet's rule for a section holding only advanced
+// cells. The sections are drawn here rather than by `fieldGridOf()`'s
+// headed sections because they nest and carry a button: they are this
+// sub-tab's presentation, and the server's field rows are unchanged.
+//
+// THE XPATH BUILDER IS A DIALOG (#2046): each of the two sections has a
+// button that opens one `<dialog>` in the page, modal, for that section's
+// fields. The reader builds a LIST of expressions in it and adds the list
+// to one field; the dialog then closes and the field's section says what
+// was added.
 //
 // The console is a static surface that requires script (`../CLAUDE.md`), so
 // no fallback is owed for a browser with script blocked.
@@ -55,6 +72,41 @@ const ROWS: { map: string, key: string }[] = [
   { map: 'wstrustEncryptResponseElements', key: 'encryptResponse' },
   { map: 'wstrustSignRequestElements', key: 'signRequest' },
   { map: 'wstrustSignResponseElements', key: 'signResponse' }
+];
+
+// THE SUB-TAB'S TWO PROTECTION SECTIONS (#2046), in drawing order, and the
+// fields each of their request and response halves holds. A WS-Trust field
+// in none of them is General. `builder` names the dialog's part, whose
+// targets are the `WebWsProtection.TARGETS` the section holds. The order of
+// a response's signing and encryption is the signature's question as much
+// as the cipher's, and is filed with signing; encrypting the signature is
+// encryption's.
+const PARTS: { id: string, key: string, builder: string,
+               sections: { id: string, key: string,
+                           attributes: string[] }[] }[] = [
+  { id: 'encryption', key: 'encryptionHeading', builder: 'encrypt',
+    sections: [
+      { id: 'encryption-request', key: 'requestProcessing',
+        attributes: ['wstrustEncryptRequest',
+                     'wstrustAcceptEncryptedElements',
+                     'wstrustEncryptRequestElements'] },
+      { id: 'encryption-response', key: 'responseProcessing',
+        attributes: ['wstrustEncryptResponse',
+                     'wstrustEncryptResponseElements',
+                     'wstrustEncryptionAlgorithm',
+                     'wstrustKeyTransportAlgorithm',
+                     'wstrustEncryptionCertificate',
+                     'wstrustResponseRecipientXPath',
+                     'wstrustEncryptSignature'] }
+    ] },
+  { id: 'signing', key: 'signingHeading', builder: 'sign',
+    sections: [
+      { id: 'signing-request', key: 'requestProcessing',
+        attributes: ['wstrustSignRequest', 'wstrustSignRequestElements'] },
+      { id: 'signing-response', key: 'responseProcessing',
+        attributes: ['wstrustSignResponse', 'wstrustSignResponseElements',
+                     'wstrustResponseProtectionOrder'] }
+    ] }
 ];
 
 // THE ELEMENTS THE BUILDER DRAWS AT MOST. A pasted message is the
@@ -103,6 +155,7 @@ const SNAPSHOT = 7;
 
 class WebWsTrustProtection {
   static readonly ROWS = ROWS;
+  static readonly PARTS = PARTS;
   static readonly SAMPLE = SAMPLE;
   static readonly MAX_ELEMENTS = MAX_ELEMENTS;
 
@@ -172,25 +225,137 @@ class WebWsTrustProtection {
   }
 
   /**
-   * Draws the XPath builder frame. It posts nothing: no control has a
+   * The part of `PARTS` and the section within it a field is drawn in.
+   *
+   * @param attribute - the field's attribute
+   * @returns `{ part, section }`, or null for a General field
+   */
+  static placeOf(attribute): { part: string, section: string } | null {
+    for (let i = 0; i < PARTS.length; i++) {
+      for (let j = 0; j < PARTS[i].sections.length; j++) {
+        if (PARTS[i].sections[j].attributes.indexOf(attribute) >= 0) {
+          return { part: PARTS[i].id, section: PARTS[i].sections[j].id };
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * The builder targets one part's sections hold, in `TARGETS`' order.
+   *
+   * @param builder - the part's `builder` (`encrypt` or `sign`)
+   * @param drawn - optional; the attributes the page draws, to keep only
+   * @returns the attributes
+   */
+  static targetsOf(builder, drawn?): string[] {
+    const part = PARTS.filter(function (one) {
+      return one.builder === builder;
+    })[0];
+    if (!part) {
+      return [];
+    }
+    const held = [];
+    part.sections.forEach(function (one) {
+      one.attributes.forEach(function (attribute) {
+        held.push(attribute);
+      });
+    });
+    return WebWsProtection.TARGETS.filter(function (one) {
+      return held.indexOf(one) >= 0 &&
+        (!drawn || drawn.indexOf(one) >= 0);
+    });
+  }
+
+  /**
+   * Draws the WS-Trust group of the sub-tab's field grid: the General
+   * fields, then each protection section with its request and response
+   * halves, and its XPath builder button where it holds a target.
+   *
+   * @param rows - the fields the form draws, typed, each with `simple`
+   * @param label - the group's heading
+   * @param values - the form's values by attribute
+   * @param options - `WebKit.fieldGridCell()`'s options
+   * @param t - the translator
+   * @returns the group as HTML, or '' when it draws no field
+   */
+  static grid(rows, label, values, options, t): string {
+    const list = rows || [];
+    if (!list.length) {
+      return '';
+    }
+    const cells = function (picked) {
+      return picked.map(function (row) {
+        return kit.fieldGridCell(row, values, options, t);
+      }).join('');
+    };
+    const general = list.filter(function (row) {
+      return !WebWsTrustProtection.placeOf(row.attribute);
+    });
+    const drawn = list.map(function (row) {
+      return row.attribute;
+    });
+    const parts = PARTS.map(function (part) {
+      const halves = part.sections.map(function (section) {
+        const mine = list.filter(function (row) {
+          return section.attributes.indexOf(row.attribute) >= 0;
+        });
+        return !mine.length ? ''
+          : '<div class="fg-section" id="fgs-wstrust-' + section.id +
+            '"><h5>' + t.html(K + section.key) + '</h5><div class="fg">' +
+            cells(mine) + '</div></div>';
+      }).join('');
+      if (!halves) {
+        return '';
+      }
+      const offered = WebWsTrustProtection.targetsOf(part.builder, drawn);
+      const heading = t.text(K + part.key);
+      return '<div class="fg-section wsp-part" id="fgs-wstrust-' + part.id +
+        '"><div class="wsp-parthead"><h4>' + kit.esc(heading) + '</h4>' +
+        (offered.length
+          ? '<button type="button" class="secondary" data-wsp-open="' +
+            part.builder + '" aria-haspopup="dialog" aria-controls=' +
+            '"wsp-dialog" data-wsp-heading="' + kit.esc(heading) + '">' +
+            t.html(K + 'openBuilder') + '</button>'
+          : '') + '</div>' +
+        '<p class="wsp-added" role="status" aria-live="polite" ' +
+        'data-wsp-added="' + part.builder + '"></p>' + halves + '</div>';
+    }).join('');
+    return '<div class="fg-group"><h3>' + kit.esc(label) + '</h3>' +
+      (general.length
+        ? '<div class="fg-section" id="fgs-wstrust-general"><h4>' +
+          t.html(K + 'general') + '</h4><div class="fg">' + cells(general) +
+          '</div></div>'
+        : '') + parts + '</div>';
+  }
+
+  /**
+   * Draws the XPath builder: one `<dialog>`, opened in the page by a
+   * protection section's button. It posts nothing: no control has a
    * `name` and no button submits.
    *
    * @param targets - the fields an expression may be added to that the
    *   page draws
    * @param t - the translator
-   * @returns the frame as HTML, or '' when the page draws no target
+   * @returns the dialog as HTML, or '' when the page draws no target
    */
-  static builder(targets, t): string {
+  static dialog(targets, t): string {
     const offered = WebWsProtection.TARGETS.filter(function (one) {
       return (targets || []).indexOf(one) >= 0;
     });
     if (!offered.length) {
       return '';
     }
-    return kit.frame('<h4 id="cfg-wstrust-xpath">' +
-      t.html(K + 'builderHeading') + '</h4>' +
-      kit.note(t.html(K + 'builderIntro')) +
-      '<div class="wsp-builder" data-wsp-builder>' +
+    return '<dialog class="wsp-dialog" id="wsp-dialog" ' +
+      'aria-labelledby="wsp-dialog-title" data-wsp-builder ' +
+      'data-wsp-targets="' + kit.esc(offered.join(' ')) + '">' +
+      '<div class="wsp-dialog-head"><h3 id="wsp-dialog-title">' +
+      t.html(K + 'builderHeading') +
+      '<span class="sub" id="wsp-dialog-part"></span></h3>' +
+      '<button type="button" class="wsp-dialog-x" data-wsp-close ' +
+      'aria-label="' + kit.esc(t.text(K + 'close')) + '">&times;</button>' +
+      '</div><div class="wsp-dialog-body">' +
+      kit.note(t.html(K + 'dialogIntro')) +
       '<div class="formrow"><label for="wsp-sample">' +
       t.html(K + 'sample') + '</label><textarea id="wsp-sample" ' +
       'class="wsp-sample" rows="10" cols="80" spellcheck="false">' +
@@ -202,17 +367,94 @@ class WebWsTrustProtection {
       '<div class="wsp-tree" id="wsp-tree"></div>' +
       '<div class="formrow"><label for="wsp-expression">' +
       t.html(K + 'expression') + '</label><input type="text" ' +
-      'id="wsp-expression" class="wsp-expression" readonly></div>' +
+      'id="wsp-expression" class="wsp-expression" readonly> ' +
+      '<button type="button" class="secondary" data-wsp-collect disabled>' +
+      t.html(K + 'collect') + '</button></div>' +
       '<p class="sub" id="wsp-matches" aria-live="polite"></p>' +
+      '<h4 id="wsp-list-heading">' + t.html(K + 'listHeading') + '</h4>' +
+      '<ol class="wsp-list" id="wsp-list" aria-labelledby=' +
+      '"wsp-list-heading"></ol>' +
+      '<p class="state-none" id="wsp-list-empty">' +
+      t.html(K + 'listEmpty') + '</p>' +
       '<div class="formrow"><label for="wsp-target">' +
       t.html(K + 'target') + '</label><select id="wsp-target">' +
-      offered.map(function (one) {
-        return '<option value="' + kit.esc(one) + '">' + kit.esc(one) +
-          '</option>';
-      }).join('') + '</select> <button type="button" class="secondary" ' +
-      'data-wsp-add disabled>' + t.html(K + 'add') + '</button></div>' +
+      WebWsTrustProtection.targetOptions(offered) + '</select> ' +
+      '<button type="button" data-wsp-add disabled>' +
+      t.html(K + 'addList') + '</button></div>' +
       '<p class="wsp-added" id="wsp-added" role="status" ' +
-      'aria-live="polite"></p></div>');
+      'aria-live="polite"></p></div>' +
+      '<div class="wsp-dialog-foot"><button type="button" ' +
+      'class="secondary" data-wsp-close>' + t.html(K + 'close') +
+      '</button></div></dialog>';
+  }
+
+  /**
+   * The target select's options.
+   *
+   * @param targets - the attributes, in order
+   * @returns the options as HTML
+   */
+  static targetOptions(targets): string {
+    return (targets || []).map(function (one) {
+      return '<option value="' + kit.esc(one) + '">' + kit.esc(one) +
+        '</option>';
+    }).join('');
+  }
+
+  /**
+   * The dialog's list of expressions, one item each with its remove
+   * button.
+   *
+   * @param list - the expressions
+   * @param t - the translator
+   * @returns the items as HTML
+   */
+  static listItems(list, t): string {
+    return (list || []).map(function (expr, n) {
+      return '<li><code>' + kit.esc(expr) + '</code> <button type="button" ' +
+        'class="secondary fg-drop" data-wsp-remove="' + n + '" title="' +
+        kit.esc(t.text(K + 'remove')) + '" aria-label="' +
+        kit.esc(t.text(K + 'removeN', { n: n + 1 })) + '">' +
+        kit.trashIcon() + '</button></li>';
+    }).join('');
+  }
+
+  /**
+   * What adding a list to a field leaves in it: the field's values with
+   * each expression of the list not already there appended, or, for the
+   * single recipient expression, the list's one expression.
+   *
+   * @param field - the target attribute
+   * @param held - the values the field holds now
+   * @param list - the expressions
+   * @returns `{ values, added }`, or null when the recipient is given more
+   *   or fewer than one
+   */
+  static merged(field, held, list): { values: string[], added: number }
+                                    | null {
+    const exprs = (list || []).map(function (one) {
+      return String(one).trim();
+    }).filter(function (one) {
+      return one !== '';
+    });
+    if (field === 'wstrustResponseRecipientXPath') {
+      return exprs.length === 1 ? { values: exprs, added: 1 } : null;
+    }
+    const values = (held || []).filter(function (one) {
+      return String(one).trim() !== '';
+    });
+    const present = values.map(function (one) {
+      return String(one).trim();
+    });
+    let added = 0;
+    exprs.forEach(function (expr) {
+      if (present.indexOf(expr) < 0) {
+        present.push(expr);
+        values.push(expr);
+        added++;
+      }
+    });
+    return { values: values, added: added };
   }
 
   /**
@@ -414,7 +656,7 @@ class WebWsTrustProtection {
   }
 
   /**
-   * Wires the XPath builder.
+   * Wires the XPath builder dialog and the buttons that open it.
    *
    * @param env - `{ document, window }`
    * @param t - the translator
@@ -434,18 +676,33 @@ class WebWsTrustProtection {
     const matches = doc.getElementById('wsp-matches');
     const target = doc.getElementById('wsp-target');
     const added = doc.getElementById('wsp-added');
+    const listed = doc.getElementById('wsp-list');
+    const empty = doc.getElementById('wsp-list-empty');
+    const partName = doc.getElementById('wsp-dialog-part');
     const parse = builder.querySelector('[data-wsp-parse]');
+    const collect = builder.querySelector('[data-wsp-collect]');
     const add = builder.querySelector('[data-wsp-add]');
+    const drawnTargets = String(builder.getAttribute('data-wsp-targets') ||
+                                '').split(' ').filter(function (one) {
+      return !!one;
+    });
     let parsed = null;
     let nodes = [];
+    let list = [];
+    let part = '';
     const say = function (element, text, refused) {
       // Each line's own class, as drawn, and the refusal's beside it.
-      element.className = element.id === 'wsp-added' ? 'wsp-added'
-        : element.id === 'wsp-matches' ? 'sub' : 'wsp-status';
+      element.className = element.id === 'wsp-matches' ? 'sub'
+        : element.id === 'wsp-status' ? 'wsp-status' : 'wsp-added';
       if (refused) {
         element.className += ' state-invalid';
       }
       WebSafeDom.text(element, text);
+    };
+    const showList = function () {
+      WebSafeDom.render(listed, WebWsTrustProtection.listItems(list, t));
+      empty.hidden = list.length > 0;
+      add.disabled = list.length === 0;
     };
     const choose = function (n) {
       const element = nodes[n];
@@ -455,8 +712,7 @@ class WebWsTrustProtection {
       const expr = WebWsProtection.pathFor(
         WebWsTrustProtection.chainOf(element));
       expression.value = expr;
-      add.disabled = !expr;
-      WebSafeDom.text(added, '');
+      collect.disabled = !expr;
       if (!expr) {
         // A name the subset cannot quote (stepFor()).
         say(matches, t.text(K + 'apostrophe'), true);
@@ -492,13 +748,49 @@ class WebWsTrustProtection {
       }
       say(matches, t.text(K + 'matches', { n: hit.length }), false);
     };
+    // OPENING: the dialog is for the section whose button was pressed, so
+    // its field select offers that section's targets only. The list and
+    // the parsed sample stay from the last opening.
+    const openers = doc.querySelectorAll('[data-wsp-open]');
+    for (let i = 0; i < openers.length; i++) {
+      const opener = openers[i];
+      opener.addEventListener('click', function () {
+        part = String(opener.getAttribute('data-wsp-open') || '');
+        const mine = WebWsTrustProtection.targetsOf(part, drawnTargets);
+        WebSafeDom.render(target, WebWsTrustProtection.targetOptions(mine));
+        WebSafeDom.text(partName,
+          ' — ' + String(opener.getAttribute('data-wsp-heading') || ''));
+        WebSafeDom.text(added, '');
+        showList();
+        if (typeof builder.showModal === 'function') {
+          if (!builder.open) {
+            builder.showModal();
+          }
+        } else {
+          // A stand-in document (a test's) has no modal dialog.
+          builder.setAttribute('open', '');
+        }
+        if (sample && sample.focus) {
+          sample.focus();
+        }
+      });
+    }
+    const closers = builder.querySelectorAll('[data-wsp-close]');
+    for (let i = 0; i < closers.length; i++) {
+      closers[i].addEventListener('click', function () {
+        if (typeof builder.close === 'function') {
+          builder.close();
+        } else {
+          builder.removeAttribute('open');
+        }
+      });
+    }
     parse.addEventListener('click', function () {
       parsed = null;
       nodes = [];
       expression.value = '';
-      add.disabled = true;
+      collect.disabled = true;
       WebSafeDom.text(matches, '');
-      WebSafeDom.text(added, '');
       WebSafeDom.render(tree, '');
       const Parser = env.window && env.window.DOMParser;
       if (!Parser) {
@@ -539,10 +831,25 @@ class WebWsTrustProtection {
         choose(Number(button.getAttribute('data-wsp-node')));
       }
     });
-    add.addEventListener('click', function () {
+    collect.addEventListener('click', function () {
       const expr = String(expression.value || '').trim();
+      if (expr && list.indexOf(expr) < 0) {
+        list.push(expr);
+      }
+      WebSafeDom.text(added, '');
+      showList();
+    });
+    listed.addEventListener('click', function (event) {
+      const button = event && event.target && event.target.closest
+        ? event.target.closest('button[data-wsp-remove]') : null;
+      if (button) {
+        list.splice(Number(button.getAttribute('data-wsp-remove')), 1);
+        showList();
+      }
+    });
+    add.addEventListener('click', function () {
       const field = String(target.value || '');
-      if (!expr || WebWsProtection.TARGETS.indexOf(field) < 0) {
+      if (!list.length || WebWsProtection.TARGETS.indexOf(field) < 0) {
         return;
       }
       const cell = doc.getElementById('fgc-' + field);
@@ -551,28 +858,29 @@ class WebWsTrustProtection {
         return;
       }
       let focus = null;
+      let count = 0;
       if (field === 'wstrustResponseRecipientXPath') {
-        // The recipient is ONE expression: it is replaced.
+        // The recipient is ONE expression: it is replaced, by a list of one.
+        const one = WebWsTrustProtection.merged(field, [], list);
         focus = doc.getElementById('fg-' + field);
+        if (!one) {
+          say(added, t.text(K + 'recipientOne', { field: field }), true);
+          return;
+        }
         if (!focus) {
           say(added, t.text(K + 'notDrawn', { field: field }), true);
           return;
         }
-        focus.value = expr;
+        focus.value = one.values[0];
+        count = 1;
       } else {
-        const values = WebWsTrustProtection.listValues(cell, field)
-          .filter(function (one) {
-            return String(one).trim() !== '';
-          });
-        if (values.map(function (one) {
-          return String(one).trim();
-        }).indexOf(expr) < 0) {
-          values.push(expr);
-        }
-        WebWsTrustProtection.redrawList(doc, field, values, t);
+        const next = WebWsTrustProtection.merged(field,
+          WebWsTrustProtection.listValues(cell, field), list);
+        WebWsTrustProtection.redrawList(doc, field, next.values, t);
         const inputs = doc.getElementById('fgc-' + field)
           .querySelectorAll('.fg-item input');
         focus = inputs.length ? inputs[inputs.length - 1] : null;
+        count = next.added;
         WebWsTrustProtection.syncBoxes(doc);
       }
       // A FIELD THE SIMPLIFIED VIEW HIDES is shown: the form is switched to
@@ -585,11 +893,22 @@ class WebWsTrustProtection {
           advanced.checked = true;
         }
       }
+      list = [];
+      showList();
+      // THE DIALOG CLOSES and the section it was opened from says what was
+      // added, where the field is.
+      const where = doc.querySelector('[data-wsp-added="' + part + '"]');
+      if (typeof builder.close === 'function') {
+        builder.close();
+      } else {
+        builder.removeAttribute('open');
+      }
+      say(where || added, t.text(K + 'addedN', { n: count, field: field }),
+          false);
       if (focus && focus.focus) {
         focus.focus();
       }
       touched();
-      say(added, t.text(K + 'added', { field: field }), false);
     });
   }
 }
