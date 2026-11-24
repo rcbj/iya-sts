@@ -4029,6 +4029,13 @@ const CODES = [
       'module is initialised again off the event loop once they drain, and ' +
       'the next call is made on it (#1955).',
     spec: '' },
+  { code: 'STS-KEYS-0213',
+    summary: 'A thread held the process-wide lock on re-initialising a ' +
+      'PKCS#11 module for longer than the bound (a worker stopped while it ' +
+      'held it, or the module hung in C_Finalize or C_Initialize): the ' +
+      'thread waiting for it takes it over and initialises the module ' +
+      'again itself (#1955).',
+    spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
