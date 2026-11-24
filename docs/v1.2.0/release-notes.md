@@ -105,6 +105,16 @@ outlive the new one (ASVS 5.0.0 7.4.3). The page that confirms the new
 password says so. If the sessions cannot be ended, the password is still set
 and `STS-PORTAL-0638` is logged.
 
+### Fixed: the console, portal and reports say why they cannot open without WebCrypto
+
+The admin console, the user portal and the reports application sign in with
+the browser's WebCrypto, which a browser offers only to a page opened over
+HTTPS (or `localhost`). Opened over plain HTTP, or in a browser too old to have
+WebCrypto, each one used to stop with a blank page. Each now checks before it
+signs in and, where WebCrypto is missing, shows one sentence in the page's
+language saying that this browser cannot run the page securely, usually
+because the page was not opened over HTTPS or the browser is too old.
+
 ### Create pages mark what the create requires
 
 Each Directory object has a create page that marks a field required exactly

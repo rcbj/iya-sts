@@ -147,5 +147,7 @@
   "presetsNote": "Chacune ouvre Nouvelle requête avec sa requête déjà remplie. Rien n’est exécuté avant que vous appuyiez sur Exécuter, et l’enregistrer crée votre propre définition.",
   "presetFrom": "Partie de la requête prédéfinie {name}.",
   "adminOnlySource": "Administrateurs des rapports uniquement",
-  "adminOnlyNote": "Seul un administrateur des rapports (REPORT_ADMIN) peut interroger cette source : elle indique qui a fait quoi et d'où, ou qui détient quel justificatif."
+  "adminOnlyNote": "Seul un administrateur des rapports (REPORT_ADMIN) peut interroger cette source : elle indique qui a fait quoi et d'où, ou qui détient quel justificatif.",
+  "noWebCrypto.title": "Ce navigateur ne peut pas ouvrir cette page",
+  "noWebCrypto.text": "Ce navigateur ne peut pas exécuter cette page en toute sécurité : WebCrypto n'est pas disponible, généralement parce que la page n'a pas été ouverte en HTTPS ou que le navigateur est trop ancien."
 }
