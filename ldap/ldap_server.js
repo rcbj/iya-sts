@@ -23176,6 +23176,25 @@ server.search('', function (req, res, next) {
     log.debug('Leaving the LDAP search handler. Not bound.');
     return next(readRefusal);
   }
+  // A SUBSTRING ASSERTION WIDER THAN THE CAP IS REFUSED BEFORE ANY ENTRY IS
+  // READ (#2137, ASVS 5.0.0 1.3.12). `ldap_matching.ts` matches a substring
+  // in one linear pass, so a wide one is no longer a backtracking bomb, but
+  // its cost is still components x value length for every value in scope,
+  // and nothing legitimate needs more than a handful; the constant is argued
+  // there. adminLimitExceeded (11) is RFC 4511's "a server-defined
+  // administrative limit", which this is, and the client is told the limit.
+  const widest = ldapMatching.widestSubstring(req.filter);
+  if (widest > ldapMatching.MAX_SUBSTRING_COMPONENTS) {
+    log.debug('Leaving the LDAP search handler. A substring assertion is ' +
+              'too wide.');
+    return next(ldapRefusal(req, 'STS-LDAP-0226', 'a search of ' + base +
+      ' was refused: a substring assertion held ' + widest +
+      ' components, over the limit of ' +
+      ldapMatching.MAX_SUBSTRING_COMPONENTS,
+      new ldap.AdminLimitExceededError('a substring assertion may hold at ' +
+        'most ' + ldapMatching.MAX_SUBSTRING_COMPONENTS + ' components'),
+      base));
+  }
   if (!inNamingContext(base)) {
     log.debug('Leaving the LDAP search handler. Outside the naming context.');
     return next(ldapRefusal(req, 'STS-LDAP-0003', 'a search based at ' + base +

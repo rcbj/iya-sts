@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6088** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6092** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 228
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 262
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 179
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 180
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 35
@@ -3671,6 +3671,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0223` | An LDAP operation's handler threw after the cluster read barrier it waited for (active-active), where the socket's own handling can no longer catch it: the client is answered operationsError (1) rather than left without a result (run #510). | RFC 4511 section 4.1.9 |
 | `STS-LDAP-0224` | A handler for a person's credential attribute was refused by the entry observer: the attribute is not one of the five it observes, or the handler offers no changed(); that attribute's index is not kept in step with the entries (#2050, #2051). | none — logged |
 | `STS-LDAP-0225` | The handler of a person's credential attribute threw on a write of their entry; the write stands, and the index of that attribute may be behind the entry until its job catches it up (#2050, #2051). | none — logged |
+| `STS-LDAP-0226` | An LDAP search was refused before it read any entry: one of its substring assertions held more components (initial, any, final) than the limit of 32 (#2137). | LDAP adminLimitExceeded (11) |
 
 ## STS-ATTR
 
