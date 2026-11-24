@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6085** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6086** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -99,7 +99,7 @@ is an ordinary outcome.
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 304
 * [Management API (`STS-API`)](#sts-api) — 97
-* [User portal (`STS-PORTAL`)](#sts-portal) — 122
+* [User portal (`STS-PORTAL`)](#sts-portal) — 123
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 16
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
@@ -6519,6 +6519,7 @@ Raised from: portal/.
 | `STS-PORTAL-0634` | POST /account-api/photo in a realm whose profilePhoto.selfService is off (#719). | HTTP 403 JSON |
 | `STS-PORTAL-0635` | A profile photo was not saved in product mode: its address would be built on a Host header, because global.publicBaseUrl is not set (#719). | HTTP 409 JSON |
 | `STS-PORTAL-0636` | GET /web/photo/{id} answered 404: no such photo, its person was deleted, or their account is disabled (#719). | HTTP 404 |
+| `STS-PORTAL-0638` | A person set a new password from a reset link and their other sessions could not be ended; the password is set (#2123, ASVS 5.0.0 7.4.3). | — |
 | `STS-PORTAL-0637` | A password reset or an authenticator app setup was done and recorded, and its failure count could not be cleared (ASVS 5.0.0 2.3.3). | — |
 
 ## STS-ACCOUNT

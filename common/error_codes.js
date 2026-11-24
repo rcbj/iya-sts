@@ -30214,6 +30214,11 @@ const CODES = [
     summary: 'GET /web/photo/{id} answered 404: no such photo, its person ' +
       'was deleted, or their account is disabled (#719).',
     spec: 'HTTP 404' },
+  { code: 'STS-PORTAL-0638',
+    summary: 'A person set a new password from a reset link and their ' +
+      'other sessions could not be ended; the password is set (#2123, ' +
+      'ASVS 5.0.0 7.4.3).',
+    spec: '' },
   { code: 'STS-PORTAL-0637',
     summary: 'A password reset or an authenticator app setup was done and ' +
       'recorded, and its failure count could not be cleared (ASVS 5.0.0 ' +

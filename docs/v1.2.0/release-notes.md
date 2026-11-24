@@ -76,6 +76,16 @@ WS-Trust, Kerberos and LDAP) never carry a chosen role, and are refused
 where a role is required (`STS-XACML-0332`). See
 [Dynamic selectable roles](dynamic-roles.md).
 
+### Behaviour change: a password reset signs you out everywhere
+
+Setting a new password from a reset link a person asked for at
+`/portal/forgot-password` now ends every session they had, on every device,
+as a reset an administrator issues already did. A reset usually follows a
+password somebody else may know, and a session opened with it should not
+outlive the new one (ASVS 5.0.0 7.4.3). The page that confirms the new
+password says so. If the sessions cannot be ended, the password is still set
+and `STS-PORTAL-0638` is logged.
+
 ### Create pages mark what the create requires
 
 Each Directory object has a create page that marks a field required exactly
