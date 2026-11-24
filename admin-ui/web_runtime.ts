@@ -1448,7 +1448,7 @@ class ConsoleRuntime extends SpaClient {
       self.dirty = true;
     }, function (method: string, path: string, body?: Json) {
       return self.apiJson(method, path, body);
-    });
+    }, this.prefix);
     this.loadPageScripts();
     this.revealActiveNav();
   }
