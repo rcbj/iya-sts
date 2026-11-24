@@ -1459,6 +1459,12 @@ const JOBS = [
   // `clientLab: true`: skipped without CLIENT_LAB_URL (tests/CLAUDE.md,
   // *THE CLIENT LAB*).
   { file: 'sts_piv_card.js', browser: false, local: true, clientLab: true },
+  // S/MIME MAIL DECRYPTED WITH THE KEY ON A PIV CARD (#2058): a 9d key on
+  // the client lab's card, its attested certificate registered on the
+  // portal as the person's S/MIME certificate, the service's mail delivered
+  // to the lab's postfix over STARTTLS and opened by openssl cms through
+  // OpenSC; without the card's key it cannot be. `clientLab: true`.
+  { file: 'sts_piv_smime.js', browser: false, local: true, clientLab: true },
   // CERTIFICATE SIGN-IN PROFILES AND RFC 9440 OVER REAL HANDSHAKES (#2012):
   // an outside chain bound by issuer and serial through a realm's
   // certSignIn.profiles, outside the profile, a name binding refused without
