@@ -10,7 +10,7 @@ shaped that way. [Persistence](persistence.md) covers turning the store on, the
 compose stack and what survives a restart. This page covers only what is in
 the database.
 
-**Schema version 32**: 41 tables and 46 secondary indexes in a schema of their
+**Schema version 33**: 42 tables and 47 secondary indexes in a schema of their
 own, `sts`.
 
 ## Where the schema is written down
@@ -94,6 +94,7 @@ CONCURRENTLY` (`STS-STORE-0173` if that fails).
 | 30 | `sts_cluster_locks`: a row per named lock, locked `FOR UPDATE` by the portable cluster statements in place of `pg_advisory_xact_lock` (#677) |
 | 31 | `sts_ldap_entries_asked_names` rebuilt for `stsassertionkeypair` and `stssamlassertionkeypair` (#1290) |
 | 32 | the partial index `sts_sessions_started` on `(realm, started_at DESC, key) WHERE chosen`, so the console's live session pages walk newest first (#882). MariaDB has the same columns and no predicate |
+| 33 | `sts_audit`, the audit log as one sealed row per event, where the application role may only add and read rows, and the two functions old rows leave through, `sts_audit_retain` and `sts_audit_purge_realm` (#1616). `postgres/upgrade-1.1.0.sql` builds them on a 1.1 store |
 
 **Versions 27 and 28 rebuild an index on a large table.** The script drops
 `sts_ldap_entries_asked_names` and builds it again with the new list of
@@ -108,6 +109,17 @@ tables and sequences. **It does not hold `CREATE`, `TRUNCATE`, `REFERENCES` or
 `TRIGGER`.** `CREATE` is revoked on `sts` and on `public`, from `PUBLIC` and
 from the role. The script also stops if an existing role holds `SUPERUSER`,
 `REPLICATION` or `BYPASSRLS`, because only a superuser could remove those.
+
+**The audit log is the exception: on `sts_audit` the role holds `SELECT` and
+`INSERT` and nothing else** (#1616, ASVS 5.0.0 16.4.2). The script takes
+`UPDATE`, `DELETE`, `TRUNCATE`, `REFERENCES` and `TRIGGER` away after the
+table-wide grant, so a second run does not hand them back, and gives the
+role `EXECUTE` on the two functions rows leave through. They are
+`SECURITY DEFINER` and run as the role that ran the script, so whoever holds
+the service's credential cannot rewrite or delete an audit row. The service
+checks this at every start: where its role can change the table (it owns it,
+or holds one of those privileges), `/admin/mode` reports the requirement as
+not met and `STS-AUDIT-0019` is logged.
 
 The default privileges extend the same grants to tables a later version adds.
 The database's `search_path` is set to `sts, public`, so the driver can use
@@ -221,6 +233,9 @@ Two things on that list deserve an operator's attention:
  ───────────                         ───────
  sts_schema                          sts_report_artifacts (sealed)
                                      sts_report_artifact_pieces (sealed)
+ audit log
+ ─────────
+ sts_audit (body sealed; append-only)
 ```
 
 There are no foreign keys. Every table is keyed by what its readers look up,
@@ -794,6 +809,40 @@ removes the pieces and the row in one statement.
 | `bytes` | bytea | **sealed (AES-GCM)** | up to 1 MiB of the report, sealed on its own under the realm's `report-artifact` data key together with the job id and `seq`, so a piece moved to another job or another place does not open as part of a report |
 
 Primary key `(realm, job_id, seq)`; no other index.
+
+## `sts_audit`
+
+The audit log (#1616, schema version 33): one row per event, written by the
+process that recorded it. Until schema version 33 the log was sealed
+segments of 32 events in `sts_minted`, rewritten in place; the 1.2.0
+service copies those rows in at its first start, with their chain
+checksums, and removes the segments.
+
+| Column | Type | Encrypted? | Meaning |
+|---|---|---|---|
+| `realm` | text | clear | the trust realm |
+| `origin` | text | clear | the process that recorded the event |
+| `seq` | bigint | clear | the event's number, unique per process |
+| `at` | bigint | clear | when it was recorded, in milliseconds |
+| `body` | text | **sealed (AES-GCM)** | the event, with its keyed chain checksums, sealed under the realm's `minted-rows` data key |
+
+Primary key `(realm, origin, seq)`; index `sts_audit_at` on
+`(realm, at, origin, seq)`, the audit page's order.
+
+**Append-only.** The application role may `INSERT` and `SELECT` only. Rows
+leave through two functions the script owner owns:
+
+* `sts_audit_retain(realm, keep)` removes a realm's rows older than its
+  newest `keep`, and **keeps at least 1000 whatever it is asked**. The
+  `audit.retain` scheduler job calls it every ten minutes with each realm's
+  `audit.maxEvents`; the audit page shows no more than `audit.maxEvents`.
+* `sts_audit_purge_realm(realm)` removes a realm's rows only when the realm
+  is gone from `sts_realms` or is retiring, and never the default realm's.
+
+**A row is never re-sealed.** Data-key rotation re-seals other tables with
+`UPDATE`, which this table refuses. Its rows are counted against their data
+key instead, so a retired key is kept, and not destroyed, until retention
+has removed every audit row sealed under it.
 
 ## `sts_schema`
 

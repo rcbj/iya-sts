@@ -570,6 +570,8 @@ export function readPersistence(program, engine) {
     const options = pair[1];
     const table = tableOf(program, pair[0], options);
     table.indexes = options.indexes || [];
+    // The verbs the per-table grant gives (#1616), where not the four.
+    table.grant = options.grant || '';
     tables.push(table);
     add(table.name, table.statement, options.driver);
     table.indexes.forEach(function (one) {
@@ -619,6 +621,18 @@ export function renderScript(template, persistence) {
       }
       return held + ';';
     });
+  // ONE GRANT PER TABLE (#1616): `--@grant-tables` is every table of the
+  // model, in its order, each given the four verbs or the `grant` its
+  // declaration names — MariaDB's application account, which cannot be
+  // given a database-wide grant with one table taken out of it. A table the
+  // model gains is granted without anybody writing a line for it.
+  const granted = script.replace(/^--@grant-tables$/mg, function () {
+    return persistence.tables.map(function (table) {
+      return "EXECUTE IMMEDIATE CONCAT('GRANT " +
+        (table.grant || 'SELECT, INSERT, UPDATE, DELETE') + " ON ', " +
+        "@sts_app_database, '.`" + table.name + "` TO ', @sts_app_account);";
+    }).join('\n');
+  });
   log.debug("Leaving renderScript().");
-  return script;
+  return granted;
 }

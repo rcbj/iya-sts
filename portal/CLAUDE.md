@@ -2370,7 +2370,13 @@ can be chosen from.
 `stsPasswordResetExpires`, `security.passwordResetTtlMinutes`), REMOVES the
 current password into the history, signs the person out everywhere, and hands
 the administrator `…/portal/reset-password?user=<name>&token=<token>` once.
-This page spends it. It is `/portal/activate`'s shape and for its reasons, with
+This page spends it. **Spending it SIGNS THE PERSON OUT EVERYWHERE** (#2123,
+ASVS 5.0.0 7.4.3, rcbj 2026-11-24): `AccountReset.endEverySession()` asks
+`logout.terminate()` for every session of the identity, as the administrator's
+reset does. That matters for a link the person asked for at
+`/portal/forgot-password`, which removes nothing when it is issued. A failure is
+said (`STS-PORTAL-0638`) and does not undo the password. It is
+`/portal/activate`'s shape and for its reasons, with
 three differences:
 
 * **GET checks the link before drawing the form** (rate limited on
