@@ -495,6 +495,7 @@ default**:
 | `oauth2.refreshTokenRequireMtls` | the same for a client certificate (section 7.1 still passes a certificate-authenticated client) |
 | `oauth2.accessTokenRequireDpop` | every protected resource refuses an access token that is not DPoP-bound and proved |
 | `oauth2.accessTokenRequireMtls` | the same for a certificate-bound token |
+| `oauth2.accessTokenRequireSenderConstraint` | no access token is minted unless the request binds it, by a DPoP proof or the connection's client certificate, either one; the authorization endpoint refuses a `token` response type (ASVS 5.0.0 10.3.5, 10.4.14) |
 
 * **The refresh settings refuse the whole token request**, access token
   included. Half a token set is worse than an error, because the client finds

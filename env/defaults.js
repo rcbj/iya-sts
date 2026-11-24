@@ -167,6 +167,7 @@ var config = {
     httpSignatureResponseAlg: "ES256",             // Signed response algorithm
     accessTokenRequireDpop: false,                 // Require DPoP for every access token
     accessTokenRequireMtls: false,                 // Require mutual TLS for every access token
+    accessTokenRequireSenderConstraint: false,     // Issue only sender-constrained access tokens
     openRegistration: false,                       // Open dynamic client registration (product mode)
     softwareStatementRequireTrustedIssuer: true,   // Refuse a software statement from an undeclared issuer
     softwareStatementOpensRegistration: true,      // A trusted software statement opens a closed registration endpoint

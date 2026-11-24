@@ -3059,6 +3059,14 @@
     "en": "b4af599a6caff599",
     "text": "Le volet RFC 8705 de la ligne ci-dessus, sur les mêmes surfaces : un jeton d’accès présenté doit porter `cnf[\"x5t#S256\"]` et la connexion doit porter ce certificat. **Il exige que le port principal soit lié en HTTPS** (global.https), et l’écouteur du débogueur a commencé à DEMANDER un certificat client le 2026-09-15 pour qu’un jeton lié puisse seulement y être présenté — il est demandé, jamais exigé. Un jeton que ce service n’a pas émis est soumis à la même règle : la liaison qu’il porte est vérifiée même si le jeton lui-même ne peut pas l’être."
   },
+  "oauth2.accessTokenRequireSenderConstraint|label": {
+    "en": "545727cb62da6732",
+    "text": "Émettre uniquement des jetons d’accès contraints à l’expéditeur"
+  },
+  "oauth2.accessTokenRequireSenderConstraint|description": {
+    "en": "24f1fba61fc8e5d2",
+    "text": "DÉSACTIVÉ PAR DÉFAUT, et à laisser désactivé sauf si chaque client du domaine peut lier ses jetons (ASVS 5.0.0 10.3.5 et 10.4.14, #2183). Activé, le point de terminaison de jeton n’émet un jeton d’accès qu’à une requête qui le lie : une preuve DPoP (RFC 9449) ou le certificat client de la connexion (RFC 8705), l’un ou l’autre, pour chaque type d’autorisation. Le point de terminaison d’autorisation refuse un response_type qui émettrait un jeton dans le navigateur (`token` implicite et hybride), qui ne pourrait jamais être lié. Un client qui n’envoie ni l’un ni l’autre est refusé avec invalid_dpop_proof nommant ce réglage. Les deux lignes ci-dessus refusent un jeton non lié aux ressources ; celle-ci refuse de l’émettre."
+  },
   "oauth2.openRegistration|label": {
     "en": "5cd1778292c7697a",
     "text": "Enregistrement dynamique de clients ouvert (mode produit)"

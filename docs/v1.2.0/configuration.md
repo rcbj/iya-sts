@@ -460,6 +460,20 @@ handshake succeeds either way and what a certificate is worth is decided per
 request. A listener that never asked would have made this setting an exemption
 dressed up as a refusal.
 
+
+### `oauth2.accessTokenRequireSenderConstraint`
+
+Off, and meant to stay off unless every client of the realm can bind its
+tokens (ASVS 5.0.0 10.3.5 and 10.4.14). On, the token endpoint issues an access
+token only to a request that binds it: a DPoP proof (RFC 9449) or the
+connection's client certificate (RFC 8705), either one, for every grant. A
+request with neither is refused `invalid_dpop_proof` (`STS-OAUTH-1013`). The
+authorization endpoint refuses a `response_type` that would mint a token in the
+browser (implicit and hybrid `token`, `STS-OAUTH-1014`), because that token
+could never be bound. The two settings above refuse an unbound token at the
+resources; this one refuses to mint it. Clients that send plain client
+credentials, `/admin/api-explorer` and most off-the-shelf libraries stop
+getting tokens while it is on.
 ### `oauth2.delegatedPermissionsEnforced` — the OTHER mode, and not part of the first
 
 Off by default, runtime, and settable on a trust realm. **It matters in
@@ -1895,6 +1909,7 @@ card, and each of these applies per realm. Directory → **Users**
 | `oauth2.httpSignatureMaxAgeS` | `STS_OAUTH2_HTTP_SIGNATURE_MAX_AGE_S` | `60` | yes | How far a signed resource request's `created` may be from this server's clock, in either direction, before it is refused with 401. The draft recommends 1 minute. |
 | `oauth2.httpSignatureResponseAlg` | `STS_OAUTH2_HTTP_SIGNATURE_RESPONSE_ALG` | `ES256` | yes | Which of the realm's keys signs a resource response, by its JWS algorithm: `ES256` (default), `ES384`, `EdDSA` (Ed25519 only under FAPI 2.0, so `oauth2.eddsaCurve` must be `Ed25519`), or `ML-DSA-44`, `ML-DSA-65` or `ML-DSA-87`. **Warning:** the ML-DSA choices are post-quantum and only an RFC 9964 client can verify them. They are not FAPI 2.0 algorithms. The RSA key is not offered: it is published as RS256, which FAPI 2.0 does not allow. |
 | `oauth2.accessTokenRequireMtls` | `STS_OAUTH2_ACCESS_TOKEN_REQUIRE_MTLS` | `false` | yes | The RFC 8705 half of the row above, at the same surfaces: a presented access token must carry `cnf["x5t#S256"]` and the connection must carry that certificate. **It needs the main port bound as HTTPS** (`global.https`), and the debugger's listener ASKS for a client certificate so that a bound token can be presented there at all — asked for, never required, the posture the main port takes. Where a certificate cannot be asked for the affected request is refused with `STS-OAUTH-0527` rather than let through. |
+| `oauth2.accessTokenRequireSenderConstraint` | `STS_OAUTH2_ACCESS_TOKEN_REQUIRE_SENDER_CONSTRAINT` | `false` | yes | Off by default. On, the token endpoint issues an access token only to a request that binds it, by a DPoP proof or the connection's client certificate, and the authorization endpoint refuses a `token` response type (ASVS 5.0.0 10.3.5, 10.4.14). |
 | `oauth2.openRegistration` | `STS_OAUTH2_OPEN_REGISTRATION` | `false` | yes | Whether POST /oauth2/register (RFC 7591) accepts a registration from anybody who can reach it IN PRODUCT MODE. Development always does — it is how a client under test registers itself — and this setting changes nothing there. In product it is OFF, the endpoint refuses with `access_denied` naming this setting, and `registration_endpoint` is left out of both discovery documents: a published endpoint that refuses every caller is a promise broken. Create applications through /admin or /admin-api instead, which require a credential. Turning it on is a decision to let the internet mint confidential clients on this authorization server. |
 | `oauth2.softwareStatementRequireTrustedIssuer` | `STS_OAUTH2_SOFTWARE_STATEMENT_REQUIRE_TRUSTED_ISSUER` | `true` | yes | Whether registration refuses a `software_statement` whose issuer nothing in this realm trusts, with `unapproved_software_statement`, in both modes. Off, such a statement is accepted UNVERIFIED: its claims lose to the JSON, the entry records it as untrusted, and it never opens a closed endpoint. A malformed, unsigned, badly signed or expired statement is refused either way. |
 | `oauth2.softwareStatementOpensRegistration` | `STS_OAUTH2_SOFTWARE_STATEMENT_OPENS_REGISTRATION` | `true` | yes | Whether a registration carrying a TRUSTED software statement is accepted where `POST /oauth2/register` is otherwise closed (product mode, `oauth2.openRegistration` off). While on, `registration_endpoint` stays advertised, and a client registered this way must present a trusted statement from the same issuer with every RFC 7592 update. |
