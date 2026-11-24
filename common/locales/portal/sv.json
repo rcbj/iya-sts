@@ -495,6 +495,7 @@
   "resetDone.heading": "Ditt lösenord är angivet",
   "resetDone.ok": "Den här återställningslänken har nu använts och fungerar inte igen.",
   "resetDone.next": "Logga in med ditt nya lösenord. Om ditt konto har en andra faktor blir du ombedd att använda den som vanligt.",
+  "resetDone.signedOut": "Alla sessioner du hade, på alla enheter, har loggats ut, så ingen som kände till ditt gamla lösenord är fortfarande inloggad.",
   "signedOut.title": "Utloggad",
   "signedOut.heading": "Du är utloggad",
   "signedOut.noSession": "Det fanns ingen portalsession i den här webbläsaren att avsluta.",

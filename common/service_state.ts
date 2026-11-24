@@ -221,6 +221,58 @@ class ServiceState {
   // process restores what it minted — the point at which the front process
   // may start its request workers, whose own restores then run beside this
   // one (`server.js`). Its return is ignored; a throw is the caller's.
+  /**
+   * Starts the append-only audit log once the minted state is restored
+   * (#1616): this process's stored events back into its ring and, in the
+   * front process, the old segments copied and the privileges asked.
+   * Never rejects.
+   *
+   * @returns a promise that settles when it is done
+   */
+  startAuditLog(): Promise<void> {
+    helpers.log.debug("Entering ServiceState.startAuditLog().");
+    const front = require('worker_threads').isMainThread;
+    const store = require('../persistence/audit_store');
+    const errorCodes = require('./error_codes');
+    // Retention, a cluster job, registered in every process: a cluster
+    // job's body is handed to a worker, which must know it (#408).
+    store.registerJobs();
+    // ASKED IN EVERY PROCESS, because `/admin/mode` may be answered by any
+    // of them; SAID by the front process alone, once.
+    const probe = store.privileges(true).then(function (p: any) {
+      if (front && p && p.present && p.writable) {
+        helpers.log.warn(errorCodes.tag('STS-AUDIT-0019') + 'audit: this ' +
+          'service\'s database role can change or delete rows of ' +
+          'sts_audit, so the audit log is not append-only here (ASVS 5.0.0 ' +
+          '16.4.2): the role owns the table, or holds UPDATE, DELETE or ' +
+          'TRUNCATE on it. Run the schema script ' +
+          '(postgres/schema.sql or postgres/upgrade-1.1.0.sql, or ' +
+          'MariaDB\'s) as the table owner, and connect as the application ' +
+          'role it makes. /admin/mode reports it.');
+      }
+      if (front && p && p.present && !p.functions) {
+        helpers.log.warn(errorCodes.tag('STS-AUDIT-0022') + 'audit: ' +
+          'sts_audit is there and its two functions are not, so retention ' +
+          'cannot remove old rows. Run the schema script as the table owner.');
+      }
+      return p;
+    }, function (e: any) {
+      helpers.log.debug("Caught in ServiceState.startAuditLog(): " +
+                        ((e && e.message) || e));
+      return null;
+    });
+    helpers.log.debug("Leaving ServiceState.startAuditLog().");
+    return probe.then(function () {
+      return require('./audit').restoreFromStore({ migrate: front });
+    }).then(function () {
+      return undefined;
+    }, function (e: any) {
+      helpers.log.debug("Caught in ServiceState.startAuditLog(): " +
+                        ((e && e.message) || e));
+      return undefined;
+    });
+  }
+
   start(opts?: { beforeMinted?: (keys: any) => void }): Promise<any> {
     const { log, persistence, keystore, cluster, clusterSecrets, pki, realms,
             helpers } = this.deps;
@@ -299,6 +351,16 @@ class ServiceState {
         opts.beforeMinted(keys);
       }
       return persistence.restoreMinted().then(function (mintedResult) {
+        // THE APPEND-ONLY AUDIT LOG (#1616), with the minted state back: this
+        // process's own newest events into its ring, and — in the front
+        // process only, which every worker's start follows — the old ring's
+        // segments copied into `sts_audit` once and the role's privileges on
+        // it asked, which `/admin/mode` reports (STS-AUDIT-0019). Never
+        // fatal: the service starts either way and says what it found.
+        return self.startAuditLog().then(function () {
+          return mintedResult;
+        });
+      }).then(function (mintedResult) {
         // ---------------------------------------------------------------------
         // AND THEN COORDINATION, WHICH IS LAST AND HAS TO BE.
         //

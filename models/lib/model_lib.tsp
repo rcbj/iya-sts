@@ -265,6 +265,10 @@ model TableOptions {
   constraints?: PlacedText[];
   driver: unknown;
   indexes?: IndexOptions[];
+  /** MariaDB only (#1616): the verbs the application account is granted on
+   * this table by the per-table grants, where not the four it gets on every
+   * other table. */
+  grant?: string;
 }
 
 /** One column: its SQL type and the clauses after that type. */

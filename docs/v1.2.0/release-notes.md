@@ -76,6 +76,16 @@ WS-Trust, Kerberos and LDAP) never carry a chosen role, and are refused
 where a role is required (`STS-XACML-0332`). See
 [Dynamic selectable roles](dynamic-roles.md).
 
+### Behaviour change: a password reset signs you out everywhere
+
+Setting a new password from a reset link a person asked for at
+`/portal/forgot-password` now ends every session they had, on every device,
+as a reset an administrator issues already did. A reset usually follows a
+password somebody else may know, and a session opened with it should not
+outlive the new one (ASVS 5.0.0 7.4.3). The page that confirms the new
+password says so. If the sessions cannot be ended, the password is still set
+and `STS-PORTAL-0638` is logged.
+
 ### Create pages mark what the create requires
 
 Each Directory object has a create page that marks a field required exactly
@@ -108,11 +118,12 @@ old set). Development mode still issues any scope a client asks for. This
 service's own clients declare their scopes and are not affected. A client's
 OAuth tab now names the set it gets when it declares none.
 
-**Upgrading from 1.1.** Run the upgrade script before or after starting the
-1.2.0 image. It stores `legacy` for a store that holds any application and
-has no value of its own, so every existing client keeps the scopes it had.
-It changes no table and records no schema version. A second run writes
-nothing. A store still on 1.0.0 runs `upgrade-1.0.0.sql` first.
+**Upgrading from 1.1.** Run the upgrade script before starting the 1.2.0
+image ([The audit log is append-only](#new-the-audit-log-is-append-only-in-the-database)
+says why it must come first). It stores `legacy` for a store that holds any
+application and has no value of its own, so every existing client keeps the
+scopes it had. A second run writes nothing. A store still on 1.0.0 runs
+`upgrade-1.0.0.sql` first.
 
 ```bash
 docker compose exec -T postgres \
@@ -129,6 +140,44 @@ both the directory and the settings, set `oauth2.undeclaredClientScopes` to
 `legacy` yourself. While it is `legacy` or `identity`, `/admin/mode` reports
 ASVS 5.0.0 10.4.11 as not met. Declare in each client's `oauthAllowedScope`
 the scopes it needs, then set the setting to `openid`.
+
+### New: the audit log is append-only in the database
+
+Where the audit log is stored (product mode on PostgreSQL or MariaDB, or
+any deployment with request workers or several nodes), each event is now one
+sealed row of a table of its own, `sts_audit`. The database role the service
+connects as may add rows and read them, and may not change or delete one
+(ASVS 5.0.0 16.4.2). Until 1.2.0 the log was kept with sessions and tokens,
+where that role could rewrite it: the keyed checksums showed a change, and
+nothing stopped one.
+
+Old rows leave through two functions the table's owner owns. Retention runs
+every ten minutes (the `audit.retain` scheduler job), removes what is past
+each realm's `audit.maxEvents`, and keeps at least 1000 rows per realm
+whatever the service asks. A removed realm's rows go once the realm is gone.
+The audit page shows each realm's newest `audit.maxEvents` events across
+every process.
+
+A data key that audit rows are sealed under is no longer destroyed while
+they remain, because those rows cannot be re-encrypted. Retention removes
+them, and then the key can go.
+
+If the service's role can still change the table (it owns it, or holds
+`UPDATE`, `DELETE` or `TRUNCATE` on it), the service starts, logs
+`STS-AUDIT-0019`, and `/admin/mode` reports the requirement as not met.
+
+**Upgrading from 1.1.** Run the upgrade script as the table owner **before
+starting the 1.2.0 image**. It creates `sts_audit` and its two functions,
+gives the application role `SELECT` and `INSERT` on it and nothing more, and
+records schema version 33. On MariaDB it also replaces the application
+account's database-wide grant with one grant per table, because MariaDB
+cannot take one table out of a database grant. A 1.2.0 image started first
+does not start: its role cannot create the table (`STS-STORE-0029`, naming
+the script). At its first start the 1.2.0 service copies the audit rows the
+old log held into `sts_audit`, with their checksums, and removes the old
+rows. The commands are the ones under [the scopes change](#behaviour-change-a-client-that-declares-no-scopes-is-issued-openid-alone).
+A new install gets everything from `postgres/schema.sql` or
+`mariadb/schema.sql`.
 
 ## 1.1.0
 

@@ -102,10 +102,11 @@ function checkTheReleaseUpgrade(t, sql, schema) {
           'F3. no sts_sessions_subject_band: MariaDB has none');
   t.check(!/CREATE INDEX CONCURRENTLY/i.test(code),
           'F4. no CREATE INDEX CONCURRENTLY: MariaDB has none');
+  // Release 1.1.0's version, 32: upgrade-1.1.0.sql records 33 (#1616), and
+  // this file takes a store to 1.1.0 and no further.
   t.check(upgrade.indexOf(
-    'INSERT IGNORE INTO sts_schema (version) VALUES (' +
-    schema.SCHEMA_VERSION + ')') >= 0,
-          'F5. the script records the module\'s SCHEMA_VERSION');
+    'INSERT IGNORE INTO sts_schema (version) VALUES (32)') >= 0,
+          'F5. the script records version 32, release 1.1.0\'s');
   // The driver builds this index in place, after open(), and never refuses a
   // start over it (#882): it is the one the model marks `online`.
   const online = (schema.SCHEMA_OBJECTS || []).filter(function (one) {
@@ -156,9 +157,11 @@ function checkTheScopeUpgrade(t) {
   const steps = code.split('EXECUTE IMMEDIATE').filter(function (one) {
     return /'INSERT /.test(one);
   });
-  t.check(!/\b(CREATE|ALTER|DROP)\s/i.test(code) &&
-          !/INTO sts_schema/i.test(code),
-          'G1. upgrade-1.1.0.sql runs no DDL and records no schema version');
+  t.check(!/\b(ALTER|DROP)\s/i.test(code) &&
+          /INSERT IGNORE INTO sts_schema \(version\) VALUES \(33\)/
+            .test(code),
+          'G1. upgrade-1.1.0.sql alters and drops nothing and records ' +
+          'schema version 33');
   t.check(steps.length === 2 &&
           /@sts_upgrade_version > 0 AND @sts_upgrade_scope_tables = 3/
             .test(steps[0]) &&
@@ -174,6 +177,69 @@ function checkTheScopeUpgrade(t) {
   t.check(/WHERE version >= 32/.test(code) && /SIGNAL SQLSTATE/.test(code),
           'G3. a store older than release 1.1.0 is refused');
   log.debug("Leaving checkTheScopeUpgrade().");
+}
+
+// THE APPEND-ONLY AUDIT LOG ON MARIADB (#1616): a grant per table where
+// there was one on `<db>.*`, `sts_audit`'s SELECT and INSERT alone, the
+// same list in the schema script and the upgrade, every table of the model
+// in it, and the two procedures the same in both.
+function checkTheAuditLog(t, sql) {
+  log.debug("Entering checkTheAuditLog().");
+  const upgrade = fs.readFileSync(
+    path.join(ROOT, 'mariadb', 'upgrade-1.1.0.sql'), 'utf8');
+  const perTable = function (text) {
+    return (text.match(/^EXECUTE IMMEDIATE CONCAT\('GRANT [A-Z, ]+ ON ', @sts_app_database, '\.`\w+` TO ', @sts_app_account\);$/mg) || [])
+      .filter(function (one, i, all) {
+        // The give-and-take-away of the audit table's four verbs is not a
+        // table's own grant: it is the LAST grant of a table that counts.
+        return all.lastIndexOf(one) === i;
+      });
+  };
+  const lastGrant = function (lines, table) {
+    const mine = lines.filter(function (one) {
+      return one.indexOf('.`' + table + '` TO') > 0;
+    });
+    return mine[mine.length - 1] || '';
+  };
+  const schemaGrants = perTable(sql);
+  const upgradeGrants = perTable(upgrade);
+  const schema = require('../persistence/schema_mariadb');
+  const tables = schema.SCHEMA_OBJECTS.filter(function (o) {
+    return /^CREATE TABLE /.test(o.statement);
+  }).map(function (o) { return o.name; });
+  t.check(tables.every(function (name) {
+    return !!lastGrant(schemaGrants, name);
+  }), 'H1. schema.sql grants every table of the model on its own',
+          tables.filter(function (name) {
+            return !lastGrant(schemaGrants, name);
+          }).join(' '));
+  t.check(/GRANT SELECT, INSERT ON /.test(lastGrant(schemaGrants, 'sts_audit')) &&
+          /GRANT SELECT, INSERT ON /.test(lastGrant(upgradeGrants, 'sts_audit')),
+          'H2. and the audit log SELECT and INSERT alone, in both scripts');
+  t.check(tables.every(function (name) {
+    return lastGrant(schemaGrants, name) === lastGrant(upgradeGrants, name);
+  }), 'H3. upgrade-1.1.0.sql grants each table as schema.sql does');
+  const dbWide = function (text) {
+    const lines = text.match(/^EXECUTE IMMEDIATE CONCAT\('(GRANT|REVOKE)[^\n]*'\.\* (TO|FROM) '[^\n]*$/mg) || [];
+    return lines[lines.length - 1] || '';
+  };
+  t.check(/^EXECUTE IMMEDIATE CONCAT\('REVOKE ALL PRIVILEGES/.test(dbWide(sql)) &&
+          /^EXECUTE IMMEDIATE CONCAT\('REVOKE ALL PRIVILEGES/.test(dbWide(upgrade)),
+          'H4. the last word on <db>.* is a REVOKE, in both scripts',
+          dbWide(sql) + ' | ' + dbWide(upgrade));
+  const proc = function (text, name) {
+    const m = new RegExp('^CREATE OR REPLACE PROCEDURE ' + name + '\\b.*$', 'm')
+      .exec(text);
+    return m ? m[0] : '';
+  };
+  t.check(['sts_audit_retain', 'sts_audit_purge_realm'].every(function (n) {
+    return !!proc(sql, n) && proc(sql, n) === proc(upgrade, n) &&
+           /SQL SECURITY DEFINER/.test(proc(sql, n));
+  }) && /GREATEST\(COALESCE\(p_keep, 0\), 1000\)/.test(
+    proc(sql, 'sts_audit_retain')),
+          'H5. the two procedures run as their definer, are the same in both ' +
+          'scripts, and retention keeps at least 1000 rows');
+  log.debug("Leaving checkTheAuditLog().");
 }
 
 async function run(t) {
@@ -257,6 +323,8 @@ async function run(t) {
   checkTheReleaseUpgrade(t, sql, schema);
   t.log.info('=== G. the release 1.1.0 upgrade (#1589) ===');
   checkTheScopeUpgrade(t);
+  t.log.info('=== H. the append-only audit log (#1616) ===');
+  checkTheAuditLog(t, sql);
   log.debug("Leaving run().");
 }
 

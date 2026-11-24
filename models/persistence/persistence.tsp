@@ -1286,6 +1286,33 @@ model StsReportArtifactPieces {
   bytes: bytes;
 }
 
+// THE AUDIT LOG, APPEND-ONLY (#1616, schema version 33; ASVS 5.0.0 16.4.2).
+// One row per event, where the ring was sealed 32-event segments in
+// `sts_minted` rewritten in place. The application role holds INSERT and
+// SELECT here and nothing else: the schema script revokes UPDATE, DELETE
+// and TRUNCATE after its table-wide grants, so the database refuses a
+// change to a written row whoever holds the service's credential. Rows
+// leave only through the owner's SECURITY DEFINER functions
+// `sts_audit_retain()` (past the newest N of a realm, with a floor of its
+// own) and `sts_audit_purge_realm()` (a realm that is gone or retiring).
+// `realm`, `origin`, `seq` and `at` are plain, because retention and
+// ordering are the database's; the event itself is `body`, sealed under the
+// realm's data key as the segments were, and NEVER resealed — a retired
+// data key is kept while an audit row still names it (#1616, decision 6).
+@table(#{name: "sts_audit", head: "CREATE TABLE IF NOT EXISTS", constraints: #[#{at: 5, text: "PRIMARY KEY (realm, origin, seq)"}], driver: #{order: 87}, indexes: #[#{name: "sts_audit_at", text: "CREATE INDEX IF NOT EXISTS sts_audit_at ON sts_audit (realm, at, origin, seq)", driver: #{order: 88}}]})
+model StsAudit {
+  @column(#{sql: "text", clauses: "NOT NULL", required: true, primaryKey: true})
+  realm: string;
+  @column(#{sql: "text", clauses: "NOT NULL DEFAULT ''", required: true, primaryKey: true})
+  origin: string;
+  @column(#{sql: "bigint", clauses: "NOT NULL", required: true, primaryKey: true})
+  seq: int64;
+  @column(#{sql: "bigint", clauses: "NOT NULL", required: true})
+  at: int64;
+  @column(#{sql: "text", clauses: "NOT NULL", required: true})
+  body: string;
+}
+
 // What version of the above is on disk. One row, and nothing reads it yet —
 // it is here so that a future change has something to look at other than the
 // shape of the tables.
@@ -1297,5 +1324,5 @@ model StsSchema {
   applied_at: utcDateTime;
 }
 
-@schema(#{version: 32})
+@schema(#{version: 33})
 model PostgresSchema {}

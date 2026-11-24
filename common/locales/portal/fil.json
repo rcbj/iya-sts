@@ -495,6 +495,7 @@
   "resetDone.heading": "Naka-set na ang iyong password",
   "resetDone.ok": "Nagamit na ang reset link na ito at hindi na ito gagana ulit.",
   "resetDone.next": "Mag-sign in gamit ang bago mong password. Kung may ikalawang factor ang iyong account, hihingin ito gaya ng dati.",
+  "resetDone.signedOut": "Na-sign out ang bawat session mo, sa anumang device, kaya walang sinumang nakakaalam ng dati mong password ang naka-sign in pa.",
   "signedOut.title": "Naka-sign out",
   "signedOut.heading": "Naka-sign out ka na",
   "signedOut.noSession": "Walang portal session sa browser na ito na matatapos.",

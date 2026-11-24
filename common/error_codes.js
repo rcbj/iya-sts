@@ -24581,8 +24581,10 @@ const CODES = [
       'allowed in development (#1450).',
     spec: '' },
   { code: 'STS-XACML-0052',
-    summary: 'The issuance gate\'s decider threw; issuance was ALLOWED ' +
-      'because a throw is a defect rather than a decision.',
+    summary: 'The issuance gate\'s decider threw, a defect rather than a ' +
+      'decision: in development the issuance is allowed, so a mock stays ' +
+      'fixable; in product it is refused (STS-XACML-0183, ASVS 5.0.0 ' +
+      '16.5.3).',
     spec: '' },
   { code: 'STS-XACML-0053',
     summary: 'The role register threw while resolving a party\'s roles; only ' +
@@ -30273,6 +30275,11 @@ const CODES = [
       'recorded, and its failure count could not be cleared (ASVS 5.0.0 ' +
       '2.3.3).',
     spec: '' },
+  { code: 'STS-PORTAL-0638',
+    summary: 'A person set a new password from a reset link and their ' +
+      'other sessions could not be ended; the password is set (#2123, ' +
+      'ASVS 5.0.0 7.4.3).',
+    spec: '' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },
@@ -31886,7 +31893,28 @@ const CODES = [
     summary: 'A syslog audit destination was refused because product mode needs tls.',
     spec: 'HTTP 400' },
   { code: 'STS-AUDIT-0017',
-    summary: 'A realm in product mode has no audit export destination, so its audit log stays with the service.' }
+    summary: 'A realm in product mode has no audit export destination, so its audit log stays with the service.' },
+  { code: 'STS-AUDIT-0018',
+    summary: 'Audit events could not be written to sts_audit, the ' +
+      'append-only audit table: they are kept for the next try, and past ' +
+      'a bound the oldest are let go and counted (#1616).' },
+  { code: 'STS-AUDIT-0019',
+    summary: 'This service\'s database role can change or delete rows of ' +
+      'sts_audit (it owns the table, or holds UPDATE, DELETE or TRUNCATE ' +
+      'on it), so the audit log is not append-only (ASVS 5.0.0 16.4.2); ' +
+      '/admin/mode reports the requirement as not met. The service runs ' +
+      '(#1616).' },
+  { code: 'STS-AUDIT-0020',
+    summary: 'sts_audit could not be read for the audit page, which shows ' +
+      'this process\'s own events instead (#1616).' },
+  { code: 'STS-AUDIT-0021',
+    summary: 'The append-only audit log\'s start (this process\'s events ' +
+      'read back, the old ring copied) or its retention run failed; the ' +
+      'service runs and retention is asked again on the next run (#1616).' },
+  { code: 'STS-AUDIT-0022',
+    summary: 'sts_audit is there and the two functions rows leave it ' +
+      'through are not, so retention cannot remove old rows: the schema ' +
+      'script was not run as the table owner (#1616).' }
   // ===== END ===============================================================
 ];
 
