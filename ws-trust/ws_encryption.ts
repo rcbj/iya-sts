@@ -308,20 +308,38 @@ export = class WsEncryption {
    */
   static openedCopy(doc): any {
     log.debug("Entering WsEncryption.openedCopy().");
+    const tried = WsEncryption.openedCopyOrWhy(doc);
+    log.debug("Leaving WsEncryption.openedCopy(). " + !!tried.copy);
+    return tried.copy;
+  }
+
+  /**
+   * A copy of the request with every ciphertext opened, or why it could not
+   * be (#2046): the fault opening it gave, so a signature made over the
+   * plaintext that therefore cannot be checked is refused for that, and
+   * not as a part altered after it was signed.
+   *
+   * @param doc - the request as it arrived
+   * @returns `{ copy }`, or `{ copy: null, refused }` with the fault (null
+   *   for a document that would not round-trip)
+   */
+  static openedCopyOrWhy(doc): any {
+    log.debug("Entering WsEncryption.openedCopyOrWhy().");
     let copy;
     try {
       copy = new DOMParser().parseFromString(
         new XMLSerializer().serializeToString(doc), 'text/xml');
     } catch (e) {
-      log.debug("Caught in WsEncryption.openedCopy(): " +
+      log.debug("Caught in WsEncryption.openedCopyOrWhy(): " +
                 ((e && e.message) || e));
       // A document that will not round-trip has no other reading.
-      log.debug("Leaving WsEncryption.openedCopy(). Unreadable.");
-      return null;
+      log.debug("Leaving WsEncryption.openedCopyOrWhy(). Unreadable.");
+      return { copy: null, refused: null };
     }
     const opened = WsEncryption.decryptAll(copy);
-    log.debug("Leaving WsEncryption.openedCopy(). " + opened.ok);
-    return opened.ok ? copy : null;
+    log.debug("Leaving WsEncryption.openedCopyOrWhy(). " + opened.ok);
+    return opened.ok ? { copy: copy, refused: null }
+                     : { copy: null, refused: opened };
   }
 
   /**
@@ -402,8 +420,21 @@ export = class WsEncryption {
       log.debug("Leaving WsEncryption.protectResponse(). No recipient.");
       return recipient;
     }
+    // THE KEYUSAGE WAIVER (rcbj, 2026-11-24, #2046): the application may
+    // let its answers be encrypted to a certificate whose keyUsage does not
+    // permit it — the request's signing certificate. Only that check;
+    // common/certificate_trust.ts's header argues it.
+    // AND THE REQUEST'S OWN SIGNER IS NAMED (#2046): when the recipient is
+    // the certificate the accepted signature named, the message-signing
+    // door has already established whose it is — its path to this realm's
+    // message-signing Issuing CA, which is not in the signer truststore, or
+    // its place on the requester's entry. Its fields and revocation are
+    // still asked. Any other certificate is held to a path as before.
     const held = CertificateTrust.pinnedSync('encryption-recipient',
-                                             recipient.pem);
+      recipient.pem,
+      { ignoreKeyUsage: WsEncryption.on(id,
+                                        'wstrust.recipientIgnoresKeyUsage'),
+        named: recipient.signer === true });
     if (!held.ok) {
       log.debug("Leaving WsEncryption.protectResponse(). Refused.");
       return WsEncryption.fail('STS-WSTRUST-0077', 'RequestFailed',
@@ -1025,15 +1056,43 @@ export = class WsEncryption {
       }
       // The element is a certificate element. Text that is not a certificate
       // is a completed-encryption fault, and the next source is not tried.
-      return shaped.pem ? { ok: true, pem: shaped.pem }
+      return shaped.pem
+        ? { ok: true, pem: shaped.pem,
+            signer: WsEncryption.isAcceptedSigner(doc, shaped.pem) }
         : WsEncryption.fail('STS-WSTRUST-0077', 'RequestFailed',
             'the selected element is not a certificate');
     }
     const named = WsEncryption.signerCertificate(doc);
     log.debug("Leaving WsEncryption.recipientOf(). The signer.");
-    return named ? { ok: true, pem: named }
+    return named
+      ? { ok: true, pem: named,
+          signer: WsEncryption.isAcceptedSigner(doc, named) }
       : WsEncryption.fail('STS-WSTRUST-0076', 'InvalidRequest',
           'the request\'s signature names no certificate element');
+  }
+
+  /**
+   * Whether a certificate is the one the request's ACCEPTED signature named
+   * (#2046): the message-signing door has already validated it as the
+   * requester's — its path to this realm's message-signing Issuing CA, or
+   * its place on the requester's entry, and its revocation.
+   *
+   * @param doc - the request
+   * @param pem - the recipient certificate
+   * @returns true when it is that certificate and the signature was accepted
+   */
+  private static isAcceptedSigner(doc, pem: string): boolean {
+    log.debug("Entering WsEncryption.isAcceptedSigner().");
+    if (!SIGNED.has(doc)) {
+      log.debug("Leaving WsEncryption.isAcceptedSigner(). Not accepted.");
+      return false;
+    }
+    const signer = WsEncryption.signerCertificate(doc);
+    const same = !!signer &&
+      WsEncryption.pemOf(signer).replace(/\s+/g, '') ===
+      WsEncryption.pemOf(pem).replace(/\s+/g, '');
+    log.debug("Leaving WsEncryption.isAcceptedSigner(). " + same);
+    return same;
   }
 
   // THE RECIPIENT A SIGNATURE VOUCHES FOR (rcbj on #1908, 2026-11-18). An
@@ -1365,8 +1424,23 @@ export = class WsEncryption {
       }
       cur = cur.parentNode;
     }
+    // THE SERIALIZER DECLARES THE ELEMENT'S OWN PREFIX, AND ITS ATTRIBUTES',
+    // ITSELF (#2046): a declaration of either copied here as well wrote it
+    // twice — `<wst:Lifetime xmlns:wst=".." xmlns:wst="..">` — so an
+    // element whose prefix an ancestor declared was encrypted as text that
+    // is not well-formed XML, and a receiver that parses what it decrypts
+    // strictly (WSS4J) could not read it. Every other in-scope declaration
+    // is still copied, for a prefix only text uses (an xsi:type value).
+    const own = {};
+    own[clone.prefix ? 'xmlns:' + clone.prefix : 'xmlns'] = true;
+    const rootAttrs = clone.attributes || [];
+    for (let i = 0; i < rootAttrs.length; i++) {
+      if (rootAttrs[i].prefix && rootAttrs[i].prefix !== 'xmlns') {
+        own['xmlns:' + rootAttrs[i].prefix] = true;
+      }
+    }
     Object.keys(declared).forEach(function (name) {
-      if (!clone.getAttribute(name)) {
+      if (!own[name] && !clone.hasAttribute(name)) {
         clone.setAttribute(name, declared[name]);
       }
     });

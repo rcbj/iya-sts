@@ -547,9 +547,10 @@ is signed in to every surface on the port. In order:
 
 1. **revocation** is consulted (below); a refused certificate starts no session
    and is not recorded as an authentication;
-2. **the identity gate**: a certificate this service issued must come from a TLS
-   client Issuing CA; anything else issued here is reported as
-   `refusedAsIdentity`;
+2. **the identity gate**: a certificate this service issued must come from one
+   of the realm's identity Issuing CAs — the TLS client CA, or the ACME, EST
+   and SCEP CAs a smart-card or PIV certificate is enrolled from; anything
+   else issued here is reported as `refusedAsIdentity`;
 3. **an application's certificate signs nobody in** — it is an RFC 8705 client
    credential, reported as `session.application`;
 4. **the session starts in the certificate's realm**: for a certificate this
@@ -569,8 +570,27 @@ The answer is **JSON**: `signedIn`, the session, whether a certificate was
 presented and verified, the `x5t#S256` thumbprint the token endpoint would bind
 a token to, and the revocation verdict. A caller that presents no certificate is
 simply not signed in, and the answer says so. The session carries
-`amr ["swk"]` (a software key) and `acr "1"`. A browser that already holds a
-session keeps it and starts no second one.
+`amr ["swk"]` (a software key) and `acr "1"`, or `amr ["hwk"]` when a hardware
+token's attestation covers the certificate, and `["hwk", "sc"]` when that
+evidence says the key is on a smart card, such as an attested PIV certificate
+([Hardware tokens](hardware-tokens.md#what-a-sign-in-claims)). Whether a smart
+card may sign in here at all is the authentication policy's *Smart card
+(PIV/CAC) certificate* row ([Smart cards](authentication.md#smart-cards-2031)).
+A browser that already holds a session keeps it and starts no second one.
+
+**With the key on a card.** Any TLS client that can use a PKCS#11 key works;
+`curl` through OpenSSL's PKCS#11 engine and OpenSC is the one this service is
+tested with (`alice-9a-chain.pem` is the issued slot 9a certificate and its
+chain; the card's PIN can be given as `pin-value=` in the URI):
+
+```bash
+curl --engine pkcs11 --key-type ENG --key 'pkcs11:id=%01;type=private' \
+     --cert alice-9a-chain.pem --cacert sts.pem \
+     -H 'Accept: application/json' https://sts.example.org/tls/sign-in
+```
+
+A card reported lost has its certificates revoked (`keyCompromise`), so the
+same command is answered `signedIn: false` with the revocation reason.
 
 **Why a client needs this answer.** A client knows what it sent. What it cannot
 see is which chain the server built out of it, which anchor it verified against,

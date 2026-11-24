@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# File: tests/client-lab/bin/lab-mail-fetch
+#
+# ---------------------------------------------------------------------------
+# WHAT HAS ARRIVED IN THE LAB'S MAILBOX (#2058).
+#
+#   lab-mail-fetch <dir> [timeout seconds] [address]
+#
+# Waits (default 60 s) for at least one message in /var/mail/labmail
+# (bin/lab-mail-start) — one delivered to <address>, when it is given —
+# then writes each message of the mbox into <dir> as
+# msg-<n>.eml — the "From " separator line dropped, ">From " unquoted — and
+# prints how many there are. Messages already fetched stay; the mailbox is
+# left as it is.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+dir="${1:?a directory}"
+wait="${2:-60}"
+address="${3:-}"
+box=/var/mail/labmail
+mkdir -p "${dir}"
+for i in $(seq 1 "${wait}"); do
+  if [ -s "${box}" ] && { [ -z "${address}" ] ||
+       grep -qiF "Delivered-To: ${address}" "${box}"; }; then
+    break
+  fi
+  sleep 1
+done
+if [ ! -s "${box}" ] || { [ -n "${address}" ] &&
+     ! grep -qiF "Delivered-To: ${address}" "${box}"; }; then
+  echo "0"
+  exit 1
+fi
+awk -v dir="${dir}" '
+  /^From / { n++; out = dir "/msg-" n ".eml"; next }
+  { sub(/^>From /, "From "); print > out }
+  END { print n }
+' "${box}"

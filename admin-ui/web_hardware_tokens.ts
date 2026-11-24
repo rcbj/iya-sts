@@ -74,6 +74,47 @@ class HardwareTokensPage {
     }).join('<br>') : '—';
   }
 
+  // THE REGISTER'S TABLE, drawn by the tokens tab and, with the person
+  // fixed, by that person's Hardware tokens sub-tab on Directory → Users
+  // (#2052): one table, so the two cannot disagree about a token.
+  /**
+   * The tokens table, a Report lost on each active token.
+   *
+   * @param t - the translator
+   * @param tokens - the tokens to draw
+   * @param c - the render context
+   * @returns the HTML
+   */
+  static tokensTable(t: Json, tokens: Json[], c: Json): string {
+    const esc = WebKit.esc;
+    const rows = tokens.map(function (r: Json): string {
+      const lost = r.status === 'lost';
+      return '<tr><td>' + esc(r.model || r.vendor) + '<br><small><code>' +
+        esc(r.key) + '</code></small></td><td>' + esc(r.holder || '—') +
+        '</td><td>' + esc((r.evidenceSources || []).join(', ')) +
+        '</td><td>' + HardwareTokensPage.credentialsCell(t, r) + '</td><td>' +
+        (lost ? t.html('consoleHardwareTokens.lostOn', { at: r.lostAt,
+                                                         by: r.lostBy })
+              : t.html('consoleHardwareTokens.active')) + '</td><td>' +
+        (lost || !c.write ? '' : '<form method="post" action="' + PAGE +
+          '" class="inline"><input type="hidden" name="action" ' +
+          'value="lost"><input type="hidden" name="key" value="' +
+          esc(r.key) + '"><button class="danger" type="submit">' +
+          t.html('consoleHardwareTokens.reportLost') + '</button></form>') +
+        '</td></tr>';
+    }).join('');
+    const table = tokens.length
+      ? '<table class="grid"><thead><tr><th>' +
+        t.html('consoleHardwareTokens.thToken') + '</th><th>' +
+        t.html('consoleHardwareTokens.thHolder') + '</th><th>' +
+        t.html('consoleHardwareTokens.thEvidence') + '</th><th>' +
+        t.html('consoleHardwareTokens.thCredentials') + '</th><th>' +
+        t.html('consoleHardwareTokens.thStatus') + '</th><th></th></tr>' +
+        '</thead><tbody>' + rows + '</tbody></table>'
+      : WebKit.note(t.html('consoleHardwareTokens.none'));
+    return table;
+  }
+
   /**
    * Draws the page's body.
    *
@@ -115,32 +156,7 @@ class HardwareTokensPage {
           '</option>';
       }).join('') + '</select><button type="submit">' +
       t.html('consoleHardwareTokens.filter') + '</button></div></form>';
-    const tokens: Json[] = v.tokens || [];
-    const rows = tokens.map(function (r: Json): string {
-      const lost = r.status === 'lost';
-      return '<tr><td>' + esc(r.model || r.vendor) + '<br><small><code>' +
-        esc(r.key) + '</code></small></td><td>' + esc(r.holder || '—') +
-        '</td><td>' + esc((r.evidenceSources || []).join(', ')) +
-        '</td><td>' + self.credentialsCell(t, r) + '</td><td>' +
-        (lost ? t.html('consoleHardwareTokens.lostOn', { at: r.lostAt,
-                                                         by: r.lostBy })
-              : t.html('consoleHardwareTokens.active')) + '</td><td>' +
-        (lost || !c.write ? '' : '<form method="post" action="' + PAGE +
-          '" class="inline"><input type="hidden" name="action" ' +
-          'value="lost"><input type="hidden" name="key" value="' +
-          esc(r.key) + '"><button class="danger" type="submit">' +
-          t.html('consoleHardwareTokens.reportLost') + '</button></form>') +
-        '</td></tr>';
-    }).join('');
-    const table = tokens.length
-      ? '<table class="grid"><thead><tr><th>' +
-        t.html('consoleHardwareTokens.thToken') + '</th><th>' +
-        t.html('consoleHardwareTokens.thHolder') + '</th><th>' +
-        t.html('consoleHardwareTokens.thEvidence') + '</th><th>' +
-        t.html('consoleHardwareTokens.thCredentials') + '</th><th>' +
-        t.html('consoleHardwareTokens.thStatus') + '</th><th></th></tr>' +
-        '</thead><tbody>' + rows + '</tbody></table>'
-      : WebKit.note(t.html('consoleHardwareTokens.none'));
+    const table = self.tokensTable(t, v.tokens || [], c);
     return WebKit.note(t.html('consoleHardwareTokens.lead'),
                        t.text('consoleHardwareTokens.whatThisIs')) +
       '<h2 data-tab="tokens">' + t.html('console.nav.hardware-tokens') +
@@ -329,7 +345,16 @@ class HardwareTokensPage {
       WebKit.note(t.html('consoleHardwareTokens.oath.what'))) + importForm;
   }
 
-  static enrolForm(t: Json, v: Json, c: Json): string {
+  /**
+   * The PIV enrolment form; with `user`, for that person alone (#2052).
+   *
+   * @param t - the translator
+   * @param v - the view (its `piv` rules)
+   * @param c - the render context
+   * @param user - optional; the person the form is fixed to
+   * @returns the HTML
+   */
+  static enrolForm(t: Json, v: Json, c: Json, user?: string): string {
     const esc = WebKit.esc;
     const rules = v.piv || { profiles: [] };
     if (!(rules.profiles || []).length) {
@@ -341,9 +366,12 @@ class HardwareTokensPage {
     return WebKit.note(t.html('consoleHardwareTokens.enrolWhat')) +
       '<form method="post" action="' + PAGE + '">' +
       '<input type="hidden" name="action" value="enrol-piv">' +
-      '<div class="formrow"><label for="hwt-user">' +
-      t.html('consoleHardwareTokens.enrolUser') + '</label>' +
-      '<input type="text" id="hwt-user" name="username" maxlength="256">' +
+      '<div class="formrow">' + (user
+        ? '<input type="hidden" name="username" value="' + esc(user) + '">'
+        : '<label for="hwt-user">' +
+          t.html('consoleHardwareTokens.enrolUser') + '</label>' +
+          '<input type="text" id="hwt-user" name="username" ' +
+          'maxlength="256">') +
       '<label for="hwt-profile">' +
       t.html('consoleHardwareTokens.enrolProfile') + '</label>' +
       '<select id="hwt-profile" name="profile">' +
@@ -403,6 +431,203 @@ class HardwareTokensPage {
             t.html('consoleHardwareTokens.escrowRecover') +
             '</button></form>' : '') + '</td></tr>';
       }).join('') + '</tbody></table>';
+  }
+  // ---------------------------------------------------------------------
+  // A PERSON'S SUB-TABS ON DIRECTORY → USERS (#2052, rcbj 2026-11-23: "I
+  // also want it to be a tab on individual user objects. Reuse the code for
+  // these pages."). Each is drawn by the functions above with the person
+  // fixed — the same table, the same lists, the same forms — from the
+  // answers the users drill composes: `GET /admin-api/hardware-tokens` with
+  // `q` the person, and `GET /admin-api/hardware-tokens/oath` with `oq` the
+  // person. Every form posts to `/admin/hardware-tokens`, so it reaches the
+  // same operation as the central page (rule 7), and the runtime returns to
+  // the sub-tab it was sent from. A search names a person or a serial, so
+  // each list keeps the person's own rows only.
+  // ---------------------------------------------------------------------
+
+  /**
+   * Whether a composed answer can be drawn: a refusal is said in a note.
+   *
+   * @param t - the translator
+   * @param v - the composed answer
+   * @returns the note when it cannot, else an empty string
+   */
+  static refusedNote(t: Json, v: Json): string {
+    if (v && v.ok !== false && !v.error) {
+      return '';
+    }
+    return WebKit.note(t.html('consoleHardwareTokens.person.unavailable'));
+  }
+
+  /**
+   * The person's view: the composed answer with the search fixed to them.
+   *
+   * @param v - the composed answer
+   * @param user - the person
+   * @returns the view
+   */
+  static personView(v: Json, user: string): Json {
+    const out = Object.assign({}, v || {}, { q: user });
+    out.tokens = ((v && v.tokens) || []).filter(function (r: Json) {
+      return r.holder === user || (r.credentials || []).some(
+        function (one: Json): boolean { return one.holder === user; });
+    });
+    return out;
+  }
+
+  /**
+   * The Hardware tokens sub-tab: the person's tokens, with Report lost.
+   *
+   * @param t - the translator
+   * @param v - `GET /admin-api/hardware-tokens?q=<person>`'s answer
+   * @param c - the render context
+   * @param user - the person
+   * @returns the HTML
+   */
+  static personTokens(t: Json, v: Json, c: Json, user: string): string {
+    const refused = HardwareTokensPage.refusedNote(t, v);
+    if (refused) {
+      return WebKit.frame(refused);
+    }
+    const mine = HardwareTokensPage.personView(v, user);
+    return WebKit.frame(WebKit.note(
+      t.html('consoleHardwareTokens.lead'),
+      t.text('consoleHardwareTokens.whatThisIs')) +
+      HardwareTokensPage.tokensTable(t, mine.tokens, c) +
+      WebKit.note(t.html('consoleHardwareTokens.lostWhat')) +
+      HardwareTokensPage.centralLink(t));
+  }
+
+  /**
+   * The OATH tokens sub-tab: the tokens assigned to the person, an Assign
+   * by key, and their one-time code token from the users answer.
+   *
+   * @param t - the translator
+   * @param o - `GET /admin-api/hardware-tokens/oath?oq=<person>`'s answer
+   * @param c - the render context
+   * @param user - the person
+   * @param enrolled - the person's one-time code token, drawn by the users
+   *   page (`mfaSection()`'s `hotp`), with its Clear
+   * @returns the HTML
+   */
+  static personOath(t: Json, o: Json, c: Json, user: string,
+                    enrolled: string): string {
+    const esc = WebKit.esc;
+    const refused = HardwareTokensPage.refusedNote(t, o);
+    const rows: Json[] = refused ? [] : ((o && o.tokens) || []).filter(
+      function (r: Json): boolean { return r.holder === user; });
+    const list = rows.length
+      ? '<table class="grid"><thead><tr><th>' +
+        t.html('consoleHardwareTokens.thToken') + '</th><th>' +
+        t.html('consoleHardwareTokens.oath.thKind') + '</th><th>' +
+        t.html('consoleHardwareTokens.thStatus') + '</th></tr></thead>' +
+        '<tbody>' + rows.map(function (r: Json): string {
+          return '<tr><td>' + esc(r.model || r.vendor) + '<br><small><code>' +
+            esc(r.key) + '</code></small></td><td><code>' + esc(r.kind) +
+            '</code> ' + esc(String(r.digits)) + ' ' +
+            t.html('consoleHardwareTokens.oath.digits') + '</td><td>' +
+            esc(r.status) + '</td></tr>';
+        }).join('') + '</tbody></table>'
+      : WebKit.note(t.html('consoleHardwareTokens.person.noOath'));
+    const assign = c.write
+      ? '<form method="post" action="' + PAGE + '" class="inline">' +
+        '<input type="hidden" name="action" value="assign-oath">' +
+        '<input type="hidden" name="username" value="' + esc(user) + '">' +
+        '<input type="text" name="key" size="24" maxlength="256" required ' +
+        'aria-label="' + esc(t.text('consoleHardwareTokens.person.tokenKey')) +
+        '" placeholder="' +
+        esc(t.text('consoleHardwareTokens.person.tokenKey')) + '">' +
+        '<button type="submit">' +
+        t.html('consoleHardwareTokens.oath.assign') + '</button></form>'
+      : '';
+    return WebKit.frame((refused || list) + assign +
+      WebKit.note(t.html('consoleHardwareTokens.oath.what')) +
+      HardwareTokensPage.centralLink(t)) + (enrolled ? WebKit.frame(enrolled)
+                                                    : '');
+  }
+
+  /**
+   * The YubiKey OTP sub-tab: assign an imported YubiKey by serial, and the
+   * person's YubiKey OTP from the users answer.
+   *
+   * @param t - the translator
+   * @param c - the render context
+   * @param user - the person
+   * @param enrolled - the person's YubiKey OTP, drawn by the users page
+   *   (`mfaSection()`'s `yubi`), with its Clear
+   * @returns the HTML
+   */
+  static personYubi(t: Json, c: Json, user: string,
+                    enrolled: string): string {
+    const esc = WebKit.esc;
+    const assign = c.write
+      ? '<form method="post" action="' + PAGE + '">' +
+        '<input type="hidden" name="action" value="assign-yubiotp">' +
+        '<input type="hidden" name="username" value="' + esc(user) + '">' +
+        '<div class="formrow"><label for="hwt-yubi-serial">' +
+        t.html('consoleHardwareTokens.person.yubiSerial') + '</label>' +
+        '<input type="text" id="hwt-yubi-serial" name="serial" size="12" ' +
+        'maxlength="16" required><label for="hwt-yubi-otp">' +
+        t.html('consoleHardwareTokens.person.yubiOtp') + '</label>' +
+        '<input type="text" id="hwt-yubi-otp" name="otp" size="48" ' +
+        'maxlength="64" autocomplete="off"><button type="submit">' +
+        t.html('consoleHardwareTokens.oath.assign') + '</button></div></form>'
+      : '';
+    return (enrolled ? WebKit.frame(enrolled) : WebKit.frame(
+      WebKit.note(t.html('consoleHardwareTokens.person.noYubi')))) +
+      WebKit.frame(WebKit.note(
+        t.html('consoleHardwareTokens.person.yubiWhat')) + assign);
+  }
+
+  /**
+   * The PIV sub-tab: the enrolment form fixed to the person, and their
+   * escrowed keys with Recover key.
+   *
+   * @param t - the translator
+   * @param v - `GET /admin-api/hardware-tokens?q=<person>`'s answer
+   * @param c - the render context
+   * @param user - the person
+   * @returns the HTML
+   */
+  static personPiv(t: Json, v: Json, c: Json, user: string): string {
+    const refused = HardwareTokensPage.refusedNote(t, v);
+    if (refused) {
+      return WebKit.frame(refused);
+    }
+    const mine = HardwareTokensPage.personView(v, user);
+    return WebKit.frame(HardwareTokensPage.enrolForm(t, mine, c, user)) +
+      WebKit.frame(HardwareTokensPage.escrowList(t, mine, c));
+  }
+
+  /**
+   * The SSH user certificates sub-tab: the person's certificates, each
+   * revocable.
+   *
+   * @param t - the translator
+   * @param v - `GET /admin-api/hardware-tokens?q=<person>`'s answer
+   * @param c - the render context
+   * @param user - the person
+   * @returns the HTML
+   */
+  static personSsh(t: Json, v: Json, c: Json, user: string): string {
+    const refused = HardwareTokensPage.refusedNote(t, v);
+    if (refused) {
+      return WebKit.frame(refused);
+    }
+    return WebKit.frame(HardwareTokensPage.sshList(t,
+      HardwareTokensPage.personView(v, user), c) +
+      WebKit.note(t.html('consoleHardwareTokens.person.sshIssue')));
+  }
+
+  /**
+   * The link from a person's sub-tab to the central page.
+   *
+   * @param t - the translator
+   * @returns the HTML
+   */
+  static centralLink(t: Json): string {
+    return '<p class="sub"><a href="' + PAGE + '">' +
+      t.html('consoleHardwareTokens.person.central') + '</a></p>';
   }
 }
 

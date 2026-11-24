@@ -41,5 +41,7 @@
   "wkdOn": "Sumasagot ang realm na ito sa Web Key Directory (openpgp.wkd).",
   "wkdOff": "Hindi sumasagot ang realm na ito sa Web Key Directory (naka-off ang openpgp.wkd).",
   "wkdDomains": "Mga domain na sineserbisyuhan nito:",
-  "wkdWhat": "Ang request na walang realm sa path nito ay sinasagot ng realm na nagseserbisyo sa domain nito, ang default realm muna. Ang mga key lang ng mga taong pumayag ang sinasagot."
+  "wkdWhat": "Ang request na walang realm sa path nito ay sinasagot ng realm na nagseserbisyo sa domain nito, ang default realm muna. Ang mga key lang ng mga taong pumayag ang sinasagot.",
+  "personUnavailable": "Hindi mabasa rito ang OpenPGP key at S/MIME certificate ng taong ito. Ipinapakita ang mga ito ng Directory → OpenPGP keys.",
+  "central": "Ang key ng isang tao, ang Web Key Directory at S/MIME: Directory → OpenPGP keys"
 }

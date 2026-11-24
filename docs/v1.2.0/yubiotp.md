@@ -12,11 +12,11 @@ Enrolment is off until an operator turns on both `yubiotp.offered` and the authe
 
 There is no signature-algorithm setting for a YubiKey OTP. The OTP itself is AES-128-ECB of one 16-byte block, which is Yubico's format. A YK-VAL request is signed with HMAC-SHA1, which is Validation Protocol 2.0. Neither can be changed.
 
-`yubiotp.offered` (`STS_YUBIOTP_OFFERED`) and `yubiotp.ykval` (`STS_YUBIOTP_YKVAL`) are on **Protocols → TOTP MFA** (`/admin/totp`). `yubiotp.allowPlaintextImport` (`STS_YUBIOTP_ALLOW_PLAINTEXT_IMPORT`) is in the Devices group, on **Protocols → Device registration** (`/admin/device-registration`). All three take effect while the service is running. They turn enrolment, the verify endpoint and plaintext import on or off. They leave AES-128-ECB and HMAC-SHA1 as they are.
+`yubiotp.offered` (`STS_YUBIOTP_OFFERED`), `yubiotp.ykval` (`STS_YUBIOTP_YKVAL`) and `yubiotp.allowPlaintextImport` (`STS_YUBIOTP_ALLOW_PLAINTEXT_IMPORT`) are the YubiKey OTP group, on **Protocols → YubiKey OTP** (`/admin/yubiotp`). Until #2049 the first two were on Protocols → TOTP MFA and the third on Protocols → Device registration; their keys, variables and defaults did not change. All three take effect while the service is running. They turn enrolment, the verify endpoint and plaintext import on or off. They leave AES-128-ECB and HMAC-SHA1 as they are.
 
 ## Set one up
 
-On `/portal/mfa`, **Set up a YubiKey OTP** shows one line:
+On `/portal/mfa`, or the **YubiKey OTP** tab of **Tokens and keys** (`/portal/tokens-and-keys`), **Set up a YubiKey OTP** shows one line:
 
 ```bash
 ykman otp yubiotp 1 --public-id … --private-id … --key …
@@ -26,9 +26,13 @@ Run it once with the key inserted. It programs the first OTP slot. Touch the key
 
 ## Import a batch
 
-An administrator posts a CSV to `POST /admin-api/hardware-tokens/import-yubiotp`. The columns are the serial, the modhex public identity, the private identity in hexadecimal, and the AES key in hexadecimal. In product mode a file in the clear is refused unless `yubiotp.allowPlaintextImport` is on. Each row is kept unassigned, and the secret is sealed.
+An administrator posts a CSV to `POST /admin-api/hardware-tokens/import-yubiotp`; the console has no import form for it. The columns are the serial, the modhex public identity, the private identity in hexadecimal, and the AES key in hexadecimal. In product mode a file in the clear is refused unless `yubiotp.allowPlaintextImport` is on. Each row is kept unassigned, and the secret is sealed.
 
-`assign-yubiotp` gives a serial to a person and spends one OTP. The person can do the same from `/portal/mfa` with the serial and one touch (`yubiotp-claim`). An assigned token is retired by reporting the hardware token lost, which also takes the secret off the entry.
+`assign-yubiotp` gives a serial to a person and spends one OTP. In the console it is **Assign** on the **YubiKey OTP** sub-tab of the person's Credentials (Directory → Users). The person can do the same from `/portal/mfa`, or the YubiKey OTP tab of Tokens and keys, with the serial and one touch (`yubiotp-claim`). An assigned token is retired by reporting the hardware token lost, which also takes the secret off the entry.
+
+## On the person's entry
+
+An assigned YubiKey is on its holder's entry, in `stsYubiOtpToken`: one JSON value with its serial, public identity, status, and when it was imported and assigned. Never the AES key, which is sealed in the person's YubiKey OTP credential. The entry is the master copy; the inventory and the public-identity index YK-VAL answers from are derived from it ([Hardware tokens](hardware-tokens.md#on-the-persons-directory-entry)). Removing the value by another door — the attribute editor, `/admin-api`, SCIM, an `ldapmodify` — retires the token: its credential is removed, its public identity is dropped, it is never assigned again, and the audit row (`yubiotp.retire`) names who removed it. Adding or changing a value is refused and put back (`STS-HWTOKEN-0017`). A row nobody has been assigned stays in the inventory, its secret sealed, until it is assigned or claimed.
 
 ## YK-VAL
 
@@ -38,4 +42,4 @@ An administrator posts a CSV to `POST /admin-api/hardware-tokens/import-yubiotp`
 
 ## What the users page does not count
 
-A person whose only second factor is a YubiKey OTP is omitted from the realm-wide second-factor tile. The same limit applies to an HOTP-only person. Counting them would add an index, which this release does not do. The person's own page still shows the credential: the public identity, how it was provisioned, and when it was last used. Clearing it is `POST /admin-api/users/clear-yubi` (and `POST /admin-api/mfa/clear-yubi`). A token lost with the key is better reported lost, which retires every credential on it.
+A person whose only second factor is a YubiKey OTP is omitted from the realm-wide second-factor tile. The same limit applies to an HOTP-only person. Counting them would add an index, which this release does not do. The person's own page still shows the credential, on the **YubiKey OTP** sub-tab of their Credentials: the public identity, how it was provisioned, and when it was last used. Clearing it is `POST /admin-api/users/clear-yubi` (and `POST /admin-api/mfa/clear-yubi`). A token lost with the key is better reported lost, which retires every credential on it.

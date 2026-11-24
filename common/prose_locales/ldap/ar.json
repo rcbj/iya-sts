@@ -1351,6 +1351,10 @@
     "en": "05bb26087cc96574",
     "text": "TRUE أو FALSE: تشفير ds:Signature لاستجابة WS-Trust لهذا التطبيق أيضًا (sp:EncryptSignature في WS-SecurityPolicy)، متجاوزًا wstrust.encryptSignature. لا يُقرأ إلا ما دامت الاستجابة موقّعة ومشفّرة معًا، والتوقيع أولًا؛ ويُشفَّر التوقيع إلى مستلم الاستجابة."
   },
+  "applications.schema.attributes.wstrustRecipientIgnoresKeyUsage.what": {
+    "en": "ee5d3e5465e289d1",
+    "text": "TRUE أو FALSE: تشفير استجابات WS-Trust لهذا التطبيق لشهادة المستلم أيًّا كان keyUsage الخاص بها، متجاوزًا wstrust.recipientIgnoresKeyUsage. تسمح شهادات توقيع الرسائل في النطاق بـ digitalSignature فقط، لذا تُرفض بدونه الاستجابة المشفرة لشهادة توقيع الطلب. يُتجاوز فحص keyUsage وحده: وتبقى صلاحية الشهادة ومسارها وحالة إلغائها مفحوصة حيث يفحصها وضع PKI المتشدد."
+  },
   "applications.schema.attributes.wstrustDecryptionCertificate.what": {
     "en": "b00a63a9bafc49ad",
     "text": "الشهادة التي يُشفَّر إليها طلب WS-TRUST لهذا التطبيق، بصيغة PEM. ما دامت معيَّنة، يُفك تشفير الطلب الموجَّه إلى هذا التطبيق بمفتاحها الخاص لا بمفتاح النطاق، والطلب الموجَّه إليه المشفَّر إلى مفتاح النطاق هو FailedCheck. عامة: تقدمها صفحة التطبيق و GET /admin-api/applications."

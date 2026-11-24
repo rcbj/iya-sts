@@ -1915,6 +1915,30 @@
     "en": "b48aa4041763958e",
     "text": "خارج المواصفة. إعدادات `webauthn.*` في أربعة أنواع — المراسم (اسم RP، وتجاوز معرّف RP، والخوارزميات، والتحقق من المستخدم، ونقل الإقرار، والمهلة)، وCTAP2 (إرفاق أداة المصادقة، وcredProps) والسياسة (هل يجوز لمفتاح أن يكون أوليًا، وهل يجوز أن يكون عاملًا ثانيًا، وكم لكل شخص) — مع جدول خوارزميات COSE بجانبها، مقروء من authn/webauthn.js، الوحدة التي تفحص التوقيع. **واحد مُلزَم والباقي طلبات**: يُفحص userVerification مقابل علم UV داخل البايتات التي وقّعتها أداة المصادقة. تُبلَّغ سياسة الإقرار (#105) وبيانات FIDO الوصفية السارية بجانبها. لا يوجد POST بجانب هذا: ترسل النماذج set-many إلى /admin/config. يطابق GET /admin/webauthn."
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens-settings.what": {
+    "en": "0052f035e7838d3d",
+    "text": "خارج المواصفة (#2049). مجموعة Hardware tokens: الإعداد hardwareTokens.hardwareClaims الذي يقرر ما إذا كان استنتاج PKINIT ومفتاح المرور دون تصديق موثوق لا يزالان يكسبان hwk، إلى جانب ما هو سجل الرموز وما يسحبه الرمز المفقود. لا يوجد POST بجانب هذا: النماذج ترسل set-many إلى /admin/config. يطابق GET /admin/hardware-tokens-settings."
+  },
+  "stsmetadata.endpoints./admin-api/piv.what": {
+    "en": "24ea31c5f2d6423c",
+    "text": "خارج المواصفة (#2049). كل إعداد piv.*: جذور التصديق، وما إذا كان ملف تعريف PIV يتطلب تصديقًا، وسياسات PIN واللمس، وتسجيل الدخول بمصادقة البطاقة، وإيداع المفاتيح، والجهات المُصدِرة الخارجية المطابَقة بمعرّف UUID للبطاقة. لا يوجد POST بجانب هذا: النماذج ترسل set-many إلى /admin/config. يطابق GET /admin/piv."
+  },
+  "stsmetadata.endpoints./admin-api/yubiotp.what": {
+    "en": "00d89a7aca51d6c1",
+    "text": "خارج المواصفة (#2049). كل إعداد yubiotp.*: التسجيل، ونقطة التحقق YK-VAL 2.0، والاستيراد بنص واضح. لا يوجد POST بجانب هذا: النماذج ترسل set-many إلى /admin/config. يطابق GET /admin/yubiotp."
+  },
+  "stsmetadata.endpoints./admin-api/oath-tokens.what": {
+    "en": "5cf49220b4238eee",
+    "text": "خارج المواصفة (#2049). إعدادات hotp.* والإعداد pskc.allowPlaintextImport: طول الرمز، والنافذتان، وما إذا كان وضع المنتج يقبل ملف بذور PSKC بنص واضح. لا يوجد POST بجانب هذا: النماذج ترسل set-many إلى /admin/config. يطابق GET /admin/oath-tokens."
+  },
+  "stsmetadata.endpoints./admin-api/ssh-user-ca.what": {
+    "en": "d469684ddad7dfa3",
+    "text": "خارج المواصفة (#2049). كل إعداد pki.ssh* لمرجع شهادات مستخدمي OpenSSH في النطاق: خوارزمياته، وقواعد ما بعد الكم، وأطول شهادة مع دليل عتادي ودونه، والامتدادات، والأسماء الرئيسية. لا يوجد POST بجانب هذا: النماذج ترسل set-many إلى /admin/config. يطابق GET /admin/ssh-user-ca."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp-settings.what": {
+    "en": "392792b504230c16",
+    "text": "خارج المواصفة (#2049). كل إعداد openpgp.*: دليل Web Key Directory، والخوارزميات المقبولة، وأصغر مفتاح RSA، وقواعد ما بعد الكم، وعمر التحدي، وانحراف ساعة التوقيع. لا يوجد POST بجانب هذا: النماذج ترسل set-many إلى /admin/config. يطابق GET /admin/openpgp-settings."
+  },
   "stsmetadata.endpoints./admin-api/mfa.what": {
     "en": "22620e663bd803a3",
     "text": "خارج المواصفة. صف واحد لكل شخص: كلمة المرور، ومفاتيح الأمان في دور `mfa`، وهل تطبيق مصادقة مسجَّل، وأيًّا من الاثنين سيُطلب. `totpUsable: false` هو الصف الذي يُبحث عنه — تسجيل لا تستطيع هذه العملية قراءته، ويُرفض حامله عند خطوة الرمز بدل تمريره بعامل واحد. **صفحة وحدة التحكم التي كان هذا يطابقها زالت**: دام /admin/mfa ساعات قبل أن ينقسم إلى صفحتي الآلية /admin/totp و/admin/webauthn وقائمة هي الآن أعمدة في /admin/users. هذا المورد مُبقًى ويجيب من ذلك العرض، فيكون هناك إحصاء واحد بدل مسحين. يطابق GET /admin/users، ويحمل GET /admin-api/users الحقائق نفسها كـ `factors` في كل صف."

@@ -42,6 +42,8 @@
   "nav.keys.heading": "Passkeys",
   "nav.tokens.label": "Security keys",
   "nav.tokens.heading": "Your security keys and smart cards",
+  "nav.tokens-and-keys.label": "Tokens and keys",
+  "nav.tokens-and-keys.heading": "Your tokens, certificates and keys",
   "nav.openpgp.label": "OpenPGP and mail encryption",
   "nav.openpgp.heading": "Your OpenPGP key and mail encryption",
   "nav.mfa.label": "Authenticator app",

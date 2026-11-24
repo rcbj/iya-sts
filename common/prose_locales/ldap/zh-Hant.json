@@ -1351,6 +1351,10 @@
     "en": "05bb26087cc96574",
     "text": "TRUE 或 FALSE：同時加密此應用程式的 WS-Trust 回應的 ds:Signature（WS-SecurityPolicy 的 sp:EncryptSignature），覆蓋 wstrust.encryptSignature。僅在回應既簽章又加密且先簽章時讀取；簽章加密給回應的接收方。"
   },
+  "applications.schema.attributes.wstrustRecipientIgnoresKeyUsage.what": {
+    "en": "ee5d3e5465e289d1",
+    "text": "TRUE 或 FALSE：無論接收方憑證的 keyUsage 為何，都將此應用程式的 WS-Trust 回應加密給它，覆寫 wstrust.recipientIgnoresKeyUsage。領域的訊息簽章憑證只允許 digitalSignature，因此沒有此設定時，加密給請求簽章憑證的回應會被拒絕。只略過 keyUsage 檢查：在偏執 PKI 模式檢查之處，仍會檢查憑證的有效期、路徑與撤銷狀態。"
+  },
   "applications.schema.attributes.wstrustDecryptionCertificate.what": {
     "en": "b00a63a9bafc49ad",
     "text": "發給此應用程式的 WS-TRUST 請求所加密到的憑證，PEM。設定後，發給此應用程式的請求以其私密金鑰而非領域的私密金鑰解密，而加密到領域金鑰的發給它的請求是 FailedCheck。公開：應用程式頁面和 GET /admin-api/applications 會提供它。"

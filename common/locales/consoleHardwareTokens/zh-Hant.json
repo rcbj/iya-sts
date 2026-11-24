@@ -68,5 +68,14 @@
   "sshExpires": "到期",
   "sshHardware": "綁定硬體",
   "sshRevoked": "已撤銷",
-  "sshRevoke": "撤銷"
+  "sshRevoke": "撤銷",
+  "person.unavailable": "無法在此讀取此人的權杖。目錄 → 硬體權杖會顯示它們。",
+  "person.noOath": "沒有為此人指派 OATH 權杖。",
+  "person.tokenKey": "權杖鍵（廠商/序號）",
+  "person.yubiSerial": "YubiKey 序號",
+  "person.yubiOtp": "它產生的一個 OTP（選填）",
+  "person.noYubi": "此人沒有 YubiKey OTP。",
+  "person.yubiWhat": "依序號將一把已匯入的 YubiKey 指派給此人。從該金鑰輸入的 OTP 可證明它在手邊，並在指派前檢查。",
+  "person.sshIssue": "個人在入口網站上為自己持有的公開金鑰簽發自己的 SSH 使用者憑證。管理員可在此撤銷。",
+  "person.central": "此領域的所有權杖：目錄 → 硬體權杖"
 }

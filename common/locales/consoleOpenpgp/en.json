@@ -41,5 +41,7 @@
   "wkdOn": "This realm answers the Web Key Directory (openpgp.wkd).",
   "wkdOff": "This realm does not answer the Web Key Directory (openpgp.wkd is off).",
   "wkdDomains": "Domains it serves:",
-  "wkdWhat": "A request with no realm in its path is answered by the realm that serves its domain, the default realm first. Only the keys of people who opted in are answered."
+  "wkdWhat": "A request with no realm in its path is answered by the realm that serves its domain, the default realm first. Only the keys of people who opted in are answered.",
+  "personUnavailable": "This person's OpenPGP key and S/MIME certificate could not be read here. Directory → OpenPGP keys shows them.",
+  "central": "One person's key, the Web Key Directory and S/MIME: Directory → OpenPGP keys"
 }

@@ -214,6 +214,7 @@
   "detail.tabService": "服务账户",
   "detail.tabKeys": "密钥对",
   "detail.tabSelfIssued": "Self-issued IDs",
+  "detail.tabOpenpgp": "OpenPGP 和 S/MIME",
   "detail.tabFederation": "联合链接",
   "detail.tabGnap": "GNAP 授权",
   "detail.tabUma": "UMA",

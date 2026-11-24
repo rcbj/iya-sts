@@ -452,6 +452,24 @@ klist -f      # flags include H: hardware authenticated
 
 A certificate issued to somebody else is refused *Client name mismatch*.
 
+**4. With the key on a PIV card** (`sts_piv_card.js`). Generate an RSA key
+in slot 9a — MIT Kerberos 1.20 signs through PKCS#11 with RSA only — enrol a
+`piv-auth` certificate for it with the card's attestation, and import the
+certificate into the slot
+([Hardware tokens](hardware-tokens.md#piv-key-attestation)). Then name
+OpenSC's module instead of the files (`certid=01` is slot 9a, as OpenSC
+numbers it); `kinit` asks for the card's PIN:
+
+```bash
+kinit -X X509_user_identity=PKCS11:module_name=/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so:certid=01 \
+  alice@EXAMPLE.COM
+klist -f      # flags include A (pre-authenticated) and H (hardware authenticated)
+```
+
+`H` comes from the card's recorded attestation. Once the card is reported
+lost, its certificate is revoked and `kinit` is refused
+`KDC_ERR_REVOKED_CERTIFICATE`.
+
 **Anonymous PKINIT** (RFC 8062, `krb5.anonymousPkinit`, on by default) gives
 a machine with no host keytab FAST armor:
 

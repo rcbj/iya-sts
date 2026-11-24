@@ -41,5 +41,7 @@
   "wkdOn": "Ce domaine de confiance répond au Web Key Directory (openpgp.wkd).",
   "wkdOff": "Ce domaine de confiance ne répond pas au Web Key Directory (openpgp.wkd est désactivé).",
   "wkdDomains": "Domaines servis :",
-  "wkdWhat": "Une requête dont le chemin ne comporte aucun domaine de confiance reçoit la réponse du domaine de confiance qui sert son domaine DNS, le domaine de confiance par défaut en premier. Seules les clés des personnes qui l'ont accepté sont renvoyées."
+  "wkdWhat": "Une requête dont le chemin ne comporte aucun domaine de confiance reçoit la réponse du domaine de confiance qui sert son domaine DNS, le domaine de confiance par défaut en premier. Seules les clés des personnes qui l'ont accepté sont renvoyées.",
+  "personUnavailable": "La clé OpenPGP et le certificat S/MIME de cette personne n’ont pas pu être lus ici. Annuaire → Clés OpenPGP les affiche.",
+  "central": "La clé d’une personne, le Web Key Directory et S/MIME : Annuaire → Clés OpenPGP"
 }

@@ -357,7 +357,16 @@ const STYLE_AS_WRITTEN =
   'ol.steps li{margin:0 0 4px}' +
   '.state-valid{color:#1b7a3a;font-weight:600}' +
   '.state-revoked,.state-superseded{color:#b00020;font-weight:600}' +
-  '.state-expired{color:#8a8a96;font-weight:600}';
+  '.state-expired{color:#8a8a96;font-weight:600}' +
+  // A PAGE OF TABS (#2053): each tab a fragment, the panel it names shown
+  // by `:target` and the first while none is named, no script involved.
+  '.ptabbar{display:flex;flex-wrap:wrap;gap:4px;margin:0 0 12px}' +
+  '.ptabbar a{padding:6px 12px;border:1px solid #c8c8d2;border-radius:4px;' +
+  'text-decoration:none}' +
+  '.ptabs>.ptabpanel{display:none}' +
+  '.ptabs>.ptabpanel:target,.ptabs>.ptabpanel:has(:target){display:block}' +
+  '.ptabs:not(:has(>.ptabpanel:target,>.ptabpanel :target))>' +
+  '.ptabpanel.first{display:block}';
 
 const NAV = [
   // `key` names the section in the `portal` catalog (#539): its title and
@@ -459,6 +468,12 @@ const NAV = [
       // `web_tokens.ts` from `account_tokens.ts`.
       { path: BASE + '/tokens', label: 'Security keys',
         heading: 'Your security keys and smart cards' },
+      // TOKENS AND KEYS (#2053): one page, a tab per kind a person
+      // registers — hardware tokens, OATH tokens, YubiKey OTP, PIV, SSH
+      // user certificates, OpenPGP and S/MIME — each tab the card of the
+      // page beside it. Drawn by `web_tokens_and_keys.ts`.
+      { path: BASE + '/tokens-and-keys', label: 'Tokens and keys',
+        heading: 'Your tokens, certificates and keys' },
       // OpenPGP AND MAIL ENCRYPTION (#1955 P6): the person's OpenPGP key,
       // registered by signing a challenge (on a YubiKey's OpenPGP card the
       // card signs), its Web Key Directory publication, their S/MIME

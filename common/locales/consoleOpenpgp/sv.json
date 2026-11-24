@@ -41,5 +41,7 @@
   "wkdOn": "Den här sfären besvarar Web Key Directory (openpgp.wkd).",
   "wkdOff": "Den här sfären besvarar inte Web Key Directory (openpgp.wkd är avstängd).",
   "wkdDomains": "Domäner den betjänar:",
-  "wkdWhat": "En begäran utan sfär i sökvägen besvaras av den sfär som betjänar dess domän, standardsfären först. Bara nycklar för personer som har valt att delta besvaras."
+  "wkdWhat": "En begäran utan sfär i sökvägen besvaras av den sfär som betjänar dess domän, standardsfären först. Bara nycklar för personer som har valt att delta besvaras.",
+  "personUnavailable": "Den här personens OpenPGP-nyckel och S/MIME-certifikat kunde inte läsas här. Katalog → OpenPGP-nycklar visar dem.",
+  "central": "En persons nyckel, Web Key Directory och S/MIME: Katalog → OpenPGP-nycklar"
 }
