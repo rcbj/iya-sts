@@ -1351,6 +1351,10 @@
     "en": "05bb26087cc96574",
     "text": "TRUE o FALSE: i-encrypt din ang ds:Signature ng isang WS-Trust response para sa application na ito (ang sp:EncryptSignature ng WS-SecurityPolicy), na nag-o-override sa wstrust.encryptSignature. Binabasa lamang habang ang response ay parehong naka-sign at naka-encrypt, na naka-sign muna; ine-encrypt ang signature para sa recipient ng response."
   },
+  "applications.schema.attributes.wstrustRecipientIgnoresKeyUsage.what": {
+    "en": "ee5d3e5465e289d1",
+    "text": "TRUE o FALSE: i-encrypt ang mga WS-Trust na tugon ng application na ito sa recipient certificate nito anuman ang keyUsage nito, na ino-override ang wstrust.recipientIgnoresKeyUsage. digitalSignature lang ang pinapahintulutan ng mga message-signing certificate ng realm, kaya kung wala ito ay tinatanggihan ang tugong naka-encrypt sa signing certificate ng kahilingan. Ang pagsusuri ng keyUsage lang ang nilalaktawan: sinusuri pa rin ang bisa, path at revocation ng certificate kung saan sinusuri ito ng paranoid PKI mode."
+  },
   "applications.schema.attributes.wstrustDecryptionCertificate.what": {
     "en": "b00a63a9bafc49ad",
     "text": "ANG CERTIFICATE NA PINAG-E-ENCRYPT-AN NG WS-TRUST REQUEST PARA SA APPLICATION NA ITO, PEM. Habang nakatakda ito, dine-decrypt ang request para sa application na ito gamit ang private key nito at hindi ang sa realm, at FailedCheck ang request para rito na naka-encrypt sa key ng realm. Pampubliko: ibinibigay ito ng pahina ng application at ng GET /admin-api/applications."

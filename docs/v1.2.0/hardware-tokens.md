@@ -33,6 +33,50 @@ The register is a sibling of the [device register](devices.md), not part of
 it. A device there is the computer or phone a person signs in *from*, and a
 roaming security key identifies no such device.
 
+## Where each kind lives
+
+Every credential a token or card carries is held on **the person's directory
+entry**, which is the master copy. The stores beside the entries are indexes
+for the questions that are not one person's: a KRL, which token holds a
+credential at a sign-in, a serial typed at a claim. A person registers each
+kind on the portal's **Tokens and keys** page (`/portal/tokens-and-keys`,
+under *How I sign in*), a tab per kind. An administrator works on one
+person's on their page, **Directory → Users → Credentials**, whose sub-tabs
+have the same names in the same order, or on the central Directory page.
+Each kind's settings are on a Protocols page of its own, a **Metadata** tab
+and a **Settings** tab.
+
+| Kind | On the entry | Portal tab (and the older page, which still works) | Central console page | Settings |
+|---|---|---|---|---|
+| Hardware tokens | `stsHardwareToken` | **Hardware tokens** (`/portal/tokens`) | Directory → Hardware tokens, *Hardware tokens* tab | Protocols → Hardware tokens (`/admin/hardware-tokens-settings`) |
+| [OATH tokens](one-time-code-tokens.md) (HOTP, PSKC) | `stsOathToken` | **OATH tokens** (`/portal/tokens`, `/portal/mfa`) | Directory → Hardware tokens, *OATH tokens* tab | Protocols → OATH tokens (`/admin/oath-tokens`) |
+| [YubiKey OTP](yubiotp.md) | `stsYubiOtpToken` | **YubiKey OTP** (`/portal/mfa`) | the person's *YubiKey OTP* sub-tab; a batch is imported through `/admin-api` | Protocols → YubiKey OTP (`/admin/yubiotp`) |
+| [PIV certificates](#piv-key-attestation) | `stsEnrolledCertificate`, and the card in `stsHardwareToken` | **PIV** (`/portal/tokens`) | Directory → Hardware tokens, *Enrol PIV* and *Escrowed keys* tabs | Protocols → PIV (`/admin/piv`) |
+| [SSH user certificates](pki.md#openssh-user-certificates) | `stsSshUserCertificate` | **SSH user certificates** | Directory → Hardware tokens, *SSH certificates* tab | Protocols → SSH user certificates (`/admin/ssh-user-ca`) |
+| [OpenPGP keys and S/MIME certificates](openpgp.md) | `stsOpenPgpKey`, `userSMIMECertificate` | **OpenPGP and S/MIME** (`/portal/openpgp`) | Directory → OpenPGP keys (`/admin/openpgp`) | Protocols → OpenPGP (`/admin/openpgp-settings`) |
+
+**A write of the entry by another door** — the console's attribute editor,
+`/admin-api`, SCIM, an `ldapmodify` — is held to the same rules for every
+kind, and its audit row names who wrote it:
+
+- **Removing a value gives the credential up.** An SSH certificate is
+  revoked and goes on the KRL; a hardware token's credentials stop counting
+  as hardware evidence; an OATH or YubiKey OTP token is retired.
+- **Adding or changing a value is refused**, and the value is taken off or
+  put back: only the CA issues a certificate, only attestation records a
+  serial, and only the inventory assigns a token (`STS-HWTOKEN-0017`). An SSH
+  certificate written back after it was revoked or expired, one issued to
+  somebody else and one this realm never issued are refused the same way
+  (`STS-SSHCA-0009`), and so is an S/MIME value that holds no certificate
+  (`STS-OPENPGP-0034`).
+- **An imported token nobody holds yet is staged.** Its sealed secret stays
+  in the inventory until it is assigned or claimed, and from then on the
+  holder's entry is the master.
+
+The detail is [below](#on-the-persons-directory-entry) for tokens, in
+[PKI](pki.md#openssh-user-certificates) for SSH certificates and in
+[OpenPGP and S/MIME](openpgp.md#encrypted-mail) for S/MIME.
+
 ## Where a token comes from
 
 **A serial is recorded only from attestation.** No form, API or import takes
@@ -87,11 +131,31 @@ under that serial.
 - **People** see their own tokens on the portal's **Security keys** page
   (`/portal/tokens`, under *How I sign in*). The page draws from
   `GET /account-api/tokens`.
+- The portal's **Tokens and keys** page (`/portal/tokens-and-keys`, also
+  under *How I sign in*) has a tab per kind a person registers: **Hardware
+  tokens**, **OATH tokens**, **YubiKey OTP**, **PIV**, **SSH user
+  certificates**, and **OpenPGP and S/MIME** — the same names and order as
+  the Credentials sub-tabs of a person's page in the console. Each tab is
+  the card of the page that already had it (Security keys, Authenticator
+  app, OpenPGP and mail encryption), and a form on it is answered on its
+  tab. The SSH tab lists your SSH user certificates, issues one for an
+  OpenSSH public key you paste and revokes one, over
+  `/account-api/ssh/certificates` (see [PKI](pki.md#openssh-user-certificates)).
+  The page draws from `GET /account-api/tokens-and-keys` and asks
+  `GET /account-api/mfa`, `GET /account-api/openpgp` and
+  `GET /account-api/ssh/certificates` for the other tabs.
 - **Administrators** see the realm's tokens under **Directory → Hardware
   tokens** (`/admin/hardware-tokens`). The list can be filtered by status
   and searched by serial or by person. Where the store is read on demand,
   the unsearched list shows the newest thousand tokens and says so. The page
-  draws from `GET /admin-api/hardware-tokens`.
+  draws from `GET /admin-api/hardware-tokens`. Its other tabs are *OATH
+  tokens*, *Enrol PIV*, *Escrowed keys* and *SSH certificates*.
+- **One person's** tokens and keys are on their page, **Directory → Users →
+  Credentials**, in the sub-tabs **Hardware tokens**, **OATH tokens**,
+  **YubiKey OTP**, **PIV**, **SSH user certificates** and **OpenPGP and
+  S/MIME**. Each is the central page's own list and forms with the person
+  fixed, and each act reaches the same `/admin-api` operation (see
+  [the admin console](admin-console.md#password-and-second-factors)).
 
 ## On the person's directory entry
 
@@ -198,7 +262,8 @@ RFC 8176 `amr` values that say a key is in hardware are earned from
   evidence, and `pkinit-smartcard` (and `sc`) when the key is on a card. By
   default it also keeps the inference it used before: a smart-card logon
   certificate whose key this service did not generate. The setting
-  `hardwareTokens.hardwareClaims` (in the *Devices* group) controls this.
+  `hardwareTokens.hardwareClaims` (the *Hardware tokens* group, on
+  Protocols → Hardware tokens) controls this.
 
 | `hardwareTokens.hardwareClaims` | PKINIT earns a hardware claim from |
 |---|---|
@@ -288,9 +353,11 @@ accepts that proof when a certificate is enrolled, in two ways:
    f9 certificate, and any intermediate after it. The draft defines no
    statement type for a PIV attestation, so this type is this service's
    choice: Yubico's own identifier for an attestation certificate.
-2. **On the enrolment form**: the portal's **Security keys** page, and the
-   console's **Directory → Hardware tokens → Enrol PIV** tab
-   (`POST /admin-api/hardware-tokens/enrol-piv`). Paste the certificate request
+2. **On the enrolment form**: the portal's **Security keys** page and the
+   **PIV** tab of **Tokens and keys**, the console's **Directory → Hardware
+   tokens → Enrol PIV** tab, and the **PIV** sub-tab of a person's
+   Credentials (`POST /admin-api/hardware-tokens/enrol-piv`, and for a person
+   `POST /account-api/tokens` with `action` `enrol-piv`). Paste the certificate request
    from `ykman piv certificates request`, the slot attestation certificate and
    the f9 certificate. The form issues over the realm's EST Issuing CA, so the
    profile must be in `est.allowedProfiles`. A person enrols only themselves;
@@ -307,24 +374,28 @@ The service checks all of the following, and refuses the request if any one
 fails. An attestation that does not verify is never "issued without
 evidence": the client sent it, so it meant it.
 
-- The attested public key is the request's key.
-- The chain reaches one of the realm's **PIV attestation anchors** through the
-  validation door (use case `piv-attestation`, see
-  [PKI use cases](pki-use-cases.md)). By default the anchors are Yubico's two
-  published roots, shipped with the service and pinned by their SHA-256:
-  *Yubico PIV Root CA Serial 263751*, and *Yubico Attestation Root 1* for
-  firmware 5.7.4 and later, with Yubico's PIV intermediates. Setting
-  `piv.attestationAnchors` replaces the roots.
-- The attestation names the key's serial number.
-- The slot in the attestation certificate's subject ("YubiKey PIV Attestation
-  9a") is the slot of the profile asked for.
-- The key's PIN and touch policies meet the realm's `piv.pinPolicy` and
-  `piv.touchPolicy`.
+| Check | Refused with |
+|---|---|
+| The request carries a readable attestation: one slot attestation certificate and the f9 certificate (and any intermediate after it) | `STS-PIV-0004` |
+| The attested public key is the request's key | `STS-PIV-0005` |
+| The slot certificate chains to one of the realm's **PIV attestation anchors** through the f9 certificate: the slot certificate's issuer is the f9 certificate's subject, and the f9 certificate chains to the anchor. The check goes through the validation door (use case `piv-attestation`, see [PKI use cases](pki-use-cases.md)). By default the anchors are Yubico's two published roots, shipped with the service and pinned by their SHA-256: *Yubico PIV Root CA Serial 263751*, and *Yubico Attestation Root 1* for firmware 5.7.4 and later, with Yubico's PIV intermediates. Setting `piv.attestationAnchors` replaces the roots | `STS-PIV-0006` |
+| The slot certificate names the key's serial number (extension `.3.7`) | `STS-PIV-0007` |
+| Its subject names a slot ("YubiKey PIV Attestation 9a"), for a PIV profile and for a profile that signs in | `STS-PIV-0036` |
+| That slot is the profile's ([below](#piv-certificate-profiles)); a 9e key only ever for `piv-card-auth` | `STS-PIV-0008`, `STS-PIV-0037` |
+| The key's PIN and touch policies (extension `.3.8`) meet the realm's `piv.pinPolicy` and `piv.touchPolicy` | `STS-PIV-0011`, `STS-PIV-0012` |
+| A PIV profile asked without an attestation, where `piv.requireAttestation` is on | `STS-PIV-0010` |
+
+A smart card that does not attest as a YubiKey does — a card whose slot
+certificates carry no Yubico serial, or are signed under a fixed issuer
+name rather than by its f9 certificate — is refused by the serial check or
+the chain check, and no token is recorded for it.
 
 The service reads Yubico's extensions: `1.3.6.1.4.1.41482.3.3` (firmware,
 three octets), `.3.7` (serial, an integer), `.3.8` (PIN policy, then touch
 policy), `.3.9` (form factor), and `.3.10` and `.3.11` (FIPS and CSPN keys) on
-the f9 certificate. These are documented on Yubico's
+the f9 certificate. Only the serial is required; the firmware, form factor and
+FIPS mark are recorded when present and are what the
+[XACML attributes](#requiring-a-hardware-token) carry. These are documented on Yubico's
 [PIV attestation](https://developers.yubico.com/PIV/Introduction/PIV_attestation.html)
 page.
 
@@ -449,9 +520,10 @@ the request is refused rather than the key kept in plain. With escrow off,
 - An escrowed key is **never hardware evidence**: this service had it in
   memory. Its certificate earns no `hwk`.
 - **The holder** recovers their own escrowed key on the portal's Security keys
-  page, after a fresh sign-in.
+  page or the PIV tab of Tokens and keys, after a fresh sign-in.
 - **An administrator** recovers a person's escrowed key on Directory →
-  Hardware tokens → Escrowed keys, or with
+  Hardware tokens → Escrowed keys, on the PIV sub-tab of the person's
+  Credentials, or with
   `POST /admin-api/hardware-tokens/recover-key` and
   `{ "username": "...", "serial": "..." }`. The administrator must have
   signed in within `account.recentAuthMinutes`, as the holder must; an
@@ -506,6 +578,22 @@ over the whole Federal PKI path, policy mappings included. It reads the same
 `stsPivCardUuid`. A card a profile covers is answered by that profile, and
 this mapping is not asked for it.
 
+## Tested with real clients
+
+This service's test suite enrols and uses a PIV card whose keys are
+generated on the card and never leave it, with the clients a person uses
+rather than with code of its own. What it establishes:
+
+| Client | What works |
+|---|---|
+| `yubico-piv-tool` and OpenSC's PKCS#11 module (`opensc-pkcs11.so`) | generating keys in slots 9a, 9c and 9d, signing a certificate request on the card, and importing the issued certificate into its slot |
+| The portal's PIV enrolment and EST `/.well-known/est/piv-sign/simpleenroll` | an attested certificate from a request signed on the card, with the attestation on the form or in the request's `id-aa-attestation` attribute; the card is then in the register under its serial, evidence `piv-attestation` |
+| `curl` with the card's key as a `pkcs11:` URI (OpenSSL's PKCS#11 engine) | a mutual-TLS sign-in at `GET /tls/sign-in` |
+| MIT `kinit -X X509_user_identity=PKCS11:…` | a PKINIT TGT; `klist -f` shows the flags `A` (pre-authenticated) and `H` (hardware authenticated). MIT Kerberos 1.20 signs through PKCS#11 with **RSA only**, so put an RSA key in slot 9a for PKINIT ([Kerberos](kerberos.md#a-certificate-as-the-pre-authentication-pkinit-179)) |
+| `openssl cms -decrypt` with the card's 9d key through PKCS#11 | reading the S/MIME mail this service sends to the 9d certificate ([OpenPGP and S/MIME](openpgp.md#encrypted-mail)); without the card the mail cannot be read |
+| A card reported lost on the portal | its certificates are revoked (`keyCompromise`): the same `curl` starts no session, and the same `kinit` is answered `KDC_ERR_REVOKED_CERTIFICATE` |
+| A card that does not attest as a YubiKey | refused at enrolment (`STS-PIV-0006` or `STS-PIV-0007`), and no token recorded |
+
 ## Settings
 
 | Setting | Default | What it does |
@@ -522,7 +610,17 @@ this mapping is not asked for it.
 | `pki.paranoidPivAttestation`, `pki.paranoidPivCard` | on | The two use cases' rows under paranoid PKI mode |
 | `hardwareTokens.hardwareClaims` | `inference` | Whether a PKINIT inference, and a passkey without trusted attestation, still earns `hwk` |
 
-Every row is also in [Configuration](configuration.md#devices).
+The `piv.*` rows are the *PIV* group, on **Protocols → PIV** (`/admin/piv`),
+`roles.pivKeyRecoveryGroup` is in the *Roles* group, the two
+`pki.paranoid*` rows are in the *PKI* group (**Protocols → PKI**), and
+`hardwareTokens.hardwareClaims` is the *Hardware tokens* group, on
+**Protocols → Hardware tokens** (`/admin/hardware-tokens-settings`), whose
+Metadata tab says what a token register is and what a sign-in earns. Until
+#2049 both were in the *Devices* group; keys, variables and defaults did not
+change. **Directory → Hardware tokens** (`/admin/hardware-tokens`) keeps the
+tokens, the OATH inventory, PIV enrolment, escrow and SSH certificates. Every
+row is also in [Configuration](configuration.md#piv), under *PIV* and
+*Hardware tokens*.
 
 ## Error codes
 

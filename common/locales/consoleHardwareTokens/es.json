@@ -68,5 +68,14 @@
   "sshExpires": "Vence",
   "sshHardware": "vinculado al hardware",
   "sshRevoked": "revocado",
-  "sshRevoke": "Revocar"
+  "sshRevoke": "Revocar",
+  "person.unavailable": "No se pudieron leer aquí los tokens de esta persona. Directorio → Tokens de hardware los muestra.",
+  "person.noOath": "No hay ningún token OATH asignado a esta persona.",
+  "person.tokenKey": "Clave del token (fabricante/serie)",
+  "person.yubiSerial": "Número de serie de la YubiKey",
+  "person.yubiOtp": "Un OTP de ella (opcional)",
+  "person.noYubi": "Esta persona no tiene ningún YubiKey OTP.",
+  "person.yubiWhat": "Asigne a esta persona una YubiKey importada por su número de serie. Un OTP escrito desde la llave demuestra que está a mano y se comprueba antes de asignarla.",
+  "person.sshIssue": "Una persona emite su propio certificado de usuario SSH en el portal, para una clave pública que posee. Un administrador puede revocarlo aquí.",
+  "person.central": "Todos los tokens de este dominio: Directorio → Tokens de hardware"
 }

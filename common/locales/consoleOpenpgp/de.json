@@ -41,5 +41,7 @@
   "wkdOn": "Dieser Vertrauensbereich beantwortet das Web Key Directory (openpgp.wkd).",
   "wkdOff": "Dieser Vertrauensbereich beantwortet das Web Key Directory nicht (openpgp.wkd ist ausgeschaltet).",
   "wkdDomains": "Bediente Domains:",
-  "wkdWhat": "Eine Anfrage ohne Vertrauensbereich im Pfad beantwortet der Vertrauensbereich, der ihre Domain bedient, zuerst der Standard-Vertrauensbereich. Beantwortet werden nur die Schlüssel von Personen, die zugestimmt haben."
+  "wkdWhat": "Eine Anfrage ohne Vertrauensbereich im Pfad beantwortet der Vertrauensbereich, der ihre Domain bedient, zuerst der Standard-Vertrauensbereich. Beantwortet werden nur die Schlüssel von Personen, die zugestimmt haben.",
+  "personUnavailable": "Der OpenPGP-Schlüssel und das S/MIME-Zertifikat dieser Person konnten hier nicht gelesen werden. Verzeichnis → OpenPGP-Schlüssel zeigt sie.",
+  "central": "Der Schlüssel einer Person, das Web Key Directory und S/MIME: Verzeichnis → OpenPGP-Schlüssel"
 }

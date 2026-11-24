@@ -1915,6 +1915,30 @@
     "en": "b48aa4041763958e",
     "text": "ICKE-SPEC. `webauthn.*`-inställningarna i fyra slag — CEREMONIN (RP-namn, åsidosättning av RP ID, algoritmer, användarverifiering, överföring av attestering, tidsgräns), CTAP2 (autentiseringsenhetens anslutning, credProps) och POLICY (om en nyckel får vara primär, om den får vara en andra faktor, hur många per person) — med COSE-algoritmtabellen bredvid, avläst ur authn/webauthn.js, modulen som kontrollerar signaturen. **EN UPPRÄTTHÅLLS OCH RESTEN ÄR ÖNSKEMÅL**: userVerification kontrolleras mot UV-flaggan inuti de byte som autentiseringsenheten signerade. Attesteringspolicyn (#105) och den FIDO-metadata som gäller rapporteras bredvid. Det finns ingen POST bredvid den här: formulären postar set-many till /admin/config. Speglar GET /admin/webauthn."
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens-settings.what": {
+    "en": "0052f035e7838d3d",
+    "text": "ICKE-SPEC (#2049). Gruppen Hardware tokens: hardwareTokens.hardwareClaims, som avgör om en PKINIT-slutsats och en passkey utan betrodd attestering fortfarande får hwk, bredvid vad ett tokenregister är och vad en förlorad token drar tillbaka. Det finns ingen POST bredvid den här: formulären postar set-many till /admin/config. Speglar GET /admin/hardware-tokens-settings."
+  },
+  "stsmetadata.endpoints./admin-api/piv.what": {
+    "en": "24ea31c5f2d6423c",
+    "text": "ICKE-SPEC (#2049). Varje piv.*-inställning: attesteringsrötterna, om en PIV-profil kräver en attestering, PIN- och beröringspolicyerna, inloggning med kortautentisering, nyckeldeposition och de externa utfärdare som mappas via kortets UUID. Det finns ingen POST bredvid den här: formulären postar set-many till /admin/config. Speglar GET /admin/piv."
+  },
+  "stsmetadata.endpoints./admin-api/yubiotp.what": {
+    "en": "00d89a7aca51d6c1",
+    "text": "ICKE-SPEC (#2049). Varje yubiotp.*-inställning: registrering, YK-VAL 2.0-verifieringsslutpunkten och import i klartext. Det finns ingen POST bredvid den här: formulären postar set-many till /admin/config. Speglar GET /admin/yubiotp."
+  },
+  "stsmetadata.endpoints./admin-api/oath-tokens.what": {
+    "en": "5cf49220b4238eee",
+    "text": "ICKE-SPEC (#2049). Inställningarna hotp.* och pskc.allowPlaintextImport: kodlängden, de två fönstren och om produktläget tar emot en PSKC-fröfil i klartext. Det finns ingen POST bredvid den här: formulären postar set-many till /admin/config. Speglar GET /admin/oath-tokens."
+  },
+  "stsmetadata.endpoints./admin-api/ssh-user-ca.what": {
+    "en": "d469684ddad7dfa3",
+    "text": "ICKE-SPEC (#2049). Varje pki.ssh*-inställning för realmens OpenSSH-användar-CA: dess algoritmer, postkvantreglerna, det längsta certifikatet med och utan maskinvarubevis, tilläggen och principalerna. Det finns ingen POST bredvid den här: formulären postar set-many till /admin/config. Speglar GET /admin/ssh-user-ca."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp-settings.what": {
+    "en": "392792b504230c16",
+    "text": "ICKE-SPEC (#2049). Varje openpgp.*-inställning: Web Key Directory, de godtagna algoritmerna, den minsta RSA-nyckeln, postkvantreglerna, utmaningens livslängd och signaturens klockavvikelse. Det finns ingen POST bredvid den här: formulären postar set-many till /admin/config. Speglar GET /admin/openpgp-settings."
+  },
   "stsmetadata.endpoints./admin-api/mfa.what": {
     "en": "22620e663bd803a3",
     "text": "ICKE-SPEC. En rad per person: lösenord, säkerhetsnycklar i rollen `mfa`, om en autentiseringsapp är registrerad och vilken av de två personen kommer att uppmanas att använda. `totpUsable: false` är raden att leta efter — en registrering som den här processen inte kan läsa, vars innehavare NEKAS vid kodsteget snarare än släpps igenom på en faktor. **KONSOLSIDAN SOM DETTA SPEGLADE FINNS INTE LÄNGRE**: /admin/mfa varade i några timmar innan den delades upp i mekanismsidorna /admin/totp och /admin/webauthn och en förteckning som nu är kolumner på /admin/users. Den här resursen behålls och svarar UTIFRÅN DEN VYN, så att det finns en sammanräkning snarare än två genomsökningar. Speglar GET /admin/users, och GET /admin-api/users bär samma fakta som `factors` på varje rad."

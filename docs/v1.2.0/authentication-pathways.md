@@ -30,20 +30,24 @@ product mode, how strong each is, and the rules that hold for all of them.
 |---|---|---|---|---|
 | **Sign-in screen**, password then a second factor | Password, and a TOTP code, passkey, recovery code or wallet | `pwd` and the factor, such as `otp` or `hwk` | `mfa` | Required |
 | **Passkey alone** (passwordless) | One passkey | `hwk` | `1` | Refused under the requirement above, because one key is one factor. Asks for a password instead |
-| **Continue with your certificate** on the screen | A verified TLS client certificate | `swk` | `1` | Asked afterwards where one is required |
-| **Sign in with a smart card or certificate** (the handoff, off by default) | The same certificate, presented on a listener of its own and bound to the sign-in | `swk` | `1` | Asked afterwards where one is required |
+| **Continue with your certificate** on the screen | A verified TLS client certificate, or a smart card's | `swk`; `hwk` (and `sc` on a smart card) when an attested hardware token holds the key | `1` | Asked afterwards where one is required |
+| **Sign in with a smart card or certificate** (the handoff, off by default) | The same certificate, presented on a listener of its own and bound to the sign-in | as above | `1` | Asked afterwards where one is required |
 | **OpenID Connect Native SSO** | An ID Token and a device secret, for an application that opted in | As the original sign-in | As the original sign-in | Not asked again: it shares that sign-in |
 | **Passkey with no username** | A discoverable passkey with user verification | `hwk`, `user` | `mfa` | Already two factors |
 | **SIOPv2 self-issued ID** | A wallet's self-issued ID Token, where enabled | `swk` | `1` | Asked afterwards where one is required |
-| **`GET /tls/sign-in`** | A verified TLS client certificate | `swk` | `1` | **Required in product.** This door has no screen, so it starts no session for somebody who needs a second factor. They use the screen's certificate button instead |
+| **`GET /tls/sign-in`** | A verified TLS client certificate | as above | `1` | **Required in product.** This door has no screen, so it starts no session for somebody who needs a second factor. They use the screen's certificate button instead |
 | **SPNEGO** (`/authn/spnego`) | A Kerberos ticket | From the ticket's flags | `mfa` if the ticket records two factors, otherwise `1` | Enforced at the KDC when the ticket was issued. See below |
-| **Kerberos AS-REQ** | Password and FAST with OTP, a passkey, or PKINIT | `pwd` and `otp`, among others | From the factors | A person who holds or must hold a second factor gets no ticket on a password alone |
+| **Kerberos AS-REQ** | Password and FAST with OTP, a passkey, or PKINIT (a certificate or a PIV card) | `pwd` and `otp`, among others; PKINIT with an attested card's key `hwk` and `sc` | From the factors | A person who holds or must hold a second factor gets no ticket on a password alone |
 | **Wallet** (`/authn/wallet`) | A credential this realm issued, with a holder proof | `pop` | `1`, or `mfa` with hardware and user attestation | Asked afterwards where one is required |
 | **Federation partner** | A verified assertion from a configured partner | `federated` and the partner's own values | From the partner | **Not asked** by this rule. The issuance policy can demand a local second factor as a step-up |
 | **Emailed code or link** | Possession of a verified mailbox | | | Off by default. NIST SP 800-63B-4 does not count email as an authenticator |
 | **Recovery code** | A single-use code | With the password | `mfa` | It is the second factor, for when the usual one is lost |
 | **Remembered browser** | An earlier second factor on this browser | | | Off by default. Only if the authentication policy's `rememberedBrowserSkipsSecondFactor` is on, and never for an administrator |
 | **Anonymous** | Nothing | none | `0` | Off by default (`authn.unauthenticatedSessions`) |
+
+Which certificates count as a smart card, and the policy rows that admit
+each, are in [Smart cards](authentication.md#smart-cards-2031); what earns
+`hwk` and `sc` is in [Hardware tokens](hardware-tokens.md#what-a-sign-in-claims).
 
 > **Note.** A federated session has whatever strength the partner states, and
 > this service does not ask for a second factor on top. A partner is the

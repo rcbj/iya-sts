@@ -2292,7 +2292,8 @@ class WsTrust {
       log.debug("Leaving WsTrust.signedReading(). In the clear.");
       return this.messageSignature(doc, connection, prepare);
     }
-    const opened = WsEncryption.openedCopy(doc);
+    const tried = WsEncryption.openedCopyOrWhy(doc);
+    const opened = tried.copy;
     const order = WsEncryption.decryptsBeforeVerifying(doc) && opened
       ? [opened, doc] : (opened ? [doc, opened] : [doc]);
     let first: any = undefined;
@@ -2308,6 +2309,24 @@ class WsTrust {
       if (first === undefined || (first === null && reading)) {
         first = reading;
       }
+    }
+    // A SIGNATURE THAT COULD NOT BE CHECKED BECAUSE ITS CIPHERTEXT WOULD NOT
+    // OPEN is refused for that (#2046, rcbj 2026-11-24). Read over the
+    // ciphertext alone, a signature made before the encryption — an
+    // encrypted Body, signed first, as WSS4J and WCF send it — fails its
+    // digests, and was refused as a part altered after it was signed
+    // (STS-WSTRUST-0045) when nothing had been altered: the realm had
+    // refused to open the ciphertext. The opening's own fault is the
+    // reason, the one an encrypted header that does not open is given.
+    if (first && first.ok === false && tried.refused) {
+      log.info(errorCodes.tag(String(tried.refused.code || '')) +
+               'wstrust: the request\'s signature could not be checked: ' +
+               'its ciphertext would not open — ' + tried.refused.reason +
+               '.');
+      log.debug("Leaving WsTrust.signedReading(). The ciphertext.");
+      return { ok: false, errorCode: tried.refused.code,
+               trustFault: tried.refused.trustFault,
+               reason: tried.refused.reason };
     }
     log.debug("Leaving WsTrust.signedReading(). Neither verified.");
     return first === undefined ? null : first;

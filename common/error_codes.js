@@ -13209,7 +13209,9 @@ const CODES = [
   { code: 'STS-WSTRUST-0045',
     summary: 'A signed RST\'s WS-Security signature does not verify with the ' +
       'certificate it names, or a signed part was altered. Product ' +
-      '(#521).',
+      '(#521). A signature that cannot be checked because the request\'s ' +
+      'ciphertext will not open is STS-WSTRUST-0075, with the reason ' +
+      'it would not open (#2046).',
     spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
       'section 11' },
   { code: 'STS-WSTRUST-0046',

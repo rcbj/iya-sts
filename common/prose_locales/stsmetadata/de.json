@@ -1915,6 +1915,30 @@
     "en": "b48aa4041763958e",
     "text": "KEINE SPEZIFIKATION. Die Einstellungen `webauthn.*` in vier Arten — die ZEREMONIE (Name des RP, Überschreibung der RP-ID, Algorithmen, Benutzerprüfung, Attestation Conveyance, Zeitüberschreitung), CTAP2 (Anbindung des Authentifikators, credProps) und RICHTLINIE (ob ein Schlüssel primär sein darf, ob er ein zweiter Faktor sein darf, wie viele je Person) — daneben die COSE-Algorithmentabelle, gelesen aus authn/webauthn.js, dem Modul, das die Signatur prüft. **EINES WIRD ERZWUNGEN UND DER REST SIND ANFRAGEN**: userVerification wird gegen das Flag UV in den Bytes geprüft, die der Authentifikator signiert hat. Die Attestierungsrichtlinie (#105) und die geltenden Metadaten von FIDO werden daneben gemeldet. Es gibt kein POST neben diesem: die Formulare senden set-many an /admin/config. Spiegelt GET /admin/webauthn."
   },
+  "stsmetadata.endpoints./admin-api/hardware-tokens-settings.what": {
+    "en": "0052f035e7838d3d",
+    "text": "KEINE SPEZIFIKATION (#2049). Die Gruppe Hardware tokens: hardwareTokens.hardwareClaims, das entscheidet, ob eine PKINIT-Schlussfolgerung und ein Passkey ohne vertrauenswürdige Attestierung noch hwk erhalten, daneben, was ein Token-Register ist und was ein verlorenes Token zurückzieht. Es gibt kein POST neben diesem: die Formulare senden set-many an /admin/config. Spiegelt GET /admin/hardware-tokens-settings."
+  },
+  "stsmetadata.endpoints./admin-api/piv.what": {
+    "en": "24ea31c5f2d6423c",
+    "text": "KEINE SPEZIFIKATION (#2049). Jede Einstellung piv.*: die Attestierungswurzeln, ob ein PIV-Profil eine Attestierung verlangt, die PIN- und Berührungsrichtlinien, die Anmeldung mit Kartenauthentifizierung, die Schlüsselhinterlegung und die externen Aussteller, die über die Karten-UUID zugeordnet werden. Es gibt kein POST neben diesem: die Formulare senden set-many an /admin/config. Spiegelt GET /admin/piv."
+  },
+  "stsmetadata.endpoints./admin-api/yubiotp.what": {
+    "en": "00d89a7aca51d6c1",
+    "text": "KEINE SPEZIFIKATION (#2049). Jede Einstellung yubiotp.*: die Einrichtung, der YK-VAL-2.0-Verify-Endpunkt und Klartextimporte. Es gibt kein POST neben diesem: die Formulare senden set-many an /admin/config. Spiegelt GET /admin/yubiotp."
+  },
+  "stsmetadata.endpoints./admin-api/oath-tokens.what": {
+    "en": "5cf49220b4238eee",
+    "text": "KEINE SPEZIFIKATION (#2049). Die Einstellungen hotp.* und pskc.allowPlaintextImport: die Codelänge, die beiden Fenster und ob der Produktmodus eine PSKC-Seed-Datei im Klartext annimmt. Es gibt kein POST neben diesem: die Formulare senden set-many an /admin/config. Spiegelt GET /admin/oath-tokens."
+  },
+  "stsmetadata.endpoints./admin-api/ssh-user-ca.what": {
+    "en": "d469684ddad7dfa3",
+    "text": "KEINE SPEZIFIKATION (#2049). Jede Einstellung pki.ssh* der OpenSSH-Benutzer-CA des Realms: ihre Algorithmen, die Post-Quanten-Regeln, das längste Zertifikat mit und ohne Hardware-Nachweis, die Erweiterungen und die Principals. Es gibt kein POST neben diesem: die Formulare senden set-many an /admin/config. Spiegelt GET /admin/ssh-user-ca."
+  },
+  "stsmetadata.endpoints./admin-api/openpgp-settings.what": {
+    "en": "392792b504230c16",
+    "text": "KEINE SPEZIFIKATION (#2049). Jede Einstellung openpgp.*: das Web Key Directory, die akzeptierten Algorithmen, der kleinste RSA-Schlüssel, die Post-Quanten-Regeln, die Lebensdauer der Challenge und der Uhrzeitversatz der Signatur. Es gibt kein POST neben diesem: die Formulare senden set-many an /admin/config. Spiegelt GET /admin/openpgp-settings."
+  },
   "stsmetadata.endpoints./admin-api/mfa.what": {
     "en": "22620e663bd803a3",
     "text": "KEINE SPEZIFIKATION. Eine Zeile je Person: Passwort, Sicherheitsschlüssel in der Rolle `mfa`, ob eine Authentifikator-Anwendung eingerichtet ist und nach welchem der beiden gefragt wird. `totpUsable: false` ist die Zeile, nach der zu suchen ist — eine Einrichtung, die dieser Prozess nicht lesen kann und deren Inhaber beim Code-Schritt ABGELEHNT wird, statt mit einem Faktor durchgelassen zu werden. **DIE KONSOLENSEITE, DIE DIES SPIEGELTE, IST WEG**: /admin/mfa bestand wenige Stunden, bevor es sich in die Seiten der Mechanismen /admin/totp und /admin/webauthn und eine Liste teilte, die jetzt Spalten auf /admin/users sind. Diese Ressource bleibt und antwortet AUS DIESER SICHT, sodass es eine Zählung gibt statt zweier Durchläufe. Spiegelt GET /admin/users, und GET /admin-api/users trägt dieselben Tatsachen als `factors` in jeder Zeile."

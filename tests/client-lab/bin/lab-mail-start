@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# File: tests/client-lab/bin/lab-mail-start
+#
+# ---------------------------------------------------------------------------
+# THE LAB'S MAIL SERVER: POSTFIX, RECEIVING FOR A DOMAIN, OVER STARTTLS
+# (#2058).
+#
+#   lab-mail-start <domain>
+#
+# The service sends mail over TLS only (common/mail_transports.ts: SMTP is
+# never sent in the clear, in either mode), so postfix offers STARTTLS on
+# port 25 with a certificate for `client-lab` under a CA made here, now. The
+# CA CERTIFICATE alone is written to the shared volume, at
+# /run/sts-test/client-lab/mail-ca.crt, the path the service reads it at
+# (`mail.smtpCaFile`); the CA's key is deleted on the way out.
+#
+# Every address at <domain> is delivered, unknown local parts included
+# (`local_recipient_maps` empty, `luser_relay`), to ONE mailbox, the
+# `labmail` user's /var/mail/labmail, which bin/lab-mail-fetch reads; every
+# call starts it EMPTY, so a job reads only its own mail. A second call
+# replaces the domain and the certificate and reloads postfix.
+# Its log is /var/log/postfix.log (maillog_file must be under /var).
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+domain="${1:?a mail domain}"
+dir=/run/client-lab/mail
+shared=/run/sts-test/client-lab
+mkdir -p "${dir}" "${shared}"
+keys="$(mktemp -d)"
+trap 'rm -rf "${keys}"' EXIT
+
+id labmail > /dev/null 2>&1 || useradd -m -s /usr/sbin/nologin labmail
+: > /var/mail/labmail
+chown labmail:mail /var/mail/labmail
+chmod 0600 /var/mail/labmail
+
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 \
+  -out "${keys}/ca.key"
+openssl req -x509 -new -key "${keys}/ca.key" -sha256 -days 2 \
+  -subj "/CN=Client Lab Mail CA $(openssl rand -hex 4)" \
+  -addext "basicConstraints=critical,CA:TRUE" \
+  -addext "keyUsage=critical,keyCertSign,cRLSign" -out "${dir}/ca.crt"
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 \
+  -out "${dir}/server.key"
+chmod 0600 "${dir}/server.key"
+openssl req -new -key "${dir}/server.key" -subj "/CN=client-lab" \
+  -out "${keys}/server.csr"
+printf 'subjectAltName=DNS:client-lab,DNS:localhost\nextendedKeyUsage=serverAuth\n' \
+  > "${keys}/server.ext"
+openssl x509 -req -in "${keys}/server.csr" -CA "${dir}/ca.crt" \
+  -CAkey "${keys}/ca.key" -CAcreateserial -sha256 -days 2 \
+  -extfile "${keys}/server.ext" -out "${dir}/server.crt"
+cp "${dir}/ca.crt" "${shared}/mail-ca.crt"
+chmod 0644 "${shared}/mail-ca.crt"
+
+postconf -e \
+  "myhostname = client-lab" \
+  "mydestination = client-lab, localhost, ${domain}" \
+  "inet_interfaces = all" \
+  "inet_protocols = ipv4" \
+  "local_recipient_maps =" \
+  "luser_relay = labmail" \
+  "alias_maps =" \
+  "smtpd_tls_cert_file = ${dir}/server.crt" \
+  "smtpd_tls_key_file = ${dir}/server.key" \
+  "smtpd_tls_security_level = encrypt" \
+  "smtpd_tls_mandatory_protocols = >=TLSv1.2" \
+  "maillog_file = /var/log/postfix.log" \
+  "message_size_limit = 10240000"
+# Mail reaches the mailbox over STARTTLS or not at all: `encrypt` refuses a
+# client that will not start TLS (the service never would).
+postfix check
+if postfix status > /dev/null 2>&1; then
+  postfix reload
+else
+  postfix start
+fi
+echo "postfix receives for ${domain} on client-lab:25 (STARTTLS);" \
+     "its CA is ${shared}/mail-ca.crt"

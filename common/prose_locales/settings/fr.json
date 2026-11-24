@@ -6175,6 +6175,14 @@
     "en": "32f9389b65f0eb67",
     "text": "Indique si la ds:Signature d’une réponse WS-Trust est chiffrée elle aussi (sp:EncryptSignature de WS-SecurityPolicy), pour le destinataire de la réponse. Lu uniquement tant que la réponse est signée puis chiffrée. La liaison du WSDL porte sp:EncryptSignature tant que ce réglage est activé. Le wstrustEncryptSignature d’une application l’emporte."
   },
+  "wstrust.recipientIgnoresKeyUsage|label": {
+    "en": "5084027709e17c26",
+    "text": "Chiffrer une réponse pour un certificat quel que soit son keyUsage"
+  },
+  "wstrust.recipientIgnoresKeyUsage|description": {
+    "en": "58e43975d6e28519",
+    "text": "Si une réponse WS-Trust peut être chiffrée pour un certificat dont le keyUsage n'autorise ni keyEncipherment ni keyAgreement — le plus souvent le certificat de signature de la requête : les certificats de signature de messages de ce domaine n'autorisent que digitalSignature. Seule cette vérification est levée ; la validité, le chemin et la révocation du certificat restent vérifiés là où le mode PKI paranoïaque les vérifie. Désactivé par défaut. Le wstrustRecipientIgnoresKeyUsage d'une application le remplace."
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Connexion initiée par le fournisseur d’identité"

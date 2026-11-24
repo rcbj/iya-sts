@@ -25,7 +25,8 @@ SLH-DSA is skipped.
 ## Setting one up yourself
 
 On the portal, **Authenticator app** (`/portal/mfa`) has a
-*One-time code token* card. *Set up a one-time code token* shows:
+*One-time code token* card; the **OATH tokens** tab of **Tokens and keys**
+(`/portal/tokens-and-keys`) draws the same card. *Set up a one-time code token* shows:
 
 - a QR code holding an `otpauth://hotp/` URI with its counter, for an app
   that reads HOTP;
@@ -132,11 +133,13 @@ A file encrypted to a certificate (section 6.3) is refused whole.
 
 An unassigned token reaches a person in one of two ways:
 
-- **An administrator assigns it**, by serial, on the OATH tab (or
-  `POST /admin-api/hardware-tokens/assign-oath` with `key` and
-  `username`).
+- **An administrator assigns it**, by serial, on the OATH tab, or on the
+  **OATH tokens** sub-tab of the person's Credentials (Directory → Users),
+  or with `POST /admin-api/hardware-tokens/assign-oath` and `key` and
+  `username`.
 - **The person claims it** on the portal, **Security keys**
-  (`/portal/tokens`), *Claim a token you were given*: the serial printed on
+  (`/portal/tokens`) or the **OATH tokens** tab of **Tokens and keys**,
+  *Claim a token you were given*: the serial printed on
   it and a code it shows now. The code is spent. A wrong serial and a wrong
   code get the same answer, so a claim cannot be used to learn which
   serials are in stock.
@@ -156,6 +159,24 @@ The code a claim spends is refused at the next sign-in. An HOTP code a few
 presses ahead signs in and moves the counter, after which the skipped codes
 are refused.
 
+## On the person's entry
+
+**An assigned token is on its holder's entry**, in `stsOathToken`: one JSON
+value per token with its key, kind, vendor, serial, model and key id, its
+status, and who assigned it when. Never the secret, which is the person's
+HOTP or authenticator credential. The entry is the master copy and the OATH
+inventory its index ([Hardware tokens](hardware-tokens.md#on-the-persons-directory-entry)):
+
+- removing the value by another door — the attribute editor, `/admin-api`,
+  SCIM, an `ldapmodify` — retires the token: its credential is removed and
+  it is never assigned again, and the audit row (`oath-token.retire`) names
+  who removed it;
+- adding or changing a value is refused and put back (`STS-HWTOKEN-0017`):
+  a token is assigned only from the inventory, by an administrator or by its
+  holder's claim;
+- an **unassigned** token is staged in the inventory with its sealed secret,
+  and belongs to nobody until it is assigned or claimed.
+
 ## A lost token
 
 Report the token lost on the *Hardware tokens* tab or the person's portal
@@ -164,8 +185,9 @@ person's entry, the sessions its codes signed in end, and the inventory
 marks it retired. A retired token is never assigned again: its secret may
 be with whoever found it.
 
-An administrator can also clear one person's token on their row under
-**Directory → Users** (or `POST /admin-api/users/clear-hotp`).
+An administrator can also clear one person's token on the **OATH tokens**
+sub-tab of their Credentials, under **Directory → Users** (or
+`POST /admin-api/users/clear-hotp`).
 
 ## The MAC
 
@@ -185,6 +207,11 @@ SHA-512. A seed that names ML-DSA, ML-KEM or SLH-DSA is skipped. There is
 no post-quantum MAC.
 
 ## Settings
+
+The four rows are the OATH tokens group, on **Protocols → OATH tokens**
+(`/admin/oath-tokens`). Until #2049 the `hotp.*` rows were on Protocols →
+TOTP MFA and the PSKC one on Protocols → Device registration; their keys,
+variables and defaults did not change.
 
 | Setting | Default | What it does |
 |---|---|---|

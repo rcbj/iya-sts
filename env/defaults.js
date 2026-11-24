@@ -530,14 +530,14 @@ var config = {
     enrolmentTtlMinutes: 10  // Unconfirmed enrolment lifetime (minutes)
   },
 
-  // --- TOTP MFA --------------------------------------------------------
+  // --- OATH tokens -----------------------------------------------------
   hotp: {
     digits: 6,         // HOTP code length (digits)
     window: 10,        // HOTP look-ahead (codes)
     resyncWindow: 100  // HOTP resynchronisation window (codes)
   },
 
-  // --- TOTP MFA --------------------------------------------------------
+  // --- YubiKey OTP -----------------------------------------------------
   yubiotp: {
     offered: false,              // Offer YubiKey OTP enrolment
     ykval: false,                // Answer the YK-VAL 2.0 verify endpoint
@@ -822,17 +822,17 @@ var config = {
     browserTokenCertificateHeader: "x5u"                                   // Remembered browser token certificate header
   },
 
-  // --- Devices ---------------------------------------------------------
+  // --- Hardware tokens -------------------------------------------------
   hardwareTokens: {
     hardwareClaims: "inference"  // What earns a hardware-key claim
   },
 
-  // --- Devices ---------------------------------------------------------
+  // --- OATH tokens -----------------------------------------------------
   pskc: {
     allowPlaintextImport: false  // Accept plaintext PSKC seed files in product mode
   },
 
-  // --- Devices ---------------------------------------------------------
+  // --- PIV -------------------------------------------------------------
   piv: {
     attestationAnchors: "",                                                    // PIV attestation roots (PEM)
     requireAttestation: false,                                                 // Require a PIV attestation for the PIV profiles
@@ -995,7 +995,8 @@ var config = {
     signRequest: false,                           // Require a request signed
     signResponse: false,                          // Sign a response
     responseProtectionOrder: "sign-then-encrypt", // Response protection order
-    encryptSignature: false                       // Encrypt a response's signature
+    encryptSignature: false,                      // Encrypt a response's signature
+    recipientIgnoresKeyUsage: false               // Encrypt a response to a certificate whatever its keyUsage
   },
 
   // --- WS-Federation ---------------------------------------------------

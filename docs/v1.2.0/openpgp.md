@@ -16,7 +16,9 @@ for a person who chose it or a message the realm named.
 
 ## Registering a key
 
-On the portal, **OpenPGP and mail encryption** (`/portal/openpgp`):
+On the portal, **OpenPGP and mail encryption** (`/portal/openpgp`), or the
+**OpenPGP and S/MIME** tab of **Tokens and keys**
+(`/portal/tokens-and-keys`), which draws the same page:
 
 1. Choose **Get a challenge**. The page shows a few lines of text naming the
    realm, your account, your address and a random value. It is good for
@@ -66,8 +68,8 @@ separate classical one.
 ### Configuring the algorithms
 
 `openpgp.algorithms` (`STS_OPENPGP_ALGORITHMS`) is per realm and takes
-effect while the service is running. On **Directory → OpenPGP keys**
-(`/admin/openpgp`) each name is a checkbox and an order number. **Select
+effect while the service is running. On **Protocols → OpenPGP**
+(`/admin/openpgp-settings`) each name is a checkbox and an order number. **Select
 all** ticks every name, or only the four composites while
 `openpgp.pqcOnly` is on. At least one name must stay ticked; a save of an
 empty list is refused (`STS-ADMIN-0840`). The same value can be set with
@@ -98,7 +100,9 @@ made by a YubiKey's OpenPGP card is the same bytes as one made by GnuPG with
 a key on disk, so nothing is recorded as hardware-bound.
 
 An administrator can do the same for a person on **Directory → OpenPGP
-keys** (`/admin/openpgp`) or through `POST /admin-api/openpgp/<action>`. The
+keys** (`/admin/openpgp`), on the **OpenPGP and S/MIME** sub-tab of the
+person's Credentials (Directory → Users), or through
+`POST /admin-api/openpgp/<action>`. The
 challenge is still the person's: the administrator issues it, hands it over,
 and pastes back what the person signed. Nobody can register a key whose
 holder did not sign the challenge.
@@ -193,10 +197,25 @@ On the same page, under **Encrypted mail**, a person chooses:
 The S/MIME certificate is the person's `userSMIMECertificate`. They can set
 it on the same page (a PEM certificate that can receive S/MIME now and names
 their address), an administrator can, and so can anything that writes the
-attribute over LDAP. An administrator sees it on the person's console page
-under **Stored certificates**, and in `GET /admin-api/users/certificates`
-(`smimeCertificates`), described as the stored certificates are; it signs
-nobody in.
+attribute over LDAP. **The entry is the master copy**, and there is no
+other: a value written by any door is what mail is encrypted to, and a value
+that holds no certificate is taken off the entry again and audited
+(`STS-OPENPGP-0034`), so mail is never encrypted to nothing. An administrator
+sees it on the person's **OpenPGP and S/MIME** sub-tab, read-only beside
+**Stored certificates** on the Key pairs sub-tab, and in
+`GET /admin-api/users/certificates` (`smimeCertificates`), described as the
+stored certificates are; it signs nobody in.
+
+**An S/MIME certificate on a smart card.** A YubiKey's key-management key
+(PIV slot 9d) can receive this mail: enrol a `piv-key-management`
+certificate for it with its attestation
+([Hardware tokens](hardware-tokens.md#piv-key-attestation)), then set that
+certificate here. The card decrypts; with OpenSC,
+`openssl cms -decrypt -engine pkcs11 -keyform engine -inkey 'pkcs11:id=%03'`
+reads the message, and nothing without the card can. A key generated on the
+card is lost with it, and so is every message encrypted to it; a realm that
+must keep old mail readable generates and escrows 9d keys instead
+([Escrowed encryption keys](hardware-tokens.md#escrowed-encryption-keys)).
 
 An encrypted message's **Subject is not encrypted**, so it goes out under a
 neutral subject for its kind — "A security notice from …", "A message from
@@ -252,6 +271,12 @@ administrator mailing a link is told it was not sent, and every refusal is on
 the audit log.
 
 ## Settings
+
+The `openpgp.*` rows are drawn on **Protocols → OpenPGP**
+(`/admin/openpgp-settings`), whose Metadata tab also lists the realm's Web
+Key Directory endpoints. **Directory → OpenPGP keys** (`/admin/openpgp`)
+shows one person's key and draws no setting; until #2049 the group was homed
+there, and could not be changed in the console.
 
 | Setting | Default | What it does |
 |---|---|---|

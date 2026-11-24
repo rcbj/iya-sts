@@ -2066,6 +2066,41 @@ pre-authorized offer).
   default is not recorded as a choice, so a change of the setting before
   the wallet redeems still applies. `oid4vc/CLAUDE.md` has where it goes.
 
+## `/portal/tokens-and-keys`: A TAB PER KIND, OVER THE EXISTING CARDS (#2053, 2026-11-23)
+
+rcbj: "The user portal needs to provide a page where a user can register
+each of these application artifacts." Under *How I sign in*, beside
+Security keys: Hardware tokens, OATH tokens, YubiKey OTP, PIV, SSH user
+certificates, and OpenPGP and S/MIME — the names and order of a person's
+Credentials sub-tabs on the console (#2052). `web_tokens_and_keys.ts`
+draws each tab with the card of the page that already had it
+(`web_tokens.ts`'s `heldCard()`, `claimCard()`, `enrolCard()`,
+`escrowCard()`; `web_mfa.ts`'s `hotpCard()`, `yubiCard()`;
+`web_openpgp.ts`'s body), so there is one copy of each, and
+`/portal/tokens`, `/portal/mfa` and `/portal/openpgp` are unchanged.
+
+**Two runtime parts made it possible, both general.** A page may
+`compose` other GET operations into its view (each member that view, or a
+refusal its tab draws), and name in `members` where a form posts → the
+member its answer replaces (`''` for the page's own): a card's form still
+posts to its own page and so to its own `/account-api` operation, and
+`answered()` puts the answer back into this page, which keeps its address
+and its tab. A post that answers no view (SSH's) keeps its answer as
+`<member>Answer` while the page is asked again, which is how an issued
+certificate is shown once. And a form may name fields the operation
+takes as a list or an integer (`data-array`, `data-integer`;
+`PortalRuntime.typedFields()`), since the account API refuses a string
+there. The tabs are fragments the stylesheet shows (`.ptabs`, `:target`).
+
+The page is drawn from `GET /account-api/tokens-and-keys` (the tokens
+view; its own operation because a page is drawn from the one GET that
+mirrors it) and composes `GET /account-api/mfa`, `/account-api/openpgp`
+and `/account-api/ssh/certificates`. **SSH is the one new card**: the
+list with Revoke and an issue form over the existing SSH operations,
+which take `account:manage` beside `ssh:certificate`; their POSTs mirror
+`/portal/ssh` and `/portal/ssh/revoke`, which are form targets and no
+page. `tests/portal_tokens_and_keys.js` holds it.
+
 ## `/portal/tokens`: A PERSON'S SECURITY KEYS AND SMART CARDS (#1955 P1, 2026-11-20)
 
 Under *How I sign in*, beside Passkeys: the physical tokens the register

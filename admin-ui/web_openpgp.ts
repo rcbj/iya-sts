@@ -60,6 +60,24 @@ class OpenPgpPage {
    * @returns the HTML
    */
   static personTab(t: Json, p: Json, write: boolean): string {
+    return '<h2 data-tab="person">' + WebKit.esc(p.username) + '</h2>' +
+      OpenPgpPage.personBody(t, p, write);
+  }
+
+  // THE TAB'S BODY, without the heading that makes it a tab of this page:
+  // a person's OpenPGP and S/MIME sub-tab on Directory → Users (#2052)
+  // draws the same body, and its forms post to `/admin/openpgp` and so
+  // reach the same `POST /admin-api/openpgp/<action>`.
+  /**
+   * The person tab's body: the key, its Web Key Directory publication, the
+   * mail encryption and the S/MIME certificate, each with its forms.
+   *
+   * @param t - the translator
+   * @param p - the person
+   * @param write - whether the reader may write
+   * @returns the HTML
+   */
+  static personBody(t: Json, p: Json, write: boolean): string {
     const esc = WebKit.esc;
     const k = p.key;
     const m = p.mailEncryption || {};
@@ -107,8 +125,8 @@ class OpenPgpPage {
         '<br>' + OpenPgpPage.form(p.username, 'smime',
           '<textarea name="certificate" rows="4" cols="60"></textarea>',
           t.html('consoleOpenpgp.smimeSet')) : '');
-    return '<h2 data-tab="person">' + esc(p.username) + '</h2>' +
-      WebKit.frame('<p>' + t.html('consoleOpenpgp.mailAddress') + ' <code>' +
+    return WebKit.frame('<p>' + t.html('consoleOpenpgp.mailAddress') +
+      ' <code>' +
         esc(p.mail || '—') + '</code></p>' + key + '<h3>' +
         t.html('consoleOpenpgp.wkdHeading') + '</h3>' + wkd + '<h3>' +
         t.html('consoleOpenpgp.mailHeading') + '</h3>' + mail);
@@ -123,6 +141,20 @@ class OpenPgpPage {
    * @returns the HTML
    */
   static registerTab(t: Json, p: Json, write: boolean): string {
+    return '<h2 data-tab="register">' + t.html('consoleOpenpgp.registerTab') +
+      '</h2>' + OpenPgpPage.registerBody(t, p, write);
+  }
+
+  /**
+   * The registration tab's body, for this page and a person's sub-tab
+   * (#2052).
+   *
+   * @param t - the translator
+   * @param p - the person
+   * @param write - whether the reader may write
+   * @returns the HTML
+   */
+  static registerBody(t: Json, p: Json, write: boolean): string {
     const esc = WebKit.esc;
     const c = p.challenge;
     const body = !write ? WebKit.note(t.html('consoleOpenpgp.readOnly'))
@@ -138,9 +170,29 @@ class OpenPgpPage {
                            t.html('consoleOpenpgp.challengeAgain'))
         : OpenPgpPage.form(p.username, 'challenge', '',
                            t.html('consoleOpenpgp.challenge')));
-    return '<h2 data-tab="register">' + t.html('consoleOpenpgp.registerTab') +
-      '</h2>' + WebKit.frame(WebKit.note(
-        t.html('consoleOpenpgp.registerWhat')) + body);
+    return WebKit.frame(WebKit.note(
+      t.html('consoleOpenpgp.registerWhat')) + body);
+  }
+
+  /**
+   * A person's OpenPGP and S/MIME sub-tab on Directory → Users (#2052):
+   * this page's two person bodies, from `GET /admin-api/openpgp?user=`.
+   *
+   * @param t - the translator
+   * @param v - the composed answer
+   * @param write - whether the reader may write
+   * @returns the HTML
+   */
+  static personPanel(t: Json, v: Json, write: boolean): string {
+    if (!v || !v.person) {
+      return WebKit.frame(WebKit.note(
+        t.html('consoleOpenpgp.personUnavailable')));
+    }
+    return OpenPgpPage.personBody(t, v.person, write) +
+      '<h3>' + t.html('consoleOpenpgp.registerTab') + '</h3>' +
+      OpenPgpPage.registerBody(t, v.person, write) +
+      '<p class="sub"><a href="' + PAGE + '">' +
+      t.html('consoleOpenpgp.central') + '</a></p>';
   }
 
   /**
