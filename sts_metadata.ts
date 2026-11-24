@@ -9797,6 +9797,20 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Put a post-login activity off', specs: [],
     what: 'NON-SPEC (#1096). For the profile\'s snoozeDays; refused once ' +
           'the allotted time has passed. The held session starts.' },
+  { path: '/authn-api/mfa/:id/post-login/mail', group: 'Authentication',
+    name: 'Register a post-quantum mail-encryption key',
+    specs: ['rfc9580', 'rfc8551'],
+    what: 'NON-SPEC (#2009 P2). The pqc-mail-encryption activity: an ' +
+          'OpenPGP challenge and key, or an S/MIME certificate, whose ' +
+          'encryption key is ML-KEM; the held session starts once it is ' +
+          'registered.' },
+  { path: '/authn-api/mfa/:id/post-login/piv', group: 'Authentication',
+    name: 'Re-issue a PIV certificate a post-login activity asks for',
+    specs: ['fips201'],
+    what: 'NON-SPEC (#2009 P3). The piv-reissue activity: a slot\'s ' +
+          'certificate request and its attestation, answered with the ' +
+          're-issued certificate; the held session starts once it is ' +
+          'written.' },
   { path: '/authn-api/mfa/:id/roles', group: 'Authentication',
     name: 'Choose the dynamic roles for this sign-in', specs: [],
     what: 'NON-SPEC (#1072). The role step\'s choice, held to the step\'s ' +

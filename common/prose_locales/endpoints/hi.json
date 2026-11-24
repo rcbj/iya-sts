@@ -2107,6 +2107,14 @@
     "en": "3d081a5b28f53bd6",
     "text": "एक लॉगिन-पश्चात गतिविधि टाल दें"
   },
+  "endpoints.route./authn-api/mfa/:id/post-login/mail.name": {
+    "en": "07e532c277a3f57e",
+    "text": "पोस्ट-क्वांटम मेल-एन्क्रिप्शन कुंजी पंजीकृत करें"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/piv.name": {
+    "en": "e0733b33f8ee2cb8",
+    "text": "लॉग-इन के बाद की गतिविधि द्वारा माँगा गया PIV प्रमाणपत्र फिर से जारी करें"
+  },
   "endpoints.route./authn-api/mfa/:id/roles.name": {
     "en": "77d2211c8b1e2d93",
     "text": "इस साइन-इन की गतिशील भूमिकाएँ चुनें"
