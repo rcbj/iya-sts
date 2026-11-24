@@ -215,9 +215,9 @@ module.exports = {
               'the assignment is what the use case trusts');
       t.check(!truststores.namesFor('saml-signer', 'default').assigned,
               'another realm is not changed by it');
-      t.check(truststores.assign(realmA, 'outbound-smtp', ['partners'])
-        .code === 'STS-PKI-0301', 'a service-wide use case cannot name a ' +
-              'realm\'s truststore (it resolves in the default realm)');
+      t.check(truststores.assign(realmA, 'tls-client', ['partners'])
+        .code === 'STS-PKI-0301', 'a service-wide inbound use case cannot ' +
+              'name a realm\'s truststore (it resolves in the default realm)');
       t.check(truststores.create('default', { name: 'shared' }).ok,
               'a default-realm truststore is created');
       t.check(truststores.assignmentProblem('outbound-smtp', ['shared'],
@@ -310,6 +310,44 @@ module.exports = {
         t.check(page.indexOf('| `' + row.id + '` |') >= 0,
                 'docs/v1.2.0/truststores.md lists ' + row.id);
       });
+
+      // E3. A REALM'S OVERRIDE OF AN OUTBOUND USE CASE (#2148).
+      t.log.info('E3. per-realm overrides');
+      t.check(truststores.create(realmA, { name: 'realm-relay' }).ok,
+              'a realm\'s own truststore is created');
+      const before = truststores.namesFor('outbound-smtp', realmA);
+      t.check(before.names.join(',') ===
+              truststores.namesFor('outbound-smtp', 'default').names.join(','),
+              'a realm with no override inherits the default realm\'s list');
+      t.check(truststores.assign(realmA, 'outbound-smtp',
+                                 ['system', 'realm-relay', 'shared']).ok,
+              'a realm overrides an outbound use case with its own and a ' +
+              'service-wide truststore');
+      t.check(truststores.namesFor('outbound-smtp', realmA).names.join(',') ===
+              'system,realm-relay,shared',
+              'the realm\'s own dials trust its override');
+      t.check(truststores.namesFor('outbound-smtp', 'default').names
+        .indexOf('realm-relay') === -1,
+              'the default realm, and every other realm, is not changed by it');
+      const overRow = truststores.useCases(realmA).filter(function (one) {
+        return one.id === 'outbound-smtp';
+      })[0];
+      t.check(overRow.overridable && overRow.realmOverride,
+              'the use case says it is overridable and overridden here');
+      t.check(!truststores.useCases(realmA).filter(function (one) {
+        return one.id === 'tls-client';
+      })[0].overridable, 'a handshake (tls-client) is not overridable');
+      const otherRealm = 'sts-ts-other-' + stamp;
+      t.check(truststores.assignmentProblem('outbound-smtp', ['realm-relay'],
+                                            otherRealm).code ===
+              'STS-PKI-0301', 'another realm cannot name this realm\'s ' +
+              'truststore');
+      t.check(truststores.assign(realmA, 'outbound-smtp', []).ok &&
+              !truststores.namesFor('outbound-smtp', realmA).assigned,
+              'clearing the override returns the realm to the default ' +
+              'realm\'s list');
+      t.check(truststores.remove(realmA, 'realm-relay').ok,
+              'the realm\'s truststore is deleted once unassigned');
 
       // F. THE SLOT.
       t.log.info('F. the slot');

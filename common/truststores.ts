@@ -609,11 +609,34 @@ class Truststores {
   // ----- Assignments -------------------------------------------------------
 
   // The realm a use case resolves in.
+  // A service-wide use case resolves in the default realm, EXCEPT an outbound
+  // one a realm has given a list of its own (#2148): that realm's dials use
+  // its override. A realm with none inherits the default realm's list.
   private resolvingRealm(useCase: Json, realmId?: string): string {
     this.deps.log.debug("Entering Truststores.resolvingRealm().");
-    this.deps.log.debug("Leaving Truststores.resolvingRealm().");
-    return useCase && useCase.scope === 'service' ?
-      this.deps.realms.DEFAULT_ID : this.realmIdOf(realmId);
+    const here = this.realmIdOf(realmId);
+    const DEFAULT = this.deps.realms.DEFAULT_ID;
+    if (!useCase || useCase.scope !== 'service') {
+      this.deps.log.debug("Leaving Truststores.resolvingRealm(). Realm.");
+      return here;
+    }
+    const overrides = here !== DEFAULT && UseCases.overridable(useCase) &&
+      ((this.assignments(here)[useCase.id] || []).length > 0);
+    this.deps.log.debug("Leaving Truststores.resolvingRealm(). " +
+                        (overrides ? 'The realm\'s override.' :
+                                     'The default realm.'));
+    return overrides ? here : DEFAULT;
+  }
+
+  // Where an assignment for a use case is WRITTEN from a realm (#2148): an
+  // overridable use case assigned from a realm is that realm's override;
+  // every other service-wide one is the default realm's.
+  private assigningRealm(useCase: Json, realmId?: string): string {
+    this.deps.log.debug("Entering Truststores.assigningRealm().");
+    const here = this.realmIdOf(realmId);
+    this.deps.log.debug("Leaving Truststores.assigningRealm().");
+    return useCase && useCase.scope === 'service' &&
+      !UseCases.overridable(useCase) ? this.deps.realms.DEFAULT_ID : here;
   }
 
   /**
@@ -849,7 +872,7 @@ class Truststores {
                'one truststore; to return it to its default, clear its ' +
                'assignment' };
     }
-    const realmId2 = this.resolvingRealm(useCase, realmId);
+    const realmId2 = this.assigningRealm(useCase, realmId);
     for (let i = 0; i < names.length; i++) {
       const name = String(names[i] || '');
       const where = this.locate(realmId2, name);
@@ -868,7 +891,8 @@ class Truststores {
           'SPIFFE use case may name' };
       }
       if (useCase.scope === 'service' && where.kind === 'named' &&
-          where.realmId !== self.deps.realms.DEFAULT_ID) {
+          where.realmId !== self.deps.realms.DEFAULT_ID &&
+          !(UseCases.overridable(useCase) && where.realmId === realmId2)) {
         log.debug("Leaving Truststores.assignmentProblem(). Scope.");
         return { code: 'STS-PKI-0302', why: '"' + useCaseId + '" is decided ' +
                  'with no realm in hand, so it may name only truststores ' +
@@ -899,8 +923,7 @@ class Truststores {
         'STS-PKI-0300');
     }
     const useCase = UseCases.get(useCaseId);
-    const id = useCase && useCase.scope === 'service' ?
-      this.deps.realms.DEFAULT_ID : this.realmIdOf(realmId);
+    const id = this.assigningRealm(useCase, realmId);
     const held = Object.assign({}, this.assignments(id));
     if (!names || (Array.isArray(names) && !names.length)) {
       if (!useCase) {
@@ -1353,7 +1376,7 @@ class Truststores {
    *
    * @param realmId - the realm; the ambient one where omitted
    * @returns rows `{ id, title, scope, kind, direction, names, defaults,
-   *   assigned, assignable, sites }`
+   *   assigned, assignable, overridable, realmOverride, sites }`
    */
   useCases(realmId?: string): Json[] {
     const { log } = this.deps;
@@ -1367,6 +1390,12 @@ class Truststores {
                fallback: (row.fallback || []).slice(),
                assigned: chosen.assigned,
                assignable: UseCases.assignable(row),
+               // #2148: whether a realm may give it a list of its own, and
+               // whether the realm asked about has.
+               overridable: UseCases.overridable(row),
+               realmOverride: UseCases.overridable(row) &&
+                 self.realmIdOf(realmId) !== self.deps.realms.DEFAULT_ID &&
+                 (self.assignments(realmId)[row.id] || []).length > 0,
                sites: row.sites.slice() };
     });
     log.debug("Leaving Truststores.useCases(). " + out.length + ".");

@@ -91,6 +91,7 @@
   "outbound": "utgående",
   "assigned": "tilldelat",
   "byDefault": "sin standard",
+  "realmOverride": "denna realms egen lista",
   "fallback": "När det inte ger något ankare:",
   "assignHint": "Förtroendelager, i ordning, åtskilda med kommatecken",
   "assignButton": "Tilldela",

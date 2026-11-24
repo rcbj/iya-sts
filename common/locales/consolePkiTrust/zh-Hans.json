@@ -91,6 +91,7 @@
   "outbound": "出站",
   "assigned": "已分配",
   "byDefault": "其默认值",
+  "realmOverride": "此域自己的列表",
   "fallback": "当其未产生任何锚点时：",
   "assignHint": "信任库，按顺序，以逗号分隔",
   "assignButton": "分配",

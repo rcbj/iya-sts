@@ -91,6 +91,7 @@
   "outbound": "傳出",
   "assigned": "已指派",
   "byDefault": "其預設值",
+  "realmOverride": "此領域自己的清單",
   "fallback": "當其未產生任何錨點時：",
   "assignHint": "信任庫，依序，以逗號分隔",
   "assignButton": "指派",

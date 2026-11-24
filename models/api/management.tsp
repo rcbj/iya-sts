@@ -34086,6 +34086,8 @@ op `setParanoidPkiRow`(@js(#{`examples`:#[#{`setting`:"pki.paranoidFidoMds",`val
   @js(#{`description`:"What it falls back to when its default list yields no anchor; never used for an assignment."}) `fallback`: (string)[];
   @js(#{`description`:"Whether `names` is an assignment rather than the default."}) `assigned`: boolean;
   @js(#{`description`:"Whether it may be assigned truststores at all."}) `assignable`: boolean;
+  @js(#{`description`:"Whether a realm other than the default may give it a list of its own, for that realm's own outbound connections (#2148)."}) `overridable`: boolean;
+  @js(#{`description`:"Whether this realm has given it a list of its own; false in the default realm."}) `realmOverride`: boolean;
   @js(#{`description`:"Where it is decided, by source file."}) `sites`: (string)[]
 }
 

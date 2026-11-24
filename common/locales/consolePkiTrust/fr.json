@@ -91,6 +91,7 @@
   "outbound": "sortant",
   "assigned": "attribué",
   "byDefault": "sa liste par défaut",
+  "realmOverride": "la liste propre à ce domaine",
   "fallback": "Si elle ne donne aucune ancre :",
   "assignHint": "Magasins de confiance, dans l’ordre, séparés par des virgules",
   "assignButton": "Attribuer",

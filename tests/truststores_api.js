@@ -364,10 +364,19 @@ module.exports = {
       t.check(inUse.status === 400 && inUse.code === 'STS-PKI-0307',
               'C3. a truststore a use case trusts is not deleted', inUse.code);
       const fromRealm = await call(routes, realmA, 'POST', 'assign',
-        { useCase: 'outbound-smtp', truststores: ['system'] });
+        { useCase: 'tls-client', truststores: ['system'] });
       t.check(fromRealm.status === 400 && fromRealm.code === 'STS-PKI-0302',
-              'C4. a service-wide use case is not assigned from a realm',
-              fromRealm.code);
+              'C4. a service-wide inbound use case is not assigned from a ' +
+              'realm', fromRealm.code);
+      // #2148: an outbound one is, as that realm's own override.
+      const override = await call(routes, realmA, 'POST', 'assign',
+        { useCase: 'outbound-smtp', truststores: ['system'] });
+      const unoverride = await call(routes, realmA, 'POST', 'unassign',
+        { useCase: 'outbound-smtp' });
+      t.check(override.status === 200 && unoverride.status === 200,
+              'C4b. an outbound use case is overridden from a realm, and the ' +
+              'override cleared (#2148)', override.status + ' ' +
+              unoverride.status);
       const fixed = await call(routes, realmA, 'POST', 'assign',
         { useCase: 'cell-peer', truststores: ['partners'] });
       const unknown = await call(routes, realmA, 'POST', 'assign',
@@ -483,7 +492,7 @@ module.exports = {
               String(addRow.detail.fingerprints).split(' ').length === 2,
               'D3. the add row names the actor, the truststore and the ' +
               'fingerprints', JSON.stringify(addRow || {}).slice(0, 300));
-      t.check(rows.length === 10,
+      t.check(rows.length === 12,
               'D4. one row per write that was made, none for a refusal ' +
               '(' + rows.length + ')');
 

@@ -418,6 +418,22 @@ class TruststoreUseCases {
   }
 
   /**
+   * Whether a realm other than the default may assign a service-wide use case
+   * a list of its own (#2148, rcbj 2026-11-24): an OUTBOUND x509 use case,
+   * whose dial is made in a realm, used for that realm's own dials only. A
+   * handshake has no realm, and a fixed row takes no list.
+   *
+   * @param row - the use case
+   * @returns true for an assignable outbound service-wide use case
+   */
+  static overridable(row: UseCase | null): boolean {
+    log.debug("Entering TruststoreUseCases.overridable().");
+    log.debug("Leaving TruststoreUseCases.overridable().");
+    return !!row && row.scope === 'service' && row.direction === 'outbound' &&
+      row.kind === 'x509';
+  }
+
+  /**
    * Every legacy setting a default list names, once.
    *
    * @returns the setting keys

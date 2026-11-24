@@ -91,6 +91,7 @@
   "outbound": "outbound",
   "assigned": "assigned",
   "byDefault": "its default",
+  "realmOverride": "this realm's own list",
   "fallback": "When that yields no anchor:",
   "assignHint": "Truststores, in order, separated by commas",
   "assignButton": "Assign",

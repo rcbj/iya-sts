@@ -24,7 +24,8 @@
 //      `withPem: false`; a remove under the colon spelling; a delete.
 //   C. ASSIGNMENT: a realm use case assigned the truststore and the realm's
 //      signers, read back on the view; a delete refused while it is trusted
-//      (0307); a service-wide use case refused from a realm (0302); a fixed
+//      (0307); a service-wide inbound use case refused from a realm (0302)
+//      — an outbound one may be overridden there (#2148); a fixed
 //      use case (0303) and a SPIFFE use case given an X.509 store (0304)
 //      refused; unassign back to the default.
 //   D. REALM CONFINEMENT: another realm neither lists the truststore nor can
@@ -231,9 +232,9 @@ async function test() {
   refused("C2. a truststore a use case trusts is not deleted",
           await coded(realm, "STS-PKI-0307", "delete", { name: "partners" }),
           "STS-PKI-0307");
-  refused("C3. a service-wide use case is not assigned from a realm",
+  refused("C3. a service-wide inbound use case is not assigned from a realm",
           await coded(realm, "STS-PKI-0302", "assign",
-                      { useCase: "outbound-smtp", truststores: ["system"] }),
+                      { useCase: "tls-client", truststores: ["system"] }),
           "STS-PKI-0302");
   refused("C4. a fixed use case is not assigned",
           await coded(realm, "STS-PKI-0303", "assign",

@@ -7754,6 +7754,8 @@ class AdminViews {
           direction: row.direction, names: row.names.slice(),
           defaults: row.defaults.slice(), fallback: row.fallback.slice(),
           assigned: !!row.assigned, assignable: !!row.assignable,
+          overridable: !!row.overridable,
+          realmOverride: !!row.realmOverride,
           sites: row.sites.slice()
         };
       }),
