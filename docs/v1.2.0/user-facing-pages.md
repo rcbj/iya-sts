@@ -151,8 +151,9 @@ portal through single sign-on, with no screen.
 **Changing how you sign in needs a recent sign-in** in product mode: one within
 `account.recentAuthMinutes`, 15 minutes by default. That covers the second
 factors, recovery codes, passkeys, app passwords, certificates, signing keys,
-self-issued IDs, a published DID, the email address and a wallet credential
-offer. An older sign-in sends you to sign in again, and the portal returns to
+a hardware token's acts (reporting it lost, enrolling a PIV certificate,
+recovering an escrowed key), SSH user certificates, self-issued IDs, a
+published DID, the email address and a wallet credential offer. An older sign-in sends you to sign in again, and the portal returns to
 the page. After a password or a second factor, passkey or recovery codes
 change, the portal says that your other sessions can be ended at `/logout`.
 
@@ -183,6 +184,9 @@ not drawn.
 | Your applications | `/portal/applications` |
 | Your security activity | `/portal/signals` |
 | Passkeys | `/portal/keys` |
+| Security keys and smart cards: your hardware tokens, Report lost, PIV enrolment and escrowed keys ([Hardware tokens](hardware-tokens.md)) | `/portal/tokens` |
+| Tokens and keys: a tab each for hardware tokens, OATH tokens, YubiKey OTP, PIV, SSH user certificates, and OpenPGP and S/MIME ([Hardware tokens](hardware-tokens.md#where-each-kind-lives)) | `/portal/tokens-and-keys` |
+| OpenPGP key and mail encryption ([OpenPGP and S/MIME](openpgp.md)) | `/portal/openpgp` |
 | Authenticator app and recovery codes | `/portal/mfa` |
 | Certificates | `/portal/certificates` |
 | Who may act for you | `/portal/delegate` |

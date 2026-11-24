@@ -274,6 +274,7 @@ PKIOperation as `application/octet-stream` — which the suite holds
 | `email` | a person with `mail` (the rfc822Name) |
 | `timestamping` | nothing beyond the entry |
 | `smartcard-logon` | a person with `userPrincipalName` or `mail` (the UPN otherName) |
+| `piv-auth`, `piv-sign`, `piv-key-management`, `piv-card-auth` | a person; the YubiKey's PIV slot profiles, issued only once an operator adds them to `scep.allowedProfiles`, with the card's attestation as evidence. See [Hardware tokens](hardware-tokens.md#piv-certificate-profiles) |
 | `device` | a DEVICE entry: the one the request's `urn:sts:device:<id>` names (its owner, or an administrator), or a new one owned by the requester; a TPM key attestation in product. See [Devices](devices.md) |
 
 `scep.allowedProfiles` narrows the nine per realm. **Never issued over any

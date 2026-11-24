@@ -85,6 +85,21 @@ surface without touching the rest:
 | **Policy export signing** | realm | The certificate a policy export from Directory → Policies is signed under (#1713): a fresh key per export, `digitalSignature` only, with this whole chain in the export's `x5c`. Another realm that imports the export trusts this Issuing CA, not the Root it shares with every realm. See [Export and import](policies.md#export-and-import). |
 | **Remote PEP listeners** | realm | The HTTPS listener certificate of a remote XACML PEP **registered in this realm** — `serverAuth`, naming the PEP and the hosts its clients dial, issued from `/admin/xacml/peps` or `POST /admin-api/xacml/issue-pep-certificate`. The private key is handed over once and not kept. Realm-scoped because a PEP enforces one realm's policy. See [Remote PEP](remote-pep.md#an-https-listener-certified-by-the-realm-it-registered-to). |
 
+### PIV smart-card certificates
+
+The four PIV slot profiles — `piv-auth` (9a), `piv-sign` (9c),
+`piv-key-management` (9d) and `piv-card-auth` (9e) — are issued by the
+realm's ACME, EST and SCEP Issuing CAs, and by the PIV enrolment form on the
+portal and the console, which issues over the EST Issuing CA. No realm issues
+them until an operator adds them to the family's `allowedProfiles`. A
+request that carries a YubiKey PIV key attestation which verifies is issued
+with that attestation as hardware evidence, and the card is recorded in the
+realm's hardware token register under its serial. The profiles, the
+attestation checks and their refusals, key escrow for slot 9d, and the
+clients a card is used with are in
+[Hardware tokens](hardware-tokens.md#piv-key-attestation). The settings are
+on **Protocols → PIV** (`/admin/piv`).
+
 ### OpenSSH user certificates
 
 Each realm also has an OpenSSH user CA. It is separate from the X.509
@@ -208,7 +223,8 @@ schemas are in `GET /admin-api/account-api`.
 - **Listing and revoking.** `GET /account-api/ssh/certificates` lists the
   caller's certificates that have not expired. An administrator sees a
   person's on **Directory → Hardware tokens → SSH certificates** (search for
-  the person on the Tokens tab), or with
+  the person on the Tokens tab), on the **SSH user certificates** sub-tab of
+  the person's Credentials, or with
   `GET /admin-api/hardware-tokens/ssh-certificates?username=...`, and
   revokes one there or with `POST /admin-api/hardware-tokens/revoke-ssh` and
   `{ "username": "...", "serial": "..." }`. A revoked certificate is on the
@@ -217,8 +233,9 @@ schemas are in `GET /admin-api/account-api`.
   its holder's entry, in `stsSshUserCertificate` (one JSON value each: the
   serial, the certificate in OpenSSH text form, the key, the principals,
   when it expires and which authority signed it), so an LDAP read of the
-  person returns it, and the person's console page lists it under **Stored
-  certificates** (`GET /admin-api/users/certificates`, `sshCertificates`).
+  person returns it, and the person's console page lists it, read-only,
+  beside **Stored certificates** on the Key pairs sub-tab of Credentials
+  (`GET /admin-api/users/certificates`, `sshCertificates`).
   It is written when the certificate is issued and taken off when it is
   revoked, when its key is reported lost and when it expires. **The entry
   is the master**; the CA's register beside it is the index the KRL, a
@@ -2004,7 +2021,9 @@ is checked — see
 
 The algorithms [OpenSSH user certificates](#openssh-user-certificates) are
 signed with, and what a certificate may say. All seven are per realm and take effect while the service is
-running, on **Protocols → PKI** (`/admin/pki`).
+running, on **Protocols → SSH user certificates** (`/admin/ssh-user-ca`), the
+*SSH user certificates* group. Until #2049 they were in the *PKI* group on
+**Protocols → PKI**; their keys, variables and defaults did not change.
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
