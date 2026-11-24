@@ -1351,6 +1351,10 @@
     "en": "05bb26087cc96574",
     "text": "TRUE eller FALSE: kryptera även ds:Signature i ett WS-Trust-svar för den här applikationen (WS-SecurityPolicys sp:EncryptSignature), vilket åsidosätter wstrust.encryptSignature. Läses bara medan svaret både signeras och krypteras, signerat först; signaturen krypteras till svarets mottagare."
   },
+  "applications.schema.attributes.wstrustRecipientIgnoresKeyUsage.what": {
+    "en": "ee5d3e5465e289d1",
+    "text": "TRUE eller FALSE: kryptera den här applikationens WS-Trust-svar till mottagarcertifikatet oavsett dess keyUsage, och åsidosätt wstrust.recipientIgnoresKeyUsage. Sfärens certifikat för meddelandesignering tillåter bara digitalSignature, så utan detta nekas ett svar krypterat till begärans signeringscertifikat. Bara keyUsage-kontrollen hoppas över: certifikatets giltighet, sökväg och spärrstatus kontrolleras fortfarande där paranoid PKI-läge kontrollerar dem."
+  },
   "applications.schema.attributes.wstrustDecryptionCertificate.what": {
     "en": "b00a63a9bafc49ad",
     "text": "CERTIFIKATET SOM EN WS-TRUST-BEGÄRAN FÖR DET HÄR PROGRAMMET KRYPTERAS TILL, PEM. Så länge det är satt dekrypteras en begäran för programmet med dess privata nyckel och inte sfärens, och en begäran för det som krypterats till sfärens nyckel är en FailedCheck. Offentligt: programsidan och GET /admin-api/applications lämnar ut det."

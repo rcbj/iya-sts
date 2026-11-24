@@ -665,6 +665,45 @@ async function run(t, double, crls) {
   t.check(trust.registrationProblem('encryption-recipient',
                                     signsOnly.pem) !== null,
           'M. and at the door', '');
+  // THE KEYUSAGE WAIVER (rcbj, 2026-11-24, #2046): keyUsage alone, an
+  // encryption recipient alone.
+  const waived = trust.pinnedSync('encryption-recipient', signsOnly.pem,
+                                  { ignoreKeyUsage: true });
+  t.check(waived.ok,
+          'M. ignoreKeyUsage: a certificate that may not encipher is ' +
+          'accepted as a recipient', waived.code + ' ' + waived.why);
+  const signsOnlyOld = await kit.mint({ cn: 'old signer', usages:
+    ['digitalSignature'], notBefore: now - 3 * kit.DAY,
+    notAfter: now - kit.DAY });
+  const waivedOld = trust.pinnedSync('encryption-recipient', signsOnlyOld.pem,
+                                     { ignoreKeyUsage: true });
+  t.check(!waivedOld.ok && waivedOld.code === 'STS-KEYS-0168',
+          'M. ignoreKeyUsage waives keyUsage alone: an expired one is still ' +
+          'refused', waivedOld.code);
+  const otherPurpose = await kit.mint({ cn: 'saml signer usage', usages:
+                                        ['keyEncipherment'] });
+  const notHere = trust.pinnedSync('saml-signer', otherPurpose.pem,
+                                   { ignoreKeyUsage: true });
+  t.check(!notHere.ok && notHere.code === 'STS-KEYS-0171',
+          'M. ignoreKeyUsage is honoured for an encryption recipient only',
+          notHere.code);
+  // THE REQUEST'S OWN SIGNER (#2046): a CA-issued, digitalSignature-only
+  // certificate whose authority the signer truststore does not hold — as
+  // the realm's message-signing certificates are — is a recipient when it
+  // is named (the message-signing door validated it) and its keyUsage is
+  // waived, and its path is still asked when it is not named.
+  const ownCa = await kit.mint({ cn: 'own message-signing ca', ca: true });
+  const ownSigner = await kit.mint({ cn: 'own signer', issuer: ownCa,
+                                     usages: ['digitalSignature'] });
+  const namedSigner = trust.pinnedSync('encryption-recipient', ownSigner.pem,
+    { ignoreKeyUsage: true, named: true });
+  t.check(namedSigner.ok,
+          'M. the accepted signer\'s certificate, named, with keyUsage ' +
+          'waived, is a recipient', namedSigner.code + ' ' + namedSigner.why);
+  const unnamedSigner = trust.pinnedSync('encryption-recipient',
+    ownSigner.pem, { ignoreKeyUsage: true });
+  t.check(!unnamedSigner.ok && /chains to nothing/.test(unnamedSigner.why),
+          'M. not named, its path is still asked', unnamedSigner.why);
   // N. THE PATH HELPERS (Phase 5): a site's shape kept, the checks added.
   t.log.info('N. attestation, enrollment and credential paths');
   const pki = require('../common/pki');

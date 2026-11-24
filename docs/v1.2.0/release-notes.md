@@ -33,6 +33,16 @@ page, where a list of expressions is built and added to it.
 The XPath subset gains `not(…)`. New refusals: `STS-WSTRUST-0084`,
 `0085`, `0086` and `0087`. See [Message integrity](ws-trust.md#message-integrity).
 
+### New: a WS-Trust answer encrypted to the request's signing certificate
+
+`wstrustRecipientIgnoresKeyUsage` (the realm's `wstrust.recipientIgnoresKeyUsage`,
+off by default) lets an application's answers be encrypted to a certificate whose
+`keyUsage` does not permit encryption, such as the request's signing certificate:
+this realm's message-signing certificates permit `digitalSignature` only. Only that
+check is waived; the certificate's validity, path and revocation are still checked.
+It is in the **Message encryption → Response message processing** section of the
+application's WS-Trust tab. See [WS-Trust](ws-trust.md#xml-encryption).
+
 ### Fixed: a WS-Trust answer element encrypted by a custom expression
 
 A response encryption expression naming an element below the top of the

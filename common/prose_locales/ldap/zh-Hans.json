@@ -1351,6 +1351,10 @@
     "en": "05bb26087cc96574",
     "text": "TRUE 或 FALSE：同时加密此应用的 WS-Trust 响应的 ds:Signature（WS-SecurityPolicy 的 sp:EncryptSignature），覆盖 wstrust.encryptSignature。仅在响应既签名又加密且先签名时读取；签名加密给响应的接收方。"
   },
+  "applications.schema.attributes.wstrustRecipientIgnoresKeyUsage.what": {
+    "en": "ee5d3e5465e289d1",
+    "text": "TRUE 或 FALSE：无论接收方证书的 keyUsage 如何，都将此应用程序的 WS-Trust 响应加密给它，覆盖 wstrust.recipientIgnoresKeyUsage。领域的消息签名证书只允许 digitalSignature，因此没有此设置时，加密给请求签名证书的响应会被拒绝。只跳过 keyUsage 检查：在偏执 PKI 模式检查的地方，仍会检查证书的有效期、路径和吊销状态。"
+  },
   "applications.schema.attributes.wstrustDecryptionCertificate.what": {
     "en": "b00a63a9bafc49ad",
     "text": "发给此应用的 WS-TRUST 请求所加密到的证书，PEM。设置后，发给此应用的请求用其私钥而非领域的私钥解密，而加密到领域密钥的发给它的请求是 FailedCheck。公开：应用页面和 GET /admin-api/applications 会提供它。"

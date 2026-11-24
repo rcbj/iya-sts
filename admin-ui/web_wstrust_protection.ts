@@ -112,6 +112,7 @@ const PARTS: { id: string, key: string, builder: string,
                      'wstrustKeyTransportAlgorithm',
                      'wstrustEncryptionCertificate',
                      'wstrustResponseRecipientXPath',
+                     'wstrustRecipientIgnoresKeyUsage',
                      'wstrustEncryptSignature'] }
     ] },
   { id: 'signing', key: 'signingHeading', builder: 'sign',
