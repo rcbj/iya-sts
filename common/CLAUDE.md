@@ -17289,6 +17289,20 @@ the cluster's `csrf` key, so nodes and restarts agree. Read the name through
 **`web_safe_dom.ts` is the one `.innerHTML =` in a browser runtime**
 (`tests/web_safe_dom.js`). It is a second layer behind escaping and the CSP.
 
+**And it is where a page in a trust realm gets the realm's prefix, on EVERY
+draw (#2098).** `WebPage.realmLinks()` ran only when the page was drawn, so
+markup drawn later — the WS-Trust protection lists' redraw, a delegate
+search's results, #2096's derived bindings — kept `/admin/...` and in a realm
+posted natively to the default realm, which refuses every non-GET. Now
+`WebPage`'s constructor names its prefix to the door (`realmFrom()`, read at
+each draw, so a realm switch is followed) and `render()`, `insert()` and
+`replace()` prefix every root-relative `href`, `action`, `formaction` and
+`src` not already in the realm (`WebSafeDom.realmLinks()`, which
+`WebPage.realmLinks()` now is; idempotent, as `withRealmLinks()` always was).
+**A late draw needs nothing of its own**: draw it as markup through the door.
+Setting a URL on an element directly is the bypass, and
+`tests/web_realm_links.js` E lists the sites that do, each with its reason.
+
 **`step_address.ts` keeps a sign-in step's id out of what a server is sent**, in
 product: a redirect's `?authn=`, `?mfa=`, `?change=` or `?consent=` moves to the
 fragment, the shell tells the page (`data-sts-step-fragment`), and the page sends

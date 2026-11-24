@@ -328,7 +328,7 @@ async function evidence(driver) {
 // body answering the element to press, or a string saying why there is none.
 async function pressAndWait(driver, find, args, what) {
   log.debug("Entering pressAndWait(). " + what);
-  const token = STAMP + "-" + Math.random().toString(36).slice(2);
+  const token = STAMP + "-" + crypto.randomBytes(8).toString("hex");
   const pressed = await driver.executeScript(
     "const found = (function () { " + find + " }).apply(null, " +
     "arguments[2]);" +

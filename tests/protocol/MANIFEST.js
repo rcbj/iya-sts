@@ -1855,6 +1855,13 @@ const JOBS = [
   // person's binding values derived from an uploaded certificate, added
   // and removed. Its truststore Root is removed and every setting reset.
   { file: 'sts_cert_sign_in_editors.js', browser: true, local: true },
+  // FORMS DRAWN AFTER THE PAGE, IN A TRUST REALM (#2098). `local: true`:
+  // this repository's console and portal, in Chrome, in a throwaway realm:
+  // the WS-Trust protection list redrawn by a ticked box posts its + and
+  // trash into the realm, the + is claimed and the save read back; the
+  // delegate search's Choose posts into the realm and names the delegate.
+  // Its default-realm console user is removed in a `finally`.
+  { file: 'sts_realm_late_forms.js', browser: true, local: true },
   // EVERY SAML 2.0, SAML 1.1, WS-TRUST AND WS-FEDERATION DOCUMENT THIS
   // SERVICE EMITS, AGAINST THE PUBLISHED OASIS AND W3C XML SCHEMAS (#188,
   // 2026-09-24): metadata, Responses on every binding, the ArtifactResponse,
