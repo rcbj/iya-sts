@@ -1490,11 +1490,13 @@ other scope is 400 `STS-XACML-0344`.
   never another application's or a role's policy, never the access or
   issuance policy (by name, the repository pull's rule). A reference to
   anything else is left unresolved, which is Indeterminate at the PEP as
-  here. **One difference from the service, accepted**: `decideAccess()`
-  decides an application's own policy with no repository, so a reference
-  inside it is unresolved here and resolved at a local PEP holding the
-  closure. `source` says which entry was sent (`application`, `root`,
-  `none`).
+  here. **`decideAccess()` resolves a reference against the same set**
+  (every enabled policy nobody owns, less the access and issuance policies;
+  `XacmlStore.repository(withhold)`, `FgaPep`'s `pepRepository`), so a
+  reference inside an application's own policy decides the same at the
+  service and at a local PEP holding the closure (#1206; until then it was
+  unresolved here, `STS-AUTHZEN-0028`, and decided there). `source` says
+  which entry was sent (`application`, `root`, `none`).
 * **ITS OWN TOKEN**, a digest of exactly what it sends (the scope, the
   application, the source, each row's name, document and root mark), with
   the same ETag, `?since=` and `If-None-Match` 304. A change outside the
