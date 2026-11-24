@@ -1953,8 +1953,12 @@ class ApplicationsPage {
       // A primary name equal to the identifier is folded into the advanced
       // view (#393). The copy is what is drawn; `mine` stays the entry's
       // own rows, which the SAML panels fold for themselves.
-      const folded = ApplicationsPage.withFoldedPrimaryNames(
-        mine, values, row.identifier);
+      // EXCEPT ON WS-TRUST (rcbj, 2026-11-23, #2046): `wstrustAppliesTo` is
+      // always in that sub-tab's simplified view, whatever it holds.
+      const folded = group.id === 'wstrust'
+        ? { rows: mine, folded: false }
+        : ApplicationsPage.withFoldedPrimaryNames(mine, values,
+                                                  row.identifier);
       const drawn = folded.rows;
       const views = kit.hasViews(drawn);
       const advancedRows = drawn.filter(function (one) {
