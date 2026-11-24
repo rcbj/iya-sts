@@ -495,6 +495,7 @@
   "resetDone.heading": "您的密码已设置",
   "resetDone.ok": "此重置链接现已使用，无法再次使用。",
   "resetDone.next": "请使用新密码登录。如果您的账户有第二因素，系统会照常要求您提供。",
+  "resetDone.signedOut": "您在所有设备上的全部会话都已退出登录，因此知道您旧密码的人不会仍处于登录状态。",
   "signedOut.title": "已退出登录",
   "signedOut.heading": "您已退出登录",
   "signedOut.noSession": "此浏览器上没有可结束的门户会话。",
