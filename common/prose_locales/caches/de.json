@@ -1796,8 +1796,8 @@
     "text": "Eine Zeile je OpenSSH-Benutzerzertifikat, das die SSH-Benutzer-CA dieses Realms ausgestellt hat, nach Seriennummer: wem es gehört (urn:uuid), der Schlüssel-Fingerabdruck, seine Principals, seine Laufzeit und ob es widerrufen wurde. Niemals ein Schlüssel."
   },
   "caches.store.ssh_user_ca.issued.bound": {
-    "en": "36fc38da0e0699e8",
-    "text": "Die Zeilen, die ein Prozess hält, sind ein Cache von 5.000 je Realm; eine Zeile verlässt den Speicher, wenn ihr Zertifikat abläuft."
+    "en": "e9eaf8f07040a227",
+    "text": "Durchgesetzt: Die Zeilen, die ein Prozess hält, sind ein bei Bedarf gefülltes Fenster von 5.000 je Realm; eine Zeile verlässt den Speicher, wenn ihr Zertifikat abläuft."
   },
   "caches.store.ssh_user_ca.issued.lifetime": {
     "en": "fdcbaa82a4ac533d",
