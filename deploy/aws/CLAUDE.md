@@ -1755,6 +1755,30 @@ shared service, so `ignore_changes = [desired_count]`; a changed
 `instance_count` then reaches a running shared service only through
 `update-service`.
 
+**THE COMPANION IS A SIDECAR, NOT A SERVICE (`companion = true`, rcbj
+2026-11-23: "deploy the companion pep-app to the remote pep cluster").**
+`/pep-app/protected` and `/whoami` take the person from identity HEADERS
+the proxy sets, which is why the local cluster compose publishes no port
+for it (#1972). On Fargate the equivalent is a container in each member's
+task: the route's one upstream, `http://127.0.0.1:9700`, is each member's
+own companion, and no rule names 9700, so no other caller can send it
+headers. A service of its own would have needed a listener on the NLB, a
+rule admitting only the PEP group, and plain HTTP across the VPC, all to
+keep out callers a loopback never lets in. It is `essential = false` and
+the task grows to 512/1024 for the second node process. The companion is
+given no bootstrap secret, so it holds no management power; `/pep-app`
+needs none. `provision.sh --pep-app` runs the utility's step 8 with the
+first member only (`--cluster --create-cluster --pep-app`,
+`REGISTER_PEP_NO_START`), and REDACTS the line where the utility prints the
+new client secret: the PEP receives it on its own pull.
+
+**A TEMPORARY PUBLIC ROUTE LEAVES ITS POLICY BEHIND.** Checking the
+proxy→companion hop without a sign-in (product mode needs a password and
+MFA) was done with a public `/pep-app/public` route saved IN FRONT of
+`/pep-app` (the first route that matches wins); removing it from the
+document did not remove its generated `pepc-<cluster>-<route>` policy,
+which took `POST /admin-api/xacml/delete` with its name.
+
 **What was checked, 2026-11-23, on `testidp`** (one node, develop
 `b63b1ef04719`, two per-instance members): pass 1 made both entries, keys,
 secrets and the service's cluster `aws`; the apply (27 resources) started
@@ -1762,9 +1786,14 @@ both, which registered on DPoP-bound tokens and pulled; pass 2 issued both
 pairs, skipped everything else, and redeployed; every PEP target group went
 healthy; `GET /` on `direct…:9443`, verified against the service Root,
 alternated between the members; `sync-pep` answered `delivered: true` for
-each, and each member's own log shows the one nudge. Not exercised: the
-`shared` mode and autoscaling (offline only), a reverse-proxy route behind
-9543, and the destroy path through `destroy_dependent_stacks`.
+each, and each member's own log shows the one nudge. With the companion:
+`/pep-app/protected` answered a browser 302 to the authorization endpoint
+with a PAR `request_uri` (the member held the client and its secret from
+its pull); a public route answered the companion's echo through 9543 with a
+forged `X-Remote-User` stripped; 9700 is closed from outside. Not
+exercised: the `shared` mode and autoscaling (offline only), a whole
+sign-in to `/pep-app/protected`, and the destroy path through
+`destroy_dependent_stacks`.
 
 **What has no test**: `provision.sh` against a live environment is checked
 by hand (above); `tests/render.tftest.hcl` holds the stack's shapes

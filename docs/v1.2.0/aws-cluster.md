@@ -486,6 +486,38 @@ listener certificate names both, so a client may use either name. From
 outside, use the direct name for 9443 and 9543: CloudFront in front of the
 public name carries 443 only.
 
+### The demonstration application behind the reverse proxy
+
+The companion's `/pep-app` (the application the remote PEP's
+[reverse proxy](remote-pep.md#in-front-of-an-application-the-reverse-proxy-1760)
+protects in the demonstrations) can run beside each member:
+
+```bash
+# A companion container in each member's task.
+TF_STACK=pep-cluster PEP_COUNT=2 PEP_COMPANION=true IMAGE_TAG=<tag> \
+  deploy/aws/terraform-local.sh testidp apply
+
+# The role pep-app, the confidential client pep-app, its consent, and one
+# session route on the cluster to http://127.0.0.1:9700.
+deploy/aws/pep-cluster/provision.sh --env=testidp \
+  --host=test-idp.iyasec.io --direct-host=direct.test-idp.iyasec.io \
+  --image="$IMAGE" --count=2 --pep-app
+```
+
+The companion image is `companion-<tag>` in the project's repository
+(`docker build -t <repository>:companion-<tag> companion/`).
+
+- **Each member reaches its own companion** at `127.0.0.1:9700`, inside
+  its task. No security group admits 9700. The companion takes the person
+  from the identity headers the proxy sets, so nothing else may reach it.
+- **The client secret is not shown.** The utility prints a new one once.
+  `provision.sh` replaces it in that line, because the PEP receives the
+  secret on its own pull.
+- **Sign in** at `https://direct.test-idp.iyasec.io:9543/pep-app/protected`.
+  The person needs the `pep-app` role, which is created with no holders:
+  grant it on the console (Directory → Roles). A request with no session
+  that is not from a browser is answered 401.
+
 ### Checking it
 
 ```bash

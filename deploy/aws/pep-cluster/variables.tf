@@ -171,3 +171,23 @@ variable "extra_environment" {
   type        = map(string)
   default     = {}
 }
+
+variable "companion" {
+  description = <<-EOF2
+    Run the development companion (companion/) beside each member, as a
+    second container in the member's task, so the cluster's reverse proxy
+    has `/pep-app` to protect: register the route with upstream
+    `http://127.0.0.1:9700` (provision.sh --pep-app). A demonstration, off
+    by default. It listens on the task's own loopback only as far as any
+    caller is concerned: no security group admits 9700, so nothing but the
+    member beside it can send it the identity headers it trusts.
+  EOF2
+  type        = bool
+  default     = false
+}
+
+variable "companion_image" {
+  description = "A whole image reference for the companion, in place of the project repository's `companion-<image_tag>`."
+  type        = string
+  default     = ""
+}

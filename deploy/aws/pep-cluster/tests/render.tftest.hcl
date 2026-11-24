@@ -212,6 +212,51 @@ run "the_clients_are_told_the_direct_name" {
   }
 }
 
+run "no_companion_by_default" {
+  command = plan
+
+  assert {
+    condition     = alltrue([for t in aws_ecs_task_definition.member : length(jsondecode(t.container_definitions)) == 1])
+    error_message = "a member is the PEP alone unless the companion is asked for"
+  }
+}
+
+run "the_companion_is_a_sidecar_no_rule_admits" {
+  command = plan
+
+  variables {
+    companion = true
+  }
+
+  assert {
+    condition = alltrue([
+      for t in aws_ecs_task_definition.member :
+      [for c in jsondecode(t.container_definitions) : c.name] == ["xacml-pep", "companion"]
+    ])
+    error_message = "each member's task carries its own companion"
+  }
+  assert {
+    condition     = jsondecode(aws_ecs_task_definition.member["aws-pep-1"].container_definitions)[1].essential == false
+    error_message = "a stopped companion does not stop the member"
+  }
+  assert {
+    condition     = jsondecode(aws_ecs_task_definition.member["aws-pep-1"].container_definitions)[1].image == "111122223333.dkr.ecr.us-west-2.amazonaws.com/iya-sts:companion-abc123def456"
+    error_message = "the companion image is companion-<tag>"
+  }
+  assert {
+    condition     = !contains([for r in aws_vpc_security_group_ingress_rule.pep_from_nlb : r.from_port], 9700)
+    error_message = "no rule admits the companion's port"
+  }
+  assert {
+    condition     = aws_ecs_task_definition.member["aws-pep-1"].cpu == "512" && aws_ecs_task_definition.member["aws-pep-1"].memory == "1024"
+    error_message = "the task grows to hold the second process"
+  }
+  assert {
+    condition     = output.companion_upstream == "http://127.0.0.1:9700"
+    error_message = "the route's upstream is each member's own loopback"
+  }
+}
+
 run "a_port_the_environment_uses_is_refused" {
   command = plan
 

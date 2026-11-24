@@ -27,6 +27,7 @@
 #     WORKLOAD_PORT is accepted and no longer published (#324).
 #   TF_STACK=pep-cluster [PEP_CLUSTER=aws] [PEP_MODE=per-instance|shared] \
 #     [PEP_COUNT=2] [PEP_REALM=id] [PEP_AUTOSCALING_MAX=n] [IMAGE_TAG=<tag>] \
+#     [PEP_COMPANION=true] \
 #     deploy/aws/terraform-local.sh testidp apply    # a remote PEP cluster
 #     (#1284); deploy/aws/pep-cluster/provision.sh first, and again after
 #     the apply for the listener pairs (deploy/aws/CLAUDE.md)
@@ -243,6 +244,7 @@ then
   [ -z "${PEP_REALM:-}" ] || TF_VARS+=(-e "TF_VAR_realm=${PEP_REALM}")
   [ -z "${PEP_AUTOSCALING_MAX:-}" ] || TF_VARS+=(-e "TF_VAR_autoscaling_max=${PEP_AUTOSCALING_MAX}")
   [ -z "${PEP_IMAGE:-}" ] || TF_VARS+=(-e "TF_VAR_pep_image=${PEP_IMAGE}")
+  [ -z "${PEP_COMPANION:-}" ] || TF_VARS+=(-e "TF_VAR_companion=${PEP_COMPANION}")
 fi
 
 for v in TF_CLI_ARGS TF_CLI_ARGS_plan TF_CLI_ARGS_apply TF_CLI_ARGS_destroy; do

@@ -28,6 +28,15 @@
 #      `add-pep-cluster-member`), so the members share one configuration.
 #   4. When a pair was issued in this run and the member's ECS service
 #      exists, a new deployment of it, so the tasks start with the pair.
+#   5. With --pep-app, the companion's `/pep-app` on the cluster's reverse
+#      proxy (the utility's step 8, asked once, with the first member):
+#      the role `pep-app`, the confidential client `pep-app` with its
+#      callback at the load balancer's 9543, global consent for its four
+#      scopes, and one session route to `http://127.0.0.1:9700` — each
+#      member's own companion sidecar (the stack's `companion = true`).
+#      THE CLIENT SECRET IS WITHHELD: the utility prints a new one once, and
+#      this script replaces it in that line, because the PEP receives the
+#      secret on its own authenticated pull and nobody else needs it.
 #
 # THE ORDER IS TWO PASSES, because the realm issues a listener pair only to a
 # PEP that has REGISTERED:
@@ -37,7 +46,7 @@
 #
 #   deploy/aws/pep-cluster/provision.sh --env=testidp \
 #     --host=test-idp.iyasec.io --direct-host=direct.test-idp.iyasec.io \
-#     --image=<service image> [--count=2]
+#     --image=<service image> [--count=2] [--pep-app]
 #   deploy/aws/pep-cluster/provision.sh --env=testidp --remove   # the secrets
 #
 # Needs docker, the aws CLI (credentials for the account), curl and jq. The
@@ -65,6 +74,8 @@ IMAGE=""
 REGION="${AWS_REGION:-us-west-2}"
 NAME="iya-sts"
 REMOVE=0
+PEP_APP=0
+PROXY_PORT=9543
 CA_FILE=""
 
 say() { echo "==> [pep-cluster/${ENV_NAME}/${CLUSTER}] $*" >&2; }
@@ -84,7 +95,9 @@ for a in "$@"; do
     --region=*) REGION="${a#*=}" ;;
     --ca=*) CA_FILE="${a#*=}" ;;
     --remove) REMOVE=1 ;;
-    -h|--help) sed -n '8,47p' "$0"; exit 0 ;;
+    --pep-app) PEP_APP=1 ;;
+    --proxy-port=*) PROXY_PORT="${a#*=}" ;;
+    -h|--help) sed -n '8,56p' "$0"; exit 0 ;;
     *) die "unknown argument '${a}' (--help)." ;;
   esac
 done
@@ -232,15 +245,28 @@ for m in "${MEMBERS[@]}"; do
   # and the mode-700 directory is writable; the image's own user (10001)
   # could not. Empty under Cygwin, where Docker Desktop's mount is the
   # user's anyway.
+  # THE COMPANION'S PATH, with the first member only: the utility's
+  # --cluster is what asks it, and its own cluster step creates the cluster
+  # when it is not there yet (step 3 below then finds it). The members'
+  # containers are Fargate's, so the utility starts none
+  # (REGISTER_PEP_NO_START).
+  APP_ARGS=()
+  if [ "${PEP_APP}" = "1" ] && [ "${m}" = "${MEMBERS[0]}" ];
+  then
+    APP_ARGS=(--cluster="${CLUSTER}" --create-cluster --pep-app
+              --upstream="http://127.0.0.1:9700"
+              --public-base="https://${DIRECT_HOST:-${HOST}}:${PROXY_PORT}")
+  fi
   docker run --rm "${HOST_USER_ARGS[@]}" \
     -v "$(hostPath "${WORK}"):/work" \
     -e ADMIN_API_CLIENT_SECRET_FILE=/work/client-secret \
-    -e HOME=/work \
+    -e HOME=/work -e REGISTER_PEP_NO_START=1 \
     --entrypoint node "${IMAGE}" utilities/register-remote-pep.js \
     --url="${URL}" ${REALM:+--realm="${REALM}"} --name="${m}" \
     --out="/work/${m}" --pdp-url="${PDP_URL}" --https-dns="${HOST}" \
     ${DIRECT_HOST:+--https-dns="${DIRECT_HOST}"} \
-    ${CA_FILE:+--ca=/work/service-ca.pem} >&2 ||
+    ${CA_FILE:+--ca=/work/service-ca.pem} "${APP_ARGS[@]}" |
+    sed -E 's/(Client secret for "[^"]*" \(shown once\): ).*/\1[withheld by provision.sh: the PEP receives it on its pull]/' >&2 ||
     die "register-remote-pep.js failed for ${m}; nothing of it was stored."
 
   member_json "${out}" > "${WORK}/${m}.new"

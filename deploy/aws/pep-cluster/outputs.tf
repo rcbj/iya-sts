@@ -35,3 +35,8 @@ output "credential_mode" {
 output "autoscaling" {
   value = local.autoscaling ? { min = var.instance_count, max = var.autoscaling_max, cpu_target = var.autoscaling_cpu_target } : null
 }
+
+output "companion_upstream" {
+  description = "With companion = true: the upstream a cluster route names to reach each member's own companion."
+  value       = var.companion ? "http://127.0.0.1:${local.companion_port}" : null
+}

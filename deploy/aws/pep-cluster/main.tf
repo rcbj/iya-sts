@@ -63,6 +63,41 @@ locals {
   image_tag = var.image_tag != "" ? var.image_tag : local.env.image_tag
   image     = var.pep_image != "" ? var.pep_image : "${local.ecr_url}:pep-${local.image_tag}"
 
+  # THE COMPANION SIDECAR (`var.companion`): `/pep-app`, the application the
+  # demonstrations put behind the reverse proxy. A container in EACH
+  # member's task rather than a service of its own, for two reasons. Its
+  # `/pep-app/protected` and `/whoami` take the person from identity
+  # HEADERS the proxy sets (#1972), so it must be reachable by the proxy
+  # and by nothing else; inside one task the proxy reaches it at
+  # 127.0.0.1:9700 and no security group rule names 9700, so no other
+  # caller can. And a cluster route has one upstream for every member,
+  # which `http://127.0.0.1:9700` is — each member's own companion. It is
+  # not essential: a companion that stops costs `/pep-app` a 502 and leaves
+  # the member deciding. The task grows to hold a second node process.
+  companion_image = var.companion_image != "" ? var.companion_image : "${local.ecr_url}:companion-${local.image_tag}"
+  companion_port  = 9700
+  task_cpu        = var.companion ? max(var.task_cpu, 512) : var.task_cpu
+  task_memory     = var.companion ? max(var.task_memory, 1024) : var.task_memory
+  companion_container = {
+    name      = "companion"
+    image     = local.companion_image
+    essential = false
+    environment = [
+      for k, v in {
+        COMPANION_PORT       = tostring(local.companion_port)
+        COMPANION_PUBLIC_URL = "http://127.0.0.1:${local.companion_port}"
+        # The service at the public name the VPC resolves to the load
+        # balancer, verified against the image's roots (the node presents
+        # the public certificate). `/pep-app` dials it only for a realm's
+        # metadata and JWKS, in the proxy's jwt and saml identity modes.
+        COMPANION_STS_URL           = local.pdp_url
+        COMPANION_STS_PUBLIC_URL    = local.pdp_url
+        COMPANION_KRB5_SERVICE_PORT = "off"
+      } : { name = k, value = v }
+    ]
+    logConfiguration = local.container_log
+  }
+
   # TWO NAMES. `service_host` is the environment's PUBLIC name, which is
   # what a member dials the service at and what the nodes dial a member's
   # notify port at: inside the VPC it resolves to the load balancer's
@@ -510,8 +545,8 @@ resource "aws_ecs_task_definition" "member" {
   family                   = "${local.prefix}-pep-${each.key}"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
-  cpu                      = var.task_cpu
-  memory                   = var.task_memory
+  cpu                      = local.task_cpu
+  memory                   = local.task_memory
   execution_role_arn       = aws_iam_role.execution.arn
 
   runtime_platform {
@@ -519,7 +554,7 @@ resource "aws_ecs_task_definition" "member" {
     cpu_architecture        = "X86_64"
   }
 
-  container_definitions = jsonencode([
+  container_definitions = jsonencode(concat([
     {
       name       = "xacml-pep"
       image      = local.image
@@ -566,7 +601,7 @@ resource "aws_ecs_task_definition" "member" {
       # that replaces a member.
       logConfiguration = local.container_log
     }
-  ])
+  ], var.companion ? [local.companion_container] : []))
 }
 
 resource "aws_ecs_service" "member" {
