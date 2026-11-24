@@ -94,8 +94,15 @@ class AccountSshUserCa {
       return ctx.refuse(res, 403, 'STS-PKI-0293',
                         'Self-service SSH certificate issuance is disabled.');
     }
+    // PER REALM (#2093): the door's name carries the realm, so the two
+    // pki.personSelfService* limits a realm sets for itself count that
+    // realm's issuances and no other's, and alice in one realm is not alice
+    // in another. The limiter is process-wide so a GUESSER gets no fresh
+    // budget per realm (`common/websecurity.ts`); this door issues only to
+    // a person already signed in to the realm, so there is nothing to
+    // guess, and a realm's setting must govern that realm.
     const allowed = await ctx.websecurity.attemptShared(
-      'portal-ssh-user-ca', req, caller.username, {
+      'portal-ssh-user-ca@' + caller.realm, req, caller.username, {
         identity: ctx.config.value('pki.personSelfServicePerIdentity'),
         address: ctx.config.value('pki.personSelfServicePerAddress')
       });

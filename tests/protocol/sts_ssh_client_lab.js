@@ -492,11 +492,10 @@ async function setUp() {
   await ok(base + "/admin-api/realms/create", { id: REALM, domain: DOMAIN,
     name: "SSH client lab " + STAMP, overrides: {
       "authn.allowOptionalSecondFactor": "true",
-      // THE RUNNER IS ONE ADDRESS FOR EVERY JOB'S PEOPLE, the NAT case the
-      // row describes: issuance is counted per address across realms (five
-      // a minute by default), and sts_ssh_user_ca.js, just before this job
-      // in the lane, spends four of them.
-      "pki.personSelfServicePerAddress": "100",
+      // pki.personSelfServicePerAddress is the default five: since #2093 it
+      // counts this realm's issuances only, so the four sts_ssh_user_ca.js
+      // spends from the same runner address in its own realm just before
+      // this job are not this realm's. This job issues two.
       "risk.assessSignIns": "false",
       "oauth2.deviceAuthorization": "true" } },
     "created the realm " + REALM);

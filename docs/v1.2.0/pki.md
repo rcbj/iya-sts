@@ -188,7 +188,10 @@ certificates. The two switches cannot both be on (`STS-PKI-0296`).
 The Account API issues a short-lived certificate for a caller's own UID,
 after a separate access-policy decision for every principal. Issuance
 requires recent authentication and is governed by `pki.personSelfService`
-and the existing PKI self-service rate limits. The request and response
+and the existing PKI self-service rate limits (`pki.personSelfServicePerIdentity`
+and `pki.personSelfServicePerAddress`). Those limits are counted per realm:
+issuances in one realm never use up another realm's budget, and the same
+username in two realms counts as two people. The request and response
 schemas are in `GET /admin-api/account-api`.
 
 - **A group is not a principal by default.** A group common name may be

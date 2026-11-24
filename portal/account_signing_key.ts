@@ -350,7 +350,9 @@ class AccountSigningKey {
                         { view: self.view(caller, base) });
     };
     const limited = async function (): Promise<Json> {
-      return websecurity.attemptShared('portal-signing-key', req, username, {
+      // Per realm (#2093): account-api/ssh_user_ca.ts argues it.
+      return websecurity.attemptShared('portal-signing-key@' + caller.realm,
+                                       req, username, {
         identity: config.value('pki.personSelfServicePerIdentity'),
         address: config.value('pki.personSelfServicePerAddress')
       });
