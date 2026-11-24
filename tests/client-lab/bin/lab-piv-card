@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# File: tests/client-lab/bin/lab-piv-card
+#
+# ---------------------------------------------------------------------------
+# REPLACES THE LAB'S PIV CARD WITH A FACTORY-FRESH ONE (#2056).
+#
+#   lab-piv-card yubikey    PivApplet patched to attest as a YubiKey 5
+#                           (patches/pivapplet-yubikey-attestation.patch)
+#   lab-piv-card stock      PivApplet as published: its attestation names
+#                           no serial and is issued by a fixed name, and
+#                           the service refuses it (STS-PIV-0006/0007)
+#   lab-piv-card            prints which one is in the reader
+#
+# The old card's keys, certificates and PINs go with it.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+# shellcheck source=tests/client-lab/card-lib.sh
+. /opt/client-lab/card-lib.sh
+
+if [ $# -eq 0 ]; then
+  cat "${RUN}/piv-variant"
+  exit 0
+fi
+stop_card piv "${PIV_READER}"
+start_piv_card "$1"
+cat "${RUN}/piv-variant"

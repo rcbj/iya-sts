@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# File: tests/client-lab/bin/lab-smoke
+#
+# ---------------------------------------------------------------------------
+# THE CLIENT LAB'S SMOKE CHECK (#2056): each card answers its own clients.
+#
+#   1. gpg --card-status on the OpenPGP card (SmartPGP), and its serial is
+#      the one this start made;
+#   2. yubico-piv-tool -a status on the PIV card (PivApplet);
+#   3. OpenSC's PKCS#11 module lists both slots with a token present;
+#   4. every client the lab carries answers --version (or its equivalent).
+#
+# Prints one `ok`/`FAIL` line per check and exits non-zero on any FAIL.
+# ---------------------------------------------------------------------------
+set -uo pipefail
+
+fails=0
+check() {
+  local what="$1"
+  shift
+  if out="$("$@" 2>&1)"; then
+    echo "ok   ${what}"
+  else
+    echo "FAIL ${what}"
+    echo "${out}" | sed 's/^/     /'
+    fails=$((fails + 1))
+  fi
+}
+
+home="$(/opt/client-lab/bin/lab-gnupg-home "$(mktemp -d)")"
+serial="$(cat /run/client-lab/openpgp-serial)"
+card="$(GNUPGHOME="${home}" gpg --card-status 2>&1)"
+echo "${card}" | sed 's/^/     /'
+check "gpg --card-status reads the OpenPGP card" \
+  grep -q "^Application ID" <<< "${card}"
+check "the OpenPGP card's serial is this start's (${serial})" \
+  grep -qi "^Serial number.*: *${serial}" <<< "${card}"
+GNUPGHOME="${home}" gpgconf --kill all > /dev/null 2>&1 || true
+
+piv="$(yubico-piv-tool -r 'Virtual PCD 00 01' -a status 2>&1)"
+echo "${piv}" | sed 's/^/     /'
+check "yubico-piv-tool -a status reads the PIV card" \
+  grep -q "^Version:" <<< "${piv}"
+
+slots="$(pkcs11-tool --module /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so \
+  --list-slots 2>&1 || pkcs11-tool --list-slots 2>&1)"
+echo "${slots}" | sed 's/^/     /'
+check "OpenSC's PKCS#11 module sees a token in the PIV reader" \
+  grep -q "Virtual PCD 00 01" <<< "${slots}"
+check "and one in the OpenPGP reader" \
+  grep -q "Virtual PCD 00 00" <<< "${slots}"
+
+check "ssh -V" ssh -V
+check "sshd -V" bash -c '/usr/sbin/sshd -V 2>&1 | grep -q OpenSSH'
+check "oathtool --version" oathtool --version
+check "pamtester and pam_yubico" bash -c \
+  'command -v pamtester && ls /lib/security/pam_yubico.so'
+check "kinit (MIT)" bash -c 'command -v kinit && klist -V'
+check "postfix" postconf mail_version
+check "curl --version" curl --version
+check "openssl version" openssl version
+
+if [ "${fails}" -ne 0 ]; then
+  echo "${fails} check(s) failed"
+  exit 1
+fi
+echo "every check passed"
