@@ -553,8 +553,10 @@ four changes:
 * **`installForgeRandom()`** points forge's default generator (and
   `createInstance()`) at node's when `crypto.js` loads. forge is one module
   instance, so this reaches the vendored callers that may not be edited here.
-  The parent project owes the real fix: `xmldsig.js` signing RSA with node's
-  `crypto.sign()` rather than forge's JavaScript RSA.
+  The real fix — `xmldsig.js` signing RSA with node's `crypto.sign()` rather
+  than forge's JavaScript RSA — was made HERE by #1615 (2026-11-24), the
+  file being this service's own since #1280: see `common/crypto_impl/CLAUDE.md`,
+  *XML on node's OpenSSL*.
 * **`rsa-oaep-mgf1p` and `rsa-1_5` wrap and unwrap through node's
   `publicEncrypt()` / `privateDecrypt()`**, and `transportOptions()` is gone.
   RSA-1_5 decryption needs OpenSSL's implicit rejection, which node 24 has
@@ -9453,8 +9455,8 @@ The eight XML signers and both query-string signers take `STS.xmlSigner`.
 * **Post-quantum** goes through `signEnveloped()` with an injected
   `pq_jose.sign`, since the vendored file holds the identifiers.
 * **ECDSA** goes through the vendored GENERAL engine with node's `ieee-p1363`
-  r||s (rcbj's D8). `signEnveloped()`'s classical branch is RSA-only forge,
-  and the vendored file is not edited here.
+  r||s (rcbj's D8). `signEnveloped()`'s classical branch is RSA only (on
+  node's OpenSSL since #1615).
 
 `crypto.signQueryString()` gains the same two branches in our own code. The
 XML group's ML-DSA keys get plain certificates of their own (D7), because
