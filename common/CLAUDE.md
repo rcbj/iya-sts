@@ -13311,6 +13311,12 @@ what a maintainer of this directory has to know beside them:
   on the cell tier. While `yubiotp.ykval` is off the route answers
   `OPERATION_NOT_ALLOWED` and signs nothing. On, the client id and the
   HMAC-SHA1 are checked in every mode.
+* **The refusals are in the reference server's order (#2094)**, because
+  the protocol names none: no nonce, a malformed OTP (`BAD_OTP`,
+  STS-YUBIOTP-0033), no id, a malformed nonce (`MISSING_PARAMETER`,
+  0034), an unknown client, then `h`. `h` is optional in the protocol and
+  required here, and it is asked for after the lookup, so an unknown
+  client is `NO_SUCH_CLIENT` signed or not. `authn/ykval.ts` argues it.
 * **Enrolment is `yubiotp.offered` and the authentication policy's
   `yubico-otp` row**, both (`YubiOtp.offered()`). The row is `optional`
   and off by default, the same arrangement as HOTP's: a save that does
