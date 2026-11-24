@@ -4136,16 +4136,16 @@
     "text": "Självutfärdade nyckelpar som en person får begära per fönster"
   },
   "pki.personSelfServicePerIdentity|description": {
-    "en": "6e1c2730f816df42",
-    "text": "Hur många gånger en person får trycka på Generera på /portal/signing-key under ett fönster på security.rateLimitWindowS. Att generera ett nyckelpar är hundratals millisekunder CPU på den tråd som varje protokoll här besvaras på, vilket är skälet till att det över huvud taget begränsas."
+    "en": "8395545b6fa2f69c",
+    "text": "Hur många gånger en person får trycka på Generera på /portal/signing-key under ett fönster på security.rateLimitWindowS. Att generera ett nyckelpar är hundratals millisekunder CPU på den tråd som varje protokoll här besvaras på, vilket är skälet till att det över huvud taget begränsas. Räknas per realm: samma användarnamn i en annan realm är en annan person med en egen kvot."
   },
   "pki.personSelfServicePerAddress|label": {
     "en": "a28779785d0daa13",
     "text": "Självutfärdade nyckelpar som en adress får begära per fönster"
   },
   "pki.personSelfServicePerAddress|description": {
-    "en": "d9ea8bbca2155dce",
-    "text": "Samma gräns räknad per klientADRESS för alla bakom den. Den är en egen rad eftersom en driftsättning vars användare når den genom en enda NAT eller proxy delar en adress, och fem för ett helt kontor är ett annat tal än fem för en person."
+    "en": "8e71583151b79b18",
+    "text": "Samma gräns räknad per klientADRESS för alla bakom den. Den är en egen rad eftersom en driftsättning vars användare når den genom en enda NAT eller proxy delar en adress, och fem för ett helt kontor är ett annat tal än fem för en person. Räknas per realm: utfärdanden i en realm förbrukar inget av en annan realms kvot, så det tal en realm sätter gäller bara dess egna."
   },
   "pki.personTlsClientCertificateMax|label": {
     "en": "a79f25756d5b332f",

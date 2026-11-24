@@ -114,7 +114,9 @@ function run(t) {
     '..', 'portal', 'account_overview.ts'), 'utf8');
   const portalWeb = fs.readFileSync(path.join(__dirname, '..', 'portal',
                                               'web_overview.ts'), 'utf8');
-  t.check(/attempt(?:Shared)?\('portal-signing-key',\s*req,\s*username, \{\s*identity: config\.value\('pki\.personSelfServicePerIdentity'\),\s*address: config\.value\('pki\.personSelfServicePerAddress'\)/
+  // The door's name carries the realm since #2093
+  // (`self_service_limits_per_realm.js`).
+  t.check(/attempt(?:Shared)?\('portal-signing-key@' \+ caller\.realm,\s*req,\s*username, \{\s*identity: config\.value\('pki\.personSelfServicePerIdentity'\),\s*address: config\.value\('pki\.personSelfServicePerAddress'\)/
             .test(portalSource),
           'the portal\'s signing-key door passes the two settings rather ' +
           'than the literal 5 — read as source, since reaching it means five ' +

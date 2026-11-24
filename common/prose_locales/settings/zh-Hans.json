@@ -4136,16 +4136,16 @@
     "text": "每人每个窗口可申请的自签发密钥对数"
   },
   "pki.personSelfServicePerIdentity|description": {
-    "en": "6e1c2730f816df42",
-    "text": "在一个 security.rateLimitWindowS 窗口内，一个人可以在 /portal/signing-key 上按下“生成”的次数。生成一个密钥对要在响应此处所有协议的线程上耗费数百毫秒 CPU 时间，这就是要对其加以限制的原因。"
+    "en": "8395545b6fa2f69c",
+    "text": "在一个 security.rateLimitWindowS 窗口内，一个人可以在 /portal/signing-key 上按下“生成”的次数。生成一个密钥对要在响应此处所有协议的线程上耗费数百毫秒 CPU 时间，这就是要对其加以限制的原因。按领域（realm）分别计数：另一个领域中的同一用户名是另一个人，有自己的额度。"
   },
   "pki.personSelfServicePerAddress|label": {
     "en": "a28779785d0daa13",
     "text": "每个地址每个窗口可申请的自签发密钥对数"
   },
   "pki.personSelfServicePerAddress|description": {
-    "en": "d9ea8bbca2155dce",
-    "text": "同样的限制，但按客户端地址统计，涵盖该地址背后的所有人。它单独成行，是因为如果部署中的人员通过同一个 NAT 或代理访问，他们会共享一个地址，而整个办公室五次与一个人五次是不同的数字。"
+    "en": "8e71583151b79b18",
+    "text": "同样的限制，但按客户端地址统计，涵盖该地址背后的所有人。它单独成行，是因为如果部署中的人员通过同一个 NAT 或代理访问，他们会共享一个地址，而整个办公室五次与一个人五次是不同的数字。按领域（realm）分别计数：一个领域中的签发不会消耗另一个领域的额度，因此一个领域设置的数字只约束它自己的签发。"
   },
   "pki.personTlsClientCertificateMax|label": {
     "en": "a79f25756d5b332f",

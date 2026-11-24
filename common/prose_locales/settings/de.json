@@ -4136,16 +4136,16 @@
     "text": "Selbst ausgestellte Schlüsselpaare, die eine Person je Fenster anfordern darf"
   },
   "pki.personSelfServicePerIdentity|description": {
-    "en": "6e1c2730f816df42",
-    "text": "Wie oft eine Person auf /portal/signing-key in einem Fenster von security.rateLimitWindowS auf Generieren drücken darf. Ein Schlüsselpaar zu erzeugen kostet einige hundert Millisekunden CPU auf dem Thread, auf dem hier jedes Protokoll beantwortet wird; genau deshalb ist es überhaupt begrenzt."
+    "en": "8395545b6fa2f69c",
+    "text": "Wie oft eine Person auf /portal/signing-key in einem Fenster von security.rateLimitWindowS auf Generieren drücken darf. Ein Schlüsselpaar zu erzeugen kostet einige hundert Millisekunden CPU auf dem Thread, auf dem hier jedes Protokoll beantwortet wird; genau deshalb ist es überhaupt begrenzt. Je Realm gezählt: derselbe Benutzername in einem anderen Realm ist eine andere Person mit eigenem Kontingent."
   },
   "pki.personSelfServicePerAddress|label": {
     "en": "a28779785d0daa13",
     "text": "Selbst ausgestellte Schlüsselpaare, die eine Adresse je Fenster anfordern darf"
   },
   "pki.personSelfServicePerAddress|description": {
-    "en": "d9ea8bbca2155dce",
-    "text": "Dieselbe Grenze, je Client-ADRESSE über alle dahinter gezählt. Es ist eine eigene Zeile, weil eine Bereitstellung, deren Personen sie über ein einziges NAT oder einen Proxy erreichen, sich eine Adresse teilt, und fünf für ein ganzes Büro eine andere Zahl sind als fünf für eine Person."
+    "en": "8e71583151b79b18",
+    "text": "Dieselbe Grenze, je Client-ADRESSE über alle dahinter gezählt. Es ist eine eigene Zeile, weil eine Bereitstellung, deren Personen sie über ein einziges NAT oder einen Proxy erreichen, sich eine Adresse teilt, und fünf für ein ganzes Büro eine andere Zahl sind als fünf für eine Person. Je Realm gezählt: Ausstellungen in einem Realm verbrauchen nichts vom Kontingent eines anderen Realms, die Zahl, die ein Realm setzt, gilt also nur für seine eigenen."
   },
   "pki.personTlsClientCertificateMax|label": {
     "en": "a79f25756d5b332f",

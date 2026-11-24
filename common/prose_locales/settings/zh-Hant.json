@@ -4136,16 +4136,16 @@
     "text": "每人每個時段可要求的自行簽發金鑰組數"
   },
   "pki.personSelfServicePerIdentity|description": {
-    "en": "6e1c2730f816df42",
-    "text": "一個人在一個 security.rateLimitWindowS 時段內可在 /portal/signing-key 上按下 Generate 的次數。產生金鑰組會在回應此處每個協定的同一執行緒上耗用數百毫秒的 CPU，這就是需要限制的原因。"
+    "en": "8395545b6fa2f69c",
+    "text": "一個人在一個 security.rateLimitWindowS 時段內可在 /portal/signing-key 上按下 Generate 的次數。產生金鑰組會在回應此處每個協定的同一執行緒上耗用數百毫秒的 CPU，這就是需要限制的原因。依領域（realm）分別計數：另一個領域中的同一使用者名稱是另一個人，有自己的額度。"
   },
   "pki.personSelfServicePerAddress|label": {
     "en": "a28779785d0daa13",
     "text": "每個位址每個時段可要求的自行簽發金鑰組數"
   },
   "pki.personSelfServicePerAddress|description": {
-    "en": "d9ea8bbca2155dce",
-    "text": "同一限制，但以用戶端「位址」計算，涵蓋其後的所有人。它自成一列，是因為人員透過同一個 NAT 或 Proxy 存取的部署會共用一個位址，整個辦公室五次與一個人五次是不同的數字。"
+    "en": "8e71583151b79b18",
+    "text": "同一限制，但以用戶端「位址」計算，涵蓋其後的所有人。它自成一列，是因為人員透過同一個 NAT 或 Proxy 存取的部署會共用一個位址，整個辦公室五次與一個人五次是不同的數字。依領域（realm）分別計數：一個領域中的簽發不會耗用另一個領域的額度，因此一個領域設定的數字只約束它自己的簽發。"
   },
   "pki.personTlsClientCertificateMax|label": {
     "en": "a79f25756d5b332f",
