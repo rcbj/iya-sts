@@ -12067,6 +12067,23 @@ class OAuth2Server {
           '/oauth2/par first and send the ' +
           'request_uri it answers with.' }, 'STS-OAUTH-0419');
     }
+    // ASVS 5.0.0 10.4.15 (#2185): rich authorization details only in a
+    // pushed request, where the realm says so.
+    if (!pushed && config.value('oauth2.authorizationDetailsRequirePar') &&
+        String((req.query || {}).authorization_details || '').trim()) {
+      oauthMonitor.record(clientId, 'par.required_refused',
+                        { error: 'invalid_request' });
+      log.debug("Leaving OAuth2Server.pushedRequestPolicyRefusal(). " +
+                "authorization_details, not pushed.");
+      return errorCodes.mark({ error: 'invalid_request',
+        description: 'this authorization request carries ' +
+          'authorization_details and was not pushed, and ' +
+          'oauth2.authorizationDetailsRequirePar says rich authorization ' +
+          'requests are accepted only through pushed authorization requests ' +
+          '(RFC 9126, RFC 9396). POST the parameters to ' +
+          self.asBaseOf(req) + '/oauth2/par first and send the request_uri ' +
+          'it answers with.' }, 'STS-OAUTH-1015');
+    }
     if (pushed && !jar.alg &&
         requestObject.signedRequired(client,
                                      self.authorizationProfileOf(req),

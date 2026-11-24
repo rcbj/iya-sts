@@ -5111,6 +5111,14 @@
     "en": "822efb2b3e3dc3ea",
     "text": "RFC 9126 第 4 节的全局策略：授权端点会拒绝任何未携带本服务在 /oauth2/par 上签发的 request_uri 的请求，在本服务器上答复 invalid_request 和 400。发布为 require_pushed_authorization_requests。默认关闭，因为每个发送普通授权请求的客户端都会被拒绝。客户端可以通过其条目上的 oauthRequirePushedAuthorizationRequests（注册时的 require_pushed_authorization_requests）对自己提出同样的要求，命名授权服务器的配置也可以发布它。"
   },
+  "oauth2.authorizationDetailsRequirePar|label": {
+    "en": "caca56f9374ced58",
+    "text": "仅在推送的请求中接受 authorization_details"
+  },
+  "oauth2.authorizationDetailsRequirePar|description": {
+    "en": "fd2ce3adf8912ed5",
+    "text": "默认关闭（ASVS 5.0.0 10.4.15，#2185）。开启后，授权端点会在本服务器上以 invalid_request 和 400 拒绝携带 RFC 9396 authorization_details 且未通过 /oauth2/par 签发的 request_uri 送达的请求，使富授权请求永远不会出现在浏览器的地址中。按值传递的已签名请求对象也会被拒绝：它同样经过浏览器。不含 authorization_details 的请求不受影响；上面一行使每个请求都必须推送。"
+  },
   "oauth2.parRequestUriLifetimeS|label": {
     "en": "25024915c069671f",
     "text": "推送的 request_uri 有效期（秒）"

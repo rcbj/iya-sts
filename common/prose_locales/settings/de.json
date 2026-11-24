@@ -5111,6 +5111,14 @@
     "en": "822efb2b3e3dc3ea",
     "text": "Die globale Richtlinie aus RFC 9126 Abschnitt 4: der Autorisierungsendpunkt lehnt auf diesem Server mit invalid_request und 400 jede Anfrage ab, die keine request_uri trägt, die dieser Dienst unter /oauth2/par ausgestellt hat. Veröffentlicht als require_pushed_authorization_requests. AUS als Vorgabe, weil jeder Client, der eine einfache Autorisierungsanfrage sendet, abgelehnt würde. Ein Client kann dasselbe für sich selbst mit oauthRequirePushedAuthorizationRequests auf seinem Eintrag verlangen (require_pushed_authorization_requests bei der Registrierung), und das Profil eines benannten Autorisierungsservers kann es veröffentlichen."
   },
+  "oauth2.authorizationDetailsRequirePar|label": {
+    "en": "caca56f9374ced58",
+    "text": "authorization_details nur in einer übertragenen Anfrage annehmen"
+  },
+  "oauth2.authorizationDetailsRequirePar|description": {
+    "en": "fd2ce3adf8912ed5",
+    "text": "STANDARDMÄSSIG AUS (ASVS 5.0.0 10.4.15, #2185). Eingeschaltet lehnt der Autorisierungsendpunkt mit invalid_request und einem 400 auf diesem Server eine Anfrage ab, die RFC-9396-authorization_details trägt und nicht über eine bei /oauth2/par ausgegebene request_uri kam, damit eine Rich-Authorization-Anfrage nie in der Adresse des Browsers reist. Auch ein als Wert übergebenes signiertes Anfrageobjekt wird abgelehnt: Es reist ebenfalls im Browser. Eine Anfrage ohne authorization_details ist nicht betroffen; die Zeile darüber macht jede Anfrage zu einer übertragenen."
+  },
   "oauth2.parRequestUriLifetimeS|label": {
     "en": "25024915c069671f",
     "text": "Lebensdauer der request_uri aus /oauth2/par (Sekunden)"

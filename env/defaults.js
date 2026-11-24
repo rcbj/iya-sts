@@ -262,6 +262,7 @@ var config = {
     requestObjectEncryptionCurve: "P-256",         // Request object encryption: EC curve
     pushedAuthorizationRequests: true,             // Pushed authorization requests (RFC 9126)
     requirePushedAuthorizationRequests: false,     // Require pushed authorization requests
+    authorizationDetailsRequirePar: false,         // Accept authorization_details only in a pushed request
     parRequestUriLifetimeS: 60,                    // Pushed request_uri lifetime (seconds)
     parMaxRequests: 10000,                         // Pushed requests held at once
     parMaxBodyBytes: 65536,                        // Largest pushed authorization request (bytes)

@@ -5111,6 +5111,14 @@
     "en": "822efb2b3e3dc3ea",
     "text": "RFC 9126 avsnitt 4:s globala policy: auktoriseringsslutpunkten avvisar, med invalid_request och 400 på den här servern, varje begäran som inte bär en request_uri som den här tjänsten utfärdat vid /oauth2/par. Publiceras som require_pushed_authorization_requests. AVSTÄNGT som standard, eftersom varje klient som skickar en vanlig auktoriseringsbegäran skulle avvisas. En klient kan begära samma sak av sig själv med oauthRequirePushedAuthorizationRequests på sin post (require_pushed_authorization_requests vid registreringen), och en namngiven auktoriseringsservers profil kan publicera det."
   },
+  "oauth2.authorizationDetailsRequirePar|label": {
+    "en": "caca56f9374ced58",
+    "text": "Acceptera authorization_details endast i en pushad begäran"
+  },
+  "oauth2.authorizationDetailsRequirePar|description": {
+    "en": "fd2ce3adf8912ed5",
+    "text": "AV SOM STANDARD (ASVS 5.0.0 10.4.15, #2185). På avvisar auktoriseringsslutpunkten, med invalid_request och en 400 på denna server, en begäran som bär RFC 9396 authorization_details och inte kom via en request_uri utfärdad vid /oauth2/par, så att en rik auktoriseringsbegäran aldrig färdas i webbläsarens adress. Ett signerat begäranobjekt som skickas som värde avvisas också: det färdas också i webbläsaren. En begäran utan authorization_details påverkas inte; raden ovan gör varje begäran pushad."
+  },
   "oauth2.parRequestUriLifetimeS|label": {
     "en": "25024915c069671f",
     "text": "Livslängd för pushad request_uri (sekunder)"

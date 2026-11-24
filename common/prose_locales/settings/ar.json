@@ -5111,6 +5111,14 @@
     "en": "822efb2b3e3dc3ea",
     "text": "السياسة العامة وفق RFC 9126 section 4: ترفض نقطة نهاية التفويض، بـ invalid_request و400 على هذا الخادم، أي طلب لا يحمل request_uri أصدرته هذه الخدمة عند /oauth2/par. تُنشر كـ require_pushed_authorization_requests. متوقفة افتراضيًا، لأن كل عميل يرسل طلب تفويض عادي سيُرفض. يمكن لعميل أن يطلب الأمر نفسه لنفسه عبر oauthRequirePushedAuthorizationRequests على مدخله (require_pushed_authorization_requests عند التسجيل)، ويمكن لملف تعريف خادم تفويض مسمًّى أن ينشره."
   },
+  "oauth2.authorizationDetailsRequirePar|label": {
+    "en": "caca56f9374ced58",
+    "text": "قبول authorization_details فقط في طلب مدفوع"
+  },
+  "oauth2.authorizationDetailsRequirePar|description": {
+    "en": "fd2ce3adf8912ed5",
+    "text": "معطّل افتراضيًا (ASVS 5.0.0 10.4.15، #2185). عند تفعيله، ترفض نقطة نهاية التفويض، بـ invalid_request ورمز 400 على هذا الخادم، طلبًا يحمل authorization_details وفق RFC 9396 ولم يأتِ عبر request_uri صادر من /oauth2/par، حتى لا ينتقل طلب تفويض غني أبدًا في عنوان المتصفح. ويُرفض أيضًا كائن طلب موقّع يُمرَّر بالقيمة: فهو ينتقل في المتصفح كذلك. ولا يتأثر طلب بلا authorization_details؛ والصف أعلاه يجعل كل طلب مدفوعًا."
+  },
   "oauth2.parRequestUriLifetimeS|label": {
     "en": "25024915c069671f",
     "text": "عمر request_uri المدفوع (بالثواني)"

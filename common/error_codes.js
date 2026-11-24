@@ -12369,6 +12369,13 @@ const CODES = [
       'DPoP proof: every token issued to that client is DPoP-bound (RFC ' +
       '9449) to the PEP\'s assertion key (#1827\'s follow-up).',
     spec: 'invalid_dpop_proof (HTTP 400)' },
+  { code: 'STS-OAUTH-1015',
+    summary: 'The authorization endpoint refused a request that carried ' +
+      'RFC 9396 authorization_details and was not pushed, while ' +
+      'oauth2.authorizationDetailsRequirePar is on (#2185, ASVS 5.0.0 ' +
+      '10.4.15).',
+    spec: 'RFC 9126 section 4: HTTP 400 invalid_request, answered on this ' +
+      'server' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
