@@ -153,13 +153,17 @@ function childMain() {
     ldap.createUser('pcp-bare', { invent: false });
     credentials.setPassword('pcp-alice', PASSWORD);
     credentials.setPassword('pcp-bare', PASSWORD);
+    const SCOPES = ['openid', 'profile', 'email', 'offline_access'];
     applications.createApplication({ identifier: 'pcp-public',
       protocols: ['oauth2', 'oidc'],
       fields: { oauthClientId: 'pcp-public', oauthClientSecret: '',
                 oauthRedirectUri: [REDIRECT],
                 oauthTokenEndpointAuthMethod: 'none',
                 oauthGrantType: ['authorization_code', 'refresh_token',
-                                 'client_credentials'] } });
+                                 'client_credentials'],
+                // Declared since #2114: product issues a client that
+                // declares nothing `openid` alone.
+                oauthAllowedScope: SCOPES } });
     applications.updateApplication('pcp-public', {
       attribute: 'oauthClientSecret', mode: 'set', value: '' });
     applications.createApplication({ identifier: 'pcp-confidential',
@@ -167,7 +171,8 @@ function childMain() {
       fields: { oauthClientId: 'pcp-confidential', oauthClientSecret: SECRET,
                 oauthRedirectUri: [REDIRECT],
                 oauthTokenEndpointAuthMethod: 'client_secret_post',
-                oauthGrantType: ['authorization_code', 'refresh_token'] } });
+                oauthGrantType: ['authorization_code', 'refresh_token'],
+                oauthAllowedScope: SCOPES } });
 
     const payloadOf = function (jwt) {
       return JSON.parse(Buffer.from(String(jwt).split('.')[1], 'base64url')
@@ -449,7 +454,8 @@ function childMain() {
       applications.createApplication({ identifier: 'pcp-by-hand',
         protocols: ['oauth2', 'oidc'],
         fields: { oauthClientId: 'pcp-by-hand',
-                  oauthRedirectUri: [REDIRECT] } });
+                  oauthRedirectUri: [REDIRECT],
+                  oauthAllowedScope: SCOPES } });
       applications.createApplication({ identifier: 'pcp-by-hand-secret',
         protocols: ['oauth2', 'oidc'],
         fields: { oauthClientId: 'pcp-by-hand-secret',
