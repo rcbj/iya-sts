@@ -233,6 +233,8 @@ declare namespace IyaDomain {
     openPgpKey?: string;
     openPgpFingerprint?: string;
     openPgpKeyInfo?: string;
+    openPgpClassicalKey?: string;
+    openPgpClassicalKeyInfo?: string;
     hobaPublicKey?: string[];
     activationExpires?: string;
     passwordResetExpires?: string;
@@ -780,6 +782,12 @@ declare namespace IyaDomain {
     method?: string;
     attestation?: string;
     noPasskeyFallback?: string;
+    mailEnabled?: string;
+    mailSnoozeDays?: string;
+    mailGraceDays?: string;
+    mailNoKey?: string;
+    mailPrefer?: string;
+    mailKeepClassical?: string;
     precedence?: number;
     description?: string[];
     noPasskeyRole?: string;

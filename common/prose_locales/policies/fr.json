@@ -1911,6 +1911,66 @@
     "en": "4fa78beae92d0ce5",
     "text": "none : ML-DSA uniquement. classical : après l’échec d’un enregistrement ML-DSA sur l’appareil, une nouvelle tentative avec les algorithmes classiques est proposée (là où la politique de clé d’accès en permet une) — une clé d’accès classique vaut mieux qu’un mot de passe, et son détenteur est invité plus tard à la migration comme n’importe qui d’autre."
   },
+  "postLogin.FIELDS.mailEnabled.label": {
+    "en": "40a2cfe48791e921",
+    "text": "Demander un chiffrement post-quantique du courrier"
+  },
+  "postLogin.FIELDS.mailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, toute personne que ce profil atteint et dont le courrier est chiffré pour une clé classique — une clé OpenPGP dont la clé de chiffrement n’est pas ML-KEM, ou un certificat S/MIME dont la clé n’est pas ML-KEM — est invitée après la connexion à en enregistrer une post-quantique (pqc-mail-encryption) : ce qui est chiffré aujourd’hui pour une clé classique sera lisible quand cette clé tombera. Un profil nommé où ceci est désactivé exclut de cette activité quiconque il sélectionne."
+  },
+  "postLogin.FIELDS.mailSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "jours"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.label": {
+    "en": "13594ff89ca962fe",
+    "text": "Chiffrement du courrier : Ignorer le reporte de"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "Combien de temps Ignorer reporte l’activité de chiffrement du courrier pour cette personne."
+  },
+  "postLogin.FIELDS.mailGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "jours"
+  },
+  "postLogin.FIELDS.mailGraceDays.label": {
+    "en": "0ac068befb17c89a",
+    "text": "Chiffrement du courrier : délai accordé"
+  },
+  "postLogin.FIELDS.mailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "Compté à partir de la PREMIÈRE invitation de la personne à l’activité de chiffrement du courrier. Une fois écoulé, Ignorer disparaît et la connexion est retenue jusqu’à l’enregistrement d’une clé post-quantique. 0 signifie aucune échéance."
+  },
+  "postLogin.FIELDS.mailNoKey.label": {
+    "en": "59ea773955163006",
+    "text": "Chiffrement du courrier : une personne dont le courrier n’est pas chiffré"
+  },
+  "postLogin.FIELDS.mailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "Une personne dont le courrier n’est pas chiffré du tout (stsMailEncryption none ou absent). leave : rien n’est demandé. invite : invitée à enregistrer une clé post-quantique, et peut toujours l’ignorer. require : invitée, et ne peut l’ignorer que jusqu’à la fin du délai accordé."
+  },
+  "postLogin.FIELDS.mailPrefer.label": {
+    "en": "ec4a832609a5828b",
+    "text": "Chiffrement du courrier : ce qui est proposé"
+  },
+  "postLogin.FIELDS.mailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "Ce que propose l’étape. either : une clé OpenPGP et un certificat S/MIME, le type que la personne utilise aujourd’hui en premier. openpgp : une clé OpenPGP RFC 9980 seulement. smime : un certificat S/MIME ML-KEM seulement, téléversé (ce domaine n’en émet pas). Un type que le domaine ne peut pas accepter n’est jamais proposé, et personne n’est sollicité là où aucun ne le peut."
+  },
+  "postLogin.FIELDS.mailKeepClassical.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "jours"
+  },
+  "postLogin.FIELDS.mailKeepClassical.label": {
+    "en": "771fd3ea4d36a053",
+    "text": "Chiffrement du courrier : conserver la clé OpenPGP classique pendant"
+  },
+  "postLogin.FIELDS.mailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "Combien de jours la clé OpenPGP classique d’une personne reste sur son entrée et dans le Web Key Directory à côté de la clé post-quantique qui l’a remplacée, pour qu’un correspondant qui ne peut pas utiliser la nouvelle trouve encore l’ancienne. Le nouveau courrier de ce service va à la clé post-quantique dès maintenant. Ensuite, une tâche du planificateur retire la clé classique de l’entrée et du Web Key Directory. 0 la retire aussitôt."
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "b1a01fe693170513",
     "text": "La classe de ce service pour un profil d’activité après connexion : ce qu’il est demandé à une personne de faire après s’être connectée. Nommée par le PROFIL (`cn=default`, ou un profil nommé que nomme une application ou un groupe)."
@@ -1946,6 +2006,30 @@
   "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyFallback.what": {
     "en": "4fa78beae92d0ce5",
     "text": "none : ML-DSA uniquement. classical : après l’échec d’un enregistrement ML-DSA sur l’appareil, une nouvelle tentative avec les algorithmes classiques est proposée (là où la politique de clé d’accès en permet une) — une clé d’accès classique vaut mieux qu’un mot de passe, et son détenteur est invité plus tard à la migration comme n’importe qui d’autre."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, toute personne que ce profil atteint et dont le courrier est chiffré pour une clé classique — une clé OpenPGP dont la clé de chiffrement n’est pas ML-KEM, ou un certificat S/MIME dont la clé n’est pas ML-KEM — est invitée après la connexion à en enregistrer une post-quantique (pqc-mail-encryption) : ce qui est chiffré aujourd’hui pour une clé classique sera lisible quand cette clé tombera. Un profil nommé où ceci est désactivé exclut de cette activité quiconque il sélectionne."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "Combien de temps Ignorer reporte l’activité de chiffrement du courrier pour cette personne."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "Compté à partir de la PREMIÈRE invitation de la personne à l’activité de chiffrement du courrier. Une fois écoulé, Ignorer disparaît et la connexion est retenue jusqu’à l’enregistrement d’une clé post-quantique. 0 signifie aucune échéance."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "Une personne dont le courrier n’est pas chiffré du tout (stsMailEncryption none ou absent). leave : rien n’est demandé. invite : invitée à enregistrer une clé post-quantique, et peut toujours l’ignorer. require : invitée, et ne peut l’ignorer que jusqu’à la fin du délai accordé."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "Ce que propose l’étape. either : une clé OpenPGP et un certificat S/MIME, le type que la personne utilise aujourd’hui en premier. openpgp : une clé OpenPGP RFC 9980 seulement. smime : un certificat S/MIME ML-KEM seulement, téléversé (ce domaine n’en émet pas). Un type que le domaine ne peut pas accepter n’est jamais proposé, et personne n’est sollicité là où aucun ne le peut."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "Combien de jours la clé OpenPGP classique d’une personne reste sur son entrée et dans le Web Key Directory à côté de la clé post-quantique qui l’a remplacée, pour qu’un correspondant qui ne peut pas utiliser la nouvelle trouve encore l’ancienne. Le nouveau courrier de ce service va à la clé post-quantique dès maintenant. Ensuite, une tâche du planificateur retire la clé classique de l’entrée et du Web Key Directory. 0 la retire aussitôt."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
     "en": "2b5b2ba409912c7d",
@@ -2018,6 +2102,42 @@
   "postLogin.sentences.noPasskeyRequire": {
     "en": "988144ad40324fa8",
     "text": "une personne qui ne détient aucune clé d’accès est invitée à enregistrer une clé d’accès post-quantique, et peut l’ignorer jusqu’à la fin du délai de grâce"
+  },
+  "postLogin.sentences.mailMigration": {
+    "en": "51b2d82c00bdd004",
+    "text": "une personne dont le courrier est chiffré pour une clé OpenPGP ou un certificat S/MIME classique est invitée, après la connexion, à en enregistrer un post-quantique (ML-KEM)"
+  },
+  "postLogin.sentences.mailOfferEither": {
+    "en": "a56bdbdfc1184177",
+    "text": "elle peut enregistrer une clé OpenPGP ou téléverser un certificat S/MIME"
+  },
+  "postLogin.sentences.mailOfferOpenpgp": {
+    "en": "1088a13e106235ab",
+    "text": "elle peut enregistrer une clé OpenPGP"
+  },
+  "postLogin.sentences.mailOfferSmime": {
+    "en": "1f353acddbfc305e",
+    "text": "elle peut téléverser un certificat S/MIME"
+  },
+  "postLogin.sentences.mailNoKeyLeave": {
+    "en": "207bfd0824bc73d6",
+    "text": "une personne dont le courrier n’est pas chiffré n’est pas sollicitée"
+  },
+  "postLogin.sentences.mailNoKeyInvite": {
+    "en": "5b5bb65ef0e67a72",
+    "text": "une personne dont le courrier n’est pas chiffré est invitée à enregistrer une clé post-quantique, et peut toujours l’ignorer"
+  },
+  "postLogin.sentences.mailNoKeyRequire": {
+    "en": "cb269a837a256b60",
+    "text": "une personne dont le courrier n’est pas chiffré est invitée à enregistrer une clé post-quantique, et peut l’ignorer jusqu’à la fin du délai de grâce"
+  },
+  "postLogin.sentences.mailKeep": {
+    "en": "f73b9c2b0b0c4082",
+    "text": "une clé OpenPGP classique qu’une clé post-quantique remplace est conservée à côté d’elle, et publiée avec elle, pendant {{days}} jour(s)"
+  },
+  "postLogin.sentences.mailKeepNone": {
+    "en": "f7cb6f0da08b7411",
+    "text": "une clé OpenPGP classique qu’une clé post-quantique remplace est retirée aussitôt"
   },
   "postLogin.sentences.appliesTo": {
     "en": "f195acc04e68d15e",

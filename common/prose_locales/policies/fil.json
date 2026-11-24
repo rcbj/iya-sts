@@ -1911,6 +1911,66 @@
     "en": "4fa78beae92d0ce5",
     "text": "none: ML-DSA lang. classical: kapag pumalya ang pag-register ng ML-DSA sa device, iniaalok ang pag-ulit gamit ang mga classical na algorithm (kung saan pinapayagan ito ng passkey policy) — mas mabuti ang classical na passkey kaysa password, at hihingan ang may hawak nito ng migration sa ibang pagkakataon gaya ng iba."
   },
+  "postLogin.FIELDS.mailEnabled.label": {
+    "en": "40a2cfe48791e921",
+    "text": "Humingi ng post-quantum na pag-encrypt ng mail"
+  },
+  "postLogin.FIELDS.mailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, bawat taong naaabot ng profile na ito na ang mail ay naka-encrypt sa isang klasikong key — isang OpenPGP key na ang encryption key ay hindi ML-KEM, o isang S/MIME certificate na ang key ay hindi ML-KEM — ay hihilingang magrehistro ng post-quantum na key pagkatapos mag-sign in (pqc-mail-encryption): ang naka-encrypt ngayon sa isang klasikong key ay mababasa kapag bumagsak ang key na iyon. Ang isang pinangalanang profile na naka-off ito ay hindi isinasama sa aktibidad na ito ang sinumang pinili nito."
+  },
+  "postLogin.FIELDS.mailSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "araw"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.label": {
+    "en": "13594ff89ca962fe",
+    "text": "Pag-encrypt ng mail: ipinagpapaliban ito ng Laktawan nang"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "Gaano katagal ipinagpapaliban ng Laktawan ang aktibidad ng pag-encrypt ng mail para sa taong iyon."
+  },
+  "postLogin.FIELDS.mailGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "araw"
+  },
+  "postLogin.FIELDS.mailGraceDays.label": {
+    "en": "0ac068befb17c89a",
+    "text": "Pag-encrypt ng mail: itinakdang panahon"
+  },
+  "postLogin.FIELDS.mailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "Binibilang mula sa UNANG imbitasyon ng tao sa aktibidad ng pag-encrypt ng mail. Kapag lumipas na, wala nang Laktawan at pipigilan ang pag-sign in hanggang may nairehistrong post-quantum na key. Ang 0 ay walang deadline."
+  },
+  "postLogin.FIELDS.mailNoKey.label": {
+    "en": "59ea773955163006",
+    "text": "Pag-encrypt ng mail: isang taong hindi naka-encrypt ang mail"
+  },
+  "postLogin.FIELDS.mailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "Isang taong hindi naka-encrypt ang mail kahit kailan (stsMailEncryption none o wala). leave: hindi tatanungin. invite: hihilingang magrehistro ng post-quantum na key, at laging puwedeng laktawan. require: tatanungin, at puwede lang laktawan hanggang lumipas ang itinakdang panahon."
+  },
+  "postLogin.FIELDS.mailPrefer.label": {
+    "en": "ec4a832609a5828b",
+    "text": "Pag-encrypt ng mail: ano ang iniaalok"
+  },
+  "postLogin.FIELDS.mailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "Ano ang iniaalok ng hakbang. either: isang OpenPGP key at isang S/MIME certificate, nauuna ang uring ginagamit ng tao ngayon. openpgp: isang OpenPGP key ayon sa RFC 9980 lamang. smime: isang ML-KEM S/MIME certificate lamang, ina-upload (walang inilalabas ang realm na ito). Hindi kailanman iniaalok ang uring hindi matatanggap ng realm, at walang tatanungin kung wala sa dalawa ang puwede."
+  },
+  "postLogin.FIELDS.mailKeepClassical.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "araw"
+  },
+  "postLogin.FIELDS.mailKeepClassical.label": {
+    "en": "771fd3ea4d36a053",
+    "text": "Pag-encrypt ng mail: panatilihin ang klasikong OpenPGP key nang"
+  },
+  "postLogin.FIELDS.mailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "Ilang araw nananatili ang klasikong OpenPGP key ng tao sa kanyang entry at sa Web Key Directory katabi ng post-quantum na key na pumalit dito, para mahanap pa rin ng kausap na hindi magamit ang bago ang luma. Ang bagong mail mula sa serbisyong ito ay pupunta agad sa post-quantum na key. Pagkatapos, aalisin ng isang scheduler job ang klasikong key sa entry at sa Web Key Directory. Inaalis ito agad ng 0."
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "b1a01fe693170513",
     "text": "Ang class ng serbisyong ito para sa post-login activity profile: kung ano ang hinihinging gawin ng tao pagkatapos mag-sign in. Pinangangalanan ayon sa PROFILE (`cn=default`, o isang named profile na pinapangalanan ng isang application o isang group)."
@@ -1946,6 +2006,30 @@
   "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyFallback.what": {
     "en": "4fa78beae92d0ce5",
     "text": "none: ML-DSA lang. classical: kapag pumalya ang pag-register ng ML-DSA sa device, iniaalok ang pag-ulit gamit ang mga classical na algorithm (kung saan pinapayagan ito ng passkey policy) — mas mabuti ang classical na passkey kaysa password, at hihingan ang may hawak nito ng migration sa ibang pagkakataon gaya ng iba."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, bawat taong naaabot ng profile na ito na ang mail ay naka-encrypt sa isang klasikong key — isang OpenPGP key na ang encryption key ay hindi ML-KEM, o isang S/MIME certificate na ang key ay hindi ML-KEM — ay hihilingang magrehistro ng post-quantum na key pagkatapos mag-sign in (pqc-mail-encryption): ang naka-encrypt ngayon sa isang klasikong key ay mababasa kapag bumagsak ang key na iyon. Ang isang pinangalanang profile na naka-off ito ay hindi isinasama sa aktibidad na ito ang sinumang pinili nito."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "Gaano katagal ipinagpapaliban ng Laktawan ang aktibidad ng pag-encrypt ng mail para sa taong iyon."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "Binibilang mula sa UNANG imbitasyon ng tao sa aktibidad ng pag-encrypt ng mail. Kapag lumipas na, wala nang Laktawan at pipigilan ang pag-sign in hanggang may nairehistrong post-quantum na key. Ang 0 ay walang deadline."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "Isang taong hindi naka-encrypt ang mail kahit kailan (stsMailEncryption none o wala). leave: hindi tatanungin. invite: hihilingang magrehistro ng post-quantum na key, at laging puwedeng laktawan. require: tatanungin, at puwede lang laktawan hanggang lumipas ang itinakdang panahon."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "Ano ang iniaalok ng hakbang. either: isang OpenPGP key at isang S/MIME certificate, nauuna ang uring ginagamit ng tao ngayon. openpgp: isang OpenPGP key ayon sa RFC 9980 lamang. smime: isang ML-KEM S/MIME certificate lamang, ina-upload (walang inilalabas ang realm na ito). Hindi kailanman iniaalok ang uring hindi matatanggap ng realm, at walang tatanungin kung wala sa dalawa ang puwede."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "Ilang araw nananatili ang klasikong OpenPGP key ng tao sa kanyang entry at sa Web Key Directory katabi ng post-quantum na key na pumalit dito, para mahanap pa rin ng kausap na hindi magamit ang bago ang luma. Ang bagong mail mula sa serbisyong ito ay pupunta agad sa post-quantum na key. Pagkatapos, aalisin ng isang scheduler job ang klasikong key sa entry at sa Web Key Directory. Inaalis ito agad ng 0."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
     "en": "2b5b2ba409912c7d",
@@ -2018,6 +2102,42 @@
   "postLogin.sentences.noPasskeyRequire": {
     "en": "988144ad40324fa8",
     "text": "ang taong walang hawak na passkey ay hinihiling na mag-register ng post-quantum na passkey, at puwede itong i-skip hanggang matapos ang grace period"
+  },
+  "postLogin.sentences.mailMigration": {
+    "en": "51b2d82c00bdd004",
+    "text": "ang isang taong ang mail ay naka-encrypt sa isang klasikong OpenPGP key o S/MIME certificate ay hihilingang magrehistro ng post-quantum (ML-KEM) na key o certificate pagkatapos mag-sign in"
+  },
+  "postLogin.sentences.mailOfferEither": {
+    "en": "a56bdbdfc1184177",
+    "text": "puwede silang magrehistro ng OpenPGP key o mag-upload ng S/MIME certificate"
+  },
+  "postLogin.sentences.mailOfferOpenpgp": {
+    "en": "1088a13e106235ab",
+    "text": "puwede silang magrehistro ng OpenPGP key"
+  },
+  "postLogin.sentences.mailOfferSmime": {
+    "en": "1f353acddbfc305e",
+    "text": "puwede silang mag-upload ng S/MIME certificate"
+  },
+  "postLogin.sentences.mailNoKeyLeave": {
+    "en": "207bfd0824bc73d6",
+    "text": "hindi tinatanong ang taong hindi naka-encrypt ang mail"
+  },
+  "postLogin.sentences.mailNoKeyInvite": {
+    "en": "5b5bb65ef0e67a72",
+    "text": "iniimbitahan ang taong hindi naka-encrypt ang mail na magrehistro ng post-quantum na key, at laging puwedeng laktawan"
+  },
+  "postLogin.sentences.mailNoKeyRequire": {
+    "en": "cb269a837a256b60",
+    "text": "hinihiling sa taong hindi naka-encrypt ang mail na magrehistro ng post-quantum na key, at puwedeng laktawan hanggang matapos ang palugit"
+  },
+  "postLogin.sentences.mailKeep": {
+    "en": "f73b9c2b0b0c4082",
+    "text": "ang klasikong OpenPGP key na pinalitan ng post-quantum ay pinananatiling katabi nito, at inilalathala kasama nito, sa loob ng {{days}} araw"
+  },
+  "postLogin.sentences.mailKeepNone": {
+    "en": "f7cb6f0da08b7411",
+    "text": "ang klasikong OpenPGP key na pinalitan ng post-quantum ay inaalis agad"
   },
   "postLogin.sentences.appliesTo": {
     "en": "f195acc04e68d15e",

@@ -245,6 +245,10 @@ model Person {
   stsOpenPgpFingerprint?: string;
   @attr(#{kind: "single", what: "What the portal and console draw about stsOpenPgpKey, one JSON value: its version, algorithms, the user ids that matched, when it was registered and by whom, and whether the person publishes it in the Web Key Directory (#1955). Written with the key and by the publication choice."})
   stsOpenPgpKeyInfo?: DirectoryJson;
+  @attr(#{kind: "single", what: "The person's CLASSICAL OpenPGP public key, armored, kept beside the post-quantum key that replaced it at the post-login mail-encryption activity (#2009 P2, rcbj's D3): published in the Web Key Directory with the new key until stsOpenPgpClassicalKeyInfo's keptUntil, then removed by the job post-login.mail-classical-retire. Mail from this service is never encrypted to it. Public. Written by common/openpgp_keys.ts only."})
+  stsOpenPgpClassicalKey?: string;
+  @attr(#{kind: "single", what: "What is drawn about stsOpenPgpClassicalKey, one JSON value: its fingerprint, algorithms, when it was replaced and keptUntil, the instant it is removed (#2009 P2). Written and removed with the key."})
+  stsOpenPgpClassicalKeyInfo?: DirectoryJson;
   @attr(#{kind: "single", what: "How mail to the person is encrypted: none, openpgp (PGP/MIME to stsOpenPgpKey) or smime (S/MIME to userSMIMECertificate), chosen on /portal/openpgp (#1955). Absent is none."})
   stsMailEncryption?: string;
   @attr(#{kind: "single"})

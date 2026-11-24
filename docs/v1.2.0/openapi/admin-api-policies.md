@@ -940,6 +940,18 @@ Scope: `admin:read`.
 | `postLogin.profile.graceDays` | list, or string, or number, or boolean, or null |  |  |
 | `postLogin.profile.graceDays[]` | string, or number, or boolean, or null |  |  |
 | `postLogin.profile.inherited` | boolean |  |  |
+| `postLogin.profile.mailEnabled` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailEnabled[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailGraceDays` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailGraceDays[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailKeepClassical` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailKeepClassical[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailNoKey` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailNoKey[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailPrefer` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailPrefer[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailSnoozeDays` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.mailSnoozeDays[]` | string, or number, or boolean, or null |  |  |
 | `postLogin.profile.method` | list, or string, or number, or boolean, or null |  |  |
 | `postLogin.profile.method[]` | string, or number, or boolean, or null |  |  |
 | `postLogin.profile.name` | string |  |  |
@@ -2214,6 +2226,18 @@ Scope: `admin:write`.
 | `profile.graceDays` | list, or string, or number, or boolean, or null |  |  |
 | `profile.graceDays[]` | string, or number, or boolean, or null |  |  |
 | `profile.inherited` | boolean |  |  |
+| `profile.mailEnabled` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailEnabled[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailGraceDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailGraceDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailKeepClassical` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailKeepClassical[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailNoKey` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailNoKey[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailPrefer` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailPrefer[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailSnoozeDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailSnoozeDays[]` | string, or number, or boolean, or null |  |  |
 | `profile.method` | list, or string, or number, or boolean, or null |  |  |
 | `profile.method[]` | string, or number, or boolean, or null |  |  |
 | `profile.name` | string |  |  |
@@ -2257,6 +2281,18 @@ Scope: `admin:write`.
 | `profile.graceDays` | list, or string, or number, or boolean, or null |  |  |
 | `profile.graceDays[]` | string, or number, or boolean, or null |  |  |
 | `profile.inherited` | boolean |  |  |
+| `profile.mailEnabled` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailEnabled[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailGraceDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailGraceDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailKeepClassical` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailKeepClassical[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailNoKey` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailNoKey[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailPrefer` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailPrefer[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailSnoozeDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailSnoozeDays[]` | string, or number, or boolean, or null |  |  |
 | `profile.method` | list, or string, or number, or boolean, or null |  |  |
 | `profile.method[]` | string, or number, or boolean, or null |  |  |
 | `profile.name` | string |  |  |
@@ -3262,7 +3298,9 @@ Scope: `admin:write`.
 
 Writes `cn=<profile>,ou=postLoginPolicies` in this realm's directory, REPLACING what is there; a realm with no `default` of its own follows the default realm's, and named profiles are the realm's own. **Off by default** (`enabled`). On, a person the profile reaches who is due the `activity` is asked after signing in, before being sent back to the application: `pqc-passkey-migration` asks a person holding a classical passkey and no post-quantum one to register an ML-DSA passkey, and — per `noPasskey` — a person holding none to register one. A passkey has no role (#1135): `noPasskeyRole` is accepted and ignored. Skip puts it off `snoozeDays`; once `graceDays` (0 = never) have passed since the person's first invitation Skip is refused (STS-AUTHN-0474) and the sign-in is held until it is done, and a door that cannot ask for it refuses the sign-in (STS-AUTHN-0473). A named profile carries a `precedence` and nothing else: a group names it in `stsPostLoginPolicy` (`POST /admin-api/groups/set-policy`) and an application in `appPostLoginPolicy` (`POST /admin-api/applications/set`). Of the profile the application signed in to names and those the person's groups name the lowest `precedence` wins, so a named profile with `enabled` off excludes them; a started activity's mail and the progress report know no application and select by the groups alone. A profile something names is not deleted (STS-AUTHN-0543). `method` (#1100) is how a classical passkey is migrated: `upgrade` (proved once, then replaced in place on its authenticator), `alongside` (an ML-DSA passkey beside it) or `automatic` (the lanes decide). `attestation` (#1102): `post-quantum` counts an ML-DSA passkey as migrated only where its recorded attestation is post-quantum too. `noPasskeyFallback` (#1103): `classical` offers a person with no passkey a classical retry where their device cannot make ML-DSA.
 
-**Every field is required** and one left out is refused by name rather than reset to a default, because a save that quietly loosened a rule nobody mentioned is the mistake nobody sees.
+**The mail-encryption activity (#2009) is a block of its own**, off by default with its own switch, so a profile saved before reads it as off: `mailEnabled` asks a person whose mail is encrypted to a classical OpenPGP key or S/MIME certificate to register a post-quantum (ML-KEM) one after signing in; `mailNoKey` what a person whose mail is not encrypted is asked; `mailPrefer` what the step offers (an OpenPGP key, an uploaded S/MIME certificate, or either); `mailKeepClassical` how many days a replaced classical OpenPGP key stays on the entry and in the Web Key Directory beside the new one; and its own `mailSnoozeDays` and `mailGraceDays`.
+
+**Every field is required**, except the mail-encryption block, which a save may leave out to keep what the profile stored, and one left out is refused by name rather than reset to a default, because a save that quietly loosened a rule nobody mentioned is the mistake nobody sees.
 
 **Mirrors** `POST /admin/policies` on the admin console.
 
@@ -3284,6 +3322,12 @@ Scope: `admin:write`.
 | `description` | string |  | What the profile is for, for the next person. Optional. |
 | `enabled` | boolean, or string | yes | OFF BY DEFAULT. On, every person this profile reaches who is due the activity below is asked to do it after signing in, before they are sent back to the application. A named profile with this off EXCLUDES whoever it is selected for: the members of the groups naming it, and a sign-in to an application naming it. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false. |
 | `graceDays` | integer, or string | yes | Counted from the person's FIRST invitation. When it has passed, Skip is gone and the sign-in is held — no session is started — until the activity is done. 0 is no deadline: it can always be skipped. Between 0 and 3650. Default 0. |
+| `mailEnabled` | boolean, or string |  | OFF BY DEFAULT. The mail-encryption activity (#2009): a person whose mail is encrypted to a classical key is asked to register a post-quantum one. Left out, the profile's stored value stays. |
+| `mailGraceDays` | integer, or string |  | The mail-encryption activity's allotted time from the first invitation; 0 is no deadline. Between 0 and 3650. Left out, the stored value stays. |
+| `mailKeepClassical` | integer, or string |  | Days a replaced classical OpenPGP key is kept beside the post-quantum one; 0 removes it at once. Between 0 and 3650. Left out, the stored value stays. |
+| `mailNoKey` | one of `leave`, `invite`, `require` |  | A person whose mail is not encrypted: leave, invite or require. Left out, the stored value stays. |
+| `mailPrefer` | one of `either`, `openpgp`, `smime` |  | What the step offers: either, openpgp or smime (uploaded). Left out, the stored value stays. |
+| `mailSnoozeDays` | integer, or string |  | How long Skip puts the mail-encryption activity off. Between 1 and 90. Left out, the stored value stays. |
 | `method` | one of `automatic`, `upgrade`, `alongside` | yes | upgrade: the person uses their classical passkey once, then an ML-DSA passkey replaces it in place on the same authenticator — one passkey, nothing left behind. alongside: an ML-DSA passkey is added beside it, in the post-quantum lane where the realm offers two lanes, or on another authenticator where it offers one. automatic: alongside where the person's passkey policy offers two lanes, upgrade where it offers one. Default `automatic`. |
 | `noPasskey` | one of `leave`, `invite`, `require` | yes | leave: not asked. invite: asked to register a post-quantum passkey, and may always skip it. require: asked, and may skip it only until the allotted time has passed. Default `leave`. |
 | `noPasskeyFallback` | one of `none`, `classical` | yes | none: ML-DSA only. classical: after an ML-DSA registration fails on the device, a retry with the classical algorithms is offered (where the passkey policy allows one) — a classical passkey is better than a password, and its holder is asked for the migration later like anyone else's. Default `none`. |
@@ -3316,6 +3360,18 @@ Scope: `admin:write`.
 | `profile.graceDays` | list, or string, or number, or boolean, or null |  |  |
 | `profile.graceDays[]` | string, or number, or boolean, or null |  |  |
 | `profile.inherited` | boolean |  |  |
+| `profile.mailEnabled` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailEnabled[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailGraceDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailGraceDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailKeepClassical` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailKeepClassical[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailNoKey` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailNoKey[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailPrefer` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailPrefer[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailSnoozeDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailSnoozeDays[]` | string, or number, or boolean, or null |  |  |
 | `profile.method` | list, or string, or number, or boolean, or null |  |  |
 | `profile.method[]` | string, or number, or boolean, or null |  |  |
 | `profile.name` | string |  |  |
@@ -3359,6 +3415,18 @@ Scope: `admin:write`.
 | `profile.graceDays` | list, or string, or number, or boolean, or null |  |  |
 | `profile.graceDays[]` | string, or number, or boolean, or null |  |  |
 | `profile.inherited` | boolean |  |  |
+| `profile.mailEnabled` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailEnabled[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailGraceDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailGraceDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailKeepClassical` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailKeepClassical[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailNoKey` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailNoKey[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailPrefer` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailPrefer[]` | string, or number, or boolean, or null |  |  |
+| `profile.mailSnoozeDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.mailSnoozeDays[]` | string, or number, or boolean, or null |  |  |
 | `profile.method` | list, or string, or number, or boolean, or null |  |  |
 | `profile.method[]` | string, or number, or boolean, or null |  |  |
 | `profile.name` | string |  |  |

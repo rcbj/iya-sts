@@ -302,8 +302,10 @@ function run(t) {
   }).join(','), Kinds.ids().join(','),
   'I. without a test\'s list the table\'s activities are asked');
   t.equal(require('../common/post_login_activities').ACTIVITIES.join(','),
-    Kinds.ids().join(','),
-    'and an administrator may start the same ones');
+    Kinds.startableIds().join(','),
+    'and an administrator may start the ones the table marks startable');
+  t.equal(Kinds.startableIds().join(','), PQC,
+    'which is the passkey migration alone until #2009 P4');
 
   // J. A module that does not load, then does.
   const errors = [];

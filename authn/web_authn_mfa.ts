@@ -547,6 +547,10 @@ class WebAuthnMfa {
   static postLogin(v: Json, ctx: Json): string {
     const t = ctx.t;
     const p = v.postLogin || {};
+    // THE MAIL-ENCRYPTION ACTIVITY (#2009 P2) has a page of its own.
+    if (p.activity === 'pqc-mail-encryption') {
+      return WebAuthnMfa.postLoginMail(v, ctx);
+    }
     const name = String(v.username);
     const button = function (action: string, label: string,
                              secondary: boolean): string {
@@ -591,6 +595,97 @@ class WebAuthnMfa {
       (p.canSkip
         ? button('skip', t.html('authn.postLogin.skipButton',
                                 { days: Number(p.snoozeDays) || 1 }), true)
+        : '') +
+      WebAuthnMfa.startOver(t) + '<div class="meta">' +
+      t.html('authn.mfaSetup.meta') + '</div>';
+  }
+
+  /**
+   * `/authn/post-login` for the mail-encryption activity (#2009 P2): why
+   * the person is asked, then each kind of key the step offers — an RFC
+   * 9980 OpenPGP key (a challenge to sign, then the key and the signed
+   * text) and an uploaded ML-KEM S/MIME certificate — and Skip where it is
+   * allowed. What is said about the card is design U2's: an OpenPGP card
+   * cannot hold such a key, so nothing is called hardware-bound.
+   *
+   * @param v - the view
+   * @param ctx - the context
+   * @returns the body
+   */
+  static postLoginMail(v: Json, ctx: Json): string {
+    const t = ctx.t;
+    const p = v.postLogin || {};
+    const m = p.mail || {};
+    const esc = WebAuthnLogin.esc;
+    const name = String(v.username);
+    const offers: string[] = [].concat(m.offers || []).map(String);
+    const current = m.current || {};
+    const why = p.reason === 'none' ? 'authn.postLogin.mailSubNone'
+      : (p.reason === 'smime-classical' ? 'authn.postLogin.mailSubSmime'
+                                        : 'authn.postLogin.mailSubOpenpgp');
+    const until = String(p.deadline || '').slice(0, 10);
+    const openpgp = offers.indexOf('openpgp') < 0 ? ''
+      : '<h2>' + t.html('authn.postLogin.mailOpenpgpHeading') + '</h2>' +
+        '<p>' + t.html('authn.postLogin.mailOpenpgpHow') + '</p>' +
+        '<p>' + t.html('authn.postLogin.mailOpenpgpCard') + '</p>' +
+        (current.kind === 'openpgp' && Number(m.keepClassicalDays) > 0
+          ? '<p>' + t.html('authn.postLogin.mailKeep',
+                           { days: Number(m.keepClassicalDays) }) + '</p>'
+          : '') +
+        (m.challenge
+          ? '<p>' + t.html('authn.postLogin.mailChallenge',
+                           { date: String(m.challenge.expiresAt || '')
+                             .slice(0, 16).replace('T', ' ') }) + '</p>' +
+            '<pre id="post-login-challenge">' + esc(m.challenge.text) +
+            '</pre>' +
+            '<form method="post" action="/authn/post-login">' +
+            '<div class="row"><label for="post-login-public-key">' +
+            t.html('authn.postLogin.mailPublicKey') + '</label>' +
+            '<textarea id="post-login-public-key" name="publicKey" ' +
+            'rows="8" cols="64"></textarea></div>' +
+            '<div class="row"><label for="post-login-signed">' +
+            t.html('authn.postLogin.mailSigned') + '</label>' +
+            '<textarea id="post-login-signed" name="signed" rows="8" ' +
+            'cols="64"></textarea></div>' +
+            '<div class="row"><button type="submit" ' +
+            'id="post-login-openpgp-register" name="action" ' +
+            'value="openpgp-register">' +
+            t.html('authn.postLogin.mailRegisterButton') +
+            '</button></div></form>'
+          : '<form method="post" action="/authn/post-login">' +
+            '<div class="row"><button type="submit" ' +
+            'id="post-login-openpgp-challenge" name="action" ' +
+            'value="openpgp-challenge">' +
+            t.html('authn.postLogin.mailChallengeButton') +
+            '</button></div></form>');
+    const smime = offers.indexOf('smime') < 0 ? ''
+      : '<h2>' + t.html('authn.postLogin.mailSmimeHeading') + '</h2>' +
+        '<p>' + t.html('authn.postLogin.mailSmimeHow') + '</p>' +
+        '<form method="post" action="/authn/post-login">' +
+        '<div class="row"><label for="post-login-certificate">' +
+        t.html('authn.postLogin.mailCertificate') + '</label>' +
+        '<textarea id="post-login-certificate" name="certificate" ' +
+        'rows="8" cols="64"></textarea></div>' +
+        '<div class="row"><button type="submit" ' +
+        'id="post-login-smime-register" name="action" ' +
+        'value="smime-register">' +
+        t.html('authn.postLogin.mailSmimeButton') + '</button></div></form>';
+    return '<h1>' + t.html('authn.postLogin.mailHeading') + '</h1>' +
+      '<p class="sub">' + t.html(why, { name: name,
+        algorithm: String(current.algorithm || '') }) + '</p>' +
+      WebAuthnMfa.error(ctx) +
+      (p.required ? '<p><strong>' + t.html('authn.postLogin.required') +
+                    '</strong></p>'
+        : (until ? '<p>' + t.html('authn.postLogin.until',
+                                  { date: until }) + '</p>' : '')) +
+      openpgp + smime +
+      (p.canSkip
+        ? '<form method="post" action="/authn/post-login"><div class="row">' +
+          '<button type="submit" id="post-login-skip" class="secondary" ' +
+          'name="action" value="skip">' +
+          t.html('authn.postLogin.skipButton',
+                 { days: Number(p.snoozeDays) || 1 }) +
+          '</button></div></form>'
         : '') +
       WebAuthnMfa.startOver(t) + '<div class="meta">' +
       t.html('authn.mfaSetup.meta') + '</div>';

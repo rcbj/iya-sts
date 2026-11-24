@@ -1911,6 +1911,66 @@
     "en": "4fa78beae92d0ce5",
     "text": "none：僅限 ML-DSA。classical：ML-DSA 註冊在裝置上失敗後，提供以傳統演算法重試（在密碼金鑰原則允許時）——傳統密碼金鑰總比密碼好，其持有人之後會和其他人一樣被要求移轉。"
   },
+  "postLogin.FIELDS.mailEnabled.label": {
+    "en": "40a2cfe48791e921",
+    "text": "要求郵件加密使用後量子金鑰"
+  },
+  "postLogin.FIELDS.mailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "預設關閉。開啟後，此設定檔所涵蓋、且其郵件以傳統金鑰加密的每個人——加密金鑰不是 ML-KEM 的 OpenPGP 金鑰，或金鑰不是 ML-KEM 的 S/MIME 憑證——在登入後都會被要求註冊一個後量子金鑰（pqc-mail-encryption）：如今以傳統金鑰加密的內容，在該金鑰被破解後即可被讀取。關閉此項的具名設定檔會把它所選中的人排除在此活動之外。"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "天"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.label": {
+    "en": "13594ff89ca962fe",
+    "text": "郵件加密：略過後延後"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "略過會為此人把郵件加密活動延後多久。"
+  },
+  "postLogin.FIELDS.mailGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "天"
+  },
+  "postLogin.FIELDS.mailGraceDays.label": {
+    "en": "0ac068befb17c89a",
+    "text": "郵件加密：允許的時間"
+  },
+  "postLogin.FIELDS.mailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "從此人第一次被邀請參加郵件加密活動時起計算。期滿後不能再略過，登入會被暫停，直到註冊了後量子金鑰。0 表示沒有期限。"
+  },
+  "postLogin.FIELDS.mailNoKey.label": {
+    "en": "59ea773955163006",
+    "text": "郵件加密：郵件未加密的人"
+  },
+  "postLogin.FIELDS.mailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "郵件完全未加密的人（stsMailEncryption 為 none 或未設定）。leave：不詢問。invite：請其註冊後量子金鑰，且永遠可以略過。require：詢問，且只能在允許的時間內略過。"
+  },
+  "postLogin.FIELDS.mailPrefer.label": {
+    "en": "ec4a832609a5828b",
+    "text": "郵件加密：提供什麼"
+  },
+  "postLogin.FIELDS.mailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "此步驟提供什麼。either：OpenPGP 金鑰與 S/MIME 憑證，先提供此人現在使用的那種。openpgp：僅提供 RFC 9980 OpenPGP 金鑰。smime：僅提供上傳的 ML-KEM S/MIME 憑證（本領域不簽發）。本領域無法接受的種類絕不提供；兩種都不能時不詢問任何人。"
+  },
+  "postLogin.FIELDS.mailKeepClassical.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "天"
+  },
+  "postLogin.FIELDS.mailKeepClassical.label": {
+    "en": "771fd3ea4d36a053",
+    "text": "郵件加密：保留傳統 OpenPGP 金鑰"
+  },
+  "postLogin.FIELDS.mailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "一個人的傳統 OpenPGP 金鑰在其項目與 Web Key Directory 中、在取代它的後量子金鑰旁保留多少天，讓無法使用新金鑰的通信對象仍能找到舊金鑰。本服務的新郵件會立即使用後量子金鑰。之後由排程工作把傳統金鑰從項目與 Web Key Directory 中移除。0 表示立即移除。"
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "b1a01fe693170513",
     "text": "本服務用於登入後活動設定檔的類別：某人登入後被要求做的事。以「設定檔」命名（`cn=default`，或由應用程式或群組指定的具名設定檔）。"
@@ -1946,6 +2006,30 @@
   "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyFallback.what": {
     "en": "4fa78beae92d0ce5",
     "text": "none：僅限 ML-DSA。classical：ML-DSA 註冊在裝置上失敗後，提供以傳統演算法重試（在密碼金鑰原則允許時）——傳統密碼金鑰總比密碼好，其持有人之後會和其他人一樣被要求移轉。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "預設關閉。開啟後，此設定檔所涵蓋、且其郵件以傳統金鑰加密的每個人——加密金鑰不是 ML-KEM 的 OpenPGP 金鑰，或金鑰不是 ML-KEM 的 S/MIME 憑證——在登入後都會被要求註冊一個後量子金鑰（pqc-mail-encryption）：如今以傳統金鑰加密的內容，在該金鑰被破解後即可被讀取。關閉此項的具名設定檔會把它所選中的人排除在此活動之外。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "略過會為此人把郵件加密活動延後多久。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "從此人第一次被邀請參加郵件加密活動時起計算。期滿後不能再略過，登入會被暫停，直到註冊了後量子金鑰。0 表示沒有期限。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "郵件完全未加密的人（stsMailEncryption 為 none 或未設定）。leave：不詢問。invite：請其註冊後量子金鑰，且永遠可以略過。require：詢問，且只能在允許的時間內略過。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "此步驟提供什麼。either：OpenPGP 金鑰與 S/MIME 憑證，先提供此人現在使用的那種。openpgp：僅提供 RFC 9980 OpenPGP 金鑰。smime：僅提供上傳的 ML-KEM S/MIME 憑證（本領域不簽發）。本領域無法接受的種類絕不提供；兩種都不能時不詢問任何人。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "一個人的傳統 OpenPGP 金鑰在其項目與 Web Key Directory 中、在取代它的後量子金鑰旁保留多少天，讓無法使用新金鑰的通信對象仍能找到舊金鑰。本服務的新郵件會立即使用後量子金鑰。之後由排程工作把傳統金鑰從項目與 Web Key Directory 中移除。0 表示立即移除。"
   },
   "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
     "en": "2b5b2ba409912c7d",
@@ -2018,6 +2102,42 @@
   "postLogin.sentences.noPasskeyRequire": {
     "en": "988144ad40324fa8",
     "text": "沒有密碼金鑰的人會被要求註冊一個後量子密碼金鑰，且在寬限期結束前可以略過"
+  },
+  "postLogin.sentences.mailMigration": {
+    "en": "51b2d82c00bdd004",
+    "text": "郵件以傳統 OpenPGP 金鑰或 S/MIME 憑證加密的人，在登入後會被要求註冊一個後量子（ML-KEM）的金鑰或憑證"
+  },
+  "postLogin.sentences.mailOfferEither": {
+    "en": "a56bdbdfc1184177",
+    "text": "他們可以註冊 OpenPGP 金鑰或上傳 S/MIME 憑證"
+  },
+  "postLogin.sentences.mailOfferOpenpgp": {
+    "en": "1088a13e106235ab",
+    "text": "他們可以註冊 OpenPGP 金鑰"
+  },
+  "postLogin.sentences.mailOfferSmime": {
+    "en": "1f353acddbfc305e",
+    "text": "他們可以上傳 S/MIME 憑證"
+  },
+  "postLogin.sentences.mailNoKeyLeave": {
+    "en": "207bfd0824bc73d6",
+    "text": "郵件未加密的人不會被詢問"
+  },
+  "postLogin.sentences.mailNoKeyInvite": {
+    "en": "5b5bb65ef0e67a72",
+    "text": "郵件未加密的人會被邀請註冊後量子金鑰，且永遠可以略過"
+  },
+  "postLogin.sentences.mailNoKeyRequire": {
+    "en": "cb269a837a256b60",
+    "text": "郵件未加密的人會被要求註冊後量子金鑰，且只能在寬限期結束前略過"
+  },
+  "postLogin.sentences.mailKeep": {
+    "en": "f73b9c2b0b0c4082",
+    "text": "被後量子金鑰取代的傳統 OpenPGP 金鑰會在其旁保留並一同發布 {{days}} 天"
+  },
+  "postLogin.sentences.mailKeepNone": {
+    "en": "f7cb6f0da08b7411",
+    "text": "被後量子金鑰取代的傳統 OpenPGP 金鑰會立即移除"
   },
   "postLogin.sentences.appliesTo": {
     "en": "f195acc04e68d15e",

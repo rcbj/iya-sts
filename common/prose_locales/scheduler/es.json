@@ -399,6 +399,14 @@
     "en": "5081eadb5d5abbeb",
     "text": "Envía a las personas a las que llega una actividad posterior al inicio de sesión en curso (#1111) un recordatorio para iniciar sesión, donde la actividad les pide registrar una clave de acceso poscuántica. Lee en cada ejecución un tramo de la población de cada actividad iniciada (el ámbito, o la unión de sus grupos) tras un cursor, escribe solo a quienes tienen la actividad pendiente, nunca dentro del intervalo de recordatorio ni por encima de su máximo, y escribe una fila de auditoría por actividad iniciada y ejecución."
   },
+  "sched.jobs.post-login.mail-classical-retire.title": {
+    "en": "3a94b1ec977440b8",
+    "text": "Claves OpenPGP clásicas conservadas, quitadas"
+  },
+  "sched.jobs.post-login.mail-classical-retire.describe": {
+    "en": "5ecdf1cc48430c85",
+    "text": "Quita una clave OpenPGP clásica que la actividad posterior al inicio de sesión de cifrado del correo conservó junto a la clave poscuántica que la sustituyó (#2009, D3), cuando han pasado los mailKeepClassical días del perfil: de la entrada de la persona y, con ello, del Web Key Directory. Recorre solo las filas de claves conservadas, nunca el directorio, y escribe una fila de auditoría por cada clave quitada. Una clave cuyo tiempo ha pasado ya queda fuera del directorio y de toda página, haya corrido o no esta tarea."
+  },
   "sched.jobs.process.memory-report.title": {
     "en": "b84bcf99d45e1ee1",
     "text": "Informe de memoria"

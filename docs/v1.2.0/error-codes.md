@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6035** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6042** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 449
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 453
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 87
@@ -90,7 +90,7 @@ is an ordinary outcome.
 * [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 32
 * [PIV key attestation (`STS-PIV`)](#sts-piv) — 28
 * [OpenSSH user certificates (`STS-SSHCA`)](#sts-sshca) — 5
-* [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 30
+* [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 33
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 254
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 140
@@ -1847,6 +1847,10 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0580` | A legacy U2F key was not imported: the person's passkey policy enforces a CTAP 2.1 credProtect level, which an imported key ran no ceremony to report and cannot prove (#1955). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-AUTHN-0581` | A post-login activity is not asked: the module its row in common/post_login_kinds.ts names could not be loaded, or does not export a whole activity (its id and exposure the row's, and every question it must answer). The other activities are still asked (#2009). | Log line; nobody is asked that activity |
 | `STS-AUTHN-0582` | A post-login activity could not say whether a person is due it (its answer threw), so it was not asked at that sign-in, even where it may have been required. The other activities are still asked. Logged at error level once per activity in a process (#2009). | Log line; the sign-in goes on without that activity |
+| `STS-AUTHN-0600` | The post-login mail-encryption activity refused an S/MIME certificate whose key is not ML-KEM (RFC 9935): the activity asks for a post-quantum certificate, and mail encrypted to an RSA or EC one could be read once that key falls. Nothing was written (#2009). | none (HTTP 400 from /authn-api) |
+| `STS-AUTHN-0601` | A post-login mail-encryption act named a kind of key the step does not offer (an OpenPGP act where only S/MIME is offered, or the reverse): the profile's mailPrefer and what the realm can take decide what is offered, not the browser (#2009). | none (HTTP 400 from /authn-api) |
+| `STS-AUTHN-0602` | A post-login act was sent to a step asking another activity: a mail-encryption act at a passkey step, a passkey registration at a mail-encryption step. Nothing was done (#2009). | none (HTTP 400 from /authn-api) |
+| `STS-AUTHN-0603` | The post-login mail-encryption activity can no longer be done here: since the step was asked the realm stopped taking every kind it offered (openpgp.algorithms names no ML-KEM composite, or the runtime cannot encapsulate to ML-KEM). The held session is started without it: a sign-in is never held for something that cannot be done (#2009). | none (the sign-in goes on) |
 
 ## STS-OAUTH
 
@@ -5192,6 +5196,9 @@ Raised from: common/openpgp_keys.ts, common/crypto.js (section 19), portal/accou
 | `STS-OPENPGP-0028` | An S/MIME message to an ML-KEM certificate could not be built: this runtime cannot encapsulate (ML-KEM needs OpenSSL 3.5). The message was not sent under a classical algorithm instead. | the mail send; STS-MAIL-0243 carries the sentence |
 | `STS-OPENPGP-0029` | The proof of possession offered with an OpenPGP key carries more than one signature. A proof is signed once, by one key, so that the signer and the creation time judged are the signature that verified. | HTTP 400 (the page with the sentence) |
 | `STS-OPENPGP-0030` | A person's mail address changed and the OpenPGP key whose user ids name only the former address could not be retired from their entry, or an S/MIME choice whose certificate does not name the new address could not be put back to none. Mail is still not encrypted to either for the new address: a key or certificate is used only for an address it names. | none (a log line; the directory write that changed the address is unaffected) |
+| `STS-OPENPGP-0031` | A post-quantum OpenPGP key was registered at the post-login mail-encryption activity, and the classical key it replaced could not be kept beside it on the person's entry (#2009, D3): the new key stands and the classical one is replaced, as a registration replaces a key. | none (a log line; the registration succeeds) |
+| `STS-OPENPGP-0032` | The job post-login.mail-classical-retire could not remove a classical OpenPGP key whose kept time had passed (#2009, D3). It is already left out of the Web Key Directory and every page, and the next run tries again. | none (a log line and the run's result) |
+| `STS-OPENPGP-0033` | An OpenPGP key registered where a post-quantum one is asked for (the post-login mail-encryption activity, #2009) has an encryption key that is not one of RFC 9980's ML-KEM composites. Refused before its proof is checked; nothing is spent or written. | none (HTTP 400 from /authn-api) |
 
 ## STS-SVCACCT
 

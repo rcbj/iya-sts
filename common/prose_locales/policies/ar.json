@@ -1911,6 +1911,66 @@
     "en": "4fa78beae92d0ce5",
     "text": "none: ML-DSA فقط. classical: بعد فشل تسجيل ML-DSA على الجهاز، تُعرض إعادة محاولة بالخوارزميات الكلاسيكية (حيث تسمح سياسة مفتاح المرور بواحدة) — فمفتاح المرور الكلاسيكي أفضل من كلمة المرور، ويُطلب من حامله الترحيل لاحقًا مثل أي شخص آخر."
   },
+  "postLogin.FIELDS.mailEnabled.label": {
+    "en": "40a2cfe48791e921",
+    "text": "اطلب تشفير البريد بمفتاح ما بعد الكم"
+  },
+  "postLogin.FIELDS.mailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "متوقف افتراضيًا. عند تشغيله، يُطلب من كل شخص يصل إليه هذا الملف ويُشفَّر بريده لمفتاح تقليدي — مفتاح OpenPGP مفتاح تشفيره ليس ML-KEM، أو شهادة S/MIME مفتاحها ليس ML-KEM — بعد تسجيل الدخول أن يسجّل مفتاحًا لما بعد الكم (pqc-mail-encryption): ما يُشفَّر اليوم لمفتاح تقليدي يمكن قراءته متى سقط ذلك المفتاح. الملف المسمّى الذي يكون فيه هذا متوقفًا يستبعد من هذا النشاط من يُختار له."
+  },
+  "postLogin.FIELDS.mailSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "أيام"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.label": {
+    "en": "13594ff89ca962fe",
+    "text": "تشفير البريد: التخطي يؤجله مدة"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "المدة التي يؤجل بها التخطي نشاط تشفير البريد لذلك الشخص."
+  },
+  "postLogin.FIELDS.mailGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "أيام"
+  },
+  "postLogin.FIELDS.mailGraceDays.label": {
+    "en": "0ac068befb17c89a",
+    "text": "تشفير البريد: الوقت الممنوح"
+  },
+  "postLogin.FIELDS.mailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "يُحسب من أول دعوة للشخص إلى نشاط تشفير البريد. عند انقضائه يزول التخطي ويُعلَّق تسجيل الدخول حتى يُسجَّل مفتاح لما بعد الكم. ‏0 يعني بلا موعد نهائي."
+  },
+  "postLogin.FIELDS.mailNoKey.label": {
+    "en": "59ea773955163006",
+    "text": "تشفير البريد: شخص لا يُشفَّر بريده"
+  },
+  "postLogin.FIELDS.mailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "شخص لا يُشفَّر بريده إطلاقًا (stsMailEncryption قيمته none أو غير موجودة). leave: لا يُسأل. invite: يُطلب منه تسجيل مفتاح لما بعد الكم، ويمكنه دائمًا التخطي. require: يُسأل، ولا يمكنه التخطي إلا حتى ينقضي الوقت الممنوح."
+  },
+  "postLogin.FIELDS.mailPrefer.label": {
+    "en": "ec4a832609a5828b",
+    "text": "تشفير البريد: ما يُعرض"
+  },
+  "postLogin.FIELDS.mailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "ما تعرضه الخطوة. either: مفتاح OpenPGP وشهادة S/MIME، ويأتي أولًا النوع الذي يستخدمه الشخص الآن. openpgp: مفتاح OpenPGP وفق RFC 9980 فقط. smime: شهادة S/MIME بخوارزمية ML-KEM فقط، تُرفع (هذا النطاق لا يُصدر شهادة). النوع الذي لا يستطيع النطاق قبوله لا يُعرض أبدًا، ولا يُسأل أحد حيث لا يمكن أيٌّ منهما."
+  },
+  "postLogin.FIELDS.mailKeepClassical.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "أيام"
+  },
+  "postLogin.FIELDS.mailKeepClassical.label": {
+    "en": "771fd3ea4d36a053",
+    "text": "تشفير البريد: الاحتفاظ بمفتاح OpenPGP التقليدي مدة"
+  },
+  "postLogin.FIELDS.mailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "كم يومًا يبقى مفتاح OpenPGP التقليدي للشخص على مدخله وفي Web Key Directory إلى جانب مفتاح ما بعد الكم الذي حلّ محله، كي يجد المراسل الذي لا يستطيع استخدام الجديد المفتاح القديم. البريد الجديد من هذه الخدمة يذهب إلى مفتاح ما بعد الكم فورًا. بعد ذلك تزيل مهمة مجدولة المفتاح التقليدي من المدخل ومن Web Key Directory. ‏0 يزيله فورًا."
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "b1a01fe693170513",
     "text": "صنف هذه الخدمة لملف نشاط ما بعد تسجيل الدخول: ما يُطلب من الشخص فعله بعد تسجيل الدخول. يُسمّى بالملف (`cn=default`، أو ملف مسمّى يسمّيه تطبيق أو مجموعة)."
@@ -1946,6 +2006,30 @@
   "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyFallback.what": {
     "en": "4fa78beae92d0ce5",
     "text": "none: ML-DSA فقط. classical: بعد فشل تسجيل ML-DSA على الجهاز، تُعرَض إعادة محاولة بالخوارزميات التقليدية (حيث تسمح سياسة مفتاح المرور بذلك) — فمفتاح المرور التقليدي أفضل من كلمة المرور، ويُطلب من حامله الترحيل لاحقًا كسائر الناس."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "متوقف افتراضيًا. عند تشغيله، يُطلب من كل شخص يصل إليه هذا الملف ويُشفَّر بريده لمفتاح تقليدي — مفتاح OpenPGP مفتاح تشفيره ليس ML-KEM، أو شهادة S/MIME مفتاحها ليس ML-KEM — بعد تسجيل الدخول أن يسجّل مفتاحًا لما بعد الكم (pqc-mail-encryption): ما يُشفَّر اليوم لمفتاح تقليدي يمكن قراءته متى سقط ذلك المفتاح. الملف المسمّى الذي يكون فيه هذا متوقفًا يستبعد من هذا النشاط من يُختار له."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "المدة التي يؤجل بها التخطي نشاط تشفير البريد لذلك الشخص."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "يُحسب من أول دعوة للشخص إلى نشاط تشفير البريد. عند انقضائه يزول التخطي ويُعلَّق تسجيل الدخول حتى يُسجَّل مفتاح لما بعد الكم. ‏0 يعني بلا موعد نهائي."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "شخص لا يُشفَّر بريده إطلاقًا (stsMailEncryption قيمته none أو غير موجودة). leave: لا يُسأل. invite: يُطلب منه تسجيل مفتاح لما بعد الكم، ويمكنه دائمًا التخطي. require: يُسأل، ولا يمكنه التخطي إلا حتى ينقضي الوقت الممنوح."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "ما تعرضه الخطوة. either: مفتاح OpenPGP وشهادة S/MIME، ويأتي أولًا النوع الذي يستخدمه الشخص الآن. openpgp: مفتاح OpenPGP وفق RFC 9980 فقط. smime: شهادة S/MIME بخوارزمية ML-KEM فقط، تُرفع (هذا النطاق لا يُصدر شهادة). النوع الذي لا يستطيع النطاق قبوله لا يُعرض أبدًا، ولا يُسأل أحد حيث لا يمكن أيٌّ منهما."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "كم يومًا يبقى مفتاح OpenPGP التقليدي للشخص على مدخله وفي Web Key Directory إلى جانب مفتاح ما بعد الكم الذي حلّ محله، كي يجد المراسل الذي لا يستطيع استخدام الجديد المفتاح القديم. البريد الجديد من هذه الخدمة يذهب إلى مفتاح ما بعد الكم فورًا. بعد ذلك تزيل مهمة مجدولة المفتاح التقليدي من المدخل ومن Web Key Directory. ‏0 يزيله فورًا."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
     "en": "2b5b2ba409912c7d",
@@ -2018,6 +2102,42 @@
   "postLogin.sentences.noPasskeyRequire": {
     "en": "988144ad40324fa8",
     "text": "يُطلب من شخص لا يحمل مفتاح مرور أن يسجّل مفتاح مرور ما بعد كم، ويمكنه تخطيه إلى أن تنتهي فترة السماح"
+  },
+  "postLogin.sentences.mailMigration": {
+    "en": "51b2d82c00bdd004",
+    "text": "يُطلب من الشخص الذي يُشفَّر بريده لمفتاح OpenPGP أو شهادة S/MIME تقليدية، بعد تسجيل الدخول، أن يسجّل واحدًا لما بعد الكم (ML-KEM)"
+  },
+  "postLogin.sentences.mailOfferEither": {
+    "en": "a56bdbdfc1184177",
+    "text": "يمكنه تسجيل مفتاح OpenPGP أو رفع شهادة S/MIME"
+  },
+  "postLogin.sentences.mailOfferOpenpgp": {
+    "en": "1088a13e106235ab",
+    "text": "يمكنه تسجيل مفتاح OpenPGP"
+  },
+  "postLogin.sentences.mailOfferSmime": {
+    "en": "1f353acddbfc305e",
+    "text": "يمكنه رفع شهادة S/MIME"
+  },
+  "postLogin.sentences.mailNoKeyLeave": {
+    "en": "207bfd0824bc73d6",
+    "text": "لا يُسأل الشخص الذي لا يُشفَّر بريده"
+  },
+  "postLogin.sentences.mailNoKeyInvite": {
+    "en": "5b5bb65ef0e67a72",
+    "text": "يُدعى الشخص الذي لا يُشفَّر بريده إلى تسجيل مفتاح لما بعد الكم، ويمكنه دائمًا التخطي"
+  },
+  "postLogin.sentences.mailNoKeyRequire": {
+    "en": "cb269a837a256b60",
+    "text": "يُطلب من الشخص الذي لا يُشفَّر بريده تسجيل مفتاح لما بعد الكم، ويمكنه التخطي حتى تنتهي فترة السماح"
+  },
+  "postLogin.sentences.mailKeep": {
+    "en": "f73b9c2b0b0c4082",
+    "text": "يُحتفظ بمفتاح OpenPGP التقليدي الذي يحلّ محله مفتاح لما بعد الكم إلى جانبه، ويُنشر معه، مدة {{days}} يوم"
+  },
+  "postLogin.sentences.mailKeepNone": {
+    "en": "f7cb6f0da08b7411",
+    "text": "يُزال مفتاح OpenPGP التقليدي الذي يحلّ محله مفتاح لما بعد الكم فورًا"
   },
   "postLogin.sentences.appliesTo": {
     "en": "f195acc04e68d15e",

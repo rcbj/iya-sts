@@ -21,6 +21,14 @@ its vendor and serial number. The record holds:
 - the evidence the serial came from;
 - whether it is in use or was reported lost.
 
+**Moving a token's credentials to post-quantum algorithms** is a
+[post-login activity](post-login-activities.md): the passkeys
+(`pqc-passkey-migration`), and the mail-encryption key (an OpenPGP key or an
+S/MIME certificate, `pqc-mail-encryption`). An OpenPGP card cannot hold an
+RFC 9980 key yet, so the post-quantum OpenPGP key is kept in software and is
+not recorded on a token here; the card's own key keeps working for signing
+elsewhere.
+
 The register is a sibling of the [device register](devices.md), not part of
 it. A device there is the computer or phone a person signs in *from*, and a
 roaming security key identifies no such device.

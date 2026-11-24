@@ -1397,7 +1397,10 @@ namespace IyaSts.Api.Common;
 
 @hoisted model WithDnKindUserKeyEtc10 { `dn`?: string; `kind`?: string; `userKey`?: string; `cn`?: string; `mail`?: string; `displayName`?: string; `value`?: string; `attribute`?: string; `holds`?: string; `present`?: boolean }
 
-@hoisted model WithActivityReasonRequiredEtc9 { `activity`?: string; `reason`?: string; `required`?: boolean; `canSkip`?: boolean; `method`?: string; `failed`?: string; `separate`?: boolean; `snoozeDays`?: numeric; `deadline`?: string }
+@hoisted model WithActivityReasonRequiredEtc9 { `activity`?: string; `reason`?: string; `required`?: boolean; `canSkip`?: boolean; `method`?: string; `failed`?: string; `separate`?: boolean; `snoozeDays`?: numeric; `deadline`?: string; @js(#{`description`:"The mail-encryption activity's step (#2009): what it offers (`openpgp`, `smime`), what the person's mail is encrypted to now, the OpenPGP challenge it issued (null until asked), and how many days a replaced classical OpenPGP key is kept."}) `mail`?: PostLoginMailStepView }
+
+// #2009 P2: the post-login mail-encryption step's facts.
+@hoisted model PostLoginMailStepView { `offers`: ("openpgp" | "smime")[]; `current`: { `kind`: string; `algorithm`: string }; `challenge`: { `text`: string; `expiresAt`: string } | null; `keepClassicalDays`: numeric }
 
 @hoisted model WithIdProfileCreatedAtEtc7 { `id`?: string; `profile`?: NullableString; `createdAt`?: StringOrNumeric; `expiresAt`?: StringOrNumeric; `createdBy`?: NullableString; `usedAt`?: StringOrNumericOrNull; `status`?: string }
 
