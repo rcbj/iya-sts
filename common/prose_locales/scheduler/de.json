@@ -396,8 +396,16 @@
     "text": "Mail zur Post-Login-Aktivität"
   },
   "sched.jobs.post-login.activity-mail.describe": {
-    "en": "5081eadb5d5abbeb",
-    "text": "Sendet den Personen, die eine laufende Post-Login-Aktivität erreicht (#1111), eine Erinnerung, sich anzumelden; die Aktivität bittet sie dort dann, einen Post-Quanten-Passkey zu registrieren. Liest je Lauf nach einem Cursor einen Abschnitt der Population jeder gestarteten Aktivität (der Vertrauensbereich oder die Vereinigung ihrer Gruppen), sendet nur den Personen eine Mail, für die die Aktivität fällig ist, nie innerhalb des Erinnerungsintervalls und nie über ihr Maximum hinaus, und schreibt je gestarteter Aktivität und Lauf eine Audit-Zeile."
+    "en": "9e62432e54429d50",
+    "text": "Sendet den Personen, die eine laufende Post-Login-Aktivität erreicht (#1111), eine Erinnerung, sich anzumelden; die Aktivität bittet sie dort dann darum: einen Post-Quanten-Passkey, einen Post-Quanten-Schlüssel zur E-Mail-Verschlüsselung oder ein neues PIV-Zertifikat zu registrieren, jede Aktivität mit ihrer eigenen Nachricht. Liest je Lauf nach einem Cursor einen Abschnitt der Population jeder gestarteten Aktivität (der Vertrauensbereich oder die Vereinigung ihrer Gruppen), sendet nur den Personen eine Mail, für die die Aktivität fällig ist, nie innerhalb des Erinnerungsintervalls und nie über ihr Maximum hinaus, und schreibt je gestarteter Aktivität und Lauf eine Audit-Zeile."
+  },
+  "sched.jobs.post-login.mail-classical-retire.title": {
+    "en": "3a94b1ec977440b8",
+    "text": "Behaltene klassische OpenPGP-Schlüssel entfernt"
+  },
+  "sched.jobs.post-login.mail-classical-retire.describe": {
+    "en": "5ecdf1cc48430c85",
+    "text": "Entfernt einen klassischen OpenPGP-Schlüssel, den die Post-Login-Aktivität zur E-Mail-Verschlüsselung neben dem Post-Quanten-Schlüssel behalten hat, der ihn ersetzt hat (#2009, D3), sobald die mailKeepClassical Tage des Profils verstrichen sind: vom Eintrag der Person und damit aus dem Web Key Directory. Durchläuft nur die Zeilen der behaltenen Schlüssel, nie das Verzeichnis, und schreibt eine Audit-Zeile je entferntem Schlüssel. Ein Schlüssel, dessen Zeit abgelaufen ist, fehlt bereits im Verzeichnis und auf jeder Seite, ob dieser Job gelaufen ist oder nicht."
   },
   "sched.jobs.process.memory-report.title": {
     "en": "b84bcf99d45e1ee1",

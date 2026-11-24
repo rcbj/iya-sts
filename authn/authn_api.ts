@@ -140,6 +140,12 @@ const SEND_BODY = ModelZod.body('authn', 'sendEmailedFactor');
 
 const ROLES_BODY = ModelZod.body('authn', 'chooseRoles');
 
+// The post-login mail-encryption activity's acts (#2009 P2).
+const POST_LOGIN_MAIL_BODY = ModelZod.body('authn', 'answerPostLoginMail');
+
+// The post-login PIV re-issue's acts (#2009 P3).
+const POST_LOGIN_PIV_BODY = ModelZod.body('authn', 'answerPostLoginPiv');
+
 const OPEN_BODY = ModelZod.body('authn', 'spendEmailedLink');
 
 // The pages a step's view is asked for (`?page=`), and the passkey chosen.
@@ -348,6 +354,16 @@ const SCREEN_OPERATIONS = [
     operationId: 'skipPostLoginActivity', access: 'mfa',
     action: 'skip',
     handler: 'mfaAct', body: EMPTY_BODY, refusedCode: 'STS-AUTHN-0474' },
+  // --- the mail-encryption activity (#2009 P2) -----------------------------
+  { method: 'POST', path: API + '/mfa/:id/post-login/mail',
+    operationId: 'answerPostLoginMail', access: 'mfa',
+    action: 'mail',
+    handler: 'mfaAct', body: POST_LOGIN_MAIL_BODY },
+  // --- the PIV re-issue (#2009 P3) ----------------------------------------
+  { method: 'POST', path: API + '/mfa/:id/post-login/piv',
+    operationId: 'answerPostLoginPiv', access: 'mfa',
+    action: 'piv',
+    handler: 'mfaAct', body: POST_LOGIN_PIV_BODY },
   // --- the role step (#1072) -----------------------------------------------
   { method: 'POST', path: API + '/mfa/:id/roles',
     operationId: 'chooseRoles', access: 'mfa',
@@ -1228,6 +1244,17 @@ class AuthnApi {
       case 'skipPostLoginActivity':
         authn.postLoginAct(req,
           res as IyaApi.AuthnAnswering<'skipPostLoginActivity'>, id, 'skip');
+        break;
+      case 'answerPostLoginMail':
+        // THE MAIL-ENCRYPTION ACTIVITY (#2009 P2): a challenge, a key or a
+        // certificate, each the step's to judge.
+        await authn.postLoginMailAct(req,
+          res as IyaApi.AuthnAnswering<'answerPostLoginMail'>, id, body);
+        break;
+      case 'answerPostLoginPiv':
+        // THE PIV RE-ISSUE (#2009 P3): a slot's enrolment, or going on.
+        await authn.postLoginPivAct(req,
+          res as IyaApi.AuthnAnswering<'answerPostLoginPiv'>, id, body);
         break;
       case 'chooseRoles':
         // THE ROLE STEP (#1072): the names ticked, held to the step's own

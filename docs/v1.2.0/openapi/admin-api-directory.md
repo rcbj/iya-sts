@@ -2812,7 +2812,7 @@ Scope: `admin:write`.
 
 **Started post-login activities in this realm (#1111)**
 
-Everything Directory → Post-login activities draws: `started`, every post-login activity started in the realm, newest first — `id`, `activity`, `groups` (their DNs; empty for the whole realm), `intervalDays`, `maxMails`, `perRun`, `state` (`running`, `paused`, `ended`), who started and last changed it and when — each with `run`, what its scheduler job has done (`passes` over the population, `read`, `mailed`, `notDue`, `heldBack`, `refused`, `lastRunAt`, `lastSummary`); the `activities` an administrator may start, the `limits` of the numbers and of `groups`, whether a mail transport is `mailAvailable`, whether any post-login profile is `activityEnabled` (the POLICY asking anybody by itself; a running started activity asks its own people at sign-in whatever it says, #1126), the job and how often it runs; and `groupChooser`, the start form's group search (#1123): `chosen` (the `groups` asked, each resolved — `found` false for a name this realm does not have) and `pane`, one page of the groups whose cn or DN contains `groupq`, 20 from `groupfrom` (a stale offset is clamped to the first page), the chosen ones left out (`total`, `matched`, `from`, `shown`: each `dn` and `cn`). The search reads the directory's group index, never its people. Who was mailed and where each person stands is the reports application's postLoginProgress source, not this operation.
+Everything Directory → Post-login activities draws: `started`, every post-login activity started in the realm, newest first — `id`, `activity`, `groups` (their DNs; empty for the whole realm), `intervalDays`, `maxMails`, `perRun`, `state` (`running`, `paused`, `ended`), who started and last changed it and when — each with `run`, what its scheduler job has done (`passes` over the population, `read`, `mailed`, `notDue`, `heldBack`, `refused`, `lastRunAt`, `lastSummary`); the `activities` an administrator may start (`pqc-passkey-migration`, `pqc-mail-encryption`, `piv-reissue`; #2009), the `limits` of the numbers and of `groups`, whether a mail transport is `mailAvailable`, whether any post-login profile is `activityEnabled` for the passkey migration (the POLICY asking anybody by itself; a running started activity asks its own people at sign-in whatever it says, #1126) and `enabledActivities`, every activity some profile's own switch turns on, the job and how often it runs; and `groupChooser`, the start form's group search (#1123): `chosen` (the `groups` asked, each resolved — `found` false for a name this realm does not have) and `pane`, one page of the groups whose cn or DN contains `groupq`, 20 from `groupfrom` (a stale offset is clamped to the first page), the chosen ones left out (`total`, `matched`, `from`, `shown`: each `dn` and `cn`). The search reads the directory's group index, never its people. Who was mailed and where each person stands is the reports application's postLoginProgress source, not this operation.
 
 **Mirrors** `GET /admin/post-login-activities` on the admin console.
 
@@ -2835,6 +2835,8 @@ Scope: `admin:read`.
 | `activities` | list |  |  |
 | `activities[]` | string |  |  |
 | `activityEnabled` | boolean |  |  |
+| `enabledActivities` | list |  |  |
+| `enabledActivities[]` | string |  |  |
 | `everyMinutes` | number |  |  |
 | `groupChooser` | object |  |  |
 | `groupChooser.chosen` | list |  |  |
@@ -3112,7 +3114,7 @@ Scope: `admin:write`.
 
 **Start a post-login activity**
 
-Starts a post-login activity in this realm. AT SIGN-IN, from now, each person it reaches is asked to do it (#1126), under the rules of the post-login profile that reaches them — even where that profile is off, unless it is a NAMED profile that is off, which excludes them. BY MAIL, from the next run of the scheduler job `post-login.activity-mail` (every few minutes, or Run now on Monitoring → Scheduler) each person the activity is DUE for — it reaches them, the realm can make the passkey, they have not done it — is mailed at the address on their entry a reminder to sign in, at most `maxMails` times and never twice inside `intervalDays`. The mail's one link opens the sign-in page; it carries no credential, and the post-login activity does the registration. `groups` narrows the people to the members of those groups: their UNION, a person in two of them read and mailed once; none means everybody in the realm. A group this realm does not have is refused (STS-AUTHN-0530); a second started activity for the same activity and the same groups is refused (STS-AUTHN-0492); bad values are STS-AUTHN-0490.
+Starts a post-login activity in this realm. AT SIGN-IN, from now, each person it reaches is asked to do it (#1126), under the rules of the post-login profile that reaches them — even where that profile is off, unless it is a NAMED profile that is off, which excludes them. BY MAIL, from the next run of the scheduler job `post-login.activity-mail` (every few minutes, or Run now on Monitoring → Scheduler) each person the activity is DUE for — it reaches them, the realm can make what it asks for, they have not done it — is mailed at the address on their entry a reminder to sign in, at most `maxMails` times and never twice inside `intervalDays`. `activity` is which one (#2009): `pqc-passkey-migration` (an ML-DSA passkey, the default), `pqc-mail-encryption` (an ML-KEM OpenPGP key or S/MIME certificate) or `piv-reissue` (a new PIV slot certificate from a post-quantum issuer, or before one expires), each mailed with its own message and asked under its own block of the post-login profile's rules. The mail's one link opens the sign-in page; it carries no credential, and the post-login activity does the work. `groups` narrows the people to the members of those groups: their UNION, a person in two of them read and mailed once; none means everybody in the realm. A group this realm does not have is refused (STS-AUTHN-0530); a second started activity for the same activity and the same groups is refused (STS-AUTHN-0492); bad values are STS-AUTHN-0490.
 
 **Mirrors** `POST /admin/post-login-activities` on the admin console.
 
@@ -3129,7 +3131,7 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `activity` | one of `pqc-passkey-migration` |  | The post-login activity. |
+| `activity` | one of `pqc-passkey-migration`, `pqc-mail-encryption`, `piv-reissue` |  | The post-login activity: `pqc-passkey-migration` (a post-quantum passkey, the default), `pqc-mail-encryption` (a post-quantum mail-encryption key: OpenPGP or S/MIME) or `piv-reissue` (a new PIV slot certificate, #2009). |
 | `groups` | list |  | Groups' cns or DNs, the people being the union of their members; empty or absent for everybody in the realm. |
 | `groups[]` | string |  |  |
 | `intervalDays` | integer |  | Days between two mails to one person (default 7). |

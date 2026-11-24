@@ -264,7 +264,17 @@ completes the pending sign-in on it.
   (0464), not a person here or another realm's (0465), an application's
   (0466), not taken here (0467).
 
-**Tests**: `tests/authn_certificate_signin.js`, over a real handshake.
+* **A SMART CARD OR ANOTHER CERTIFICATE (#2031)**: the offer is drawn while
+  the policy takes either (`certificatePrimary` or `smartCardPrimary`); the
+  act asks the row for the kind `screenCertificateHolder()` found
+  (`holder.smartCard`) and refuses the other with STS-AUTHN-0593 and the
+  not-offered sentence, and the session's credential carries `smartCard`
+  and `cardAuth`. `authnPolicyRefusal()` asks `smartCard` for such a
+  credential (0590), `pkinitSmartCard` for a Kerberos session whose amr has
+  `sc` (0591), and `requireAttestedHardware` last (0592).
+
+**Tests**: `tests/authn_certificate_signin.js`, over a real handshake;
+`tests/authn_policy_smart_card.js` for the rows.
 **Not yet tested**: a second factor after the certificate, and the cell
 restart; both are the paths the emailed first factor already exercises.
 

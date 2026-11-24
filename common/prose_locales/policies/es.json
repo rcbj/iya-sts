@@ -275,6 +275,14 @@
     "en": "b66258c1b032dec3",
     "text": "Para cualquiera que tenga un rol de consola (Admin Read o Admin Write) y no tenga segundo factor. `offer`: en cada inicio de sesión se le muestra el paso que configura uno, con un botón Ignorar. `always`: debe configurar uno antes de iniciar sesión, salvo el administrador integrado del dominio predeterminado (admin.bootstrapUsername), al que solo se le ofrece, para que un servicio nunca se quede sin nadie que pueda iniciar sesión. `if-held`: como todos los demás, según el campo anterior. MÁS DÉBIL QUE `always`: un administrador con solo una contraseña es un administrador que puede ser cualquiera que tenga la contraseña."
   },
+  "authn.FIELDS.requireAttestedHardware.label": {
+    "en": "231d6b2e19c32f3c",
+    "text": "Se exige un token de hardware atestado"
+  },
+  "authn.FIELDS.requireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no`: ningún requisito más allá de las filas de mecanismos. `always`: una sesión solo se inicia cuando la credencial que completó el inicio de sesión (una clave de acceso, una llave de seguridad, un certificado o una tarjeta inteligente) está en un token de hardware activo cuya atestación registró el registro, la misma prueba que hace el mecanismo `attested-hardware` de una aplicación. Se rechaza una contraseña, una aplicación de autenticación, un código enviado por correo, una cartera, un socio de federación o un ticket de Kerberos por sí solos. El administrador integrado del reino predeterminado (admin.bootstrapUsername) está exento, para que un servicio nunca quede sin nadie que pueda iniciar sesión."
+  },
   "authn.FIELDS.passwordPrimary.label": {
     "en": "8459feba5558b2cd",
     "text": "Contraseña — como primer factor"
@@ -320,16 +328,16 @@
     "text": "Token de códigos de un solo uso (HOTP): como segundo factor"
   },
   "authn.FIELDS.hotpSecondFactor.what": {
-    "en": "608274a83bf567cd",
-    "text": "Un código de un solo uso RFC 4226 de un token basado en contador (#1955): la ranura OTP de una YubiKey, o el token de un proveedor que un administrador importó de un archivo de semillas PSKC. Nunca es un primer factor. Si está desactivado aquí, nadie puede INSCRIBIR ni reclamar uno; a quien ya tiene uno se le sigue pidiendo, como al titular de una aplicación de autenticación."
+    "en": "33918856782d0904",
+    "text": "Un código de un solo uso RFC 4226 de un token basado en contador (#1955): la ranura OTP de una YubiKey, o el token de un proveedor que un administrador importó de un archivo de semillas PSKC. Nunca es primer factor. DESACTIVADO DE FORMA PREDETERMINADA, y debe activarse para este reino antes de que nadie pueda inscribir, reclamar o recibir un token HOTP, de modo que ningún token HOTP se usa al iniciar sesión hasta entonces. Desactivado aquí, nadie puede INSCRIBIR ni reclamar uno; a quien ya tiene uno se le sigue pidiendo, como al titular de una aplicación de autenticación."
   },
   "authn.FIELDS.yubicoOtpSecondFactor.label": {
     "en": "cba1439d0faf9aaf",
     "text": "OTP de YubiKey — como segundo factor"
   },
   "authn.FIELDS.yubicoOtpSecondFactor.what": {
-    "en": "f8f7a6ee5bbb46a8",
-    "text": "Una OTP de YubiKey (la contraseña de un solo uso en modhex publicada por Yubico, #1955). Nunca un primer factor: este servicio guarda la clave AES. Desactivada aquí, nadie puede INSCRIBIR, asignar o reclamar una, aunque yubiotp.offered esté activado; a quien ya tiene una se le sigue pidiendo."
+    "en": "a5efe4af91b59cf2",
+    "text": "Una YubiKey OTP (la contraseña de un solo uso modhex publicada por Yubico, #1955). Nunca es primer factor: este servicio guarda la clave AES. DESACTIVADO DE FORMA PREDETERMINADA, y debe activarse para este reino (con yubiotp.offered) antes de que nadie pueda inscribir, reclamar o recibir una YubiKey OTP, de modo que ninguna se usa al iniciar sesión hasta entonces. Desactivado aquí, nadie puede INSCRIBIR, asignar ni reclamar una, aunque yubiotp.offered esté activado; a quien ya tiene una se le sigue pidiendo."
   },
   "authn.FIELDS.recoveryCodeSecondFactor.label": {
     "en": "ee9982b48a9c6a90",
@@ -376,16 +384,40 @@
     "text": "Certificado de cliente TLS — como primer factor"
   },
   "authn.FIELDS.certificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Un certificado de cliente TLS verificado: GET /tls/sign-in, o Continuar con su certificado en la pantalla de inicio de sesión."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Un certificado de cliente TLS verificado que no es una tarjeta inteligente: GET /tls/sign-in, o Continuar con su certificado en la pantalla de inicio de sesión. Un certificado de tarjeta inteligente es de la fila de tarjeta inteligente, que sigue a esta mientras no tiene valor (#2031)."
+  },
+  "authn.FIELDS.smartCardPrimary.label": {
+    "en": "2fd7ffc9233a4399",
+    "text": "Certificado de tarjeta inteligente (PIV/CAC) — como primer factor"
+  },
+  "authn.FIELDS.smartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Un certificado de tarjeta inteligente (PIV/CAC), en GET /tls/sign-in o en Continuar con su certificado: una clave PIV atestada, un certificado inscrito aquí con un perfil de ranura PIV, una tarjeta externa asignada por su UUID de tarjeta (piv.externalIssuers, stsPivCardUuid) o uno bajo un perfil de certSignIn.profiles marcado smartCard. AUSENTE, sigue a stsAuthnCertificatePrimary, de modo que una política escrita antes conserva su significado (#2031)."
+  },
+  "authn.FIELDS.smartCardCardAuthPrimary.label": {
+    "en": "a8aedf2b449f0f65",
+    "text": "Clave de autenticación de tarjeta PIV (sin PIN) — como primer factor"
+  },
+  "authn.FIELDS.smartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Un certificado de autenticación de tarjeta PIV (ranura 9e), cuya clave funciona sin PIN. También es una tarjeta inteligente, así que la fila de tarjeta inteligente también debe estar activada. AUSENTE, sigue el ajuste piv.cardAuthSignIn (#2031)."
   },
   "authn.FIELDS.kerberosPrimary.label": {
     "en": "f2f6ed9dd0454fdc",
     "text": "Kerberos (SPNEGO) — como primer factor"
   },
   "authn.FIELDS.kerberosPrimary.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego con un ticket de Kerberos."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego con un ticket de Kerberos, salvo PKINIT con tarjeta inteligente, que tiene su propia fila y sigue a esta mientras no tiene valor (#2031)."
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.label": {
+    "en": "9c5eeb540b2f1c36",
+    "text": "Kerberos PKINIT con tarjeta inteligente — como primer factor"
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego con un ticket de Kerberos que lleva el indicador pkinit-smartcard de este reino: el KDC lo emitió con PKINIT desde una tarjeta inteligente. AUSENTE, sigue a stsAuthnKerberosPrimary (#2031)."
   },
   "authn.FIELDS.walletPrimary.label": {
     "en": "f215dfc0a7d74e7f",
@@ -491,6 +523,10 @@
     "en": "b66258c1b032dec3",
     "text": "Para cualquiera que tenga un rol de consola (Admin Read o Admin Write) y no tenga segundo factor. `offer`: en cada inicio de sesión se le muestra el paso que configura uno, con un botón Ignorar. `always`: debe configurar uno antes de iniciar sesión, salvo el administrador integrado del dominio predeterminado (admin.bootstrapUsername), al que solo se le ofrece, para que un servicio nunca se quede sin nadie que pueda iniciar sesión. `if-held`: como todos los demás, según el campo anterior. MÁS DÉBIL QUE `always`: un administrador con solo una contraseña es un administrador que puede ser cualquiera que tenga la contraseña."
   },
+  "authn.SCHEMA.attributes.stsAuthnRequireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no`: ningún requisito más allá de las filas de mecanismos. `always`: una sesión solo se inicia cuando la credencial que completó el inicio de sesión (una clave de acceso, una llave de seguridad, un certificado o una tarjeta inteligente) está en un token de hardware activo cuya atestación registró el registro, la misma prueba que hace el mecanismo `attested-hardware` de una aplicación. Se rechaza una contraseña, una aplicación de autenticación, un código enviado por correo, una cartera, un socio de federación o un ticket de Kerberos por sí solos. El administrador integrado del reino predeterminado (admin.bootstrapUsername) está exento, para que un servicio nunca quede sin nadie que pueda iniciar sesión."
+  },
   "authn.SCHEMA.attributes.stsAuthnPasswordPrimary.what": {
     "en": "3b32854915d0d6d0",
     "text": "Una contraseña en la pantalla de inicio de sesión. Como SEGUNDO factor es la contraseña que se pide después de una wallet u otro primer factor sin contraseña."
@@ -512,12 +548,12 @@
     "text": "Un código de un solo uso de RFC 6238. Nunca es un primer factor: este servicio guarda el mismo secreto compartido que la app. Desactivado aquí, nadie puede REGISTRAR uno; a quien ya tenga uno se le sigue pidiendo, porque un interruptor de desactivación que rebajara cada cuenta registrada a solo una contraseña haría algo distinto de lo que dice (esta fila reemplazó a totp.enabled y mantiene su contrato)."
   },
   "authn.SCHEMA.attributes.stsAuthnHotpSecondFactor.what": {
-    "en": "608274a83bf567cd",
-    "text": "Un código de un solo uso RFC 4226 de un token basado en contador (#1955): la ranura OTP de una YubiKey, o el token de un proveedor que un administrador importó de un archivo de semillas PSKC. Nunca es un primer factor. Si está desactivado aquí, nadie puede INSCRIBIR ni reclamar uno; a quien ya tiene uno se le sigue pidiendo, como al titular de una aplicación de autenticación."
+    "en": "33918856782d0904",
+    "text": "Un código de un solo uso RFC 4226 de un token basado en contador (#1955): la ranura OTP de una YubiKey, o el token de un proveedor que un administrador importó de un archivo de semillas PSKC. Nunca es primer factor. DESACTIVADO DE FORMA PREDETERMINADA, y debe activarse para este reino antes de que nadie pueda inscribir, reclamar o recibir un token HOTP, de modo que ningún token HOTP se usa al iniciar sesión hasta entonces. Desactivado aquí, nadie puede INSCRIBIR ni reclamar uno; a quien ya tiene uno se le sigue pidiendo, como al titular de una aplicación de autenticación."
   },
   "authn.SCHEMA.attributes.stsAuthnYubicoOtpSecondFactor.what": {
-    "en": "f8f7a6ee5bbb46a8",
-    "text": "Una OTP de YubiKey (la contraseña de un solo uso en modhex publicada por Yubico, #1955). Nunca un primer factor: este servicio guarda la clave AES. Desactivada aquí, nadie puede INSCRIBIR, asignar o reclamar una, aunque yubiotp.offered esté activado; a quien ya tiene una se le sigue pidiendo."
+    "en": "a5efe4af91b59cf2",
+    "text": "Una YubiKey OTP (la contraseña de un solo uso modhex publicada por Yubico, #1955). Nunca es primer factor: este servicio guarda la clave AES. DESACTIVADO DE FORMA PREDETERMINADA, y debe activarse para este reino (con yubiotp.offered) antes de que nadie pueda inscribir, reclamar o recibir una YubiKey OTP, de modo que ninguna se usa al iniciar sesión hasta entonces. Desactivado aquí, nadie puede INSCRIBIR, asignar ni reclamar una, aunque yubiotp.offered esté activado; a quien ya tiene una se le sigue pidiendo."
   },
   "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
     "en": "e93ab2adc3e581bd",
@@ -540,12 +576,24 @@
     "text": "Un enlace de un solo uso enviado por correo a la dirección VERIFICADA de la persona, que completa el inicio de sesión solo en el navegador que lo empezó. NIST SP 800-63B-4 sección 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", porque a un buzón se puede acceder con solo una contraseña, y el correo puede leerse en tránsito o desviarse. Desactivado de forma predeterminada por ese motivo; actívelo solo donde ese sea un riesgo aceptado."
   },
   "authn.SCHEMA.attributes.stsAuthnCertificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Un certificado de cliente TLS verificado: GET /tls/sign-in, o Continuar con su certificado en la pantalla de inicio de sesión."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Un certificado de cliente TLS verificado que no es una tarjeta inteligente: GET /tls/sign-in, o Continuar con su certificado en la pantalla de inicio de sesión. Un certificado de tarjeta inteligente es de la fila de tarjeta inteligente, que sigue a esta mientras no tiene valor (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Un certificado de tarjeta inteligente (PIV/CAC), en GET /tls/sign-in o en Continuar con su certificado: una clave PIV atestada, un certificado inscrito aquí con un perfil de ranura PIV, una tarjeta externa asignada por su UUID de tarjeta (piv.externalIssuers, stsPivCardUuid) o uno bajo un perfil de certSignIn.profiles marcado smartCard. AUSENTE, sigue a stsAuthnCertificatePrimary, de modo que una política escrita antes conserva su significado (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Un certificado de autenticación de tarjeta PIV (ranura 9e), cuya clave funciona sin PIN. También es una tarjeta inteligente, así que la fila de tarjeta inteligente también debe estar activada. AUSENTE, sigue el ajuste piv.cardAuthSignIn (#2031)."
   },
   "authn.SCHEMA.attributes.stsAuthnKerberosPrimary.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego con un ticket de Kerberos."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego con un ticket de Kerberos, salvo PKINIT con tarjeta inteligente, que tiene su propia fila y sigue a esta mientras no tiene valor (#2031)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego con un ticket de Kerberos que lleva el indicador pkinit-smartcard de este reino: el KDC lo emitió con PKINIT desde una tarjeta inteligente. AUSENTE, sigue a stsAuthnKerberosPrimary (#2031)."
   },
   "authn.SCHEMA.attributes.stsAuthnWalletPrimary.what": {
     "en": "c6b81177c7b7d944",
@@ -644,16 +692,16 @@
     "text": "Token de códigos de un solo uso (HOTP)"
   },
   "authn.MECHANISMS.hotp.what": {
-    "en": "608274a83bf567cd",
-    "text": "Un código de un solo uso RFC 4226 de un token basado en contador (#1955): la ranura OTP de una YubiKey, o el token de un proveedor que un administrador importó de un archivo de semillas PSKC. Nunca es un primer factor. Si está desactivado aquí, nadie puede INSCRIBIR ni reclamar uno; a quien ya tiene uno se le sigue pidiendo, como al titular de una aplicación de autenticación."
+    "en": "33918856782d0904",
+    "text": "Un código de un solo uso RFC 4226 de un token basado en contador (#1955): la ranura OTP de una YubiKey, o el token de un proveedor que un administrador importó de un archivo de semillas PSKC. Nunca es primer factor. DESACTIVADO DE FORMA PREDETERMINADA, y debe activarse para este reino antes de que nadie pueda inscribir, reclamar o recibir un token HOTP, de modo que ningún token HOTP se usa al iniciar sesión hasta entonces. Desactivado aquí, nadie puede INSCRIBIR ni reclamar uno; a quien ya tiene uno se le sigue pidiendo, como al titular de una aplicación de autenticación."
   },
   "authn.MECHANISMS.yubico-otp.label": {
     "en": "01f8772904333b7b",
     "text": "OTP de YubiKey"
   },
   "authn.MECHANISMS.yubico-otp.what": {
-    "en": "f8f7a6ee5bbb46a8",
-    "text": "Una OTP de YubiKey (la contraseña de un solo uso en modhex publicada por Yubico, #1955). Nunca un primer factor: este servicio guarda la clave AES. Desactivada aquí, nadie puede INSCRIBIR, asignar o reclamar una, aunque yubiotp.offered esté activado; a quien ya tiene una se le sigue pidiendo."
+    "en": "a5efe4af91b59cf2",
+    "text": "Una YubiKey OTP (la contraseña de un solo uso modhex publicada por Yubico, #1955). Nunca es primer factor: este servicio guarda la clave AES. DESACTIVADO DE FORMA PREDETERMINADA, y debe activarse para este reino (con yubiotp.offered) antes de que nadie pueda inscribir, reclamar o recibir una YubiKey OTP, de modo que ninguna se usa al iniciar sesión hasta entonces. Desactivado aquí, nadie puede INSCRIBIR, asignar ni reclamar una, aunque yubiotp.offered esté activado; a quien ya tiene una se le sigue pidiendo."
   },
   "authn.MECHANISMS.recoveryCode.label": {
     "en": "5bda8302b5ecf4d3",
@@ -684,16 +732,40 @@
     "text": "Certificado de cliente TLS"
   },
   "authn.MECHANISMS.certificate.what": {
-    "en": "bbf7d091b1854474",
-    "text": "Un certificado de cliente TLS verificado: GET /tls/sign-in, o Continuar con su certificado en la pantalla de inicio de sesión."
+    "en": "f2fbb7dc9d0fa190",
+    "text": "Un certificado de cliente TLS verificado que no es una tarjeta inteligente: GET /tls/sign-in, o Continuar con su certificado en la pantalla de inicio de sesión. Un certificado de tarjeta inteligente es de la fila de tarjeta inteligente, que sigue a esta mientras no tiene valor (#2031)."
+  },
+  "authn.MECHANISMS.smartCard.label": {
+    "en": "055e41994165a328",
+    "text": "Certificado de tarjeta inteligente (PIV/CAC)"
+  },
+  "authn.MECHANISMS.smartCard.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "Un certificado de tarjeta inteligente (PIV/CAC), en GET /tls/sign-in o en Continuar con su certificado: una clave PIV atestada, un certificado inscrito aquí con un perfil de ranura PIV, una tarjeta externa asignada por su UUID de tarjeta (piv.externalIssuers, stsPivCardUuid) o uno bajo un perfil de certSignIn.profiles marcado smartCard. AUSENTE, sigue a stsAuthnCertificatePrimary, de modo que una política escrita antes conserva su significado (#2031)."
+  },
+  "authn.MECHANISMS.smartCardCardAuth.label": {
+    "en": "7b5626b23b778ecd",
+    "text": "Clave de autenticación de tarjeta PIV (sin PIN)"
+  },
+  "authn.MECHANISMS.smartCardCardAuth.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "Un certificado de autenticación de tarjeta PIV (ranura 9e), cuya clave funciona sin PIN. También es una tarjeta inteligente, así que la fila de tarjeta inteligente también debe estar activada. AUSENTE, sigue el ajuste piv.cardAuthSignIn (#2031)."
   },
   "authn.MECHANISMS.kerberos.label": {
     "en": "a8316dcb1a42420f",
     "text": "Kerberos (SPNEGO)"
   },
   "authn.MECHANISMS.kerberos.what": {
-    "en": "da71a0338fe2a8df",
-    "text": "GET /authn/spnego con un ticket de Kerberos."
+    "en": "0507278dcc36c133",
+    "text": "GET /authn/spnego con un ticket de Kerberos, salvo PKINIT con tarjeta inteligente, que tiene su propia fila y sigue a esta mientras no tiene valor (#2031)."
+  },
+  "authn.MECHANISMS.pkinitSmartCard.label": {
+    "en": "62046e8418115023",
+    "text": "Kerberos PKINIT con tarjeta inteligente"
+  },
+  "authn.MECHANISMS.pkinitSmartCard.what": {
+    "en": "475e236f74379392",
+    "text": "GET /authn/spnego con un ticket de Kerberos que lleva el indicador pkinit-smartcard de este reino: el KDC lo emitió con PKINIT desde una tarjeta inteligente. AUSENTE, sigue a stsAuthnKerberosPrimary (#2031)."
   },
   "authn.MECHANISMS.wallet.label": {
     "en": "696e7476221a3382",
@@ -754,6 +826,10 @@
   "authn.sentences.emailTtlInactive": {
     "en": "20f80fea7980a662",
     "text": "un código o enlace enviado por correo es válido durante {{n}} segundos — INACTIVO: este dominio no puede enviar correo"
+  },
+  "authn.sentences.attestedAlways": {
+    "en": "7feb965c44fd5614",
+    "text": "todo inicio de sesión debe terminar en una credencial guardada en un token de hardware atestado (salvo el administrador integrado)"
   },
   "kinds.serviceAccount.label": {
     "en": "029b1070484594c2",
@@ -1911,6 +1987,134 @@
     "en": "4fa78beae92d0ce5",
     "text": "none: solo ML-DSA. classical: después de que un registro ML-DSA falle en el dispositivo, se ofrece un reintento con los algoritmos clásicos (donde la política de llaves de acceso lo permita) — una llave de acceso clásica es mejor que una contraseña, y a quien la tiene se le pide la migración más adelante como a cualquier otra persona."
   },
+  "postLogin.FIELDS.mailEnabled.label": {
+    "en": "40a2cfe48791e921",
+    "text": "Pedir cifrado poscuántico del correo"
+  },
+  "postLogin.FIELDS.mailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, a toda persona a la que llegue este perfil y cuyo correo se cifre con una clave clásica —una clave OpenPGP cuya clave de cifrado no es ML-KEM, o un certificado S/MIME cuya clave no es ML-KEM— se le pide, tras iniciar sesión, que registre una poscuántica (pqc-mail-encryption): lo que hoy se cifra con una clave clásica podrá leerse cuando esa clave caiga. Un perfil con nombre que tenga esto desactivado excluye de esta actividad a quien se le seleccione."
+  },
+  "postLogin.FIELDS.mailSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "días"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.label": {
+    "en": "13594ff89ca962fe",
+    "text": "Cifrado del correo: Omitir lo aplaza"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "Cuánto tiempo aplaza Omitir la actividad de cifrado del correo para esa persona."
+  },
+  "postLogin.FIELDS.mailGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "días"
+  },
+  "postLogin.FIELDS.mailGraceDays.label": {
+    "en": "0ac068befb17c89a",
+    "text": "Cifrado del correo: plazo concedido"
+  },
+  "postLogin.FIELDS.mailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "Contado desde la PRIMERA invitación de la persona a la actividad de cifrado del correo. Cuando ha pasado, Omitir desaparece y el inicio de sesión se retiene hasta que se registre una clave poscuántica. 0 es sin plazo."
+  },
+  "postLogin.FIELDS.mailNoKey.label": {
+    "en": "59ea773955163006",
+    "text": "Cifrado del correo: una persona cuyo correo no se cifra"
+  },
+  "postLogin.FIELDS.mailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "Una persona cuyo correo no se cifra en absoluto (stsMailEncryption none o ausente). leave: no se le pide. invite: se le pide que registre una clave poscuántica y siempre puede omitirlo. require: se le pide, y solo puede omitirlo hasta que pase el plazo concedido."
+  },
+  "postLogin.FIELDS.mailPrefer.label": {
+    "en": "ec4a832609a5828b",
+    "text": "Cifrado del correo: qué se ofrece"
+  },
+  "postLogin.FIELDS.mailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "Qué ofrece el paso. either: una clave OpenPGP y un certificado S/MIME, primero el tipo que la persona usa ahora. openpgp: solo una clave OpenPGP según RFC 9980. smime: solo un certificado S/MIME ML-KEM, subido (este dominio no emite ninguno). Un tipo que el dominio no puede aceptar nunca se ofrece, y no se pide nada a nadie donde no se puede ninguno."
+  },
+  "postLogin.FIELDS.mailKeepClassical.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "días"
+  },
+  "postLogin.FIELDS.mailKeepClassical.label": {
+    "en": "771fd3ea4d36a053",
+    "text": "Cifrado del correo: conservar la clave OpenPGP clásica durante"
+  },
+  "postLogin.FIELDS.mailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "Cuántos días se queda la clave OpenPGP clásica de una persona en su entrada y en el Web Key Directory junto a la clave poscuántica que la sustituyó, para que un corresponsal que no pueda usar la nueva siga encontrando la antigua. El correo nuevo de este servicio va a la clave poscuántica desde ya. Después, una tarea del planificador quita la clave clásica de la entrada y del Web Key Directory. 0 la quita de inmediato."
+  },
+  "postLogin.FIELDS.pivEnabled.label": {
+    "en": "6d8ee32fc1b5b94a",
+    "text": "Pedir la reemisión de certificados PIV"
+  },
+  "postLogin.FIELDS.pivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, a toda persona a la que llegue este perfil y que tenga un certificado de ranura PIV emitido por este dominio, en una ranura que nombre pivSlots, se le pide tras iniciar sesión que inscriba uno nuevo (piv-reissue) cuando pivTrigger diga que corresponde: su emisor lo firmó con un algoritmo clásico mientras la CA emisora EST de este dominio es poscuántica, o caduca dentro de pivRenewDays. El certificado antiguo se revoca (superseded) cuando el nuevo se usa por primera vez para iniciar sesión. Un perfil con nombre que tenga esto desactivado excluye de esta actividad a quien se le seleccione."
+  },
+  "postLogin.FIELDS.pivSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "días"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.label": {
+    "en": "733d7ad9439f061c",
+    "text": "Reemisión PIV: Omitir la aplaza"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "Cuánto tiempo aplaza Omitir la reemisión PIV para esa persona."
+  },
+  "postLogin.FIELDS.pivGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "días"
+  },
+  "postLogin.FIELDS.pivGraceDays.label": {
+    "en": "cf0842fc5de15483",
+    "text": "Reemisión PIV: plazo concedido"
+  },
+  "postLogin.FIELDS.pivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "Contado desde la PRIMERA invitación de la persona a la reemisión PIV. Cuando ha pasado, Omitir desaparece y el inicio de sesión se retiene hasta que cada ranura pendiente tenga un certificado nuevo. 0 es sin plazo."
+  },
+  "postLogin.FIELDS.pivSlots.label": {
+    "en": "95dcbc9b5db168f8",
+    "text": "Reemisión PIV: ranuras"
+  },
+  "postLogin.FIELDS.pivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "Las ranuras PIV cuyos certificados examina la actividad, separadas por comas: 9a (autenticación PIV), 9c (firma digital), 9d (gestión de claves), 9e (autenticación de tarjeta). Una ranura cuyo perfil omite est.allowedProfiles nunca se pide."
+  },
+  "postLogin.FIELDS.pivTrigger.label": {
+    "en": "3a6dc99d50545fe3",
+    "text": "Reemisión PIV: qué hace que un certificado corresponda"
+  },
+  "postLogin.FIELDS.pivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "Qué hace que corresponda el certificado de una ranura. classical-issuer: su emisor lo firmó con un algoritmo clásico y la CA emisora EST de este dominio es poscuántica (un certificado reemitido bajo una CA clásica no sería mejor). expiring: caduca dentro de pivRenewDays. both: cualquiera de los dos."
+  },
+  "postLogin.FIELDS.pivRenewDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "días"
+  },
+  "postLogin.FIELDS.pivRenewDays.label": {
+    "en": "2e9493d0c48dc0ba",
+    "text": "Reemisión PIV: renovar con esta antelación"
+  },
+  "postLogin.FIELDS.pivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "Cuántos días antes de caducar corresponde renovar un certificado de ranura PIV, cuando pivTrigger es expiring o both."
+  },
+  "postLogin.FIELDS.pivTarget.label": {
+    "en": "a1261fcffb0037ed",
+    "text": "Reemisión PIV: qué se emite"
+  },
+  "postLogin.FIELDS.pivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "Sobre qué es el certificado nuevo. reissue: un certificado nuevo sobre una clave que la tarjeta vuelve a generar en la misma ranura, firmado por la CA emisora EST del dominio. rekey: una clave poscuántica en la tarjeta, que hoy ninguna tarjeta PIV puede generar, así que un perfil con rekey no pide nada a nadie."
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "b1a01fe693170513",
     "text": "La clase de este servicio para un perfil de actividad posterior al inicio de sesión: lo que se pide a una persona después de iniciar sesión. Nombrada por el PERFIL (`cn=default`, o un perfil con nombre que nombra una aplicación o un grupo)."
@@ -1946,6 +2150,58 @@
   "postLogin.SCHEMA.attributes.stsPostLoginNoPasskeyFallback.what": {
     "en": "4fa78beae92d0ce5",
     "text": "none: solo ML-DSA. classical: después de que un registro ML-DSA falle en el dispositivo, se ofrece un reintento con los algoritmos clásicos (donde la política de llaves de acceso lo permita) — una llave de acceso clásica es mejor que una contraseña, y a quien la tiene se le pide la migración más adelante como a cualquier otra persona."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, a toda persona a la que llegue este perfil y cuyo correo se cifre con una clave clásica —una clave OpenPGP cuya clave de cifrado no es ML-KEM, o un certificado S/MIME cuya clave no es ML-KEM— se le pide, tras iniciar sesión, que registre una poscuántica (pqc-mail-encryption): lo que hoy se cifra con una clave clásica podrá leerse cuando esa clave caiga. Un perfil con nombre que tenga esto desactivado excluye de esta actividad a quien se le seleccione."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "Cuánto tiempo aplaza Omitir la actividad de cifrado del correo para esa persona."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "Contado desde la PRIMERA invitación de la persona a la actividad de cifrado del correo. Cuando ha pasado, Omitir desaparece y el inicio de sesión se retiene hasta que se registre una clave poscuántica. 0 es sin plazo."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "Una persona cuyo correo no se cifra en absoluto (stsMailEncryption none o ausente). leave: no se le pide. invite: se le pide que registre una clave poscuántica y siempre puede omitirlo. require: se le pide, y solo puede omitirlo hasta que pase el plazo concedido."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "Qué ofrece el paso. either: una clave OpenPGP y un certificado S/MIME, primero el tipo que la persona usa ahora. openpgp: solo una clave OpenPGP según RFC 9980. smime: solo un certificado S/MIME ML-KEM, subido (este dominio no emite ninguno). Un tipo que el dominio no puede aceptar nunca se ofrece, y no se pide nada a nadie donde no se puede ninguno."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "Cuántos días se queda la clave OpenPGP clásica de una persona en su entrada y en el Web Key Directory junto a la clave poscuántica que la sustituyó, para que un corresponsal que no pueda usar la nueva siga encontrando la antigua. El correo nuevo de este servicio va a la clave poscuántica desde ya. Después, una tarea del planificador quita la clave clásica de la entrada y del Web Key Directory. 0 la quita de inmediato."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, a toda persona a la que llegue este perfil y que tenga un certificado de ranura PIV emitido por este dominio, en una ranura que nombre pivSlots, se le pide tras iniciar sesión que inscriba uno nuevo (piv-reissue) cuando pivTrigger diga que corresponde: su emisor lo firmó con un algoritmo clásico mientras la CA emisora EST de este dominio es poscuántica, o caduca dentro de pivRenewDays. El certificado antiguo se revoca (superseded) cuando el nuevo se usa por primera vez para iniciar sesión. Un perfil con nombre que tenga esto desactivado excluye de esta actividad a quien se le seleccione."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "Cuánto tiempo aplaza Omitir la reemisión PIV para esa persona."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "Contado desde la PRIMERA invitación de la persona a la reemisión PIV. Cuando ha pasado, Omitir desaparece y el inicio de sesión se retiene hasta que cada ranura pendiente tenga un certificado nuevo. 0 es sin plazo."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "Las ranuras PIV cuyos certificados examina la actividad, separadas por comas: 9a (autenticación PIV), 9c (firma digital), 9d (gestión de claves), 9e (autenticación de tarjeta). Una ranura cuyo perfil omite est.allowedProfiles nunca se pide."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "Qué hace que corresponda el certificado de una ranura. classical-issuer: su emisor lo firmó con un algoritmo clásico y la CA emisora EST de este dominio es poscuántica (un certificado reemitido bajo una CA clásica no sería mejor). expiring: caduca dentro de pivRenewDays. both: cualquiera de los dos."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "Cuántos días antes de caducar corresponde renovar un certificado de ranura PIV, cuando pivTrigger es expiring o both."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "Sobre qué es el certificado nuevo. reissue: un certificado nuevo sobre una clave que la tarjeta vuelve a generar en la misma ranura, firmado por la CA emisora EST del dominio. rekey: una clave poscuántica en la tarjeta, que hoy ninguna tarjeta PIV puede generar, así que un perfil con rekey no pide nada a nadie."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
     "en": "2b5b2ba409912c7d",
@@ -2018,6 +2274,66 @@
   "postLogin.sentences.noPasskeyRequire": {
     "en": "988144ad40324fa8",
     "text": "a una persona que no tiene llave de acceso se le pide registrar una llave de acceso poscuántica, y puede omitirlo hasta que termine el periodo de gracia"
+  },
+  "postLogin.sentences.mailMigration": {
+    "en": "51b2d82c00bdd004",
+    "text": "a una persona cuyo correo se cifra con una clave OpenPGP o un certificado S/MIME clásicos se le pide, tras iniciar sesión, que registre uno poscuántico (ML-KEM)"
+  },
+  "postLogin.sentences.mailOfferEither": {
+    "en": "a56bdbdfc1184177",
+    "text": "puede registrar una clave OpenPGP o subir un certificado S/MIME"
+  },
+  "postLogin.sentences.mailOfferOpenpgp": {
+    "en": "1088a13e106235ab",
+    "text": "puede registrar una clave OpenPGP"
+  },
+  "postLogin.sentences.mailOfferSmime": {
+    "en": "1f353acddbfc305e",
+    "text": "puede subir un certificado S/MIME"
+  },
+  "postLogin.sentences.mailNoKeyLeave": {
+    "en": "207bfd0824bc73d6",
+    "text": "a una persona cuyo correo no se cifra no se le pide nada"
+  },
+  "postLogin.sentences.mailNoKeyInvite": {
+    "en": "5b5bb65ef0e67a72",
+    "text": "a una persona cuyo correo no se cifra se la invita a registrar una clave poscuántica, y siempre puede omitirlo"
+  },
+  "postLogin.sentences.mailNoKeyRequire": {
+    "en": "cb269a837a256b60",
+    "text": "a una persona cuyo correo no se cifra se le pide que registre una clave poscuántica, y puede omitirlo hasta que termine el periodo de gracia"
+  },
+  "postLogin.sentences.mailKeep": {
+    "en": "f73b9c2b0b0c4082",
+    "text": "una clave OpenPGP clásica que sustituye una poscuántica se conserva junto a ella, y se publica con ella, durante {{days}} día(s)"
+  },
+  "postLogin.sentences.mailKeepNone": {
+    "en": "f7cb6f0da08b7411",
+    "text": "una clave OpenPGP clásica que sustituye una poscuántica se quita de inmediato"
+  },
+  "postLogin.sentences.pivReissue": {
+    "en": "5f2f81aff443f105",
+    "text": "a una persona con un certificado de ranura PIV ({{slots}}) se le pide, tras iniciar sesión, que inscriba uno nuevo"
+  },
+  "postLogin.sentences.pivTriggerClassical": {
+    "en": "632e10e241646755",
+    "text": "un certificado corresponde cuando lo firmó una CA clásica y la CA emisora EST de este dominio es poscuántica"
+  },
+  "postLogin.sentences.pivTriggerExpiring": {
+    "en": "aded73c111de1a19",
+    "text": "un certificado corresponde {{days}} día(s) antes de caducar"
+  },
+  "postLogin.sentences.pivTriggerBoth": {
+    "en": "e1ad48c0307193c5",
+    "text": "un certificado corresponde cuando lo firmó una CA clásica y la CA emisora EST de este dominio es poscuántica, o {{days}} día(s) antes de caducar"
+  },
+  "postLogin.sentences.pivTargetRekey": {
+    "en": "812934151a1711bd",
+    "text": "se pide una clave poscuántica en la tarjeta, que hoy ninguna tarjeta PIV puede generar, así que no se pide nada a nadie"
+  },
+  "postLogin.sentences.pivSuperseded": {
+    "en": "89b3974d23046244",
+    "text": "el certificado antiguo se revoca cuando el nuevo se usa por primera vez para iniciar sesión"
   },
   "postLogin.sentences.appliesTo": {
     "en": "f195acc04e68d15e",

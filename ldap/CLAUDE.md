@@ -4586,12 +4586,16 @@ its SubjectPublicKeyInfo's SHA-256. This file owns:
   `upn:<lower-cased>` per `userPrincipalName`, so the `upn` method is the
   same probe; the `email` method is `peopleByMail()`. A windowed process asks
   the store's index alone (a person is always windowed); a process with no
-  window reads only the in-memory HOLDERS of `stsCertificateBinding` or
-  `userPrincipalName` through `eachHolderOfAny()`, never every entry — the
-  uniqueness check runs on every write carrying a binding, and run
-  45236493306's walk guards (`tests/no_full_directory_walk_in_jobs.js`,
-  `..._in_requests.js`) found it reaching `eachEntryInRealm()` from
-  `putEntry()`, so from the CRL and federation jobs. No schema moves. Recording a binding is a write, so it is keyed; a
+  window holds the directory as a Map and walks it, reading memory and never
+  the store — `peopleByMail()`'s arrangement, and a BARRIER of
+  `tests/no_full_directory_walk_in_jobs.js` for that reason. The uniqueness
+  check that calls it returns before any lookup when the entry written
+  carries no binding, so the CRL and federation jobs' writes never reach it
+  (run 45236493306's walk guards found that they did). It is NOT
+  `eachHolderOfAny()`: without a window that is the same walk, and every
+  name it is given must be in the store's asked index
+  (`tests/directory_asked_names.js`, run 45269202825), which the windowed
+  question here does not use. No schema moves. Recording a binding is a write, so it is keyed; a
   `userPrincipalName` stored before #2012 is keyed by
   `persistence/granting_index_backfill.js`'s second walk, which re-keys every
   entry naming one of `directory_codec.BACKFILL_ATTRIBUTES` once

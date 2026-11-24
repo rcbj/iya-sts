@@ -79,8 +79,11 @@
 // fresh one (logging in again) and runs ONCE more; where even that fails with
 // CKR_CRYPTOKI_NOT_INITIALIZED or a device error the module is finalized and
 // initialized again first — ONCE for every token on the module, after the
-// operations holding its sessions drain, and with every session from before
-// forgotten rather than closed or lent (`reinitializeEntry()`). Nothing
+// operations holding its sessions drain, with every session from before
+// forgotten rather than closed or lent (`reinitializeEntry()`), and ONCE for
+// every thread of the process that met the outage at the same moment: a
+// lock and a generation in shared memory make it single-flight, and the
+// threads that waited take in the one that reconnected. Nothing
 // polls: the next operation after an outage is what reconnects, and an
 // operation that still fails is refused with STS-KEYS-0201 — a refusal,
 // never a crash.
@@ -977,33 +980,280 @@ function drained(entry) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// ONE RE-INITIALISATION AT A TIME IN THE PROCESS: A SINGLE FLIGHT (#1955 P8,
+// rcbj 2026-11-23: "fix it").
+//
+// WHERE THE RACE WAS. Every thread that loaded a module — the front and
+// each request worker, `worker_threads` Workers that each load the binding
+// and this file — holds its own entry, its own session pool and its own
+// control thread, while C_Finalize and C_Initialize are the PROCESS's. A
+// thread's own operations already joined one re-initialisation
+// (`entry.recovering`), and the outage channel below tells the other
+// threads after the fact. What that left was the channel's flight time:
+// two threads that met the outage in the same instant each finalized the
+// module, the second after the first had initialised it again and opened
+// its sessions, so the first thread's retry met a dead session and was
+// refused (STS-KEYS-0201) — a spurious failed signature or decryption
+// during an outage. It was never libuv's pool: C_SignAsync and its kin run
+// there, but a re-initialisation is asked by a JavaScript thread (through
+// its control thread), and two JavaScript threads were the two that raced.
+//
+// THE FIX IS A LOCK AND A GENERATION IN SHARED MEMORY. One
+// SharedArrayBuffer for the process, made by the first thread that loads
+// this file — the front, at `crypto.js`'s require, long before a request
+// worker is started — and handed to every Worker made after it through
+// `worker_threads.setEnvironmentData()`, which a new Worker inherits from
+// the thread that made it (a request worker from the front, a control
+// thread from its owner); a structured clone of a SharedArrayBuffer shares
+// its memory, so nothing is plumbed through the pool. It holds a SLOT of
+// three int32s per module path: the path's hash, the lock (0 free, else the
+// holder's threadId + 1) and the module's GENERATION, the number of times
+// any thread of the process has initialised it again. A session remembers
+// the generation it was opened under (`gen`). A thread that must
+// re-initialise takes the lock (`Atomics.compareExchange`, waiting with
+// `Atomics.waitAsync`, which arms no timer of ours), and holding it looks at
+// the generation: MOVED since its session was opened (or since it noticed
+// the outage) means another thread re-initialised in between, so it does
+// not finalize — it ADOPTS that result (its sessions from before are
+// forgotten, its slots found again) and its one retry runs on the module the
+// other thread reconnected. UNMOVED means it is the one: it re-initialises,
+// moves the generation and lets go. However many threads notice at once,
+// the module is finalized once, and every one of them retries against that
+// one result (`tests/pkcs11_reconnect.js`).
+//
+// A HOLDER THAT NEVER LETS GO (a worker terminated mid-way) is waited out
+// for REINIT_LOCK_WAIT_MS and then taken over, logged under STS-KEYS-0213;
+// the blocking door (`recoverSync()`) waits at most REINIT_LOCK_WAIT_SYNC_MS
+// with `Atomics.wait` and is refused STS-KEYS-0212 past it. Neither is
+// periodic: a wait ends when the holder lets go. A runtime with no
+// SharedArrayBuffer (none this service runs on) gets a private table, a lock
+// for its own thread only; the outage channel still tells the others.
+// ---------------------------------------------------------------------------
+const REINIT_ENV_KEY = 'iya-sts-pkcs11-reinit:v1';
+const REINIT_SLOTS = 32;
+const REINIT_SLOT_INTS = 3;
+const REINIT_LOCK_WAIT_MS = 30000;
+const REINIT_LOCK_WAIT_SYNC_MS = 2000;
+
+const REINIT_TABLE = (function () {
+  let table = null;
+  let problem = null;
+  try {
+    const workerThreads = require('worker_threads');
+    const held = workerThreads.getEnvironmentData(REINIT_ENV_KEY);
+    if (held instanceof SharedArrayBuffer) {
+      table = new Int32Array(held);
+    } else {
+      const made = new SharedArrayBuffer(4 * REINIT_SLOTS * REINIT_SLOT_INTS);
+      workerThreads.setEnvironmentData(REINIT_ENV_KEY, made);
+      table = new Int32Array(made);
+    }
+  } catch (e) {
+    // Reported on the line below: a private table serves this thread.
+    problem = (e && e.message) || String(e);
+    table = new Int32Array(REINIT_SLOTS * REINIT_SLOT_INTS);
+  }
+  if (problem) {
+    log.debug('Caught in REINIT_TABLE: ' + problem);
+  }
+  return table;
+})();
+
+// This thread's name in the lock: its threadId plus one, so 0 is free.
+function reinitHolder() {
+  log.debug('Entering reinitHolder().');
+  const id = Number(require('worker_threads').threadId) || 0;
+  log.debug('Leaving reinitHolder().');
+  return id + 1;
+}
+
+// A module path's slot in the table, claimed on first use: FNV-1a over the
+// path, never 0. Not a cryptographic use; two paths that collided would only
+// share a lock and a generation, which costs a reconnect, never a crash.
+function reinitSlotOf(entry) {
+  log.debug('Entering reinitSlotOf().');
+  if (typeof entry.reinitSlot === 'number') {
+    log.debug('Leaving reinitSlotOf(). Held.');
+    return entry.reinitSlot;
+  }
+  let h = 0x811c9dc5;
+  const text = String(entry.modulePath || '');
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  h = (h | 0) || 1;
+  let slot = ((h >>> 0) % REINIT_SLOTS) * REINIT_SLOT_INTS;
+  for (let n = 0; n < REINIT_SLOTS; n++) {
+    const at = (((h >>> 0) + n) % REINIT_SLOTS) * REINIT_SLOT_INTS;
+    const was = Atomics.compareExchange(REINIT_TABLE, at, 0, h);
+    if (was === 0 || was === h) {
+      slot = at;
+      break;
+    }
+  }
+  entry.reinitSlot = slot;
+  log.debug('Leaving reinitSlotOf(). ' + slot);
+  return slot;
+}
+
+// The module's generation: how many times a thread of this process has
+// initialised it again.
+function sharedGeneration(entry) {
+  log.debug('Entering sharedGeneration().');
+  const out = Atomics.load(REINIT_TABLE, reinitSlotOf(entry) + 2);
+  log.debug('Leaving sharedGeneration(). ' + out);
+  return out;
+}
+
+// One attempt at the lock: 0 when this thread took it, else its holder.
+function tryReinitLock(entry) {
+  log.debug('Entering tryReinitLock().');
+  const was = Atomics.compareExchange(REINIT_TABLE, reinitSlotOf(entry) + 1,
+                                      0, reinitHolder());
+  log.debug('Leaving tryReinitLock(). ' + was);
+  return was;
+}
+
+/**
+ * Takes the module's lock, waiting for its holder to let go; a holder that
+ * has not let go after REINIT_LOCK_WAIT_MS is taken over (STS-KEYS-0213).
+ *
+ * @param entry - the module
+ * @returns a promise settled once this thread holds the lock
+ */
+async function takeReinitLock(entry) {
+  log.debug('Entering takeReinitLock().');
+  const at = reinitSlotOf(entry) + 1;
+  const me = reinitHolder();
+  const deadline = Date.now() + REINIT_LOCK_WAIT_MS;
+  for (;;) {
+    const was = tryReinitLock(entry);
+    if (was === 0) {
+      log.debug('Leaving takeReinitLock(). Taken.');
+      return;
+    }
+    const left = deadline - Date.now();
+    if (left <= 0) {
+      if (Atomics.compareExchange(REINIT_TABLE, at, was, me) === was) {
+        log.warn(errorCodes.tag('STS-KEYS-0213') + 'pkcs11: the ' +
+                 'process-wide lock on re-initialising "' + entry.modulePath +
+                 '" was held by thread ' + (was - 1) + ' for more than ' +
+                 REINIT_LOCK_WAIT_MS + ' ms; this thread takes it over.');
+        log.debug('Leaving takeReinitLock(). Taken over.');
+        return;
+      }
+      continue;
+    }
+    // ES2024's `Atomics.waitAsync`, which node has had since 16; the cast
+    // is for the type-check's library, which predates it.
+    const waited = /** @type {any} */ (Atomics).waitAsync(REINIT_TABLE, at,
+                                                          was, left);
+    if (waited.async) {
+      // A pending `Atomics.waitAsync()` does not keep a thread's event loop
+      // alive (measured: a worker with nothing else to do exited mid-wait),
+      // so a message port with a listener holds it open for the wait.
+      const hold = new (require('worker_threads').MessageChannel)();
+      hold.port1.on('message', function () {
+        log.debug('takeReinitLock(): nothing is ever sent here.');
+      });
+      try {
+        await waited.value;
+      } finally {
+        hold.port1.close();
+      }
+    }
+  }
+}
+
+// The same, for the blocking door: true once held, false when the holder
+// did not let go within REINIT_LOCK_WAIT_SYNC_MS.
+function takeReinitLockSync(entry) {
+  log.debug('Entering takeReinitLockSync().');
+  const at = reinitSlotOf(entry) + 1;
+  const deadline = Date.now() + REINIT_LOCK_WAIT_SYNC_MS;
+  for (;;) {
+    const was = tryReinitLock(entry);
+    if (was === 0) {
+      log.debug('Leaving takeReinitLockSync(). Taken.');
+      return true;
+    }
+    const left = deadline - Date.now();
+    if (left <= 0) {
+      log.debug('Leaving takeReinitLockSync(). Held elsewhere.');
+      return false;
+    }
+    Atomics.wait(REINIT_TABLE, at, was, left);
+  }
+}
+
+// Lets the lock go and wakes every thread waiting on it.
+function giveReinitLock(entry) {
+  log.debug('Entering giveReinitLock().');
+  const at = reinitSlotOf(entry) + 1;
+  Atomics.compareExchange(REINIT_TABLE, at, reinitHolder(), 0);
+  Atomics.notify(REINIT_TABLE, at);
+  log.debug('Leaving giveReinitLock().');
+}
+
+// This thread initialised the module again: the generation moves, and this
+// thread has taken in the generation it made.
+function moveSharedGeneration(entry) {
+  log.debug('Entering moveSharedGeneration().');
+  const out = Atomics.add(REINIT_TABLE, reinitSlotOf(entry) + 2, 1) + 1;
+  entry.adoptedGeneration = out;
+  log.debug('Leaving moveSharedGeneration(). ' + out);
+  return out;
+}
+
+// Whether this thread has yet to take in generation `gen`, which another
+// thread made; when it has not, it takes it in now (the epoch moves, so its
+// sessions from before are forgotten rather than closed or lent).
+function adoptSharedGeneration(entry, gen) {
+  log.debug('Entering adoptSharedGeneration(). ' + gen);
+  const fresh = !(Number(entry.adoptedGeneration) >= gen);
+  if (fresh) {
+    entry.adoptedGeneration = gen;
+    entry.epoch++;
+  }
+  log.debug('Leaving adoptSharedGeneration(). ' + fresh);
+  return fresh;
+}
+
 /**
  * Initialises a module again, ONCE for every token on it that met the
- * outage: the operations of this thread holding its sessions drain first
- * (they complete or meet the outage and join this), then C_Finalize and
- * C_Initialize are made off the event loop, the epoch moves — so every
- * session from before is forgotten rather than closed or lent — and every
- * token on the module drops its idle sessions and finds its slot again.
- * New operations wait for it in `acquire()`.
+ * outage — and, through the lock above, once for every THREAD of the
+ * process that met it at the same moment. The operations of this thread
+ * holding its sessions drain first (they complete or meet the outage and
+ * join this); then the process-wide lock is taken, and either another
+ * thread has initialised the module again since `seenGeneration` (it is
+ * adopted, nothing is finalized) or C_Finalize and C_Initialize are made off
+ * the event loop and the generation moves. Either way the epoch moves — so
+ * every session from before is forgotten rather than closed or lent — and
+ * every token on the module drops its idle sessions and finds its slot
+ * again. New operations wait for it in `acquire()`.
  *
  * CKR_CRYPTOKI_NOT_INITIALIZED is answered without C_Finalize: somebody
- * (another thread of this process — C_Finalize is process-wide) finalized
- * it already, and finalizing again would end the sessions that thread has
- * just opened. The other threads of the process each meet the outage on
- * their own sessions and reopen them; a thread's count cannot see another
- * thread's calls, so a device that really went away can cost an operation
- * in flight on another thread its one retry (STS-KEYS-0201), never a crash.
+ * finalized it already, and finalizing again would end the sessions they
+ * have just opened.
  *
  * @param entry - the module
  * @param finalizeFirst - false when the module is already not initialized
+ * @param seenEpoch - this thread's epoch the failed session was opened
+ *   under, or undefined
+ * @param seenGeneration - the process's generation it was opened under,
+ *   or undefined for the generation when the outage was noticed
  * @returns a promise settled once it is done
  */
-function reinitializeEntry(entry, finalizeFirst, seenEpoch) {
+function reinitializeEntry(entry, finalizeFirst, seenEpoch, seenGeneration) {
   log.debug('Entering reinitializeEntry().');
   if (entry.recovering) {
     log.debug('Leaving reinitializeEntry(). Joined.');
     return entry.recovering;
   }
+  const seenGen = typeof seenGeneration === 'number' ? seenGeneration :
+                  sharedGeneration(entry);
   const done = function () {
     entry.recovering = null;
   };
@@ -1016,20 +1266,34 @@ function reinitializeEntry(entry, finalizeFirst, seenEpoch) {
            entry.epoch !== seenEpoch;
   };
   let skipped = false;
-  entry.recovering = drained(entry).then(function () {
+  entry.recovering = drained(entry).then(async function () {
     if (since()) {
       skipped = true;
       return true;
     }
-    return entry.control.call('reinitialize', [!!finalizeFirst]);
+    await takeReinitLock(entry);
+    try {
+      const now = sharedGeneration(entry);
+      if (now !== seenGen) {
+        // Another thread reconnected while this one waited: its result
+        // is this one's too.
+        skipped = true;
+        adoptSharedGeneration(entry, now);
+        return true;
+      }
+      await entry.control.call('reinitialize', [!!finalizeFirst]);
+      moveSharedGeneration(entry);
+      entry.epoch++;
+      announceReinitialized(entry);
+    } finally {
+      giveReinitLock(entry);
+    }
+    return true;
   }).then(function () {
     if (skipped) {
       log.info('pkcs11: "' + entry.modulePath + '" was initialised again ' +
                'by another thread since the session that met the outage ' +
                'was opened; it is not finalized again.');
-    } else {
-      entry.epoch++;
-      announceReinitialized(entry);
     }
     return Promise.all(Array.from(entry.tokens).map(function (t) {
       return t.afterReinitialize();
@@ -1058,9 +1322,13 @@ function reinitializeEntry(entry, finalizeFirst, seenEpoch) {
 // each other thread moves its epoch (its sessions from before are forgotten,
 // not closed: their handles may now name the announcer's), finds its slots
 // again, and — the point — does not finalize for an outage met on a session
-// opened before the announcement (`reinitializeEntry()`'s `seenEpoch`). What
-// is left is the time a message takes to arrive: two threads that both
-// finalize inside it still cost each other's retries, as before.
+// opened before the announcement (`reinitializeEntry()`'s `seenEpoch`). The
+// time a message takes to arrive is NOT what keeps two threads from both
+// finalizing — that is the process-wide lock and generation above, which
+// make a re-initialisation single-flight; the channel only lets a thread
+// that met no outage of its own drop its idle sessions early. A message
+// carries the generation it made, and one this thread has already taken in
+// (through the lock) is not taken in twice.
 // ---------------------------------------------------------------------------
 function outageChannel(entry) {
   log.debug('Entering outageChannel().');
@@ -1071,7 +1339,7 @@ function outageChannel(entry) {
                                                  entry.modulePath);
     channel.onmessage = function (event) {
       if (event && event.data && event.data.reinitialized) {
-        foreignReinitialized(entry);
+        foreignReinitialized(entry, Number(event.data.generation) || 0);
       }
     };
     if (typeof channel.unref === 'function') {
@@ -1092,7 +1360,8 @@ function announceReinitialized(entry) {
   log.debug('Entering announceReinitialized().');
   if (entry.channel) {
     try {
-      entry.channel.postMessage({ reinitialized: true });
+      entry.channel.postMessage({ reinitialized: true,
+                                  generation: entry.adoptedGeneration });
     } catch (e) {
       log.debug('Caught in announceReinitialized(): ' +
                 ((e && e.message) || e));
@@ -1102,10 +1371,18 @@ function announceReinitialized(entry) {
 }
 
 // Another thread initialised the module again: every session of this thread
-// from before is gone with it.
-function foreignReinitialized(entry) {
+// from before is gone with it — unless this thread took that generation in
+// already, through the lock (`adoptSharedGeneration()`).
+function foreignReinitialized(entry, generation) {
   log.debug('Entering foreignReinitialized(). ' + entry.modulePath);
-  entry.epoch++;
+  if (generation > 0) {
+    if (!adoptSharedGeneration(entry, generation)) {
+      log.debug('Leaving foreignReinitialized(). Taken in already.');
+      return;
+    }
+  } else {
+    entry.epoch++;
+  }
   const tokens = Array.from(entry.tokens);
   for (const t of tokens) {
     t.generation++;
@@ -1132,9 +1409,10 @@ function foreignReinitialized(entry) {
 // A TOKEN: one slot of one module, logged in as the user, with its pool of
 // sessions. Built by `common/crypto.js`'s `openPkcs11Token()`.
 //
-// A SESSION is held as `{ h, epoch }`: the binding's handle and the module's
-// epoch it was opened under (`newEntry()`). `open` counts this token's
-// sessions that exist — idle, lent, and the one blocking session — and is
+// A SESSION is held as `{ h, epoch, gen }`: the binding's handle, the
+// module's epoch it was opened under in this thread (`newEntry()`) and the
+// process's generation of the module then (`sharedGeneration()`). `open`
+// counts this token's sessions that exist — idle, lent, and the one blocking session — and is
 // only ever moved one session at a time, never reset while sessions are
 // lent: a session from an earlier epoch is forgotten when it comes back.
 // ---------------------------------------------------------------------------
@@ -1303,6 +1581,7 @@ class Pkcs11Token {
   openSessionSync() {
     log.debug('Entering Pkcs11Token.openSessionSync().');
     const epoch = this.entry.epoch;
+    const gen = sharedGeneration(this.entry);
     let h;
     try {
       h = CONTROL_OPS.open(this.entry.lib, this.slot, this.pin);
@@ -1312,7 +1591,7 @@ class Pkcs11Token {
     this.open++;
     this.loggedIn = this.pin !== null;
     log.debug('Leaving Pkcs11Token.openSessionSync().');
-    return { h: h, epoch: epoch };
+    return { h: h, epoch: epoch, gen: gen };
   }
 
   // A session opened off the event loop, counted from the moment it is
@@ -1320,6 +1599,7 @@ class Pkcs11Token {
   async openSessionAsync() {
     log.debug('Entering Pkcs11Token.openSessionAsync().');
     const epoch = this.entry.epoch;
+    const gen = sharedGeneration(this.entry);
     this.open++;
     let h;
     try {
@@ -1330,7 +1610,7 @@ class Pkcs11Token {
     }
     this.loggedIn = this.pin !== null;
     log.debug('Leaving Pkcs11Token.openSessionAsync().');
-    return { h: h, epoch: epoch };
+    return { h: h, epoch: epoch, gen: gen };
   }
 
   // Whether a session is from the module's current epoch.
@@ -1550,7 +1830,7 @@ class Pkcs11Token {
   // After an outage met off the event loop: every idle session is dropped
   // (they were lost with the one that failed), and the module is initialised
   // again, once, where the error says the library itself lost the device.
-  async recover(err, seenEpoch) {
+  async recover(err, seenEpoch, seenGeneration) {
     log.debug('Entering Pkcs11Token.recover().');
     this.reconnects++;
     this.generation++;
@@ -1563,7 +1843,7 @@ class Pkcs11Token {
     if (REINITIALIZE_ON.has(ckr)) {
       await reinitializeEntry(this.entry,
                               ckr !== CK.CKR_CRYPTOKI_NOT_INITIALIZED,
-                              seenEpoch);
+                              seenEpoch, seenGeneration);
     }
     log.warn(errorCodes.tag('STS-KEYS-0201') + 'pkcs11: ' + this.describe() +
              ' answered ' + ((err && err.message) || err) + '; the session ' +
@@ -1575,8 +1855,10 @@ class Pkcs11Token {
   // place is safe only while no asynchronous operation of this thread holds
   // a session on it; otherwise it is started off the event loop, where it
   // waits for them, and this call is refused (STS-KEYS-0212).
-  recoverSync(err, what, seenEpoch) {
+  recoverSync(err, what, seenEpoch, seenGeneration) {
     log.debug('Entering Pkcs11Token.recoverSync().');
+    const seenGen = typeof seenGeneration === 'number' ? seenGeneration :
+                    sharedGeneration(this.entry);
     this.reconnects++;
     this.generation++;
     const ckr = ckrOf(err);
@@ -1591,7 +1873,7 @@ class Pkcs11Token {
     if (REINITIALIZE_ON.has(ckr) && !since) {
       if (this.entry.inflight > 0 || this.entry.recovering) {
         reinitializeEntry(this.entry, ckr !== CK.CKR_CRYPTOKI_NOT_INITIALIZED,
-                          seenEpoch)
+                          seenEpoch, seenGen)
           .catch(function (e) {
             // The next operation meets the module as it is, and refuses
             // with its own answer.
@@ -1604,10 +1886,30 @@ class Pkcs11Token {
           'the module; it is initialised again off the event loop once ' +
           'they drain', err);
       }
-      CONTROL_OPS.reinitialize(this.entry.lib,
-                               ckr !== CK.CKR_CRYPTOKI_NOT_INITIALIZED);
-      this.entry.epoch++;
-      announceReinitialized(this.entry);
+      // The process-wide lock (`takeReinitLock()`), waited for in place —
+      // this is the door where the event loop waits for the module — and
+      // at most REINIT_LOCK_WAIT_SYNC_MS.
+      if (!takeReinitLockSync(this.entry)) {
+        log.debug('Leaving Pkcs11Token.recoverSync(). Locked elsewhere.');
+        throw refusal('STS-KEYS-0212', what + ' on ' + this.describe() +
+          ' met a lost device while another thread of this process is ' +
+          'initialising the module again', err);
+      }
+      try {
+        const now = sharedGeneration(this.entry);
+        if (now !== seenGen) {
+          // Another thread reconnected it: this thread takes that in.
+          adoptSharedGeneration(this.entry, now);
+        } else {
+          CONTROL_OPS.reinitialize(this.entry.lib,
+                                   ckr !== CK.CKR_CRYPTOKI_NOT_INITIALIZED);
+          moveSharedGeneration(this.entry);
+          this.entry.epoch++;
+          announceReinitialized(this.entry);
+        }
+      } finally {
+        giveReinitLock(this.entry);
+      }
       for (const t of Array.from(this.entry.tokens)) {
         t.generation++;
         t.dropIdle();
@@ -1664,7 +1966,7 @@ class Pkcs11Token {
                     '; reconnecting once.');
           this.discard(session);
           try {
-            await this.recover(e, session.epoch);
+            await this.recover(e, session.epoch, session.gen);
           } catch (r) {
             // The device is still away: the reconnect itself failed, which
             // is this operation's refusal, not a different one.
@@ -1758,7 +2060,7 @@ class Pkcs11Token {
                     ((e && e.message) || e) + '; reconnecting once.');
           this.dropSync(session);
           try {
-            this.recoverSync(e, what, session.epoch);
+            this.recoverSync(e, what, session.epoch, session.gen);
           } catch (r) {
             // The device is still away: the reconnect itself failed, which
             // is this operation's refusal, not a different one.
@@ -2951,6 +3253,9 @@ module.exports = {
   revive: revive,
   errorFields: errorFields,
   newEntry: newEntry,
+  // The process's generation of a module (`reinitializeEntry()`), for a
+  // test that counts re-initialisations across threads.
+  sharedGeneration: sharedGeneration,
   openToken: openToken,
   forgetLibraries: forgetLibraries
 };

@@ -1224,7 +1224,9 @@ Protocols → PKI trust has four tabs:
   `x5c` of their JWK sets, the settings that hold certificates or trust anchors,
   the realm's federated SPIFFE bundles, GNAP clients' keys and the
   TLS-terminating proxies trusted to forward a client certificate
-  (`tls.trustedProxyCertificates`, listed as `thumbprint-only`). The default
+  (`tls.trustedProxyCertificates`, listed as `thumbprint-only`; a key pin,
+  `spki:<hex>`, is listed with `(key)` after its place and its fingerprint
+  reads `spki:` and the key's digest, which is not a certificate's). The default
   realm's tab also lists the cloud providers' certificates the image ships and
   the client-certificate truststore, which are the same for every realm. The daily `pki.pins.audit` job writes it, and
   **Recheck now** (`POST /admin-api/pki/trust/recheck`) does so on demand. The job logs what changed (`STS-PKI-0263`,

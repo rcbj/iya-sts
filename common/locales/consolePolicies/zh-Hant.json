@@ -1,6 +1,7 @@
 {
   "yes": "是",
   "no": "否",
+  "follows": "同 {row}",
   "configuration": "組態",
   "schema": "結構描述",
   "saveProfile": "儲存設定檔",

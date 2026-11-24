@@ -345,24 +345,33 @@ class CertificatePins {
 
   /**
    * The TLS-terminating proxies trusted to forward a client certificate
-   * (#2012, `tls.trustedProxyCertificates`): SHA-256 fingerprints, so each
-   * is a thumbprint row, as a registered thumbprint is. The certificate is
-   * not here to read; what is listed is that the realm pins one, and its
-   * handshake is the client truststore's (`tls-client`).
+   * (#2012, `tls.trustedProxyCertificates`): SHA-256 digests, so each is
+   * a thumbprint row, as a registered thumbprint is. The certificate is not
+   * here to read; what is listed is that the realm pins one, and its
+   * handshake is the client truststore's (`tls-client`). A certificate's
+   * digest is listed as written, as it always was; a key's (an `spki:` pin,
+   * rcbj 2026-11-23, read by `forwarded_client_certificate.ts`'s `pinOf()`)
+   * as `spki:<lower-case hex>`, with `(key)` after its place, so the
+   * inventory never shows a key's digest as a certificate fingerprint.
    *
    * @returns the rows
    */
   static fromTrustedProxies(): PinnedSource[] {
     helpers.log.debug("Entering CertificatePins.fromTrustedProxies().");
+    const forwarded = require('./forwarded_client_certificate');
     const raw = config.value('tls.trustedProxyCertificates');
     const rows: PinnedSource[] = [];
     (Array.isArray(raw) ? raw : String(raw || '').split(','))
       .map(function (one: unknown): string {
         return String(one).trim();
       }).filter(Boolean).forEach(function (one: string, i: number) {
+        const pin = forwarded.pinOf(one);
+        const key = !!pin && pin.kind === 'spki';
         rows.push({ source: 'setting',
-                    where: 'tls.trustedProxyCertificates #' + (i + 1),
-                    purpose: 'tls-client', thumbprint: one,
+                    where: 'tls.trustedProxyCertificates #' + (i + 1) +
+                           (key ? ' (key)' : ''),
+                    purpose: 'tls-client',
+                    thumbprint: key ? 'spki:' + pin.hex : one,
                     href: '/admin/listeners' });
       });
     helpers.log.debug("Leaving CertificatePins.fromTrustedProxies(). " +

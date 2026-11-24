@@ -45,12 +45,30 @@
 //
 // and then by this table's order.
 //
-// A LIBRARY (rule 3) AND A LEAF: it requires `helpers` only.
+// **THE STARTED ACTIVITIES, THEIR MAIL AND THE REPORT READ THIS TABLE TOO**
+// (#2009 P4, design X6). `startable` says an administrator may start the
+// activity (#1111): every activity since P4. `template` is the mail use
+// `post-login-reminder` sends for it — one message per activity, so a realm
+// that reworded the passkey reminder keeps its words and the other
+// activities' reminders say what THEY ask. `policySwitch` is the policy row
+// that turns the activity on in a profile, which the started activities'
+// page asks without loading the activity's module.
+//
+// A LIBRARY (rule 3) AND A LEAF THAT REQUIRES NOTHING OF THIS SERVICE (#2009
+// P4): its logger is bunyan's own, `model_tables.ts`'s arrangement, so
+// `report/catalog.ts` — which requires nothing of the service, its sources
+// reading a store being `report/sources.ts`'s business — reads the activity
+// list from here instead of keeping a copy, and no require from there can
+// load `helpers.js` (and with it the configuration and the key set) into a
+// reader that only wanted a list of names.
 // ---------------------------------------------------------------------------
 
-import helpers = require('./helpers');
+import bunyan = require('bunyan');
 
-const { log } = helpers;
+const log = bunyan.createLogger({
+  name: 'sts-post-login-kinds',
+  level: process.env.LOG_LEVEL || process.env.STS_LOG_LEVEL || 'info'
+});
 
 /**
  * How an activity's credential is exposed: the order a sign-in asks in.
@@ -68,6 +86,16 @@ interface KindRow {
   // The module that answers for it, relative to this directory, required
   // lazily by `post_login.ts`; '' where `post_login.ts` answers itself.
   module: string;
+  // Whether an administrator may START it (#1111): mail its people. Every
+  // activity since #2009's P4 gave the started activities, their mail and
+  // their report the other activities' words.
+  startable: boolean;
+  // The mail template a started activity's reminder is sent with (#2009
+  // P4): `common/mail_templates.ts`'s id.
+  template: string;
+  // The policy row that turns the activity on in a profile (#2009 P4):
+  // `enabled` for the passkey migration (design X2), then each block's own.
+  policySwitch: string;
 }
 
 /**
@@ -110,12 +138,41 @@ interface PostLoginKind {
 const PQC_PASSKEY_MIGRATION = 'pqc-passkey-migration';
 
 /**
+ * The mail-encryption migration's id (#2009 P2): OpenPGP and S/MIME, one
+ * activity (rcbj's D1).
+ */
+const PQC_MAIL_ENCRYPTION = 'pqc-mail-encryption';
+
+/**
+ * The PIV certificate re-issue's id (#2009 P3): a smart card's slot
+ * certificates moved to a post-quantum issuer, or renewed before they lapse.
+ */
+const PIV_REISSUE = 'piv-reissue';
+
+/**
  * Every post-login activity, in the order a sign-in asks those of one
  * exposure.
  */
 const KINDS: readonly KindRow[] = Object.freeze([
+  // The reminder keeps its template's id from before #2009, so a realm's
+  // rewording of it and a delivery log naming it mean what they meant.
   Object.freeze({ id: PQC_PASSKEY_MIGRATION, exposure: 'forgery' as Exposure,
-                  module: '' })
+                  module: '', startable: true,
+                  template: 'post-login-reminder',
+                  policySwitch: 'enabled' }),
+  // #2009 P2: `common/post_login_mail.ts` answers for it.
+  Object.freeze({ id: PQC_MAIL_ENCRYPTION,
+                  exposure: 'decrypt-later' as Exposure,
+                  module: './post_login_mail', startable: true,
+                  template: 'post-login-reminder-mail-encryption',
+                  policySwitch: 'mailEnabled' }),
+  // #2009 P3: `common/post_login_piv.ts` answers for it. A certificate a
+  // classical CA signed can be forged once that CA's key falls, so its
+  // exposure is the passkey migration's, and it is asked after it.
+  Object.freeze({ id: PIV_REISSUE, exposure: 'forgery' as Exposure,
+                  module: './post_login_piv', startable: true,
+                  template: 'post-login-reminder-piv-reissue',
+                  policySwitch: 'pivEnabled' })
 ]);
 
 /**
@@ -132,6 +189,14 @@ class PostLoginKinds {
    * The passkey migration's id.
    */
   static readonly PQC_PASSKEY_MIGRATION = PQC_PASSKEY_MIGRATION;
+  /**
+   * The mail-encryption migration's id (#2009 P2).
+   */
+  static readonly PQC_MAIL_ENCRYPTION = PQC_MAIL_ENCRYPTION;
+  /**
+   * The PIV certificate re-issue's id (#2009 P3).
+   */
+  static readonly PIV_REISSUE = PIV_REISSUE;
   /**
    * The table.
    */
@@ -156,6 +221,23 @@ class PostLoginKinds {
   }
 
   /**
+   * The activities an administrator may start (#1111), in the table's
+   * order: every activity since #2009's P4.
+   *
+   * @returns the ids
+   */
+  static startableIds(): string[] {
+    log.debug("Entering PostLoginKinds.startableIds().");
+    const out = KINDS.filter(function (row) {
+      return row.startable === true;
+    }).map(function (row) {
+      return row.id;
+    });
+    log.debug("Leaving PostLoginKinds.startableIds(). " + out.length);
+    return out;
+  }
+
+  /**
    * One activity's row.
    *
    * @param id - the activity
@@ -167,6 +249,53 @@ class PostLoginKinds {
       return row.id === String(id || '');
     })[0] || null;
     log.debug("Leaving PostLoginKinds.rowOf(). " + (out ? out.id : 'None.'));
+    return out;
+  }
+
+  /**
+   * The mail template a started activity's reminder is sent with (#2009
+   * P4); the passkey migration's for an activity not in the table, which is
+   * what a reminder asked with no activity always was.
+   *
+   * @param id - the activity
+   * @returns the template's id
+   */
+  static templateOf(id: string): string {
+    log.debug("Entering PostLoginKinds.templateOf().");
+    const row = PostLoginKinds.rowOf(id) ||
+                PostLoginKinds.rowOf(PQC_PASSKEY_MIGRATION);
+    const out = (row as KindRow).template;
+    log.debug("Leaving PostLoginKinds.templateOf(). " + out);
+    return out;
+  }
+
+  /**
+   * Every reminder template, one per activity, in the table's order.
+   *
+   * @returns the template ids
+   */
+  static templates(): string[] {
+    log.debug("Entering PostLoginKinds.templates().");
+    const out = KINDS.map(function (row) {
+      return row.template;
+    });
+    log.debug("Leaving PostLoginKinds.templates(). " + out.length);
+    return out;
+  }
+
+  /**
+   * Whether a profile's rows turn an activity on, read off the row its
+   * table names (#2009 P4), without loading the activity's module.
+   *
+   * @param id - the activity
+   * @param profile - a profile as `post_login_policy.ts` reads one
+   * @returns whether that row is true
+   */
+  static switchedOnIn(id: string, profile: Record<string, any>): boolean {
+    log.debug("Entering PostLoginKinds.switchedOnIn().");
+    const row = PostLoginKinds.rowOf(id);
+    const out = !!row && !!profile && profile[row.policySwitch] === true;
+    log.debug("Leaving PostLoginKinds.switchedOnIn(). " + out);
     return out;
   }
 

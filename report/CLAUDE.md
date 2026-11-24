@@ -454,6 +454,18 @@ time budget and a cancellation stop the paging and not just the taking.
   is the row's own the same way — `policy`, or the started activity that
   asked at a sign-in — and is never inferred for an older row: empty there
   is the truth, nobody recorded who asked.
+* **One row per person PER ACTIVITY, and the activity list is the
+  activities' own (#2009 P4).** `activity` enumerates
+  `common/post_login_kinds.ts`'s `ids()` — the passkey migration, the
+  mail-encryption migration, the PIV re-issue — so the filter's dropdown
+  offers all three and a definition saved with `pqc-passkey-migration`
+  still validates. **The catalog requires that file and nothing else of the
+  service**: it is a leaf on bunyan alone since P4 (it required `helpers`
+  until then, which is why this was a copy). A row with no stamped
+  `graceDays` takes its OWN activity's allotted time
+  (`post_login.timingOf()`: `graceDays`, `mailGraceDays` or `pivGraceDays`),
+  read once per person and activity. Two presets follow the first, one per
+  new activity; the first keeps its id and its filter.
 * **`role` is RETIRED, not removed (#1135).** A row written since carries
   none, and its catalog field lost its `primary`/`mfa` enumeration and
   left the *past grace period* preset's columns; a row written before

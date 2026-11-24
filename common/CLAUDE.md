@@ -2350,6 +2350,23 @@ each mode guarantees, exactly:
   START (`startSyncRound()`), which the sharing rule already allowed, so a
   keyed round leaves no worker looking behind. `tests/request_ryw_session.js`.
 
+**THE FRONT PROCESS CATCHES UP ON A SETTINGS ANSWER (found in #2019; rcbj,
+2026-11-23: "catch up on change").** The read barrier is a worker's: a
+request the front DISPATCHES runs none in the front, yet every middleware
+`app.js` installs above the pool — `forwarded_client_certificate.ts` first
+— decides on the front's copy of the realm. So a worker marks an answer
+during which a realm row or a setting changed (`x-sts-pool-settings`,
+`RequestWorker.markSettingsAnswer()`, wrapping `writeHead()`), and
+`request_pool.js`'s `holdForSettings()` forwards it only once
+`persistence.syncSettingsNow()` has caught up (both tiers' logs; one
+catch-up in flight and one queued, shared; STS-WORKER-0058 when it runs out,
+and the answer goes anyway). A worker's committed realm or settings save
+also posts `{ settingsCommitted }`, which wakes the front's pull
+(`receiveSettingsCommitted()`), for a write with no answer to ride on. No
+timer and no store round trip on an unmarked request.
+`persistence/CLAUDE.md` has what it covers and what it does not;
+`tests/front_settings_catch_up.js` holds it.
+
 **A RUN-OUT BARRIER IS A REFUSAL, NEVER A STALE ANSWER (2026-11-14).**
 The barrier gave up at a hard-coded 5,000 ms and SERVED the request "from what
 that worker has", on the argument that reaching it meant the store was unwell.
@@ -8120,10 +8137,28 @@ SLH-DSA has no mechanism here. `docs/v1.2.0/hsm.md` is the operator half.
   initialised the module again posts on a BroadcastChannel named for the
   module's path — every thread hears it, no plumbing through the pool — and
   the others move their epoch and do not finalize for an outage met on a
-  session opened before it (`tests/pkcs11_signing.js` N). What is left is the
-  message's own flight time: two threads finalizing inside it still cost
-  each other's retries. A SharedArrayBuffer would close that too, at the
-  price of handing one to every request worker through the pool; not done.
+  session opened before it (`tests/pkcs11_signing.js` N). **And the
+  reconnect is SINGLE-FLIGHT PER PROCESS** (rcbj, 2026-11-23: "fix it").
+  The message's flight time left two threads that met one outage in the
+  same instant each finalizing the module, the second after the first had
+  reconnected, so the first's retry failed (`STS-KEYS-0201`) — a spurious
+  failed signature or decryption during an outage. The race was between
+  JavaScript threads (the front and the request workers, each with its own
+  binding and pool), not libuv's pool. Now a SharedArrayBuffer made by the
+  first thread to load `crypto_impl/pkcs11.js` (the front, at `crypto.js`'s
+  require, before any worker starts) reaches every Worker through
+  `worker_threads.setEnvironmentData()`, which a new Worker inherits — no
+  plumbing through the pool. Per module path it holds a lock and a
+  GENERATION; a session remembers the generation it was opened under. A
+  thread that must re-initialise takes the lock (`Atomics.waitAsync`, a
+  ref'd message port holding its loop open for the wait); if the generation
+  moved since its session was opened another thread reconnected, and it
+  adopts that result instead of finalizing; otherwise it re-initialises and
+  moves the generation. A holder that never lets go is taken over after
+  30 s (`STS-KEYS-0213`); the blocking door waits at most 2 s
+  (`Atomics.wait`) and is refused `STS-KEYS-0212` past it.
+  `tests/pkcs11_reconnect.js` holds it: two worker threads meeting one
+  outage finalize once and both sign after it (fake module and SoftHSM2).
 * **A SIGNING KEY IN THE HSM TRAVELS WHERE A PEM TRAVELS.** Its "PEM" is a
   reference, `pkcs11-key:v1:<b64url {token, id, kty, crv, bits}>` — what
   `export()` answers and what `keystore.js` seals — and `privateKeyFrom()`
@@ -12413,7 +12448,17 @@ is exactly what it was. The headers of the three files argue them in full.
   only from a proxy named by BOTH `tls.trustedProxyCertificates` (the SHA-256
   of the client certificate it connects with, which must have verified) AND
   `tls.trustedProxyAddresses`; one without the other trusts nobody
-  (STS-TLS-0076). The forwarded chain is verified HERE to the client
+  (STS-TLS-0076). **A pin may name the KEY** (#2012, rcbj 2026-11-23: "accept
+  both"): `spki:<hex>` is the SHA-256 of the certificate's SubjectPublicKeyInfo,
+  read off its DER through `crypto.certificateSpkiDer()`, so a proxy
+  certificate renewed under the same key keeps matching; a bare value is the
+  whole certificate's DER hash, as before, in the same hex form (colons, a
+  `sha256:` prefix). `pinOf()` is the one reading, shared with
+  `certificate_pins.ts`'s inventory row (an SPKI pin is listed `spki:<hex>`,
+  `(key)` after its place). A malformed entry is refused at the WRITE by the
+  module's write rule (`STS-TLS-0077`) and skipped, as always, where it was
+  already stored or came from the environment — a write rule, not a type
+  check, so a stored value that predates the rule is not re-judged. The forwarded chain is verified HERE to the client
   truststore (`pki.verifyPathToAnchors()`), and the request's `req.socket` is
   replaced, for that request, by a Proxy over the real socket whose
   `authorized`, `getPeerCertificate()` and `getPeerX509Certificate()` answer
@@ -12424,8 +12469,17 @@ is exactly what it was. The headers of the three files argue them in full.
   through `request_pool.js`'s `peerOf()` and never the headers; from any other
   sender both headers are deleted and recorded (STS-TLS-0072, at most once a
   minute). `oauth2_bcp.js`'s `no-certificate-header` note says the same.
+  **Its settings are the front's copy, CAUGHT UP ON CHANGE** (#2019's
+  finding; rcbj, 2026-11-23): a `/admin-api` write of the proxy settings is
+  answered by a request worker, and the front holds that answer until its
+  own realm and settings logs have the write — so the proxy's next request
+  meets the new pins and ranges on that node. `persistence/CLAUDE.md`, *The
+  front process catches up on a settings write*.
 * **THE HANDOFF** (`certSignIn.handoff`, rcbj: an option, off by default) is
   `tls/CLAUDE.md`'s, with the `certificate-sign-in` hosted application.
+* **A PROFILE MAY SAY `smartCard: true`** (#2031): the certificates it
+  covers sign in under the authentication policy's smart card row
+  (`identityOf()` answers `smartCard`). Absent is false.
 * **WHAT HAS NO TEST**: a real handshake through a profile, the handoff over
   two real listeners, and a real TLS-terminating proxy. `tests/certificate_binding.js`
   holds the logic in process over certificates made at run time; nothing has
@@ -14318,6 +14372,46 @@ the sign-in closed. A person names none of their own.
 ways round, at the issuance gate), and `tests/authn_policy.js` the module,
 the inheritance, the mail guard, the retired settings and a kind registered
 later.
+
+### The smart-card rows and attested hardware (#2031, rcbj 2026-11-23)
+
+Three mechanism rows split a smart card out of the row that governed it:
+`smartCard` (out of `certificate`), `pkinitSmartCard` (out of `kerberos`)
+and `smartCardCardAuth` (out of the `piv.cardAuthSignIn` setting). Each is
+first-factor only and `optional`. Three rules a maintainer must keep:
+
+* **A ROW WITH `follows` IS A THIRD STATE, NOT A DEFAULT.** The model's
+  mechanism row names what it follows (a field key, or `setting:<key>`).
+  `read()` answers that value whenever the entry stores no value for the
+  row (`resolveFollowing()`, `sources` = `follows <what>`); a save may send
+  `follow`, which writes NO attribute; a save that omits the row keeps what
+  it is now, following included. So a policy stored before the rows keeps
+  its meaning. `following(profile, key)` is the one reader of the state; the
+  console draws a third radio (FOLLOW) from the view's `follows`,
+  `followsLabel` and `following`.
+* **WHAT IS A SMART CARD IS EVIDENCE, DECIDED IN `tls/tls_server.js`'s
+  `smartCardOf()`** — `sc` in the register's amr, a PIV slot profile in the
+  enrolment register (`piv_attestation.enrolledPivOf()`), an outside card's
+  `pivCard` identity, or a `certSignIn.profiles` profile with
+  `smartCard: true` — and carried on the session's credential
+  (`smartCard`, `cardAuth`). `authn.ts`'s `authnPolicyRefusal()` maps a
+  smart-card certificate to `smartCard` (STS-AUTHN-0590) and a Kerberos
+  session with `sc` to `pkinitSmartCard` (0591). The screen offers a
+  certificate while either certificate row is on and its act asks the one
+  the certificate is (0593). `piv_attestation.signInRefusal()` asks
+  `smartCardCardAuth` (still STS-PIV-0013); a card-auth key needs `smartCard`
+  too, which is what keeps the unset policy equal to the old two conditions.
+* **`requireAttestedHardware` (`no` | `always`) IS A REQUIREMENT FIELD, NOT
+  A MECHANISM ROW**: nothing is presented as attested hardware. At `always`
+  `authnPolicyRefusal()` refuses a session whose completing credential is on
+  no active token (`Authn.attestedHardwareHeld()`, STS-AUTHN-0592), the
+  default realm's built-in administrator exempt; a save with no
+  hardware-capable row on is refused (cross-field). The KDC's own AS
+  exchange is gated by neither Kerberos row, as before.
+
+**HOTP and YubiKey OTP say they are off by default** in their `what` (rcbj,
+2026-11-23), which the page and `/admin-api` draw. `tests/authn_policy_smart_card.js`
+holds all of it; `tests/piv_attestation.js` 4j-4m the card-auth row.
 
 ## 3cd. `service_accounts.ts`, `service_account_policy.ts`, `service_account_rotation.ts`: A SERVICE ACCOUNT IS A PERSON WITH A FLAG (#221, 2026-10-06)
 
@@ -16604,8 +16698,8 @@ rcbj: post-login activities for the other credentials a token carries
   stays a one-value enum meaning the passkey migration (design X2: each new
   activity gets a BLOCK of rows with its own switch, so a profile saved
   before reads it as off — backwards compatibility, no migration). The
-  report's filter (`report/catalog.ts`) is still its own copy until P4:
-  that module requires nothing of this service.
+  report's filter (`report/catalog.ts`) reads it too since P4, which made
+  the table a leaf on bunyan alone (below).
 * **A closed table read lazily, not a hook** (rule 3e, failed both ways
   round in the header). A row names the module that answers for its
   activity; one that is not whole is not asked, and the others are.
@@ -16626,6 +16720,123 @@ rcbj: post-login activities for the other credentials a token carries
   running started activity of it), then the snooze and the allotted time
   from the activity's own `timing()`. The passkey migration is
   `passkeyKind()`, its answers unchanged.
+
+### 3ct, continued: the mail-encryption activity (#2009 P2, 2026-11-23)
+
+`pqc-mail-encryption`, `post_login_mail.ts` (its header argues it; rcbj's
+D1, D3, D4). What reaches outside it:
+
+* **A BLOCK OF ROWS ON THE POLICY, `optional`** (`mailEnabled`,
+  `mailSnoozeDays`, `mailGraceDays`, `mailNoKey`, `mailPrefer`,
+  `mailKeepClassical`; `stsPostLoginMail*`). `post_login_policy.ts`'s
+  `validate()` skips an optional row left out and `save()` writes back what
+  the entry stored for it (the passkey policy's #907 rule), so a client
+  written before the block is neither refused nor switches it off. A
+  profile saved before reads it as off. The `activity` row stays one value.
+* **STARTABLE IS A COLUMN OF THE TABLE** (`post_login_kinds.ts`'s
+  `startable`, `startableIds()`): every activity since P4, which gave the
+  others their mail and report words (below).
+* **D3's SECOND SLOT IS `openpgp_keys.ts`'s**: `register()` takes
+  `requirePostQuantum` (STS-OPENPGP-0033, asked before the proof) and
+  `keepClassicalDays`; the replaced classical key goes to
+  `stsOpenPgpClassicalKey` / `stsOpenPgpClassicalKeyInfo` with a row in
+  `openpgp.classicalKept` (cell tier, on demand), which is what the job
+  `post-login.mail-classical-retire` walks — never the directory, for which
+  no index answers "holds a classical key". `classicalKept()` is the
+  read-time check: a key past `keptUntil` is neither drawn nor published by
+  the Web Key Directory, whether or not the job ran. `lookup()` answers the
+  two binary keys concatenated, the post-quantum one first. `encryptionFor()`
+  reads the first slot only, so new mail goes to the new key.
+* **S/MIME IS UPLOADED (D4)**: `crypto.smimeRecipientCertificate()` answers
+  `postQuantum` and `keyAlgorithm`; `crypto.smimeKemAvailable()` is the
+  realm's "can encrypt to ML-KEM" (tried once a process).
+* **THE STEP** is `authn.ts`'s `postLoginMailAct()`, `POST
+  /authn-api/mfa/{id}/post-login/mail` (`act`: `openpgp-challenge`,
+  `openpgp-register`, `smime-register`); the challenge is kept on the step.
+  The passkey `register` act at a mail step, and the reverse, is
+  STS-AUTHN-0602.
+
+### 3ct, continued: the PIV re-issue (#2009 P3, 2026-11-23)
+
+`piv-reissue`, `post_login_piv.ts` (its header argues it; rcbj's D5 and
+design X5). What reaches outside it:
+
+* **A THIRD OPTIONAL BLOCK** (`pivEnabled`, `pivSnoozeDays`,
+  `pivGraceDays`, `pivSlots`, `pivTrigger`, `pivRenewDays`, `pivTarget`;
+  `stsPostLoginPiv*`, OIDs 988–994), on the mail block's rule.
+  `pivSlots` is the policy's first `list` row: `parseField()` takes one or
+  more of the field's values and writes them comma-separated in the
+  field's order.
+* **DUE IS READ OFF THE ENTRY'S CERTIFICATE RECORDS**
+  (`cert_enrollment.enrolledOf()`), the newest valid one per slot profile.
+  `classical-issuer` asks the certificate's SIGNATURE, not its key
+  (`pqc_support.ofSignature()`, new; a PIV key is classical whatever), and
+  only where the realm's EST Issuing CA is post-quantum or composite
+  (`pki.describeIssuer(realm, 'est')`, else `pki.keyAlgorithm` for a CA not
+  built yet). `rekey` asks nobody: no card makes a post-quantum key.
+* **THE STEP** is `authn.ts`'s `postLoginPivAct()`, `POST
+  /authn-api/mfa/{id}/post-login/piv` (`act`: `piv-enrol`, `piv-continue`),
+  through `piv_enrolment.enrol()` with the step's person as caller, so
+  every rule of the PIV form holds. Each issued certificate, its chain and
+  the `ykman` import command are kept on the step (`postLogin.issued`);
+  `piv-continue` is refused until every due slot has one (STS-AUTHN-0622).
+  It does NOT pass `replaces` to the core: that revokes at issue.
+* **D5: REVOKED AT FIRST USE.** `enrol()` writes `piv.supersedes` (cell
+  tier, on demand, keyed by the NEW serial, expiring with the old
+  certificate) and `authn.ts`'s `pivCertificateUsed()` — called from
+  `startSessionHere()` and the re-authentication path beside
+  `recoveryCompleted()`, for a credential of kind `certificate` with a
+  serial (both certificate doors pass one) — hands the serial to
+  `certificateUsed()`, not awaited. That one keyed read is the whole cost
+  at a sign-in; a hit revokes the old serial (`revokeEnrolled(…,
+  'superseded', …, { entry })`, so only the person's own) and deletes the
+  row, a failure keeps it for the next sign-in (STS-PIV-0038), and another
+  person using the serial revokes nothing (STS-PIV-0039).
+
+### 3ct, continued: started activities, mail and report per activity (#2009 P4, 2026-11-23)
+
+Design X6. Nothing new decides anything: the table grew three columns and
+three readers read them.
+
+* **THE TABLE IS A LEAF THAT REQUIRES NOTHING OF THE SERVICE.**
+  `post_login_kinds.ts` logs through bunyan directly (`model_tables.ts`'s
+  arrangement) where it required `helpers`, so `report/catalog.ts` — which
+  requires only bunyan — reads `PostLoginKinds.ids()` for the `activity`
+  enumeration instead of keeping a copy. A require of `helpers` from the
+  catalog would have loaded the configuration and the key set into every
+  reader of a field list; a generated list would have been a second copy.
+  `tests/post_login_started_kinds.js` A reads the source and fails on any
+  other require.
+* **`startable` is true for all three**, so `ACTIVITIES`, the console's
+  chooser and the model's enum (`startPostLoginActivity`'s `activity`,
+  `models/api/management.tsp`) are the three. A stored started activity
+  names its activity already and needed no migration; a start naming none
+  is the passkey migration (`ACTIVITIES[0]`), as before. The duplicate rule
+  (0492) is per activity, so two activities may run for one group.
+* **`template`: ONE MESSAGE PER ACTIVITY, NOT A SENTENCE IN ONE.** X6 said
+  `post-login-reminder` carries the activity's own sentence. A value
+  dropped into one template is not translated per language (a template's
+  values are data), and a realm's rewording of the passkey reminder would
+  then speak for the other two. So the passkey migration keeps
+  `post-login-reminder` (its id, every realm's rewording and every delivery
+  row naming it unchanged) and the others are
+  `post-login-reminder-mail-encryption` and
+  `post-login-reminder-piv-reissue`, notifications like it, in every
+  catalog and the three overlays. `mail_uses.ts`'s `postLoginReminder()`
+  picks by `facts.activity` (`templateOf()`), and the job passes it.
+* **`policySwitch`** names each activity's switch (`enabled`,
+  `mailEnabled`, `pivEnabled`), so the view answers `enabledActivities`
+  through `post_login_policy.anyEnabled()` without loading an activity's
+  module; `activityEnabled` keeps meaning the passkey migration's.
+* **THE REPORT'S FALLBACK DEADLINE IS THE ROW'S ACTIVITY'S.** A row with no
+  stamped profile took `graceDays` from `forPerson()`, which is the passkey
+  block's; `report/sources.ts` asks `post_login.timingOf(activity, rules)`
+  (the activity's own `timing()`) per person and activity. Two presets
+  (`progress-mail-encryption`, `progress-piv-reissue`) follow the first,
+  which keeps its id and its passkey filter.
+* **No new code, no schema step, no setting.** Nothing new refuses: an
+  activity outside the three is the schema's (STS-API-0009) over the API and
+  0490 in process, as an unknown one always was.
 
 ## 3cx. `policy_selection.ts`: WHAT A NAMED POLICY COVERS NAMES IT, AND ONE RANKING FOR EVERY KIND (#1235, 2026-10-30)
 

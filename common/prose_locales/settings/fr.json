@@ -6248,8 +6248,8 @@
     "text": "Certificats client des proxys terminant TLS (SHA-256)"
   },
   "tls.trustedProxyCertificates|description": {
-    "en": "5ebd0abc01f9dfdf",
-    "text": "Les empreintes SHA-256 des certificats client qu’un proxy terminant TLS présente lorsqu’il se connecte ici. Pour une requête sur une connexion présentant l’un d’eux, depuis une adresse de tls.trustedProxyAddresses, les en-têtes Client-Cert et Client-Cert-Chain de RFC 9440 sont vérifiés ici par rapport au magasin de confiance des clients et à la révocation, et ce certificat tient lieu de celui de la négociation à chaque porte. Les deux paramètres sont requis ; venant de tout autre expéditeur, les deux en-têtes sont supprimés et consignés (STS-TLS-0072) et jamais lus. VIDE, la valeur par défaut, ne lit un certificat que dans la négociation."
+    "en": "16cfd6503c70990f",
+    "text": "Les empreintes SHA-256 des certificats client qu’un proxy terminant TLS présente lorsqu’il se connecte ici. En hexadécimal (deux-points et préfixe sha256: acceptés). spki: devant le même hexadécimal épingle à la place le SHA-256 de la SubjectPublicKeyInfo du certificat, que conserve un renouvellement sous la même clé ; une entrée mal formée est refusée (STS-TLS-0077). Pour une requête sur une connexion présentant l’un d’eux, depuis une adresse de tls.trustedProxyAddresses, les en-têtes Client-Cert et Client-Cert-Chain de RFC 9440 sont vérifiés ici par rapport au magasin de confiance des clients et à la révocation, et ce certificat tient lieu de celui de la négociation à chaque porte. Les deux paramètres sont requis ; venant de tout autre expéditeur, les deux en-têtes sont supprimés et consignés (STS-TLS-0072) et jamais lus. VIDE, la valeur par défaut, ne lit un certificat que dans la négociation."
   },
   "tls.trustedProxyAddresses|label": {
     "en": "4bc0cf2135bd81af",

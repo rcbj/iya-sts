@@ -1478,6 +1478,20 @@ class ProtocolStack {
     // routes forward.
     this.build('common/post_login_activities',
                require('./post_login_activities'), 'PostLoginActivities');
+    // 18j-vi-b. THE MAIL-ENCRYPTION ACTIVITY (#2009 P2): a library that
+    // registers its scheduler job (the kept classical OpenPGP keys
+    // removed) when built, and no route — here with the scheduler in hand,
+    // for the reason above. It requires `openpgp_keys`, built long before;
+    // `post_login.ts` reaches it lazily from the activities' table, so
+    // building it here moves nothing.
+    this.build('common/post_login_mail', require('./post_login_mail'),
+               'PostLoginMail');
+    // 18j-vi-c. THE PIV CERTIFICATE RE-ISSUE (#2009 P3): a library and no
+    // route or job, whose `piv.supersedes` store has to be declared before
+    // the minted rows are restored. Everything it reads is reached at the
+    // moment of use; `post_login.ts` and `authn.ts` reach it lazily.
+    this.build('common/post_login_piv', require('./post_login_piv'),
+               'PostLoginPiv');
     // 18j-vii. AUDIT EXPORT (#641): a library that registers its per-process
     // job when built, and no route. Here, with the scheduler in hand, and
     // before the management API spreads its operations. Requiring

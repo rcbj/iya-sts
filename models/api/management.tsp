@@ -9237,7 +9237,10 @@ namespace IyaSts.Api.Management {
     `email`?: boolean;
     `what`?: string;
     `disabled`?: boolean;
-    `disabledWhy`?: string
+    `disabledWhy`?: string;
+    @js(#{`description`:"On a row that follows another while the policy stores no value for it (#2031): the field key it follows, or `setting:<key>`."}) `follows`?: string;
+    @js(#{`description`:"What it follows, as a reader names it: the row's label, or the setting's key."}) `followsLabel`?: string;
+    @js(#{`description`:"Whether the row follows now: the profile holds no value for it."}) `following`?: boolean
   }
 
 @component model `WithContainerDefinitionContainerObjectClasses` is (`WithKeyAttributeLabel`)[];
@@ -9290,6 +9293,7 @@ namespace IyaSts.Api.Management {
     `enforced`?: boolean;
     `requireSecondFactor`?: StringOrNumericOrBooleanEtc8;
     `requireSecondFactorForAdministrators`?: StringOrNumericOrBooleanEtc8;
+    `requireAttestedHardware`?: StringOrNumericOrBooleanEtc8;
     `rememberedBrowserDays`?: StringOrNumericOrBooleanEtc8;
     `rememberedBrowserSkipsSecondFactor`?: StringOrNumericOrBooleanEtc8;
     `emailCodeTtlS`?: StringOrNumericOrBooleanEtc8;
@@ -9309,7 +9313,10 @@ namespace IyaSts.Api.Management {
     `emailLinkPrimary`?: StringOrNumericOrBooleanEtc8;
     `emailLinkSecondFactor`?: StringOrNumericOrBooleanEtc8;
     `certificatePrimary`?: StringOrNumericOrBooleanEtc8;
+    `smartCardPrimary`?: StringOrNumericOrBooleanEtc8;
+    `smartCardCardAuthPrimary`?: StringOrNumericOrBooleanEtc8;
     `kerberosPrimary`?: StringOrNumericOrBooleanEtc8;
+    `pkinitSmartCardPrimary`?: StringOrNumericOrBooleanEtc8;
     `walletPrimary`?: StringOrNumericOrBooleanEtc8;
     `walletSecondFactor`?: StringOrNumericOrBooleanEtc8;
     `federationPrimary`?: StringOrNumericOrBooleanEtc8
@@ -9432,7 +9439,20 @@ namespace IyaSts.Api.Management {
     `noPasskey`?: StringOrNumericOrBooleanEtc7;
     `method`?: StringOrNumericOrBooleanEtc7;
     `attestation`?: StringOrNumericOrBooleanEtc8;
-    `noPasskeyFallback`?: StringOrNumericOrBooleanEtc8
+    `noPasskeyFallback`?: StringOrNumericOrBooleanEtc8;
+    @js(#{`description`:"The mail-encryption activity's switch (#2009)."}) `mailEnabled`?: StringOrNumericOrBooleanEtc8;
+    `mailSnoozeDays`?: StringOrNumericOrBooleanEtc8;
+    `mailGraceDays`?: StringOrNumericOrBooleanEtc8;
+    `mailNoKey`?: StringOrNumericOrBooleanEtc8;
+    `mailPrefer`?: StringOrNumericOrBooleanEtc8;
+    `mailKeepClassical`?: StringOrNumericOrBooleanEtc8;
+    @js(#{`description`:"The PIV re-issue's switch (#2009)."}) `pivEnabled`?: StringOrNumericOrBooleanEtc8;
+    `pivSnoozeDays`?: StringOrNumericOrBooleanEtc8;
+    `pivGraceDays`?: StringOrNumericOrBooleanEtc8;
+    `pivSlots`?: StringOrNumericOrBooleanEtc8;
+    `pivTrigger`?: StringOrNumericOrBooleanEtc8;
+    `pivRenewDays`?: StringOrNumericOrBooleanEtc8;
+    `pivTarget`?: StringOrNumericOrBooleanEtc8
   }
 
 @component model `WithOkMessageErrors142` {
@@ -13239,7 +13259,7 @@ op `deleteRiskDatasetVersion`(@js(#{`examples`:#[#{`dataset`:"asn",`version`:"20
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getMail`(@js(#{`examples`:#["password-reset"]}) `parameters/0/schema`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "reset-refused-attempt" | "layout" | "test-message",
+op `getMail`(@js(#{`examples`:#["password-reset"]}) `parameters/0/schema`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message",
   @js(#{`examples`:#["fr"]}) `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `realm`?: string;
@@ -13385,7 +13405,7 @@ op `saveMailTemplate`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: {
-    @js(#{`description`:"The message id."}) `template`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "reset-refused-attempt" | "layout" | "test-message";
+    @js(#{`description`:"The message id."}) `template`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message";
     @js(#{`description`:"A BCP 47 tag."}) `lang`: string;
     @js(#{`description`:"One line."}) `subject`: string;
     @js(#{`description`:"The text part."}) `text`: string;
@@ -13421,7 +13441,7 @@ op `saveMailTemplate`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `resetMailTemplate`(@js(#{`examples`:#[#{`template`:"test-message",`lang`:"de"}]}) `requestBody/content/application~1json/schema`: {
-    @js(#{`description`:"The message id."}) `template`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "reset-refused-attempt" | "layout" | "test-message";
+    @js(#{`description`:"The message id."}) `template`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "authzen-access-revoked" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "post-login-reminder-mail-encryption" | "post-login-reminder-piv-reissue" | "reset-refused-attempt" | "layout" | "test-message";
     @js(#{`description`:"A BCP 47 tag."}) `lang`: string
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors9`,
@@ -38958,12 +38978,12 @@ op `resetPasswordPolicy`(@js(#{`examples`:#[#{`profile`:"default"}]}) `requestBo
   }) @hoisted union post_admin_api_policies_save_authn_policy_b_application_json_totpSecondFactor_h2982 {boolean, string}
 
 @js(#{
-    `description`:"An RFC 4226 one-time code from a counter-based token (#1955): a YubiKey's OTP slot, or a vendor's token an administrator imported from a PSKC seed file. Never a first factor. Off here, nobody may ENROL or claim one; a person who already holds one is still asked for it, as an authenticator app's holder is. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false; a save that leaves it out keeps the profile's current value, so a client written before it is not refused and changes nothing.",
+    `description`:"An RFC 4226 one-time code from a counter-based token (#1955): a YubiKey's OTP slot, or a vendor's token an administrator imported from a PSKC seed file. Never a first factor. OFF BY DEFAULT, and it must be turned on for this realm before anybody can enrol, claim or be assigned an HOTP token, so no HOTP token is used at sign-in until it is. Off here, nobody may ENROL or claim one; a person who already holds one is still asked for it, as an authenticator app's holder is. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false; a save that leaves it out keeps the profile's current value, so a client written before it is not refused and changes nothing.",
     `$comb`:"oneOf"
   }) @hoisted union post_admin_api_policies_save_authn_policy_b_application_json_hotpSecondFactor_p4 {boolean, string}
 
 @js(#{
-    `description`:"A YubiKey OTP (Yubico's published modhex one-time password, #1955). Never a first factor: this service holds the AES key. Off here, nobody may ENROL, assign or claim one, even when yubiotp.offered is on; a person who already holds one is still asked for it. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false; a save that leaves it out keeps the profile's current value, so a client written before it is not refused and changes nothing.",
+    `description`:"A YubiKey OTP (Yubico's published modhex one-time password, #1955). Never a first factor: this service holds the AES key. OFF BY DEFAULT, and it must be turned on for this realm (with yubiotp.offered) before anybody can enrol, claim or be assigned a YubiKey OTP, so none is used at sign-in until it is. Off here, nobody may ENROL, assign or claim one, even when yubiotp.offered is on; a person who already holds one is still asked for it. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false; a save that leaves it out keeps the profile's current value, so a client written before it is not refused and changes nothing.",
     `$comb`:"oneOf"
   }) @hoisted union post_admin_api_policies_save_authn_policy_b_application_json_yubicoOtpSecondFactor_p5 {boolean, string}
 
@@ -38973,12 +38993,27 @@ op `resetPasswordPolicy`(@js(#{`examples`:#[#{`profile`:"default"}]}) `requestBo
   }) @hoisted union post_admin_api_policies_save_authn_policy_b_application_json_recoveryCodeSecondFactor_h2983 {boolean, string}
 
 @js(#{
-    `description`:"A verified TLS client certificate: GET /tls/sign-in, or Continue with your certificate on the sign-in screen. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true.",
+    `description`:"A verified TLS client certificate that is not a smart card: GET /tls/sign-in, or Continue with your certificate on the sign-in screen. A smart card certificate is `smartCardPrimary`'s, which follows this one while unset (#2031). (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true.",
     `$comb`:"oneOf"
   }) @hoisted union post_admin_api_policies_save_authn_policy_b_application_json_certificatePrimary_h2988 {boolean, string}
 
 @js(#{
-    `description`:"GET /authn/spnego with a Kerberos ticket. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true.",
+    `description`:"A smart card (PIV/CAC) certificate: an attested PIV key, a certificate enrolled here under a PIV slot profile, an outside card mapped by its card UUID, or one under a certSignIn.profiles profile marked smartCard (#2031). `true`, `false`, or `follow`: while the profile stores no value it follows `certificatePrimary`, and `follow` keeps it so. Default `follow`; a save that leaves it out keeps what the profile has now, following included, so a client written before it is not refused and changes nothing.",
+    `$comb`:"oneOf"
+  }) @hoisted union post_admin_api_policies_save_authn_policy_b_application_json_smartCardPrimary_p2031 {boolean, string}
+
+@js(#{
+    `description`:"A PIV card authentication (slot 9e) certificate, whose key works without a PIN; a smart card too, so `smartCardPrimary` must also be on (#2031). `true`, `false`, or `follow`: while the profile stores no value it follows the piv.cardAuthSignIn setting (false by default). Default `follow`; a save that leaves it out keeps what the profile has now.",
+    `$comb`:"oneOf"
+  }) @hoisted union post_admin_api_policies_save_authn_policy_b_application_json_smartCardCardAuthPrimary_p2031 {boolean, string}
+
+@js(#{
+    `description`:"GET /authn/spnego with a Kerberos ticket that carries this realm's pkinit-smartcard indicator (#2031). `true`, `false`, or `follow`: while the profile stores no value it follows `kerberosPrimary`. Default `follow`; a save that leaves it out keeps what the profile has now.",
+    `$comb`:"oneOf"
+  }) @hoisted union post_admin_api_policies_save_authn_policy_b_application_json_pkinitSmartCardPrimary_p2031 {boolean, string}
+
+@js(#{
+    `description`:"GET /authn/spnego with a Kerberos ticket, other than PKINIT with a smart card, which is `pkinitSmartCardPrimary`'s and follows this one while unset (#2031). (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true.",
     `$comb`:"oneOf"
   }) @hoisted union post_admin_api_policies_save_authn_policy_b_application_json_kerberosPrimary_h2989 {boolean, string}
 
@@ -39077,6 +39112,7 @@ op `saveAuthnPolicy`(@js(#{
         `profile`:"default",
         `requireSecondFactor`:"if-held",
         `requireSecondFactorForAdministrators`:"offer",
+        `requireAttestedHardware`:"no",
         `passwordPrimary`:true,
         `passwordSecondFactor`:true,
         `passkeyPrimary`:true,
@@ -39090,7 +39126,10 @@ op `saveAuthnPolicy`(@js(#{
         `emailLinkPrimary`:false,
         `emailLinkSecondFactor`:false,
         `certificatePrimary`:true,
+        `smartCardPrimary`:"follow",
+        `smartCardCardAuthPrimary`:"follow",
         `kerberosPrimary`:true,
+        `pkinitSmartCardPrimary`:"follow",
         `walletPrimary`:true,
         `walletSecondFactor`:true,
         `federationPrimary`:true,
@@ -39111,6 +39150,9 @@ op `saveAuthnPolicy`(@js(#{
     @js(#{
       `description`:"For anybody holding a console role (Admin Read or Admin Write) who holds no second factor. `offer`: they are shown the step that sets one up, with an Ignore button, at every sign-in. `always`: they must set one up before they are signed in — except the default realm's built-in administrator (admin.bootstrapUsername), who is only ever offered one, so a service is never left with nobody who can sign in. `if-held`: as everybody else, by the field above. WEAKER THAN `always`: an administrator on a password alone is an administrator anyone with the password is. Default `offer`."
     }) `requireSecondFactorForAdministrators`: "if-held" | "offer" | "always";
+    @js(#{
+      `description`:"#2031. `no`: no requirement beyond the mechanism rows. `always`: a session starts only where the credential that completed the sign-in (a passkey, a security key, a certificate or a smart card) is on an active hardware token whose attestation the register recorded; the default realm's built-in administrator is exempt. Default `no`; a save that leaves it out keeps the profile's current value."
+    }) `requireAttestedHardware`?: "no" | "always";
     `passwordPrimary`: BooleanOrString3;
     `passwordSecondFactor`: BooleanOrString3;
     `passkeyPrimary`: post_admin_api_policies_save_authn_policy_b_application_json_passkeyPrimary_h2980;
@@ -39124,7 +39166,10 @@ op `saveAuthnPolicy`(@js(#{
     `emailLinkPrimary`: BooleanOrString5;
     `emailLinkSecondFactor`: BooleanOrString5;
     `certificatePrimary`: post_admin_api_policies_save_authn_policy_b_application_json_certificatePrimary_h2988;
+    `smartCardPrimary`?: post_admin_api_policies_save_authn_policy_b_application_json_smartCardPrimary_p2031;
+    `smartCardCardAuthPrimary`?: post_admin_api_policies_save_authn_policy_b_application_json_smartCardCardAuthPrimary_p2031;
     `kerberosPrimary`: post_admin_api_policies_save_authn_policy_b_application_json_kerberosPrimary_h2989;
+    `pkinitSmartCardPrimary`?: post_admin_api_policies_save_authn_policy_b_application_json_pkinitSmartCardPrimary_p2031;
     `walletPrimary`: BooleanOrString6;
     `walletSecondFactor`: BooleanOrString6;
     `federationPrimary`: post_admin_api_policies_save_authn_policy_b_application_json_federationPrimary_h2992;
@@ -40312,7 +40357,7 @@ op `removePersonAttribute`(@js(#{`examples`:#[#{`name`:"employeeBadge"}]}) `requ
   #{
     `operationId`:"savePostLoginPolicy",
     `summary`:"Set the post-login activity policy profile",
-    `description`:"Writes `cn=<profile>,ou=postLoginPolicies` in this realm's directory, REPLACING what is there; a realm with no `default` of its own follows the default realm's, and named profiles are the realm's own. **Off by default** (`enabled`). On, a person the profile reaches who is due the `activity` is asked after signing in, before being sent back to the application: `pqc-passkey-migration` asks a person holding a classical passkey and no post-quantum one to register an ML-DSA passkey, and — per `noPasskey` — a person holding none to register one. A passkey has no role (#1135): `noPasskeyRole` is accepted and ignored. Skip puts it off `snoozeDays`; once `graceDays` (0 = never) have passed since the person's first invitation Skip is refused (STS-AUTHN-0474) and the sign-in is held until it is done, and a door that cannot ask for it refuses the sign-in (STS-AUTHN-0473). A named profile carries a `precedence` and nothing else: a group names it in `stsPostLoginPolicy` (`POST /admin-api/groups/set-policy`) and an application in `appPostLoginPolicy` (`POST /admin-api/applications/set`). Of the profile the application signed in to names and those the person's groups name the lowest `precedence` wins, so a named profile with `enabled` off excludes them; a started activity's mail and the progress report know no application and select by the groups alone. A profile something names is not deleted (STS-AUTHN-0543). `method` (#1100) is how a classical passkey is migrated: `upgrade` (proved once, then replaced in place on its authenticator), `alongside` (an ML-DSA passkey beside it) or `automatic` (the lanes decide). `attestation` (#1102): `post-quantum` counts an ML-DSA passkey as migrated only where its recorded attestation is post-quantum too. `noPasskeyFallback` (#1103): `classical` offers a person with no passkey a classical retry where their device cannot make ML-DSA.\n\n**Every field is required** and one left out is refused by name rather than reset to a default, because a save that quietly loosened a rule nobody mentioned is the mistake nobody sees.\n\n**Mirrors** `POST /admin/policies` on the admin console.",
+    `description`:"Writes `cn=<profile>,ou=postLoginPolicies` in this realm's directory, REPLACING what is there; a realm with no `default` of its own follows the default realm's, and named profiles are the realm's own. **Off by default** (`enabled`). On, a person the profile reaches who is due the `activity` is asked after signing in, before being sent back to the application: `pqc-passkey-migration` asks a person holding a classical passkey and no post-quantum one to register an ML-DSA passkey, and — per `noPasskey` — a person holding none to register one. A passkey has no role (#1135): `noPasskeyRole` is accepted and ignored. Skip puts it off `snoozeDays`; once `graceDays` (0 = never) have passed since the person's first invitation Skip is refused (STS-AUTHN-0474) and the sign-in is held until it is done, and a door that cannot ask for it refuses the sign-in (STS-AUTHN-0473). A named profile carries a `precedence` and nothing else: a group names it in `stsPostLoginPolicy` (`POST /admin-api/groups/set-policy`) and an application in `appPostLoginPolicy` (`POST /admin-api/applications/set`). Of the profile the application signed in to names and those the person's groups name the lowest `precedence` wins, so a named profile with `enabled` off excludes them; a started activity's mail and the progress report know no application and select by the groups alone. A profile something names is not deleted (STS-AUTHN-0543). `method` (#1100) is how a classical passkey is migrated: `upgrade` (proved once, then replaced in place on its authenticator), `alongside` (an ML-DSA passkey beside it) or `automatic` (the lanes decide). `attestation` (#1102): `post-quantum` counts an ML-DSA passkey as migrated only where its recorded attestation is post-quantum too. `noPasskeyFallback` (#1103): `classical` offers a person with no passkey a classical retry where their device cannot make ML-DSA.\n\n**The mail-encryption activity (#2009) is a block of its own**, off by default with its own switch, so a profile saved before reads it as off: `mailEnabled` asks a person whose mail is encrypted to a classical OpenPGP key or S/MIME certificate to register a post-quantum (ML-KEM) one after signing in; `mailNoKey` what a person whose mail is not encrypted is asked; `mailPrefer` what the step offers (an OpenPGP key, an uploaded S/MIME certificate, or either); `mailKeepClassical` how many days a replaced classical OpenPGP key stays on the entry and in the Web Key Directory beside the new one; and its own `mailSnoozeDays` and `mailGraceDays`.\n\n**The PIV re-issue (#2009) is a block of its own** too, off by default with its own switch: `pivEnabled` asks a person holding a PIV slot certificate this realm issued, in a slot `pivSlots` names, to enrol a new one after signing in when `pivTrigger` says it is due (`classical-issuer`: a classical CA signed it and the realm's EST Issuing CA is post-quantum; `expiring`: it expires within `pivRenewDays`); `pivTarget` `rekey` asks nobody; the old certificate is revoked when the new one is first used to sign in; and its own `pivSnoozeDays` and `pivGraceDays`.\n\n**Every field is required**, except the mail-encryption and PIV re-issue blocks, which a save may leave out to keep what the profile stored, and one left out is refused by name rather than reset to a default, because a save that quietly loosened a rule nobody mentioned is the mistake nobody sees.\n\n**Mirrors** `POST /admin/policies` on the admin console.",
     `tags`:#["Policies"],
     `responses`:#{
       `200`:#{
@@ -40370,6 +40415,19 @@ op `savePostLoginPolicy`(@js(#{
     @js(#{
       `description`:"none: ML-DSA only. classical: after an ML-DSA registration fails on the device, a retry with the classical algorithms is offered (where the passkey policy allows one) — a classical passkey is better than a password, and its holder is asked for the migration later like anyone else's. Default `none`."
     }) `noPasskeyFallback`: "none" | "classical";
+    @js(#{`description`:"OFF BY DEFAULT. The mail-encryption activity (#2009): a person whose mail is encrypted to a classical key is asked to register a post-quantum one. Left out, the profile's stored value stays."}) `mailEnabled`?: boolean | string;
+    @js(#{`description`:"How long Skip puts the mail-encryption activity off. Between 1 and 90. Left out, the stored value stays."}) `mailSnoozeDays`?: integer | string;
+    @js(#{`description`:"The mail-encryption activity's allotted time from the first invitation; 0 is no deadline. Between 0 and 3650. Left out, the stored value stays."}) `mailGraceDays`?: integer | string;
+    @js(#{`description`:"A person whose mail is not encrypted: leave, invite or require. Left out, the stored value stays."}) `mailNoKey`?: "leave" | "invite" | "require";
+    @js(#{`description`:"What the step offers: either, openpgp or smime (uploaded). Left out, the stored value stays."}) `mailPrefer`?: "either" | "openpgp" | "smime";
+    @js(#{`description`:"Days a replaced classical OpenPGP key is kept beside the post-quantum one; 0 removes it at once. Between 0 and 3650. Left out, the stored value stays."}) `mailKeepClassical`?: integer | string;
+    @js(#{`description`:"OFF BY DEFAULT. The PIV re-issue (#2009): a person holding a PIV slot certificate this realm issued is asked to enrol a new one when it is due. Left out, the stored value stays."}) `pivEnabled`?: boolean | string;
+    @js(#{`description`:"How long Skip puts the PIV re-issue off. Between 1 and 90. Left out, the stored value stays."}) `pivSnoozeDays`?: integer | string;
+    @js(#{`description`:"The PIV re-issue's allotted time from the first invitation; 0 is no deadline. Between 0 and 3650. Left out, the stored value stays."}) `pivGraceDays`?: integer | string;
+    @js(#{`description`:"The slots looked at, comma-separated: 9a, 9c, 9d, 9e. Left out, the stored value stays."}) `pivSlots`?: string;
+    @js(#{`description`:"What makes a certificate due: classical-issuer, expiring or both. Left out, the stored value stays."}) `pivTrigger`?: "classical-issuer" | "expiring" | "both";
+    @js(#{`description`:"Days before expiry a certificate is due. Between 1 and 365. Left out, the stored value stays."}) `pivRenewDays`?: integer | string;
+    @js(#{`description`:"reissue (a new certificate over a key the card makes again) or rekey (a post-quantum key on the card, which no card makes today, so nobody is asked). Left out, the stored value stays."}) `pivTarget`?: "reissue" | "rekey";
     @js(#{
       `description`:"Ignored since #1135: a passkey has no role, so a person with none registers a passkey and nothing else is asked. Accepted so that an older body is not refused; not stored, not answered."
     }) `noPasskeyRole`?: string
@@ -47690,7 +47748,7 @@ op `getEscrowedPivKeys`(@js(#{`maxLength`:256,`examples`:#["alice"]}) `parameter
   #{
     `operationId`:"getPostLoginActivities",
     `summary`:"Started post-login activities in this realm (#1111)",
-    `description`:"Everything Directory → Post-login activities draws: `started`, every post-login activity started in the realm, newest first — `id`, `activity`, `groups` (their DNs; empty for the whole realm), `intervalDays`, `maxMails`, `perRun`, `state` (`running`, `paused`, `ended`), who started and last changed it and when — each with `run`, what its scheduler job has done (`passes` over the population, `read`, `mailed`, `notDue`, `heldBack`, `refused`, `lastRunAt`, `lastSummary`); the `activities` an administrator may start, the `limits` of the numbers and of `groups`, whether a mail transport is `mailAvailable`, whether any post-login profile is `activityEnabled` (the POLICY asking anybody by itself; a running started activity asks its own people at sign-in whatever it says, #1126), the job and how often it runs; and `groupChooser`, the start form's group search (#1123): `chosen` (the `groups` asked, each resolved — `found` false for a name this realm does not have) and `pane`, one page of the groups whose cn or DN contains `groupq`, 20 from `groupfrom` (a stale offset is clamped to the first page), the chosen ones left out (`total`, `matched`, `from`, `shown`: each `dn` and `cn`). The search reads the directory's group index, never its people. Who was mailed and where each person stands is the reports application's postLoginProgress source, not this operation.\n\n**Mirrors** `GET /admin/post-login-activities` on the admin console.",
+    `description`:"Everything Directory → Post-login activities draws: `started`, every post-login activity started in the realm, newest first — `id`, `activity`, `groups` (their DNs; empty for the whole realm), `intervalDays`, `maxMails`, `perRun`, `state` (`running`, `paused`, `ended`), who started and last changed it and when — each with `run`, what its scheduler job has done (`passes` over the population, `read`, `mailed`, `notDue`, `heldBack`, `refused`, `lastRunAt`, `lastSummary`); the `activities` an administrator may start (`pqc-passkey-migration`, `pqc-mail-encryption`, `piv-reissue`; #2009), the `limits` of the numbers and of `groups`, whether a mail transport is `mailAvailable`, whether any post-login profile is `activityEnabled` for the passkey migration (the POLICY asking anybody by itself; a running started activity asks its own people at sign-in whatever it says, #1126) and `enabledActivities`, every activity some profile's own switch turns on, the job and how often it runs; and `groupChooser`, the start form's group search (#1123): `chosen` (the `groups` asked, each resolved — `found` false for a name this realm does not have) and `pane`, one page of the groups whose cn or DN contains `groupq`, 20 from `groupfrom` (a stale offset is clamped to the first page), the chosen ones left out (`total`, `matched`, `from`, `shown`: each `dn` and `cn`). The search reads the directory's group index, never its people. Who was mailed and where each person stands is the reports application's postLoginProgress source, not this operation.\n\n**Mirrors** `GET /admin/post-login-activities` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -47743,6 +47801,7 @@ op `getPostLoginActivities`(@js(#{`maxLength`:256,`examples`:#["staff"]}) `param
     };
     `mailAvailable`?: boolean;
     `activityEnabled`?: boolean;
+    `enabledActivities`?: (string)[];
     `groupChooser`?: {
       `search`?: string;
       `chosen`?: ({
@@ -47797,7 +47856,7 @@ op `getPostLoginActivities`(@js(#{`maxLength`:256,`examples`:#["staff"]}) `param
   #{
     `operationId`:"startPostLoginActivity",
     `summary`:"Start a post-login activity",
-    `description`:"Starts a post-login activity in this realm. AT SIGN-IN, from now, each person it reaches is asked to do it (#1126), under the rules of the post-login profile that reaches them — even where that profile is off, unless it is a NAMED profile that is off, which excludes them. BY MAIL, from the next run of the scheduler job `post-login.activity-mail` (every few minutes, or Run now on Monitoring → Scheduler) each person the activity is DUE for — it reaches them, the realm can make the passkey, they have not done it — is mailed at the address on their entry a reminder to sign in, at most `maxMails` times and never twice inside `intervalDays`. The mail's one link opens the sign-in page; it carries no credential, and the post-login activity does the registration. `groups` narrows the people to the members of those groups: their UNION, a person in two of them read and mailed once; none means everybody in the realm. A group this realm does not have is refused (STS-AUTHN-0530); a second started activity for the same activity and the same groups is refused (STS-AUTHN-0492); bad values are STS-AUTHN-0490.\n\n**Mirrors** `POST /admin/post-login-activities` on the admin console.",
+    `description`:"Starts a post-login activity in this realm. AT SIGN-IN, from now, each person it reaches is asked to do it (#1126), under the rules of the post-login profile that reaches them — even where that profile is off, unless it is a NAMED profile that is off, which excludes them. BY MAIL, from the next run of the scheduler job `post-login.activity-mail` (every few minutes, or Run now on Monitoring → Scheduler) each person the activity is DUE for — it reaches them, the realm can make what it asks for, they have not done it — is mailed at the address on their entry a reminder to sign in, at most `maxMails` times and never twice inside `intervalDays`. `activity` is which one (#2009): `pqc-passkey-migration` (an ML-DSA passkey, the default), `pqc-mail-encryption` (an ML-KEM OpenPGP key or S/MIME certificate) or `piv-reissue` (a new PIV slot certificate from a post-quantum issuer, or before one expires), each mailed with its own message and asked under its own block of the post-login profile's rules. The mail's one link opens the sign-in page; it carries no credential, and the post-login activity does the work. `groups` narrows the people to the members of those groups: their UNION, a person in two of them read and mailed once; none means everybody in the realm. A group this realm does not have is refused (STS-AUTHN-0530); a second started activity for the same activity and the same groups is refused (STS-AUTHN-0492); bad values are STS-AUTHN-0490.\n\n**Mirrors** `POST /admin/post-login-activities` on the admin console.",
     `tags`:#["Directory"],
     `responses`:#{
       `200`:#{
@@ -47826,7 +47885,7 @@ op `startPostLoginActivity`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: {
-    @js(#{`description`:"The post-login activity."}) `activity`?: "pqc-passkey-migration";
+    @js(#{`description`:"The post-login activity: `pqc-passkey-migration` (a post-quantum passkey, the default), `pqc-mail-encryption` (a post-quantum mail-encryption key: OpenPGP or S/MIME) or `piv-reissue` (a new PIV slot certificate, #2009)."}) `activity`?: "pqc-passkey-migration" | "pqc-mail-encryption" | "piv-reissue";
     @js(#{
       `maxItems`:50,
       `description`:"Groups' cns or DNs, the people being the union of their members; empty or absent for everybody in the realm."

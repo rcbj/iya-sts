@@ -2738,6 +2738,21 @@ class AdminViews {
       field.disabled = !!(field.email && !mailUsable);
       field.disabledWhy = field.disabled ? mailWhy : '';
     });
+    // THE ROWS THAT FOLLOW ANOTHER WHILE UNSET (#2031): what each follows
+    // (a row's label, or a setting's key), and whether it follows now, so
+    // the form can offer the third choice and check it.
+    member.fields.forEach(function (field) {
+      const own = authn.FIELD_BY_KEY[field.key];
+      if (!own || !own.follows) {
+        return;
+      }
+      const target = String(own.follows);
+      const row = authn.FIELD_BY_KEY[target];
+      field.follows = target;
+      field.followsLabel = row ? row.label
+        : target.replace(/^setting:/, '');
+      field.following = authn.following(member.profile, field.key);
+    });
     const profile = member.profile;
     const out = {
       from: profile.from,

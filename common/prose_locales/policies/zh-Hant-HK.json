@@ -44,8 +44,8 @@
     "text": "TLS 客戶端證書——作為第一因素"
   },
   "authn.FIELDS.certificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "已驗證的 TLS 客戶端證書：GET /tls/sign-in，或在登入頁面上使用「使用您的憑證繼續」。"
+    "en": "f2fbb7dc9d0fa190",
+    "text": "不是智能卡的已驗證 TLS 客戶端證書：GET /tls/sign-in，或在登入頁面上使用「使用您的憑證繼續」。智能卡證書屬於智能卡一列，該列在未設定時跟隨本列（#2031）。"
   },
   "authn.FIELDS.emailCodeTtlS.label": {
     "en": "a0d3df11fd93619b",
@@ -80,8 +80,8 @@
     "text": "寄到該人「已驗證」地址的單次使用連結，只在開始登入的那個瀏覽器中才能完成登入。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為郵箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
   },
   "authn.SCHEMA.attributes.stsAuthnCertificatePrimary.what": {
-    "en": "bbf7d091b1854474",
-    "text": "已驗證的 TLS 客戶端證書：GET /tls/sign-in，或在登入頁面上使用「使用您的憑證繼續」。"
+    "en": "f2fbb7dc9d0fa190",
+    "text": "不是智能卡的已驗證 TLS 客戶端證書：GET /tls/sign-in，或在登入頁面上使用「使用您的憑證繼續」。智能卡證書屬於智能卡一列，該列在未設定時跟隨本列（#2031）。"
   },
   "authn.SCHEMA.attributes.stsAuthnEmailCodeAttempts.what": {
     "en": "f01dd1453c1c4690",
@@ -120,8 +120,8 @@
     "text": "TLS 客戶端證書"
   },
   "authn.MECHANISMS.certificate.what": {
-    "en": "bbf7d091b1854474",
-    "text": "已驗證的 TLS 客戶端證書：GET /tls/sign-in，或在登入頁面上使用「使用您的憑證繼續」。"
+    "en": "f2fbb7dc9d0fa190",
+    "text": "不是智能卡的已驗證 TLS 客戶端證書：GET /tls/sign-in，或在登入頁面上使用「使用您的憑證繼續」。智能卡證書屬於智能卡一列，該列在未設定時跟隨本列（#2031）。"
   },
   "authn.nistWarning": {
     "en": "a84b99742bf880e2",
@@ -210,5 +210,253 @@
   "page.mailWhy": {
     "en": "c7aa023cc0d9c95a",
     "text": "此領域無法傳送郵件，因此兩種電郵機制無法開啟，也從不提供。請在「伺服器設定 > 郵件」上設定傳輸方式。"
+  },
+  "authn.FIELDS.requireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no`：除機制列外沒有其他要求。`always`：只有當完成登入的證書（通行金鑰、安全金鑰、證書或智能卡）位於登記冊記錄了其證明的有效硬體權杖上時，才會開始工作階段，這與應用程式的 `attested-hardware` 機制所做的檢查相同。僅憑密碼、驗證器應用程式、電郵代碼、錢包、聯合夥伴或 Kerberos 票證將被拒絕。預設領域的內建管理員（admin.bootstrapUsername）不受此限，以免服務無人能夠登入。"
+  },
+  "authn.FIELDS.smartCardPrimary.label": {
+    "en": "2fd7ffc9233a4399",
+    "text": "智能卡（PIV/CAC）證書——作為第一因素"
+  },
+  "authn.FIELDS.smartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "智能卡（PIV/CAC）證書，用於 GET /tls/sign-in 或「使用您的證書繼續」：經過證明的 PIV 金鑰、在此以 PIV 插槽設定檔註冊的證書、依卡 UUID 對應的外部卡（piv.externalIssuers、stsPivCardUuid），或屬於標記為 smartCard 的 certSignIn.profiles 設定檔的證書。未設定時，它跟隨 stsAuthnCertificatePrimary，因此在它之前撰寫的原則保持原有含義（#2031）。"
+  },
+  "authn.FIELDS.smartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "PIV 卡驗證（插槽 9e）證書，其金鑰無需 PIN 即可使用。它也是智能卡，因此智能卡列也必須開啟。未設定時，它跟隨 piv.cardAuthSignIn 設定（#2031）。"
+  },
+  "authn.FIELDS.kerberosPrimary.what": {
+    "en": "0507278dcc36c133",
+    "text": "使用 Kerberos 票證存取 GET /authn/spnego，但使用智能卡的 PKINIT 除外，它有自己的列，並在未設定時跟隨本列（#2031）。"
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.label": {
+    "en": "9c5eeb540b2f1c36",
+    "text": "使用智能卡的 Kerberos PKINIT——作為第一因素"
+  },
+  "authn.FIELDS.pkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "使用帶有本領域 pkinit-smartcard 指示符的 Kerberos 票證存取 GET /authn/spnego：KDC 透過智能卡 PKINIT 簽發了該票證。未設定時，它跟隨 stsAuthnKerberosPrimary（#2031）。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnRequireAttestedHardware.what": {
+    "en": "2ac1dc57bed7309d",
+    "text": "`no`：除機制列外沒有其他要求。`always`：只有當完成登入的證書（通行金鑰、安全金鑰、證書或智能卡）位於登記冊記錄了其證明的有效硬體權杖上時，才會開始工作階段，這與應用程式的 `attested-hardware` 機制所做的檢查相同。僅憑密碼、驗證器應用程式、電郵代碼、錢包、聯合夥伴或 Kerberos 票證將被拒絕。預設領域的內建管理員（admin.bootstrapUsername）不受此限，以免服務無人能夠登入。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardPrimary.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "智能卡（PIV/CAC）證書，用於 GET /tls/sign-in 或「使用您的證書繼續」：經過證明的 PIV 金鑰、在此以 PIV 插槽設定檔註冊的證書、依卡 UUID 對應的外部卡（piv.externalIssuers、stsPivCardUuid），或屬於標記為 smartCard 的 certSignIn.profiles 設定檔的證書。未設定時，它跟隨 stsAuthnCertificatePrimary，因此在它之前撰寫的原則保持原有含義（#2031）。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnSmartCardCardAuthPrimary.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "PIV 卡驗證（插槽 9e）證書，其金鑰無需 PIN 即可使用。它也是智能卡，因此智能卡列也必須開啟。未設定時，它跟隨 piv.cardAuthSignIn 設定（#2031）。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnKerberosPrimary.what": {
+    "en": "0507278dcc36c133",
+    "text": "使用 Kerberos 票證存取 GET /authn/spnego，但使用智能卡的 PKINIT 除外，它有自己的列，並在未設定時跟隨本列（#2031）。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnPkinitSmartCardPrimary.what": {
+    "en": "475e236f74379392",
+    "text": "使用帶有本領域 pkinit-smartcard 指示符的 Kerberos 票證存取 GET /authn/spnego：KDC 透過智能卡 PKINIT 簽發了該票證。未設定時，它跟隨 stsAuthnKerberosPrimary（#2031）。"
+  },
+  "authn.MECHANISMS.smartCard.label": {
+    "en": "055e41994165a328",
+    "text": "智能卡（PIV/CAC）證書"
+  },
+  "authn.MECHANISMS.smartCard.what": {
+    "en": "f6aef9c35bb76d49",
+    "text": "智能卡（PIV/CAC）證書，用於 GET /tls/sign-in 或「使用您的證書繼續」：經過證明的 PIV 金鑰、在此以 PIV 插槽設定檔註冊的證書、依卡 UUID 對應的外部卡（piv.externalIssuers、stsPivCardUuid），或屬於標記為 smartCard 的 certSignIn.profiles 設定檔的證書。未設定時，它跟隨 stsAuthnCertificatePrimary，因此在它之前撰寫的原則保持原有含義（#2031）。"
+  },
+  "authn.MECHANISMS.smartCardCardAuth.what": {
+    "en": "88e3b2ac8204a8ad",
+    "text": "PIV 卡驗證（插槽 9e）證書，其金鑰無需 PIN 即可使用。它也是智能卡，因此智能卡列也必須開啟。未設定時，它跟隨 piv.cardAuthSignIn 設定（#2031）。"
+  },
+  "authn.MECHANISMS.kerberos.what": {
+    "en": "0507278dcc36c133",
+    "text": "使用 Kerberos 票證存取 GET /authn/spnego，但使用智能卡的 PKINIT 除外，它有自己的列，並在未設定時跟隨本列（#2031）。"
+  },
+  "authn.MECHANISMS.pkinitSmartCard.label": {
+    "en": "62046e8418115023",
+    "text": "使用智能卡的 Kerberos PKINIT"
+  },
+  "authn.MECHANISMS.pkinitSmartCard.what": {
+    "en": "475e236f74379392",
+    "text": "使用帶有本領域 pkinit-smartcard 指示符的 Kerberos 票證存取 GET /authn/spnego：KDC 透過智能卡 PKINIT 簽發了該票證。未設定時，它跟隨 stsAuthnKerberosPrimary（#2031）。"
+  },
+  "authn.sentences.attestedAlways": {
+    "en": "7feb965c44fd5614",
+    "text": "每次登入都必須以保存在經過證明的硬體權杖上的證書完成（內建管理員除外）"
+  },
+  "postLogin.FIELDS.mailEnabled.label": {
+    "en": "40a2cfe48791e921",
+    "text": "要求電郵加密使用後量子金鑰"
+  },
+  "postLogin.FIELDS.mailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "預設關閉。開啟後，此設定檔所涵蓋、且其電郵以傳統金鑰加密的每個人——加密金鑰不是 ML-KEM 的 OpenPGP 金鑰，或金鑰不是 ML-KEM 的 S/MIME 證書——在登入後都會被要求註冊一個後量子金鑰（pqc-mail-encryption）：如今以傳統金鑰加密的內容，在該金鑰被破解後即可被讀取。關閉此項的具名設定檔會把它所選中的人排除在此活動之外。"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.label": {
+    "en": "13594ff89ca962fe",
+    "text": "電郵加密：略過後延後"
+  },
+  "postLogin.FIELDS.mailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "略過會為此人把電郵加密活動延後多久。"
+  },
+  "postLogin.FIELDS.mailGraceDays.label": {
+    "en": "0ac068befb17c89a",
+    "text": "電郵加密：允許的時間"
+  },
+  "postLogin.FIELDS.mailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "從此人第一次被邀請參加電郵加密活動時起計算。期滿後不能再略過，登入會被暫停，直到註冊了後量子金鑰。0 表示沒有期限。"
+  },
+  "postLogin.FIELDS.mailNoKey.label": {
+    "en": "59ea773955163006",
+    "text": "電郵加密：電郵未加密的人"
+  },
+  "postLogin.FIELDS.mailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "電郵完全未加密的人（stsMailEncryption 為 none 或未設定）。leave：不詢問。invite：請其註冊後量子金鑰，且永遠可以略過。require：詢問，且只能在允許的時間內略過。"
+  },
+  "postLogin.FIELDS.mailPrefer.label": {
+    "en": "ec4a832609a5828b",
+    "text": "電郵加密：提供什麼"
+  },
+  "postLogin.FIELDS.mailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "此步驟提供什麼。either：OpenPGP 金鑰與 S/MIME 證書，先提供此人現在使用的那種。openpgp：僅提供 RFC 9980 OpenPGP 金鑰。smime：僅提供上傳的 ML-KEM S/MIME 證書（本領域不簽發）。本領域無法接受的種類絕不提供；兩種都不能時不詢問任何人。"
+  },
+  "postLogin.FIELDS.mailKeepClassical.label": {
+    "en": "771fd3ea4d36a053",
+    "text": "電郵加密：保留傳統 OpenPGP 金鑰"
+  },
+  "postLogin.FIELDS.mailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "一個人的傳統 OpenPGP 金鑰在其項目與 Web Key Directory 中、在取代它的後量子金鑰旁保留多少天，讓無法使用新金鑰的通信對象仍能找到舊金鑰。本服務的新電郵會立即使用後量子金鑰。之後由排程工作把傳統金鑰從項目與 Web Key Directory 中移除。0 表示立即移除。"
+  },
+  "postLogin.FIELDS.pivEnabled.label": {
+    "en": "6d8ee32fc1b5b94a",
+    "text": "要求重新簽發 PIV 證書"
+  },
+  "postLogin.FIELDS.pivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "預設關閉。開啟後，凡本設定檔涵蓋、並在 pivSlots 所列插槽中持有本領域簽發之 PIV 插槽證書的人，當 pivTrigger 認定到期時，都會在登入後被要求註冊一張新證書（piv-reissue）：其簽發者以傳統演算法簽署而本領域的 EST 簽發 CA 為後量子，或證書將在 pivRenewDays 內到期。新證書首次用於登入時，舊證書會被撤銷（superseded）。關閉此項的具名設定檔會將被選取的人排除在本活動之外。"
+  },
+  "postLogin.FIELDS.pivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "自該人第一次受邀參加 PIV 重新簽發起算。時間一過便不能再略過，登入會被暫停，直到每個到期插槽都有新證書。0 表示沒有期限。"
+  },
+  "postLogin.FIELDS.pivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "本活動檢查其證書的 PIV 插槽，以逗號分隔：9a（PIV 驗證）、9c（數位簽章）、9d（金鑰管理）、9e（卡片驗證）。其設定檔未列入 est.allowedProfiles 的插槽永遠不會被要求。"
+  },
+  "postLogin.FIELDS.pivTrigger.label": {
+    "en": "3a6dc99d50545fe3",
+    "text": "PIV 重新簽發：什麼使證書到期"
+  },
+  "postLogin.FIELDS.pivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "什麼使插槽的證書到期。classical-issuer：其簽發者以傳統演算法簽署，且本領域的 EST 簽發 CA 為後量子（在傳統 CA 下重新簽發的證書並不會更好）。expiring：它將在 pivRenewDays 內到期。both：兩者之一。"
+  },
+  "postLogin.FIELDS.pivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "當 pivTrigger 為 expiring 或 both 時，PIV 插槽證書在到期前多少天需要續約。"
+  },
+  "postLogin.FIELDS.pivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "新證書針對什麼。reissue：針對卡片在同一插槽中重新產生的金鑰簽發新證書，由本領域的 EST 簽發 CA 簽署。rekey：卡片上的後量子金鑰，目前沒有 PIV 卡能產生，因此設為 rekey 的設定檔不會要求任何人。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailEnabled.what": {
+    "en": "6a3caab0724b6deb",
+    "text": "預設關閉。開啟後，此設定檔所涵蓋、且其電郵以傳統金鑰加密的每個人——加密金鑰不是 ML-KEM 的 OpenPGP 金鑰，或金鑰不是 ML-KEM 的 S/MIME 證書——在登入後都會被要求註冊一個後量子金鑰（pqc-mail-encryption）：如今以傳統金鑰加密的內容，在該金鑰被破解後即可被讀取。關閉此項的具名設定檔會把它所選中的人排除在此活動之外。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailSnoozeDays.what": {
+    "en": "75818d57de2ba89f",
+    "text": "略過會為此人把電郵加密活動延後多久。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailGraceDays.what": {
+    "en": "1cffbca629a17d9d",
+    "text": "從此人第一次被邀請參加電郵加密活動時起計算。期滿後不能再略過，登入會被暫停，直到註冊了後量子金鑰。0 表示沒有期限。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailNoKey.what": {
+    "en": "b05acbfbd76cc64c",
+    "text": "電郵完全未加密的人（stsMailEncryption 為 none 或未設定）。leave：不詢問。invite：請其註冊後量子金鑰，且永遠可以略過。require：詢問，且只能在允許的時間內略過。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailPrefer.what": {
+    "en": "98b3aa16d7513d5f",
+    "text": "此步驟提供什麼。either：OpenPGP 金鑰與 S/MIME 證書，先提供此人現在使用的那種。openpgp：僅提供 RFC 9980 OpenPGP 金鑰。smime：僅提供上傳的 ML-KEM S/MIME 證書（本領域不簽發）。本領域無法接受的種類絕不提供；兩種都不能時不詢問任何人。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginMailKeepClassical.what": {
+    "en": "c8030fa81a2f934d",
+    "text": "一個人的傳統 OpenPGP 金鑰在其項目與 Web Key Directory 中、在取代它的後量子金鑰旁保留多少天，讓無法使用新金鑰的通信對象仍能找到舊金鑰。本服務的新電郵會立即使用後量子金鑰。之後由排程工作把傳統金鑰從項目與 Web Key Directory 中移除。0 表示立即移除。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "預設關閉。開啟後，凡本設定檔涵蓋、並在 pivSlots 所列插槽中持有本領域簽發之 PIV 插槽證書的人，當 pivTrigger 認定到期時，都會在登入後被要求註冊一張新證書（piv-reissue）：其簽發者以傳統演算法簽署而本領域的 EST 簽發 CA 為後量子，或證書將在 pivRenewDays 內到期。新證書首次用於登入時，舊證書會被撤銷（superseded）。關閉此項的具名設定檔會將被選取的人排除在本活動之外。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "自該人第一次受邀參加 PIV 重新簽發起算。時間一過便不能再略過，登入會被暫停，直到每個到期插槽都有新證書。0 表示沒有期限。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "本活動檢查其證書的 PIV 插槽，以逗號分隔：9a（PIV 驗證）、9c（數位簽章）、9d（金鑰管理）、9e（卡片驗證）。其設定檔未列入 est.allowedProfiles 的插槽永遠不會被要求。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "什麼使插槽的證書到期。classical-issuer：其簽發者以傳統演算法簽署，且本領域的 EST 簽發 CA 為後量子（在傳統 CA 下重新簽發的證書並不會更好）。expiring：它將在 pivRenewDays 內到期。both：兩者之一。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "當 pivTrigger 為 expiring 或 both 時，PIV 插槽證書在到期前多少天需要續約。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "新證書針對什麼。reissue：針對卡片在同一插槽中重新產生的金鑰簽發新證書，由本領域的 EST 簽發 CA 簽署。rekey：卡片上的後量子金鑰，目前沒有 PIV 卡能產生，因此設為 rekey 的設定檔不會要求任何人。"
+  },
+  "postLogin.sentences.mailMigration": {
+    "en": "51b2d82c00bdd004",
+    "text": "電郵以傳統 OpenPGP 金鑰或 S/MIME 證書加密的人，在登入後會被要求註冊一個後量子（ML-KEM）的金鑰或證書"
+  },
+  "postLogin.sentences.mailOfferEither": {
+    "en": "a56bdbdfc1184177",
+    "text": "他們可以註冊 OpenPGP 金鑰或上傳 S/MIME 證書"
+  },
+  "postLogin.sentences.mailOfferSmime": {
+    "en": "1f353acddbfc305e",
+    "text": "他們可以上傳 S/MIME 證書"
+  },
+  "postLogin.sentences.mailNoKeyLeave": {
+    "en": "207bfd0824bc73d6",
+    "text": "電郵未加密的人不會被詢問"
+  },
+  "postLogin.sentences.mailNoKeyInvite": {
+    "en": "5b5bb65ef0e67a72",
+    "text": "電郵未加密的人會被邀請註冊後量子金鑰，且永遠可以略過"
+  },
+  "postLogin.sentences.mailNoKeyRequire": {
+    "en": "cb269a837a256b60",
+    "text": "電郵未加密的人會被要求註冊後量子金鑰，且只能在寬限期結束前略過"
+  },
+  "postLogin.sentences.pivReissue": {
+    "en": "5f2f81aff443f105",
+    "text": "持有 PIV 插槽證書（{{slots}}）的人在登入後會被要求註冊一張新證書"
+  },
+  "postLogin.sentences.pivTriggerClassical": {
+    "en": "632e10e241646755",
+    "text": "當證書由傳統 CA 簽署且本領域的 EST 簽發 CA 為後量子時，證書到期"
+  },
+  "postLogin.sentences.pivTriggerExpiring": {
+    "en": "aded73c111de1a19",
+    "text": "證書在到期前 {{days}} 天需要更換"
+  },
+  "postLogin.sentences.pivTriggerBoth": {
+    "en": "e1ad48c0307193c5",
+    "text": "當證書由傳統 CA 簽署且本領域的 EST 簽發 CA 為後量子時，或在到期前 {{days}} 天，證書到期"
+  },
+  "postLogin.sentences.pivSuperseded": {
+    "en": "89b3974d23046244",
+    "text": "新證書首次用於登入時，舊證書會被撤銷"
   }
 }

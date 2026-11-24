@@ -39,5 +39,11 @@
   "groupsFull": "{max} grupper är valda, det flesta en aktivitet får ange.",
   "startNote": "När den startas tillfrågas de den når från sin nästa inloggning; utskicket börjar vid jobbets nästa körning. Den som redan har gjort aktiviteten, som realmen inte kan be om den, eller som en avslagen namngiven profil utesluter, varken tillfrågas eller får mejl.",
   "startButton": "Starta",
-  "readOnly": "Att starta, pausa och avsluta en aktivitet efter inloggning kräver Admin Write."
+  "readOnly": "Att starta, pausa och avsluta en aktivitet efter inloggning kräver Admin Write.",
+  "activityName.passkey": "Postkvant-nyckel (passkey)",
+  "activityName.mail": "Postkvant-kryptering av e-post",
+  "activityName.piv": "Nytt PIV-certifikat",
+  "activityWhat.passkey": "den som har en klassisk passkey, eller ingen, ombeds registrera en ML-DSA-passkey, enligt profilens passkey-rader efter inloggning.",
+  "activityWhat.mail": "den vars e-post krypteras till en klassisk OpenPGP-nyckel eller ett klassiskt S/MIME-certifikat ombeds registrera en ML-KEM-nyckel, enligt profilens block för e-postkryptering.",
+  "activityWhat.piv": "den som har ett PIV-platscertifikat som den här sfären utfärdat ombeds skaffa ett nytt när en klassisk utfärdare signerade det eller det snart går ut, enligt profilens PIV-block."
 }

@@ -14,6 +14,17 @@ node_modules
 *.pem
 *.log
 
+# WHAT THE ABSTRACT MODEL GENERATES FOR THE SERVICE (rcbj, 2026-11-23).
+# `models/tools/generate.mjs` writes models/generated/ inside the image build
+# (`build-typescript.sh`), and the service reads only that copy, so none of it
+# is ever committed. A host run of the generator or of `common/model_emit.js`
+# writes the same directory here, and without this line a `git add -A` would
+# commit it. The generated files that ARE committed on purpose (the two
+# schema.sql, types/*.generated.d.ts, common/domain_classes.ts, the
+# data-model and OpenAPI pages, the PEP's OpenAPI and Rust) are listed in
+# models/CLAUDE.md with the reason for each, and a drift test holds each one.
+models/generated/
+
 # THE PERSISTENT STORE, since 2026-08-27. `persistence.mode=ldif` writes one
 # RFC 2849 LDIF file per trust realm here, plus realms.json and appconfig.json.
 # Never committed, and the reason is the same one that keeps the console from

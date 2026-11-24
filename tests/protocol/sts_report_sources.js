@@ -25,7 +25,7 @@
 //      source, the success with its algorithm, the refusal with its error
 //      code, and no row carries an address or a summary (B).
 //   L. postLoginProgress: the fields, not anchored, `progress` one of five
-//      words and groupable, the three presets each one the form can draw
+//      words and groupable, the five presets each one the form can draw
 //      (A); with the realm's post-login activity on for people with no
 //      passkey, two people are asked at a sign-in and press Skip — each a
 //      row: snoozed, one ask, one skip, asked by the policy, a week's
@@ -491,11 +491,13 @@ async function test() {
                             "mailed"]);
     assert.strictEqual(word.group, true);
   });
-  check("L-A. the three predefined queries, each one the form can draw: " +
-        "one filter leaf, at most one group and one order", function () {
+  check("L-A. the five predefined queries (one per activity since #2009 " +
+        "P4), each one the form can draw: one filter leaf, at most one " +
+        "group and one order", function () {
     assert.deepStrictEqual(progress.presets.map(function (one) {
       return one.id;
-    }), ["progress-by-activity", "past-grace-period", "skipped-most"]);
+    }), ["progress-by-activity", "progress-mail-encryption",
+         "progress-piv-reissue", "past-grace-period", "skipped-most"]);
     progress.presets.forEach(function (one) {
       const doc = one.document;
       assert.ok(!doc.where || (doc.where.op !== "and" &&

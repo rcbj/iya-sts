@@ -2089,7 +2089,11 @@ class AdminApi {
               'passkey as migrated only where its recorded attestation is ' +
               'post-quantum too. `noPasskeyFallback` (#1103): `classical` ' +
               'offers a person with no passkey a classical retry where ' +
-              'their device cannot make ML-DSA.',
+              'their device cannot make ML-DSA. The mail-encryption ' +
+              'activity (#2009) is a block of its own with its own switch ' +
+              '(`mailEnabled`, off by default), which a save may leave ' +
+              'out to keep what the profile stored; so is the PIV ' +
+              're-issue (#2009, `pivEnabled`).',
         example: { enabled: true, activity: 'pqc-passkey-migration',
                    snoozeDays: 7, graceDays: 30, noPasskey: 'invite',
                    method: 'automatic',

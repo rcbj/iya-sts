@@ -36,6 +36,10 @@
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
+// The post-login activities there are (#2009 P4): a leaf that requires
+// nothing of this service (its header says why), so this module keeps
+// requiring nothing of it either and has no copy of the list to keep in step.
+import PostLoginKinds = require('../common/post_login_kinds');
 
 const log = bunyan.createLogger({ name: 'sts-report-catalog' });
 
@@ -231,7 +235,12 @@ function source(id: string, retention: string,
 // directory, so it is neither anchored nor indexed: an unordered read stops
 // at its limit, and an ordered read or a count walks the rows a page at a
 // time under the usual time caps.
-const POST_LOGIN_ACTIVITIES = ['pqc-passkey-migration'];
+// THE ACTIVITY ENUMERATION IS THE ACTIVITIES' OWN TABLE (#2009 P4), so the
+// filter's dropdown offers every activity a row can name and a definition
+// saved with `pqc-passkey-migration` still validates. Until P4 this was a
+// copy, because `post_login_kinds.ts` required `helpers.js`; it is a leaf
+// now.
+const POST_LOGIN_ACTIVITIES = PostLoginKinds.ids();
 // NO ROLE ENUMERATION SINCE #1135: an activity asks for a passkey, not a
 // passkey in a role, and a row written since carries none. `role` stays
 // in the source, unenumerated, because a row written before keeps the
@@ -256,7 +265,12 @@ function postLoginProgressSource(): SourceSpec {
     [field('username', 'string', 'The directory uid of the person.'),
      field('activity', 'string',
        'The post-login activity: pqc-passkey-migration, a post-quantum ' +
-       '(ML-DSA) passkey where the person holds a classical one or none.',
+       '(ML-DSA) passkey where the person holds a classical one or none; ' +
+       'pqc-mail-encryption, a post-quantum (ML-KEM) OpenPGP key or S/MIME ' +
+       'certificate where mail to the person is encrypted to a classical ' +
+       'one; piv-reissue, a new PIV slot certificate where a classical ' +
+       'issuer signed the one held or it expires soon (#2009). Filter on it ' +
+       'to report one activity.',
        undefined, POST_LOGIN_ACTIVITIES),
      field('profile', 'string',
        'The post-login profile that reached the person when the row was ' +
@@ -308,6 +322,28 @@ function postLoginProgressSource(): SourceSpec {
                    select: ['progress'],
                    where: { op: 'eq', field: 'activity',
                             value: 'pqc-passkey-migration' },
+                   aggregate: 'count', groupBy: ['progress'],
+                   orderBy: [{ field: 'progress', dir: 'asc' }],
+                   limit: 100, format: 'json', mode: 'auto' } },
+     // ONE PRESET PER ACTIVITY (#2009 P4), each the first one's document
+     // with its own activity, so a reader starts from the activity they
+     // started. The first keeps its id and its passkey filter, so a
+     // definition made from it before P4 is what it was.
+     { id: 'progress-mail-encryption',
+       name: 'Progress of the mail-encryption migration',
+       document: { source: 'postLoginProgress',
+                   select: ['progress'],
+                   where: { op: 'eq', field: 'activity',
+                            value: 'pqc-mail-encryption' },
+                   aggregate: 'count', groupBy: ['progress'],
+                   orderBy: [{ field: 'progress', dir: 'asc' }],
+                   limit: 100, format: 'json', mode: 'auto' } },
+     { id: 'progress-piv-reissue',
+       name: 'Progress of the PIV re-issue',
+       document: { source: 'postLoginProgress',
+                   select: ['progress'],
+                   where: { op: 'eq', field: 'activity',
+                            value: 'piv-reissue' },
                    aggregate: 'count', groupBy: ['progress'],
                    orderBy: [{ field: 'progress', dir: 'asc' }],
                    limit: 100, format: 'json', mode: 'auto' } },
