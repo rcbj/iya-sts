@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6039** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6040** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -52,7 +52,7 @@ is an ordinary outcome.
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 21
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 112
-* [Worker pools (`STS-WORKER`)](#sts-worker) — 57
+* [Worker pools (`STS-WORKER`)](#sts-worker) — 58
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 116
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
@@ -342,6 +342,7 @@ Raised from: common/request_pool.js, common/request_worker.ts, common/service_st
 | `STS-WORKER-0055` | A request worker reported that its change-log pull waited on its own flush past workers.readBarrierTimeoutMs (STS-STORE-0176), so the front process retired it — nothing more routed to it, then drained, waiting for its own flush to settle — and forks a replacement into its slot when it exits. A pool that is stopping or has given up keeps the worker, and the line says why. | — |
 | `STS-WORKER-0056` | A request worker retired because its change-log pull was wedged (STS-WORKER-0055) did not finish draining within 8000 ms and was ended; its replacement follows as for any worker that exits. | — |
 | `STS-WORKER-0057` | A request worker was ended, or exited, with its own flush still out past ten times workers.readBarrierTimeoutMs after it began (5 minutes by default): the flush was given up on, and the writes in it may not have reached the store. A flush that settles before then is waited for. | Log line |
+| `STS-WORKER-0058` | The front process could not catch up on the realm and settings change logs before forwarding an answer that wrote a setting (the catch-up ran out or failed): the answer is forwarded, and a check the front makes before dispatch meets the new value at its next change-log pull (#2019). | Log line |
 
 ## STS-STORE
 
