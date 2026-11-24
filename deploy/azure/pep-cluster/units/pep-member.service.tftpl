@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# THE REMOTE PEP (#1284). Its keys are read-only files on ${run_dir}
+# (pep-secrets); its non-secret settings are /etc/pep/pep.env, which is in
+# the VM's model and holds no secret; the anchor's path, if any, is
+# ${run_dir}/runtime.env.
+#
+# HOST NETWORKING: the PEP's 9443 and 9543 are the VM's, which the members'
+# security group admits from the gateway's subnet alone, and the companion
+# (when there is one) is the VM's 127.0.0.1:9700, which no rule admits — so
+# the route's one upstream reaches each member's own companion and nothing
+# else can (deploy/azure/CLAUDE.md, *A remote PEP cluster*).
+[Unit]
+Description=remote PEP: ${member}
+Requires=pep-secrets.service sts-registry.service
+After=pep-secrets.service sts-registry.service ${wants}
+%{ if wants != "" ~}
+Wants=${wants}
+%{ endif ~}
+
+[Service]
+Environment=HOME=/var/lib/sts
+ExecStartPre=-/usr/bin/docker rm -f xacml-pep
+ExecStartPre=/bin/bash /etc/sts/registry-login.sh
+ExecStartPre=/usr/bin/docker pull ${image}
+ExecStart=/usr/bin/docker run --rm --name xacml-pep \
+  --network host \
+  --env-file /etc/pep/pep.env \
+  --env-file ${run_dir}/runtime.env \
+  -v ${run_dir}:${run_dir}:ro \
+  --log-driver=journald \
+  --log-opt tag=pep/${environment}/${member} \
+  ${image}
+ExecStop=/usr/bin/docker stop -t 30 xacml-pep
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

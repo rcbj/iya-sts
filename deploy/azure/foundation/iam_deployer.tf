@@ -62,6 +62,9 @@ resource "azurerm_role_definition" "deployer" {
       "Microsoft.Compute/*",
       "Microsoft.DBforPostgreSQL/*",
       "Microsoft.Insights/dataCollectionRuleAssociations/*",
+      # A remote PEP cluster's shared scale set, autoscaled by CPU (#1284,
+      # ../pep-cluster/main.tf, `autoscale_max`).
+      "Microsoft.Insights/autoscaleSettings/*",
       "Microsoft.Insights/diagnosticSettings/*",
       "Microsoft.KeyVault/vaults/read",
       "Microsoft.ManagedIdentity/userAssignedIdentities/read",
@@ -86,6 +89,8 @@ locals {
   deployer_groups = merge(
     { for k, g in azurerm_resource_group.unit : "unit-${k}" => g.id },
     { for k, g in azurerm_resource_group.global : "global-${k}" => g.id },
+    # A remote PEP environment's own group (#1284, pep_units.tf).
+    { for k, g in azurerm_resource_group.pep : "pep-${k}" => g.id },
   )
 
   deployer_group_grants = {
@@ -109,6 +114,13 @@ locals {
   deployer_vault_grants = {
     for pair in setproduct(keys(local.units), var.deployer_principal_ids) :
     "${pair[0]}-${pair[1]}" => { unit = pair[0], principal = pair[1] }
+  }
+
+  # A remote PEP environment's vault (#1284): provision.sh, run as a
+  # deployer, writes each member's secret there.
+  deployer_pep_vault_grants = {
+    for pair in setproduct(keys(var.pep_environments), var.deployer_principal_ids) :
+    "${pair[0]}-${pair[1]}" => { env = pair[0], principal = pair[1] }
   }
 
   deployer_global_vault_grants = {
@@ -140,6 +152,16 @@ resource "azurerm_role_assignment" "deployer_readers" {
 resource "azurerm_role_assignment" "deployer_vaults" {
   for_each             = local.deployer_vault_grants
   scope                = azurerm_key_vault.unit[each.value.unit].id
+  role_definition_name = "Key Vault Secrets Officer"
+  principal_id         = each.value.principal
+}
+
+# A remote PEP environment's member secrets (#1284, ../pep-cluster/
+# provision.sh). Secrets only: the `gateway` certificate is member 1's to
+# replace (pep_units.tf).
+resource "azurerm_role_assignment" "deployer_pep_vaults" {
+  for_each             = local.deployer_pep_vault_grants
+  scope                = azurerm_key_vault.pep[each.value.env].id
   role_definition_name = "Key Vault Secrets Officer"
   principal_id         = each.value.principal
 }
