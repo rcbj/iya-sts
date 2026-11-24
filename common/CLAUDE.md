@@ -12541,8 +12541,11 @@ is exactly what it was. The headers of the three files argue them in full.
   method; `tests/protocol/sts_cert_sign_in_profiles.js` every stored method
   over a real handshake (G), each with the account disabled, renewal (H)
   and an expired leaf (I), the values worked out by openssl as
-  `docs/v1.2.0/configure-tls.md` says; `tests/protocol/sts_cert_handoff.js`
-  the handoff over two real listeners.
+  `docs/v1.2.0/configure-tls.md` says, and (#2089) revocation end to end
+  in development (J) and in a product-mode realm (K), a listed leaf and an
+  unfetchable CRL; `tests/protocol/sts_cert_handoff.js` the handoff over
+  two real listeners, and the main port asking for no certificate beside
+  it (D).
 
 ## 3ag. `cert_enrollment.ts`: ACME, EST AND SCEP ISSUE THROUGH ONE CORE (2026-09-13)
 
