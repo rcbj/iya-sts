@@ -414,16 +414,20 @@ function check(request) {
   try {
     answer = decider(question);
   } catch (error) {
-    // THE ONE PLACE THIS FAILS OPEN ON AN ERROR, and it is deliberate and
-    // narrow. A THROW here is a defect in the PEP or the engine — not a Deny,
-    // not an Indeterminate, both of which the PEP returns as ordinary answers.
-    // A mock whose every protocol family stopped issuing because a policy
-    // module threw would be unusable and, worse, unfixable: the console that
-    // would let somebody correct the policy is reached through a session this
-    // service would then refuse to mint.
+    // A THROW here is a defect in the PEP or the engine — not a Deny, not an
+    // Indeterminate, both of which the PEP returns as ordinary answers. In
+    // DEVELOPMENT it is allowed: a mock whose every protocol family stopped
+    // issuing because a policy module threw would be unusable and, worse,
+    // unfixable, the console that would let somebody correct the policy being
+    // reached through a session this service would then refuse to mint. In
+    // PRODUCT `noDecision()` refuses it (STS-XACML-0183, ASVS 5.0.0 16.5.3:
+    // fail closed), as every other policy fault in this file is refused;
+    // `tests/asvs_product_limits.js` section 17 holds both.
     log.error(errorCodes.tag('STS-XACML-0052') +
-              'issuance_gate: the decider threw and issuance was ALLOWED; ' +
-              'this is a defect in the embedded PEP rather than a decision. ' +
+              'issuance_gate: the decider threw, which is a defect in the ' +
+              'embedded PEP rather than a decision, and the issuance was ' +
+              (require('./mode').failsOpenOnPolicyFault()
+                ? 'ALLOWED (development)' : 'REFUSED (product)') + ': ' +
               error.message);
     log.debug("Leaving check().");
     return noDecision(allow('The embedded PEP threw, which is a defect ' +

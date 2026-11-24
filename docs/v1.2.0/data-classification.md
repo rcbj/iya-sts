@@ -95,9 +95,9 @@ An app password or recovery code is shown once.
 | Requirement | Rule, and the control that implements it |
 |---|---|
 | Encryption | Audit rows and other minted rows are sealed where they persist. Secret settings are sealed. Other settings are plain JSON. |
-| Integrity | Sealing where sealed. Stored settings rely on the database's own access control. |
+| Integrity | Sealing where sealed. Audit rows carry a keyed checksum chained to the row before, and their table refuses an update or delete by the service's role. Stored settings rely on the database's own access control. |
 | Transit | TLS, including the database connection, which is verified by default on this stack. |
-| Retention | `audit.maxEvents` (5000 per realm) and the destinations you export to. |
+| Retention | `audit.maxEvents` (5000 per realm) and the destinations you export to. Stored audit rows are in `sts_audit`, which the service's own database role can add to and read and cannot change or delete (ASVS 5.0.0 16.4.2); the table owner's retention keeps at least 1000 per realm. |
 | Logging | See [the logging inventory](logging-inventory.md). |
 | Access | Admin Read in the realm. |
 | Database encryption | Storage-level encryption. |

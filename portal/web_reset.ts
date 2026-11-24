@@ -74,6 +74,7 @@ class ResetPages {
         PortalShell.chooser(t, ctx.locale, (ctx.prefix || '') + kit.BASE) +
         '<h1>' + t.html('portal.resetDone.heading') + '</h1>' +
         '<div class="ok">' + t.html('portal.resetDone.ok') + '</div>' +
+        '<p>' + t.html('portal.resetDone.signedOut') + '</p>' +
         '<p>' + t.html('portal.resetDone.next') + '</p>' +
         '<p><a href="' + kit.esc(view.signIn || kit.BASE) + '">' +
         t.html('portal.signIn') + '</a></p></div>';

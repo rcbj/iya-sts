@@ -611,6 +611,18 @@
     "en": "e082de544e11ddcb",
     "text": "Magdagdag ng audit export destination, para hindi maabot ang kopya ng log kung makompromiso ang service. Hangga’t wala pa, nagtatala ang service ng babala para sa realm na iyon."
   },
+  "mode.requirements.audit-append-only.what": {
+    "en": "53b7ec225e4b3f63",
+    "text": "Hindi mababago ang audit log gamit ang sariling database credential ng serbisyo"
+  },
+  "mode.requirements.audit-append-only.development": {
+    "en": "11ab073d36508489",
+    "text": "Kung saan nananatili ang minted state (mga request worker o ilang node, o keys.source=persisted), isinusulat ang log gaya sa product. Kung hindi, nasa memorya ito at nawawala kasama ng proseso."
+  },
+  "mode.requirements.audit-append-only.product": {
+    "en": "421ebab018244a91",
+    "text": "Ang bawat event ay isang selyadong row ng sts_audit, kung saan ang database role ng serbisyo ay maaaring magdagdag at magbasa ng mga row at wala nang iba; ang mga lumang row ay umaalis lamang sa pamamagitan ng retention function ng may-ari ng table, na nag-iiwan ng hindi bababa sa 1000 sa bawat realm. Kung saan kayang baguhin ng role ang table — pag-aari nito ito, o may UPDATE, DELETE o TRUNCATE dito — iuulat itong hindi natutugunan (STS-AUDIT-0019) at patuloy na tumatakbo ang serbisyo."
+  },
   "mode.requirements.malware-scan-tls.what": {
     "en": "926957ee32cf2309",
     "text": "Naka-encrypt ang mga file patungo sa malware scanner"

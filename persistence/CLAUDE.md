@@ -1191,6 +1191,10 @@ REPORTED — `audit.js`'s `list()` and `summary()`, `admin_stats.js`'s
 `snapshot()`, `xacml_monitor.js`'s. The test for `own` is one question: **is a
 write to this store an ASSIGNMENT or an INCREMENT?**
 
+**SINCE #1616 (2026-11-24) THE AUDIT EVENTS ARE NOT A MINTED STORE AT
+ALL** — see *The audit log, append-only* below. `audit.nums` keeps what this
+paragraph says; `audit.events` is the OLD ring, read once to be copied.
+
 **THE AUDIT LOG'S FAN-IN IS READ WHEN A PAGE ASKS, NOT AT EACH CHANGE
 (2026-10-21, #820).** `audit.events` and `audit.nums` are declared
 `contributionsOnRead`. Every event rewrote a sealed segment of up to 32
@@ -1649,7 +1653,68 @@ line says whether it was a prepare or another task taking the loop at a
 turn, which the old line could not. `tests/read_barrier_slow_apply.js`
 holds the split.
 
-**`audit.events` IS STORED IN SEGMENTS OF 32** (`realms.arr({ segment })`,
+## The audit log, append-only (#1616, 2026-11-24; ASVS 5.0.0 16.4.2)
+
+**Every audit event is ONE sealed row of `sts_audit`, where the application
+role holds INSERT and SELECT and nothing else.** Until then the ring was the
+segments below, in `sts_minted`, which that role may UPDATE and DELETE like
+any minted row: the keyed chain on each row (`common/CLAUDE.md`, audit) said
+a row had changed, and nothing prevented it. rcbj's decisions are on the
+ticket; what a reader of this directory needs:
+
+* **`audit_store.js` is the store; `audit_portable.js` its MariaDB
+  statements.** `common/audit.js`'s ring is now this process's events in
+  memory (`realms.arr()` with no `persist`), each one also queued by
+  `audit_store.append()` and written a turn later with the rest of its
+  burst, `INSERT … ON CONFLICT DO NOTHING` (`INSERT IGNORE` on MariaDB): a
+  retried write or a second copy needs no UPDATE. A refused write is kept
+  for the next, to a bound (`STS-AUDIT-0018`). `audit.fresh()` reads the
+  realm's newest `audit.maxEvents` rows, every process's, and `merged()`
+  shows them beside this process's own, each once by (origin, seq).
+* **ACTIVE EXACTLY WHERE MINTED STATE PERSISTS** (`persistence_minted`'s
+  `enabled()`), on a driver with the `audit*` methods. Memory and LDIF stores
+  have neither, and the ring is the process's own, as before.
+* **ROWS LEAVE THROUGH THE OWNER'S TWO SECURITY DEFINER FUNCTIONS** (MariaDB:
+  SQL SECURITY DEFINER procedures), never a DELETE of this role's:
+  `sts_audit_retain(realm, keep)`, which keeps at least 1000 whatever it is
+  asked because the caller is the role the table is protected from, and
+  `sts_audit_purge_realm(realm)`, which deletes only a realm gone from
+  `sts_realms` or retiring, never the default one. The `audit.retain` cluster
+  job (service scope, ten minutes) calls the first for every live realm and
+  the second for every realm the table holds and the service does not.
+* **A ROW IS NEVER RE-SEALED.** `sts_audit` is in `EXTRA_SEALED` marked
+  `countOnly`: counted against its data key and skipped by the re-seal pass.
+  A key is destroyed only on a count of zero (`common/data_key_rotation.ts`),
+  so a retired key stays while an audit row names it, and goes when
+  retention has removed them.
+* **THE SERVICE CREATES THE TABLE LIKE ANY OTHER, WHICH ONLY A ROLE THAT
+  COULD ALSO ALTER IT CAN DO.** Every process asks `auditPrivileges()` at its
+  start (`has_table_privilege`, which an owner always has; on MariaDB
+  `information_schema`'s grants on the table, the database and globally);
+  where the role can change the table, the front process logs
+  `STS-AUDIT-0019` and `/admin/mode`'s `audit-append-only` row is reported
+  not met. The service runs (rcbj's decision 7). The ordinary case — a role
+  without CREATE — refuses to start without the table (`STS-STORE-0029`), so
+  `upgrade-1.1.0.sql` runs first.
+* **MARIADB'S GRANTS ARE PER TABLE SINCE SCHEMA 33** (`--@grant-tables` in
+  the template, one line per table of the model): MariaDB cannot take one
+  table out of a database grant. A new table is granted with the model.
+* **THE OLD RING IS COPIED AT EVERY START OF THE FRONT PROCESS**
+  (`audit.js`'s `migrateLegacy()`): `legacyEvents`, declared under the old
+  handle and shape so the minted restore and the fan-in still read it, is
+  written into `sts_audit` with its chain checksums, and only then are the
+  `audit.events` rows of `sts_minted` deleted (`auditDropLegacy()`). Asked
+  every start, so a node still on 1.1 during a rolling upgrade is caught.
+* **A PROCESS TAKES ITS OWN NEWEST ROWS BACK** into its ring at its start
+  (`restoreFromStore()`), because `audit_export.ts` walks `localEvents()`
+  with a cursor per origin, and the segments used to restore them.
+* Tests: `tests/audit_append_only.js` (the store against a stand-in
+  driver), `tests/postgres_schema.js` and `tests/mariadb_schema.js` (the
+  grants, the functions, the upgrade's statements). The role's refusals were
+  run against PostgreSQL 18 and MariaDB 11 when this was written.
+
+**`audit.events` IS STORED IN SEGMENTS OF 32 — UNTIL #1616, ABOVE**
+(`realms.arr({ segment })`,
 `common/CLAUDE.md`): a whole-array `merge: 'own'` row was 2.3 MB sealed and
 written per flush and read back by every other process. Another origin's
 segments are put back together by `persistence_replication.remoteSegmentedRows()`;
@@ -2676,7 +2741,9 @@ never earlier than the store would drop the row, holds. `cluster/CLAUDE.md`,
 *The scheduler*, argues it. Rows written before #338 carry NULL and are read
 until the history walk has deleted the ones it holds.
 
-**What is still read whole, and why.** The `merge: 'own'` accumulators —
+**What is still read whole, and why.** (Since #1616 `audit.events` is the
+old ring, emptied at the first start; what follows describes it before.)
+The `merge: 'own'` accumulators —
 `audit.events` above all — carry no expiry: a row is a process's share of a
 ring or a counter, not a record with a lifetime. `audit.events` is one row per
 32-event segment, per realm, per ORIGIN, up to `audit.maxEvents` (5000) events

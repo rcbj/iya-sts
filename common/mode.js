@@ -860,6 +860,27 @@ function undeclaredScopeWaivers() {
       level: 'MUST', setting: 'oauth2.undeclaredClientScopes' }];
 }
 
+// THE AUDIT LOG NOT APPEND-ONLY HERE (#1616, ASVS 5.0.0 16.4.2): the
+// database role this service connects as can change `sts_audit`, as the
+// last probe of the table found (`persistence/audit_store.js`). Carried on
+// the `audit-append-only` row; nothing where the log is not written there.
+function auditAppendOnlyWaivers() {
+  log.debug("Entering auditAppendOnlyWaivers().");
+  let probe = null;
+  try {
+    const store = require('../persistence/audit_store');
+    probe = store.active() ? store.lastProbe() : null;
+  } catch (e) {
+    log.debug("Caught in auditAppendOnlyWaivers(): " +
+              ((e && e.message) || e));
+    probe = null;
+  }
+  log.debug("Leaving auditAppendOnlyWaivers().");
+  return probe && probe.present && probe.writable ? [
+    { requirement: 'audit-append-only', section: 'ASVS 5.0.0 16.4.2',
+      level: 'MUST', setting: 'persistence.databaseUrl' }] : [];
+}
+
 // The switches that turn access decisions off in this process, as the data
 // `report()` carries on the row they qualify: a product operator may need one
 // to recover from a policy that denies its own repair, and it must show.
@@ -3448,6 +3469,23 @@ const REQUIREMENTS = [
              'is out of reach of a compromise here. Until one exists the ' +
              'service logs a warning for that realm.',
     where: 'common/audit_export.ts' },
+  // #1616 (ASVS 5.0.0 16.4.2).
+  { id: 'audit-append-only',
+    what: 'The audit log cannot be changed through the service\'s own ' +
+          'database credential',
+    development: 'Where minted state persists (request workers or several ' +
+                 'nodes, or keys.source=persisted) the log is written as in ' +
+                 'product. Otherwise it is in memory and goes with the ' +
+                 'process.',
+    product: 'Each event is one sealed row of sts_audit, where the ' +
+             'service\'s database role may add and read rows and nothing ' +
+             'else; old rows leave only through the table owner\'s ' +
+             'retention function, which keeps at least 1000 in each realm. ' +
+             'Where the role can change the table — it owns it, or holds ' +
+             'UPDATE, DELETE or TRUNCATE on it — this is reported as not ' +
+             'met (STS-AUDIT-0019) and the service runs.',
+    where: 'persistence/audit_store.js, postgres/schema.sql, ' +
+           'mariadb/schema.sql' },
   // #1501 (ASVS 5.0.0 12.3.1).
   { id: 'malware-scan-tls',
     what: 'Files reach the malware scanner encrypted',
@@ -4883,6 +4921,7 @@ function report() {
   const accessOff = product ? accessEnforcementWaivers() : [];
   const certificate = product ? certificateWaivers() : [];
   const scopes = product ? undeclaredScopeWaivers() : [];
+  const auditLog = auditAppendOnlyWaivers();
   return {
     mode: current(),
     isProduct: product,
@@ -4894,7 +4933,9 @@ function report() {
           : row.id === 'public-certificate' && certificate.length
             ? { waived: certificate }
             : row.id === 'declared-scopes' && scopes.length
-              ? { waived: scopes } : {};
+              ? { waived: scopes }
+              : row.id === 'audit-append-only' && auditLog.length
+                ? { waived: auditLog } : {};
       return Object.assign({ inForce: product ? row.product :
                                       row.development },
                            row, extra);

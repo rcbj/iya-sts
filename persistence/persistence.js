@@ -3969,6 +3969,9 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // realm maps. Required lazily: this file loads before the composition
     // root, and report/stores must not load the scheduler from here.
     require('../report/stores').setDriver(driver, activeMode);
+    // THE APPEND-ONLY AUDIT LOG (#1616): `sts_audit` through the driver's
+    // `audit*` methods, where the driver has them; inactive otherwise.
+    require('./audit_store').setDriver(driver);
   }).then(function () {
     // ---------------------------------------------------------------------
     // THE KEYSTORE STARTS HERE, BEFORE ANYTHING SEALED IS READ BACK (#222).

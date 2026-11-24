@@ -611,6 +611,18 @@
     "en": "e082de544e11ddcb",
     "text": "請新增稽核匯出目的地，使日誌副本在此服務遭入侵時不受影響。在新增之前，服務會為該信任領域記錄警告。"
   },
+  "mode.requirements.audit-append-only.what": {
+    "en": "53b7ec225e4b3f63",
+    "text": "審計日誌無法透過服務自身的資料庫憑證修改"
+  },
+  "mode.requirements.audit-append-only.development": {
+    "en": "11ab073d36508489",
+    "text": "在已產生狀態會持久保存的情況下（請求工作執行緒或多個節點，或 keys.source=persisted），日誌的寫入方式與產品模式相同。否則它保存在記憶體中，隨程序消失。"
+  },
+  "mode.requirements.audit-append-only.product": {
+    "en": "421ebab018244a91",
+    "text": "每個事件是 sts_audit 中的一個密封列，服務的資料庫角色可以新增和讀取列，除此之外什麼也不能做；舊列只能透過資料表擁有者的保留函式離開，該函式在每個領域中至少保留 1000 列。若該角色能夠修改此資料表——它擁有該表，或對其持有 UPDATE、DELETE 或 TRUNCATE——則報告為未滿足（STS-AUDIT-0019），服務仍繼續運行。"
+  },
   "mode.requirements.malware-scan-tls.what": {
     "en": "926957ee32cf2309",
     "text": "檔案以加密方式到達惡意軟體掃描器"

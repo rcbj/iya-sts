@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6085** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6091** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -99,14 +99,14 @@ is an ordinary outcome.
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 304
 * [Management API (`STS-API`)](#sts-api) — 97
-* [User portal (`STS-PORTAL`)](#sts-portal) — 122
+* [User portal (`STS-PORTAL`)](#sts-portal) — 123
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 16
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 191
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 29
 * [Reporting (`STS-REPORT`)](#sts-report) — 59
-* [Audit export (`STS-AUDIT`)](#sts-audit) — 16
+* [Audit export (`STS-AUDIT`)](#sts-audit) — 21
 
 ## STS-HTTP
 
@@ -5343,7 +5343,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0049` | The built-in access-control policy could not be built from its template (a defect), so access to every gated surface is ALLOWED without a policy decision. | — |
 | `STS-XACML-0050` | common/access_gate.ts was given a decider that is not a function; every access decision is allowed. | — |
 | `STS-XACML-0051` | The access gate's decider threw: refused in product mode, allowed in development (#1450). | — |
-| `STS-XACML-0052` | The issuance gate's decider threw; issuance was ALLOWED because a throw is a defect rather than a decision. | — |
+| `STS-XACML-0052` | The issuance gate's decider threw, a defect rather than a decision: in development the issuance is allowed, so a mock stays fixable; in product it is refused (STS-XACML-0183, ASVS 5.0.0 16.5.3). | — |
 | `STS-XACML-0053` | The role register threw while resolving a party's roles; only the built-in roles were used. | — |
 | `STS-XACML-0054` | The role register threw while building the roles claim; the token or assertion was issued without it. | — |
 | `STS-XACML-0055` | A role write named an invalid role name, or the name of a built-in role. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors } |
@@ -6525,6 +6525,7 @@ Raised from: portal/.
 | `STS-PORTAL-0635` | A profile photo was not saved in product mode: its address would be built on a Host header, because global.publicBaseUrl is not set (#719). | HTTP 409 JSON |
 | `STS-PORTAL-0636` | GET /web/photo/{id} answered 404: no such photo, its person was deleted, or their account is disabled (#719). | HTTP 404 |
 | `STS-PORTAL-0637` | A password reset or an authenticator app setup was done and recorded, and its failure count could not be cleared (ASVS 5.0.0 2.3.3). | — |
+| `STS-PORTAL-0638` | A person set a new password from a reset link and their other sessions could not be ended; the password is set (#2123, ASVS 5.0.0 7.4.3). | — |
 
 ## STS-ACCOUNT
 
@@ -6929,6 +6930,11 @@ Raised from: common/audit_export.ts, mgmt-api/audit_export_api.ts.
 | `STS-AUDIT-0015` | A webhook or Splunk HEC destination rejected the event itself (HTTP 400). That event is counted permanently failed and the cursor moves past it. The destination is not paused for the events after it (#641). | none (that event is dropped; later events are still delivered) |
 | `STS-AUDIT-0016` | A syslog audit destination was refused because product mode needs tls. | HTTP 400 |
 | `STS-AUDIT-0017` | A realm in product mode has no audit export destination, so its audit log stays with the service. | — |
+| `STS-AUDIT-0018` | Audit events could not be written to sts_audit, the append-only audit table: they are kept for the next try, and past a bound the oldest are let go and counted (#1616). | — |
+| `STS-AUDIT-0019` | This service's database role can change or delete rows of sts_audit (it owns the table, or holds UPDATE, DELETE or TRUNCATE on it), so the audit log is not append-only (ASVS 5.0.0 16.4.2); /admin/mode reports the requirement as not met. The service runs (#1616). | — |
+| `STS-AUDIT-0020` | sts_audit could not be read for the audit page, which shows this process's own events instead (#1616). | — |
+| `STS-AUDIT-0021` | The append-only audit log's start (this process's events read back, the old ring copied) or its retention run failed; the service runs and retention is asked again on the next run (#1616). | — |
+| `STS-AUDIT-0022` | sts_audit is there and the two functions rows leave it through are not, so retention cannot remove old rows: the schema script was not run as the table owner (#1616). | — |
 
 ## Adding a code
 
