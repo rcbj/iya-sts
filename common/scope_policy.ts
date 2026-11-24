@@ -195,6 +195,23 @@ const VC_API_SCOPES = Object.freeze(['vc-api:issue', 'vc-api:verify']);
  */
 const ACCOUNT_SCOPE = 'account:manage';
 
+// ITS READ SCOPE (#2168, ASVS 5.0.0 10.2.3): what the portal signs in with,
+// taken by `/account-api`'s reads and nothing else; `account:manage` is
+// asked for by a second authorization the first time the portal writes.
+// Protected like `account:manage`, and declared the same way.
+/**
+ * The account API's read scope, protected like the rest.
+ */
+const ACCOUNT_READ_SCOPE = 'account:read';
+
+// AND THE REPORT API'S (#2168): what the reports application signs in with,
+// taken by `/report-api`'s reads only and authorized by REPORT_USE or
+// REPORT_ADMIN (`common/role_permissions.ts`). Protected like the two.
+/**
+ * The report API's read scope, protected like the rest.
+ */
+const REPORT_READ_SCOPE = 'report:read';
+
 // THE SSH COMMAND LINE'S (the #1955 review): `/account-api`'s SSH
 // certificate operations take it instead of `account:manage`, so a client
 // on the device grant that only fetches certificates holds nothing else of
@@ -390,6 +407,7 @@ class ScopePolicy {
     [String(config.value('scim.scopeRead') || 'scim:read'),
      String(config.value('scim.scopeWrite') || 'scim:write'),
      DEVICE_COMPLIANCE_SCOPE, PEP_AUDIT_SCOPE, PEP_SCOPE, ACCOUNT_SCOPE,
+     ACCOUNT_READ_SCOPE, REPORT_READ_SCOPE,
      SSH_CERTIFICATE_SCOPE, AUTHZEN_SCOPE, UMA_PROTECTION_SCOPE]
       .concat(ssfScopes.published(), GRANT_MANAGEMENT_SCOPES, VC_API_SCOPES,
               OWNER_SCOPES)
@@ -981,6 +999,8 @@ export = {
   OWNER_SCOPES: OWNER_SCOPES,
   DEVICE_COMPLIANCE_SCOPE: DEVICE_COMPLIANCE_SCOPE,
   SSH_CERTIFICATE_SCOPE: SSH_CERTIFICATE_SCOPE,
+  ACCOUNT_READ_SCOPE: ACCOUNT_READ_SCOPE,
+  REPORT_READ_SCOPE: REPORT_READ_SCOPE,
   PEP_AUDIT_SCOPE: PEP_AUDIT_SCOPE,
   PEP_SCOPE: PEP_SCOPE,
   PROTECTED_CODE: PROTECTED_CODE,

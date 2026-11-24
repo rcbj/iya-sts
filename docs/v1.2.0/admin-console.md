@@ -54,6 +54,22 @@ while your sign-on session lasts. The console keeps no session of its own:
 **Sign out** ends the sign-on session at `/logout`, and with it the console's
 tokens. See [Sessions](sessions.md) and [Signing out](signing-out.md).
 
+**The console signs in with read scopes only** (`openid admin:read
+admin:console`), so browsing a page gives the browser no right to change
+anything. The first time you save something, the management API refuses the
+read token with `insufficient_scope`, naming the scope the change needs, and
+the console asks the authorization server for it in a small window of its
+own: silently (`prompt=none`) for `admin:write` while your sign-on session
+lasts, and for `admin:security` only on a fresh sign-in: silently if you
+signed in within the last five minutes (`max_age=300`), and otherwise by
+signing in again in that window (`prompt=login`, `max_age=0`). A bar over the page says what is happening, and offers
+**Continue** if the browser blocked the window or a sign-in is needed. The
+change you pressed waits in memory and is sent once the scope is in hand.
+The write token is used for changes only, is never refreshed, and is
+dropped after ten minutes or at its own expiry, whichever is first; reads
+keep using the read token. Forms are drawn from what your roles allow
+(`holds` on `GET /admin-api/me`), not from what the read token carries.
+
 On a service with trust realms, the plain `/admin` first asks which realm;
 `/admin?realm=default` skips the question, and a realm's own console is at
 `/realm/<id>/admin`.

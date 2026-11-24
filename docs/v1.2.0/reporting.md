@@ -43,6 +43,18 @@ are decided by `ADMIN_READ` and `ADMIN_WRITE`:
   `report-admins`, as a direct member, or by holding Admin Write on the
   realm's console roster. It does not imply `report:use`: the page asks
   for both and is issued what the person holds.
+- **`report:read`** is authorized by either role. It reads, with whichever
+  report role its subject holds now, and changes nothing: the API takes it
+  on a GET and ignores it on anything else.
+
+**The page signs in with `report:read` only.** The first change it sends
+(a definition saved, a run, a cancel) is refused `insufficient_scope`
+naming `report:use report:admin`, and the page asks for them by a second
+authorization in a small window, silently (`prompt=none`) while the sign-on
+session lasts; issuance narrows them to the roles held, and the change is
+sent again with that token. That token is used for changes only, is never
+refreshed and is dropped after ten minutes. A program's own `report:use` or
+`report:admin` token works as before.
 
 Both groups are created empty. **A console administrator has reports
 without joining either group**: Admin Write is a report administrator in
@@ -1304,7 +1316,7 @@ is recorded and logged. It is not in the body.
 | `invalid_token` | 401 | No token, a token that did not verify, an expired token, a token that is not an access token, the wrong issuer, a revoked token, a disabled account, a session that has ended, or a certificate-bound token without that certificate. |
 | `invalid_dpop_proof` | 401 | A DPoP-bound token sent as Bearer, or a proof this service refused. |
 | `invalid_token` | 403 | The token is not audienced to this realm's `/report-api`. |
-| `insufficient_scope` | 403 | The token lacks `report:use` or `report:admin`. |
+| `insufficient_scope` | 403 | The token lacks `report:use` or `report:admin` (or, for a GET, `report:read`). |
 | `forbidden` | 403 | The token names no person, or this account may not use reports here, or the report's source is for report administrators and the caller does not hold `REPORT_ADMIN` (`STS-REPORT-0061`). |
 | `not_found` | 404 | No such definition, including one you may not see. |
 | `job_not_found` | 404 | No such job, including one you may not see. An unknown API path is answered the same way. |

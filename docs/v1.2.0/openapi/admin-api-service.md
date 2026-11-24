@@ -3311,6 +3311,8 @@ Scope: `admin:read`.
 | `console.open` | boolean |  |  |
 | `console.windowOpens` | boolean |  |  |
 | `expiresAt` | number, or null |  |  |
+| `holds` | list |  | The roles the caller holds now whose permission its client may still be issued, whatever this token carries: what a second authorization could add. A console that signed in with read scopes draws its forms from this, and asks for `admin:write` or `admin:security` when a write needs it (#2168). |
+| `holds[]` | string |  |  |
 | `mode` | string |  |  |
 | `pages` | list |  |  |
 | `pages[]` | string |  |  |

@@ -1809,6 +1809,43 @@ class AdminApi {
     log.debug("Leaving AdminApi.refuseStaleSignIn().");
   }
 
+  // ---------------------------------------------------------------------------
+  // RFC 6750 SECTION 3.1'S `insufficient_scope`, SAID IN A HEADER (#2168).
+  //
+  // The console signs in with read scopes only (ASVS 5.0.0 10.2.3) and asks a
+  // second authorization for a write scope the first time a write needs it.
+  // It learns WHICH scope from the refusal itself rather than from a table
+  // of its own, so the gate names it on the two refusals a missing scope
+  // ends in: the access policy's (STS-API-0005) and the security change's
+  // (STS-API-0138). Only the header is added — the status, the code and the
+  // body are what they were, so a caller that reads none of it sees no
+  // change — and only for a scope the token does not carry: a token that
+  // carries it and whose subject lost the role is told nothing a second
+  // authorization could mend, so no client loops on it.
+  // ---------------------------------------------------------------------------
+  /**
+   * Names the scopes a refused request lacks, in a `WWW-Authenticate`
+   * challenge of the scheme it was presented in.
+   *
+   * @param res - the response
+   * @param scheme - the presented scheme, `dpop` or `bearer`
+   * @param missing - the scopes the token does not carry, none for no
+   *   challenge
+   */
+  challengeMissingScope(res, scheme, missing) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.challengeMissingScope().");
+    const named = (missing || []).filter(Boolean);
+    if (!named.length) {
+      log.debug("Leaving AdminApi.challengeMissingScope(). None missing.");
+      return;
+    }
+    res.set('WWW-Authenticate', (scheme === 'dpop' ? 'DPoP' : 'Bearer') +
+            ' error="insufficient_scope", scope="' + named.join(' ') + '"');
+    log.debug("Leaving AdminApi.challengeMissingScope(). " +
+              named.join(' '));
+  }
+
   withAction(req, body) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.withAction().");
@@ -11794,8 +11831,12 @@ class AdminApi {
   consoleGateOf(me) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.consoleGateOf().");
+    // WHAT THE PERSON HOLDS, NOT WHAT THIS TOKEN CARRIES (#2168): the
+    // console's first token is a read token, and the frame says what its
+    // reader may do — a write is one second authorization away (`holds`).
+    const holds = Array.isArray(me.holds) ? me.holds : (me.roles || []);
     // SECURITY_ADMIN is the roster's `security` (#645).
-    const roles = (me.roles || []).map(function (role) {
+    const roles = holds.map(function (role) {
       return role === 'ADMIN_READ' ? 'read'
         : (role === 'ADMIN_WRITE' ? 'write'
           : (role === 'SECURITY_ADMIN' ? 'security'
@@ -11810,7 +11851,9 @@ class AdminApi {
       username: me.caller ? String(me.caller.name || '') : '',
       authority: me.authority || null, identityRealm: me.realm || null,
       readGroup: me.readGroup, writeGroup: me.writeGroup,
-      read: !!me.read, write: !!me.write, security: !!me.security,
+      read: !!me.read,
+      write: !!me.write || holds.indexOf('ADMIN_WRITE') >= 0,
+      security: !!me.security || holds.indexOf('SECURITY_ADMIN') >= 0,
       roles: roles,
       open: enforced && !!held.open,
       closed: enforced && !!held.empty && !held.open && !roles.length,
@@ -11926,6 +11969,58 @@ class AdminApi {
     log.debug("Leaving AdminApi.consoleSetLanguage(). " + (tag || 'removed'));
   }
 
+  // ---------------------------------------------------------------------------
+  // WHAT A SECOND AUTHORIZATION COULD ADD (#2168). The console signs in with
+  // `admin:read admin:console` and asks for `admin:write` or `admin:security`
+  // the first time a write needs one, so `write` and `security` above — held
+  // ∩ carried, what THIS token is let through for — are false on its first
+  // token for everybody, and a page drawn from them would offer no form to
+  // press. `holds` is the other half: the roles the subject holds NOW, in
+  // the realm that issued the token, whose permission the token's client
+  // still declares — held ∩ declared — so the console draws a form only for
+  // somebody a write token would be issued to. It decides nothing: the gate
+  // asks held ∩ carried of every call, as before.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the roles the caller's subject holds now whose permission its
+   * client may still be issued, whatever this token carries.
+   *
+   * @param res - the response, with the gate's caller and claims
+   * @param carriedRoles - the roles this token carries (held ∩ carried)
+   * @returns the role names
+   */
+  heldAdminRoles(res, carriedRoles) {
+    const { log, rolePermissions } = this.deps;
+    log.debug("Entering AdminApi.heldAdminRoles().");
+    const caller = (res && res.locals && res.locals.apiCaller) || null;
+    const claims = (res && res.locals && res.locals.apiTokenClaims) || null;
+    if (!caller || !claims || caller.kind !== 'person') {
+      log.debug("Leaving AdminApi.heldAdminRoles(). Carried only.");
+      return (carriedRoles || []).slice(0);
+    }
+    let held = [];
+    try {
+      const asked = this.declaredAdminScopes(claims, String(caller.realm),
+        ['admin:read', 'admin:write', 'admin:security']).kept;
+      held = rolePermissions.effectiveRoles(claims, asked,
+                                            String(caller.realm)).roles;
+    } catch (e) {
+      // A roster that cannot be read now adds nothing: the console then
+      // draws what this token carries, which is what it drew before.
+      log.debug("Caught in AdminApi.heldAdminRoles(): " +
+                ((e && e.message) || e));
+      held = [];
+    }
+    const all = (carriedRoles || []).slice(0);
+    (held || []).forEach(function (role) {
+      if (all.indexOf(role) < 0) {
+        all.push(role);
+      }
+    });
+    log.debug("Leaving AdminApi.heldAdminRoles(). " + all.length + ".");
+    return all;
+  }
+
   meJson(req, res) {
     const { log, config, realms, mode, adminScope } = this.deps;
     log.debug("Entering AdminApi.meJson().");
@@ -11961,6 +12056,8 @@ class AdminApi {
       write: !required || roles.indexOf('ADMIN_WRITE') >= 0,
       // #645: whether a security change would be let through.
       security: !required || roles.indexOf('SECURITY_ADMIN') >= 0,
+      // #2168: what a second authorization could add to this token.
+      holds: this.heldAdminRoles(res, roles),
       expiresAt: caller ? caller.expiresAt : null,
       // The account menu's picture (#719): this realm's copy, a person's only.
       photo: caller && caller.kind === 'person'
@@ -12707,6 +12804,10 @@ class AdminApi {
           log.info('admin-api: refusing ' + req.method + ' ' +
                    (req.originalUrl || req.url) + ' for ' + who + ': ' +
                    securityChange.detail + '.');
+          // The scope a second authorization would add (#2168), where the
+          // token lacks it; a missing role is not mended by one.
+          self.challengeMissingScope(res, presentation.scheme,
+            scopes.indexOf('admin:security') < 0 ? ['admin:security'] : []);
           errorCodes.mark(res, 'STS-API-0138');
           return self.sendJson(res, 403, { error: 'forbidden', errors: [
             'Only a Security Administrator may make this change: ' +
@@ -12856,6 +12957,28 @@ class AdminApi {
           log.info('admin-api: the access policy refused ' + req.method + ' ' +
                    (req.originalUrl || req.url) + ' for ' + who + '. ' +
                    policy.why);
+          // WHICH SCOPE A SECOND AUTHORIZATION WOULD ADD (#2168): the one
+          // the operation takes, where the token lacks it — `admin:write`
+          // too for a console form helper, which needs both — and an
+          // owner's `owner:write` beside it for a write on an object the
+          // caller may own, asked on an owner's read token.
+          const lacking = [];
+          if (!mdmFeed && !pepFeed && !ownerPath) {
+            if (scopes.indexOf(scopesWanted) < 0) {
+              lacking.push(scopesWanted);
+            }
+            if (requiredAllRoles.indexOf('ADMIN_WRITE') >= 0 &&
+                scopes.indexOf('admin:write') < 0) {
+              lacking.push('admin:write');
+            }
+            if (req.method !== 'GET' && !consoleOp && !securityChange &&
+                carried.indexOf('owner:read') >= 0 &&
+                carried.indexOf('owner:write') < 0 &&
+                self.ownedOperationOf(req)) {
+              lacking.push('owner:write');
+            }
+          }
+          self.challengeMissingScope(res, presentation.scheme, lacking);
           errorCodes.mark(res, 'STS-API-0005');
           return self.sendJson(res, 403, { error: 'forbidden', errors: [
             'The access policy refused this request. ' + policy.why +
@@ -12918,6 +13041,9 @@ class AdminApi {
         // its token is the session, so the caller this gate verified is
         // who they are asked about.
         req.adminApiCaller = res.locals.apiCaller;
+        // THE CLAIMS THE DECISION WAS MADE ON, for `GET /admin-api/me`'s
+        // `holds` (#2168): asked there only, never on every request.
+        res.locals.apiTokenClaims = claims;
         // WHAT AN OWNER IS ANSWERED (#607): a read whose answer carries more
         // than the one object — the role register around one role — is
         // narrowed to it in `sendJson()`.

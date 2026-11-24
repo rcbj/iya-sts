@@ -149,5 +149,14 @@
   "adminOnlySource": "Endast rapportadministratörer",
   "adminOnlyNote": "Endast en rapportadministratör (REPORT_ADMIN) får fråga den här källan: den visar vem som gjorde vad och varifrån, eller vem som har vilken autentiseringsuppgift.",
   "noWebCrypto.title": "Den här webbläsaren kan inte öppna sidan",
-  "noWebCrypto.text": "Den här webbläsaren kan inte köra sidan säkert: WebCrypto är inte tillgängligt, oftast för att sidan inte öppnades över HTTPS eller för att webbläsaren är för gammal."
+  "noWebCrypto.text": "Den här webbläsaren kan inte köra sidan säkert: WebCrypto är inte tillgängligt, oftast för att sidan inte öppnades över HTTPS eller för att webbläsaren är för gammal.",
+  "step.pending": "Hämtar behörighet att göra den här ändringen…",
+  "step.blocked": "Den här ändringen kräver ditt tillstånd. Öppna fönstret för att ge det.",
+  "step.signIn": "Logga in för att göra den här ändringen.",
+  "step.fresh": "Den här ändringen kräver att du loggar in igen.",
+  "step.open": "Fortsätt",
+  "step.cancel": "Avbryt",
+  "step.refused": "Behörighet att göra den här ändringen gavs inte: ",
+  "step.other": "Den inloggningen gällde ett annat konto, så inget skickades.",
+  "step.failed": "Behörighet att göra den här ändringen kunde inte fås."
 }

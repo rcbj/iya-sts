@@ -263,7 +263,9 @@ function reportCallerOf(claims: any, carried: string[]): any {
     realms.currentId());
   const withdrawn = (effective.withdrawn || []).filter(function (
       one: string): boolean {
-    return REPORT_SCOPES.indexOf(one) >= 0;
+    // `report:read` (#2168) too: a read token whose subject holds neither
+    // report role now is refused as a withdrawn `report:use` is.
+    return REPORT_SCOPES.indexOf(one) >= 0 || one === 'report:read';
   });
   if (withdrawn.length) {
     log.warn(errorCodes.tag('STS-REPORT-0018') +

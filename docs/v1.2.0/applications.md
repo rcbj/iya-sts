@@ -378,8 +378,9 @@ as `sts-api-client`, or create one of your own.
 **The three APIs also define their scopes, and a client holds a delegated
 permission grant of each one it may ask for.**
 `sts-management-api` defines `admin:read`, `admin:write`, `admin:console`,
-`owner:read` and `owner:write`; `sts-account-api` defines `account:manage`;
-`sts-report-api` defines `report:use` and `report:admin`. Each is a delegated
+`owner:read` and `owner:write`; `sts-account-api` defines `account:manage`
+and `account:read`; `sts-report-api` defines `report:use`, `report:admin`
+and `report:read`. Each is a delegated
 permission under a fixed base, `urn:sts:admin-api:`, `urn:sts:account-api:`
 or `urn:sts:report-api:`, so the permission `admin:read` is
 `urn:sts:admin-api:admin:read` whatever host name the service is reached by.
@@ -397,8 +398,8 @@ they use:
 | Client | Delegated permission grants |
 |---|---|
 | `sts-admin-console` | `admin:read`, `admin:write`, `admin:console` |
-| `sts-user-portal` | `account:manage`, `owner:read`, `owner:write` |
-| `sts-report` | `report:use`, `report:admin` |
+| `sts-user-portal` | `account:manage`, `account:read`, `owner:read`, `owner:write` |
+| `sts-report` | `report:use`, `report:admin`, `report:read` |
 | `sts-api-client` | `admin:read`, `admin:write`, `report:use` |
 
 On the client's **Configuration → OAuth 2.0 / OpenID Connect** sub-tab, the

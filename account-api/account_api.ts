@@ -87,9 +87,13 @@ const SHAPE_CODES: Record<string, string> = {
 const BASE = '/account-api';
 const PORTAL = '/portal';
 /**
- * The one scope this API takes.
+ * The scope every operation of this API takes.
  */
 const SCOPE = 'account:manage';
+/**
+ * The scope a read takes instead (#2168): what the portal signs in with.
+ */
+const READ_SCOPE = 'account:read';
 /**
  * The portal's client.
  */
@@ -939,8 +943,15 @@ class AccountApi {
     // `account:manage`, or a narrower scope THIS operation names instead
     // (the #1955 review, `ssh:certificate`): the first one the token
     // carries is the one the client must still declare.
+    // AND ON A READ, `account:read` (#2168, ASVS 5.0.0 10.2.3): the portal
+    // signs in with it and asks a second authorization for `account:manage`
+    // the first time it writes. Never on any other method, so a read token
+    // changes nothing; `account:manage` still reaches every operation, so a
+    // token or a client from before is answered as it was.
+    const reading = req.method === 'GET' || req.method === 'HEAD';
     const accepted = [SCOPE].concat(Array.isArray((op as Json).scopes)
-      ? (op as Json).scopes.map(String) : []);
+      ? (op as Json).scopes.map(String) : [])
+      .concat(reading ? [READ_SCOPE] : []);
     const used = accepted.filter(function (one: string): boolean {
       return carried.indexOf(one) >= 0;
     })[0] || '';
@@ -1295,6 +1306,7 @@ export = {
   AccountApi: AccountApi,
   BASE: BASE,
   SCOPE: SCOPE,
+  READ_SCOPE: READ_SCOPE,
   installInstance: (instance: AccountApi): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   registerRoutes: slot.forward('registerRoutes'),

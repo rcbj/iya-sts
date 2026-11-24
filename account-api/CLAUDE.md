@@ -106,8 +106,13 @@ but not for this:
    wants one (`0011`); and `sender_constraints.js`'s rule that the portal's
    client, public, is DPoP-bound always, beside #34's two settings;
 6. a PERSON's token, never a client's own (`0012`); carrying `account:manage`
-   (`0013`); issued to a client that STILL declares it (`0014`, #110's rule
-   asked on every call);
+   — or, on a GET or HEAD only, `account:read` (#2168: what the portal signs
+   in with; it changes nothing, and `account:manage` still reaches every
+   operation, so an old token or client is answered as before) — (`0013`,
+   whose `insufficient_scope` challenge names what this method takes, which
+   is how the portal knows to ask a second authorization for
+   `account:manage`); issued to a client that STILL declares it (`0014`,
+   #110's rule asked on every call);
 7. the access policy, as the portal's pages asked it: `user-portal`, `read` for
    a GET and `manage-own` otherwise, the owner the subject (`0015`).
 
