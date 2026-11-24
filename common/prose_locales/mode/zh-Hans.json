@@ -104,8 +104,8 @@
     "text": "无论 `oauthAllowedScope` 列出了什么，客户端请求的任何 scope 都会被签发。在两种模式下，admin:read、admin:write、SCIM 和 Shared Signals 的 scope 以及调试器权限，都只会签发给 `oauthAllowedScope` 中列出了它们的客户端。"
   },
   "mode.requirements.declared-scopes.product": {
-    "en": "33fcb48e8c17655e",
-    "text": "超出客户端 `oauthAllowedScope` 的 scope 会在授权端点、推送授权端点和令牌端点以 invalid_scope 被拒绝（STS-OAUTH-0578），并在刷新或交换中被去掉。未列出任何内容的客户端获得文档所述的默认值：openid、profile、email、address、phone、offline_access 以及本领域的 OpenID4VCI scope。指明应用或委托权限的 scope 保持其自己的规则。"
+    "en": "dcdd1cbadd143bd7",
+    "text": "超出客户端 `oauthAllowedScope` 的 scope 会在授权端点、推送授权端点和令牌端点以 invalid_scope 被拒绝（STS-OAUTH-0578），并在刷新或交换中被去掉。未列出任何内容的客户端获得 oauth2.undeclaredClientScopes 所规定的内容：默认仅 openid（ASVS 5.0.0 10.4.11）；identity 再加上 profile、email、address 和 phone；legacy（升级后的存储所保留的）还加上 offline_access 以及本领域的 OpenID4VCI scope。指明应用或委托权限的 scope 保持其自己的规则。"
   },
   "mode.requirements.declared-protocols.what": {
     "en": "89e8ef1624565f1b",

@@ -104,8 +104,8 @@
     "text": "Jeder Scope, den ein Client verlangt, wird ausgestellt, unabhängig davon, was sein `oauthAllowedScope` aufführt. In BEIDEN Modi werden admin:read, admin:write, die Scopes für SCIM und Shared Signals sowie die Berechtigung des Debuggers nur einem Client ausgestellt, dessen `oauthAllowedScope` sie aufführt."
   },
   "mode.requirements.declared-scopes.product": {
-    "en": "33fcb48e8c17655e",
-    "text": "Ein Scope außerhalb des `oauthAllowedScope` des Clients wird an den Endpunkten für Autorisierung, Pushed Authorization und Token mit invalid_scope abgelehnt (STS-OAUTH-0578) und von einem Refresh oder einem Austausch entfernt. Ein Client, der nichts aufführt, erhält die dokumentierte Vorgabe: openid, profile, email, address, phone, offline_access und die OpenID4VCI-Scopes dieses Bereichs. Ein Scope, der eine Anwendung oder eine delegierte Berechtigung benennt, behält seine eigenen Regeln."
+    "en": "dcdd1cbadd143bd7",
+    "text": "Ein Scope außerhalb des `oauthAllowedScope` des Clients wird an den Endpunkten für Autorisierung, Pushed Authorization und Token mit invalid_scope abgelehnt (STS-OAUTH-0578) und von einem Refresh oder einem Austausch entfernt. Ein Client, der nichts aufführt, erhält, was oauth2.undeclaredClientScopes festlegt: standardmäßig nur openid (ASVS 5.0.0 10.4.11); identity ergänzt profile, email, address und phone; legacy, was ein aktualisierter Speicher behält, ergänzt zudem offline_access und die OpenID4VCI-Scopes dieses Bereichs. Ein Scope, der eine Anwendung oder eine delegierte Berechtigung benennt, behält seine eigenen Regeln."
   },
   "mode.requirements.declared-protocols.what": {
     "en": "89e8ef1624565f1b",

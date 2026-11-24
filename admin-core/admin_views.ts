@@ -10217,6 +10217,37 @@ class AdminViews {
       enforced: bcpState.enforced,
       waived: bcpState.waived
     };
+    // THE DEFAULT SET IN FORCE FOR A CLIENT THAT DECLARES NO SCOPES (#1589):
+    // null where `oauthAllowedScope` lists any, so a page draws it only for
+    // the client it governs. `setting` is `oauth2.undeclaredClientScopes`,
+    // `scopes` what that gives (the realm's OpenID4VCI scopes are named by
+    // `credentialScopes`, not listed: they are the OAuth server's to count),
+    // and `enforced` whether this realm is in product, the only mode that
+    // reads it. The scopes the client was SEEN asking for are marked
+    // against that set, as they are against a declared list.
+    let undeclaredClientScopes = null;
+    let defaultScopes: string[] | null = null;
+    if (!declaredScopes) {
+      try {
+        const policy = require('../common/scope_policy');
+        const setting = policy.ScopePolicy.undeclaredSetting(
+          config.value('oauth2.undeclaredClientScopes'));
+        defaultScopes = policy.defaultScopes() || [];
+        undeclaredClientScopes = {
+          setting: setting,
+          scopes: defaultScopes,
+          credentialScopes: setting === 'legacy',
+          enforced: !mode.grantsUndeclaredScopes()
+        };
+      } catch (e) {
+        log.debug("Caught in AdminViews.applicationObservedState(): " +
+                  ((e && e.message) || e));
+        // No scope policy built (a view tested on its own): nothing is said
+        // about a default, and nothing is marked against one.
+        undeclaredClientScopes = null;
+        defaultScopes = null;
+      }
+    }
     const signed = String(fields.samlAuthnRequestSigned || '');
     const out = {
       oauthGrantTypeObserved: marked('oauthGrantTypeObserved',
@@ -10225,7 +10256,9 @@ class AdminViews {
         nonEmpty(oauth.responseTypes), applications.canonicalResponseType),
       appRedirectUriObserved: marked('appRedirectUriObserved',
                                      declared(oauth.redirectUris)),
-      oauthScope: marked('oauthScope', declaredScopes),
+      oauthScope: marked('oauthScope', declaredScopes ||
+        (defaultScopes && undeclaredClientScopes &&
+         !undeclaredClientScopes.credentialScopes ? defaultScopes : null)),
       appAuthorizationServer: marked('appAuthorizationServer', null),
       samlNameIdFormat: marked('samlNameIdFormat', null),
       samlResponseBinding: marked('samlResponseBinding', null),
@@ -10235,7 +10268,8 @@ class AdminViews {
                           fields.samlAuthnRequestVerification))
         : null,
       samlObservedSigningCertificate: certificate,
-      oauthAllowedTokenResponseTypes: tokenResponseTypes
+      oauthAllowedTokenResponseTypes: tokenResponseTypes,
+      undeclaredClientScopes: undeclaredClientScopes
     };
     log.debug("Leaving AdminViews.applicationObservedState().");
     return out;

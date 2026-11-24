@@ -5151,6 +5151,14 @@
     "en": "2394ee67a689920d",
     "text": "Applique OpenID Connect Key Binding 1.0 (#150). Activé : le document de découverte liste la portée `bound_key`, un client qui ne déclare aucune portée peut la demander, et une requête qui la demande doit indiquer `dpop_jkt` et utiliser le flux par code (refusée sinon, STS-OAUTH-0704 et 0705) ; l’ID Token nomme alors la clé DPoP (`cnf.jwk`, `typ: dpop+id_token`), la requête de jeton doit la prouver avec `c_s256`, et chaque actualisation doit venir de la même clé. **Désactivé, il n’existe pas, et le service est OpenID Connect Core seul** : `bound_key` n’est pas annoncée, une requête qui la porte n’est pas refusée — la portée est ignorée et non accordée, comme Core traite une portée sur laquelle un OP n’agit pas — et aucun ID Token n’est lié. Désactivez-le là où des parties de confiance demandent toutes les portées annoncées et ignorent tout de Key Binding (#315). Une autorisation déjà liée avant la désactivation garde la vérification de sa clé à l’actualisation."
   },
+  "oauth2.undeclaredClientScopes|label": {
+    "en": "76b8daaed31c60ea",
+    "text": "Portées d’un client qui n’en déclare aucune"
+  },
+  "oauth2.undeclaredClientScopes|description": {
+    "en": "58d0721fcc34cae0",
+    "text": "Ce que le mode produit délivre à un client dont oauthAllowedScope ne liste rien — typiquement un client qui s’est enregistré lui-même (RFC 7591) sans membre scope. openid, la valeur par défaut depuis 1.2.0 : openid seul, de sorte que toute autre portée doit être déclarée (ASVS 5.0.0 10.4.11). identity : les portées d’identité d’OpenID Connect — openid, profile, email, address et phone — et bound_key tant qu’OpenID Connect Key Binding est activé, mais jamais offline_access ni une portée OpenID4VCI. legacy : ce que donnaient les versions antérieures à 1.2.0 — les portées d’identité, offline_access (jetons d’actualisation survivant à la session) et les portées d’identifiants OpenID4VCI de ce domaine ; le script de mise à niveau 1.1.0 l’enregistre dans chaque domaine qui avait une application, et /admin/mode avertit tant qu’il est en vigueur. Le mode développement délivre toute portée qu’un client demande, quoi que dise ce paramètre ; les portées protégées de ce service exigent toujours une déclaration. (#1589)"
+  },
   "oauth2.enterpriseClaimsAlways|label": {
     "en": "25c226f1b3654eee",
     "text": "Claims des Enterprise Extensions dans chaque ID Token"

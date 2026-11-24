@@ -653,6 +653,39 @@ function checkTheReleaseUpgrade(t, sql) {
   log.debug("Leaving checkTheReleaseUpgrade().");
 }
 
+// Release 1.1.x to 1.2.0 (#1589): postgres/upgrade-1.1.0.sql is one DATA
+// step and no DDL. 1.2.0 makes oauth2.undeclaredClientScopes default to
+// `openid`, so a store holding any application keeps `legacy`, the old set,
+// in the default realm's sts_appconfig row (every realm's fallback), only
+// where nothing is stored, with a change-log row only when it wrote.
+function checkTheScopeUpgrade(t) {
+  log.debug("Entering checkTheScopeUpgrade().");
+  const upgrade = fs.readFileSync(
+    path.join(ROOT, 'postgres', 'upgrade-1.1.0.sql'), 'utf8');
+  const code = upgrade.split('\n').filter(function (line) {
+    return !/^\s*--/.test(line);
+  }).join('\n');
+  const text = fs.readFileSync(path.join(ROOT, 'common', 'config.js'), 'utf8');
+  const at = text.indexOf("key: 'oauth2.undeclaredClientScopes'");
+  const row = at >= 0 ? text.slice(at, at + 400) : '';
+  t.check(/dflt:\s*'openid'/.test(row) && /'legacy'/.test(row),
+          'oauth2.undeclaredClientScopes defaults to openid and offers legacy',
+          row);
+  t.check(!/\b(CREATE|ALTER|DROP)\s/i.test(code) &&
+          !/INSERT INTO sts_schema/i.test(code),
+          'upgrade-1.1.0.sql runs no DDL and records no schema version');
+  t.check(/WHERE version >= 32/.test(code),
+          'upgrade-1.1.0.sql refuses a store older than release 1.1.0');
+  t.check(/INSERT INTO sts_appconfig \(key, value\)\s+SELECT 'oauth2\.undeclaredClientScopes', '\{"raw": "legacy"\}'::jsonb\s+WHERE EXISTS \(SELECT 1 FROM sts_ldap_entries\s+WHERE parent_key LIKE 'ou=applications,%'\)\s+ON CONFLICT \(key\) DO NOTHING/
+            .test(code),
+          'the default realm gets {"raw": "legacy"} only with an ' +
+          'application and no stored row');
+  t.check(/INSERT INTO sts_changes \(origin, kind\)\s+SELECT 'upgrade-1\.1\.0', 'appconfig' WHERE EXISTS \(SELECT 1 FROM written\)/
+            .test(code),
+          'the write records a change-log row, and only when it wrote');
+  log.debug("Leaving checkTheScopeUpgrade().");
+}
+
 // Schema 23 (2026-10-20, `/portal/delegate`): the uid trigram index, a GIN
 // with `pg_trgm`'s operator class over `rdn_value`, partial on the children
 // of a realm's `ou=users` — the predicate `uidContains` repeats, or the
@@ -879,6 +912,7 @@ function run(t) {
   checkTheVersionAgrees(t, sql);
   checkTheSessionIndex(t, sql);
   checkTheReleaseUpgrade(t, sql);
+  checkTheScopeUpgrade(t);
   checkTheUidTrigramIndex(t, sql);
   checkThePrivilegeIsNarrow(t, sql);
   checkTheRoleNameAgrees(t);

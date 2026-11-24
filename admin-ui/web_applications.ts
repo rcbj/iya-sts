@@ -2435,7 +2435,45 @@ class ApplicationsPage {
       t.text('consoleApplications.a2.observedTip'),
       ['oauthGrantTypeObserved', 'oauthResponseTypeObserved',
        'appRedirectUriObserved', 'oauthScope', 'appAuthorizationServer'],
+      ApplicationsPage.undeclaredScopesLine(row, t) +
       ApplicationsPage.tokenResponseTypesLine(row, t));
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE DEFAULT SCOPES A CLIENT THAT DECLARES NONE IS GIVEN (#1589): a line
+  // under the observed ones, drawn only where `oauthAllowedScope` lists
+  // nothing, naming what `oauth2.undeclaredClientScopes` gives it — so an
+  // administrator sees the default being applied rather than reading an
+  // empty list as "nothing". A warning while the set is wider than `openid`
+  // in product (ASVS 5.0.0 10.4.11); a plain note in development, which
+  // issues any scope a client asks for.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws the line naming the default scopes of a client that declares none.
+   *
+   * @param row - the application's view, `page.config.observed` in it
+   * @param t - the page's translator (#539)
+   * @returns the line as HTML, or ''
+   */
+  static undeclaredScopesLine(row, t) {
+    const observed = row && row.page && row.page.config
+      ? row.page.config.observed : null;
+    const state = observed && observed.undeclaredClientScopes;
+    if (!state) {
+      return '';
+    }
+    const scopes: string[] = [].concat(state.scopes || []);
+    const args = { setting: String(state.setting || ''),
+                   scopes: scopes.join(' ') };
+    const sentence = !state.enforced
+      ? 'consoleApplications.a2.undeclaredScopesDevelopment'
+      : state.credentialScopes
+        ? 'consoleApplications.a2.undeclaredScopesLegacy'
+        : 'consoleApplications.a2.undeclaredScopes';
+    const body = '<p>' + t.html(sentence, args) + '</p>';
+    return '<div class="fg-observed-row sub" id="cfg-undeclared-scopes">' +
+      (state.enforced && state.setting !== 'openid' ? kit.warn(body)
+                                                    : body) + '</div>';
   }
 
   // ---------------------------------------------------------------------------

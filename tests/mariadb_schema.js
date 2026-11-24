@@ -144,6 +144,38 @@ function checkTheReleaseUpgrade(t, sql, schema) {
   log.debug("Leaving checkTheReleaseUpgrade().");
 }
 
+// Release 1.1.x to 1.2.0 (#1589): postgres/upgrade-1.1.0.sql's one data
+// step, gated on the version and on the three tables it reads and writes.
+function checkTheScopeUpgrade(t) {
+  log.debug("Entering checkTheScopeUpgrade().");
+  const upgrade = fs.readFileSync(
+    path.join(ROOT, 'mariadb', 'upgrade-1.1.0.sql'), 'utf8');
+  const code = upgrade.split('\n').filter(function (line) {
+    return !/^\s*--/.test(line);
+  }).join('\n');
+  const steps = code.split('EXECUTE IMMEDIATE').filter(function (one) {
+    return /'INSERT /.test(one);
+  });
+  t.check(!/\b(CREATE|ALTER|DROP)\s/i.test(code) &&
+          !/INTO sts_schema/i.test(code),
+          'G1. upgrade-1.1.0.sql runs no DDL and records no schema version');
+  t.check(steps.length === 2 &&
+          /@sts_upgrade_version > 0 AND @sts_upgrade_scope_tables = 3/
+            .test(steps[0]) &&
+          /INSERT IGNORE INTO sts_appconfig/.test(steps[0]) &&
+          /''oauth2\.undeclaredClientScopes'', JSON_OBJECT\(''raw'', ''legacy''\)/
+            .test(steps[0]) &&
+          /parent_key LIKE ''ou=applications,%''/.test(steps[0]) &&
+          /@sts_upgrade_scope_written > 0/.test(steps[1]) &&
+          /''upgrade-1\.1\.0'', ''appconfig''/.test(steps[1]),
+          'G2. legacy is written only with an application and no stored ' +
+          'row, and a change-log row only when it wrote',
+          steps.join('\n---\n'));
+  t.check(/WHERE version >= 32/.test(code) && /SIGNAL SQLSTATE/.test(code),
+          'G3. a store older than release 1.1.0 is refused');
+  log.debug("Leaving checkTheScopeUpgrade().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const schema = require('../persistence/schema_mariadb');
@@ -223,6 +255,8 @@ async function run(t) {
 
   t.log.info('=== F. the release 1.0.0 upgrade ===');
   checkTheReleaseUpgrade(t, sql, schema);
+  t.log.info('=== G. the release 1.1.0 upgrade (#1589) ===');
+  checkTheScopeUpgrade(t);
   log.debug("Leaving run().");
 }
 

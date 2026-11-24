@@ -269,6 +269,7 @@ var config = {
     stepUpMaxAgeS: -1,                             // Step-up: oldest authentication this service's resource server accepts (s)
     errorPageAutoRedirectS: 0,                     // Error page: continue to the client after (seconds)
     keyBinding: true,                              // OpenID Connect Key Binding
+    undeclaredClientScopes: "openid",              // Scopes for a client that declares none
     enterpriseClaimsAlways: false,                 // Enterprise Extensions claims in every ID Token
     didClaim: false,                               // The did claim
     sessionManagement: false,                      // OpenID Connect Session Management

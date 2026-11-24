@@ -975,6 +975,12 @@ Scope: `admin:read`.
 | `page.config.observed.samlResponseBinding` | list |  |  |
 | `page.config.observed.samlResponseBinding[].declared` | boolean |  |  |
 | `page.config.observed.samlResponseBinding[].value` | string |  |  |
+| `page.config.observed.undeclaredClientScopes` | object |  |  |
+| `page.config.observed.undeclaredClientScopes.credentialScopes` | boolean |  |  |
+| `page.config.observed.undeclaredClientScopes.enforced` | boolean |  |  |
+| `page.config.observed.undeclaredClientScopes.scopes` | list |  |  |
+| `page.config.observed.undeclaredClientScopes.scopes[]` | string |  |  |
+| `page.config.observed.undeclaredClientScopes.setting` | one of `openid`, `identity`, `legacy` |  |  |
 | `page.config.protocols` | list |  |  |
 | `page.config.protocols[].deliveryAttribute` | string |  |  |
 | `page.config.protocols[].eventsAttribute` | string |  |  |

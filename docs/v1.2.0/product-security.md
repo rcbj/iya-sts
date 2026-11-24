@@ -260,6 +260,13 @@ session cookie) needs Admin Read to read and Admin Write to write.
   `response_type=code` alone (`unauthorized_client`). List what else it needs in
   `oauthGrantType` and `oauthResponseType`. See
   [Configuring OpenID Connect flows](configure-oidc-flows.md).
+* **A client that declares no scopes is issued `openid` alone** (since 1.2.0,
+  ASVS 5.0.0 10.4.11). One that registered itself without a `scope` gets no
+  `profile`, no `offline_access` and so no refresh token, until its
+  `oauthAllowedScope` lists them (`invalid_scope`, `STS-OAUTH-0578`).
+  `oauth2.undeclaredClientScopes` widens the set; an upgraded store keeps
+  `legacy`, the old set, and `/admin/mode` says so. See
+  [Configuration](configuration.md).
 * **PKCE is required of every client**, confidential ones included. An
   authorization request with no `code_challenge` is refused `invalid_request`.
 * **A repeated parameter is refused** at the authorization and token endpoints

@@ -104,8 +104,8 @@
     "text": "Varje scope som en klient ber om utfärdas, oavsett vad dess `oauthAllowedScope` listar. I BÅDA lägena utfärdas admin:read, admin:write, SCIM- och Shared Signals-scopes samt debuggerbehörigheten bara till en klient vars `oauthAllowedScope` listar dem."
   },
   "mode.requirements.declared-scopes.product": {
-    "en": "33fcb48e8c17655e",
-    "text": "Ett scope utanför klientens `oauthAllowedScope` avvisas med invalid_scope vid auktoriserings-, pushed authorization- och tokenslutpunkterna (STS-OAUTH-0578) och tas bort vid en uppdatering eller ett utbyte. En klient som inte listar något får det dokumenterade standardvärdet: openid, profile, email, address, phone, offline_access och den här sfärens OpenID4VCI-scopes. Ett scope som anger en applikation eller en delegerad behörighet behåller sina egna regler."
+    "en": "dcdd1cbadd143bd7",
+    "text": "Ett scope utanför klientens `oauthAllowedScope` avvisas med invalid_scope vid auktoriserings-, pushed authorization- och tokenslutpunkterna (STS-OAUTH-0578) och tas bort vid en uppdatering eller ett utbyte. En klient som inte listar något får vad oauth2.undeclaredClientScopes säger: som standard enbart openid (ASVS 5.0.0 10.4.11); identity lägger till profile, email, address och phone; legacy, vad ett uppgraderat lager behåller, lägger dessutom till offline_access och den här sfärens OpenID4VCI-scopes. Ett scope som anger en applikation eller en delegerad behörighet behåller sina egna regler."
   },
   "mode.requirements.declared-protocols.what": {
     "en": "89e8ef1624565f1b",

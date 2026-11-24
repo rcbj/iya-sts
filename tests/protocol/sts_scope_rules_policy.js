@@ -290,12 +290,10 @@ async function everyOtherScope(dev, prod) {
           function () {
     issued(free, "anything:custom");
   });
-  const defaults = await cc(prod, "sp-bare", "profile email");
-  K.check("B. product, no list: the OpenID Connect scopes are the default " +
-          "set", function () {
-    issued(defaults, "profile email");
-  });
-  for (const one of ["anything:custom", "ssf:write"]) {
+  // #1589: the default set is `oauth2.undeclaredClientScopes`, `openid`
+  // alone by default since 1.2.0 — so `profile` is refused like any other
+  // undeclared scope. (`legacy`, the old set, is tests/scope_policy.js's.)
+  for (const one of ["profile email", "anything:custom", "ssf:write"]) {
     const out = await asked(prod, "STS-OAUTH-0578", function () {
       return cc(prod, "sp-bare", one);
     });

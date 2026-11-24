@@ -104,8 +104,8 @@
     "text": "يُصدر أي scope يطلبه العميل، مهما سرد `oauthAllowedScope` الخاص به. في كلا الوضعين لا تُصدر admin:read وadmin:write وscope الخاصة بـ SCIM وShared Signals وإذن أداة التصحيح إلا لعميل يسردها `oauthAllowedScope` الخاص به."
   },
   "mode.requirements.declared-scopes.product": {
-    "en": "33fcb48e8c17655e",
-    "text": "يُرفض scope الخارج عن `oauthAllowedScope` الخاص بالعميل بـ invalid_scope عند نقاط نهاية التفويض والتفويض المدفوع والرمز (STS-OAUTH-0578) ويُنزَع من تحديث أو تبادل. يحصل العميل الذي لا يسرد شيئًا على الافتراضي الموثَّق: openid وprofile وemail وaddress وphone وoffline_access وscope الخاصة بـ OpenID4VCI لنطاق الثقة هذا. يحتفظ scope الذي يسمّي تطبيقًا أو إذنًا مفوَّضًا بقواعده الخاصة."
+    "en": "dcdd1cbadd143bd7",
+    "text": "يُرفض scope الخارج عن `oauthAllowedScope` الخاص بالعميل بـ invalid_scope عند نقاط نهاية التفويض والتفويض المدفوع والرمز (STS-OAUTH-0578) ويُنزَع من تحديث أو تبادل. يحصل العميل الذي لا يسرد شيئًا على ما يحدده oauth2.undeclaredClientScopes: openid وحده افتراضيًا (ASVS 5.0.0 10.4.11)؛ و identity يضيف profile وemail وaddress وphone؛ و legacy، وهو ما يحتفظ به مخزن تمت ترقيته، يضيف أيضًا offline_access وscope الخاصة بـ OpenID4VCI لنطاق الثقة هذا. يحتفظ scope الذي يسمّي تطبيقًا أو إذنًا مفوَّضًا بقواعده الخاصة."
   },
   "mode.requirements.declared-protocols.what": {
     "en": "89e8ef1624565f1b",
