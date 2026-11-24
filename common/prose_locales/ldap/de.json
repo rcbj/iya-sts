@@ -1351,6 +1351,10 @@
     "en": "05bb26087cc96574",
     "text": "TRUE oder FALSE: auch die ds:Signature einer WS-Trust-Antwort für diese Anwendung verschlüsseln (sp:EncryptSignature von WS-SecurityPolicy); ersetzt wstrust.encryptSignature. Wird nur gelesen, solange die Antwort sowohl signiert als auch verschlüsselt wird, zuerst signiert; die Signatur wird für den Empfänger der Antwort verschlüsselt."
   },
+  "applications.schema.attributes.wstrustRecipientIgnoresKeyUsage.what": {
+    "en": "ee5d3e5465e289d1",
+    "text": "TRUE oder FALSE: die WS-Trust-Antworten dieser Anwendung an ihr Empfängerzertifikat verschlüsseln, unabhängig von dessen keyUsage; ersetzt wstrust.recipientIgnoresKeyUsage. Die Nachrichtensignatur-Zertifikate des Bereichs erlauben nur digitalSignature, daher wird eine an das Signaturzertifikat der Anfrage verschlüsselte Antwort ohne diese Einstellung abgelehnt. Nur die keyUsage-Prüfung entfällt: Gültigkeit, Pfad und Sperrstatus des Zertifikats werden weiterhin geprüft, wo der paranoide PKI-Modus sie prüft."
+  },
   "applications.schema.attributes.wstrustDecryptionCertificate.what": {
     "en": "b00a63a9bafc49ad",
     "text": "DAS ZERTIFIKAT, AN DAS EINE WS-TRUST-ANFRAGE FÜR DIESE ANWENDUNG VERSCHLÜSSELT WIRD, PEM. Solange es gesetzt ist, wird eine Anfrage für diese Anwendung mit seinem privaten Schlüssel entschlüsselt und nicht mit dem des Realms, und eine an den Schlüssel des Realms verschlüsselte Anfrage für sie ist ein FailedCheck. Öffentlich: Die Anwendungsseite und GET /admin-api/applications geben es heraus."

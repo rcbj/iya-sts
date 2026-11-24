@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# File: tests/client-lab/bin/lab-openpgp-card
+#
+# ---------------------------------------------------------------------------
+# THE OpenPGP CARD TAKEN OUT OF ITS READER, AND A NEW ONE PUT IN (#2057).
+#
+#   lab-openpgp-card remove   stops the SmartPGP card: the reader is empty,
+#                             as when a person pulls their key out
+#   lab-openpgp-card fresh    a factory-fresh card in its place (a new
+#                             serial, PINs 123456 and 12345678); the old
+#                             card's keys are gone with it
+#   lab-openpgp-card          prints this start's serial, or `none`
+#
+# jcardsim keeps a card's state in memory, so a card removed cannot be put
+# back: `fresh` is a different card.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+# shellcheck source=tests/client-lab/card-lib.sh
+. /opt/client-lab/card-lib.sh
+
+case "${1:-}" in
+  remove)
+    stop_card openpgp "${PGP_READER}"
+    echo "none" > "${RUN}/openpgp-serial"
+    echo "removed"
+    ;;
+  fresh)
+    stop_card openpgp "${PGP_READER}" || true
+    start_openpgp_card
+    cat "${RUN}/openpgp-serial"
+    ;;
+  "")
+    cat "${RUN}/openpgp-serial" 2>/dev/null || echo "none"
+    ;;
+  *)
+    echo "lab-openpgp-card: remove or fresh, not $1" >&2
+    exit 2
+    ;;
+esac

@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# File: tests/client-lab/bin/lab-postfix
+#
+# ---------------------------------------------------------------------------
+# A MAIL SERVER FOR A DOMAIN A JOB MADE UP (#2057): postfix in the lab,
+# delivering locally, with STARTTLS on port 25 so this service's own SMTP
+# transport — which has no cleartext option — can deliver to it.
+#
+#   lab-postfix start <dir> <domain> <ca-file> <user>...
+#       <dir> (under the work directory when relative) gets the TLS key and
+#       certificate (for `client-lab`, from a CA made here), the mailboxes
+#       (`<dir>/mail/<user>`, mbox) and postfix's log (`<dir>/maillog`).
+#       <ca-file> receives the CA's certificate: a path on the volume this
+#       lab shares with the service (/run/sts-test), which is what
+#       mail.smtpCaFile names. Each <user> is a local account, the local
+#       part of an address at <domain>. Prints the CA's path.
+#   lab-postfix stop
+#
+# The CA's key is deleted once the server's certificate is issued.
+# ---------------------------------------------------------------------------
+set -euo pipefail
+
+action="${1:?start or stop}"
+if [ "${action}" = "stop" ]; then
+  postfix stop > /dev/null 2>&1 || true
+  echo "stopped"
+  exit 0
+fi
+if [ "${action}" != "start" ]; then
+  echo "lab-postfix: start or stop, not ${action}" >&2
+  exit 2
+fi
+dir="${2:?a directory}"
+domain="${3:?a domain}"
+cafile="${4:?a file for the CA certificate}"
+shift 4
+case "${dir}" in
+  /*) ;;
+  *) dir="/run/client-lab/work/${dir}" ;;
+esac
+mkdir -p "${dir}/mail" "$(dirname "${cafile}")"
+chmod 1777 "${dir}/mail"
+# local(8) delivers as the recipient, who must be able to pass through the
+# work directory (0700, the agent's) to reach the mailbox: traverse only.
+d="${dir}"
+while [ "${d}" != "/" ]; do
+  chmod o+x "${d}"
+  d="$(dirname "${d}")"
+done
+
+keys="$(mktemp -d)"
+trap 'rm -rf "${keys}"' EXIT
+openssl req -x509 -new -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+  -keyout "${keys}/ca.key" -subj "/CN=Client Lab Mail CA $(openssl rand -hex 4)" \
+  -days 2 -addext "basicConstraints=critical,CA:TRUE" \
+  -addext "keyUsage=critical,keyCertSign,cRLSign" \
+  -out "${dir}/ca.pem" 2> /dev/null
+openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+  -keyout "${dir}/smtpd.key" -subj "/CN=client-lab" \
+  -out "${keys}/smtpd.csr" 2> /dev/null
+printf 'subjectAltName=DNS:client-lab\nextendedKeyUsage=serverAuth\n' \
+  > "${keys}/ext"
+openssl x509 -req -in "${keys}/smtpd.csr" -CA "${dir}/ca.pem" \
+  -CAkey "${keys}/ca.key" -CAcreateserial -days 2 -sha256 \
+  -extfile "${keys}/ext" -out "${dir}/smtpd.pem" 2> /dev/null
+chmod 0600 "${dir}/smtpd.key"
+cp "${dir}/ca.pem" "${cafile}"
+chmod 0644 "${cafile}"
+
+for user in "$@"; do
+  if ! id -u "${user}" > /dev/null 2>&1; then
+    useradd -M -s /usr/sbin/nologin "${user}"
+  fi
+done
+
+postconf -e "myhostname = client-lab" \
+  "mydomain = ${domain}" \
+  "myorigin = client-lab" \
+  "mydestination = ${domain}, client-lab, localhost" \
+  "inet_interfaces = all" \
+  "inet_protocols = ipv4" \
+  "mynetworks = 127.0.0.0/8" \
+  "relayhost =" \
+  "alias_maps =" "alias_database =" \
+  "mail_spool_directory = ${dir}/mail" \
+  "home_mailbox =" "mailbox_command =" \
+  "smtpd_tls_cert_file = ${dir}/smtpd.pem" \
+  "smtpd_tls_key_file = ${dir}/smtpd.key" \
+  "smtpd_tls_security_level = may" \
+  "smtpd_relay_restrictions = permit_mynetworks reject_unauth_destination" \
+  "maillog_file_prefixes = /var, /dev/stdout, /run/client-lab/work" \
+  "maillog_file = ${dir}/maillog" \
+  "compatibility_level = 3.6"
+# No chroot: the container has no copy of /etc for postfix's jail.
+postconf -F '*/*/chroot = n'
+postfix stop > /dev/null 2>&1 || true
+postfix check
+postfix start
+for i in $(seq 1 40); do
+  if (exec 3<>/dev/tcp/127.0.0.1/25) 2> /dev/null; then
+    break
+  fi
+  sleep 0.25
+done
+echo "${cafile}"

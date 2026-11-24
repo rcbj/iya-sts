@@ -301,8 +301,9 @@ a sign-on session, the same session the password screen starts, so the holder
 is then signed in to every surface here. The answer is JSON: `signedIn`, the
 `session`, whether the certificate was `presented` and `verified`, the
 `thumbprint` a token would be bound to, and the `revocation` verdict. The
-session carries `amr ["swk"]` and `acr "1"`. A browser that already holds a
-session keeps it.
+session carries `amr ["swk"]` and `acr "1"`, or `hwk` (and `sc`) when the
+certificate's key is on an attested hardware token or smart card. A browser
+that already holds a session keeps it.
 
 The main port **asks** every connection for a client certificate and requires
 none, so nothing needs turning on. If you have set
@@ -338,6 +339,19 @@ password-protected `.p12` (below).
 A person may hold at most `pki.personTlsClientCertificateMax` valid ones (5 by
 default). The person can revoke one with **Revoke** on the same page; after
 that it signs nobody in.
+
+### A PIV smart card's certificate
+
+A certificate for a key generated on a YubiKey's PIV applet is enrolled with
+the card's attestation, on the portal's **Tokens and keys → PIV** tab or over
+EST, from the realm's EST Issuing CA; like a portal certificate, it needs no
+anchor added. The card is then recorded as a hardware token, and a sign-in
+with it records `hwk` and `sc`. Enrolling it, what the attestation must
+carry and the clients it is used with (OpenSC, `curl` with a `pkcs11:` key)
+are in [Hardware tokens](hardware-tokens.md#piv-key-attestation); the
+`curl` line is in [TLS](tls.md#signing-in-with-a-certificate-get-tlssign-in).
+A government PIV or CAC card from somebody else's CA is under
+[Smart-card and certificate sign-in](#smart-card-and-certificate-sign-in).
 
 ### A certificate from your own CA
 

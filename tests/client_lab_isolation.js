@@ -27,7 +27,7 @@
 //      package or component (comments aside): jcardsim, SmartPGP,
 //      PivApplet, vsmartcard/vpcd, pcscd, OpenSC, yubico-piv-tool, gnupg,
 //      scdaemon, postfix, sendmail, openssh-server, oathtool, pam_yubico,
-//      pamtester, krb5-user — nor `client-lab`.
+//      pamtester, krb5-user, ldap-utils, libyubikey — nor `client-lab`.
 //   D. The root package.json's dependencies name none of them, and neither
 //      the user's compose files nor the product image's CI build names the
 //      lab.
@@ -49,7 +49,8 @@ const LAB_WORDS = ['jcardsim', 'smartpgp', 'pivapplet', 'vsmartcard', 'vpcd',
                    'pcscd', 'opensc', 'yubico-piv-tool', 'gnupg', 'gnupg2',
                    'scdaemon', 'postfix', 'sendmail', 'openssh-server',
                    'oathtool', 'pam_yubico', 'libpam-yubico', 'pamtester',
-                   'krb5-user', 'client-lab'];
+                   'krb5-user', 'ldap-utils', 'libyubikey-dev',
+                   'ykgenerate', 'client-lab'];
 
 function read(rel) {
   log.debug("Entering read(). " + rel);

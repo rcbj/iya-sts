@@ -243,8 +243,8 @@ way. Its five sections:
   Every page under Protocols is drawn as tabs, and the first tab is
   **Metadata**: the realm's endpoints for that protocol and what explains it
   or reports its state. The other tabs are the registers, forms and settings.
-* **Directory** — users, groups, roles, applications, policies, and *As the
-  directory holds it*: the raw entries under each container and the directory
+* **Directory** — users, groups, roles, applications, policies, hardware
+  tokens, OpenPGP keys, and *As the directory holds it*: the raw entries under each container and the directory
   service itself.
   A page with more than one section is drawn as tabs, Metadata first (its
   tiles, notes and the container's schema), then the list, its forms and its
@@ -517,9 +517,10 @@ and the credential catalogue, less what has a door of its own or is not text:
 | `userPassword` | the password controls on the same page, or `POST /admin-api/users/set-password`, which hashes it |
 | `mail` | **Set the address**, in the same section (`POST /admin-api/users/set-mail`), which marks the address verified and tells the former one |
 | `uid`, and the attribute the entry's DN is named by | nothing: a rename is not an attribute edit |
-| `userCertificate` | **Stored certificates** on the Credentials tab (Factors) |
+| `userCertificate` | **Stored certificates** on the Credentials tab (Key pairs) |
 | the other certificates, photographs, `audio`, `userPKCS12` | an LDAP client: their values are binary |
 | group memberships, credentials, what sign-ins record | Groups, the credential controls |
+| `stsHardwareToken`, `stsOathToken`, `stsYubiOtpToken`, `stsSshUserCertificate` | the token and key sub-tabs of Credentials (below). An edit by LDAP or SCIM that removes one gives the token up or revokes the certificate; one that adds or changes one is refused ([Hardware tokens](hardware-tokens.md#where-each-kind-lives)) |
 
 **What a value must look like.** `cn` and `sn` can never be emptied (RFC 4519
 requires them of every person). An attribute its schema declares single-valued
@@ -794,7 +795,8 @@ of Admin Write. Each control is an action on `POST /admin/users` and on
   client certificate stays on its own page.
 
 Stored certificates, message-signing certificates and TLS client certificates
-are the Key pairs sub-tab. Self-issued IDs, with the published DIDs, are the
+are the Key pairs sub-tab, with the person's S/MIME and SSH user certificates
+listed read-only beside them. Self-issued IDs, with the published DIDs, are the
 sub-tab after it.
 
 The token and key sub-tabs (#2052) are the central Directory pages with the
@@ -1233,6 +1235,32 @@ that enforces it, and its **Access types** tab maps each type's members to
 XACML attributes; [Fine-grained authorization](fga.md#the-console-and-the-api)
 walks through both. [Applications](applications.md) documents the page,
 `/admin/applications/new`, the schema and CORS.
+
+### Hardware tokens — `/admin/hardware-tokens`, and OpenPGP keys — `/admin/openpgp`
+
+The registers of what people carry, filed under Directory because each is
+somebody's; the mechanisms' settings are six Protocols pages
+([below](#protocols-pages-worth-explaining)).
+**Directory → Hardware tokens** has five tabs after Metadata:
+
+| Tab | What it holds | API |
+|---|---|---|
+| **Hardware tokens** | every token the realm recorded from an attestation, by status, searched by serial or person, with **Report lost** | `GET /admin-api/hardware-tokens`, `POST …/lost` |
+| **OATH tokens** | the inventory of imported PSKC tokens, the import form, **Assign** on an unassigned one and **Remove** on one not assigned | `GET …/oath`, `POST …/import-pskc`, `assign-oath`, `remove-oath` |
+| **Enrol PIV** | the PIV enrolment form for a named person: the slot profile, the request and the two attestation certificates | `POST …/enrol-piv` |
+| **Escrowed keys** | a person's escrowed `piv-key-management` certificates, each with **Recover key** | `GET …/escrowed`, `POST …/recover-key` |
+| **SSH certificates** | a person's SSH user certificates, each with **Revoke** | `GET …/ssh-certificates`, `POST …/revoke-ssh` |
+
+YubiKey OTP has no tab: a batch is imported with
+`POST /admin-api/hardware-tokens/import-yubiotp` and assigned on the person's
+YubiKey OTP sub-tab. **Directory → OpenPGP keys** shows one person's OpenPGP
+key, its Web Key Directory publication, their S/MIME certificate and their
+mail encryption, and registers a key from a challenge they signed. Both
+pages' per-person halves are also the person's Credentials sub-tabs
+([above](#password-and-second-factors)). What they mean is in
+[Hardware tokens](hardware-tokens.md), [One-time code tokens](one-time-code-tokens.md),
+[YubiKey OTP](yubiotp.md), [PKI](pki.md#openssh-user-certificates) and
+[OpenPGP and S/MIME](openpgp.md).
 
 ## Monitoring
 

@@ -1169,6 +1169,14 @@ card authentication key).
 The KDC's own PKINIT exchange is not gated by these rows, as it is not gated
 by *Kerberos (SPNEGO)*: they govern the session `/authn/spnego` starts.
 
+How a card gets its certificates — a YubiKey's PIV slots enrolled with the
+card's attestation, on the portal's **Tokens and keys → PIV** tab, the
+console or EST — what the attestation must carry, and the clients a card
+works with (OpenSC, `curl` with a `pkcs11:` key at `/tls/sign-in`, MIT
+`kinit` over PKCS#11), are in [Hardware tokens](hardware-tokens.md#piv-key-attestation).
+A government card from another CA is
+[Smart-card and certificate sign-in](configure-tls.md#smart-card-and-certificate-sign-in).
+
 #### Attested hardware for everybody
 
 `requireAttestedHardware` (*Attested hardware token required*) is `no` by
@@ -1613,6 +1621,12 @@ be changed with `POST /admin-api/config/set`.
   the authentication policy (Directory → Policies). API: `GET /admin-api/totp`.
 * **Protocols → Recovery codes** (`/admin/backup-codes`): the four settings and
   what a code is made of. API: `GET /admin-api/backup-codes`.
+* **Protocols → OATH tokens**, **YubiKey OTP**, **Hardware tokens** and
+  **PIV** (`/admin/oath-tokens`, `/admin/yubiotp`,
+  `/admin/hardware-tokens-settings`, `/admin/piv`): the one-time code tokens'
+  and smart cards' settings, each with a Metadata tab; the tokens themselves
+  are **Directory → Hardware tokens**. See
+  [Hardware tokens](hardware-tokens.md#where-each-kind-lives).
 * **Users** (`/admin/users`): per person, who holds which factor and how many
   recovery codes are left, with **Require MFA**, **Send a reset link**, set
   password, clear the authenticator app, a key or the recovery codes,
@@ -1624,7 +1638,9 @@ be changed with `POST /admin-api/config/set`.
 * **Sessions** (`/admin/sessions`): every live session, with how it was
   established.
 * **The user portal**: `/portal/mfa` (authenticator app, recovery codes),
-  `/portal/keys` (passkeys), `/portal/app-passwords` (app passwords for
+  `/portal/keys` (passkeys), `/portal/tokens-and-keys` (hardware tokens,
+  one-time code tokens, PIV, SSH certificates, OpenPGP and S/MIME, a tab
+  each), `/portal/app-passwords` (app passwords for
   the password-only doors), `/portal/kerberos` (a Kerberos keytab from your own
   password), `/portal/password`, `/portal/activate` and
   `/portal/reset-password`; and `/portal/consents`, where a person withdraws

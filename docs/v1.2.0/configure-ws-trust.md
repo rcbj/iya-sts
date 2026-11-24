@@ -867,7 +867,7 @@ of the form.
 | Section | Request message processing | Response message processing |
 |---|---|---|
 | **General** | `wstrustAppliesTo`, `wstrustJwtScope` | |
-| **Message encryption** | `wstrustEncryptRequest`, `wstrustAcceptEncryptedElements`, `wstrustEncryptRequestElements` | `wstrustEncryptResponse`, `wstrustEncryptResponseElements`, `wstrustEncryptionAlgorithm`, `wstrustKeyTransportAlgorithm`, `wstrustEncryptionCertificate`, `wstrustResponseRecipientXPath`, `wstrustEncryptSignature` |
+| **Message encryption** | `wstrustEncryptRequest`, `wstrustAcceptEncryptedElements`, `wstrustEncryptRequestElements` | `wstrustEncryptResponse`, `wstrustEncryptResponseElements`, `wstrustEncryptionAlgorithm`, `wstrustKeyTransportAlgorithm`, `wstrustEncryptionCertificate`, `wstrustResponseRecipientXPath`, `wstrustRecipientIgnoresKeyUsage`, `wstrustEncryptSignature` |
 | **Message signing** | `wstrustSignRequest`, `wstrustSignRequestElements` | `wstrustSignResponse`, `wstrustSignResponseElements`, `wstrustResponseProtectionOrder` |
 
 The application's decryption key pair is on its **Credentials** tab.

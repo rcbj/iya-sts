@@ -1351,6 +1351,10 @@
     "en": "05bb26087cc96574",
     "text": "TRUE या FALSE: इस अनुप्रयोग के लिए WS-Trust प्रतिक्रिया का ds:Signature भी एन्क्रिप्ट करें (WS-SecurityPolicy का sp:EncryptSignature), wstrust.encryptSignature को ओवरराइड करते हुए। केवल तभी पढ़ा जाता है जब प्रतिक्रिया पर हस्ताक्षर और एन्क्रिप्शन दोनों हों, पहले हस्ताक्षर; हस्ताक्षर प्रतिक्रिया के प्राप्तकर्ता के लिए एन्क्रिप्ट किया जाता है।"
   },
+  "applications.schema.attributes.wstrustRecipientIgnoresKeyUsage.what": {
+    "en": "ee5d3e5465e289d1",
+    "text": "TRUE या FALSE: इस एप्लिकेशन की WS-Trust प्रतिक्रियाओं को उनके प्राप्तकर्ता प्रमाणपत्र के लिए एन्क्रिप्ट करें, उसका keyUsage जो भी हो, wstrust.recipientIgnoresKeyUsage को ओवरराइड करते हुए। realm के संदेश-हस्ताक्षर प्रमाणपत्र केवल digitalSignature की अनुमति देते हैं, इसलिए इसके बिना अनुरोध के हस्ताक्षर प्रमाणपत्र के लिए एन्क्रिप्ट की गई प्रतिक्रिया अस्वीकार होती है। केवल keyUsage जाँच छोड़ी जाती है: प्रमाणपत्र की वैधता, पथ और निरसन अब भी वहाँ जाँचे जाते हैं जहाँ paranoid PKI मोड उन्हें जाँचता है।"
+  },
   "applications.schema.attributes.wstrustDecryptionCertificate.what": {
     "en": "b00a63a9bafc49ad",
     "text": "वह प्रमाणपत्र जिस पर इस एप्लिकेशन के लिए WS-TRUST अनुरोध एन्क्रिप्ट किया जाता है, PEM। जब तक यह सेट है, इस एप्लिकेशन के लिए अनुरोध इसकी निजी कुंजी से डिक्रिप्ट होता है, रियल्म की कुंजी से नहीं, और रियल्म की कुंजी पर एन्क्रिप्ट किया गया उसके लिए अनुरोध FailedCheck है। सार्वजनिक: एप्लिकेशन पृष्ठ और GET /admin-api/applications इसे देते हैं।"

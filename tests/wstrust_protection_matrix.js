@@ -41,8 +41,12 @@
 //      is opened; and the opened answer must carry the issued token.
 //   B. THE PRESETS REFUSED: for each request map and box, a client that
 //      leaves out what the box asks for is refused with the fault the
-//      service documents (STS-WSTRUST-0075 for encryption, 0085 for
-//      signing), and ciphertext where no map names it is 0075 too.
+//      service documents (STS-WSTRUST-0075 for encryption, 0040, 0084 and
+//      0085 for signing), and ciphertext where no map names it is 0080. A
+//      ciphertext that will not open (a key wrapped with OAEP over SHA-1)
+//      is refused with that reason, 0075, the Body as the header, never as
+//      a part altered after it was signed; a part that really was altered
+//      still is (0045).
 //   C. CUSTOM EXPRESSIONS, ONE FIELD AT A TIME: for each of the five
 //      fields, expressions naming single elements — a header block, an
 //      element inside the RST, an element of the RSTR — met by a WSS4J
@@ -56,7 +60,13 @@
 //      signed (that key opens it, the application's does not), with the
 //      application's certificate winning when both are set, and the
 //      refusals when nothing names a recipient, the expression matches
-//      nothing or no certificate, or what it names is not signed.
+//      nothing or no certificate, or what it names is not signed. The
+//      request's signing certificate is refused as a recipient when its
+//      keyUsage is digitalSignature only (the realm's own), unless the
+//      application or the realm waives that check (rcbj, 2026-11-24:
+//      wstrustRecipientIgnoresKeyUsage, wstrust.recipientIgnoresKeyUsage);
+//      one that also permits keyEncipherment — the requester's own, stored
+//      on their entry — is a recipient in product.
 //   D. CUSTOM EXPRESSIONS IN COMBINATION: several expressions in one map,
 //      a custom expression beside a preset, all four maps custom at once,
 //      the same element signed and encrypted in both orders, the signature
@@ -275,11 +285,14 @@ async function childBody() {
     certPem: certFor(recipientKeys, 'wpm-recipient'),
     keyPem: recipientKeys.privateKey.export({ type: 'pkcs8', format: 'pem' })
   };
-  // A SIGNER WHOSE CERTIFICATE ALSO PERMITS keyEncipherment, for an answer
-  // encrypted to the request's signing certificate: the realm's
-  // message-signing CA issues digitalSignature only, and the service refuses
-  // to encrypt to such a certificate (STS-WSTRUST-0077), so this one is the
-  // requester's own and is believed in development.
+  // A SIGNER WHOSE CERTIFICATE ALSO PERMITS keyEncipherment (rcbj,
+  // 2026-11-24), for an answer encrypted to the request's signing
+  // certificate: the realm's message-signing CA issues digitalSignature
+  // only, and the service refuses to encrypt to such a certificate
+  // (STS-WSTRUST-0077) unless the application waives that check. This one is
+  // the requester's own, stored on their entry, which is how product
+  // believes a certificate the realm did not issue (wstrust_message_signature
+  // E7).
   const dualKeys = nodeCrypto.generateKeyPairSync('rsa',
     { modulusLength: 2048 });
   const dual = (function () {
@@ -302,6 +315,11 @@ async function childBody() {
              keyPem: dualKeys.privateKey.export({ type: 'pkcs8',
                                                   format: 'pem' }) };
   })();
+  const dualStored = ldap.changeStoredCertificate('person', USER,
+    { add: new nodeCrypto.X509Certificate(dual.certPem).raw });
+  t.check(dualStored && dualStored.ok,
+          'precondition: the dual-use certificate is stored on ' + USER,
+          JSON.stringify(dualStored));
   // A second recipient, named by a header the requester signs (D).
   const otherKeys = nodeCrypto.generateKeyPairSync('rsa',
     { modulusLength: 2048 });
@@ -662,7 +680,39 @@ async function childBody() {
         'wstrustEncryptRequestElements', false, true) },
       sign: presetParts(true, false, false),
       encrypt: presetParts(false, true, true), keyTransport: 'rsa-oaep-mgf1p',
-      code: 'STS-WSTRUST-0075' },
+      code: 'STS-WSTRUST-0075', says: /OAEP over SHA-1/ },
+    // A BODY THAT WILL NOT OPEN IS REFUSED FOR THAT (rcbj, 2026-11-24): the
+    // signature over its plaintext cannot be checked, and was refused as a
+    // part altered after it was signed (STS-WSTRUST-0045).
+    { what: 'Encrypt request Body ticked, the Body signed and then ' +
+            'encrypted with its key wrapped with OAEP over SHA-1: the ' +
+            'reason is the key, not an altered part',
+      maps: { wstrustEncryptRequestElements: presets(
+        'wstrustEncryptRequestElements', true, false) },
+      sign: presetParts(true, false, false),
+      encrypt: presetParts(true, false, true), keyTransport: 'rsa-oaep-mgf1p',
+      code: 'STS-WSTRUST-0075', says: /would not open[\s\S]*OAEP over SHA-1/,
+      saysNot: /altered/ },
+    { what: 'Encrypt request Body and Header ticked, both wrapped with OAEP ' +
+            'over SHA-1: the same reason',
+      maps: { wstrustEncryptRequestElements: presets(
+        'wstrustEncryptRequestElements', true, true) },
+      sign: presetParts(true, false, false),
+      encrypt: presetParts(true, true, true), keyTransport: 'rsa-oaep-mgf1p',
+      code: 'STS-WSTRUST-0075', says: /would not open[\s\S]*OAEP over SHA-1/,
+      saysNot: /altered/ },
+    // AND A PART REALLY ALTERED IS STILL SAID TO BE: the Body opens, the
+    // signed wsa:To was changed on the way.
+    { what: 'Encrypt request Body ticked, the Body opens, and a signed ' +
+            'header altered after it was signed is still STS-WSTRUST-0045',
+      maps: { wstrustEncryptRequestElements: presets(
+        'wstrustEncryptRequestElements', true, false) },
+      sign: [{ local: 'Body' }, { local: 'To', ns: WSA }],
+      encrypt: presetParts(true, false, true),
+      tamper: function (xml) {
+        return xml.replace(BASE + '/sts</wsa:To>', BASE + '/x</wsa:To>');
+      },
+      code: 'STS-WSTRUST-0045', says: /altered/ },
     { what: 'Sign request Header ticked, the header blocks not signed',
       maps: { wstrustSignRequestElements: presets(
         'wstrustSignRequestElements', false, true) },
@@ -687,9 +737,15 @@ async function childBody() {
     for (let i = 0; i < refusals.length; i++) {
       const one = refusals[i];
       configure(one.maps);
-      const r = built[i] && built[i].ok
-        ? await ask(soap, String(built[i].xml))
+      const sent = built[i] && built[i].ok
+        ? (one.tamper ? one.tamper(String(built[i].xml))
+                      : String(built[i].xml)) : '';
+      const r = sent ? await ask(soap, sent)
         : { status: 0, body: JSON.stringify(built[i]) };
+      if (one.tamper && sent === String(built[i].xml)) {
+        r.status = 0;
+        r.body = 'the tamper changed nothing';
+      }
       // The SOAP fault each code is documented to carry.
       const product = one.code === 'STS-WSTRUST-0084'
         ? /FailedCheck|FailedAuthentication/
@@ -698,7 +754,11 @@ async function childBody() {
       t.check(r.status === 500 && (r.errorCode === one.code ||
                 (one.code === 'STS-WSTRUST-0084' &&
                  /FailedAuthentication/.test(String(r.body)))) &&
-              product.test(String(r.body)),
+              (one.code === 'STS-WSTRUST-0045'
+                ? /FailedAuthentication/.test(String(r.body))
+                : product.test(String(r.body))) &&
+              (!one.says || one.says.test(String(r.body))) &&
+              (!one.saysNot || !one.saysNot.test(String(r.body))),
               'B. SOAP ' + soap + ': ' + one.what + ' is ' + one.code,
               brief(r));
     }
@@ -828,17 +888,53 @@ async function childBody() {
       maps: { wstrustEncryptResponseElements: presets(
         'wstrustEncryptResponseElements', true, false) },
       sign: SIGN_BODY, encrypt: null, refused: 'STS-WSTRUST-0077' },
+    // THE KEYUSAGE WAIVER (rcbj, 2026-11-24): the application may have its
+    // answers encrypted to a certificate whose keyUsage does not permit it.
+    { what: 'C. wstrustRecipientIgnoresKeyUsage TRUE: the answer is ' +
+            'encrypted to the realm\'s digitalSignature-only signing ' +
+            'certificate',
+      recipientNone: true, ignoresKeyUsage: 'TRUE',
+      maps: { wstrustEncryptResponseElements: presets(
+        'wstrustEncryptResponseElements', true, false) },
+      sign: SIGN_BODY, encrypt: null, to: 'signer',
+      enc: ['RequestSecurityTokenResponseCollection'] },
+    { what: 'C. wstrust.recipientIgnoresKeyUsage on for the realm, the ' +
+            'application silent: the same',
+      recipientNone: true, realmIgnoresKeyUsage: true,
+      maps: { wstrustEncryptResponseElements: presets(
+        'wstrustEncryptResponseElements', true, true),
+              wstrustSignResponseElements: presets(
+        'wstrustSignResponseElements', true, false) },
+      sign: SIGN_BODY, encrypt: null, to: 'signer',
+      enc: ['RequestSecurityTokenResponseCollection', 'Action'],
+      sig: ['Timestamp', 'Body'] },
+    { what: 'C. the realm waives keyUsage and the application says FALSE: ' +
+            'refused',
+      recipientNone: true, realmIgnoresKeyUsage: true,
+      ignoresKeyUsage: 'FALSE',
+      maps: { wstrustEncryptResponseElements: presets(
+        'wstrustEncryptResponseElements', true, false) },
+      sign: SIGN_BODY, encrypt: null, refused: 'STS-WSTRUST-0077' },
+    { what: 'C. wstrustRecipientIgnoresKeyUsage TRUE with a recipient ' +
+            'expression naming the signer\'s BinarySecurityToken',
+      recipientXPath: H + 'wsse:Security/wsse:BinarySecurityToken',
+      ignoresKeyUsage: 'TRUE',
+      maps: { wstrustEncryptResponseElements:
+                ['//wst:RequestedSecurityToken'] },
+      sign: SIGN_BODY, encrypt: null, to: 'signer',
+      enc: ['RequestedSecurityToken'] },
     { what: 'C. no certificate on the application and no expression: the ' +
             'answer is encrypted to the request\'s signing certificate ' +
-            '(one that permits keyEncipherment)',
-      recipientNone: true, product: false, signer: 'dual',
+            '(the requester\'s own, stored on their entry, permitting ' +
+            'keyEncipherment)',
+      recipientNone: true, signer: 'dual',
       maps: { wstrustEncryptResponseElements: presets(
         'wstrustEncryptResponseElements', true, false) },
       sign: SIGN_BODY, encrypt: null, to: 'dual',
       enc: ['RequestSecurityTokenResponseCollection'] },
     { what: 'C. the request\'s signing certificate, Body and Header ' +
             'encrypted and the answer signed',
-      recipientNone: true, product: false, signer: 'dual',
+      recipientNone: true, signer: 'dual',
       maps: { wstrustEncryptResponseElements: presets(
         'wstrustEncryptResponseElements', true, true),
               wstrustSignResponseElements: presets(
@@ -848,7 +944,7 @@ async function childBody() {
       sig: ['Timestamp', 'Body', 'Action'] },
     { what: 'C. the request\'s signing certificate, with a custom ' +
             'expression and the request encrypted too',
-      recipientNone: true, product: false, signer: 'dual',
+      recipientNone: true, signer: 'dual',
       maps: { wstrustEncryptResponseElements:
                 ['//wst:RequestedSecurityToken'],
               wstrustEncryptRequestElements: [R + 'wsp:AppliesTo'] },
@@ -867,7 +963,7 @@ async function childBody() {
     { what: 'C. recipient expression naming the signer\'s own ' +
             'BinarySecurityToken',
       recipientXPath: H + 'wsse:Security/wsse:BinarySecurityToken',
-      product: false, signer: 'dual',
+      signer: 'dual',
       maps: { wstrustEncryptResponseElements: presets(
         'wstrustEncryptResponseElements', true, false) },
       sign: SIGN_BODY, encrypt: null, to: 'dual',
@@ -1136,16 +1232,31 @@ async function childBody() {
       ? xp(soap, c.recipientXPath) : '');
     set('wstrustResponseProtectionOrder', c.responseOrder || '');
     set('wstrustEncryptSignature', c.encryptSignature ? 'TRUE' : '');
-    caseAnswers.push(builtCases[i] && builtCases[i].ok
-      ? await ask(soap, String(builtCases[i].xml),
-                  c.product === false ? 'development' : 'product')
-      : { status: 0, body: JSON.stringify(builtCases[i]) });
+    set('wstrustRecipientIgnoresKeyUsage', c.ignoresKeyUsage || '');
+    if (c.realmIgnoresKeyUsage) {
+      config.setOverride('wstrust.recipientIgnoresKeyUsage', 'true');
+    }
+    // The requester's own certificate names no revocation source
+    // (wstrust_message_signature E7's arrangement).
+    if (c.signer === 'dual') {
+      config.setOverride('pki.revocationRequireDistributionPoint', 'off');
+    }
+    try {
+      caseAnswers.push(builtCases[i] && builtCases[i].ok
+        ? await ask(soap, String(builtCases[i].xml),
+                    c.product === false ? 'development' : 'product')
+        : { status: 0, body: JSON.stringify(builtCases[i]) });
+    } finally {
+      config.clearOverride('wstrust.recipientIgnoresKeyUsage');
+      config.clearOverride('pki.revocationRequireDistributionPoint');
+    }
   }
   configure({});
   set('wstrustEncryptionCertificate', recipient.certPem);
   set('wstrustResponseRecipientXPath', '');
   set('wstrustResponseProtectionOrder', '');
   set('wstrustEncryptSignature', '');
+  set('wstrustRecipientIgnoresKeyUsage', '');
   const caseOpened = batch(cases.map(function (c, i) {
     return verifyItem(caseAnswers[i].status === 200 ? caseAnswers[i].body
                                                     : '<x/>', c.to);

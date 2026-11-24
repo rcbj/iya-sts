@@ -6175,6 +6175,14 @@
     "en": "32f9389b65f0eb67",
     "text": "क्या WS-Trust प्रतिक्रिया का ds:Signature भी एन्क्रिप्ट किया जाता है (WS-SecurityPolicy का sp:EncryptSignature), प्रतिक्रिया के प्राप्तकर्ता के लिए। केवल तभी पढ़ा जाता है जब प्रतिक्रिया पर हस्ताक्षर हो और फिर उसे एन्क्रिप्ट किया जाए। जब तक यह चालू है, WSDL का बाइंडिंग sp:EncryptSignature रखता है। किसी अनुप्रयोग का wstrustEncryptSignature इसे ओवरराइड करता है।"
   },
+  "wstrust.recipientIgnoresKeyUsage|label": {
+    "en": "5084027709e17c26",
+    "text": "किसी प्रमाणपत्र के लिए प्रतिक्रिया एन्क्रिप्ट करें, उसका keyUsage जो भी हो"
+  },
+  "wstrust.recipientIgnoresKeyUsage|description": {
+    "en": "58e43975d6e28519",
+    "text": "क्या किसी WS-Trust प्रतिक्रिया को ऐसे प्रमाणपत्र के लिए एन्क्रिप्ट किया जा सकता है जिसका keyUsage न keyEncipherment की अनुमति देता है न keyAgreement की — अधिकतर, अनुरोध का हस्ताक्षर प्रमाणपत्र: इस realm के संदेश-हस्ताक्षर प्रमाणपत्र केवल digitalSignature की अनुमति देते हैं। केवल वही जाँच छोड़ी जाती है; प्रमाणपत्र की वैधता, पथ और निरसन अब भी वहाँ जाँचे जाते हैं जहाँ paranoid PKI मोड उन्हें जाँचता है। डिफ़ॉल्ट रूप से बंद। किसी एप्लिकेशन का wstrustRecipientIgnoresKeyUsage इसे ओवरराइड करता है।"
+  },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "पहचान-प्रदाता-प्रारंभित साइन-इन"

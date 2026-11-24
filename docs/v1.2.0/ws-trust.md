@@ -947,9 +947,16 @@ cipher failure, or a certificate the encryption-recipient check refuses, is
 [paranoid PKI mode](pki.md#paranoid-pki-mode) the certificate must permit
 `keyEncipherment` or `keyAgreement`. A message-signing certificate permits
 `digitalSignature` only, so product mode refuses it once it has been found.
-A certificate with no `keyUsage` may encrypt (RFC 5280). Set
-`wstrustEncryptionCertificate` when the signer's certificate cannot be an
-encryption recipient.
+A certificate with no `keyUsage` may encrypt (RFC 5280). When the signer's
+certificate cannot be an encryption recipient, either set
+`wstrustEncryptionCertificate`, or set `wstrustRecipientIgnoresKeyUsage` to
+`true` (the realm's `wstrust.recipientIgnoresKeyUsage`, off by default) to
+encrypt to that certificate whatever its `keyUsage` says. That waives the
+`keyUsage` check alone: the certificate's validity, its path and its
+revocation are checked as before. It is the one paranoid-PKI check an
+application may waive. A requester whose own certificate permits both
+`digitalSignature` and `keyEncipherment`, stored on its entry, needs no
+waiver.
 
 To encrypt the issued SAML 2.0 assertion, set `wstrustEncryptResponse` to
 `true` and add this as one value of `wstrustEncryptResponseElements`:
@@ -1129,6 +1136,7 @@ The lifetime clamp, the authentication context, the JWT's `jti` and `kid`, and
 | `wstrust.signResponse` | `STS_WSTRUST_SIGN_RESPONSE` | `false` | yes | Whether an answer carries a signed `wsu:Timestamp` and a signature over it and the Body, or what `wstrustSignResponseElements` names. An application's `wstrustSignResponse` overrides it. |
 | `wstrust.responseProtectionOrder` | `STS_WSTRUST_RESPONSE_PROTECTION_ORDER` | `sign-then-encrypt` | yes | The order of signing and encryption when both are on; `encrypt-then-sign` is the other. An application's `wstrustResponseProtectionOrder` overrides it. |
 | `wstrust.encryptSignature` | `STS_WSTRUST_ENCRYPT_SIGNATURE` | `false` | yes | Whether a signed-then-encrypted answer's `ds:Signature` is encrypted too. An application's `wstrustEncryptSignature` overrides it. |
+| `wstrust.recipientIgnoresKeyUsage` | `STS_WSTRUST_RECIPIENT_IGNORES_KEY_USAGE` | `false` | yes | Whether an answer may be encrypted to a certificate whose `keyUsage` permits neither `keyEncipherment` nor `keyAgreement`, such as the request's signing certificate. Only that check is waived. An application's `wstrustRecipientIgnoresKeyUsage` overrides it. |
 
 A SAML token is shaped by the shared `saml.*` settings and the SAML 2.0
 assertion settings — see the

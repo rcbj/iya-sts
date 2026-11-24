@@ -883,6 +883,9 @@ model WsTrustRelyingParty {
   @fromAttr(#{attr: "wstrustEncryptSignature"})
   `encryptSignature`?: string;
 
+  @fromAttr(#{attr: "wstrustRecipientIgnoresKeyUsage"})
+  `recipientIgnoresKeyUsage`?: string;
+
   @fromAttr(#{attr: "wstrustDecryptionCertificate"})
   `decryptionCertificate`?: string;
 
