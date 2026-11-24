@@ -142,10 +142,14 @@ test.
 
 **THE CLOUD ARMOR RULES (`armor.tf`)**, in order: the eight preconfigured WAF
 rule sets (CRS 3.3 — sqli, xss, lfi, rfi, rce, protocolattack,
-scannerdetection, methodenforcement) at sensitivity 1, a per-address
-throttle (`waf_rate_limit` a minute, then 429), the `allowed_cidrs` allow,
-and the default deny — the signatures BEFORE the allow, because an allow
-ends evaluation. Cloud Armor inspects the first 8 KB of a body and passes the
+scannerdetection, methodenforcement) at sensitivity 1, then `allowed_cidrs`
+THROTTLED (under `waf_rate_limit` a minute per address allowed, over it 429),
+and the default deny — the signatures BEFORE the allowlist, because an allow
+ends evaluation. **The throttle and the allowlist are one rule matching the
+allowed ranges**: a throttle's `conform_action` ends evaluation too, and the
+first version's throttle on `*` ahead of a separate allow admitted every
+address under the limit, so the deny-all was never reached. Caught in review;
+`tests/render.tftest.hcl` now refuses any allow or throttle on `*`. Cloud Armor inspects the first 8 KB of a body and passes the
 rest, where AWS's SizeRestrictions_BODY was counted; neither blocks an
 application's large POST.
 

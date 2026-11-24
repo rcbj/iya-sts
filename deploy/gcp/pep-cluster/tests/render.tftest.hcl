@@ -114,13 +114,26 @@ run "cloud_armor_in_front" {
   assert {
     condition = (
       max([for r in google_compute_security_policy.main.rule : r.priority if r.action == "deny(403)" && length(r.match[0].expr) > 0]...) <
-      min([for r in google_compute_security_policy.main.rule : r.priority if r.action == "allow"]...)
+      min([for r in google_compute_security_policy.main.rule : r.priority if r.action == "throttle"]...)
     )
-    error_message = "An allowed address is still held to the signatures: they come before the allow."
+    error_message = "An allowed address is still held to the signatures: they come before the allowlist."
   }
   assert {
-    condition     = one([for r in google_compute_security_policy.main.rule : r.priority if r.action == "throttle"]) < min([for r in google_compute_security_policy.main.rule : r.priority if r.action == "allow"]...)
-    error_message = "The rate limit comes before the allow."
+    # A throttle's conform_action ENDS evaluation, so a throttle or an allow
+    # on `*` ahead of the deny would admit everybody (armor.tf, its header).
+    condition = length([
+      for r in google_compute_security_policy.main.rule : r
+      if contains(["allow", "throttle"], r.action) && length(r.match[0].config) > 0 &&
+      contains(flatten([for c in r.match[0].config : c.src_ip_ranges]), "*")
+    ]) == 0
+    error_message = "No rule lets every address through: only allowed_cidrs are allowed or throttled."
+  }
+  assert {
+    condition = sort(flatten([
+      for r in google_compute_security_policy.main.rule : flatten([for c in r.match[0].config : c.src_ip_ranges])
+      if r.action == "throttle"
+    ])) == sort(var.allowed_cidrs)
+    error_message = "The throttle IS the allowlist: allowed_cidrs, and nothing else."
   }
   assert {
     condition     = one([for r in google_compute_security_policy.main.rule : r.action if r.priority == 2147483647]) == "deny(403)"

@@ -14,10 +14,19 @@
 #              sqli-v33-stable, xss-v33-stable, lfi-v33-stable,
 #              rfi-v33-stable, rce-v33-stable, protocolattack-v33-stable,
 #              scannerdetection-v33-stable, methodenforcement-v33-stable
-#   200      a per-address rate limit (`waf_rate_limit` a minute), then 429
-#   1000+    ALLOW `allowed_cidrs` (ten ranges a rule, Cloud Armor's limit)
+#   1000+    `allowed_cidrs` (ten ranges a rule, Cloud Armor's limit),
+#            THROTTLED: under `waf_rate_limit` a minute per address ALLOWED,
+#            over it 429
 #   2147483647  DENY everything else — the allowlist posture testidp's
 #            CloudFront WAF and AWS's PEP WAF take
+#
+# THE RATE LIMIT AND THE ALLOWLIST ARE ONE RULE, NOT TWO. A throttle rule's
+# `conform_action` ENDS evaluation like any action: a throttle matching every
+# source (`*`) ahead of the allowlist allowed EVERY address under the limit,
+# and the deny-all was never reached — the policy admitted the whole
+# internet. It was written that way first and caught in review (2026-11-23).
+# Matching the throttle on the allowed ranges themselves means an address
+# outside them reaches only the deny.
 #
 # THE SIGNATURES COME BEFORE THE ALLOW, because an allow ends evaluation: an
 # allowed address is still held to them, as on AWS.
@@ -65,37 +74,25 @@ resource "google_compute_security_policy" "main" {
     }
   }
 
-  rule {
-    action      = "throttle"
-    priority    = 200
-    description = "At most waf_rate_limit requests a minute from one address"
-    match {
-      versioned_expr = "SRC_IPS_V1"
-      config {
-        src_ip_ranges = ["*"]
-      }
-    }
-    rate_limit_options {
-      conform_action = "allow"
-      exceed_action  = "deny(429)"
-      enforce_on_key = "IP"
-      rate_limit_threshold {
-        count        = var.waf_rate_limit
-        interval_sec = 60
-      }
-    }
-  }
-
   dynamic "rule" {
     for_each = local.allowed_chunks
     content {
-      action      = "allow"
+      action      = "throttle"
       priority    = 1000 + rule.key
-      description = "allowed_cidrs, part ${rule.key + 1}"
+      description = "allowed_cidrs, part ${rule.key + 1}, at most waf_rate_limit a minute an address"
       match {
         versioned_expr = "SRC_IPS_V1"
         config {
           src_ip_ranges = rule.value
+        }
+      }
+      rate_limit_options {
+        conform_action = "allow"
+        exceed_action  = "deny(429)"
+        enforce_on_key = "IP"
+        rate_limit_threshold {
+          count        = var.waf_rate_limit
+          interval_sec = 60
         }
       }
     }
