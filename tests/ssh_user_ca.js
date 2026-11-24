@@ -627,6 +627,51 @@ async function checkDirectoryWrites(t) {
       .stssshusercertificate || []).length;
   }), '10c. written back by a directory write, it is refused and taken ' +
       'off again: a revocation is permanent');
+  // WHO DID IT, FOR EVERY DOOR: the revocation's audit row names the
+  // ambient request's actor — the management API's token subject (what
+  // the console's calls carry too), the SCIM client — and a job's name.
+  const doors = [
+    { what: '10d. /admin-api', actor: 'api-admin-' + name,
+      source: { req: { headers: {}, socket: {},
+        res: { locals: { apiCaller: { name: 'api-admin-' + name } } } } } },
+    { what: '10e. SCIM', actor: 'scim-client-' + name,
+      source: { req: { headers: {}, socket: {},
+        scimAuth: { principal: 'scim-client-' + name },
+        res: { locals: {} } } } },
+    { what: '10f. a scheduler job', actor: 'job:test.revoke',
+      source: { actor: 'job:test.revoke' } }
+  ];
+  const audit = require('../common/audit');
+  for (let i = 0; i < doors.length; i++) {
+    const door = doors[i];
+    const one = (0x7b000000 + i + (Date.now() % 0xffff)).toString(16);
+    await register.record(realm, [{ serialHex: one,
+      keyType: 'ssh-ed25519', keyFingerprint: 'SHA256:door' + i,
+      ownerSubject: 'urn:uuid:' + uuid, principals: [name],
+      issuedAt: new Date().toISOString(),
+      notAfter: new Date(Date.now() + 600000).toISOString(),
+      caMember: 'sshUserCa', certificate: 'ssh-ed25519-cert-v01 x' + i }]);
+    const current = ldap.objectFor(name);
+    const kept = Object.assign({}, current.entry.attributes || current.entry);
+    Object.keys(kept).forEach(function (key) {
+      if (key.toLowerCase() === 'stssshusercertificate') {
+        delete kept[key];
+      }
+    });
+    audit.withSource(door.source, function () {
+      return ldap.writePerson(current.dn, kept);
+    });
+    let row = null;
+    await settled(async function () {
+      row = audit.list().filter(function (e) {
+        return e.action === 'ssh-user-ca.revoke' && e.detail &&
+          e.detail.serialHex === one;
+      })[0] || null;
+      return !!row;
+    });
+    t.equal(row && row.actor, door.actor, door.what + ': a removal through ' +
+            'it is revoked, and the audit row names who did it');
+  }
   log.debug('Leaving checkDirectoryWrites().');
 }
 

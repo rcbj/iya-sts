@@ -21891,7 +21891,8 @@ function ldapAddNow(req, res, next) {
     const addSource = ldapMailSource(req, addedEntry.dn);
     verifyWrittenMail(addedEntry, {}, addSource);
     noteAccountChange('created', addedEntry.dn, {},
-                      attributeSnapshot(addedEntry));
+                      attributeSnapshot(addedEntry),
+                      { actor: 'ldap:' + boundDnOf(req), door: 'ldap add' });
   }
   // Hot (#627): once per add, and the count is a list built to be logged.
   if (log.debug()) {
@@ -22349,7 +22350,8 @@ server.del('', function (req, res, next) {
     // The one path every door's person delete takes (#351): by its DN, and
     // what they held read and ended as a batch — of one, here, since an LDAP
     // DelRequest names one entry (RFC 4511 section 4.8).
-    removePersonEntry(stored, 'an LDAP delete');
+    removePersonEntry(stored, 'an LDAP delete',
+                      { actor: 'ldap:' + boundDnOf(req) });
   } else {
     entries.delete(normalizeDn(dn));
     // By its DN (#351): a leaf, so nothing else moved, and a DN-less touch
@@ -29983,7 +29985,8 @@ function removePersonEntry(stored, door, options) {
   // actually happened; and with the name carried, because
   // canonicalUsernameOfDn() can no longer read an entry that is not there.
   noteAccountChange('deleted:' + goneName, stored.dn, goneAttributes, {},
-                    { door: door });
+                    Object.assign({ door: door }, options && options.actor
+                      ? { actor: String(options.actor) } : {}));
   // AND OUT OF EVERY GROUP AND ROLE THAT NAMED THEM (2026-11-10, #1612):
   // somebody made again under the username would otherwise be in the same
   // groups and hold the same roles (forgetGroupMemberships(),
