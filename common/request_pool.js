@@ -7958,6 +7958,14 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
   // Nothing a client says about whose directory connections should close may be
   // believed. See LDAP_DROP_HEADER.
   delete headers[LDAP_DROP_HEADER];
+  // THE TWO ANSWER MARKS A WORKER SETS FOR THIS PROCESS (REVOKING_HEADER,
+  // SETTINGS_HEADER) are read only off a worker's answer, never off a
+  // request, so a caller's copy decides nothing today. It is deleted anyway,
+  // as every other `x-sts-` name is: a handler that ever reflected a request
+  // header onto its answer would otherwise let a client make this process
+  // hold an answer for a settings catch-up, or read it as revoking.
+  delete headers[REVOKING_HEADER];
+  delete headers[SETTINGS_HEADER];
   // THE COOKIE HEADER AS THE BROWSER SENT IT, AND THAT IT CAME OVER TLS, so
   // that the worker translates the names by ITS view of the realm's mode
   // (`common/cookie_wire.ts`, A REQUEST A WORKER ANSWERS; GitHub Actions run
