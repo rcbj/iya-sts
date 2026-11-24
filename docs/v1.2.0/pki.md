@@ -104,6 +104,16 @@ refreshed by the operator's deployment; the service cannot make an SSH
 server consult it. Certificate revocation and lost-token reports rebuild
 the KRL, and a scheduler refreshes it periodically.
 
+Tested with OpenSSH 9.2 (`sshd`, `ssh`, `ssh-agent`, `ssh-keygen`) and a
+YubiKey-style PIV card through OpenSC 0.23's PKCS#11 module. sshd reads the
+`RevokedKeys` file again at every sign-in, so replacing the file is the
+whole refresh, and a revoked certificate is still accepted until the file
+is replaced. To use a certificate whose key is on a smart card, give ssh
+the card's public key as well as the certificate, for example
+`ssh -I opensc-pkcs11.so -i card.pub -o CertificateFile=card-cert.pub`.
+Without `-i`, ssh offers the certificate but cannot find the key on the
+card that signs for it.
+
 #### The signature algorithms
 
 `pki.sshUserCaAlgorithms` (`STS_PKI_SSH_USER_CA_ALGORITHMS`) is which
