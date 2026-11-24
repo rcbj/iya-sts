@@ -598,5 +598,7 @@
 "hotp.start": "Configurar un token de códigos de un solo uso",
 "apps.reauthenticate": "Volver a iniciar sesión",
 "apps.reauthenticateNote": "Cada enlace de inicio de sesión le pide que vuelva a iniciar sesión, para que pueda elegir los roles que usará con esa aplicación.",
-"apps.reauthenticateApply": "Aplicar"
+"apps.reauthenticateApply": "Aplicar",
+"noWebCrypto.title": "Este navegador no puede abrir esta página",
+"noWebCrypto.text": "Este navegador no puede ejecutar esta página de forma segura: WebCrypto no está disponible, normalmente porque la página no se abrió mediante HTTPS o porque el navegador es demasiado antiguo."
 }
