@@ -551,6 +551,14 @@
     "en": "f7fb5461e2325e1e",
     "text": "Iniulat na nawala ang isang hardware token at inalis ang mga credential nito"
   },
+  "audit.actions.hardware-token.entry-removed.label": {
+    "en": "b0c30c4d2648746a",
+    "text": "Inalis ang isang hardware token sa entry ng isang tao, at umalis sa rehistro ang kanilang mga credential dito"
+  },
+  "audit.actions.hardware-token.entry-refused.label": {
+    "en": "4cbaa7f21b4532bb",
+    "text": "Tinanggihan ang isang token na isinulat sa entry ng isang tao at ibinalik ayon sa pagkakatala"
+  },
   "audit.actions.oath-token.import.label": {
     "en": "4da380e22dff30ec",
     "text": "Na-import, o tinanggihan, ang PSKC seed file ng isang vendor"
@@ -567,6 +575,10 @@
     "en": "92d69a1a2d848892",
     "text": "Inalis sa inventory ang isang hindi naka-assign na OATH token"
   },
+  "audit.actions.oath-token.retire.label": {
+    "en": "eb17373466c15b1b",
+    "text": "Inalis sa serbisyo ang isang nakatalagang OATH token dahil inalis ito sa entry ng may hawak"
+  },
   "audit.actions.yubiotp.import.label": {
     "en": "6f92401fa557c5e6",
     "text": "Na-import ang isang YubiKey OTP CSV, o tinanggihan"
@@ -582,6 +594,10 @@
   "audit.actions.yubiotp.remove.label": {
     "en": "a4a9aedd10cc2813",
     "text": "Inalis sa inventory ang isang hindi naka-assign na YubiKey OTP"
+  },
+  "audit.actions.yubiotp.retire.label": {
+    "en": "3ec9c9ee79cdc845",
+    "text": "Inalis sa serbisyo ang isang nakatalagang YubiKey OTP dahil inalis ito sa entry ng may hawak"
   },
   "audit.actions.yubiotp.client-add.label": {
     "en": "40676cb783f36097",
@@ -1830,6 +1846,10 @@
   "audit.actions.ssh-user-ca.revoke.label": {
     "en": "45c66d3faec475a4",
     "text": "Binawi ng isang tao ang isa sa kanyang mga SSH user certificate"
+  },
+  "audit.actions.ssh-user-ca.entry-refused.label": {
+    "en": "a3319df6d0e3cfae",
+    "text": "Tinanggihan ang isang SSH user certificate na isinulat sa entry ng isang tao: hindi ito inisyu sa kanila ng CA, o binawi o nag-expire na"
   },
   "audit.actions.did.person.published.label": {
     "en": "36165dbbaae0269a",

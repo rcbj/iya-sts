@@ -3031,6 +3031,9 @@ const SIMPLE_FIELD_ATTRIBUTES = [
   // WS-Federation, WS-Trust, Kerberos: their identifiers and addresses.
   'wsfedRealm', 'wsfedReplyUrl', 'wsfedSignOutUri', 'wstrustAppliesTo',
   'krb5ServicePrincipalName',
+  // WS-Trust's JWT scopes (#2046, rcbj): the simple view is every WS-Trust
+  // field that is not about signing or encrypting a message.
+  'wstrustJwtScope',
   // Shared Signals: the receiver, where its events go and which.
   'ssfReceiverId', 'ssfDeliveryEndpoint', 'ssfAllowedEvents',
   'ssfSigningAlgorithm',

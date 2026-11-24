@@ -1,0 +1,299 @@
+PivApplet, made to attest as a YubiKey 5 does — for the iya-sts client lab's
+virtual PIV card ONLY (#2056, umbrella #2055).
+
+Applied by tests/client-lab/build-cards.sh (`git apply`) to PivApplet
+(https://github.com/arekinath/PivApplet) at the commit the lab's Dockerfile
+pins, 5cb14a9e8d16e92fbad73dcad86a219a9210554f, in the lab image's `cards`
+stage. Never in the product image. Like the file it changes, this patch is
+under the Mozilla Public License 2.0 (REUSE.toml); the patched file keeps
+its licence notice and is marked MODIFIED where it changes.
+
+WHY. Stock PivApplet's attestation is refused by common/piv_attestation.ts
+(the #2056 check): its subject is "PIVApplet Attestation 9A", its issuer is
+always the fixed name "PIVApplet Attestation" whatever the f9 certificate
+says, and it carries no serial (STS-PIV-0007) and no form factor. The lab
+also runs STOCK PivApplet (bin/lab-piv-card stock) so that refusal stays
+asserted. The verifier is not changed for either.
+
+WHAT CHANGES, each field as the YubiKey documentation gives it:
+
+  * subject "CN=YubiKey PIV Attestation <slot>", the slot in lower-case hex
+    — Yubico, "PIV Attestation" (developers.yubico.com/PIV/Introduction/
+    PIV_attestation.html): the attestation certificate's subject;
+  * issuer = the f9 attestation certificate's own subject, copied as DER —
+    the same page: the slot certificate is signed by, and so names as its
+    issuer, the f9 certificate; the fixed name only while f9 still holds
+    its self-signed start certificate;
+  * 1.3.6.1.4.1.41482.3.3, firmware, three octets: 5.4.3 (a released
+    YubiKey 5 firmware; also what GET VERSION answers) — Yubico, "Yubico
+    PIV attestation extensions" (developers.yubico.com/PIV/Introduction/
+    Yubico_extensions.html, the OID arc listed on .../Yubico_Attestation_OID);
+  * 1.3.6.1.4.1.41482.3.7, the serial, a DER INTEGER — the same page. The
+    card's 4-byte serial (GET SERIAL, INS F8) is now positive and of eight
+    decimal digits (0x01000000-0x03FFFFFF), as a YubiKey 5's is, drawn from
+    the card's own RandomData (the platform SecureRandom under jcardsim), so
+    every card has its own;
+  * 1.3.6.1.4.1.41482.3.8, PIN and touch policy, two octets: unchanged (the
+    slot's PIN policy, touch "never" — a virtual card has nothing to touch);
+  * 1.3.6.1.4.1.41482.3.9, the form factor, one octet: 0x01, USB-A Keychain
+    — the same page.
+
+NOT ADDED: 1.3.6.1.4.1.41482.3.10 (FIPS). The verifier reads it, but a
+YubiKey 5 that is not a FIPS model does not carry it, and the FIPS mark of
+a FIPS model is read from the f9 certificate, which the lab makes.
+
+diff --git a/src/net/cooperi/pivapplet/PivApplet.java b/src/net/cooperi/pivapplet/PivApplet.java
+index 9abbfeb..7fcb9b6 100644
+--- a/src/net/cooperi/pivapplet/PivApplet.java
++++ b/src/net/cooperi/pivapplet/PivApplet.java
+@@ -4,6 +4,11 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+  *
+  * Copyright (c) 2017, Alex Wilson <alex@cooperi.net>
++ *
++ * MODIFIED 2026 by Iya CyberSecurity Solutions, LLC, for the iya-sts client
++ * lab's virtual card only (#2056; tests/client-lab/patches/
++ * pivapplet-yubikey-attestation.patch says what and why). This file remains
++ * under the Mozilla Public License 2.0.
+  */
+ 
+ package net.cooperi.pivapplet;
+@@ -115,7 +120,7 @@ public class PivApplet extends Applet
+ 	};
+ 
+ 	private static final byte[] YKPIV_VERSION = {
+-	    (byte)5, (byte)4, (byte)0
++	    (byte)5, (byte)4, (byte)3	/* MODIFIED (#2056): a YubiKey 5 */
+ 	};
+ 
+ 	/* Standard PIV commands we support. */
+@@ -385,7 +390,12 @@ public class PivApplet extends Applet
+ 
+ 		serial = new byte[4];
+ 		randData.generateData(serial, (short)0, (short)4);
+-		serial[0] |= (byte)0x80;
++		/*
++		 * MODIFIED (#2056): a positive serial of eight decimal digits
++		 * (0x01000000 to 0x03FFFFFF), as a YubiKey 5's is, from the
++		 * card's own RandomData, so every card has its own.
++		 */
++		serial[0] = (byte)((byte)(serial[0] & (byte)0x03) | (byte)0x01);
+ 
+ 		certSerial = new byte[16];
+ 		fascn = new byte[25];
+@@ -3260,6 +3270,111 @@ public class PivApplet extends Applet
+ 	    'A', 't', 't', 'e', 's', 't', 'a', 't', 'i', 'o', 'n'
+ 	};
+ 
++	/* MODIFIED (#2056): the subject and form factor a YubiKey writes. */
++	private static final byte[] YK_CN_STRING = {
++	    'Y', 'u', 'b', 'i', 'K', 'e', 'y', ' ', 'P', 'I', 'V', ' ',
++	    'A', 't', 't', 'e', 's', 't', 'a', 't', 'i', 'o', 'n'
++	};
++	private static final byte YK_FORM_FACTOR = (byte)0x01;
++
++	/* MODIFIED (#2056): the last element's header and the f9 subject. */
++	private short derHdr;
++	private short f9SubjectLen;
++
++	/*
++	 * MODIFIED (#2056): the content length of the DER element whose tag
++	 * is at d[off], with its header length in derHdr, or -1 when it does
++	 * not fit before end (one- and two-byte long forms only, which is
++	 * every certificate a PIV object holds).
++	 */
++	private short
++	derLength(byte[] d, short off, short end)
++	{
++		if ((short)(off + 2) > end)
++			return ((short)-1);
++		final short b = (short)(d[(short)(off + 1)] & 0xFF);
++		short len;
++		if (b < (short)0x80) {
++			derHdr = 2;
++			len = b;
++		} else if (b == (short)0x81 && (short)(off + 3) <= end) {
++			derHdr = 3;
++			len = (short)(d[(short)(off + 2)] & 0xFF);
++		} else if (b == (short)0x82 && (short)(off + 4) <= end) {
++			derHdr = 4;
++			len = (short)((short)((d[(short)(off + 2)] & 0xFF) << 8) |
++			    (short)(d[(short)(off + 3)] & 0xFF));
++		} else {
++			return ((short)-1);
++		}
++		if (len < 0 || (short)(off + derHdr + len) > end ||
++		    (short)(off + derHdr + len) < off)
++			return ((short)-1);
++		return (len);
++	}
++
++	/*
++	 * MODIFIED (#2056): the offset of the subject Name in the f9
++	 * certificate object (70 <Certificate> ...), with its length in
++	 * f9SubjectLen, or -1 when there is no certificate to read.
++	 */
++	private short
++	findF9Subject()
++	{
++		final File f = slots[SLOT_F9].cert;
++		if (f == null || f.data == null || f.len < (short)2 ||
++		    f.data[0] != (byte)0x70)
++			return ((short)-1);
++		final byte[] d = f.data;
++		final short end = f.len;
++		short off = (short)0;
++		short len;
++		/* into the 70 wrapper, the Certificate, the TBSCertificate */
++		for (byte i = 0; i < 3; ++i) {
++			len = derLength(d, off, end);
++			if (len < 0 || (i > 0 && d[off] != ASN1_SEQ))
++				return ((short)-1);
++			off += derHdr;
++		}
++		/* skip the version (if any), serial, signature, issuer, validity */
++		if (d[off] == ASN1_APP_0) {
++			len = derLength(d, off, end);
++			if (len < 0)
++				return ((short)-1);
++			off += (short)(derHdr + len);
++		}
++		for (byte i = 0; i < 4; ++i) {
++			len = derLength(d, off, end);
++			if (len < 0)
++				return ((short)-1);
++			off += (short)(derHdr + len);
++		}
++		if (d[off] != ASN1_SEQ)
++			return ((short)-1);
++		len = derLength(d, off, end);
++		if (len < 0)
++			return ((short)-1);
++		f9SubjectLen = (short)(derHdr + len);
++		return (off);
++	}
++
++	private void
++	writeHexLower(byte val)
++	{
++		final byte lowNybble = (byte)(val & (byte)0x0F);
++		final byte highNybble = (byte)((byte)(val >> 4) & (byte)0xF);
++		wtlv.writeByte(lowerHexDigit(highNybble));
++		wtlv.writeByte(lowerHexDigit(lowNybble));
++	}
++
++	private static byte
++	lowerHexDigit(byte nybble)
++	{
++		if (nybble <= (byte)9)
++			return ((byte)('0' + nybble));
++		return ((byte)('a' + (byte)(nybble - (byte)0xA)));
++	}
++
+ 	private void
+ 	writeHex(byte val)
+ 	{
+@@ -3343,19 +3458,31 @@ public class PivApplet extends Applet
+ //#endif
+ 		wtlv.pop();
+ 
+-		/* Issuer */
+-		wtlv.push(ASN1_SEQ);
+-		wtlv.push(ASN1_SET);
+-		wtlv.push(ASN1_SEQ);
+-		wtlv.push(ASN1_OID);
+-		wtlv.write(OID_CN, (short)0, (short)OID_CN.length);
+-		wtlv.pop();
+-		wtlv.push(ASN1_UTF8STRING);
+-		wtlv.write(CN_STRING, (short)0, (short)CN_STRING.length);
+-		wtlv.pop();
+-		wtlv.pop();
+-		wtlv.pop();
+-		wtlv.pop();
++		/*
++		 * Issuer. MODIFIED (#2056): the f9 certificate's own subject,
++		 * copied as DER, as a YubiKey writes it; the fixed name only
++		 * when f9 holds no readable certificate (its self-signed start).
++		 */
++		final short f9Subject = (slot.id != (byte)0xF9) ?
++		    findF9Subject() : (short)-1;
++		if (f9Subject >= (short)0) {
++			wtlv.write(slots[SLOT_F9].cert.data, f9Subject,
++			    f9SubjectLen);
++		} else {
++			wtlv.push(ASN1_SEQ);
++			wtlv.push(ASN1_SET);
++			wtlv.push(ASN1_SEQ);
++			wtlv.push(ASN1_OID);
++			wtlv.write(OID_CN, (short)0, (short)OID_CN.length);
++			wtlv.pop();
++			wtlv.push(ASN1_UTF8STRING);
++			wtlv.write(CN_STRING, (short)0,
++			    (short)CN_STRING.length);
++			wtlv.pop();
++			wtlv.pop();
++			wtlv.pop();
++			wtlv.pop();
++		}
+ 
+ 		/* Validity */
+ 		wtlv.push(ASN1_SEQ);
+@@ -3377,10 +3504,18 @@ public class PivApplet extends Applet
+ 		wtlv.write(OID_CN, (short)0, (short)OID_CN.length);
+ 		wtlv.pop();
+ 		wtlv.push(ASN1_UTF8STRING);
+-		wtlv.write(CN_STRING, (short)0, (short)CN_STRING.length);
++		/*
++		 * MODIFIED (#2056): "YubiKey PIV Attestation <slot>", the slot in
++		 * lower-case hex, as a YubiKey writes it.
++		 */
+ 		if (slot.id != (byte)0xF9) {
++			wtlv.write(YK_CN_STRING, (short)0,
++			    (short)YK_CN_STRING.length);
+ 			wtlv.writeByte((byte)' ');
+-			writeHex(slot.id);
++			writeHexLower(slot.id);
++		} else {
++			wtlv.write(CN_STRING, (short)0,
++			    (short)CN_STRING.length);
+ 		}
+ 		wtlv.pop();
+ 		wtlv.pop();
+@@ -3493,6 +3628,19 @@ public class PivApplet extends Applet
+ 		wtlv.pop();
+ 		wtlv.pop();
+ 
++		/* MODIFIED (#2056): .3.7, the serial, a DER INTEGER. */
++		wtlv.push(ASN1_SEQ);
++		wtlv.push(ASN1_OID);
++		wtlv.write(OID_YUBICOX, (short)0, (short)OID_YUBICOX.length);
++		wtlv.writeByte((byte)0x07);
++		wtlv.pop();
++		wtlv.push(ASN1_OCTETSTRING);
++		wtlv.push(ASN1_INTEGER);
++		wtlv.write(serial, (short)0, (short)serial.length);
++		wtlv.pop();
++		wtlv.pop();
++		wtlv.pop();
++
+ 		wtlv.push(ASN1_SEQ);
+ 		wtlv.push(ASN1_OID);
+ 		wtlv.write(OID_YUBICOX, (short)0, (short)OID_YUBICOX.length);
+@@ -3504,6 +3652,17 @@ public class PivApplet extends Applet
+ 		wtlv.pop();
+ 		wtlv.pop();
+ 
++		/* MODIFIED (#2056): .3.9, the form factor, USB-A keychain. */
++		wtlv.push(ASN1_SEQ);
++		wtlv.push(ASN1_OID);
++		wtlv.write(OID_YUBICOX, (short)0, (short)OID_YUBICOX.length);
++		wtlv.writeByte((byte)0x09);
++		wtlv.pop();
++		wtlv.push(ASN1_OCTETSTRING);
++		wtlv.writeByte(YK_FORM_FACTOR);
++		wtlv.pop();
++		wtlv.pop();
++
+ 		wtlv.pop();
+ 		wtlv.pop();
+ 

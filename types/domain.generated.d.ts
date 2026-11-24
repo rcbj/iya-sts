@@ -233,6 +233,11 @@ declare namespace IyaDomain {
     passwordMustChange?: boolean;
     lockedSince?: string;
     userCertificate?: string[];
+    smimeCertificate?: string[];
+    sshUserCertificate?: string[];
+    hardwareTokens?: string[];
+    oathTokens?: string[];
+    yubiOtpTokens?: string[];
     krb5KeyInfo?: string;
     openPgpKey?: string;
     openPgpFingerprint?: string;

@@ -694,6 +694,12 @@ const ACTIONS = [
            'one who held it' },
   { action: 'hardware-token.lost', category: 'directory',
     label: 'A hardware token was reported lost and its credentials retired' },
+  { action: 'hardware-token.entry-removed', category: 'directory',
+    label: 'A hardware token was removed from a person\'s entry, ' +
+           'and their credentials on it left the register' },
+  { action: 'hardware-token.entry-refused', category: 'directory',
+    label: 'A token written onto a person\'s entry was refused and ' +
+           'put back as recorded' },
   // THE OATH TOKEN INVENTORY (#1955 P4): a PSKC seed file imported (or
   // refused), a token assigned or claimed, a claim refused, and an
   // unassigned token removed. `common/oath_tokens.ts` writes all four.
@@ -705,6 +711,9 @@ const ACTIONS = [
     label: 'A person\'s claim of an imported OATH token was refused' },
   { action: 'oath-token.remove', category: 'directory',
     label: 'An unassigned OATH token was removed from the inventory' },
+  { action: 'oath-token.retire', category: 'directory',
+    label: 'An assigned OATH token was retired because it was ' +
+           'removed from its holder\'s entry' },
   // THE YUBIKEY OTP INVENTORY (#1955 P5). `common/yubiotp_store.ts` writes
   // each of these.
   { action: 'yubiotp.import', category: 'directory',
@@ -716,6 +725,9 @@ const ACTIONS = [
            'refused' },
   { action: 'yubiotp.remove', category: 'directory',
     label: 'An unassigned YubiKey OTP was removed from the inventory' },
+  { action: 'yubiotp.retire', category: 'directory',
+    label: 'An assigned YubiKey OTP was retired because it was ' +
+           'removed from its holder\'s entry' },
   { action: 'yubiotp.client-add', category: 'directory',
     label: 'A YK-VAL client was created' },
   { action: 'yubiotp.client-remove', category: 'directory',
@@ -1705,6 +1717,10 @@ const ACTIONS = [
     label: 'A person was issued an SSH user certificate' },
   { action: 'ssh-user-ca.revoke', category: 'authentication',
     label: 'A person revoked one of their SSH user certificates' },
+  { action: 'ssh-user-ca.entry-refused', category: 'authentication',
+    label: 'An SSH user certificate written onto a person\'s entry ' +
+           'was refused: the CA did not issue it to them, or it is ' +
+           'revoked or expired' },
   // #1291: a person's own did:web, published from the user portal.
   { action: 'did.person.published', category: 'authentication',
     label: 'A person published a did:web of their own' },
@@ -2342,7 +2358,8 @@ let actorSessionResolver = null;
 const sources = new AsyncLocalStorage();
 
 // Run `fn` with `source` ambient: `{ req }` for an HTTP request, or
-// `{ address }` for a raw socket. Returns what `fn` returns.
+// `{ address }` for a raw socket, or `{ actor }` for a scheduler job's body
+// (#2050, `currentActor()`). Returns what `fn` returns.
 /**
  * Runs a function with a source ambient, so every row written inside it carries
  * that source's address.
@@ -2465,6 +2482,51 @@ function actorSessionOfRequest(req) {
     log.debug("Leaving actorSessionOfRequest(). Threw.");
     return '';
   }
+}
+
+// WHO IS DOING THE WORK THIS CODE RUNS INSIDE (#2050), for a row written
+// as a CONSEQUENCE of it — a certificate revoked because a write took it off
+// an entry — where the code that writes the row was handed no request. The
+// same answer `recordHttp()` gives the request's own row: the management
+// and account APIs' token subject (`res.locals.apiCaller`, which the
+// console's calls to `/admin-api` carry too), SCIM's authenticated client
+// (`req.scimAuth.principal`, the actor of SCIM's own rows), and otherwise
+// the resolver's signed-in user. A job's source names the job
+// (`cluster/scheduler.ts`, `job:<id>`). '' outside any source, or for a
+// request nobody authenticated.
+/**
+ * The actor of the ambient source; exported as `currentActor`.
+ *
+ * @returns the actor, or ''
+ */
+function ambientActor() {
+  log.debug("Entering ambientActor().");
+  const source = sources.getStore();
+  if (!source) {
+    log.debug("Leaving ambientActor(). No source.");
+    return '';
+  }
+  if (source.actor) {
+    log.debug("Leaving ambientActor(). The source names one.");
+    return String(source.actor);
+  }
+  const req = source.req;
+  if (!req) {
+    log.debug("Leaving ambientActor(). A socket's source.");
+    return '';
+  }
+  const res = req.res;
+  const caller = res && res.locals && res.locals.apiCaller;
+  if (caller && caller.name) {
+    log.debug("Leaving ambientActor(). The API's caller.");
+    return String(caller.name);
+  }
+  if (req.scimAuth && req.scimAuth.principal) {
+    log.debug("Leaving ambientActor(). The SCIM client.");
+    return String(req.scimAuth.principal);
+  }
+  log.debug("Leaving ambientActor(). The resolver's.");
+  return actorOfRequest(req);
 }
 
 function actorOfRequest(req) {
@@ -3678,6 +3740,7 @@ module.exports = {
   withSource: withSource,
   currentAddress: ambientAddress,
   currentRequest: ambientRequest,
+  currentActor: ambientActor,
   list: list,
   localEvents: localEvents,
   authenticationEventsFor: authenticationEventsFor,

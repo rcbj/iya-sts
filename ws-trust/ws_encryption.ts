@@ -1365,8 +1365,23 @@ export = class WsEncryption {
       }
       cur = cur.parentNode;
     }
+    // THE SERIALIZER DECLARES THE ELEMENT'S OWN PREFIX, AND ITS ATTRIBUTES',
+    // ITSELF (#2046): a declaration of either copied here as well wrote it
+    // twice — `<wst:Lifetime xmlns:wst=".." xmlns:wst="..">` — so an
+    // element whose prefix an ancestor declared was encrypted as text that
+    // is not well-formed XML, and a receiver that parses what it decrypts
+    // strictly (WSS4J) could not read it. Every other in-scope declaration
+    // is still copied, for a prefix only text uses (an xsi:type value).
+    const own = {};
+    own[clone.prefix ? 'xmlns:' + clone.prefix : 'xmlns'] = true;
+    const rootAttrs = clone.attributes || [];
+    for (let i = 0; i < rootAttrs.length; i++) {
+      if (rootAttrs[i].prefix && rootAttrs[i].prefix !== 'xmlns') {
+        own['xmlns:' + rootAttrs[i].prefix] = true;
+      }
+    }
     Object.keys(declared).forEach(function (name) {
-      if (!clone.getAttribute(name)) {
+      if (!own[name] && !clone.hasAttribute(name)) {
         clone.setAttribute(name, declared[name]);
       }
     });

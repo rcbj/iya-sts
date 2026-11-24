@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6059** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6071** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 228
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 259
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 177
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 179
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 35
@@ -85,12 +85,12 @@ is an ordinary outcome.
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 16
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 53
-* [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 13
+* [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 17
 * [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 36
 * [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 32
 * [PIV key attestation (`STS-PIV`)](#sts-piv) — 30
-* [OpenSSH user certificates (`STS-SSHCA`)](#sts-sshca) — 5
-* [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 33
+* [OpenSSH user certificates (`STS-SSHCA`)](#sts-sshca) — 10
+* [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 34
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 258
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 140
@@ -3664,6 +3664,8 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0221` | A person import created the entry but could not write the credentials the file carried. The person is there without them. | none (a console or management API refusal, HTTP 400) |
 | `STS-LDAP-0222` | Something a deleted person held outside their entry, under their name or DN (devices, post-login progress, mail preferences, federation blocks, GNAP approvals, the identity register, pending enrolments, rich authorization Allows, the risk standing; the RISC register row, moved out of the name when it is taken again), could not be forgotten, so a person made again under the name may inherit it. The delete itself stands. | — |
 | `STS-LDAP-0223` | An LDAP operation's handler threw after the cluster read barrier it waited for (active-active), where the socket's own handling can no longer catch it: the client is answered operationsError (1) rather than left without a result (run #510). | RFC 4511 section 4.1.9 |
+| `STS-LDAP-0224` | A handler for a person's credential attribute was refused by the entry observer: the attribute is not one of the five it observes, or the handler offers no changed(); that attribute's index is not kept in step with the entries (#2050, #2051). | none — logged |
+| `STS-LDAP-0225` | The handler of a person's credential attribute threw on a write of their entry; the write stands, and the index of that attribute may be behind the entry until its job catches it up (#2050, #2051). | none — logged |
 
 ## STS-ATTR
 
@@ -5031,6 +5033,10 @@ Raised from: common/hardware_tokens.ts, mgmt-api/hardware_tokens_api.ts, portal/
 | `STS-HWTOKEN-0011` | A passkey was written and the hardware token register could not record the token its attestation named; the key stands, and the token is recorded when it is next registered (#1955). | — |
 | `STS-HWTOKEN-0012` | A hardware token act named an action that is not one of the page's (#1955). | HTTP 400 (the page with the sentence) |
 | `STS-HWTOKEN-0013` | The hardware token list or the lost-key act failed with an unexpected error at /admin-api; the log line has the stack (#1955). | HTTP 500 |
+| `STS-HWTOKEN-0014` | The directory offered the token entries library no locate(), locateAsync(), write() or holdersAsync(), so nothing was installed: no hardware, OATH or YubiKey OTP token is written onto its holder's entry until one is, and every index write is marked pending (#2051). | none — logged |
+| `STS-HWTOKEN-0015` | A token's value could not be written onto its holder's entry (stsHardwareToken, stsOathToken or stsYubiOtpToken); the index row is marked pending and the hardware-tokens.entries job writes it again (#2051). | none — logged |
+| `STS-HWTOKEN-0016` | The hardware-tokens.entries job, or the manual rebuild of the token indexes from the entries, could not read a store or the directory; nothing more was done this run (#2051). | none — logged |
+| `STS-HWTOKEN-0017` | A hardware, OATH or YubiKey OTP token value written onto a person's entry by a door other than its own module was not what the index recorded for them, so it was put back as recorded or taken off, and audited with the writer: a serial is recorded only from attestation and a token assigned only by its inventory (#2051). | none — audited |
 
 ## STS-OATH
 
@@ -5170,6 +5176,11 @@ Raised from: common/ssh_user_ca.ts, common/ssh_issued.ts, common/pki.js, pki/pki
 | `STS-SSHCA-0003` | An SSH security-key attestation was sent without the challenge ssh-keygen was given, which the attestation signed, so it could not be verified (#1955). | HTTP 400 |
 | `STS-SSHCA-0004` | An administrator's SSH certificate act named nobody of the realm's directory (#1955). | HTTP 404 |
 | `STS-SSHCA-0005` | A person's SSH user certificates could not be read or revoked: the register threw (#1955). | HTTP 500 or 503 |
+| `STS-SSHCA-0006` | The directory offered the SSH user certificate register no locate() or write(), so nothing was installed: no certificate is written onto its holder's entry (stsSshUserCertificate) until one is, and the register still holds and publishes every certificate (#2050). | none — logged |
+| `STS-SSHCA-0007` | A person's entry could not be brought in step with the SSH user certificates the register holds for them: the certificate was issued or revoked in the register, which is authoritative, and the ssh-user-ca.entries job tries the entry again (#2050). | none — logged |
+| `STS-SSHCA-0008` | The ssh-user-ca.entries job could not read the register of issued SSH user certificates, or record what it found, so no entry was brought in step this run; the next run tries again (#2050). | none — logged |
+| `STS-SSHCA-0009` | An SSH user certificate written onto a person's entry by a door other than the CA was refused and taken off again: its serial was never issued by this realm, was issued to somebody else, was revoked (a revocation is permanent) or has expired, or the value differs from what the CA issued. Audited with the writer (#2050). | none — audited |
+| `STS-SSHCA-0010` | An SSH user certificate was removed from its holder's entry, which revokes it, and the revocation could not be recorded or the KRL rebuilt; the entry no longer names it and the next KRL build tries again (#2050). | none — logged |
 
 ## STS-OPENPGP
 
@@ -5212,6 +5223,7 @@ Raised from: common/openpgp_keys.ts, common/crypto.js (section 19), portal/accou
 | `STS-OPENPGP-0031` | A post-quantum OpenPGP key was registered at the post-login mail-encryption activity, and the classical key it replaced could not be kept beside it on the person's entry (#2009, D3): the new key stands and the classical one is replaced, as a registration replaces a key. | none (a log line; the registration succeeds) |
 | `STS-OPENPGP-0032` | The job post-login.mail-classical-retire could not remove a classical OpenPGP key whose kept time had passed (#2009, D3). It is already left out of the Web Key Directory and every page, and the next run tries again. | none (a log line and the run's result) |
 | `STS-OPENPGP-0033` | An OpenPGP key registered where a post-quantum one is asked for (the post-login mail-encryption activity, #2009) has an encryption key that is not one of RFC 9980's ML-KEM composites. Refused before its proof is checked; nothing is spent or written. | none (HTTP 400 from /authn-api) |
+| `STS-OPENPGP-0034` | A userSMIMECertificate value written onto a person's entry holds no certificate this service can read, so it was taken off again and audited with the writer: an S/MIME certificate on the entry is the master mail is encrypted to (#2050). | none — audited |
 
 ## STS-SVCACCT
 

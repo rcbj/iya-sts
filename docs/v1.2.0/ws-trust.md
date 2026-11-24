@@ -804,6 +804,12 @@ returns a fault.** Nothing is issued, and the clear response is not sent.
 The fault itself stays in the clear, in both modes. Development no longer
 answers in clear when encryption was required and could not be done.
 
+* **How a request's key may be wrapped.** RSA-OAEP over SHA-256
+  (`http://www.w3.org/2009/xmlenc11#rsa-oaep` with a SHA-256 digest and
+  MGF1-SHA-256) is opened in every mode. A key wrapped with OAEP over SHA-1
+  — `rsa-oaep-mgf1p`, Apache WSS4J's default — is refused unless
+  `crypto.allowLegacyHashes` is on (`wsse:FailedCheck`,
+  `STS-WSTRUST-0075`), so configure the client for SHA-256.
 * **Which ciphertext a request may carry.** The shapes opened are an
   `xenc:EncryptedData` of type Element or Content, or a WS-Security 1.1
   `EncryptedHeader`, its key in its own `KeyInfo` or in an
@@ -1001,9 +1007,15 @@ reference, so an answer it would sign is `STS-WSTRUST-0086` too.
   verifies and then decrypts.
 
 **The presets.** The console's *Body* and *Header* checkboxes on an
-application's WS-Trust tab write these expressions into the maps and take
-them out again. They store nothing of their own: a box is ticked exactly when
-its expressions are in the map.
+application's WS-Trust tab write these expressions into the maps. Ticking a
+box replaces the map with the presets of the boxes ticked; unticking the
+map's last box puts back what it held before, while the page is open, and
+otherwise takes out only that box's expressions. Putting a map to use (a box
+ticked, the XPath builder's list added, a value typed into an empty map)
+turns its switch on, and giving it back turns the switch back. The boxes
+store nothing of their own: a box is ticked exactly when its expressions are
+in the map. [Configuring WS-Trust](configure-ws-trust.md#message-protection-in-the-console)
+describes the tab.
 
 | Preset | Encryption maps | Signing maps |
 |---|---|---|
@@ -1014,13 +1026,21 @@ its expressions are in the map.
 against `/sts/cert`, decrypts and verifies it in both orders and with the
 signature encrypted, and its signed requests (with or without its
 `InclusiveNamespaces` prefix list) are accepted and held to the presets.
+Requests WSS4J signs and encrypts are accepted in either order: AES-256-GCM,
+RSA-OAEP over SHA-256, a header block as an `EncryptedHeader`, the
+recipient named by issuer and serial, a direct reference, its SKI or its
+thumbprint. Every combination of the eight Body and Header boxes, under
+SOAP 1.1 and 1.2, and custom expressions in all five fields are exchanged
+with WSS4J and opened and verified by it, in product mode
+(`tests/wstrust_protection_matrix.js`).
 While answers are signed, each output's `ResponseProtection` offers
 `sp:SignedParts` and `sp:SignedElements`, both optional.
 
 The XPath subset includes `not(…)` over its other predicates, which is what
 the Header preset needs. A `not()` inside a `not()` is `STS-WSTRUST-0079`.
-The console's *XPath builder* writes an expression for an element you click
-in a sample message, with these prefixes.
+The console's *XPath builder*, opened from the card of each field that holds
+expressions, writes an expression for an element you click in a sample
+message, with these prefixes, and adds the list you build to that field.
 
 ### Not implemented
 

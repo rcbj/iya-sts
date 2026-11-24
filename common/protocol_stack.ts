@@ -345,6 +345,12 @@ class ProtocolStack {
     // write, so it is built beside the credential store, and everything it
     // calls back (credentials, enrolment, SSF, logout) is reached at the
     // moment of use.
+    // #2051: a person's hardware, OATH and YubiKey OTP tokens on their
+    // entry, the master the register and the inventories index. A library
+    // over the directory's slot (`ldap_server.js` fills it at 21), which
+    // the three token modules reach at the moment of use.
+    this.build('common/token_entries', require('./token_entries'),
+               'TokenEntries');
     this.build('common/hardware_tokens', require('./hardware_tokens'),
                'HardwareTokens');
     // #1955 P3: the per-realm SSH user CA's policy and hardware-token
@@ -1404,6 +1410,13 @@ class ProtocolStack {
     // not require the scheduler; this is where the scheduler is in hand.
     require('./yubiotp_store').installScheduler(jobScheduler);
     require('./ssh_user_ca').installScheduler(jobScheduler);
+    // #2050: the SSH user certificates on their holders' entries, kept in
+    // step with the register (`ssh-user-ca.entries`), for the same reason.
+    require('./ssh_issued').installScheduler(jobScheduler);
+    // #2051: the tokens on their holders' entries (`hardware-tokens.entries`)
+    // and the manual rebuild of their indexes from them, for the same
+    // reason.
+    require('./token_entries').installScheduler(jobScheduler);
     require('./admin_stats').ensureTokenPurgeJob(jobScheduler);
     require('../persistence/persistence_minted')
       .ensureTombstoneJob(jobScheduler);

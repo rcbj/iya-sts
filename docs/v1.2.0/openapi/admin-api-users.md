@@ -988,6 +988,25 @@ Scope: `admin:read`.
 | `(shape 2).page.mfa.certificates.errors[]` | string |  |  |
 | `(shape 2).page.mfa.certificates.ok` | boolean |  |  |
 | `(shape 2).page.mfa.certificates.rule` | string |  |  |
+| `(shape 2).page.mfa.certificates.smimeCertificates` | list |  |  |
+| `(shape 2).page.mfa.certificates.smimeCertificates[].expired` | boolean |  |  |
+| `(shape 2).page.mfa.certificates.smimeCertificates[].issuer` | string |  |  |
+| `(shape 2).page.mfa.certificates.smimeCertificates[].notAfter` | string |  |  |
+| `(shape 2).page.mfa.certificates.smimeCertificates[].notBefore` | string |  |  |
+| `(shape 2).page.mfa.certificates.smimeCertificates[].readable` | boolean |  |  |
+| `(shape 2).page.mfa.certificates.smimeCertificates[].serialNumber` | string |  |  |
+| `(shape 2).page.mfa.certificates.smimeCertificates[].sha256` | string |  |  |
+| `(shape 2).page.mfa.certificates.smimeCertificates[].subject` | string |  |  |
+| `(shape 2).page.mfa.certificates.sshCertificates` | list |  |  |
+| `(shape 2).page.mfa.certificates.sshCertificates[].authority` | string | yes | `classical`, or `ssh-mldsa-65` for a certificate the ML-DSA authority signed. |
+| `(shape 2).page.mfa.certificates.sshCertificates[].certificate` | string | yes | The certificate in OpenSSH text form; empty for one issued before #2050, whose text was never kept. |
+| `(shape 2).page.mfa.certificates.sshCertificates[].issuedAt` | string | yes |  |
+| `(shape 2).page.mfa.certificates.sshCertificates[].keyFingerprint` | string | yes | The certified key's SHA256 fingerprint. |
+| `(shape 2).page.mfa.certificates.sshCertificates[].keyType` | string | yes | The certified key's OpenSSH type. |
+| `(shape 2).page.mfa.certificates.sshCertificates[].notAfter` | string | yes |  |
+| `(shape 2).page.mfa.certificates.sshCertificates[].principals` | list | yes |  |
+| `(shape 2).page.mfa.certificates.sshCertificates[].principals[]` | string |  |  |
+| `(shape 2).page.mfa.certificates.sshCertificates[].serialHex` | string | yes | The serial, lower-case hex. |
 | `(shape 2).page.mfa.certificates.user` | string |  |  |
 | `(shape 2).page.mfa.devices` | object |  |  |
 | `(shape 2).page.mfa.devices.devices` | list |  |  |
@@ -1890,6 +1909,25 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `rule` | string |  |  |
 | `sha256` | string |  |  |
+| `smimeCertificates` | list |  |  |
+| `smimeCertificates[].expired` | boolean |  |  |
+| `smimeCertificates[].issuer` | string |  |  |
+| `smimeCertificates[].notAfter` | string |  |  |
+| `smimeCertificates[].notBefore` | string |  |  |
+| `smimeCertificates[].readable` | boolean |  |  |
+| `smimeCertificates[].serialNumber` | string |  |  |
+| `smimeCertificates[].sha256` | string |  |  |
+| `smimeCertificates[].subject` | string |  |  |
+| `sshCertificates` | list |  |  |
+| `sshCertificates[].authority` | string | yes | `classical`, or `ssh-mldsa-65` for a certificate the ML-DSA authority signed. |
+| `sshCertificates[].certificate` | string | yes | The certificate in OpenSSH text form; empty for one issued before #2050, whose text was never kept. |
+| `sshCertificates[].issuedAt` | string | yes |  |
+| `sshCertificates[].keyFingerprint` | string | yes | The certified key's SHA256 fingerprint. |
+| `sshCertificates[].keyType` | string | yes | The certified key's OpenSSH type. |
+| `sshCertificates[].notAfter` | string | yes |  |
+| `sshCertificates[].principals` | list | yes |  |
+| `sshCertificates[].principals[]` | string |  |  |
+| `sshCertificates[].serialHex` | string | yes | The serial, lower-case hex. |
 | `user` | string |  |  |
 
 **400**: The operation was refused; `errors` says why and nothing changed.
@@ -1913,6 +1951,25 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `rule` | string |  |  |
 | `sha256` | string |  |  |
+| `smimeCertificates` | list |  |  |
+| `smimeCertificates[].expired` | boolean |  |  |
+| `smimeCertificates[].issuer` | string |  |  |
+| `smimeCertificates[].notAfter` | string |  |  |
+| `smimeCertificates[].notBefore` | string |  |  |
+| `smimeCertificates[].readable` | boolean |  |  |
+| `smimeCertificates[].serialNumber` | string |  |  |
+| `smimeCertificates[].sha256` | string |  |  |
+| `smimeCertificates[].subject` | string |  |  |
+| `sshCertificates` | list |  |  |
+| `sshCertificates[].authority` | string | yes | `classical`, or `ssh-mldsa-65` for a certificate the ML-DSA authority signed. |
+| `sshCertificates[].certificate` | string | yes | The certificate in OpenSSH text form; empty for one issued before #2050, whose text was never kept. |
+| `sshCertificates[].issuedAt` | string | yes |  |
+| `sshCertificates[].keyFingerprint` | string | yes | The certified key's SHA256 fingerprint. |
+| `sshCertificates[].keyType` | string | yes | The certified key's OpenSSH type. |
+| `sshCertificates[].notAfter` | string | yes |  |
+| `sshCertificates[].principals` | list | yes |  |
+| `sshCertificates[].principals[]` | string |  |  |
+| `sshCertificates[].serialHex` | string | yes | The serial, lower-case hex. |
 | `user` | string |  |  |
 
 ## POST /admin-api/users/add-service-account-owner
@@ -2387,7 +2444,7 @@ Scope: `admin:write`.
 
 **The certificates stored on one person's entry (userCertificate)**
 
-Each certificate stored in the person's `userCertificate`: the SHA-256 of its DER, its subject, issuer, serial and validity. A certificate from an outside certificate authority signs its holder in only as the one entry storing it (#1061).
+Each certificate stored in the person's `userCertificate`: the SHA-256 of its DER, its subject, issuer, serial and validity. A certificate from an outside certificate authority signs its holder in only as the one entry storing it (#1061). Beside them, the person's S/MIME certificates (`userSMIMECertificate`, described the same way) and the live SSH user certificates the realm's SSH user CA issued them (`stsSshUserCertificate`), neither of which signs anybody in (#2050).
 
 **Mirrors** `GET /admin/users` on the admin console.
 
@@ -2420,6 +2477,25 @@ Scope: `admin:read`.
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 | `rule` | string |  |  |
+| `smimeCertificates` | list |  | The person's S/MIME certificates (userSMIMECertificate), described as the stored ones are (#2050). |
+| `smimeCertificates[].expired` | boolean |  |  |
+| `smimeCertificates[].issuer` | string |  |  |
+| `smimeCertificates[].notAfter` | string |  |  |
+| `smimeCertificates[].notBefore` | string |  |  |
+| `smimeCertificates[].readable` | boolean |  |  |
+| `smimeCertificates[].serialNumber` | string |  |  |
+| `smimeCertificates[].sha256` | string |  |  |
+| `smimeCertificates[].subject` | string |  |  |
+| `sshCertificates` | list |  | The person's live SSH user certificates, as their entry carries them (stsSshUserCertificate, #2050). |
+| `sshCertificates[].authority` | string | yes | `classical`, or `ssh-mldsa-65` for a certificate the ML-DSA authority signed. |
+| `sshCertificates[].certificate` | string | yes | The certificate in OpenSSH text form; empty for one issued before #2050, whose text was never kept. |
+| `sshCertificates[].issuedAt` | string | yes |  |
+| `sshCertificates[].keyFingerprint` | string | yes | The certified key's SHA256 fingerprint. |
+| `sshCertificates[].keyType` | string | yes | The certified key's OpenSSH type. |
+| `sshCertificates[].notAfter` | string | yes |  |
+| `sshCertificates[].principals` | list | yes |  |
+| `sshCertificates[].principals[]` | string |  |  |
+| `sshCertificates[].serialHex` | string | yes | The serial, lower-case hex. |
 | `user` | string |  |  |
 
 ## POST /admin-api/users/clear-backup-codes
@@ -5164,6 +5240,25 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `rule` | string |  |  |
 | `sha256` | string |  |  |
+| `smimeCertificates` | list |  |  |
+| `smimeCertificates[].expired` | boolean |  |  |
+| `smimeCertificates[].issuer` | string |  |  |
+| `smimeCertificates[].notAfter` | string |  |  |
+| `smimeCertificates[].notBefore` | string |  |  |
+| `smimeCertificates[].readable` | boolean |  |  |
+| `smimeCertificates[].serialNumber` | string |  |  |
+| `smimeCertificates[].sha256` | string |  |  |
+| `smimeCertificates[].subject` | string |  |  |
+| `sshCertificates` | list |  |  |
+| `sshCertificates[].authority` | string | yes | `classical`, or `ssh-mldsa-65` for a certificate the ML-DSA authority signed. |
+| `sshCertificates[].certificate` | string | yes | The certificate in OpenSSH text form; empty for one issued before #2050, whose text was never kept. |
+| `sshCertificates[].issuedAt` | string | yes |  |
+| `sshCertificates[].keyFingerprint` | string | yes | The certified key's SHA256 fingerprint. |
+| `sshCertificates[].keyType` | string | yes | The certified key's OpenSSH type. |
+| `sshCertificates[].notAfter` | string | yes |  |
+| `sshCertificates[].principals` | list | yes |  |
+| `sshCertificates[].principals[]` | string |  |  |
+| `sshCertificates[].serialHex` | string | yes | The serial, lower-case hex. |
 | `user` | string |  |  |
 
 **400**: The operation was refused; `errors` says why and nothing changed.
@@ -5187,6 +5282,25 @@ Scope: `admin:write`.
 | `ok` | boolean | yes |  |
 | `rule` | string |  |  |
 | `sha256` | string |  |  |
+| `smimeCertificates` | list |  |  |
+| `smimeCertificates[].expired` | boolean |  |  |
+| `smimeCertificates[].issuer` | string |  |  |
+| `smimeCertificates[].notAfter` | string |  |  |
+| `smimeCertificates[].notBefore` | string |  |  |
+| `smimeCertificates[].readable` | boolean |  |  |
+| `smimeCertificates[].serialNumber` | string |  |  |
+| `smimeCertificates[].sha256` | string |  |  |
+| `smimeCertificates[].subject` | string |  |  |
+| `sshCertificates` | list |  |  |
+| `sshCertificates[].authority` | string | yes | `classical`, or `ssh-mldsa-65` for a certificate the ML-DSA authority signed. |
+| `sshCertificates[].certificate` | string | yes | The certificate in OpenSSH text form; empty for one issued before #2050, whose text was never kept. |
+| `sshCertificates[].issuedAt` | string | yes |  |
+| `sshCertificates[].keyFingerprint` | string | yes | The certified key's SHA256 fingerprint. |
+| `sshCertificates[].keyType` | string | yes | The certified key's OpenSSH type. |
+| `sshCertificates[].notAfter` | string | yes |  |
+| `sshCertificates[].principals` | list | yes |  |
+| `sshCertificates[].principals[]` | string |  |  |
+| `sshCertificates[].serialHex` | string | yes | The serial, lower-case hex. |
 | `user` | string |  |  |
 
 ## POST /admin-api/users/remove-device

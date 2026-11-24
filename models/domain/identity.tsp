@@ -198,6 +198,26 @@ model Credential {
   @fromAttr(#{attr: "userCertificate"})
   `userCertificate`?: string[];
 
+  // #2050: the person's S/MIME certificates (RFC 2798), under either RFC
+  // 4522 spelling, and the live SSH user certificates the realm's SSH user
+  // CA issued them, one JSON value each.
+  @fromAttr(#{attr: "userSMIMECertificate"})
+  `smimeCertificate`?: string[];
+
+  @fromAttr(#{attr: "stsSshUserCertificate"})
+  `sshUserCertificate`?: string[];
+
+  // #2051: the person's hardware, OATH and YubiKey OTP tokens, the master
+  // data, one JSON value each.
+  @fromAttr(#{attr: "stsHardwareToken"})
+  `hardwareTokens`?: string[];
+
+  @fromAttr(#{attr: "stsOathToken"})
+  `oathTokens`?: string[];
+
+  @fromAttr(#{attr: "stsYubiOtpToken"})
+  `yubiOtpTokens`?: string[];
+
   @fromAttr(#{attr: "stsKrb5KeyInfo"})
   `krb5KeyInfo`?: string;
 

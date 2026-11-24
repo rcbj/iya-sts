@@ -164,3 +164,19 @@ path = "admin-ui/natural_earth/**"
 precedence = "override"
 SPDX-FileCopyrightText = "Natural Earth (public domain)"
 SPDX-License-Identifier = "LicenseRef-NaturalEarth-PublicDomain"
+
+# The client lab's patch to PivApplet (#2056): a modified form of
+# arekinath/PivApplet's PivApplet.java, so under that file's Mozilla Public
+# License 2.0. It is applied to the pinned upstream source when the TEST image
+# tests/client-lab/ is built; PivApplet, SmartPGP (GPL-2.0), jcardsim
+# (Apache-2.0) and vsmartcard (GPL-3.0) are fetched or installed there and are
+# not in this repository. Never in the product image
+# (tests/client_lab_isolation.js).
+[[annotations]]
+path = "tests/client-lab/patches/pivapplet-yubikey-attestation.patch"
+precedence = "override"
+SPDX-FileCopyrightText = [
+  "2017 Alex Wilson <alex@cooperi.net>",
+  "2026 Iya CyberSecurity Solutions, LLC",
+]
+SPDX-License-Identifier = "MPL-2.0"

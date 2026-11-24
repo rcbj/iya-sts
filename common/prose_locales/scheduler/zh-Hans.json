@@ -143,6 +143,22 @@
     "en": "71471822b228b1b8",
     "text": "在 GNAP 授予结束、其令牌已无法出示之后，删除为该授予的限额保留的累计值（#432）。"
   },
+  "sched.jobs.hardware-tokens.entries.title": {
+    "en": "9d8b09e882eac9f4",
+    "text": "条目上的硬件令牌"
+  },
+  "sched.jobs.hardware-tokens.entries.describe": {
+    "en": "6f13f7286a692187",
+    "text": "把写入条目未成功的硬件令牌、OATH 令牌和 YubiKey OTP 令牌写到其持有人的条目上，并在一个进程中首次运行时，把在令牌保存到条目之前登记的每个令牌复制到其持有人上。"
+  },
+  "sched.jobs.hardware-tokens.rebuild-index.title": {
+    "en": "bcde449a95ccb5af",
+    "text": "重建硬件令牌索引"
+  },
+  "sched.jobs.hardware-tokens.rebuild-index.describe": {
+    "en": "bbcb6fbdb123f2c7",
+    "text": "根据人员条目上的令牌（它们是主数据）重写硬件令牌登记簿以及 OATH 和 YubiKey OTP 清单：在恢复之后或某个索引与条目不一致时手动运行。"
+  },
   "sched.jobs.keys.data-key-count.title": {
     "en": "c6e6cb1a17fd0095",
     "text": "数据加密密钥的值计数"
@@ -662,6 +678,14 @@
   "sched.jobs.ssf.stream-maintenance.describe": {
     "en": "bd4794eda9c5d2d2",
     "text": "对接收方已不活动达 ssf.inactivityTimeoutS 的流进行暂停、禁用或删除（SSF 1.0 section 8.1.1），暂停或禁用前先以 stream-updated 事件通告；并向每个已启用、且在 ssf.verificationEveryS 内未从本发送方收到验证事件的流发送验证事件（section 8.1.4）。"
+  },
+  "sched.jobs.ssh-user-ca.entries.title": {
+    "en": "510115184c6100fc",
+    "text": "条目上的 SSH 用户证书"
+  },
+  "sched.jobs.ssh-user-ca.entries.describe": {
+    "en": "5bc74370f72a746d",
+    "text": "把签发时未能写入条目的 SSH 用户证书写到其持有人的条目（stsSshUserCertificate）上，移除已过期的证书，并在一个进程中首次运行时，把在证书保存到条目之前签发的证书复制到其持有人上。"
   },
   "sched.jobs.ssh-user-ca.krl.title": {
     "en": "9694f71884ac8e1b",

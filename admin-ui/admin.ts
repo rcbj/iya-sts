@@ -4666,7 +4666,29 @@ class AdminConsole {
       '.wsp-el.wsp-match{background:#fff8c5;border-color:#9a6700}' +
       '.wsp-el.wsp-match::after{content:" \\2713"}' +
       '.wsp-el.wsp-chosen{outline:2px solid #0969da}' +
-      '.wsp-expression{width:100%;font-family:monospace}' +
+      '.wsp-expression{width:70%;font-family:monospace}' +
+      // ITS DIALOG AND THE CARDS THAT OPEN IT (#2046): a modal `<dialog>`
+      // in the page, its body scrolling inside the viewport, and the button
+      // at the foot of each target field's card.
+      '.wsp-dialog{width:min(64rem,94vw);max-height:90vh;padding:0;' +
+      'border:1px solid #c5c5d3;border-radius:10px;' +
+      'box-shadow:0 18px 60px rgba(0,0,0,.35)}' +
+      '.wsp-dialog[open]{display:flex;flex-direction:column}' +
+      '.wsp-dialog::backdrop{background:rgba(20,20,30,.55)}' +
+      '.wsp-dialog-head{display:flex;align-items:flex-start;gap:1rem;' +
+      'padding:.8rem 1.1rem .6rem;border-bottom:1px solid #e3e3ea}' +
+      '.wsp-dialog-head h3{margin:0;flex:1 1 auto}' +
+      '.wsp-dialog-head .sub{font-weight:400;color:#555}' +
+      '.wsp-dialog-x{font-size:1.5rem;line-height:1;padding:.05rem .45rem}' +
+      '.wsp-dialog-body{padding:.6rem 1.1rem;overflow:auto}' +
+      '.wsp-dialog-foot{padding:.6rem 1.1rem;border-top:1px solid #e3e3ea;' +
+      'text-align:right}' +
+      '.wsp-list code{word-break:break-all}' +
+      '.wsp-list li{margin:.2em 0}' +
+      '.wsp-cellbuilder{margin-top:.4em}' +
+      '.wsp-cellbuilder .wsp-added{margin:.3em 0 0;font-size:.9em}' +
+      '.wsp-part{border-top:1px solid #e3e3ea;margin-top:.8em}' +
+      '.wsp-part .fg-section h5{margin:.6em 0 .3em;font-size:.95em}' +
       // A SUB-TAB'S SIMPLE / ADVANCED SWITCH (#500, `WebKit.viewSwitch()`):
       // while Simplified is ticked the form's advanced cells, and a headed
       // section holding only those, are not drawn; they stay in the form,

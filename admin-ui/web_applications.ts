@@ -1953,8 +1953,12 @@ class ApplicationsPage {
       // A primary name equal to the identifier is folded into the advanced
       // view (#393). The copy is what is drawn; `mine` stays the entry's
       // own rows, which the SAML panels fold for themselves.
-      const folded = ApplicationsPage.withFoldedPrimaryNames(
-        mine, values, row.identifier);
+      // EXCEPT ON WS-TRUST (rcbj, 2026-11-23, #2046): `wstrustAppliesTo` is
+      // always in that sub-tab's simplified view, whatever it holds.
+      const folded = group.id === 'wstrust'
+        ? { rows: mine, folded: false }
+        : ApplicationsPage.withFoldedPrimaryNames(mine, values,
+                                                  row.identifier);
       const drawn = folded.rows;
       const views = kit.hasViews(drawn);
       const advancedRows = drawn.filter(function (one) {
@@ -2019,6 +2023,19 @@ class ApplicationsPage {
               ['gnap_access_token'], 'cfg-gnap-claims',
               t.text('consoleApplications.a2.customClaims'))
           : '');
+      // The grid's options, for the plain grid and WS-Trust's sections.
+      const gridOptions = { redraw: '/admin/applications/edit',
+                            showSet: true, protocols: config.protocols,
+                            views: views,
+                            // The scopes the delegated permission grants
+                            // declare, read-only in their list (#1141).
+                            derived: config.derived || {},
+                            // The lists with a search, and the last
+                            // search's results for each (#459).
+                            searches: config.fieldSearches || {},
+                            finds: (state && state.finds) || {},
+                            // #488: the scope policy's warnings, by field.
+                            fieldWarnings: config.fieldWarnings || {} };
       // The sub-tab's own fields, in one form.
       const fieldForm = kit.frame(
         // A sub-tab drawn only for a section has no fields to save.
@@ -2030,26 +2047,17 @@ class ApplicationsPage {
           ? kit.note(t.html(
               'consoleApplications.a2.primaryNameFolded'))
           : '') +
-        // MESSAGE PROTECTION (#1917): the eight Body / Header boxes, inside
-        // this form so the one Save stores the maps they rewrite. They post
-        // nothing themselves (`web_wstrust_protection.ts`).
+        // WS-TRUST'S SECTIONS (#2046): General, then MESSAGE PROTECTION
+        // (#1917: the eight Body / Header boxes, inside this form so the one
+        // Save stores the maps they rewrite; they post nothing themselves),
+        // then Message encryption and Message signing, each in request and
+        // response halves (`WsTrustProtection.grid()`). Every other sub-tab
+        // is the plain grid.
         (group.id === 'wstrust'
-          ? WsTrustProtection.frame(values, drawn,
-                                    '/admin/applications/edit', t)
-          : '') +
-        kit.fieldGridOf(drawn, config.groups, values,
-                           { redraw: '/admin/applications/edit',
-                             showSet: true, protocols: config.protocols,
-                             views: views,
-                             // The scopes the delegated permission grants
-                             // declare, read-only in their list (#1141).
-                             derived: config.derived || {},
-                             // The lists with a search, and the last
-                             // search's results for each (#459).
-                             searches: config.fieldSearches || {},
-                             finds: (state && state.finds) || {},
-                             // #488: the scope policy's warnings, by field.
-                             fieldWarnings: config.fieldWarnings || {} }) +
+          ? WsTrustProtection.grid(drawn, group.label, values, gridOptions,
+              t, WsTrustProtection.frame(values, drawn,
+                                         '/admin/applications/edit', t))
+          : kit.fieldGridOf(drawn, config.groups, values, gridOptions)) +
         // #825: the three hosted surfaces. The checkbox posts confirm=1.
         // An unchanged bound does not need it; a changed one does, and the
         // server refuses the whole save without it. The list matches
@@ -2173,10 +2181,11 @@ class ApplicationsPage {
         ? ''
         : DocLinks.consoleHtml(
             DocLinks.forConsoleTab('cfg-' + group.id), t);
-      // THE XPATH BUILDER (#1917), under the WS-Trust form whose five XPath
-      // fields it adds to. Outside the form, and it posts nothing anyway.
+      // THE XPATH BUILDER (#1917), a dialog since #2046, opened by the
+      // Message encryption and Message signing sections' buttons. Outside
+      // the form, and it posts nothing anyway.
       const xpathBuilder = group.id === 'wstrust'
-        ? WsTrustProtection.builder(drawn.map(function (one) {
+        ? WsTrustProtection.dialog(drawn.map(function (one) {
             return one.attribute;
           }), t)
         : '';

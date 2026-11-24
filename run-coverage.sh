@@ -495,6 +495,12 @@ else
     # run's directory where the service reads it — so the jobs that need a
     # peer RUN here rather than being skipped.
     -e STS_TEST_PEER_URL=
+    # AND THE CLIENT LAB'S, THE SIXTH (#2056): the compose file defaults
+    # `CLIENT_LAB_URL=http://client-lab:9610`, and `--no-deps` starts none.
+    # Emptied, the jobs that carry `clientLab: true` are reported SKIPPED
+    # with the reason: the lab is a container of real clients and virtual
+    # cards, not something the runner can start as a child.
+    -e CLIENT_LAB_URL=
     # AND THE DIRECTORY'S SOCKET, WHICH IS THE THIRD OF EXACTLY THE SAME KIND
     # AND WAS FOUND THE SAME WAY — two red jobs in a run that had never got
     # this far before.
