@@ -145,5 +145,7 @@
   "announcement.close": "關閉",
   "presets": "預先定義的查詢",
   "presetsNote": "每一項都會開啟「新增查詢」並填好其查詢。在您按下「執行」之前不會執行任何動作，儲存後會成為您自己的定義。",
-  "presetFrom": "從預先定義的查詢 {name} 開始。"
+  "presetFrom": "從預先定義的查詢 {name} 開始。",
+  "adminOnlySource": "僅限報告管理員",
+  "adminOnlyNote": "只有報告管理員（REPORT_ADMIN）可以查詢此資料來源：它記錄誰在何處做了什麼，或誰持有哪種憑證。"
 }

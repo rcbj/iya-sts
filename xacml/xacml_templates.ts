@@ -303,12 +303,23 @@ const ISSUANCE_ATTRIBUTE = {
   // reads beside it; the subject's groups come from the PIP as
   // OWNER_IDENTITY, looked up by OWNER_SUBJECT (the person by username).
   // -------------------------------------------------------------------------
-  // On the RESOURCE: `definition` or `job`.
+  // On the RESOURCE: `definition` or `job`, and `query` for an ad hoc
+  // query's source question (#2126).
   REPORT_OBJECT_KIND: 'urn:sts:xacml:report-object-kind',
   // On the RESOURCE: the group DNs the definition is shared with (a job's,
   // its definition's), compared as OBJECT_OWNER is. Empty for a row shared
   // with nobody, and for a question about the API rather than a row.
   REPORT_SHARED_GROUP: 'urn:sts:xacml:report-shared-group',
+  // On the RESOURCE (#2126, ASVS 5.0.0 8.2.3): the catalog source the
+  // report reads, sent on the question `report/rights.ts` asks before a
+  // report is defined, run or downloaded — never on a plain read of a
+  // row, so a definition the caller may no longer run stays visible.
+  REPORT_SOURCE: 'urn:sts:xacml:report-source',
+  // On the RESOURCE (#2126): those of the sources the catalog marks
+  // `adminOnly` (auditEvents, authActivity, credentialHolders). The
+  // first and third rules permit a question carrying one only to a
+  // subject holding REPORT_ADMIN. Empty for every other question.
+  REPORT_ADMIN_SOURCE: 'urn:sts:xacml:report-admin-source',
   // -------------------------------------------------------------------------
   // THE ACCESS REQUEST RULE'S VOCABULARY (#1180): an AuthZEN access request
   // a person would approve, deny or revoke (resource
@@ -4341,7 +4352,11 @@ const TEMPLATES: TemplateRow[] = [
           'the report API\'s rows: a report administrator reaches any ' +
           'definition or job, a report user one shared with a group they ' +
           'are in, for the listed actions; an owner reaches their own ' +
-          'through the first rule, and an application only those.',
+          'through the first rule, and an application only those. Since ' +
+          '#2126 a report over a source for administrators (auditEvents, ' +
+          'authActivity, credentialHolders, and any listed below) is ' +
+          'permitted, by both rules, only to a subject holding ' +
+          'REPORT_ADMIN.',
     parameters: [
       { name: 'permitOwner',
         label: 'Permit a subject to act on a resource they own',
@@ -4458,6 +4473,21 @@ const TEMPLATES: TemplateRow[] = [
               'its jobs, download a result), `run` (run it), `write` ' +
               '(change, share or delete it, which the default leaves to ' +
               'the owner and a report administrator).' },
+      // THE REPORT SOURCES FOR ADMINISTRATORS (#2126): the catalog marks
+      // auditEvents, authActivity and credentialHolders `adminOnly`, and the
+      // report gate sends those as `report-admin-source`; this list adds
+      // sources a realm's policy treats the same way, by `report-source`.
+      { name: 'reportAdminSources',
+        label: 'Further report sources only a report administrator may ' +
+               'query',
+        dflt: '', type: 'list',
+        help: 'Comma- or newline-separated catalog source ids (#2126). A ' +
+              'report over one of them — defined, run, previewed, ' +
+              'scheduled or downloaded — is permitted only to a subject ' +
+              'holding REPORT_ADMIN, as it always is for the sources the ' +
+              'catalog marks for administrators (auditEvents, ' +
+              'authActivity, credentialHolders), which this list cannot ' +
+              'open. Empty adds none.' },
       // THE ACCESS REQUEST RULE (#1180): who may approve, deny or revoke an
       // AuthZEN access request — rcbj's decision 2, that self-approval and
       // separation of duties are policy rather than an `if`.
@@ -4635,6 +4665,41 @@ const TEMPLATES: TemplateRow[] = [
         B.value(TYPE.STRING, 'authzen-access-request'),
         B.designator(model.CATEGORY.RESOURCE, model.ATTRIBUTE.RESOURCE_ID,
                      TYPE.STRING)])]));
+      // A REPORT SOURCE FOR ADMINISTRATORS (#2126, ASVS 5.0.0 8.2.3): a
+      // question carrying an administrators' source — the catalog's mark,
+      // `report-admin-source`, or a source this realm's policy lists in
+      // `reportAdminSources`, by `report-source` — is permitted only to a
+      // subject holding REPORT_ADMIN. A conjunct, so it narrows the owner
+      // too: a REPORT_USE owner may not run their own report over the
+      // audit ring. Every other question carries neither attribute, and is
+      // decided exactly as before.
+      const reportAdminSources = B.listOf(
+        given.reportAdminSources === undefined ? ''
+                                               : given.reportAdminSources);
+      const holdsReportAdmin = B.apply(F1 + 'string-is-in', [
+        B.value(TYPE.STRING, 'REPORT_ADMIN'),
+        B.designator(model.CATEGORY.ACCESS_SUBJECT, ISSUANCE_ATTRIBUTE.ROLE,
+                     TYPE.STRING)]);
+      const noAdminSource = B.apply(F1 + 'integer-equal', [
+        B.apply(F1 + 'string-bag-size', [
+          B.designator(model.CATEGORY.RESOURCE,
+                       ISSUANCE_ATTRIBUTE.REPORT_ADMIN_SOURCE, TYPE.STRING)]),
+        B.value(TYPE.INTEGER, '0')]);
+      const noListedSource = reportAdminSources.length
+        ? B.apply(F1 + 'not', [B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'string-equal' },
+          B.designator(model.CATEGORY.RESOURCE,
+                       ISSUANCE_ATTRIBUTE.REPORT_SOURCE, TYPE.STRING),
+          B.apply(F1 + 'string-bag', reportAdminSources.map(
+            function (one: string): any {
+              return B.value(TYPE.STRING, one);
+            }))])])
+        : null;
+      const reportSourceAllowed = B.apply(F1 + 'or', [
+        holdsReportAdmin,
+        noListedSource ? B.apply(F1 + 'and', [noAdminSource, noListedSource])
+                       : noAdminSource]);
+      conjuncts.push(reportSourceAllowed);
 
       const condition = conjuncts.length === 1
         ? conjuncts[0]
@@ -4822,7 +4887,9 @@ const TEMPLATES: TemplateRow[] = [
                      (sharedActions.join(', ') || '(none)') + ' on one ' +
                      'shared with a group they are in (#1030). An owner ' +
                      'reaches their own through the first rule; an ' +
-                     'application reaches only what it defined.',
+                     'application reaches only what it defined. A report ' +
+                     'over a source for administrators is REPORT_ADMIN\'s ' +
+                     'alone (#2126).',
         // `report-api` is `common/access_gate.ts`'s RESOURCE.REPORT_API,
         // which the report gate sends as the resource-id; written out
         // because this file may not require that module's dependents.
@@ -4838,7 +4905,11 @@ const TEMPLATES: TemplateRow[] = [
                          ISSUANCE_ATTRIBUTE.AUTHENTICATED, TYPE.BOOLEAN)]),
           holdsRequiredRole,
           isAPerson,
-          B.apply(F1 + 'or', [isReportAdmin, sharedWithTheirGroup])]),
+          B.apply(F1 + 'or', [isReportAdmin, sharedWithTheirGroup]),
+          // An administrators' source (#2126) narrows a share as it
+          // narrows the owner in the first rule: a REPORT_USE member of a
+          // group an audit report is shared with may see it, not run it.
+          reportSourceAllowed]),
         obligations: [], advice: []
       };
 
@@ -4980,6 +5051,12 @@ const TEMPLATES: TemplateRow[] = [
                          'a shared group\'s member the listed actions on ' +
                          'one shared with them'
                        : '') +
+                     '. A report over a source the catalog marks for ' +
+                     'administrators' +
+                     (reportAdminSources.length ? ', or over ' +
+                       reportAdminSources.join(', ') : '') +
+                     ', is permitted only to a subject holding ' +
+                     'REPORT_ADMIN (#2126)' +
                      (permitApproval
                        ? '. A fourth rule (#1180) permits the approvers an ' +
                          'AuthZEN access request names to decide it, and ' +

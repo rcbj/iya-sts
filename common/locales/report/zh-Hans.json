@@ -145,5 +145,7 @@
   "announcement.close": "关闭",
   "presets": "预定义查询",
   "presetsNote": "每一项都会打开“新建查询”并填好其查询。在您按“运行”之前不会执行任何操作，保存后会成为您自己的定义。",
-  "presetFrom": "从预定义查询 {name} 开始。"
+  "presetFrom": "从预定义查询 {name} 开始。",
+  "adminOnlySource": "仅限报告管理员",
+  "adminOnlyNote": "只有报告管理员（REPORT_ADMIN）可以查询此数据源：它记录谁在何处做了什么，或谁持有哪种凭据。"
 }

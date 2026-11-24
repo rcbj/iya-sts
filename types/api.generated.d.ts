@@ -1708,7 +1708,7 @@ declare namespace IyaApi.Report {
   type SchedulePage = { "scope"?: "mine" | "realm"; "owner"?: string | null; "page"?: number; "pages"?: number; "per"?: number; "total"?: number; "schedules"?: Array<Schedule> };
   type ShareWrite = { "groups": Array<string> };
   type SignalPage = { "scope"?: "realm" | "own"; "receiving"?: boolean; "why"?: Array<string>; "total"?: number; "page"?: number; "pages"?: number; "per"?: number; "rows"?: Array<{ "at"?: string; "name"?: string; "vocabulary"?: string; "type"?: string; "subject"?: string; "verified"?: boolean; "reactions"?: Array<{ "failed"?: boolean; "skipped"?: string; "observed"?: boolean; "ended"?: number; "revoked"?: number }> }> };
-  type Source = { "id"?: string; "anchored"?: boolean; "bounded"?: boolean; "retention"?: string; "paging"?: "limit"; "relationships"?: Array<string>; "fields"?: Array<Field>; "presets"?: Array<{ "id"?: string; "name"?: string; "document"?: QueryDocument }> };
+  type Source = { "id"?: string; "anchored"?: boolean; "adminOnly"?: boolean; "usable"?: boolean; "bounded"?: boolean; "retention"?: string; "paging"?: "limit"; "relationships"?: Array<string>; "fields"?: Array<Field>; "presets"?: Array<{ "id"?: string; "name"?: string; "document"?: QueryDocument }> };
   type SourceEnvelope = { "source"?: Source };
   interface Operations {
     "getIndex": { method: "GET"; path: "/report-api"; body: {}; query: {}; answers: { 200: Index } };

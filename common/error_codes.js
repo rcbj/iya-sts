@@ -31758,6 +31758,17 @@ const CODES = [
       'before #1579 bounded it), so it is answered without its document and ' +
       'parameters, and a run of it is refused for its query.',
     spec: 'recorded' },
+  { code: 'STS-REPORT-0061',
+    summary: 'A report over a source for report administrators only ' +
+      '(auditEvents, authActivity, credentialHolders: the catalog marks ' +
+      'them adminOnly) was refused because the caller — or, for a ' +
+      'scheduled run, the definition\'s owner — does not hold ' +
+      'REPORT_ADMIN, or the access-control policy refused the source: a ' +
+      'query, a job, a definition saved or run, or a result downloaded ' +
+      '(#2126, ASVS 5.0.0 8.2.3). A definition saved before stays ' +
+      'visible to its owner.',
+    spec: 'forbidden (HTTP 403); recorded for a scheduled run, whose ' +
+      'occurrence is consumed' },
   { code: 'STS-AUDIT-0001',
     summary: 'An audit export destination was refused because its ' +
       'configuration is not usable: an unknown action or type, a missing ' +

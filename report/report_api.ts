@@ -104,7 +104,8 @@ function reportHttpStatus(code: string): number {
     status = 429;
   } else if (code === 'STS-REPORT-0011' || code === 'STS-REPORT-0016' ||
       code === 'STS-REPORT-0017' || code === 'STS-REPORT-0018' ||
-      code === 'STS-REPORT-0044' || code === 'STS-REPORT-0045') {
+      code === 'STS-REPORT-0044' || code === 'STS-REPORT-0045' ||
+      code === 'STS-REPORT-0061') {
     status = 403;
   } else if (code === 'STS-REPORT-0006' || code === 'STS-REPORT-0007' ||
       code === 'STS-REPORT-0008' || code === 'STS-REPORT-0009' ||
@@ -462,7 +463,7 @@ function reportValidator(): any {
   return made;
 }
 
-function reportPublicSource(src: any): any {
+function reportPublicSource(src: any, who?: any): any {
   log.debug("Entering reportPublicSource().");
   const fields = (src.fields || []).map(function (field: any): any {
     return {
@@ -497,6 +498,12 @@ function reportPublicSource(src: any): any {
     // A directory-backed source (rcbj, 2026-10-27): a filter has to name
     // an indexed field, and the page offers only those in a first row.
     anchored: src.anchored === true,
+    // A SOURCE FOR REPORT ADMINISTRATORS (#2126): the catalog's mark, and
+    // whether THIS caller may query it — the same two questions a query
+    // of it would put (`rights.sourceRefusal()`), so the page can disable
+    // what would be refused rather than draw a form that fails.
+    adminOnly: src.adminOnly === true,
+    usable: who ? rights.sourceUsable(who, String(src.id)) : undefined,
     fields: fields,
     // The predefined queries (#1110), each a name and a whole document the
     // page fills its form from; an empty list where the source has none.
@@ -1335,17 +1342,21 @@ function reportServeOpenApi(
 }
 
 function reportServeCatalog(
-    res: ReportAnswering<'getCatalog'>): void {
+    res: ReportAnswering<'getCatalog'>,
+    who: any): void {
   log.debug("Entering reportServeCatalog().");
   const catalog = new Catalog();
   reportJson(res, 200, {
-    sources: catalog.list().map(reportPublicSource)
+    sources: catalog.list().map(function (src: any): any {
+      return reportPublicSource(src, who);
+    })
   });
   log.debug("Leaving reportServeCatalog().");
 }
 
 function reportServeSource(
     res: ReportAnswering<'getCatalogSource'>,
+    who: any,
     id: string): void {
   log.debug("Entering reportServeSource().");
   const catalog = new Catalog();
@@ -1356,7 +1367,7 @@ function reportServeSource(
     log.debug("Leaving reportServeSource(). None.");
     return;
   }
-  reportJson(res, 200, { source: reportPublicSource(src) });
+  reportJson(res, 200, { source: reportPublicSource(src, who) });
   log.debug("Leaving reportServeSource().");
 }
 
@@ -1408,6 +1419,18 @@ async function reportAcceptQuery(
     return;
   }
   const plan = validated.plan;
+  // THE SOURCE (#2126, ASVS 5.0.0 8.2.3): an administrators' source is
+  // REPORT_ADMIN's to query, preview, queue or run — a saved
+  // definition's question is the row's (its owner, its shares), an ad
+  // hoc one the caller's own.
+  const sourceRefused = rights.sourceRefusal(who, 'run', definition ? {
+    kind: 'definition', owner: definition.owner,
+    groups: definition.groups } : null, String(plan.source || ''));
+  if (sourceRefused) {
+    reportApplyRefusal(res, who, sourceRefused, plan, 'query');
+    log.debug("Leaving reportAcceptQuery(). The source is refused.");
+    return;
+  }
   if (plan.execution === 'sync' && !forceAsync) {
     const limits = new Limits();
     const control = {
@@ -1575,13 +1598,26 @@ function reportCreateDefinition(
     log.debug("Leaving reportCreateDefinition(). Not a definition.");
     return;
   }
+  let existing: any = null;
   if (id) {
-    const existing = stores.getDefinition(id);
+    existing = stores.getDefinition(id);
     if (!existing || !rights.canEdit(who, existing)) {
       reportMissingDefinition(res);
       log.debug("Leaving reportCreateDefinition(). Not editable.");
       return;
     }
+  }
+  // THE SOURCE (#2126): saving a report over an administrators' source is
+  // REPORT_ADMIN's. A definition saved before the rule may still be given
+  // another source by its owner, or deleted; it may not be saved as it is.
+  const sourceRefused = rights.sourceRefusal(who, 'write', existing ? {
+    kind: 'definition', owner: existing.owner, groups: existing.groups } : {
+    kind: 'definition', owner: who.subject, groups: [] },
+    String((posted.document && posted.document.source) || ''));
+  if (sourceRefused) {
+    reportApplyRefusal(res, who, sourceRefused, null, '');
+    log.debug("Leaving reportCreateDefinition(). The source is refused.");
+    return;
   }
   const saved = jobs.save({
     id: id || null,
@@ -1847,6 +1883,20 @@ async function reportServeResult(
     log.debug("Leaving reportServeResult(). Expired.");
     return;
   }
+  // THE SOURCE (#2126): a result read from an administrators' source is
+  // REPORT_ADMIN's to download, whoever ran it — including one a report
+  // user's job produced before the rule.
+  const definition = job.definitionId ?
+    stores.getDefinition(job.definitionId) : null;
+  const sourceRefused = rights.sourceRefusal(who, 'read', {
+    kind: 'job', owner: job.owner,
+    groups: definition && Array.isArray(definition.groups) ?
+      definition.groups : [] }, String(job.source || ''));
+  if (sourceRefused) {
+    reportApplyRefusal(res, who, sourceRefused, job, 'retrieve');
+    log.debug("Leaving reportServeResult(). The source is refused.");
+    return;
+  }
   if (job.status !== 'completed') {
     reportRetrieveRefused(who, job, 'STS-REPORT-0021');
     reportSend(res, reportHttpStatus('STS-REPORT-0021'),
@@ -2065,9 +2115,9 @@ async function reportRoute(req: any, res: any, who: any): Promise<void> {
   } else if (a === 'openapi.json' && !b && method === 'GET') {
     reportServeOpenApi(res);
   } else if (a === 'catalog' && !b && method === 'GET') {
-    reportServeCatalog(res);
+    reportServeCatalog(res, who);
   } else if (a === 'catalog' && b && !c && method === 'GET') {
-    reportServeSource(res, b);
+    reportServeSource(res, who, b);
   } else if (a === 'realms' && !b && method === 'GET') {
     reportServeRealms(res);
   } else if (a === 'groups' && !b && method === 'GET') {
