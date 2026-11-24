@@ -2107,6 +2107,14 @@
     "en": "3d081a5b28f53bd6",
     "text": "تأجيل نشاط ما بعد تسجيل الدخول"
   },
+  "endpoints.route./authn-api/mfa/:id/post-login/mail.name": {
+    "en": "07e532c277a3f57e",
+    "text": "تسجيل مفتاح تشفير بريد ما بعد الكم"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/piv.name": {
+    "en": "e0733b33f8ee2cb8",
+    "text": "إعادة إصدار شهادة PIV يطلبها نشاط ما بعد تسجيل الدخول"
+  },
   "endpoints.route./authn-api/mfa/:id/roles.name": {
     "en": "77d2211c8b1e2d93",
     "text": "اختيار الأدوار الديناميكية لتسجيل الدخول هذا"

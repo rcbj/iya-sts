@@ -526,6 +526,8 @@
   "endpoints.route./authn-api/mfa/:id/skip.name": "Ignore an offered second factor",
   "endpoints.route./authn-api/mfa/:id/post-login/register.name": "Register the passkey a post-login activity asks for",
   "endpoints.route./authn-api/mfa/:id/post-login/skip.name": "Put a post-login activity off",
+  "endpoints.route./authn-api/mfa/:id/post-login/mail.name": "Register a post-quantum mail-encryption key",
+  "endpoints.route./authn-api/mfa/:id/post-login/piv.name": "Re-issue a PIV certificate a post-login activity asks for",
   "endpoints.route./authn-api/mfa/:id/roles.name": "Choose the dynamic roles for this sign-in",
   "endpoints.route./authn-api/mfa/:id/email/send.name": "Mail a sign-in code or link",
   "endpoints.route./authn-api/mfa/:id/email/code.name": "Check an emailed code",

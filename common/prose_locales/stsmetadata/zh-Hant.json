@@ -3387,6 +3387,14 @@
     "en": "b1be682232332278",
     "text": "NON-SPEC（#1096）。依設定檔的 snoozeDays 延後；給定期限已過即遭拒絕。遭暫扣的工作階段隨即開始。"
   },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/mail.what": {
+    "en": "5d4392dc0f98e868",
+    "text": "NON-SPEC（#2009 P2）。pqc-mail-encryption 活動：一個 OpenPGP 挑戰與金鑰，或一個 S/MIME 憑證，其加密金鑰為 ML-KEM；註冊後被暫扣的工作階段隨即開始。"
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/piv.what": {
+    "en": "5f17fc65239bfbc0",
+    "text": "NON-SPEC（#2009 P3）。piv-reissue 活動：某個插槽的憑證請求及其證明，以重新簽發的憑證作答；寫入後被暫扣的工作階段隨即開始。"
+  },
   "stsmetadata.endpoints./authn-api/mfa/:id/roles.what": {
     "en": "26fc9f7a66659a20",
     "text": "非規範（#1072）。角色步驟的選擇，依該步驟的提供內容和每個角色的資格政策核對；被暫停的工作階段隨之啟動。"
