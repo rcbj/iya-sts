@@ -846,6 +846,8 @@
   "stsmetadata.endpoints./authn-api/mfa/:id/skip.what": "NON-SPEC (#572, #246). Only where the step was offered: the sign-in finishes on the password.",
   "stsmetadata.endpoints./authn-api/mfa/:id/post-login/register.what": "NON-SPEC (#1096). The next step is the passkey page's registration, ML-DSA only; its finish starts the held session.",
   "stsmetadata.endpoints./authn-api/mfa/:id/post-login/skip.what": "NON-SPEC (#1096). For the profile's snoozeDays; refused once the allotted time has passed. The held session starts.",
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/mail.what": "NON-SPEC (#2009 P2). The pqc-mail-encryption activity: an OpenPGP challenge and key, or an S/MIME certificate, whose encryption key is ML-KEM; the held session starts once it is registered.",
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/piv.what": "NON-SPEC (#2009 P3). The piv-reissue activity: a slot's certificate request and its attestation, answered with the re-issued certificate; the held session starts once it is written.",
   "stsmetadata.endpoints./authn-api/mfa/:id/roles.what": "NON-SPEC (#1072). The role step's choice, held to the step's own offer and each role's eligibility policy now; the held session starts with it.",
   "stsmetadata.endpoints./authn-api/mfa/:id/email/send.what": "NON-SPEC (#573). To the verified address only; a resend replaces the last.",
   "stsmetadata.endpoints./authn-api/mfa/:id/email/code.what": "NON-SPEC (#573). Once for the cluster, a bounded number of wrong codes per step.",

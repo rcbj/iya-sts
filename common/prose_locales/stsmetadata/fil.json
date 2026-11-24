@@ -3387,6 +3387,14 @@
     "en": "b1be682232332278",
     "text": "NON-SPEC (#1096). Nang snoozeDays ng profile; tinatanggihan kapag lumipas na ang itinakdang panahon. Sinisimulan ang pinigil na session."
   },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/mail.what": {
+    "en": "5d4392dc0f98e868",
+    "text": "NON-SPEC (#2009 P2). Ang aktibidad na pqc-mail-encryption: isang OpenPGP na hamon at susi, o isang S/MIME certificate, na ML-KEM ang susi sa pag-encrypt; magsisimula ang hinintong session kapag nairehistro na ito."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/piv.what": {
+    "en": "5f17fc65239bfbc0",
+    "text": "NON-SPEC (#2009 P3). Ang aktibidad na piv-reissue: ang kahilingan sa certificate ng isang slot at ang attestation nito, na sinasagot ng muling inisyung certificate; magsisimula ang hinintong session kapag naisulat na ito."
+  },
   "stsmetadata.endpoints./authn-api/mfa/:id/roles.what": {
     "en": "26fc9f7a66659a20",
     "text": "HINDI SPEC (#1072). Ang pinili sa hakbang ng tungkulin, sinuri laban sa alok ng hakbang at sa patakaran ng bawat tungkulin; nagsisimula ang pinahintong session kasama ito."

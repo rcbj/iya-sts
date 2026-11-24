@@ -2107,6 +2107,14 @@
     "en": "3d081a5b28f53bd6",
     "text": "Skjuta upp en aktivitet efter inloggning"
   },
+  "endpoints.route./authn-api/mfa/:id/post-login/mail.name": {
+    "en": "07e532c277a3f57e",
+    "text": "Registrera en postkvantnyckel för e-postkryptering"
+  },
+  "endpoints.route./authn-api/mfa/:id/post-login/piv.name": {
+    "en": "e0733b33f8ee2cb8",
+    "text": "Utfärda om ett PIV-certifikat som en aktivitet efter inloggning begär"
+  },
   "endpoints.route./authn-api/mfa/:id/roles.name": {
     "en": "77d2211c8b1e2d93",
     "text": "Välj den här inloggningens dynamiska roller"

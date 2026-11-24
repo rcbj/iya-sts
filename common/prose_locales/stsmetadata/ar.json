@@ -3387,6 +3387,14 @@
     "en": "b1be682232332278",
     "text": "NON-SPEC (#1096). لمدة snoozeDays في الملف الشخصي؛ ويُرفض بعد انقضاء الوقت المخصَّص. تبدأ الجلسة المحتجزة."
   },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/mail.what": {
+    "en": "5d4392dc0f98e868",
+    "text": "NON-SPEC (#2009 P2). نشاط pqc-mail-encryption: تحدٍّ ومفتاح OpenPGP، أو شهادة S/MIME، مفتاح تشفيرها ML-KEM؛ تبدأ الجلسة المحتجزة بعد تسجيله."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/piv.what": {
+    "en": "5f17fc65239bfbc0",
+    "text": "NON-SPEC (#2009 P3). نشاط piv-reissue: طلب شهادة لفتحة ما وإثباتها، يُجاب عنهما بالشهادة المعاد إصدارها؛ تبدأ الجلسة المحتجزة بعد كتابتها."
+  },
   "stsmetadata.endpoints./authn-api/mfa/:id/roles.what": {
     "en": "26fc9f7a66659a20",
     "text": "خارج المواصفة (#1072). اختيار خطوة الأدوار، يُتحقق منه مقابل عرض الخطوة وسياسة أهلية كل دور؛ وتبدأ الجلسة المعلَّقة به."

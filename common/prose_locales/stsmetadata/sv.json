@@ -3387,6 +3387,14 @@
     "en": "b1be682232332278",
     "text": "NON-SPEC (#1096). I profilens snoozeDays; nekas när den tilldelade tiden har gått. Den kvarhållna sessionen startar."
   },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/mail.what": {
+    "en": "5d4392dc0f98e868",
+    "text": "NON-SPEC (#2009 P2). Aktiviteten pqc-mail-encryption: en OpenPGP-utmaning och nyckel, eller ett S/MIME-certifikat, vars krypteringsnyckel är ML-KEM; den kvarhållna sessionen startar när den har registrerats."
+  },
+  "stsmetadata.endpoints./authn-api/mfa/:id/post-login/piv.what": {
+    "en": "5f17fc65239bfbc0",
+    "text": "NON-SPEC (#2009 P3). Aktiviteten piv-reissue: en platss certifikatbegäran och dess attestering, besvarade med det omutfärdade certifikatet; den kvarhållna sessionen startar när det har skrivits."
+  },
   "stsmetadata.endpoints./authn-api/mfa/:id/roles.what": {
     "en": "26fc9f7a66659a20",
     "text": "UTANFÖR SPECIFIKATION (#1072). Rollstegets val, prövat mot stegets erbjudande och varje rolls behörighetspolicy; den hållna sessionen startar med det."
