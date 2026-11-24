@@ -1017,6 +1017,7 @@
   "protection.requestProcessing": "معالجة رسالة الطلب",
   "protection.responseProcessing": "معالجة رسالة الاستجابة",
   "protection.openBuilder": "منشئ XPath…",
+  "protection.openBuilderFor": "منشئ XPath لـ {field}",
   "protection.close": "إغلاق",
   "protection.dialogIntro": "الصق رسالة SOAP نموذجية، واعرض عناصرها وانقر على أحدها. يُكتب تعبيره ببادئات هذه الخدمة، ضمن المجموعة الفرعية التي تقيّمها الخدمة، وتُعلَّم عناصر النموذج التي يطابقها. أضف كل تعبير تريده إلى القائمة، ثم أضف القائمة إلى حقل واضغط حفظ في النموذج: لا يُرسل شيء من هنا قبل ذلك.",
   "protection.collect": "أضف إلى القائمة",

@@ -1017,6 +1017,7 @@
   "protection.requestProcessing": "Behandling av begärandemeddelandet",
   "protection.responseProcessing": "Behandling av svarsmeddelandet",
   "protection.openBuilder": "XPath-byggare…",
+  "protection.openBuilderFor": "XPath-byggare för {field}",
   "protection.close": "Stäng",
   "protection.dialogIntro": "Klistra in ett exempel på ett SOAP-meddelande, visa dess element och klicka på ett. Dess uttryck skrivs med den här tjänstens prefix, i den delmängd som tjänsten utvärderar, och de element i exemplet som det matchar markeras. Lägg till varje uttryck du vill ha i listan, lägg sedan till listan i ett fält och tryck på Spara i formuläret: inget skickas härifrån förrän dess.",
   "protection.collect": "Lägg till i listan",

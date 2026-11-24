@@ -1017,6 +1017,7 @@
   "protection.requestProcessing": "Request message processing",
   "protection.responseProcessing": "Response message processing",
   "protection.openBuilder": "XPath builder…",
+  "protection.openBuilderFor": "XPath builder for {field}",
   "protection.close": "Close",
   "protection.dialogIntro": "Paste a sample SOAP message, show its elements and click one. Its expression is written with this service's prefixes, in the subset the service evaluates, and the elements of the sample it matches are marked. Add each expression you want to the list, then add the list to a field and press Save on the form: nothing here is sent until then.",
   "protection.collect": "Add to the list",

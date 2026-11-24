@@ -32,21 +32,22 @@
 // is added to the dialog's list, and the list is added to one of the five
 // fields of the form; Save stores it.
 //
-// THE SUB-TAB'S SECTIONS (#2046, rcbj 2026-11-23): General, then Message
-// encryption and Message signing, each split into request and response
+// THE SUB-TAB'S SECTIONS (#2046, rcbj 2026-11-23): General, the Message
+// protection boxes, then Message encryption and Message signing, each split into request and response
 // message processing (`PARTS`, the one table of which field goes where).
-// The simple view is the eight boxes and the General fields that are
-// simple; every encryption and signing field is advanced, so its sections
+// The simple view is the General fields that are simple, then the eight
+// boxes; every encryption and signing field is advanced, so its sections
 // are hidden by the stylesheet's rule for a section holding only advanced
 // cells. The sections are drawn here rather than by `fieldGridOf()`'s
 // headed sections because they nest and carry a button: they are this
 // sub-tab's presentation, and the server's field rows are unchanged.
 //
-// THE XPATH BUILDER IS A DIALOG (#2046): each of the two sections has a
-// button that opens one `<dialog>` in the page, modal, for that section's
-// fields. The reader builds a LIST of expressions in it and adds the list
-// to one field; the dialog then closes and the field's section says what
-// was added.
+// THE XPATH BUILDER IS A DIALOG (#2046): each of the five target fields'
+// cards has a button that opens one `<dialog>` in the page, modal, for
+// that field alone (rcbj, 2026-11-23: "smart enough to know which field
+// needs to be updated"). The reader builds a LIST of expressions in it and
+// adds the list to the field; the dialog then closes and the card says
+// what was added.
 //
 // The console is a static surface that requires script (`../CLAUDE.md`), so
 // no fallback is owed for a browser with script blocked.
@@ -277,23 +278,27 @@ class WebWsTrustProtection {
    * @param values - the form's values by attribute
    * @param options - `WebKit.fieldGridCell()`'s options
    * @param t - the translator
+   * @param protection - optional; the Message protection frame
+   *   (`frame()`), drawn after General and before the two sections (rcbj,
+   *   2026-11-23: General first in the simplified view)
    * @returns the group as HTML, or '' when it draws no field
    */
-  static grid(rows, label, values, options, t): string {
+  static grid(rows, label, values, options, t, protection?): string {
     const list = rows || [];
     if (!list.length) {
       return '';
     }
+    // A TARGET'S CARD carries the builder's button (rcbj, 2026-11-23): the
+    // dialog it opens adds to that field and no other.
     const cells = function (picked) {
       return picked.map(function (row) {
-        return kit.fieldGridCell(row, values, options, t);
+        const cell = kit.fieldGridCell(row, values, options, t);
+        return WebWsProtection.TARGETS.indexOf(row.attribute) < 0 ? cell
+          : WebWsTrustProtection.withBuilderButton(cell, row.attribute, t);
       }).join('');
     };
     const general = list.filter(function (row) {
       return !WebWsTrustProtection.placeOf(row.attribute);
-    });
-    const drawn = list.map(function (row) {
-      return row.attribute;
     });
     const parts = PARTS.map(function (part) {
       const halves = part.sections.map(function (section) {
@@ -308,25 +313,40 @@ class WebWsTrustProtection {
       if (!halves) {
         return '';
       }
-      const offered = WebWsTrustProtection.targetsOf(part.builder, drawn);
-      const heading = t.text(K + part.key);
       return '<div class="fg-section wsp-part" id="fgs-wstrust-' + part.id +
-        '"><div class="wsp-parthead"><h4>' + kit.esc(heading) + '</h4>' +
-        (offered.length
-          ? '<button type="button" class="secondary" data-wsp-open="' +
-            part.builder + '" aria-haspopup="dialog" aria-controls=' +
-            '"wsp-dialog" data-wsp-heading="' + kit.esc(heading) + '">' +
-            t.html(K + 'openBuilder') + '</button>'
-          : '') + '</div>' +
-        '<p class="wsp-added" role="status" aria-live="polite" ' +
-        'data-wsp-added="' + part.builder + '"></p>' + halves + '</div>';
+        '"><h4>' + t.html(K + part.key) + '</h4>' + halves + '</div>';
     }).join('');
     return '<div class="fg-group"><h3>' + kit.esc(label) + '</h3>' +
       (general.length
         ? '<div class="fg-section" id="fgs-wstrust-general"><h4>' +
           t.html(K + 'general') + '</h4><div class="fg">' + cells(general) +
           '</div></div>'
-        : '') + parts + '</div>';
+        : '') + (protection || '') + parts + '</div>';
+  }
+
+  /**
+   * Puts the XPath builder's button, and the line that says what it added,
+   * at the foot of one target field's card.
+   *
+   * @param cell - the card, as `WebKit.fieldGridCell()` draws it
+   * @param attribute - the target field
+   * @param t - the translator
+   * @returns the card with the button inside it
+   */
+  static withBuilderButton(cell, attribute, t): string {
+    const end = cell.lastIndexOf('</div>');
+    if (end < 0) {
+      return cell;
+    }
+    return cell.slice(0, end) + '<div class="wsp-cellbuilder">' +
+      '<button type="button" class="secondary" data-wsp-open="' +
+      kit.esc(attribute) + '" aria-haspopup="dialog" ' +
+      'aria-controls="wsp-dialog" aria-label="' +
+      kit.esc(t.text(K + 'openBuilderFor', { field: attribute })) + '">' +
+      t.html(K + 'openBuilder') + '</button>' +
+      '<p class="wsp-added" role="status" aria-live="polite" ' +
+      'data-wsp-added="' + kit.esc(attribute) + '"></p></div>' +
+      cell.slice(end);
   }
 
   /**
@@ -376,9 +396,11 @@ class WebWsTrustProtection {
       '"wsp-list-heading"></ol>' +
       '<p class="state-none" id="wsp-list-empty">' +
       t.html(K + 'listEmpty') + '</p>' +
-      '<div class="formrow"><label for="wsp-target">' +
-      t.html(K + 'target') + '</label><select id="wsp-target">' +
-      WebWsTrustProtection.targetOptions(offered) + '</select> ' +
+      // THE FIELD is the card's that opened the dialog, so its select is
+      // not shown: it holds that one field, and the title names it.
+      '<div class="formrow"><label for="wsp-target" hidden>' +
+      t.html(K + 'target') + '</label><select id="wsp-target" hidden>' +
+      WebWsTrustProtection.targetOptions(offered) + '</select>' +
       '<button type="button" data-wsp-add disabled>' +
       t.html(K + 'addList') + '</button></div>' +
       '<p class="wsp-added" id="wsp-added" role="status" ' +
@@ -689,7 +711,7 @@ class WebWsTrustProtection {
     let parsed = null;
     let nodes = [];
     let list = [];
-    let part = '';
+    let field = '';
     const say = function (element, text, refused) {
       // Each line's own class, as drawn, and the refusal's beside it.
       element.className = element.id === 'wsp-matches' ? 'sub'
@@ -748,18 +770,24 @@ class WebWsTrustProtection {
       }
       say(matches, t.text(K + 'matches', { n: hit.length }), false);
     };
-    // OPENING: the dialog is for the section whose button was pressed, so
-    // its field select offers that section's targets only. The list and
-    // the parsed sample stay from the last opening.
+    // OPENING: the dialog is for the field whose card holds the button, so
+    // its (hidden) select holds that field alone and the title names it.
     const openers = doc.querySelectorAll('[data-wsp-open]');
     for (let i = 0; i < openers.length; i++) {
       const opener = openers[i];
       opener.addEventListener('click', function () {
-        part = String(opener.getAttribute('data-wsp-open') || '');
-        const mine = WebWsTrustProtection.targetsOf(part, drawnTargets);
-        WebSafeDom.render(target, WebWsTrustProtection.targetOptions(mine));
-        WebSafeDom.text(partName,
-          ' — ' + String(opener.getAttribute('data-wsp-heading') || ''));
+        const wanted = String(opener.getAttribute('data-wsp-open') || '');
+        if (drawnTargets.indexOf(wanted) < 0) {
+          return;
+        }
+        if (wanted !== field) {
+          // Another field's list is not this one's.
+          list = [];
+        }
+        field = wanted;
+        WebSafeDom.render(target,
+                          WebWsTrustProtection.targetOptions([field]));
+        WebSafeDom.text(partName, ' — ' + field);
         WebSafeDom.text(added, '');
         showList();
         if (typeof builder.showModal === 'function') {
@@ -848,7 +876,6 @@ class WebWsTrustProtection {
       }
     });
     add.addEventListener('click', function () {
-      const field = String(target.value || '');
       if (!list.length || WebWsProtection.TARGETS.indexOf(field) < 0) {
         return;
       }
@@ -897,7 +924,7 @@ class WebWsTrustProtection {
       showList();
       // THE DIALOG CLOSES and the section it was opened from says what was
       // added, where the field is.
-      const where = doc.querySelector('[data-wsp-added="' + part + '"]');
+      const where = doc.querySelector('[data-wsp-added="' + field + '"]');
       if (typeof builder.close === 'function') {
         builder.close();
       } else {

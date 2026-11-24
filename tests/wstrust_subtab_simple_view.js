@@ -17,6 +17,8 @@
 //   A. An application whose wstrustAppliesTo is its identifier draws that
 //      cell in the WS-Trust sub-tab's simplified view (no `fg-adv`), with
 //      wstrustJwtScope beside it, and no "folded" note.
+//      General comes first, then the Message protection boxes (rcbj,
+//      2026-11-23), then the encryption and signing sections.
 //   B. The rule is otherwise unchanged: on an OAuth application whose
 //      oauthClientId is its identifier, that cell is still advanced.
 // ---------------------------------------------------------------------------
@@ -96,6 +98,15 @@ function childMain() {
            /fg-adv/.test(cellTag(wstrust, 'wstrustSignRequestElements')),
            'A3. the sub-tab opens on the simplified view, the signing ' +
            'fields advanced');
+      const general = wstrust.indexOf('id="fgs-wstrust-general"');
+      const boxes = wstrust.indexOf('id="cfg-wstrust-protection"');
+      const encryption = wstrust.indexOf('id="fgs-wstrust-encryption"');
+      note(general > 0 && boxes > general && encryption > boxes &&
+           wstrust.lastIndexOf('<form', general) ===
+             wstrust.lastIndexOf('<form', boxes),
+           'A4. General first, then Message protection, then the ' +
+           'encryption section, in one form',
+           JSON.stringify([general, boxes, encryption]));
 
       // --- B. The rule elsewhere ----------------------------------------
       const oauth = applications.createApplication({ identifier: 'wsv-web',

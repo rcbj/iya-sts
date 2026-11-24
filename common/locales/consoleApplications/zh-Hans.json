@@ -1017,6 +1017,7 @@
   "protection.requestProcessing": "请求消息处理",
   "protection.responseProcessing": "响应消息处理",
   "protection.openBuilder": "XPath 构建器…",
+  "protection.openBuilderFor": "{field} 的 XPath 构建器",
   "protection.close": "关闭",
   "protection.dialogIntro": "粘贴一条示例 SOAP 消息，显示其元素并点击其中一个。其表达式使用本服务的前缀书写，属于本服务评估的子集，并会标出示例中与之匹配的元素。将需要的每个表达式添加到列表，然后将列表添加到某个字段，并在表单上按“保存”：在此之前这里不会发送任何内容。",
   "protection.collect": "添加到列表",

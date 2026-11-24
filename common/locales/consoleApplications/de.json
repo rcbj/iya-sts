@@ -1017,6 +1017,7 @@
   "protection.requestProcessing": "Verarbeitung der Anfragenachricht",
   "protection.responseProcessing": "Verarbeitung der Antwortnachricht",
   "protection.openBuilder": "XPath-Builder…",
+  "protection.openBuilderFor": "XPath-Builder für {field}",
   "protection.close": "Schließen",
   "protection.dialogIntro": "Fügen Sie eine Beispiel-SOAP-Nachricht ein, zeigen Sie ihre Elemente an und klicken Sie auf eines. Sein Ausdruck wird mit den Präfixen dieses Dienstes geschrieben, in der Teilmenge, die der Dienst auswertet, und die Elemente des Beispiels, auf die er passt, werden markiert. Fügen Sie jeden gewünschten Ausdruck der Liste hinzu, fügen Sie die Liste dann einem Feld hinzu und drücken Sie im Formular Speichern: Bis dahin wird hier nichts gesendet.",
   "protection.collect": "Zur Liste hinzufügen",
