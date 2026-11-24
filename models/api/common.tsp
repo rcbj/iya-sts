@@ -1067,7 +1067,7 @@ namespace IyaSts.Api.Common;
 
 @hoisted model WithDescriptionObjectId { @js(#{`description`:"The `id` of a row in `workbench.objects`."}) `objectId`: string }
 
-@hoisted model WithOkErrorsErrorEtc4 { `ok`?: boolean; `errors`?: (string)[]; `error`?: string; `error_description`?: string }
+@hoisted model WithOkErrorsErrorEtc4 { `ok`?: boolean; `errors`?: (string)[]; `messages`?: RefusalMessages; `error`?: string; `error_description`?: string }
 
 @hoisted model WithActiveWaitingConcurrencyEtc4 { `active`?: integer; `waiting`?: integer; `concurrency`?: numeric; `backlog`?: numeric }
 

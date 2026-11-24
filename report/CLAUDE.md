@@ -1207,6 +1207,18 @@ reporter still live. `STS_REPORT_NODE=true` is the only opt-in:
 false for the holder. The variable stays off `AGREEMENT_SETTINGS` and off
 the default compose service.
 
+**The expensive acts have a per-subject budget (#2167, ASVS 5.0.0
+2.4.2)**: `POST /queries`, `POST /jobs`, `POST /definitions/{id}/run` and
+`GET /jobs/{id}/result` (`reportExpensive()`) each count, after the gate and
+the shape check, in `websecurity.subjectActShared('report-act', …)`, keyed
+by the token's realm and `sub`, at `report.actsPerSubject` in
+`report.actWindowS` (240 in 600 s in product, 0 = off in development). Past
+it: 429 `too_many_requests`, `Retry-After`, `STS-REPORT-0062`, and
+`messages` beside `error_description`, which the page draws through
+`refusalSaid()`. A job's status, the lists and the edits are not counted:
+the page polls status while it waits, and must not spend the download's
+budget doing so. `tests/subject_act_budgets.js`.
+
 An enqueue is refused (`STS-REPORT-0023`, HTTP 429) when the subject
 already has more queued and running jobs than
 `max(8, maxConcurrentPerSubject * 4)`, or the realm more than

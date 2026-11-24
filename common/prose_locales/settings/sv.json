@@ -275,6 +275,22 @@
     "en": "4bfb2112a9f37a5d",
     "text": "Hur nyligen, i minuter, någon måste ha loggat in för att ändra hur en person loggar in. På portalen: personens andra faktorer, återställningskoder, nycklar, applösenord, certifikat, signeringsnycklar, självutfärdade ID:n, e-postadress eller ett erbjudande om en plånboksbehörighet, samt att avsluta personens övriga sessioner; personen skickas till inloggning först. För en administratör: att ändra en persons lösenord, andra faktor, nyckel, återställningskoder, e-postadress eller applösenord via konsolen eller /admin-api, som svarar med insufficient_user_authentication enligt RFC 9470. 0 betyder att det inte krävs, standardvärdet i utveckling. Produktläget använder 15 som standard."
   },
+  "account.writesPerSubject|label": {
+    "en": "90cb891002b3f2f1",
+    "text": "Kontoändringar per person och fönster"
+  },
+  "account.writesPerSubject|description": {
+    "en": "4a4d877797b1c467",
+    "text": "Hur många ändringar en inloggad person får göra i sitt eget konto via /account-api (portalen) under ett fönster på account.writeWindowS: profiländringar, registrerade eller borttagna inloggningsuppgifter, återkallade samtycken, enhetsändringar. Räknas per tokenens subjekt, inte per adress, så personer bakom samma adress delar det inte. Därutöver avvisas en ändring med 429 och Retry-After tills fönstret har passerat; läsning av kontot fortsätter. 0 betyder ingen gräns, standardvärdet i utvecklingsläge. Produktläget har 300 som standard."
+  },
+  "account.writeWindowS|label": {
+    "en": "b5b3a8ffb257226e",
+    "text": "Fönster för kontoändringar (sekunder)"
+  },
+  "account.writeWindowS|description": {
+    "en": "738a3bd11ca86499",
+    "text": "Fönstret som account.writesPerSubject räknas i, i sekunder. Ett fast fönster, som varje hastighetsgräns här."
+  },
   "persistence.allowDefaultDatabasePassword|label": {
     "en": "24634837693652d6",
     "text": "Tillåt ett standardlösenord för databasen i produktläge"
@@ -12458,6 +12474,22 @@
   "report.maxConcurrentPerSubject|description": {
     "en": "525965a5866fed18",
     "text": "Hur många rapportjobb en person får ha igång samtidigt."
+  },
+  "report.actsPerSubject|label": {
+    "en": "c2fd1d4d02b9a6b1",
+    "text": "Rapportkörningar och nedladdningar per person och fönster"
+  },
+  "report.actsPerSubject|description": {
+    "en": "e49f26690bd91e46",
+    "text": "Hur många kostsamma åtgärder en anropare av Reports API får göra under ett fönster på report.actWindowS: en ad hoc-fråga eller förhandsvisning, ett köat jobb, en sparad definition som körs, ett nedladdat resultat. Räknas per tokenens subjekt, inte per adress. Därutöver avvisas en sådan åtgärd med 429 och Retry-After tills fönstret har passerat; listorna och definitionerna kan fortfarande läsas. 0 betyder ingen gräns, standardvärdet i utvecklingsläge. Produktläget har 240 som standard."
+  },
+  "report.actWindowS|label": {
+    "en": "3e27ff3046206690",
+    "text": "Fönster för rapportåtgärder (sekunder)"
+  },
+  "report.actWindowS|description": {
+    "en": "03466784e84b1e2b",
+    "text": "Fönstret som report.actsPerSubject räknas i, i sekunder. Ett fast fönster, som varje hastighetsgräns här."
   },
   "report.artifactRetentionS|label": {
     "en": "ae014cb5ae4ea837",

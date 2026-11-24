@@ -312,6 +312,7 @@
   "gnap.requestNotCompleted": "La demande n’a pas pu être finalisée.",
   "gnap.tooManyCodes": "Trop de codes ont été essayés depuis cet endroit. {detail}",
   "gnap.wrongOrigin": "Cette opération est envoyée par une page de ce service : la requête portait {carried, select, none {aucun en-tête Origin} other {une autre origine}}.",
+  "limits.tooManyActs": "Vous avez fait cela trop de fois en peu de temps. Attendez {seconds} secondes et réessayez.",
   "logout.accountNotSignedIn": "Ce compte n’est plus connecté dans ce navigateur. Choisissez de nouveau.",
   "logout.accountsOff": "Ce domaine de confiance ne conserve pas plusieurs comptes connectés par navigateur (authn.multipleAccounts est désactivé) : il n’y a donc aucun compte à choisir.",
   "logout.chooseAccount": "Choisissez un compte, ou tous les comptes.",

@@ -319,6 +319,11 @@ var config = {
     clientCertificateRenewDays: 30                                           // Renew a FAPI client certificate this many days before it expires
   },
 
+  // --- Web security ----------------------------------------------------
+  account: {
+    writeWindowS: 600  // Account write window (seconds)
+  },
+
   // --- Persistence -----------------------------------------------------
   persistence: {
     allowDefaultDatabasePassword: false,                   // Allow a default database password in product mode
@@ -1806,6 +1811,7 @@ var config = {
     pdfMaxPages: 100,           // PDF report page cap
     maxConcurrentPerRealm: 2,   // Report jobs running per realm
     maxConcurrentPerSubject: 1, // Report jobs running per person
+    actWindowS: 600,            // Report act window (seconds)
     artifactRetentionS: 86400,  // How long a report result is kept (seconds)
     jobRetentionS: 604800       // How long a report job row is kept (seconds)
   },

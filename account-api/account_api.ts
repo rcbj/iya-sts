@@ -68,6 +68,8 @@ import ProfilePhoto = require('../common/profile_photo');
 // What a request may name and hold (#1483): a leaf that registers nothing.
 import RequestHeaders = require('../common/request_headers');
 import ModelZod = require('../common/model_zod');
+// A refusal as a catalog sentence (#2006): the write budget's (#2167).
+import Sentence = require('../common/sentence');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -536,10 +538,22 @@ class AccountApi {
     const t = this.translatorFor(username);
     const portal = i18n.catalogData(t.negotiated, 'portal');
     const chooser = i18n.catalogData(t.negotiated, 'chooser');
+    // THE REFUSALS THIS API WORDS AS CATALOG SENTENCES (#2167): only the
+    // rate limits' area, not the whole namespace — the portal's other
+    // refusals are English (#2006 lists them), and the sign-in screen's
+    // hundreds of sentences would only make every page heavier.
+    const refusals = i18n.catalogData(t.negotiated, 'refusals');
     const catalogs: Json = {};
     Object.keys(portal.catalogs).forEach(function (tag) {
+      const limits: Json = {};
+      const all = refusals.catalogs[tag] || {};
+      Object.keys(all).forEach(function (key) {
+        if (key.indexOf('refusals.limits.') === 0) {
+          limits[key] = all[key];
+        }
+      });
       catalogs[tag] = Object.assign({}, portal.catalogs[tag],
-                                    chooser.catalogs[tag] || {});
+                                    chooser.catalogs[tag] || {}, limits);
     });
     log.debug("Leaving AccountApi.localeData(). " + t.locale);
     return { negotiated: portal.negotiated, catalogs: catalogs,
@@ -1071,6 +1085,11 @@ class AccountApi {
         return this.json(res, 200, { ok: false, stepUp: {
           prompt: 'login', maxAge: this.recentAuthSeconds() } });
       }
+      if (op.method !== 'GET' && await this.overWriteBudget(req, res,
+                                                             caller)) {
+        log.debug("Leaving AccountApi.run(). Over the write budget.");
+        return undefined;
+      }
     }
     // WHAT THE REQUEST NAMES AND HOLDS (#1483, `/admin-api`'s #1476 rule):
     // a query name the operation does not declare, a value its declared type
@@ -1161,6 +1180,50 @@ class AccountApi {
       log.debug("Leaving AccountApi.run(). Threw.");
       return undefined;
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // THE WRITE BUDGET OF ONE PERSON (#2167, ASVS 5.0.0 2.4.2). Every operation
+  // that takes a token and is not a GET changes the person's own account —
+  // a profile edit, a credential enrolled or removed, a consent withdrawn, a
+  // device changed — and until this each was bounded only by the ceiling
+  // on one ADDRESS (`common/request_budget.ts`). So they count, after the
+  // gate has proved who is calling, in a bucket keyed by the token's
+  // subject in this realm (`websecurity.subjectActShared()`), of
+  // `account.writesPerSubject` in `account.writeWindowS`. A GET is not
+  // counted: reading one's own account stays under the address ceiling
+  // only, and a person over the write budget can still see their account.
+  // The refusal is a 429 with Retry-After, and its sentence is a catalog
+  // message the portal draws in its own language (#2006).
+  // -------------------------------------------------------------------------
+  /**
+   * Counts a write against its person's budget, and refuses one over it.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param caller - who the token names
+   * @returns a promise of true when the request was refused
+   */
+  async overWriteBudget(req: Json, res: Json,
+                        caller: AccountCaller): Promise<boolean> {
+    const { log, config, websecurity } = this.deps;
+    log.debug("Entering AccountApi.overWriteBudget().");
+    const counted = await websecurity.subjectActShared('account-write', req,
+      String(caller.realm || '') + '|' + String(caller.sub || ''),
+      Number(config.value('account.writesPerSubject')),
+      Number(config.value('account.writeWindowS')), 'STS-ACCOUNT-0024');
+    if (counted.ok) {
+      log.debug("Leaving AccountApi.overWriteBudget(). Within it.");
+      return false;
+    }
+    const said = counted.said ||
+      Sentence.say('refusals.limits.tooManyActs',
+                   { seconds: counted.retryAfterS || 1 });
+    res.set('Retry-After', String(counted.retryAfterS || 1));
+    this.refuse(res, 429, 'STS-ACCOUNT-0024', [String(said)],
+                { messages: Sentence.messagesOf([said]) });
+    log.debug("Leaving AccountApi.overWriteBudget(). Refused.");
+    return true;
   }
 
   // ---------------------------------------------------------------------------

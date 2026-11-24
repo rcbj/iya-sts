@@ -1529,6 +1529,36 @@ const SETTINGS = [
                  'means it is not asked, which is the development default. ' +
                  'Product mode defaults to 15.' },
 
+  // #2167 (ASVS 5.0.0 2.4.2): a signed-in person's own budget of writes,
+  // keyed by the token's subject. 300 in ten minutes is one write every two
+  // seconds, sustained for ten minutes; the busiest real visit to the portal
+  // — a passkey enrolled (two acts), a device approved (two), a few keys
+  // renamed, consents withdrawn, a photo set — is a few dozen. Off in
+  // development, as the per-address ceiling is.
+  { key: 'account.writesPerSubject', group: 'Web security',
+    label: 'Account writes per person per window',
+    env: 'STS_ACCOUNT_WRITES_PER_SUBJECT', type: 'int', dflt: strongerInProduct(300, 0), derived: true,
+    min: 0, max: 1000000,
+    runtime: true,
+    description: 'How many changes one signed-in person may make to their ' +
+                 'own account through /account-api (the portal) in an ' +
+                 'account.writeWindowS window: profile edits, credentials ' +
+                 'enrolled or removed, consents withdrawn, device changes. ' +
+                 'Counted by the token\'s subject, not by address, so ' +
+                 'people behind one address do not share it. Past it a ' +
+                 'write is refused with 429 and Retry-After until the ' +
+                 'window passes; reading the account goes on. 0 means no ' +
+                 'limit, which is the development default. Product mode ' +
+                 'defaults to 300.' },
+
+  { key: 'account.writeWindowS', group: 'Web security',
+    label: 'Account write window (seconds)',
+    env: 'STS_ACCOUNT_WRITE_WINDOW_S', type: 'int', dflt: 600,
+    min: 1, max: 86400,
+    runtime: true,
+    description: 'The window account.writesPerSubject is counted in, in ' +
+                 'seconds. A fixed window, as every rate limit here is.' },
+
   { key: 'persistence.allowDefaultDatabasePassword', group: 'Persistence',
     label: 'Allow a default database password in product mode',
     env: 'STS_PERSISTENCE_ALLOW_DEFAULT_DATABASE_PASSWORD', type: 'bool', dflt: false,
@@ -22310,6 +22340,30 @@ const SETTINGS = [
     env: 'REPORT_MAX_CONCURRENT_PER_SUBJECT', type: 'int', dflt: 1,
     min: 1, max: 8, runtime: true,
     description: 'How many report jobs one person may have running at once.' },
+  // #2167 (ASVS 5.0.0 2.4.2): the expensive acts, keyed by the token's
+  // subject. 240 in ten minutes is one every two and a half seconds,
+  // sustained; a person refining a query previews it every few seconds at
+  // the very most, and a synchronous run may take up to report.syncMaxMs.
+  // Off in development, as the per-address ceiling is.
+  { key: 'report.actsPerSubject', group: 'Reporting',
+    label: 'Report runs and downloads per person per window',
+    env: 'REPORT_ACTS_PER_SUBJECT', type: 'int', dflt: strongerInProduct(240, 0), derived: true,
+    min: 0, max: 1000000, runtime: true,
+    description: 'How many expensive acts one caller of the Reports API may ' +
+                 'make in a report.actWindowS window: an ad hoc query or ' +
+                 'preview, a job queued, a saved definition run, a result ' +
+                 'downloaded. Counted by the token\'s subject, not by ' +
+                 'address. Past it such an act is refused with 429 and ' +
+                 'Retry-After until the window passes; the lists and ' +
+                 'definitions can still be read. 0 means no limit, which ' +
+                 'is the development default. Product mode defaults to ' +
+                 '240.' },
+  { key: 'report.actWindowS', group: 'Reporting',
+    label: 'Report act window (seconds)',
+    env: 'REPORT_ACT_WINDOW_S', type: 'int', dflt: 600,
+    min: 1, max: 86400, runtime: true,
+    description: 'The window report.actsPerSubject is counted in, in ' +
+                 'seconds. A fixed window, as every rate limit here is.' },
   { key: 'report.artifactRetentionS', group: 'Reporting',
     label: 'How long a report result is kept (seconds)',
     env: 'REPORT_ARTIFACT_RETENTION_S', type: 'int', dflt: 86400,

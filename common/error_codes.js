@@ -30322,6 +30322,15 @@ const CODES = [
   { code: 'STS-ACCOUNT-0023',
     summary: 'A token was refused because the person it names no longer exists.',
     spec: 'HTTP 401' },
+  { code: 'STS-ACCOUNT-0024',
+    summary: 'A signed-in person made more writes to their own account ' +
+      '(profile edits, credentials enrolled or removed, consents ' +
+      'withdrawn, device changes: every act of /account-api that is not ' +
+      'a GET) than account.writesPerSubject allows in an ' +
+      'account.writeWindowS window, counted by the token\'s subject; ' +
+      'further writes are refused until the window passes, and reads go ' +
+      'on (#2167, ASVS 5.0.0 2.4.2).',
+    spec: 'HTTP 429 { ok: false, errors, messages } with Retry-After' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +
@@ -31776,6 +31785,14 @@ const CODES = [
       'visible to its owner.',
     spec: 'forbidden (HTTP 403); recorded for a scheduled run, whose ' +
       'occurrence is consumed' },
+  { code: 'STS-REPORT-0062',
+    summary: 'A caller of the Reports API made more expensive acts (an ad ' +
+      'hoc query or preview, a job queued, a saved definition run, a ' +
+      'result downloaded) than report.actsPerSubject allows in a ' +
+      'report.actWindowS window, counted by the token\'s subject; further ' +
+      'acts are refused until the window passes, and the other ' +
+      'operations go on (#2167, ASVS 5.0.0 2.4.2).',
+    spec: 'too_many_requests (HTTP 429) with Retry-After' },
   { code: 'STS-AUDIT-0001',
     summary: 'An audit export destination was refused because its ' +
       'configuration is not usable: an unknown action or type, a missing ' +

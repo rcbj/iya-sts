@@ -21,6 +21,14 @@ Unless an operation below says otherwise, any status it does not list answers th
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## GET /report-api
 
@@ -57,6 +65,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -64,6 +80,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## GET /report-api/announcements
 
@@ -100,6 +124,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -107,6 +139,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## GET /report-api/catalog
 
@@ -202,6 +242,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -209,6 +257,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## GET /report-api/catalog/{id}
 
@@ -305,6 +361,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -312,6 +376,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **404**: unknown_source.
 
@@ -319,6 +391,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## GET /report-api/definitions
 
@@ -415,6 +495,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -422,6 +510,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## POST /report-api/definitions
 
@@ -561,6 +657,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **401**: invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.
 
@@ -568,6 +672,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -575,6 +687,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## GET /report-api/definitions/{id}
 
@@ -665,6 +785,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -672,6 +800,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **404**: not_found.
 
@@ -679,6 +815,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## POST /report-api/definitions/{id}
 
@@ -819,6 +963,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **401**: invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.
 
@@ -826,6 +978,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -833,6 +993,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **404**: not_found.
 
@@ -840,6 +1008,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## DELETE /report-api/definitions/{id}
 
@@ -871,6 +1047,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -878,6 +1062,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **404**: not_found.
 
@@ -885,6 +1077,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## POST /report-api/definitions/{id}/run
 
@@ -975,6 +1175,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **401**: invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.
 
@@ -982,6 +1190,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -989,6 +1205,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **404**: not_found.
 
@@ -996,13 +1220,29 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
-**429**: too_many_jobs.
+**429**: too_many_jobs, or too_many_requests: this caller's budget of expensive acts (report.actsPerSubject in report.actWindowS) is spent. Retry-After says when to try again (#2167).
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## POST /report-api/definitions/{id}/share
 
@@ -1100,6 +1340,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **401**: invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.
 
@@ -1107,6 +1355,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -1114,6 +1370,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **404**: not_found.
 
@@ -1121,6 +1385,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## GET /report-api/groups
 
@@ -1161,6 +1433,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -1168,6 +1448,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## GET /report-api/jobs
 
@@ -1258,6 +1546,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -1265,6 +1561,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## POST /report-api/jobs
 
@@ -1388,6 +1692,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **401**: invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.
 
@@ -1395,6 +1707,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -1402,13 +1722,29 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
-**429**: too_many_jobs.
+**429**: too_many_jobs, or too_many_requests: this caller's budget of expensive acts (report.actsPerSubject in report.actWindowS) is spent. Retry-After says when to try again (#2167).
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## GET /report-api/jobs/{id}
 
@@ -1491,6 +1827,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -1498,6 +1842,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **404**: job_not_found.
 
@@ -1505,6 +1857,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## POST /report-api/jobs/{id}/cancel
 
@@ -1587,6 +1947,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -1594,6 +1962,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **404**: job_not_found.
 
@@ -1601,6 +1977,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## GET /report-api/jobs/{id}/result
 
@@ -1645,6 +2029,14 @@ As `text/csv`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -1652,6 +2044,14 @@ As `text/csv`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **404**: job_not_found.
 
@@ -1659,6 +2059,14 @@ As `text/csv`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **409**: job_not_ready.
 
@@ -1666,6 +2074,14 @@ As `text/csv`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **410**: result_expired.
 
@@ -1673,6 +2089,29 @@ As `text/csv`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
+
+**429**: too_many_requests: this caller's budget of expensive acts (report.actsPerSubject in report.actWindowS) is spent. Retry-After says when to try again (#2167).
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## GET /report-api/me
 
@@ -1703,6 +2142,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -1710,6 +2157,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## GET /report-api/openapi.json
 
@@ -1746,6 +2201,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -1753,6 +2216,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## POST /report-api/queries
 
@@ -1895,6 +2366,14 @@ As `text/csv`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **401**: invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.
 
@@ -1902,6 +2381,14 @@ As `text/csv`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -1909,13 +2396,29 @@ As `text/csv`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
-**429**: too_many_jobs.
+**429**: too_many_jobs, or too_many_requests: this caller's budget of expensive acts (report.actsPerSubject in report.actWindowS) is spent. Retry-After says when to try again (#2167).
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## GET /report-api/realms
 
@@ -1953,6 +2456,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -1960,6 +2471,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## GET /report-api/schedules
 
@@ -2065,6 +2584,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: Another owner was named without report:admin.
 
@@ -2072,6 +2599,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 ## GET /report-api/signals
 
@@ -2124,6 +2659,14 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 
 **403**: forbidden or insufficient_scope.
 
@@ -2131,4 +2674,12 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|
 | `error` | string |  |  |
 | `error_description` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
 {% endraw %}
