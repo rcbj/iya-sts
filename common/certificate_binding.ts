@@ -38,6 +38,10 @@
 //     policy the path does not carry to the leaf is not;
 //   * `bindings` — the methods that say whose it is (below), by default
 //     `certificate-sha256` and `issuer-serial`;
+//   * `smartCard` — true where the certificates it covers are smart cards
+//     (PIV/CAC), so a sign-in on one is the authentication policy's smart
+//     card row rather than its TLS client certificate row (#2031). Absent
+//     is false, so a profile stored before it keeps its meaning;
 //   * `lowAffinity` — true only where an administrator opts in to a NAME
 //     method (rcbj's decision on #2012). False, a name method in the list is
 //     refused when the setting is written.
@@ -260,7 +264,8 @@ class CertificateBinding {
   static profileProblem(one: Json): string {
     helpers.log.debug("Entering CertificateBinding.profileProblem().");
     const allowed = ['id', 'issuers', 'keyUsage', 'extendedKeyUsage',
-                     'policies', 'bindings', 'lowAffinity', 'description'];
+                     'policies', 'bindings', 'lowAffinity', 'description',
+                     'smartCard'];
     let problem = '';
     if (!one || typeof one !== 'object' || Array.isArray(one)) {
       problem = 'is not a JSON object';
@@ -323,6 +328,10 @@ class CertificateBinding {
                   bindings.filter(function (v) {
                     return LOW_AFFINITY.indexOf(String(v)) >= 0;
                   }).join(', ') + ') without "lowAffinity": true';
+      } else if (one.smartCard !== undefined &&
+                 typeof one.smartCard !== 'boolean') {
+        problem = '("' + one.id + '") has a "smartCard" that is not true ' +
+                  'or false';
       } else if (one.description !== undefined &&
                  (typeof one.description !== 'string' ||
                   one.description.length > 500)) {
@@ -459,7 +468,10 @@ class CertificateBinding {
         policies: strings(one.policies),
         bindings: one.bindings === undefined ? DEFAULT_BINDINGS.slice(0)
           : strings(one.bindings),
-        lowAffinity: one.lowAffinity === true
+        lowAffinity: one.lowAffinity === true,
+        // #2031: the certificates it covers are smart cards (PIV/CAC), for
+        // the authentication policy's smart card row. Absent is false.
+        smartCard: one.smartCard === true
       };
     });
     log.debug("Leaving CertificateBinding.profiles(). " + out.length + ".");
@@ -876,7 +888,8 @@ class CertificateBinding {
       return null;
     }
     const base = { issuedHere: false, outside: true, accepted: false,
-                   realm: realmId, profile: profile.id };
+                   realm: realmId, profile: profile.id,
+                   smartCard: profile.smartCard === true };
     const outside = this.profileRefusal(profile, leaf, chain);
     if (outside) {
       log.info(codes.tag('STS-TLS-0066') + 'certificate_binding: a client ' +

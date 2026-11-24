@@ -318,7 +318,35 @@ async function checkIssuance(t, dev) {
     t.check(piv.signInRefusal(card.record.serialHex) === null,
             '4i. and does with piv.cardAuthSignIn');
     config.clearOverride('piv.cardAuthSignIn');
+    // #2031: the authentication policy's smartCardCardAuth row decides,
+    // and follows the setting only while the policy stores no value.
+    const authnPolicy = require('../common/authn_policy');
+    const enrolledCard = piv.enrolledPivOf(card.record.serialHex);
+    t.check(enrolledCard && enrolledCard.cardAuth === true &&
+            enrolledCard.profile === 'piv-card-auth',
+            '4j. the enrolment register names a piv-card-auth certificate ' +
+            'the card authentication key (#2031)',
+            JSON.stringify(enrolledCard));
+    const savedOn = authnPolicy.save('default',
+      Object.assign({}, authnPolicy.DEFAULTS, { smartCardCardAuthPrimary:
+                                                  true }));
+    t.check(savedOn.ok && piv.signInRefusal(card.record.serialHex) === null,
+            '4k. the policy\'s smartCardCardAuth row on lets it sign in with ' +
+            'piv.cardAuthSignIn off (#2031)', JSON.stringify(savedOn.errors));
+    config.setOverride('piv.cardAuthSignIn', true);
+    const savedOff = authnPolicy.save('default',
+      Object.assign({}, authnPolicy.DEFAULTS, { smartCardCardAuthPrimary:
+                                                  false }));
+    t.equal(code(piv.signInRefusal(card.record.serialHex)), 'STS-PIV-0013',
+            '4l. and the row off refuses it with piv.cardAuthSignIn on ' +
+            '(#2031)');
+    void savedOff;
+    config.clearOverride('piv.cardAuthSignIn');
+    authnPolicy.reset('default');
   }
+  t.check(!piv.enrolledPivOf('00ffffffffffff'),
+          '4m. a certificate not enrolled here is no PIV card to the ' +
+          'register (#2031)');
   t.check(piv.signInRefusal(serialHex) === null,
           '4j. a piv-auth certificate signs in');
   // X4: what the attestation said, recorded and handed to policy.
