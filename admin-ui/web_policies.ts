@@ -1753,8 +1753,19 @@ class PoliciesPage {
           '" value="' + value + '"' + (checked ? ' checked' : '') + off +
           hint + '> ' + kit.esc(label) + '</label>';
       };
-      control = radio('', 'TRUE', t.text('consolePolicies.yes'), yes) +
-        ' ' + radio('-no', 'FALSE', t.text('consolePolicies.no'), !yes) +
+      // A ROW THAT FOLLOWS ANOTHER WHILE UNSET (#2031) has a third choice,
+      // checked while it follows; it posts FOLLOW, which keeps it so.
+      const following = !!field.following;
+      control = radio('', 'TRUE', t.text('consolePolicies.yes'),
+                      yes && !following) +
+        ' ' + radio('-no', 'FALSE', t.text('consolePolicies.no'),
+                    !yes && !following) +
+        (field.follows
+          ? ' ' + radio('-follow', 'FOLLOW',
+              t.text('consolePolicies.follows',
+                     { row: String(field.followsLabel || field.follows) }),
+              following)
+          : '') +
         (field.disabled
           ? ' <span class="off">' + kit.esc(field.disabledWhy) + '</span>'
           : '');

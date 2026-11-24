@@ -5942,6 +5942,8 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
   // where a hardware token's attestation covers the key, with `sc` where
   // it says the key is on a smart card. Never inferred here.
   const amr = certificateAmrOf(cert, username);
+  // A SMART CARD OR NOT (#2031), for the authentication policy's two rows.
+  const card = smartCardOf(cert, gated, amr);
   try {
     session = authn.startSession(res, username, amr, '1',
                                  'a client certificate on the ' + mode +
@@ -5959,11 +5961,15 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
                                            '/tls/sign-in)',
                                    // And its serial, which the hardware
                                    // token register files it by (#1955).
-                                   credential: {
+                                   credential: Object.assign({
                                      kind: 'certificate',
                                      id: cert.fingerprint256 || '',
                                      serial: String(cert.serialNumber ||
-                                                    '') } });
+                                                    '') },
+                                     card.smartCard ? { smartCard: true }
+                                                    : {},
+                                     card.cardAuth ? { cardAuth: true }
+                                                   : {}) });
   } catch (e) {
     // Bookkeeping must never break a connection that has already been
     // accepted — the same rule recordClientCertificate() states.
@@ -6027,6 +6033,38 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
     answer.account = held ? 'reauthenticated' : 'added';
   }
   return answer;
+}
+
+// WHETHER A CLIENT CERTIFICATE IS A SMART CARD (#2031), from evidence this
+// service holds and never from what the certificate claims of itself: the
+// hardware token register's attestation says its key is on a smart card
+// (`amr` carries `sc`, `certificateAmrOf()`); it was enrolled here under a
+// PIV slot profile (`piv_attestation.enrolledPivOf()`); it is an outside PIV
+// or CAC card mapped by its card UUID (the identity's `pivCard`, #1955 D8);
+// or it is covered by a `certSignIn.profiles` profile marked `smartCard`
+// (#2012). `cardAuth` is the PIV card authentication key, slot 9e. Asked by
+// both sign-in doors, which put the answer on the session's credential for
+// the authentication policy's `smartCard` row.
+function smartCardOf(cert, gated, amr) {
+  log.debug('Entering smartCardOf().');
+  let enrolled = null;
+  try {
+    enrolled = require('../common/piv_attestation').enrolledPivOf(
+      String((cert && cert.serialNumber) || ''),
+      String((cert && cert.fingerprint256) || ''));
+  } catch (e) {
+    log.debug('Caught in smartCardOf(): ' + ((e && e.message) || e));
+    // No register to ask: the other evidence still answers.
+    enrolled = null;
+  }
+  const smartCard = (Array.isArray(amr) && amr.indexOf('sc') >= 0) ||
+    !!enrolled ||
+    !!(gated && gated.accepted && (gated.pivCard === true ||
+                                   gated.smartCard === true));
+  const out = { smartCard: smartCard,
+                cardAuth: !!(enrolled && enrolled.cardAuth) };
+  log.debug('Leaving smartCardOf(). ' + JSON.stringify(out));
+  return out;
 }
 
 // Why a client certificate may not sign in for the PIV profile it was
@@ -6314,16 +6352,22 @@ function screenCertificateHolder(req) {
       ? 'its revocation was consulted (' + revocation.policy + '): ' +
         revocation.why
       : 'NO REVOCATION WAS CHECKED (pki.revocationCheck is off)';
+    const amr = certificateAmrOf(peer.cert, peer.username);
+    // A SMART CARD OR NOT (#2031): the screen's act asks the policy's row
+    // for the kind it is.
+    const card = smartCardOf(peer.cert, pre.gated, amr);
     log.debug('Leaving screenCertificateHolder(). ' + peer.username);
     return {
       ok: true,
       username: peer.username,
+      smartCard: card.smartCard,
+      cardAuth: card.cardAuth,
       credentialId: String(peer.cert.fingerprint256 || ''),
       // Its serial, which the hardware token register files it by (#1955).
       serial: String(peer.cert.serialNumber || ''),
       // What the certificate's key earns (#1955 P1), for the screen's
       // session: `GET /tls/sign-in`'s answer, from the same evidence.
-      amr: certificateAmrOf(peer.cert, peer.username),
+      amr: amr,
       revocationSaid: revocationSaid,
       // What the certificate says of its holder (#127's facts), kept by the
       // certificate sign-in handoff (#2012), which rebuilds the

@@ -12436,6 +12436,9 @@ is exactly what it was. The headers of the three files argue them in full.
   minute). `oauth2_bcp.js`'s `no-certificate-header` note says the same.
 * **THE HANDOFF** (`certSignIn.handoff`, rcbj: an option, off by default) is
   `tls/CLAUDE.md`'s, with the `certificate-sign-in` hosted application.
+* **A PROFILE MAY SAY `smartCard: true`** (#2031): the certificates it
+  covers sign in under the authentication policy's smart card row
+  (`identityOf()` answers `smartCard`). Absent is false.
 * **WHAT HAS NO TEST**: a real handshake through a profile, the handoff over
   two real listeners, and a real TLS-terminating proxy. `tests/certificate_binding.js`
   holds the logic in process over certificates made at run time; nothing has
@@ -14328,6 +14331,46 @@ the sign-in closed. A person names none of their own.
 ways round, at the issuance gate), and `tests/authn_policy.js` the module,
 the inheritance, the mail guard, the retired settings and a kind registered
 later.
+
+### The smart-card rows and attested hardware (#2031, rcbj 2026-11-23)
+
+Three mechanism rows split a smart card out of the row that governed it:
+`smartCard` (out of `certificate`), `pkinitSmartCard` (out of `kerberos`)
+and `smartCardCardAuth` (out of the `piv.cardAuthSignIn` setting). Each is
+first-factor only and `optional`. Three rules a maintainer must keep:
+
+* **A ROW WITH `follows` IS A THIRD STATE, NOT A DEFAULT.** The model's
+  mechanism row names what it follows (a field key, or `setting:<key>`).
+  `read()` answers that value whenever the entry stores no value for the
+  row (`resolveFollowing()`, `sources` = `follows <what>`); a save may send
+  `follow`, which writes NO attribute; a save that omits the row keeps what
+  it is now, following included. So a policy stored before the rows keeps
+  its meaning. `following(profile, key)` is the one reader of the state; the
+  console draws a third radio (FOLLOW) from the view's `follows`,
+  `followsLabel` and `following`.
+* **WHAT IS A SMART CARD IS EVIDENCE, DECIDED IN `tls/tls_server.js`'s
+  `smartCardOf()`** — `sc` in the register's amr, a PIV slot profile in the
+  enrolment register (`piv_attestation.enrolledPivOf()`), an outside card's
+  `pivCard` identity, or a `certSignIn.profiles` profile with
+  `smartCard: true` — and carried on the session's credential
+  (`smartCard`, `cardAuth`). `authn.ts`'s `authnPolicyRefusal()` maps a
+  smart-card certificate to `smartCard` (STS-AUTHN-0590) and a Kerberos
+  session with `sc` to `pkinitSmartCard` (0591). The screen offers a
+  certificate while either certificate row is on and its act asks the one
+  the certificate is (0593). `piv_attestation.signInRefusal()` asks
+  `smartCardCardAuth` (still STS-PIV-0013); a card-auth key needs `smartCard`
+  too, which is what keeps the unset policy equal to the old two conditions.
+* **`requireAttestedHardware` (`no` | `always`) IS A REQUIREMENT FIELD, NOT
+  A MECHANISM ROW**: nothing is presented as attested hardware. At `always`
+  `authnPolicyRefusal()` refuses a session whose completing credential is on
+  no active token (`Authn.attestedHardwareHeld()`, STS-AUTHN-0592), the
+  default realm's built-in administrator exempt; a save with no
+  hardware-capable row on is refused (cross-field). The KDC's own AS
+  exchange is gated by neither Kerberos row, as before.
+
+**HOTP and YubiKey OTP say they are off by default** in their `what` (rcbj,
+2026-11-23), which the page and `/admin-api` draw. `tests/authn_policy_smart_card.js`
+holds all of it; `tests/piv_attestation.js` 4j-4m the card-auth row.
 
 ## 3cd. `service_accounts.ts`, `service_account_policy.ts`, `service_account_rotation.ts`: A SERVICE ACCOUNT IS A PERSON WITH A FLAG (#221, 2026-10-06)
 

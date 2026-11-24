@@ -1118,8 +1118,74 @@ It replaced three settings: `authn.mfaRequired` is `requireSecondFactor`
 holds is always asked for), and `totp.enabled` and `backupCodes.enabled` are the
 TOTP and recovery-code rows. Those two keep their settings' contract: off stops
 NEW enrolments and never a factor already held. The same contract covers the
-*One-time code token (HOTP)* and *YubiKey OTP* rows. Both are listed and off
-until an operator turns them on.
+*One-time code token (HOTP)* and *YubiKey OTP* rows.
+
+**HOTP and YubiKey OTP are off by default, and must be turned on.** Until a
+realm turns the *One-time code token (HOTP)* row on, nobody in it can enrol,
+claim or be assigned an HOTP token, so no HOTP token is used at sign-in. The
+same holds for the *YubiKey OTP* row, which also needs `yubiotp.offered`. The
+policy page and `GET /admin-api/policies` say so beside each row. Turning a
+row off later stops new enrolments only: a token a person already holds is
+still asked for.
+
+#### Smart cards (#2031)
+
+Three rows separate a smart card from the generic row that governed it until
+now. Each is a first factor only.
+
+| Row (API field) | What it governs | While the policy stores no value |
+|---|---|---|
+| *Smart card (PIV/CAC) certificate* (`smartCardPrimary`) | a client certificate that is a smart card, at `GET /tls/sign-in` and *Continue with your certificate* | follows *TLS client certificate* (`certificatePrimary`) |
+| *PIV card authentication key (no PIN)* (`smartCardCardAuthPrimary`) | a PIV slot 9e certificate, at the TLS sign-in and at PKINIT | follows the `piv.cardAuthSignIn` setting (off) |
+| *Kerberos PKINIT with a smart card* (`pkinitSmartCardPrimary`) | `/authn/spnego` with a ticket carrying this realm's `pkinit-smartcard` indicator | follows *Kerberos (SPNEGO)* (`kerberosPrimary`) |
+
+**A certificate is a smart card** when the service holds evidence that it is
+one: the hardware token register's attestation says its key is on a smart
+card; it was enrolled here under a PIV slot profile; it is an outside PIV or
+CAC card mapped by its card UUID (`piv.externalIssuers`, `stsPivCardUuid`);
+or a [certificate sign-in profile](tls.md) that covers it says
+`"smartCard": true`. Nothing the certificate says of itself makes it one.
+With the smart-card rows split out, *TLS client certificate* means a
+certificate that is not a smart card, and *Kerberos (SPNEGO)* means Kerberos
+other than PKINIT with a smart card.
+
+**A row that follows** answers what it follows whenever the profile stores no
+value for it. The page draws a third choice beside Yes and No, *as …*, which
+is checked while the row follows. A save may send `true`, `false` or `follow`;
+`follow` stores nothing, so the row keeps following. A save that leaves a row
+out keeps what it is now, following included, so a client written before the
+rows is not refused. A policy stored before the rows existed stores none of
+them, so every one follows the control that governed its path before, and
+the realm behaves exactly as it did.
+
+So a realm can take PIV/CAC cards and refuse other client certificates (smart
+card *Yes*, TLS client certificate *No*), or the reverse. The card
+authentication key is a smart card too, so it needs the smart card row as
+well as its own. Refusals: `STS-AUTHN-0590` (a smart card), `STS-AUTHN-0591`
+(PKINIT with a smart card), `STS-AUTHN-0593` (the sign-in screen's act, for
+the kind of certificate the policy does not take), and `STS-PIV-0013` (the
+card authentication key).
+
+The KDC's own PKINIT exchange is not gated by these rows, as it is not gated
+by *Kerberos (SPNEGO)*: they govern the session `/authn/spnego` starts.
+
+#### Attested hardware for everybody
+
+`requireAttestedHardware` (*Attested hardware token required*) is `no` by
+default. At `always`, a session starts only where the credential that
+completed the sign-in — a passkey, a security key, a certificate or a smart
+card — is on an active hardware token whose attestation the hardware token
+register recorded. That is the test an application's `attested-hardware`
+mechanism makes (see [Hardware tokens](hardware-tokens.md)). A password, an
+authenticator app, an emailed code, a wallet, a federation partner or a
+Kerberos ticket alone is refused (`STS-AUTHN-0592`). The default realm's
+built-in administrator (`admin.bootstrapUsername`) is exempt, so a service is
+never left with nobody who can sign in. A save with `always` and no passkey,
+security-key, certificate or smart-card row on is refused. It is a
+requirement rather than a mechanism row because nothing is presented *as*
+attested hardware: it is a property of the passkey, key or card that
+answered. An application's named policy may narrow further; it cannot relax
+it.
 
 API: `GET /admin-api/policies` (the `authn` member) and `POST
 /admin-api/policies/save-authn-policy` / `reset-authn-policy`.
