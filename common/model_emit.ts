@@ -559,6 +559,8 @@ class ModelEmit {
       secretsDestination: 'Secrets destination',
       signerTrustAnchor: 'Signer trust anchor',
       trustAnchor: 'Trust anchor',
+      truststore: 'Named truststore',
+      truststoreAssignments: 'Truststore assignments',
       device: 'Device',
       federationRelationship: 'Federation relationship',
       group: 'Group',

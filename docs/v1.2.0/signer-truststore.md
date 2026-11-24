@@ -5,6 +5,11 @@ nav_order: 7
 
 # The signer truststore, at `/admin/pki/trust`
 
+Since 1.2.0 the signer truststore is one of several
+[truststores](truststores.md): the view `signers`, which the use cases that
+read it name in their default lists. Everything below still holds; a use case
+may now be assigned other truststores beside it or in place of it.
+
 The signer truststore holds the certificate authorities, and the intermediates
 under them, that a **third party's certificate** may chain to when this service
 relies on it for anything but a TLS handshake: under a signature, as an

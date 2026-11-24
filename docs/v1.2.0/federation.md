@@ -860,7 +860,7 @@ changes:
 |---|---|---|
 | A person with no directory entry | under `link-at-first-sign-in` and `jit-namespaced`, created on first sign-in as `<relationship>~<subject>`, linked, unless `fedAutocreateUsers` is off. A new relationship is created with the switch on. `any-existing` creates under the confirm-lookup name instead | created when `fedAutocreateUsers` is on, as `<relationship>~<subject>`, linked. A new relationship is created with the switch off, and a sign-in for somebody with no entry is then refused `STS-FED-0090`. A relationship that already stores TRUE keeps creating. `any-existing` cannot be set |
 | `fedSubjectPolicy` `any-existing` | the name match of old | refused, when set and at the sign-in |
-| The browser the answer arrives in | any | the browser that started the sign-in: a cookie set when the person is sent to the partner must come back with the answer, or it is refused (`STS-FED-0237`) |
+| The browser the answer arrives in | any | the browser that started the sign-in: a cookie set when the person is sent to the partner must come back with the answer, or it is refused (`STS-FED-0237`). The answer clears it, and a browser holds at most eight: a ninth start clears the oldest |
 | A SAML 1.1 or WS-Federation assertion with no audience restriction | accepted, with a warning | refused (`STS-FED-0241`) unless `federation.allowAssertionWithoutAudience` is on |
 | An untyped Logout Token from an OpenID Connect partner | accepted when it is typed `jwt` or carries no type | accepted only typed `logout+jwt`, unless `federation.allowUntypedLogoutToken` is on |
 | The password at the linking sign-in | not checked (the reserved `invalid` is refused) | verified, with the second factor |

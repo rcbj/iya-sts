@@ -587,6 +587,18 @@
     "en": "0a4ee080bb81a76f",
     "text": "Une personne est interrogée une fois par application avant que SAML 2.0, SAML 1.1 ou WS-Federation ne la connecte à celle-ci, et la réponse est conservée. saml2.ssoConsent, saml11.ssoConsent et wsfed.ssoConsent le désactivent par protocole, et la valeur propre d’une application les remplace."
   },
+  "mode.requirements.build-detail.what": {
+    "en": "67a7688cb243e28c",
+    "text": "La build exacte n’est montrée qu’aux administrateurs"
+  },
+  "mode.requirements.build-detail.development": {
+    "en": "11a96f2e73c6f2e9",
+    "text": "Chaque pied de page, les API de connexion, du portail et des rapports et leurs documents OpenAPI portent la version, le numéro de build, la date de build et le commit, et le User-Agent de chaque requête de ce service nomme la version."
+  },
+  "mode.requirements.build-detail.product": {
+    "en": "94f6f154139aa78d",
+    "text": "Aucun d’eux ne porte la build : le pied de page n’a pas de ligne de version, un document OpenAPI donne la version propre de l’API et le User-Agent n’est que le nom du produit. La console et l’API de gestion montrent toujours la build. security.publishBuildInfo à on la montre de nouveau."
+  },
   "mode.requirements.secrets-from-store.what": {
     "en": "51a0285e7263826e",
     "text": "Les secrets du service proviennent d’un coffre de secrets"

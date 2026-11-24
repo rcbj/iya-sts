@@ -587,6 +587,18 @@
     "en": "0a4ee080bb81a76f",
     "text": "Eine Person wird einmal je Anwendung gefragt, bevor SAML 2.0, SAML 1.1 oder WS-Federation sie dort anmeldet, und die Antwort wird behalten. saml2.ssoConsent, saml11.ssoConsent und wsfed.ssoConsent schalten es je Protokoll aus, und der eigene Wert einer Anwendung setzt sie außer Kraft."
   },
+  "mode.requirements.build-detail.what": {
+    "en": "67a7688cb243e28c",
+    "text": "Der genaue Build wird nur Administratoren gezeigt"
+  },
+  "mode.requirements.build-detail.development": {
+    "en": "11a96f2e73c6f2e9",
+    "text": "Jede Seitenfußzeile, die APIs für Anmeldung, Portal und Berichte und ihre OpenAPI-Dokumente enthalten die Version, die Build-Nummer, die Build-Zeit und den Commit, und der User-Agent jeder Anfrage dieses Dienstes nennt die Version."
+  },
+  "mode.requirements.build-detail.product": {
+    "en": "94f6f154139aa78d",
+    "text": "Keines davon enthält den Build: Die Fußzeile hat keine Versionszeile, ein OpenAPI-Dokument nennt die eigene Version der API, und der User-Agent ist nur der Produktname. Die Konsole und die Verwaltungs-API zeigen den Build weiterhin. security.publishBuildInfo auf on zeigt ihn wieder."
+  },
   "mode.requirements.secrets-from-store.what": {
     "en": "51a0285e7263826e",
     "text": "Geheimnisse des Backends kommen aus einem Geheimnisspeicher"

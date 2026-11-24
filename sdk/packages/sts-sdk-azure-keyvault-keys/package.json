@@ -1,0 +1,10 @@
+{
+  "name": "sts-sdk-azure-keyvault-keys",
+  "version": "0.0.0",
+  "private": true,
+  "license": "BUSL-1.1",
+  "description": "Pins @azure/keyvault-keys for the image prefix /opt/sts-sdk (Dockerfile).",
+  "dependencies": {
+    "@azure/keyvault-keys": "4.10.2"
+  }
+}

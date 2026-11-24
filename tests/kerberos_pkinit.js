@@ -25,14 +25,17 @@
 //      hw-authent and AD-INITIAL-VERIFIED-CAS in the TGT — and the refusals:
 //      no freshness token, another person's certificate, a replayed
 //      AuthPack, group-2-sized MODP, no KDF, a revoked certificate, RSA key
-//      transport;
+//      transport; and MS-PKCA's paChecksum2 (#2125): SHA-256 and SHA-384
+//      accepted, a wrong one refused, an unlisted digest refused, SHA-1
+//      accepted in development, and krb5.pkinitRequirePaChecksum2;
 //   5. anonymous PKINIT: the unsigned AuthPack, the anonymous TGT, the KDC's
 //      contribution to its session key (PA-PKINIT-KX), and the TGS refusing
 //      to sell anything for it;
 //   6. in a PRODUCT-MODE CHILD: a person who must hold a second factor is
 //      refused on the password alone and admitted by certificate, and a
 //      person with no Kerberos keys at all is admitted by certificate and
-//      told to sign in once when they bring a password.
+//      told to sign in once when they bring a password; and a paChecksum2
+//      over SHA-1 refused there, while one over SHA-256 is taken.
 //
 // WHY IN PROCESS (tests/CLAUDE.md's first question): the vectors need chosen
 // inputs, and what the KDC wrote INTO a TGT is sealed under the krbtgt key,
@@ -47,6 +50,16 @@ const log = require('bunyan').createLogger({ name: 'kerberos_pkinit',
   level: process.env.LOG_LEVEL || 'info' });
 
 const RUN = nodeCrypto.randomBytes(3).toString('hex');
+
+// The digests the test client can put in a paChecksum2, by node's name: the
+// four MS-PKCA section 2.2.3 lists, and SHA-224, which it does not.
+const PACHECKSUM2_OIDS = {
+  sha1: '1.3.14.3.2.26',
+  sha224: '2.16.840.1.101.3.4.2.4',
+  sha256: '2.16.840.1.101.3.4.2.1',
+  sha384: '2.16.840.1.101.3.4.2.2',
+  sha512: '2.16.840.1.101.3.4.2.3'
+};
 
 // The KRB5PrincipalName of RFC 8636 section 8's vectors, and the vectors.
 const VECTOR_AS_REQ = Buffer.from('aaaaaaaaaaaaaaaaaaaa', 'hex');
@@ -112,6 +125,8 @@ function theCodec(t) {
   const pack = codec.readAuthPack(codec.encAuthPack({
     cusec: 5, ctime: new Date('2026-10-05T00:00:00Z'), nonce: -12345,
     paChecksum: Buffer.alloc(20, 7), freshnessToken: Buffer.from('tok'),
+    paChecksum2: { checksum: Buffer.alloc(32, 9),
+                   algorithm: '2.16.840.1.101.3.4.2.1' },
     supportedKdfs: ['1.3.6.1.5.2.3.6.2', '1.3.6.1.5.2.3.6.3'] }));
   t.check(pack.nonce === -12345 && pack.cusec === 5 &&
           Buffer.from(pack.freshnessToken).toString() === 'tok' &&
@@ -119,6 +134,13 @@ function theCodec(t) {
             '1.3.6.1.5.2.3.6.2,1.3.6.1.5.2.3.6.3',
           'an AuthPack round-trips, a negative (signed 32-bit) nonce as MIT ' +
           'sends one included', JSON.stringify(pack));
+  t.check(!!pack.paChecksum2 &&
+          pack.paChecksum2.algorithm === '2.16.840.1.101.3.4.2.1' &&
+          Buffer.from(pack.paChecksum2.checksum)
+            .equals(Buffer.alloc(32, 9)),
+          'MS-PKCA 2.2.3: paChecksum2 [5] round-trips, its ' +
+          'AlgorithmIdentifier\'s OID read back',
+          JSON.stringify(pack.paChecksum2));
   log.debug("Leaving theCodec().");
 }
 
@@ -243,12 +265,25 @@ function makeClient() {
                                               intDer(Buffer.from([1]))])]),
           codec.encBitString(intDer(dh.getPublicKey()))]));
       }
+      // MS-PKCA section 2.2.3's paChecksum2, when asked for: the digest
+      // named by `opts.paChecksum2`, spoiled with `opts.paChecksum2Wrong`.
+      let paChecksum2 = null;
+      if (opts.paChecksum2) {
+        const sum = nodeCrypto.createHash(opts.paChecksum2).update(raw)
+          .digest();
+        if (opts.paChecksum2Wrong) {
+          sum[0] ^= 0xff;
+        }
+        paChecksum2 = { checksum: sum,
+                        algorithm: PACHECKSUM2_OIDS[opts.paChecksum2] };
+      }
       const now = new Date();
       const pack = codec.encAuthPack({
         cusec: (now.getMilliseconds() * 1000) % 1000000, ctime: now,
         nonce: 123456789,
         paChecksum: nodeCrypto.createHash('sha1').update(raw).digest(),
         freshnessToken: opts.token || null,
+        paChecksum2: paChecksum2,
         clientPublicValue: opts.noDh ? null : new Uint8Array(spki),
         supportedKdfs: opts.noKdf ? null : ['1.3.6.1.5.2.3.6.2']
       });
@@ -362,6 +397,101 @@ function makeClient() {
            principals: principals, kdc: kdc, msgs: msgs, kcrypto: kcrypto,
            asn1: asn1, codec: codec, enrol: enrol, asReq: asReq,
            REALM: REALM };
+}
+
+// THE CODE A PKINIT REFUSAL RECORDED. It is never sent (the root CLAUDE.md's
+// error-code rule), so it is read where `krb5_kdc.js` gets it: the PKINIT
+// provider's checkRequest() is wrapped for one request.
+async function refusalCodeOf(c, send) {
+  log.debug("Entering refusalCodeOf().");
+  const provider = c.principals.pkinitProvider();
+  const original = provider.checkRequest;
+  let seen = null;
+  provider.checkRequest = async function (opts) {
+    const result = await original.call(provider, opts);
+    seen = result && !result.ok ? result.errorCode : null;
+    return result;
+  };
+  let reply = null;
+  try {
+    reply = await send();
+  } finally {
+    delete provider.checkRequest;
+  }
+  log.debug("Leaving refusalCodeOf().");
+  return Object.assign({}, reply, { errorCode: seen });
+}
+
+// MS-PKCA's paChecksum2 (#2125, ASVS 5.0.0 11.4.3), in development mode.
+async function paChecksum2(t, c, who, cert, token) {
+  log.debug("Entering paChecksum2().");
+  t.log.info('=== 4c. MS-PKCA paChecksum2 ===');
+  const settings = require('../common/config');
+  const { asReq } = c;
+  const sha256 = await asReq(who, cert, { token: token,
+                                          paChecksum2: 'sha256' });
+  t.check(sha256.ok, 'a valid paChecksum2 over SHA-256 beside the paChecksum ' +
+          'gets a TGT', JSON.stringify(sha256.code || sha256.eText || ''));
+  const sha384 = await asReq(who, cert, { token: token,
+                                          paChecksum2: 'sha384' });
+  t.check(sha384.ok, 'and one over SHA-384',
+          JSON.stringify(sha384.code || sha384.eText || ''));
+  const wrong = await refusalCodeOf(c, function () {
+    return asReq(who, cert, { token: token, paChecksum2: 'sha256',
+                              paChecksum2Wrong: true });
+  });
+  t.check(!wrong.ok && wrong.code === 41 &&
+          wrong.errorCode === 'STS-KRB-0261',
+          'a paChecksum2 that is not the SHA-256 of the body is ' +
+          'KRB_AP_ERR_MODIFIED, STS-KRB-0261', JSON.stringify(wrong));
+  const unlisted = await refusalCodeOf(c, function () {
+    return asReq(who, cert, { token: token, paChecksum2: 'sha224' });
+  });
+  t.check(!unlisted.ok && unlisted.code === 79 &&
+          unlisted.errorCode === 'STS-KRB-0260',
+          'a paChecksum2 over a digest MS-PKCA does not list (SHA-224) is ' +
+          'KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED, STS-KRB-0260',
+          JSON.stringify(unlisted));
+  if (!require('../common/mode').isProduct()) {
+    const sha1 = await asReq(who, cert, { token: token,
+                                          paChecksum2: 'sha1' });
+    t.check(sha1.ok, 'in development, a paChecksum2 over SHA-1 is checked ' +
+            'and taken (product refuses it: section 6)',
+            JSON.stringify(sha1.code || sha1.eText || ''));
+    const sha1Wrong = await refusalCodeOf(c, function () {
+      return asReq(who, cert, { token: token, paChecksum2: 'sha1',
+                                paChecksum2Wrong: true });
+    });
+    t.check(!sha1Wrong.ok && sha1Wrong.errorCode === 'STS-KRB-0261',
+            'and a wrong one over SHA-1 is still refused: MS-PKCA says a ' +
+            'present paChecksum2 "will always be validated"',
+            JSON.stringify(sha1Wrong));
+  }
+  const none = await asReq(who, cert, { token: token });
+  t.check(none.ok, 'without krb5.pkinitRequirePaChecksum2, the SHA-1 ' +
+          'paChecksum alone still gets a TGT',
+          JSON.stringify(none.code || none.eText || ''));
+  settings.setOverride('krb5.pkinitRequirePaChecksum2', true);
+  let required = null;
+  let requiredGood = null;
+  try {
+    required = await refusalCodeOf(c, function () {
+      return asReq(who, cert, { token: token });
+    });
+    requiredGood = await asReq(who, cert, { token: token,
+                                            paChecksum2: 'sha512' });
+  } finally {
+    settings.clearOverride('krb5.pkinitRequirePaChecksum2');
+  }
+  t.check(!required.ok && required.code === 79 &&
+          required.errorCode === 'STS-KRB-0262',
+          'with krb5.pkinitRequirePaChecksum2 on, a request without one is ' +
+          'KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED, STS-KRB-0262',
+          JSON.stringify(required));
+  t.check(requiredGood.ok, 'and one with a valid paChecksum2 over SHA-512 ' +
+          'gets a TGT',
+          JSON.stringify(requiredGood.code || requiredGood.eText || ''));
+  log.debug("Leaving paChecksum2().");
 }
 
 // RENEW-TILL IS CAPPED AT THE CERTIFICATE TOO (the review of #897,
@@ -527,6 +657,7 @@ async function throughTheKdc(t) {
           'transport) is KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED',
           JSON.stringify(noDh));
   await renewTillCapped(t, c, ALICE, first.token);
+  await paChecksum2(t, c, ALICE, alice, first.token);
   const revoked = await core.revokeEnrolled(alice.record.serialHex,
                                             'keyCompromise', 'test');
   t.check(revoked && revoked.ok !== false, 'the certificate is revoked');
@@ -620,6 +751,7 @@ async function productScenario() {
     log.debug("Entering brief().");
     log.debug("Leaving brief().");
     return { ok: r.ok, code: r.code, eText: r.eText,
+             errorCode: r.errorCode || null,
              indicators: r.indicators, flags: r.flags };
   };
   const certP = await c.enrol(P);
@@ -631,6 +763,20 @@ async function productScenario() {
   out.pkinitKeyless = brief(await c.asReq(K, certK, { token: first.token }));
   out.passwordKeyless = brief(await c.asReq(K, null,
                                             { password: 'Any-Password-1!' }));
+  // MS-PKCA's paChecksum2 over SHA-1 (#2125): the child runs with
+  // crypto.allowLegacyHashes on for other reasons, so it is switched off for
+  // these two, as the legacy KDF's check above does.
+  const settings = require('../common/config');
+  settings.setOverride('crypto.allowLegacyHashes', false);
+  try {
+    out.paChecksum2Sha1 = brief(await refusalCodeOf(c, function () {
+      return c.asReq(P, certP, { token: first.token, paChecksum2: 'sha1' });
+    }));
+    out.paChecksum2Sha256 = brief(await c.asReq(P, certP, {
+      token: first.token, paChecksum2: 'sha256' }));
+  } finally {
+    settings.clearOverride('crypto.allowLegacyHashes');
+  }
   log.debug("Leaving productScenario().");
   return out;
 }
@@ -717,6 +863,13 @@ function inProduct(t) {
           'and a password from them is still refused with the sentence that ' +
           'says to sign in once (STS-KRB-0104), as before PKINIT',
           JSON.stringify(r.passwordKeyless));
+  t.check(!r.paChecksum2Sha1.ok && r.paChecksum2Sha1.code === 79 &&
+          r.paChecksum2Sha1.errorCode === 'STS-KRB-0260',
+          'in product, a paChecksum2 over SHA-1 is ' +
+          'KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED, STS-KRB-0260 (#2125)',
+          JSON.stringify(r.paChecksum2Sha1));
+  t.check(r.paChecksum2Sha256.ok, 'and one over SHA-256 gets a TGT',
+          JSON.stringify(r.paChecksum2Sha256));
   log.debug("Leaving inProduct().");
 }
 

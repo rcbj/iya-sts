@@ -367,6 +367,31 @@ const UNLINKING_NOTIFICATIONS = ['consent-revoked', 'account-delete'];
 // the victim's.
 const LINK_COOKIE = 'sts_fed_link';
 
+// THE PER-FLOW COOKIE OF #1497 (`bindFlowToBrowser()`), AND HOW MANY ONE
+// BROWSER MAY HOLD (#2139, ASVS 5.0.0 4.2.5). Each start sets a new cookie
+// that lives as long as the context; until #2139 none was ever cleared, so
+// repeated starts grew the Cookie header toward node's 16 KiB limit and the
+// browser was then answered 431 everywhere on this host until the cookies
+// expired. The cookie is now cleared when the flow's answer arrives
+// (`releaseFlowCookieAtAnswer()`), and a start that finds this many live in
+// the browser already clears the OLDEST as it sets the new one.
+//
+// CLEARING THE OLDEST, NOT REFUSING THE START, because the cookies still live
+// at a start are almost all ABANDONED flows — a tab closed at the partner, a
+// back button, a partner that never answered — and refusing would lock the
+// person out of federated sign-in for up to `federation.requestTtlMin`, which
+// is the failure #2139 is about. Eight is far more than anybody signs in
+// with at once (two tabs is two), so evicting the eighth-oldest breaks only
+// a flow seven newer starts have overtaken; its answer is then refused as
+// from another browser (STS-FED-0237) and the person starts again. Eight
+// cookies are about 600 bytes of header.
+const FLOW_COOKIE_PREFIX = 'sts_fed_flow_';
+const MAX_LIVE_FLOW_COOKIES = 8;
+// The width of the start time, base 36, at the front of a flow cookie's
+// name after the prefix: what orders the cookies by age. Nine digits hold
+// every millisecond until the year 5188.
+const FLOW_COOKIE_TIME_WIDTH = 9;
+
 const NS_SAMLP = 'urn:oasis:names:tc:SAML:2.0:protocol';
 const NS_SAML = 'urn:oasis:names:tc:SAML:2.0:assertion';
 const NS_MD = 'urn:oasis:names:tc:SAML:2.0:metadata';
@@ -4072,21 +4097,132 @@ class FederationSp {
   // per flow, so that two tabs do not undo each other. SameSite=None because a
   // SAML or form_post answer arrives as a cross-site POST, which a Lax cookie
   // would not ride.
-  private bindFlowToBrowser(res, contextRecord) {
+  //
+  // THE NAME CARRIES THE START TIME (#2139), base 36 and fixed width before
+  // the random part, so that `evictOldFlowCookies()` can tell the oldest
+  // without a store. A cookie named before #2139 has no time and counts as
+  // the oldest of all; its context still names it, so it binds as before.
+  private bindFlowToBrowser(req, res, contextRecord) {
     const { log, randomId } = this.deps;
     log.debug("Entering FederationSp.bindFlowToBrowser().");
     if (!require('../common/mode').bindsSignInSteps()) {
       log.debug("Leaving FederationSp.bindFlowToBrowser(). Not in this mode.");
       return;
     }
+    this.evictOldFlowCookies(req, res);
     const binding = randomId(24);
-    const name = 'sts_fed_flow_' + randomId(8);
+    const name = FLOW_COOKIE_PREFIX +
+      Date.now().toString(36).padStart(FLOW_COOKIE_TIME_WIDTH, '0') +
+      randomId(8);
     contextRecord.browserCookie = name;
     contextRecord.browserBinding = this.bindingHashOf(binding);
     res.append('Set-Cookie', name + '=' + binding + '; Path=/; HttpOnly; ' +
                'Secure; SameSite=None; Max-Age=' +
                Math.max(60, Math.floor(this.contextTtlMs() / 1000)));
     log.debug("Leaving FederationSp.bindFlowToBrowser().");
+  }
+
+  // A flow cookie's clearing line: the attributes it was set with, so the
+  // browser removes that cookie and not some other of the same name.
+  private static flowCookieClearLine(name: string): string {
+    helpers.log.debug("Entering FederationSp.flowCookieClearLine().");
+    helpers.log.debug("Leaving FederationSp.flowCookieClearLine().");
+    return name + '=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0';
+  }
+
+  // When a flow cookie's flow started, from its name; 0 for a name from
+  // before #2139, which carries none.
+  private static flowCookieStartedAt(name: string): number {
+    helpers.log.debug("Entering FederationSp.flowCookieStartedAt().");
+    const rest = name.slice(FLOW_COOKIE_PREFIX.length);
+    const time = rest.slice(0, FLOW_COOKIE_TIME_WIDTH);
+    if (rest.length <= FLOW_COOKIE_TIME_WIDTH || !/^[0-9a-z]+$/.test(time)) {
+      helpers.log.debug("Leaving FederationSp.flowCookieStartedAt(). No time.");
+      return 0;
+    }
+    const at = parseInt(time, 36);
+    helpers.log.debug("Leaving FederationSp.flowCookieStartedAt().");
+    return isFinite(at) ? at : 0;
+  }
+
+  // THE BOUND ON ACCUMULATION (#2139; FLOW_COOKIE_PREFIX argues it): the
+  // flow cookies this browser presents, and the oldest of them cleared
+  // until the one about to be set makes MAX_LIVE_FLOW_COOKIES. Their
+  // contexts are left to expire: nothing here knows their handles.
+  private evictOldFlowCookies(req, res) {
+    const { log, authn } = this.deps;
+    log.debug("Entering FederationSp.evictOldFlowCookies().");
+    const live = Object.keys(authn.cookiesOf(req) || {})
+      .filter(function (name: string): boolean {
+        return name.indexOf(FLOW_COOKIE_PREFIX) === 0;
+      });
+    const over = live.length - (MAX_LIVE_FLOW_COOKIES - 1);
+    if (over <= 0) {
+      log.debug("Leaving FederationSp.evictOldFlowCookies(). " + live.length +
+                " live.");
+      return;
+    }
+    live.sort(function (a: string, b: string): number {
+      return FederationSp.flowCookieStartedAt(a) -
+             FederationSp.flowCookieStartedAt(b);
+    });
+    live.slice(0, over).forEach(function (name: string): void {
+      res.append('Set-Cookie', FederationSp.flowCookieClearLine(name));
+    });
+    log.info('federation: this browser held ' + live.length + ' live sign-in ' +
+             'flow cookies; the oldest ' + over + ' cleared as another flow ' +
+             'starts (at most ' + MAX_LIVE_FLOW_COOKIES + ').');
+    log.debug("Leaving FederationSp.evictOldFlowCookies(). Cleared " + over +
+              ".");
+  }
+
+  // THE FLOW'S COOKIE CLEARED WITH ITS ANSWER (#2139). Every answer the
+  // assertion consumer service gives for a flow ENDS it in this browser: a
+  // success signs the person in (or moves on to a linking, profile or
+  // step-up step, each bound by LINK_COOKIE and a context of its own), and a
+  // refusal — the partner's error or status, an answer refused here, a
+  // context spent or expired — tells them to start again, which sets a new
+  // cookie. So the clear is not threaded through the five protocols' dozens
+  // of exits: it is put on the response here, once, for the flow the answer
+  // names, and only where this browser presents that cookie.
+  //
+  // AT THE FLUSH, NOT NOW, for `cell_placement.ts`'s `setAffinityOnAnswer()`
+  // reason: a successful sign-in ends in `authn.ts`'s `setCookieHeader()`,
+  // which REPLACES every Set-Cookie before it, so a line appended here would
+  // be thrown away on exactly the path that matters most. A flow that has
+  // EXPIRED is the browser's: the cookie's Max-Age is the context's lifetime.
+  private releaseFlowCookieAtAnswer(req, res, handle: string): void {
+    const { log, authn } = this.deps;
+    log.debug("Entering FederationSp.releaseFlowCookieAtAnswer().");
+    if (!handle || !res || typeof res.writeHead !== 'function' ||
+        (res.locals && res.locals.fedFlowCookieReleased)) {
+      log.debug("Leaving FederationSp.releaseFlowCookieAtAnswer(). Nothing " +
+                "to do.");
+      return;
+    }
+    const held = this.heldContext(handle);
+    const name = String((held && held.browserCookie) || '');
+    const presented = authn.cookiesOf(req) || {};
+    if (!name || !Object.prototype.hasOwnProperty.call(presented, name)) {
+      log.debug("Leaving FederationSp.releaseFlowCookieAtAnswer(). No flow " +
+                "cookie held.");
+      return;
+    }
+    if (res.locals) {
+      res.locals.fedFlowCookieReleased = true;
+    }
+    const line = FederationSp.flowCookieClearLine(name);
+    const original = res.writeHead;
+    res.writeHead = function flowCookieWriteHead(this: any, ...args: any[]) {
+      log.debug("Entering flowCookieWriteHead().");
+      res.writeHead = original;
+      const already = res.getHeader('Set-Cookie');
+      const lines = already === undefined ? [] : [].concat(already);
+      res.setHeader('Set-Cookie', lines.concat([line]));
+      log.debug("Leaving flowCookieWriteHead().");
+      return original.apply(this, args);
+    };
+    log.debug("Leaving FederationSp.releaseFlowCookieAtAnswer().");
   }
 
   // Whether this browser started the flow. A context with no binding is one
@@ -6240,7 +6376,7 @@ class FederationSp {
       nonce: 'n-' + randomId(16),
       pkceVerifier: pkce.verifier, pkceChallenge: pkce.challenge
     };
-    this.bindFlowToBrowser(res, contextRecord);
+    this.bindFlowToBrowser(req, res, contextRecord);
 
     if (record.fedProtocol === 'saml2') {
       // SIGNED OFF THE EVENT LOOP where the realm's XML key is in the HSM
@@ -10225,6 +10361,10 @@ class FederationSp {
                 "holds the flow.");
       return undefined;
     }
+    // THIS FLOW'S COOKIE GOES WITH WHATEVER IS ANSWERED NOW (#2139), success
+    // or refusal; here, after the relay, because only this cell holds the
+    // context that names it.
+    this.releaseFlowCookieAtAnswer(req, res, flowHandle);
     try {
       if (record.fedProtocol === 'saml2') {
         log.debug("Leaving FederationSp.consume().");
