@@ -690,12 +690,38 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- #882. Driver order 78 follows `sts_schema`, so the index is here.
 CREATE INDEX IF NOT EXISTS sts_sessions_started ON sts_sessions (realm, started_at DESC, `key`);
 
+-- THE AUDIT LOG, APPEND-ONLY (#1616, schema version 33; ASVS 5.0.0 16.4.2),
+-- after the session index because driver order 79 follows it:
+-- PostgreSQL's table and its two functions, here procedures. Each is ONE
+-- statement, so this file needs no DELIMITER. SQL SECURITY DEFINER: they run
+-- as the account running this file, and the application account may call
+-- them and may not DELETE from the table (the per-table grants below).
+CREATE TABLE IF NOT EXISTS sts_audit (
+  realm  VARCHAR(64)  NOT NULL,
+  origin VARCHAR(255) NOT NULL DEFAULT '',
+  seq    BIGINT       NOT NULL,
+  at     BIGINT       NOT NULL,
+  body   LONGTEXT     NOT NULL,
+  PRIMARY KEY (realm, origin, seq)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_nopad_bin;
+
+CREATE INDEX IF NOT EXISTS sts_audit_at ON sts_audit (realm, at, origin, seq);
+
+-- Everything in a realm older than its newest `p_keep` rows, keeping at
+-- least 1000 whatever it is asked — the caller is the account this table is
+-- protected from. (PostgreSQL's sts_audit_retain() argues it.)
+CREATE OR REPLACE PROCEDURE sts_audit_retain(IN p_realm VARCHAR(64), IN p_keep BIGINT) SQL SECURITY DEFINER DELETE a FROM sts_audit a JOIN (SELECT at, origin, seq FROM (SELECT at, origin, seq, ROW_NUMBER() OVER (ORDER BY at DESC, origin DESC, seq DESC) AS rn FROM sts_audit WHERE realm = p_realm) ranked WHERE rn = GREATEST(COALESCE(p_keep, 0), 1000)) edge ON a.realm = p_realm AND (a.at, a.origin, a.seq) < (edge.at, edge.origin, edge.seq);
+
+-- A realm's rows only when the realm is gone from sts_realms or retiring,
+-- and never the default realm's.
+CREATE OR REPLACE PROCEDURE sts_audit_purge_realm(IN p_realm VARCHAR(64)) SQL SECURITY DEFINER DELETE FROM sts_audit WHERE realm = p_realm AND p_realm NOT IN ('', 'default') AND NOT EXISTS (SELECT 1 FROM sts_realms r WHERE r.id = p_realm AND r.retiring_at IS NULL);
+
 -- The same number as PostgreSQL's, so there is one SCHEMA_VERSION.
-INSERT IGNORE INTO sts_schema (version) VALUES (32);
+INSERT IGNORE INTO sts_schema (version) VALUES (33);
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ACCOUNT: SELECT, INSERT, UPDATE AND DELETE ON THIS
--- DATABASE'S TABLES, AND NOTHING ELSE.
+-- DATABASE'S TABLES — SELECT AND INSERT ON THE AUDIT LOG — AND NOTHING ELSE.
 --
 -- MariaDB's client has no psql `\gexec`, so each statement is built as text
 -- and run with EXECUTE IMMEDIATE. Names and the password are quoted by
@@ -711,9 +737,17 @@ INSERT IGNORE INTO sts_schema (version) VALUES (32);
 -- and GRANT OPTION goes before ALL for the same reason: ALL removes the row.
 -- Grants on OTHER databases are left alone, as PostgreSQL's script leaves
 -- another database's CONNECT alone, so one account may serve two stores.
--- `<db>.*` covers a table created later too, as PostgreSQL's ALTER DEFAULT
--- PRIVILEGES does. An AUTO_INCREMENT needs no grant of its own, where a
--- PostgreSQL sequence does.
+-- An AUTO_INCREMENT needs no grant of its own, where a PostgreSQL sequence
+-- does.
+--
+-- **ONE GRANT PER TABLE SINCE #1616 (schema version 33)**, where it was
+-- one grant on `<db>.*`: MariaDB cannot take one table out of a database
+-- grant, and the audit log's must be SELECT and INSERT alone (ASVS 5.0.0
+-- 16.4.2). `--@grant-tables` is every table of the model, so a table the
+-- model gains is granted with it; the database-wide grant is given and taken
+-- away first, so a run on an older store does not leave it behind. The
+-- audit table's grant is taken away and given again, narrower, for the same
+-- reason a table-level grant from an earlier run could otherwise outlive it.
 --
 -- TLS. PostgreSQL's decision is that the database connection is TLS at BOTH
 -- ends and cannot be relaxed (`persistence/CLAUDE.md`, *TLS TO THE DATABASE,
@@ -733,7 +767,53 @@ EXECUTE IMMEDIATE CONCAT('REVOKE GRANT OPTION ON *.* FROM ', @sts_app_account);
 EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.* TO ', @sts_app_account);
 EXECUTE IMMEDIATE CONCAT('REVOKE GRANT OPTION ON ', @sts_app_database, '.* FROM ', @sts_app_account);
 EXECUTE IMMEDIATE CONCAT('REVOKE ALL PRIVILEGES ON ', @sts_app_database, '.* FROM ', @sts_app_account);
-EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.* TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_audit` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('REVOKE ALL PRIVILEGES ON ', @sts_app_database, '.`sts_audit` FROM ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_ldap_entries` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_ldap_entry_keys` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_ldap_dek_counts` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_ldap_dek_deltas` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_ldap_counts` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_ldap_count_deltas` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_realms` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_appconfig` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_keys` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_minted` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_sessions` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_minted_index` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_changes` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_used_assertions` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_cluster_nodes` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_cluster_leases` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_cluster_claims` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_cluster_secrets` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_cluster_locks` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_cluster_counters` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_cluster_windows` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_cluster_budgets` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_node_snapshots` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_change_readers` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_risk_datasets` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_risk_dataset_versions` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_risk_dataset_blobs` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_risk_geo_locations` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_risk_geo_ranges` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_risk_asn_ranges` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_risk_ip_lists` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_risk_fido_authenticators` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_risk_assessments` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_risk_feature_counts` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_risk_failures` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_risk_session_context` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_risk_subjects` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_risk_terms_acceptances` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_cell_routing` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_report_artifacts` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_report_artifact_pieces` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT ON ', @sts_app_database, '.`sts_audit` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT SELECT, INSERT, UPDATE, DELETE ON ', @sts_app_database, '.`sts_schema` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT EXECUTE ON PROCEDURE ', @sts_app_database, '.`sts_audit_retain` TO ', @sts_app_account);
+EXECUTE IMMEDIATE CONCAT('GRANT EXECUTE ON PROCEDURE ', @sts_app_database, '.`sts_audit_purge_realm` TO ', @sts_app_account);
 EXECUTE IMMEDIATE IF(@sts_app_require_ssl = 1, CONCAT('ALTER USER ', @sts_app_account, ' REQUIRE SSL'), 'DO 0');
 
 SELECT CONCAT('sts-schema: done in ', DATABASE(), '. ', @sts_app_account, ' may read and write the rows and cannot change the schema.') AS result;

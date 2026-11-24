@@ -243,8 +243,8 @@ async function notOwner(t) {
           settled.built.length === 0, 'B5. the settlement says told, not ' +
           'built', JSON.stringify(settled));
   t.check(record.pool.some(function (s) {
-    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 32;
-  }), 'B6. schema version 32 is recorded');
+    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 33;
+  }), 'B6. schema version 33 is recorded');
   t.check(!record.pool.some(function (s) {
     return /CONCURRENTLY/.test(s.sql);
   }) && record.dedicated.length === 0,

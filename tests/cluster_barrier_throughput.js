@@ -117,7 +117,7 @@ function recordingHarness() {
 // ---------------------------------------------------------------------------
 // 1. THE SEGMENTED RING.
 // ---------------------------------------------------------------------------
-function segmentedRing(t) {
+async function segmentedRing(t) {
   log.debug("Entering segmentedRing().");
   t.log.info('=== 1. a ring stored in segments ===');
   const realms = require('../common/realms');
@@ -208,9 +208,13 @@ function segmentedRing(t) {
   t.equal(notes.join(','), '5',
           'and the next push lands in the segment its position names');
 
-  // THE AUDIT RING: declared segmented, and trimmed to the cap on the way in.
+  // THE AUDIT LOG SINCE #1616: every process's events from `sts_audit`
+  // (here a stand-in for the store), this process's beside them, and the
+  // realm's newest `audit.maxEvents` shown — the table keeps at least 1000
+  // between retention runs, so the reader is what holds the page to the cap.
   const audit = require('../common/audit');
   const config = require('../common/config');
+  const store = require('../persistence/audit_store');
   config.setOverride('audit.maxEvents', 3);
   const rows = [];
   for (let i = 0; i < 6; i++) {
@@ -218,20 +222,33 @@ function segmentedRing(t) {
                 action: 'protocol.call', outcome: 'success',
                 origin: 'node-b', summary: 'from node b ' + i });
   }
-  replication.contribute('audit.events', DEFAULT, '0', 'node-b',
-                         { start: 0, rows: rows });
-  const listed = realms.run(realms.DEFAULT_REALM, function () {
-    return audit.list().filter(function (row) {
-      return String(row.summary || '').indexOf('from node b') === 0;
+  const realActive = store.active;
+  const realNewest = store.newest;
+  store.active = function () { return true; };
+  store.newest = function () {
+    return Promise.resolve(rows.slice().reverse());
+  };
+  let listed = [];
+  try {
+    await realms.run(realms.DEFAULT_REALM, function () {
+      return audit.fresh();
     });
-  });
+    listed = realms.run(realms.DEFAULT_REALM, function () {
+      return audit.list().filter(function (row) {
+        return String(row.summary || '').indexOf('from node b') === 0;
+      });
+    });
+  } finally {
+    store.active = realActive;
+    store.newest = realNewest;
+  }
   t.equal(listed.map(function (row) { return row.seq; }).join(','), '6,5,4',
-          'THE AUDIT LOG KEEPS THE NEWEST audit.maxEvents OF ANOTHER ' +
-          'PROCESS\'S EVENTS: a stored copy can carry one segment that ' +
-          'process already dropped');
+          'THE AUDIT LOG KEEPS THE NEWEST audit.maxEvents OF EVERY ' +
+          'PROCESS\'S EVENTS, read from sts_audit');
   t.check(realms.handleFor('audit.events') &&
           realms.handleFor('audit.events').read(DEFAULT, '').present === false,
-          'and audit.events is the segmented kind');
+          'and the old ring, audit.events, is still the segmented kind, ' +
+          'for the copy of what it holds');
   config.setOverride('audit.maxEvents', 5000);
   log.debug("Leaving segmentedRing().");
 }
@@ -790,7 +807,7 @@ async function childMain() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-barrier-tp-'));
   let threw = '';
   try {
-    segmentedRing(t);
+    await segmentedRing(t);
     await barrierWithoutHead(t);
     await directoryPosition(t, path.join(dir, 'ldif'));
     await mintedGenerations(t, dir);

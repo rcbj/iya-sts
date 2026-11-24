@@ -15,10 +15,15 @@
 // reads every noted row in one batch.
 //
 //   R1. three changes to another process's segment read nothing, and it is
-//       not in the list yet;
-//   R2. `fresh()` reads it once, in one batch, and the list and the
+//       not in the fan-in yet;
+//   R2. a refresh reads it once, in one batch, and the fan-in and the
 //       summary then carry it;
-//   R3. a segment that is gone by the time it is read leaves the list;
+//   R3. a segment that is gone by the time it is read leaves the fan-in;
+//
+// SINCE #1616 the `audit.events` segments are the OLD ring, read only to be
+// copied into `sts_audit`, the append-only table the audit list reads
+// (`persistence/audit_store.js`); `audit.fresh()` refreshes `audit.nums`
+// and reads the table. The machinery is unchanged, and is asked directly.
 //   R4. a `merge: 'own'` store without the flag is still read at the change;
 //   R5. a read that fails leaves the rows noted, and the next refresh reads
 //       them;
@@ -132,12 +137,26 @@ function child() {
                action: 'acr.test', outcome: 'success', summary: 'b ' + seq,
                origin: 'process-b', actor: '', target: '' };
     };
+    // ANOTHER PROCESS'S EVENTS AS THE FAN-IN HOLDS THEM. Since #1616 the
+    // `audit.events` segments are the OLD ring, read once to be copied into
+    // `sts_audit` (`audit.js`'s `migrateLegacy()`), and the audit list reads
+    // that table; the fan-in of the segments is still this machinery, so it
+    // is asked directly, as the copy asks it.
     const theirEvents = function () {
       return realms.run(realms.get(realmId), function () {
-        return audit.list().filter(function (row) {
-          return row.action === 'acr.test';
-        }).length;
+        let n = 0;
+        replication.remoteSegmentedRows('audit.events', realmId)
+          .forEach(function (rows) {
+            n += (rows || []).filter(function (row) {
+              return row.action === 'acr.test';
+            }).length;
+          });
+        return n;
       });
+    };
+    // What `audit.fresh()` asked before #1616, and what the copy asks now.
+    const refresh = function () {
+      return replication.refreshContributions(['audit.events', 'audit.nums']);
     };
 
     const segment = storedName('0', 'process-b');
@@ -157,7 +176,7 @@ function child() {
            noted: replication.staleContributionCount('audit.events'),
            listed: theirEvents() }));
 
-    await audit.fresh();
+    await refresh();
     const summary = realms.run(realms.get(realmId), function () {
       return audit.summary();
     });
@@ -172,7 +191,7 @@ function child() {
 
     drop('audit.events', segColumn);
     await minted.applyChange(change('audit.events', segment));
-    await audit.fresh();
+    await refresh();
     note(theirEvents() === 0,
          'R3. a segment gone by the time it is read leaves the list',
          String(theirEvents()));
@@ -193,10 +212,10 @@ function child() {
     await minted.applyChange(change('audit.events',
                                     storedName('1', 'process-b')));
     failMany = true;
-    await audit.fresh();
+    await refresh();
     const stillNoted = replication.staleContributionCount('audit.events');
     failMany = false;
-    await audit.fresh();
+    await refresh();
     note(stillNoted === 1 && theirEvents() === 1 &&
          replication.staleContributionCount('audit.events') === 0,
          'R5. a failed read leaves the rows noted, and the next refresh ' +

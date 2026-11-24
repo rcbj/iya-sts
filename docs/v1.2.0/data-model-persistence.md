@@ -19,7 +19,7 @@ The MariaDB script is the same schema version. The model emits
 it as `mariadb/schema.sql`, that file's own bytes. This page
 lists the PostgreSQL tables.
 
-Schema version **32**.
+Schema version **33**.
 
 A required column must be present. **Generated** is a column the
 database fills. A directory name on a column is one the schema
@@ -75,6 +75,7 @@ Extensions: `pg_stat_statements`, `pg_trgm`.
 | [sts_cell_routing](#stscellrouting) | `StsCellRouting` | 5 |
 | [sts_report_artifacts](#stsreportartifacts) | `StsReportArtifacts` | 6 |
 | [sts_report_artifact_pieces](#stsreportartifactpieces) | `StsReportArtifactPieces` | 4 |
+| [sts_audit](#stsaudit) | `StsAudit` | 5 |
 | [sts_schema](#stsschema) | `StsSchema` | 2 |
 
 ## sts_ldap_entries
@@ -701,6 +702,18 @@ TypeSpec model `StsReportArtifactPieces`.
 | `job_id` | `text` | yes |  |
 | `seq` | `int` | yes |  |
 | `bytes` | `bytea` | yes |  |
+
+## sts_audit
+
+TypeSpec model `StsAudit`.
+
+| Column | SQL type | Required | Notes |
+|---|---|---|---|
+| `realm` | `text` | yes |  |
+| `origin` | `text` | yes |  |
+| `seq` | `bigint` | yes |  |
+| `at` | `bigint` | yes |  |
+| `body` | `text` | yes |  |
 
 ## sts_schema
 

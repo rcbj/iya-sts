@@ -2190,8 +2190,27 @@ const OUTCOMES = ['success', 'refused', 'error'];
 // sealed segment every other process read, opened and parsed — about 5,000
 // rows a minute in each of 8081's nine processes under a password load —
 // and the only reader of what they held is the audit page.
-const events = realms.arr({ persist: 'audit.events', merge: 'own',
-                            segment: 32, contributionsOnRead: true });
+// NOT PERSISTED HERE SINCE #1616 (ASVS 5.0.0 16.4.2). This is the ring of
+// the events THIS process recorded, in memory; where minted state persists
+// each event is ALSO one sealed row of `sts_audit`, the append-only table
+// (`persistence/audit_store.js`), and that table — every process's rows —
+// is what `fresh()` reads and `merged()` shows. The segments this ring was
+// written as until then are `legacyEvents` below, read once to be copied.
+const events = realms.arr();
+
+// THE OLD RING, READ ONCE (#1616). Declared under its old handle and its old
+// shape so that the minted restore still finds this process's segments and
+// the fan-in still reads the other processes', for `migrateLegacy()` to copy
+// into `sts_audit` and then remove. Nothing is pushed here any more.
+const legacyEvents = realms.arr({ persist: 'audit.events', merge: 'own',
+                                  segment: 32, contributionsOnRead: true });
+
+// THE STORED ROWS `fresh()` READ (#1616): a realm's newest `audit.maxEvents`
+// rows of `sts_audit`, every process's, opened, newest first as read. Not
+// persisted: it is a copy of the table, refreshed when a page is drawn.
+const stored = realms.obj(function () {
+  return { rows: null };
+});
 
 // ---------------------------------------------------------------------
 // PER TRUST REALM, like the ring above it. A sequence number shared between
@@ -2713,6 +2732,15 @@ function record(event) {
   }
   events.push(row);
   trimToCap();
+  // AND TO THE APPEND-ONLY TABLE (#1616), where minted state persists: one
+  // sealed row, written with the rest of this burst. Lazily: the store is a
+  // persistence module, and this file is required by most of the service.
+  try {
+    require('../persistence/audit_store').append(realms.currentId(), row);
+  } catch (e) {
+    log.debug("Caught in record(): " + ((e && e.message) || e));
+    // The row stays in this process's ring; recording never fails an act.
+  }
   // `summarised: true` (2026-09-17, #36 follow-up): the caller logs a
   // PERIODIC SUMMARY of these rows by code instead — the standing rule that a
   // storm of one kind of failure (a relying party that is down, and every
@@ -3548,37 +3576,59 @@ function authenticationEventsForPerson(names, since) {
  */
 function fresh() {
   log.debug("Entering fresh().");
-  if (typeof replication.refreshContributions !== 'function') {
-    log.debug("Leaving fresh(). No fan-in.");
-    return Promise.resolve();
+  const counts = typeof replication.refreshContributions === 'function'
+    ? replication.refreshContributions(['audit.nums']) : Promise.resolve();
+  // THE TABLE, WHERE THERE IS ONE (#1616): this realm's newest rows, every
+  // process's, read once per page. This process's own rows not yet written
+  // are added by `merged()` from its ring.
+  let store = null;
+  try {
+    store = require('../persistence/audit_store');
+  } catch (e) {
+    log.debug("Caught in fresh(): " + ((e && e.message) || e));
+    store = null;
   }
-  log.debug("Leaving fresh().");
-  return replication.refreshContributions(['audit.events', 'audit.nums'])
-    .then(function () {
-      return undefined;
+  const cap = Math.max(1, parseInt(maxEvents(), 10) || 1);
+  const read = store && store.active()
+    ? store.newest(realms.currentId(), cap).then(function (rows) {
+      stored.rows = rows;
+    }, function (err) {
+      log.warn(errorCodes.tag('STS-AUDIT-0020') + 'audit: sts_audit could ' +
+               'not be read, so the page shows this process\'s own events: ' +
+               ((err && err.message) || err));
+      stored.rows = null;
+    })
+    : Promise.resolve().then(function () {
+      // No table (or no longer one): nothing read earlier is shown.
+      stored.rows = null;
     });
+  log.debug("Leaving fresh().");
+  return Promise.all([counts, read]).then(function () {
+    return undefined;
+  });
 }
 
 function merged() {
   log.debug("Entering merged().");
   const mine = events.slice(0);
-  // Each other process's events, trimmed to the cap: a segmented store can
-  // hand back up to one segment that process has already dropped.
   const cap = Math.max(1, parseInt(maxEvents(), 10) || 1);
-  const others = replication.remoteSegmentedRows('audit.events')
-    .map(function (rows) {
-      return rows.length > cap ? rows.slice(rows.length - cap) : rows;
-    });
-  if (!others.length) {
+  // THE TABLE'S ROWS (#1616), as `fresh()` last read them, with this
+  // process's own events beside them — those not yet written, and those
+  // written since — each event once, by its origin and seq.
+  const fromStore = Array.isArray(stored.rows) ? stored.rows : null;
+  if (!fromStore || !fromStore.length) {
     log.debug("Leaving merged().");
-    // THE OVERWHELMINGLY COMMON CASE — one process — and it costs one array
-    // copy and a length check rather than a sort of everything.
+    // ONE PROCESS AND NO TABLE — memory, an LDIF store, development — or a
+    // table not read yet: this process's ring, as it always was.
     return mine;
   }
-  let all = mine;
-  others.forEach(function (rows) {
-    if (Array.isArray(rows)) {
-      all = all.concat(rows);
+  const seen = new Set();
+  let all = [];
+  fromStore.concat(mine).forEach(function (row) {
+    const id = String(row.origin || '') + ':' + String(row.seq);
+    if (!seen.has(id)) {
+      seen.add(id);
+      all.push(row);
     }
   });
   // BY TIME, and stably by origin and sequence within one millisecond so that
@@ -3594,8 +3644,122 @@ function merged() {
     }
     return (a.seq || 0) - (b.seq || 0);
   });
+  // THE REALM'S NEWEST `audit.maxEvents` (#1616): retention is per realm
+  // now, and the table keeps at least 1000 between its runs.
+  if (all.length > cap) {
+    all = all.slice(all.length - cap);
+  }
   log.debug("Leaving merged().");
   return all;
+}
+
+// ---------------------------------------------------------------------------
+// AT A START, WITH THE STORE OPEN (#1616): this process's own newest events
+// back into its ring — what the segments restored until then, and what
+// `audit_export.ts`'s cursor walks (`localEvents()`) — and, in the front
+// process, the old segments copied into `sts_audit` once. Never rejects: a
+// failure is said (STS-AUDIT-0021) and the service starts.
+// ---------------------------------------------------------------------------
+/**
+ * Puts this process's own newest stored events back into its ring, and in
+ * the front process copies the old segments into `sts_audit` (#1616).
+ *
+ * @param opts - `{ migrate }`: copy the old segments (the front process)
+ * @returns a promise of `{ restored, copied }`
+ */
+function restoreFromStore(opts) {
+  log.debug("Entering restoreFromStore().");
+  let store = null;
+  try {
+    store = require('../persistence/audit_store');
+  } catch (e) {
+    log.debug("Caught in restoreFromStore(): " + ((e && e.message) || e));
+    store = null;
+  }
+  if (!store || !store.active()) {
+    log.debug("Leaving restoreFromStore(). No table.");
+    return Promise.resolve({ restored: 0, copied: 0 });
+  }
+  const out = { restored: 0, copied: 0 };
+  const origin = processOrigin();
+  const cap = Math.max(1, parseInt(maxEvents(), 10) || 1);
+  const copy = opts && opts.migrate ? migrateLegacy(store) : Promise.resolve(0);
+  log.debug("Leaving restoreFromStore().");
+  return copy.then(function (copied) {
+    out.copied = copied;
+    return Promise.all(realms.list().map(function (realm) {
+      return realms.run(realm, function () {
+        return store.newest(realm.id, cap, origin).then(function (rows) {
+          const have = new Set(events.map(function (row) {
+            return String(row.seq);
+          }));
+          const back = (rows || []).slice().reverse().filter(function (row) {
+            return !have.has(String(row.seq));
+          });
+          if (back.length) {
+            const now = events.splice(0, events.length);
+            back.concat(now).forEach(function (row) {
+              events.push(row);
+            });
+            trimToCap();
+            out.restored += back.length;
+          }
+        });
+      });
+    }));
+  }).then(function () {
+    return out;
+  }, function (err) {
+    log.warn(errorCodes.tag('STS-AUDIT-0021') + 'audit: the stored events ' +
+             'could not be read back at the start: ' +
+             ((err && err.message) || err));
+    return out;
+  });
+}
+
+// THE COPY OF THE OLD RING (#1616): every realm's segments — this process's,
+// restored into `legacyEvents`, and every other process's, through the
+// fan-in — written into `sts_audit` with their chain checksums, and only
+// when every realm's copy has been written, the segments removed. Running
+// it again — every start of the front process does — finds nothing, or a
+// straggler's segments (a node still on 1.1 during a rolling upgrade), and
+// copies those: an INSERT meeting its own row does nothing.
+function migrateLegacy(store) {
+  log.debug("Entering migrateLegacy().");
+  const refresh = typeof replication.refreshContributions === 'function'
+    ? replication.refreshContributions(['audit.events']) : Promise.resolve();
+  log.debug("Leaving migrateLegacy().");
+  return refresh.then(function () {
+    let total = 0;
+    return Promise.all(realms.list().map(function (realm) {
+      return realms.run(realm, function () {
+        const rows = legacyEvents.slice(0);
+        replication.remoteSegmentedRows('audit.events', realm.id)
+          .forEach(function (theirs) {
+            if (Array.isArray(theirs)) {
+              Array.prototype.push.apply(rows, theirs);
+            }
+          });
+        total += rows.length;
+        return rows.length ? store.insertRows(realm.id, rows) : 0;
+      });
+    })).then(function () {
+      if (!total) {
+        return 0;
+      }
+      return store.dropLegacy().then(function (gone) {
+        realms.list().forEach(function (realm) {
+          realms.run(realm, function () {
+            legacyEvents.splice(0, legacyEvents.length);
+          });
+        });
+        log.info('audit: ' + total + ' event(s) of the old ring were copied ' +
+                 'into sts_audit, the append-only table, and its ' + gone +
+                 ' segment row(s) removed (#1616).');
+        return total;
+      });
+    });
+  });
 }
 
 // The counts the page's tiles and the API's summary need, taken in one pass
@@ -3721,6 +3885,7 @@ function prose() {
  */
 module.exports = {
   verifyIntegrity: verifyIntegrity,
+  restoreFromStore: restoreFromStore,
   CATEGORIES: CATEGORIES,
   redactedPath: redactedPath,
   redactedQuery: redactedQuery,

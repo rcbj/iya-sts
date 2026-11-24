@@ -6,10 +6,18 @@
 -- ---------------------------------------------------------------------------
 -- RELEASE 1.1.x TO RELEASE 1.2.0, ON A LIVE STORE.
 --
--- Schema version 32 is both releases' schema: 1.2.0 changes no table, and
--- this file runs no DDL and records no version. It is ONE DATA STEP, which
--- keeps a 1.1.x deployment's OAuth clients working across a changed default
--- — see THE DEFAULT SCOPES OF A CLIENT THAT DECLARES NONE, below.
+-- Release 1.1.x is schema version 32; 1.2.0 is 33. This file does two
+-- things, each idempotent:
+--
+--   * ONE DATA STEP, which keeps a 1.1.x deployment's OAuth clients
+--     working across a changed default — THE DEFAULT SCOPES OF A CLIENT
+--     THAT DECLARES NONE, below (#1589);
+--   * THE APPEND-ONLY AUDIT LOG (#1616, schema version 33): the table
+--     `sts_audit`, its index, the two SECURITY DEFINER functions rows leave
+--     it through, the application role's INSERT and SELECT on it and
+--     nothing more, and the version row — THE AUDIT LOG, at the end. The
+--     rows already held move into it when the 1.2.0 service first starts:
+--     they are sealed, and this file cannot open them.
 --
 -- THIS FILE IS HAND-WRITTEN. regenerate-model-docs.sh does not emit it.
 -- tests/postgres_schema.js holds it to the step below.
@@ -20,14 +28,17 @@
 --   psql -v ON_ERROR_STOP=1 -f postgres/upgrade-1.1.0.sql \
 --        "postgres://owner@host:5432/sts"
 --
--- As the table owner. Run it before or after starting the 1.2.0 image: a
--- 1.2.0 process already running reads the value at its next change-log
--- pull. A 1.1.x process ignores the key (config.js's
+-- As the table owner — the role `postgres/schema.sql` was run as — and
+-- BEFORE starting the 1.2.0 image: its application role cannot create the
+-- audit table, and the service refuses to start without it
+-- (STS-STORE-0029, naming this file). The scope value is read by a 1.2.0
+-- process already running at its next change-log pull. A 1.1.x process ignores the key (config.js's
 -- applyPersistedOverrides() logs STS-CORE-0008 and leaves the value in the
 -- store). A second run writes nothing. A store from 1.0.0 runs
 -- upgrade-1.0.0.sql first, then this file.
 --
--- -v sts_schema=sts is the default. A store with no sts_schema version of
+-- -v sts_schema=sts and -v sts_app_role=sts_app are the defaults, the
+-- names postgres/schema.sql uses. A store with no sts_schema version of
 -- 32 or later is refused: it is older than release 1.1.0, and
 -- upgrade-1.0.0.sql is its first step.
 --
@@ -37,6 +48,10 @@
 \if :{?sts_schema}
 \else
 \set sts_schema sts
+\endif
+\if :{?sts_app_role}
+\else
+\set sts_app_role sts_app
 \endif
 SET search_path TO :"sts_schema", public;
 
@@ -134,4 +149,80 @@ SELECT COALESCE((SELECT value->>'raw' FROM sts_appconfig
 \echo 'upgrade-1.1.0: sts_appconfig, sts_ldap_entries or sts_changes is not in this database, so oauth2.undeclaredClientScopes was not written. Set it to legacy by hand while any client declares no scopes.'
 \endif
 
-\echo 'upgrade-1.1.0: done. schema.sql was not run. The 1.2.0 image can start.'
+-- ---------------------------------------------------------------------------
+-- THE AUDIT LOG, APPEND-ONLY (#1616, ASVS 5.0.0 16.4.2; schema version 33).
+--
+-- Until 1.2.0 the audit ring was sealed segments in `sts_minted`, which the
+-- application role may UPDATE and DELETE like every other row there: its
+-- keyed chain showed a change, and nothing prevented one. 1.2.0 writes one
+-- sealed row per event into `sts_audit`, where that role holds INSERT and
+-- SELECT and nothing else, and rows leave through two functions owned by the
+-- role running this file. The statements are postgres/schema.sql's, and
+-- tests/postgres_schema.js holds the two to each other.
+--
+-- THE ROWS ALREADY HELD are copied in by the 1.2.0 service at its first
+-- start (they are sealed under keys this file does not hold), with their
+-- chain checksums, and the old segments removed — common/audit.js.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS sts_audit (
+  realm text NOT NULL,
+  origin text NOT NULL DEFAULT '',
+  seq bigint NOT NULL,
+  at bigint NOT NULL,
+  body text NOT NULL,
+  PRIMARY KEY (realm, origin, seq)
+);
+CREATE INDEX IF NOT EXISTS sts_audit_at ON sts_audit (realm, at, origin, seq);
+
+CREATE OR REPLACE FUNCTION sts_audit_retain(p_realm text, p_keep bigint)
+  RETURNS bigint LANGUAGE plpgsql SECURITY DEFINER SET search_path FROM CURRENT AS $$
+DECLARE
+  keep bigint := GREATEST(COALESCE(p_keep, 0), 1000);
+  edge record;
+  gone bigint;
+BEGIN
+  SELECT a.at, a.origin, a.seq INTO edge FROM sts_audit a
+   WHERE a.realm = p_realm
+   ORDER BY a.at DESC, a.origin DESC, a.seq DESC OFFSET keep - 1 LIMIT 1;
+  IF NOT FOUND THEN
+    RETURN 0;
+  END IF;
+  DELETE FROM sts_audit a
+   WHERE a.realm = p_realm AND (a.at, a.origin, a.seq) < (edge.at, edge.origin, edge.seq);
+  GET DIAGNOSTICS gone = ROW_COUNT;
+  RETURN gone;
+END $$;
+
+CREATE OR REPLACE FUNCTION sts_audit_purge_realm(p_realm text)
+  RETURNS bigint LANGUAGE plpgsql SECURITY DEFINER SET search_path FROM CURRENT AS $$
+DECLARE
+  gone bigint;
+BEGIN
+  IF p_realm IS NULL OR p_realm = '' OR p_realm = 'default' THEN
+    RETURN 0;
+  END IF;
+  IF EXISTS (SELECT 1 FROM sts_realms r
+              WHERE r.id = p_realm AND r.retiring_at IS NULL) THEN
+    RETURN 0;
+  END IF;
+  DELETE FROM sts_audit a WHERE a.realm = p_realm;
+  GET DIAGNOSTICS gone = ROW_COUNT;
+  RETURN gone;
+END $$;
+
+REVOKE ALL ON FUNCTION sts_audit_retain(text, bigint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION sts_audit_purge_realm(text) FROM PUBLIC;
+
+-- The default privileges postgres/schema.sql set hand a new table all four
+-- verbs; the two it may keep are granted outright in case they were not,
+-- and the rest taken away.
+GRANT SELECT, INSERT ON sts_audit TO :"sts_app_role";
+REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+  ON sts_audit FROM :"sts_app_role";
+GRANT EXECUTE ON FUNCTION sts_audit_retain(text, bigint)
+  TO :"sts_app_role";
+GRANT EXECUTE ON FUNCTION sts_audit_purge_realm(text) TO :"sts_app_role";
+
+INSERT INTO sts_schema (version) VALUES (33) ON CONFLICT (version) DO NOTHING;
+
+\echo 'upgrade-1.1.0: done. sts_audit is in place (schema version 33) and the application role may only add to it and read it. schema.sql was not run. The 1.2.0 image can start.'
