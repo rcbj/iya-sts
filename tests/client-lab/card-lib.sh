@@ -24,6 +24,20 @@ RUN=/run/client-lab
 PGP_READER='Virtual PCD 00 00'
 PIV_READER='Virtual PCD 00 01'
 PIV_AID='A000000308000010000100'
+# THE ATRs. jcardsim's default, 3B80800101, is in OpenSC 0.23's table as a
+# PIVKey card (card-piv.c's piv_atrs), and OpenSC turns EC off for every
+# PIVKey (CI_NO_EC): a P-256 key on the card then has no signing mechanism
+# at all (CKR_MECHANISM_INVALID). So each card answers an ATR of its own:
+#   * the yubikey PIV card a YubiKey 5 NFC's, whose historical bytes carry
+#     "YubiKey" in compact-TLV tag 5 (developers.yubico.com/PIV/
+#     Introduction/Yubico_extensions.html), which OpenSC reads as a
+#     YubiKey 5 — as it would the real one;
+#   * the stock PIV card a generic one no table names (historical bytes
+#     "LabPIV01", T=1, its check byte computed);
+#   * the OpenPGP card jcardsim's default, which only scdaemon reads.
+ATR_DEFAULT='3B80800101'
+ATR_YUBIKEY5='3BFD1300008131FE158073C021C057597562694B657940'
+ATR_GENERIC_PIV='3B8880014C6162504956303108'
 
 say() {
   echo "client-lab: $*"
@@ -31,11 +45,11 @@ say() {
 
 # One jcardsim configuration per card (VSmartCard reads a properties file).
 card_config() {
-  local aid="$1" class="$2" port="$3" reloader="$4"
+  local aid="$1" class="$2" port="$3" reloader="$4" atr="$5"
   cat <<EOF
 com.licel.jcardsim.card.applet.0.AID=${aid}
 com.licel.jcardsim.card.applet.0.Class=${class}
-com.licel.jcardsim.card.ATR=3B80800101
+com.licel.jcardsim.card.ATR=${atr}
 com.licel.jcardsim.vsmartcard.host=127.0.0.1
 com.licel.jcardsim.vsmartcard.port=${port}
 com.licel.jcardsim.vsmartcard.reloader.port=${reloader}
@@ -82,8 +96,8 @@ stop_card() {
 
 start_card() {
   local name="$1" aid="$2" class="$3" classes="$4" port="$5" reloader="$6"
-  local reader="$7"
-  card_config "${aid}" "${class}" "${port}" "${reloader}" \
+  local reader="$7" atr="${8:-${ATR_DEFAULT}}"
+  card_config "${aid}" "${class}" "${port}" "${reloader}" "${atr}" \
     > "${RUN}/${name}.cfg"
   say "starting the ${name} card (${classes}) on ${reader} (port ${port})"
   java -cp "${CARDS}/${classes}:${CARDS}/jcardsim.jar" \
@@ -138,7 +152,11 @@ start_piv_card() {
       return 1
       ;;
   esac
+  local atr="${ATR_YUBIKEY5}"
+  if [ "${variant}" = "stock" ]; then
+    atr="${ATR_GENERIC_PIV}"
+  fi
   start_card piv "${PIV_AID}" net.cooperi.pivapplet.PivApplet \
-    "pivapplet-${variant}" 35964 8098 "${PIV_READER}"
+    "pivapplet-${variant}" 35964 8098 "${PIV_READER}" "${atr}"
   echo "${variant}" > "${RUN}/piv-variant"
 }
