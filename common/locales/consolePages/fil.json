@@ -141,6 +141,7 @@
   "title.xacml-policies": "Mga XACML policy",
   "title.backup-codes": "Mga recovery code",
   "title.persistence": "Persistence",
+  "title.cluster": "Cluster",
   "title.totp": "TOTP MFA",
   "title.webauthn": "WebAuthn",
   "title.kerberos": "Mga setting ng Kerberos",

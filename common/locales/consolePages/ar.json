@@ -141,6 +141,7 @@
   "title.xacml-policies": "سياسات XACML",
   "title.backup-codes": "رموز الاسترداد",
   "title.persistence": "الاستمرارية",
+  "title.cluster": "العنقود",
   "title.totp": "TOTP MFA",
   "title.webauthn": "WebAuthn",
   "title.kerberos": "إعدادات Kerberos",

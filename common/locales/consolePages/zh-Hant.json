@@ -141,6 +141,7 @@
   "title.xacml-policies": "XACML 原則",
   "title.backup-codes": "復原碼",
   "title.persistence": "持久保存",
+  "title.cluster": "叢集",
   "title.totp": "TOTP MFA",
   "title.webauthn": "WebAuthn",
   "title.kerberos": "Kerberos 設定",

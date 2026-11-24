@@ -431,6 +431,7 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/config': ['index', 'settings'],
   '/admin/mode': ['requirements', 'development', 'notyet'],
   '/admin/persistence': ['settings'],
+  '/admin/cluster': ['settings'],
   '/admin/cells': ['cells', 'residents', 'rehome', 'settings'],
   '/admin/mail': ['test', 'verify', 'messages', 'settings'],
   '/admin/sign-in-appearance': ['colours', 'layout', 'preview', 'settings'],
@@ -1444,6 +1445,15 @@ const PAGES: WebPage[] = [
   { path: '/admin/persistence', title: 'Persistence',
     operation: '/admin-api/persistence',
     render: ProtocolSettingsPage.render },
+  // THE CLUSTER PAGE WAS NEVER CONVERTED (#446), so Platform → Cluster
+  // answered "not a console page" and its settings were drawn nowhere;
+  // `tests/setting_homes_drawn.js` found it (#2049). Its settings and
+  // prose are drawn here; its status block (members, leases, other cells)
+  // is still drawn by the console in node only, and has no browser
+  // renderer in `web_protocol_settings.ts` yet.
+  { path: '/admin/cluster', title: 'Cluster',
+    operation: '/admin-api/cluster',
+    render: ProtocolSettingsPage.render },
   { path: '/admin/totp', title: 'TOTP MFA',
     operation: '/admin-api/totp',
     render: ProtocolSettingsPage.render },
@@ -1599,6 +1609,42 @@ class WebPages {
    *   who may not write when left out.
    * @returns the body as HTML, or null when the page is not converted
    */
+  // THE ASSERTION GROUPS' ROWS THE ASSERTION FORM DOES NOT CARRY (#2049).
+  // The form draws `SAML_ASSERTION_SETTINGS` (`admin-core/admin_actions.ts`),
+  // a fixed list that is also the narrow door's; `saml2.publishAlgorithmSupport`
+  // and `saml11.doNotCacheCondition` joined the two groups after it and were
+  // drawn nowhere until `tests/setting_homes_drawn.js` found them. Each is
+  // drawn here from the page's own settings block, as every other group is,
+  // and saved through `set-many`.
+  /**
+   * Draws, under the assertion form, the rows of the two SAML assertion
+   * groups that form does not carry.
+   *
+   * @param view - the SAML page's answer (`settings`, `assertions`)
+   * @param context - the render context
+   * @returns the HTML, empty when the form carries every row
+   */
+  static samlAssertionLeftovers(view: Json, context: Json): string {
+    const drawn = ((view.assertions && view.assertions.settings) || [])
+      .map(function (setting: Json): string { return setting.key; });
+    const block = view.settings || { groups: [] };
+    return (block.groups || []).filter(function (group: Json): boolean {
+      return group.group === 'SAML 2.0 assertions' ||
+             group.group === 'SAML 1.1 assertions';
+    }).map(function (group: Json): Json {
+      return Object.assign({}, group, {
+        settings: (group.settings || []).filter(function (setting: Json) {
+          return drawn.indexOf(setting.key) < 0;
+        })
+      });
+    }).filter(function (group: Json): boolean {
+      return group.settings.length > 0;
+    }).map(function (group: Json): string {
+      return WebKit.frame(SettingsForms.section(group, '/admin/saml2',
+                                                block.context, context.t));
+    }).join('');
+  }
+
   /**
    * Translates a page's query into its operation's, by the row's `params`.
    *
@@ -2318,7 +2364,8 @@ class WebPages {
           html: SamlPage.idpInitiatedBody(context, view.idpInitiated) },
         { id: 'saml-tab-assertions',
           label: context.t.text('consolePages.title.saml-assertions'),
-          html: SamlAssertionsPage.body(context, assertionView) },
+          html: SamlAssertionsPage.body(context, assertionView) +
+            WebPages.samlAssertionLeftovers(view, context) },
         { id: 'saml-tab-attributes',
           label: context.t.text('consolePages.title.saml-attributes'),
           html: ClaimsPage.samlAttributesBody(context, view.attributes) }
@@ -2341,7 +2388,10 @@ class WebPages {
         view, context.t);
       const vciSettings = SettingsForms.forms(
         view.oid4vciSettings.settings,
-        '/admin/vc#vc-tab-oid4vci', ['OID4VCI', 'W3C VC API'], context.t);
+        // `Person DIDs` (#1291) is homed on this page and carried in the
+        // view, and was left out of this list until #2049's check found it.
+        '/admin/vc#vc-tab-oid4vci', ['OID4VCI', 'W3C VC API', 'Person DIDs'],
+        context.t);
       const vpSettings = SettingsForms.forms(
         view.oid4vpSettings.settings,
         '/admin/vc#vc-tab-oid4vp', ['OID4VP'], context.t);

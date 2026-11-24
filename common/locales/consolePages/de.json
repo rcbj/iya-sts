@@ -141,6 +141,7 @@
   "title.xacml-policies": "XACML-Richtlinien",
   "title.backup-codes": "Wiederherstellungscodes",
   "title.persistence": "Persistenz",
+  "title.cluster": "Cluster",
   "title.totp": "TOTP-MFA",
   "title.webauthn": "WebAuthn",
   "title.kerberos": "Kerberos-Einstellungen",

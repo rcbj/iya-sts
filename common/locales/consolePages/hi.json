@@ -141,6 +141,7 @@
   "title.xacml-policies": "XACML नीतियाँ",
   "title.backup-codes": "पुनर्प्राप्ति कोड",
   "title.persistence": "स्थायित्व",
+  "title.cluster": "क्लस्टर",
   "title.totp": "TOTP MFA",
   "title.webauthn": "WebAuthn",
   "title.kerberos": "Kerberos सेटिंग",

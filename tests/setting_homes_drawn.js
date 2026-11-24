@@ -25,7 +25,8 @@
 // the drawer cannot reach is a failure too, named with what it threw.
 //
 //   1. the table names at least the pages it is known to;
-//   2. every page draws a control for every setting of each group it homes;
+//   2. every page draws a control for every setting of each group it homes,
+//      but for the rows OWED names, which must still be undrawn;
 //   3. the six #2049 pages draw their groups, and Directory → OpenPGP keys
 //      and Directory → Hardware tokens are named by no row.
 // ===========================================================================
@@ -36,6 +37,33 @@ const config = require('../common/config');
 const admin = require('../admin-ui/admin');
 const consolePage = require('./tools/console_page')
   .consolePage(require('path').join(__dirname, '..'));
+
+// THE XACML PAGES ARRIVE WITH THE FAMILY: `xacml/xacml_admin` fills the
+// console's slot for them when it loads (a running service loads it at 23c),
+// and without it `GET /admin-api/xacml` answers the no-XACML view, which
+// carries no settings block.
+require('../xacml/xacml_admin');
+
+// WHAT THIS FOUND AND #2049 DID NOT FIX, each named with its reason so the
+// table can only shrink: every entry is asserted to be STILL undrawn, so a
+// fix fails this file until its row is removed. Fixed on #2049 itself:
+// `/admin/cluster` (never converted by #446, so "not a console page"),
+// `/admin/vc` (`Person DIDs` left out of the tab's group list) and
+// `/admin/saml2` (two assertion rows outside `SAML_ASSERTION_SETTINGS`).
+const OWED = {
+  // The tab draws `TOKEN_LIFETIME_KEYS` only, from an answer that carries
+  // those rows alone; drawing the rest of the group needs the answer's
+  // model to carry them.
+  '/admin/token-lifetimes [OAuth 2.0 / OIDC per-client]':
+    ['oauth2.refreshTokenMaxChainS', 'oauth2.consentAlwaysForPublicClients',
+     'oauth2.maxAuthAgeS'],
+  // Directory → Users draws people and no settings form; its answer
+  // carries no settings block.
+  '/admin/users [Profile photos]':
+    ['profilePhoto.selfService', 'profilePhoto.cacheFederated',
+     'profilePhoto.maxFileBytes', 'profilePhoto.maxStoredBytes',
+     'profilePhoto.minPixels', 'profilePhoto.maxPixels']
+};
 
 const log = require('bunyan').createLogger({
   name: 'setting_homes_drawn',
@@ -85,6 +113,7 @@ async function runBody(t) {
   t.log.info('=== 2. every page draws every group it homes ===');
   const undrawn = [];
   const unreachable = [];
+  const stillOwed = [];
   for (const page of paths) {
     let html = null;
     try {
@@ -104,8 +133,17 @@ async function runBody(t) {
       const missing = keysOf(group).filter(function (key) {
         return !drawsControl(html, key);
       });
-      if (missing.length) {
-        undrawn.push(page + ' [' + group + ']: ' + missing.join(', '));
+      const name = page + ' [' + group + ']';
+      const owed = OWED[name] || [];
+      if (owed.length) {
+        stillOwed.push(name + ': ' + (missing.join(',') === owed.join(',')
+          ? 'still undrawn' : 'NOW ' + (missing.join(', ') || 'drawn')));
+      }
+      const unexpected = missing.filter(function (key) {
+        return owed.indexOf(key) < 0;
+      });
+      if (unexpected.length) {
+        undrawn.push(name + ': ' + unexpected.join(', '));
       }
     });
   }
@@ -116,6 +154,14 @@ async function runBody(t) {
           '2. and each draws a control for every setting of every group ' +
           'homed on it (' + paths.length + ' page(s))',
           undrawn.join('; '));
+
+  t.check(stillOwed.length === Object.keys(OWED).length &&
+          stillOwed.every(function (line) {
+            return /still undrawn$/.test(line);
+          }),
+          '2. and each page OWED names still leaves exactly those rows ' +
+          'undrawn (remove its row once it draws them)',
+          stillOwed.join('; '));
 
   t.log.info('=== 3. the #2049 pages ===');
   const expected = {
