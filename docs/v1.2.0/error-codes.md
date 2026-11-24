@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6080** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6085** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -106,7 +106,7 @@ is an ordinary outcome.
 * [Registries (`STS-REG`)](#sts-reg) — 191
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 29
 * [Reporting (`STS-REPORT`)](#sts-report) — 59
-* [Audit export (`STS-AUDIT`)](#sts-audit) — 16
+* [Audit export (`STS-AUDIT`)](#sts-audit) — 21
 
 ## STS-HTTP
 
@@ -6924,6 +6924,11 @@ Raised from: common/audit_export.ts, mgmt-api/audit_export_api.ts.
 | `STS-AUDIT-0015` | A webhook or Splunk HEC destination rejected the event itself (HTTP 400). That event is counted permanently failed and the cursor moves past it. The destination is not paused for the events after it (#641). | none (that event is dropped; later events are still delivered) |
 | `STS-AUDIT-0016` | A syslog audit destination was refused because product mode needs tls. | HTTP 400 |
 | `STS-AUDIT-0017` | A realm in product mode has no audit export destination, so its audit log stays with the service. | — |
+| `STS-AUDIT-0018` | Audit events could not be written to sts_audit, the append-only audit table: they are kept for the next try, and past a bound the oldest are let go and counted (#1616). | — |
+| `STS-AUDIT-0019` | This service's database role can change or delete rows of sts_audit (it owns the table, or holds UPDATE, DELETE or TRUNCATE on it), so the audit log is not append-only (ASVS 5.0.0 16.4.2); /admin/mode reports the requirement as not met. The service runs (#1616). | — |
+| `STS-AUDIT-0020` | sts_audit could not be read for the audit page, which shows this process's own events instead (#1616). | — |
+| `STS-AUDIT-0021` | The append-only audit log's start (this process's events read back, the old ring copied) or its retention run failed; the service runs and retention is asked again on the next run (#1616). | — |
+| `STS-AUDIT-0022` | sts_audit is there and the two functions rows leave it through are not, so retention cannot remove old rows: the schema script was not run as the table owner (#1616). | — |
 
 ## Adding a code
 

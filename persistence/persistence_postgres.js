@@ -147,6 +147,8 @@ const grantingBackfill = require('./granting_index_backfill');
 // The risk engine's statements on MariaDB (#677). A LIBRARY, built in
 // create() only on an engine that is not PostgreSQL.
 const riskPortable = require('./risk_portable');
+// THE AUDIT LOG'S STATEMENTS ON MARIADB (#1616): `audit_portable.js`.
+const auditPortable = require('./audit_portable');
 // The directory's lookups as SQL (#349): one builder for this driver and the
 // bridge's thread. A leaf.
 const directoryQueries = require('./directory_queries');
@@ -2583,7 +2585,15 @@ function create(options) {
     { table: 'sts_minted', keys: ['handle', 'realm', 'key'],
       column: 'key_sealed', jsonb: false, change: null },
     { table: 'sts_changes', keys: ['seq'], column: 'key', jsonb: false,
-      change: null }
+      change: null },
+    // THE APPEND-ONLY AUDIT LOG (#1616): COUNTED, NEVER RE-SEALED. This role
+    // may not UPDATE `sts_audit`, by design (ASVS 5.0.0 16.4.2), so a row
+    // keeps the data key it was sealed under — and because a key is
+    // destroyed only on a count of zero (`data_key_rotation.ts`), counting
+    // these is what keeps a retired key while an audit row still names it,
+    // until retention has aged those rows out (rcbj's decision 6).
+    { table: 'sts_audit', keys: ['realm', 'origin', 'seq'], column: 'body',
+      jsonb: false, change: null, countOnly: true }
   ];
 
   // The column as text, for LIKE and for the regular expression.
@@ -4186,6 +4196,14 @@ function create(options) {
         shapes: { dataset: riskDatasetFrom, version: riskVersionFrom,
                   range: riskRangeFrom, failure: riskFailureFrom }
       })
+    : null;
+
+  // THE AUDIT LOG ON MARIADB (#1616), or null for PostgreSQL's own
+  // statements below: INSERT IGNORE for an INSERT that may meet its own row,
+  // the two definer procedures by CALL, and information_schema for the
+  // privilege probe.
+  const auditLib = dialect.engine !== 'postgres'
+    ? auditPortable.forDriver({ dialect: dialect, pool: pool })
     : null;
 
   // ---------------------------------------------------------------------
@@ -9928,6 +9946,155 @@ function create(options) {
       });
     },
 
+    // -------------------------------------------------------------------
+    // THE APPEND-ONLY AUDIT LOG (#1616, ASVS 5.0.0 16.4.2). One sealed row
+    // per event in `sts_audit`, where this role holds INSERT and SELECT and
+    // nothing else: `common/audit_store.ts` seals and opens, and these only
+    // write, read and ask. Rows LEAVE through the owner's two SECURITY
+    // DEFINER functions, never a DELETE of this role's. An INSERT that meets
+    // its own row (a retried flush, the one-time copy of the old ring run
+    // again) does nothing, which needs no UPDATE.
+    // -------------------------------------------------------------------
+    auditInsert: function (rows) {
+      log.debug("Entering auditInsert(). " + rows.length);
+      if (auditLib) {
+        log.debug("Leaving auditInsert(). Portable.");
+        return auditLib.auditInsert(rows);
+      }
+      if (!rows.length) {
+        log.debug("Leaving auditInsert(). Nothing.");
+        return Promise.resolve(0);
+      }
+      log.debug("Leaving auditInsert().");
+      return pool.query(
+        'INSERT INTO sts_audit (realm, origin, seq, at, body) ' +
+        'SELECT * FROM unnest($1::text[], $2::text[], $3::bigint[], ' +
+        '$4::bigint[], $5::text[]) ' +
+        'ON CONFLICT (realm, origin, seq) DO NOTHING',
+        [rows.map(function (r) { return String(r.realm); }),
+         rows.map(function (r) { return String(r.origin || ''); }),
+         rows.map(function (r) { return Number(r.seq); }),
+         rows.map(function (r) { return Number(r.at); }),
+         rows.map(function (r) { return String(r.body); })]
+      ).then(function (r) {
+        return r.rowCount || 0;
+      });
+    },
+
+    // A realm's newest rows, newest first, in the audit page's order.
+    // `origin`, when given, narrows to one process's rows: what a process
+    // takes back into its own ring at a start.
+    auditNewest: function (realm, limit, origin) {
+      log.debug("Entering auditNewest(). realm=" + realm);
+      if (auditLib) {
+        log.debug("Leaving auditNewest(). Portable.");
+        return auditLib.auditNewest(realm, limit, origin);
+      }
+      const one = origin !== undefined && origin !== null;
+      log.debug("Leaving auditNewest().");
+      return pool.query(
+        'SELECT realm, origin, seq, at, body FROM sts_audit WHERE realm = $1 ' +
+        (one ? 'AND origin = $3 ' : '') +
+        'ORDER BY at DESC, origin DESC, seq DESC LIMIT $2',
+        one ? [String(realm), Math.max(1, Number(limit) || 1), String(origin)]
+          : [String(realm), Math.max(1, Number(limit) || 1)]
+      ).then(function (r) {
+        return r.rows.map(function (row) {
+          return { realm: row.realm, origin: row.origin,
+                   seq: Number(row.seq), at: Number(row.at), body: row.body };
+        });
+      });
+    },
+
+    // Retention, through the owner's function, which keeps at least 1000
+    // rows whatever `keep` says. Answers how many left, or null.
+    auditRetain: function (realm, keep) {
+      log.debug("Entering auditRetain(). realm=" + realm);
+      if (auditLib) {
+        log.debug("Leaving auditRetain(). Portable.");
+        return auditLib.auditRetain(realm, keep);
+      }
+      log.debug("Leaving auditRetain().");
+      return pool.query('SELECT sts_audit_retain($1, $2) AS gone',
+                        [String(realm), Number(keep) || 0])
+        .then(function (r) {
+          return Number((r.rows[0] || {}).gone) || 0;
+        });
+    },
+
+    // A realm's rows, through the owner's function, which deletes nothing
+    // of a realm that is live or of the default one.
+    auditPurgeRealm: function (realm) {
+      log.debug("Entering auditPurgeRealm(). realm=" + realm);
+      if (auditLib) {
+        log.debug("Leaving auditPurgeRealm(). Portable.");
+        return auditLib.auditPurgeRealm(realm);
+      }
+      log.debug("Leaving auditPurgeRealm().");
+      return pool.query('SELECT sts_audit_purge_realm($1) AS gone',
+                        [String(realm)])
+        .then(function (r) {
+          return Number((r.rows[0] || {}).gone) || 0;
+        });
+    },
+
+    // The realms `sts_audit` holds rows of: what the retention job compares
+    // with the live realms, to purge a removed realm's (#1616).
+    auditRealms: function () {
+      log.debug("Entering auditRealms().");
+      if (auditLib) {
+        log.debug("Leaving auditRealms(). Portable.");
+        return auditLib.auditRealms();
+      }
+      log.debug("Leaving auditRealms().");
+      return pool.query('SELECT DISTINCT realm FROM sts_audit')
+        .then(function (r) {
+          return r.rows.map(function (row) { return String(row.realm); });
+        });
+    },
+
+    // THE OLD RING'S SEGMENTS, once copied into `sts_audit` (#1616): every
+    // `sts_minted` row of the handle they were written under. This role
+    // may delete `sts_minted` rows; only `sts_audit` is append-only.
+    auditDropLegacy: function (handle) {
+      log.debug("Entering auditDropLegacy(). " + handle);
+      if (auditLib) {
+        log.debug("Leaving auditDropLegacy(). Portable.");
+        return auditLib.auditDropLegacy(handle);
+      }
+      log.debug("Leaving auditDropLegacy().");
+      return pool.query('DELETE FROM sts_minted WHERE handle = $1',
+                        [String(handle)])
+        .then(function (r) {
+          return r.rowCount || 0;
+        });
+    },
+
+    // Whether the table and its functions are there, and whether THIS role
+    // could change a row — which an owner always can, so a table this role
+    // made for itself reads as writable too (#1616, decision 7).
+    auditPrivileges: function () {
+      log.debug("Entering auditPrivileges().");
+      if (auditLib) {
+        log.debug("Leaving auditPrivileges(). Portable.");
+        return auditLib.auditPrivileges();
+      }
+      log.debug("Leaving auditPrivileges().");
+      return pool.query(
+        'SELECT to_regclass(\'sts_audit\') IS NOT NULL AS present, ' +
+        '(to_regprocedure(\'sts_audit_retain(text,bigint)\') IS NOT NULL ' +
+        'AND to_regprocedure(\'sts_audit_purge_realm(text)\') IS NOT NULL) ' +
+        'AS functions, CASE WHEN to_regclass(\'sts_audit\') IS NULL THEN ' +
+        'false ELSE has_table_privilege(\'sts_audit\', \'UPDATE\') OR ' +
+        'has_table_privilege(\'sts_audit\', \'DELETE\') OR ' +
+        'has_table_privilege(\'sts_audit\', \'TRUNCATE\') END AS writable'
+      ).then(function (r) {
+        const row = r.rows[0] || {};
+        return { present: !!row.present, functions: !!row.functions,
+                 writable: !!row.writable };
+      });
+    },
+
     // One attributable failure. The address arrives sealed and as a prefix;
     // the name as a subject or a keyed digest — never as typed.
     riskRecordFailure: function (row) {
@@ -10993,7 +11160,10 @@ function create(options) {
             });
           }, Promise.resolve());
         }).then(function () {
-          return EXTRA_SEALED.reduce(function (c, one) {
+          // A count-only column (the audit log, #1616) is left as it is.
+          return EXTRA_SEALED.filter(function (one) {
+            return !one.countOnly;
+          }).reduce(function (c, one) {
             return c.then(function () {
               return resealExtra(one, like, limit, reseal, tally);
             });
