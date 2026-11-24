@@ -23,8 +23,9 @@
 //      them as delegated permissions any more (#1030).
 //   B. EVERY OTHER SCOPE is issued freely in development, and in product only
 //      when the client's `oauthAllowedScope` lists it — or, with no list, when
-//      it is in the documented default set; a scope naming an application or
-//      a delegated permission is not judged here.
+//      it is in the default set `oauth2.undeclaredClientScopes` chooses
+//      (#1589: openid alone by default, identity, legacy); a scope naming an
+//      application or a delegated permission is not judged here.
 //   C. `tokenSet()` NARROWS — a refresh and an exchange carrying a scope the
 //      client may no longer have are issued without it, the `scope` member
 //      says so, and an audit row records it.
@@ -236,8 +237,40 @@ function claimB(t) {
           'development: ssf:write is an ordinary scope and is issued');
   config.setOverride('global.mode', 'product');
   try {
-    t.equal(codeOf(scopePolicy.refusal('openid profile email', 'sp-bare')),
-            null, 'product, no list: OIDC scopes are the default set');
+    // #1589: the default set is `oauth2.undeclaredClientScopes`. `openid`,
+    // the default since 1.2.0, is openid alone.
+    t.equal(codeOf(scopePolicy.refusal('openid', 'sp-bare')), null,
+            'product, no list, openid (the default): openid is issued');
+    t.equal(codeOf(scopePolicy.refusal('openid profile', 'sp-bare')),
+            'STS-OAUTH-0578', 'product, no list, openid (the default): ' +
+            'profile is refused STS-OAUTH-0578');
+    t.equal(codeOf(scopePolicy.refusal('vc:scope', 'sp-bare',
+                                       { defaults: ['vc:scope'] })),
+            'STS-OAUTH-0578', 'product, no list, openid: the caller\'s ' +
+            'defaults (OpenID4VCI) are not in the set');
+    t.equal(scopePolicy.defaultScopes({ defaults: ['vc:scope'] }).join(' '),
+            'openid', 'openid: defaultScopes() is openid alone');
+    config.setOverride('oauth2.undeclaredClientScopes', 'identity');
+    t.equal(codeOf(scopePolicy.refusal('openid profile email address phone',
+                                       'sp-bare')), null,
+            'product, no list, identity: the identity scopes are issued');
+    t.equal(codeOf(scopePolicy.refusal('openid offline_access', 'sp-bare')),
+            'STS-OAUTH-0578', 'product, no list, identity: offline_access ' +
+            'is refused');
+    t.equal(codeOf(scopePolicy.refusal('vc:scope', 'sp-bare',
+                                       { defaults: ['vc:scope'] })),
+            'STS-OAUTH-0578', 'product, no list, identity: the caller\'s ' +
+            'defaults are not in the set');
+    t.equal(codeOf(scopePolicy.refusal('openid profile', 'sp-declared')),
+            'STS-OAUTH-0578', 'product, a list, identity: the setting does ' +
+            'not reach a client that declares scopes');
+    // `legacy` — every release before 1.2.0, and what an upgraded store
+    // keeps (postgres/upgrade-1.1.0.sql) — for the rest of this claim.
+    config.setOverride('oauth2.undeclaredClientScopes', 'legacy');
+    t.equal(codeOf(scopePolicy.refusal('openid profile email offline_access',
+                                       'sp-bare')),
+            null, 'product, no list, legacy: OIDC scopes and offline_access ' +
+            'are the default set');
     t.equal(codeOf(scopePolicy.refusal('anything:custom', 'sp-bare')),
             'STS-OAUTH-0578', 'product, no list: a custom scope is refused ' +
             'STS-OAUTH-0578');
@@ -263,6 +296,7 @@ function claimB(t) {
             'attribute', JSON.stringify(refused));
   } finally {
     config.clearOverride('global.mode');
+    config.clearOverride('oauth2.undeclaredClientScopes');
   }
   log.debug("Leaving claimB().");
 }

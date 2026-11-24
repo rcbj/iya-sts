@@ -5151,6 +5151,14 @@
     "en": "2394ee67a689920d",
     "text": "نفّذ OpenID Connect Key Binding 1.0 (#150). عند تشغيله: تسرد وثيقة الاكتشاف نطاق `bound_key`، ويجوز لعميل لا يصرّح بأي نطاقات أن يطلبه، ويجب أن يسمّي طلب له `dpop_jkt` ويستخدم تدفق الرمز (ويُرفض خلاف ذلك، STS-OAUTH-0704 و0705)؛ ثم يسمّي ID Token مفتاح DPoP (`cnf.jwk`، `typ: dpop+id_token`)، ويجب أن يثبت طلب الرمز ذلك بـ `c_s256`، ويجب أن يأتي كل تحديث من المفتاح نفسه. **عند الإيقاف، لا يوجد، والخدمة هي OpenID Connect Core وحدها**: لا يُعلَن `bound_key`، ولا يُرفض طلب يحمله — يُتجاهل النطاق ولا يُمنح، كما يعامل Core نطاقًا لا يتصرف OP بناءً عليه — ولا يُربط أي ID Token. أوقفه حيث تطلب الأطراف المعتمدة كل نطاق معلَن ولا تعرف شيئًا عن Key Binding (#315). تحتفظ منحة رُبطت بالفعل قبل إيقافه بفحص مفتاحها عند التحديث."
   },
+  "oauth2.undeclaredClientScopes|label": {
+    "en": "76b8daaed31c60ea",
+    "text": "النطاقات لعميل لا يصرّح بأي منها"
+  },
+  "oauth2.undeclaredClientScopes|description": {
+    "en": "58d0721fcc34cae0",
+    "text": "ما يُصدره وضع الإنتاج لعميل لا يسرد oauthAllowedScope الخاص به شيئًا — عادةً عميل سجّل نفسه (RFC 7591) دون عضو scope. openid، الافتراضي منذ 1.2.0: openid وحده، فيجب التصريح بكل نطاق آخر (ASVS 5.0.0 10.4.11). identity: نطاقات الهوية في OpenID Connect — openid وprofile وemail وaddress وphone — و bound_key ما دام OpenID Connect Key Binding قيد التشغيل، لكن لا offline_access ولا أي نطاق OpenID4VCI أبدًا. legacy: ما كانت تمنحه الإصدارات السابقة لـ 1.2.0 — نطاقات الهوية وoffline_access (رموز تحديث تعيش أطول من الجلسة) ونطاقات اعتماد OpenID4VCI الخاصة بنطاق الثقة هذا؛ يخزّنه سكربت الترقية 1.1.0 في كل نطاق ثقة كان فيه تطبيق، ويحذّر /admin/mode ما دام ساريًا. يصدر وضع التطوير أي نطاق يطلبه العميل مهما قال هذا الإعداد؛ أما النطاقات المحمية لهذه الخدمة فتحتاج دائمًا إلى تصريح. (#1589)"
+  },
   "oauth2.enterpriseClaimsAlways|label": {
     "en": "25c226f1b3654eee",
     "text": "مطالبات Enterprise Extensions في كل ID Token"

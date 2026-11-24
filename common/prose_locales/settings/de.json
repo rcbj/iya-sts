@@ -5151,6 +5151,14 @@
     "en": "2394ee67a689920d",
     "text": "OpenID Connect Key Binding 1.0 ausführen (#150). Ist es ein: das Discovery-Dokument listet den Scope `bound_key`, ein Client, der keine Scopes deklariert, darf ihn verlangen, und eine Anfrage danach muss `dpop_jkt` nennen und den Code-Flow verwenden (sonst abgelehnt, STS-OAUTH-0704 und 0705); das ID Token nennt dann den DPoP-Schlüssel (`cnf.jwk`, `typ: dpop+id_token`), die Token-Anfrage muss ihn mit `c_s256` nachweisen, und jede Aktualisierung muss von demselben Schlüssel kommen. **Aus existiert es nicht, und der Dienst ist allein OpenID Connect Core**: `bound_key` wird nicht bekannt gegeben, eine Anfrage, die es trägt, wird nicht abgelehnt — der Scope wird ignoriert und nicht gewährt, wie Core einen Scope behandelt, auf den ein OP nicht handelt — und kein ID Token wird gebunden. Schalten Sie es aus, wo Relying Parties jeden bekannt gegebenen Scope verlangen und von Key Binding nichts wissen (#315). Ein Grant, der bereits gebunden war, bevor es ausgeschaltet wurde, behält seine Schlüsselprüfung bei der Aktualisierung."
   },
+  "oauth2.undeclaredClientScopes|label": {
+    "en": "76b8daaed31c60ea",
+    "text": "Scopes für einen Client, der keine deklariert"
+  },
+  "oauth2.undeclaredClientScopes|description": {
+    "en": "58d0721fcc34cae0",
+    "text": "Was der Produktionsmodus einem Client ausstellt, dessen oauthAllowedScope nichts aufführt — typischerweise einem, der sich selbst (RFC 7591) ohne scope-Member registriert hat. openid, der Standard seit 1.2.0: nur openid, sodass jeder andere Scope deklariert werden muss (ASVS 5.0.0 10.4.11). identity: die Identitäts-Scopes von OpenID Connect — openid, profile, email, address und phone — sowie bound_key, solange OpenID Connect Key Binding eingeschaltet ist, aber nie offline_access oder ein OpenID4VCI-Scope. legacy: was Versionen vor 1.2.0 vergaben — die Identitäts-Scopes, offline_access (Refresh-Tokens, die die Sitzung überdauern) und die OpenID4VCI-Credential-Scopes dieses Bereichs; das Upgrade-Skript 1.1.0 speichert es in jedem Bereich, der eine Anwendung hatte, und /admin/mode warnt, solange es gilt. Der Entwicklungsmodus stellt jeden Scope aus, den ein Client verlangt, gleich was dies sagt; die geschützten Scopes dieses Dienstes brauchen stets eine Deklaration. (#1589)"
+  },
   "oauth2.enterpriseClaimsAlways|label": {
     "en": "25c226f1b3654eee",
     "text": "Claims der Enterprise Extensions in jedem ID Token"

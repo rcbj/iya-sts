@@ -5824,11 +5824,31 @@ reads.
   here: the first is an audience and not a privilege, the second has a grant of
   its own (`oauthDelegatedPermission`, rule 3s).
 * **Every other scope**, in PRODUCT only (`mode.grantsUndeclaredScopes()`): a
-  client with a list gets what it lists; a client with none gets the documented
-  default — OIDC Core's six and the caller's `defaults` (the authorization
-  server passes this realm's OpenID4VCI scopes; GNAP passes none). That is RFC
-  6749 section 3.3's pre-defined default, and the alternative ("nothing without
-  a list") breaks every plain OpenID Connect client.
+  client with a list gets what it lists; a client with none gets the default
+  `oauth2.undeclaredClientScopes` chooses — RFC 6749 section 3.3's
+  pre-defined default. **`openid` alone since 1.2.0 (#1589, rcbj
+  2026-11-24, option 1: ASVS 5.0.0 10.4.11's strict reading).** The old
+  default — OIDC Core's six, `offline_access` among them, and the caller's
+  `defaults` (the authorization server passes this realm's OpenID4VCI
+  scopes; GNAP passes none) — is `legacy`, and gave every self-registered
+  client that named no `scope` refresh tokens outliving the session.
+  `identity` sits between: the identity scopes and `bound_key`, never
+  `offline_access` nor the caller's. `openid` stays in every one, so a plain
+  OpenID Connect client still signs in without declaring it.
+
+  **THE COMPATIBILITY STEP IS AN UPGRADE SCRIPT, NOT A STARTUP MIGRATION.**
+  `postgres/upgrade-1.1.0.sql` and its MariaDB twin store `legacy` in the
+  default realm's `sts_appconfig` row (every realm's fallback) where the
+  store holds any application and no value — the `xacml.pepAuthentication`
+  step's pattern. The service itself cannot tell an upgraded store from a
+  fresh one without a marker, and a value written at every start would
+  either pin a fresh install or pin it after its first self-registered
+  client; a script runs exactly once, on an upgrade. Whether each client
+  declares scopes is not read: the attribute may be sealed. `/admin/mode`
+  reports `declared-scopes` with a `waived` row (ASVS 5.0.0 10.4.11) while
+  the value is not `openid`, and `admin_views.ts`'s
+  `applicationObservedState()` answers `undeclaredClientScopes` so a
+  client's OAuth tab names the set it gets.
 
 **`declares()` IS THE RESOURCE SERVERS' QUESTION.** `/admin-api`
 (`declaredAdminScopes()`, `STS-API-0123`), SCIM (`STS-SCIM-0079`) and Shared

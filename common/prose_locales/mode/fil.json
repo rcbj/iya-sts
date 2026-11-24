@@ -104,8 +104,8 @@
     "text": "Ini-issue ang anumang scope na hinihingi ng client, anuman ang nakalista sa `oauthAllowedScope` nito. Sa PAREHONG mode, ang admin:read, admin:write, ang mga SCIM at Shared Signals scope at ang debugger permission ay ini-issue lang sa client na ang `oauthAllowedScope` ay naglilista ng mga ito."
   },
   "mode.requirements.declared-scopes.product": {
-    "en": "33fcb48e8c17655e",
-    "text": "Ang scope na wala sa `oauthAllowedScope` ng client ay tinatanggihan nang invalid_scope sa authorization, pushed authorization at token endpoint (STS-OAUTH-0578) at inaalis sa refresh o exchange. Ang client na walang inililista ay nakakakuha ng dokumentadong default: openid, profile, email, address, phone, offline_access at ang mga OpenID4VCI scope ng realm na ito. Ang scope na nagpapangalan ng application o delegated permission ay may sariling mga patakaran."
+    "en": "dcdd1cbadd143bd7",
+    "text": "Ang scope na wala sa `oauthAllowedScope` ng client ay tinatanggihan nang invalid_scope sa authorization, pushed authorization at token endpoint (STS-OAUTH-0578) at inaalis sa refresh o exchange. Ang client na walang inililista ay nakakakuha ng itinakda ng oauth2.undeclaredClientScopes: openid lamang bilang default (ASVS 5.0.0 10.4.11); dinadagdagan ito ng identity ng profile, email, address at phone; ang legacy, na iniingatan ng na-upgrade na store, ay nagdaragdag pa ng offline_access at ng mga OpenID4VCI scope ng realm na ito. Ang scope na nagpapangalan ng application o delegated permission ay may sariling mga patakaran."
   },
   "mode.requirements.declared-protocols.what": {
     "en": "89e8ef1624565f1b",

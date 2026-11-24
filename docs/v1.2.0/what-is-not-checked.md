@@ -118,7 +118,7 @@ any of them would be a broken implementation rather than a lenient one:
 | Let a group grant anything by being a group | A group grants what a role or roster names it for: the console's Admin Read and Admin Write, each realm's own administrator roster, `REMOTE_PEPS` and `XACML_USER` for the XACML surfaces, a configured role's `roleMemberGroup`, and the embedded debugger through the console roles. The groups claim in a token grants nothing | The same |
 | ~~Decide who may delegate to whom, in two of the three families that can~~ — **reversed (#108, #186)** | Kerberos S4U, WS-Trust `OnBehalfOf` / `ActAs` and RFC 8693 token exchange are decided by the issuance policy from one set of controls on the directory entries ([Delegation and impersonation](delegation.md)). A refusal is the KDC's own error, `wst:RequestFailed` (`STS-WSTRUST-0018` to `0024`) or `invalid_request` / `invalid_target` (`STS-OAUTH-0618`, `0619`, `0622`, `0790` to `0794`), and an exchange may not widen its subject_token's scope (`STS-OAUTH-0621`). An ungranted delegated permission is `invalid_scope` (`STS-OAUTH-0155`). See [Delegation](#delegation-is-decided-in-all-three-families) | The policy is asked and every delegation issued, the act recording what product would have refused. The KDC's fixture accounts carry delegation settings. An ungranted delegated permission is honoured unless `oauth2.delegatedPermissionsEnforced` is on. In both modes a subject_token's `may_act` naming somebody else is refused (`STS-OAUTH-0620`), and so is a WS-Trust request carrying both elements (`STS-WSTRUST-0025`) |
 | Verify the certificate of whoever answers an outbound request — a GNAP push finish, an SSF push, a federation back channel (and the SAML metadata, RFC 9728, Logout Token and status-list fetches that share its policy), an XACML PEP nudge, a kubelet | **Always verified (#171)**: every `…SkipTlsVerification` setting and `spiffe.k8sSkipKubeletVerification` is ignored (logged once with its family's code) and cannot be turned on (`STS-CORE-0103`). A private CA is trusted through the family's `…CaFile`. Plain http is refused for SSF, federation and XACML whatever `…AllowHttp` says, and allowed for a GNAP push finish to a loopback address only | `…SkipTlsVerification` turns verification off, warned on every request, and `…AllowHttp` admits plain http to any host. Both are off by default |
-| ~~Tie a scope to a client~~ — **reversed (#110)** | A client is issued only the scopes its `oauthAllowedScope` declares — or, declaring none, the default set: `openid`, `profile`, `email`, `address`, `phone`, `offline_access` and the realm's OpenID4VCI scopes. Anything else is `invalid_scope` (`STS-OAUTH-0578`); a scope naming an application or a delegated permission keeps its own rules. See [Scopes](#a-scope-is-tied-to-the-client) | Any scope is issued — except this service's own protected scopes (`admin:read`, `admin:write`, the SCIM and Shared Signals scopes, the debugger permission), which are held to the declaration in both modes (`STS-OAUTH-0577`) |
+| ~~Tie a scope to a client~~ — **reversed (#110)** | A client is issued only the scopes its `oauthAllowedScope` declares — or, declaring none, the default set `oauth2.undeclaredClientScopes` chooses: `openid` alone since 1.2.0 (`legacy`, what an upgraded store keeps, is `openid`, `profile`, `email`, `address`, `phone`, `offline_access` and the realm's OpenID4VCI scopes). Anything else is `invalid_scope` (`STS-OAUTH-0578`); a scope naming an application or a delegated permission keeps its own rules. See [Scopes](#a-scope-is-tied-to-the-client) | Any scope is issued — except this service's own protected scopes (`admin:read`, `admin:write`, the SCIM and Shared Signals scopes, the debugger permission), which are held to the declaration in both modes (`STS-OAUTH-0577`) |
 
 **Recorded is not the same claim as authenticated, and the two are kept apart
 everywhere.** A verified TLS client certificate, a presentation at the
@@ -842,10 +842,12 @@ console and through `/admin-api/applications/add` and `remove`.
   (`invalid_client_metadata`); an administrator does. GNAP's `ssf` access
   rights are held to the same attribute (`STS-GNAP-0719`).
 * **Every other scope, in product**: a client with a list gets what the list
-  names; a client with no list gets the default set — `openid`, `profile`,
-  `email`, `address`, `phone`, `offline_access` and this realm's OpenID4VCI
-  scopes. Anything else is `invalid_scope` (`STS-OAUTH-0578`). In development
-  any scope is issued.
+  names; a client with no list gets the default set
+  `oauth2.undeclaredClientScopes` chooses — `openid` alone since 1.2.0;
+  `identity` adds `profile`, `email`, `address` and `phone`; `legacy`, what
+  an upgraded store keeps, adds `offline_access` and this realm's OpenID4VCI
+  scopes too. Anything else is `invalid_scope` (`STS-OAUTH-0578`). In
+  development any scope is issued.
 * **A scope naming an application or a delegated permission** keeps its own
   rules: the first becomes the token's audience, the second needs a grant.
   Product mode refuses an ungranted delegated permission whatever

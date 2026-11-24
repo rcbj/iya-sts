@@ -3888,7 +3888,9 @@ request that was wrong rather than at a resource server three calls later.
 `scopeRefusal()` is a function of its own beside `permissionRefusal()` for that
 one's reason — a translation (`audienceScopes()`) must not also be a policy — and
 it adds only this server's DEFAULT SET to the library's: `credentialScopes()`,
-this realm's OpenID4VCI configuration scopes, beside OIDC's six.
+this realm's OpenID4VCI configuration scopes, which the library counts only
+while `oauth2.undeclaredClientScopes` is `legacy` (#1589; `openid` alone is
+the default since 1.2.0 — `common/CLAUDE.md`, 3au).
 
 **`tokenSet()` NARROWS, AS THE BACKSTOP, AND THAT IS WHERE THE TWO POLICIES
 PART.** A grant carrying its scope from earlier — a refresh, an exchange's `body.scope ||

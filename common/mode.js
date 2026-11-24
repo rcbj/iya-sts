@@ -845,6 +845,21 @@ function certificateWaivers() {
       level: 'MUST', setting: 'tls.certificateFile' }];
 }
 
+// A product realm whose client that declares no scopes is given more than
+// `openid` (#1589, ASVS 5.0.0 10.4.11 "only the scopes it requires"), as the
+// data `report()` carries on the `declared-scopes` row: `legacy` is what an
+// upgraded store keeps (postgres/upgrade-1.1.0.sql), and it must show until
+// an operator has declared each client's scopes and moved the setting.
+function undeclaredScopeWaivers() {
+  log.debug("Entering undeclaredScopeWaivers().");
+  const value = String(config.value('oauth2.undeclaredClientScopes') ||
+                       'openid');
+  log.debug("Leaving undeclaredScopeWaivers(). " + value);
+  return value === 'openid' ? [] : [
+    { requirement: 'least-scopes-by-default', section: 'ASVS 5.0.0 10.4.11',
+      level: 'MUST', setting: 'oauth2.undeclaredClientScopes' }];
+}
+
 // The switches that turn access decisions off in this process, as the data
 // `report()` carries on the row they qualify: a product operator may need one
 // to recover from a policy that denies its own repair, and it must show.
@@ -1731,7 +1746,9 @@ function authorizesDelegation() {
 // 2 names the policy — `scope` is the list "that the client can use when
 // requesting access tokens" — so a client is issued only what its
 // `oauthAllowedScope` lists, or, where it lists nothing, the documented
-// default set (OpenID Connect's six and this realm's OpenID4VCI scopes). A
+// default set `oauth2.undeclaredClientScopes` chooses (#1589: `openid` alone
+// since 1.2.0; `legacy` was OpenID Connect's six and this realm's OpenID4VCI
+// scopes). A
 // scope naming an application or a delegated permission keeps its own rules.
 // **This service's own protected scopes are NOT behind this predicate**:
 // `admin:*`, the SCIM and Shared Signals scopes and the debugger permission
@@ -2873,11 +2890,13 @@ const REQUIREMENTS = [
     product: 'A scope outside the client\'s `oauthAllowedScope` is refused ' +
              'invalid_scope at the authorization, pushed authorization and ' +
              'token endpoints (STS-OAUTH-0578) and taken off a refresh or an ' +
-             'exchange. A client that lists nothing gets the documented ' +
-             'default: openid, profile, email, address, phone, ' +
-             'offline_access and this realm\'s OpenID4VCI scopes. A scope ' +
-             'naming an application or a delegated permission keeps its own ' +
-             'rules.',
+             'exchange. A client that lists nothing gets what ' +
+             'oauth2.undeclaredClientScopes says: openid alone by default ' +
+             '(ASVS 5.0.0 10.4.11); identity adds profile, email, address ' +
+             'and phone; legacy, what an upgraded store keeps, adds ' +
+             'offline_access and this realm\'s OpenID4VCI scopes too. A ' +
+             'scope naming an application or a delegated permission keeps ' +
+             'its own rules.',
     where: 'common/scope_policy.ts, oauth-oidc/oauth2.ts, ' +
            'gnap/gnap_grants.ts' },
   { id: 'declared-protocols',
@@ -4861,6 +4880,7 @@ function report() {
   const waived = require('../oauth-oidc/oauth2_bcp').waivers();
   const accessOff = product ? accessEnforcementWaivers() : [];
   const certificate = product ? certificateWaivers() : [];
+  const scopes = product ? undeclaredScopeWaivers() : [];
   return {
     mode: current(),
     isProduct: product,
@@ -4870,7 +4890,9 @@ function report() {
         : row.id === 'access-decisions-fail-closed' && accessOff.length
           ? { waived: accessOff }
           : row.id === 'public-certificate' && certificate.length
-            ? { waived: certificate } : {};
+            ? { waived: certificate }
+            : row.id === 'declared-scopes' && scopes.length
+              ? { waived: scopes } : {};
       return Object.assign({ inForce: product ? row.product :
                                       row.development },
                            row, extra);

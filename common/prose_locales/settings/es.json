@@ -5151,6 +5151,14 @@
     "en": "2394ee67a689920d",
     "text": "Aplica OpenID Connect Key Binding 1.0 (#150). Activado: el documento de descubrimiento incluye el ámbito `bound_key`, un cliente que no declara ámbitos puede pedirlo, y una solicitud que lo pida debe indicar `dpop_jkt` y usar el flujo de código (si no, se rechaza, STS-OAUTH-0704 y 0705); el ID Token nombra entonces la clave DPoP (`cnf.jwk`, `typ: dpop+id_token`), la solicitud de token debe probarla con `c_s256`, y cada actualización debe venir de la misma clave. **Desactivado, no existe, y el servicio es solo OpenID Connect Core**: `bound_key` no se anuncia, una solicitud que lo incluya no se rechaza — el ámbito se ignora y no se concede, como Core trata un ámbito sobre el que un OP no actúa — y ningún ID Token queda vinculado. Desactívelo donde las partes de confianza pidan todos los ámbitos anunciados y no sepan nada de Key Binding (#315). Una concesión ya vinculada antes de desactivarlo conserva la comprobación de su clave al actualizarse."
   },
+  "oauth2.undeclaredClientScopes|label": {
+    "en": "76b8daaed31c60ea",
+    "text": "Ámbitos para un cliente que no declara ninguno"
+  },
+  "oauth2.undeclaredClientScopes|description": {
+    "en": "58d0721fcc34cae0",
+    "text": "Lo que el modo de producto emite a un cliente cuyo oauthAllowedScope no enumera nada — normalmente uno que se registró por sí mismo (RFC 7591) sin un miembro scope. openid, el valor predeterminado desde 1.2.0: solo openid, de modo que todo otro ámbito debe declararse (ASVS 5.0.0 10.4.11). identity: los ámbitos de identidad de OpenID Connect — openid, profile, email, address y phone — y bound_key mientras OpenID Connect Key Binding esté activado, pero nunca offline_access ni un ámbito de OpenID4VCI. legacy: lo que daban las versiones anteriores a 1.2.0 — los ámbitos de identidad, offline_access (tokens de actualización que sobreviven a la sesión) y los ámbitos de credenciales de OpenID4VCI de este dominio; el script de actualización 1.1.0 lo guarda en cada dominio que tenía una aplicación, y /admin/mode avisa mientras esté en vigor. El modo de desarrollo emite cualquier ámbito que un cliente pida, diga lo que diga esto; los ámbitos protegidos de este servicio siempre necesitan una declaración. (#1589)"
+  },
   "oauth2.enterpriseClaimsAlways|label": {
     "en": "25c226f1b3654eee",
     "text": "Claims de Enterprise Extensions en cada ID Token"

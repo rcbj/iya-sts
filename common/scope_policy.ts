@@ -51,12 +51,18 @@
 //     audience, not a privilege.
 //   * EVERY OTHER SCOPE — held to the declaration in PRODUCT only
 //     (`mode.grantsUndeclaredScopes()`). A client whose list names it gets it;
-//     a client with no list at all gets the documented DEFAULT: OpenID Connect
-//     Core's six and the caller's `defaults` (this realm's OpenID4VCI
-//     credential scopes). That is RFC 6749 section 3.3's "pre-defined default
-//     value", and it is what keeps every plain OpenID Connect client working
-//     without anybody having to declare `openid`. In development a client
-//     under test asks for whatever it likes.
+//     a client with no list at all gets the documented DEFAULT, RFC 6749
+//     section 3.3's "pre-defined default value", which
+//     `oauth2.undeclaredClientScopes` chooses (#1589, rcbj 2026-11-24):
+//     `openid` alone since 1.2.0 — ASVS 5.0.0 10.4.11's "only the scopes it
+//     requires", so a self-registered client that names no `scope` holds no
+//     refresh token outliving the session — `identity` (OpenID Connect's
+//     identity scopes, no `offline_access`), or `legacy`, every earlier
+//     release's OpenID Connect Core six and the caller's `defaults` (this
+//     realm's OpenID4VCI credential scopes), which the 1.1.0 upgrade script
+//     keeps for a store that had applications. `openid` stays in every one,
+//     so a plain OpenID Connect client works without declaring it. In
+//     development a client under test asks for whatever it likes.
 //
 // **REFUSED AT THE DOOR, NARROWED AT THE BACKSTOP.** `refusal()` is what the
 // authorization, pushed authorization and token endpoints ask, and they answer
@@ -105,10 +111,14 @@ import scopeVerdicts = require('../xacml/xacml_scope_verdicts');
 // Connect Key Binding's `bound_key` (#150), which asks for a bound ID Token.
 /**
  * OpenID Connect Core's scopes (section 5.4 and offline_access) and Key
- * Binding's `bound_key`: the default set of a client that declares none.
+ * Binding's `bound_key`: the legacy default set of a client that declares
+ * none (`oauth2.undeclaredClientScopes` = `legacy`, #1589).
  */
 const OIDC_SCOPES = Object.freeze(['openid', 'profile', 'email', 'address',
   'phone', 'offline_access', 'bound_key']);
+
+// `oauth2.undeclaredClientScopes`' three values (#1589), narrowest first.
+const UNDECLARED_SETTINGS = Object.freeze(['openid', 'identity', 'legacy']);
 
 // `/admin-api`'s four, as `common/roles.js` maps them to ADMIN_READ,
 // ADMIN_WRITE, SECURITY_ADMIN (#645) and ADMIN_CONSOLE — the last the
@@ -538,31 +548,68 @@ class ScopePolicy {
     return answer;
   }
 
-  // The default set for a client that declares nothing: OIDC's six and the
-  // caller's.
+  // THE DEFAULT SET FOR A CLIENT THAT DECLARES NOTHING (#1589), by
+  // `oauth2.undeclaredClientScopes`: `openid` alone (the default since
+  // 1.2.0, ASVS 5.0.0 10.4.11's strict reading); `identity`, OpenID
+  // Connect's identity scopes and `bound_key`, never `offline_access` nor
+  // the caller's; `legacy`, every release before 1.2.0's set — all of
+  // OIDC_SCOPES and the caller's `defaults` (this realm's OpenID4VCI
+  // scopes). Read per call, so changing the setting changes the next
+  // request; only product reads the answer (`mode.grantsUndeclaredScopes()`).
   /**
-   * Returns the default set for a client that declares nothing: OpenID
-   * Connect's scopes and the caller's `defaults`.
+   * Returns the default set for a client that declares nothing, as
+   * `oauth2.undeclaredClientScopes` says (#1589): `openid` alone, the
+   * identity scopes, or the legacy set (OpenID Connect's scopes with
+   * `offline_access`, and the caller's `defaults`).
    *
    * @param opts - optional; `defaults` adds scopes (the realm's OpenID4VCI
-   *   credential scopes)
+   *   credential scopes) under `legacy` only
    * @returns the default scope names
    */
   defaultScopes(opts?: JudgeOptions): string[] {
     const { log } = this.deps;
     log.debug("Entering ScopePolicy.defaultScopes().");
+    const which = ScopePolicy.undeclaredSetting(
+      this.deps.config.value('oauth2.undeclaredClientScopes'));
+    if (which === 'openid') {
+      log.debug("Leaving ScopePolicy.defaultScopes(). openid only.");
+      return ['openid'];
+    }
     // `bound_key` only while OpenID Connect Key Binding is performed (#315):
     // off, a client that declares nothing is not granted it by default.
     const keyBinding = this.deps.config.value('oauth2.keyBinding') !== false;
     const out = OIDC_SCOPES.filter(function (one) {
-      return keyBinding || one !== 'bound_key';
-    });
-    ((opts && opts.defaults) || []).forEach(function (one) {
-      if (one && out.indexOf(String(one)) < 0) {
-        out.push(String(one));
+      if (one === 'bound_key') {
+        return keyBinding;
       }
+      return which === 'legacy' || one !== 'offline_access';
     });
-    log.debug("Leaving ScopePolicy.defaultScopes().");
+    if (which === 'legacy') {
+      ((opts && opts.defaults) || []).forEach(function (one) {
+        if (one && out.indexOf(String(one)) < 0) {
+          out.push(String(one));
+        }
+      });
+    }
+    log.debug("Leaving ScopePolicy.defaultScopes(). " + which + ".");
+    return out;
+  }
+
+  // The setting's value, read as one of its three: anything else (a value
+  // the console would refuse cannot be stored, so only a test's stub) is
+  // the default, `openid` — the strict reading, never the wider one.
+  /**
+   * Reads `oauth2.undeclaredClientScopes` as one of `openid`, `identity`
+   * or `legacy`; anything else is `openid`.
+   *
+   * @param value - the setting's value
+   * @returns the value, or `openid`
+   */
+  static undeclaredSetting(value: unknown): string {
+    helpers.log.debug("Entering ScopePolicy.undeclaredSetting().");
+    const text = String(value == null ? '' : value);
+    const out = UNDECLARED_SETTINGS.indexOf(text) >= 0 ? text : 'openid';
+    helpers.log.debug("Leaving ScopePolicy.undeclaredSetting(). " + out);
     return out;
   }
 
@@ -739,7 +786,8 @@ class ScopePolicy {
           'is issued only the scopes it declared (RFC 7591 section 2) — ' +
           (judged.declared
             ? 'its list is ' + quoted(judged.declared) + '.'
-            : 'it declares none, so it may have the default set: ' +
+            : 'it declares none, so it may have the default set ' +
+              'oauth2.undeclaredClientScopes gives (#1589): ' +
               quoted(this.defaultScopes(opts)) + '.') + where };
     }
     log.debug("Leaving ScopePolicy.refusal(). Allowed.");

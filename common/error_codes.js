@@ -10797,7 +10797,8 @@ const CODES = [
   { code: 'STS-OAUTH-0578',
     summary: 'In product mode, a client asked for a scope outside its ' +
       'oauthAllowedScope — or, declaring none, outside the default set ' +
-      '(OpenID Connect\'s six and the OpenID4VCI credential scopes).',
+      'oauth2.undeclaredClientScopes gives (openid alone by default since ' +
+      '1.2.0, #1589).',
     spec: 'invalid_scope (redirected error, or HTTP 400 at the token and ' +
       'pushed authorization request endpoints)' },
   { code: 'STS-OAUTH-0579',

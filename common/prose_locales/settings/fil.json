@@ -5151,6 +5151,14 @@
     "en": "2394ee67a689920d",
     "text": "Isagawa ang OpenID Connect Key Binding 1.0 (#150). Kapag naka-on: nakalista sa discovery document ang scope na `bound_key`, maaari itong hingin ng client na walang idinedeklarang scope, at ang request para dito ay dapat magbigay ng `dpop_jkt` at gumamit ng code flow (tinatanggihan kung hindi, STS-OAUTH-0704 at 0705); pinangangalanan ng ID Token ang DPoP key (`cnf.jwk`, `typ: dpop+id_token`), dapat itong patunayan ng token request gamit ang `c_s256`, at bawat refresh ay dapat manggaling sa parehong key. **Kapag naka-off, wala ito, at ang serbisyo ay OpenID Connect Core lamang**: hindi ina-advertise ang `bound_key`, hindi tinatanggihan ang request na may dala nito — binabalewala ang scope at hindi ibinibigay, gaya ng pagtrato ng Core sa scope na hindi kinikilos ng OP — at walang ID Token na naka-bind. I-off ito kung saan humihingi ang mga relying party ng bawat ina-advertise na scope at walang alam sa Key Binding (#315). Ang grant na naka-bind na bago ito i-off ay patuloy na sinusuri ang key nito sa refresh."
   },
+  "oauth2.undeclaredClientScopes|label": {
+    "en": "76b8daaed31c60ea",
+    "text": "Mga scope para sa client na walang idinedeklara"
+  },
+  "oauth2.undeclaredClientScopes|description": {
+    "en": "58d0721fcc34cae0",
+    "text": "Ang inilalabas ng product mode sa client na walang nakalista sa oauthAllowedScope — karaniwan ay isang nagrehistro mismo (RFC 7591) nang walang scope member. openid, ang default mula 1.2.0: openid lamang, kaya bawat ibang scope ay dapat ideklara (ASVS 5.0.0 10.4.11). identity: ang mga identity scope ng OpenID Connect — openid, profile, email, address at phone — at bound_key habang naka-on ang OpenID Connect Key Binding, ngunit hindi kailanman offline_access o OpenID4VCI scope. legacy: ang ibinigay ng mga release bago ang 1.2.0 — ang mga identity scope, offline_access (mga refresh token na tumatagal nang lampas sa session) at ang mga OpenID4VCI credential scope ng realm na ito; iniimbak ito ng 1.1.0 upgrade script sa bawat realm na may application, at nagbababala ang /admin/mode habang ito ay may bisa. Inilalabas ng development mode ang anumang scope na hingin ng client anuman ang sabihin nito; ang mga protektadong scope ng serbisyong ito ay laging nangangailangan ng deklarasyon. (#1589)"
+  },
   "oauth2.enterpriseClaimsAlways|label": {
     "en": "25c226f1b3654eee",
     "text": "Mga claim ng Enterprise Extensions sa bawat ID Token"

@@ -5151,6 +5151,14 @@
     "en": "2394ee67a689920d",
     "text": "Utför OpenID Connect Key Binding 1.0 (#150). På: discovery-dokumentet listar scopet `bound_key`, en klient som inte deklarerar några scopes får be om det, och en begäran om det måste ange `dpop_jkt` och använda kodflödet (avvisas annars, STS-OAUTH-0704 och 0705); ID-tokenet namnger då DPoP-nyckeln (`cnf.jwk`, `typ: dpop+id_token`), tokenbegäran måste bevisa den med `c_s256`, och varje förnyelse måste komma från samma nyckel. **Av finns det inte, och tjänsten är enbart OpenID Connect Core**: `bound_key` annonseras inte, en begäran som innehåller det avvisas inte — scopet ignoreras och beviljas inte, så som Core behandlar ett scope en OP inte agerar på — och inget ID-token binds. Stäng av det där förlitande parter begär varje annonserat scope och inte känner till Key Binding (#315). Ett beviljande som redan var bundet innan det stängdes av behåller sin nyckelkontroll vid förnyelse."
   },
+  "oauth2.undeclaredClientScopes|label": {
+    "en": "76b8daaed31c60ea",
+    "text": "Scopes för en klient som inte deklarerar några"
+  },
+  "oauth2.undeclaredClientScopes|description": {
+    "en": "58d0721fcc34cae0",
+    "text": "Vad produktionsläget utfärdar till en klient vars oauthAllowedScope inte listar något — typiskt en som registrerat sig själv (RFC 7591) utan scope-medlem. openid, standardvärdet sedan 1.2.0: enbart openid, så varje annat scope måste deklareras (ASVS 5.0.0 10.4.11). identity: OpenID Connects identitets-scopes — openid, profile, email, address och phone — samt bound_key så länge OpenID Connect Key Binding är på, men aldrig offline_access eller ett OpenID4VCI-scope. legacy: vad utgåvor före 1.2.0 gav — identitets-scopes, offline_access (uppdateringstokens som överlever sessionen) och den här sfärens OpenID4VCI-credential-scopes; uppgraderingsskriptet 1.1.0 lagrar det i varje sfär som hade en applikation, och /admin/mode varnar så länge det gäller. Utvecklingsläget utfärdar vilket scope en klient än ber om, oavsett vad detta säger; den här tjänstens skyddade scopes kräver alltid en deklaration. (#1589)"
+  },
   "oauth2.enterpriseClaimsAlways|label": {
     "en": "25c226f1b3654eee",
     "text": "Enterprise Extensions-claims i varje ID Token"
