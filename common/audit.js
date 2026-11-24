@@ -3598,7 +3598,10 @@ function fresh() {
                ((err && err.message) || err));
       stored.rows = null;
     })
-    : Promise.resolve();
+    : Promise.resolve().then(function () {
+      // No table (or no longer one): nothing read earlier is shown.
+      stored.rows = null;
+    });
   log.debug("Leaving fresh().");
   return Promise.all([counts, read]).then(function () {
     return undefined;

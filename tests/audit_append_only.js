@@ -244,6 +244,7 @@ async function run(t) {
     t.equal(driver.dropped.join(','), 'audit.events',
             'D3. and then the old segments are removed');
 
+    config.setOverride('audit.maxEvents', 4);
     t.log.info('=== E. retention and a removed realm ===');
     driver.retained.length = 0;
     driver.purged.length = 0;
@@ -291,6 +292,11 @@ async function run(t) {
   } finally {
     await store.flush();
     store.setDriver(null);
+    // What `fresh()` read is let go, so a later test sees this process's
+    // ring alone.
+    await realms.run(realms.DEFAULT_REALM, function () {
+      return audit.fresh();
+    });
     keystore.seal = saved.seal;
     keystore.open = saved.open;
     minted.enabled = saved.enabled;
