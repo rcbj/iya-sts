@@ -1416,6 +1416,54 @@ Three decisions on the row that each prevent a specific wrong reading:
   Strings and never meets the refusal. `tests/xacml_pep_heartbeat_values.js`
   holds both halves.
 
+## An embedded PEP registers as one, and only for its bound application (#2026)
+
+**Part of #1206 (work item 3; rcbj's D1-D3).** A PEP embedded in an
+application through an authentication library (the `iya-pep-<lang>`
+packages) registers and sends heartbeats on the 1.1.0 path, its own
+service account's DPoP-bound token from `sts-remote-pep`, and says what it
+is: `kind` (`container` | `embedded`), `application`, `mode` (`central` |
+`local`), `protocolVersion`, and on a heartbeat `policyEvents` (`none` |
+`requested` | `excluded` | `down`, D4: whether its application's stream can
+carry `pep-policies-changed`).
+
+* **ABSENT `kind` IS `container`**, so every PEP built before this keeps
+  registering exactly as it did, and its entry is written exactly as it
+  was: the five attributes (`xacmlPepKind`, `xacmlPepApplication`,
+  `xacmlPepMode`, `xacmlPepProtocolVersion`, `xacmlPepPolicyEvents`, OIDs
+  1100-1104) are written only when they say something.
+* **ONE READING, `PepRegistry.identityOf()`**, asked by `xacml.ts`'s
+  `pepIdentity()` on both doors before anything is written: an unknown kind,
+  an embedded mode that is neither, or a `policyEvents` outside the four
+  (`STS-XACML-0342`); `mode` with a container (`0341`); a `protocolVersion`
+  outside `PROTOCOL_VERSIONS` (`{1}`), or none from an embedded PEP
+  (`0340`); all 400. **And the binding** (`xacml_pep_binding.ts`'s `of()`,
+  read only for a PEP that says or was embedded): bound to nothing (`0338`)
+  or to another application than it names (`0339`), 403 `access_denied`.
+  That is what stops a PEP key copied into another application posing as
+  its PEP.
+* **A HEARTBEAT ASKS THE SAME**, an absent member taking the row's value, so
+  a binding an administrator moves or clears refuses the PEP's next
+  heartbeat (the row keeps what it held). A pull's own `heartbeat(name, {})`
+  is not asked: it says nothing about the identity.
+* **`application` ON THE CONSOLE'S ROW STAYS THE BINDING** (`pepsJson()`,
+  #2025); what the PEP registered for is `registeredApplication`, beside
+  `kind`, `mode`, `protocolVersion` and `policyEvents`. The list draws an
+  embedded PEP's application and mode under its name and "not for an
+  embedded PEP" in the listener and proxy columns; its page is the Overview
+  (kind, mode, protocol version, policy-change events, the binding) and
+  Decisions only, with no cluster part: it pulls no settings (the AuthZEN
+  edge is a setting group), binds no listener and runs no reverse proxy or
+  receivers.
+* **AUTHZEN.** A bound embedded PEP on its own `authzen:evaluate` token is
+  admitted to `/access/v1/evaluation` and `/evaluations` as an AUTHZEN_PEPS
+  holder scoped to its binding alone (`authzen/CLAUDE.md`, *Who is asking*;
+  `authzen_caller.ts`). The registration is not consulted there: the
+  binding is the administrator's fact.
+
+`tests/xacml_pep_embedded.js` holds it in process;
+`tests/protocol/sts_xacml_pep_embedded.js` over the wire.
+
 ## A heartbeat writes the entry only when something durable changed (#1882)
 
 **rcbj: "not every PEP heartbeat needs a directory write".** Until

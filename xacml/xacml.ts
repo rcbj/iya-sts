@@ -169,6 +169,10 @@ import xml = require('./xacml_xml');
 import validate = require('./xacml_validate');
 import mtls = require('../oauth-oidc/mtls');
 import peps = require('./xacml_pep_registry');
+// An embedded PEP's binding to its application (#2025), which a
+// registration as an embedded PEP is checked against (#2026). A LIBRARY
+// requiring only leaves, so it can neither move a route nor close a cycle.
+import PepBinding = require('./xacml_pep_binding');
 // Remote PEP clusters (#1760): a member's pulls are answered from its
 // EFFECTIVE row, the cluster's documents with its own addresses.
 import pepClusters = require('./xacml_pep_clusters');
@@ -1870,6 +1874,47 @@ class XacmlSurface {
    * @param given - the name the caller sent, read only with no certificate
    * @returns the folded name, '' when none is usable
    */
+  /**
+   * Reads what a registration or heartbeat says the PEP is (#2026), against
+   * the application its entry is bound to, and answers the refusal when it
+   * may not be that.
+   *
+   * @param res - the response, written on a refusal
+   * @param body - the request body
+   * @param kept - the PEP's row on a heartbeat, null on a registration
+   * @param name - the PEP's name, its entry's username
+   * @returns the identity, or null when a refusal was written
+   */
+  embeddedIdentity(res: Res, body: any, kept: any, name: string): any {
+    const { log } = this.deps;
+    log.debug('Entering XacmlSurface.embeddedIdentity(). ' + name);
+    // THE BINDING IS READ ONLY FOR A PEP THAT SAYS, OR WAS, EMBEDDED: a
+    // container's registration costs no directory read it did not before.
+    const kind = body && body.kind !== undefined ? body.kind
+      : (kept ? kept.kind : 'container');
+    const boundTo = kind === 'embedded' ? PepBinding.shared().of(name) : '';
+    const said = peps.identityOf(body, kept, boundTo);
+    if (!said.ok) {
+      log.info('xacml: remote PEP "' + name + '" refused: ' + said.why);
+      // AUDITED WITH ITS CODE, under the registration's action for both
+      // doors: a PEP refused for its binding is somebody presenting a PEP
+      // key for an application it was not provisioned for, which an
+      // administrator wants to find on the audit log, not only in a log.
+      audit.audit({ action: 'xacml.pep.register', actor: name,
+                    protocol: 'XACML', errorCode: said.code,
+                    detail: 'Remote PEP "' + name + '" was refused (' +
+                            (kept ? 'a heartbeat' : 'a registration') +
+                            '): ' + said.why });
+      errorCodes.mark(res, said.code);
+      // error-code: none — marked on the line above: identityOf()'s code.
+      this.fail(res, said.status, said.error, said.why);
+      log.debug('Leaving XacmlSurface.embeddedIdentity(). Refused.');
+      return null;
+    }
+    log.debug('Leaving XacmlSurface.embeddedIdentity(). ' + said.kind);
+    return said;
+  }
+
   pepNameOf(identity: CallerIdentity | undefined, given: string): string {
     const { log, peps } = this.deps;
     log.debug('Entering XacmlSurface.pepNameOf().');
@@ -2985,7 +3030,20 @@ class XacmlSurface {
       const name = identity.authenticated
         ? (identity.commonName || identity.dn)
         : String(body.name || '');
+      // AN EMBEDDED PEP (#2026, part of #1206): its kind, application,
+      // mode and protocol version, refused here before anything is
+      // written — an embedded registration only for the application its
+      // entry is bound to (`identityOf()` argues each refusal).
+      const said = self.embeddedIdentity(res, body, null, name);
+      if (!said) {
+        log.debug('Leaving POST /xacml/pep/register. The identity.');
+        return;
+      }
       const result = peps.register({
+        kind: said.kind,
+        application: said.application,
+        mode: said.mode,
+        protocolVersion: said.protocolVersion,
         name: name,
         identity: identity.dn,
         certificateSubject: identity.subject,
@@ -3019,6 +3077,10 @@ class XacmlSurface {
         protocol: 'XACML',
         detail: 'Remote PEP "' + result.name + '" ' +
                 (result.created ? 'registered' : 're-registered') +
+                (said.kind === 'embedded'
+                  ? ' as embedded in "' + said.application + '" (' +
+                    said.mode + ', protocol ' + said.protocolVersion + ')'
+                  : '') +
                 (identity.credential === 'token'
                   ? ' on a DPoP-bound access token.'
                   : identity.authenticated ? ' over mutual TLS.'
@@ -3583,7 +3645,20 @@ class XacmlSurface {
                   'none.');
         return;
       }
+      // AN EMBEDDED PEP'S IDENTITY (#2026), asked again on every heartbeat
+      // with the row's values for what it leaves out, so a binding an
+      // administrator removed or moved refuses the next one.
+      const said = self.embeddedIdentity(res, body, peps.read(name), name);
+      if (!said) {
+        log.debug('Leaving POST /xacml/pep/heartbeat. The identity.');
+        return;
+      }
       const result = peps.heartbeat(name, {
+        kind: said.kind,
+        application: said.application,
+        mode: said.mode,
+        protocolVersion: said.protocolVersion,
+        policyEvents: said.policyEvents,
         syncToken: body.syncToken === undefined ? undefined : body.syncToken,
         policyCount: body.policyCount,
         decisions: body.decisions,

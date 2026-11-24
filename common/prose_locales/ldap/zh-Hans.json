@@ -2147,6 +2147,26 @@
     "en": "b2a987046bb7d733",
     "text": "远程 PEP 最近一次在心跳中报告的、关于其每个监听器的情况（#1760），包括其环境的四个和已定义的监听器：一个 JSON 文档 { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }，以及到达时间。状态是 listening、waiting、failed 和 off 之一，原因来自一个封闭集合，从不是操作系统的文本；证书是其所提供证书的主体、签发者、序列号、subjectAltName、有效期和指纹。其他成员一律丢弃。不含它的心跳保留它，值为 null 的心跳清除它，注册则删除它。早于监听器功能的 PEP 上没有此项，控制台显示为未报告。"
   },
+  "xacmlPeps.schema.attributes.xacmlPepKind.what": {
+    "en": "960870930224edc8",
+    "text": "注册的远程 PEP 类型（#2026，#1206 的一部分）：container，即 xacml-pep 镜像；或 embedded，即通过 iya-pep 软件包位于身份验证库中的 PEP。未说明类型的注册视为 container，因此较旧的 PEP 仍按原样读取。嵌入式 PEP 没有反向代理、监听器或 AuthZEN 边缘。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepApplication.what": {
+    "en": "32ed1379a2ec5e49",
+    "text": "嵌入式远程 PEP 注册时声明其所嵌入的应用（#2026）。仅当它是该 PEP 条目所绑定的应用（stsPepApplication，由管理员设置）时才接受，因此它与绑定的不一致最多持续到 PEP 的下一次心跳，一旦不一致该心跳即被拒绝。容器为空。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepMode.what": {
+    "en": "a500efda86cbdfb5",
+    "text": "嵌入式远程 PEP 的模式（#2026）：central，每个决策都向本服务的 AuthZEN 评估端点询问；或 local，它拉取其应用的策略并在进程内决策。容器为空，且不得发送。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProtocolVersion.what": {
+    "en": "b0ac6a9742a5bf2e",
+    "text": "远程 PEP 的软件包所使用的 PEP 协议版本，以其注册或最近一次心跳所述为准（#2026）。本服务支持版本 1 并拒绝其他版本，因此落后的库会被看见，而不是悄然出错。未发送版本的 PEP（容器）为空。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPolicyEvents.what": {
+    "en": "6dc388f78e803fc6",
+    "text": "嵌入式远程 PEP 所在应用的流能否传递 pep-policies-changed 事件，以 PEP 最近一次心跳报告为准（#2026）：none（主机没有信号流，因此 PEP 轮询）、requested、excluded（应用的 ssfEvents 将其排除）或 down。在报告之前为空。"
+  },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "PEP 注册时关于自身所说的任何内容。"

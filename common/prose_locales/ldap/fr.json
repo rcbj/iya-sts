@@ -2147,6 +2147,26 @@
     "en": "b2a987046bb7d733",
     "text": "Ce que le PEP distant a communiqué en dernier, dans un signal de vie, sur chacun de ses écouteurs (#1760), les quatre de son environnement et ceux qui sont définis : un document JSON { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }, avec son heure d’arrivée. L’état est l’un de listening, waiting, failed et off et la raison l’une d’un ensemble fermé, jamais le texte du système d’exploitation ; le certificat est le sujet, l’émetteur, le numéro de série, le subjectAltName, la validité et l’empreinte de celui qu’il sert. Tout autre membre est écarté. Un signal de vie qui ne le contient pas le conserve, un signal à null l’efface, et un enregistrement le supprime. Absent sur un PEP antérieur aux écouteurs, ce que la console affiche comme non communiqué."
   },
+  "xacmlPeps.schema.attributes.xacmlPepKind.what": {
+    "en": "960870930224edc8",
+    "text": "Le type de PEP distant qui s’est enregistré (#2026, partie de #1206) : container, l’image xacml-pep, ou embedded, un PEP intégré dans une bibliothèque d’authentification au moyen d’un paquet iya-pep. Un enregistrement qui n’en indique aucun est container, de sorte qu’un PEP plus ancien est lu comme il l’a toujours été. Un PEP intégré n’a ni proxy inverse, ni écouteurs, ni périphérie AuthZEN."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepApplication.what": {
+    "en": "32ed1379a2ec5e49",
+    "text": "L’application dans laquelle un PEP distant intégré a déclaré être intégré lors de son enregistrement (#2026). Acceptée seulement si c’est l’application à laquelle son entrée est liée (stsPepApplication, définie par un administrateur) : elle ne peut donc différer de la liaison que jusqu’au prochain battement de cœur du PEP, refusé dès qu’elles divergent. Vide pour un conteneur."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepMode.what": {
+    "en": "a500efda86cbdfb5",
+    "text": "Le mode d’un PEP distant intégré (#2026) : central, où chaque décision est demandée au point de terminaison d’évaluation AuthZEN de ce service, ou local, où il récupère les politiques de son application et décide dans le processus. Vide pour un conteneur, qui ne peut pas en envoyer."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProtocolVersion.what": {
+    "en": "b0ac6a9742a5bf2e",
+    "text": "La version du protocole PEP que parle le paquet du PEP distant, telle qu’indiquée lors de son enregistrement ou de son dernier battement de cœur (#2026). Ce service prend en charge la version 1 et refuse toute autre, de sorte qu’une bibliothèque en retard est visible plutôt que silencieusement incorrecte. Vide pour un PEP qui n’en envoie pas (le conteneur)."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPolicyEvents.what": {
+    "en": "6dc388f78e803fc6",
+    "text": "Si le flux de l’application dans laquelle un PEP distant intégré est intégré peut transporter l’événement pep-policies-changed, tel que le PEP l’a signalé lors de son dernier battement de cœur (#2026) : none (l’hôte n’a pas de flux de signaux, le PEP interroge donc périodiquement), requested, excluded (le ssfEvents de l’application l’exclut) ou down. Vide tant que rien n’a été signalé."
+  },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Ce que le PEP a dit de lui-même lors de son enregistrement."

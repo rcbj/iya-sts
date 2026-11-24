@@ -284,6 +284,19 @@ must be in the set (403 `0025`), none named and one in the set picks it,
 none in the set is `0026`, several and none named `0027`. **`ou=peps` is not
 consulted**: registration is not a permission.
 
+**A BOUND EMBEDDED PEP IS SCOPED BY ITS BINDING (#2026, rcbj's D3 (a) on
+#1206).** A `central`-mode PEP embedded in an application asks
+`/access/v1/evaluation` (and `/evaluations`) for every decision on its own
+DPoP-bound `authzen:evaluate` token. `byPepToken()` reads the PEP entry's
+`stsPepApplication` (#2025, `xacml/xacml_pep_binding.ts`) into the caller's
+`embeddedIn`; `rolesOf()` then adds AUTHZEN_PEPS, so the access-control
+policy still decides (and `/admin/xacml/decide` reproduces it), and
+`scopeOf()` answers the binding and nothing else, so a `context.application`
+naming another is `0025` as any scoped caller's is, and none named picks the
+binding. No group membership or `stsAuthzenApplication` to keep in step; a
+PEP also in AUTHZEN_PEPS with a wider scope is narrowed to its binding.
+Only on the PEP token door, and never from `ou=peps`.
+
 **ENABLING FGA ON AN APPLICATION WRITES BOTH FOR THE REALM'S REMOTE PEPS
 (#1210, rcbj's decision of 2026-10-30), WHICH DELIBERATELY MAKES THE
 REMOTE_PEPS GROUP A SOURCE OF AUTHZEN PERMISSION.** An edge PDP forwards an

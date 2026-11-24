@@ -2147,6 +2147,26 @@
     "en": "b2a987046bb7d733",
     "text": "ما بلّغه PEP البعيد آخر مرة في نبضة عن كل مستمع لديه (#1760)، أربعة بيئته والمعرَّفة: مستند JSON واحد بالشكل { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }، مع وقت وصوله. تكون state إحدى listening وwaiting وfailed وoff، ويكون reason أحد مجموعة مغلقة، وليس نص نظام التشغيل أبدًا؛ والشهادة هي subject وissuer وserial وsubjectAltName وvalidity وfingerprint للشهادة التي يخدمها. يُسقَط كل عضو آخر. النبضة من دونه تبقيه، والتي تحمله null تمسحه، والتسجيل يسقطه. غائب عن PEP أقدم من المستمعين، وترسمه وحدة التحكم غير مُبلَّغ."
   },
+  "xacmlPeps.schema.attributes.xacmlPepKind.what": {
+    "en": "960870930224edc8",
+    "text": "نوع الـPEP البعيد الذي سجّل (#2026، جزء من #1206): container، أي صورة xacml-pep، أو embedded، أي PEP داخل مكتبة مصادقة عبر حزمة iya-pep. التسجيل الذي لا يذكر نوعًا هو container، فيُقرأ الـPEP الأقدم كما كان دائمًا. ليس للـPEP المضمَّن وكيل عكسي ولا مستمعون ولا حافة AuthZEN."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepApplication.what": {
+    "en": "32ed1379a2ec5e49",
+    "text": "التطبيق الذي ذكر الـPEP البعيد المضمَّن أنه مضمَّن فيه عند تسجيله (#2026). لا يُقبل إلا إذا كان التطبيق المرتبط به مُدخله (stsPepApplication، يعيّنه مسؤول)، لذا لا يمكن أن يختلف عن الارتباط إلا حتى نبضة الـPEP التالية، التي تُرفض متى اختلفا. فارغ للحاوية."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepMode.what": {
+    "en": "a500efda86cbdfb5",
+    "text": "وضع الـPEP البعيد المضمَّن (#2026): central، حيث يُسأل عن كل قرار نقطةَ تقييم AuthZEN في هذه الخدمة، أو local، حيث يجلب سياسات تطبيقه ويقرر داخل العملية. فارغ للحاوية، التي لا يجوز لها إرساله."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProtocolVersion.what": {
+    "en": "b0ac6a9742a5bf2e",
+    "text": "إصدار بروتوكول PEP الذي تتحدثه حزمة الـPEP البعيد، كما ذكره عند تسجيله أو في آخر نبضة (#2026). تدعم هذه الخدمة الإصدار 1 وترفض غيره، فتظهر المكتبة المتأخرة بدل أن تكون خاطئة بصمت. فارغ للـPEP الذي لا يرسل إصدارًا (الحاوية)."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPolicyEvents.what": {
+    "en": "6dc388f78e803fc6",
+    "text": "هل يستطيع تدفق التطبيق المضمَّن فيه الـPEP البعيد حمل حدث pep-policies-changed، كما أبلغ الـPEP في آخر نبضة (#2026): none (ليس للمضيف تدفق إشارات، لذا يستعلم الـPEP دوريًا)، أو requested، أو excluded (يستبعده ssfEvents الخاص بالتطبيق)، أو down. فارغ حتى يُبلَّغ."
+  },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "ما قاله PEP عن نفسه عندما سجّل."

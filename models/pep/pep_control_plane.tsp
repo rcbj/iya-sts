@@ -91,6 +91,14 @@ namespace IyaSts.Pep.ControlPlane {
   `description`?: string;
   @js(#{`description`:"Sent only when the PEP knows it: a lower-case DNS name of at most 253 characters, not an IP address; anything else is 400 STS-XACML-0261.",`maxLength`:253})
   `hostname`?: string | null;
+  @js(#{`description`:"container (the xacml-pep image) or embedded (a PEP inside an authentication library, #2026). Absent is container, so an older PEP is one. Anything else is 400 STS-XACML-0342."})
+  `kind`?: "container" | "embedded";
+  @js(#{`description`:"An embedded PEP's application: its identifier in the realm's registry. It must be the application the PEP's entry is bound to (stsPepApplication): bound to none is 403 STS-XACML-0338, another or none named 403 STS-XACML-0339. Ignored for a container."})
+  `application`?: string;
+  @js(#{`description`:"An embedded PEP's mode: central (every decision asked of POST /access/v1/evaluation) or local (the bound application's policies pulled and decided in process). Required for an embedded PEP (400 STS-XACML-0342 otherwise); with a container it is 400 STS-XACML-0341."})
+  `mode`?: "central" | "local";
+  @js(#{`description`:"The PEP protocol version the PEP's package speaks. The service supports 1; any other, or none from an embedded PEP, is 400 STS-XACML-0340."})
+  `protocolVersion`?: int32;
 }
 
 @component model `RegisterNotify` {
@@ -122,9 +130,9 @@ namespace IyaSts.Pep.ControlPlane {
   `responses`:#{
     `200`:#{`description`:"Registered again.",`content`:#{`application/json`:#{`schema`:null}}},
     `201`:#{`description`:"Registered for the first time.",`content`:#{`application/json`:#{`schema`:null}}},
-    `400`:#{`description`:"No usable name (STS-XACML-0019) or a bad hostname (0261): invalid_request. Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"No usable name (STS-XACML-0019), a bad hostname (0261), an unknown kind or an embedded PEP's mode that is neither central nor local (0342), mode with a container (0341) or an unsupported protocolVersion (0340): invalid_request. Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"No certificate (STS-XACML-0017, 0018): invalid_client; or the token door refused the credential (see the dpop scheme), with a DPoP challenge.",`content`:#{`application/json`:#{`schema`:null}}},
-    `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
+    `403`:#{`description`:"The gate; or an embedded registration whose entry is bound to no application (STS-XACML-0338) or to another than it names (0339): access_denied.",`content`:#{`application/json`:#{`schema`:null}}},
     `413`:#{`description`:"A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
     `415`:#{`description`:"A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
     `429`:#{`description`:"Over the ceiling on one address's requests (security.requestsPerAddressPerMinute, STS-CORE-0172), refused before any endpoint sees it: too_many_requests, Retry-After 60.",`headers`:#{`Retry-After`:#{`schema`:#{`type`:"integer"}}},`content`:#{`application/json`:#{`schema`:null}}},
@@ -282,6 +290,16 @@ op `postRegister`(`requestBody/content/application~1json/schema`: `RegisterReque
   `settings`?: `SettingsReport` | null;
   `signals`?: `PepSignals` | null;
   `listeners`?: `ListenersReport` | null;
+  @js(#{`description`:"container (the xacml-pep image) or embedded (a PEP inside an authentication library, #2026). Absent keeps the registered kind. Anything else is 400 STS-XACML-0342."})
+  `kind`?: "container" | "embedded";
+  @js(#{`description`:"An embedded PEP's application: its identifier in the realm's registry. It must be the application the PEP's entry is bound to (stsPepApplication): bound to none is 403 STS-XACML-0338, another or none named 403 STS-XACML-0339. Ignored for a container."})
+  `application`?: string;
+  @js(#{`description`:"An embedded PEP's mode: central (every decision asked of POST /access/v1/evaluation) or local (the bound application's policies pulled and decided in process). Required for an embedded PEP (400 STS-XACML-0342 otherwise); with a container it is 400 STS-XACML-0341."})
+  `mode`?: "central" | "local";
+  @js(#{`description`:"The PEP protocol version the PEP's package speaks. The service supports 1; any other, or none from an embedded PEP, is 400 STS-XACML-0340."})
+  `protocolVersion`?: int32;
+  @js(#{`description`:"An embedded PEP's report (D4 of #1206): whether the stream of the application it is embedded in can carry pep-policies-changed. none: the host has no signal stream and the PEP polls; requested: the stream asks for it; excluded: the application's ssfEvents leaves it out; down: the stream is not running or not healthy. Anything else is 400 STS-XACML-0342."})
+  `policyEvents`?: "none" | "requested" | "excluded" | "down";
 }
 
 @component model `HeartbeatAnswer` {
@@ -300,9 +318,9 @@ op `postRegister`(`requestBody/content/application~1json/schema`: `RegisterReque
   `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
   `responses`:#{
     `200`:#{`description`:"Acknowledged.",`content`:#{`application/json`:#{`schema`:null}}},
-    `400`:#{`description`:"No name (STS-XACML-0020), a bad hostname (0261) or a value the service cannot hold (0303; see HeartbeatRequest). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",`content`:#{`application/json`:#{`schema`:null}}},
+    `400`:#{`description`:"No name (STS-XACML-0020), a bad hostname (0261), a value the service cannot hold (0303; see HeartbeatRequest), or the identity's refusals as at register (0340, 0341, 0342). Also a control character in a query value (STS-HTTP-0011) or a parameter named __proto__, constructor or prototype (0010), refused before any endpoint sees it, and a body cut short of its Content-Length (STS-HTTP-0013).",`content`:#{`application/json`:#{`schema`:null}}},
     `401`:#{`description`:"The token door refused the credential (see the dpop scheme): a DPoP challenge in WWW-Authenticate.",`headers`:#{`WWW-Authenticate`:#{`schema`:#{`type`:"string"}},`DPoP-Nonce`:#{`schema`:#{`type`:"string"}}},`content`:#{`application/json`:#{`schema`:null}}},
-    `403`:#{`description`:"The gate.",`content`:#{`application/json`:#{`schema`:null}}},
+    `403`:#{`description`:"The gate; or an embedded PEP whose entry is no longer bound to its application (STS-XACML-0338, 0339): access_denied.",`content`:#{`application/json`:#{`schema`:null}}},
     `404`:#{`description`:"Not registered (STS-XACML-0021).",`content`:#{`application/json`:#{`schema`:null}}},
     `413`:#{`description`:"A body over the 5 MB the service reads (STS-HTTP-0004), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},
     `415`:#{`description`:"A body in a character set or content encoding the service does not read (STS-HTTP-0012), refused before any endpoint sees it: invalid_request.",`content`:#{`application/json`:#{`schema`:null}}},

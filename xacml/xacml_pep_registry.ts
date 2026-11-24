@@ -131,6 +131,26 @@ import pepSettings = require('./xacml_pep_settings');
 // A remote PEP's listeners (#1760): the reading of what the PEP reports.
 import pepListeners = require('./xacml_pep_listeners');
 
+// ---------------------------------------------------------------------------
+// AN EMBEDDED PEP'S IDENTITY (#2026, part of #1206; rcbj's D1-D3).
+//
+// A registration and a heartbeat carry `kind` (`container` | `embedded`;
+// ABSENT IS `container`, so every PEP built before this keeps working),
+// `application`, `mode` (`central` | `local`, embedded only) and
+// `protocolVersion`, and a heartbeat `policyEvents` (D4). The closed sets
+// are here; `identityOf()` is the one reading of them.
+// ---------------------------------------------------------------------------
+const KINDS: readonly string[] = Object.freeze(['container', 'embedded']);
+const MODES: readonly string[] = Object.freeze(['central', 'local']);
+const POLICY_EVENTS: readonly string[] =
+  Object.freeze(['none', 'requested', 'excluded', 'down']);
+// THE PEP PROTOCOL VERSIONS THIS SERVICE SPEAKS. A version is added here
+// when the control plane changes in a way an older package cannot follow,
+// and one is removed when this service stops answering it: a PEP that
+// sends one not here is refused (STS-XACML-0340), so a library that fell
+// behind is visible on its own registration rather than silently wrong.
+const PROTOCOL_VERSIONS: readonly number[] = Object.freeze([1]);
+
 // A control character, C0, DEL or C1, in a heartbeat's text member
 // (`reportProblem()`, fuzz run #595).
 const REPORT_CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
@@ -194,8 +214,37 @@ interface PepRow {
   // What the PEP last reported about every listener it has, normalised by
   // `xacml_pep_listeners.ts`'s `inUseOf()`; null when it never reported.
   listenersInUse: any;
+  // AN EMBEDDED PEP (#2026, part of #1206): `container` (an absent kind,
+  // so every row an older PEP wrote) or `embedded`; the application it
+  // registered for (`application` on the console's row is the BINDING,
+  // read off its entry, which the registration had to equal); its mode,
+  // `central` or `local`; the protocol version its package speaks (null
+  // when it sent none); and whether its application's stream can carry
+  // `pep-policies-changed` (`none`, `requested`, `excluded`, `down`, or ''
+  // until reported).
+  kind: string;
+  registeredApplication: string;
+  mode: string;
+  protocolVersion: number | null;
+  policyEvents: string;
   current: boolean;
   stale: boolean;
+}
+
+// WHAT A REGISTRATION OR HEARTBEAT SAYS AN EMBEDDED PEP IS (#2026), read by
+// `PepRegistry.identityOf()`: normalised, or a refusal with its status and
+// code.
+interface PepIdentity {
+  ok: boolean;
+  kind?: string;
+  application?: string;
+  mode?: string;
+  protocolVersion?: number | null;
+  policyEvents?: string;
+  status?: number;
+  error?: string;
+  code?: string;
+  why?: string;
 }
 
 // What a remote PEP reports about its reverse proxy's CAEP/RISC receivers
@@ -960,6 +1009,155 @@ class PepRegistry {
   // `tests/xacml_pep_proxy.js` B4/B5 hold. Neither can throw or reach the
   // entry as anything but the kept members.
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // WHAT A REGISTRATION OR A HEARTBEAT SAYS THE PEP IS (#2026, part of
+  // #1206), read ONCE, here, for both doors. Refused, in this order, each
+  // before anything is written:
+  //
+  //   * a `kind` that is neither `container` nor `embedded` (0342). ABSENT
+  //     IS THE ROW'S on a heartbeat and `container` on a registration, so a
+  //     PEP built before this — which sends none — is a container, as it
+  //     always was;
+  //   * `mode` with a container (0341): `central` and `local` are an
+  //     embedded PEP's, and a container that sends one has been configured
+  //     as something it is not; an embedded PEP's mode that is neither (0342);
+  //   * a `protocolVersion` this service does not speak (0340), and none
+  //     at all from an embedded PEP, whose package always sends one: a
+  //     library that fell behind is refused on its own registration;
+  //   * a `policyEvents` outside the four words (0342);
+  //   * AN EMBEDDED PEP NOT BOUND, OR BOUND ELSEWHERE (0338, 0339), against
+  //     `boundTo` — `stsPepApplication` on its entry, which the caller reads
+  //     (`xacml_pep_binding.ts`) because this module holds no directory of
+  //     people. 403, not 400: the PEP's request is well formed and it is
+  //     not allowed to be what it says. This is what stops a PEP key
+  //     copied into another application posing as that application's PEP.
+  //
+  // A HEARTBEAT ASKS THE SAME, so a binding an administrator removed or
+  // moved refuses the PEP's next heartbeat rather than leaving a row that
+  // claims an application it is no longer bound to.
+  // -------------------------------------------------------------------------
+  /**
+   * Reads what a registration or heartbeat says the PEP is, against the
+   * application its entry is bound to.
+   *
+   * @param said - the request body
+   * @param kept - the PEP's row, on a heartbeat; null on a registration
+   * @param boundTo - the application the PEP's entry is bound to, or ''
+   * @returns the identity normalised, or a refusal with status and code
+   */
+  static identityOf(said: any, kept: PepRow | null,
+                    boundTo: string): PepIdentity {
+    const { log } = helpers;
+    log.debug('Entering PepRegistry.identityOf().');
+    const body = said && typeof said === 'object' ? said : {};
+    const refuse = function (status: number, code: string,
+                             why: string): PepIdentity {
+      log.debug('Entering refuse(). ' + code);
+      log.debug('Leaving refuse().');
+      return { ok: false, status: status, code: code, why: why,
+               error: status === 403 ? 'access_denied' : 'invalid_request' };
+    };
+    const kind = body.kind === undefined || body.kind === null
+      ? (kept ? kept.kind : 'container') : body.kind;
+    if (typeof kind !== 'string' || KINDS.indexOf(kind) < 0) {
+      log.debug('Leaving PepRegistry.identityOf(). An unknown kind.');
+      return refuse(400, 'STS-XACML-0342', '`kind` is container (or ' +
+        'absent) for the xacml-pep image, or embedded for a PEP inside an ' +
+        'authentication library; nothing else is a remote PEP here.');
+    }
+    const sentMode = body.mode !== undefined && body.mode !== null &&
+      body.mode !== '';
+    if (kind === 'container' && sentMode) {
+      log.debug('Leaving PepRegistry.identityOf(). Mode with a container.');
+      return refuse(400, 'STS-XACML-0341', '`mode` (central or local) is ' +
+        'an embedded PEP\'s, and this one registers as a container (kind ' +
+        'container, or no kind). Send kind embedded with the application ' +
+        'it is embedded in, or leave mode out.');
+    }
+    const mode = kind === 'container' ? ''
+      : sentMode ? body.mode
+      : (kept && kept.kind === 'embedded' ? kept.mode : '');
+    if (kind === 'embedded' &&
+        (typeof mode !== 'string' || MODES.indexOf(mode) < 0)) {
+      log.debug('Leaving PepRegistry.identityOf(). No usable mode.');
+      return refuse(400, 'STS-XACML-0342', 'An embedded PEP says its mode: ' +
+        'central (every decision asked of this service) or local (its ' +
+        'application\'s policies pulled and decided in process).');
+    }
+    const sentVersion = body.protocolVersion !== undefined &&
+      body.protocolVersion !== null;
+    const version = sentVersion ? body.protocolVersion
+      : (kept ? kept.protocolVersion : null);
+    if ((version !== null && (typeof version !== 'number' ||
+         PROTOCOL_VERSIONS.indexOf(version) < 0)) ||
+        (kind === 'embedded' && version === null)) {
+      log.debug('Leaving PepRegistry.identityOf(). An unsupported version.');
+      return refuse(400, 'STS-XACML-0340', 'This service speaks PEP ' +
+        'protocol version ' + PROTOCOL_VERSIONS.join(', ') + ', and this ' +
+        'PEP ' + (version === null ? 'sent none'
+          : 'speaks ' + String(version).slice(0, 20)) + '. Upgrade the ' +
+        'PEP\'s package (iya-pep) to one that speaks a supported version.');
+    }
+    const events = body.policyEvents === undefined
+      ? (kept ? kept.policyEvents : '') : body.policyEvents;
+    if (events !== null && events !== '' &&
+        (typeof events !== 'string' || POLICY_EVENTS.indexOf(events) < 0)) {
+      log.debug('Leaving PepRegistry.identityOf(). Unknown policyEvents.');
+      return refuse(400, 'STS-XACML-0342', '`policyEvents` is none, ' +
+        'requested, excluded or down: whether the stream of the ' +
+        'application the PEP is embedded in can carry pep-policies-changed.');
+    }
+    const application = kind === 'container' ? ''
+      : body.application === undefined || body.application === null
+        ? (kept ? kept.registeredApplication : '')
+        : String(body.application);
+    if (kind === 'embedded' && !boundTo) {
+      log.debug('Leaving PepRegistry.identityOf(). Not bound.');
+      return refuse(403, 'STS-XACML-0338', 'This PEP registers as embedded ' +
+        'in "' + application.slice(0, 120) + '", and its entry is bound to ' +
+        'no application. An administrator binds it first ' +
+        '(set-pep-application, or issue-pep-credential with an ' +
+        'application).');
+    }
+    if (kind === 'embedded' && application !== boundTo) {
+      log.debug('Leaving PepRegistry.identityOf(). Bound elsewhere.');
+      return refuse(403, 'STS-XACML-0339', application
+        ? 'This PEP registers as embedded in "' + application.slice(0, 120) +
+          '", and its entry is bound to "' + boundTo + '". An embedded PEP ' +
+          'is admitted only for the application it is bound to.'
+        : 'An embedded PEP names the application it is embedded in ' +
+          '(`application`); this one is bound to "' + boundTo + '".');
+    }
+    log.debug('Leaving PepRegistry.identityOf(). ' + kind +
+              (mode ? ' ' + mode : ''));
+    return { ok: true, kind: kind, application: application, mode: mode,
+             protocolVersion: version,
+             policyEvents: kind === 'embedded' ? String(events || '') : '' };
+  }
+
+  // The identity's attributes on an entry (#2026), each only when it says
+  // something, so a container's entry is written as it always was.
+  private static identityAttributes(attributes: Record<string, unknown>,
+                                    identity: any): void {
+    helpers.log.debug("Entering PepRegistry.identityAttributes().");
+    const set = function (name: string, value: unknown): void {
+      helpers.log.debug("Entering set().");
+      if (value === undefined || value === null || value === '') {
+        delete attributes[name];
+      } else {
+        attributes[name] = String(value);
+      }
+      helpers.log.debug("Leaving set().");
+    };
+    const embedded = identity.kind === 'embedded';
+    set('xacmlPepKind', embedded ? 'embedded' : '');
+    set('xacmlPepApplication', embedded ? identity.application : '');
+    set('xacmlPepMode', embedded ? identity.mode : '');
+    set('xacmlPepProtocolVersion', identity.protocolVersion);
+    set('xacmlPepPolicyEvents', embedded ? identity.policyEvents : '');
+    helpers.log.debug("Leaving PepRegistry.identityAttributes().");
+  }
+
   /**
    * The first member of a heartbeat report the service cannot hold.
    * @param report - what the PEP reports (the handler's object)
@@ -1226,6 +1424,14 @@ class PepRegistry {
         settingsInUse: pepSettings.inUseOf(pep.settingsInUse || ''),
         listeners: pep.listeners || '',
         listenersInUse: pepListeners.inUseOf(pep.listenersInUse || ''),
+        // AN EMBEDDED PEP (#2026): an entry with no kind is a container's,
+        // which is every entry written before the kind existed.
+        kind: pep.kind === 'embedded' ? 'embedded' : 'container',
+        registeredApplication: pep.application || '',
+        mode: pep.mode || '',
+        protocolVersion: typeof pep.protocolVersion === 'number'
+          ? pep.protocolVersion : null,
+        policyEvents: pep.policyEvents || '',
         // DERIVED, not stored, and both of them for the same reason: a
         // stored "current" would be a second copy of a comparison, and it
         // would be wrong the moment somebody edited a policy without this row
@@ -1388,6 +1594,15 @@ class PepRegistry {
     if (host.hostname) {
       attributes.xacmlPepHostname = host.hostname;
     }
+    // AN EMBEDDED PEP'S IDENTITY (#2026), as `identityOf()` read it in the
+    // handler; written only when there is something to say, so a
+    // container's entry is written exactly as it always was. A
+    // registration is a new process: what it said replaces what was held,
+    // and its stream's report waits for its first heartbeat.
+    PepRegistry.identityAttributes(attributes, {
+      kind: given.kind, application: given.application, mode: given.mode,
+      protocolVersion: given.protocolVersion, policyEvents: ''
+    });
     // THE SIGNAL HEALTH IS NOT KEPT across a registration: a PEP registers
     // when its process starts, so the last snapshot describes receivers that
     // no longer exist. The next heartbeat reports the new ones.
@@ -1547,6 +1762,20 @@ class PepRegistry {
         ? existing.refused : this.number(said.refused)),
       xacmlPepUndischargeable: String(said.undischargeable === undefined
         ? existing.undischargeable : this.number(said.undischargeable))
+    });
+    // AN EMBEDDED PEP'S IDENTITY AND ITS STREAM'S REPORT (#2026): an absent
+    // member keeps the row's, as every member here does (the pull's own
+    // `heartbeat(name, {})` sends none). The handler has already refused
+    // what `identityOf()` refuses.
+    PepRegistry.identityAttributes(attributes as Record<string, unknown>, {
+      kind: said.kind === undefined ? existing.kind : said.kind,
+      application: said.application === undefined
+        ? existing.registeredApplication : said.application,
+      mode: said.mode === undefined ? existing.mode : said.mode,
+      protocolVersion: said.protocolVersion === undefined
+        ? existing.protocolVersion : said.protocolVersion,
+      policyEvents: said.policyEvents === undefined
+        ? existing.policyEvents : said.policyEvents
     });
     // NOTHING DURABLE CHANGED (#1882): no entry write, no audit row, no
     // directory change-log row. The record is held here and journalled
@@ -1950,6 +2179,12 @@ class PepRegistry {
       attributes.xacmlPepListenersInUse =
         JSON.stringify(row.listenersInUse);
     }
+    // An embedded PEP's identity (#2026), only when there is one.
+    PepRegistry.identityAttributes(attributes, {
+      kind: row.kind, application: row.registeredApplication,
+      mode: row.mode, protocolVersion: row.protocolVersion,
+      policyEvents: row.policyEvents
+    });
     log.debug("Leaving PepRegistry.attributesOf().");
     return Object.assign(attributes, overrides || {});
   }
@@ -2062,6 +2297,10 @@ export = {
   signalsOf: PepRegistry.signalsOf,
   hostnameOf: PepRegistry.hostnameOf,
   reportProblem: PepRegistry.reportProblem,
+  // An embedded PEP's identity (#2026): the one reading of kind,
+  // application, mode, protocol version and the stream's report.
+  identityOf: PepRegistry.identityOf,
+  PROTOCOL_VERSIONS: PROTOCOL_VERSIONS,
   recordNotify: slot.forward('recordNotify'),
   setEnabled: slot.forward('setEnabled'),
   setProxy: slot.forward('setProxy'),

@@ -1208,6 +1208,15 @@ const JOBS = [
   // listeners in, every row passing, on the first local memory run.
   { file: 'sts_xacml_pep_proxy_cluster.js', browser: false, local: true,
     timeoutMs: 2400000 },
+  // #2026: an embedded remote PEP (#1206) on its own DPoP-bound tokens, as
+  // the iya-pep package sends them: registration refused unbound, bound
+  // elsewhere, with an unsupported protocol version and with mode on a
+  // container (each code on the audit log), then accepted with kind,
+  // application, mode and protocol version on /admin-api/xacml/peps; a
+  // heartbeat's policyEvents, and the next heartbeat refused once the
+  // binding moves; AuthZEN in central mode scoped to the bound application
+  // (xacml_pep_embedded in process). In a realm of its own.
+  { file: 'sts_xacml_pep_embedded.js', browser: false, local: true },
   // THE SOCKETS AND DOORS A DEPLOYED CLUSTER IS MOST LIKELY TO BREAK
   // (2026-09-18): every one of these families was covered in process and by
   // nothing driven over the network, so a stack behind a load balancer said

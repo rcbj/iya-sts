@@ -25632,6 +25632,41 @@ const CODES = [
       'changed.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-XACML-0338',
+    summary: 'A remote PEP registered (or sent a heartbeat) as kind ' +
+      'embedded, and its entry is bound to no application ' +
+      '(stsPepApplication, set-pep-application): an embedded PEP is ' +
+      'admitted only for the application an administrator bound it to ' +
+      '(#2026). Nothing was recorded.',
+    spec: 'POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 403 ' +
+      'access_denied' },
+  { code: 'STS-XACML-0339',
+    summary: 'A remote PEP registered (or sent a heartbeat) as kind ' +
+      'embedded naming no application, or an application other than the ' +
+      'one its entry is bound to: a PEP key copied into another ' +
+      'application cannot pose as that application\'s PEP (#2026). ' +
+      'Nothing was recorded.',
+    spec: 'POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 403 ' +
+      'access_denied' },
+  { code: 'STS-XACML-0340',
+    summary: 'A remote PEP sent a protocolVersion this service does not ' +
+      'support (the supported set is 1), or an embedded PEP sent none ' +
+      '(#2026). Nothing was recorded; the PEP\'s package must be upgraded.',
+    spec: 'POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 400 ' +
+      'invalid_request' },
+  { code: 'STS-XACML-0341',
+    summary: 'A remote PEP sent mode with kind container (or no kind, ' +
+      'which is container): central and local are an embedded PEP\'s ' +
+      'modes (#2026). Nothing was recorded.',
+    spec: 'POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 400 ' +
+      'invalid_request' },
+  { code: 'STS-XACML-0342',
+    summary: 'A remote PEP sent a kind that is neither container nor ' +
+      'embedded, or registered as embedded with a mode that is neither ' +
+      'central nor local, or a policyEvents report outside none, ' +
+      'requested, excluded and down (#2026). Nothing was recorded.',
+    spec: 'POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 400 ' +
+      'invalid_request' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +

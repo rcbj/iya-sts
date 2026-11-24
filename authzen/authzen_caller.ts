@@ -60,6 +60,22 @@
 // arrive. `xacml.pepAuthentication` set to `certificate` refuses it here
 // as at the PEP door. AUTHZEN_PEPS is widened for nobody.
 //
+// **AND A BOUND EMBEDDED PEP IS SCOPED BY ITS BINDING (#2026, rcbj's D3 (a)
+// on #1206).** A PEP embedded in an application through an authentication
+// library, in `central` mode, asks this endpoint for every decision on its
+// own `authzen:evaluate` token. Its entry's `stsPepApplication` (#2025)
+// names the one application it is embedded in, and THE BINDING IMPLIES THE
+// SCOPE: such a caller is admitted as if it held AUTHZEN_PEPS (`rolesOf()`
+// adds the role, so the access-control policy still decides, and
+// `/admin/xacml/decide` reproduces it) with that application and no other as
+// its scope (`scopeOf()`), so a `context.application` naming another is
+// refused 403 STS-AUTHZEN-0025 as any scoped caller's is. No second group
+// or attribute to keep in step with the binding. Only on the PEP's token:
+// the binding is read for the entry `pep_token.ts` named, which holds
+// REMOTE_PEPS. A PEP that is bound and ALSO in AUTHZEN_PEPS with a wider
+// `stsAuthzenApplication` is narrowed to its binding: the binding says what
+// it is.
+//
 // **THE SELF-REGISTERED `ou=peps` ROW IS NOT CONSULTED.** A remote PEP's
 // registration is visibility and a nudge, never a permission
 // (`xacml/xacml_pep_registry.ts`), and it would be the first thing a caller
@@ -111,6 +127,9 @@ interface Caller {
   // 3.2: what the caller's credential authorizes). Absent at mTLS.
   iss?: string;
   act?: any;
+  // The application a bound embedded PEP's entry names (#2026): its whole
+  // scope, and the reason it is admitted as an AUTHZEN_PEPS holder.
+  embeddedIn?: string;
 }
 
 // What `applicationOf()` answers.
@@ -149,6 +168,10 @@ interface CallerDeps {
   // The SHA-256 of a certificate's DER, lower-case hex: the spelling the
   // door's index keys a stored certificate by.
   sha256Hex(der: Buffer): string;
+  // The application a remote PEP's entry is bound to (#2026,
+  // `xacml/xacml_pep_binding.ts`), by username; '' for none. Optional, so a
+  // test's own deps that predate it answer none.
+  boundApplication?(username: string): string;
 }
 
 // What `admission()` answers.
@@ -252,6 +275,13 @@ class AuthzenCaller {
         log.debug("Leaving sha256Hex().");
         return String(require('../common/crypto').digest('sha256', der,
                                                          'hex'));
+      },
+      boundApplication: function (username: string): string {
+        log.debug("Entering boundApplication().");
+        const bound = String(require('../xacml/xacml_pep_binding').shared()
+          .of(username) || '');
+        log.debug("Leaving boundApplication(). " + bound);
+        return bound;
       }
     };
   }
@@ -436,9 +466,19 @@ class AuthzenCaller {
         'which is not a remote PEP: it is not in the group ' +
         'roles.remotePepGroup names (REMOTE_PEPS).');
     }
-    log.debug("Leaving AuthzenCaller.byPepToken(). " + read.dn);
-    return { kind: 'entry', name: String(read.dn), door: 'pep-token',
-             identifier: '', clientId: '', roles: [] };
+    // A BOUND EMBEDDED PEP (#2026): the header's paragraph.
+    const bound = typeof self.deps.boundApplication === 'function'
+      ? String(self.deps.boundApplication(String(read.username || '')) || '')
+      : '';
+    log.debug("Leaving AuthzenCaller.byPepToken(). " + read.dn +
+              (bound ? ' (embedded in ' + bound + ')' : ''));
+    const caller: Caller = { kind: 'entry', name: String(read.dn),
+                             door: 'pep-token', identifier: '', clientId: '',
+                             roles: [] };
+    if (bound) {
+      caller.embeddedIn = bound;
+    }
+    return caller;
   }
 
   // A 401 for a remote PEP's token, whose DPoP challenge `byPepToken()`
@@ -717,9 +757,15 @@ class AuthzenCaller {
     const { log, roles, applications } = this.deps;
     log.debug("Entering AuthzenCaller.rolesOf(). " + caller.kind);
     if (caller.kind === 'entry') {
+      const held: string[] = (roles.rolesOf({ kind: 'user', name: caller.name,
+                                              authenticated: true }) || [])
+        .slice();
+      // A BOUND EMBEDDED PEP HOLDS AUTHZEN_PEPS BY ITS BINDING (#2026).
+      if (caller.embeddedIn && held.indexOf(AUTHZEN_ROLE) < 0) {
+        held.push(AUTHZEN_ROLE);
+      }
       log.debug("Leaving AuthzenCaller.rolesOf(). An entry.");
-      return roles.rolesOf({ kind: 'user', name: caller.name,
-                             authenticated: true });
+      return held;
     }
     let groups: string[] = [];
     const entry = caller.identifier ? applications.get(caller.identifier)
@@ -826,6 +872,12 @@ class AuthzenCaller {
       }
       log.debug("Leaving add().");
     };
+    // A BOUND EMBEDDED PEP'S SCOPE IS ITS BINDING, AND ONLY IT (#2026).
+    if (caller.embeddedIn) {
+      log.debug("Leaving AuthzenCaller.scopeOf(). Embedded in " +
+                caller.embeddedIn);
+      return [caller.embeddedIn];
+    }
     if (caller.kind === 'entry') {
       const stored = pip.locateSubject(caller.name);
       const values = stored

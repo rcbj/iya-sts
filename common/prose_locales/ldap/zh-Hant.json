@@ -2147,6 +2147,26 @@
     "en": "b2a987046bb7d733",
     "text": "遠程 PEP 最近一次在心跳中報告的、關於其每個監聽器的情況（#1760），包括其環境的四個和已定義的監聽器：一個 JSON 文檔 { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }，以及到達時間。狀態是 listening、waiting、failed 和 off 之一，原因來自一個封閉集合，從不是操作系統的文本；證書是其所提供證書的主體、簽發者、序列號、subjectAltName、有效期和指紋。其他成員一律丟棄。不含它的心跳保留它，值為 null 的心跳清除它，注冊則刪除它。早於監聽器功能的 PEP 上沒有此項，控制台顯示為未報告。"
   },
+  "xacmlPeps.schema.attributes.xacmlPepKind.what": {
+    "en": "960870930224edc8",
+    "text": "註冊的遠端 PEP 類型（#2026，#1206 的一部分）：container，即 xacml-pep 映像；或 embedded，即透過 iya-pep 套件位於驗證程式庫中的 PEP。未說明類型的註冊視為 container，因此較舊的 PEP 仍依原樣讀取。內嵌式 PEP 沒有反向代理、接聽程式或 AuthZEN 邊緣。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepApplication.what": {
+    "en": "32ed1379a2ec5e49",
+    "text": "內嵌式遠端 PEP 註冊時聲明其所內嵌的應用程式（#2026）。僅當它是該 PEP 項目所繫結的應用程式（stsPepApplication，由管理員設定）時才接受，因此它與繫結的不一致最多持續到 PEP 的下一次活動訊號，一旦不一致該活動訊號即遭拒絕。容器為空。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepMode.what": {
+    "en": "a500efda86cbdfb5",
+    "text": "內嵌式遠端 PEP 的模式（#2026）：central，每個決策都向本服務的 AuthZEN 評估端點詢問；或 local，它擷取其應用程式的原則並在處理程序內決策。容器為空，且不得傳送。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProtocolVersion.what": {
+    "en": "b0ac6a9742a5bf2e",
+    "text": "遠端 PEP 的套件所使用的 PEP 通訊協定版本，以其註冊或最近一次活動訊號所述為準（#2026）。本服務支援版本 1 並拒絕其他版本，因此落後的程式庫會被看見，而不是悄然出錯。未傳送版本的 PEP（容器）為空。"
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPolicyEvents.what": {
+    "en": "6dc388f78e803fc6",
+    "text": "內嵌式遠端 PEP 所在應用程式的串流能否傳遞 pep-policies-changed 事件，以 PEP 最近一次活動訊號回報為準（#2026）：none（主機沒有訊號串流，因此 PEP 輪詢）、requested、excluded（應用程式的 ssfEvents 將其排除）或 down。回報之前為空。"
+  },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "PEP 註冊時對自己所做的任何說明。"

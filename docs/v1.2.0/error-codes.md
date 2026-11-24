@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6080** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6085** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -92,7 +92,7 @@ is an ordinary outcome.
 * [OpenSSH user certificates (`STS-SSHCA`)](#sts-sshca) — 11
 * [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 34
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 258
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 263
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 140
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 137
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
@@ -5550,6 +5550,11 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0335` | set-pep-application named a person who is not a service account, or a service account that does not hold REMOTE_PEPS: only a remote PEP's identity is bound to an application (#2025). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-XACML-0336` | set-pep-application (or issue-pep-credential with an application) named no application, or one this realm's registry does not hold, so nothing was bound (#2025). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-XACML-0337` | An embedded PEP's binding could not be written or removed: the directory is not available or refused the write (#2025). Nothing changed. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-XACML-0338` | A remote PEP registered (or sent a heartbeat) as kind embedded, and its entry is bound to no application (stsPepApplication, set-pep-application): an embedded PEP is admitted only for the application an administrator bound it to (#2026). Nothing was recorded. | POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 403 access_denied |
+| `STS-XACML-0339` | A remote PEP registered (or sent a heartbeat) as kind embedded naming no application, or an application other than the one its entry is bound to: a PEP key copied into another application cannot pose as that application's PEP (#2026). Nothing was recorded. | POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 403 access_denied |
+| `STS-XACML-0340` | A remote PEP sent a protocolVersion this service does not support (the supported set is 1), or an embedded PEP sent none (#2026). Nothing was recorded; the PEP's package must be upgraded. | POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 400 invalid_request |
+| `STS-XACML-0341` | A remote PEP sent mode with kind container (or no kind, which is container): central and local are an embedded PEP's modes (#2026). Nothing was recorded. | POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 400 invalid_request |
+| `STS-XACML-0342` | A remote PEP sent a kind that is neither container nor embedded, or registered as embedded with a mode that is neither central nor local, or a policyEvents report outside none, requested, excluded and down (#2026). Nothing was recorded. | POST /xacml/pep/register and /xacml/pep/heartbeat: HTTP 400 invalid_request |
 
 ## STS-XPEP
 

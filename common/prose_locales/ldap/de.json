@@ -2147,6 +2147,26 @@
     "en": "b2a987046bb7d733",
     "text": "Was der entfernte PEP zuletzt in einem Heartbeat über jeden Listener gemeldet hat, den er hat (#1760), die vier seiner Umgebung und die festgelegten: ein JSON-Dokument von { listeners: [ { id, source, protocol, purpose, address, port, state, reason, renew, certificate } ] }, mit dem Zeitpunkt des Eintreffens. state ist eines von listening, waiting, failed und off, und reason eines aus einer geschlossenen Menge, niemals der Text des Betriebssystems; certificate ist subject, issuer, serial, subjectAltName, validity und fingerprint dessen, das er ausliefert. Jedes andere Mitglied wird verworfen. Ein Heartbeat ohne es behält es, einer mit null löscht es, und eine Registrierung verwirft es. Abwesend bei einem PEP, der älter ist als die Listener, was die Konsole als nicht gemeldet zeichnet."
   },
+  "xacmlPeps.schema.attributes.xacmlPepKind.what": {
+    "en": "960870930224edc8",
+    "text": "Welche Art von Remote-PEP sich registriert hat (#2026, Teil von #1206): container, das Image xacml-pep, oder embedded, ein PEP in einer Authentifizierungsbibliothek über ein iya-pep-Paket. Eine Registrierung ohne Angabe ist container, sodass ein älterer PEP gelesen wird wie immer. Ein eingebetteter PEP hat keinen Reverse Proxy, keine Listener und keinen AuthZEN-Edge."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepApplication.what": {
+    "en": "32ed1379a2ec5e49",
+    "text": "Die Anwendung, in die ein eingebetteter Remote-PEP bei seiner Registrierung eingebettet zu sein angab (#2026). Nur akzeptiert, wenn es die Anwendung ist, an die sein Eintrag gebunden ist (stsPepApplication, von einem Administrator gesetzt); sie kann also nur bis zum nächsten Heartbeat des PEP von der Bindung abweichen, der abgelehnt wird, sobald beide auseinandergehen. Leer bei einem Container."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepMode.what": {
+    "en": "a500efda86cbdfb5",
+    "text": "Der Modus eines eingebetteten Remote-PEP (#2026): central, wobei jede Entscheidung beim AuthZEN-Auswertungsendpunkt dieses Dienstes erfragt wird, oder local, wobei er die Richtlinien seiner Anwendung lädt und im Prozess entscheidet. Leer bei einem Container, der keinen senden darf."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepProtocolVersion.what": {
+    "en": "b0ac6a9742a5bf2e",
+    "text": "Die PEP-Protokollversion, die das Paket des Remote-PEP spricht, wie bei seiner Registrierung oder seinem letzten Heartbeat angegeben (#2026). Dieser Dienst unterstützt Version 1 und lehnt jede andere ab, sodass eine veraltete Bibliothek sichtbar wird statt stillschweigend falsch zu sein. Leer bei einem PEP, der keine sendet (dem Container)."
+  },
+  "xacmlPeps.schema.attributes.xacmlPepPolicyEvents.what": {
+    "en": "6dc388f78e803fc6",
+    "text": "Ob der Stream der Anwendung, in die ein eingebetteter Remote-PEP eingebettet ist, das Ereignis pep-policies-changed übertragen kann, wie der PEP es zuletzt in einem Heartbeat gemeldet hat (#2026): none (der Host hat keinen Signal-Stream, daher fragt der PEP regelmäßig ab), requested, excluded (ssfEvents der Anwendung schließt es aus) oder down. Leer, bis es gemeldet wurde."
+  },
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Was der PEP beim Registrieren über sich selbst gesagt hat."
