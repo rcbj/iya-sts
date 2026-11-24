@@ -632,11 +632,22 @@ subject:<subject DN>
 
 Every write stores a value in one form: the method lower-cased, hexadecimal
 lower-cased without colons, a serial without leading zeros, and a DN
-lower-cased with the spaces around `=` and `,` removed. The colon separates
-the parts, so write the issuer's digest without colons; a serial may keep
-them. So `ISSUER-SERIAL:3B1F…9C0A:00:4F:2A:19` is stored as
+lower-cased with the spaces around `=`, `,` and `+` removed. The colon
+separates the parts, so write the issuer's digest without colons; a serial
+and a subjectKeyIdentifier may keep them. So
+`ISSUER-SERIAL:3B1F…9C0A:00:4F:2A:19` is stored as
 `issuer-serial:3b1f…9c0a:4f2a19`. A person may hold several values, one per
 card or certificate.
+
+A subject with a **multi-valued RDN**, such as `UID=12345+CN=SMITH.JANE`, may
+be written with its attributes in any order: an RDN is a set, so
+`CN=SMITH.JANE+UID=12345` is the same value. Copy what `openssl -nameopt
+RFC2253` prints and it matches.
+
+A value is removed by the same text it was added with, in any of these
+spellings: `users/remove-attribute` puts it in the stored form before it
+looks for it, and adding a value already held in another spelling is
+refused as already held.
 
 * **Console:** **Directory → Users →** the person **→ Attributes**, the
   *Certificate sign-in bindings* field: one box per value, **+** to add one.

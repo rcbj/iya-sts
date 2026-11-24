@@ -624,12 +624,23 @@ function settleAnchors(url, pems, failed) {
 // right way to call this engine and a second spelling of it here would be a
 // second set of edge cases.
 // ---------------------------------------------------------------------------
+//
+// THREE OPTIONS A TEST ASKS FOR (#2081), each absent in every other caller:
+// `pair`, a key pair to certify again (a renewal under the same key, so the
+// same SubjectPublicKeyInfo and the same derived subjectKeyIdentifier);
+// `expiredSince`, milliseconds, a validity that ENDED that long ago; and
+// `san`, subjectAltName entries as the engine takes them
+// (`[{ kind: 'email', value }]`).
 async function issue(spec) {
   log.debug("Entering issue().");
-  const pair = await keys.generateKeyPair('rsa-2048');
-  const now = new Date();
-  const until = new Date(now.getTime() +
-                         (spec.years || 1) * 365 * 24 * 3600 * 1000);
+  const pair = spec.pair || await keys.generateKeyPair('rsa-2048');
+  const expired = Number(spec.expiredSince) > 0;
+  const now = expired
+    ? new Date(Date.now() - Number(spec.expiredSince) - 24 * 3600 * 1000)
+    : new Date();
+  const until = expired
+    ? new Date(Date.now() - Number(spec.expiredSince))
+    : new Date(now.getTime() + (spec.years || 1) * 365 * 24 * 3600 * 1000);
   const extensions = {
     basicConstraints: { present: true, critical: true, ca: !!spec.ca,
                         pathLen: spec.ca ? (spec.pathLen || 0) : undefined },
@@ -653,6 +664,10 @@ async function issue(spec) {
     // place an over-broad extended key usage stops being cosmetic.
     extensions.extKeyUsage = { present: true, usages: ['clientAuth'] };
   }
+  if (Array.isArray(spec.san) && spec.san.length) {
+    extensions.subjectAltName = { present: true, critical: false,
+                                  names: spec.san };
+  }
   const issued = await x509.issueCertificate({
     subject: spec.subject,
     subjectPublicKey: pair.publicPem,
@@ -668,7 +683,7 @@ async function issue(spec) {
   });
   log.debug("Leaving issue().");
   return { pem: issued.pem, privateKeyPem: pair.privatePem,
-           publicKeyPem: pair.publicPem, subject: spec.subject,
+           publicKeyPem: pair.publicPem, pair: pair, subject: spec.subject,
            serialHex: issued.serialHex,
            notAfter: until.toISOString() };
 }
@@ -721,6 +736,7 @@ async function mint(opts) {
   const leaf = await issue({
     subject: options.subject || DEFAULT_SUBJECT,
     years: options.years || 1,
+    san: options.leafSan,
     crl: issuingList ? issuingList.url : '',
     issuer: { certificatePem: issuing.pem,
               privateKeyPem: issuing.privateKeyPem, keyAlg: 'rsa-2048' }
@@ -740,6 +756,7 @@ async function mint(opts) {
   log.debug("Leaving mint().");
   return {
     root: root, issuing: issuing, leaf: leaf,
+    issuingList: issuingList ? issuingList.url : '',
     // WHAT A TLS CLIENT NEEDS, spelt the way node's `cert`/`key` options take
     // it: the leaf followed by the intermediate, because node sends every
     // certificate in `cert` and the service holds only the root.
@@ -749,6 +766,30 @@ async function mint(opts) {
     subject: leaf.subject,
     crls: crls
   };
+}
+
+// ANOTHER LEAF FROM A CREDENTIAL'S OWN ISSUING CA (#2081), for a test that
+// needs a second certificate under the same authority: a renewal
+// (`o.sameKey`, the old leaf's key pair certified again, so its
+// SubjectPublicKeyInfo and derived subjectKeyIdentifier are kept), or an
+// expired leaf (`o.expiredSince`, milliseconds). Answers `mint()`'s shape
+// with the new leaf in it, so `certPem`/`keyPem` present the new one.
+async function reissue(minted, o) {
+  log.debug("Entering reissue().");
+  const opts = o || {};
+  const leaf = await issue({
+    subject: opts.subject || minted.leaf.subject,
+    years: 1, san: opts.san, expiredSince: opts.expiredSince,
+    pair: opts.sameKey ? minted.leaf.pair : undefined,
+    crl: minted.issuingList || '',
+    issuer: { certificatePem: minted.issuing.pem,
+              privateKeyPem: minted.issuing.privateKeyPem,
+              keyAlg: 'rsa-2048' }
+  });
+  log.debug("Leaving reissue().");
+  return Object.assign({}, minted, { leaf: leaf,
+    certPem: leaf.pem + minted.issuing.pem, keyPem: leaf.privateKeyPem,
+    subject: leaf.subject });
 }
 
 async function main() {
@@ -1252,7 +1293,7 @@ if (require.main === module) {
   });
 }
 
-module.exports = { mint: mint, trustAnchor: postAnchor,
+module.exports = { mint: mint, reissue: reissue, trustAnchor: postAnchor,
                    removeAnchor: removeAnchor, forgetAnchors: forgetAnchors,
                    settleAnchors: settleAnchors,
                    recordAnchor: recordAnchor, trustRecorded: trustRecorded,

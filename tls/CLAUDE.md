@@ -2330,8 +2330,13 @@ requirement; what is this directory's:
   revoked refusal and before the identity gate, as `refusedOnRevocation` with
   `revocationRequired` — `GET /tls/sign-in` marks STS-TLS-0071, the screen
   answers its STS-AUTHN-0464.
-* **WHAT HAS NO TEST**: the handoff over two real listeners and a real
-  browser, and a request through a real TLS-terminating proxy.
+* **WHAT HAS NO TEST**: the handoff with a real browser (its certificate
+  chooser and PIN prompt; rcbj tests those with a physical card), and a
+  request through a real TLS-terminating proxy. The handoff over two real
+  listeners is `tests/protocol/sts_cert_handoff.js` (#2081): a realm's own
+  listener on 8099 asking for a certificate, `certificate-sign-in` mapped to
+  it, the screen's link, the 303 back, the act on the main port, and the
+  refusals.
 
 ## A SMART CARD OR NOT (#2031, 2026-11-23)
 
