@@ -598,5 +598,7 @@
 "hotp.start": "Einmalcode-Token einrichten",
 "apps.reauthenticate": "Erneut anmelden",
 "apps.reauthenticateNote": "Jeder Anmeldelink verlangt eine neue Anmeldung, damit Sie die Rollen für diese Anwendung wählen können.",
-"apps.reauthenticateApply": "Übernehmen"
+"apps.reauthenticateApply": "Übernehmen",
+"noWebCrypto.title": "Dieser Browser kann diese Seite nicht öffnen",
+"noWebCrypto.text": "Dieser Browser kann diese Seite nicht sicher ausführen: WebCrypto ist nicht verfügbar, meist weil die Seite nicht über HTTPS geöffnet wurde oder der Browser zu alt ist."
 }

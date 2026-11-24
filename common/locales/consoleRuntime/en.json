@@ -18,5 +18,7 @@
   "accounts.otherAccount": "That sign-in was another account, so this tab did not take it. Sign in again as {user}, or switch account from the account menu.",
   "accounts.refused.title": "The console will not open for this account",
   "accounts.refused.text": "The management API answered {status} for the account this tab is signed in as.",
-  "policyName.required": "A name is required."
+  "policyName.required": "A name is required.",
+  "noWebCrypto.title": "This browser cannot open this page",
+  "noWebCrypto.text": "This browser cannot run this page securely: WebCrypto is unavailable, usually because the page was not opened over HTTPS or the browser is too old."
 }
