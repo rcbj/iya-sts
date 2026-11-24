@@ -3128,8 +3128,8 @@
     "text": "Gültigkeitsdauer des Client-Geheimnisses (Tage)"
   },
   "oauth2.clientSecretLifetimeDays|description": {
-    "en": "6ad202dff164f155",
-    "text": "Die Gültigkeitsdauer in Tagen jedes Client-Geheimnisses, das dieser Dienst erzeugt oder entgegennimmt, und damit das `client_secret_expires_at`, das RFC 7591 Abschnitt 3.2.1 für einen bei POST /oauth2/register registrierten Client veröffentlicht — der Standard für jedes Geheimnis, das erzeugt oder entgegengenommen wird (eine Neuerzeugung, eine Rotation, ein hinzugefügtes Geheimnis, ein in der Konsole eingegebener Wert), es sei denn, das Formular zum Hinzufügen nennt eine andere oder das Formular zum Anlegen tut das für das erste Geheimnis einer Anwendung. NULL, der Standard, ist das eigene \"never\" dieses Abschnitts. Diese Dauer wird jedem Geheimnis bei der Erzeugung aufgeprägt und durch eine spätere Änderung nicht verschoben."
+    "en": "0282a861551627b6",
+    "text": "Die Gültigkeitsdauer in Tagen jedes Client-Geheimnisses, das dieser Dienst erzeugt oder entgegennimmt, und damit das `client_secret_expires_at`, das RFC 7591 Abschnitt 3.2.1 für einen bei POST /oauth2/register registrierten Client veröffentlicht — der Standard für jedes Geheimnis, das erzeugt oder entgegengenommen wird (eine Neuerzeugung, eine Rotation, ein hinzugefügtes Geheimnis, ein in der Konsole eingegebener Wert), es sei denn, das Formular zum Hinzufügen nennt eine andere oder das Formular zum Anlegen tut das für das erste Geheimnis einer Anwendung. Der Standard ist 365 Tage (ASVS 5.0.0 13.3.4); NULL ist das eigene \"never\" dieses Abschnitts. Diese Dauer wird jedem Geheimnis bei der Erzeugung aufgeprägt und durch eine spätere Änderung nicht verschoben."
   },
   "oauth2.registeredClientIdPrefix|label": {
     "en": "cdb90402fa7ad1de",

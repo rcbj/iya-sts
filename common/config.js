@@ -7178,7 +7178,7 @@ const SETTINGS = [
 
   { key: 'oauth2.clientSecretLifetimeDays', group: 'OAuth 2.0 / OIDC',
     label: 'Client secret lifetime (days)',
-    env: 'STS_OAUTH2_CLIENT_SECRET_LIFETIME_DAYS', type: 'int', dflt: 0,
+    env: 'STS_OAUTH2_CLIENT_SECRET_LIFETIME_DAYS', type: 'int', dflt: 365,
     min: 0, max: 730, runtime: true,
     description: 'The lifetime, in days, of every client secret this ' +
                  'service mints or is given, and so the ' +
@@ -7188,9 +7188,9 @@ const SETTINGS = [
                  'mints or is given (a regeneration, a rotation, an added ' +
                  'secret, a value typed on the console), unless the add ' +
                  'form names another, or the create form does for an ' +
-                 'application\'s first secret. ZERO, the default, is that ' +
-                 'section\'s ' +
-                 'own "never". It is stamped on each secret when it is ' +
+                 'application\'s first secret. The default is 365 days ' +
+                 '(ASVS 5.0.0 13.3.4); ZERO is that section\'s own ' +
+                 '"never". It is stamped on each secret when it is ' +
                  'made and is not moved by a later change.' },
 
   { key: 'oauth2.registeredClientIdPrefix', group: 'OAuth 2.0 / OIDC',
