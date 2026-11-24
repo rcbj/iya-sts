@@ -3023,6 +3023,12 @@ const JOBS = [
   // refusals through the editor's API (xacml_pap).
   { file: 'sts_xacml_pap.js', browser: false, local: true,
     optIn: '444' },
+  // #2025: an embedded remote PEP bound to its application through
+  // /admin-api/xacml (set-pep-application, clear-pep-application,
+  // issue-pep-credential with an application), the application's page, the
+  // clean-up when the application is deleted, and the audit rows
+  // (xacml_pep_binding in process). In a realm of its own.
+  { file: 'sts_xacml_pep_binding.js', browser: false, local: true },
   // D12 (#444): the AuthZEN binding for OAuth 2.0 token exchange over
   // /access/v1/evaluation(s), in both modes (authzen_token_exchange).
   // Posts an outside test Root to the client truststore and removes it.
