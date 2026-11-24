@@ -42,7 +42,16 @@ locals {
   # whose must-agree settings (global.mode, publicBaseUrl, keys.source, …)
   # differ from the others', so they are spelt once.
   node_environment = merge({
-    STS_MODE                   = var.sts_mode
+    STS_MODE = var.sts_mode
+    # THE MAIN PORT IS HTTPS, SAID WHERE THE HEALTH CHECK CAN SEE IT
+    # (2026-11-23, #1284's build). Every appconfig file sets `global.https`
+    # (env/CLAUDE.md), so the service was HTTPS without this; but
+    # common/healthcheck_probe.js (bc200ad5a) loads no configuration and
+    # decides its scheme from STS_HTTPS alone, spoke plain HTTP to 8081,
+    # and the container went unhealthy every 15 s after its start period
+    # (STS-TLS-0021 "http request" from 127.0.0.1 in the node's log). The
+    # same value the appconfig gives, so the service behaves as it did.
+    STS_HTTPS                  = "true"
     STS_PERSISTENCE_MODE       = "postgres"
     STS_PERSISTENCE_COORDINATE = "true"
     STS_KEYS_SOURCE            = "persisted"

@@ -149,6 +149,9 @@ const INTERNAL: ReadonlySet<string> = new Set([
   'x-sts-peer-authorized', 'x-sts-peer-certificate', 'x-sts-pool-phases',
   'x-sts-pool-phases-wanted', 'x-sts-pool-protocol-worker',
   'x-sts-pool-revoking', 'x-sts-pool-ticket', 'x-sts-tls-client-hello',
+  // A request worker to the front on an answer during which a realm row or
+  // a setting moved (#2019, `common/request_pool.js`'s SETTINGS_HEADER).
+  'x-sts-pool-settings',
   // The front to a worker and back about cookie names (`common/cookie_wire.ts`).
   'x-sts-wire-prefix', 'x-sts-wire-tls'
 ]);

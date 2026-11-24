@@ -25,6 +25,12 @@
 #   TF_STACK=spiffe-realm REALM=acme SERVER_PORT=9181 \
 #     deploy/aws/terraform-local.sh testidp apply  # a realm's Server API.
 #     WORKLOAD_PORT is accepted and no longer published (#324).
+#   TF_STACK=pep-cluster IMAGE_TAG=<tag> [PEP_CLUSTER=aws] \
+#     [PEP_MODE=per-instance|shared] [PEP_COUNT=2] [PEP_REALM=id] \
+#     [PEP_AUTOSCALING_MAX=n] [PEP_COMPANION=true] [PEP_IDP_URL=https://…] \
+#     deploy/aws/terraform-local.sh testpep apply    # a remote PEP cluster,
+#     an environment of its own (#1284); deploy/aws/pep-cluster/provision.sh
+#     first, and again after the apply (deploy/aws/CLAUDE.md)
 #
 # A MULTI-CELL ENVIRONMENT (#98) — one with environment/envs/<env>.cells.tfvars.json:
 #   IMAGE_TAG=<tag> deploy/aws/terraform-local.sh testidpna apply    # every
@@ -176,7 +182,7 @@ then
 fi
 
 TF_VARS=()
-if [ "${TF_STACK}" = "environment" ] && { [ "${TF_ACTION}" = "plan" ] || [ "${TF_ACTION}" = "apply" ] || [ "${TF_ACTION}" = "import" ]; };
+if { [ "${TF_STACK}" = "environment" ] || [ "${TF_STACK}" = "pep-cluster" ]; } && { [ "${TF_ACTION}" = "plan" ] || [ "${TF_ACTION}" = "apply" ] || [ "${TF_ACTION}" = "import" ]; };
 then
   [ -n "${IMAGE_TAG:-}" ] || { echo "ERROR: ${TF_ACTION} needs IMAGE_TAG." >&2; exit 1; }
   if [ -z "${ALLOWED_CIDR:-}" ];
@@ -226,6 +232,23 @@ then
   TF_VARS+=(-e "TF_VAR_image_tag=${IMAGE_TAG}")
 fi
 
+# A REMOTE PEP CLUSTER (#1284, deploy/aws/pep-cluster/), an environment of
+# its own: IMAGE_TAG and ALLOWED_CIDR are taken above, as for an iya-sts
+# environment. Each other knob is passed only when it is set, so the stack's
+# own default (or its envs/<env>.tfvars) stands otherwise; the cluster name
+# defaults to `aws` in entrypoint.sh.
+if [ "${TF_STACK}" = "pep-cluster" ];
+then
+  TF_VARS+=(-e "TF_PEP_CLUSTER=${PEP_CLUSTER:-aws}")
+  [ -z "${PEP_MODE:-}" ] || TF_VARS+=(-e "TF_VAR_credential_mode=${PEP_MODE}")
+  [ -z "${PEP_COUNT:-}" ] || TF_VARS+=(-e "TF_VAR_instance_count=${PEP_COUNT}")
+  [ -z "${PEP_REALM:-}" ] || TF_VARS+=(-e "TF_VAR_realm=${PEP_REALM}")
+  [ -z "${PEP_AUTOSCALING_MAX:-}" ] || TF_VARS+=(-e "TF_VAR_autoscaling_max=${PEP_AUTOSCALING_MAX}")
+  [ -z "${PEP_IMAGE:-}" ] || TF_VARS+=(-e "TF_VAR_pep_image=${PEP_IMAGE}")
+  [ -z "${PEP_COMPANION:-}" ] || TF_VARS+=(-e "TF_VAR_companion=${PEP_COMPANION}")
+  [ -z "${PEP_IDP_URL:-}" ] || TF_VARS+=(-e "TF_VAR_idp_url=${PEP_IDP_URL}")
+fi
+
 for v in TF_CLI_ARGS TF_CLI_ARGS_plan TF_CLI_ARGS_apply TF_CLI_ARGS_destroy; do
   [ -z "${!v:-}" ] || TF_VARS+=(-e "${v}=${!v}")
 done
@@ -251,7 +274,7 @@ echo "==> Building ${IMAGE_NAME}" >&2
 # and killing the client leaves the container running without this script's
 # credentials endpoint. `wait` returns early on a trapped signal, hence the
 # loop.
-CONTAINER_NAME="iya-sts-terraform-${TF_ENV}${TF_CELL:+-${TF_CELL}}${REALM:+-${REALM}}-$$"
+CONTAINER_NAME="iya-sts-terraform-${TF_ENV}${TF_CELL:+-${TF_CELL}}${REALM:+-${REALM}}${PEP_CLUSTER:+-pep-${PEP_CLUSTER}}-$$"
 relay() {
   echo "==> Interrupted: telling terraform to stop cleanly and release the lock" >&2
   "${DOCKER_CMD[@]}" kill --signal INT "${CONTAINER_NAME}" >/dev/null 2>&1 || true

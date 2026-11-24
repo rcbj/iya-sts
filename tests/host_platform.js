@@ -71,6 +71,7 @@ const HOST_SCRIPTS = [
   'deploy/azure/bootstrap-state.sh',
   'deploy/aws/run-suite.sh',
   'deploy/aws/convert-to-cells.sh',
+  'deploy/aws/pep-cluster/provision.sh',
   'tests/tools/rehearse-cell-conversion.sh',
   'tests/tools/build-corpora-image.sh',
   'tests/eudi-wallet-poc/create-wallet-user.sh',

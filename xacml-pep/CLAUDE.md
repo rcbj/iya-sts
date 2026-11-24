@@ -251,6 +251,8 @@ shim) are in git history.
 | `certs/` | The compose files' default certificate mount; empty and gitignored. |
 | `openapi/` | **GENERATED (#1830)**: one OpenAPI 3.1 document per surface, from `models/pep/` — see *THE MODEL OF EVERY ENDPOINT*. Never edited by hand. |
 
+**Deployed as a scaled service on AWS by `deploy/aws/pep-cluster/` (#1284)**: an environment of its own — the image on Fargate behind an ALB with AWS WAF, its keys from Secrets Manager. `deploy/aws/CLAUDE.md`, *A remote PEP cluster*, argues it; nothing in this directory changed for it.
+
 | Rust module (`rust/bins/xacml-pep/src/`) | What it is (the Node file it replaces) |
 |---|---|
 | `options.rs` | The environment, read once (`pep.js`'s `options`). |

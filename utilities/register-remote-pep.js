@@ -101,7 +101,22 @@ const COMPOSE_FILE = 'docker-compose.pep.yml';
 // The companion demonstration (--pep-app). One prefix covers every page
 // companion/pep_app.js serves under /pep-app, including POST of an item.
 const PEP_APP_SCOPES = ['openid', 'profile', 'email', 'offline_access'];
-const PEP_APP_GRANTS = ['authorization_code', 'refresh_token'];
+// THE ROUTE ASKS FOR SIGNALS (`signals: true`, pepAppRoute()), so the proxy
+// runs a CAEP/RISC receiver for this client, and the receiver needs a
+// client-credentials token for the realm's transmitter with these two
+// scopes (docs/v1.2.0/remote-pep.md, *the `session` mechanism*, step 4).
+// Without them it does not start (STS-XPEP-0094) and the proxy falls back to
+// asking POST /xacml/pep/session: found on AWS on 2026-11-23 (#1284).
+// Declared on the client only, NOT given global consent: a client-credentials
+// grant has no person to consent.
+const PEP_APP_SIGNAL_SCOPES = ['ssf.read', 'ssf.manage'];
+// AND THE ROLES THAT CONFER THEM: a declared scope is issued to a client only
+// when it also holds the role that confers its permission, or the token
+// endpoint answers invalid_scope ("the application 'pep-app' is not a member
+// of the role SSF_MANAGE"). Found the same day, the step after the scopes.
+const PEP_APP_SIGNAL_ROLES = ['SSF_READ', 'SSF_MANAGE'];
+const PEP_APP_GRANTS = ['authorization_code', 'refresh_token',
+  'client_credentials'];
 const PEP_APP_AUTH = ['client_secret_basic', 'client_secret_post'];
 const PEP_APP_METHODS = ['GET', 'HEAD', 'POST'];
 const PEP_APP_CALLBACK = '/.iya-pep/callback';
@@ -1322,11 +1337,12 @@ async function ensurePepApplication(api, step, spec, callbacks, dryRun) {
         oauthRedirectUri: callbacks.slice(),
         oauthGrantType: PEP_APP_GRANTS.slice(),
         oauthResponseType: ['code'],
-        oauthAllowedScope: PEP_APP_SCOPES.slice()
+        oauthAllowedScope: PEP_APP_SCOPES.concat(PEP_APP_SIGNAL_SCOPES)
       }
     });
     requireOk(step, made, next);
     await grantPepConsent(api, step, spec, []);
+    await grantPepSignalRoles(api, step, spec);
     log.debug("Leaving ensurePepApplication(). Created.");
     return { state: 'created', secret: secret };
   }
@@ -1353,7 +1369,7 @@ async function ensurePepApplication(api, step, spec, callbacks, dryRun) {
     ['oauthGrantType', PEP_APP_GRANTS],
     ['oauthTokenEndpointAuthMethod', PEP_APP_AUTH],
     ['oauthResponseType', ['code']],
-    ['oauthAllowedScope', PEP_APP_SCOPES]
+    ['oauthAllowedScope', PEP_APP_SCOPES.concat(PEP_APP_SIGNAL_SCOPES)]
   ];
   for (let i = 0; i < missing.length; i++) {
     const attribute = missing[i][0];
@@ -1379,8 +1395,48 @@ async function ensurePepApplication(api, step, spec, callbacks, dryRun) {
     secret = String((added.body && added.body.clientSecret) || '');
   }
   await grantPepConsent(api, step, spec, have('oauthGlobalConsent'));
+  await grantPepSignalRoles(api, step, spec);
   log.debug("Leaving ensurePepApplication().");
   return { state: secret ? 'secret' : 'exists', secret: secret };
+}
+
+/**
+ * The application in the roles that confer the signal scopes
+ * (PEP_APP_SIGNAL_ROLES). `roles/add-member` refuses a member the role
+ * already holds, so each role is read first and a holder is skipped.
+ *
+ * @param api - the API client
+ * @param step - the step's title
+ * @param spec - `pepAppSpec()`'s answer
+ * @returns a promise of nothing
+ */
+async function grantPepSignalRoles(api, step, spec) {
+  log.debug("Entering grantPepSignalRoles().");
+  for (let r = 0; r < PEP_APP_SIGNAL_ROLES.length; r++) {
+    const name = PEP_APP_SIGNAL_ROLES[r];
+    const listed = await api.get('/roles?role=' + encodeURIComponent(name));
+    if (listed.status !== 200 || !listed.body || !listed.body.role ||
+        !listed.body.role.found) {
+      log.debug("Leaving grantPepSignalRoles(). No role " + name + ".");
+      throw new StepError(step, refusalOf(listed), 'The realm has no role ' +
+        name + ', which confers the scope the route\'s signals receiver ' +
+        'needs. Check the realm\'s roles on the console (Directory -> Roles).');
+    }
+    if ((listed.body.role.applications || []).indexOf(spec.app) >= 0) {
+      continue;
+    }
+    const added = await api.post('/roles/add-member', {
+      role: name, kind: 'application', member: spec.app
+    });
+    if (!added || added.status !== 200 || !added.body ||
+        added.body.ok === false) {
+      log.debug("Leaving grantPepSignalRoles(). Not added to " + name + ".");
+    }
+    requireOk(step, added, 'Add the application to ' + name + ' on the ' +
+      'console (Directory -> Roles) and run this again. Without it the ' +
+      'proxy\'s CAEP/RISC receiver does not start (STS-XPEP-0094).');
+  }
+  log.debug("Leaving grantPepSignalRoles().");
 }
 
 /**

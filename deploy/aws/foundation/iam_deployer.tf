@@ -643,6 +643,8 @@ data "aws_iam_policy_document" "deploy_edge" {
       values = [
         "elasticloadbalancing.amazonaws.com", "ecs.amazonaws.com",
         "rds.amazonaws.com",
+        # A shared remote PEP cluster's autoscaling (#1284).
+        "ecs.application-autoscaling.amazonaws.com",
       ]
     }
   }
@@ -909,6 +911,28 @@ data "aws_iam_policy_document" "deploy_compute" {
       variable = "ecs:cluster"
       values   = [for p in local.rarn.ecs : "${p}:cluster/${var.name}-*"]
     }
+  }
+
+  # A SHARED REMOTE PEP CLUSTER THAT AUTOSCALES (#1284, pep-cluster/'s
+  # `autoscaling_max`): a scalable target on one of the project's ECS
+  # services, and a target-tracking policy on it. Application Auto Scaling's
+  # scalable-target ARNs are generated, not named, so the resource cannot be
+  # narrowed by name; what it can scale is still only what EcsOnlyProjectNamed
+  # lets this role create. Its alarms are made by its own service-linked role
+  # (ServiceLinkedRolesForElbEcsRds).
+  statement {
+    sid = "EcsServiceAutoScaling"
+    actions = [
+      "application-autoscaling:RegisterScalableTarget",
+      "application-autoscaling:DeregisterScalableTarget",
+      "application-autoscaling:PutScalingPolicy",
+      "application-autoscaling:DeleteScalingPolicy",
+      "application-autoscaling:Describe*",
+      "application-autoscaling:TagResource",
+      "application-autoscaling:UntagResource",
+      "application-autoscaling:ListTagsForResource",
+    ]
+    resources = ["*"]
   }
 
   statement {
@@ -1407,6 +1431,40 @@ data "aws_iam_policy_document" "deploy_cloudfront" {
     resources = [
       "arn:${local.partition}:wafv2:us-east-1:${local.account_id}:global/ipset/${var.name}-*",
       "arn:${local.partition}:wafv2:us-east-1:${local.account_id}:global/webacl/${var.name}-*",
+    ]
+  }
+
+  # A REGIONAL WEB ACL ON A LOAD BALANCER (#1284, pep-cluster/waf.tf): the
+  # remote PEP cluster's ALB, in every permitted region, by the same name
+  # prefix. The managed rule groups it names are AWS's, read through
+  # wafv2:CreateWebACL/UpdateWebACL on the ACL itself.
+  statement {
+    sid = "WafRegionalOnlyThisProjectsNames"
+    actions = [
+      "wafv2:CreateIPSet", "wafv2:GetIPSet", "wafv2:UpdateIPSet",
+      "wafv2:DeleteIPSet", "wafv2:CreateWebACL", "wafv2:GetWebACL",
+      "wafv2:UpdateWebACL", "wafv2:DeleteWebACL", "wafv2:TagResource",
+      "wafv2:UntagResource", "wafv2:ListTagsForResource",
+      "wafv2:AssociateWebACL", "wafv2:DisassociateWebACL",
+      "wafv2:GetWebACLForResource",
+    ]
+    resources = flatten([
+      for r in local.regions : [
+        "arn:${local.partition}:wafv2:${r}:${local.account_id}:regional/ipset/${var.name}-*",
+        "arn:${local.partition}:wafv2:${r}:${local.account_id}:regional/webacl/${var.name}-*",
+        "arn:${local.partition}:wafv2:${r}::managedruleset/*",
+        "arn:${local.partition}:elasticloadbalancing:${r}:${local.account_id}:loadbalancer/app/${var.name}-*",
+      ]
+    ])
+  }
+
+  # Associating an ACL also asks the load balancer.
+  statement {
+    sid     = "AlbSetWebAcl"
+    actions = ["elasticloadbalancing:SetWebAcl"]
+    resources = [
+      for r in local.regions :
+      "arn:${local.partition}:elasticloadbalancing:${r}:${local.account_id}:loadbalancer/app/${var.name}-*"
     ]
   }
 
