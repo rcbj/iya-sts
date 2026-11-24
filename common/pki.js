@@ -15809,14 +15809,22 @@ async function buildSshUserKrlAsync(scopeId) {
       digest: digest, bytesB64: bytes.toString('base64'),
       version: version, generatedAt: now
     } }));
+    // THE CACHE IS A CACHE (#2092). The KRL is derived from the register
+    // and the row, both already recorded, so a cache that did not reach the
+    // store loses nothing: the next build makes the same list again. It was
+    // a 503 (STS-PKI-0290) until #2092, and in a product realm on a store
+    // that keeps nothing no write is ever queued, so EVERY first fetch was
+    // refused and the second answered from the cache this process held —
+    // an sshd refreshing RevokedKeys at that moment kept a stale KRL. The
+    // failure is recorded and what was built is answered.
     const outcome = await keystore.pkiSettled(id);
     if (keystore.persists() && (!outcome || !outcome.ok)) {
-      log.error(errorCodes.tag('STS-PKI-0290') + 'pki: the SSH user KRL ' +
-                'was built but its cache could not be persisted.');
-      log.debug("Leaving buildSshUserKrlAsync(). Store failed.");
-      return errorCodes.mark({ ok: false, errors: [
-        'The SSH user key revocation list could not be recorded.'
-      ] }, 'STS-PKI-0290');
+      log.warn(errorCodes.tag('STS-PKI-0299') + 'pki: the "' +
+               (id || 'default') + '" realm\'s SSH user KRL was built and ' +
+               'is answered, but its cache could not be persisted (' +
+               (outcome ? String(outcome.error || 'the write failed')
+                 : 'no write reached the store') + '); the next build ' +
+               'makes it again.');
     }
     log.debug("Leaving buildSshUserKrlAsync(). Built.");
     return { ok: true, bytes: bytes };

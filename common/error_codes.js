@@ -5556,6 +5556,11 @@ const CODES = [
       'ssh-mldsa-65, or asked for the ML-DSA authority of a realm that has ' +
       'none.',
     spec: 'GET /pki/ssh-user-ca/{scope} answers 400 or 404' },
+  { code: 'STS-PKI-0299',
+    summary: 'A realm\'s SSH user KRL was built but its cache could not be ' +
+      'persisted (#2092); the list built is answered and the next build ' +
+      'makes it again.',
+    spec: 'Nothing: GET /pki/ssh-user-krl/{scope} answers the KRL' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
