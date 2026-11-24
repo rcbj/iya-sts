@@ -159,6 +159,13 @@ function started(r) {
 // A request is therefore asked again until the answer is the one the
 // setting means, for at most ten seconds: the check is still that the
 // setting takes effect, and a setting that never did still fails.
+// SINCE THE FRONT CATCHES UP ON A SETTINGS ANSWER (rcbj, 2026-11-23, "catch
+// up on change": `persistence/persistence.js`, THE SETTINGS GENERATION) the
+// first answer is already right on ONE node — the front holds the write's
+// answer until its own copy has the setting. The retry stays for the
+// cluster mode, where the balancer may send the proxy's request to the
+// OTHER node, whose front hears the write only by the change log's own
+// nudge (NOTIFY on PostgreSQL) a moment later.
 async function settledUntil(url, o, wanted) {
   log.debug("Entering settledUntil().");
   const deadline = Date.now() + 10000;

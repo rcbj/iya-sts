@@ -2350,6 +2350,23 @@ each mode guarantees, exactly:
   START (`startSyncRound()`), which the sharing rule already allowed, so a
   keyed round leaves no worker looking behind. `tests/request_ryw_session.js`.
 
+**THE FRONT PROCESS CATCHES UP ON A SETTINGS ANSWER (found in #2019; rcbj,
+2026-11-23: "catch up on change").** The read barrier is a worker's: a
+request the front DISPATCHES runs none in the front, yet every middleware
+`app.js` installs above the pool — `forwarded_client_certificate.ts` first
+— decides on the front's copy of the realm. So a worker marks an answer
+during which a realm row or a setting changed (`x-sts-pool-settings`,
+`RequestWorker.markSettingsAnswer()`, wrapping `writeHead()`), and
+`request_pool.js`'s `holdForSettings()` forwards it only once
+`persistence.syncSettingsNow()` has caught up (both tiers' logs; one
+catch-up in flight and one queued, shared; STS-WORKER-0058 when it runs out,
+and the answer goes anyway). A worker's committed realm or settings save
+also posts `{ settingsCommitted }`, which wakes the front's pull
+(`receiveSettingsCommitted()`), for a write with no answer to ride on. No
+timer and no store round trip on an unmarked request.
+`persistence/CLAUDE.md` has what it covers and what it does not;
+`tests/front_settings_catch_up.js` holds it.
+
 **A RUN-OUT BARRIER IS A REFUSAL, NEVER A STALE ANSWER (2026-11-14).**
 The barrier gave up at a hard-coded 5,000 ms and SERVED the request "from what
 that worker has", on the argument that reaching it meant the store was unwell.
@@ -12424,6 +12441,12 @@ is exactly what it was. The headers of the three files argue them in full.
   through `request_pool.js`'s `peerOf()` and never the headers; from any other
   sender both headers are deleted and recorded (STS-TLS-0072, at most once a
   minute). `oauth2_bcp.js`'s `no-certificate-header` note says the same.
+  **Its settings are the front's copy, CAUGHT UP ON CHANGE** (#2019's
+  finding; rcbj, 2026-11-23): a `/admin-api` write of the proxy settings is
+  answered by a request worker, and the front holds that answer until its
+  own realm and settings logs have the write — so the proxy's next request
+  meets the new pins and ranges on that node. `persistence/CLAUDE.md`, *The
+  front process catches up on a settings write*.
 * **THE HANDOFF** (`certSignIn.handoff`, rcbj: an option, off by default) is
   `tls/CLAUDE.md`'s, with the `certificate-sign-in` hosted application.
 * **WHAT HAS NO TEST**: a real handshake through a profile, the handoff over

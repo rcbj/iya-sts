@@ -1661,6 +1661,13 @@ const CODES = [
       'writes in it may not have reached the store. A flush that settles ' +
       'before then is waited for.',
     spec: 'Log line' },
+  { code: 'STS-WORKER-0058',
+    summary: 'The front process could not catch up on the realm and ' +
+      'settings change logs before forwarding an answer that wrote a ' +
+      'setting (the catch-up ran out or failed): the answer is forwarded, ' +
+      'and a check the front makes before dispatch meets the new value at ' +
+      'its next change-log pull (#2019).',
+    spec: 'Log line' },
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',
     spec: '' },
