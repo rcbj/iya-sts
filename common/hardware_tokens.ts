@@ -1839,6 +1839,90 @@ class HardwareTokens {
     return { ok: true, written: written, pending: pending };
   }
 
+  // The register's row of a key, read from the store when this process
+  // does not hold it.
+  private async rowAsync(key: string): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokens.rowAsync().");
+    if (!register.get(key)) {
+      try {
+        await register.warm([key]);
+      } catch (e) {
+        log.debug("Caught in HardwareTokens.rowAsync(): " +
+                  ((e && e.message) || e));
+        // The store cannot be asked: what this process holds decides.
+      }
+    }
+    log.debug("Leaving HardwareTokens.rowAsync().");
+    return register.get(key) || null;
+  }
+
+  /**
+   * What the index holds for one person's value of a token (the entry
+   * observer's check, `token_entries.ts`): the value they may hold, or null.
+   *
+   * @param key - the token's key
+   * @param change - the observer's change (`subject` the person)
+   * @returns a promise of the value, or null
+   */
+  async entryValueFor(key: string, change: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokens.entryValueFor().");
+    const person = String((change && change.subject) || '')
+      .replace(/^urn:uuid:/i, '');
+    const row = await this.rowAsync(String(key));
+    log.debug("Leaving HardwareTokens.entryValueFor().");
+    return person ? HardwareTokens.entryValueOf(String(key), row, person)
+                  : null;
+  }
+
+  /**
+   * A token's value removed from a person's entry by another door (the
+   * entry observer, `token_entries.ts`): the entry is the master, so the
+   * register's row drops that person's credentials — they are no longer
+   * evidence at a sign-in — and hands the token to another holder of a
+   * credential on it, or forgets it when nobody is left. Every other
+   * person's entry is written first, as every write here is.
+   *
+   * @param key - the token's key
+   * @param change - the observer's change
+   * @returns a promise of `{ ok, changed }`
+   */
+  async entryRemoved(key: string, change: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering HardwareTokens.entryRemoved().");
+    const c = change || {};
+    const person = String(c.subject || '').replace(/^urn:uuid:/i, '');
+    const row = await this.rowAsync(String(key));
+    if (!row || !person ||
+        HardwareTokens.peopleOf(row).indexOf(person) < 0) {
+      log.debug("Leaving HardwareTokens.entryRemoved(). Not theirs.");
+      return { ok: true, changed: false };
+    }
+    const next = JSON.parse(JSON.stringify(row));
+    delete next.entrySync;
+    next.credentials = (next.credentials || []).filter(function (cr: Json) {
+      return String((cr && cr.holder) || row.holder || '') !== person;
+    });
+    if (String(next.holder || '') === person) {
+      next.holder = String(((next.credentials || [])[0] || {}).holder || '');
+    }
+    next.updatedAt = this.nowIso();
+    if (!next.holder && !(next.credentials || []).length) {
+      register.delete(String(key));
+    } else {
+      this.put(String(key), next, row);
+    }
+    this.recordAudit('hardware-token.entry-removed',
+      String(c.actor || c.door || 'directory'), String(c.username || ''),
+      'Hardware token ' + key + ' was removed from the entry of ' +
+      String(c.username || '') + ', so its credentials of theirs are no ' +
+      'longer on the register', { key: String(key),
+                                  door: String(c.door || '') });
+    log.debug("Leaving HardwareTokens.entryRemoved(). Dropped.");
+    return { ok: true, changed: true };
+  }
+
   /**
    * The register rebuilt from the entries, which are the master
    * (`token_entries.rebuildIndexes()`), in the ambient realm.
@@ -1935,5 +2019,7 @@ export = {
   entryValueOf: HardwareTokens.entryValueOf,
   syncEntries: slot.forward('syncEntries'),
   rebuildFromEntries: slot.forward('rebuildFromEntries'),
+  entryValueFor: slot.forward('entryValueFor'),
+  entryRemoved: slot.forward('entryRemoved'),
   forgetForTests: slot.forward('forgetForTests')
 };

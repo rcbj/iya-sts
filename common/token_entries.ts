@@ -28,18 +28,39 @@
 //     imported and assigned (`common/yubiotp_store.ts`). Never its AES key,
 //     which is the person's `stsYubiOtpCredential`.
 //
-// **THE ENTRY IS THE MASTER; THE STORES ARE INDEXES.** Each module writes
-// the holder's entry FIRST and then its store (`hardware_tokens.register`,
-// `oath_tokens.inventory`, `yubiotp.inventory` and `yubiotp.publicIds`),
-// which stay because the questions that need them are not a person's: a
-// credential's token at a sign-in (`c:<kind>:<ref>`), a serial typed at a
-// claim, a YK-VAL public identity, the console's paged lists, a lost token's
-// retirement. On a conflict the entry wins: the manual job
-// `hardware-tokens.rebuild-index` rewrites every index row from the
-// entries holding these attributes (each module's `rebuildFromEntries()`),
-// so an index can be rebuilt whole from the directory. It is manual,
-// because the holders of an attribute no holder index names are a walk of
-// the realm's people (`holdersAsync()`), which no schedule should repeat.
+// **THE ENTRY IS THE MASTER; THE STORES ARE INDEXES** (rcbj, 2026-11-23:
+// "Be consistent. The user objects need to contain the master copy of the
+// credential data."), under the one rule every credential kind follows
+// (`common/entry_observer.ts`, which `ssh_issued.ts` and `openpgp_keys.ts`
+// share). The stores stay because the questions that need them are not a
+// person's: a credential's token at a sign-in (`c:<kind>:<ref>`), a serial
+// typed at a claim, a YK-VAL public identity, the console's paged lists, a
+// lost token's retirement.
+//
+//   * **THE ENTRY FIRST, THEN THE INDEX.** Each module writes the holder's
+//     entry and then its row (`put()`); while this library writes an entry
+//     its handler is told the write is its own and does nothing.
+//   * **CHANGE-DRIVEN.** Every write of a person's entry by another door —
+//     the console, `/admin-api`, SCIM, an `ldapmodify` — reaches this
+//     library's handler through `noteAccountChange()` for that one entry
+//     (`entryChanged()`). A value REMOVED is the token given up, and the
+//     module updates its index row for that entry (`entryRemoved()`): a
+//     hardware token's credentials of that person dropped from its row, so
+//     they are no longer evidence at a sign-in; an OATH or YubiKey OTP token
+//     retired, its credential removed and, for a YubiKey, its public
+//     identity dropped. A value ADDED or CHANGED is put back to what the
+//     index holds for that person (`entryValueFor()`), or taken off, and
+//     audited (STS-HWTOKEN-0017): a serial is recorded only from
+//     attestation, and a token is assigned only by its inventory.
+//   * **THE REBUILD IS RECOVERY, NOT UPKEEP.** The manual job
+//     `hardware-tokens.rebuild-index` rewrites every index row from the
+//     entries holding these attributes (each module's
+//     `rebuildFromEntries()`), so an index can be made again whole after a
+//     restore. It is an administrator's tool and never what keeps the
+//     indexes right day to day: it reads the holders page by page
+//     (`holdersAsync()`, the store's paged holder question in a windowed
+//     process, the realm's map in slices with the event loop given back
+//     between them), never on a request's path.
 //
 // **AN UNASSIGNED IMPORT HAS NO PERSON**, so its sealed seed stays in the
 // staging inventory until it is assigned or claimed; from then on the
@@ -76,6 +97,7 @@ import helpers = require('./helpers');
 import InstanceSlot = require('./instance_slot');
 import realms = require('./realms');
 import errorCodes = require('./error_codes');
+import entryObserver = require('./entry_observer');
 
 type Json = any;
 
@@ -118,6 +140,9 @@ class TokenEntries {
   private directory: TokenDirectory | null = null;
   // The realms whose backfill this process has finished (header).
   private backfilled: Record<string, boolean> = {};
+  // How many entry writes of this library's own are in progress: the
+  // observer is told of them inside the write, and ignores them (header).
+  private selfWrites = 0;
 
   /**
    * Builds the library over its dependencies.
@@ -262,7 +287,11 @@ class TokenEntries {
     const after: string[] = [];
     before.forEach(function (one: string): void {
       const read = TokenEntries.read(one);
-      if (read && String(read[field]) === key) {
+      // A value that is not ours goes with any write of the attribute.
+      if (!read) {
+        return;
+      }
+      if (String(read[field]) === key) {
         if (!found && text) {
           after.push(text);
         }
@@ -300,12 +329,15 @@ class TokenEntries {
       return 'done';
     }
     let written = false;
+    this.selfWrites += 1;
     try {
       written = this.directory !== null &&
         this.directory.write(String(found.dn), attribute, after) === true;
     } catch (e) {
       log.debug("Caught in TokenEntries.apply(): " + ((e && e.message) || e));
       written = false;
+    } finally {
+      this.selfWrites -= 1;
     }
     if (!written) {
       log.warn(codes.tag('STS-HWTOKEN-0015') + 'hardware tokens: ' +
@@ -556,6 +588,124 @@ class TokenEntries {
     return true;
   }
 
+  // THE MODULE WHOSE INDEX AN ATTRIBUTE IS.
+  private moduleFor(attribute: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering TokenEntries.moduleFor(). " + attribute);
+    const mods = this.deps.loadModules();
+    log.debug("Leaving TokenEntries.moduleFor().");
+    return attribute === ATTRIBUTES.hardware ? mods[0]
+      : (attribute === ATTRIBUTES.oath ? mods[1] : mods[2]);
+  }
+
+  /**
+   * THE ENTRY OBSERVER'S HANDLER (header, `common/entry_observer.ts`): a
+   * person's token attribute changed by a write of their entry. A write of
+   * this library's own is ignored. Of any other door's, a value removed is
+   * the token given up — the index row updated for this one entry by its
+   * module (`entryRemoved()`: a hardware token's credentials of this person
+   * dropped, an OATH or YubiKey OTP token retired) — and a value added or
+   * changed is put back to what the index holds for this person, or taken
+   * off, and audited: a serial is recorded only from attestation, and a
+   * token is assigned only by its inventory. In a promise job, after the
+   * write has returned.
+   *
+   * @param change - the observer's change
+   * @returns the promise of the work, or null when there was none
+   */
+  entryChanged(change: Json): Promise<Json> | null {
+    const { log } = this.deps;
+    log.debug("Entering TokenEntries.entryChanged().");
+    if (this.selfWrites > 0) {
+      log.debug("Leaving TokenEntries.entryChanged(). Our own write.");
+      return null;
+    }
+    const c = change || {};
+    const attribute = String(c.attribute || '');
+    const field = TokenEntries.check(attribute);
+    const index = function byKey(values: string[]): Record<string, string> {
+      log.debug("Entering byKey().");
+      const out: Record<string, string> = {};
+      (values || []).forEach(function (one: string): void {
+        const read = TokenEntries.read(one);
+        if (read && read[field]) {
+          out[String(read[field])] = String(one);
+        }
+      });
+      log.debug("Leaving byKey().");
+      return out;
+    };
+    const before = index(c.before);
+    const after = index(c.after);
+    const removed = Object.keys(before).filter(function (k: string) {
+      return after[k] === undefined;
+    });
+    const added = Object.keys(after).filter(function (k: string) {
+      return before[k] !== after[k];
+    });
+    if (!removed.length && !added.length) {
+      log.debug("Leaving TokenEntries.entryChanged(). Nothing moved.");
+      return null;
+    }
+    const mod = this.moduleFor(attribute);
+    const work = this.inRealm(String(c.realm || ''), async (): Promise<Json> => {
+      let given = 0;
+      let refused = 0;
+      for (const key of removed) {
+        const answer = await mod.entryRemoved(key, c);
+        given += answer && answer.changed ? 1 : 0;
+      }
+      if (!c.deleted) {
+        for (const key of added) {
+          const wanted = await mod.entryValueFor(key, c);
+          if (wanted && TokenEntries.stored(wanted) === after[key]) {
+            continue;
+          }
+          refused += 1;
+          this.project(String(c.subject || c.username || ''), attribute, key,
+                       wanted || null);
+          require('./audit').record({
+            category: 'authentication', action: 'hardware-token.entry-refused',
+            actor: String(c.actor || c.door || 'directory'),
+            target: String(c.username || ''), outcome: 'refused',
+            errorCode: 'STS-HWTOKEN-0017',
+            summary: 'A token written onto the entry of ' +
+                     String(c.username || '') + ' (' + attribute + ') was ' +
+                     (wanted ? 'put back as recorded' : 'taken off') +
+                     ': a token is recorded only from attestation or an ' +
+                     'assignment',
+            detail: { key: key, door: String(c.door || '') }
+          });
+        }
+      }
+      if (refused) {
+        log.warn(this.deps.errorCodes.tag('STS-HWTOKEN-0017') + 'hardware ' +
+                 'tokens: ' + refused + ' ' + attribute + ' value(s) written ' +
+                 'onto ' + c.dn + ' were not what was recorded; put back.');
+      }
+      return { given: given, refused: refused };
+    }).catch((e: Json): Json => {
+      log.error(this.deps.errorCodes.tag('STS-HWTOKEN-0016') + 'hardware ' +
+                'tokens: a write of ' + String(c.dn || '') + ' could not be ' +
+                'applied to the index: ' + ((e && e.message) || e));
+      return { given: 0, refused: 0, failed: true };
+    });
+    log.debug("Leaving TokenEntries.entryChanged(). " + removed.length +
+              " removed, " + added.length + " added.");
+    return work;
+  }
+
+  // Runs `fn` in a realm, in a promise job.
+  private inRealm<T>(realmId: string, fn: () => Promise<T>): Promise<T> {
+    const { log, realms: r } = this.deps;
+    log.debug("Entering TokenEntries.inRealm().");
+    log.debug("Leaving TokenEntries.inRealm().");
+    return Promise.resolve().then(function (): Promise<T> {
+      return realmId === String(r.currentId() || '') ? fn()
+                                                     : r.run(realmId, fn);
+    });
+  }
+
   /**
    * Forgets the backfill marks; for tests only.
    */
@@ -569,7 +719,17 @@ class TokenEntries {
 const slot = new InstanceSlot<TokenEntries>(
   'common/token_entries',
   () => new TokenEntries(TokenEntries.defaultDeps()),
-  null,
+  // THE OBSERVER'S HANDLERS (header): the one mechanism every credential
+  // kind shares, `ssh_issued.ts`'s and `openpgp_keys.ts`'s beside these.
+  function (instance: TokenEntries): void {
+    ATTRIBUTE_NAMES.forEach(function (attribute: string): void {
+      entryObserver.register(attribute, {
+        changed: function (change: Json): void {
+          instance.entryChanged(change);
+        }
+      });
+    });
+  },
   helpers.log);
 
 slot.buildNowUnlessDeferred();
@@ -594,5 +754,6 @@ export = {
   holdersOf: slot.forward('holdersOf'),
   syncEntries: slot.forward('syncEntries'),
   rebuildIndexes: slot.forward('rebuildIndexes'),
+  entryChanged: slot.forward('entryChanged'),
   forgetForTests: slot.forward('forgetForTests')
 };

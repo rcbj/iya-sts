@@ -551,6 +551,14 @@
     "en": "f7fb5461e2325e1e",
     "text": "En maskinvarutoken anmäldes förlorad och dess inloggningsuppgifter återkallades"
   },
+  "audit.actions.hardware-token.entry-removed.label": {
+    "en": "b0c30c4d2648746a",
+    "text": "En maskinvarutoken togs bort från en persons post, och personens autentiseringsuppgifter på den lämnade registret"
+  },
+  "audit.actions.hardware-token.entry-refused.label": {
+    "en": "4cbaa7f21b4532bb",
+    "text": "En token som skrevs till en persons post avvisades och återställdes som den registrerats"
+  },
   "audit.actions.oath-token.import.label": {
     "en": "4da380e22dff30ec",
     "text": "En leverantörs PSKC-fröfil importerades, eller avvisades"
@@ -567,6 +575,10 @@
     "en": "92d69a1a2d848892",
     "text": "En ej tilldelad OATH-token togs bort från inventariet"
   },
+  "audit.actions.oath-token.retire.label": {
+    "en": "eb17373466c15b1b",
+    "text": "En tilldelad OATH-token drogs in eftersom den togs bort från innehavarens post"
+  },
   "audit.actions.yubiotp.import.label": {
     "en": "6f92401fa557c5e6",
     "text": "En CSV med YubiKey-OTP importerades, eller avvisades"
@@ -582,6 +594,10 @@
   "audit.actions.yubiotp.remove.label": {
     "en": "a4a9aedd10cc2813",
     "text": "En ej tilldelad YubiKey-OTP togs bort från inventariet"
+  },
+  "audit.actions.yubiotp.retire.label": {
+    "en": "3ec9c9ee79cdc845",
+    "text": "En tilldelad YubiKey OTP drogs in eftersom den togs bort från innehavarens post"
   },
   "audit.actions.yubiotp.client-add.label": {
     "en": "40676cb783f36097",

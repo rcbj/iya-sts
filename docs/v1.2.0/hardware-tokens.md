@@ -110,15 +110,31 @@ The hardware token register and the OATH and YubiKey OTP inventories are
 not one person's: which token holds the credential at a sign-in, a serial
 typed at a claim, a YubiKey's public identity at YK-VAL, the console's
 lists, and a lost report. A change is written to the entry first and to
-the index after. An index row whose entry could not be written is written
-again by the `hardware-tokens.entries` scheduler job, every ten minutes.
+the index after, the same order as for S/MIME and SSH user certificates.
 
-**Rebuilding an index.** Where an index disagrees with the entries — after
-a restore, say — run the manual job `hardware-tokens.rebuild-index` from
-**Monitoring → Scheduler**. It rewrites the register's rows, the inventories'
-assigned and retired rows and the YubiKey public identities from the
-entries. The job walks the realm's people, which is why it never runs on a
-schedule.
+**Every write of the entry keeps the indexes in step**, whichever door
+made it — the console, `/admin-api`, SCIM or an `ldapmodify`:
+
+- **Removing a value gives the token up.** A hardware token's credentials
+  of that person leave the register, so they no longer count as hardware
+  evidence at a sign-in. An OATH or YubiKey OTP token is retired: its
+  credential is removed, a YubiKey's public identity is dropped, and the
+  token is not assigned again. The audit log names who removed it.
+- **Adding or changing a value is refused.** The value is put back to what
+  the register or inventory recorded for that person, or taken off, and
+  audited (`STS-HWTOKEN-0017`). A serial is recorded only from attestation,
+  and a token is assigned only from its inventory.
+
+An index row whose entry could not be written is written again by the
+`hardware-tokens.entries` scheduler job, every ten minutes.
+
+**Rebuilding an index** is a recovery tool, not how the indexes stay
+right. Where an index disagrees with the entries — after a restore, say —
+run the manual job `hardware-tokens.rebuild-index` from **Monitoring →
+Scheduler**. It rewrites the register's rows, the inventories' assigned and
+retired rows and the YubiKey public identities from the entries. It reads
+the realm's people a page at a time in the background, never on a request,
+and never runs on a schedule.
 
 An **unassigned** imported token belongs to nobody yet. Its sealed secret
 stays in the inventory until it is assigned or claimed, and from then on

@@ -983,6 +983,67 @@ class OathTokens {
   }
 
   /**
+   * What the inventory holds for one person's value of a token (the entry
+   * observer's check, `token_entries.ts`), or null.
+   *
+   * @param key - the inventory key
+   * @param change - the observer's change (`subject` the person)
+   * @returns a promise of the value, or null
+   */
+  async entryValueFor(key: string, change: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering OathTokens.entryValueFor().");
+    const person = String((change && change.subject) || '')
+      .replace(/^urn:uuid:/i, '');
+    const row = await this.rowOf(String(key));
+    log.debug("Leaving OathTokens.entryValueFor().");
+    return row && person && String(row.holder || '') === person
+      ? OathTokens.entryValueOf(String(key), row) : null;
+  }
+
+  /**
+   * A token's value removed from its holder's entry by another door (the
+   * entry observer): the entry is the master, so the token is RETIRED — its
+   * credential removed when it is still this token's, as a lost report
+   * would — and the row no longer names a holder. The entry first: it is
+   * kept off, then the row is written.
+   *
+   * @param key - the inventory key
+   * @param change - the observer's change
+   * @returns a promise of `{ ok, changed }`
+   */
+  async entryRemoved(key: string, change: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering OathTokens.entryRemoved().");
+    const c = change || {};
+    const person = String(c.subject || '').replace(/^urn:uuid:/i, '');
+    const row = await this.rowOf(String(key));
+    if (!row || !person || String(row.holder || '') !== person) {
+      log.debug("Leaving OathTokens.entryRemoved(). Not theirs.");
+      return { ok: true, changed: false };
+    }
+    if (row.status === 'assigned') {
+      await this.retire(String(row.kind || ''), { ref: String(key) },
+                        { username: String(c.username || '') });
+    }
+    const entries = require('./token_entries');
+    entries.project(String(c.subject), entries.ATTRIBUTES.oath, String(key),
+                    null);
+    const fresh = (await this.rowOf(String(key))) || row;
+    const next = Object.assign({}, fresh, {
+      status: 'retired', holder: '', retiredFrom: person,
+      retiredAt: String(fresh.retiredAt || this.nowIso()) });
+    delete next.entrySync;
+    inventory.set(String(key), next);
+    this.recordAudit('oath-token.retire', String(c.actor || c.door ||
+      'directory'), String(c.username || ''), 'OATH token ' + key + ' was ' +
+      'retired: it was removed from the entry of ' + String(c.username || ''),
+      { key: String(key), door: String(c.door || '') });
+    log.debug("Leaving OathTokens.entryRemoved(). Retired.");
+    return { ok: true, changed: true };
+  }
+
+  /**
    * The inventory's assigned and retired rows rebuilt from the entries,
    * which are the master; a row the entries name and the inventory lost is
    * made again, without a secret.
@@ -1050,5 +1111,7 @@ export = {
   entryValueOf: OathTokens.entryValueOf,
   syncEntries: slot.forward('syncEntries'),
   rebuildFromEntries: slot.forward('rebuildFromEntries'),
+  entryValueFor: slot.forward('entryValueFor'),
+  entryRemoved: slot.forward('entryRemoved'),
   forgetForTests: slot.forward('forgetForTests')
 };

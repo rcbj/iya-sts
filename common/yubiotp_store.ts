@@ -885,6 +885,83 @@ class YubiOtpStore {
     return { ok: true, written: written, pending: pending };
   }
 
+  // The inventory's row of a serial, read from the store when this process
+  // does not hold it.
+  private async rowAsync(serial: string): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering YubiOtpStore.rowAsync().");
+    if (!inventory.get(serial)) {
+      try {
+        await inventory.warm([serial]);
+      } catch (e) {
+        log.debug("Caught in YubiOtpStore.rowAsync(): " +
+                  ((e && e.message) || e));
+        // The store cannot be asked: what this process holds decides.
+      }
+    }
+    log.debug("Leaving YubiOtpStore.rowAsync().");
+    return inventory.get(serial) || null;
+  }
+
+  /**
+   * What the inventory holds for one person's value of a token (the entry
+   * observer's check, `token_entries.ts`), or null.
+   *
+   * @param serial - the serial
+   * @param change - the observer's change (`username` the person)
+   * @returns a promise of the value, or null
+   */
+  async entryValueFor(serial: string, change: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering YubiOtpStore.entryValueFor().");
+    const row = await this.rowAsync(String(serial));
+    const who = String((change && change.username) || '');
+    log.debug("Leaving YubiOtpStore.entryValueFor().");
+    return row && who && String(row.holder || '') === who
+      ? YubiOtpStore.entryValueOf(String(serial), row) : null;
+  }
+
+  /**
+   * A token's value removed from its holder's entry by another door (the
+   * entry observer): the entry is the master, so the token is RETIRED —
+   * the credential removed when it is still this serial's and its public
+   * identity dropped, as a lost report would — and the row no longer names
+   * a holder. The entry first, then the row.
+   *
+   * @param serial - the serial
+   * @param change - the observer's change
+   * @returns a promise of `{ ok, changed }`
+   */
+  async entryRemoved(serial: string, change: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering YubiOtpStore.entryRemoved().");
+    const c = change || {};
+    const who = String(c.username || '');
+    const row = await this.rowAsync(String(serial));
+    if (!row || !who || String(row.holder || '') !== who) {
+      log.debug("Leaving YubiOtpStore.entryRemoved(). Not theirs.");
+      return { ok: true, changed: false };
+    }
+    if (row.status === 'assigned') {
+      await this.retire({ serial: String(serial) }, {}, { username: who });
+    }
+    const entries = require('./token_entries');
+    entries.project(String(c.subject || who), entries.ATTRIBUTES.yubiotp,
+                    String(serial), null);
+    const fresh = inventory.get(String(serial)) || row;
+    const next = Object.assign({}, fresh, {
+      status: 'retired', holder: '', retiredFrom: who,
+      retiredAt: String(fresh.retiredAt || this.nowIso()) });
+    delete next.entrySync;
+    inventory.set(String(serial), next);
+    this.recordAudit('yubiotp.retire', String(c.actor || c.door ||
+      'directory'), who, 'YubiKey OTP ' + serial + ' was retired: it was ' +
+      'removed from the entry of ' + who, { serial: String(serial),
+                                            door: String(c.door || '') });
+    log.debug("Leaving YubiOtpStore.entryRemoved(). Retired.");
+    return { ok: true, changed: true };
+  }
+
   /**
    * The inventory's assigned and retired rows, and the public-identity
    * index of the assigned ones, rebuilt from the entries, which are the
@@ -971,5 +1048,7 @@ export = {
   sweepNonces: slot.forward('sweepNonces'),
   entryValueOf: YubiOtpStore.entryValueOf,
   syncEntries: slot.forward('syncEntries'),
-  rebuildFromEntries: slot.forward('rebuildFromEntries')
+  rebuildFromEntries: slot.forward('rebuildFromEntries'),
+  entryValueFor: slot.forward('entryValueFor'),
+  entryRemoved: slot.forward('entryRemoved')
 };

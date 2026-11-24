@@ -551,6 +551,14 @@
     "en": "f7fb5461e2325e1e",
     "text": "एक हार्डवेयर टोकन खोया हुआ बताया गया और उसके क्रेडेंशियल हटाए गए"
   },
+  "audit.actions.hardware-token.entry-removed.label": {
+    "en": "b0c30c4d2648746a",
+    "text": "किसी व्यक्ति की प्रविष्टि से एक हार्डवेयर टोकन हटाया गया, और उस पर उनके क्रेडेंशियल रजिस्टर से हट गए"
+  },
+  "audit.actions.hardware-token.entry-refused.label": {
+    "en": "4cbaa7f21b4532bb",
+    "text": "किसी व्यक्ति की प्रविष्टि पर लिखा गया टोकन अस्वीकार किया गया और दर्ज रूप में लौटा दिया गया"
+  },
   "audit.actions.oath-token.import.label": {
     "en": "4da380e22dff30ec",
     "text": "किसी विक्रेता की PSKC सीड फ़ाइल आयात की गई, या अस्वीकार की गई"
@@ -567,6 +575,10 @@
     "en": "92d69a1a2d848892",
     "text": "असाइन न किया गया OATH टोकन सूची से हटाया गया"
   },
+  "audit.actions.oath-token.retire.label": {
+    "en": "eb17373466c15b1b",
+    "text": "एक सौंपा गया OATH टोकन सेवानिवृत्त किया गया क्योंकि उसे उसके धारक की प्रविष्टि से हटाया गया"
+  },
   "audit.actions.yubiotp.import.label": {
     "en": "6f92401fa557c5e6",
     "text": "YubiKey OTP की CSV आयात की गई, या अस्वीकार की गई"
@@ -582,6 +594,10 @@
   "audit.actions.yubiotp.remove.label": {
     "en": "a4a9aedd10cc2813",
     "text": "असाइन न किया गया YubiKey OTP सूची से हटाया गया"
+  },
+  "audit.actions.yubiotp.retire.label": {
+    "en": "3ec9c9ee79cdc845",
+    "text": "एक सौंपा गया YubiKey OTP सेवानिवृत्त किया गया क्योंकि उसे उसके धारक की प्रविष्टि से हटाया गया"
   },
   "audit.actions.yubiotp.client-add.label": {
     "en": "40676cb783f36097",

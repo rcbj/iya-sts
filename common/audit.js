@@ -694,6 +694,12 @@ const ACTIONS = [
            'one who held it' },
   { action: 'hardware-token.lost', category: 'directory',
     label: 'A hardware token was reported lost and its credentials retired' },
+  { action: 'hardware-token.entry-removed', category: 'directory',
+    label: 'A hardware token was removed from a person\'s entry, ' +
+           'and their credentials on it left the register' },
+  { action: 'hardware-token.entry-refused', category: 'directory',
+    label: 'A token written onto a person\'s entry was refused and ' +
+           'put back as recorded' },
   // THE OATH TOKEN INVENTORY (#1955 P4): a PSKC seed file imported (or
   // refused), a token assigned or claimed, a claim refused, and an
   // unassigned token removed. `common/oath_tokens.ts` writes all four.
@@ -705,6 +711,9 @@ const ACTIONS = [
     label: 'A person\'s claim of an imported OATH token was refused' },
   { action: 'oath-token.remove', category: 'directory',
     label: 'An unassigned OATH token was removed from the inventory' },
+  { action: 'oath-token.retire', category: 'directory',
+    label: 'An assigned OATH token was retired because it was ' +
+           'removed from its holder\'s entry' },
   // THE YUBIKEY OTP INVENTORY (#1955 P5). `common/yubiotp_store.ts` writes
   // each of these.
   { action: 'yubiotp.import', category: 'directory',
@@ -716,6 +725,9 @@ const ACTIONS = [
            'refused' },
   { action: 'yubiotp.remove', category: 'directory',
     label: 'An unassigned YubiKey OTP was removed from the inventory' },
+  { action: 'yubiotp.retire', category: 'directory',
+    label: 'An assigned YubiKey OTP was retired because it was ' +
+           'removed from its holder\'s entry' },
   { action: 'yubiotp.client-add', category: 'directory',
     label: 'A YK-VAL client was created' },
   { action: 'yubiotp.client-remove', category: 'directory',

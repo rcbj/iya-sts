@@ -23385,6 +23385,13 @@ const CODES = [
       'the token indexes from the entries, could not read a store or the ' +
       'directory; nothing more was done this run (#2051).',
     spec: 'none — logged' },
+  { code: 'STS-HWTOKEN-0017',
+    summary: 'A hardware, OATH or YubiKey OTP token value written onto a ' +
+      'person\'s entry by a door other than its own module was not what ' +
+      'the index recorded for them, so it was put back as recorded or ' +
+      'taken off, and audited with the writer: a serial is recorded only ' +
+      'from attestation and a token assigned only by its inventory (#2051).',
+    spec: 'none — audited' },
   // ===== OATH ==============================================================
   { code: 'STS-OATH-0001',
     summary: 'An HOTP code (or a pair given to resynchronise) was not ' +

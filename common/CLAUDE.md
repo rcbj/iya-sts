@@ -8412,10 +8412,16 @@ secret. `hardware_tokens.ts` (`put()`), `oath_tokens.ts` and
 their store, which is an index; a row whose entry write failed is marked
 `entrySync: 'pending'` (`e:pending`), and `hardware-tokens.entries` writes
 it again — its first run in a process the backfill of every row with a
-holder. On a conflict the entry wins: the manual job
-`hardware-tokens.rebuild-index` rewrites the register, the inventories'
-assigned and retired rows and `yubiotp.publicIds` from the entries'
-holders (`holdersAsync()`, a walk, so manual only). An unassigned import
+holder. **Change-driven, through `entry_observer.ts`, the mechanism the
+SSH and S/MIME kinds share**: a foreign write REMOVING a value updates that
+entry's index row (`entryRemoved()`: a hardware token's credentials of the
+person dropped, an OATH or YubiKey OTP token retired) and one ADDING or
+CHANGING a value is put back to what the index holds for the person
+(`entryValueFor()`), or taken off, and audited (STS-HWTOKEN-0017). The
+manual job `hardware-tokens.rebuild-index` rewrites the register, the
+inventories' assigned and retired rows and `yubiotp.publicIds` from the
+entries' holders (`holdersAsync()`, paged) — recovery after a restore,
+never the upkeep. An unassigned import
 has no person and keeps its sealed seed in the inventory until assigned or
 claimed. The directory is a rule 3e slot, `token_entries.setDirectory()`,
 filled by `ldap/ldap_server.js`, for the reason `ssh_issued.ts`'s is.

@@ -551,6 +551,14 @@
     "en": "f7fb5461e2325e1e",
     "text": "أُبلغ عن فقد رمز مادي وأُبطلت بيانات اعتماده"
   },
+  "audit.actions.hardware-token.entry-removed.label": {
+    "en": "b0c30c4d2648746a",
+    "text": "أُزيل رمز مادي من إدخال شخص، وغادرت بيانات اعتماده عليه السجل"
+  },
+  "audit.actions.hardware-token.entry-refused.label": {
+    "en": "4cbaa7f21b4532bb",
+    "text": "رُفض رمز كُتب على إدخال شخص وأُعيد كما هو مسجل"
+  },
   "audit.actions.oath-token.import.label": {
     "en": "4da380e22dff30ec",
     "text": "استُورد ملف بذور PSKC لمورّد، أو رُفض"
@@ -567,6 +575,10 @@
     "en": "92d69a1a2d848892",
     "text": "أُزيل رمز OATH غير مُسنَد من المخزون"
   },
+  "audit.actions.oath-token.retire.label": {
+    "en": "eb17373466c15b1b",
+    "text": "سُحب رمز OATH مخصص لأنه أُزيل من إدخال حامله"
+  },
   "audit.actions.yubiotp.import.label": {
     "en": "6f92401fa557c5e6",
     "text": "استُورد ملف CSV لـ OTP الخاص بـ YubiKey، أو رُفض"
@@ -582,6 +594,10 @@
   "audit.actions.yubiotp.remove.label": {
     "en": "a4a9aedd10cc2813",
     "text": "أُزيل OTP غير مُسنَد لـ YubiKey من المخزون"
+  },
+  "audit.actions.yubiotp.retire.label": {
+    "en": "3ec9c9ee79cdc845",
+    "text": "سُحب YubiKey OTP مخصص لأنه أُزيل من إدخال حامله"
   },
   "audit.actions.yubiotp.client-add.label": {
     "en": "40676cb783f36097",

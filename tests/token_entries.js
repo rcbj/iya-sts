@@ -119,9 +119,94 @@ async function run(t) {
           '1i. an OATH token\'s value carries its description, no secret');
   t.check(yv.serial === '123' && yv.publicId === 'cccc' &&
           !('secret' in yv), '1j. a YubiKey OTP\'s value carries no AES key');
+  await checkObserver(t, realm);
   tokens.forgetForTests();
   entries.forgetForTests();
   log.debug("Leaving run().");
+}
+
+// Gives the promise jobs a handler started time to finish.
+async function settled(test) {
+  log.debug("Entering settled().");
+  for (let i = 0; i < 200; i++) {
+    if (await test()) {
+      log.debug("Leaving settled(). Held.");
+      return true;
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 10);
+    });
+  }
+  log.debug("Leaving settled(). Never held.");
+  return false;
+}
+
+// The entry's attributes, with one attribute's values replaced, written
+// back through `writePerson()` — a directory write by another door, which
+// reaches `noteAccountChange()` as an LDAP modify does.
+function rewrite(name, attribute, values) {
+  log.debug("Entering rewrite().");
+  const view = ldap.objectFor(name);
+  const attrs = Object.assign({}, view.entry.attributes || view.entry);
+  Object.keys(attrs).forEach(function (key) {
+    if (key.toLowerCase() === attribute.toLowerCase()) {
+      delete attrs[key];
+    }
+  });
+  if (values) {
+    attrs[attribute] = values;
+  }
+  const out = ldap.writePerson(view.dn, attrs);
+  log.debug("Leaving rewrite().");
+  return out;
+}
+
+// THE ONE OBSERVER (#2051): all five credential kinds are handed over by
+// `common/entry_observer.ts`, and a directory write by another door keeps
+// the index right without the manual rebuild.
+async function checkObserver(t, realm) {
+  log.debug("Entering checkObserver().");
+  require('../common/ssh_issued');
+  require('../common/openpgp_keys');
+  const observer = require('../common/entry_observer');
+  const five = ['stsHardwareToken', 'stsOathToken', 'stsSshUserCertificate',
+                'stsYubiOtpToken', 'userSMIMECertificate'];
+  t.equal(observer.registered().join(','), five.join(','),
+          '2a. one observer holds the handlers of all five credential kinds');
+  const told = observer.entryChanged({ kind: 'updated', realm: realm,
+    dn: 'uid=nobody-' + RUN + ',ou=users', username: 'nobody-' + RUN,
+    subject: '', before: {},
+    after: { stshardwaretoken: ['{}'], stsoathtoken: ['{}'],
+             stsyubiotptoken: ['{}'], stssshusercertificate: ['{}'],
+             'usersmimecertificate;binary': ['x'] } });
+  t.equal(told.slice().sort().join(','), five.join(','),
+          '2b. a write moving each of the five is handed to each owner');
+  const BEA = 'tke-bea-' + RUN;
+  ldap.createUser(BEA, { invent: false, attributes: {} });
+  const key = 'yubico/tkb-' + RUN;
+  const made = tokens.recordAttested({
+    username: BEA, vendor: 'Yubico AB', serial: 'tkb-' + RUN,
+    credential: { kind: 'fido', ref: 'b-' + RUN },
+    evidence: { source: 'fido-enterprise-attestation' } });
+  t.check(made.ok && valuesOn(BEA, 'stsHardwareToken').length === 1,
+          'precondition: a token on the entry of ' + BEA);
+  rewrite(BEA, 'stsHardwareToken', null);
+  t.check(await settled(async function () {
+    return tokens.byKey(key) === null;
+  }), '2c. a directory write removing the token updates the register at ' +
+      'once, with no rebuild: nobody holds it, so it is gone',
+          JSON.stringify(tokens.byKey(key)));
+  const invented = entries.stored({ key: 'yubico/invented-' + RUN,
+    vendor: 'yubico', serial: 'invented-' + RUN, holder: true,
+    status: 'active', credentials: [{ kind: 'fido', ref: 'z' }] });
+  rewrite(BEA, 'stsHardwareToken', [invented]);
+  t.check(await settled(async function () {
+    return valuesOn(BEA, 'stsHardwareToken').length === 0;
+  }) && tokens.byKey('yubico/invented-' + RUN) === null,
+          '2d. a token written onto the entry by another door is taken off ' +
+          'again and makes no register row: a serial comes only from ' +
+          'attestation');
+  log.debug("Leaving checkObserver().");
 }
 
 module.exports = {
