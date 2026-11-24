@@ -251,6 +251,8 @@ const EXACT: Record<string, string> = {
   'xacml-tab-pep-clusters': 'remote-pep.html#remote-pep-clusters',
   // An application's page: the remote PEP routes in front of it (#1760).
   'tab-pep-routes': 'remote-pep.html',
+  // An application's page: the embedded remote PEPs bound to it (#2025).
+  'tab-embedded-peps': 'remote-pep.html#an-embedded-peps-application',
   // A remote PEP's page (#1760): its settings and its reverse proxy.
   'xacml-pep-tab-settings':
     'remote-pep.html#the-settings-this-service-sets-for-it',

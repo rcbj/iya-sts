@@ -1049,5 +1049,18 @@
   "tip.credential.csr": "A PKCS #10 request signed with the key to certify: EC P-256 (preferred) or RSA of 2048 bits or more. Its subject and names are ignored; the certificate names the entry.",
   "tip.credential.load": "Read a request file into the box above, in the browser. Nothing is sent until you certify.",
   "tip.credential.revokePrevious": "Off by default: a running PEP keeps its old key until it is moved onto the new one. On, every other valid RFC 7523 key of the entry goes on its authority&rsquo;s revocation list.",
-  "tip.credential.submit": "Sends issue-pep-credential. The answer shows the certificate and the environment to start the PEP with, once."
+  "tip.credential.submit": "Sends issue-pep-credential. The answer shows the certificate and the environment to start the PEP with, once.",
+  "pepPage.th.application": "Embedded in",
+  "pepPage.application.none": "no application",
+  "tip.overview.application": "The application an embedded PEP is bound to, held on its entry. A registration as an embedded PEP is refused unless it names this application.",
+  "binding.legend": "Embedded in an application",
+  "binding.lead": "An embedded PEP runs inside an application, through an authentication library. Bind its service account to that one application; remove the binding when the PEP is no longer embedded there.",
+  "binding.application": "Application identifier",
+  "tip.binding.application": "The application’s identifier in this realm’s registry.",
+  "binding.submit": "Bind",
+  "tip.binding.submit": "Write the binding on the PEP’s entry, replacing any it has.",
+  "binding.clear": "Remove the binding",
+  "tip.binding.clear": "Take the binding off the PEP’s entry.",
+  "credential.application": "Embedded in application (optional)",
+  "tip.credential.application": "Also bind the PEP to this application, in the same call, once the key is certified. Leave it empty for a PEP that is not embedded in an application."
 }

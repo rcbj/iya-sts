@@ -1009,6 +1009,8 @@
   "protection.apostrophe": "يحتوي اسم عنصر أو نطاق أسماء على فاصلة عليا لا يستطيع تعبير في هذه المجموعة الجزئية وضعها بين علامتي اقتباس.",
   "protection.target": "الحقل",
   "protection.notDrawn": "الحقل {field} ليس في هذه الصفحة.",
+  "embeddedPeps.tab": "PEP المضمَّنة",
+  "embeddedPeps.lead": "هذه الـ PEP البعيدة مضمَّنة في هذا التطبيق عبر مكتبة مصادقة، ومرتبطة به. يُربط كل منها ويُفك ربطه في صفحته الخاصة.",
   "protection.general": "عام",
   "protection.encryptionHeading": "تشفير الرسائل",
   "protection.signingHeading": "توقيع الرسائل",

@@ -1191,6 +1191,10 @@
     "en": "b86f230b79b40252",
     "text": "遠端 PEP 的斷言金鑰已根據其請求完成認證"
   },
+  "audit.actions.xacml.pep.binding.label": {
+    "en": "a254d6c56c6f82ac",
+    "text": "嵌入式遠端 PEP 已繫結至其應用程式，或已解除繫結"
+  },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
     "text": "遠端 PEP 向 PIP 查詢主體的屬性"

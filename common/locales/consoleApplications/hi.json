@@ -1009,6 +1009,8 @@
   "protection.apostrophe": "किसी एलिमेंट या नेमस्पेस के नाम में अपॉस्ट्रॉफ़ी है, जिसे इस उपसमुच्चय का व्यंजक उद्धृत नहीं कर सकता।",
   "protection.target": "फ़ील्ड",
   "protection.notDrawn": "{field} इस पृष्ठ पर नहीं है।",
+  "embeddedPeps.tab": "एम्बेडेड PEP",
+  "embeddedPeps.lead": "ये रिमोट PEP एक प्रमाणीकरण लाइब्रेरी के माध्यम से इस एप्लिकेशन में एम्बेड हैं, और इससे बंधे हैं। प्रत्येक को उसके अपने पृष्ठ पर बाँधा और खोला जाता है।",
   "protection.general": "सामान्य",
   "protection.encryptionHeading": "संदेश एन्क्रिप्शन",
   "protection.signingHeading": "संदेश हस्ताक्षर",

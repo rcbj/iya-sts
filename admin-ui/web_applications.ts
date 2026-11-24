@@ -1500,6 +1500,12 @@ class ApplicationsPage {
           label: t.text('consoleApplications.pepRoutes.tab'),
           html: ApplicationsPage.applicationPepRoutesSection(t,
             json.page.pepRoutes || []) },
+        // THE EMBEDDED REMOTE PEPS BOUND TO IT (#2025): read only, each
+        // linked to its own page, where the binding is set and removed.
+        { id: 'tab-embedded-peps',
+          label: t.text('consoleApplications.embeddedPeps.tab'),
+          html: ApplicationsPage.applicationEmbeddedPepsSection(t,
+            json.page.embeddedPeps || []) },
         // THE METADATA REFRESH, the only control on this page that reaches off
         // this machine, drawn only for an application that names a URL — see
         // sp_metadata.ts.
@@ -5531,6 +5537,26 @@ class ApplicationsPage {
           '</code></td><td><code>' + kit.esc(one.path) + '</code></td><td>' +
           kit.esc((one.mechanisms || []).join(', ')) + '</td></tr>';
       }).join('') + '</table>');
+  }
+
+  /**
+   * The embedded remote PEPs bound to an application (#2025), each linked to
+   * its own page; nothing when none is.
+   *
+   * @param t - the translator
+   * @param peps - the PEPs' usernames
+   * @returns the section, or '' when none is bound
+   */
+  static applicationEmbeddedPepsSection(t, peps) {
+    if (!peps.length) {
+      return '';
+    }
+    return kit.frame('<p>' + t.html('consoleApplications.embeddedPeps.lead') +
+      '</p><ul>' + peps.map(function (one) {
+        return '<li><a href="/admin/xacml/pep?pep=' +
+          kit.esc(encodeURIComponent(String(one))) + '"><code>' +
+          kit.esc(String(one)) + '</code></a></li>';
+      }).join('') + '</ul>');
   }
 
   static applicationRolesSection(row, state, carryBack, t) {

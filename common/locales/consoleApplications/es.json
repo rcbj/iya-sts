@@ -1009,6 +1009,8 @@
   "protection.apostrophe": "Un nombre de elemento o de espacio de nombres contiene un apóstrofo, que una expresión de este subconjunto no puede entrecomillar.",
   "protection.target": "Campo",
   "protection.notDrawn": "{field} no está en esta página.",
+  "embeddedPeps.tab": "PEP integrados",
+  "embeddedPeps.lead": "Estos PEP remotos están integrados en esta aplicación mediante una biblioteca de autenticación, y vinculados a ella. Cada uno se vincula y desvincula en su propia página.",
   "protection.general": "General",
   "protection.encryptionHeading": "Cifrado de mensajes",
   "protection.signingHeading": "Firma de mensajes",

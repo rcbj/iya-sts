@@ -1009,6 +1009,8 @@
   "protection.apostrophe": "Un nom d'élément ou d'espace de noms contient une apostrophe, qu'une expression de ce sous-ensemble ne peut pas mettre entre guillemets.",
   "protection.target": "Champ",
   "protection.notDrawn": "{field} n'est pas sur cette page.",
+  "embeddedPeps.tab": "PEP intégrés",
+  "embeddedPeps.lead": "Ces PEP distants sont intégrés dans cette application au moyen d’une bibliothèque d’authentification, et liés à elle. Chacun est lié et délié sur sa propre page.",
   "protection.general": "Général",
   "protection.encryptionHeading": "Chiffrement des messages",
   "protection.signingHeading": "Signature des messages",

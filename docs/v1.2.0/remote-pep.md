@@ -2802,6 +2802,17 @@ The PEP embedded in an application by the authentication libraries carries its o
 
 `README.md` there gives the format, how an answer is compared, and the licences: the cases are Apache-2.0 like the suite they come from, and the rest is MIT.
 
+## An embedded PEP's application
+
+A PEP can also run inside an application, embedded through an authentication library ([#1206](https://github.com/rcbj/iya-sts/issues/1206)). It still signs in as its own service account, with its own key, exactly as above. What it adds is a **binding**: its entry names the one application it is embedded in.
+
+- **Set it** on the PEP's page (Overview, *Embedded in an application*), with `POST /admin-api/xacml/set-pep-application` (`name`, `application`), or in the same call that certifies its key (`issue-pep-credential` with `application`).
+- **Remove it** with *Remove the binding* or `POST /admin-api/xacml/clear-pep-application`. Removing a binding that is not there changes nothing.
+- **Who may be bound**: an entry in this realm's `ou=users` (`STS-XACML-0334`) that is a service account holding `REMOTE_PEPS` (`STS-XACML-0335`), to an application in this realm's registry (`STS-XACML-0336`). No registration is needed first.
+- **One application per PEP.** Binding to another replaces the first.
+- **Deleting the application removes its bindings**, each with an audit row, so an application registered later under the same identifier inherits none.
+- The application's page lists the PEPs bound to it (*Embedded PEPs*). Every change is audited as `xacml.pep.binding`.
+
 ## See also
 
 - [Authorization overview](authorization.md) — every authorization decision this service makes, and where each is documented

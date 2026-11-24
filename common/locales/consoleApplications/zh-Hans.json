@@ -1009,6 +1009,8 @@
   "protection.apostrophe": "元素名或命名空间名中含有撇号，此子集中的表达式无法为其加引号。",
   "protection.target": "字段",
   "protection.notDrawn": "{field} 不在此页面上。",
+  "embeddedPeps.tab": "嵌入式 PEP",
+  "embeddedPeps.lead": "这些远程 PEP 通过身份验证库嵌入在此应用中，并绑定到它。每个 PEP 在其自己的页面上绑定和解除绑定。",
   "protection.general": "常规",
   "protection.encryptionHeading": "消息加密",
   "protection.signingHeading": "消息签名",

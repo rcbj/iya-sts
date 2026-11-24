@@ -1049,5 +1049,18 @@
   "tip.credential.csr": "Isang PKCS #10 request na nilagdaan ng key na ise-certify: EC P-256 (mas mainam) o RSA na 2048 bits o higit pa. Binabalewala ang subject at mga pangalan nito; ang entry ang pinangangalanan ng certificate.",
   "tip.credential.load": "Basahin ang isang request file papunta sa kahon sa itaas, sa browser. Walang ipapadala hangga’t hindi ka nagse-certify.",
   "tip.credential.revokePrevious": "Naka-off bilang default: pinapanatili ng tumatakbong PEP ang luma nitong key hanggang mailipat ito sa bago. Kapag naka-on, mapupunta sa revocation list ng authority nito ang bawat iba pang valid na RFC 7523 key ng entry.",
-  "tip.credential.submit": "Ipinapadala ang issue-pep-credential. Isang beses na ipinapakita ng sagot ang certificate at ang environment na gagamitin sa pagsisimula ng PEP."
+  "tip.credential.submit": "Ipinapadala ang issue-pep-credential. Isang beses na ipinapakita ng sagot ang certificate at ang environment na gagamitin sa pagsisimula ng PEP.",
+  "pepPage.th.application": "Naka-embed sa",
+  "pepPage.application.none": "walang application",
+  "tip.overview.application": "Ang application na nakatali sa isang naka-embed na PEP, nakatago sa entry nito. Tatanggihan ang pagpaparehistro bilang naka-embed na PEP kung hindi nito pinangangalanan ang application na ito.",
+  "binding.legend": "Naka-embed sa isang application",
+  "binding.lead": "Tumatakbo ang naka-embed na PEP sa loob ng isang application, sa pamamagitan ng isang authentication library. Itali ang service account nito sa iisang application na iyon; alisin ang pagkakatali kapag hindi na roon naka-embed ang PEP.",
+  "binding.application": "Identifier ng application",
+  "tip.binding.application": "Ang identifier ng application sa registry ng realm na ito.",
+  "binding.submit": "Itali",
+  "tip.binding.submit": "Isulat ang pagkakatali sa entry ng PEP, papalitan ang mayroon ito.",
+  "binding.clear": "Alisin ang pagkakatali",
+  "tip.binding.clear": "Alisin ang pagkakatali sa entry ng PEP.",
+  "credential.application": "Naka-embed sa application (opsyonal)",
+  "tip.credential.application": "Itali rin ang PEP sa application na ito, sa parehong tawag, kapag na-certify na ang key. Iwanang blangko para sa PEP na hindi naka-embed sa anumang application."
 }

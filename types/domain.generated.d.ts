@@ -769,6 +769,7 @@ declare namespace IyaDomain {
     defaultDelegationSemantics?: string;
     authzenApplication?: string[];
     authzenCallbackUri?: string[];
+    pepApplication?: string;
     mailVerified?: string;
     mailEncryption?: string;
     audSub?: string[];

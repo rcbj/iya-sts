@@ -1009,6 +1009,8 @@
   "protection.apostrophe": "元素名稱或命名空間名稱含有撇號，此子集中的運算式無法為其加上引號。",
   "protection.target": "欄位",
   "protection.notDrawn": "{field} 不在此頁面上。",
+  "embeddedPeps.tab": "嵌入式 PEP",
+  "embeddedPeps.lead": "這些遠端 PEP 透過身分驗證程式庫嵌入在此應用程式中，並綁定到它。每個 PEP 在其自己的頁面上綁定和解除綁定。",
   "protection.general": "一般",
   "protection.encryptionHeading": "訊息加密",
   "protection.signingHeading": "訊息簽章",

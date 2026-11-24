@@ -1049,5 +1049,18 @@
   "tip.credential.csr": "En PKCS #10-begäran signerad med nyckeln som ska certifieras: EC P-256 (föredras) eller RSA på minst 2048 bitar. Dess subjekt och namn ignoreras; certifikatet namnger posten.",
   "tip.credential.load": "Läser in en begäransfil i rutan ovan, i webbläsaren. Inget skickas förrän du certifierar.",
   "tip.credential.revokePrevious": "Av som standard: en körande PEP behåller sin gamla nyckel tills den flyttas till den nya. På hamnar varje annan giltig RFC 7523-nyckel för posten på dess utfärdares spärrlista.",
-  "tip.credential.submit": "Skickar issue-pep-credential. Svaret visar certifikatet och miljön att starta PEP:en med, en gång."
+  "tip.credential.submit": "Skickar issue-pep-credential. Svaret visar certifikatet och miljön att starta PEP:en med, en gång.",
+  "pepPage.th.application": "Inbäddad i",
+  "pepPage.application.none": "ingen applikation",
+  "tip.overview.application": "Applikationen som en inbäddad PEP är bunden till, lagrad på dess post. En registrering som inbäddad PEP avvisas om den inte namnger denna applikation.",
+  "binding.legend": "Inbäddad i en applikation",
+  "binding.lead": "En inbäddad PEP körs inuti en applikation, genom ett autentiseringsbibliotek. Bind dess tjänstekonto till den enda applikationen; ta bort bindningen när PEP:en inte längre är inbäddad där.",
+  "binding.application": "Applikationens identifierare",
+  "tip.binding.application": "Applikationens identifierare i detta förtroendeområdes register.",
+  "binding.submit": "Bind",
+  "tip.binding.submit": "Skriv bindningen på PEP:ens post och ersätt den som finns.",
+  "binding.clear": "Ta bort bindningen",
+  "tip.binding.clear": "Ta bort bindningen från PEP:ens post.",
+  "credential.application": "Inbäddad i applikation (valfritt)",
+  "tip.credential.application": "Bind också PEP:en till denna applikation, i samma anrop, när nyckeln har certifierats. Lämna tomt för en PEP som inte är inbäddad i någon applikation."
 }

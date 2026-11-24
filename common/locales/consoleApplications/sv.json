@@ -1009,6 +1009,8 @@
   "protection.apostrophe": "Ett element- eller namnrymdsnamn innehåller en apostrof, som ett uttryck i den här delmängden inte kan citera.",
   "protection.target": "Fält",
   "protection.notDrawn": "{field} finns inte på den här sidan.",
+  "embeddedPeps.tab": "Inbäddade PEP:ar",
+  "embeddedPeps.lead": "Dessa fjärr-PEP:ar är inbäddade i denna applikation genom ett autentiseringsbibliotek, och bundna till den. Var och en binds och lösgörs på sin egen sida.",
   "protection.general": "Allmänt",
   "protection.encryptionHeading": "Meddelandekryptering",
   "protection.signingHeading": "Meddelandesignering",

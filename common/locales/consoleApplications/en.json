@@ -1009,6 +1009,8 @@
   "protection.apostrophe": "An element or namespace name holds an apostrophe, which an expression in this subset cannot quote.",
   "protection.target": "Field",
   "protection.notDrawn": "{field} is not on this page.",
+  "embeddedPeps.tab": "Embedded PEPs",
+  "embeddedPeps.lead": "These remote PEPs are embedded in this application through an authentication library, and bound to it. Each is bound and unbound on its own page.",
   "protection.general": "General",
   "protection.encryptionHeading": "Message encryption",
   "protection.signingHeading": "Message signing",

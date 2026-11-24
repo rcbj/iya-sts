@@ -1191,6 +1191,10 @@
     "en": "b86f230b79b40252",
     "text": "La clé d’assertion d’un PEP distant a été certifiée à partir de sa demande"
   },
+  "audit.actions.xacml.pep.binding.label": {
+    "en": "a254d6c56c6f82ac",
+    "text": "Un PEP distant intégré a été lié à son application, ou délié"
+  },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
     "text": "Un PEP distant a demandé au PIP les attributs d’un sujet"

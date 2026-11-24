@@ -2665,6 +2665,64 @@ Scope: `admin:write`.
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 
+## POST /admin-api/xacml/clear-pep-application
+
+`clearXacmlPepApplication`
+
+**Remove an embedded remote PEP's binding to its application**
+
+Removes `stsPepApplication` from the PEP's entry (#2025). Idempotent: removing a binding that is not there answers ok and changes nothing. `name` (or `pep`) is the PEP's username; nobody by that name is STS-XACML-0334. Audited as `xacml.pep.binding` when a binding was removed.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `name` | string |  | The username of the PEP's entry under this realm's ou=users: a service account in the remote PEPs group. |
+| `pep` | string |  | The same, under the member GET /admin-api/xacml/peps calls it. Send `pep` or `name`; both, they must name the same PEP. |
+
+**200**: The binding is removed, or there was none.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string |  | The application it is bound to now; empty when it is bound to none. |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The PEP's entry, by username. |
+| `previous` | string |  | The application it was bound to before; empty when it was bound to none. |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string |  | The application it is bound to now; empty when it is bound to none. |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The PEP's entry, by username. |
+| `previous` | string |  | The application it was bound to before; empty when it was bound to none. |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
 ## POST /admin-api/xacml/clear-pep-proxy
 
 `clearXacmlPepProxy`
@@ -5995,6 +6053,7 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `application` | string |  | An embedded PEP's application (#2025): its identifier in this realm's registry. The PEP is bound to it once the key is certified, as set-pep-application binds it; the binding is checked before anything is certified (STS-XACML-0334 to 0336). |
 | `csr` | string |  | The PEP's PKCS #10 certificate request, PEM or base64 DER, signed with the key to be certified (EC P-256 or RSA of 2048 bits or more). Its subject and names are ignored. |
 | `days` | integer |  | The lifetime. Defaults to `pki.leafLifetimeDays`, and is shortened to the Issuing CA's own expiry. |
 | `label` | string |  | A short name for the key on the entry's key list. Defaults to `remote PEP`. |
@@ -6006,6 +6065,7 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `application` | string |  | The application the PEP was bound to in the same call (#2025), when the request named one. |
 | `certificatePem` | string |  |  |
 | `chainPem` | list |  | The Issuing CA and the realm Intermediate, leaf excluded. |
 | `chainPem[]` | string |  |  |
@@ -6039,6 +6099,7 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `application` | string |  | The application the PEP was bound to in the same call (#2025), when the request named one. |
 | `certificatePem` | string |  |  |
 | `chainPem` | list |  | The Issuing CA and the realm Intermediate, leaf excluded. |
 | `chainPem[]` | string |  |  |
@@ -6817,6 +6878,7 @@ Scope: `admin:read`.
 | `pepAuthentication` | one of `certificate`, `token`, `either` |  |  |
 | `peps` | list |  |  |
 | `peps[].allowed` | number, or null |  |  |
+| `peps[].application` | string |  | The application an embedded PEP's entry is bound to (#2025), stsPepApplication; empty when it is bound to none. |
 | `peps[].authenticated` | boolean |  |  |
 | `peps[].bias` | string |  |  |
 | `peps[].certificateSubject` | string |  |  |
@@ -9692,6 +9754,65 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+## POST /admin-api/xacml/set-pep-application
+
+`setXacmlPepApplication`
+
+**Bind an embedded remote PEP to the application it is embedded in**
+
+Writes `stsPepApplication` on the PEP's entry (#2025): the one application, by its identifier in this realm's registry, that the PEP is embedded in through an authentication library. A registration as an embedded PEP is checked against it. `name` (or `pep`) is the USERNAME of the PEP's entry under this realm's ou=users; no registered ou=peps row is needed, because a PEP is bound before it ever registers. The entry must exist (STS-XACML-0334), be a service account holding REMOTE_PEPS (STS-XACML-0335), and the application must be in the registry (STS-XACML-0336). One application per PEP: a binding replaces the one held. Audited as `xacml.pep.binding`. Deleting the application removes the binding.
+
+**Mirrors** `POST /admin/xacml#xacml-tab-policies, POST /admin/xacml#xacml-tab-editor, POST /admin/xacml#xacml-tab-peps, POST /admin/xacml/policies, POST /admin/xacml/editor and POST /admin/xacml/peps` on the admin console.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string |  | The application the PEP is embedded in: its identifier in this realm's registry. |
+| `name` | string |  | The username of the PEP's entry under this realm's ou=users: a service account in the remote PEPs group. |
+| `pep` | string |  | The same, under the member GET /admin-api/xacml/peps calls it. Send `pep` or `name`; both, they must name the same PEP. |
+
+**200**: The PEP is bound.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string |  | The application it is bound to now; empty when it is bound to none. |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The PEP's entry, by username. |
+| `previous` | string |  | The application it was bound to before; empty when it was bound to none. |
+| `problems` | list |  |  |
+| `problems[]` | string |  |  |
+| `what` | string |  |  |
+| `why` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `application` | string |  | The application it is bound to now; empty when it is bound to none. |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pep` | string |  | The PEP's entry, by username. |
+| `previous` | string |  | The application it was bound to before; empty when it was bound to none. |
 | `problems` | list |  |  |
 | `problems[]` | string |  |  |
 | `what` | string |  |  |

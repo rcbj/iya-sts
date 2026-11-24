@@ -1191,6 +1191,10 @@
     "en": "b86f230b79b40252",
     "text": "Der Assertion-Schlüssel eines entfernten PEP wurde anhand seiner Anfrage zertifiziert"
   },
+  "audit.actions.xacml.pep.binding.label": {
+    "en": "a254d6c56c6f82ac",
+    "text": "Ein eingebetteter entfernter PEP wurde an seine Anwendung gebunden oder davon gelöst"
+  },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
     "text": "Ein entfernter PEP hat den PIP nach den Attributen eines Subjekts gefragt"

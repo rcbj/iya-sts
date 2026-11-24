@@ -1009,6 +1009,8 @@
   "protection.apostrophe": "May apostrophe ang pangalan ng element o namespace, na hindi kayang i-quote ng isang expression sa subset na ito.",
   "protection.target": "Field",
   "protection.notDrawn": "Wala sa pahinang ito ang {field}.",
+  "embeddedPeps.tab": "Mga naka-embed na PEP",
+  "embeddedPeps.lead": "Naka-embed ang mga remote PEP na ito sa application na ito sa pamamagitan ng isang authentication library, at nakatali rito. Bawat isa ay itinatali at kinakalas sa sarili nitong pahina.",
   "protection.general": "Pangkalahatan",
   "protection.encryptionHeading": "Pag-encrypt ng mensahe",
   "protection.signingHeading": "Paglagda ng mensahe",

@@ -8103,6 +8103,12 @@ class AdminApi {
           // certificate request (#1827's follow-up, phase 3).
           { action: 'issue-pep-credential',
             operationId: 'issueXacmlPepCredential' },
+          // An embedded PEP bound to the application it is embedded in
+          // (#2025).
+          { action: 'set-pep-application',
+            operationId: 'setXacmlPepApplication' },
+          { action: 'clear-pep-application',
+            operationId: 'clearXacmlPepApplication' },
           // The remote PEP's reverse proxy (#1760).
           { action: 'set-pep-proxy', operationId: 'setXacmlPepProxy' },
           { action: 'clear-pep-proxy', operationId: 'clearXacmlPepProxy' },

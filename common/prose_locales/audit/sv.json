@@ -1191,6 +1191,10 @@
     "en": "b86f230b79b40252",
     "text": "En fjärr-PEP:s påståendenyckel certifierades från dess begäran"
   },
+  "audit.actions.xacml.pep.binding.label": {
+    "en": "a254d6c56c6f82ac",
+    "text": "En inbäddad fjärr-PEP knöts till sitt program, eller lossades"
+  },
   "audit.actions.xacml.pip.query.label": {
     "en": "af3eace9dacb68c6",
     "text": "En fjärransluten PEP frågade PIP:en efter ett subjekts attribut"

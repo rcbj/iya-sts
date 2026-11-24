@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6055** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6059** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -92,7 +92,7 @@ is an ordinary outcome.
 * [OpenSSH user certificates (`STS-SSHCA`)](#sts-sshca) — 5
 * [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 33
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 254
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 258
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 140
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 137
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
@@ -5528,6 +5528,10 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0331` | A remote PEP's heartbeat was refused: a member its entry stores carries a value the service cannot hold (fuzz run #595) — a counter that is not a non-negative integer of at most 2^53 - 1, a text member that is not a string or carries a control character, or signals, settings or listeners that are not an object or null. Nothing of it is recorded; the refusal names the member. | none — 400 invalid_request on POST /xacml/pep/heartbeat |
 | `STS-XACML-0332` | A flow that cannot draw the role step — the password grant, a token exchange, the RFC 7523 or RFC 7522 grant, the device grant, CIBA, WS-Trust, a Kerberos ticket or an LDAP bind — was refused because the application (or the realm, where it names none) would require the person to choose a dynamic role (#1072, rcbj's decision 5). | access_denied at the token endpoint (RFC 6749 section 5.2); wst:RequestFailed; KDC_ERR_POLICY (RFC 4120 section 7.5.9); LDAP unwillingToPerform (RFC 4511 section 4.1.9) |
 | `STS-XACML-0333` | Single sign-on into an application that requires a dynamic role was not answered from the session, which chose none for it (a sign-in for another application, or at a door that names none): the person was sent to sign in again and choose, or, where the request forbids asking (prompt=none, IsPassive), it was refused (#1072). | interaction_required (OIDC Core section 3.1.2.6) with prompt=none; NoPassive with IsPassive |
+| `STS-XACML-0334` | set-pep-application or clear-pep-application (or issue-pep-credential with an application) named no remote PEP, or a name that is nobody in this realm's ou=users: an embedded PEP's binding is written on the entry it signs in as (#2025). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-XACML-0335` | set-pep-application named a person who is not a service account, or a service account that does not hold REMOTE_PEPS: only a remote PEP's identity is bound to an application (#2025). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-XACML-0336` | set-pep-application (or issue-pep-credential with an application) named no application, or one this realm's registry does not hold, so nothing was bound (#2025). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-XACML-0337` | An embedded PEP's binding could not be written or removed: the directory is not available or refused the write (#2025). Nothing changed. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-XPEP
 
