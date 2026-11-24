@@ -33,7 +33,9 @@
 //            encrypts each part to `certPem` — `Content` for an element's
 //            children (the SOAP Body's), `Element` for the element, `Header`
 //            for a header block as a wsse11:EncryptedHeader — with
-//            AES-256-GCM and RSA-OAEP, the recipient named by
+//            AES-256-GCM and XML Encryption 1.1's RSA-OAEP over SHA-256
+//            (`keyTransport` "rsa-oaep-mgf1p" for OAEP over SHA-1), the
+//            recipient named by
 //            `keyIdentifier` (IssuerSerial, the default; DirectReference;
 //            SKI; Thumbprint). `order` is sign-then-encrypt (the default)
 //            or encrypt-then-sign. A part `{ local: "Body" }` with no `ns`
@@ -236,7 +238,17 @@ public final class Wss4jDriver {
     }
     encrypt.setKeyIdentifierType(identifier);
     encrypt.setSymmetricEncAlgorithm(WSS4JConstants.AES_256_GCM);
-    encrypt.setKeyEncAlgo(WSS4JConstants.KEYTRANSPORT_RSAOAEP);
+    // THE KEY TRANSPORT: XML Encryption 1.1's rsa-oaep with SHA-256 and
+    // MGF1-SHA-256 unless asked for WSS4J's default, rsa-oaep-mgf1p (OAEP
+    // over SHA-1), which a realm refuses to unwrap by default.
+    if ("rsa-oaep-mgf1p".equals(
+          sealing.path("keyTransport").asText("rsa-oaep"))) {
+      encrypt.setKeyEncAlgo(WSS4JConstants.KEYTRANSPORT_RSAOAEP);
+    } else {
+      encrypt.setKeyEncAlgo(WSS4JConstants.KEYTRANSPORT_RSAOAEP_XENC11);
+      encrypt.setDigestAlgorithm(WSS4JConstants.SHA256);
+      encrypt.setMGFAlgorithm(WSS4JConstants.MGF_SHA256);
+    }
     for (JsonNode part : sealing.path("parts")) {
       encrypt.getParts().add(new WSEncryptionPart(
         part.path("local").asText(), part.path("ns").asText(soapNs),
