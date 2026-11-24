@@ -16078,6 +16078,77 @@ sshIssued.setDirectory({
   }
 });
 
+// A PERSON'S HARDWARE, OATH AND YUBIKEY OTP TOKENS (#2051), the SSH
+// certificate slot's shape: `common/token_entries.ts` finds one person by
+// subject or username — synchronously for a request's write, whose person
+// is held by then, or off the event loop for a background job — replaces
+// one of the three attributes it owns in place, and asks who holds one,
+// which only the manual index rebuild does. The entry is the master and the
+// three stores its indexes; the module is built beside the credential
+// libraries, long before this one, so it cannot require this one (rule 3e).
+const TOKEN_ATTRIBUTES = ['stshardwaretoken', 'stsoathtoken',
+                          'stsyubiotptoken'];
+function tokenEntryOf(stored) {
+  log.debug('Entering tokenEntryOf().');
+  if (!stored || !isPersonEntry(stored)) {
+    log.debug('Leaving tokenEntryOf(). Nobody.');
+    return null;
+  }
+  const values = {};
+  TOKEN_ATTRIBUTES.forEach(function (name) {
+    values[name] = (stored.attributes[name] || []).map(String);
+  });
+  log.debug('Leaving tokenEntryOf(). ' + stored.dn);
+  return { dn: stored.dn, username: usernameOfEntry(stored), values: values };
+}
+const tokenEntries = require('../common/token_entries');
+tokenEntries.setDirectory({
+  locate: function locate(who) {
+    log.debug('Entering the token entries locate().');
+    const key = String(who || '');
+    const stored = /^urn:uuid:/i.test(key) ? entryByUuid(key)
+      : locateEntry(key).stored;
+    log.debug('Leaving the token entries locate().');
+    return tokenEntryOf(stored);
+  },
+  locateAsync: async function locateAsync(who) {
+    log.debug('Entering the token entries locateAsync().');
+    const key = String(who || '');
+    if (/^urn:uuid:/i.test(key)) {
+      await warmSubjectsAsync([key]);
+    } else {
+      await warmNamesAsync([key]);
+    }
+    const stored = /^urn:uuid:/i.test(key) ? entryByUuid(key)
+      : locateEntry(key).stored;
+    log.debug('Leaving the token entries locateAsync().');
+    return tokenEntryOf(stored);
+  },
+  write: function write(dn, attribute, values) {
+    log.debug('Entering the token entries write(). ' + attribute);
+    const allowed = TOKEN_ATTRIBUTES.indexOf(String(attribute)
+      .toLowerCase()) >= 0;
+    const written = allowed &&
+      writePersonAttribute(dn, attribute, values) === true;
+    log.debug('Leaving the token entries write(). ' + written);
+    return written;
+  },
+  holdersAsync: async function tokenHoldersAsync(attribute) {
+    log.debug('Entering the token entries holdersAsync().');
+    const name = String(attribute || '').toLowerCase();
+    if (TOKEN_ATTRIBUTES.indexOf(name) < 0) {
+      log.debug('Leaving the token entries holdersAsync(). Not ours.');
+      return [];
+    }
+    const rows = await holdersAsync('person', name, [name]);
+    log.debug('Leaving the token entries holdersAsync(). ' + rows.length);
+    return rows.map(function (row) {
+      return { username: row.id, dn: row.dn,
+               values: (row.attributes[name] || []).map(String) };
+    });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // THE PERSON-ASSERTION SLOT (2026-09-11), and it is the one that lets somebody
 // in `ou=users` be an RFC 7523 issuer.

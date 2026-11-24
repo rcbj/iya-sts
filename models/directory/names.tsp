@@ -344,6 +344,11 @@ namespace IyaSts.Directory;
   // the master and the CA's register (`ssh_user_ca.issued`) its index, the
   // KRL's source: removing a value revokes it. `common/ssh_issued.ts`.
   "stsSshUserCertificate",
+  // A PERSON'S HARDWARE, OATH AND YUBIKEY OTP TOKENS (#2051, rcbj
+  // 2026-11-23): the master data, one JSON value per token; the register
+  // and the two inventories are indexes derived from them.
+  // `common/token_entries.ts`.
+  "stsHardwareToken", "stsOathToken", "stsYubiOtpToken",
   // THE WEBAUTHN USER HANDLE (#474): 64 random bytes, base64url, one per
   // person, that every passkey they register is created under and that a
   // discoverable credential hands back to say whose it is. Not a secret —

@@ -207,6 +207,17 @@ model Credential {
   @fromAttr(#{attr: "stsSshUserCertificate"})
   `sshUserCertificate`?: string[];
 
+  // #2051: the person's hardware, OATH and YubiKey OTP tokens, the master
+  // data, one JSON value each.
+  @fromAttr(#{attr: "stsHardwareToken"})
+  `hardwareTokens`?: string[];
+
+  @fromAttr(#{attr: "stsOathToken"})
+  `oathTokens`?: string[];
+
+  @fromAttr(#{attr: "stsYubiOtpToken"})
+  `yubiOtpTokens`?: string[];
+
   @fromAttr(#{attr: "stsKrb5KeyInfo"})
   `krb5KeyInfo`?: string;
 
