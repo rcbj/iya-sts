@@ -355,6 +355,14 @@
     "en": "7ee4c3866d1b407a",
     "text": "确切的版本、构建号、构建时间和 commit 是否出现在管理员以外的人可以读到的地方：每个页面的页脚、登录、门户和报表 API 及其 OpenAPI 文档，以及此服务向合作方发出的请求的 User-Agent。auto（默认）在开发模式下显示，在产品模式下隐藏；产品模式下文档改为给出 API 自身的版本，User-Agent 只有产品名称；on 和 off 在任一模式下强制设定。控制台和管理 API 始终显示构建。"
   },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "申请加入 HSTS 预加载列表"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "在 Strict-Transport-Security 中添加 preload(仅产品模式发送该标头),以便可以在 hstspreload.org 将主机名提交到浏览器的预加载列表。预加载会使整个可注册域及其每个子域在所有浏览器中都只能使用 HTTPS,而退出该列表需要数月。仅在“对子域应用 HSTS”开启时发送。"
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "接受未指定受众的断言"

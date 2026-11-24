@@ -355,6 +355,14 @@
     "en": "7ee4c3866d1b407a",
     "text": "Ob die genaue Version, die Build-Nummer, die Build-Zeit und der Commit dort erscheinen, wo jemand anderes als ein Administrator sie lesen kann: in der Fußzeile jeder Seite, in den APIs für Anmeldung, Portal und Berichte und ihren OpenAPI-Dokumenten sowie im User-Agent der Anfragen, die dieser Dienst an Partner stellt. auto, der Standard, zeigt sie im Entwicklungsmodus und verbirgt sie im Produktmodus, wo die Dokumente stattdessen die eigene Version der API nennen und der User-Agent nur der Produktname ist; on und off erzwingen es in jedem Modus. Die Konsole und die Verwaltungs-API zeigen den Build immer."
   },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "Die Aufnahme in die HSTS-Preload-Liste beantragen"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "Fügt preload zu Strict-Transport-Security hinzu, das nur der Produktmodus sendet, sodass der Hostname bei hstspreload.org für die Preload-Liste der Browser eingereicht werden kann. Das Preloading verpflichtet die gesamte registrierbare Domäne und jede Subdomäne in jedem Browser auf HTTPS, und das Verlassen der Liste dauert Monate. Wird nur gesendet, solange HSTS auf Subdomänen anwenden eingeschaltet ist."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Eine Assertion annehmen, die keine Audience nennt"

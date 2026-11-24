@@ -712,6 +712,7 @@ refusal of an application's certificate — is the same in both modes. See
 | `global.trustProxy` | `STS_TRUST_PROXY` | `false` | yes | Believe `X-Forwarded-Proto` and `X-Forwarded-Host` from a TLS-terminating proxy. |
 | `global.trustedProxies` | `STS_TRUSTED_PROXIES` | *(empty)* | yes | The addresses or CIDRs forwarded headers — and PROXY protocol headers — are believed from. Empty believes forwarded headers from any caller in development and from none in product. |
 | `security.hstsIncludeSubDomains` | `STS_SECURITY_HSTS_INCLUDE_SUBDOMAINS` | `false` (`true` in product) | yes | Adds `includeSubDomains` to `Strict-Transport-Security`, which only product mode sends. |
+| `security.hstsPreload` | `STS_SECURITY_HSTS_PRELOAD` | `false` | yes | Adds `preload` to `Strict-Transport-Security`, only while `includeSubDomains` is sent too. See [Preloading](#preloading). |
 | `global.proxyProtocol` | `STS_PROXY_PROTOCOL` | `off` | no | `v2` expects a PROXY protocol v2 header on every TCP listener, read before TLS. |
 | `global.proxyProtocolTimeoutMs` | `STS_PROXY_PROTOCOL_TIMEOUT_MS` | `30000` | yes | How long a trusted proxy may take to send a complete header. |
 | `pki.revocationCheck` | `STS_PKI_REVOCATION_CHECK` | `auto` | yes | Whether a presented certificate is checked for revocation: `off`, `soft-fail`, `hard-fail`, or `auto` (hard in product, soft in development). |
@@ -749,6 +750,56 @@ HTTP; the header then carries `max-age` alone. A browser that has seen the
 header refuses an untrusted certificate with no way to click through, so give
 the service a certificate browsers trust before people use it in product mode. The plain-HTTP revocation
 and SCEP listener never sends the header. Development mode does not send it.
+
+### Preloading
+
+Browsers ship with a list of host names they use only over HTTPS, before
+they have seen any header from them: the HSTS preload list, run at
+[hstspreload.org](https://hstspreload.org/). Turn on `security.hstsPreload`
+and the header becomes
+`Strict-Transport-Security: max-age=31536000; includeSubDomains; preload`.
+It is off by default in both modes.
+
+**Preloading is a commitment for the whole registrable domain, not for this
+service.** The list holds the domain you submit, which must be the
+registrable domain (`example.com`, not `sts.example.com`), and a browser
+applies it to that domain and every subdomain of it, whoever runs them. Each
+of them must answer over HTTPS with a certificate browsers trust, from the
+day the entry ships in a browser release, or nobody can reach it: there is
+no click-through and no way for a person to make an exception. Leaving the
+list takes months, because each browser removes the entry only in a later
+release and an installed browser keeps the old list until it is updated.
+
+The list accepts a domain whose own header, served on the registrable
+domain itself over HTTPS, carries a `max-age` of at least a year,
+`includeSubDomains` and `preload`, and whose plain-HTTP address redirects to
+HTTPS on the same host. This service's `max-age` is always a year. It sends
+`preload` only while `security.hstsIncludeSubDomains` is on: with that off
+the header carries no `preload`, `/admin/mode` shows it on the HSTS row
+("NOT MET HERE: `hsts-preload`"), and the log says so once with
+`STS-CORE-0181`. The setting is not refused when it is written, because
+`security.hstsIncludeSubDomains` takes its default from the realm's mode and
+either setting can come from an environment variable or an appconfig file;
+the two are checked together as each response is built.
+
+To submit:
+
+1. Make sure every subdomain of the registrable domain answers over HTTPS,
+   and that the registrable domain itself serves the header above. When the
+   service is not on the registrable domain, the server that is has to send
+   the same header; this service's setting covers only its own host name.
+2. Turn on `security.hstsPreload` (product mode, `security.hstsIncludeSubDomains`
+   on) and check a response:
+   `curl -sI https://sts.example.com/ | grep -i strict-transport-security`.
+3. Enter the registrable domain at [hstspreload.org](https://hstspreload.org/),
+   check the result, and submit it. Inclusion follows in later browser
+   releases.
+
+To withdraw, use the removal form at
+[hstspreload.org/removal](https://hstspreload.org/removal/) first, and keep
+the header (without `preload`) until the removal has reached the browsers
+people use. Turning `security.hstsPreload` off on its own does not remove
+the domain; the list stays until the removal is processed.
 
 ## Design decisions
 

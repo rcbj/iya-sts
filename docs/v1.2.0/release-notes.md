@@ -25,6 +25,17 @@ the sign-in again and carries on. The API answers 401 with RFC 9470's
 client credentials is not asked. A script that uses a person's token for
 these acts must sign that person in again when it gets the 401. Development
 mode does not ask, since `account.recentAuthMinutes` is 0 there.
+### HSTS can be preloaded
+
+A new setting, `security.hstsPreload` (off by default), adds `preload` to
+the `Strict-Transport-Security` header product mode sends, so the domain
+can be submitted to the browsers' HSTS preload list (ASVS 5.0.0 3.7.4). It
+is sent only while `security.hstsIncludeSubDomains` is on; with that off
+the header carries no `preload`, `/admin/mode` says so and the log records
+`STS-CORE-0181`. Preloading binds the whole registrable domain and takes
+months to undo: see [Preloading](tls.md#preloading).
+
+**Upgrading.** Nothing changes until the setting is turned on.
 
 ### Behaviour change: CSV exports neutralise spreadsheet formulas
 

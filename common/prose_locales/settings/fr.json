@@ -355,6 +355,14 @@
     "en": "7ee4c3866d1b407a",
     "text": "Indique si la version exacte, le numéro de build, la date de build et le commit apparaissent là où une personne autre qu’un administrateur peut les lire : le pied de page de chaque page, les API de connexion, du portail et des rapports et leurs documents OpenAPI, et le User-Agent des requêtes que ce service envoie aux partenaires. auto, la valeur par défaut, les montre en mode développement et les masque en mode produit, où les documents donnent à la place la version propre de l’API et le User-Agent n’est que le nom du produit ; on et off l’imposent dans les deux modes. La console et l’API de gestion montrent toujours la build."
   },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "Demander l'inscription sur la liste de préchargement HSTS"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "Ajoute preload à Strict-Transport-Security, que seul le mode produit envoie, afin que le nom d'hôte puisse être soumis à la liste de préchargement des navigateurs sur hstspreload.org. Le préchargement engage tout le domaine enregistrable et chaque sous-domaine à utiliser HTTPS dans tous les navigateurs, et quitter la liste prend des mois. Envoyé seulement tant que Appliquer HSTS aux sous-domaines est activé."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Accepter une assertion sans audience"

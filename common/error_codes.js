@@ -1357,6 +1357,15 @@ const CODES = [
       'process never defined and the store no longer lists (#1938); it is ' +
       'asked again at the next realm read.',
     spec: '' },
+  { code: 'STS-CORE-0181',
+    summary: 'security.hstsPreload is on while ' +
+      'security.hstsIncludeSubDomains is off, so Strict-Transport-Security ' +
+      'is sent without preload: the HSTS preload list accepts a host only ' +
+      'when its header covers every subdomain (#2165). Logged when this ' +
+      'starts; /admin/mode shows it on the strict-transport-security row. ' +
+      'Turn on security.hstsIncludeSubDomains, or turn off ' +
+      'security.hstsPreload.',
+    spec: 'none — a warning; the header is still sent, without preload' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +

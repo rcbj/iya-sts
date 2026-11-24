@@ -355,6 +355,14 @@
     "en": "7ee4c3866d1b407a",
     "text": "Om den exakta versionen, byggnumret, byggtiden och commit syns där någon annan än en administratör kan läsa dem: sidfoten på varje sida, API:erna för inloggning, portal och rapporter och deras OpenAPI-dokument, och User-Agent i de förfrågningar tjänsten gör till partner. auto, standard, visar dem i utvecklingsläge och döljer dem i produktläge, där dokumenten i stället anger API:ets egen version och User-Agent bara är produktnamnet; on och off tvingar fram det i båda lägena. Konsolen och hanterings-API:et visar alltid bygget."
   },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "Begär att stå på HSTS-förladdningslistan"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "Lägger till preload i Strict-Transport-Security, som bara produktläget skickar, så att värdnamnet kan skickas in till webbläsarnas förladdningslista på hstspreload.org. Förladdning binder hela den registrerbara domänen och varje underdomän till HTTPS i alla webbläsare, och att lämna listan tar månader. Skickas bara medan Tillämpa HSTS på underdomäner är på."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Acceptera ett påstående utan målgrupp"

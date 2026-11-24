@@ -355,6 +355,14 @@
     "en": "7ee4c3866d1b407a",
     "text": "Si la versión exacta, el número de compilación, la hora de compilación y el commit aparecen donde alguien que no es administrador puede leerlos: el pie de cada página, las API de inicio de sesión, del portal y de informes y sus documentos OpenAPI, y el User-Agent de las solicitudes que este servicio hace a los socios. auto, el valor por defecto, los muestra en modo desarrollo y los oculta en modo producto, donde los documentos indican en su lugar la versión propia de la API y el User-Agent es solo el nombre del producto; on y off lo imponen en cualquier modo. La consola y la API de administración siempre muestran la compilación."
   },
+  "security.hstsPreload|label": {
+    "en": "0ad9ffe8e0b46be8",
+    "text": "Solicitar la inclusión en la lista de precarga de HSTS"
+  },
+  "security.hstsPreload|description": {
+    "en": "ee9334d5a57de03e",
+    "text": "Añade preload a Strict-Transport-Security, que solo envía el modo producto, para que el nombre de host pueda enviarse a la lista de precarga de los navegadores en hstspreload.org. La precarga compromete todo el dominio registrable y cada subdominio a usar HTTPS en todos los navegadores, y salir de la lista lleva meses. Solo se envía mientras Aplicar HSTS a los subdominios está activado."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Aceptar una aserción sin audiencia"

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6092** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6093** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 21
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 112
+* [Service core (`STS-CORE`)](#sts-core) — 113
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 58
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 116
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 34
@@ -276,6 +276,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0178` | One or more settings in env/defaults.js hold a value that is not the image's default. The file's value is used, as before the upgrade; a defaults file copied from an earlier release pins every default changed since. The warning names each setting and the file. | none — a warning logged at startup; nothing is refused |
 | `STS-CORE-0179` | env/defaults.js is present and could not be loaded (it does not parse, or throws), so the service refused to start. A missing file is not this: the image's own defaults are used (STS-CORE-0177). | — |
 | `STS-CORE-0180` | A store could not forget what it held for a trust realm this process never defined and the store no longer lists (#1938); it is asked again at the next realm read. | — |
+| `STS-CORE-0181` | security.hstsPreload is on while security.hstsIncludeSubDomains is off, so Strict-Transport-Security is sent without preload: the HSTS preload list accepts a host only when its header covers every subdomain (#2165). Logged when this starts; /admin/mode shows it on the strict-transport-security row. Turn on security.hstsIncludeSubDomains, or turn off security.hstsPreload. | none — a warning; the header is still sent, without preload |
 
 ## STS-WORKER
 

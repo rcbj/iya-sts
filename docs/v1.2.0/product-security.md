@@ -98,7 +98,12 @@ single sign-on consent switches `saml2.ssoConsent`, `saml11.ssoConsent` and
 * **HSTS.** Every response over TLS carries
   `Strict-Transport-Security: max-age=31536000; includeSubDomains`. Turn off
   `security.hstsIncludeSubDomains` if a subdomain of the host name must still
-  answer over plain HTTP. See [TLS](tls.md#strict-transport-security).
+  answer over plain HTTP. `security.hstsPreload`, off by default, adds
+  `preload` so the domain can be submitted to the browsers' preload list;
+  that commits the whole registrable domain and every subdomain to HTTPS in
+  every browser and takes months to undo, so read
+  [Preloading](tls.md#preloading) first. See
+  [TLS](tls.md#strict-transport-security).
 * **Forwarded addresses.** With `global.trustProxy` on, `X-Forwarded-For`,
   `X-Forwarded-Proto` and `X-Forwarded-Host` are believed only from the proxies
   listed in `global.trustedProxies`. With no list, they are believed from nobody,

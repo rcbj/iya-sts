@@ -76,6 +76,7 @@ import workerThreads = require('worker_threads');
 import helpers = require('./helpers');
 import config = require('./config');
 import mode = require('./mode');
+import errorCodes = require('./error_codes');
 
 const log = helpers.log;
 
@@ -92,6 +93,12 @@ const TLS_HEADER = 'x-sts-wire-tls';
 // From a worker back to the front process: `1` where this answer's `Set-Cookie`
 // lines take the prefix, `0` where they do not. Never passed to the client.
 const PREFIX_HEADER = 'x-sts-wire-prefix';
+// The one max-age this service sends, and the least the HSTS preload list
+// accepts (https://hstspreload.org/, "Submission Requirements"): a year.
+const HSTS_MAX_AGE = 31536000;
+// Whether the last header built withheld `preload` (#2165), so the warning is
+// logged when that changes rather than on every response.
+let preloadWithheld = false;
 
 class CookieWire {
   // Hot path: every request and every Set-Cookie line. No Entering/Leaving
@@ -251,6 +258,46 @@ class CookieWire {
   }
 
   /**
+   * The Strict-Transport-Security value for a response over TLS (#1438,
+   * #2165).
+   *
+   * `preload` (`security.hstsPreload`, off by default) asks to be put on the
+   * browsers' built-in list. The list takes a host only when its header
+   * carries `includeSubDomains` and a max-age of at least a year, and a
+   * browser holding the list applies it to the whole registrable domain and
+   * every subdomain. So where `includeSubDomains` is not in force the
+   * directive is WITHHELD rather than the setting refused: the two settings
+   * are in force together only at the moment a response is built, because
+   * `security.hstsIncludeSubDomains` takes its default from the realm's mode
+   * and either may come from an environment variable, an appconfig file or
+   * a realm's override, none of which a write-time check sees. The header
+   * then carries no promise the list would reject, `/admin/mode` says so on
+   * the `strict-transport-security` row (`mode.js`, `hstsPreloadWaivers()`)
+   * and the change is logged once (STS-CORE-0181).
+   *
+   * @returns the header value
+   */
+  // Hot path: every response over TLS. No Entering/Leaving pair — one would
+  // drown the log.
+  static strictTransportSecurity(): string {
+    const subdomains = !!config.value('security.hstsIncludeSubDomains');
+    const preload = !!config.value('security.hstsPreload');
+    const withheld = preload && !subdomains;
+    if (withheld !== preloadWithheld) {
+      preloadWithheld = withheld;
+      if (withheld) {
+        log.warn(errorCodes.tag('STS-CORE-0181') + 'hsts: ' +
+                 'security.hstsPreload is on and ' +
+                 'security.hstsIncludeSubDomains is off, so ' +
+                 'Strict-Transport-Security is sent without preload.');
+      }
+    }
+    return 'max-age=' + HSTS_MAX_AGE +
+      (subdomains ? '; includeSubDomains' : '') +
+      (preload && subdomains ? '; preload' : '');
+  }
+
+  /**
    * The middleware. In a worker it translates only what the front process
    * marked (inWorker()).
    *
@@ -282,9 +329,8 @@ class CookieWire {
       const writeHead = res.writeHead;
       res.writeHead = function () {
         if (hsts) {
-          res.setHeader('Strict-Transport-Security', 'max-age=31536000' +
-            (config.value('security.hstsIncludeSubDomains')
-              ? '; includeSubDomains' : ''));
+          res.setHeader('Strict-Transport-Security',
+                        CookieWire.strictTransportSecurity());
         }
         const wrap = typeof res.stsWirePrefix === 'boolean'
           ? res.stsWirePrefix : prefixes;
@@ -300,6 +346,8 @@ class CookieWire {
   }
 
   static readonly TLS_HEADER = TLS_HEADER;
+
+  static readonly HSTS_MAX_AGE = HSTS_MAX_AGE;
 
   static readonly PREFIX_HEADER = PREFIX_HEADER;
 }
