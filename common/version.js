@@ -468,6 +468,27 @@ function buildId(v) {
   return (at || '0') + (r.commit ? '-' + r.commit : '');
 }
 
+// AND WHAT A PAGE IS GIVEN IN ITS PLACE (#2142, ASVS 5.0.0 13.4.6): the key
+// the image build drew at random and stamped (`STS_BUILD_KEY`, the
+// Dockerfile), which keys a cache exactly as well — one per build, the same
+// on every node — and says nothing about which build it is. buildId() names
+// the build instant and the commit, and every shell is served to anybody. A
+// record with no key (a checkout, the tests image, an image older than
+// #2142) falls back to buildId(), which is what it was keyed by before.
+/**
+ * The opaque identifier a page and the files it fetches are keyed by: the
+ * stamped random key, or buildId() where the record has none.
+ *
+ * @param v - optional; a version record, this process's when omitted
+ * @returns the key
+ */
+function buildKey(v) {
+  log.debug("Entering buildKey().");
+  const r = v || load();
+  log.debug("Leaving buildKey().");
+  return r.key ? String(r.key) : buildId(r);
+}
+
 // Write the record next to the artifact so it ships with it.
 /**
  * Computes a version record, marks it stamped and writes it as version.json
@@ -521,6 +542,13 @@ function stamp(dir, env) {
   const v = resolve({ build: decided.build, release: decided.release,
                       now: now, parts: named.parts });
   v.stamped = true;
+  // THE BUILD'S OPAQUE KEY (#2142), drawn by the Dockerfile and only
+  // recorded here: this file is a leaf and draws nothing random itself. One
+  // that is not 32 hex digits is left out, and buildKey() falls back.
+  const key = String(((env || process.env).STS_BUILD_KEY) || '').trim();
+  if (/^[0-9a-f]{32}$/.test(key)) {
+    v.key = key;
+  }
   try {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, STAMP_FILE), JSON.stringify(v, null, 2) +
@@ -642,18 +670,32 @@ function load(dir) {
  */
 const PRODUCT = 'sts';
 
+//
+// **AND IN PRODUCT THE TOKEN CARRIES NO VERSION (#2142, ASVS 5.0.0 13.4.6).**
+// The access log above belongs to somebody else, and a build named there
+// tells whoever reads it which defects this deployment carries. So the
+// caller says whether the build may be shown — `mode.publishesBuildDetail()`
+// at the call site, since this file is a leaf and may not ask the mode
+// itself — and `false` gives the bare product token, `sts (<component>)`.
+// Left out it is shown, as it always was. No partner protocol reads the
+// version out of the header, and the remote PEP learns the PDP's release
+// from /admin-api, not from here (xacml-pep/CLAUDE.md).
 /**
  * Builds the outbound User-Agent, `sts/<M.N.O.build> (<component>)` in
- * RFC 9110 product form.
+ * RFC 9110 product form, or `sts (<component>)` where the build may not be
+ * shown.
  *
  * @param component - optional; what is making the request, put in the comment
+ * @param showBuild - optional; false leaves the version out
+ *   (`mode.publishesBuildDetail()`), true or left out puts it in
  * @returns the User-Agent header value
  */
-function userAgent(component) {
+function userAgent(component, showBuild) {
   log.debug("Entering userAgent(). component=" + component);
-  const v = load();
+  const product = showBuild === false ? PRODUCT
+    : PRODUCT + '/' + load().version;
   log.debug("Leaving userAgent().");
-  return PRODUCT + '/' + v.version + (component ? ' (' + component + ')' : '');
+  return product + (component ? ' (' + component + ')' : '');
 }
 
 // --- package.json manifests -------------------------------------------------
@@ -769,7 +811,8 @@ function syncManifests() {
  * syncs the manifests.
  * @namespace
  */
-module.exports = { resolve, stamp, load, buildInfo, buildId, userAgent,
+module.exports = { resolve, stamp, load, buildInfo, buildId, buildKey,
+    userAgent,
     buildNumberFrom, releaseFrom, checkManifests,
     syncManifests, manifestVersion, PRODUCT, STAMP_FILE, VERSION_FILE,
     MANIFESTS };

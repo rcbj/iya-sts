@@ -45,8 +45,9 @@
 // chain falls through to the base and to English as the server's does.
 //
 // CACHING BY BUILD: an address carrying `?v=` equal to this build's
-// identifier (`common/version.js`'s `buildId()`, the shell's
-// `data-sts-build`) is the same bytes for the life of the build, so it is
+// identifier (`common/version.js`'s `buildKey()` since #2142, a random key
+// stamped per build where it was `buildId()`; the shell's `data-sts-build`)
+// is the same bytes for the life of the build, so it is
 // `public, max-age=31536000, immutable`; any other is `no-cache`, revalidated
 // by its ETag. A new build is a new identifier, so a browser never holds a
 // stale catalog past a deploy. **IT WAS THE VERSION UNTIL #1298**, when the
@@ -67,6 +68,7 @@ import InstanceSlot = require('./instance_slot');
 import i18n = require('./i18n');
 import errorCodes = require('./error_codes');
 import version = require('./version');
+import mode = require('./mode');
 import ShellDocument = require('./shell_document');
 import WebCardCss = require('./web_card_css');
 import WebFooter = require('./web_footer');
@@ -143,7 +145,7 @@ class PublicAssets {
     log.debug("Entering PublicAssets.cachingFor().");
     const asked = req && req.query && typeof req.query.v === 'string'
       ? req.query.v : '';
-    const out = asked && asked === String(version.buildId())
+    const out = asked && asked === String(version.buildKey())
       ? IMMUTABLE : 'no-cache';
     log.debug("Leaving PublicAssets.cachingFor(). " + out);
     return out;
@@ -160,7 +162,9 @@ class PublicAssets {
     log.debug("Entering PublicAssets.index().");
     const out = {
       source: i18n.SOURCE,
-      version: String(version.load().version),
+      // Empty where the build may not be shown (#2142): anybody reads this.
+      version: mode.publishesBuildDetail() ? String(version.load().version)
+                                           : '',
       catalogs: i18n.catalogs(),
       offered: i18n.offered()
     };

@@ -347,6 +347,14 @@
     "en": "26b0298f1a2bd460",
     "text": "Idinaragdag ang includeSubDomains sa Strict-Transport-Security, para gumamit ang mga browser ng HTTPS sa bawat subdomain ng host name ng service na ito. Naka-on bilang default sa product mode. I-off kung kailangan pang sumagot ng subdomain sa plain HTTP."
   },
+  "security.publishBuildInfo|label": {
+    "en": "854e975db3ad3f56",
+    "text": "Ipakita ang eksaktong build sa mga taong hindi administrator"
+  },
+  "security.publishBuildInfo|description": {
+    "en": "7ee4c3866d1b407a",
+    "text": "Kung lalabas ang eksaktong version, build number, oras ng build at commit kung saan mababasa ito ng iba bukod sa administrator: ang footer ng bawat page, ang mga API ng sign-in, portal at reports at ang kanilang mga OpenAPI document, at ang User-Agent ng mga request ng service na ito sa mga partner. Ipinapakita ito ng auto, ang default, sa development mode at itinatago sa product mode, kung saan ang sariling version ng API ang nakasaad sa mga document at ang User-Agent ay pangalan lang ng produkto; pinipilit ito ng on at off sa alinmang mode. Laging ipinapakita ng console at ng management API ang build."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Tanggapin ang assertion na walang audience"

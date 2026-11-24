@@ -347,6 +347,14 @@
     "en": "26b0298f1a2bd460",
     "text": "Ajoute includeSubDomains à Strict-Transport-Security, afin que les navigateurs utilisent HTTPS pour tous les sous-domaines du nom d’hôte de ce service. Activé par défaut en mode produit. Désactivez-le si un sous-domaine doit encore répondre en HTTP simple."
   },
+  "security.publishBuildInfo|label": {
+    "en": "854e975db3ad3f56",
+    "text": "Montrer la build exacte aux personnes qui ne sont pas administrateurs"
+  },
+  "security.publishBuildInfo|description": {
+    "en": "7ee4c3866d1b407a",
+    "text": "Indique si la version exacte, le numéro de build, la date de build et le commit apparaissent là où une personne autre qu’un administrateur peut les lire : le pied de page de chaque page, les API de connexion, du portail et des rapports et leurs documents OpenAPI, et le User-Agent des requêtes que ce service envoie aux partenaires. auto, la valeur par défaut, les montre en mode développement et les masque en mode produit, où les documents donnent à la place la version propre de l’API et le User-Agent n’est que le nom du produit ; on et off l’imposent dans les deux modes. La console et l’API de gestion montrent toujours la build."
+  },
   "federation.allowAssertionWithoutAudience|label": {
     "en": "ed95d7ca4d1f2354",
     "text": "Accepter une assertion sans audience"

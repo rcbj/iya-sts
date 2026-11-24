@@ -12056,6 +12056,27 @@ the product token. Each of those reaches somebody else's server, and their
 access log is where an integration with a mock they did not install gets
 diagnosed.
 
+**IN PRODUCT, NOBODY BUT AN ADMINISTRATOR IS TOLD WHICH BUILD THIS IS (#2142,
+ASVS 5.0.0 13.4.6).** `mode.publishesBuildDetail()` — `security.publishBuildInfo`,
+`auto` following the mode — is asked where a build would reach anybody else,
+and false leaves it out: the page footer's facts (`page_footer.ts`, so every
+shell and the error page, the console's shell DOCUMENT included, since anybody
+can fetch it), the shell's `data-sts-version`, `/web/locales/catalogs.json`, the
+front page's view, `/account-api`'s `version` members and document, the reports
+index, `/authn-api/openapi.json` (OpenAPI requires `info.version`, so it is the
+API's own `1`, as the reports document's always was), and every outbound
+User-Agent, which becomes `sts (<component>)`. `userAgent(component,
+showBuild)` takes the answer from its caller because this module may not ask the
+mode; the requesters that built the header once at require time ask per request
+now (a `defaultDeps()` getter), since the mode is per realm and runtime-settable.
+The console keeps the build through its shell ANSWER, which only a token holder
+reads: `WebFooter.drawnIn()` draws the footer with it. `/admin-api` and
+`/admin/sts-metadata` never ask. The audit export's `source` and User-Agent stay
+whole: they go to the operator's own destination. A page's cached files are
+keyed by `buildKey()`, a random key the Dockerfile draws per build
+(`STS_BUILD_KEY`), where `buildId()` named the commit and the instant to every
+visitor; with no key (a checkout, the tests image) it is `buildId()`.
+
 **`package.json` carries VERSION's M.N.O exactly** since #1298 (it was `M.N.0`,
 semver's three parts with the build number not one of them), and never the
 build number (#1317). `node

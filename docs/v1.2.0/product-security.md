@@ -87,6 +87,14 @@ single sign-on consent switches `saml2.ssoConsent`, `saml11.ssoConsent` and
 * **HTTPS.** The main port is HTTPS, and a process with `global.https` off does
   not start. The plain-HTTP revocation and SCEP listener stays, because
   RFC 5280, RFC 5019 and RFC 8894 expect those services over HTTP.
+* **The build.** No page, API answer or outbound request that someone other
+  than an administrator can see names the exact version, build number, build
+  time or commit: the page footer has no version line, the sign-in and portal
+  APIs' OpenAPI documents give the API's own version (`1`), the reports, portal
+  and front-page answers carry an empty version, and the User-Agent of every
+  request to a partner is `sts (<component>)`. The console and the management
+  API still show the build. `security.publishBuildInfo` set to `on` shows it
+  everywhere again (ASVS 5.0.0 13.4.6).
 * **HSTS.** Every response over TLS carries
   `Strict-Transport-Security: max-age=31536000; includeSubDomains`. Turn off
   `security.hstsIncludeSubDomains` if a subdomain of the host name must still

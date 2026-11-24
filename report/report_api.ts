@@ -1063,14 +1063,17 @@ function reportStoredHolds(row: any): boolean {
 
 function reportServeIndex(res: ReportAnswering<'getIndex'>): void {
   log.debug("Entering reportServeIndex().");
+  // Empty where the build may not be shown (#2142): a reader of reports is
+  // not necessarily an administrator.
+  const shown = require('../common/mode').publishesBuildDetail();
   reportJson(res, 200, {
     service: 'report',
     catalog: BASE + '/catalog',
     realms: BASE + '/realms',
     version: {
-      version: APP_VERSION.version,
+      version: shown ? APP_VERSION.version : '',
       stamped: APP_VERSION.stamped === true,
-      buildInfo: APP_BUILD_INFO
+      buildInfo: shown ? APP_BUILD_INFO : ''
     }
   });
   log.debug("Leaving reportServeIndex().");

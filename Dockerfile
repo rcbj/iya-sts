@@ -527,6 +527,13 @@ COPY --from=debugger /debugger/ ./debugger/embedded/
 # (tests/tools/release-number.js). It must be M.N.O exactly or this RUN fails
 # (STS-CORE-0175); empty, the default, the release is VERSION's as before.
 #
+# STS_BUILD_KEY (#2142) is sixteen random bytes drawn here, once per build:
+# the opaque key the static surfaces' cached files are addressed by
+# (`version.buildKey()`), the same on every node and worker of this image and
+# different in the next one, which — unlike the build identifier it replaces
+# there — names neither the commit nor the build instant to whoever fetches
+# a page.
+#
 # `cat` afterwards so the record is in the build log: when somebody asks which
 # build an image is, the answer is in the log of the build that made it as well
 # as in the image.
@@ -537,6 +544,7 @@ ARG STS_VERSION_RELEASE=
 RUN GIT_COMMIT="${GIT_COMMIT}" STS_RELEASE="${STS_RELEASE}" \
     BUILD_NUMBER="${BUILD_NUMBER}" \
     STS_VERSION_RELEASE="${STS_VERSION_RELEASE}" \
+    STS_BUILD_KEY="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')" \
     node common/version.js --stamp . && cat version.json
 # OCI metadata, read by ghcr.io and Docker Hub (2026-10-02). `source` is what
 # LINKS the published package (ghcr.io/rcbj/iya-sts, pushed by
