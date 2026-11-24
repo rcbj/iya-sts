@@ -8691,6 +8691,27 @@ const CODES = [
       'without it: a sign-in is never held for something that cannot be ' +
       'done (#2009).',
     spec: 'none (the sign-in goes on)' },
+  { code: 'STS-AUTHN-0620',
+    summary: 'A post-login PIV re-issue act named a slot the step does not ' +
+      'ask for: no certificate in it was due when the step was asked ' +
+      '(#2009).',
+    spec: 'none (HTTP 400 from /authn-api)' },
+  { code: 'STS-AUTHN-0621',
+    summary: 'A post-login PIV re-issue act named a slot whose profile this ' +
+      'realm no longer enrols: est.allowedProfiles left it out after the ' +
+      'step was asked. Nothing was issued (#2009).',
+    spec: 'none (HTTP 400 from /authn-api)' },
+  { code: 'STS-AUTHN-0622',
+    summary: 'The post-login PIV re-issue step was asked to continue before ' +
+      'every slot it asks for had a new certificate: enrol the others, or ' +
+      'Skip where the step may still be skipped (#2009).',
+    spec: 'none (HTTP 400 from /authn-api)' },
+  { code: 'STS-AUTHN-0623',
+    summary: 'The post-login PIV re-issue can no longer be done here: since ' +
+      'the step was asked, the realm stopped enrolling every profile it ' +
+      'asked for. The held session is started without it: a sign-in is ' +
+      'never held for something that cannot be done (#2009).',
+    spec: 'none (the sign-in goes on)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -23783,6 +23804,19 @@ const CODES = [
       'works without a PIN, was offered for a profile other than ' +
       'piv-card-auth (#1955).',
     spec: 'HTTP 400' },
+  { code: 'STS-PIV-0038',
+    summary: 'A PIV certificate a post-login re-issue replaced could not be ' +
+      'revoked (superseded) when its successor was first used to sign in: ' +
+      'the certificate authority refused, or the record could not be read. ' +
+      'The row is kept, so the next sign-in with the new certificate tries ' +
+      'again; until then the old certificate is still valid (#2009, D5).',
+    spec: 'none (logged; the sign-in goes on)' },
+  { code: 'STS-PIV-0039',
+    summary: 'A certificate a post-login PIV re-issue enrolled for one ' +
+      'person was used to start a session for another. Nothing is revoked: ' +
+      'a person\'s certificates are revoked only by their own new ' +
+      'certificate (#2009, D5).',
+    spec: 'none (logged; the sign-in goes on)' },
   // ===== SSHCA =============================================================
   { code: 'STS-SSHCA-0001',
     summary: 'The SSH user CA\'s public key or its KRL was asked for on the ' +

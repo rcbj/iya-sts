@@ -704,6 +704,28 @@ model PostLoginPolicy {
   @fromAttr(#{attr: "stsPostLoginMailKeepClassical"})
   `mailKeepClassical`?: string;
 
+  // #2009 P3: the PIV re-issue's block.
+  @fromAttr(#{attr: "stsPostLoginPivEnabled"})
+  `pivEnabled`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginPivSnoozeDays"})
+  `pivSnoozeDays`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginPivGraceDays"})
+  `pivGraceDays`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginPivSlots"})
+  `pivSlots`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginPivTrigger"})
+  `pivTrigger`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginPivRenewDays"})
+  `pivRenewDays`?: string;
+
+  @fromAttr(#{attr: "stsPostLoginPivTarget"})
+  `pivTarget`?: string;
+
   @fromAttr(#{attr: "stsPostLoginPrecedence"})
   `precedence`?: integer;
 

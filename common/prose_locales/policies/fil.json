@@ -2047,6 +2047,74 @@
     "en": "c8030fa81a2f934d",
     "text": "Ilang araw nananatili ang klasikong OpenPGP key ng tao sa kanyang entry at sa Web Key Directory katabi ng post-quantum na key na pumalit dito, para mahanap pa rin ng kausap na hindi magamit ang bago ang luma. Ang bagong mail mula sa serbisyong ito ay pupunta agad sa post-quantum na key. Pagkatapos, aalisin ng isang scheduler job ang klasikong key sa entry at sa Web Key Directory. Inaalis ito agad ng 0."
   },
+  "postLogin.FIELDS.pivEnabled.label": {
+    "en": "6d8ee32fc1b5b94a",
+    "text": "Hilingin ang muling pag-isyu ng mga PIV certificate"
+  },
+  "postLogin.FIELDS.pivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, ang bawat taong naaabot ng profile na ito na may hawak na PIV slot certificate na inisyu ng realm na ito, sa slot na pinangalanan ng pivSlots, ay hinihilingang mag-enrol ng bago pagkatapos mag-sign in (piv-reissue) kapag sinabi ng pivTrigger na dapat na: nilagdaan ito ng issuer nito gamit ang klasikong algorithm habang post-quantum ang EST Issuing CA ng realm na ito, o mag-e-expire ito sa loob ng pivRenewDays. Binabawi (superseded) ang lumang certificate kapag unang ginamit ang bago sa isang sign-in. Ang pinangalanang profile na naka-off ito ay nag-aalis sa aktibidad na ito ng sinumang pinili para rito."
+  },
+  "postLogin.FIELDS.pivSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "araw"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.label": {
+    "en": "733d7ad9439f061c",
+    "text": "Muling pag-isyu ng PIV: ipinagpapaliban ito ng Laktawan nang"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "Gaano katagal ipinagpapaliban ng Laktawan ang muling pag-isyu ng PIV para sa taong iyon."
+  },
+  "postLogin.FIELDS.pivGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "araw"
+  },
+  "postLogin.FIELDS.pivGraceDays.label": {
+    "en": "cf0842fc5de15483",
+    "text": "Muling pag-isyu ng PIV: nakalaang panahon"
+  },
+  "postLogin.FIELDS.pivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "Binibilang mula sa UNANG imbitasyon ng tao sa muling pag-isyu ng PIV. Kapag lumipas na, wala nang Laktawan at pinipigil ang sign-in hanggang magkaroon ng bagong certificate ang bawat slot na dapat na. Ang 0 ay walang deadline."
+  },
+  "postLogin.FIELDS.pivSlots.label": {
+    "en": "95dcbc9b5db168f8",
+    "text": "Muling pag-isyu ng PIV: mga slot"
+  },
+  "postLogin.FIELDS.pivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "Ang mga PIV slot na ang mga certificate ay tinitingnan ng aktibidad, pinaghihiwalay ng kuwit: 9a (PIV authentication), 9c (digital signature), 9d (key management), 9e (card authentication). Hindi kailanman hinihiling ang slot na ang profile ay wala sa est.allowedProfiles."
+  },
+  "postLogin.FIELDS.pivTrigger.label": {
+    "en": "3a6dc99d50545fe3",
+    "text": "Muling pag-isyu ng PIV: ano ang nagpapadapat sa isang certificate"
+  },
+  "postLogin.FIELDS.pivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "Ano ang nagpapadapat sa certificate ng isang slot. classical-issuer: nilagdaan ito ng issuer nito gamit ang klasikong algorithm at post-quantum ang EST Issuing CA ng realm na ito (hindi magiging mas mabuti ang certificate na muling inisyu sa ilalim ng klasikong CA). expiring: mag-e-expire ito sa loob ng pivRenewDays. both: alinman."
+  },
+  "postLogin.FIELDS.pivRenewDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "araw"
+  },
+  "postLogin.FIELDS.pivRenewDays.label": {
+    "en": "2e9493d0c48dc0ba",
+    "text": "Muling pag-isyu ng PIV: i-renew nang ganito kaaga bago mag-expire"
+  },
+  "postLogin.FIELDS.pivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "Ilang araw bago mag-expire ang isang PIV slot certificate ito dapat nang i-renew, kapag expiring o both ang pivTrigger."
+  },
+  "postLogin.FIELDS.pivTarget.label": {
+    "en": "a1261fcffb0037ed",
+    "text": "Muling pag-isyu ng PIV: ano ang iniisyu"
+  },
+  "postLogin.FIELDS.pivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "Para saan ang bagong certificate. reissue: bagong certificate para sa key na muling ginagawa ng card sa parehong slot, nilagdaan ng EST Issuing CA ng realm. rekey: isang post-quantum key sa card, na wala pang PIV card na kayang gumawa ngayon, kaya walang hinihilingan ang profile na naka-rekey."
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "b1a01fe693170513",
     "text": "Ang class ng serbisyong ito para sa post-login activity profile: kung ano ang hinihinging gawin ng tao pagkatapos mag-sign in. Pinangangalanan ayon sa PROFILE (`cn=default`, o isang named profile na pinapangalanan ng isang application o isang group)."
@@ -2106,6 +2174,34 @@
   "postLogin.SCHEMA.attributes.stsPostLoginMailKeepClassical.what": {
     "en": "c8030fa81a2f934d",
     "text": "Ilang araw nananatili ang klasikong OpenPGP key ng tao sa kanyang entry at sa Web Key Directory katabi ng post-quantum na key na pumalit dito, para mahanap pa rin ng kausap na hindi magamit ang bago ang luma. Ang bagong mail mula sa serbisyong ito ay pupunta agad sa post-quantum na key. Pagkatapos, aalisin ng isang scheduler job ang klasikong key sa entry at sa Web Key Directory. Inaalis ito agad ng 0."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, ang bawat taong naaabot ng profile na ito na may hawak na PIV slot certificate na inisyu ng realm na ito, sa slot na pinangalanan ng pivSlots, ay hinihilingang mag-enrol ng bago pagkatapos mag-sign in (piv-reissue) kapag sinabi ng pivTrigger na dapat na: nilagdaan ito ng issuer nito gamit ang klasikong algorithm habang post-quantum ang EST Issuing CA ng realm na ito, o mag-e-expire ito sa loob ng pivRenewDays. Binabawi (superseded) ang lumang certificate kapag unang ginamit ang bago sa isang sign-in. Ang pinangalanang profile na naka-off ito ay nag-aalis sa aktibidad na ito ng sinumang pinili para rito."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "Gaano katagal ipinagpapaliban ng Laktawan ang muling pag-isyu ng PIV para sa taong iyon."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "Binibilang mula sa UNANG imbitasyon ng tao sa muling pag-isyu ng PIV. Kapag lumipas na, wala nang Laktawan at pinipigil ang sign-in hanggang magkaroon ng bagong certificate ang bawat slot na dapat na. Ang 0 ay walang deadline."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "Ang mga PIV slot na ang mga certificate ay tinitingnan ng aktibidad, pinaghihiwalay ng kuwit: 9a (PIV authentication), 9c (digital signature), 9d (key management), 9e (card authentication). Hindi kailanman hinihiling ang slot na ang profile ay wala sa est.allowedProfiles."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "Ano ang nagpapadapat sa certificate ng isang slot. classical-issuer: nilagdaan ito ng issuer nito gamit ang klasikong algorithm at post-quantum ang EST Issuing CA ng realm na ito (hindi magiging mas mabuti ang certificate na muling inisyu sa ilalim ng klasikong CA). expiring: mag-e-expire ito sa loob ng pivRenewDays. both: alinman."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "Ilang araw bago mag-expire ang isang PIV slot certificate ito dapat nang i-renew, kapag expiring o both ang pivTrigger."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "Para saan ang bagong certificate. reissue: bagong certificate para sa key na muling ginagawa ng card sa parehong slot, nilagdaan ng EST Issuing CA ng realm. rekey: isang post-quantum key sa card, na wala pang PIV card na kayang gumawa ngayon, kaya walang hinihilingan ang profile na naka-rekey."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
     "en": "2b5b2ba409912c7d",
@@ -2214,6 +2310,30 @@
   "postLogin.sentences.mailKeepNone": {
     "en": "f7cb6f0da08b7411",
     "text": "ang klasikong OpenPGP key na pinalitan ng post-quantum ay inaalis agad"
+  },
+  "postLogin.sentences.pivReissue": {
+    "en": "5f2f81aff443f105",
+    "text": "ang taong may hawak na PIV slot certificate ({{slots}}) ay hinihilingang mag-enrol ng bago pagkatapos mag-sign in"
+  },
+  "postLogin.sentences.pivTriggerClassical": {
+    "en": "632e10e241646755",
+    "text": "dapat na ang isang certificate kapag klasikong CA ang lumagda rito at post-quantum ang EST Issuing CA ng realm na ito"
+  },
+  "postLogin.sentences.pivTriggerExpiring": {
+    "en": "aded73c111de1a19",
+    "text": "dapat na ang isang certificate {{days}} araw bago ito mag-expire"
+  },
+  "postLogin.sentences.pivTriggerBoth": {
+    "en": "e1ad48c0307193c5",
+    "text": "dapat na ang isang certificate kapag klasikong CA ang lumagda rito at post-quantum ang EST Issuing CA ng realm na ito, o {{days}} araw bago ito mag-expire"
+  },
+  "postLogin.sentences.pivTargetRekey": {
+    "en": "812934151a1711bd",
+    "text": "hinihiling ang post-quantum key sa card, na wala pang PIV card na kayang gumawa ngayon, kaya walang hinihilingan"
+  },
+  "postLogin.sentences.pivSuperseded": {
+    "en": "89b3974d23046244",
+    "text": "binabawi ang lumang certificate kapag unang ginamit ang bago sa pag-sign in"
   },
   "postLogin.sentences.appliesTo": {
     "en": "f195acc04e68d15e",

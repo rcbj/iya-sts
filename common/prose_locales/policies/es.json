@@ -2047,6 +2047,74 @@
     "en": "c8030fa81a2f934d",
     "text": "Cuántos días se queda la clave OpenPGP clásica de una persona en su entrada y en el Web Key Directory junto a la clave poscuántica que la sustituyó, para que un corresponsal que no pueda usar la nueva siga encontrando la antigua. El correo nuevo de este servicio va a la clave poscuántica desde ya. Después, una tarea del planificador quita la clave clásica de la entrada y del Web Key Directory. 0 la quita de inmediato."
   },
+  "postLogin.FIELDS.pivEnabled.label": {
+    "en": "6d8ee32fc1b5b94a",
+    "text": "Pedir la reemisión de certificados PIV"
+  },
+  "postLogin.FIELDS.pivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, a toda persona a la que llegue este perfil y que tenga un certificado de ranura PIV emitido por este dominio, en una ranura que nombre pivSlots, se le pide tras iniciar sesión que inscriba uno nuevo (piv-reissue) cuando pivTrigger diga que corresponde: su emisor lo firmó con un algoritmo clásico mientras la CA emisora EST de este dominio es poscuántica, o caduca dentro de pivRenewDays. El certificado antiguo se revoca (superseded) cuando el nuevo se usa por primera vez para iniciar sesión. Un perfil con nombre que tenga esto desactivado excluye de esta actividad a quien se le seleccione."
+  },
+  "postLogin.FIELDS.pivSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "días"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.label": {
+    "en": "733d7ad9439f061c",
+    "text": "Reemisión PIV: Omitir la aplaza"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "Cuánto tiempo aplaza Omitir la reemisión PIV para esa persona."
+  },
+  "postLogin.FIELDS.pivGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "días"
+  },
+  "postLogin.FIELDS.pivGraceDays.label": {
+    "en": "cf0842fc5de15483",
+    "text": "Reemisión PIV: plazo concedido"
+  },
+  "postLogin.FIELDS.pivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "Contado desde la PRIMERA invitación de la persona a la reemisión PIV. Cuando ha pasado, Omitir desaparece y el inicio de sesión se retiene hasta que cada ranura pendiente tenga un certificado nuevo. 0 es sin plazo."
+  },
+  "postLogin.FIELDS.pivSlots.label": {
+    "en": "95dcbc9b5db168f8",
+    "text": "Reemisión PIV: ranuras"
+  },
+  "postLogin.FIELDS.pivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "Las ranuras PIV cuyos certificados examina la actividad, separadas por comas: 9a (autenticación PIV), 9c (firma digital), 9d (gestión de claves), 9e (autenticación de tarjeta). Una ranura cuyo perfil omite est.allowedProfiles nunca se pide."
+  },
+  "postLogin.FIELDS.pivTrigger.label": {
+    "en": "3a6dc99d50545fe3",
+    "text": "Reemisión PIV: qué hace que un certificado corresponda"
+  },
+  "postLogin.FIELDS.pivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "Qué hace que corresponda el certificado de una ranura. classical-issuer: su emisor lo firmó con un algoritmo clásico y la CA emisora EST de este dominio es poscuántica (un certificado reemitido bajo una CA clásica no sería mejor). expiring: caduca dentro de pivRenewDays. both: cualquiera de los dos."
+  },
+  "postLogin.FIELDS.pivRenewDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "días"
+  },
+  "postLogin.FIELDS.pivRenewDays.label": {
+    "en": "2e9493d0c48dc0ba",
+    "text": "Reemisión PIV: renovar con esta antelación"
+  },
+  "postLogin.FIELDS.pivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "Cuántos días antes de caducar corresponde renovar un certificado de ranura PIV, cuando pivTrigger es expiring o both."
+  },
+  "postLogin.FIELDS.pivTarget.label": {
+    "en": "a1261fcffb0037ed",
+    "text": "Reemisión PIV: qué se emite"
+  },
+  "postLogin.FIELDS.pivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "Sobre qué es el certificado nuevo. reissue: un certificado nuevo sobre una clave que la tarjeta vuelve a generar en la misma ranura, firmado por la CA emisora EST del dominio. rekey: una clave poscuántica en la tarjeta, que hoy ninguna tarjeta PIV puede generar, así que un perfil con rekey no pide nada a nadie."
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "b1a01fe693170513",
     "text": "La clase de este servicio para un perfil de actividad posterior al inicio de sesión: lo que se pide a una persona después de iniciar sesión. Nombrada por el PERFIL (`cn=default`, o un perfil con nombre que nombra una aplicación o un grupo)."
@@ -2106,6 +2174,34 @@
   "postLogin.SCHEMA.attributes.stsPostLoginMailKeepClassical.what": {
     "en": "c8030fa81a2f934d",
     "text": "Cuántos días se queda la clave OpenPGP clásica de una persona en su entrada y en el Web Key Directory junto a la clave poscuántica que la sustituyó, para que un corresponsal que no pueda usar la nueva siga encontrando la antigua. El correo nuevo de este servicio va a la clave poscuántica desde ya. Después, una tarea del planificador quita la clave clásica de la entrada y del Web Key Directory. 0 la quita de inmediato."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "DESACTIVADO DE FORMA PREDETERMINADA. Activado, a toda persona a la que llegue este perfil y que tenga un certificado de ranura PIV emitido por este dominio, en una ranura que nombre pivSlots, se le pide tras iniciar sesión que inscriba uno nuevo (piv-reissue) cuando pivTrigger diga que corresponde: su emisor lo firmó con un algoritmo clásico mientras la CA emisora EST de este dominio es poscuántica, o caduca dentro de pivRenewDays. El certificado antiguo se revoca (superseded) cuando el nuevo se usa por primera vez para iniciar sesión. Un perfil con nombre que tenga esto desactivado excluye de esta actividad a quien se le seleccione."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "Cuánto tiempo aplaza Omitir la reemisión PIV para esa persona."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "Contado desde la PRIMERA invitación de la persona a la reemisión PIV. Cuando ha pasado, Omitir desaparece y el inicio de sesión se retiene hasta que cada ranura pendiente tenga un certificado nuevo. 0 es sin plazo."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "Las ranuras PIV cuyos certificados examina la actividad, separadas por comas: 9a (autenticación PIV), 9c (firma digital), 9d (gestión de claves), 9e (autenticación de tarjeta). Una ranura cuyo perfil omite est.allowedProfiles nunca se pide."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "Qué hace que corresponda el certificado de una ranura. classical-issuer: su emisor lo firmó con un algoritmo clásico y la CA emisora EST de este dominio es poscuántica (un certificado reemitido bajo una CA clásica no sería mejor). expiring: caduca dentro de pivRenewDays. both: cualquiera de los dos."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "Cuántos días antes de caducar corresponde renovar un certificado de ranura PIV, cuando pivTrigger es expiring o both."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "Sobre qué es el certificado nuevo. reissue: un certificado nuevo sobre una clave que la tarjeta vuelve a generar en la misma ranura, firmado por la CA emisora EST del dominio. rekey: una clave poscuántica en la tarjeta, que hoy ninguna tarjeta PIV puede generar, así que un perfil con rekey no pide nada a nadie."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
     "en": "2b5b2ba409912c7d",
@@ -2214,6 +2310,30 @@
   "postLogin.sentences.mailKeepNone": {
     "en": "f7cb6f0da08b7411",
     "text": "una clave OpenPGP clásica que sustituye una poscuántica se quita de inmediato"
+  },
+  "postLogin.sentences.pivReissue": {
+    "en": "5f2f81aff443f105",
+    "text": "a una persona con un certificado de ranura PIV ({{slots}}) se le pide, tras iniciar sesión, que inscriba uno nuevo"
+  },
+  "postLogin.sentences.pivTriggerClassical": {
+    "en": "632e10e241646755",
+    "text": "un certificado corresponde cuando lo firmó una CA clásica y la CA emisora EST de este dominio es poscuántica"
+  },
+  "postLogin.sentences.pivTriggerExpiring": {
+    "en": "aded73c111de1a19",
+    "text": "un certificado corresponde {{days}} día(s) antes de caducar"
+  },
+  "postLogin.sentences.pivTriggerBoth": {
+    "en": "e1ad48c0307193c5",
+    "text": "un certificado corresponde cuando lo firmó una CA clásica y la CA emisora EST de este dominio es poscuántica, o {{days}} día(s) antes de caducar"
+  },
+  "postLogin.sentences.pivTargetRekey": {
+    "en": "812934151a1711bd",
+    "text": "se pide una clave poscuántica en la tarjeta, que hoy ninguna tarjeta PIV puede generar, así que no se pide nada a nadie"
+  },
+  "postLogin.sentences.pivSuperseded": {
+    "en": "89b3974d23046244",
+    "text": "el certificado antiguo se revoca cuando el nuevo se usa por primera vez para iniciar sesión"
   },
   "postLogin.sentences.appliesTo": {
     "en": "f195acc04e68d15e",

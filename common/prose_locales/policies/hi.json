@@ -2047,6 +2047,74 @@
     "en": "c8030fa81a2f934d",
     "text": "किसी व्यक्ति की पारंपरिक OpenPGP कुंजी उसकी प्रविष्टि और Web Key Directory में उसकी जगह लेने वाली पोस्ट-क्वांटम कुंजी के साथ कितने दिन रहती है, ताकि जो संवाददाता नई कुंजी का उपयोग नहीं कर सकता वह पुरानी पा सके। इस सेवा का नया मेल तुरंत पोस्ट-क्वांटम कुंजी पर जाता है। उसके बाद एक शेड्यूलर जॉब पारंपरिक कुंजी को प्रविष्टि और Web Key Directory से हटा देता है। 0 उसे तुरंत हटा देता है।"
   },
+  "postLogin.FIELDS.pivEnabled.label": {
+    "en": "6d8ee32fc1b5b94a",
+    "text": "PIV प्रमाणपत्रों को दोबारा जारी करने के लिए कहें"
+  },
+  "postLogin.FIELDS.pivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "डिफ़ॉल्ट रूप से बंद। चालू होने पर, यह प्रोफ़ाइल जिस भी व्यक्ति तक पहुँचती है और जिसके पास pivSlots में बताए किसी स्लॉट में इस realm का जारी किया PIV स्लॉट प्रमाणपत्र है, उससे साइन इन के बाद नया नामांकित करने को कहा जाता है (piv-reissue) जब pivTrigger उसे देय बताता है: उसके जारीकर्ता ने उस पर क्लासिकल एल्गोरिदम से हस्ताक्षर किए जबकि इस realm का EST Issuing CA पोस्ट-क्वांटम है, या वह pivRenewDays के भीतर समाप्त होता है। नया प्रमाणपत्र पहली बार साइन इन में उपयोग होने पर पुराना रद्द (superseded) कर दिया जाता है। जिस नामित प्रोफ़ाइल में यह बंद है, वह जिसके लिए चुनी जाती है उसे इस गतिविधि से बाहर रखती है।"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "दिन"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.label": {
+    "en": "733d7ad9439f061c",
+    "text": "PIV दोबारा जारी करना: छोड़ें इसे इतना टालता है"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "छोड़ें उस व्यक्ति के लिए PIV दोबारा जारी करने को कितने समय टालता है।"
+  },
+  "postLogin.FIELDS.pivGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "दिन"
+  },
+  "postLogin.FIELDS.pivGraceDays.label": {
+    "en": "cf0842fc5de15483",
+    "text": "PIV दोबारा जारी करना: दिया गया समय"
+  },
+  "postLogin.FIELDS.pivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "PIV दोबारा जारी करने के लिए व्यक्ति के पहले आमंत्रण से गिना जाता है। समय बीत जाने पर छोड़ें उपलब्ध नहीं रहता और साइन इन तब तक रोका जाता है जब तक हर देय स्लॉट को नया प्रमाणपत्र नहीं मिल जाता। 0 का अर्थ है कोई समय-सीमा नहीं।"
+  },
+  "postLogin.FIELDS.pivSlots.label": {
+    "en": "95dcbc9b5db168f8",
+    "text": "PIV दोबारा जारी करना: स्लॉट"
+  },
+  "postLogin.FIELDS.pivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "वे PIV स्लॉट जिनके प्रमाणपत्र गतिविधि देखती है, अल्पविराम से अलग: 9a (PIV प्रमाणीकरण), 9c (डिजिटल हस्ताक्षर), 9d (कुंजी प्रबंधन), 9e (कार्ड प्रमाणीकरण)। जिस स्लॉट की प्रोफ़ाइल est.allowedProfiles में नहीं है, उसके लिए कभी नहीं कहा जाता।"
+  },
+  "postLogin.FIELDS.pivTrigger.label": {
+    "en": "3a6dc99d50545fe3",
+    "text": "PIV दोबारा जारी करना: प्रमाणपत्र को क्या देय बनाता है"
+  },
+  "postLogin.FIELDS.pivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "किसी स्लॉट के प्रमाणपत्र को क्या देय बनाता है। classical-issuer: उसके जारीकर्ता ने क्लासिकल एल्गोरिदम से हस्ताक्षर किए और इस realm का EST Issuing CA पोस्ट-क्वांटम है (क्लासिकल CA के तहत दोबारा जारी प्रमाणपत्र बेहतर नहीं होगा)। expiring: वह pivRenewDays के भीतर समाप्त होता है। both: दोनों में से कोई भी।"
+  },
+  "postLogin.FIELDS.pivRenewDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "दिन"
+  },
+  "postLogin.FIELDS.pivRenewDays.label": {
+    "en": "2e9493d0c48dc0ba",
+    "text": "PIV दोबारा जारी करना: समाप्ति से इतना पहले नवीनीकरण"
+  },
+  "postLogin.FIELDS.pivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "जब pivTrigger expiring या both हो, तब PIV स्लॉट प्रमाणपत्र समाप्ति से कितने दिन पहले नवीनीकरण के लिए देय होता है।"
+  },
+  "postLogin.FIELDS.pivTarget.label": {
+    "en": "a1261fcffb0037ed",
+    "text": "PIV दोबारा जारी करना: क्या जारी होता है"
+  },
+  "postLogin.FIELDS.pivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "नया प्रमाणपत्र किस पर होता है। reissue: उसी स्लॉट में कार्ड द्वारा फिर से बनाई गई कुंजी पर नया प्रमाणपत्र, जिस पर realm का EST Issuing CA हस्ताक्षर करता है। rekey: कार्ड पर एक पोस्ट-क्वांटम कुंजी, जो आज कोई PIV कार्ड नहीं बना सकता, इसलिए rekey पर सेट प्रोफ़ाइल किसी से नहीं कहती।"
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "b1a01fe693170513",
     "text": "साइन इन के बाद की गतिविधि प्रोफ़ाइल के लिए इस सेवा का वर्ग: साइन इन के बाद व्यक्ति से क्या करने को कहा जाता है। नाम प्रोफ़ाइल से (`cn=default`, या कोई नामित प्रोफ़ाइल जिसका नाम कोई अनुप्रयोग या समूह लेता है)।"
@@ -2106,6 +2174,34 @@
   "postLogin.SCHEMA.attributes.stsPostLoginMailKeepClassical.what": {
     "en": "c8030fa81a2f934d",
     "text": "किसी व्यक्ति की पारंपरिक OpenPGP कुंजी उसकी प्रविष्टि और Web Key Directory में उसकी जगह लेने वाली पोस्ट-क्वांटम कुंजी के साथ कितने दिन रहती है, ताकि जो संवाददाता नई कुंजी का उपयोग नहीं कर सकता वह पुरानी पा सके। इस सेवा का नया मेल तुरंत पोस्ट-क्वांटम कुंजी पर जाता है। उसके बाद एक शेड्यूलर जॉब पारंपरिक कुंजी को प्रविष्टि और Web Key Directory से हटा देता है। 0 उसे तुरंत हटा देता है।"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "डिफ़ॉल्ट रूप से बंद। चालू होने पर, यह प्रोफ़ाइल जिस भी व्यक्ति तक पहुँचती है और जिसके पास pivSlots में बताए किसी स्लॉट में इस realm का जारी किया PIV स्लॉट प्रमाणपत्र है, उससे साइन इन के बाद नया नामांकित करने को कहा जाता है (piv-reissue) जब pivTrigger उसे देय बताता है: उसके जारीकर्ता ने उस पर क्लासिकल एल्गोरिदम से हस्ताक्षर किए जबकि इस realm का EST Issuing CA पोस्ट-क्वांटम है, या वह pivRenewDays के भीतर समाप्त होता है। नया प्रमाणपत्र पहली बार साइन इन में उपयोग होने पर पुराना रद्द (superseded) कर दिया जाता है। जिस नामित प्रोफ़ाइल में यह बंद है, वह जिसके लिए चुनी जाती है उसे इस गतिविधि से बाहर रखती है।"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "छोड़ें उस व्यक्ति के लिए PIV दोबारा जारी करने को कितने समय टालता है।"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "PIV दोबारा जारी करने के लिए व्यक्ति के पहले आमंत्रण से गिना जाता है। समय बीत जाने पर छोड़ें उपलब्ध नहीं रहता और साइन इन तब तक रोका जाता है जब तक हर देय स्लॉट को नया प्रमाणपत्र नहीं मिल जाता। 0 का अर्थ है कोई समय-सीमा नहीं।"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "वे PIV स्लॉट जिनके प्रमाणपत्र गतिविधि देखती है, अल्पविराम से अलग: 9a (PIV प्रमाणीकरण), 9c (डिजिटल हस्ताक्षर), 9d (कुंजी प्रबंधन), 9e (कार्ड प्रमाणीकरण)। जिस स्लॉट की प्रोफ़ाइल est.allowedProfiles में नहीं है, उसके लिए कभी नहीं कहा जाता।"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "किसी स्लॉट के प्रमाणपत्र को क्या देय बनाता है। classical-issuer: उसके जारीकर्ता ने क्लासिकल एल्गोरिदम से हस्ताक्षर किए और इस realm का EST Issuing CA पोस्ट-क्वांटम है (क्लासिकल CA के तहत दोबारा जारी प्रमाणपत्र बेहतर नहीं होगा)। expiring: वह pivRenewDays के भीतर समाप्त होता है। both: दोनों में से कोई भी।"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "जब pivTrigger expiring या both हो, तब PIV स्लॉट प्रमाणपत्र समाप्ति से कितने दिन पहले नवीनीकरण के लिए देय होता है।"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "नया प्रमाणपत्र किस पर होता है। reissue: उसी स्लॉट में कार्ड द्वारा फिर से बनाई गई कुंजी पर नया प्रमाणपत्र, जिस पर realm का EST Issuing CA हस्ताक्षर करता है। rekey: कार्ड पर एक पोस्ट-क्वांटम कुंजी, जो आज कोई PIV कार्ड नहीं बना सकता, इसलिए rekey पर सेट प्रोफ़ाइल किसी से नहीं कहती।"
   },
   "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
     "en": "2b5b2ba409912c7d",
@@ -2214,6 +2310,30 @@
   "postLogin.sentences.mailKeepNone": {
     "en": "f7cb6f0da08b7411",
     "text": "पोस्ट-क्वांटम कुंजी जिस पारंपरिक OpenPGP कुंजी की जगह लेती है, वह तुरंत हटा दी जाती है"
+  },
+  "postLogin.sentences.pivReissue": {
+    "en": "5f2f81aff443f105",
+    "text": "PIV स्लॉट प्रमाणपत्र ({{slots}}) रखने वाले व्यक्ति से साइन इन के बाद नया नामांकित करने को कहा जाता है"
+  },
+  "postLogin.sentences.pivTriggerClassical": {
+    "en": "632e10e241646755",
+    "text": "प्रमाणपत्र तब देय होता है जब उस पर क्लासिकल CA ने हस्ताक्षर किए हों और इस realm का EST Issuing CA पोस्ट-क्वांटम हो"
+  },
+  "postLogin.sentences.pivTriggerExpiring": {
+    "en": "aded73c111de1a19",
+    "text": "प्रमाणपत्र अपनी समाप्ति से {{days}} दिन पहले देय होता है"
+  },
+  "postLogin.sentences.pivTriggerBoth": {
+    "en": "e1ad48c0307193c5",
+    "text": "प्रमाणपत्र तब देय होता है जब उस पर क्लासिकल CA ने हस्ताक्षर किए हों और इस realm का EST Issuing CA पोस्ट-क्वांटम हो, या अपनी समाप्ति से {{days}} दिन पहले"
+  },
+  "postLogin.sentences.pivTargetRekey": {
+    "en": "812934151a1711bd",
+    "text": "कार्ड पर पोस्ट-क्वांटम कुंजी माँगी जाती है, जो आज कोई PIV कार्ड नहीं बना सकता, इसलिए किसी से नहीं कहा जाता"
+  },
+  "postLogin.sentences.pivSuperseded": {
+    "en": "89b3974d23046244",
+    "text": "नया प्रमाणपत्र पहली बार साइन इन में उपयोग होने पर पुराना प्रमाणपत्र रद्द कर दिया जाता है"
   },
   "postLogin.sentences.appliesTo": {
     "en": "f195acc04e68d15e",

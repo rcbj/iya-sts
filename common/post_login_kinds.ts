@@ -120,6 +120,12 @@ const PQC_PASSKEY_MIGRATION = 'pqc-passkey-migration';
 const PQC_MAIL_ENCRYPTION = 'pqc-mail-encryption';
 
 /**
+ * The PIV certificate re-issue's id (#2009 P3): a smart card's slot
+ * certificates moved to a post-quantum issuer, or renewed before they lapse.
+ */
+const PIV_REISSUE = 'piv-reissue';
+
+/**
  * Every post-login activity, in the order a sign-in asks those of one
  * exposure.
  */
@@ -129,7 +135,12 @@ const KINDS: readonly KindRow[] = Object.freeze([
   // #2009 P2: `common/post_login_mail.ts` answers for it.
   Object.freeze({ id: PQC_MAIL_ENCRYPTION,
                   exposure: 'decrypt-later' as Exposure,
-                  module: './post_login_mail', startable: false })
+                  module: './post_login_mail', startable: false }),
+  // #2009 P3: `common/post_login_piv.ts` answers for it. A certificate a
+  // classical CA signed can be forged once that CA's key falls, so its
+  // exposure is the passkey migration's, and it is asked after it.
+  Object.freeze({ id: PIV_REISSUE, exposure: 'forgery' as Exposure,
+                  module: './post_login_piv', startable: false })
 ]);
 
 /**
@@ -150,6 +161,10 @@ class PostLoginKinds {
    * The mail-encryption migration's id (#2009 P2).
    */
   static readonly PQC_MAIL_ENCRYPTION = PQC_MAIL_ENCRYPTION;
+  /**
+   * The PIV certificate re-issue's id (#2009 P3).
+   */
+  static readonly PIV_REISSUE = PIV_REISSUE;
   /**
    * The table.
    */

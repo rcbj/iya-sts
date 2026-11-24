@@ -1003,6 +1003,20 @@ Scope: `admin:read`.
 | `postLogin.profile.noPasskey[]` | string, or number, or boolean, or null |  |  |
 | `postLogin.profile.noPasskeyFallback` | list, or string, or number, or boolean, or null |  |  |
 | `postLogin.profile.noPasskeyFallback[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivEnabled` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivEnabled[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivGraceDays` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivGraceDays[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivRenewDays` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivRenewDays[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivSlots` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivSlots[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivSnoozeDays` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivSnoozeDays[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivTarget` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivTarget[]` | string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivTrigger` | list, or string, or number, or boolean, or null |  |  |
+| `postLogin.profile.pivTrigger[]` | string, or number, or boolean, or null |  |  |
 | `postLogin.profile.precedence` | integer |  |  |
 | `postLogin.profile.problems` | list |  |  |
 | `postLogin.profile.problems[]` | string |  |  |
@@ -2311,6 +2325,20 @@ Scope: `admin:write`.
 | `profile.noPasskey[]` | string, or number, or boolean, or null |  |  |
 | `profile.noPasskeyFallback` | list, or string, or number, or boolean, or null |  |  |
 | `profile.noPasskeyFallback[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivEnabled` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivEnabled[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivGraceDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivGraceDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivRenewDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivRenewDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivSlots` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivSlots[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivSnoozeDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivSnoozeDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivTarget` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivTarget[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivTrigger` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivTrigger[]` | string, or number, or boolean, or null |  |  |
 | `profile.precedence` | integer |  |  |
 | `profile.problems` | list |  |  |
 | `profile.problems[]` | string |  |  |
@@ -2366,6 +2394,20 @@ Scope: `admin:write`.
 | `profile.noPasskey[]` | string, or number, or boolean, or null |  |  |
 | `profile.noPasskeyFallback` | list, or string, or number, or boolean, or null |  |  |
 | `profile.noPasskeyFallback[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivEnabled` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivEnabled[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivGraceDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivGraceDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivRenewDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivRenewDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivSlots` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivSlots[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivSnoozeDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivSnoozeDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivTarget` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivTarget[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivTrigger` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivTrigger[]` | string, or number, or boolean, or null |  |  |
 | `profile.precedence` | integer |  |  |
 | `profile.problems` | list |  |  |
 | `profile.problems[]` | string |  |  |
@@ -3386,7 +3428,9 @@ Writes `cn=<profile>,ou=postLoginPolicies` in this realm's directory, REPLACING 
 
 **The mail-encryption activity (#2009) is a block of its own**, off by default with its own switch, so a profile saved before reads it as off: `mailEnabled` asks a person whose mail is encrypted to a classical OpenPGP key or S/MIME certificate to register a post-quantum (ML-KEM) one after signing in; `mailNoKey` what a person whose mail is not encrypted is asked; `mailPrefer` what the step offers (an OpenPGP key, an uploaded S/MIME certificate, or either); `mailKeepClassical` how many days a replaced classical OpenPGP key stays on the entry and in the Web Key Directory beside the new one; and its own `mailSnoozeDays` and `mailGraceDays`.
 
-**Every field is required**, except the mail-encryption block, which a save may leave out to keep what the profile stored, and one left out is refused by name rather than reset to a default, because a save that quietly loosened a rule nobody mentioned is the mistake nobody sees.
+**The PIV re-issue (#2009) is a block of its own** too, off by default with its own switch: `pivEnabled` asks a person holding a PIV slot certificate this realm issued, in a slot `pivSlots` names, to enrol a new one after signing in when `pivTrigger` says it is due (`classical-issuer`: a classical CA signed it and the realm's EST Issuing CA is post-quantum; `expiring`: it expires within `pivRenewDays`); `pivTarget` `rekey` asks nobody; the old certificate is revoked when the new one is first used to sign in; and its own `pivSnoozeDays` and `pivGraceDays`.
+
+**Every field is required**, except the mail-encryption and PIV re-issue blocks, which a save may leave out to keep what the profile stored, and one left out is refused by name rather than reset to a default, because a save that quietly loosened a rule nobody mentioned is the mistake nobody sees.
 
 **Mirrors** `POST /admin/policies` on the admin console.
 
@@ -3418,6 +3462,13 @@ Scope: `admin:write`.
 | `noPasskey` | one of `leave`, `invite`, `require` | yes | leave: not asked. invite: asked to register a post-quantum passkey, and may always skip it. require: asked, and may skip it only until the allotted time has passed. Default `leave`. |
 | `noPasskeyFallback` | one of `none`, `classical` | yes | none: ML-DSA only. classical: after an ML-DSA registration fails on the device, a retry with the classical algorithms is offered (where the passkey policy allows one) — a classical passkey is better than a password, and its holder is asked for the migration later like anyone else's. Default `none`. |
 | `noPasskeyRole` | string |  | Ignored since #1135: a passkey has no role, so a person with none registers a passkey and nothing else is asked. Accepted so that an older body is not refused; not stored, not answered. |
+| `pivEnabled` | boolean, or string |  | OFF BY DEFAULT. The PIV re-issue (#2009): a person holding a PIV slot certificate this realm issued is asked to enrol a new one when it is due. Left out, the stored value stays. |
+| `pivGraceDays` | integer, or string |  | The PIV re-issue's allotted time from the first invitation; 0 is no deadline. Between 0 and 3650. Left out, the stored value stays. |
+| `pivRenewDays` | integer, or string |  | Days before expiry a certificate is due. Between 1 and 365. Left out, the stored value stays. |
+| `pivSlots` | string |  | The slots looked at, comma-separated: 9a, 9c, 9d, 9e. Left out, the stored value stays. |
+| `pivSnoozeDays` | integer, or string |  | How long Skip puts the PIV re-issue off. Between 1 and 90. Left out, the stored value stays. |
+| `pivTarget` | one of `reissue`, `rekey` |  | reissue (a new certificate over a key the card makes again) or rekey (a post-quantum key on the card, which no card makes today, so nobody is asked). Left out, the stored value stays. |
+| `pivTrigger` | one of `classical-issuer`, `expiring`, `both` |  | What makes a certificate due: classical-issuer, expiring or both. Left out, the stored value stays. |
 | `precedence` | integer, or string |  | A named profile only: the lowest matching precedence wins. Default 100. |
 | `profile` | string |  | Which profile: `default`, or a named profile (lower-case letters, digits and hyphens), which is created by its first save. Left out, the save edits the default profile; given empty, or null, it is refused. |
 | `snoozeDays` | integer, or string | yes | How long Skip puts the activity off for that person. Between 1 and 90. Default 7. |
@@ -3465,6 +3516,20 @@ Scope: `admin:write`.
 | `profile.noPasskey[]` | string, or number, or boolean, or null |  |  |
 | `profile.noPasskeyFallback` | list, or string, or number, or boolean, or null |  |  |
 | `profile.noPasskeyFallback[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivEnabled` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivEnabled[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivGraceDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivGraceDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivRenewDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivRenewDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivSlots` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivSlots[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivSnoozeDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivSnoozeDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivTarget` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivTarget[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivTrigger` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivTrigger[]` | string, or number, or boolean, or null |  |  |
 | `profile.precedence` | integer |  |  |
 | `profile.problems` | list |  |  |
 | `profile.problems[]` | string |  |  |
@@ -3520,6 +3585,20 @@ Scope: `admin:write`.
 | `profile.noPasskey[]` | string, or number, or boolean, or null |  |  |
 | `profile.noPasskeyFallback` | list, or string, or number, or boolean, or null |  |  |
 | `profile.noPasskeyFallback[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivEnabled` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivEnabled[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivGraceDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivGraceDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivRenewDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivRenewDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivSlots` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivSlots[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivSnoozeDays` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivSnoozeDays[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivTarget` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivTarget[]` | string, or number, or boolean, or null |  |  |
+| `profile.pivTrigger` | list, or string, or number, or boolean, or null |  |  |
+| `profile.pivTrigger[]` | string, or number, or boolean, or null |  |  |
 | `profile.precedence` | integer |  |  |
 | `profile.problems` | list |  |  |
 | `profile.problems[]` | string |  |  |

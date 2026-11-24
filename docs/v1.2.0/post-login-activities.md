@@ -12,19 +12,22 @@ and mails them reminders. Either way the rules come from the policy.
 [Passkeys → Post-login activities](passkeys.md#post-login-activities-moving-people-to-post-quantum-passkeys)
 walks through a rollout; this page is the reference.
 
-Two activities exist today:
+Three activities exist today:
 
 | Activity | What the person is asked |
 |---|---|
 | `pqc-mail-encryption` | To move their **mail encryption to a post-quantum key**: an OpenPGP key whose encryption subkey is ML-KEM (RFC 9980), or an uploaded ML-KEM S/MIME certificate. A person whose mail is encrypted to a classical key is asked; a person whose mail is not encrypted can be invited or required. See [The mail-encryption activity](#the-mail-encryption-activity) below. |
+| `piv-reissue` | To **enrol new PIV slot certificates** on their YubiKey: a certificate this realm issued is replaced when a classical CA signed it and the realm's EST Issuing CA is now post-quantum, or when it is about to expire. The old certificate is revoked when the new one is first used to sign in. See [The PIV re-issue](#the-piv-re-issue) below. |
 | `pqc-passkey-migration` | To register a **post-quantum (ML-DSA) passkey**. A person who holds a classical passkey and no ML-DSA one is asked for an ML-DSA one. All their passkeys are asked about at once, because a passkey has no role: one ML-DSA passkey is enough, and it signs them in and answers the second step as the realm allows. A person with no passkey can be invited or required to register one. |
 
 Each activity has its own block of fields on the policy, with its own
 switch, Skip and allotted time, so a profile saved before an activity
 existed reads it as off. When several are due at one sign-in, the person
 is asked every required one and at most one they may skip; mail encryption
-is asked before the passkey migration, because mail encrypted to a
-classical key today can be read once that key falls.
+is asked before the passkey migration and the PIV re-issue, because mail
+encrypted to a classical key today can be read once that key falls; the
+other two are about forgery, which a key can only suffer once it has
+fallen.
 
 ## Before you start
 
@@ -204,6 +207,60 @@ removes it from the entry and the directory; a key past its time is
 already left out of the directory whether or not the job has run. A
 registration on the portal outside this step replaces the key as before.
 
+## The PIV re-issue
+
+The third block of the policy. Like the mail-encryption block, its fields
+may be left out of a save through the management API.
+
+| Field | Default | What it does |
+|---|---|---|
+| Ask for PIV certificate re-issue (`pivEnabled`) | off | When on, a person holding a [PIV slot certificate](hardware-tokens.md#piv-certificate-profiles) this realm issued, in a slot `pivSlots` names, is asked after signing in to enrol a new one when it is due. A named profile with this off excludes the people it reaches. |
+| PIV re-issue: Skip puts it off for (`pivSnoozeDays`) | 7 days | 1–90. |
+| PIV re-issue: allotted time (`pivGraceDays`) | 0 | From the first invitation to this activity; 0 means no deadline. |
+| PIV re-issue: slots (`pivSlots`) | `9a,9c,9d,9e` | The slots looked at, comma-separated. |
+| PIV re-issue: what makes a certificate due (`pivTrigger`) | `both` | `classical-issuer`, `expiring` or `both`. |
+| PIV re-issue: renew this long before expiry (`pivRenewDays`) | 30 days | 1–365, for `expiring` and `both`. |
+| PIV re-issue: what is issued (`pivTarget`) | `reissue` | `reissue`, or `rekey`, which asks nobody (below). |
+
+**Who is asked.** Slot by slot, the person's newest valid certificate of
+that slot's profile (`piv-auth` 9a, `piv-sign` 9c, `piv-key-management`
+9d, `piv-card-auth` 9e) is due when:
+
+* `classical-issuer`: its issuer signed it with a classical algorithm **and**
+  the realm's EST Issuing CA has a post-quantum or composite key. A
+  certificate re-issued under a classical CA would be no better, so nobody
+  is asked for this until the EST Issuing CA is rebuilt with an ML-DSA or
+  SLH-DSA key on **Protocols → PKI**;
+* `expiring`: it expires within `pivRenewDays`.
+
+A slot whose profile is not in `est.allowedProfiles` is never asked for,
+since the enrolment would be refused, and a person who holds no PIV
+certificate is not asked: this activity re-issues, it does not hand out
+cards. **The key on the card stays classical**: a YubiKey makes no
+post-quantum key today, so `pivTarget` `rekey` asks nobody; it is there
+for when a card can.
+
+**What the person does.** For each due slot the step shows the
+certificate and why it is due, and the `ykman` commands that make a new
+key and request in the slot (`ykman piv keys generate`, `ykman piv
+certificates request`) and the attestations (`ykman piv keys attest`,
+`ykman piv certificates export f9`). They paste the request, the slot's
+attestation and the f9 certificate. Everything the
+[PIV enrolment form](hardware-tokens.md#piv-key-attestation) checks is
+checked: the profile, the attestation, and that the certificate is the
+person's own. The new certificate is shown with the command that writes
+it to the card (`ykman piv certificates import <slot> certificate.pem`).
+When every due slot has a new certificate, *Continue* finishes the
+activity and the sign-in goes on.
+
+**The old certificate keeps working until the new one is used.** It is
+revoked (reason `superseded`) the first time the person signs in with the
+new certificate, over TLS or at the sign-in screen, not when it is
+issued: a person whose import failed still has a card that signs them in.
+If that revocation fails it is tried again at the next sign-in
+(STS-PIV-0038). A certificate the person never uses goes on being valid
+until it expires.
+
 ## Skip, and the allotted time
 
 - **The first invitation starts the clock.** iya-sts records when the person was
@@ -346,6 +403,7 @@ Programs signing in with a key (SCIM, the SPIRE Server API) are never asked.
 | `authn.post-login.asked` | A person was asked; `askedBy` says whether the policy or a started activity asked. |
 | `authn.post-login.skipped` | A person skipped; the row includes when the skip ends. |
 | `authn.post-login.done` | A person did the activity: for the passkey migration the row includes the passkey's algorithm; for mail encryption the kind (`openpgp` or `smime`), the fingerprint or serial, and when a kept classical key goes. |
+| `piv.reissued`, `piv.superseded` | A PIV re-issue enrolled a new certificate (with the serial it replaces), and later revoked the old one when the new one was first used. |
 | `openpgp.classical-kept`, `openpgp.classical-retired` | A classical OpenPGP key was kept beside a post-quantum one, and later removed. |
 | `authn.post-login.held` | A required activity refused a sign-in at a door that can't ask for it. |
 | `authn.post-login.unsupported` | The person's device did not complete the passkey ceremony; the error name, the browser and the platform. |
@@ -373,6 +431,10 @@ Programs signing in with a key (SCIM, the SPIRE Server API) are never asked.
 | STS-AUTHN-0600 | The mail-encryption step refused an S/MIME certificate whose key is not ML-KEM. |
 | STS-AUTHN-0601, 0602 | The step was sent a kind of key it does not offer, or another activity's act. |
 | STS-AUTHN-0603 | The realm can no longer take anything the mail-encryption step offered, so the held session started without it. |
+| STS-AUTHN-0620, 0621 | A PIV re-issue act named a slot the step does not ask for, or one whose profile the realm no longer enrols. |
+| STS-AUTHN-0622 | *Continue* was pressed before every due slot had a new certificate. |
+| STS-AUTHN-0623 | The realm no longer enrols any profile the PIV step asked for, so the held session started without it. |
+| STS-PIV-0038, 0039 | A superseded PIV certificate could not be revoked at its successor's first use (tried again next time), or a re-issued certificate was used by somebody else (nothing revoked). |
 | STS-OPENPGP-0033 | An OpenPGP key registered at the step has no ML-KEM encryption subkey. |
 | STS-OPENPGP-0031, 0032 | A classical OpenPGP key could not be kept, or could not be removed by the job. |
 

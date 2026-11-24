@@ -181,6 +181,14 @@ interface PostLoginProfile {
   mailNoKey: string;
   mailPrefer: string;
   mailKeepClassical: number;
+  // #2009 P3: the PIV re-issue's block.
+  pivEnabled: boolean;
+  pivSnoozeDays: number;
+  pivGraceDays: number;
+  pivSlots: string;
+  pivTrigger: string;
+  pivRenewDays: number;
+  pivTarget: string;
   [field: string]: any;
 }
 
@@ -290,6 +298,20 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
     'beside it, and published with it, for {{days}} day(s)',
   mailKeepNone: 'a classical OpenPGP key a post-quantum one replaces is ' +
     'removed at once',
+  // #2009 P3: the PIV re-issue's block.
+  pivReissue: 'a person holding a PIV slot certificate ({{slots}}) is ' +
+    'asked, after signing in, to enrol a new one',
+  pivTriggerClassical: 'a certificate is due when a classical CA signed it ' +
+    'and this realm\'s EST Issuing CA is post-quantum',
+  pivTriggerExpiring: 'a certificate is due {{days}} day(s) before it ' +
+    'expires',
+  pivTriggerBoth: 'a certificate is due when a classical CA signed it and ' +
+    'this realm\'s EST Issuing CA is post-quantum, or {{days}} day(s) ' +
+    'before it expires',
+  pivTargetRekey: 'a post-quantum key on the card is asked for, which no ' +
+    'PIV card can make today, so nobody is asked',
+  pivSuperseded: 'the old certificate is revoked when the new one is first ' +
+    'used to sign in',
   appliesTo: 'applies where an application or a group names it ' +
     '(appPostLoginPolicy, stsPostLoginPolicy), at precedence ' +
     '{{precedence}}'
@@ -484,6 +506,26 @@ class PostLoginPolicy {
       log.debug("Leaving PostLoginPolicy.parseField().");
       return { problem: field.label + ' is a yes-or-no setting, and "' +
                         text.slice(0, 40) + '" is neither.' };
+    }
+    if (field.type === 'list') {
+      // A LIST OF CLOSED VALUES (#2009 P3, the PIV slots): comma or space
+      // separated, each one of the field's values, at least one, kept in
+      // the field's own order and written comma-separated.
+      const given = text.toLowerCase().split(/[\s,]+/).filter(Boolean);
+      const values = field.values || [];
+      const unknown = given.filter(function (one) {
+        return values.indexOf(one) < 0;
+      });
+      if (!given.length || unknown.length) {
+        log.debug("Leaving PostLoginPolicy.parseField().");
+        return { problem: field.label + ' is one or more of ' +
+                          values.join(', ') + ', comma-separated; "' +
+                          text.slice(0, 40) + '" is not.' };
+      }
+      log.debug("Leaving PostLoginPolicy.parseField().");
+      return { value: values.filter(function (one) {
+        return given.indexOf(one) >= 0;
+      }).join(',') };
     }
     if (field.type === 'enum') {
       const lower = text.toLowerCase();
@@ -918,6 +960,23 @@ class PostLoginPolicy {
           ? fill(SENTENCES.mailKeep,
                  { days: String(rules.mailKeepClassical) })
           : SENTENCES.mailKeepNone);
+    }
+    // THE PIV RE-ISSUE'S BLOCK (#2009 P3), the same rule.
+    if (rules.pivEnabled === true) {
+      const days = { days: String(rules.pivRenewDays) };
+      out.push(fill(SENTENCES.pivReissue,
+                    { slots: String(rules.pivSlots || '') }),
+        rules.pivTrigger === 'classical-issuer'
+          ? SENTENCES.pivTriggerClassical
+          : (rules.pivTrigger === 'expiring'
+            ? fill(SENTENCES.pivTriggerExpiring, days)
+            : fill(SENTENCES.pivTriggerBoth, days)),
+        fill(SENTENCES.snooze, { days: String(rules.pivSnoozeDays) }),
+        Number(rules.pivGraceDays) > 0
+          ? fill(SENTENCES.grace, { days: String(rules.pivGraceDays) })
+          : SENTENCES.noGrace,
+        rules.pivTarget === 'rekey' ? SENTENCES.pivTargetRekey
+                                    : SENTENCES.pivSuperseded);
     }
     if (rules.name !== DEFAULT_PROFILE) {
       out.unshift(fill(SENTENCES.appliesTo, {

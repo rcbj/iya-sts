@@ -1913,6 +1913,21 @@ The door of the sign-in surface's `GET /authn/totp, /authn/webauthn, /authn/back
 | `view.postLogin.mail.offers` | list | yes |  |
 | `view.postLogin.mail.offers[]` | one of `openpgp`, `smime` |  |  |
 | `view.postLogin.method` | string |  |  |
+| `view.postLogin.piv` | object |  | The PIV re-issue's step (#2009): each due slot with its certificate and why, and what the step has issued, with the command that writes it to the card. |
+| `view.postLogin.piv.issued` | list | yes |  |
+| `view.postLogin.piv.issued[].certificatePem` | string | yes |  |
+| `view.postLogin.piv.issued[].chainPem` | list | yes |  |
+| `view.postLogin.piv.issued[].chainPem[]` | string |  |  |
+| `view.postLogin.piv.issued[].command` | string | yes |  |
+| `view.postLogin.piv.issued[].profile` | string | yes |  |
+| `view.postLogin.piv.issued[].serialHex` | string | yes |  |
+| `view.postLogin.piv.issued[].slot` | string | yes |  |
+| `view.postLogin.piv.slots` | list | yes |  |
+| `view.postLogin.piv.slots[].notAfter` | string | yes |  |
+| `view.postLogin.piv.slots[].profile` | string | yes |  |
+| `view.postLogin.piv.slots[].reason` | one of `classical-issuer`, `expiring` | yes |  |
+| `view.postLogin.piv.slots[].serialHex` | string | yes |  |
+| `view.postLogin.piv.slots[].slot` | string | yes |  |
 | `view.postLogin.reason` | string |  |  |
 | `view.postLogin.required` | boolean |  |  |
 | `view.postLogin.separate` | boolean |  |  |
@@ -2086,6 +2101,21 @@ The door of the sign-in surface's `GET /authn/totp, /authn/webauthn, /authn/back
 | `view.postLogin.mail.offers` | list | yes |  |
 | `view.postLogin.mail.offers[]` | one of `openpgp`, `smime` |  |  |
 | `view.postLogin.method` | string |  |  |
+| `view.postLogin.piv` | object |  | The PIV re-issue's step (#2009): each due slot with its certificate and why, and what the step has issued, with the command that writes it to the card. |
+| `view.postLogin.piv.issued` | list | yes |  |
+| `view.postLogin.piv.issued[].certificatePem` | string | yes |  |
+| `view.postLogin.piv.issued[].chainPem` | list | yes |  |
+| `view.postLogin.piv.issued[].chainPem[]` | string |  |  |
+| `view.postLogin.piv.issued[].command` | string | yes |  |
+| `view.postLogin.piv.issued[].profile` | string | yes |  |
+| `view.postLogin.piv.issued[].serialHex` | string | yes |  |
+| `view.postLogin.piv.issued[].slot` | string | yes |  |
+| `view.postLogin.piv.slots` | list | yes |  |
+| `view.postLogin.piv.slots[].notAfter` | string | yes |  |
+| `view.postLogin.piv.slots[].profile` | string | yes |  |
+| `view.postLogin.piv.slots[].reason` | one of `classical-issuer`, `expiring` | yes |  |
+| `view.postLogin.piv.slots[].serialHex` | string | yes |  |
+| `view.postLogin.piv.slots[].slot` | string | yes |  |
 | `view.postLogin.reason` | string |  |  |
 | `view.postLogin.required` | boolean |  |  |
 | `view.postLogin.separate` | boolean |  |  |
@@ -3382,6 +3412,243 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `certificate` | string |  | `smime-register`: the ML-KEM certificate, PEM or base64 DER. |
 | `publicKey` | string |  | `openpgp-register`: the public key, ASCII-armored. |
 | `signed` | string |  | `openpgp-register`: the challenge as `gpg --clearsign` signed it. |
+
+**200**: The answer.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `end` | object |  |  |
+| `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `form` | object |  |  |
+| `form.action` | string |  |  |
+| `form.fields` | map |  | A request's own parameters, by name. |
+| `form.fields.{key}` | string |  |  |
+| `form.method` | one of `GET`, `POST` |  |  |
+| `id` | string |  |  |
+| `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
+| `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
+| `notice` | string |  |  |
+| `ok` | boolean |  |  |
+| `passkey` | object |  |  |
+| `passkey.autofill` | boolean |  |  |
+| `passkey.unknownCredential` | string |  |  |
+| `step` | string |  |  |
+
+**400**: Refused: `{ ok: false, errors }` — the body, the id, or the act itself.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `end` | object |  |  |
+| `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `form` | object |  |  |
+| `form.action` | string |  |  |
+| `form.fields` | map |  | A request's own parameters, by name. |
+| `form.fields.{key}` | string |  |  |
+| `form.method` | one of `GET`, `POST` |  |  |
+| `id` | string |  |  |
+| `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
+| `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
+| `notice` | string |  |  |
+| `ok` | boolean |  |  |
+| `passkey` | object |  |  |
+| `passkey.autofill` | boolean |  |  |
+| `passkey.unknownCredential` | string |  |  |
+| `step` | string |  |  |
+
+**403**: No Origin of this service, or no CSRF token bound to this browser's session.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `end` | object |  |  |
+| `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `form` | object |  |  |
+| `form.action` | string |  |  |
+| `form.fields` | map |  | A request's own parameters, by name. |
+| `form.fields.{key}` | string |  |  |
+| `form.method` | one of `GET`, `POST` |  |  |
+| `id` | string |  |  |
+| `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
+| `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
+| `notice` | string |  |  |
+| `ok` | boolean |  |  |
+| `passkey` | object |  |  |
+| `passkey.autofill` | boolean |  |  |
+| `passkey.unknownCredential` | string |  |  |
+| `step` | string |  |  |
+
+**415**: Not a JSON body.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `end` | object |  |  |
+| `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `form` | object |  |  |
+| `form.action` | string |  |  |
+| `form.fields` | map |  | A request's own parameters, by name. |
+| `form.fields.{key}` | string |  |  |
+| `form.method` | one of `GET`, `POST` |  |  |
+| `id` | string |  |  |
+| `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
+| `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
+| `notice` | string |  |  |
+| `ok` | boolean |  |  |
+| `passkey` | object |  |  |
+| `passkey.autofill` | boolean |  |  |
+| `passkey.unknownCredential` | string |  |  |
+| `step` | string |  |  |
+
+**429**: Too many attempts.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `end` | object |  |  |
+| `end.title` | string |  |  |
+| `end.titleRefusal` | object, or null |  | The screen's refusal as an answer carries it (#2006): `errors` and their `messages`, where the last act's refusal left a catalog message. |
+| `end.titleRefusal.errors` | list | yes |  |
+| `end.titleRefusal.errors[]` | string |  |  |
+| `end.titleRefusal.messages` | list | yes | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `end.titleRefusal.messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `end.titleRefusal.messages[].key` | string | yes |  |
+| `end.titleRefusal.messages[].params` | map |  |  |
+| `end.titleRefusal.messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. Nested deeper than this page draws. |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `form` | object |  |  |
+| `form.action` | string |  |  |
+| `form.fields` | map |  | A request's own parameters, by name. |
+| `form.fields.{key}` | string |  |  |
+| `form.method` | one of `GET`, `POST` |  |  |
+| `id` | string |  |  |
+| `location` | string |  |  |
+| `messages` | list |  | One entry per sentence of `errors`, null where a sentence has no catalog message (#2006). |
+| `messages[]` | object, or null |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, a parameter that is words carried the same way. The page draws it in its own language and falls back to the English in `errors`. |
+| `messages[].key` | string | yes |  |
+| `messages[].params` | map |  |  |
+| `messages[].params.{key}` | object, or string, or number |  | A refusal's sentence as a catalog message (#2006): its key in the `refusals` catalogs and its parameters, drawn by the page in its own language. |
+| `messages[].params.{key}.key` | string | yes |  |
+| `messages[].params.{key}.params` | map |  |  |
+| `messages[].params.{key}.params.{key}` | string, or number |  |  |
+| `next` | one of `redirect`, `mfa`, `password-change`, `home-cell`, `stay`, `refused` |  |  |
+| `notice` | string |  |  |
+| `ok` | boolean |  |  |
+| `passkey` | object |  |  |
+| `passkey.autofill` | boolean |  |  |
+| `passkey.unknownCredential` | string |  |  |
+| `step` | string |  |  |
+
+## POST /authn-api/mfa/{id}/post-login/piv
+
+`answerPostLoginPiv`
+
+**Enrols new PIV slot certificates, as a post-login activity asks**
+
+The PIV certificate re-issue (#2009). `piv-enrol` takes one due slot (`slot`: 9a, 9c, 9d or 9e) and the three texts of the PIV enrolment form: the certificate request the card signed (`csr`, from `ykman piv certificates request`), the slot's attestation certificate (`slotPem`, `ykman piv keys attest`) and the f9 certificate (`attestationPem`). The certificate is issued by this realm's EST Issuing CA with the step's person as the caller, every rule the form's (the profile in `est.allowedProfiles`, the attestation, the identity rule); it is kept on the step with its chain and the `ykman piv certificates import` command, drawn by its page (`postLogin.piv.issued`), and the next step is the page again. The certificate it replaces is revoked (`superseded`) when the new one is first used to sign in, not now. A slot the step does not ask for is refused (STS-AUTHN-0620), and one whose profile the realm no longer enrols (STS-AUTHN-0621). `piv-continue`, once every due slot has a new certificate, finishes the activity and starts the session the sign-in was held for (STS-AUTHN-0622 before). Where the realm enrols no profile the step asked for any more, the session starts without it (STS-AUTHN-0623); this act at another activity's step is refused (STS-AUTHN-0602).
+
+The door of the sign-in surface's `POST /authn/post-login`.
+
+Sent with `Content-Type: application/json`, an `Origin` of this service and `X-CSRF-Token` — the `csrf` the page's view answered, bound to the browser's `sts_session` cookie.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `act` | one of `piv-enrol`, `piv-continue` | yes | What the person does: enrol one slot's certificate, or go on once every slot has one. |
+| `attestationPem` | string |  | `piv-enrol`: the f9 attestation certificate, PEM. |
+| `csr` | string |  | `piv-enrol`: the certificate request the card signed, PEM. |
+| `slot` | one of `9a`, `9c`, `9d`, `9e` |  | `piv-enrol`: the slot, 9a, 9c, 9d or 9e. |
+| `slotPem` | string |  | `piv-enrol`: the slot's attestation certificate, PEM. |
 
 **200**: The answer.
 

@@ -2047,6 +2047,74 @@
     "en": "c8030fa81a2f934d",
     "text": "كم يومًا يبقى مفتاح OpenPGP التقليدي للشخص على مدخله وفي Web Key Directory إلى جانب مفتاح ما بعد الكم الذي حلّ محله، كي يجد المراسل الذي لا يستطيع استخدام الجديد المفتاح القديم. البريد الجديد من هذه الخدمة يذهب إلى مفتاح ما بعد الكم فورًا. بعد ذلك تزيل مهمة مجدولة المفتاح التقليدي من المدخل ومن Web Key Directory. ‏0 يزيله فورًا."
   },
+  "postLogin.FIELDS.pivEnabled.label": {
+    "en": "6d8ee32fc1b5b94a",
+    "text": "طلب إعادة إصدار شهادات PIV"
+  },
+  "postLogin.FIELDS.pivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "معطّل افتراضيًا. عند تفعيله، يُطلب من كل شخص يشمله هذا الملف الشخصي ويحمل شهادة فتحة PIV أصدرها هذا النطاق، في فتحة يسمّيها pivSlots، بعد تسجيل الدخول أن يسجّل شهادة جديدة (piv-reissue) حين يقول pivTrigger إنها مستحقة: وقّعها مُصدرها بخوارزمية تقليدية بينما سلطة الإصدار EST في هذا النطاق ما بعد كمية، أو تنتهي صلاحيتها خلال pivRenewDays. تُلغى الشهادة القديمة (superseded) عند أول استخدام للجديدة في تسجيل الدخول. الملف الشخصي المسمّى الذي يُعطَّل فيه هذا يستبعد من يُختار له من هذا النشاط."
+  },
+  "postLogin.FIELDS.pivSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "أيام"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.label": {
+    "en": "733d7ad9439f061c",
+    "text": "إعادة إصدار PIV: التخطي يؤجلها لمدة"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "المدة التي يؤجل بها التخطي إعادة إصدار PIV لذلك الشخص."
+  },
+  "postLogin.FIELDS.pivGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "أيام"
+  },
+  "postLogin.FIELDS.pivGraceDays.label": {
+    "en": "cf0842fc5de15483",
+    "text": "إعادة إصدار PIV: المهلة الممنوحة"
+  },
+  "postLogin.FIELDS.pivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "تُحسب من أول دعوة للشخص إلى إعادة إصدار PIV. عند انقضائها يختفي التخطي ويُعلَّق تسجيل الدخول حتى تحصل كل فتحة مستحقة على شهادة جديدة. القيمة 0 تعني بلا مهلة."
+  },
+  "postLogin.FIELDS.pivSlots.label": {
+    "en": "95dcbc9b5db168f8",
+    "text": "إعادة إصدار PIV: الفتحات"
+  },
+  "postLogin.FIELDS.pivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "فتحات PIV التي يفحص النشاط شهاداتها، مفصولة بفواصل: 9a (مصادقة PIV)، 9c (توقيع رقمي)، 9d (إدارة المفاتيح)، 9e (مصادقة البطاقة). لا تُطلب أبدًا فتحة يستبعد est.allowedProfiles ملفها الشخصي."
+  },
+  "postLogin.FIELDS.pivTrigger.label": {
+    "en": "3a6dc99d50545fe3",
+    "text": "إعادة إصدار PIV: ما يجعل الشهادة مستحقة"
+  },
+  "postLogin.FIELDS.pivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "ما يجعل شهادة الفتحة مستحقة. classical-issuer: وقّعها مُصدرها بخوارزمية تقليدية وسلطة الإصدار EST في هذا النطاق ما بعد كمية (شهادة يُعاد إصدارها تحت سلطة تقليدية لن تكون أفضل). expiring: تنتهي صلاحيتها خلال pivRenewDays. both: أيٌّ منهما."
+  },
+  "postLogin.FIELDS.pivRenewDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "أيام"
+  },
+  "postLogin.FIELDS.pivRenewDays.label": {
+    "en": "2e9493d0c48dc0ba",
+    "text": "إعادة إصدار PIV: التجديد قبل انتهاء الصلاحية بهذه المدة"
+  },
+  "postLogin.FIELDS.pivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "كم يومًا قبل انتهاء صلاحية شهادة فتحة PIV تصبح مستحقة للتجديد، حين يكون pivTrigger هو expiring أو both."
+  },
+  "postLogin.FIELDS.pivTarget.label": {
+    "en": "a1261fcffb0037ed",
+    "text": "إعادة إصدار PIV: ما الذي يُصدَر"
+  },
+  "postLogin.FIELDS.pivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "على أي مفتاح تكون الشهادة الجديدة. reissue: شهادة جديدة على مفتاح تُعيد البطاقة توليده في الفتحة نفسها، توقّعها سلطة الإصدار EST في النطاق. rekey: مفتاح ما بعد كمي على البطاقة، لا تستطيع أي بطاقة PIV توليده اليوم، لذا فإن ملفًا شخصيًا مضبوطًا على rekey لا يطلب من أحد شيئًا."
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "b1a01fe693170513",
     "text": "صنف هذه الخدمة لملف نشاط ما بعد تسجيل الدخول: ما يُطلب من الشخص فعله بعد تسجيل الدخول. يُسمّى بالملف (`cn=default`، أو ملف مسمّى يسمّيه تطبيق أو مجموعة)."
@@ -2106,6 +2174,34 @@
   "postLogin.SCHEMA.attributes.stsPostLoginMailKeepClassical.what": {
     "en": "c8030fa81a2f934d",
     "text": "كم يومًا يبقى مفتاح OpenPGP التقليدي للشخص على مدخله وفي Web Key Directory إلى جانب مفتاح ما بعد الكم الذي حلّ محله، كي يجد المراسل الذي لا يستطيع استخدام الجديد المفتاح القديم. البريد الجديد من هذه الخدمة يذهب إلى مفتاح ما بعد الكم فورًا. بعد ذلك تزيل مهمة مجدولة المفتاح التقليدي من المدخل ومن Web Key Directory. ‏0 يزيله فورًا."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "معطّل افتراضيًا. عند تفعيله، يُطلب من كل شخص يشمله هذا الملف الشخصي ويحمل شهادة فتحة PIV أصدرها هذا النطاق، في فتحة يسمّيها pivSlots، بعد تسجيل الدخول أن يسجّل شهادة جديدة (piv-reissue) حين يقول pivTrigger إنها مستحقة: وقّعها مُصدرها بخوارزمية تقليدية بينما سلطة الإصدار EST في هذا النطاق ما بعد كمية، أو تنتهي صلاحيتها خلال pivRenewDays. تُلغى الشهادة القديمة (superseded) عند أول استخدام للجديدة في تسجيل الدخول. الملف الشخصي المسمّى الذي يُعطَّل فيه هذا يستبعد من يُختار له من هذا النشاط."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "المدة التي يؤجل بها التخطي إعادة إصدار PIV لذلك الشخص."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "تُحسب من أول دعوة للشخص إلى إعادة إصدار PIV. عند انقضائها يختفي التخطي ويُعلَّق تسجيل الدخول حتى تحصل كل فتحة مستحقة على شهادة جديدة. القيمة 0 تعني بلا مهلة."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "فتحات PIV التي يفحص النشاط شهاداتها، مفصولة بفواصل: 9a (مصادقة PIV)، 9c (توقيع رقمي)، 9d (إدارة المفاتيح)، 9e (مصادقة البطاقة). لا تُطلب أبدًا فتحة يستبعد est.allowedProfiles ملفها الشخصي."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "ما يجعل شهادة الفتحة مستحقة. classical-issuer: وقّعها مُصدرها بخوارزمية تقليدية وسلطة الإصدار EST في هذا النطاق ما بعد كمية (شهادة يُعاد إصدارها تحت سلطة تقليدية لن تكون أفضل). expiring: تنتهي صلاحيتها خلال pivRenewDays. both: أيٌّ منهما."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "كم يومًا قبل انتهاء صلاحية شهادة فتحة PIV تصبح مستحقة للتجديد، حين يكون pivTrigger هو expiring أو both."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "على أي مفتاح تكون الشهادة الجديدة. reissue: شهادة جديدة على مفتاح تُعيد البطاقة توليده في الفتحة نفسها، توقّعها سلطة الإصدار EST في النطاق. rekey: مفتاح ما بعد كمي على البطاقة، لا تستطيع أي بطاقة PIV توليده اليوم، لذا فإن ملفًا شخصيًا مضبوطًا على rekey لا يطلب من أحد شيئًا."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
     "en": "2b5b2ba409912c7d",
@@ -2214,6 +2310,30 @@
   "postLogin.sentences.mailKeepNone": {
     "en": "f7cb6f0da08b7411",
     "text": "يُزال مفتاح OpenPGP التقليدي الذي يحلّ محله مفتاح لما بعد الكم فورًا"
+  },
+  "postLogin.sentences.pivReissue": {
+    "en": "5f2f81aff443f105",
+    "text": "يُطلب من الشخص الذي يحمل شهادة فتحة PIV ({{slots}}) بعد تسجيل الدخول أن يسجّل شهادة جديدة"
+  },
+  "postLogin.sentences.pivTriggerClassical": {
+    "en": "632e10e241646755",
+    "text": "تستحق الشهادة حين تكون سلطة تقليدية قد وقّعتها وسلطة الإصدار EST في هذا النطاق ما بعد كمية"
+  },
+  "postLogin.sentences.pivTriggerExpiring": {
+    "en": "aded73c111de1a19",
+    "text": "تستحق الشهادة قبل انتهاء صلاحيتها بـ {{days}} يوم"
+  },
+  "postLogin.sentences.pivTriggerBoth": {
+    "en": "e1ad48c0307193c5",
+    "text": "تستحق الشهادة حين تكون سلطة تقليدية قد وقّعتها وسلطة الإصدار EST في هذا النطاق ما بعد كمية، أو قبل انتهاء صلاحيتها بـ {{days}} يوم"
+  },
+  "postLogin.sentences.pivTargetRekey": {
+    "en": "812934151a1711bd",
+    "text": "يُطلب مفتاح ما بعد كمي على البطاقة، لا تستطيع أي بطاقة PIV توليده اليوم، لذا لا يُطلب من أحد شيء"
+  },
+  "postLogin.sentences.pivSuperseded": {
+    "en": "89b3974d23046244",
+    "text": "تُلغى الشهادة القديمة عند أول استخدام للجديدة في تسجيل الدخول"
   },
   "postLogin.sentences.appliesTo": {
     "en": "f195acc04e68d15e",

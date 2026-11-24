@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6049** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6055** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 457
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 461
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 760
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 87
@@ -88,7 +88,7 @@ is an ordinary outcome.
 * [Hardware tokens (`STS-HWTOKEN`)](#sts-hwtoken) — 13
 * [OATH one-time code tokens (`STS-OATH`)](#sts-oath) — 36
 * [Yubico OTP (`STS-YUBIOTP`)](#sts-yubiotp) — 32
-* [PIV key attestation (`STS-PIV`)](#sts-piv) — 28
+* [PIV key attestation (`STS-PIV`)](#sts-piv) — 30
 * [OpenSSH user certificates (`STS-SSHCA`)](#sts-sshca) — 5
 * [OpenPGP keys and mail encryption (`STS-OPENPGP`)](#sts-openpgp) — 33
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 44
@@ -1857,6 +1857,10 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0601` | A post-login mail-encryption act named a kind of key the step does not offer (an OpenPGP act where only S/MIME is offered, or the reverse): the profile's mailPrefer and what the realm can take decide what is offered, not the browser (#2009). | none (HTTP 400 from /authn-api) |
 | `STS-AUTHN-0602` | A post-login act was sent to a step asking another activity: a mail-encryption act at a passkey step, a passkey registration at a mail-encryption step. Nothing was done (#2009). | none (HTTP 400 from /authn-api) |
 | `STS-AUTHN-0603` | The post-login mail-encryption activity can no longer be done here: since the step was asked the realm stopped taking every kind it offered (openpgp.algorithms names no ML-KEM composite, or the runtime cannot encapsulate to ML-KEM). The held session is started without it: a sign-in is never held for something that cannot be done (#2009). | none (the sign-in goes on) |
+| `STS-AUTHN-0620` | A post-login PIV re-issue act named a slot the step does not ask for: no certificate in it was due when the step was asked (#2009). | none (HTTP 400 from /authn-api) |
+| `STS-AUTHN-0621` | A post-login PIV re-issue act named a slot whose profile this realm no longer enrols: est.allowedProfiles left it out after the step was asked. Nothing was issued (#2009). | none (HTTP 400 from /authn-api) |
+| `STS-AUTHN-0622` | The post-login PIV re-issue step was asked to continue before every slot it asks for had a new certificate: enrol the others, or Skip where the step may still be skipped (#2009). | none (HTTP 400 from /authn-api) |
+| `STS-AUTHN-0623` | The post-login PIV re-issue can no longer be done here: since the step was asked, the realm stopped enrolling every profile it asked for. The held session is started without it: a sign-in is never held for something that cannot be done (#2009). | none (the sign-in goes on) |
 
 ## STS-OAUTH
 
@@ -5150,6 +5154,8 @@ Raised from: common/piv_attestation.ts, common/cert_enrollment.ts, common/piv_en
 | `STS-PIV-0035` | A card UUID written to stsPivCardUuid is already held by another entry of the realm, which would make the card name two people; nothing was written (#1955, D8). | HTTP 400 (the directory write); LDAP constraintViolation |
 | `STS-PIV-0036` | A PIV attestation's subject names no slot, and the profile asked is a PIV slot profile or one that signs in (tls-client, tls-server-client, smartcard-logon), for which the slot is the point of the check (#1955). | HTTP 400 |
 | `STS-PIV-0037` | A PIV attestation of slot 9e, the Card Authentication key that works without a PIN, was offered for a profile other than piv-card-auth (#1955). | HTTP 400 |
+| `STS-PIV-0038` | A PIV certificate a post-login re-issue replaced could not be revoked (superseded) when its successor was first used to sign in: the certificate authority refused, or the record could not be read. The row is kept, so the next sign-in with the new certificate tries again; until then the old certificate is still valid (#2009, D5). | none (logged; the sign-in goes on) |
+| `STS-PIV-0039` | A certificate a post-login PIV re-issue enrolled for one person was used to start a session for another. Nothing is revoked: a person's certificates are revoked only by their own new certificate (#2009, D5). | none (logged; the sign-in goes on) |
 
 ## STS-SSHCA
 

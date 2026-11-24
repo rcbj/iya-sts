@@ -2047,6 +2047,74 @@
     "en": "c8030fa81a2f934d",
     "text": "Hur många dagar en persons klassiska OpenPGP-nyckel ligger kvar på posten och i Web Key Directory bredvid postkvantnyckeln som ersatte den, så att en korrespondent som inte kan använda den nya ändå hittar den gamla. Ny e-post från tjänsten går till postkvantnyckeln direkt. Därefter tar ett schemalagt jobb bort den klassiska nyckeln från posten och Web Key Directory. 0 tar bort den direkt."
   },
+  "postLogin.FIELDS.pivEnabled.label": {
+    "en": "6d8ee32fc1b5b94a",
+    "text": "Be om nyutfärdande av PIV-certifikat"
+  },
+  "postLogin.FIELDS.pivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "AV SOM STANDARD. På blir varje person som profilen når och som har ett PIV-platscertifikat som området utfärdat, på en plats som pivSlots anger, ombedd efter inloggning att registrera ett nytt (piv-reissue) när pivTrigger säger att det är dags: utfärdaren signerade det med en klassisk algoritm medan områdets EST-utfärdande CA är postkvantisk, eller så går det ut inom pivRenewDays. Det gamla certifikatet återkallas (superseded) när det nya används första gången vid en inloggning. En namngiven profil där detta är av undantar den den väljs för från aktiviteten."
+  },
+  "postLogin.FIELDS.pivSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "dagar"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.label": {
+    "en": "733d7ad9439f061c",
+    "text": "PIV-nyutfärdande: Hoppa över skjuter upp det i"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "Hur länge Hoppa över skjuter upp PIV-nyutfärdandet för den personen."
+  },
+  "postLogin.FIELDS.pivGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "dagar"
+  },
+  "postLogin.FIELDS.pivGraceDays.label": {
+    "en": "cf0842fc5de15483",
+    "text": "PIV-nyutfärdande: tilldelad tid"
+  },
+  "postLogin.FIELDS.pivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "Räknas från personens FÖRSTA inbjudan till PIV-nyutfärdandet. När den har gått försvinner Hoppa över och inloggningen hålls tills varje plats som är på tur har ett nytt certifikat. 0 betyder ingen tidsgräns."
+  },
+  "postLogin.FIELDS.pivSlots.label": {
+    "en": "95dcbc9b5db168f8",
+    "text": "PIV-nyutfärdande: platser"
+  },
+  "postLogin.FIELDS.pivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "De PIV-platser vars certifikat aktiviteten tittar på, kommaseparerade: 9a (PIV-autentisering), 9c (digital signatur), 9d (nyckelhantering), 9e (kortautentisering). En plats vars profil est.allowedProfiles utelämnar efterfrågas aldrig."
+  },
+  "postLogin.FIELDS.pivTrigger.label": {
+    "en": "3a6dc99d50545fe3",
+    "text": "PIV-nyutfärdande: vad som gör ett certifikat aktuellt"
+  },
+  "postLogin.FIELDS.pivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "Vad som gör en plats certifikat aktuellt. classical-issuer: utfärdaren signerade det med en klassisk algoritm och områdets EST-utfärdande CA är postkvantisk (ett certifikat utfärdat på nytt under en klassisk CA vore inte bättre). expiring: det går ut inom pivRenewDays. both: något av dem."
+  },
+  "postLogin.FIELDS.pivRenewDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "dagar"
+  },
+  "postLogin.FIELDS.pivRenewDays.label": {
+    "en": "2e9493d0c48dc0ba",
+    "text": "PIV-nyutfärdande: förnya så här länge före utgång"
+  },
+  "postLogin.FIELDS.pivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "Hur många dagar innan ett PIV-platscertifikat går ut det är dags att förnya det, där pivTrigger är expiring eller both."
+  },
+  "postLogin.FIELDS.pivTarget.label": {
+    "en": "a1261fcffb0037ed",
+    "text": "PIV-nyutfärdande: vad som utfärdas"
+  },
+  "postLogin.FIELDS.pivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "Vad det nya certifikatet gäller. reissue: ett nytt certifikat över en nyckel som kortet skapar på nytt på samma plats, signerat av områdets EST-utfärdande CA. rekey: en postkvantisk nyckel på kortet, som inget PIV-kort kan skapa i dag, så en profil inställd på rekey frågar ingen."
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "b1a01fe693170513",
     "text": "Den här tjänstens klass för en profil för aktivitet efter inloggning: vad en person ombeds göra efter inloggningen. Namnges efter PROFILEN (`cn=default`, eller en namngiven profil som en applikation eller en grupp namnger)."
@@ -2106,6 +2174,34 @@
   "postLogin.SCHEMA.attributes.stsPostLoginMailKeepClassical.what": {
     "en": "c8030fa81a2f934d",
     "text": "Hur många dagar en persons klassiska OpenPGP-nyckel ligger kvar på posten och i Web Key Directory bredvid postkvantnyckeln som ersatte den, så att en korrespondent som inte kan använda den nya ändå hittar den gamla. Ny e-post från tjänsten går till postkvantnyckeln direkt. Därefter tar ett schemalagt jobb bort den klassiska nyckeln från posten och Web Key Directory. 0 tar bort den direkt."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "AV SOM STANDARD. På blir varje person som profilen når och som har ett PIV-platscertifikat som området utfärdat, på en plats som pivSlots anger, ombedd efter inloggning att registrera ett nytt (piv-reissue) när pivTrigger säger att det är dags: utfärdaren signerade det med en klassisk algoritm medan områdets EST-utfärdande CA är postkvantisk, eller så går det ut inom pivRenewDays. Det gamla certifikatet återkallas (superseded) när det nya används första gången vid en inloggning. En namngiven profil där detta är av undantar den den väljs för från aktiviteten."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "Hur länge Hoppa över skjuter upp PIV-nyutfärdandet för den personen."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "Räknas från personens FÖRSTA inbjudan till PIV-nyutfärdandet. När den har gått försvinner Hoppa över och inloggningen hålls tills varje plats som är på tur har ett nytt certifikat. 0 betyder ingen tidsgräns."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "De PIV-platser vars certifikat aktiviteten tittar på, kommaseparerade: 9a (PIV-autentisering), 9c (digital signatur), 9d (nyckelhantering), 9e (kortautentisering). En plats vars profil est.allowedProfiles utelämnar efterfrågas aldrig."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "Vad som gör en plats certifikat aktuellt. classical-issuer: utfärdaren signerade det med en klassisk algoritm och områdets EST-utfärdande CA är postkvantisk (ett certifikat utfärdat på nytt under en klassisk CA vore inte bättre). expiring: det går ut inom pivRenewDays. both: något av dem."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "Hur många dagar innan ett PIV-platscertifikat går ut det är dags att förnya det, där pivTrigger är expiring eller both."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "Vad det nya certifikatet gäller. reissue: ett nytt certifikat över en nyckel som kortet skapar på nytt på samma plats, signerat av områdets EST-utfärdande CA. rekey: en postkvantisk nyckel på kortet, som inget PIV-kort kan skapa i dag, så en profil inställd på rekey frågar ingen."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
     "en": "2b5b2ba409912c7d",
@@ -2214,6 +2310,30 @@
   "postLogin.sentences.mailKeepNone": {
     "en": "f7cb6f0da08b7411",
     "text": "en klassisk OpenPGP-nyckel som en postkvantnyckel ersätter tas bort direkt"
+  },
+  "postLogin.sentences.pivReissue": {
+    "en": "5f2f81aff443f105",
+    "text": "en person med ett PIV-platscertifikat ({{slots}}) ombeds efter inloggning att registrera ett nytt"
+  },
+  "postLogin.sentences.pivTriggerClassical": {
+    "en": "632e10e241646755",
+    "text": "ett certifikat är aktuellt när en klassisk CA signerade det och områdets EST-utfärdande CA är postkvantisk"
+  },
+  "postLogin.sentences.pivTriggerExpiring": {
+    "en": "aded73c111de1a19",
+    "text": "ett certifikat är aktuellt {{days}} dag(ar) innan det går ut"
+  },
+  "postLogin.sentences.pivTriggerBoth": {
+    "en": "e1ad48c0307193c5",
+    "text": "ett certifikat är aktuellt när en klassisk CA signerade det och områdets EST-utfärdande CA är postkvantisk, eller {{days}} dag(ar) innan det går ut"
+  },
+  "postLogin.sentences.pivTargetRekey": {
+    "en": "812934151a1711bd",
+    "text": "en postkvantisk nyckel på kortet efterfrågas, som inget PIV-kort kan skapa i dag, så ingen tillfrågas"
+  },
+  "postLogin.sentences.pivSuperseded": {
+    "en": "89b3974d23046244",
+    "text": "det gamla certifikatet återkallas när det nya används första gången för att logga in"
   },
   "postLogin.sentences.appliesTo": {
     "en": "f195acc04e68d15e",

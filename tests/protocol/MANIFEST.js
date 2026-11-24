@@ -704,6 +704,12 @@ const JOBS = [
   // reaching the client and the next sign-in not asked. `local: true`: this
   // repository's own /authn and /admin-api.
   { file: 'sts_post_login_mail.js', browser: false, local: true },
+  // THE POST-LOGIN PIV RE-ISSUE (#2009 P3): the PIV block off then on, the
+  // sign-in held for a piv-auth certificate due for renewal, the step's
+  // refusals, a new 9a certificate enrolled with its import command, and
+  // Continue starting the held session. `local: true`: this repository's
+  // own /authn and /admin-api.
+  { file: 'sts_post_login_piv.js', browser: false, local: true },
   // DYNAMIC SELECTABLE ROLES (#1072): a dynamic role made and given its
   // ALFA eligibility policy over /admin-api, the administrator's test, the
   // sign-in screen's box, the role step (a fabricated role refused, the

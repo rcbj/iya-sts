@@ -16757,6 +16757,43 @@ D1, D3, D4). What reaches outside it:
   The passkey `register` act at a mail step, and the reverse, is
   STS-AUTHN-0602.
 
+### 3ct, continued: the PIV re-issue (#2009 P3, 2026-11-23)
+
+`piv-reissue`, `post_login_piv.ts` (its header argues it; rcbj's D5 and
+design X5). What reaches outside it:
+
+* **A THIRD OPTIONAL BLOCK** (`pivEnabled`, `pivSnoozeDays`,
+  `pivGraceDays`, `pivSlots`, `pivTrigger`, `pivRenewDays`, `pivTarget`;
+  `stsPostLoginPiv*`, OIDs 988–994), on the mail block's rule.
+  `pivSlots` is the policy's first `list` row: `parseField()` takes one or
+  more of the field's values and writes them comma-separated in the
+  field's order.
+* **DUE IS READ OFF THE ENTRY'S CERTIFICATE RECORDS**
+  (`cert_enrollment.enrolledOf()`), the newest valid one per slot profile.
+  `classical-issuer` asks the certificate's SIGNATURE, not its key
+  (`pqc_support.ofSignature()`, new; a PIV key is classical whatever), and
+  only where the realm's EST Issuing CA is post-quantum or composite
+  (`pki.describeIssuer(realm, 'est')`, else `pki.keyAlgorithm` for a CA not
+  built yet). `rekey` asks nobody: no card makes a post-quantum key.
+* **THE STEP** is `authn.ts`'s `postLoginPivAct()`, `POST
+  /authn-api/mfa/{id}/post-login/piv` (`act`: `piv-enrol`, `piv-continue`),
+  through `piv_enrolment.enrol()` with the step's person as caller, so
+  every rule of the PIV form holds. Each issued certificate, its chain and
+  the `ykman` import command are kept on the step (`postLogin.issued`);
+  `piv-continue` is refused until every due slot has one (STS-AUTHN-0622).
+  It does NOT pass `replaces` to the core: that revokes at issue.
+* **D5: REVOKED AT FIRST USE.** `enrol()` writes `piv.supersedes` (cell
+  tier, on demand, keyed by the NEW serial, expiring with the old
+  certificate) and `authn.ts`'s `pivCertificateUsed()` — called from
+  `startSessionHere()` and the re-authentication path beside
+  `recoveryCompleted()`, for a credential of kind `certificate` with a
+  serial (both certificate doors pass one) — hands the serial to
+  `certificateUsed()`, not awaited. That one keyed read is the whole cost
+  at a sign-in; a hit revokes the old serial (`revokeEnrolled(…,
+  'superseded', …, { entry })`, so only the person's own) and deletes the
+  row, a failure keeps it for the next sign-in (STS-PIV-0038), and another
+  person using the serial revokes nothing (STS-PIV-0039).
+
 ## 3cx. `policy_selection.ts`: WHAT A NAMED POLICY COVERS NAMES IT, AND ONE RANKING FOR EVERY KIND (#1235, 2026-10-30)
 
 rcbj's decisions on #1234 (2026-10-30, twice that day): every kind on

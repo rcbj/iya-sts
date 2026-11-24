@@ -320,6 +320,13 @@ refused for a PIV profile and for `tls-client`, `tls-server-client` and
 certificate that signed the slot's certificate, never from whichever
 certificate the request sent first.
 
+**Replacing them after a sign-in.** The post-login activity
+[`piv-reissue`](post-login-activities.md#the-piv-re-issue) asks a person
+to enrol new slot certificates through the same form when a classical CA
+signed theirs and the realm's EST Issuing CA is now post-quantum, or when
+one is about to expire. The old certificate is revoked (`superseded`) the
+first time the new one is used to sign in.
+
 The certificate issued for a profile is signed by that profile's issuing
 CA. The key in the slot is the subject's. A YubiKey 5 attests a classical
 key there. How each algorithm is chosen is
