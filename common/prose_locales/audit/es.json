@@ -1831,6 +1831,10 @@
     "en": "45c66d3faec475a4",
     "text": "Una persona revocó uno de sus certificados de usuario SSH"
   },
+  "audit.actions.ssh-user-ca.entry-refused.label": {
+    "en": "a3319df6d0e3cfae",
+    "text": "Se rechazó un certificado de usuario SSH escrito en la entrada de una persona: la CA no se lo emitió, o está revocado o caducado"
+  },
   "audit.actions.did.person.published.label": {
     "en": "36165dbbaae0269a",
     "text": "Una persona publicó su propio did:web"

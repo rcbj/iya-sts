@@ -1831,6 +1831,10 @@
     "en": "45c66d3faec475a4",
     "text": "En person återkallade ett av sina SSH-användarcertifikat"
   },
+  "audit.actions.ssh-user-ca.entry-refused.label": {
+    "en": "a3319df6d0e3cfae",
+    "text": "Ett SSH-användarcertifikat som skrevs till en persons post avvisades: CA:n utfärdade det inte till personen, eller så är det återkallat eller utgånget"
+  },
   "audit.actions.did.person.published.label": {
     "en": "36165dbbaae0269a",
     "text": "En person publicerade en egen did:web"
