@@ -190,22 +190,44 @@ async function checkObserver(t, realm) {
     evidence: { source: 'fido-enterprise-attestation' } });
   t.check(made.ok && valuesOn(BEA, 'stsHardwareToken').length === 1,
           'precondition: a token on the entry of ' + BEA);
-  rewrite(BEA, 'stsHardwareToken', null);
+  // Through /admin-api's source: the token subject is the writer named.
+  const audit = require('../common/audit');
+  audit.withSource({ req: { headers: {}, socket: {},
+    res: { locals: { apiCaller: { name: 'api-admin-' + RUN } } } } },
+  function () {
+    return rewrite(BEA, 'stsHardwareToken', null);
+  });
   t.check(await settled(async function () {
     return tokens.byKey(key) === null;
   }), '2c. a directory write removing the token updates the register at ' +
       'once, with no rebuild: nobody holds it, so it is gone',
           JSON.stringify(tokens.byKey(key)));
+  const removedRow = audit.list().filter(function (e) {
+    return e.action === 'hardware-token.entry-removed' && e.detail &&
+      e.detail.key === key;
+  })[0] || null;
+  t.equal(removedRow && removedRow.actor, 'api-admin-' + RUN,
+          '2e. and the audit row names the API caller who removed it');
   const invented = entries.stored({ key: 'yubico/invented-' + RUN,
     vendor: 'yubico', serial: 'invented-' + RUN, holder: true,
     status: 'active', credentials: [{ kind: 'fido', ref: 'z' }] });
-  rewrite(BEA, 'stsHardwareToken', [invented]);
+  // Through SCIM's source: the SCIM client is the writer named.
+  audit.withSource({ req: { headers: {}, socket: {}, res: { locals: {} },
+    scimAuth: { principal: 'scim-client-' + RUN } } }, function () {
+    return rewrite(BEA, 'stsHardwareToken', [invented]);
+  });
   t.check(await settled(async function () {
     return valuesOn(BEA, 'stsHardwareToken').length === 0;
   }) && tokens.byKey('yubico/invented-' + RUN) === null,
           '2d. a token written onto the entry by another door is taken off ' +
           'again and makes no register row: a serial comes only from ' +
           'attestation');
+  const refusedRow = audit.list().filter(function (e) {
+    return e.action === 'hardware-token.entry-refused' && e.detail &&
+      e.detail.key === 'yubico/invented-' + RUN;
+  })[0] || null;
+  t.equal(refusedRow && refusedRow.actor, 'scim-client-' + RUN,
+          '2f. and the refusal\'s audit row names the SCIM client');
   log.debug("Leaving checkObserver().");
 }
 
