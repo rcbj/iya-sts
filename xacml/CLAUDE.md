@@ -3875,6 +3875,18 @@ arrangement is the owner rule's, read the other way round:
   back would hand a `report:use` token REPORT_ADMIN for a subject who also
   holds it. `label` names the subject in the refusal and the audit row
   where `name` is an identifier.
+* **A source for report administrators (#2126, ASVS 5.0.0 8.2.3)** is a
+  CONJUNCT of the first rule and of the third: a question carrying
+  `urn:sts:xacml:report-admin-source` (the sources the report catalog marks
+  `adminOnly`) or a `urn:sts:xacml:report-source` the parameter
+  `reportAdminSources` lists (empty by default) is permitted only to a
+  subject holding REPORT_ADMIN — so it narrows the owner and a share alike.
+  `report/rights.ts` sends the two only on the question asked before a
+  report is defined, run or downloaded, never on a plain read of a row, so
+  every other question is decided as before. A conjunct of the first rule
+  is vacuous for every other surface, which never sends either attribute.
+  `report/CLAUDE.md` has the rest, including why the catalog is checked in
+  code as well.
 * **The vocabulary is this service's own**, as the owner rule's is; the
   remote PEP carries none of it, as it carries no passkey vocabulary.
 

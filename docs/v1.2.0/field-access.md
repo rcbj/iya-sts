@@ -85,6 +85,26 @@ specification requires.
 The reporting catalog publishes no credential attributes. Selecting one is an
 unknown field, so a report cannot contain it.
 
+Three sources need **`REPORT_ADMIN`** (`report:admin`). They hold what the
+console keeps behind Admin Read on `/admin/audit`: who did what, from where,
+and who holds which credential.
+
+| Source | What it holds | Who may report over it |
+|---|---|---|
+| `auditEvents` | The audit ring: actors, actions, outcomes | `REPORT_ADMIN` |
+| `authActivity` | Sign-in attempts: actors, mechanisms, applications | `REPORT_ADMIN` |
+| `credentialHolders` | Who holds which authentication credential | `REPORT_ADMIN` |
+| Every other source | | `REPORT_USE` or `REPORT_ADMIN` |
+
+A caller holding only `REPORT_USE` is refused (`forbidden`, HTTP 403,
+`STS-REPORT-0061`) a query, a job or a saved definition over one of them, a
+run of a definition that uses one, and the download of a result read from one,
+even when the definition is shared with them. A scheduled run of such a
+definition is skipped while its owner does not hold `REPORT_ADMIN`. The
+catalog marks the three sources `adminOnly`, and the access-control policy
+decides them too; a realm can add sources of its own with the policy's
+`reportAdminSources` parameter ([Reports](reporting.md#who-can-open-it)).
+
 ## How state changes the answer
 
 | When | Rule |

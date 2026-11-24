@@ -12323,6 +12323,14 @@
     "en": "895bdb616e169134",
     "text": "الرسائل، بحسب معرّف القالب (password-reset، account-activation، sign-in-code، sign-in-link، credential-compromised وبقية قائمة المراقبة ← البريد)، التي لا تُرسل إلا مشفّرة — PGP/MIME إلى مفتاح OpenPGP الخاص بالشخص أو S/MIME إلى شهادته، كما اختار في البوابة. الشخص الذي لم يختر أيًا منهما لا تُرسل إليه (STS-MAIL-0240)، ويذكر الاستخدام الذي طلبها ذلك كما يفعل مع أي رسالة لم تُرسل. القيمة الفارغة، وهي الافتراضية، لا تشترط أيًا منها؛ ويُحترم ما اختاره الشخص في الحالتين."
   },
+  "mail.smimeContentEncryption|label": {
+    "en": "04776ccf8787181b",
+    "text": "تشفير محتوى S/MIME"
+  },
+  "mail.smimeContentEncryption|description": {
+    "en": "fb3309ac8f290326",
+    "text": "كيفية تشفير البريد المشفّر إلى شهادة S/MIME الخاصة بشخص ما. ‏aes256-gcm، وهو الافتراضي، يرسل AuthEnvelopedData وفق RFC 5083 تحت AES-256-GCM ‏(smime-type=authEnveloped-data، RFC 8551)، ويستطيع القارئ التحقق من أنه لم يُعدَّل. ‏aes256-cbc يرسل EnvelopedData تحت AES-256-CBC الذي كان يُرسل قبل 1.2.0 ‏(smime-type=enveloped-data)، لمستلم لا يستطيع عميل بريده قراءة AuthEnvelopedData. تحذير: لا يوفر CBC أي حماية للسلامة، وما دامت القيمة aes256-cbc في وضع المنتج فإن المتطلب 11.3.3 من ASVS 5.0.0 غير مستوفى، وهو ما يبلغ عنه ‎/admin/mode."
+  },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",
     "text": "إعادة تعيين كلمة المرور ذاتياً"

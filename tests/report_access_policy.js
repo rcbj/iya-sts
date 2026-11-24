@@ -48,6 +48,14 @@
 //      default roster, and losing the roster ends both. A realm's own
 //      administrator is issued the report scopes in their realm, and their
 //      token is believed nowhere else.
+//   G. THE SOURCES FOR REPORT ADMINISTRATORS (#2126). A report user is
+//      refused (STS-REPORT-0061) a query, a job and a definition over
+//      auditEvents, authActivity and credentialHolders, which a report
+//      administrator is not; the catalog marks them and says who may use
+//      them; a definition saved before stays visible to its owner and is
+//      refused a run and a schedule; a shared member may not run one or
+//      download its result; and a realm's override may list a source of
+//      its own (`reportAdminSources`).
 //
 // THE CONSOLE IS CLOSED FIRST: with nobody on the roster a development
 // console is open to everybody, and since #1038 so would every report be.
@@ -561,6 +569,138 @@ function childMain() {
     }
     note(await get(tShared, D1) === 200 && await get(tAdmin, D1) === 200,
          'E5. with the override gone the built-in document decides again');
+
+    // --- G. the sources for report administrators (#2126) --------------------
+    const audit = require(ROOT_DIR + '/common/audit');
+    const coded = function () {
+      return audit.list().filter(function (row) {
+        return row && row.errorCode === 'STS-REPORT-0061';
+      }).length;
+    };
+    const before = coded();
+    for (const id of ['auditEvents', 'authActivity', 'credentialHolders']) {
+      const fieldOf = id === 'credentialHolders' ? 'username' : 'actor';
+      const asked = { source: id, select: [fieldOf], limit: 1,
+                      mode: 'async' };
+      r = await call(port, 'POST', '/report-api/queries', tOwner, asked);
+      note(r.status === 403 && r.json && r.json.error === 'forbidden' &&
+           /REPORT_ADMIN/.test(r.text),
+           'G1. a report user\'s query of ' + id + ' is refused forbidden ' +
+           '(STS-REPORT-0061)', brief(r));
+      r = await call(port, 'POST', '/report-api/jobs', tOwner, asked);
+      note(r.status === 403, 'G2. and so is a job over it', brief(r));
+      r = await call(port, 'POST', '/report-api/definitions', tOwner,
+                     { name: 'g ' + id, document: asked });
+      note(r.status === 403 && /REPORT_ADMIN/.test(r.text),
+           'G3. and a definition saved over it', brief(r));
+      r = await call(port, 'POST', '/report-api/queries', tAdmin, asked);
+      note(r.status === 202 || r.status === 200,
+           'G4. a report administrator\'s query of ' + id + ' is accepted',
+           brief(r));
+    }
+    note(coded() > before,
+         'G5. the refusals are recorded under STS-REPORT-0061',
+         coded() + ' > ' + before);
+    r = await call(port, 'POST', '/report-api/queries', tOwner,
+                   { source: 'users', select: ['username'], limit: 1 });
+    note(r.status === 200, 'G6. a report user still queries users',
+         brief(r));
+    r = await call(port, 'GET', '/report-api/catalog', tOwner);
+    const listed = function (answer, id) {
+      return ((answer.json || {}).sources || []).filter(function (one) {
+        return one.id === id;
+      })[0] || {};
+    };
+    note(r.status === 200 && listed(r, 'auditEvents').adminOnly === true &&
+         listed(r, 'auditEvents').usable === false &&
+         listed(r, 'users').adminOnly === false &&
+         listed(r, 'users').usable === true,
+         'G7. the catalog marks the administrators\' sources and says the ' +
+         'report user may not use them', brief(r));
+    r = await call(port, 'GET', '/report-api/catalog/authActivity', tAdmin);
+    note(r.status === 200 && r.json && r.json.source &&
+         r.json.source.adminOnly === true && r.json.source.usable === true,
+         'G8. and that a report administrator may', brief(r));
+
+    // A DEFINITION SAVED BEFORE THE RULE by a report user stays visible to
+    // its owner, is refused a run and a schedule, and may be changed to
+    // another source.
+    stores.putDefinition({
+      id: 'def-g-old', name: 'saved before #2126', owner: subjectOf(OWNER),
+      ownerKind: 'user',
+      document: { source: 'auditEvents', select: ['actor'], limit: 1 },
+      parameters: null, schedule: '', scheduleEnabled: false,
+      notify: false, groups: [], lastSlot: null, failures: [],
+      createdAt: 1, modifiedAt: 1 });
+    note(await get(tOwner, 'def-g-old') === 200 &&
+         (await names(tOwner)).split(',').indexOf('def-g-old') >= 0,
+         'G9. an existing definition over auditEvents stays visible to ' +
+         'its report-user owner');
+    r = await run(tOwner, 'def-g-old');
+    note(r.status === 403 && /REPORT_ADMIN/.test(r.text),
+         'G10. and its run is refused (STS-REPORT-0061)', brief(r));
+    const mayOld = rights.ownerMayRun(stores.getDefinition('def-g-old'));
+    note(mayOld && mayOld.ok === false &&
+         mayOld.code === 'STS-REPORT-0061',
+         'G11. its schedule\'s question is refused for the owner',
+         JSON.stringify(mayOld));
+    r = await call(port, 'POST', '/report-api/definitions/def-g-old',
+                   tOwner, { name: 'moved off the audit ring',
+                             document: document });
+    note(r.status === 200, 'G12. its owner may give it another source',
+         brief(r));
+
+    // A REPORT ADMINISTRATOR'S definition over the audit ring, shared with
+    // a group of report users: the member sees it, may not run it, and may
+    // not download its result.
+    r = await call(port, 'POST', '/report-api/definitions', tAdmin,
+                   { name: 'g admin audit', document: { source: 'auditEvents',
+                     select: ['actor'], limit: 1 } });
+    const DA = r.json && r.json.definition ? r.json.definition.id : null;
+    note(!!DA, 'G13. a report administrator saves one over auditEvents',
+         brief(r));
+    r = await call(port, 'POST', '/report-api/definitions/' + DA + '/share',
+                   tAdmin, { groups: [groupDn] });
+    note(r.status === 200, 'precondition: shared with the group', brief(r));
+    note(await get(tShared, DA) === 200,
+         'G14. the shared member sees it');
+    r = await run(tShared, DA);
+    note(r.status === 403, 'G15. and may not run it', brief(r));
+    r = await run(tAdmin, DA);
+    const jobId = r.json && r.json.job ? r.json.job.id : null;
+    note(!!jobId, 'G16. the report administrator runs it', brief(r));
+    r = await call(port, 'GET', '/report-api/jobs/' + jobId + '/result',
+                   tShared);
+    note(r.status === 403 && /REPORT_ADMIN/.test(r.text),
+         'G17. the shared member may not download its result', brief(r));
+    note(rights.ownerMayRun(stores.getDefinition(DA)).ok === true,
+         'G18. its schedule\'s question is answered yes while the owner ' +
+         'holds REPORT_ADMIN');
+
+    // THE POLICY'S OWN LIST: an override naming users in
+    // reportAdminSources refuses a report user a query of users, though
+    // the catalog does not mark it.
+    const listedBuilt = templates.build('access-control',
+      { reportAdminSources: 'users' }, { name: 'access-control' });
+    const listedWritten = listedBuilt.ok
+      ? store.write('access-control', xml.writePolicy(listedBuilt.policy),
+                    { enabled: true }) : listedBuilt;
+    note(listedWritten && listedWritten.ok,
+         'precondition: an override listing users in reportAdminSources',
+         JSON.stringify(listedWritten));
+    try {
+      r = await call(port, 'POST', '/report-api/queries', tOwner,
+                     { source: 'users', select: ['username'], limit: 1 });
+      note(r.status === 403 && /REPORT_ADMIN/.test(r.text),
+           'G19. the policy refuses the listed source to a report user ' +
+           '(STS-REPORT-0061)', brief(r));
+      r = await call(port, 'POST', '/report-api/queries', tAdmin,
+                     { source: 'users', select: ['username'], limit: 1 });
+      note(r.status === 200, 'G20. and permits it to a report ' +
+           'administrator', brief(r));
+    } finally {
+      store.remove('access-control');
+    }
 
     // --- F. console administrators (#1038) -----------------------------------
     const R = 'rap' + stamp;

@@ -12323,6 +12323,14 @@
     "en": "895bdb616e169134",
     "text": "Los mensajes, por ID de plantilla (password-reset, account-activation, sign-in-code, sign-in-link, credential-compromised y el resto de la lista de Monitoring → Mail), que solo se envían cifrados — PGP/MIME para la clave OpenPGP de la persona o S/MIME para su certificado, según lo que eligió en el portal. A una persona que no eligió ninguno no se le envía (STS-MAIL-0240), y el uso que lo solicitó lo indica como con cualquier mensaje no enviado. Vacío, el valor predeterminado, no exige ninguno; lo que haya elegido una persona se respeta en cualquier caso."
   },
+  "mail.smimeContentEncryption|label": {
+    "en": "04776ccf8787181b",
+    "text": "Cifrado del contenido S/MIME"
+  },
+  "mail.smimeContentEncryption|description": {
+    "en": "fb3309ac8f290326",
+    "text": "Cómo se cifra el correo cifrado para el certificado S/MIME de una persona. aes256-gcm, el valor predeterminado, envía un AuthEnvelopedData de RFC 5083 con AES-256-GCM (smime-type=authEnveloped-data, RFC 8551), del que un lector puede comprobar que no se ha modificado. aes256-cbc envía el EnvelopedData con AES-256-CBC que se enviaba antes de la 1.2.0 (smime-type=enveloped-data), para un destinatario cuyo cliente de correo no puede leer AuthEnvelopedData. ADVERTENCIA: CBC no tiene protección de integridad y, mientras este valor sea aes256-cbc en modo producto, no se cumple el requisito 11.3.3 de ASVS 5.0.0, lo que informa /admin/mode."
+  },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",
     "text": "Restablecimiento de contraseña de autoservicio"

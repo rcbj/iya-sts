@@ -145,5 +145,7 @@
   "announcement.close": "Cerrar",
   "presets": "Consultas predefinidas",
   "presetsNote": "Cada una abre Nueva consulta con su consulta ya rellenada. No se ejecuta nada hasta que pulse Ejecutar, y al guardarla se crea una definición propia.",
-  "presetFrom": "Iniciada a partir de la consulta predefinida {name}."
+  "presetFrom": "Iniciada a partir de la consulta predefinida {name}.",
+  "adminOnlySource": "Solo administradores de informes",
+  "adminOnlyNote": "Solo un administrador de informes (REPORT_ADMIN) puede consultar este origen: contiene quién hizo qué y desde dónde, o quién tiene cada credencial."
 }

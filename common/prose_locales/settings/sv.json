@@ -12323,6 +12323,14 @@
     "en": "895bdb616e169134",
     "text": "Meddelandena, efter mall-id (password-reset, account-activation, sign-in-code, sign-in-link, credential-compromised och resten av listan under Övervakning → E-post), som bara skickas krypterade — PGP/MIME till personens OpenPGP-nyckel eller S/MIME till personens certifikat, enligt personens val på portalen. En person som inte har valt något av dem får inget sådant meddelande (STS-MAIL-0240), och den användning som begärde det säger det, som för alla meddelanden som inte skickas. Tomt, standardvärdet, kräver inga; det en person har valt respekteras i båda fallen."
   },
+  "mail.smimeContentEncryption|label": {
+    "en": "04776ccf8787181b",
+    "text": "S/MIME-innehållskryptering"
+  },
+  "mail.smimeContentEncryption|description": {
+    "en": "fb3309ac8f290326",
+    "text": "Hur e-post som krypteras till en persons S/MIME-certifikat krypteras. aes256-gcm, standardvärdet, skickar en AuthEnvelopedData enligt RFC 5083 under AES-256-GCM (smime-type=authEnveloped-data, RFC 8551), som en läsare kan se inte har ändrats. aes256-cbc skickar den EnvelopedData under AES-256-CBC som skickades före 1.2.0 (smime-type=enveloped-data), för en mottagare vars e-postklient inte kan läsa AuthEnvelopedData. VARNING: CBC saknar integritetsskydd, och så länge detta är aes256-cbc i produktläge uppfylls inte krav 11.3.3 i ASVS 5.0.0, vilket /admin/mode rapporterar."
+  },
   "mail.selfServiceReset|label": {
     "en": "8525111d1c0be58a",
     "text": "Självbetjäning för lösenordsåterställning"

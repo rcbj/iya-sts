@@ -683,6 +683,18 @@
     "en": "b8bdc8b82bb08a9e",
     "text": "仅提供或接受 AES-GCM，客户端未指定 enc 时也使用它，除非开启 crypto.allowCbcJwe。"
   },
+  "mode.requirements.smime-authenticated-encryption.what": {
+    "en": "e4e548f216488a28",
+    "text": "S/MIME 邮件采用认证加密"
+  },
+  "mode.requirements.smime-authenticated-encryption.development": {
+    "en": "6d1da1e7b21d186d",
+    "text": "加密到 S/MIME 证书的邮件是 AES-256-GCM 下的 AuthEnvelopedData，除非 mail.smimeContentEncryption 为 aes256-cbc，此时发送没有完整性保护的 AES-256-CBC 下的 EnvelopedData。两种情况都不报告任何内容。"
+  },
+  "mode.requirements.smime-authenticated-encryption.product": {
+    "en": "58e070998a057f5e",
+    "text": "相同，并且只要 mail.smimeContentEncryption 为 aes256-cbc，此行就报告 ASVS 5.0.0 11.3.3 未满足。"
+  },
   "mode.requirements.unscoped-people.what": {
     "en": "313033517d6bf954",
     "text": "访问 SCIM 和 Shared Signals 需要角色"

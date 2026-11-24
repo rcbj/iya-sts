@@ -145,5 +145,7 @@
   "announcement.close": "Stäng",
   "presets": "Fördefinierade frågor",
   "presetsNote": "Var och en öppnar Ny fråga med frågan ifylld. Ingenting körs förrän du trycker på Kör, och om du sparar den blir den en egen definition.",
-  "presetFrom": "Utgår från den fördefinierade frågan {name}."
+  "presetFrom": "Utgår från den fördefinierade frågan {name}.",
+  "adminOnlySource": "Endast rapportadministratörer",
+  "adminOnlyNote": "Endast en rapportadministratör (REPORT_ADMIN) får fråga den här källan: den visar vem som gjorde vad och varifrån, eller vem som har vilken autentiseringsuppgift."
 }

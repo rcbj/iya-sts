@@ -3479,6 +3479,130 @@ async function drainWithoutPool(t) {
   log.debug("Leaving drainWithoutPool().");
 }
 
+// THE SOURCES FOR REPORT ADMINISTRATORS (#2126, ASVS 5.0.0 8.2.3): the
+// catalog marks auditEvents, authActivity and credentialHolders, the API
+// publishes the mark and whether the caller may use each source, a
+// caller without REPORT_ADMIN is refused STS-REPORT-0061 by the catalog
+// and by the policy, and a scheduled definition over one is skipped for
+// an owner who holds only REPORT_USE, its occurrence consumed.
+async function adminSources(t) {
+  log.debug("Entering adminSources().");
+  const Catalog = require('../report/catalog');
+  const api = require('../report/report_api');
+  const rights = require('../report/rights');
+  const stores = require('../report/stores');
+  const jobs = require('../report/jobs');
+  const config = require('../common/config');
+  const gate = require('../common/access_gate');
+  require('../xacml/xacml_access_pep');
+  const catalog = new Catalog();
+  const ADMIN_ONLY = ['auditEvents', 'authActivity', 'credentialHolders'];
+  t.equal(catalog.list().filter(function (src) {
+    return src.adminOnly === true;
+  }).map(function (src) {
+    return src.id;
+  }).sort().join(','), ADMIN_ONLY.slice().sort().join(','),
+  'G1. the catalog marks exactly the three sources adminOnly');
+  t.equal(catalog.adminOnly('users') || catalog.adminOnly('nope'), false,
+    'G2. every other source, and an unknown one, is not');
+  const person = function (roles) {
+    return { subject: 'urn:uuid:g-test', username: 'g-test', kind: 'user',
+             roles: ['EVERYBODY', 'ALL_AUTHENTICATED_USERS'].concat(roles),
+             scope: '', clientId: 'test', realm: '' };
+  };
+  const USER = person(['REPORT_USE']);
+  const ADMIN = person(['REPORT_USE', 'REPORT_ADMIN']);
+  config.setOverride('xacml.enforceAccess', 'true');
+  const when = Date.parse('2026-11-24T12:00:30Z');
+  stores.resetForTests();
+  try {
+    t.check(gate.deciderInstalled(), 'precondition: the access PEP is ' +
+      'installed, so the policy is asked');
+    ADMIN_ONLY.forEach(function (id) {
+      const pub = api.publicSource(catalog.source(id), USER);
+      t.equal(pub.adminOnly === true && pub.usable === false, true,
+        'G3. the catalog answer marks ' + id + ' and says a report user ' +
+        'may not use it');
+      t.equal(api.publicSource(catalog.source(id), ADMIN).usable, true,
+        'G4. and that a report administrator may');
+      const refused = rights.sourceRefusal(USER, 'run', null, id);
+      t.equal(refused && refused.code, 'STS-REPORT-0061',
+        'G5. a report user\'s query of ' + id + ' is refused 0061');
+      t.equal(rights.sourceRefusal(ADMIN, 'run', null, id), null,
+        'G6. a report administrator\'s is not');
+    });
+    const users = api.publicSource(catalog.source('users'), USER);
+    t.equal(users.adminOnly === false && users.usable === true, true,
+      'G7. users is no administrators\' source and a report user may ' +
+      'use it');
+    t.equal(rights.sourceRefusal(USER, 'write', null, 'users'), null,
+      'G8. a report user may still save a report over it');
+    t.equal(api.publicSource(catalog.source('users')).usable, undefined,
+      'G9. a source drawn for nobody carries no usable');
+
+    // THE POLICY DECIDES TOO: asked directly, with the catalog's check
+    // out of the way, the gate refuses the source to REPORT_USE alone.
+    const ask = function (roles, adminSourcesAsked) {
+      return gate.check({
+        resource: gate.RESOURCE.REPORT_API, action: 'run',
+        owner: 'urn:uuid:g-test', requiredRoles: ['REPORT_USE',
+          'REPORT_ADMIN'],
+        reportObject: { kind: 'query', owner: 'urn:uuid:g-test',
+          groups: [], person: 'g-test', sources: ['auditEvents'],
+          adminSources: adminSourcesAsked },
+        subject: { name: 'urn:uuid:g-test', label: 'g-test', kind: 'user',
+          authenticated: true, roles: roles, effective: true,
+          sessionId: null },
+        context: { object: 'query' } }).allowed;
+    };
+    t.equal(ask(['REPORT_USE'], ['auditEvents']), false,
+      'G10. the PDP refuses an owner holding REPORT_USE a question ' +
+      'carrying an administrators\' source');
+    t.equal(ask(['REPORT_ADMIN'], ['auditEvents']), true,
+      'G11. and permits one holding REPORT_ADMIN');
+    t.equal(ask(['REPORT_USE'], []), true,
+      'G12. a question carrying none is decided as before');
+
+    // A SCHEDULED RUN over an administrators' source, for an owner the
+    // seam says holds REPORT_USE alone, is skipped and its slot consumed.
+    let held = ['REPORT_USE'];
+    rights.installOwnerCheck(function () {
+      return { ok: true, username: 'g-test', roles: held };
+    });
+    stores.putDefinition({
+      id: 'def-audit', name: 'audit', owner: 'urn:uuid:g-test',
+      ownerKind: 'user',
+      document: { source: 'auditEvents', select: ['actor'], limit: 1,
+                  mode: 'async' },
+      parameters: null, schedule: '* * * * *', scheduleEnabled: true,
+      notify: false, groups: [], lastSlot: null, failures: [],
+      createdAt: 1, modifiedAt: 1
+    });
+    const skipped = await jobs.scheduleNow(when);
+    const def = stores.getDefinition('def-audit') || {};
+    const notes = (def.failures || []).map(function (f) {
+      return f.description;
+    });
+    t.equal(skipped.enqueued, 0, 'G13. a report user\'s scheduled ' +
+      'report over auditEvents is not queued');
+    t.check(notes.some(function (one) {
+      return /REPORT_ADMIN/.test(one);
+    }), 'G14. the note says REPORT_ADMIN is needed', JSON.stringify(notes));
+    t.check(def.lastSlot != null, 'G15. the occurrence is consumed');
+    t.equal(rights.ownerMayRun(def).code, 'STS-REPORT-0061',
+      'G16. the schedule\'s question answers 0061');
+    held = ['REPORT_USE', 'REPORT_ADMIN'];
+    const queued = await jobs.scheduleNow(when + 60000);
+    t.equal(queued.enqueued, 1, 'G17. held by a report administrator, ' +
+      'the next occurrence queues');
+  } finally {
+    rights.installOwnerCheck(null);
+    config.clearOverride('xacml.enforceAccess');
+    stores.resetForTests();
+  }
+  log.debug("Leaving adminSources().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   await drainWithoutPool(t);
@@ -3495,6 +3619,7 @@ async function run(t) {
   await holders(t);
   await auditFresh(t);
   await disabledOwner(t);
+  await adminSources(t);
   log.debug("Leaving run().");
 }
 

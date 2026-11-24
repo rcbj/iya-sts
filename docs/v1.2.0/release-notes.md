@@ -6,6 +6,25 @@ title: Release notes
 
 ## 1.2.0
 
+### Behaviour change: S/MIME mail is authenticated encryption
+
+Mail encrypted to a person's S/MIME certificate is now a CMS
+AuthEnvelopedData (RFC 5083) under AES-256-GCM (RFC 5084), sent as
+`application/pkcs7-mime; smime-type=authEnveloped-data` as S/MIME 4.0
+(RFC 8551) asks, so the recipient can tell the message was not changed on
+the way (ASVS 5.0.0 11.3.3). Until 1.2.0 it was an EnvelopedData under
+AES-256-CBC (`smime-type=enveloped-data`), which has no integrity
+protection. RSA, EC and ML-KEM certificates are handled as before; only the
+content encryption and its container changed.
+
+**Upgrading.** Nothing to run: an existing deployment sends GCM from the
+first message after the upgrade, retries of mail already queued included.
+For a recipient whose mail client cannot read AuthEnvelopedData, set
+`mail.smimeContentEncryption` to `aes256-cbc` (in the realm, or
+`STS_MAIL_SMIME_CONTENT_ENCRYPTION`) to send exactly what 1.1 sent. While it
+is `aes256-cbc` in product mode, `/admin/mode` reports ASVS 5.0.0 11.3.3 as
+not met. See [OpenPGP and S/MIME](openpgp.md#encrypted-mail).
+
 ### New: WS-Trust message integrity, and signed answers
 
 A WS-Trust application can require its requests signed and name what the
@@ -178,6 +197,28 @@ old log held into `sts_audit`, with their checksums, and removes the old
 rows. The commands are the ones under [the scopes change](#behaviour-change-a-client-that-declares-no-scopes-is-issued-openid-alone).
 A new install gets everything from `postgres/schema.sql` or
 `mariadb/schema.sql`.
+
+### Behaviour change: three report sources need `REPORT_ADMIN`
+
+The report sources `auditEvents`, `authActivity` and `credentialHolders`
+hold who did what, from where, and who holds which credential, which the
+console keeps behind Admin Read. A report over one of them now needs
+`REPORT_ADMIN` (ASVS 5.0.0 8.2.3, #2126). A caller holding only
+`REPORT_USE` is refused (`forbidden`, `STS-REPORT-0061`) a query, a job, a
+saved definition, a run and a download over them; every other source is
+unchanged. The catalog marks the three `adminOnly`, the page offers them
+only to a caller who may use them, and the access-control policy decides
+them too, with `reportAdminSources` for sources a realm adds.
+
+**Upgrading.** Nothing is removed. A definition a report user saved over one
+of these sources stays visible to its owner, who may change its source or
+delete it; its runs and its schedule are refused with `STS-REPORT-0061`
+(each skipped occurrence noted on the definition) until its owner holds
+`REPORT_ADMIN`. A realm that overrides `access-control` keeps its override:
+the catalog's check refuses these sources without it, and rebuilding the
+override from the template adds the rule to the policy. See
+[Reports](reporting.md#who-can-open-it) and
+[Field access](field-access.md#reports).
 
 ## 1.1.0
 

@@ -340,6 +340,12 @@ interface ReportObject {
   // The PERSON the token is for, by username, for the PIP's owner identity;
   // empty for an application's own token.
   person: string;
+  // The catalog source the report reads (#2126), sent only on the
+  // question asked before a report is defined, run or downloaded.
+  sources?: string[];
+  // Those of them the catalog marks for report administrators (#2126):
+  // the policy permits a question carrying one only to REPORT_ADMIN.
+  adminSources?: string[];
 }
 
 // The object an owner would administer (#607). See `check()`.

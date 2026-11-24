@@ -1953,9 +1953,18 @@ class Mail {
             subject: row.subject, text: row.text, html: row.html,
             messageId: row.messageId, date: new Date(row.queuedAt),
             lang: row.lang,
-            // #1955 P6 (header point 9): encrypted by the composer.
+            // #1955 P6 (header point 9): encrypted by the composer. The
+            // S/MIME content encryption (#2124) is the realm's setting AT
+            // THE ATTEMPT, not at the queue, so an operator who returns to
+            // CBC for a recipient who cannot read GCM changes the retries
+            // of a message already queued too.
             encryption: row.encryption && row.encryption.kind !== 'none'
-              ? row.encryption : undefined });
+              ? (row.encryption.kind === 'smime'
+                ? Object.assign({}, row.encryption, {
+                  contentEncryption: String(
+                    self.setting('mail.smimeContentEncryption') || '') })
+                : row.encryption)
+              : undefined });
         });
     } catch (e) {
       log.debug("Caught in Mail.attempt(): " + ((e && e.message) || e));
