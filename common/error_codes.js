@@ -24581,8 +24581,10 @@ const CODES = [
       'allowed in development (#1450).',
     spec: '' },
   { code: 'STS-XACML-0052',
-    summary: 'The issuance gate\'s decider threw; issuance was ALLOWED ' +
-      'because a throw is a defect rather than a decision.',
+    summary: 'The issuance gate\'s decider threw, a defect rather than a ' +
+      'decision: in development the issuance is allowed, so a mock stays ' +
+      'fixable; in product it is refused (STS-XACML-0183, ASVS 5.0.0 ' +
+      '16.5.3).',
     spec: '' },
   { code: 'STS-XACML-0053',
     summary: 'The role register threw while resolving a party\'s roles; only ' +

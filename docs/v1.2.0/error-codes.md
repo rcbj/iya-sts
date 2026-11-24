@@ -5343,7 +5343,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0049` | The built-in access-control policy could not be built from its template (a defect), so access to every gated surface is ALLOWED without a policy decision. | — |
 | `STS-XACML-0050` | common/access_gate.ts was given a decider that is not a function; every access decision is allowed. | — |
 | `STS-XACML-0051` | The access gate's decider threw: refused in product mode, allowed in development (#1450). | — |
-| `STS-XACML-0052` | The issuance gate's decider threw; issuance was ALLOWED because a throw is a defect rather than a decision. | — |
+| `STS-XACML-0052` | The issuance gate's decider threw, a defect rather than a decision: in development the issuance is allowed, so a mock stays fixable; in product it is refused (STS-XACML-0183, ASVS 5.0.0 16.5.3). | — |
 | `STS-XACML-0053` | The role register threw while resolving a party's roles; only the built-in roles were used. | — |
 | `STS-XACML-0054` | The role register threw while building the roles claim; the token or assertion was issued without it. | — |
 | `STS-XACML-0055` | A role write named an invalid role name, or the name of a built-in role. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors } |
