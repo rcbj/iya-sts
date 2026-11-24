@@ -133,6 +133,17 @@ itself (direct) at this service's HTTPS listener, with a certificate for that
 name. A request carries no realm in its path, so it is answered by the realm
 that serves its domain — the default realm first, then the others by id.
 
+One way to do that without replacing the main certificate is a
+[custom listener](tls.md) of the service's own, on port 443, for
+`openpgpkey.<domain>`. With no certificate file given, the service issues
+its certificate. Then map the **Certificate authority** application, which
+holds the Web Key Directory, onto that listener as well as `main`. A
+realm's own listener does not work for this, because it answers only paths
+under that realm's prefix. Tested that way with GnuPG 2.2:
+`gpg --auto-key-locate clear,wkd,nodefault --locate-keys` found a key whose
+private half is on an OpenPGP card, and after **Withdraw**, the same lookup
+answered `No data`.
+
 **CORS.** The draft suggests `Access-Control-Allow-Origin: *`. This service
 never sends a wildcard: a Web Key Directory answer gets the realm's union of
 `appCorsOrigin`, as discovery documents do. A desktop mail program does not

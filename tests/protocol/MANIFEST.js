@@ -1481,6 +1481,17 @@ const JOBS = [
   // directory answering it on a domain only this job uses; the depth is
   // tests/openpgp_keys.js, in process.
   { file: 'sts_openpgp.js', browser: false, local: true },
+  // OpenPGP MAIL BETWEEN TWO PEOPLE, THE KEY ON THE CARD (#2057, umbrella
+  // #2055): the recipient's key generated on the client lab's OpenPGP card
+  // (gpg --card-edit), the portal's challenge clear-signed on it,
+  // registered and published; a sender finds it by name through the Web
+  // Key Directory (gpg --auto-key-locate wkd, openpgpkey.<domain> on a
+  // custom listener the job adds and takes away), encrypts and sends with
+  // sendmail to the lab's postfix; decrypted on the card, and not with the
+  // card out; this service's emailed code arriving PGP/MIME and decrypted
+  // on the card; withdrawn, 404. `clientLab: true`. Holds port 443.
+  { file: 'sts_openpgp_card_mail.js', browser: false, local: true,
+    clientLab: true },
   // SSH USER CERTIFICATES OVER HTTP (#1955 P3): a key made here, issued
   // and revoked through /account-api, checked as an OpenSSH certificate
   // and a KRL without this service's own parser. The issuer's decisions
