@@ -3199,3 +3199,22 @@ WKD switch and domains) and `POST /admin-api/openpgp/<action>` with `{ user,
 registration is still the person's proof**: the administrator issues the
 challenge and pastes back what the person signed. The actor is the token's
 subject (#1579). Not a security operation: no OpenPGP key is a way in.
+
+## `POST /admin-api/console/certificates/inspect` — certificate sign-in's reader (#2080)
+
+A console form helper (3cc, a row of one action, `writesNothing`): the PEM
+certificates handed in, each with its subject, issuer, serial, validity,
+SHA-256 and SubjectPublicKeyInfo SHA-256, and with `bindings: true` the
+`stsCertificateBinding` values the first is found by — `spki-sha256`, and
+`issuer-serial` and `issuer-ski` from the first other certificate or client
+trust anchor whose key verifies its signature. It is how the console's
+editors (`admin-ui/CLAUDE.md`, *Certificate sign-in's settings as form
+fields*) show what a certificate is without hashing in a browser.
+**It describes what it is handed**, which `GET /admin-api/certificates`
+deliberately never does; the difference is that this is a POST with the
+administrator's own text, answered to the page that sent it, and that one is
+a link anybody can be sent (`CertificateViews.inspectView()` argues it). At
+most 262144 characters and 64 certificates; none, or a block that is not a
+certificate, is a 400 (`STS-ADMIN-0953`, `STS-ADMIN-0954`). What it leads to
+stays a management operation: `config/set` and `users/add-attribute`.
+`GET /admin-api/tls/trust`'s rows carry `spkiSha256` since the same change.

@@ -535,13 +535,28 @@ this mapping is not asked for it.
 | `roles.pivKeyRecoveryGroup` | `piv-key-recovery` | The group whose members hold PIV_KEY_RECOVERY |
 | `pki.paranoidPivAttestation`, `pki.paranoidPivCard` | on | The two use cases' rows under paranoid PKI mode |
 | `hardwareTokens.hardwareClaims` | `inference` | Whether a PKINIT inference, and a passkey without trusted attestation, still earns `hwk` |
+| `certSignIn.profiles`, `certSignIn.requireRevocation`, `certSignIn.handoff`, `tls.trustedProxyCertificates`, `tls.trustedProxyAddresses` | empty, `auto`, off, empty, empty | [Smart-card and certificate sign-in](configure-tls.md#smart-card-and-certificate-sign-in): the profiles, the revocation a sign-in needs, the handoff to a listener of its own, and a TLS-terminating proxy |
 
 The `piv.*` rows are the *PIV* group, on **Protocols → PIV** (`/admin/piv`),
-and `hardwareTokens.hardwareClaims` is the *Hardware tokens* group, on
+beside the *Certificate sign-in* group (#2080), which is also on **Server
+configuration → Listeners**. The certificate sign-in profiles are a form
+there, one card per profile, each CA picked from the client truststore by
+subject; `piv.externalIssuers` and `piv.attestationAnchors` are lists of
+certificates, each shown by its subject, SHA-256 and expiry, to which a PEM is
+pasted or a file chosen. The page's notes link everything a smart-card
+sign-in needs: the client truststore, revocation on **PKI**, the custom
+listener and `tls.mainPortDisableOptionalClientCertificate` on **Listeners**,
+and the authentication policy's smart card row. A person's
+`stsCertificateBinding` values are derived from their certificate on their
+**Credentials → Certificate sign-in** tab
+([Recording a binding on a person](configure-tls.md#recording-a-binding-on-a-person)).
+
+`hardwareTokens.hardwareClaims` is the *Hardware tokens* group, on
 **Protocols → Hardware tokens** (`/admin/hardware-tokens-settings`), whose
 Metadata tab says what a token register is and what a sign-in earns. Until
-#2049 both were in the *Devices* group; keys, variables and defaults did not
-change. **Directory → Hardware tokens** (`/admin/hardware-tokens`) keeps the
+#2049 it and the `piv.*` rows were in the *Devices* group, and until #2080
+the certificate sign-in rows were in *TLS*; keys, variables and defaults did
+not change. **Directory → Hardware tokens** (`/admin/hardware-tokens`) keeps the
 tokens, the OATH inventory, PIV enrolment, escrow and SSH certificates. Every
 row is also in [Configuration](configuration.md#piv), under *PIV* and
 *Hardware tokens*.
