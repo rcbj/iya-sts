@@ -817,6 +817,42 @@ class PersonEditor {
   }
 
   // -------------------------------------------------------------------------
+  // A VALUE IN THE FORM THE DIRECTORY STORES IT, for the comparisons an
+  // edit makes (#2081). `ldap_server.js` canonicalises a certificate sign-in
+  // binding as it writes it (`certificateBindingRefusal()`), so a binding
+  // added as `openssl` prints it (`issuer-ski:…:35:9A:…`) is held as
+  // `issuer-ski:…:359a…`, and a remove naming it as it was added found
+  // nothing to remove. Canonicalised here the same way, by
+  // `certificate_binding.bindingValueOf()`, it is found; a value outside the
+  // grammar is left as it is, for the directory to refuse (STS-TLS-0069).
+  // An ADD differing from a held value only in spelling is therefore
+  // refused as already held (STS-LDAP-0107), never stored twice. #2080's
+  // binding editor on the console writes through this same door, so it
+  // gets the same canonical form. Required LAZILY: the binding module adds
+  // a settings write rule when it loads, which belongs where
+  // `common/protocol_stack.ts` loads it.
+  private comparable(row: EditableRow, value: string): string {
+    const { log } = this.deps;
+    log.debug("Entering PersonEditor.comparable(). " + row.name);
+    if (row.name.toLowerCase() !== 'stscertificatebinding' || value === '') {
+      log.debug("Leaving PersonEditor.comparable(). As given.");
+      return value;
+    }
+    let canonical = '';
+    try {
+      canonical = String(require('../common/certificate_binding')
+        .bindingValueOf(value) || '');
+    } catch (e) {
+      log.debug("Caught in PersonEditor.comparable(): " +
+                ((e && e.message) || e));
+      // The directory's own check still runs at the write.
+      canonical = '';
+    }
+    log.debug("Leaving PersonEditor.comparable(). " +
+              (canonical ? 'Canonical.' : 'Not a binding.'));
+    return canonical || value;
+  }
+
   // THE ONE CHECK OF A VALUE, and its normal form. Answers `{ value }` or
   // `{ error }` — the words of a refusal, which the caller codes.
   // -------------------------------------------------------------------------
@@ -1066,7 +1102,7 @@ class PersonEditor {
       return this.refused('STS-LDAP-0106', 'The value for ' + row.name + ' ' +
                           checked.error + '.');
     }
-    const value = String(checked.value);
+    const value = this.comparable(row, String(checked.value));
     if (mode !== 'set' && value === '') {
       log.debug("Leaving PersonEditor.update(). No value.");
       return this.refused('STS-LDAP-0106', 'Name the value to ' + mode +

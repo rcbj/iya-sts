@@ -1471,8 +1471,19 @@ const JOBS = [
   // lowAffinity, and a forwarded Client-Cert believed from the named proxy
   // only. Posts two test Roots to the client truststore and removes them;
   // every setting is the throwaway realm's. The logic in full is
-  // tests/certificate_binding.js, in process.
+  // tests/certificate_binding.js, in process. Since #2081 also every
+  // stored binding method and email, each with the account disabled,
+  // renewal under the same key and a new one, and an expired leaf; the
+  // values worked out by openssl as docs/v1.2.0/configure-tls.md says.
   { file: 'sts_cert_sign_in_profiles.js', browser: false, local: true },
+  // THE CERTIFICATE SIGN-IN HANDOFF OVER A REAL SECOND LISTENER (#2081): a
+  // throwaway realm's own listener on STS_TEST_REALM_LISTENER_PORT asking
+  // for a certificate, certificate-sign-in mapped to it; the screen's link,
+  // the listener's 303 back, the act on the main port, and the refusals
+  // (used, another browser, a certificate bound to nobody, the option off).
+  // Exclusive: that port is the one sts_realm_listener.js binds too.
+  { file: 'sts_cert_handoff.js', browser: false, local: true,
+    exclusive: true },
   // OpenPGP KEYS AND THE WEB KEY DIRECTORY OVER HTTP (#1955 P6): a key made
   // here registered through /admin-api/openpgp on its proof, and the
   // directory answering it on a domain only this job uses; the depth is

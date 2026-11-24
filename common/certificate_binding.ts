@@ -660,15 +660,15 @@ class CertificateBinding {
   // THE VALUES A CERTIFICATE IS FOUND BY, AND THE STORED GRAMMAR.
   // -------------------------------------------------------------------------
   /**
-   * A subject DN as the two DN methods compare it: RFC 4514 order, each RDN
-   * trimmed around its `=` and its separators, lower-cased.
+   * `text` cut at every character of `separators` that no backslash
+   * escapes; an escape is kept, with what it escapes, in its piece.
    *
-   * @param dn - the DN
-   * @returns the canonical form
+   * @param text - the text
+   * @param separators - the characters to cut at
+   * @returns the pieces, empty ones included
    */
-  static canonicalDn(dn: unknown): string {
-    helpers.log.debug("Entering CertificateBinding.canonicalDn().");
-    const text = String(dn == null ? '' : dn).trim();
+  static splitUnescaped(text: string, separators: string): string[] {
+    helpers.log.debug("Entering CertificateBinding.splitUnescaped().");
     const parts: string[] = [];
     let at = '';
     for (let i = 0; i < text.length; i++) {
@@ -676,7 +676,7 @@ class CertificateBinding {
       if (ch === '\\' && i + 1 < text.length) {
         at += ch + text.charAt(i + 1);
         i += 1;
-      } else if (ch === ',' || ch === ';') {
+      } else if (separators.indexOf(ch) >= 0) {
         parts.push(at);
         at = '';
       } else {
@@ -684,15 +684,72 @@ class CertificateBinding {
       }
     }
     parts.push(at);
+    helpers.log.debug("Leaving CertificateBinding.splitUnescaped().");
+    return parts;
+  }
+
+  /**
+   * A subject DN as the two DN methods compare it: RFC 4514 order, each
+   * attribute trimmed around its `=` and its separators, lower-cased.
+   *
+   * A MULTI-VALUED RDN'S ATTRIBUTES ARE SORTED (#2081). An RDN is a SET
+   * (X.501), so the order of its attributes means nothing, and the two
+   * spellings that meet here disagree about it: node prints them in the
+   * order they are encoded, `CN=SMITH.JANE + UID=12345`, and `openssl x509
+   * -subject -nameopt RFC2253`, which the documentation tells an
+   * administrator to copy, prints `UID=12345+CN=SMITH.JANE`. Each attribute
+   * is trimmed and the RDN joined by a bare `+`, so either matches the
+   * other. A DN of single-valued RDNs canonicalises as it always did.
+   *
+   * @param dn - the DN
+   * @returns the canonical form
+   */
+  static canonicalDn(dn: unknown): string {
+    helpers.log.debug("Entering CertificateBinding.canonicalDn().");
+    const text = String(dn == null ? '' : dn).trim();
+    const attribute = function (ava: string): string {
+      const eq = ava.indexOf('=');
+      return eq < 0 ? ava.trim().toLowerCase()
+        : ava.slice(0, eq).trim().toLowerCase() + '=' +
+          ava.slice(eq + 1).trim().toLowerCase();
+    };
+    const out = CertificateBinding.splitUnescaped(text, ',;')
+      .map(function (rdn: string): string {
+        return CertificateBinding.splitUnescaped(rdn, '+').map(attribute)
+          .filter(function (ava: string): boolean {
+            return ava.length > 0;
+          }).sort().join('+');
+      }).filter(function (rdn: string): boolean {
+        return rdn.length > 0;
+      }).join(',');
     helpers.log.debug("Leaving CertificateBinding.canonicalDn().");
-    return parts.map(function (rdn: string): string {
-      const eq = rdn.indexOf('=');
-      return eq < 0 ? rdn.trim().toLowerCase()
-        : rdn.slice(0, eq).trim().toLowerCase() + '=' +
-          rdn.slice(eq + 1).trim().toLowerCase();
-    }).filter(function (rdn: string): boolean {
-      return rdn.length > 0;
-    }).join(',');
+    return out;
+  }
+
+  /**
+   * The canonical form `canonicalDn()` gave before #2081, which left a
+   * multi-valued RDN as one string (`cn=smith.jane + uid=12345`). A value
+   * stored then from a certificate's own subject is in this form, so the
+   * DN methods ask for it as well where it differs (`keyOf()`): what
+   * matched before still matches.
+   *
+   * @param dn - the DN
+   * @returns the canonical form before #2081
+   */
+  static legacyCanonicalDn(dn: unknown): string {
+    helpers.log.debug("Entering CertificateBinding.legacyCanonicalDn().");
+    const text = String(dn == null ? '' : dn).trim();
+    const out = CertificateBinding.splitUnescaped(text, ',;')
+      .map(function (rdn: string): string {
+        const eq = rdn.indexOf('=');
+        return eq < 0 ? rdn.trim().toLowerCase()
+          : rdn.slice(0, eq).trim().toLowerCase() + '=' +
+            rdn.slice(eq + 1).trim().toLowerCase();
+      }).filter(function (rdn: string): boolean {
+        return rdn.length > 0;
+      }).join(',');
+    helpers.log.debug("Leaving CertificateBinding.legacyCanonicalDn().");
+    return out;
   }
 
   /**
@@ -791,10 +848,14 @@ class CertificateBinding {
                                       String(facts.ski) };
     } else if (method === 'issuer-subject' && issuerKey && facts.subject) {
       out = { kind: 'binding', value: CertificateBinding.bindingValueOf(
-        'issuer-subject:' + issuerKey + ':' + String(facts.subject)) };
+        'issuer-subject:' + issuerKey + ':' + String(facts.subject)),
+              legacy: 'issuer-subject:' + issuerKey + ':' +
+                CertificateBinding.legacyCanonicalDn(facts.subject) };
     } else if (method === 'subject' && facts.subject) {
       out = { kind: 'binding', value: CertificateBinding.bindingValueOf(
-        'subject:' + String(facts.subject)) };
+        'subject:' + String(facts.subject)),
+              legacy: 'subject:' +
+                CertificateBinding.legacyCanonicalDn(facts.subject) };
     } else if (method === 'card-uuid') {
       const uuids = (san.uri || []).map(function (u: string): string {
         const m = CARD_UUID.exec(String(u));
@@ -933,9 +994,13 @@ class CertificateBinding {
       }
       // `certificate-sha256` is the certificate in `userCertificate` (#1061)
       // OR the same digest stored as a binding: one method, both asked.
-      const keys = key.kind === 'stored'
+      // A DN method's form before #2081 is asked too, where it differs
+      // (`legacyCanonicalDn()`); its holders are the same people, counted
+      // once below.
+      const keys = (key.kind === 'stored'
         ? [key, { kind: 'binding', value: 'certificate-sha256:' + key.value }]
-        : [key];
+        : [key]).concat(key.legacy && key.legacy !== key.value
+          ? [{ kind: 'binding', value: key.legacy }] : []);
       const seen = new Set<string>();
       const holders = ([] as Json[]).concat(...keys.map(function (k: Json) {
         return self.holdersOf(k).filter(function (h: Json) {
