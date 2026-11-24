@@ -1690,7 +1690,7 @@ declare namespace IyaApi.Report {
   type DefinitionList = { "definitions"?: Array<Definition>; "page"?: number; "pages"?: number; "per"?: number; "total"?: number };
   type DefinitionWrite = { "name": string; "document": QueryDocument; "parameters"?: ParameterBag; "schedule"?: string; "scheduleEnabled"?: boolean; "notify"?: boolean };
   type Deleted = { "deleted"?: string };
-  type Error = { "error"?: string; "error_description"?: string };
+  type Error = { "error"?: string; "error_description"?: string; "messages"?: Array<{ "key": string; "params"?: Record<string, unknown> } | null> };
   type Field = { "id"?: string; "type"?: "string" | "number" | "boolean" | "timestamp"; "meaning"?: string; "filter"?: boolean; "sort"?: boolean; "group"?: boolean; "operators"?: Array<string>; "indexed"?: Array<string>; "indexedValues"?: Array<string>; "values"?: Array<string> };
   type Filter = FilterLogical | FilterNot | FilterIsNull | FilterValue | FilterIn | FilterParam;
   type FilterIn = { "op": "in"; "field": string; "value": Array<string | null | number | boolean> } | null;

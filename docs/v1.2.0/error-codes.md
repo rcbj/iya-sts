@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **6103** of them, in **58** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **6105** of them, in **58** subsystems.
 
 ## Where a code appears
 
@@ -100,12 +100,12 @@ is an ordinary outcome.
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 306
 * [Management API (`STS-API`)](#sts-api) — 97
 * [User portal (`STS-PORTAL`)](#sts-portal) — 123
-* [Account API (`STS-ACCOUNT`)](#sts-account) — 23
+* [Account API (`STS-ACCOUNT`)](#sts-account) — 24
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 16
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 191
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 29
-* [Reporting (`STS-REPORT`)](#sts-report) — 60
+* [Reporting (`STS-REPORT`)](#sts-report) — 61
 * [Audit export (`STS-AUDIT`)](#sts-audit) — 21
 
 ## STS-HTTP
@@ -6569,6 +6569,7 @@ Raised from: account-api/.
 | `STS-ACCOUNT-0021` | A query parameter of an /account-api request held a value its declared type does not, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
 | `STS-ACCOUNT-0022` | An /account-api request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
 | `STS-ACCOUNT-0023` | A token was refused because the person it names no longer exists. | HTTP 401 |
+| `STS-ACCOUNT-0024` | A signed-in person made more writes to their own account (profile edits, credentials enrolled or removed, consents withdrawn, device changes: every act of /account-api that is not a GET) than account.writesPerSubject allows in an account.writeWindowS window, counted by the token's subject; further writes are refused until the window passes, and reads go on (#2167, ASVS 5.0.0 2.4.2). | HTTP 429 { ok: false, errors, messages } with Retry-After |
 
 ## STS-LOGOUT
 
@@ -6917,6 +6918,7 @@ Raised from: report/.
 | `STS-REPORT-0059` | A token was refused because the person it names no longer exists. | HTTP 401 |
 | `STS-REPORT-0060` | A stored report definition no longer holds to the Reports API model (a filter naming a parameter longer than 64 characters, saved before #1579 bounded it), so it is answered without its document and parameters, and a run of it is refused for its query. | recorded |
 | `STS-REPORT-0061` | A report over a source for report administrators only (auditEvents, authActivity, credentialHolders: the catalog marks them adminOnly) was refused because the caller — or, for a scheduled run, the definition's owner — does not hold REPORT_ADMIN, or the access-control policy refused the source: a query, a job, a definition saved or run, or a result downloaded (#2126, ASVS 5.0.0 8.2.3). A definition saved before stays visible to its owner. | forbidden (HTTP 403); recorded for a scheduled run, whose occurrence is consumed |
+| `STS-REPORT-0062` | A caller of the Reports API made more expensive acts (an ad hoc query or preview, a job queued, a saved definition run, a result downloaded) than report.actsPerSubject allows in a report.actWindowS window, counted by the token's subject; further acts are refused until the window passes, and the other operations go on (#2167, ASVS 5.0.0 2.4.2). | too_many_requests (HTTP 429) with Retry-After |
 
 ## STS-AUDIT
 

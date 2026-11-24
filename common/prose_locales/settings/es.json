@@ -275,6 +275,22 @@
     "en": "99c8adf052996759",
     "text": "Hace cuánto, como máximo, en minutos, debe haber iniciado sesión alguien para cambiar cómo inicia sesión una persona. En el portal: sus segundos factores, códigos de recuperación, llaves de acceso, contraseñas de aplicación, certificados, claves de firma, identificadores autoemitidos, dirección de correo o una oferta de credencial para la cartera, y cerrar sus otras sesiones; primero se la envía a iniciar sesión de nuevo. Para un administrador: cambiar la contraseña, el segundo factor, la llave de acceso, los códigos de recuperación, la dirección de correo o las contraseñas de aplicación de una persona a través de la consola o de /admin-api, que responde con insufficient_user_authentication de RFC 9470. Lo mismo se aplica cuando un administrador concede o retira un rol, crea, cambia o elimina un dominio de confianza, actúa sobre la PKI, las claves de firma, la clave de cifrado de claves o los destinos de envío de secretos, o cambia cualquier ajuste (#2161). 0 significa que no se pide, el valor predeterminado en desarrollo. El modo producto usa 15 por defecto."
   },
+  "account.writesPerSubject|label": {
+    "en": "90cb891002b3f2f1",
+    "text": "Cambios de cuenta por persona y ventana"
+  },
+  "account.writesPerSubject|description": {
+    "en": "4a4d877797b1c467",
+    "text": "Cuántos cambios puede hacer una persona con sesión iniciada en su propia cuenta a través de /account-api (el portal) en una ventana de account.writeWindowS: ediciones del perfil, credenciales registradas o eliminadas, consentimientos retirados, cambios de dispositivos. Se cuenta por el sujeto del token, no por dirección, de modo que las personas detrás de una misma dirección no lo comparten. Por encima, un cambio se rechaza con 429 y Retry-After hasta que pase la ventana; la lectura de la cuenta continúa. 0 significa sin límite, el valor predeterminado en desarrollo. El modo producto usa 300 de forma predeterminada."
+  },
+  "account.writeWindowS|label": {
+    "en": "b5b3a8ffb257226e",
+    "text": "Ventana de cambios de cuenta (segundos)"
+  },
+  "account.writeWindowS|description": {
+    "en": "738a3bd11ca86499",
+    "text": "La ventana en la que se cuenta account.writesPerSubject, en segundos. Una ventana fija, como todo límite de frecuencia aquí."
+  },
   "persistence.allowDefaultDatabasePassword|label": {
     "en": "24634837693652d6",
     "text": "Permitir una contraseña predeterminada de la base de datos en modo producto"
@@ -12490,6 +12506,22 @@
   "report.maxConcurrentPerSubject|description": {
     "en": "525965a5866fed18",
     "text": "Cuántos trabajos de informe puede tener en ejecución a la vez una persona."
+  },
+  "report.actsPerSubject|label": {
+    "en": "c2fd1d4d02b9a6b1",
+    "text": "Ejecuciones y descargas de informes por persona y ventana"
+  },
+  "report.actsPerSubject|description": {
+    "en": "e49f26690bd91e46",
+    "text": "Cuántas acciones costosas puede hacer quien llama a la Reports API en una ventana de report.actWindowS: una consulta o vista previa ad hoc, un trabajo en cola, una definición guardada ejecutada, un resultado descargado. Se cuenta por el sujeto del token, no por dirección. Por encima, tal acción se rechaza con 429 y Retry-After hasta que pase la ventana; las listas y las definiciones se pueden seguir leyendo. 0 significa sin límite, el valor predeterminado en desarrollo. El modo producto usa 240 de forma predeterminada."
+  },
+  "report.actWindowS|label": {
+    "en": "3e27ff3046206690",
+    "text": "Ventana de acciones de informes (segundos)"
+  },
+  "report.actWindowS|description": {
+    "en": "03466784e84b1e2b",
+    "text": "La ventana en la que se cuenta report.actsPerSubject, en segundos. Una ventana fija, como todo límite de frecuencia aquí."
   },
   "report.artifactRetentionS|label": {
     "en": "ae014cb5ae4ea837",

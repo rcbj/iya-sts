@@ -275,6 +275,22 @@
     "en": "99c8adf052996759",
     "text": "Gaano kabago, sa minuto, dapat nakapag-sign in ang isang tao para baguhin kung paano nagsa-sign in ang isang tao. Sa portal: ang kaniyang mga second factor, recovery code, passkey, app password, certificate, signing key, self-issued ID, email address o isang wallet credential offer, at ang pagtatapos ng iba pa niyang session; papapag-sign in muna siya. Para sa administrator: ang pagpapalit ng password, second factor, passkey, recovery code, email address o app password ng isang tao sa console o sa /admin-api, na sumasagot ng insufficient_user_authentication ng RFC 9470. Ganoon din kapag ang isang administrator ay nagbibigay o nag-aalis ng role, gumagawa, nagbabago o nag-aalis ng trust realm, kumikilos sa PKI, sa mga signing key, sa key-encryption key o sa mga destinasyon ng pagpapadala ng sikreto, o nagbabago ng anumang setting (#2161). Ang 0 ay hindi hinihingi, ang default sa development. 15 ang default ng product mode."
   },
+  "account.writesPerSubject|label": {
+    "en": "90cb891002b3f2f1",
+    "text": "Mga pagbabago sa account bawat tao bawat window"
+  },
+  "account.writesPerSubject|description": {
+    "en": "4a4d877797b1c467",
+    "text": "Ilang pagbabago ang maaaring gawin ng isang taong naka-sign in sa sarili niyang account sa pamamagitan ng /account-api (ang portal) sa loob ng isang window na account.writeWindowS: mga pag-edit ng profile, mga credential na idinagdag o inalis, mga pahintulot na binawi, mga pagbabago sa device. Binibilang ayon sa subject ng token, hindi ayon sa address, kaya hindi ito pinaghahatian ng mga taong nasa likod ng iisang address. Lampas dito, tinatanggihan ang pagbabago nang may 429 at Retry-After hanggang lumipas ang window; nagpapatuloy ang pagbasa ng account. Ang 0 ay walang limitasyon, ang default sa development. Ang default sa product mode ay 300."
+  },
+  "account.writeWindowS|label": {
+    "en": "b5b3a8ffb257226e",
+    "text": "Window ng mga pagbabago sa account (segundo)"
+  },
+  "account.writeWindowS|description": {
+    "en": "738a3bd11ca86499",
+    "text": "Ang window kung saan binibilang ang account.writesPerSubject, sa segundo. Isang nakapirming window, gaya ng bawat rate limit dito."
+  },
   "persistence.allowDefaultDatabasePassword|label": {
     "en": "24634837693652d6",
     "text": "Payagan ang default na database password sa product mode"
@@ -12490,6 +12506,22 @@
   "report.maxConcurrentPerSubject|description": {
     "en": "525965a5866fed18",
     "text": "Ilang report job ang maaaring sabay na tumatakbo para sa isang tao."
+  },
+  "report.actsPerSubject|label": {
+    "en": "c2fd1d4d02b9a6b1",
+    "text": "Mga pagpapatakbo at pag-download ng ulat bawat tao bawat window"
+  },
+  "report.actsPerSubject|description": {
+    "en": "e49f26690bd91e46",
+    "text": "Ilang mabigat na kilos ang maaaring gawin ng isang tumatawag sa Reports API sa loob ng isang window na report.actWindowS: isang ad hoc na query o preview, isang job na inilagay sa pila, isang naka-save na definition na pinatakbo, isang resultang na-download. Binibilang ayon sa subject ng token, hindi ayon sa address. Lampas dito, tinatanggihan ang ganoong kilos nang may 429 at Retry-After hanggang lumipas ang window; mababasa pa rin ang mga listahan at definition. Ang 0 ay walang limitasyon, ang default sa development. Ang default sa product mode ay 240."
+  },
+  "report.actWindowS|label": {
+    "en": "3e27ff3046206690",
+    "text": "Window ng mga kilos sa ulat (segundo)"
+  },
+  "report.actWindowS|description": {
+    "en": "03466784e84b1e2b",
+    "text": "Ang window kung saan binibilang ang report.actsPerSubject, sa segundo. Isang nakapirming window, gaya ng bawat rate limit dito."
   },
   "report.artifactRetentionS|label": {
     "en": "ae014cb5ae4ea837",

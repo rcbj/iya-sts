@@ -275,6 +275,22 @@
     "en": "99c8adf052996759",
     "text": "要變更某人的登入方式，必須在多少分鐘內登入過。在入口網站上：本人的第二因素、復原代碼、通行金鑰、應用程式密碼、憑證、簽署金鑰、自行簽發的 ID、電子郵件地址或錢包憑證提供，以及結束本人的其他工作階段；須先重新登入。對管理員而言：透過主控台或 /admin-api 變更某人的密碼、第二因素、通行金鑰、復原代碼、電子郵件地址或應用程式密碼，/admin-api 會以 RFC 9470 的 insufficient_user_authentication 回應。管理員授予或移除角色，建立、變更或刪除信任領域，操作 PKI、簽章金鑰、金鑰加密金鑰或機密推送目的地，或變更任何設定時，同樣如此（#2161）。0 表示不要求，為開發模式預設值。產品模式預設 15。"
   },
+  "account.writesPerSubject|label": {
+    "en": "90cb891002b3f2f1",
+    "text": "每人每個時間窗口的帳戶變更次數"
+  },
+  "account.writesPerSubject|description": {
+    "en": "4a4d877797b1c467",
+    "text": "一位已登入的人在 account.writeWindowS 時間窗口內可透過 /account-api（入口網站）對自己帳戶進行的變更次數：個人資料編輯、註冊或移除認證資料、撤回同意、裝置變更。依權杖的 subject 計數，而非依位址，因此同一位址後的人不會共用此額度。超過後，變更會以 429 和 Retry-After 拒絕，直到時間窗口結束；讀取帳戶不受影響。0 表示不限制，這是開發模式的預設值。產品模式預設為 300。"
+  },
+  "account.writeWindowS|label": {
+    "en": "b5b3a8ffb257226e",
+    "text": "帳戶變更時間窗口（秒）"
+  },
+  "account.writeWindowS|description": {
+    "en": "738a3bd11ca86499",
+    "text": "計數 account.writesPerSubject 的時間窗口，單位為秒。與這裡的每個速率限制一樣，是固定窗口。"
+  },
   "persistence.allowDefaultDatabasePassword|label": {
     "en": "24634837693652d6",
     "text": "在產品模式下允許預設資料庫密碼"
@@ -12490,6 +12506,22 @@
   "report.maxConcurrentPerSubject|description": {
     "en": "525965a5866fed18",
     "text": "一位人員可同時執行的報表工作數。"
+  },
+  "report.actsPerSubject|label": {
+    "en": "c2fd1d4d02b9a6b1",
+    "text": "每人每個時間窗口的報表執行與下載次數"
+  },
+  "report.actsPerSubject|description": {
+    "en": "e49f26690bd91e46",
+    "text": "Reports API 的呼叫方在 report.actWindowS 時間窗口內可執行的高成本操作次數：一次臨時查詢或預覽、一個排入佇列的工作、一次執行已儲存的定義、一次下載結果。依權杖的 subject 計數，而非依位址。超過後，此類操作會以 429 和 Retry-After 拒絕，直到時間窗口結束；清單與定義仍可讀取。0 表示不限制，這是開發模式的預設值。產品模式預設為 240。"
+  },
+  "report.actWindowS|label": {
+    "en": "3e27ff3046206690",
+    "text": "報表操作時間窗口（秒）"
+  },
+  "report.actWindowS|description": {
+    "en": "03466784e84b1e2b",
+    "text": "計數 report.actsPerSubject 的時間窗口，單位為秒。與這裡的每個速率限制一樣，是固定窗口。"
   },
   "report.artifactRetentionS|label": {
     "en": "ae014cb5ae4ea837",

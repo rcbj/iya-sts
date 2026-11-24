@@ -13877,6 +13877,16 @@ provided by `websecurity.ts` at require time. What a maintainer needs:
   (`cert_enrollment.ts`'s `throttledShared()`), GNAP's user code, `POST
   /xacml/pip` and the LDAP bind. Same buckets, window, limits, refusals and
   codes as the synchronous three, which stay for the tests that drive them.
+* **`subjectActShared()` is a SIGNED-IN subject's budget (#2167)**, not a
+  guess limiter: `/account-api`'s writes and `/report-api`'s four expensive
+  acts, keyed by realm and token `sub`, the address bucket out of reach
+  (`IDENTITY_ONLY`'s rule). The object form of a limit may name its own
+  `windowS` (the caller's setting instead of `security.rateLimitWindowS`)
+  and the `code` and catalog `sentence` its identity refusal carries
+  (`refusalTerms()`), so an operator searching `STS-HTTP-0017` for a
+  sign-in lockout never finds somebody who saved their profile too often.
+  Every act counts, success or not. With no shared store each node counts
+  its own: up to N - 1 over across N nodes, accepted for a bound on work.
 * **On a shared store (postgres) the count is a row of
   `sts_cluster_windows`**, one conditional upsert per bucket that resets a
   passed window and increments a live one, returning the count THIS attempt
@@ -15751,7 +15761,10 @@ reasons for the shape:
   as a parameter. **Still English**: operator-written text (a policy's
   advice, an application's configuration problem), technical detail
   passed as a parameter, a validation shape refusal, the portal's and the
-  console's refusals, and every specification endpoint's answer.
+  console's refusals — except the per-subject budget's (#2167,
+  `refusals.limits.tooManyActs`), which `/account-api` and `/report-api`
+  carry as `messages` and the portal and `/report` draw — and every
+  specification endpoint's answer.
   `tests/refusal_sentences.js` holds the design and that no sign-in door is
   handed an English literal; `tests/i18n_catalogs.js` test E scans
   `Sentence.say('` and `.refusal('` as it scans `t.text('`.
