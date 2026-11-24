@@ -344,8 +344,8 @@
     "text": "Les fins de poussée GNAP, les livraisons par poussée SSF, les canaux arrière de la fédération et les notifications aux PEP XACML respectent leurs paramètres …SkipTlsVerification (vérification désactivée, avec un avertissement à chaque requête) et leurs paramètres …AllowHttp (http simple vers n’importe quel hôte). Le spiffe.k8sSkipKubeletVerification de SPIRE est également respecté."
   },
   "mode.requirements.outbound-tls.product": {
-    "en": "247dae79affdfe65",
-    "text": "Chaque paramètre …SkipTlsVerification, ainsi que spiffe.k8sSkipKubeletVerification, est IGNORÉ — journalisé une fois avec son code — et refusé à l’écriture via /admin et /admin-api (STS-CORE-0103) ; une AC privée est atteinte via le …CaFile de la famille avec la vérification activée. Le http simple est refusé pour SSF, la fédération et XACML quoi qu’indique …AllowHttp, et autorisé pour une fin de poussée GNAP uniquement vers une adresse de bouclage (RFC 9635 section 2.5.2.1)."
+    "en": "32e402ebc2350105",
+    "text": "Chaque paramètre …SkipTlsVerification, ainsi que spiffe.k8sSkipKubeletVerification, est IGNORÉ — journalisé une fois avec son code — et refusé à l’écriture via /admin et /admin-api (STS-CORE-0103) ; une AC privée est atteinte via le …CaFile de la famille avec la vérification activée. Le http simple est refusé pour SSF, la fédération et XACML quoi qu’indique …AllowHttp, et autorisé pour une fin de poussée GNAP uniquement vers une adresse de bouclage (RFC 9635 section 2.5.2.1) — ce que les règles d’adresses sortantes refusent, de sorte qu’aucune poussée en http simple n’est délivrée (#1614)."
   },
   "mode.requirements.deliberate-defects.what": {
     "en": "055db67685f19f36",

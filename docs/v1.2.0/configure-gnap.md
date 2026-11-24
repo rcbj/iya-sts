@@ -541,6 +541,13 @@ instead of redirecting the browser. Taken from `sts_gnap_core.js` (section 6).
   put the CA in a PEM file the service can read and set `gnap.pushCaFile` to
   its path. The job does this rather than skipping verification, so that it
   passes in product mode.
+* The push URI's host must not resolve to a loopback, private, link-local or
+  reserved address in product mode, and must be in
+  `security.outboundAllowedHosts` when that is set; `federation.outbound` off
+  sends no push at all. A grant request naming such a URI is refused
+  `invalid_interaction`, and the push itself goes only to the address that
+  was checked. In product mode this makes `gnap.pushAllowHttp` useless: it
+  allows plain http to a loopback address only.
 * `gnap.pushAllowedHosts` limits the hosts a push may go to.
   `gnap.pushTimeoutMs` (5000) bounds it. `gnap.pushFinish` off stops every push.
 

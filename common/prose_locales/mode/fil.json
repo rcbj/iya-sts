@@ -344,8 +344,8 @@
     "text": "Sinusunod ng mga GNAP push finish, SSF push delivery, mga back channel ng federation at mga XACML PEP nudge ang kanilang mga …SkipTlsVerification setting (naka-off ang verification, binababalaan sa bawat request) at ang kanilang mga …AllowHttp setting (plain http sa anumang host). Sinusunod din ang spiffe.k8sSkipKubeletVerification ng SPIRE."
   },
   "mode.requirements.outbound-tls.product": {
-    "en": "247dae79affdfe65",
-    "text": "Ang bawat …SkipTlsVerification setting, at ang spiffe.k8sSkipKubeletVerification, ay BINABALEWALA — nilo-log nang isang beses kasama ang code nito — at tinatanggihan sa pagsulat sa pamamagitan ng /admin at /admin-api (STS-CORE-0103); naaabot ang private CA sa pamamagitan ng …CaFile ng pamilya na naka-on ang verification. Tinatanggihan ang plain http para sa SSF, federation at XACML anuman ang sabihin ng …AllowHttp, at pinapayagan para sa GNAP push finish sa loopback address lang (RFC 9635 section 2.5.2.1)."
+    "en": "32e402ebc2350105",
+    "text": "Ang bawat …SkipTlsVerification setting, at ang spiffe.k8sSkipKubeletVerification, ay BINABALEWALA — nilo-log nang isang beses kasama ang code nito — at tinatanggihan sa pagsulat sa pamamagitan ng /admin at /admin-api (STS-CORE-0103); naaabot ang private CA sa pamamagitan ng …CaFile ng pamilya na naka-on ang verification. Tinatanggihan ang plain http para sa SSF, federation at XACML anuman ang sabihin ng …AllowHttp, at pinapayagan para sa GNAP push finish sa loopback address lang (RFC 9635 section 2.5.2.1) — na tinatanggihan ng mga patakaran sa outbound address, kaya walang plain-http push na naihahatid (#1614)."
   },
   "mode.requirements.deliberate-defects.what": {
     "en": "055db67685f19f36",

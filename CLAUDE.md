@@ -1240,7 +1240,7 @@ the file the row names.
 | Poll a partner about a person while the session lasts; ~~consume a federated sign-out~~ reversed 2026-09-23 (#167); ~~decrypt a partner's encrypted assertion~~ reversed 2026-09-23 (#168) | `federation/CLAUDE.md` |
 | ~~Keep a partner's refresh token, register itself at a partner, find one by WebFinger or send it request objects~~ — reversed 2026-11-03 (#930) behind `fedRefreshTokens`, `fedRegister`, `fedWebFinger` and `fedRequestObject`, each off by default | `federation/CLAUDE.md`, *THE OPENID CONNECT RELYING PARTY PLANS* |
 | Act as a CIBA client (#931); ~~authenticate to a partner with a client certificate~~ — reversed 2026-11-13 (#931, rcbj's decision) for FAPI 1.0 Advanced (`fedFapi` 1-advanced) only: mutual TLS, `tls_client_auth` and certificate-bound tokens | `federation/CLAUDE.md`, *THIS SERVICE AS A FAPI CLIENT* |
-| Dial a URL a CALLER supplied to fetch something FROM (`wreqptr`) — twenty-seven argued exceptions | `federation/CLAUDE.md`, *The URLs this service dials that a caller's kind of URL could name* |
+| Dial a URL a CALLER supplied to fetch something FROM (`wreqptr`) — twenty-eight argued exceptions | `federation/CLAUDE.md`, *The URLs this service dials that a caller's kind of URL could name* |
 | ~~Ask anybody's permission before it issues something~~ — reversed 2026-09-01 (`/oauth2/consent`) | `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
 | Let a page on another origin read an answer, unless it is this service's own or listed in `appCorsOrigin` | `common/CLAUDE.md` (`cors.js`) |
 | Check an end user's password, **in development mode** | `authn/CLAUDE.md`, `kerberos/CLAUDE.md`, `common/CLAUDE.md` |

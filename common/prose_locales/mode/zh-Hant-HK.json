@@ -56,8 +56,8 @@
     "text": "對外請求會驗證回應者的證書，且不會透過純 http 送出"
   },
   "mode.requirements.outbound-tls.product": {
-    "en": "247dae79affdfe65",
-    "text": "每個 …SkipTlsVerification 設定以及 spiffe.k8sSkipKubeletVerification 都會被「忽略」——以其代碼記錄一次——並在透過 /admin 與 /admin-api 寫入時被拒絕（STS-CORE-0103）；私人 CA 透過該系列的 …CaFile 在開啟驗證的情況下連線。無論 …AllowHttp 如何設定，SSF、聯合與 XACML 都會拒絕純 http，而 GNAP 推送完成只允許對回送地址使用（RFC 9635 第 2.5.2.1 節）。"
+    "en": "32e402ebc2350105",
+    "text": "每個 …SkipTlsVerification 設定以及 spiffe.k8sSkipKubeletVerification 都會被「忽略」——以其代碼記錄一次——並在透過 /admin 與 /admin-api 寫入時被拒絕（STS-CORE-0103）；私人 CA 透過該系列的 …CaFile 在開啟驗證的情況下連線。無論 …AllowHttp 如何設定，SSF、聯合與 XACML 都會拒絕純 http，而 GNAP 推送完成只允許對回送地址使用（RFC 9635 第 2.5.2.1 節）——而對外地址規則會拒絕回送地址，因此不會遞送任何純 http 推送（#1614）。"
   },
   "mode.requirements.deliberate-defects.development": {
     "en": "0b1230d1659875d3",
