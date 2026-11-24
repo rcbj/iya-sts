@@ -684,8 +684,8 @@
     "text": "SSH-användarcertifikat på poster"
   },
   "sched.jobs.ssh-user-ca.entries.describe": {
-    "en": "312afdd863ef16cd",
-    "text": "Tar bort varje sfärs utgångna och återkallade SSH-användarcertifikat från innehavarnas poster (stsSshUserCertificate), skriver tillbaka ett giltigt som en post saknar och kopierar vid sin första körning i en process de certifikat som utfärdades innan de lagrades på poster till sina innehavare."
+    "en": "5bc74370f72a746d",
+    "text": "Skriver de SSH-användarcertifikat vars skrivning till posten misslyckades vid utfärdandet till innehavarnas poster (stsSshUserCertificate), tar bort utgångna och kopierar vid sin första körning i en process de certifikat som utfärdades innan de lagrades på poster till sina innehavare."
   },
   "sched.jobs.ssh-user-ca.krl.title": {
     "en": "9694f71884ac8e1b",

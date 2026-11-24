@@ -684,8 +684,8 @@
     "text": "Certificats utilisateur SSH sur les entrées"
   },
   "sched.jobs.ssh-user-ca.entries.describe": {
-    "en": "312afdd863ef16cd",
-    "text": "Retire des entrées de leurs titulaires (stsSshUserCertificate) les certificats utilisateur SSH expirés et révoqués de chaque domaine, réécrit un certificat valide qui manque à une entrée et, à sa première exécution dans un processus, copie sur leurs titulaires les certificats délivrés avant qu’ils ne soient conservés sur les entrées."
+    "en": "5bc74370f72a746d",
+    "text": "Écrit sur les entrées de leurs titulaires (stsSshUserCertificate) les certificats utilisateur SSH dont l’écriture sur l’entrée a échoué à la délivrance, retire ceux qui ont expiré et, à sa première exécution dans un processus, copie sur leurs titulaires les certificats délivrés avant qu’ils ne soient conservés sur les entrées."
   },
   "sched.jobs.ssh-user-ca.krl.title": {
     "en": "9694f71884ac8e1b",

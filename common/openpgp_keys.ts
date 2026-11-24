@@ -119,6 +119,7 @@ import Classes = require('./domain_classes');
 import cacheRegistry = require('./cache_registry');
 import clusterClaims = require('../cluster/cluster_claims');
 import hardwareTokens = require('./hardware_tokens');
+import entryObserver = require('./entry_observer');
 
 type Json = any;
 
@@ -292,6 +293,9 @@ class OpenPgpKeys {
   static readonly ATTRIBUTES = ATTRIBUTES;
   static readonly CHALLENGE_TITLE = CHALLENGE_TITLE;
 
+  // How many entry writes of this module's own are in progress (#2050).
+  private selfWrites = 0;
+
   /**
    * Builds the module over its dependencies.
    *
@@ -437,9 +441,77 @@ class OpenPgpKeys {
     const { log } = this.deps;
     log.debug("Entering OpenPgpKeys.write(). " + name);
     const dir = this.deps.directory();
-    const ok = !!dir && dir.write(p.dn, name, values) === true;
+    let ok = false;
+    // OUR OWN WRITE (#2050): the entry observer's handler below is told of
+    // it inside the write, and ignores it.
+    this.selfWrites += 1;
+    try {
+      ok = !!dir && dir.write(p.dn, name, values) === true;
+    } finally {
+      this.selfWrites -= 1;
+    }
     log.debug("Leaving OpenPgpKeys.write(). " + ok);
     return ok;
+  }
+
+  /**
+   * THE ENTRY OBSERVER'S HANDLER FOR `userSMIMECertificate` (#2050,
+   * `common/entry_observer.ts`). The entry is the master of a person's
+   * S/MIME certificates, and there is no index of them to keep; what a
+   * write by another door may not do is leave a value that holds no
+   * certificate, which mail to them would then be encrypted to nothing
+   * with. Such a value is taken off again and audited (STS-OPENPGP-0034).
+   *
+   * @param change - the observer's change
+   * @returns how many values were taken off
+   */
+  entryChanged(change: Json): number {
+    const { log } = this.deps;
+    log.debug("Entering OpenPgpKeys.entryChanged().");
+    const c = change || {};
+    if (this.selfWrites > 0 || c.deleted) {
+      log.debug("Leaving OpenPgpKeys.entryChanged(). Nothing to check.");
+      return 0;
+    }
+    const crypto = this.deps.crypto;
+    const before = (c.before || []).map(String);
+    const bad = (c.after || []).map(String).filter(function (value: string) {
+      if (before.indexOf(value) >= 0) {
+        return false;
+      }
+      let held: Json[] = [];
+      try {
+        held = crypto.smimeCertificatesOf(value) || [];
+      } catch (e) {
+        log.debug("Caught in OpenPgpKeys.entryChanged(): " +
+                  ((e && e.message) || e));
+        held = [];
+      }
+      return !held.length;
+    });
+    if (!bad.length) {
+      log.debug("Leaving OpenPgpKeys.entryChanged(). Every value reads.");
+      return 0;
+    }
+    const kept = (c.after || []).map(String).filter(function (v: string) {
+      return bad.indexOf(v) < 0;
+    });
+    const p = { dn: String(c.dn || '') };
+    // One spelling written back, as `setSmime()` writes it, the other
+    // cleared.
+    const written = this.write(p, ATTRIBUTES.smime, kept) &&
+      this.write(p, 'userSMIMECertificate', []);
+    this.recordAudit('openpgp.smime-certificate', String(c.actor ||
+      c.door || 'directory'), String(c.username || ''), bad.length +
+      ' S/MIME certificate value(s) written onto the entry hold no ' +
+      'certificate and were taken off', { door: String(c.door || ''),
+                                          written: written },
+      'refused', 'STS-OPENPGP-0034');
+    log.warn(errorCodes.tag('STS-OPENPGP-0034') + 'openpgp: ' + bad.length +
+             ' userSMIMECertificate value(s) on ' + c.dn + ' hold no ' +
+             'certificate and were taken off.');
+    log.debug("Leaving OpenPgpKeys.entryChanged(). " + bad.length);
+    return bad.length;
   }
 
   private recordAudit(action: string, actor: string, target: string,
@@ -1840,6 +1912,12 @@ const slot = new InstanceSlot<OpenPgpKeys>(
   () => new OpenPgpKeys(OpenPgpKeys.defaultDeps()),
   function (instance: OpenPgpKeys): void {
     instance.installRetirer(hardwareTokens);
+    // The entry observer's S/MIME handler (#2050).
+    entryObserver.register('userSMIMECertificate', {
+      changed: function (change: Json): void {
+        instance.entryChanged(change);
+      }
+    });
   },
   helpers.log);
 

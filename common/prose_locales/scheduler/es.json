@@ -684,8 +684,8 @@
     "text": "Certificados de usuario SSH en las entradas"
   },
   "sched.jobs.ssh-user-ca.entries.describe": {
-    "en": "312afdd863ef16cd",
-    "text": "Quita de las entradas de sus titulares (stsSshUserCertificate) los certificados de usuario SSH caducados y revocados de cada dominio, vuelve a escribir uno vigente que falte en una entrada y, en su primera ejecución en un proceso, copia en sus titulares los certificados emitidos antes de que se guardaran en las entradas."
+    "en": "5bc74370f72a746d",
+    "text": "Escribe en las entradas de sus titulares (stsSshUserCertificate) los certificados de usuario SSH cuya escritura en la entrada falló al emitirse, quita los caducados y, en su primera ejecución en un proceso, copia en sus titulares los certificados emitidos antes de que se guardaran en las entradas."
   },
   "sched.jobs.ssh-user-ca.krl.title": {
     "en": "9694f71884ac8e1b",

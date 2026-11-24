@@ -684,8 +684,8 @@
     "text": "条目上的 SSH 用户证书"
   },
   "sched.jobs.ssh-user-ca.entries.describe": {
-    "en": "312afdd863ef16cd",
-    "text": "将每个领域已过期和已吊销的 SSH 用户证书从其持有人的条目（stsSshUserCertificate）上移除，写回条目缺少的有效证书，并在一个进程中首次运行时，把在证书保存到条目之前签发的证书复制到其持有人上。"
+    "en": "5bc74370f72a746d",
+    "text": "把签发时未能写入条目的 SSH 用户证书写到其持有人的条目（stsSshUserCertificate）上，移除已过期的证书，并在一个进程中首次运行时，把在证书保存到条目之前签发的证书复制到其持有人上。"
   },
   "sched.jobs.ssh-user-ca.krl.title": {
     "en": "9694f71884ac8e1b",

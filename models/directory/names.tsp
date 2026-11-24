@@ -340,9 +340,9 @@ namespace IyaSts.Directory;
   "stsMailEncryption",
   // A PERSON'S LIVE SSH USER CERTIFICATES (#2050, rcbj 2026-11-23): what the
   // realm's SSH user CA issued them, one JSON value per certificate, on the
-  // entry as `userCertificate` and `userSMIMECertificate` are. The CA's own
-  // register (`ssh_user_ca.issued`) stays authoritative and the KRL's
-  // source; this is its projection onto the holder. `common/ssh_issued.ts`.
+  // entry as `userCertificate` and `userSMIMECertificate` are. The entry is
+  // the master and the CA's register (`ssh_user_ca.issued`) its index, the
+  // KRL's source: removing a value revokes it. `common/ssh_issued.ts`.
   "stsSshUserCertificate",
   // A PERSON'S HARDWARE, OATH AND YUBIKEY OTP TOKENS (#2051, rcbj
   // 2026-11-23): the master data, one JSON value per token; the register

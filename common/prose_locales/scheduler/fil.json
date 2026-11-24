@@ -684,8 +684,8 @@
     "text": "Mga SSH user certificate sa mga entry"
   },
   "sched.jobs.ssh-user-ca.entries.describe": {
-    "en": "312afdd863ef16cd",
-    "text": "Inaalis ang mga nag-expire at binawing SSH user certificate ng bawat realm sa mga entry ng mga may hawak nito (stsSshUserCertificate), isinusulat muli ang buhay na kulang sa isang entry, at sa unang takbo nito sa isang proseso ay kinokopya sa mga may hawak ang mga certificate na inisyu bago sila itinago sa mga entry."
+    "en": "5bc74370f72a746d",
+    "text": "Isinusulat sa mga entry ng mga may hawak (stsSshUserCertificate) ang mga SSH user certificate na hindi naisulat sa entry nang inisyu, inaalis ang mga nag-expire, at sa unang takbo nito sa isang proseso ay kinokopya sa mga may hawak ang mga certificate na inisyu bago sila itinago sa mga entry."
   },
   "sched.jobs.ssh-user-ca.krl.title": {
     "en": "9694f71884ac8e1b",

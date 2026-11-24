@@ -22781,8 +22781,10 @@ function ldapModifyNow(req, res, next) {
         modifySource === 'ldap-self') {
       startSelfVerification(stored, beforeModify);
     }
+    // The bound DN is the writer the credential observer audits (#2050).
     noteAccountChange('updated', stored.dn, beforeModify,
-                      attributeSnapshot(stored));
+                      attributeSnapshot(stored),
+                      { actor: 'ldap:' + boundDnOf(req), door: 'ldap modify' });
   } else if (groupRuleFor(stored)) {
     noteMembershipChange(stored.dn, beforeModify, stored.attributes);
   } else if (isRoleEntry(stored)) {
@@ -28654,6 +28656,31 @@ function noteAccountChange(kind, dn, before, after, options) {
                   'one could not be retired: ' + ((e && e.message) || e));
       });
     });
+  }
+  // THE PERSON'S CREDENTIAL ATTRIBUTES (#2050, #2051): the entry is the
+  // master of their S/MIME and SSH user certificates and their tokens, and
+  // `common/entry_observer.ts` hands each changed one to the module whose
+  // index it is, for this one entry — the only thing that keeps those
+  // indexes right day to day. Asked before the observer check, because it
+  // is no account observer's business; in the entry's realm. A cache hit:
+  // every owner requires it long before this module loads.
+  try {
+    const credentialRealm = realmFor(dn);
+    const uuid = String((((after && after.entryuuid) || []).length
+      ? after.entryuuid : ((before && before.entryuuid) || []))[0] || '');
+    realms.run(credentialRealm, function () {
+      require('../common/entry_observer').entryChanged({
+        kind: String(kind), dn: String(dn),
+        username: canonicalUsernameOfDn(dn), realm: credentialRealm.id,
+        subject: uuid ? 'urn:uuid:' + uuid.replace(/^urn:uuid:/i, '') : '',
+        actor: String((options && options.actor) || ''),
+        door: String((options && options.door) || 'a directory write'),
+        before: before || {}, after: after || {} });
+    });
+  } catch (e) {
+    log.error(errorCodes.tag('STS-LDAP-0225') + 'ldap: the credential ' +
+              'attributes of ' + dn + ' could not be handed to their ' +
+              'owners: ' + ((e && e.message) || e));
   }
   if (!accountObserver && !accountListeners.length) {
     log.debug('Leaving noteAccountChange(). Nobody is observing.');
