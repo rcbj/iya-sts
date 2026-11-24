@@ -1971,6 +1971,74 @@
     "en": "c8030fa81a2f934d",
     "text": "一个人的经典 OpenPGP 密钥在其条目和 Web Key Directory 中、在取代它的后量子密钥旁保留多少天，以便无法使用新密钥的通信方仍能找到旧密钥。本服务的新邮件会立即使用后量子密钥。之后由调度任务把经典密钥从条目和 Web Key Directory 中移除。0 表示立即移除。"
   },
+  "postLogin.FIELDS.pivEnabled.label": {
+    "en": "6d8ee32fc1b5b94a",
+    "text": "要求重新签发 PIV 证书"
+  },
+  "postLogin.FIELDS.pivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "默认关闭。开启后，凡本配置文件覆盖、并在 pivSlots 所列插槽中持有本领域签发的 PIV 插槽证书的人，当 pivTrigger 认定到期时，都会在登录后被要求注册一张新证书（piv-reissue）：其签发者用经典算法签名而本领域的 EST 签发 CA 是后量子的，或证书将在 pivRenewDays 内过期。新证书首次用于登录时，旧证书被吊销（superseded）。关闭此项的命名配置文件会把被选中的人排除在本活动之外。"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "天"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.label": {
+    "en": "733d7ad9439f061c",
+    "text": "PIV 重新签发：跳过将其推迟"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "跳过会为该人推迟 PIV 重新签发多久。"
+  },
+  "postLogin.FIELDS.pivGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "天"
+  },
+  "postLogin.FIELDS.pivGraceDays.label": {
+    "en": "cf0842fc5de15483",
+    "text": "PIV 重新签发：允许的时间"
+  },
+  "postLogin.FIELDS.pivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "从该人第一次被邀请参加 PIV 重新签发时算起。时间一过，跳过不再可用，登录将被暂停，直到每个到期插槽都有新证书。0 表示没有期限。"
+  },
+  "postLogin.FIELDS.pivSlots.label": {
+    "en": "95dcbc9b5db168f8",
+    "text": "PIV 重新签发：插槽"
+  },
+  "postLogin.FIELDS.pivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "本活动检查其证书的 PIV 插槽，以逗号分隔：9a（PIV 认证）、9c（数字签名）、9d（密钥管理）、9e（卡认证）。其配置文件未列入 est.allowedProfiles 的插槽永远不会被要求。"
+  },
+  "postLogin.FIELDS.pivTrigger.label": {
+    "en": "3a6dc99d50545fe3",
+    "text": "PIV 重新签发：什么使证书到期"
+  },
+  "postLogin.FIELDS.pivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "什么使插槽的证书到期。classical-issuer：其签发者用经典算法签名，且本领域的 EST 签发 CA 是后量子的（在经典 CA 下重新签发的证书并不会更好）。expiring：它将在 pivRenewDays 内过期。both：两者之一。"
+  },
+  "postLogin.FIELDS.pivRenewDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "天"
+  },
+  "postLogin.FIELDS.pivRenewDays.label": {
+    "en": "2e9493d0c48dc0ba",
+    "text": "PIV 重新签发：在到期前提前续订的天数"
+  },
+  "postLogin.FIELDS.pivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "当 pivTrigger 为 expiring 或 both 时，PIV 插槽证书在过期前多少天到期需续订。"
+  },
+  "postLogin.FIELDS.pivTarget.label": {
+    "en": "a1261fcffb0037ed",
+    "text": "PIV 重新签发：签发什么"
+  },
+  "postLogin.FIELDS.pivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "新证书针对什么。reissue：针对卡在同一插槽中重新生成的密钥签发新证书，由本领域的 EST 签发 CA 签名。rekey：卡上的后量子密钥，目前没有 PIV 卡能生成，因此设为 rekey 的配置文件不会要求任何人。"
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "b1a01fe693170513",
     "text": "本服务用于登录后活动配置文件的类：某人登录后被要求做的事。以“配置文件”命名（`cn=default`，或由应用或群组指定的命名配置文件）。"
@@ -2030,6 +2098,34 @@
   "postLogin.SCHEMA.attributes.stsPostLoginMailKeepClassical.what": {
     "en": "c8030fa81a2f934d",
     "text": "一个人的经典 OpenPGP 密钥在其条目和 Web Key Directory 中、在取代它的后量子密钥旁保留多少天，以便无法使用新密钥的通信方仍能找到旧密钥。本服务的新邮件会立即使用后量子密钥。之后由调度任务把经典密钥从条目和 Web Key Directory 中移除。0 表示立即移除。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "默认关闭。开启后，凡本配置文件覆盖、并在 pivSlots 所列插槽中持有本领域签发的 PIV 插槽证书的人，当 pivTrigger 认定到期时，都会在登录后被要求注册一张新证书（piv-reissue）：其签发者用经典算法签名而本领域的 EST 签发 CA 是后量子的，或证书将在 pivRenewDays 内过期。新证书首次用于登录时，旧证书被吊销（superseded）。关闭此项的命名配置文件会把被选中的人排除在本活动之外。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "跳过会为该人推迟 PIV 重新签发多久。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "从该人第一次被邀请参加 PIV 重新签发时算起。时间一过，跳过不再可用，登录将被暂停，直到每个到期插槽都有新证书。0 表示没有期限。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "本活动检查其证书的 PIV 插槽，以逗号分隔：9a（PIV 认证）、9c（数字签名）、9d（密钥管理）、9e（卡认证）。其配置文件未列入 est.allowedProfiles 的插槽永远不会被要求。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "什么使插槽的证书到期。classical-issuer：其签发者用经典算法签名，且本领域的 EST 签发 CA 是后量子的（在经典 CA 下重新签发的证书并不会更好）。expiring：它将在 pivRenewDays 内过期。both：两者之一。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "当 pivTrigger 为 expiring 或 both 时，PIV 插槽证书在过期前多少天到期需续订。"
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "新证书针对什么。reissue：针对卡在同一插槽中重新生成的密钥签发新证书，由本领域的 EST 签发 CA 签名。rekey：卡上的后量子密钥，目前没有 PIV 卡能生成，因此设为 rekey 的配置文件不会要求任何人。"
   },
   "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
     "en": "2b5b2ba409912c7d",
@@ -2138,6 +2234,30 @@
   "postLogin.sentences.mailKeepNone": {
     "en": "f7cb6f0da08b7411",
     "text": "被后量子密钥取代的经典 OpenPGP 密钥会立即移除"
+  },
+  "postLogin.sentences.pivReissue": {
+    "en": "5f2f81aff443f105",
+    "text": "持有 PIV 插槽证书（{{slots}}）的人在登录后会被要求注册一张新证书"
+  },
+  "postLogin.sentences.pivTriggerClassical": {
+    "en": "632e10e241646755",
+    "text": "当证书由经典 CA 签名且本领域的 EST 签发 CA 是后量子的时，证书到期"
+  },
+  "postLogin.sentences.pivTriggerExpiring": {
+    "en": "aded73c111de1a19",
+    "text": "证书在过期前 {{days}} 天到期"
+  },
+  "postLogin.sentences.pivTriggerBoth": {
+    "en": "e1ad48c0307193c5",
+    "text": "当证书由经典 CA 签名且本领域的 EST 签发 CA 是后量子的时，或在过期前 {{days}} 天，证书到期"
+  },
+  "postLogin.sentences.pivTargetRekey": {
+    "en": "812934151a1711bd",
+    "text": "要求卡上的后量子密钥，而目前没有 PIV 卡能生成，因此不会要求任何人"
+  },
+  "postLogin.sentences.pivSuperseded": {
+    "en": "89b3974d23046244",
+    "text": "新证书首次用于登录时，旧证书被吊销"
   },
   "postLogin.sentences.appliesTo": {
     "en": "f195acc04e68d15e",

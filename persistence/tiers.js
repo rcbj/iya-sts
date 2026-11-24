@@ -449,6 +449,9 @@ const CELL_MINTED = [
   // The classical OpenPGP keys kept beside a post-quantum one, and until
   // when (#2009 P2): somebody's, beside their entry in this cell.
   'openpgp.classicalKept',
+  // What a PIV re-issue replaces, until the new certificate is first used
+  // (#2009 P3, D5): somebody's certificates, beside their entry.
+  'piv.supersedes',
   'gnap.approvers', 'gnap.continuations', 'gnap.grants', 'gnap.instances',
   'gnap.interactions', 'gnap.manageHandles', 'gnap.manageValues',
   'gnap.movedGrants', 'gnap_monitor.counters', 'gnap.spend', 'gnap.tokens',

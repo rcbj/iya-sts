@@ -1971,6 +1971,74 @@
     "en": "c8030fa81a2f934d",
     "text": "Wie viele Tage der klassische OpenPGP-Schlüssel einer Person auf ihrem Eintrag und im Web Key Directory neben dem Post-Quanten-Schlüssel bleibt, der ihn ersetzt hat, damit ein Korrespondent, der den neuen Schlüssel nicht nutzen kann, den alten noch findet. Neue E-Mails dieses Dienstes gehen sofort an den Post-Quanten-Schlüssel. Danach entfernt ein Scheduler-Job den klassischen Schlüssel vom Eintrag und aus dem Web Key Directory. 0 entfernt ihn sofort."
   },
+  "postLogin.FIELDS.pivEnabled.label": {
+    "en": "6d8ee32fc1b5b94a",
+    "text": "Nach Neuausstellung der PIV-Zertifikate fragen"
+  },
+  "postLogin.FIELDS.pivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "STANDARDMÄSSIG AUS. Eingeschaltet wird jede Person, die dieses Profil erreicht und ein von diesem Bereich ausgestelltes PIV-Steckplatzzertifikat in einem von pivSlots genannten Steckplatz hält, nach der Anmeldung gebeten, ein neues zu registrieren (piv-reissue), wenn pivTrigger es fällig nennt: Sein Aussteller hat es mit einem klassischen Algorithmus signiert, während die EST-Issuing-CA dieses Bereichs Post-Quanten ist, oder es läuft innerhalb von pivRenewDays ab. Das alte Zertifikat wird widerrufen (superseded), wenn das neue zum ersten Mal bei einer Anmeldung verwendet wird. Ein benanntes Profil, in dem dies aus ist, schließt jeden, für den es ausgewählt wird, von dieser Aktivität aus."
+  },
+  "postLogin.FIELDS.pivSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "Tage"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.label": {
+    "en": "733d7ad9439f061c",
+    "text": "PIV-Neuausstellung: Überspringen schiebt sie auf um"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "Wie lange Überspringen die PIV-Neuausstellung für diese Person aufschiebt."
+  },
+  "postLogin.FIELDS.pivGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "Tage"
+  },
+  "postLogin.FIELDS.pivGraceDays.label": {
+    "en": "cf0842fc5de15483",
+    "text": "PIV-Neuausstellung: eingeräumte Zeit"
+  },
+  "postLogin.FIELDS.pivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "Gezählt ab der ERSTEN Einladung der Person zur PIV-Neuausstellung. Ist sie verstrichen, gibt es Überspringen nicht mehr und die Anmeldung wird zurückgehalten, bis jeder fällige Steckplatz ein neues Zertifikat hat. 0 ist keine Frist."
+  },
+  "postLogin.FIELDS.pivSlots.label": {
+    "en": "95dcbc9b5db168f8",
+    "text": "PIV-Neuausstellung: Steckplätze"
+  },
+  "postLogin.FIELDS.pivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "Die PIV-Steckplätze, deren Zertifikate die Aktivität betrachtet, durch Kommas getrennt: 9a (PIV-Authentifizierung), 9c (digitale Signatur), 9d (Schlüsselverwaltung), 9e (Kartenauthentifizierung). Ein Steckplatz, dessen Profil est.allowedProfiles auslässt, wird nie erfragt."
+  },
+  "postLogin.FIELDS.pivTrigger.label": {
+    "en": "3a6dc99d50545fe3",
+    "text": "PIV-Neuausstellung: was ein Zertifikat fällig macht"
+  },
+  "postLogin.FIELDS.pivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "Was das Zertifikat eines Steckplatzes fällig macht. classical-issuer: Sein Aussteller hat es mit einem klassischen Algorithmus signiert und die EST-Issuing-CA dieses Bereichs ist Post-Quanten (ein unter einer klassischen CA neu ausgestelltes Zertifikat wäre nicht besser). expiring: Es läuft innerhalb von pivRenewDays ab. both: eines von beiden."
+  },
+  "postLogin.FIELDS.pivRenewDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "Tage"
+  },
+  "postLogin.FIELDS.pivRenewDays.label": {
+    "en": "2e9493d0c48dc0ba",
+    "text": "PIV-Neuausstellung: so lange vor Ablauf erneuern"
+  },
+  "postLogin.FIELDS.pivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "Wie viele Tage vor seinem Ablauf ein PIV-Steckplatzzertifikat zur Erneuerung fällig ist, wo pivTrigger expiring oder both ist."
+  },
+  "postLogin.FIELDS.pivTarget.label": {
+    "en": "a1261fcffb0037ed",
+    "text": "PIV-Neuausstellung: was ausgestellt wird"
+  },
+  "postLogin.FIELDS.pivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "Worüber das neue Zertifikat ausgestellt wird. reissue: ein neues Zertifikat über einen Schlüssel, den die Karte im selben Steckplatz neu erzeugt, signiert von der EST-Issuing-CA des Bereichs. rekey: ein Post-Quanten-Schlüssel auf der Karte, den heute keine PIV-Karte erzeugen kann; ein auf rekey gesetztes Profil fragt daher niemanden."
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "b1a01fe693170513",
     "text": "Die Klasse dieses Dienstes für ein Profil von Aktivitäten nach der Anmeldung: was eine Person nach dem Anmelden tun soll. Benannt durch das PROFIL (`cn=default`, oder ein benanntes Profil, das eine Anwendung oder eine Gruppe nennt)."
@@ -2030,6 +2098,34 @@
   "postLogin.SCHEMA.attributes.stsPostLoginMailKeepClassical.what": {
     "en": "c8030fa81a2f934d",
     "text": "Wie viele Tage der klassische OpenPGP-Schlüssel einer Person auf ihrem Eintrag und im Web Key Directory neben dem Post-Quanten-Schlüssel bleibt, der ihn ersetzt hat, damit ein Korrespondent, der den neuen Schlüssel nicht nutzen kann, den alten noch findet. Neue E-Mails dieses Dienstes gehen sofort an den Post-Quanten-Schlüssel. Danach entfernt ein Scheduler-Job den klassischen Schlüssel vom Eintrag und aus dem Web Key Directory. 0 entfernt ihn sofort."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "STANDARDMÄSSIG AUS. Eingeschaltet wird jede Person, die dieses Profil erreicht und ein von diesem Bereich ausgestelltes PIV-Steckplatzzertifikat in einem von pivSlots genannten Steckplatz hält, nach der Anmeldung gebeten, ein neues zu registrieren (piv-reissue), wenn pivTrigger es fällig nennt: Sein Aussteller hat es mit einem klassischen Algorithmus signiert, während die EST-Issuing-CA dieses Bereichs Post-Quanten ist, oder es läuft innerhalb von pivRenewDays ab. Das alte Zertifikat wird widerrufen (superseded), wenn das neue zum ersten Mal bei einer Anmeldung verwendet wird. Ein benanntes Profil, in dem dies aus ist, schließt jeden, für den es ausgewählt wird, von dieser Aktivität aus."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "Wie lange Überspringen die PIV-Neuausstellung für diese Person aufschiebt."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "Gezählt ab der ERSTEN Einladung der Person zur PIV-Neuausstellung. Ist sie verstrichen, gibt es Überspringen nicht mehr und die Anmeldung wird zurückgehalten, bis jeder fällige Steckplatz ein neues Zertifikat hat. 0 ist keine Frist."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "Die PIV-Steckplätze, deren Zertifikate die Aktivität betrachtet, durch Kommas getrennt: 9a (PIV-Authentifizierung), 9c (digitale Signatur), 9d (Schlüsselverwaltung), 9e (Kartenauthentifizierung). Ein Steckplatz, dessen Profil est.allowedProfiles auslässt, wird nie erfragt."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "Was das Zertifikat eines Steckplatzes fällig macht. classical-issuer: Sein Aussteller hat es mit einem klassischen Algorithmus signiert und die EST-Issuing-CA dieses Bereichs ist Post-Quanten (ein unter einer klassischen CA neu ausgestelltes Zertifikat wäre nicht besser). expiring: Es läuft innerhalb von pivRenewDays ab. both: eines von beiden."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "Wie viele Tage vor seinem Ablauf ein PIV-Steckplatzzertifikat zur Erneuerung fällig ist, wo pivTrigger expiring oder both ist."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "Worüber das neue Zertifikat ausgestellt wird. reissue: ein neues Zertifikat über einen Schlüssel, den die Karte im selben Steckplatz neu erzeugt, signiert von der EST-Issuing-CA des Bereichs. rekey: ein Post-Quanten-Schlüssel auf der Karte, den heute keine PIV-Karte erzeugen kann; ein auf rekey gesetztes Profil fragt daher niemanden."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
     "en": "2b5b2ba409912c7d",
@@ -2138,6 +2234,30 @@
   "postLogin.sentences.mailKeepNone": {
     "en": "f7cb6f0da08b7411",
     "text": "ein klassischer OpenPGP-Schlüssel, den ein Post-Quanten-Schlüssel ersetzt, wird sofort entfernt"
+  },
+  "postLogin.sentences.pivReissue": {
+    "en": "5f2f81aff443f105",
+    "text": "eine Person mit einem PIV-Steckplatzzertifikat ({{slots}}) wird nach der Anmeldung gebeten, ein neues zu registrieren"
+  },
+  "postLogin.sentences.pivTriggerClassical": {
+    "en": "632e10e241646755",
+    "text": "ein Zertifikat ist fällig, wenn eine klassische CA es signiert hat und die EST-Issuing-CA dieses Bereichs Post-Quanten ist"
+  },
+  "postLogin.sentences.pivTriggerExpiring": {
+    "en": "aded73c111de1a19",
+    "text": "ein Zertifikat ist {{days}} Tag(e) vor seinem Ablauf fällig"
+  },
+  "postLogin.sentences.pivTriggerBoth": {
+    "en": "e1ad48c0307193c5",
+    "text": "ein Zertifikat ist fällig, wenn eine klassische CA es signiert hat und die EST-Issuing-CA dieses Bereichs Post-Quanten ist, oder {{days}} Tag(e) vor seinem Ablauf"
+  },
+  "postLogin.sentences.pivTargetRekey": {
+    "en": "812934151a1711bd",
+    "text": "ein Post-Quanten-Schlüssel auf der Karte wird verlangt, den heute keine PIV-Karte erzeugen kann, daher wird niemand gefragt"
+  },
+  "postLogin.sentences.pivSuperseded": {
+    "en": "89b3974d23046244",
+    "text": "das alte Zertifikat wird widerrufen, wenn das neue zum ersten Mal zur Anmeldung verwendet wird"
   },
   "postLogin.sentences.appliesTo": {
     "en": "f195acc04e68d15e",

@@ -788,6 +788,13 @@ declare namespace IyaDomain {
     mailNoKey?: string;
     mailPrefer?: string;
     mailKeepClassical?: string;
+    pivEnabled?: string;
+    pivSnoozeDays?: string;
+    pivGraceDays?: string;
+    pivSlots?: string;
+    pivTrigger?: string;
+    pivRenewDays?: string;
+    pivTarget?: string;
     precedence?: number;
     description?: string[];
     noPasskeyRole?: string;

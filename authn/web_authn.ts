@@ -158,7 +158,17 @@ const STEP_ACTS: Json = {
     'smime-register': { op: 'post-login/mail',
       body: function (f: Json): Json {
         return { act: 'smime-register', certificate: f.certificate || '' };
-      } } },
+      } },
+    // THE PIV RE-ISSUE (#2009 P3): one slot's request and attestations, or
+    // going on once every slot has a new certificate.
+    'piv-enrol': { op: 'post-login/piv', body: function (f: Json): Json {
+      return { act: 'piv-enrol', slot: f.slot || '', csr: f.csr || '',
+               slotPem: f.slotPem || '',
+               attestationPem: f.attestationPem || '' };
+    } },
+    'piv-continue': { op: 'post-login/piv', body: function (): Json {
+      return { act: 'piv-continue' };
+    } } },
   '/authn/email-code': {
     send: { op: 'email/send', body: function (): Json {
       return { kind: 'code' };

@@ -551,6 +551,10 @@ class WebAuthnMfa {
     if (p.activity === 'pqc-mail-encryption') {
       return WebAuthnMfa.postLoginMail(v, ctx);
     }
+    // THE PIV RE-ISSUE (#2009 P3) has a page of its own.
+    if (p.activity === 'piv-reissue') {
+      return WebAuthnMfa.postLoginPiv(v, ctx);
+    }
     const name = String(v.username);
     const button = function (action: string, label: string,
                              secondary: boolean): string {
@@ -679,6 +683,103 @@ class WebAuthnMfa {
         : (until ? '<p>' + t.html('authn.postLogin.until',
                                   { date: until }) + '</p>' : '')) +
       openpgp + smime +
+      (p.canSkip
+        ? '<form method="post" action="/authn/post-login"><div class="row">' +
+          '<button type="submit" id="post-login-skip" class="secondary" ' +
+          'name="action" value="skip">' +
+          t.html('authn.postLogin.skipButton',
+                 { days: Number(p.snoozeDays) || 1 }) +
+          '</button></div></form>'
+        : '') +
+      WebAuthnMfa.startOver(t) + '<div class="meta">' +
+      t.html('authn.mfaSetup.meta') + '</div>';
+  }
+
+  /**
+   * `/authn/post-login` for the PIV re-issue (#2009 P3): why the person is
+   * asked, then each due slot — its certificate and the reason, the
+   * `ykman` commands that make the request and the attestations, and a form
+   * for the three PEM texts — or, once issued, the new certificate and the
+   * command that writes it to the card. Continue once every slot has one;
+   * Skip where it is allowed.
+   *
+   * @param v - the view
+   * @param ctx - the context
+   * @returns the body
+   */
+  static postLoginPiv(v: Json, ctx: Json): string {
+    const t = ctx.t;
+    const p = v.postLogin || {};
+    const piv = p.piv || {};
+    const esc = WebAuthnLogin.esc;
+    const name = String(v.username);
+    const issued: Json[] = [].concat(piv.issued || []);
+    const until = String(p.deadline || '').slice(0, 10);
+    const slots = [].concat(piv.slots || []).map(function (one: Json) {
+      const slot = String(one.slot || '');
+      const done = issued.filter(function (i: Json) {
+        return i.slot === slot;
+      })[0];
+      const head = '<h2>' + t.html('authn.postLogin.pivSlotHeading',
+        { slot: slot, profile: String(one.profile || '') }) + '</h2>' +
+        '<p>' + t.html(one.reason === 'classical-issuer'
+          ? 'authn.postLogin.pivReasonClassical'
+          : 'authn.postLogin.pivReasonExpiring',
+          { serial: String(one.serialHex || ''),
+            date: String(one.notAfter || '').slice(0, 10) }) + '</p>';
+      if (done) {
+        return head + '<p id="post-login-piv-issued-' + esc(slot) + '">' +
+          t.html('authn.postLogin.pivIssued',
+                 { serial: String(done.serialHex || '') }) + '</p>' +
+          '<pre id="post-login-piv-certificate-' + esc(slot) + '">' +
+          esc(done.certificatePem) + '</pre>' +
+          '<p>' + t.html('authn.postLogin.pivImport') + '</p>' +
+          '<pre>' + esc(done.command) + '</pre>';
+      }
+      return head + '<p>' + t.html('authn.postLogin.pivHow') + '</p>' +
+        '<pre>ykman piv keys generate ' + esc(slot) + ' public.pem\n' +
+        'ykman piv certificates request ' + esc(slot) +
+        ' public.pem request.csr\nykman piv keys attest ' + esc(slot) +
+        ' attestation.pem\nykman piv certificates export f9 f9.pem</pre>' +
+        '<form method="post" action="/authn/post-login">' +
+        '<input type="hidden" name="slot" value="' + esc(slot) + '">' +
+        '<div class="row"><label for="post-login-piv-csr-' + esc(slot) +
+        '">' + t.html('authn.postLogin.pivCsr') + '</label>' +
+        '<textarea id="post-login-piv-csr-' + esc(slot) + '" name="csr" ' +
+        'rows="6" cols="64"></textarea></div>' +
+        '<div class="row"><label for="post-login-piv-slot-' + esc(slot) +
+        '">' + t.html('authn.postLogin.pivSlotPem') + '</label>' +
+        '<textarea id="post-login-piv-slot-' + esc(slot) + '" ' +
+        'name="slotPem" rows="6" cols="64"></textarea></div>' +
+        '<div class="row"><label for="post-login-piv-f9-' + esc(slot) +
+        '">' + t.html('authn.postLogin.pivF9') + '</label>' +
+        '<textarea id="post-login-piv-f9-' + esc(slot) + '" ' +
+        'name="attestationPem" rows="6" cols="64"></textarea></div>' +
+        '<div class="row"><button type="submit" id="post-login-piv-enrol-' +
+        esc(slot) + '" name="action" value="piv-enrol">' +
+        t.html('authn.postLogin.pivEnrolButton') + '</button></div></form>';
+    }).join('');
+    const allDone = [].concat(piv.slots || []).every(function (one: Json) {
+      return issued.some(function (i: Json) {
+        return i.slot === one.slot;
+      });
+    });
+    return '<h1>' + t.html('authn.postLogin.pivHeading') + '</h1>' +
+      '<p class="sub">' + t.html('authn.postLogin.pivSub', { name: name }) +
+      '</p>' + WebAuthnMfa.error(ctx) +
+      '<p>' + t.html('authn.postLogin.pivSuperseded') + '</p>' +
+      (p.required ? '<p><strong>' + t.html('authn.postLogin.required') +
+                    '</strong></p>'
+        : (until ? '<p>' + t.html('authn.postLogin.until',
+                                  { date: until }) + '</p>' : '')) +
+      slots +
+      (allDone
+        ? '<form method="post" action="/authn/post-login"><div class="row">' +
+          '<button type="submit" id="post-login-piv-continue" ' +
+          'name="action" value="piv-continue">' +
+          t.html('authn.postLogin.pivContinueButton') +
+          '</button></div></form>'
+        : '') +
       (p.canSkip
         ? '<form method="post" action="/authn/post-login"><div class="row">' +
           '<button type="submit" id="post-login-skip" class="secondary" ' +

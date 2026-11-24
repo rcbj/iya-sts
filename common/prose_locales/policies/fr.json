@@ -1971,6 +1971,74 @@
     "en": "c8030fa81a2f934d",
     "text": "Combien de jours la clé OpenPGP classique d’une personne reste sur son entrée et dans le Web Key Directory à côté de la clé post-quantique qui l’a remplacée, pour qu’un correspondant qui ne peut pas utiliser la nouvelle trouve encore l’ancienne. Le nouveau courrier de ce service va à la clé post-quantique dès maintenant. Ensuite, une tâche du planificateur retire la clé classique de l’entrée et du Web Key Directory. 0 la retire aussitôt."
   },
+  "postLogin.FIELDS.pivEnabled.label": {
+    "en": "6d8ee32fc1b5b94a",
+    "text": "Demander la réémission des certificats PIV"
+  },
+  "postLogin.FIELDS.pivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, toute personne que ce profil atteint et qui détient un certificat d'emplacement PIV émis par ce domaine, dans un emplacement que pivSlots nomme, est invitée après sa connexion à en inscrire un nouveau (piv-reissue) quand pivTrigger le dit dû : son émetteur l'a signé avec un algorithme classique alors que l'autorité émettrice EST de ce domaine est post-quantique, ou il expire dans pivRenewDays. L'ancien certificat est révoqué (superseded) quand le nouveau sert pour la première fois à une connexion. Un profil nommé où ceci est désactivé exclut de cette activité quiconque pour qui il est choisi."
+  },
+  "postLogin.FIELDS.pivSnoozeDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "jours"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.label": {
+    "en": "733d7ad9439f061c",
+    "text": "Réémission PIV : Ignorer la reporte de"
+  },
+  "postLogin.FIELDS.pivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "Combien de temps Ignorer reporte la réémission PIV pour cette personne."
+  },
+  "postLogin.FIELDS.pivGraceDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "jours"
+  },
+  "postLogin.FIELDS.pivGraceDays.label": {
+    "en": "cf0842fc5de15483",
+    "text": "Réémission PIV : délai accordé"
+  },
+  "postLogin.FIELDS.pivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "Compté à partir de la PREMIÈRE invitation de la personne à la réémission PIV. Une fois passé, Ignorer disparaît et la connexion est retenue jusqu'à ce que chaque emplacement dû ait un nouveau certificat. 0 signifie sans échéance."
+  },
+  "postLogin.FIELDS.pivSlots.label": {
+    "en": "95dcbc9b5db168f8",
+    "text": "Réémission PIV : emplacements"
+  },
+  "postLogin.FIELDS.pivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "Les emplacements PIV dont l'activité examine les certificats, séparés par des virgules : 9a (authentification PIV), 9c (signature numérique), 9d (gestion des clés), 9e (authentification de carte). Un emplacement dont est.allowedProfiles omet le profil n'est jamais demandé."
+  },
+  "postLogin.FIELDS.pivTrigger.label": {
+    "en": "3a6dc99d50545fe3",
+    "text": "Réémission PIV : ce qui rend un certificat dû"
+  },
+  "postLogin.FIELDS.pivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "Ce qui rend dû le certificat d'un emplacement. classical-issuer : son émetteur l'a signé avec un algorithme classique et l'autorité émettrice EST de ce domaine est post-quantique (un certificat réémis sous une autorité classique ne serait pas meilleur). expiring : il expire dans pivRenewDays. both : l'un ou l'autre."
+  },
+  "postLogin.FIELDS.pivRenewDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "jours"
+  },
+  "postLogin.FIELDS.pivRenewDays.label": {
+    "en": "2e9493d0c48dc0ba",
+    "text": "Réémission PIV : renouveler ce délai avant expiration"
+  },
+  "postLogin.FIELDS.pivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "Combien de jours avant son expiration un certificat d'emplacement PIV est dû pour renouvellement, quand pivTrigger vaut expiring ou both."
+  },
+  "postLogin.FIELDS.pivTarget.label": {
+    "en": "a1261fcffb0037ed",
+    "text": "Réémission PIV : ce qui est émis"
+  },
+  "postLogin.FIELDS.pivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "Sur quoi porte le nouveau certificat. reissue : un nouveau certificat sur une clé que la carte régénère dans le même emplacement, signé par l'autorité émettrice EST du domaine. rekey : une clé post-quantique sur la carte, qu'aucune carte PIV ne sait produire aujourd'hui, si bien qu'un profil réglé sur rekey ne demande rien à personne."
+  },
   "postLogin.SCHEMA.objectClasses.stsPostLoginPolicy.what": {
     "en": "b1a01fe693170513",
     "text": "La classe de ce service pour un profil d’activité après connexion : ce qu’il est demandé à une personne de faire après s’être connectée. Nommée par le PROFIL (`cn=default`, ou un profil nommé que nomme une application ou un groupe)."
@@ -2030,6 +2098,34 @@
   "postLogin.SCHEMA.attributes.stsPostLoginMailKeepClassical.what": {
     "en": "c8030fa81a2f934d",
     "text": "Combien de jours la clé OpenPGP classique d’une personne reste sur son entrée et dans le Web Key Directory à côté de la clé post-quantique qui l’a remplacée, pour qu’un correspondant qui ne peut pas utiliser la nouvelle trouve encore l’ancienne. Le nouveau courrier de ce service va à la clé post-quantique dès maintenant. Ensuite, une tâche du planificateur retire la clé classique de l’entrée et du Web Key Directory. 0 la retire aussitôt."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivEnabled.what": {
+    "en": "577ed8d2f53f5a48",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, toute personne que ce profil atteint et qui détient un certificat d'emplacement PIV émis par ce domaine, dans un emplacement que pivSlots nomme, est invitée après sa connexion à en inscrire un nouveau (piv-reissue) quand pivTrigger le dit dû : son émetteur l'a signé avec un algorithme classique alors que l'autorité émettrice EST de ce domaine est post-quantique, ou il expire dans pivRenewDays. L'ancien certificat est révoqué (superseded) quand le nouveau sert pour la première fois à une connexion. Un profil nommé où ceci est désactivé exclut de cette activité quiconque pour qui il est choisi."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSnoozeDays.what": {
+    "en": "9c86c115ab21c5f0",
+    "text": "Combien de temps Ignorer reporte la réémission PIV pour cette personne."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivGraceDays.what": {
+    "en": "45a6f971b540a460",
+    "text": "Compté à partir de la PREMIÈRE invitation de la personne à la réémission PIV. Une fois passé, Ignorer disparaît et la connexion est retenue jusqu'à ce que chaque emplacement dû ait un nouveau certificat. 0 signifie sans échéance."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivSlots.what": {
+    "en": "4e690b5cbe3bf621",
+    "text": "Les emplacements PIV dont l'activité examine les certificats, séparés par des virgules : 9a (authentification PIV), 9c (signature numérique), 9d (gestion des clés), 9e (authentification de carte). Un emplacement dont est.allowedProfiles omet le profil n'est jamais demandé."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTrigger.what": {
+    "en": "ceeae6bfc896598c",
+    "text": "Ce qui rend dû le certificat d'un emplacement. classical-issuer : son émetteur l'a signé avec un algorithme classique et l'autorité émettrice EST de ce domaine est post-quantique (un certificat réémis sous une autorité classique ne serait pas meilleur). expiring : il expire dans pivRenewDays. both : l'un ou l'autre."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivRenewDays.what": {
+    "en": "f5c0bea693ce3a58",
+    "text": "Combien de jours avant son expiration un certificat d'emplacement PIV est dû pour renouvellement, quand pivTrigger vaut expiring ou both."
+  },
+  "postLogin.SCHEMA.attributes.stsPostLoginPivTarget.what": {
+    "en": "3ebbad69d34f11b3",
+    "text": "Sur quoi porte le nouveau certificat. reissue : un nouveau certificat sur une clé que la carte régénère dans le même emplacement, signé par l'autorité émettrice EST du domaine. rekey : une clé post-quantique sur la carte, qu'aucune carte PIV ne sait produire aujourd'hui, si bien qu'un profil réglé sur rekey ne demande rien à personne."
   },
   "postLogin.SCHEMA.attributes.stsPostLoginPrecedence.what": {
     "en": "2b5b2ba409912c7d",
@@ -2138,6 +2234,30 @@
   "postLogin.sentences.mailKeepNone": {
     "en": "f7cb6f0da08b7411",
     "text": "une clé OpenPGP classique qu’une clé post-quantique remplace est retirée aussitôt"
+  },
+  "postLogin.sentences.pivReissue": {
+    "en": "5f2f81aff443f105",
+    "text": "une personne détenant un certificat d'emplacement PIV ({{slots}}) est invitée, après sa connexion, à en inscrire un nouveau"
+  },
+  "postLogin.sentences.pivTriggerClassical": {
+    "en": "632e10e241646755",
+    "text": "un certificat est dû quand une autorité classique l'a signé et que l'autorité émettrice EST de ce domaine est post-quantique"
+  },
+  "postLogin.sentences.pivTriggerExpiring": {
+    "en": "aded73c111de1a19",
+    "text": "un certificat est dû {{days}} jour(s) avant son expiration"
+  },
+  "postLogin.sentences.pivTriggerBoth": {
+    "en": "e1ad48c0307193c5",
+    "text": "un certificat est dû quand une autorité classique l'a signé et que l'autorité émettrice EST de ce domaine est post-quantique, ou {{days}} jour(s) avant son expiration"
+  },
+  "postLogin.sentences.pivTargetRekey": {
+    "en": "812934151a1711bd",
+    "text": "une clé post-quantique sur la carte est demandée, qu'aucune carte PIV ne sait produire aujourd'hui, donc personne n'est sollicité"
+  },
+  "postLogin.sentences.pivSuperseded": {
+    "en": "89b3974d23046244",
+    "text": "l'ancien certificat est révoqué quand le nouveau sert pour la première fois à se connecter"
   },
   "postLogin.sentences.appliesTo": {
     "en": "f195acc04e68d15e",

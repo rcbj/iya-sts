@@ -117,6 +117,50 @@ model PolicyPostLogin {
     field: #{key: "mailKeepClassical", type: "int", dflt: 90, min: 0, max: 3650, unit: "days", optional: true, label: "Mail encryption: keep the classical OpenPGP key for"}
   })
   stsPostLoginMailKeepClassical?: int32;
+  // THE PIV RE-ISSUE'S BLOCK (#2009 P3, design X2 and X5): rows of its own,
+  // with its own switch, `optional` as the mail block's are.
+  @attr(#{
+    kind: "single",
+    what: "OFF BY DEFAULT. On, every person this profile reaches who holds a PIV slot certificate this realm issued, in a slot pivSlots names, is asked after signing in to enrol a new one (piv-reissue) when pivTrigger says it is due: its issuer signed it with a classical algorithm while this realm's EST Issuing CA is post-quantum, or it expires within pivRenewDays. The old certificate is revoked (superseded) when the new one is first used at a sign-in. A named profile with this off excludes whoever it is selected for from this activity.",
+    field: #{key: "pivEnabled", type: "bool", dflt: false, optional: true, label: "Ask for PIV certificate re-issue"}
+  })
+  stsPostLoginPivEnabled?: boolean;
+  @attr(#{
+    kind: "single",
+    what: "How long Skip puts the PIV re-issue off for that person.",
+    field: #{key: "pivSnoozeDays", type: "int", dflt: 7, min: 1, max: 90, unit: "days", optional: true, label: "PIV re-issue: Skip puts it off for"}
+  })
+  stsPostLoginPivSnoozeDays?: int32;
+  @attr(#{
+    kind: "single",
+    what: "Counted from the person's FIRST invitation to the PIV re-issue. When it has passed, Skip is gone and the sign-in is held until every due slot has a new certificate. 0 is no deadline.",
+    field: #{key: "pivGraceDays", type: "int", dflt: 0, min: 0, max: 3650, unit: "days", optional: true, label: "PIV re-issue: allotted time"}
+  })
+  stsPostLoginPivGraceDays?: int32;
+  @attr(#{
+    kind: "single",
+    what: "The PIV slots whose certificates the activity looks at, comma-separated: 9a (PIV authentication), 9c (digital signature), 9d (key management), 9e (card authentication). A slot whose profile est.allowedProfiles leaves out is never asked for.",
+    field: #{key: "pivSlots", type: "list", dflt: "9a,9c,9d,9e", values: #["9a", "9c", "9d", "9e"], optional: true, label: "PIV re-issue: slots"}
+  })
+  stsPostLoginPivSlots?: string;
+  @attr(#{
+    kind: "single",
+    what: "What makes a slot's certificate due. classical-issuer: its issuer signed it with a classical algorithm and this realm's EST Issuing CA is post-quantum (a certificate re-issued under a classical CA would be no better). expiring: it expires within pivRenewDays. both: either.",
+    field: #{key: "pivTrigger", type: "enum", dflt: "both", values: #["classical-issuer", "expiring", "both"], optional: true, label: "PIV re-issue: what makes a certificate due"}
+  })
+  stsPostLoginPivTrigger?: string;
+  @attr(#{
+    kind: "single",
+    what: "How many days before a PIV slot certificate expires it is due for renewal, where pivTrigger is expiring or both.",
+    field: #{key: "pivRenewDays", type: "int", dflt: 30, min: 1, max: 365, unit: "days", optional: true, label: "PIV re-issue: renew this long before expiry"}
+  })
+  stsPostLoginPivRenewDays?: int32;
+  @attr(#{
+    kind: "single",
+    what: "What the new certificate is over. reissue: a new certificate over a key the card makes again in the same slot, signed by the realm's EST Issuing CA. rekey: a post-quantum key on the card, which no PIV card can make today, so a profile set to rekey asks nobody.",
+    field: #{key: "pivTarget", type: "enum", dflt: "reissue", values: #["reissue", "rekey"], optional: true, label: "PIV re-issue: what is issued"}
+  })
+  stsPostLoginPivTarget?: string;
   @attr(#{
     kind: "single",
     what: "Which named post-login profile wins where several are named for one sign-in — by the application and by the person's groups: the lowest, from 1 to 1000.",

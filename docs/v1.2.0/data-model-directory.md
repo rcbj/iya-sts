@@ -46,7 +46,7 @@ Do not edit it by hand.
 | [Passkey policy on a person](#passkey-policy-on-a-person) | `PolicyPasskeyOnPerson` | on the person | 2 |
 | [Password policy](#password-policy) | `PolicyPassword` | ou=passwordPolicies | 16 |
 | [Password policy on a person](#password-policy-on-a-person) | `PolicyPasswordOnPerson` | on the person | 2 |
-| [Post-login policy](#post-login-policy) | `PolicyPostLogin` | ou=postLoginPolicies | 17 |
+| [Post-login policy](#post-login-policy) | `PolicyPostLogin` | ou=postLoginPolicies | 24 |
 | [Service-account policy](#service-account-policy) | `PolicyServiceAccount` | ou=serviceAccountPolicies | 17 |
 | [Role](#role) | `Role` | ou=roles | 16 |
 | [Secrets destination](#secrets-destination) | `SecretsDestination` | ou=applications | 11 |
@@ -1119,6 +1119,13 @@ A policy profile, kind `postLogin`.
 | `stsPostLoginNoPasskey` | one | this service | `1.3.6.1.4.1.67607.1.1.630` | leave: not asked. invite: asked to register a post-quantum passkey, and may always skip it. require: asked, and may skip it only until the allotted time has passed. |
 | `stsPostLoginNoPasskeyFallback` | one | this service | `1.3.6.1.4.1.67607.1.1.631` | none: ML-DSA only. classical: after an ML-DSA registration fails on the device, a retry with the classical algorithms is offered (where the passkey policy allows one) — a classical passkey is better than a password, and its holder is asked for the migration later like anyone else's. |
 | `stsPostLoginNoPasskeyRole` | one | this service | `1.3.6.1.4.1.67607.1.1.632` | Retired (#1135): the role a person with no passkey registered one in. A passkey has no role; nothing reads it. |
+| `stsPostLoginPivEnabled` | one | this service | `1.3.6.1.4.1.67607.1.1.988` | OFF BY DEFAULT. On, every person this profile reaches who holds a PIV slot certificate this realm issued, in a slot pivSlots names, is asked after signing in to enrol a new one (piv-reissue) when pivTrigger says it is due: its issuer signed it with a classical algorithm while this realm's EST Issuing CA is post-quantum, or it expires within pivRenewDays. The old certificate is revoked (superseded) when the new one is first used at a sign-in. A named profile with this off excludes whoever it is selected for from this activity. |
+| `stsPostLoginPivGraceDays` | one | this service | `1.3.6.1.4.1.67607.1.1.990` | Counted from the person's FIRST invitation to the PIV re-issue. When it has passed, Skip is gone and the sign-in is held until every due slot has a new certificate. 0 is no deadline. |
+| `stsPostLoginPivRenewDays` | one | this service | `1.3.6.1.4.1.67607.1.1.993` | How many days before a PIV slot certificate expires it is due for renewal, where pivTrigger is expiring or both. |
+| `stsPostLoginPivSlots` | one | this service | `1.3.6.1.4.1.67607.1.1.991` | The PIV slots whose certificates the activity looks at, comma-separated: 9a (PIV authentication), 9c (digital signature), 9d (key management), 9e (card authentication). A slot whose profile est.allowedProfiles leaves out is never asked for. |
+| `stsPostLoginPivSnoozeDays` | one | this service | `1.3.6.1.4.1.67607.1.1.989` | How long Skip puts the PIV re-issue off for that person. |
+| `stsPostLoginPivTarget` | one | this service | `1.3.6.1.4.1.67607.1.1.994` | What the new certificate is over. reissue: a new certificate over a key the card makes again in the same slot, signed by the realm's EST Issuing CA. rekey: a post-quantum key on the card, which no PIV card can make today, so a profile set to rekey asks nobody. |
+| `stsPostLoginPivTrigger` | one | this service | `1.3.6.1.4.1.67607.1.1.992` | What makes a slot's certificate due. classical-issuer: its issuer signed it with a classical algorithm and this realm's EST Issuing CA is post-quantum (a certificate re-issued under a classical CA would be no better). expiring: it expires within pivRenewDays. both: either. |
 | `stsPostLoginPrecedence` | one | this service | `1.3.6.1.4.1.67607.1.1.634` | Which named post-login profile wins where several are named for one sign-in — by the application and by the person's groups: the lowest, from 1 to 1000. |
 | `stsPostLoginSnoozeDays` | one | this service | `1.3.6.1.4.1.67607.1.1.635` | How long Skip puts the activity off for that person. |
 

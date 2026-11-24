@@ -7858,6 +7858,45 @@ class Authn {
     return out;
   }
 
+  // A SESSION STARTED ON A CERTIFICATE (#2009 P3, rcbj's D5): where the
+  // certificate is one a post-login PIV re-issue enrolled, the certificate
+  // it replaces is revoked (superseded) now, at its first use, and not when
+  // it was issued — an import that failed must not leave a card that signs
+  // nobody in. `common/post_login_piv.ts` decides; this only tells it, and
+  // nothing it does can touch the sign-in: it is not awaited, and a module
+  // that is not loaded (a process with no composition root) is not asked.
+  private pivCertificateUsed(username: string, extra: any): void {
+    const { log } = this.deps;
+    log.debug("Entering Authn.pivCertificateUsed().");
+    const credential = extra && extra.credential;
+    if (!credential || String(credential.kind || '') !== 'certificate' ||
+        !String(credential.serial || '')) {
+      log.debug("Leaving Authn.pivCertificateUsed(). Not a certificate.");
+      return;
+    }
+    let piv: any = null;
+    try {
+      piv = require('../common/post_login_piv');
+    } catch (e) {
+      log.debug("Caught in Authn.pivCertificateUsed(): " +
+                ((e && e.message) || e));
+      piv = null;
+    }
+    if (!piv || typeof piv.certificateUsed !== 'function') {
+      log.debug("Leaving Authn.pivCertificateUsed(). No module.");
+      return;
+    }
+    Promise.resolve()
+      .then(function () {
+        return piv.certificateUsed(username, String(credential.serial));
+      })
+      .catch(function (e: any) {
+        log.debug("Caught in Authn.pivCertificateUsed(): " +
+                  ((e && e.message) || e));
+      });
+    log.debug("Leaving Authn.pivCertificateUsed().");
+  }
+
   // A PASSKEY SIGNED THEM IN AFTER A RECOVERY (#724): the pending recovery
   // is cleared, and an audit row says so. Only a passkey that has passed
   // every passkey rule above reaches here, which is what "a passkey
@@ -9042,6 +9081,7 @@ class Authn {
                                                amr,
                                                acr, via, extra);
       this.recoveryCompleted(username, extra);
+      this.pivCertificateUsed(username, extra);
       if (multiAccount) {
         this.enrolInAccountSet(extra.request, res, again, defaultFound);
       }
@@ -9466,6 +9506,8 @@ class Authn {
     }
     // A PASSKEY AFTER A RECOVERY (#724) completes it.
     this.recoveryCompleted(username, extra);
+    // A RE-ISSUED PIV CERTIFICATE'S FIRST USE (#2009 P3, D5).
+    this.pivCertificateUsed(username, extra);
     log.debug("Leaving Authn.startSessionHere(). " + username +
               " is signed in (amr " +
               (amr || []).join(',') + ").");
@@ -12146,7 +12188,9 @@ class Authn {
     log.debug("Leaving Authn.postLoginWhat().");
     return activity === 'pqc-mail-encryption'
       ? 'move their mail encryption to a post-quantum key'
-      : 'register a post-quantum passkey';
+      : (activity === 'piv-reissue'
+        ? 'enrol new PIV slot certificates'
+        : 'register a post-quantum passkey');
   }
 
   private postLoginStep(res: any, record: any, username: string,
@@ -12194,7 +12238,18 @@ class Authn {
         current: due.current
           ? { kind: String(due.current.kind || ''),
               algorithm: String(due.current.algorithm || '') } : null,
-        keepClassicalDays: Number(due.keepClassicalDays) || 0 },
+        keepClassicalDays: Number(due.keepClassicalDays) || 0,
+        // THE PIV RE-ISSUE'S FACTS (#2009 P3): each due slot, its
+        // certificate and why; `issued` fills as the step enrols. Empty for
+        // the other activities.
+        slots: Array.isArray(due.slots) ? due.slots.map(function (one: any) {
+          return { slot: String(one.slot || ''),
+                   profile: String(one.profile || ''),
+                   serialHex: String(one.serialHex || ''),
+                   notAfter: String(one.notAfter || ''),
+                   reason: String(one.reason || '') };
+        }) : [],
+        issued: [] },
       held: {
         amr: Array.isArray(hold.amr) ? hold.amr : [],
         acr: String(hold.acr || ''), via: String(hold.via || ''),
@@ -12826,6 +12881,130 @@ class Authn {
     });
     this.finishPostLogin(req, res, base, step);
     log.debug("Leaving Authn.postLoginMailAct(). Done.");
+  }
+
+  // ---------------------------------------------------------------------------
+  // `POST /authn-api/mfa/{id}/post-login/piv` — THE PIV RE-ISSUE'S ACTS
+  // (#2009 P3, design X5), through `common/post_login_piv.ts` and so through
+  // the PIV enrolment form (`common/piv_enrolment.ts`) with the step's person
+  // as the caller:
+  //
+  //   * `piv-enrol` — one due slot's certificate request, its attestation and
+  //     the f9 certificate; the new certificate, its chain and the `ykman`
+  //     command that writes it to the card are kept on the step and drawn by
+  //     the page, which stays (a person writes it to the card before going
+  //     on). What it replaces is revoked when it is first used (D5);
+  //   * `piv-continue` — once every due slot has a new certificate, the
+  //     activity is done and the held session starts (STS-AUTHN-0622 before).
+  //
+  // Where the realm no longer enrols any profile the step asked for, the
+  // held session starts without it (STS-AUTHN-0623).
+  // ---------------------------------------------------------------------------
+  /**
+   * Answers an act at the post-login PIV re-issue step.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param stepId - the step's id
+   * @param body - `{ act, slot?, csr?, slotPem?, attestationPem? }`
+   * @returns a promise settled when the answer is sent
+   */
+  async postLoginPivAct(req: any,
+                        res: IyaApi.AuthnAnswering<'answerPostLoginPiv'>,
+                        stepId: string, body: any): Promise<void> {
+    const { log, baseUrlOf, audit, errorCodes, postLogin } = this.deps;
+    log.debug("Entering Authn.postLoginPivAct(). " +
+              String((body && body.act) || ''));
+    const base = baseUrlOf(req);
+    const found = this.stepProblem('post-login', stepId);
+    if (found.problem) {
+      errorCodes.mark(res, found.problem.code);
+      this.stepRefused(res, found.problem.why);
+      log.debug("Leaving Authn.postLoginPivAct(). No step.");
+      return;
+    }
+    const step = found.step;
+    const due = step.postLogin;
+    if (String(due.activity || '') !== 'piv-reissue') {
+      errorCodes.mark(res, 'STS-AUTHN-0602');
+      this.stepRefused(res, 'This step asks for another post-login ' +
+                       'activity, not a PIV certificate.');
+      log.debug("Leaving Authn.postLoginPivAct(). Another activity.");
+      return;
+    }
+    const piv = require('../common/post_login_piv');
+    const slots: any[] = [].concat(due.slots || []);
+    const issued: any[] = [].concat(due.issued || []);
+    const open = slots.filter(function (one: any) {
+      return !issued.some(function (i: any) {
+        return i.slot === one.slot;
+      });
+    });
+    if (open.length && !open.some(function (one: any) {
+      return piv.canIssue(String(one.profile));
+    })) {
+      pendingMfa.delete(String(stepId));
+      log.info(errorCodes.tag('STS-AUTHN-0623') + 'authn: the post-login ' +
+               'PIV re-issue of "' + step.username + '" cannot be done ' +
+               'here any more; the held session is started without it.');
+      errorCodes.mark(res, 'STS-AUTHN-0623');
+      this.finishPostLogin(req, res, base, step);
+      log.debug("Leaving Authn.postLoginPivAct(). Cannot be done here.");
+      return;
+    }
+    const act = String((body && body.act) || '');
+    const username = String(step.username);
+    if (act === 'piv-enrol') {
+      const answer: any = await piv.enrol(username, due, body || {});
+      if (!answer || !answer.ok) {
+        errorCodes.mark(res, errorCodes.codeOf(answer) || 'STS-AUTHN-0620');
+        this.stepRefused(res, String(((answer && answer.errors) || [])[0] ||
+          (answer && answer.error) || 'No certificate was issued.'));
+        log.debug("Leaving Authn.postLoginPivAct(). Refused.");
+        return;
+      }
+      step.postLogin.issued = issued.filter(function (i: any) {
+        return i.slot !== answer.slot;
+      }).concat([{ slot: answer.slot, profile: answer.profile,
+                   serialHex: answer.serialHex,
+                   certificatePem: answer.certificatePem,
+                   chainPem: answer.chainPem,
+                   command: answer.command }]);
+      pendingMfa.set(String(stepId), step);
+      this.stepAnswer(res, 'mfa', 'post-login', String(stepId),
+                      POST_LOGIN_PATH, 'mfa');
+      log.debug("Leaving Authn.postLoginPivAct(). Issued " + answer.slot);
+      return;
+    }
+    if (open.length) {
+      errorCodes.mark(res, 'STS-AUTHN-0622');
+      this.stepRefused(res, 'Enrol a new certificate for slot(s) ' +
+        open.map(function (one: any) {
+          return one.slot;
+        }).join(', ') + ' first.');
+      log.debug("Leaving Authn.postLoginPivAct(). Slots still open.");
+      return;
+    }
+    pendingMfa.delete(String(stepId));
+    postLogin.noteDone(username, due);
+    audit.audit({
+      action: 'authn.post-login.done', outcome: 'success',
+      actor: username, target: username, channel: 'http',
+      protocol: step.authn && step.authn.protocol,
+      summary: username + ' enrolled new PIV slot certificates (' +
+               issued.map(function (i: any) {
+                 return i.slot;
+               }).join(', ') + ') after signing in',
+      detail: { activity: String(due.activity),
+                certificates: issued.map(function (i: any) {
+                  return { slot: String(i.slot),
+                           serialHex: String(i.serialHex) };
+                }),
+                profile: String(due.profile || ''),
+                askedBy: String(due.askedBy || '') }
+    });
+    this.finishPostLogin(req, res, base, step);
+    log.debug("Leaving Authn.postLoginPivAct(). Done.");
   }
 
   private refusedSession(res, base, record, username, started, detail) {
@@ -14131,6 +14310,26 @@ class Authn {
                 expiresAt: String(due.challenge.expiresAt || '') }
             : null,
           keepClassicalDays: Number(due.keepClassicalDays) || 0 };
+      }
+      // THE PIV RE-ISSUE (#2009 P3): each due slot, and what the step has
+      // issued so far with the command that writes it to the card.
+      if (String(due.activity || '') === 'piv-reissue') {
+        view.postLogin.piv = {
+          slots: [].concat(due.slots || []).map(function (one: any) {
+            return { slot: String(one.slot || ''),
+                     profile: String(one.profile || ''),
+                     serialHex: String(one.serialHex || ''),
+                     notAfter: String(one.notAfter || ''),
+                     reason: String(one.reason || '') };
+          }),
+          issued: [].concat(due.issued || []).map(function (one: any) {
+            return { slot: String(one.slot || ''),
+                     profile: String(one.profile || ''),
+                     serialHex: String(one.serialHex || ''),
+                     certificatePem: String(one.certificatePem || ''),
+                     chainPem: [].concat(one.chainPem || []).map(String),
+                     command: String(one.command || '') };
+          }) };
       }
     }
     const own = this.preferredLanguageOf(String(step.username));
@@ -21787,6 +21986,7 @@ export = {
   mfaSetupAct: slot.forward('mfaSetupAct'),
   postLoginAct: slot.forward('postLoginAct'),
   postLoginMailAct: slot.forward('postLoginMailAct'),
+  postLoginPivAct: slot.forward('postLoginPivAct'),
   mfaStartOver: slot.forward('mfaStartOver'),
   passwordChangeStartOver: slot.forward('passwordChangeStartOver'),
   finishEmailSecondFactor: slot.forward('finishEmailSecondFactor'),
