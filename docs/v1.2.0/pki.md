@@ -117,7 +117,11 @@ Configure SSH servers to trust the returned public key with
 `TrustedUserCAKeys`, and to read the KRL with `RevokedKeys`. The KRL must be
 refreshed by the operator's deployment; the service cannot make an SSH
 server consult it. Certificate revocation and lost-token reports rebuild
-the KRL, and a scheduler refreshes it periodically.
+the KRL, and a scheduler refreshes it periodically. The service keeps a
+copy of the last KRL it built in its store; a copy that cannot be written
+does not stop the KRL being answered. The list is built again from the
+recorded revocations and served, and the failure is logged under
+`STS-PKI-0299`.
 
 Tested with OpenSSH 9.2 (`sshd`, `ssh`, `ssh-agent`, `ssh-keygen`) and a
 YubiKey-style PIV card through OpenSC 0.23's PKCS#11 module. sshd reads the

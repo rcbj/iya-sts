@@ -40,13 +40,13 @@
 //      (POST /account-api/ssh/certificates/revoke), revokes the card's
 //      certificate too, and after a KRL refresh `ssh -I` is refused.
 //
-// The realm runs in the stack's mode. Where that is product (every local
-// mode but `memory`), the LDAP write is authorized against the
-// administrator's role, Admin Write on the realm's own roster, which the
-// administrator is granted; in development any bind writes. The realm is
-// not forced into product: on a store that persists nothing a product
-// realm's first KRL is refused (STS-PKI-0290, its cache could not be
-// persisted), which is that stack's limit, not this job's. Every key,
+// The realm is a PRODUCT realm in every mode, so the LDAP write is
+// authorized against the administrator's role, Admin Write on the realm's
+// own roster, which the administrator is granted. Until #2092 it ran in the
+// stack's mode, because on a store that persists nothing (`memory`) a
+// product realm's first KRL was refused (STS-PKI-0290, its cache could not
+// be persisted); the first fetch is answered now, and this job's first
+// RevokedKeys fetch is what proves it. Every key,
 // certificate and account is made in this run; the PIV card is swapped for
 // a factory-fresh one first (bin/lab-piv-card). `local: true`, `clientLab:
 // true`: SKIPPED by the runner where there is no CLIENT_LAB_URL.
@@ -491,6 +491,7 @@ async function setUp() {
   // sts_ldap_read_authorization.js has it.
   await ok(base + "/admin-api/realms/create", { id: REALM, domain: DOMAIN,
     name: "SSH client lab " + STAMP, overrides: {
+      "global.mode": "product",
       "authn.allowOptionalSecondFactor": "true",
       // THE RUNNER IS ONE ADDRESS FOR EVERY JOB'S PEOPLE, the NAT case the
       // row describes: issuance is counted per address across realms (five
@@ -672,26 +673,26 @@ async function test() {
 
   log.info("=== d2. the person may not remove it over LDAP ===");
   const modeAnswer = await send(rb + "/admin-api/mode");
-  const product = !!(modeAnswer.body && modeAnswer.body.isProduct);
-  if (product) {
-    // Product authorizes a socket write: a person modifies only the
-    // attributes ldap.selfWritableAttributes names on their own entry
-    // (ldap/CLAUDE.md, *WHO MAY WRITE THIS DIRECTORY OVER THE SOCKET*), and
-    // an SSH certificate is not one of them.
-    const own = await ldapModify(s.ownerDn, s.ownerDn, "delete",
-      valueFor(before, agentCert.serialHex).raw);
-    const kept = await entryCertificates(s.adminDn, s.ownerDn);
-    check("in product, the person's own ldapmodify of the attribute is " +
-          "refused insufficientAccessRights (50), and nothing is revoked",
-          function () {
-      assert.strictEqual(own.code, 50, JSON.stringify(own).slice(0, 400));
-      assert.match(String(own.stderr), /Insufficient access/i);
-      assert.ok(valueFor(kept, agentCert.serialHex));
-    });
-  } else {
-    log.info("  development authorizes no LDAP write, so the person's own " +
-             "removal would revoke too; asked in product only");
-  }
+  check("the realm is in product mode (#2092: forced in every stack)",
+        function () {
+    assert.ok(modeAnswer.body && modeAnswer.body.isProduct,
+              JSON.stringify(modeAnswer.body).slice(0, 300));
+  });
+  // Product authorizes a socket write: a person modifies only the
+  // attributes ldap.selfWritableAttributes names on their own entry
+  // (ldap/CLAUDE.md, *WHO MAY WRITE THIS DIRECTORY OVER THE SOCKET*), and
+  // an SSH certificate is not one of them.
+  const ownWrite = await ldapModify(s.ownerDn, s.ownerDn, "delete",
+    valueFor(before, agentCert.serialHex).raw);
+  const kept = await entryCertificates(s.adminDn, s.ownerDn);
+  check("in product, the person's own ldapmodify of the attribute is " +
+        "refused insufficientAccessRights (50), and nothing is revoked",
+        function () {
+    assert.strictEqual(ownWrite.code, 50,
+                       JSON.stringify(ownWrite).slice(0, 400));
+    assert.match(String(ownWrite.stderr), /Insufficient access/i);
+    assert.ok(valueFor(kept, agentCert.serialHex));
+  });
 
   log.info("=== e. revoked by REMOVING it from the entry with " +
            "ldapmodify ===");
