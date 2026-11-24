@@ -2358,7 +2358,8 @@ let actorSessionResolver = null;
 const sources = new AsyncLocalStorage();
 
 // Run `fn` with `source` ambient: `{ req }` for an HTTP request, or
-// `{ address }` for a raw socket. Returns what `fn` returns.
+// `{ address }` for a raw socket, or `{ actor }` for a scheduler job's body
+// (#2050, `currentActor()`). Returns what `fn` returns.
 /**
  * Runs a function with a source ambient, so every row written inside it carries
  * that source's address.
@@ -2481,6 +2482,51 @@ function actorSessionOfRequest(req) {
     log.debug("Leaving actorSessionOfRequest(). Threw.");
     return '';
   }
+}
+
+// WHO IS DOING THE WORK THIS CODE RUNS INSIDE (#2050), for a row written
+// as a CONSEQUENCE of it — a certificate revoked because a write took it off
+// an entry — where the code that writes the row was handed no request. The
+// same answer `recordHttp()` gives the request's own row: the management
+// and account APIs' token subject (`res.locals.apiCaller`, which the
+// console's calls to `/admin-api` carry too), SCIM's authenticated client
+// (`req.scimAuth.principal`, the actor of SCIM's own rows), and otherwise
+// the resolver's signed-in user. A job's source names the job
+// (`cluster/scheduler.ts`, `job:<id>`). '' outside any source, or for a
+// request nobody authenticated.
+/**
+ * The actor of the ambient source; exported as `currentActor`.
+ *
+ * @returns the actor, or ''
+ */
+function ambientActor() {
+  log.debug("Entering ambientActor().");
+  const source = sources.getStore();
+  if (!source) {
+    log.debug("Leaving ambientActor(). No source.");
+    return '';
+  }
+  if (source.actor) {
+    log.debug("Leaving ambientActor(). The source names one.");
+    return String(source.actor);
+  }
+  const req = source.req;
+  if (!req) {
+    log.debug("Leaving ambientActor(). A socket's source.");
+    return '';
+  }
+  const res = req.res;
+  const caller = res && res.locals && res.locals.apiCaller;
+  if (caller && caller.name) {
+    log.debug("Leaving ambientActor(). The API's caller.");
+    return String(caller.name);
+  }
+  if (req.scimAuth && req.scimAuth.principal) {
+    log.debug("Leaving ambientActor(). The SCIM client.");
+    return String(req.scimAuth.principal);
+  }
+  log.debug("Leaving ambientActor(). The resolver's.");
+  return actorOfRequest(req);
 }
 
 function actorOfRequest(req) {
@@ -3694,6 +3740,7 @@ module.exports = {
   withSource: withSource,
   currentAddress: ambientAddress,
   currentRequest: ambientRequest,
+  currentActor: ambientActor,
   list: list,
   localEvents: localEvents,
   authenticationEventsFor: authenticationEventsFor,

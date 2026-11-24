@@ -54,7 +54,7 @@
 // lists and a `changed` function (STS-LDAP-0224).
 //
 // A LIBRARY (rule 3): it registers no route and requires only `helpers` and
-// `error_codes`.
+// `error_codes`; `audit` is reached at the moment of use, for the actor.
 // ===========================================================================
 
 import helpers = require('./helpers');
@@ -159,6 +159,25 @@ class EntryObserver {
     helpers.log.debug("Entering EntryObserver.entryChanged().");
     const c = change || ({} as EntryChange);
     const told: string[] = [];
+    // WHO WROTE IT (#2050): the door's own word where it has one (an LDAP
+    // operation's bound DN), else the ambient source's — the API's or the
+    // portal's token subject, the SCIM client, a scheduler job — the same
+    // actor model every audit row uses (`audit.currentActor()`). A write
+    // made outside any request or job says so rather than naming nobody.
+    let actor = String(c.actor || '');
+    if (!actor) {
+      try {
+        actor = String(require('./audit').currentActor() || '');
+      } catch (e) {
+        helpers.log.debug("Caught in EntryObserver.entryChanged(): " +
+                          ((e && e.message) || e));
+        actor = '';
+      }
+    }
+    if (!actor) {
+      actor = 'unknown: ' + String(c.door || 'a directory write') +
+        ', outside any request or job';
+    }
     Object.keys(handlers).forEach(function (attribute: string): void {
       const before = valuesIn(c.before || {}, attribute);
       const after = valuesIn(c.after || {}, attribute);
@@ -174,7 +193,7 @@ class EntryObserver {
           attribute: attribute, kind: String(c.kind || ''),
           dn: String(c.dn || ''), username: String(c.username || ''),
           subject: String(c.subject || ''), realm: String(c.realm || ''),
-          actor: String(c.actor || ''), door: String(c.door || ''),
+          actor: actor, door: String(c.door || ''),
           deleted: String(c.kind || '').indexOf('deleted') === 0,
           before: before, after: after
         });

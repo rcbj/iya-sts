@@ -2881,7 +2881,7 @@ class Scheduler {
     const inline = function (): Json {
       return realms.run(realm, function (): Json {
         // Routine info from the body is debug (common/job_log.ts).
-        return JobLog.during(function (): Json {
+        return Scheduler.asJob(job, function (): Json {
           return job.run(ctx);
         });
       });
@@ -3465,7 +3465,7 @@ class Scheduler {
     return Promise.resolve().then(function (): Json {
       return realms.run(realm, function (): Json {
         // Routine info from the body is debug (common/job_log.ts).
-        return JobLog.during(function (): Json {
+        return Scheduler.asJob(job, function (): Json {
           return job.run(ctx);
         });
       });
@@ -3567,6 +3567,25 @@ class Scheduler {
    * @param result - what the body resolved to
    * @returns the text, or ''
    */
+  /**
+   * Runs a job's body with its log lines at debug (`common/job_log.ts`) and
+   * the job AMBIENT as the audit source's actor (`job:<id>`, #2050): a
+   * directory write a job makes names the job on the audit row its
+   * consequences write, as a request's names its caller.
+   *
+   * @param job - the job
+   * @param fn - its body
+   * @returns what the body returns
+   */
+  static asJob(job: Json, fn: () => Json): Json {
+    helpers.log.debug("Entering Scheduler.asJob().");
+    helpers.log.debug("Leaving Scheduler.asJob().");
+    return JobLog.during(function (): Json {
+      return audit.withSource({ actor: 'job:' + String((job && job.id) ||
+                                                       '') }, fn);
+    });
+  }
+
   static whyOf(result: Json): string {
     helpers.log.debug("Entering Scheduler.whyOf().");
     if (!result || typeof result !== 'object' ||
@@ -3682,7 +3701,7 @@ class Scheduler {
     try {
       const result = await realms.run(realm, function (): Json {
         // Routine info from the body is debug (common/job_log.ts).
-        return JobLog.during(function (): Json {
+        return Scheduler.asJob(job, function (): Json {
           return job.run({
             realm: realmId, runId: key, trigger: 'schedule', params: null,
             stillOwner: function (): boolean {

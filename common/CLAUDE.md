@@ -8467,6 +8467,14 @@ console page. STS-SSHCA-0006 (a partial slot), 0007 (an entry not brought
 in step), 0008 (the job could not read or record), 0009 (a value refused),
 0010 (a removal's revocation failed); STS-LDAP-0224/0225 (a handler
 refused, a handler threw).
+**WHO DID IT, FOR EVERY DOOR**: the observer's change carries the writer —
+an LDAP add, modify or delete's bound DN, else `audit.currentActor()`, the
+one actor model every audit row uses: the management and account APIs'
+token subject (`res.locals.apiCaller`, which the console's `/admin-api`
+calls carry), SCIM's client (`req.scimAuth.principal`), the signed-in user,
+or a scheduler job (`job:<id>`, the source `Scheduler.asJob()` enters
+around every body). A write outside all of them is named `unknown: <door>,
+outside any request or job` on the row, never left blank.
 
 The CA key and KRL are public, `no-store` documents at
 `/pki/ssh-user-ca/{scope}` and `/pki/ssh-user-krl/{scope}`, on the main port
